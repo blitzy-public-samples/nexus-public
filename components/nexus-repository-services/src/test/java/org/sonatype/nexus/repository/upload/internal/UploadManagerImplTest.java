@@ -17,6 +17,12 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import javax.servlet.http.HttpServletRequest;
@@ -43,18 +49,19 @@ import org.sonatype.nexus.rest.ValidationErrorXO;
 import org.sonatype.nexus.rest.ValidationErrorsException;
 
 import org.apache.commons.fileupload.FileUploadException;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import com.google.common.collect.Lists;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.contains;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.isNotNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -63,6 +70,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class UploadManagerImplTest
     extends TestSupport
 {
@@ -104,7 +112,7 @@ public class UploadManagerImplTest
   @Captor
   ArgumentCaptor<ComponentUpload> componentUploadCaptor;
 
-  @Before
+  @BeforeEach
   public void setup() {
     when(handlerA.supportsApiUpload()).thenReturn(true);
     when(handlerB.supportsApiUpload()).thenReturn(true);
@@ -130,18 +138,21 @@ public class UploadManagerImplTest
   }
 
   @Test
-  public void testGetAvailable() {
-    assertThat(underTest.getAvailableDefinitions(), contains(uploadA, uploadB));
+  void testGetAvailable() {
+    List<UploadDefinition> definitions = underTest.getAvailableDefinitions();
+    assertEquals(2, definitions.size());
+    assertTrue(definitions.contains(uploadA));
+    assertTrue(definitions.contains(uploadB));
   }
 
   @Test
-  public void testGetByFormat() {
-    assertThat(underTest.getByFormat("a"), is(uploadA));
-    assertThat(underTest.getByFormat("b"), is(uploadB));
+  void testGetByFormat() {
+    assertEquals(uploadA, underTest.getByFormat("a"));
+    assertEquals(uploadB, underTest.getByFormat("b"));
   }
 
   @Test
-  public void testHandle() throws IOException, FileUploadException {
+  void testHandle() throws IOException, FileUploadException {
     BlobStoreMultipartForm uploadedForm = new BlobStoreMultipartForm();
     TempBlobFormField field = new TempBlobFormField("asset1", "foo.jar", mock(TempBlob.class));
     uploadedForm.putFile("asset1", field);
@@ -158,8 +169,8 @@ public class UploadManagerImplTest
     verify(handlerB, never()).handle(isNotNull(), isNotNull());
     ArgumentCaptor<UIUploadEvent> eventCaptor = ArgumentCaptor.forClass(UIUploadEvent.class);
     verify(eventManager, times(1)).post(eventCaptor.capture());
-    assertThat(eventCaptor.getValue().getRepository(), equalTo(repository));
-    assertThat(eventCaptor.getValue().getAssetPaths(), equalTo(assetPaths));
+    assertEquals(repository, eventCaptor.getValue().getRepository());
+    assertEquals(assetPaths, eventCaptor.getValue().getAssetPaths());
 
     // Try the other, to be sure!
     reset(handlerA, handlerB, eventManager);
@@ -177,55 +188,183 @@ public class UploadManagerImplTest
     verify(handlerA, never()).handle(isNotNull(), isNotNull());
     eventCaptor = ArgumentCaptor.forClass(UIUploadEvent.class);
     verify(eventManager, times(1)).post(eventCaptor.capture());
-    assertThat(eventCaptor.getValue().getRepository(), equalTo(repository));
-    assertThat(eventCaptor.getValue().getAssetPaths(), equalTo(assetPaths));
+    assertEquals(repository, eventCaptor.getValue().getRepository());
+    assertEquals(assetPaths, eventCaptor.getValue().getAssetPaths());
   }
 
   @Test
-  public void testHandle_unsupportedRepositoryFormat() throws IOException {
+  void testHandle_unsupportedRepositoryFormat() {
     when(repository.getFormat()).thenReturn(new Format("c")
     {
     });
 
-    expectExceptionOnUpload(repository, "Uploading components to 'c' repositories is unsupported");
+    ValidationErrorsException exception = assertThrows(ValidationErrorsException.class, 
+        () -> underTest.handle(repository, request));
+    
+    List<String> messages = exception.getValidationErrors().stream().map(ValidationErrorXO::getMessage)
+        .collect(Collectors.toList());
+    assertEquals(1, messages.size());
+    assertEquals("Uploading components to 'c' repositories is unsupported", messages.get(0));
   }
 
   @Test
-  public void testHandle_unsupportedRepositoryGroupType() throws IOException {
+  void testHandle_unsupportedRepositoryGroupType() {
     when(repository.getType()).thenReturn(new GroupType());
-    expectExceptionOnUpload(repository,
-        "Uploading components to a 'group' type repository is unsupported, must be 'hosted'");
+    
+    ValidationErrorsException exception = assertThrows(ValidationErrorsException.class, 
+        () -> underTest.handle(repository, request));
+    
+    List<String> messages = exception.getValidationErrors().stream().map(ValidationErrorXO::getMessage)
+        .collect(Collectors.toList());
+    assertEquals(1, messages.size());
+    assertEquals("Uploading components to a 'group' type repository is unsupported, must be 'hosted'", messages.get(0));
   }
 
   @Test
-  public void testHandle_unsupportedRepositoryProxyType() throws IOException {
+  void testHandle_unsupportedRepositoryProxyType() {
     when(repository.getType()).thenReturn(new ProxyType());
-    expectExceptionOnUpload(repository,
-        "Uploading components to a 'proxy' type repository is unsupported, must be 'hosted'");
+    
+    ValidationErrorsException exception = assertThrows(ValidationErrorsException.class, 
+        () -> underTest.handle(repository, request));
+    
+    List<String> messages = exception.getValidationErrors().stream().map(ValidationErrorXO::getMessage)
+        .collect(Collectors.toList());
+    assertEquals(1, messages.size());
+    assertEquals("Uploading components to a 'proxy' type repository is unsupported, must be 'hosted'", messages.get(0));
   }
 
   @Test
-  public void testHandle_unsupportedRepositoryVirtualType() throws IOException {
+  void testHandle_unsupportedRepositoryVirtualType() {
     when(repository.getType()).thenReturn(new VirtualType());
-    expectExceptionOnUpload(repository,
-        "Uploading components to a 'virtual' type repository is unsupported, must be 'hosted'");
+    
+    ValidationErrorsException exception = assertThrows(ValidationErrorsException.class, 
+        () -> underTest.handle(repository, request));
+    
+    List<String> messages = exception.getValidationErrors().stream().map(ValidationErrorXO::getMessage)
+        .collect(Collectors.toList());
+    assertEquals(1, messages.size());
+    assertEquals("Uploading components to a 'virtual' type repository is unsupported, must be 'hosted'", messages.get(0));
   }
 
   @Test
-  public void testHandle_offlineRepository() throws IOException {
+  void testHandle_offlineRepository() {
     when(configuration.isOnline()).thenReturn(false);
-    expectExceptionOnUpload(repository, "Repository offline");
+    
+    ValidationErrorsException exception = assertThrows(ValidationErrorsException.class, 
+        () -> underTest.handle(repository, request));
+    
+    List<String> messages = exception.getValidationErrors().stream().map(ValidationErrorXO::getMessage)
+        .collect(Collectors.toList());
+    assertEquals(1, messages.size());
+    assertEquals("Repository offline", messages.get(0));
   }
-
-  private void expectExceptionOnUpload(final Repository repository, final String message) throws IOException {
+  
+  @Test
+  void testConcurrentMultipartProcessingWithVirtualThreads() throws Exception {
+    // Setup virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    int taskCount = 50;
+    CountDownLatch latch = new CountDownLatch(taskCount);
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    // Setup common test data
+    BlobStoreMultipartForm uploadedForm = new BlobStoreMultipartForm();
+    TempBlobFormField field = new TempBlobFormField("asset1", "foo.jar", mock(TempBlob.class));
+    uploadedForm.putFile("asset1", field);
+    when(blobStoreAwareMultipartHelper.parse(isNotNull(), isNotNull())).thenReturn(uploadedForm);
+    
+    List<String> assetPaths = Lists.newArrayList("/asset/path/1", "/asset/path/2");
+    UploadResponse uploadResponse = mock(UploadResponse.class);
+    when(uploadResponse.getAssetPaths()).thenReturn(assetPaths);
+    when(handlerA.handle(isNotNull(), isNotNull())).thenReturn(uploadResponse);
+    
     try {
-      underTest.handle(repository, request);
-      fail("Expected exception to be thrown");
+      // Submit multiple concurrent upload tasks using virtual threads
+      for (int i = 0; i < taskCount; i++) {
+        executor.submit(() -> {
+          try {
+            underTest.handle(repository, request);
+            successCount.incrementAndGet();
+          } 
+          catch (Exception e) {
+            log.error("Error in concurrent upload", e);
+          } 
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      assertTrue(latch.await(30, TimeUnit.SECONDS), "All tasks should complete within timeout");
+      
+      // Verify all uploads were successful
+      assertEquals(taskCount, successCount.get(), "All uploads should succeed");
+      
+      // Verify handler was called the expected number of times
+      verify(handlerA, times(taskCount)).handle(isNotNull(), isNotNull());
+    } 
+    finally {
+      executor.shutdown();
     }
-    catch (ValidationErrorsException exception) {
-      List<String> messages = exception.getValidationErrors().stream().map(ValidationErrorXO::getMessage)
-          .collect(Collectors.toList());
-      assertThat(messages, contains(message));
+  }
+  
+  @Test
+  void testThreadPinningWithLargeUploads() throws Exception {
+    // Setup virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    // Setup test data for large upload simulation
+    BlobStoreMultipartForm uploadedForm = new BlobStoreMultipartForm();
+    TempBlobFormField field = new TempBlobFormField("largeAsset", "large-file.bin", mock(TempBlob.class));
+    uploadedForm.putFile("largeAsset", field);
+    when(blobStoreAwareMultipartHelper.parse(isNotNull(), isNotNull())).thenReturn(uploadedForm);
+    
+    // Simulate a large upload by making the handler take some time to process
+    List<String> assetPaths = Lists.newArrayList("/asset/path/large");
+    UploadResponse uploadResponse = mock(UploadResponse.class);
+    when(uploadResponse.getAssetPaths()).thenReturn(assetPaths);
+    when(handlerA.handle(isNotNull(), isNotNull())).thenAnswer(invocation -> {
+      // Simulate processing time for a large file
+      Thread.sleep(100);
+      return uploadResponse;
+    });
+    
+    int taskCount = 10;
+    CountDownLatch latch = new CountDownLatch(taskCount);
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    try {
+      // Submit multiple concurrent large upload tasks
+      for (int i = 0; i < taskCount; i++) {
+        executor.submit(() -> {
+          try {
+            underTest.handle(repository, request);
+            successCount.incrementAndGet();
+          } 
+          catch (Exception e) {
+            log.error("Error in large upload", e);
+          } 
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      assertTrue(latch.await(30, TimeUnit.SECONDS), "All large upload tasks should complete within timeout");
+      
+      // Verify all uploads were successful
+      assertEquals(taskCount, successCount.get(), "All large uploads should succeed");
+      
+      // Verify handler was called the expected number of times
+      verify(handlerA, times(taskCount)).handle(isNotNull(), isNotNull());
+    } 
+    finally {
+      executor.shutdown();
     }
   }
 }

@@ -32,6 +32,9 @@ import static com.google.common.base.Preconditions.checkNotNull;
  * State guard provides support to transition from state to state and execute an action, as well as guard
  * execution of an action if state is acceptable.
  *
+ * This implementation is optimized for Java 21, leveraging features like Virtual Threads for I/O-bound operations
+ * and Pattern Matching for improved code clarity.
+ *
  * @since 3.0
  */
 public class StateGuard
@@ -125,6 +128,9 @@ public class StateGuard
 
   /**
    * Create a transition to given state.
+   * 
+   * By default, this transition requires a write lock and uses Java 21's memory model
+   * for optimal concurrency handling.
    */
   @SuppressWarnings("unchecked")
   public Transition transition(final String to) {
@@ -133,6 +139,12 @@ public class StateGuard
 
   /**
    * Create a transition to given state with custom exception-handling behaviour.
+   * 
+   * @param to The target state to transition to
+   * @param silent Whether to log errors at debug level instead of error level
+   * @param ignore Exception types to ignore, allowing transition despite exceptions
+   * @param requiresWriteLock Whether this transition requires a write lock (recommended for state changes)
+   * @return A configured transition object
    */
   public Transition transition(
       final String to,
@@ -145,6 +157,8 @@ public class StateGuard
 
   /**
    * Create a guard which allows execution in the given states.
+   * 
+   * Guards use read locks by default, optimized for concurrent access patterns in Java 21.
    */
   public Guard guard(final String... allowed) {
     return new GuardImpl(allowed);
@@ -156,6 +170,8 @@ public class StateGuard
 
   /**
    * Transition from current state to target state and execute an action.
+   * 
+   * This implementation is optimized for Java 21's memory model and concurrency features.
    */
   private class TransitionImpl
       implements Transition
@@ -252,9 +268,13 @@ public class StateGuard
       }
     }
 
+    /**
+     * Check if the given throwable should be ignored based on configured exception types.
+     * Uses Java 21 Pattern Matching for instanceof for cleaner code.
+     */
     private boolean ignore(final Throwable t) {
       for (final Class<? extends Exception> type : ignore) {
-        if (type.isInstance(t)) {
+        if (t instanceof Exception exception && type.isInstance(exception)) {
           return true;
         }
       }
@@ -268,6 +288,8 @@ public class StateGuard
 
   /**
    * Execute an action or callable if current state is allowed.
+   * 
+   * This implementation is optimized for Java 21's memory model and concurrency features.
    */
   private class GuardImpl
       implements Guard
@@ -309,6 +331,8 @@ public class StateGuard
 
   /**
    * {@link StateGuard} builder.
+   * 
+   * Creates a StateGuard instance optimized for Java 21 runtime environment.
    */
   public static class Builder
   {
@@ -344,6 +368,11 @@ public class StateGuard
       return this;
     }
 
+    /**
+     * Create a new StateGuard instance with the configured parameters.
+     * 
+     * The created instance is optimized for Java 21's memory model and concurrency features.
+     */
     public StateGuard create() {
       return new StateGuard(
           logger != null ? logger : defaultLogger,

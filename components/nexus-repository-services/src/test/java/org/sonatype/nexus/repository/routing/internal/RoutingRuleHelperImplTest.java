@@ -12,9 +12,17 @@
  */
 package org.sonatype.nexus.repository.routing.internal;
 
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.entity.DetachedEntityId;
@@ -27,20 +35,22 @@ import org.sonatype.nexus.repository.routing.RoutingRuleStore;
 import org.sonatype.nexus.repository.security.RepositoryPermissionChecker;
 
 import com.google.common.collect.ImmutableList;
-import org.junit.Before;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-@Ignore("NEXUS-43375")
+@ExtendWith(MockitoExtension.class)
 public class RoutingRuleHelperImplTest
     extends TestSupport
 {
@@ -60,7 +70,7 @@ public class RoutingRuleHelperImplTest
   @Mock
   RepositoryPermissionChecker repositoryPermissionChecker;
 
-  @Before
+  @BeforeEach
   public void setup() {
     RoutingRuleData block = new RoutingRuleData();
     block.name("block");
@@ -101,6 +111,49 @@ public class RoutingRuleHelperImplTest
     assertAllowed("allow", "/com/foobar/");
 
     assertBlocked("allow", "/com/sonatype/internal/secrets");
+  }
+  
+  @Test
+  public void testRuleTypePatternMatching() throws Exception {
+    // Setup test paths
+    String apachePath = "/org/apache/tomcat/catalina";
+    String sonatypePath = "/com/sonatype/internal/secrets";
+    String foobarPath = "/com/foobar/";
+    
+    // Get rules from cache and use pattern matching to determine behavior
+    RoutingRuleData blockRule = cache.get("block");
+    RoutingRuleData allowRule = cache.get("allow");
+    
+    // Using pattern matching for rule type checking
+    if (blockRule.mode() instanceof RoutingMode mode) {
+      switch (mode) {
+        case BLOCK -> {
+          // For BLOCK mode, paths matching patterns should be blocked
+          assertTrue(isPathMatched(blockRule, sonatypePath));
+          assertTrue(isPathMatched(blockRule, foobarPath));
+          assertFalse(isPathMatched(blockRule, apachePath));
+        }
+        case ALLOW -> {
+          // This branch shouldn't be reached for blockRule
+          fail("Block rule should have BLOCK mode");
+        }
+      }
+    }
+    
+    if (allowRule.mode() instanceof RoutingMode mode) {
+      switch (mode) {
+        case ALLOW -> {
+          // For ALLOW mode, only paths matching patterns should be allowed
+          assertTrue(isPathMatched(allowRule, apachePath));
+          assertTrue(isPathMatched(allowRule, foobarPath));
+          assertFalse(isPathMatched(allowRule, sonatypePath));
+        }
+        case BLOCK -> {
+          // This branch shouldn't be reached for allowRule
+          fail("Allow rule should have ALLOW mode");
+        }
+      }
+    }
   }
 
   @Test
@@ -155,6 +208,122 @@ public class RoutingRuleHelperImplTest
     assertEquals(ImmutableList.of(repository2, repository3), assignedRepositoryMap.get(new DetachedEntityId("rule-2")));
   }
 
+  @Test
+  public void testConcurrentRuleEvaluationWithVirtualThreads() throws Exception {
+    // Setup test data
+    final int numThreads = 1000;
+    final String testPath = "/com/sonatype/internal/secrets";
+    final CountDownLatch startLatch = new CountDownLatch(1);
+    final CountDownLatch completionLatch = new CountDownLatch(numThreads);
+    final ConcurrentHashMap<String, Boolean> results = new ConcurrentHashMap<>();
+    final AtomicInteger successCounter = new AtomicInteger(0);
+    
+    // Configure repository with block rule
+    configureRepositoryMock("block");
+    
+    // Create virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    
+    // Create executor with virtual threads
+    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
+      // Submit tasks
+      for (int i = 0; i < numThreads; i++) {
+        final String threadId = "thread-" + i;
+        executor.submit(() -> {
+          try {
+            startLatch.await(); // Wait for all threads to be ready
+            boolean allowed = underTest.isAllowed(repository, testPath);
+            results.put(threadId, allowed);
+            if (!allowed) {
+              successCounter.incrementAndGet();
+            }
+          } 
+          catch (Exception e) {
+            log.error("Error in virtual thread execution", e);
+          }
+          finally {
+            completionLatch.countDown();
+          }
+        });
+      }
+      
+      // Start all threads simultaneously
+      startLatch.countDown();
+      
+      // Wait for completion with timeout
+      boolean completed = completionLatch.await(5, TimeUnit.SECONDS);
+      assertTrue(completed, "All virtual threads should complete within timeout");
+      
+      // Verify results
+      assertEquals(numThreads, results.size(), "All threads should have produced results");
+      assertEquals(numThreads, successCounter.get(), "All evaluations should have blocked the path");
+    }
+  }
+
+  @Test
+  public void testPerformanceComparisonBetweenThreadTypes() throws Exception {
+    // Setup test data
+    final int numThreads = 500;
+    final String testPath = "/com/sonatype/internal/secrets";
+    configureRepositoryMock("block");
+    
+    // Test with platform threads
+    long platformThreadTime = measureExecutionTime(() -> {
+      runConcurrentTest(numThreads, testPath, Thread.ofPlatform().factory());
+    });
+    
+    // Test with virtual threads
+    long virtualThreadTime = measureExecutionTime(() -> {
+      runConcurrentTest(numThreads, testPath, Thread.ofVirtual().factory());
+    });
+    
+    log.info("Performance comparison for {} concurrent rule evaluations:", numThreads);
+    log.info("Platform threads: {} ms", platformThreadTime);
+    log.info("Virtual threads: {} ms", virtualThreadTime);
+    
+    // We don't assert on specific times as they can vary by environment,
+    // but we log the results for analysis
+  }
+  
+  private void runConcurrentTest(int numThreads, String testPath, ThreadFactory threadFactory) throws Exception {
+    final CountDownLatch startLatch = new CountDownLatch(1);
+    final CountDownLatch completionLatch = new CountDownLatch(numThreads);
+    
+    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(threadFactory)) {
+      // Submit tasks
+      for (int i = 0; i < numThreads; i++) {
+        executor.submit(() -> {
+          try {
+            startLatch.await();
+            underTest.isAllowed(repository, testPath);
+          } 
+          catch (Exception e) {
+            log.error("Error in thread execution", e);
+          }
+          finally {
+            completionLatch.countDown();
+          }
+        });
+      }
+      
+      startLatch.countDown();
+      boolean completed = completionLatch.await(5, TimeUnit.SECONDS);
+      assertTrue(completed, "All threads should complete within timeout");
+    }
+  }
+  
+  private long measureExecutionTime(RunnableWithException task) throws Exception {
+    long startTime = System.nanoTime();
+    task.run();
+    long endTime = System.nanoTime();
+    return TimeUnit.NANOSECONDS.toMillis(endTime - startTime);
+  }
+  
+  @FunctionalInterface
+  private interface RunnableWithException {
+    void run() throws Exception;
+  }
+
   private void assertBlocked(final String ruleId, final String path) throws Exception {
     configureRepositoryMock(ruleId);
     assertFalse(underTest.isAllowed(repository, path));
@@ -176,5 +345,13 @@ public class RoutingRuleHelperImplTest
     if (repositoryRuleId != null) {
       when(configuration.getRoutingRuleId()).thenReturn(new DetachedEntityId(repositoryRuleId));
     }
+  }
+  
+  /**
+   * Helper method to check if a path matches any pattern in a routing rule.
+   * This is a simplified version of the logic in RoutingRuleHelperImpl for testing purposes.
+   */
+  private boolean isPathMatched(RoutingRuleData rule, String path) {
+    return rule.matchers().stream().anyMatch(pattern -> path.matches(pattern));
   }
 }

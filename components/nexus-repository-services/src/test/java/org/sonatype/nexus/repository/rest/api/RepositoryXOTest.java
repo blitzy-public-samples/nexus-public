@@ -12,9 +12,8 @@
  */
 package org.sonatype.nexus.repository.rest.api;
 
-import java.util.Arrays;
-import java.util.Collection;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
@@ -26,9 +25,9 @@ import org.sonatype.nexus.repository.types.GroupType;
 import org.sonatype.nexus.repository.types.HostedType;
 import org.sonatype.nexus.repository.types.ProxyType;
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.Mock;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -36,7 +35,6 @@ import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-@RunWith(Parameterized.class)
 public class RepositoryXOTest
     extends TestSupport
 {
@@ -79,19 +77,17 @@ public class RepositoryXOTest
     this.expectedAttributes = expectedAttributes;
   }
 
-  @Parameterized.Parameters
-  public static Collection<Object[]> data() {
-    return Arrays.asList(new Object[][]{
-        {
-            "x", format("npm"), "npm", new ProxyType(), "proxy", "u", Map.of("remoteUrl", "url"),
-            Map.of("proxy", Map.of("remoteUrl", "url"))
-        },
-        {"y", format("maven"), "maven", new HostedType(), "hosted", "u", Map.of("remoteUrl", "foo"), Map.of()},
-        {"z", format("nuget"), "nuget", new GroupType(), "group", "u", Map.of("remoteUrl", "foo"), Map.of()}
-    });
+  static Stream<Arguments> data() {
+    return Stream.of(
+        Arguments.of("x", format("npm"), "npm", new ProxyType(), "proxy", "u", Map.of("remoteUrl", "url"),
+            Map.of("proxy", Map.of("remoteUrl", "url"))),
+        Arguments.of("y", format("maven"), "maven", new HostedType(), "hosted", "u", Map.of("remoteUrl", "foo"), Map.of()),
+        Arguments.of("z", format("nuget"), "nuget", new GroupType(), "group", "u", Map.of("remoteUrl", "foo"), Map.of())
+    );
   }
 
-  @Test
+  @ParameterizedTest
+  @MethodSource("data")
   public void testConvertRepositoryToRepositoryXO() {
     when(repository.getName()).thenReturn(name);
     when(repository.getFormat()).thenReturn(format);

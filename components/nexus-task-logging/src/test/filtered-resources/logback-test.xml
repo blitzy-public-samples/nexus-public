@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
 
+  <!-- ThreadNameFormatter for proper display of Virtual Thread identifiers -->
+  <conversionRule conversionWord="thread" converterClass="org.sonatype.nexus.thread.logging.ThreadNameFormatter" />
+
   <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
     <target>System.out</target>
     <encoder>
@@ -38,6 +41,9 @@
       </appender>
     </sift>
   </appender>
+
+  <!-- MDC propagator for Virtual Thread boundaries -->
+  <contextListener class="org.sonatype.nexus.thread.logging.MDCContextPropagator" />
 
   <logger name="org.sonatype.nexus.common" level="DEBUG"/>
 

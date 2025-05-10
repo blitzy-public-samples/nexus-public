@@ -13,21 +13,27 @@
 package org.sonatype.nexus.logging.task;
 
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import javax.annotation.Nullable;
 
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.Logger;
 import org.slf4j.MDC;
 import org.slf4j.Marker;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
@@ -35,8 +41,8 @@ import static org.sonatype.nexus.logging.task.ReplicationTaskLogger.REPLICATION_
 import static org.sonatype.nexus.logging.task.ReplicationTaskLogger.REPLICATION_LOG_LOCATION_PREFIX;
 import static org.sonatype.nexus.logging.task.TaskLogger.TASK_LOG_ONLY_MDC;
 import static org.sonatype.nexus.logging.task.TaskLoggingMarkers.NEXUS_LOG_ONLY;
-import static org.sonatype.nexus.logging.task.TaskLoggingMarkers.TASK_LOG_ONLY;
-
+import static org.sonatype.nexus.logging.task.TaskLoggingMarkers.TASK_LOG_ONLY;@ExtendWith(MockitoExtension.class)
+@org.junit.jupiter.api.Tag(Java21TestGroup.class)
 public class ReplicationTaskLoggerTest
     extends ProgressTaskLoggerTest
 {
@@ -49,7 +55,7 @@ public class ReplicationTaskLoggerTest
 
   private final String testPath = "test/log/replication";
 
-  @Before
+  @BeforeEach
   public void setUp() throws Exception {
     super.setUp();
     this.taskLogInfo = createTaskLogInfoMock();
@@ -88,6 +94,53 @@ public class ReplicationTaskLoggerTest
     assertThat(MDC.get(REPLICATION_DISCRIMINATOR_ID), nullValue());
   }
 
+  @Test
+  public void testMDCBehaviorWithVirtualThreads() throws Exception {
+    // Set up MDC in the main thread
+    underTest.start();
+    assertThat(MDC.get(TASK_LOG_ONLY_MDC), notNullValue());
+    assertThat(MDC.get(REPLICATION_DISCRIMINATOR_ID), notNullValue());
+    
+    // Use CountDownLatch to coordinate between threads
+    CountDownLatch latch = new CountDownLatch(1);
+    
+    // Create and start a virtual thread
+    Thread virtualThread = Thread.ofVirtual().start(() -> {
+      try {
+        // Verify MDC is not automatically inherited by virtual threads
+        assertThat(MDC.get(TASK_LOG_ONLY_MDC), nullValue());
+        assertThat(MDC.get(REPLICATION_DISCRIMINATOR_ID), nullValue());
+        
+        // Set MDC values in the virtual thread
+        MDC.put(TASK_LOG_ONLY_MDC, "virtual-thread-value");
+        MDC.put(REPLICATION_DISCRIMINATOR_ID, "virtual-repository");
+        
+        // Verify MDC values are set correctly in the virtual thread
+        assertThat(MDC.get(TASK_LOG_ONLY_MDC), is("virtual-thread-value"));
+        assertThat(MDC.get(REPLICATION_DISCRIMINATOR_ID), is("virtual-repository"));
+        
+        // Signal completion
+        latch.countDown();
+      }
+      catch (Exception e) {
+        // Ensure latch is released even if test fails
+        latch.countDown();
+        throw e;
+      }
+    });
+    
+    // Wait for virtual thread to complete (with timeout)
+    assertTrue(latch.await(5, TimeUnit.SECONDS), "Virtual thread did not complete in time");
+    
+    // Verify MDC in main thread is still intact and not affected by virtual thread
+    assertThat(MDC.get(TASK_LOG_ONLY_MDC), notNullValue());
+    assertThat(MDC.get(REPLICATION_DISCRIMINATOR_ID), notNullValue());
+    assertThat(MDC.get(REPLICATION_DISCRIMINATOR_ID), is("repositoryName"));
+    
+    // Clean up
+    underTest.finish();
+  }
+
   private void mockingTaskLogsHome(Runnable statement) {
     try (MockedStatic<TaskLogHome> mocked = mockStatic(TaskLogHome.class)) {
       mocked.when(TaskLogHome::getReplicationLogsHome).thenReturn(Optional.of(testPath));
@@ -103,7 +156,7 @@ public class ReplicationTaskLoggerTest
     verify(mockLogger).info(eq(m), eq(s), eq(arg));
   }
 
-  @After
+  @AfterEach
   public void tearDown() throws Exception {
     underTest.finish();
   }

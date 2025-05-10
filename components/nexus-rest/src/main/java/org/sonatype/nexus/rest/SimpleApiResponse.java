@@ -12,98 +12,118 @@
  */
 package org.sonatype.nexus.rest;
 
-import javax.ws.rs.core.Response;
-import javax.ws.rs.core.Response.Status;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response.Status;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 import static com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL;
-import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
-import static javax.ws.rs.core.Response.Status.BAD_REQUEST;
-import static javax.ws.rs.core.Response.Status.NOT_FOUND;
-import static javax.ws.rs.core.Response.Status.OK;
-import static javax.ws.rs.core.Response.Status.UNAUTHORIZED;
+import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON;
+import static jakarta.ws.rs.core.Response.Status.BAD_REQUEST;
+import static jakarta.ws.rs.core.Response.Status.NOT_FOUND;
+import static jakarta.ws.rs.core.Response.Status.OK;
+import static jakarta.ws.rs.core.Response.Status.UNAUTHORIZED;
 
-public class SimpleApiResponse
-{
+/**
+ * Simple API response object for REST endpoints.
+ * Provides a standardized response format with status, message, and optional data.
+ */
+public record SimpleApiResponse(int status, String message, @JsonInclude(NON_NULL) Object data) {
 
-  private int status;
-
-  private String message;
-
-  @JsonInclude(NON_NULL)
-  private Object data;
-
-  public int getStatus() {
-    return status;
-  }
-
-  public void setStatus(int status) {
-    this.status = status;
-  }
-
-  public String getMessage() {
-    return message;
-  }
-
-  public void setMessage(String message) {
-    this.message = message;
-  }
-
-  public Object getData() {
-    return data;
-  }
-
-  public void setData(Object data) {
-    this.data = data;
-  }
-
+  /**
+   * Creates a successful response with the given message.
+   *
+   * @param message the success message
+   * @return a Response with 200 OK status
+   */
   public static Response ok(final String message) {
     return ok(message, null);
   }
 
+  /**
+   * Creates a successful response with the given message and data.
+   *
+   * @param message the success message
+   * @param data the response data
+   * @return a Response with 200 OK status
+   */
   public static Response ok(final String message, final Object data) {
     return response(OK, message, data);
   }
 
+  /**
+   * Creates a not found response with the given message.
+   *
+   * @param message the not found message
+   * @return a Response with 404 NOT_FOUND status
+   */
   public static Response notFound(final String message) {
     return notFound(message, null);
   }
 
+  /**
+   * Creates a not found response with the given message and data.
+   *
+   * @param message the not found message
+   * @param data the response data
+   * @return a Response with 404 NOT_FOUND status
+   */
   public static Response notFound(final String message, final Object data) {
     return response(NOT_FOUND, message, data);
   }
 
+  /**
+   * Creates a bad request response with the given message.
+   *
+   * @param message the bad request message
+   * @return a Response with 400 BAD_REQUEST status
+   */
   public static Response badRequest(final String message) {
     return badRequest(message, null);
   }
 
+  /**
+   * Creates a bad request response with the given message and data.
+   *
+   * @param message the bad request message
+   * @param data the response data
+   * @return a Response with 400 BAD_REQUEST status
+   */
   public static Response badRequest(final String message, final Object data) {
     return response(BAD_REQUEST, message, data);
   }
 
+  /**
+   * Creates an unauthorized response with the given message.
+   *
+   * @param message the unauthorized message
+   * @return a Response with 401 UNAUTHORIZED status
+   */
   public static Response unauthorized(final String message) {
     return unauthorized(message, null);
   }
 
+  /**
+   * Creates an unauthorized response with the given message and data.
+   *
+   * @param message the unauthorized message
+   * @param data the response data
+   * @return a Response with 401 UNAUTHORIZED status
+   */
   public static Response unauthorized(final String message, final Object data) {
     return response(UNAUTHORIZED, message, data);
   }
 
-  @Override
-  public String toString() {
-    return "SimpleApiResponse{" +
-        "status=" + status +
-        ", message='" + message + '\'' +
-        ", data=" + data +
-        '}';
-  }
-
+  /**
+   * Creates a response with the given status, message, and data.
+   *
+   * @param status the HTTP status
+   * @param message the response message
+   * @param data the response data
+   * @return a Response with the specified status
+   */
   private static Response response(final Status status, final String message, final Object data) {
-    SimpleApiResponse response = new SimpleApiResponse();
-    response.setStatus(status.getStatusCode());
-    response.setMessage(message);
-    response.setData(data);
+    SimpleApiResponse response = new SimpleApiResponse(status.getStatusCode(), message, data);
     return Response.status(status).entity(response).type(APPLICATION_JSON).build();
   }
 }

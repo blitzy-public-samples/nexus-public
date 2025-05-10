@@ -28,6 +28,9 @@ import static com.google.inject.name.Names.named;
  * Provider implementations are not automatically exposed under additional interfaces.
  * This small module is a workaround to expose this provider as a (managed) lifecycle.
  *
+ * <p>Components bound through this class should ensure thread management is compatible with
+ * Virtual Threads if they create or manage threads.</p>
+ *
  * @since 3.16
  */
 public class BindAsLifecycleSupport<T extends Lifecycle & Provider<?>>

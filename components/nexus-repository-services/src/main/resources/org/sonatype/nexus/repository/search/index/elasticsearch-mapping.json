@@ -45,7 +45,8 @@
               "index": "not_analyzed"
             },
             "last_updated": {
-              "type": "long"
+              "type": "long",
+              "doc_values": true
             },
             "id": {
               "type": "string",
@@ -100,10 +101,12 @@
           "index": "not_analyzed"
         },
         "lastDownloaded": {
-          "type": "date"
+          "type": "date",
+          "format": "strict_date_optional_time||epoch_millis"
         },
         "lastBlobUpdated" : {
-          "type" : "date"
+          "type" : "date",
+          "format": "strict_date_optional_time||epoch_millis"
         }
       }
     }

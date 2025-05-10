@@ -1,14 +1,45 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
 
+  <!-- Console appender with enhanced pattern for Java 21 String Templates support -->
   <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
     <target>System.out</target>
     <encoder>
-      <pattern>%date %level [%thread%X{DC}] %logger - %msg%n</pattern>
+      <pattern>%date %level [%thread%X{DC}%X{virtualThread}%X{vtId}] %logger - %msg%n</pattern>
     </encoder>
   </appender>
 
+  <!-- Virtual Thread diagnostic appender -->
+  <appender name="VIRTUAL_THREAD" class="ch.qos.logback.core.ConsoleAppender">
+    <target>System.out</target>
+    <encoder>
+      <pattern>%date %level [VIRTUAL-THREAD] %logger - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- Thread pinning events appender -->
+  <appender name="THREAD_PINNING" class="ch.qos.logback.core.ConsoleAppender">
+    <target>System.out</target>
+    <encoder>
+      <pattern>%date %level [THREAD-PINNING] %X{vtId} %logger - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- Original BlobStore file logger -->
   <logger name="org.sonatype.nexus.blobstore.file" level="DEBUG"/>
+
+  <!-- Virtual Thread diagnostic loggers -->
+  <logger name="jdk.internal.vm.VirtualThread" level="DEBUG">
+    <appender-ref ref="VIRTUAL_THREAD"/>
+  </logger>
+  
+  <!-- Thread pinning event logger -->
+  <logger name="jdk.internal.vm.ThreadPinning" level="DEBUG">
+    <appender-ref ref="THREAD_PINNING"/>
+  </logger>
+
+  <!-- Virtual Thread performance metrics logger -->
+  <logger name="org.sonatype.nexus.thread.virtual.metrics" level="DEBUG"/>
 
   <root level="${test.log.level:-INFO}">
     <appender-ref ref="CONSOLE"/>

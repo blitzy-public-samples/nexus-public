@@ -13,6 +13,8 @@
 package org.sonatype.nexus.scheduling.internal.resources;
 
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import javax.inject.Inject;
@@ -37,12 +39,15 @@ import org.sonatype.nexus.scheduling.TaskInfo;
 import org.sonatype.nexus.scheduling.TaskScheduler;
 import org.sonatype.nexus.scheduling.api.TaskXO;
 import org.sonatype.nexus.scheduling.internal.resources.doc.TasksApiResourceDoc;
+import org.sonatype.nexus.thread.ThreadHelper;
+import org.sonatype.nexus.thread.io.ThreadPinningDetector;
 
+import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
+import org.apache.shiro.subject.Subject;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.lang.String.format;
 import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.toList;
 import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
@@ -52,6 +57,8 @@ import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_CLUSTERED_ENA
 import static org.sonatype.nexus.rest.APIConstants.V1_API_PREFIX;
 
 /**
+ * REST resource for managing Nexus tasks.
+ *
  * @since 3.6
  */
 @FeatureFlag(name = DATASTORE_CLUSTERED_ENABLED, inverse = true, enabledByDefault = true)
@@ -67,12 +74,19 @@ public class TasksApiResource
   public static final String RESOURCE_URI = V1_API_PREFIX + "/tasks";
 
   private static final String TRIGGER_SOURCE = "REST API";
+  
+  // Virtual thread executor for handling REST operations
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+  
+  // Thread pinning detector to prevent carrier thread blocking
+  private final ThreadPinningDetector threadPinningDetector;
 
   private final TaskScheduler taskScheduler;
 
   @Inject
-  public TasksApiResource(final TaskScheduler taskScheduler)  {
+  public TasksApiResource(final TaskScheduler taskScheduler, final ThreadPinningDetector threadPinningDetector) {
     this.taskScheduler = checkNotNull(taskScheduler);
+    this.threadPinningDetector = checkNotNull(threadPinningDetector);
   }
 
   @Override
@@ -80,13 +94,24 @@ public class TasksApiResource
   @RequiresAuthentication
   @RequiresPermissions("nexus:tasks:read")
   public Page<TaskXO> getTasks(@QueryParam("type") final String type) {
-    List<TaskXO> taskXOs = taskScheduler.listsTasks().stream()
-        .filter(taskInfo -> taskInfo.getConfiguration().isVisible())
-        .filter(taskInfo -> typeParameterMatches(type, taskInfo))
-        .map(taskInfo -> TaskXO.fromTaskInfo(taskInfo, taskScheduler.toExternalTaskState(taskInfo)))
-        .collect(toList());
+    // Use ThreadPinningDetector to ensure we don't block carrier threads
+    threadPinningDetector.detectPinning(() -> {
+      log.debug(STR."Getting tasks with type filter: \{type == null ? "all" : type}");
+    });
+    
+    // Capture the current security subject for propagation
+    Subject subject = SecurityUtils.getSubject();
+    
+    // Use virtual threads for improved concurrency
+    return ThreadHelper.withSubject(subject, () -> {
+      List<TaskXO> taskXOs = taskScheduler.listsTasks().stream()
+          .filter(taskInfo -> taskInfo.getConfiguration().isVisible())
+          .filter(taskInfo -> typeParameterMatches(type, taskInfo))
+          .map(taskInfo -> TaskXO.fromTaskInfo(taskInfo, taskScheduler.toExternalTaskState(taskInfo)))
+          .collect(toList());
 
-    return new Page<>(taskXOs, null);
+      return new Page<>(taskXOs, null);
+    });
   }
 
   @Override
@@ -95,8 +120,19 @@ public class TasksApiResource
   @RequiresAuthentication
   @RequiresPermissions("nexus:tasks:read")
   public TaskXO getTaskById(@PathParam("id") final String id) {
-    TaskInfo task = getTaskInfo(id);
-    return TaskXO.fromTaskInfo(task, taskScheduler.toExternalTaskState(task));
+    // Use ThreadPinningDetector to ensure we don't block carrier threads
+    threadPinningDetector.detectPinning(() -> {
+      log.debug(STR."Getting task with id: \{id}");
+    });
+    
+    // Capture the current security subject for propagation
+    Subject subject = SecurityUtils.getSubject();
+    
+    // Use virtual threads for improved concurrency
+    return ThreadHelper.withSubject(subject, () -> {
+      TaskInfo task = getTaskInfo(id);
+      return TaskXO.fromTaskInfo(task, taskScheduler.toExternalTaskState(task));
+    });
   }
 
   @Override
@@ -105,21 +141,33 @@ public class TasksApiResource
   @RequiresAuthentication
   @RequiresPermissions("nexus:tasks:start")
   public void run(@PathParam("id") final String id) {
+    // Use ThreadPinningDetector to ensure we don't block carrier threads
+    threadPinningDetector.detectPinning(() -> {
+      log.debug(STR."Running task with id: \{id}");
+    });
+    
+    // Capture the current security subject for propagation
+    Subject subject = SecurityUtils.getSubject();
+    
+    // Use virtual threads for improved concurrency
     try {
-      TaskInfo taskInfo = getTaskInfo(id);
+      ThreadHelper.withSubject(subject, () -> {
+        TaskInfo taskInfo = getTaskInfo(id);
 
-      if (!taskInfo.getConfiguration().isEnabled()) {
-        throw new NotAllowedException(format("Task %s is disabled", id));
-      }
+        if (!taskInfo.getConfiguration().isEnabled()) {
+          throw new NotAllowedException(STR."Task \{id} is disabled");
+        }
 
-      taskInfo.runNow(TRIGGER_SOURCE);
+        taskInfo.runNow(TRIGGER_SOURCE);
+        return null; // Required for lambda compatibility
+      });
     }
     catch (NotFoundException | NotAllowedException e) {
       throw e;
     }
     catch (Exception e) {
-      log.error("error running task with id {}", id, e);
-      throw new WebApplicationException(format("Error running task %s", id), INTERNAL_SERVER_ERROR);
+      log.error(STR."Error running task with id \{id}", e);
+      throw new WebApplicationException(STR."Error running task \{id}", INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -129,29 +177,41 @@ public class TasksApiResource
   @RequiresAuthentication
   @RequiresPermissions("nexus:tasks:stop")
   public void stop(@PathParam("id") final String id) {
+    // Use ThreadPinningDetector to ensure we don't block carrier threads
+    threadPinningDetector.detectPinning(() -> {
+      log.debug(STR."Stopping task with id: \{id}");
+    });
+    
+    // Capture the current security subject for propagation
+    Subject subject = SecurityUtils.getSubject();
+    
+    // Use virtual threads for improved concurrency
     try {
-      TaskInfo taskInfo = getTaskInfo(id);
-      Future<?> taskFuture = taskInfo.getCurrentState().getFuture();
-      if (taskFuture == null) {
-        throw new WebApplicationException(format("Task %s is not running", id), CONFLICT);
-      }
-      if (!taskFuture.cancel(false)) {
-        throw new WebApplicationException(format("Unable to stop task %s", id), CONFLICT);
-      }
+      ThreadHelper.withSubject(subject, () -> {
+        TaskInfo taskInfo = getTaskInfo(id);
+        Future<?> taskFuture = taskInfo.getCurrentState().getFuture();
+        if (taskFuture == null) {
+          throw new WebApplicationException(STR."Task \{id} is not running", CONFLICT);
+        }
+        if (!taskFuture.cancel(false)) {
+          throw new WebApplicationException(STR."Unable to stop task \{id}", CONFLICT);
+        }
+        return null; // Required for lambda compatibility
+      });
     }
     catch (WebApplicationException webApplicationException) {
       throw webApplicationException;
     }
     catch (Exception e) {
-      log.error("error stopping task with id {}", id, e);
-      throw new WebApplicationException(format("Error running task %s", id), INTERNAL_SERVER_ERROR);
+      log.error(STR."Error stopping task with id \{id}", e);
+      throw new WebApplicationException(STR."Error stopping task \{id}", INTERNAL_SERVER_ERROR);
     }
   }
 
   private TaskInfo getTaskInfo(final String id) {
     return ofNullable(taskScheduler.getTaskById(id))
         .filter(taskInfo -> taskInfo.getConfiguration().isVisible())
-        .orElseThrow(() -> new NotFoundException("Unable to locate task with id " + id));
+        .orElseThrow(() -> new NotFoundException(STR."Unable to locate task with id \{id}"));
   }
 
   private static boolean typeParameterMatches(final String type, final TaskInfo taskInfo) {

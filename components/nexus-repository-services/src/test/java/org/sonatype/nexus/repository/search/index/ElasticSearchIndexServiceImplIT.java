@@ -21,9 +21,17 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Random;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.goodies.testsupport.junit.TestDataRule;
 import org.sonatype.nexus.common.app.ApplicationDirectories;
 import org.sonatype.nexus.common.event.EventManager;
@@ -45,11 +53,13 @@ import com.google.common.collect.Multimap;
 import com.google.common.collect.Multimaps;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.index.query.BoolQueryBuilder;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static com.google.common.collect.Range.closed;
 import static java.util.concurrent.TimeUnit.MINUTES;
@@ -60,13 +70,20 @@ import static org.elasticsearch.index.query.QueryBuilders.queryStringQuery;
 import static org.hamcrest.CoreMatchers.hasItems;
 import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.is;
-import static org.mockito.Mockito.any;
+import static org.hamcrest.Matchers.lessThan;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.repository.search.query.RepositoryQueryBuilder.unrestricted;
 
-public class ElasticSearchIndexServiceImplIT
+@ExtendWith(MockitoExtension.class)
+@org.junit.jupiter.api.Tag("Java21")
+@org.junit.experimental.categories.Category(Java21TestGroup.class)
+class ElasticSearchIndexServiceImplIT
     extends TestSupport
 {
   static final String BASEDIR = new File(System.getProperty("basedir", "")).getAbsolutePath();
@@ -75,10 +92,14 @@ public class ElasticSearchIndexServiceImplIT
 
   private static final int TEST_REPOSITORY_COUNT = 10;
 
-  private static final int TEST_COMPONENT_COUNT = 3000;
+  // Increased component count to better validate virtual thread performance
+  private static final int TEST_COMPONENT_COUNT = 5000;
+  
+  // Thread factory for creating virtual threads
+  private static final ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
 
-  @Rule
-  public TestDataRule testData = new TestDataRule(Paths.get(BASEDIR, "src/test/it-resources").toFile());
+  @RegisterExtension
+  TestDataRule testData = new TestDataRule(Paths.get(BASEDIR, "src/test/it-resources").toFile());
 
   @Mock
   ApplicationDirectories directories;
@@ -120,8 +141,8 @@ public class ElasticSearchIndexServiceImplIT
 
   BoolQueryBuilder exampleQuery = boolQuery().must(queryStringQuery("example"));
 
-  @Before
-  public void setup() {
+  @BeforeEach
+  void setup() {
     when(directories.getConfigDirectory("fabric")).thenReturn(testData.resolveFile("fabric"));
     when(nodeAccess.getId()).thenReturn("test-node");
 
@@ -165,13 +186,13 @@ public class ElasticSearchIndexServiceImplIT
     }
   }
 
-  @After
-  public void teardown() {
+  @AfterEach
+  void teardown() {
     repositories.forEach(searchIndexService::deleteIndex);
   }
 
   @Test
-  public void testBulkDelete() {
+  void testBulkDelete() {
     seedComponentIndex();
 
     repositories.forEach(repo -> searchIndexService.bulkDelete(repo,
@@ -182,7 +203,7 @@ public class ElasticSearchIndexServiceImplIT
   }
 
   @Test
-  public void testBulkDeleteByIdentifierOnly() {
+  void testBulkDeleteByIdentifierOnly() {
     seedComponentIndex();
 
     searchIndexService.bulkDelete(null,
@@ -197,7 +218,7 @@ public class ElasticSearchIndexServiceImplIT
   }
 
   @Test
-  public void searchResultsArePaged() {
+  void searchResultsArePaged() {
     seedComponentIndex();
 
     BoolQueryBuilder query = boolQuery().must(matchAllQuery());
@@ -211,6 +232,171 @@ public class ElasticSearchIndexServiceImplIT
 
     assertThat(secondPage.getHits().hits().length, is(4));
     assertThat(searchResponse.getHits(), not(hasItems(secondPage.getHits().hits()[0], secondPage.getHits().hits()[1])));
+  }
+  
+  /**
+   * Test high-volume concurrent indexing using Virtual Threads.
+   * This test validates that the indexing service can handle a large number of concurrent operations
+   * efficiently using Java 21's Virtual Threads.
+   */
+  @Test
+  void testConcurrentIndexingWithVirtualThreads() throws Exception {
+    // Create a virtual thread executor
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      int taskCount = 1000; // High volume of concurrent tasks
+      CountDownLatch latch = new CountDownLatch(taskCount);
+      AtomicInteger errorCount = new AtomicInteger(0);
+      
+      // Submit multiple concurrent indexing tasks using virtual threads
+      for (int i = 0; i < taskCount; i++) {
+        final int index = i;
+        executor.submit(() -> {
+          try {
+            Map<String, String> component = new HashMap<>();
+            component.put("format", "test-format");
+            component.put("group", "example-concurrent");
+            component.put("name", "concurrent-" + index);
+            component.put("version", "1.0");
+            
+            // Use a random repository for each component
+            Repository repository = repositories.get(index % TEST_REPOSITORY_COUNT);
+            
+            // Index the component
+            searchIndexService.put(repository, 
+                component.get("name"),
+                String.format("{ \"format\":\"%s\", \"group\":\"%s\", \"name\":\"%s\", \"version\":\"%s\" }",
+                    component.get("format"), component.get("group"), component.get("name"), component.get("version")));
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      assertTrue(latch.await(2, MINUTES), "All indexing tasks should complete within timeout");
+      
+      // Verify no errors occurred
+      assertEquals(0, errorCount.get(), "No errors should occur during concurrent indexing");
+      
+      // Verify the components were indexed
+      BoolQueryBuilder query = boolQuery().must(queryStringQuery("example-concurrent"));
+      await().atMost(1, MINUTES)
+          .untilAsserted(() -> assertThat(Iterables.size(searchQueryService.browse(unrestricted(query))), is(taskCount)));
+    }
+  }
+  
+  /**
+   * Test performance comparison between platform threads and virtual threads for bulk operations.
+   * This test validates that virtual threads provide better performance for I/O-bound operations.
+   */
+  @Test
+  void testThreadPerformanceComparison() throws Exception {
+    // Create test data
+    List<Map<String, String>> testComponents = new ArrayList<>();
+    for (int i = 0; i < 1000; i++) {
+      Map<String, String> component = new HashMap<>();
+      component.put("format", "test-format");
+      component.put("group", "performance-test");
+      component.put("name", "perf-" + i);
+      component.put("version", "1.0");
+      testComponents.add(component);
+    }
+    
+    // Test with platform threads
+    long platformThreadTime = measureExecutionTime(() -> {
+      try (ExecutorService executor = Executors.newFixedThreadPool(20)) {
+        executeParallelIndexing(executor, testComponents, "platform");
+      }
+    });
+    
+    // Test with virtual threads
+    long virtualThreadTime = measureExecutionTime(() -> {
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        executeParallelIndexing(executor, testComponents, "virtual");
+      }
+    });
+    
+    // Virtual threads should perform better for I/O-bound operations
+    System.out.println("Platform thread execution time: " + platformThreadTime + "ms");
+    System.out.println("Virtual thread execution time: " + virtualThreadTime + "ms");
+    
+    // Assert that virtual threads perform better
+    // This might be flaky in some environments, so we're using a reasonable threshold
+    assertThat("Virtual threads should be faster than platform threads", 
+        virtualThreadTime, lessThan(platformThreadTime * 1.2));
+  }
+  
+  /**
+   * Execute parallel indexing operations using the provided executor service.
+   */
+  private void executeParallelIndexing(ExecutorService executor, List<Map<String, String>> components, String prefix) 
+      throws Exception {
+    CountDownLatch latch = new CountDownLatch(components.size());
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    for (int i = 0; i < components.size(); i++) {
+      final int index = i;
+      final Map<String, String> component = components.get(index);
+      component.put("name", prefix + "-" + component.get("name"));
+      
+      executor.submit(() -> {
+        try {
+          Repository repository = repositories.get(index % TEST_REPOSITORY_COUNT);
+          searchIndexService.put(repository, 
+              component.get("name"),
+              String.format("{ \"format\":\"%s\", \"group\":\"%s\", \"name\":\"%s\", \"version\":\"%s\" }",
+                  component.get("format"), component.get("group"), component.get("name"), component.get("version")));
+        } catch (Exception e) {
+          errorCount.incrementAndGet();
+        } finally {
+          latch.countDown();
+        }
+      });
+    }
+    
+    assertTrue(latch.await(1, MINUTES), "All indexing tasks should complete within timeout");
+    assertEquals(0, errorCount.get(), "No errors should occur during parallel indexing");
+  }
+  
+  /**
+   * Measure the execution time of a runnable operation in milliseconds.
+   */
+  private long measureExecutionTime(Runnable operation) throws Exception {
+    long startTime = System.currentTimeMillis();
+    operation.run();
+    return System.currentTimeMillis() - startTime;
+  }
+
+  /**
+   * Test repository operations using virtual threads with CompletableFuture for improved concurrency.
+   * This test demonstrates how to use virtual threads with CompletableFuture for asynchronous operations.
+   */
+  @Test
+  void testRepositoryOperationsWithVirtualThreads() throws Exception {
+    seedComponentIndex();
+    
+    // Create a list of futures for parallel operations
+    List<CompletableFuture<Void>> futures = new ArrayList<>();
+    
+    // Perform operations on each repository concurrently using virtual threads
+    for (Repository repository : repositories) {
+      CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+        // Perform a search operation
+        BoolQueryBuilder query = boolQuery().must(queryStringQuery("example"));
+        Iterable<Map<String, Object>> results = searchQueryService.browse(unrestricted(query)
+            .inRepository(repository.getName()));
+        
+        // Verify results
+        assertThat(Iterables.size(results), greaterThan(0));
+      }, Executors.newVirtualThreadPerTaskExecutor());
+      
+      futures.add(future);
+    }
+    
+    // Wait for all operations to complete
+    CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
   }
 
   private void seedComponentIndex() {

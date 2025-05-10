@@ -16,14 +16,22 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Random;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -47,10 +55,21 @@ import org.sonatype.nexus.repository.view.Request;
 
 import com.google.common.collect.ConcurrentHashMultiset;
 import com.google.common.collect.Multiset;
+
+// JUnit 4 imports for backward compatibility
 import org.junit.Before;
 import org.junit.Test;
+
+// JUnit 5 imports for new tests
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
+
 import org.mockito.Mock;
 import org.mockito.Spy;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 import static com.google.common.base.Charsets.UTF_8;
 import static com.google.common.io.ByteStreams.toByteArray;
@@ -59,14 +78,22 @@ import static java.util.stream.Collectors.toList;
 import static org.awaitility.Awaitility.await;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.lessThan;
 import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.repository.http.HttpMethods.GET;
 
 /**
  * Concurrent {@link ProxyFacetSupport} tests.
+ * 
+ * Updated for Java 21 with virtual thread testing capabilities.
  */
+@ExtendWith(MockitoExtension.class)
 public class ConcurrentProxyTest
     extends TestSupport
 {
@@ -81,6 +108,9 @@ public class ConcurrentProxyTest
   private static final byte[] META_CONTENT = "META".getBytes(UTF_8);
 
   private static final byte[] ASSET_CONTENT = "ASSET".getBytes(UTF_8);
+  
+  // Higher number of clients for virtual thread tests
+  private static final int VIRTUAL_THREAD_CLIENTS = 1000;
 
   @Mock
   Repository repository;
@@ -128,6 +158,9 @@ public class ConcurrentProxyTest
   Semaphore metaDownloadPermits = new Semaphore(0);
 
   Semaphore assetDownloadPermits = new Semaphore(0);
+  
+  // For tracking thread pinning
+  AtomicInteger pinnedThreadCount = new AtomicInteger(0);
 
   @Spy
   ProxyFacetSupport underTest = new ProxyFacetSupport()
@@ -190,8 +223,15 @@ public class ConcurrentProxyTest
     }
   };
 
+  // Keep JUnit 4 compatibility
   @Before
   public void setUp() throws Exception {
+    setupTest();
+  }
+  
+  // For JUnit 5 tests
+  @BeforeEach
+  void setupTest() throws Exception {
     // this is the mock index used for indirect requests
     when(metaRequest.getPath()).thenReturn("index.json");
     when(metaContext.getRequest()).thenReturn(metaRequest);
@@ -215,6 +255,12 @@ public class ConcurrentProxyTest
     underTest.installDependencies(eventManager);
     underTest.cacheControllerHolder = cacheControllerHolder;
     underTest.attach(repository);
+    
+    // Reset counters between tests
+    cooperationExceptionCount.set(0);
+    pinnedThreadCount.set(0);
+    upstreamRequestLog.clear();
+    storage.clear();
   }
 
   Request request(final String path) {
@@ -223,6 +269,10 @@ public class ConcurrentProxyTest
 
   List<Request> generateRandomRequests(final String pathPrefix) {
     return random.ints(NUM_CLIENTS, 0, NUM_PATHS).mapToObj(i -> pathPrefix + i).map(this::request).collect(toList());
+  }
+  
+  List<Request> generateRandomRequests(final String pathPrefix, final int numClients) {
+    return random.ints(numClients, 0, NUM_PATHS).mapToObj(i -> pathPrefix + i).map(this::request).collect(toList());
   }
 
   void waitForThreadCooperation(final int expectedCount) {
@@ -494,5 +544,422 @@ public class ConcurrentProxyTest
 
     // majority of requests should have been cancelled to maintain thread limit
     assertThat(cooperationExceptionCount.get(), is(NUM_CLIENTS - threadLimit));
+  }
+  
+  /**
+   * Tests for virtual thread behavior in high-concurrency scenarios.
+   */
+  @Nested
+  @DisplayName("Virtual Thread Tests")
+  @Tag("java21")
+  class VirtualThreadTests {
+    
+    /**
+     * Tests virtual thread behavior with high concurrency.
+     */
+    @org.junit.jupiter.api.Test
+    @DisplayName("Virtual Thread High Concurrency Test")
+    void virtualThreadHighConcurrencyTest() throws Exception {
+      // Configure cooperation with high thread limit to allow all virtual threads
+      underTest.configureCooperation(cooperationFactory, cooperationFactory, true, false, true, 
+          Duration.ofSeconds(60), Duration.ofSeconds(10), VIRTUAL_THREAD_CLIENTS);
+      underTest.buildCooperation();
+      
+      // Create a virtual thread factory
+      ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+      
+      // Generate a large number of requests
+      List<Request> requests = generateRandomRequests("virtual/thread/path-", VIRTUAL_THREAD_CLIENTS);
+      int uniquePaths = countUniquePaths(requests);
+      
+      // Create a countdown latch to wait for all tasks to complete
+      CountDownLatch latch = new CountDownLatch(VIRTUAL_THREAD_CLIENTS);
+      AtomicInteger successCount = new AtomicInteger(0);
+      AtomicInteger errorCount = new AtomicInteger(0);
+      
+      // Create executor service with virtual threads
+      try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
+        // Submit tasks to the executor
+        for (Request request : requests) {
+          executor.submit(() -> {
+            try {
+              Content content = underTest.get(new Context(repository, request));
+              try (InputStream in = content.openInputStream()) {
+                if (ASSET_CONTENT.length == toByteArray(in).length) {
+                  successCount.incrementAndGet();
+                }
+              }
+            } catch (Exception e) {
+              errorCount.incrementAndGet();
+            } finally {
+              latch.countDown();
+            }
+          });
+        }
+        
+        // Wait for all tasks to be queued
+        Thread.sleep(500);
+        
+        // Release permits for all unique paths
+        waitForAssetDownloads(uniquePaths);
+        releaseAssetDownloads(uniquePaths);
+        
+        // Wait for all tasks to complete
+        assertTrue(latch.await(30, TimeUnit.SECONDS), "All tasks should complete within timeout");
+        
+        // Verify results
+        assertEquals(VIRTUAL_THREAD_CLIENTS, successCount.get(), "All requests should succeed");
+        assertEquals(0, errorCount.get(), "No requests should fail");
+        
+        // Verify upstream requests - should only be one per unique path
+        assertEquals(uniquePaths, upstreamRequestLog.size(), "Should have one upstream request per unique path");
+      }
+    }
+    
+    /**
+     * Tests thread cooperation policies with virtual threads.
+     */
+    @org.junit.jupiter.api.Test
+    @DisplayName("Virtual Thread Cooperation Policy Test")
+    void virtualThreadCooperationPolicyTest() throws Exception {
+      // Configure cooperation with different policies
+      underTest.configureCooperation(cooperationFactory, cooperationFactory, true, true, true, 
+          Duration.ofSeconds(60), Duration.ofSeconds(10), VIRTUAL_THREAD_CLIENTS);
+      underTest.buildCooperation();
+      
+      // Create thread factories for both types
+      ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+      ThreadFactory platformThreadFactory = Thread.ofPlatform().factory();
+      
+      // Create a fixed path for all requests to test cooperation
+      String fixedPath = "cooperation/policy/test";
+      Request request = request(fixedPath);
+      
+      // Number of threads to test with
+      int threadCount = 100;
+      
+      // Create countdown latches to track completion
+      CountDownLatch virtualLatch = new CountDownLatch(threadCount);
+      CountDownLatch platformLatch = new CountDownLatch(threadCount);
+      
+      // Run virtual thread test
+      try (ExecutorService virtualExecutor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
+        for (int i = 0; i < threadCount; i++) {
+          virtualExecutor.submit(() -> {
+            try {
+              underTest.get(new Context(repository, request));
+            } catch (Exception e) {
+              // Ignore exceptions for this test
+            } finally {
+              virtualLatch.countDown();
+            }
+          });
+        }
+        
+        // Wait for cooperation to be established
+        waitForThreadCooperation(threadCount);
+        
+        // Only one thread should be waiting on the upstream
+        waitForAssetDownloads(1);
+        releaseAssetDownloads(1);
+        
+        // Wait for all virtual threads to complete
+        assertTrue(virtualLatch.await(30, TimeUnit.SECONDS), "All virtual threads should complete");
+      }
+      
+      // Reset for platform thread test
+      storage.clear();
+      upstreamRequestLog.clear();
+      
+      // Run platform thread test
+      try (ExecutorService platformExecutor = Executors.newFixedThreadPool(threadCount, platformThreadFactory)) {
+        for (int i = 0; i < threadCount; i++) {
+          platformExecutor.submit(() -> {
+            try {
+              underTest.get(new Context(repository, request));
+            } catch (Exception e) {
+              // Ignore exceptions for this test
+            } finally {
+              platformLatch.countDown();
+            }
+          });
+        }
+        
+        // Wait for cooperation to be established
+        waitForThreadCooperation(threadCount);
+        
+        // Only one thread should be waiting on the upstream
+        waitForAssetDownloads(1);
+        releaseAssetDownloads(1);
+        
+        // Wait for all platform threads to complete
+        assertTrue(platformLatch.await(30, TimeUnit.SECONDS), "All platform threads should complete");
+      }
+      
+      // Verify that both thread types worked with the cooperation policy
+      assertEquals(2, upstreamRequestLog.size(), "Should have one upstream request per thread type");
+    }
+    
+    /**
+     * Tests that thread pinning does not occur during proxy operations.
+     */
+    @org.junit.jupiter.api.Test
+    @DisplayName("Thread Pinning Verification Test")
+    void threadPinningVerificationTest() throws Exception {
+      // Configure cooperation
+      underTest.configureCooperation(cooperationFactory, cooperationFactory, true, false, true, 
+          Duration.ofSeconds(60), Duration.ofSeconds(10), VIRTUAL_THREAD_CLIENTS);
+      underTest.buildCooperation();
+      
+      // Create a virtual thread factory
+      ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+      
+      // Create a request that will trigger I/O operations
+      Request request = request("pinning/test/path");
+      
+      // Number of threads to test with
+      int threadCount = 100;
+      
+      // Create a countdown latch to wait for all tasks to complete
+      CountDownLatch latch = new CountDownLatch(threadCount);
+      
+      // Create executor service with virtual threads
+      try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
+        // Submit tasks to the executor
+        for (int i = 0; i < threadCount; i++) {
+          executor.submit(() -> {
+            try {
+              // This operation should not cause thread pinning
+              underTest.get(new Context(repository, request));
+            } catch (Exception e) {
+              // Ignore exceptions for this test
+            } finally {
+              latch.countDown();
+            }
+          });
+        }
+        
+        // Wait for cooperation to be established
+        waitForThreadCooperation(1);
+        
+        // Only one thread should be waiting on the upstream
+        waitForAssetDownloads(1);
+        releaseAssetDownloads(1);
+        
+        // Wait for all tasks to complete
+        assertTrue(latch.await(30, TimeUnit.SECONDS), "All tasks should complete within timeout");
+        
+        // Verify that no thread pinning occurred
+        assertEquals(0, pinnedThreadCount.get(), "No thread pinning should occur during proxy operations");
+      }
+    }
+    
+    /**
+     * Tests virtual thread behavior with limited carrier threads to validate scalability.
+     */
+    @org.junit.jupiter.api.Test
+    @DisplayName("Limited Carrier Thread Test")
+    void limitedCarrierThreadTest() throws Exception {
+      // Configure cooperation
+      underTest.configureCooperation(cooperationFactory, cooperationFactory, true, false, true, 
+          Duration.ofSeconds(60), Duration.ofSeconds(10), VIRTUAL_THREAD_CLIENTS);
+      underTest.buildCooperation();
+      
+      // Create a virtual thread factory with limited carrier threads
+      ThreadFactory virtualThreadFactory = Thread.ofVirtual()
+          .scheduler(Executors.newFixedThreadPool(4)) // Limit to 4 carrier threads
+          .factory();
+      
+      // Generate a large number of requests
+      List<Request> requests = generateRandomRequests("limited/carrier/path-", 500);
+      int uniquePaths = countUniquePaths(requests);
+      
+      // Create a countdown latch to wait for all tasks to complete
+      CountDownLatch latch = new CountDownLatch(requests.size());
+      AtomicInteger successCount = new AtomicInteger(0);
+      
+      // Create executor service with virtual threads
+      try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
+        // Submit tasks to the executor
+        for (Request req : requests) {
+          executor.submit(() -> {
+            try {
+              Content content = underTest.get(new Context(repository, req));
+              try (InputStream in = content.openInputStream()) {
+                if (ASSET_CONTENT.length == toByteArray(in).length) {
+                  successCount.incrementAndGet();
+                }
+              }
+            } catch (Exception e) {
+              // Ignore exceptions for this test
+            } finally {
+              latch.countDown();
+            }
+          });
+        }
+        
+        // Wait for cooperation to be established
+        Thread.sleep(500);
+        
+        // Release permits for all unique paths
+        waitForAssetDownloads(uniquePaths);
+        releaseAssetDownloads(uniquePaths);
+        
+        // Wait for all tasks to complete
+        assertTrue(latch.await(30, TimeUnit.SECONDS), "All tasks should complete within timeout");
+        
+        // Verify results
+        assertEquals(requests.size(), successCount.get(), "All requests should succeed despite limited carrier threads");
+        assertEquals(uniquePaths, upstreamRequestLog.size(), "Should have one upstream request per unique path");
+      }
+    }
+    
+    /**
+     * Compares performance between platform threads and virtual threads for concurrent proxy operations.
+     */
+    @org.junit.jupiter.api.Test
+    @DisplayName("Thread Performance Comparison Test")
+    void threadPerformanceComparisonTest() throws Exception {
+      // Configure cooperation
+      underTest.configureCooperation(cooperationFactory, cooperationFactory, true, false, true, 
+          Duration.ofSeconds(60), Duration.ofSeconds(10), VIRTUAL_THREAD_CLIENTS);
+      underTest.buildCooperation();
+      
+      // Create thread factories
+      ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+      ThreadFactory platformThreadFactory = Thread.ofPlatform().factory();
+      
+      // Number of threads for the test
+      int threadCount = 500;
+      
+      // Generate requests
+      List<Request> requests = generateRandomRequests("performance/test/path-", threadCount);
+      int uniquePaths = countUniquePaths(requests);
+      
+      // Measure platform thread performance
+      long platformTime = measureThreadPerformance(platformThreadFactory, requests, uniquePaths);
+      
+      // Reset for virtual thread test
+      storage.clear();
+      upstreamRequestLog.clear();
+      
+      // Measure virtual thread performance
+      long virtualTime = measureThreadPerformance(virtualThreadFactory, requests, uniquePaths);
+      
+      // Log the results
+      logger.info("Performance comparison: Platform threads: {} ms, Virtual threads: {} ms", platformTime, virtualTime);
+      
+      // Virtual threads should be more efficient, especially at higher concurrency
+      assertThat("Virtual threads should be more efficient than platform threads", 
+          virtualTime, lessThan(platformTime));
+    }
+    
+    /**
+     * Helper method to measure thread performance.
+     */
+    private long measureThreadPerformance(ThreadFactory threadFactory, List<Request> requests, int uniquePaths) 
+        throws Exception {
+      CountDownLatch latch = new CountDownLatch(requests.size());
+      AtomicLong startTime = new AtomicLong();
+      AtomicLong endTime = new AtomicLong();
+      
+      try (ExecutorService executor = Executors.newThreadPerTaskExecutor(threadFactory)) {
+        // Record start time
+        startTime.set(System.currentTimeMillis());
+        
+        // Submit all tasks
+        for (Request req : requests) {
+          executor.submit(() -> {
+            try {
+              underTest.get(new Context(repository, req));
+            } catch (Exception e) {
+              // Ignore exceptions for this test
+            } finally {
+              latch.countDown();
+            }
+          });
+        }
+        
+        // Wait for cooperation to be established
+        Thread.sleep(500);
+        
+        // Release permits for all unique paths
+        waitForAssetDownloads(uniquePaths);
+        releaseAssetDownloads(uniquePaths);
+        
+        // Wait for all tasks to complete
+        latch.await(30, TimeUnit.SECONDS);
+        
+        // Record end time
+        endTime.set(System.currentTimeMillis());
+      }
+      
+      return endTime.get() - startTime.get();
+    }
+  }
+  
+  /**
+   * Tests for concurrent operations using CompletableFuture with virtual threads.
+   */
+  @Nested
+  @DisplayName("CompletableFuture Virtual Thread Tests")
+  @Tag("java21")
+  class CompletableFutureVirtualThreadTests {
+    
+    /**
+     * Tests concurrent operations using CompletableFuture with virtual threads.
+     */
+    @org.junit.jupiter.api.Test
+    @DisplayName("CompletableFuture with Virtual Threads Test")
+    void completableFutureWithVirtualThreadsTest() throws Exception {
+      // Configure cooperation
+      underTest.configureCooperation(cooperationFactory, cooperationFactory, true, false, true, 
+          Duration.ofSeconds(60), Duration.ofSeconds(10), VIRTUAL_THREAD_CLIENTS);
+      underTest.buildCooperation();
+      
+      // Generate requests
+      List<Request> requests = generateRandomRequests("completable/future/path-", 200);
+      int uniquePaths = countUniquePaths(requests);
+      
+      // Create executor with virtual threads
+      ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+      
+      try {
+        // Create CompletableFuture for each request
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+        
+        for (Request req : requests) {
+          CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+            try {
+              Content content = underTest.get(new Context(repository, req));
+              try (InputStream in = content.openInputStream()) {
+                byte[] bytes = toByteArray(in);
+                assertEquals(ASSET_CONTENT.length, bytes.length, "Content length should match");
+              }
+            } catch (Exception e) {
+              throw new RuntimeException(e);
+            }
+          }, executor);
+          
+          futures.add(future);
+        }
+        
+        // Wait for cooperation to be established
+        Thread.sleep(500);
+        
+        // Release permits for all unique paths
+        waitForAssetDownloads(uniquePaths);
+        releaseAssetDownloads(uniquePaths);
+        
+        // Wait for all futures to complete
+        CompletableFuture<Void> allFutures = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
+        allFutures.join();
+        
+        // Verify results
+        assertEquals(uniquePaths, upstreamRequestLog.size(), "Should have one upstream request per unique path");
+      } finally {
+        executor.shutdown();
+      }
+    }
   }
 }

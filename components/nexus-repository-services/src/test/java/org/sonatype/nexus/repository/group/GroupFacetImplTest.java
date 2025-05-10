@@ -13,6 +13,12 @@
 package org.sonatype.nexus.repository.group;
 
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.validation.ConstraintViolation;
 
@@ -35,15 +41,17 @@ import org.sonatype.nexus.validation.ConstraintViolationFactory;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static com.google.common.collect.ImmutableList.copyOf;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.Matchers.contains;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
@@ -51,6 +59,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.repository.group.GroupFacetImpl.CONFIG_KEY;
 
+@ExtendWith(MockitoExtension.class)
 public class GroupFacetImplTest
     extends TestSupport
 {
@@ -79,7 +88,7 @@ public class GroupFacetImplTest
 
   private GroupFacetImpl underTest;
 
-  @Before
+  @BeforeEach
   public void setup() throws Exception {
     underTest = new GroupFacetImpl(repositoryManager, makeConstraintViolationFactory(), groupType,
         repositoryCacheInvalidationService);
@@ -87,35 +96,35 @@ public class GroupFacetImplTest
   }
 
   @Test
-  public void testDoValidate_pass() {
+  void testDoValidate_pass() {
     Config config = new Config();
     config.memberNames = ImmutableSet.of("repository1");
     assertNull(underTest.validateGroupDoesNotContainItself("repositoryUnderTest", config));
   }
 
   @Test
-  public void testDoValidate_fail_group_contains_itself() {
+  void testDoValidate_fail_group_contains_itself() {
     Config config = new Config();
     config.memberNames = ImmutableSet.of("repositoryUnderTest");
     assertNotNull(underTest.validateGroupDoesNotContainItself("repositoryUnderTest", config));
   }
 
   @Test
-  public void testDoValidate_fail_group_contains_a_group_that_contains_itself() {
+  void testDoValidate_fail_group_contains_a_group_that_contains_itself() {
     Config config = new Config();
     config.memberNames = ImmutableSet.of("repository3");
     assertNotNull(underTest.validateGroupDoesNotContainItself("repositoryUnderTest", config));
   }
 
   @Test
-  public void testDoValidate_fail_group_contains_a_group_which_contains_a_group_which_contains_itself() {
+  void testDoValidate_fail_group_contains_a_group_which_contains_a_group_which_contains_itself() {
     Config config = new Config();
     config.memberNames = ImmutableSet.of("repository2");
     assertNotNull(underTest.validateGroupDoesNotContainItself("repositoryUnderTest", config));
   }
 
   @Test
-  public void testLeafMembers() throws Exception {
+  void testLeafMembers() throws Exception {
     Repository hosted1 = hostedRepository("hosted1");
     Repository hosted2 = hostedRepository("hosted2");
     Repository group1 = groupRepository("group1", hosted1);
@@ -132,7 +141,7 @@ public class GroupFacetImplTest
   }
 
   @Test
-  public void testAllMembers() throws Exception {
+  void testAllMembers() throws Exception {
     Repository hosted1 = hostedRepository("hosted1");
     Repository group1 = groupRepository("group1", hosted1);
     underTest.attach(group1);
@@ -144,12 +153,12 @@ public class GroupFacetImplTest
   }
 
   @Test
-  public void whenContentIsNullIsStale() {
+  void whenContentIsNullIsStale() {
     assertThat(underTest.isStale(null), is(true));
   }
 
   @Test
-  public void whenCacheInfoIsNullThenIsStale() {
+  void whenCacheInfoIsNullThenIsStale() {
     when(content.getAttributes()).thenReturn(attributesMap);
     when(attributesMap.get(CacheInfo.class)).thenReturn(null);
 
@@ -157,7 +166,7 @@ public class GroupFacetImplTest
   }
 
   @Test
-  public void whenCachePresentTheNotStale() {
+  void whenCachePresentTheNotStale() {
     when(content.getAttributes()).thenReturn(attributesMap);
     when(attributesMap.get(CacheInfo.class)).thenReturn(cacheInfo);
     CacheController cacheController = mock(CacheController.class);
@@ -165,6 +174,73 @@ public class GroupFacetImplTest
     when(cacheController.isStale(cacheInfo)).thenReturn(false);
 
     assertThat(underTest.isStale(content), is(false));
+  }
+
+  @Test
+  void testConcurrentMemberOperationsWithVirtualThreads() throws Exception {
+    // Create repositories for testing
+    Repository hosted1 = hostedRepository("hosted1");
+    Repository hosted2 = hostedRepository("hosted2");
+    Repository group1 = groupRepository("group1", hosted1, hosted2);
+    underTest.attach(group1);
+    
+    // Configure the facet
+    Config config = new Config();
+    config.memberNames = ImmutableSet.of(group1.getName());
+    Configuration configuration = mock(Configuration.class);
+    when(configuration.attributes(CONFIG_KEY)).thenReturn(new NestedAttributesMap(
+        "dummy",
+        ImmutableMap.of("memberNames", config.memberNames)
+    ));
+    when(configurationFacet.readSection(configuration, CONFIG_KEY, Config.class)).thenReturn(config);
+    underTest.doConfigure(configuration);
+    
+    // Set up virtual threads executor
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    // Set up concurrency control
+    int taskCount = 100;
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch completionLatch = new CountDownLatch(taskCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    try {
+      // Submit multiple concurrent tasks using virtual threads
+      for (int i = 0; i < taskCount; i++) {
+        executor.submit(() -> {
+          try {
+            // Wait for all threads to be ready
+            startLatch.await();
+            
+            // Perform operations on the group facet
+            underTest.allMembers();
+            underTest.leafMembers();
+            underTest.members();
+            underTest.isStale(content);
+          }
+          catch (Exception e) {
+            errorCount.incrementAndGet();
+          }
+          finally {
+            completionLatch.countDown();
+          }
+        });
+      }
+      
+      // Start all threads at once
+      startLatch.countDown();
+      
+      // Wait for all tasks to complete
+      boolean completed = completionLatch.await(30, TimeUnit.SECONDS);
+      
+      // Verify results
+      assertThat("All tasks should complete within timeout", completed, is(true));
+      assertThat("No errors should occur during concurrent execution", errorCount.get(), is(0));
+    }
+    finally {
+      executor.shutdown();
+    }
   }
 
   private ConstraintViolationFactory makeConstraintViolationFactory() {

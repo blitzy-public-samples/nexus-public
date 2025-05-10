@@ -12,6 +12,13 @@
  */
 package org.sonatype.nexus.blobstore.quota;
 
+import java.time.Duration;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 
@@ -19,6 +26,7 @@ import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.common.scheduling.PeriodicJobService;
 import org.sonatype.nexus.common.scheduling.PeriodicJobService.PeriodicJob;
 import org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport;
+import org.sonatype.nexus.thread.internal.MDCAwareRunnable;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -26,6 +34,9 @@ import static com.google.common.base.Preconditions.checkState;
 import static org.sonatype.nexus.blobstore.quota.BlobStoreQuotaSupport.createQuotaCheckJob;
 
 /**
+ * BlobStore quota usage checker that leverages Java 21 Virtual Threads for improved performance
+ * and resource utilization when performing periodic quota checks.
+ *
  * @since 3.41
  */
 @Named
@@ -42,6 +53,12 @@ public class BlobStoreQuotaUsageChecker
 
   protected PeriodicJob quotaCheckingJob;
 
+  /**
+   * ExecutorService that creates virtual threads for quota check operations.
+   * Virtual threads are lightweight and efficient for I/O-bound operations like quota checks.
+   */
+  protected ExecutorService virtualThreadExecutor;
+
   @Inject
   public BlobStoreQuotaUsageChecker(
       final PeriodicJobService jobService,
@@ -56,15 +73,49 @@ public class BlobStoreQuotaUsageChecker
 
   @Override
   protected void doStart() throws Exception {
+    // Create a virtual thread executor for quota check operations
+    // Virtual threads are lightweight and efficient for I/O-bound operations
+    virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    
     jobService.startUsing();
-    quotaCheckingJob = jobService.schedule(createQuotaCheckJob(blobStore, quotaService, log), quotaCheckInterval);
+    
+    // Create a quota check job that will run on a virtual thread
+    Runnable quotaCheckTask = () -> {
+      // Submit the quota check to run on a virtual thread
+      // Wrap in MDCAwareRunnable to ensure proper logging context propagation
+      virtualThreadExecutor.execute(new MDCAwareRunnable(createQuotaCheckJob(blobStore, quotaService, log)));
+    };
+    
+    quotaCheckingJob = jobService.schedule(quotaCheckTask, quotaCheckInterval);
   }
 
   @Override
   protected void doStop() throws Exception {
     blobStore = null;
-    quotaCheckingJob.cancel();
-    quotaCheckingJob = null;
+    
+    if (quotaCheckingJob != null) {
+      quotaCheckingJob.cancel();
+      quotaCheckingJob = null;
+    }
+    
+    // Shutdown the virtual thread executor gracefully
+    if (virtualThreadExecutor != null) {
+      virtualThreadExecutor.shutdown();
+      try {
+        // Wait for any in-progress quota checks to complete
+        if (!virtualThreadExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+          log.warn("Virtual thread executor did not terminate in time");
+          virtualThreadExecutor.shutdownNow();
+        }
+      }
+      catch (InterruptedException e) {
+        log.warn("Interrupted while waiting for virtual thread executor to shutdown", e);
+        Thread.currentThread().interrupt();
+        virtualThreadExecutor.shutdownNow();
+      }
+      virtualThreadExecutor = null;
+    }
+    
     jobService.stopUsing();
   }
 

@@ -13,8 +13,11 @@
 package org.sonatype.nexus.blobstore.metrics;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.EnumMap;
 import java.util.Map;
+import java.util.Random;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 import org.sonatype.nexus.blobstore.AccumulatingBlobStoreMetrics;
@@ -34,7 +37,6 @@ import com.google.common.annotations.VisibleForTesting;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static java.lang.Long.parseLong;
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.stream.Stream.iterate;
 import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.State.NEW;
 import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.State.STARTED;
@@ -47,7 +49,17 @@ public abstract class BlobStoreMetricsPropertiesReaderSupport<B extends BlobStor
     extends StateGuardLifecycleSupport
     implements BlobStoreMetricsPropertiesReader<B>
 {
-  private static final int METRICS_LOADING_DELAY_MILLIS = 200;
+  // Base delay for exponential backoff strategy
+  private static final int BASE_DELAY_MILLIS = 50;
+  
+  // Maximum delay for exponential backoff strategy
+  private static final int MAX_DELAY_MILLIS = 1000;
+  
+  // Jitter factor for randomizing delays (0.0-1.0)
+  private static final double JITTER_FACTOR = 0.2;
+
+  // Random number generator for jitter
+  private static final Random RANDOM = new Random();
 
   public static final int MAXIMUM_TRIES = 3;
 
@@ -98,6 +110,26 @@ public abstract class BlobStoreMetricsPropertiesReaderSupport<B extends BlobStor
 
   protected abstract Stream<T> backingFiles() throws BlobStoreMetricsNotAvailableException;
 
+  /**
+   * Calculates the delay for a retry attempt using exponential backoff with jitter.
+   * This approach is optimized for virtual threads by providing better distribution of retries.
+   *
+   * @param attempt The current retry attempt (1-based)
+   * @return The delay duration in milliseconds
+   */
+  private long calculateBackoffDelayMillis(final int attempt) {
+    // Calculate exponential backoff: baseDelay * 2^(attempt-1)
+    long exponentialDelay = BASE_DELAY_MILLIS * (1L << (attempt - 1));
+    
+    // Cap the delay at the maximum
+    long cappedDelay = Math.min(exponentialDelay, MAX_DELAY_MILLIS);
+    
+    // Apply jitter: delay = delay * (1 ± jitterFactor)
+    double jitter = 1.0 + JITTER_FACTOR * (RANDOM.nextDouble() * 2 - 1);
+    
+    return Math.round(cappedDelay * jitter);
+  }
+
   protected BlobStoreMetrics getCombinedMetrics(
       final Stream<T> blobStoreMetricsFiles) throws BlobStoreMetricsNotAvailableException
   {
@@ -116,11 +148,16 @@ public abstract class BlobStoreMetricsPropertiesReaderSupport<B extends BlobStor
                 throw new RuntimeException("Failed to load blob store metrics from " + metricsFile, e);
               }
               try {
-                MILLISECONDS.sleep(METRICS_LOADING_DELAY_MILLIS);
+                // Use Thread.sleep instead of TimeUnit.MILLISECONDS.sleep for better virtual thread compatibility
+                // Apply exponential backoff with jitter for better distribution of retries
+                Thread.sleep(calculateBackoffDelayMillis(currentTry));
               }
               catch (InterruptedException e1) {
-                log.warn("Interrupted", e1);
+                log.warn("Interrupted while waiting to retry loading properties file", e1);
+                // Preserve interrupt status for proper virtual thread handling
                 Thread.currentThread().interrupt();
+                // Break out of the retry loop when interrupted
+                return;
               }
             }
           });

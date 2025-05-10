@@ -23,21 +23,24 @@ import static com.google.common.base.Preconditions.checkNotNull;
  *
  * @since 3.0
  */
-public class DetachedEntityId
+public record DetachedEntityId(String value)
     implements EntityId, Serializable
 {
   private static final long serialVersionUID = 1L;
 
-  private final String value;
-
-  public DetachedEntityId(final String value) {
+  /**
+   * Creates a new detached entity ID with the given value.
+   *
+   * @param value the entity ID value (must not be null)
+   */
+  public DetachedEntityId {
     this.value = checkNotNull(value);
   }
 
   @Override
   @Nonnull
   public String getValue() {
-    return value;
+    return value();
   }
 
   @Override
@@ -51,11 +54,6 @@ public class DetachedEntityId
 
     EntityId that = (EntityId) o;
     return getValue().equals(that.getValue());
-  }
-
-  @Override
-  public int hashCode() {
-    return getValue().hashCode();
   }
 
   @Override

@@ -19,8 +19,10 @@ import org.sonatype.nexus.repository.capability.RepositoryConditions;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
 
 import org.hamcrest.Matchers;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -31,13 +33,14 @@ import static org.mockito.Mockito.mock;
  *
  * @since capabilities 2.0
  */
+@ExtendWith(MockitoExtension.class)
 public class RepositoryConditionsImplTest
     extends TestSupport
 {
 
   private RepositoryConditions underTest;
 
-  @Before
+  @BeforeEach
   public void setUpRepositoryConditions() {
     final EventManager eventManager = mock(EventManager.class);
     underTest = new RepositoryConditionsImpl(eventManager, mock(RepositoryManager.class));
@@ -48,10 +51,8 @@ public class RepositoryConditionsImplTest
    */
   @Test
   public void repositoryIsInService() {
-    assertThat(
-        underTest.repositoryIsOnline(() -> "repo-name"),
-        is(Matchers.<Condition>instanceOf(RepositoryOnlineCondition.class))
-    );
+    var condition = underTest.repositoryIsOnline(() -> "repo-name");
+    assertThat(condition instanceof RepositoryOnlineCondition, is(true));
   }
 
   /**
@@ -59,10 +60,8 @@ public class RepositoryConditionsImplTest
    */
   @Test
   public void repositoryExists() {
-    assertThat(
-        underTest.repositoryExists(() -> "repo-name"),
-        is(Matchers.<Condition>instanceOf(RepositoryExistsCondition.class))
-    );
+    var condition = underTest.repositoryExists(() -> "repo-name");
+    assertThat(condition instanceof RepositoryExistsCondition, is(true));
   }
 
 }

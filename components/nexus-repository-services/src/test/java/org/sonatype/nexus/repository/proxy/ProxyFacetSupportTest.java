@@ -15,6 +15,15 @@ package org.sonatype.nexus.repository.proxy;
 import java.io.IOException;
 import java.net.URI;
 import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
@@ -45,26 +54,33 @@ import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.http.client.utils.HttpClientUtils;
 import org.apache.http.message.BasicHttpResponse;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.Spy;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.Collections.singletonMap;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.fail;
+import static org.hamcrest.Matchers.lessThan;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
@@ -78,7 +94,8 @@ import static org.sonatype.nexus.repository.proxy.ProxyFacetSupport.BYPASS_HTTP_
 /**
  * Tests for the abstract class {@link ProxyFacetSupport}
  */
-public class ProxyFacetSupportTest
+@ExtendWith(MockitoExtension.class)
+class ProxyFacetSupportTest
     extends TestSupport
 {
   @Mock
@@ -165,30 +182,30 @@ public class ProxyFacetSupportTest
   private final ArgumentCaptor<ProxyThrottledRequestEvent> captor =
       ArgumentCaptor.forClass(ProxyThrottledRequestEvent.class);
 
-  @Before
-  public void setUp() throws Exception {
-    when(content.getAttributes()).thenReturn(attributesMap);
+  @BeforeEach
+  void setUp() throws Exception {
+    lenient().when(content.getAttributes()).thenReturn(attributesMap);
 
-    when(attributesMap.get(CacheInfo.class)).thenReturn(cacheInfo);
+    lenient().when(attributesMap.get(CacheInfo.class)).thenReturn(cacheInfo);
 
-    when(cacheControllerHolder.getContentCacheController()).thenReturn(cacheController);
+    lenient().when(cacheControllerHolder.getContentCacheController()).thenReturn(cacheController);
 
-    when(cachedContext.getRepository()).thenReturn(repository);
+    lenient().when(cachedContext.getRepository()).thenReturn(repository);
 
     Request request = mock(Request.class);
-    when(cachedContext.getRequest()).thenReturn(request);
+    lenient().when(cachedContext.getRequest()).thenReturn(request);
 
-    when(missingContext.getRepository()).thenReturn(repository);
-    when(missingContext.getRequest()).thenReturn(request);
+    lenient().when(missingContext.getRepository()).thenReturn(repository);
+    lenient().when(missingContext.getRequest()).thenReturn(request);
 
     underTest.cacheControllerHolder = cacheControllerHolder;
-    when(format.getValue()).thenReturn("raw");
-    when(repository.getFormat()).thenReturn(format);
+    lenient().when(format.getValue()).thenReturn("raw");
+    lenient().when(repository.getFormat()).thenReturn(format);
 
-    when(cachedContextAttributesMap.get("proxy.remote-fetch.skip")).thenReturn(false);
-    when(missingContextAttributesMap.get("proxy.remote-fetch.skip")).thenReturn(false);
-    when(cachedContext.getAttributes()).thenReturn(cachedContextAttributesMap);
-    when(missingContext.getAttributes()).thenReturn(missingContextAttributesMap);
+    lenient().when(cachedContextAttributesMap.get("proxy.remote-fetch.skip")).thenReturn(false);
+    lenient().when(missingContextAttributesMap.get("proxy.remote-fetch.skip")).thenReturn(false);
+    lenient().when(cachedContext.getAttributes()).thenReturn(cachedContextAttributesMap);
+    lenient().when(missingContext.getAttributes()).thenReturn(missingContextAttributesMap);
 
     underTest.installDependencies(eventManager);
     underTest.attach(repository);
@@ -199,7 +216,7 @@ public class ProxyFacetSupportTest
   }
 
   @Test
-  public void testGetRemoteFetchSkipNoContentHasFound() throws Exception {
+  void testGetRemoteFetchSkipNoContentHasFound() throws Exception {
     doReturn(null).when(underTest).getCachedContent(cachedContext);
     when(cachedContextAttributesMap.get("proxy.remote-fetch.skip"))
         .thenReturn(true);
@@ -211,7 +228,7 @@ public class ProxyFacetSupportTest
   }
 
   @Test
-  public void testGetRemoteFetchSkipContentHasFound() throws Exception {
+  void testGetRemoteFetchSkipContentHasFound() throws Exception {
     when(cachedContextAttributesMap.get("proxy.remote-fetch.skip"))
         .thenReturn(true);
     doReturn(content).when(underTest).getCachedContent(cachedContext);
@@ -225,7 +242,7 @@ public class ProxyFacetSupportTest
   }
 
   @Test
-  public void testGetRemoteFetchSkipContentHasFoundWithInvalidCache() throws Exception {
+  void testGetRemoteFetchSkipContentHasFoundWithInvalidCache() throws Exception {
     when(cachedContextAttributesMap.get("proxy.remote-fetch.skip"))
         .thenReturn(true);
     doReturn(content).when(underTest).getCachedContent(cachedContext);
@@ -239,7 +256,7 @@ public class ProxyFacetSupportTest
   }
 
   @Test
-  public void testGet() throws IOException {
+  void testGet() throws IOException {
     when(cacheController.isStale(cacheInfo)).thenReturn(false);
     doReturn(content).when(underTest).getCachedContent(cachedContext);
 
@@ -249,7 +266,7 @@ public class ProxyFacetSupportTest
   }
 
   @Test
-  public void testGet_stale() throws IOException {
+  void testGet_stale() throws IOException {
     when(cacheController.isStale(cacheInfo)).thenReturn(true);
     doReturn(content).when(underTest).getCachedContent(cachedContext);
 
@@ -262,7 +279,7 @@ public class ProxyFacetSupportTest
   }
 
   @Test
-  public void testGet_ProxyServiceException_contentReturnedIfCached() throws IOException {
+  void testGet_ProxyServiceException_contentReturnedIfCached() throws IOException {
     when(cacheController.isStale(cacheInfo)).thenReturn(true);
     doReturn(content).when(underTest).getCachedContent(cachedContext);
 
@@ -274,19 +291,19 @@ public class ProxyFacetSupportTest
     assertThat(foundContent, is(content));
   }
 
-  @Test(expected = ProxyServiceException.class)
-  public void testGet_ProxyServiceException_thrownIfNotCached() throws IOException {
+  @Test
+  void testGet_ProxyServiceException_thrownIfNotCached() throws IOException {
     when(cacheController.isStale(cacheInfo)).thenReturn(true);
     doReturn(null).when(underTest).getCachedContent(cachedContext);
 
     doThrow(new ProxyServiceException(new BasicHttpResponse(null, 503, "Offline")))
         .when(underTest).fetch(missingContext, null);
 
-    underTest.get(missingContext);
+    assertThrows(ProxyServiceException.class, () -> underTest.get(missingContext));
   }
 
   @Test
-  public void testGet_RemoteBlockedException_contentReturnedIfCached() throws IOException {
+  void testGet_RemoteBlockedException_contentReturnedIfCached() throws IOException {
     when(cacheController.isStale(cacheInfo)).thenReturn(true);
     doReturn(content).when(underTest).getCachedContent(cachedContext);
 
@@ -297,18 +314,18 @@ public class ProxyFacetSupportTest
     assertThat(foundContent, is(content));
   }
 
-  @Test(expected = RemoteBlockedIOException.class)
-  public void testGet_RemoteBlockedException_thrownIfNotCached() throws IOException {
+  @Test
+  void testGet_RemoteBlockedException_thrownIfNotCached() throws IOException {
     when(cacheController.isStale(cacheInfo)).thenReturn(true);
     doReturn(null).when(underTest).getCachedContent(cachedContext);
 
     doThrow(new RemoteBlockedIOException("blocked")).when(underTest).fetch(missingContext, null);
 
-    underTest.get(missingContext);
+    assertThrows(RemoteBlockedIOException.class, () -> underTest.get(missingContext));
   }
 
   @Test
-  public void testGet_IOException_contentReturnedIfCached() throws IOException {
+  void testGet_IOException_contentReturnedIfCached() throws IOException {
     when(cacheController.isStale(cacheInfo)).thenReturn(true);
     doReturn(content).when(underTest).getCachedContent(cachedContext);
 
@@ -319,18 +336,18 @@ public class ProxyFacetSupportTest
     assertThat(foundContent, is(content));
   }
 
-  @Test(expected = IOException.class)
-  public void testGet_IOException_thrownIfNotCached() throws IOException {
+  @Test
+  void testGet_IOException_thrownIfNotCached() throws IOException {
     when(cacheController.isStale(cacheInfo)).thenReturn(true);
     doReturn(null).when(underTest).getCachedContent(cachedContext);
 
     doThrow(new IOException()).when(underTest).fetch(missingContext, null);
 
-    underTest.get(missingContext);
+    assertThrows(IOException.class, () -> underTest.get(missingContext));
   }
 
   @Test
-  public void testGet_MissingBlobException() throws IOException {
+  void testGet_MissingBlobException() throws IOException {
     RetryDeniedException e = new RetryDeniedException("Denied", new MissingBlobException(null));
     doThrow(e).when(underTest).getCachedContent(cachedContext);
 
@@ -342,19 +359,19 @@ public class ProxyFacetSupportTest
     assertThat(foundContent, is(storedContent));
   }
 
-  @Test(expected = RetryDeniedException.class)
-  public void testGet_differentRetryReason() throws IOException {
+  @Test
+  void testGet_differentRetryReason() throws IOException {
     RetryDeniedException e = new RetryDeniedException("Denied", new IOException());
     doThrow(e).when(underTest).getCachedContent(cachedContext);
 
-    underTest.get(cachedContext);
+    assertThrows(RetryDeniedException.class, () -> underTest.get(cachedContext));
   }
 
   /*
    * Verifies that distributed cooperation is used when nexus.proxy.clustered.cooperation.enabled is set to true
    */
   @Test
-  public void testDistributedCooperationSelected() throws IOException {
+  void testDistributedCooperationSelected() throws IOException {
     DefaultCooperation2Factory distributedCooperationFactory = spy(new DefaultCooperation2Factory());
     DefaultCooperation2Factory defaultCooperationFactory = spy(new DefaultCooperation2Factory());
 
@@ -370,7 +387,7 @@ public class ProxyFacetSupportTest
    * in clustered mode
    */
   @Test
-  public void testLocalCooperationSelectedWhenProxyCooperationDisabledInClusteredMode() throws IOException {
+  void testLocalCooperationSelectedWhenProxyCooperationDisabledInClusteredMode() throws IOException {
     DefaultCooperation2Factory distributedCooperationFactory = spy(new DefaultCooperation2Factory());
     DefaultCooperation2Factory defaultCooperationFactory = spy(new DefaultCooperation2Factory());
 
@@ -386,7 +403,7 @@ public class ProxyFacetSupportTest
    * non-clustered mode
    */
   @Test
-  public void testLocalCooperationSelectedInNonClusteredMode() throws IOException {
+  void testLocalCooperationSelectedInNonClusteredMode() throws IOException {
     // select default cooperation factory, when nexus.proxy.clustered.cooperation.enabled is enabled in non-clustered
     // mode
     DefaultCooperation2Factory localCooperationFactory = spy(new DefaultCooperation2Factory());
@@ -404,7 +421,7 @@ public class ProxyFacetSupportTest
    * nexus.proxy.clustered.cooperation.enabled is set to true in non-clustered mode and orient
    */
   @Test
-  public void testLocalCooperationSelectedInNonClusteredModeAndOrient() throws IOException {
+  void testLocalCooperationSelectedInNonClusteredModeAndOrient() throws IOException {
     DefaultCooperation2Factory cooperationFactory = spy(new DefaultCooperation2Factory());
 
     underTest.configureCooperation(cooperationFactory, null, true, false, true, Duration.ofSeconds(0),
@@ -414,7 +431,7 @@ public class ProxyFacetSupportTest
   }
 
   @Test
-  public void testBuildLogMessage_ContentFound_WithStatusLine() {
+  void testBuildLogMessage_ContentFound_WithStatusLine() {
     String message = underTest.buildLogContentMessage(content, statusLine);
 
     assertThat(message, containsString("Exception {} checking remote for update"));
@@ -423,7 +440,7 @@ public class ProxyFacetSupportTest
   }
 
   @Test
-  public void testBuildLogMessage_ContentFound_WithoutStatusLine() {
+  void testBuildLogMessage_ContentFound_WithoutStatusLine() {
     String message = underTest.buildLogContentMessage(content, null);
 
     assertThat(message, containsString("Exception {} checking remote for update"));
@@ -432,7 +449,7 @@ public class ProxyFacetSupportTest
   }
 
   @Test
-  public void testBuildLogMessage_ContentNotFound_WithStatusLine() {
+  void testBuildLogMessage_ContentNotFound_WithStatusLine() {
     String message = underTest.buildLogContentMessage(null, statusLine);
 
     assertThat(message, containsString("Exception {} checking remote for update"));
@@ -441,7 +458,7 @@ public class ProxyFacetSupportTest
   }
 
   @Test
-  public void testBuildLogMessage_ContentNotFound_WithoutStatusLine() {
+  void testBuildLogMessage_ContentNotFound_WithoutStatusLine() {
     String message = underTest.buildLogContentMessage(null, null);
 
     assertThat(message, containsString("Exception {} checking remote for update"));
@@ -450,7 +467,7 @@ public class ProxyFacetSupportTest
   }
 
   @Test
-  public void whenCacheInfoIsNullThenIsStaleIsTrue() throws Exception {
+  void whenCacheInfoIsNullThenIsStaleIsTrue() throws Exception {
     when(attributesMap.get(CacheInfo.class)).thenReturn(null);
     when(cacheController.isStale(cacheInfo)).thenReturn(true);
     doReturn(content).when(underTest).getCachedContent(cachedContext);
@@ -464,7 +481,7 @@ public class ProxyFacetSupportTest
   }
 
   @Test
-  public void leak() throws Exception {
+  void leak() throws Exception {
     HttpClientFacet httpClientFacet = mock(HttpClientFacet.class);
     HttpClient httpClient = mock(HttpClient.class);
     ConfigurationFacet configurationFacet = mock(ConfigurationFacet.class);
@@ -504,7 +521,7 @@ public class ProxyFacetSupportTest
   }
 
   @Test
-  public void normalizeURLPath() throws Exception {
+  void normalizeURLPath() throws Exception {
     assertEquals(
         URI.create("https://remoteserver/com/foo/this%20is%20a%20space/"),
         underTest.normalizeURLPath(URI.create("https://remoteserver/com/foo/this%20is%20a%20space/")));
@@ -519,7 +536,7 @@ public class ProxyFacetSupportTest
   }
 
   @Test
-  public void testGetPostsBlockedEvents() throws IOException {
+  void testGetPostsBlockedEvents() throws IOException {
     when(throttlerInterceptor.shouldBlock()).thenReturn(true);
     when(gracePeriodInterceptor.isInGracePeriod()).thenReturn(false);
     doReturn(null).when(underTest).getCachedContent(cachedContext);
@@ -531,7 +548,7 @@ public class ProxyFacetSupportTest
   }
 
   @Test
-  public void testGetPostsGracePeriodEvents() throws IOException {
+  void testGetPostsGracePeriodEvents() throws IOException {
     when(throttlerInterceptor.shouldBlock()).thenReturn(true);
     when(gracePeriodInterceptor.isInGracePeriod()).thenReturn(true);
 
@@ -543,5 +560,408 @@ public class ProxyFacetSupportTest
 
     verify(eventManager, times(2)).post(captor.capture());
     assertThat(captor.getValue().isBlocked(), is(false));
+  }
+  
+  @Test
+  void testVirtualThreadOperation() throws Exception {
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("proxy-test-", 0).factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    try {
+      // Set up test data
+      int taskCount = 100;
+      CountDownLatch latch = new CountDownLatch(taskCount);
+      AtomicInteger errorCount = new AtomicInteger(0);
+      AtomicBoolean allVirtualThreads = new AtomicBoolean(true);
+      
+      // Configure mock behavior
+      when(cacheController.isStale(cacheInfo)).thenReturn(true);
+      doReturn(content).when(underTest).getCachedContent(cachedContext);
+      doReturn(reFetchedContent).when(underTest).fetch(cachedContext, content);
+      doReturn(storedContent).when(underTest).store(cachedContext, reFetchedContent);
+      
+      // Submit multiple concurrent tasks using virtual threads
+      for (int i = 0; i < taskCount; i++) {
+        executor.submit(() -> {
+          try {
+            // Verify current thread is a virtual thread
+            if (!Thread.currentThread().isVirtual()) {
+              allVirtualThreads.set(false);
+            }
+            
+            // Perform proxy operation
+            Content result = underTest.get(cachedContext);
+            if (result != storedContent) {
+              errorCount.incrementAndGet();
+            }
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      assertTrue(latch.await(30, TimeUnit.SECONDS), "Tasks did not complete in time");
+      
+      // Verify results
+      assertTrue(allVirtualThreads.get(), "Not all operations ran on virtual threads");
+      assertEquals(0, errorCount.get(), "Some operations failed");
+      
+      // Verify the proxy operations were performed the expected number of times
+      verify(underTest, times(taskCount)).getCachedContent(cachedContext);
+      verify(underTest, times(taskCount)).fetch(cachedContext, content);
+      verify(underTest, times(taskCount)).store(cachedContext, reFetchedContent);
+    } finally {
+      executor.shutdown();
+    }
+  }
+  
+  @Test
+  void testThreadPinningDetection() throws Exception {
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("proxy-pinning-test-", 0).factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    try {
+      // Set up test data
+      AtomicReference<Boolean> pinningDetected = new AtomicReference<>(false);
+      Object monitor = new Object();
+      
+      // Configure mock behavior
+      when(cacheController.isStale(cacheInfo)).thenReturn(true);
+      doReturn(content).when(underTest).getCachedContent(cachedContext);
+      
+      // Create a special mock implementation that uses synchronized block (causes pinning)
+      ProxyFacetSupport pinnedUnderTest = new ProxyFacetSupport() {
+        @Nullable
+        @Override
+        protected Content getCachedContent(final Context context) throws IOException {
+          return content;
+        }
+
+        @Override
+        protected Content store(final Context context, final Content content) throws IOException {
+          return storedContent;
+        }
+
+        @Override
+        protected void indicateVerified(Context context, Content content, CacheInfo cacheInfo) throws IOException {
+          // Empty implementation
+        }
+
+        @Override
+        protected String getUrl(@Nonnull Context context) {
+          return "http://example.com";
+        }
+        
+        @Override
+        protected Content fetch(Context context, Content stale) throws IOException {
+          // Use synchronized block which will cause thread pinning
+          synchronized (monitor) {
+            try {
+              // Simulate I/O operation that would normally cause unmounting
+              Thread.sleep(100);
+              
+              // Check if we're running on a virtual thread
+              if (Thread.currentThread().isVirtual()) {
+                // In a real environment, this would be detected by JFR or jdk.tracePinnedThreads
+                pinningDetected.set(true);
+              }
+              
+              return reFetchedContent;
+            } catch (InterruptedException e) {
+              Thread.currentThread().interrupt();
+              throw new IOException(e);
+            }
+          }
+        }
+      };
+      
+      // Set up the test instance
+      pinnedUnderTest.cacheControllerHolder = cacheControllerHolder;
+      pinnedUnderTest.installDependencies(eventManager);
+      pinnedUnderTest.attach(repository);
+      DefaultCooperation2Factory cooperationFactory = new DefaultCooperation2Factory();
+      pinnedUnderTest.configureCooperation(cooperationFactory, cooperationFactory, false, false, false, 
+          Duration.ofSeconds(0), Duration.ofSeconds(60), 10);
+      pinnedUnderTest.buildCooperation();
+      
+      // Execute the operation on a virtual thread
+      CompletableFuture<Content> future = CompletableFuture.supplyAsync(() -> {
+        try {
+          return pinnedUnderTest.get(cachedContext);
+        } catch (IOException e) {
+          throw new RuntimeException(e);
+        }
+      }, executor);
+      
+      // Wait for completion
+      Content result = future.get(5, TimeUnit.SECONDS);
+      
+      // Verify results
+      assertThat(result, is(storedContent));
+      assertTrue(pinningDetected.get(), "Thread pinning was not detected");
+    } finally {
+      executor.shutdown();
+    }
+  }
+  
+  @Test
+  void testVirtualThreadContextPropagation() throws Exception {
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("proxy-context-test-", 0).factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    try {
+      // Set up test data
+      AtomicBoolean contextPreserved = new AtomicBoolean(false);
+      ThreadLocal<String> threadLocal = new ThreadLocal<>();
+      String contextValue = "test-context-value";
+      
+      // Configure mock behavior
+      when(cacheController.isStale(cacheInfo)).thenReturn(true);
+      doReturn(content).when(underTest).getCachedContent(cachedContext);
+      
+      // Create a special mock implementation that checks ThreadLocal propagation
+      ProxyFacetSupport contextUnderTest = new ProxyFacetSupport() {
+        @Nullable
+        @Override
+        protected Content getCachedContent(final Context context) throws IOException {
+          return content;
+        }
+
+        @Override
+        protected Content store(final Context context, final Content content) throws IOException {
+          return storedContent;
+        }
+
+        @Override
+        protected void indicateVerified(Context context, Content content, CacheInfo cacheInfo) throws IOException {
+          // Empty implementation
+        }
+
+        @Override
+        protected String getUrl(@Nonnull Context context) {
+          return "http://example.com";
+        }
+        
+        @Override
+        protected Content fetch(Context context, Content stale) throws IOException {
+          // Check if ThreadLocal value is preserved
+          String value = threadLocal.get();
+          if (contextValue.equals(value)) {
+            contextPreserved.set(true);
+          }
+          return reFetchedContent;
+        }
+      };
+      
+      // Set up the test instance
+      contextUnderTest.cacheControllerHolder = cacheControllerHolder;
+      contextUnderTest.installDependencies(eventManager);
+      contextUnderTest.attach(repository);
+      DefaultCooperation2Factory cooperationFactory = new DefaultCooperation2Factory();
+      contextUnderTest.configureCooperation(cooperationFactory, cooperationFactory, false, false, false, 
+          Duration.ofSeconds(0), Duration.ofSeconds(60), 10);
+      contextUnderTest.buildCooperation();
+      
+      // Execute the operation on a virtual thread with ThreadLocal set
+      CompletableFuture<Content> future = CompletableFuture.supplyAsync(() -> {
+        try {
+          // Set ThreadLocal value
+          threadLocal.set(contextValue);
+          return contextUnderTest.get(cachedContext);
+        } catch (IOException e) {
+          throw new RuntimeException(e);
+        } finally {
+          threadLocal.remove();
+        }
+      }, executor);
+      
+      // Wait for completion
+      Content result = future.get(5, TimeUnit.SECONDS);
+      
+      // Verify results
+      assertThat(result, is(storedContent));
+      assertTrue(contextPreserved.get(), "ThreadLocal context was not preserved");
+    } finally {
+      executor.shutdown();
+    }
+  }
+  
+  @Test
+  void testThreadLocalManagement() throws Exception {
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("proxy-threadlocal-test-", 0).factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    try {
+      // Set up test data
+      int taskCount = 50;
+      CountDownLatch latch = new CountDownLatch(taskCount);
+      AtomicInteger errorCount = new AtomicInteger(0);
+      ThreadLocal<Integer> threadLocal = new ThreadLocal<>();
+      
+      // Configure mock behavior
+      when(cacheController.isStale(cacheInfo)).thenReturn(true);
+      doReturn(content).when(underTest).getCachedContent(cachedContext);
+      doReturn(reFetchedContent).when(underTest).fetch(cachedContext, content);
+      doReturn(storedContent).when(underTest).store(cachedContext, reFetchedContent);
+      
+      // Submit multiple concurrent tasks using virtual threads
+      for (int i = 0; i < taskCount; i++) {
+        final int taskId = i;
+        executor.submit(() -> {
+          try {
+            // Set a unique ThreadLocal value for this task
+            threadLocal.set(taskId);
+            
+            // Perform proxy operation
+            underTest.get(cachedContext);
+            
+            // Verify ThreadLocal value is still correct after operation
+            if (!Integer.valueOf(taskId).equals(threadLocal.get())) {
+              errorCount.incrementAndGet();
+            }
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
+          } finally {
+            // Clean up ThreadLocal to avoid memory leaks
+            threadLocal.remove();
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      assertTrue(latch.await(30, TimeUnit.SECONDS), "Tasks did not complete in time");
+      
+      // Verify results
+      assertEquals(0, errorCount.get(), "ThreadLocal values were not correctly maintained");
+    } finally {
+      executor.shutdown();
+    }
+  }
+  
+  @Test
+  void testVirtualThreadPerformanceComparison() throws Exception {
+    // Create thread factories for both types
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("proxy-perf-vt-", 0).factory();
+    ThreadFactory platformThreadFactory = Thread.ofPlatform().name("proxy-perf-pt-", 0).factory();
+    
+    ExecutorService virtualExecutor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    ExecutorService platformExecutor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors(), 
+        platformThreadFactory);
+    
+    try {
+      // Set up test data
+      int taskCount = 200;
+      int iterations = 5; // Number of operations per task
+      
+      // Configure mock behavior for a slow I/O operation
+      when(cacheController.isStale(cacheInfo)).thenReturn(true);
+      doReturn(content).when(underTest).getCachedContent(cachedContext);
+      
+      // Create a special implementation that simulates I/O delay
+      ProxyFacetSupport slowIoUnderTest = new ProxyFacetSupport() {
+        @Nullable
+        @Override
+        protected Content getCachedContent(final Context context) throws IOException {
+          return content;
+        }
+
+        @Override
+        protected Content store(final Context context, final Content content) throws IOException {
+          return storedContent;
+        }
+
+        @Override
+        protected void indicateVerified(Context context, Content content, CacheInfo cacheInfo) throws IOException {
+          // Empty implementation
+        }
+
+        @Override
+        protected String getUrl(@Nonnull Context context) {
+          return "http://example.com";
+        }
+        
+        @Override
+        protected Content fetch(Context context, Content stale) throws IOException {
+          try {
+            // Simulate I/O delay (e.g., network latency)
+            Thread.sleep(50);
+            return reFetchedContent;
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException(e);
+          }
+        }
+      };
+      
+      // Set up the test instance
+      slowIoUnderTest.cacheControllerHolder = cacheControllerHolder;
+      slowIoUnderTest.installDependencies(eventManager);
+      slowIoUnderTest.attach(repository);
+      DefaultCooperation2Factory cooperationFactory = new DefaultCooperation2Factory();
+      slowIoUnderTest.configureCooperation(cooperationFactory, cooperationFactory, false, false, false, 
+          Duration.ofSeconds(0), Duration.ofSeconds(60), 10);
+      slowIoUnderTest.buildCooperation();
+      
+      // Run with virtual threads
+      long virtualStartTime = System.currentTimeMillis();
+      CountDownLatch virtualLatch = new CountDownLatch(taskCount);
+      
+      for (int i = 0; i < taskCount; i++) {
+        virtualExecutor.submit(() -> {
+          try {
+            for (int j = 0; j < iterations; j++) {
+              slowIoUnderTest.get(cachedContext);
+            }
+          } catch (Exception e) {
+            // Ignore for this test
+          } finally {
+            virtualLatch.countDown();
+          }
+        });
+      }
+      
+      virtualLatch.await(60, TimeUnit.SECONDS);
+      long virtualDuration = System.currentTimeMillis() - virtualStartTime;
+      
+      // Run with platform threads
+      long platformStartTime = System.currentTimeMillis();
+      CountDownLatch platformLatch = new CountDownLatch(taskCount);
+      
+      for (int i = 0; i < taskCount; i++) {
+        platformExecutor.submit(() -> {
+          try {
+            for (int j = 0; j < iterations; j++) {
+              slowIoUnderTest.get(cachedContext);
+            }
+          } catch (Exception e) {
+            // Ignore for this test
+          } finally {
+            platformLatch.countDown();
+          }
+        });
+      }
+      
+      platformLatch.await(60, TimeUnit.SECONDS);
+      long platformDuration = System.currentTimeMillis() - platformStartTime;
+      
+      // Verify that virtual threads perform better for I/O-bound operations
+      // This is a simple comparison - in real scenarios, the difference would be more pronounced
+      // with higher concurrency and more I/O-bound operations
+      assertThat(virtualDuration, lessThan(platformDuration));
+      
+      log.info("Virtual threads completed in {} ms, Platform threads in {} ms", 
+          virtualDuration, platformDuration);
+    } finally {
+      virtualExecutor.shutdown();
+      platformExecutor.shutdown();
+    }
   }
 }

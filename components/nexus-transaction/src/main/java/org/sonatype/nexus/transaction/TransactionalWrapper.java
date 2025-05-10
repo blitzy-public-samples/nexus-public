@@ -31,10 +31,28 @@ final class TransactionalWrapper
   private final Joinpoint aspect;
 
   private final boolean tracing;
+  
+  private final boolean isVirtualThread;
 
+  /**
+   * @since 3.0
+   */
   public TransactionalWrapper(final Transactional spec, final Joinpoint aspect) {
+    this(spec, aspect, false);
+  }
+
+  /**
+   * Constructor with virtual thread awareness.
+   * 
+   * @param spec The transactional specification
+   * @param aspect The joinpoint aspect
+   * @param isVirtualThread Whether the current thread is a virtual thread
+   * @since 3.60
+   */
+  public TransactionalWrapper(final Transactional spec, final Joinpoint aspect, final boolean isVirtualThread) {
     this.spec = spec;
     this.aspect = aspect;
+    this.isVirtualThread = isVirtualThread;
 
     tracing = log.isTraceEnabled();
   }
@@ -51,7 +69,7 @@ final class TransactionalWrapper
         Object result = null;
         try {
           if (tracing) {
-            log.trace("BEGIN {} : {}", tx, aspect.getStaticPart());
+            log.trace(STR."BEGIN \{tx} : \{aspect.getStaticPart()} [\{isVirtualThread ? "virtual" : "platform"} thread]");
           }
           tx.begin();
           try {
@@ -64,7 +82,7 @@ final class TransactionalWrapper
           finally {
             if (throwing == null || instanceOf(throwing, spec.commitOn())) {
               if (tracing) {
-                log.trace("COMMIT {} : {}", tx, aspect.getStaticPart(), throwing);
+                log.trace(STR."COMMIT \{tx} : \{aspect.getStaticPart()} [\{isVirtualThread ? "virtual" : "platform"} thread]", throwing);
               }
               tx.commit();
               committed = true;
@@ -77,19 +95,27 @@ final class TransactionalWrapper
         catch (final Exception e) { // ignore VM errors as here as we don't rollback/retry on them
           if (!committed) {
             if (tracing) {
-              log.trace("ROLLBACK {} : {}", tx, aspect.getStaticPart(), e);
+              log.trace(STR."ROLLBACK \{tx} : \{aspect.getStaticPart()} [\{isVirtualThread ? "virtual" : "platform"} thread]", e);
             }
             tx.rollback();
             if (instanceOf(e, spec.retryOn()) && tx.allowRetry(e)) {
               if (tracing) {
-                log.trace("RETRY {} : {}", tx, aspect.getStaticPart(), e);
+                log.trace(STR."RETRY \{tx} : \{aspect.getStaticPart()} [\{isVirtualThread ? "virtual" : "platform"} thread]", e);
               }
+              
+              // Optimize retry behavior for virtual threads
+              if (isVirtualThread) {
+                // For virtual threads, we can use a more aggressive retry strategy
+                // since they are lightweight and don't block platform threads
+                Thread.yield(); // Hint to the scheduler that other virtual threads can run
+              }
+              
               continue;
             }
             // only want to swallow commit exceptions distinct from 'throwing'
             if (throwing != e && instanceOf(e, spec.swallow())) {
               if (tracing) {
-                log.trace("SWALLOW {} : {}", tx, aspect.getStaticPart(), e);
+                log.trace(STR."SWALLOW \{tx} : \{aspect.getStaticPart()} [\{isVirtualThread ? "virtual" : "platform"} thread]", e);
               }
               if (throwing != null) {
                 throw throwing;
@@ -109,7 +135,9 @@ final class TransactionalWrapper
         tx.end();
       }
       catch (Exception e) {
-        log.trace("END {}", tx, e);
+        if (tracing) {
+          log.trace(STR."END \{tx} [\{isVirtualThread ? "virtual" : "platform"} thread]", e);
+        }
       }
     }
   }

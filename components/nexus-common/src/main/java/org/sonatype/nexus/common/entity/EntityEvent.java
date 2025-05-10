@@ -13,6 +13,7 @@
 package org.sonatype.nexus.common.entity;
 
 import javax.annotation.Nullable;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.sonatype.nexus.common.event.HasAffinity;
 import org.sonatype.nexus.common.event.HasLocality;
@@ -21,6 +22,11 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Entity event.
+ * 
+ * This class is not suitable for conversion to a record because:
+ * 1. It's an abstract class (records can't be abstract)
+ * 2. It has mutable fields (records are immutable)
+ * 3. It has custom lazy-loading logic for the entity field
  *
  * @since 3.1
  */
@@ -34,7 +40,11 @@ public abstract class EntityEvent
 
   private String affinity;
 
+  // Using volatile for visibility across threads
   private volatile Entity entity;
+  
+  // Lock for entity initialization - more efficient than synchronized block in Java 21
+  private final ReentrantLock entityLock = new ReentrantLock();
 
   public EntityEvent(final EntityMetadata metadata) {
     this.metadata = checkNotNull(metadata);
@@ -86,19 +96,29 @@ public abstract class EntityEvent
   }
 
   /**
+   * Returns the attached entity, if it exists.
+   * Uses an optimized lazy loading pattern with ReentrantLock for better performance in Java 21.
+   * 
    * @return attached entity, if it exists
    */
   @Nullable
   public <T extends Entity> T getEntity() {
-    // can be expensive depending on the entity, so use lazy evaluation
-    if (entity == null) {
-      synchronized (this) {
-        if (entity == null) {
-          entity = metadata.getEntity().orElse(null);
+    // Fast path - check if entity is already initialized
+    Entity result = entity;
+    if (result == null) {
+      // Slow path - acquire lock and initialize if needed
+      entityLock.lock();
+      try {
+        result = entity;
+        if (result == null) {
+          // Initialize entity only once
+          entity = result = metadata.getEntity().orElse(null);
         }
+      } finally {
+        entityLock.unlock();
       }
     }
-    return (T) entity;
+    return (T) result;
   }
 
   @Override

@@ -13,6 +13,13 @@
 package org.sonatype.nexus.logging.task;
 
 /**
+ * Interface for task-specific logging operations.
+ * 
+ * <p>Implementations must ensure proper handling of logging context across thread boundaries,
+ * including compatibility with Java 21 Virtual Threads. When tasks are executed using Virtual Threads,
+ * special care must be taken to ensure that Mapped Diagnostic Context (MDC) data is properly propagated
+ * and cleaned up.</p>
+ *
  * @since 3.5
  */
 public interface TaskLogger
@@ -28,17 +35,29 @@ public interface TaskLogger
 
   /**
    * Required to start the task logging. See {@link TaskLoggerHelper#start(TaskLogger)}
+   * 
+   * <p>When implementing this method, ensure that any MDC context is properly initialized.
+   * If the task may be executed on a Virtual Thread (Java 21+), implementers must ensure
+   * that MDC context is correctly established for the thread executing the task.</p>
    */
   void start();
 
   /**
    * Required to close out the task logging. This involves cleaning up MDC and ThreadLocal variables. See {@link
    * TaskLoggerHelper#finish()}
+   * 
+   * <p>When implementing this method, ensure that all MDC context and ThreadLocal variables
+   * are properly cleaned up to prevent memory leaks, especially when using Virtual Threads which
+   * may be numerous and short-lived.</p>
    */
   void finish();
 
   /**
    * Log a progress event, which are always logged to the task log, but only periodically to the nexus.log
+   *
+   * <p>When implementing this method for environments using Virtual Threads (Java 21+),
+   * ensure that the MDC context is properly maintained during the logging operation,
+   * as Virtual Threads may be suspended and resumed on different carrier threads.</p>
    *
    * @param event log event containing progress
    */
@@ -46,6 +65,55 @@ public interface TaskLogger
 
   /**
    * Flush any pending progress messages so they are logged immediately
+   * 
+   * <p>When implementing this method for environments using Virtual Threads (Java 21+),
+   * ensure that any asynchronous logging operations properly maintain the MDC context
+   * across thread boundaries.</p>
    */
   void flush();
+  
+  /**
+   * Captures the current MDC context for use with Virtual Threads or thread pools.
+   * This is an optional helper method that implementations may provide to assist with
+   * context propagation across thread boundaries.
+   *
+   * <p>When tasks spawn additional threads or Virtual Threads, this method can be used
+   * to capture the current MDC context for propagation to the new threads.</p>
+   *
+   * @return An object representing the current MDC context, or null if not supported
+   * @since 3.60
+   */
+  default Object captureContext() {
+    return null;
+  }
+  
+  /**
+   * Applies a previously captured MDC context to the current thread.
+   * This is an optional helper method that implementations may provide to assist with
+   * context propagation across thread boundaries.
+   *
+   * <p>When tasks spawn additional threads or Virtual Threads, this method can be used
+   * to apply a previously captured MDC context to the new thread.</p>
+   *
+   * @param context The context object previously returned by {@link #captureContext()}
+   * @since 3.60
+   */
+  default void applyContext(Object context) {
+    // Default implementation does nothing
+  }
+  
+  /**
+   * Clears the MDC context from the current thread.
+   * This is an optional helper method that implementations may provide to assist with
+   * context cleanup across thread boundaries.
+   *
+   * <p>When tasks spawn additional threads or Virtual Threads, this method should be called
+   * when the thread's work is complete to prevent memory leaks, especially important with
+   * Virtual Threads which may be numerous and short-lived.</p>
+   *
+   * @since 3.60
+   */
+  default void clearContext() {
+    // Default implementation does nothing
+  }
 }

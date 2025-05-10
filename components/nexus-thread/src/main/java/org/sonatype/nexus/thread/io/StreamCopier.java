@@ -19,6 +19,7 @@ import java.io.OutputStream;
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -32,6 +33,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static java.lang.String.join;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.sonatype.nexus.common.property.SystemPropertiesHelper.getBoolean;
 import static org.sonatype.nexus.common.property.SystemPropertiesHelper.getInteger;
 import static org.sonatype.nexus.security.subject.FakeAlmightySubject.TASK_SUBJECT;
 import static org.sonatype.nexus.thread.NexusExecutorService.forFixedSubject;
@@ -104,7 +106,6 @@ public class StreamCopier<T>
    */
   public T read(final long timeoutMilliseconds) {
     try {
-
       return service.submit(() -> {
         T result;
         PipedInputStream input = new PipedInputStream();
@@ -123,7 +124,6 @@ public class StreamCopier<T>
 
         return result;
       }).get(timeoutMilliseconds, MILLISECONDS);
-
     }
     catch (Exception e) {
       throw new RuntimeException("Unable to properly read from stream", e);
@@ -158,13 +158,29 @@ public class StreamCopier<T>
     }
   }
 
+  /**
+   * Creates an ExecutorService for StreamCopier operations. When the system property
+   * 'nexus.streamcopier.useVirtualThreads' is set to true, it creates a virtual thread executor
+   * using {@link Executors#newVirtualThreadPerTaskExecutor()}. Otherwise, it creates a traditional
+   * thread pool with configurable size.
+   *
+   * @return An ExecutorService configured based on system properties
+   */
   private static ExecutorService makeExecutorService() {
     final String name = StreamCopier.class.getSimpleName().toLowerCase();
-    final int nThreads = getInteger(join(".", "nexus", name, "poolSize"), DEFAULT_POOL_SIZE);
+    final boolean useVirtualThreads = getBoolean(join(".", "nexus", name, "useVirtualThreads"), false);
 
-    ThreadFactory factory = new NexusThreadFactory(name, name);
-    ThreadPoolExecutor backing = new ThreadPoolExecutor(0, nThreads, 60L, SECONDS, new SynchronousQueue<>(), factory);
+    if (useVirtualThreads) {
+      // Create a virtual thread executor with the FakeAlmightySubject for security context
+      return forFixedSubject(Executors.newVirtualThreadPerTaskExecutor(), TASK_SUBJECT);
+    }
+    else {
+      // Traditional thread pool with configurable size
+      final int nThreads = getInteger(join(".", "nexus", name, "poolSize"), DEFAULT_POOL_SIZE);
+      ThreadFactory factory = new NexusThreadFactory(name, name);
+      ThreadPoolExecutor backing = new ThreadPoolExecutor(0, nThreads, 60L, SECONDS, new SynchronousQueue<>(), factory);
 
-    return forFixedSubject(backing, TASK_SUBJECT);
+      return forFixedSubject(backing, TASK_SUBJECT);
+    }
   }
 }

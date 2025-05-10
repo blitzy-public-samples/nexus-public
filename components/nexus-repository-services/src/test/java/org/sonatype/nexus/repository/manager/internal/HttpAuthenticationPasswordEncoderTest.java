@@ -20,9 +20,11 @@ import org.sonatype.nexus.crypto.secrets.Secret;
 import org.sonatype.nexus.crypto.secrets.SecretsService;
 import org.sonatype.nexus.security.UserIdHelper;
 
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 
@@ -32,6 +34,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.httpclient.config.AuthenticationConfiguration.AUTHENTICATION_CONFIGURATION;
 
+@ExtendWith(MockitoExtension.class)
 public class HttpAuthenticationPasswordEncoderTest
     extends TestSupport
 {
@@ -47,7 +50,7 @@ public class HttpAuthenticationPasswordEncoderTest
 
   private MockedStatic<UserIdHelper> userIdHelperMock;
 
-  @Before
+  @BeforeEach
   public void setUp() throws Exception {
     userIdHelperMock = mockStatic(UserIdHelper.class);
     userIdHelperMock.when(UserIdHelper::get).thenReturn("userId");
@@ -55,7 +58,7 @@ public class HttpAuthenticationPasswordEncoderTest
     underTest = new HttpAuthenticationPasswordEncoder(secretService);
   }
 
-  @After
+  @AfterEach
   public void tearDown() {
     userIdHelperMock.close();
   }

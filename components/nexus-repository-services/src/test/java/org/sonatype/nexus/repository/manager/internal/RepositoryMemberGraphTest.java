@@ -29,17 +29,20 @@ import org.sonatype.nexus.repository.types.ProxyType;
 import com.google.common.graph.Graph;
 import com.google.common.graph.GraphBuilder;
 import com.google.common.graph.MutableGraph;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class RepositoryMemberGraphTest
     extends TestSupport
 {
@@ -54,7 +57,7 @@ public class RepositoryMemberGraphTest
 
   private RepositoryMemberGraph repositoryMemberGraph;
 
-  @Before
+  @BeforeEach
   public void setUp() {
     groupType = new GroupType();
     hostedType = new HostedType();
@@ -63,7 +66,7 @@ public class RepositoryMemberGraphTest
   }
 
   @Test
-  public void testSingleNodeNonGroupGraph() {
+  public void singleNodeNonGroupGraph() {
     Repository repository = mock(Repository.class);
     when(repository.getType()).thenReturn(hostedType);
 
@@ -76,7 +79,7 @@ public class RepositoryMemberGraphTest
   }
 
   @Test
-  public void testSingleNodeGroupGraph() {
+  public void singleNodeGroupGraph() {
     Repository repository = mock(Repository.class);
     Configuration configuration = mock(Configuration.class);
     NestedAttributesMap attributesMap = new NestedAttributesMap("group", Map.of("memberNames", List.of()));
@@ -94,7 +97,7 @@ public class RepositoryMemberGraphTest
   }
 
   @Test
-  public void testGroupNodeWithMembers() {
+  public void groupNodeWithMembers() {
     Repository group = mock(Repository.class);
     Repository hosted = mock(Repository.class);
     Repository proxy = mock(Repository.class);
@@ -124,7 +127,7 @@ public class RepositoryMemberGraphTest
   }
 
   @Test
-  public void testGroupNodeWithNestedGroups() {
+  public void groupNodeWithNestedGroups() {
     Repository group1 = mock(Repository.class);
     Repository hosted1 = mock(Repository.class);
     Repository proxy1 = mock(Repository.class);
@@ -191,7 +194,7 @@ public class RepositoryMemberGraphTest
   }
 
   @Test
-  public void testCyclicGraph() {
+  public void cyclicGraph() {
     Repository group1 = mock(Repository.class);
     Repository group2 = mock(Repository.class);
 
@@ -219,7 +222,7 @@ public class RepositoryMemberGraphTest
   }
 
   @Test
-  public void testCombineGraphs() {
+  public void combineGraphs() {
     Repository group1 = mock(Repository.class);
     Repository hosted1 = mock(Repository.class);
     Configuration configuration1 = mock(Configuration.class);
@@ -260,7 +263,7 @@ public class RepositoryMemberGraphTest
   }
 
   @Test
-  public void testConvertToDotGraph() {
+  public void convertToDotGraph() {
     Repository group = mock(Repository.class);
     Repository hosted = mock(Repository.class);
     Repository proxy = mock(Repository.class);
@@ -293,7 +296,7 @@ public class RepositoryMemberGraphTest
   }
 
   @Test
-  public void testRenderAllRepositoryGraphsTogether() {
+  public void renderAllRepositoryGraphsTogether() {
     Repository hosted1 = mock(Repository.class);
     Repository hosted2 = mock(Repository.class);
 
@@ -311,5 +314,114 @@ public class RepositoryMemberGraphTest
 
     assertThat(graph.nodes(), is(expected.nodes()));
     assertThat(graph.edges(), is(expected.edges()));
+  }
+  
+  @Test
+  public void repositoryTypePatternMatching() {
+    Repository group = mock(Repository.class);
+    Repository hosted = mock(Repository.class);
+    Repository proxy = mock(Repository.class);
+    
+    when(group.getType()).thenReturn(groupType);
+    when(hosted.getType()).thenReturn(hostedType);
+    when(proxy.getType()).thenReturn(proxyType);
+    
+    // Using Java 21 pattern matching to identify repository types
+    String groupTypeResult = identifyRepositoryTypeWithPatternMatching(group);
+    String hostedTypeResult = identifyRepositoryTypeWithPatternMatching(hosted);
+    String proxyTypeResult = identifyRepositoryTypeWithPatternMatching(proxy);
+    
+    assertThat(groupTypeResult, is("Group Repository"));
+    assertThat(hostedTypeResult, is("Hosted Repository"));
+    assertThat(proxyTypeResult, is("Proxy Repository"));
+  }
+  
+  @Test
+  public void repositoryTypePatternMatchingWithSwitch() {
+    Repository group = mock(Repository.class);
+    Repository hosted = mock(Repository.class);
+    Repository proxy = mock(Repository.class);
+    Repository nullRepo = null;
+    
+    when(group.getType()).thenReturn(groupType);
+    when(hosted.getType()).thenReturn(hostedType);
+    when(proxy.getType()).thenReturn(proxyType);
+    
+    // Using Java 21 pattern matching with switch expressions
+    String groupTypeResult = identifyRepositoryTypeWithSwitchPattern(group);
+    String hostedTypeResult = identifyRepositoryTypeWithSwitchPattern(hosted);
+    String proxyTypeResult = identifyRepositoryTypeWithSwitchPattern(proxy);
+    String nullRepoResult = identifyRepositoryTypeWithSwitchPattern(nullRepo);
+    
+    assertThat(groupTypeResult, is("Group Repository"));
+    assertThat(hostedTypeResult, is("Hosted Repository"));
+    assertThat(proxyTypeResult, is("Proxy Repository"));
+    assertThat(nullRepoResult, is("No Repository"));
+  }
+  
+  @Test
+  public void guardedPatternMatchingForRepositoryTypes() {
+    Repository group = mock(Repository.class);
+    Repository hosted = mock(Repository.class);
+    Repository proxy = mock(Repository.class);
+    
+    when(group.getType()).thenReturn(groupType);
+    when(hosted.getType()).thenReturn(hostedType);
+    when(proxy.getType()).thenReturn(proxyType);
+    when(group.getName()).thenReturn("test-group");
+    when(hosted.getName()).thenReturn("test-hosted");
+    when(proxy.getName()).thenReturn("test-proxy");
+    
+    // Using Java 21 pattern matching with guarded patterns
+    String groupResult = identifyRepositoryWithGuardedPattern(group);
+    String hostedResult = identifyRepositoryWithGuardedPattern(hosted);
+    String proxyResult = identifyRepositoryWithGuardedPattern(proxy);
+    
+    assertThat(groupResult, is("Group Repository: test-group"));
+    assertThat(hostedResult, is("Hosted Repository: test-hosted"));
+    assertThat(proxyResult, is("Proxy Repository: test-proxy"));
+  }
+  
+  /**
+   * Demonstrates Java 21 pattern matching for instanceof with Repository types.
+   */
+  private String identifyRepositoryTypeWithPatternMatching(Repository repository) {
+    if (repository instanceof Repository r && r.getType() instanceof GroupType) {
+      return "Group Repository";
+    } else if (repository instanceof Repository r && r.getType() instanceof HostedType) {
+      return "Hosted Repository";
+    } else if (repository instanceof Repository r && r.getType() instanceof ProxyType) {
+      return "Proxy Repository";
+    } else {
+      return "Unknown Repository Type";
+    }
+  }
+  
+  /**
+   * Demonstrates Java 21 pattern matching with switch expressions for Repository types.
+   */
+  private String identifyRepositoryTypeWithSwitchPattern(Repository repository) {
+    return switch (repository) {
+      case null -> "No Repository";
+      case Repository r when r.getType() instanceof GroupType -> "Group Repository";
+      case Repository r when r.getType() instanceof HostedType -> "Hosted Repository";
+      case Repository r when r.getType() instanceof ProxyType -> "Proxy Repository";
+      default -> "Unknown Repository Type";
+    };
+  }
+  
+  /**
+   * Demonstrates Java 21 pattern matching with guarded patterns for Repository types.
+   */
+  private String identifyRepositoryWithGuardedPattern(Repository repository) {
+    return switch (repository) {
+      case Repository r when r.getType() instanceof GroupType -> 
+          "Group Repository: " + r.getName();
+      case Repository r when r.getType() instanceof HostedType -> 
+          "Hosted Repository: " + r.getName();
+      case Repository r when r.getType() instanceof ProxyType -> 
+          "Proxy Repository: " + r.getName();
+      default -> "Unknown Repository Type";
+    };
   }
 }

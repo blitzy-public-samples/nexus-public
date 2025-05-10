@@ -16,6 +16,12 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
@@ -32,19 +38,20 @@ import org.sonatype.nexus.selector.SelectorManager;
 import com.google.common.collect.ImmutableList;
 import org.apache.shiro.authz.Permission;
 import org.apache.shiro.subject.Subject;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.Arrays.asList;
 import static java.util.Collections.singletonList;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.same;
@@ -55,7 +62,8 @@ import static org.sonatype.nexus.security.BreadActions.BROWSE;
 import static org.sonatype.nexus.security.BreadActions.DELETE;
 import static org.sonatype.nexus.security.BreadActions.READ;
 
-public class RepositoryPermissionCheckerTest
+@ExtendWith(MockitoExtension.class)
+class RepositoryPermissionCheckerTest
     extends TestSupport
 {
   private static final String REPOSITORY_NAME = "repositoryName";
@@ -73,9 +81,6 @@ public class RepositoryPermissionCheckerTest
   private static final boolean HAS_REPOSITORY_PERMISSION = true;
 
   private static final boolean HAS_SELECTOR_PERMISSION = true;
-
-  @Rule
-  public ExpectedException thrown = ExpectedException.none();
 
   @Mock
   private Configuration configuration;
@@ -115,8 +120,8 @@ public class RepositoryPermissionCheckerTest
 
   private RepositoryPermissionChecker underTest;
 
-  @Before
-  public void setup() {
+  @BeforeEach
+  void setup() {
     when(recipe.getFormat()).thenReturn(format);
     when(format.getValue()).thenReturn(REPOSITORY_FORMAT);
 
@@ -148,12 +153,12 @@ public class RepositoryPermissionCheckerTest
   }
 
   @Test
-  public void testUserCanBrowseRepository() {
+  void testUserCanBrowseRepository() {
     verifyUserAccessOf(underTest::userCanReadOrBrowse);
   }
 
   @Test
-  public void testUserCanBrowseRepositories() {
+  void testUserCanBrowseRepositories() {
     when(securityHelper.anyPermitted(eq(subject), any(RepositoryContentSelectorPermission.class))).then(i -> {
       RepositoryContentSelectorPermission p = (RepositoryContentSelectorPermission) i.getArguments()[1];
       return REPOSITORY_NAME_2.equals(p.getName());
@@ -169,7 +174,7 @@ public class RepositoryPermissionCheckerTest
   }
 
   @Test
-  public void testUserCanBrowseRepositories_byConfigurations() {
+  void testUserCanBrowseRepositories_byConfigurations() {
     when(securityHelper.anyPermitted(eq(subject), any(RepositoryContentSelectorPermission.class))).then(i -> {
       RepositoryContentSelectorPermission p = (RepositoryContentSelectorPermission) i.getArguments()[1];
       return REPOSITORY_NAME_2.equals(p.getName());
@@ -181,7 +186,7 @@ public class RepositoryPermissionCheckerTest
   }
 
   @Test
-  public void testUserHasRepositoryAdminPermission() {
+  void testUserHasRepositoryAdminPermission() {
     List<Repository> permittedRepositories =
         underTest.userHasRepositoryAdminPermission(Arrays.asList(repository, repository1, repository2), READ);
 
@@ -192,7 +197,7 @@ public class RepositoryPermissionCheckerTest
   }
 
   @Test
-  public void testUserHasRepositoryAdminPermissionFor() {
+  void testUserHasRepositoryAdminPermissionFor() {
     List<Configuration> permittedRepositories =
         underTest.userHasRepositoryAdminPermissionFor(Arrays.asList(configuration, configuration1, configuration2), READ);
 
@@ -203,7 +208,7 @@ public class RepositoryPermissionCheckerTest
   }
 
   @Test
-  public void testEnsureUserHasAnyPermissionOrAdminAccess() {
+  void testEnsureUserHasAnyPermissionOrAdminAccess() {
     Permission[] repositoryPermissions =
         createAdminPermissions(READ, RepositoryAdminPermission::new, repository, repository1, repository2);
     ApplicationPermission appPerm = new ApplicationPermission("blobstores", READ);
@@ -223,6 +228,84 @@ public class RepositoryPermissionCheckerTest
     when(securityHelper.anyPermitted(same(subject), eq(appPermissions))).thenReturn(false);
     underTest.ensureUserHasAnyPermissionOrAdminAccess(appPermissions, READ, repositories);
     verify(securityHelper).ensureAnyPermitted(subject, repositoryPermissions);
+  }
+
+  @Test
+  void testConcurrentPermissionChecksWithVirtualThreads() throws Exception {
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    int taskCount = 100;
+    CountDownLatch latch = new CountDownLatch(taskCount);
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    // Set up permissions for concurrent access
+    setUpRepositoryPermission(true);
+    setUpSelectorPermission(true);
+    
+    try {
+      // Submit multiple concurrent permission check tasks using virtual threads
+      for (int i = 0; i < taskCount; i++) {
+        executor.submit(() -> {
+          try {
+            if (underTest.userCanReadOrBrowse(repository)) {
+              successCount.incrementAndGet();
+            }
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      assertTrue(latch.await(10, TimeUnit.SECONDS), "Timed out waiting for permission checks to complete");
+      
+      // Verify all permission checks were successful
+      assertEquals(taskCount, successCount.get(), "All permission checks should succeed");
+    } finally {
+      executor.shutdown();
+    }
+  }
+
+  @Test
+  void testConcurrentAdminPermissionChecksWithVirtualThreads() throws Exception {
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    int taskCount = 100;
+    CountDownLatch latch = new CountDownLatch(taskCount);
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    // Set up permissions for admin access
+    when(securityHelper.isPermitted(same(subject), ArgumentMatchers.<Permission>any()))
+        .thenReturn(new boolean[] { true, true, true });
+    
+    try {
+      // Submit multiple concurrent admin permission check tasks using virtual threads
+      for (int i = 0; i < taskCount; i++) {
+        executor.submit(() -> {
+          try {
+            List<Repository> permittedRepos = underTest.userHasRepositoryAdminPermission(
+                Arrays.asList(repository, repository1, repository2), READ);
+            if (permittedRepos.size() == 3) {
+              successCount.incrementAndGet();
+            }
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      assertTrue(latch.await(10, TimeUnit.SECONDS), "Timed out waiting for admin permission checks to complete");
+      
+      // Verify all permission checks were successful
+      assertEquals(taskCount, successCount.get(), "All admin permission checks should succeed");
+    } finally {
+      executor.shutdown();
+    }
   }
 
   private Permission[] createAdminPermissions(

@@ -13,11 +13,15 @@
 package org.sonatype.nexus.logging.task;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.experimental.categories.Category;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.slf4j.Logger;
 import org.slf4j.Marker;
 
@@ -25,11 +29,14 @@ import static java.lang.String.format;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.sonatype.nexus.logging.task.ProgressTaskLogger.PROGRESS_LINE;
 import static org.sonatype.nexus.logging.task.TaskLoggingMarkers.INTERNAL_PROGRESS;
 
+@ExtendWith(MockitoExtension.class)
+@Category(Java21TestGroup.class)
 public class ProgressTaskLoggerTest
     extends TestSupport
 {
@@ -38,19 +45,19 @@ public class ProgressTaskLoggerTest
 
   private ProgressTaskLogger underTest;
 
-  @Before
-  public void setUp() throws Exception {
+  @BeforeEach
+  void setUp() throws Exception {
     underTest = new ProgressTaskLogger(mockLogger);
     underTest.start();
   }
 
-  @After
-  public void tearDown() throws Exception {
+  @AfterEach
+  void tearDown() throws Exception {
     underTest.finish();
   }
 
   @Test
-  public void testProgress() {
+  void progressLogsMessage() {
     String message = "test message";
     TaskLoggingEvent event = new TaskLoggingEvent(mockLogger, message);
     underTest.progress(event);
@@ -63,15 +70,15 @@ public class ProgressTaskLoggerTest
   }
 
   @Test
-  public void testNoProgressLogged() {
+  void noProgressMessageResultsInNoLogging() {
     // invoke method normally invoke via thread
     underTest.logProgress();
 
     // verify no progress was logged as no progress message was set
-    verify(mockLogger, never()).info(any(Marker.class), anyString(), anyCollection());
+    verify(mockLogger, never()).info(any(Marker.class), anyString(), any());
   }
 
   private void verifyLog(final Marker m, final String s, final Object... args) {
-    verify(mockLogger).info(m, s, args);
+    verify(mockLogger).info(eq(m), eq(s), eq(args));
   }
 }

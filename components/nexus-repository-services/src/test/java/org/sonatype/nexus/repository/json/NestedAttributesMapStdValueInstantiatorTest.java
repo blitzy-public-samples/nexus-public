@@ -19,15 +19,17 @@ import org.sonatype.nexus.common.collect.NestedAttributesMap;
 
 import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.deser.std.StdValueInstantiator;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static com.google.common.collect.Maps.newHashMap;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.equalTo;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class NestedAttributesMapStdValueInstantiatorTest
     extends TestSupport
 {
@@ -44,7 +46,7 @@ public class NestedAttributesMapStdValueInstantiatorTest
 
   private NestedAttributesMapStdValueInstantiator underTest;
 
-  @Before
+  @BeforeEach
   public void setUp() {
     underTest = new NestedAttributesMapStdValueInstantiator(nestedAttributesMap);
     when(nestedAttributesMap.backing()).thenReturn(map);
@@ -52,6 +54,6 @@ public class NestedAttributesMapStdValueInstantiatorTest
 
   @Test
   public void assure_CreateUsingDefault_Returns_backing() {
-    assertThat(underTest.createUsingDefault(context), equalTo(map));
+    assertEquals(map, underTest.createUsingDefault(context));
   }
 }

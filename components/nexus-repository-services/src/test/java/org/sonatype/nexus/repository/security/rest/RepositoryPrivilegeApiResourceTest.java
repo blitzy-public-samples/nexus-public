@@ -18,6 +18,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.ws.rs.core.MediaType;
 
@@ -40,15 +46,18 @@ import org.sonatype.nexus.security.privilege.rest.PrivilegeAction;
 import org.sonatype.nexus.selector.SelectorConfiguration;
 import org.sonatype.nexus.selector.SelectorManager;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -58,6 +67,7 @@ import static org.sonatype.nexus.repository.security.rest.ApiPrivilegeWithReposi
 import static org.sonatype.nexus.repository.security.rest.ApiPrivilegeWithRepository.REPOSITORY_KEY;
 import static org.sonatype.nexus.security.privilege.rest.ApiPrivilegeWithActions.ACTIONS_KEY;
 
+@ExtendWith(MockitoExtension.class)
 public class RepositoryPrivilegeApiResourceTest
     extends TestSupport
 {
@@ -87,8 +97,8 @@ public class RepositoryPrivilegeApiResourceTest
 
   private RepositoryPrivilegeApiResource underTest;
 
-  @Before
-  public void setup() throws Exception {
+  @BeforeEach
+  void setup() throws Exception {
     when(securitySystem.getAuthorizationManager("default")).thenReturn(authorizationManager);
     when(repository1.getFormat()).thenReturn(format1);
     when(repository2.getFormat()).thenReturn(format2);
@@ -425,6 +435,54 @@ public class RepositoryPrivilegeApiResourceTest
       assertThat(e.getResponse().getMediaType(), is(MediaType.APPLICATION_JSON_TYPE));
       assertThat(e.getResponse().getEntity().toString(),
               is("ValidationErrorXO{id='*', message='\"Invalid selector 'invalid' supplied.\"'}"));
+    }
+  }
+
+  @Test
+  public void testConcurrentPrivilegeCreationWithVirtualThreads() throws Exception {
+    // Setup for concurrent testing with virtual threads
+    int taskCount = 100;
+    CountDownLatch latch = new CountDownLatch(taskCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    try {
+      // Setup mock behavior for all threads
+      when(authorizationManager.getPrivilege(any())).thenThrow(new NoSuchPrivilegeException("name"));
+      
+      // Submit multiple concurrent tasks using virtual threads
+      for (int i = 0; i < taskCount; i++) {
+        final String privilegeName = "privilege-" + i;
+        executor.submit(() -> {
+          try {
+            ApiPrivilegeRepositoryViewRequest apiPrivilege = new ApiPrivilegeRepositoryViewRequest(
+                privilegeName, 
+                "description", 
+                "format1",
+                "repository1", 
+                Arrays.asList(PrivilegeAction.BROWSE, PrivilegeAction.READ)
+            );
+            
+            underTest.createPrivilege(apiPrivilege);
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete or timeout after 30 seconds
+      boolean completed = latch.await(30, TimeUnit.SECONDS);
+      
+      // Verify results
+      assertThat(completed, is(true));
+      assertEquals(0, errorCount.get(), "No errors should occur during concurrent privilege creation");
+    } finally {
+      executor.shutdown();
     }
   }
 

@@ -19,9 +19,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 
 /**
  * Slf4j logging {@link SubscriberExceptionHandler}.
+ * Uses Java 21 string templates for structured, type-safe logging.
  *
  * @since 3.0
  */
@@ -32,12 +34,14 @@ final class Slf4jSubscriberExceptionHandler
 
   public Slf4jSubscriberExceptionHandler(final String identifier) {
     checkNotNull(identifier);
-    this.logger = LoggerFactory.getLogger(EventBus.class.getName() + "." + identifier);
+    this.logger = LoggerFactory.getLogger(STR."\{EventBus.class.getName()}.\{identifier}");
   }
 
   @Override
   public void handleException(final Throwable exception, final SubscriberExceptionContext context) {
-    logger.error("Could not dispatch event {} to subscriber {} method [{}]",
-        context.getEvent(), context.getSubscriber(), context.getSubscriberMethod(), exception);
+    // Using Java 21 string templates for structured, type-safe logging
+    // The exception is still passed as the last parameter to preserve stack trace information
+    logger.error(STR."Could not dispatch event \{context.getEvent()} to subscriber \{context.getSubscriber()} method [\{context.getSubscriberMethod()}]", 
+        exception);
   }
 }

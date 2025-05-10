@@ -109,12 +109,7 @@ final class TransactionalImpl
 
   @Override
   public String toString() {
-    return String.format("@%s(reason=%s, commitOn=%s, retryOn=%s, swallow=%s, isolation=%s)",
-        annotationType().getName(),
-        reason,
-        Arrays.toString(commitOn),
-        Arrays.toString(retryOn),
-        Arrays.toString(swallow),
-        isolation);
+    // Using Java 21 string templates for improved readability
+    return STR."@\{annotationType().getName()}(reason=\{reason}, commitOn=\{Arrays.toString(commitOn)}, retryOn=\{Arrays.toString(retryOn)}, swallow=\{Arrays.toString(swallow)}, isolation=\{isolation})";
   }
 }

@@ -12,16 +12,29 @@
  */
 package org.sonatype.nexus.logging.task;
 
-import org.sonatype.goodies.testsupport.TestSupport;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
-import org.junit.Test;
+import org.sonatype.goodies.testsupport.jupiter.TestSupport;
+import org.sonatype.nexus.common.thread.VirtualThreadTestGroup;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.Tag;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.Logger;
 
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.verify;
 
+/**
+ * Tests for {@link TaskLoggerHelper}.
+ */
+@ExtendWith(MockitoExtension.class)
+@Tag("VirtualThreadTestGroup")
 public class TaskLoggerHelperTest
     extends TestSupport
 {
@@ -32,7 +45,7 @@ public class TaskLoggerHelperTest
   private TaskLogger taskLogger;
 
   @Test
-  public void testHelper() {
+  void shouldInitializeAndCleanupTaskLogger() {
     assertNull(TaskLoggerHelper.get());
 
     TaskLoggerHelper.start(taskLogger);
@@ -44,5 +57,32 @@ public class TaskLoggerHelperTest
 
     TaskLoggerHelper.finish();
     assertNull(TaskLoggerHelper.get());
+  }
+
+  @Test
+  void shouldWorkWithVirtualThreads() throws Exception {
+    // Create a virtual thread executor if running on Java 21+
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit a task to run on a virtual thread
+      Future<?> future = executor.submit(() -> {
+        // Initialize the TaskLogger on a virtual thread
+        assertNull(TaskLoggerHelper.get());
+        
+        TaskLoggerHelper.start(taskLogger);
+        assertNotNull(TaskLoggerHelper.get());
+        
+        // Log a message from the virtual thread
+        TaskLoggingEvent event = new TaskLoggingEvent(logger, "message from virtual thread");
+        TaskLoggerHelper.progress(event);
+        verify(taskLogger).progress(event);
+        
+        // Clean up
+        TaskLoggerHelper.finish();
+        assertNull(TaskLoggerHelper.get());
+      });
+      
+      // Wait for the virtual thread task to complete
+      future.get();
+    }
   }
 }

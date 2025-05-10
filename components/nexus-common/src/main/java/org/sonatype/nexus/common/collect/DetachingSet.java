@@ -14,7 +14,9 @@ package org.sonatype.nexus.common.collect;
 
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Set;
+import java.util.SequencedSet;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 
@@ -32,6 +34,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
  */
 public class DetachingSet<V>
     extends ForwardingSet<V>
+    implements SequencedSet<V>
 {
   private Set<V> backing;
 
@@ -100,6 +103,123 @@ public class DetachingSet<V>
   public String toString() {
     return backing.toString();
   }
+  
+  /* SequencedSet implementation methods */
+  
+  @Override
+  public V getFirst() {
+    // If backing is a SequencedSet, use its implementation
+    if (backing instanceof SequencedSet<V> sequencedSet) {
+      return sequencedSet.getFirst();
+    }
+    // Otherwise, use iterator to get the first element
+    if (isEmpty()) {
+      throw new java.util.NoSuchElementException("Set is empty");
+    }
+    return iterator().next();
+  }
+  
+  @Override
+  public V getLast() {
+    // If backing is a SequencedSet, use its implementation
+    if (backing instanceof SequencedSet<V> sequencedSet) {
+      return sequencedSet.getLast();
+    }
+    // Otherwise, find the last element using iterator
+    if (isEmpty()) {
+      throw new java.util.NoSuchElementException("Set is empty");
+    }
+    V last = null;
+    for (Iterator<V> it = iterator(); it.hasNext(); ) {
+      last = it.next();
+    }
+    return last;
+  }
+  
+  @Override
+  public void addFirst(V element) {
+    // This will trigger detachment if needed
+    delegate();
+    
+    // If backing is a SequencedSet, use its implementation
+    if (backing instanceof SequencedSet<V> sequencedSet) {
+      sequencedSet.addFirst(element);
+    } else {
+      // Otherwise, just add the element (sets don't guarantee order)
+      add(element);
+    }
+  }
+  
+  @Override
+  public void addLast(V element) {
+    // This will trigger detachment if needed
+    delegate();
+    
+    // If backing is a SequencedSet, use its implementation
+    if (backing instanceof SequencedSet<V> sequencedSet) {
+      sequencedSet.addLast(element);
+    } else {
+      // Otherwise, just add the element (sets don't guarantee order)
+      add(element);
+    }
+  }
+  
+  @Override
+  public V removeFirst() {
+    // This will trigger detachment if needed
+    delegate();
+    
+    // If backing is a SequencedSet, use its implementation
+    if (backing instanceof SequencedSet<V> sequencedSet) {
+      return sequencedSet.removeFirst();
+    }
+    
+    // Otherwise, remove the first element using iterator
+    if (isEmpty()) {
+      throw new java.util.NoSuchElementException("Set is empty");
+    }
+    Iterator<V> it = iterator();
+    V first = it.next();
+    it.remove();
+    return first;
+  }
+  
+  @Override
+  public V removeLast() {
+    // This will trigger detachment if needed
+    delegate();
+    
+    // If backing is a SequencedSet, use its implementation
+    if (backing instanceof SequencedSet<V> sequencedSet) {
+      return sequencedSet.removeLast();
+    }
+    
+    // For non-SequencedSet backings, we need to find the last element
+    if (isEmpty()) {
+      throw new java.util.NoSuchElementException("Set is empty");
+    }
+    
+    // This is inefficient for regular Sets, but it's the best we can do
+    // without knowing the specific implementation
+    V last = getLast();
+    remove(last);
+    return last;
+  }
+  
+  @Override
+  public SequencedSet<V> reversed() {
+    // This will trigger detachment if needed since we're exposing content
+    delegate();
+    
+    // If backing is a SequencedSet, use its implementation
+    if (backing instanceof SequencedSet<V> sequencedSet) {
+      return new DetachingSet<>(sequencedSet.reversed(), allowDetach, detach);
+    }
+    
+    // For non-SequencedSet backings, we need to create a reversed view
+    // This is a simple implementation that creates a new set with elements in reverse order
+    throw new UnsupportedOperationException("Cannot reverse a non-sequenced set");
+  }
 
   /**
    * Incoming request where either the original content will escape back to the caller or the set will change.
@@ -108,7 +228,14 @@ public class DetachingSet<V>
   @Override
   protected Set<V> delegate() {
     if (!detached && allowDetach.getAsBoolean()) {
-      Set<V> detaching = new HashSet<>(backing.size());
+      // Use pattern matching for instanceof to simplify the code
+      Set<V> detaching = switch (backing) {
+        // If backing is a SequencedSet, try to preserve that characteristic
+        case SequencedSet<?> s -> new java.util.LinkedHashSet<>(backing.size());
+        // Otherwise use a regular HashSet
+        default -> new HashSet<>(backing.size());
+      };
+      
       backing.forEach(e -> detaching.add(detach.apply(e)));
       backing = detaching;
       detached = true;

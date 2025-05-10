@@ -12,6 +12,10 @@
  */
 package org.sonatype.nexus.common.app;
 
+import java.util.SequencedCollection;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.app.ManagedLifecycle.Phase;
 
@@ -43,6 +47,14 @@ public abstract class ManagedLifecycleManager
    * @since 3.16
    */
   public abstract void bounce(final Phase bouncePhase) throws Exception;
+  
+  /**
+   * Returns an ordered collection of all available phases.
+   * 
+   * @return a sequenced collection of phases in order from OFF to TASKS
+   * @since 3.60
+   */
+  public abstract SequencedCollection<Phase> getPhases();
 
   /**
    * Are we in the process of shutting down? (ie. moving to the {@code OFF} phase)
@@ -50,13 +62,13 @@ public abstract class ManagedLifecycleManager
    * @since 3.16
    */
   public static boolean isShuttingDown() {
-    return shuttingDown;
+    return shuttingDown.get();
   }
 
-  private static volatile boolean shuttingDown;
+  private static final AtomicBoolean shuttingDown = new AtomicBoolean(false);
 
   protected ManagedLifecycleManager() {
-    shuttingDown = false;
+    shuttingDown.set(false);
   }
 
   /**
@@ -66,7 +78,7 @@ public abstract class ManagedLifecycleManager
    */
   protected void declareShutdown() {
     log.info("Shutting down");
-    shuttingDown = true;
+    shuttingDown.set(true);
   }
 
   /**
@@ -78,7 +90,27 @@ public abstract class ManagedLifecycleManager
    */
   public void shutdownWithExitCode(final int exitCode) throws Exception {
     System.setProperty("nexus.overrideExitCode", Integer.toString(exitCode));
-    log.info("Shutdown requested with an exit code of " + exitCode);
+    log.info(STR."Shutdown requested with an exit code of \{exitCode}");
     this.to(Phase.OFF);
+  }
+  
+  /**
+   * Asynchronously initiates a shutdown with the specified exit code using a virtual thread.
+   * This allows the caller to continue processing while the shutdown sequence runs in the background.
+   *
+   * @param exitCode the exit code to provide to the calling system/process
+   * @return a CompletableFuture that completes when the shutdown process is finished
+   * @since 3.60
+   */
+  public CompletableFuture<Void> shutdownWithExitCodeAsync(final int exitCode) {
+    return CompletableFuture.runAsync(() -> {
+      try {
+        shutdownWithExitCode(exitCode);
+      } 
+      catch (Exception e) {
+        log.error("Error during async shutdown", e);
+        throw new RuntimeException("Shutdown failed", e);
+      }
+    }, Thread.ofVirtual().name("lifecycle-shutdown-").factory());
   }
 }

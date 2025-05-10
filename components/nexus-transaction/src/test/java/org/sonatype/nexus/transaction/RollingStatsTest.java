@@ -17,7 +17,8 @@ import java.util.concurrent.ThreadLocalRandom;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.goodies.testsupport.concurrent.ConcurrentRunner;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -26,6 +27,7 @@ import static org.hamcrest.Matchers.is;
 /**
  * Test rolling stats behaviour.
  */
+@Tag("Java21TestGroup")
 public class RollingStatsTest
     extends TestSupport
 {
@@ -33,7 +35,9 @@ public class RollingStatsTest
   public void testConcurrentStats() throws Exception {
     RollingStats underTest = new RollingStats(60_000, MILLISECONDS);
 
+    // Configure ConcurrentRunner to use Virtual Threads
     ConcurrentRunner runner = new ConcurrentRunner(3, 60);
+    runner.useVirtualThreads(true); // Enable Virtual Threads support
     runner.addTask(100, () -> {
       // randomize where this will land inside the window
       Thread.sleep(ThreadLocalRandom.current().nextInt(1_000));

@@ -19,18 +19,21 @@ import org.sonatype.nexus.common.collect.NestedAttributesMap;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static com.google.common.collect.Maps.newHashMap;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.nullValue;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@ExtendWith(MockitoExtension.class)
 public class NestedAttributesMapJsonParserTest
     extends TestSupport
 {
@@ -41,7 +44,7 @@ public class NestedAttributesMapJsonParserTest
 
   private NestedAttributesMapJsonParser underTest;
 
-  @Before
+  @BeforeEach
   public void setUp() {
     underTest = new NestedAttributesMapJsonParser(jsonParser, nestedAttributesMap);
   }

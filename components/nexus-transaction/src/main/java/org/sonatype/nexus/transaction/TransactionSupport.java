@@ -23,6 +23,7 @@ import static org.sonatype.nexus.transaction.Transactional.DEFAULT_REASON;
  * <li>Disallows multiple calls to begin, which indicate incorrect use of the transaction</li>
  * <li>Supports transaction implementations that don't require an explicit call to begin</li>
  * <li>Tracks the reason given for this transaction for support purposes</li>
+ * <li>Verifies thread identity to maintain proper isolation in Virtual Thread environments</li>
  * </ul>
  *
  * @since 3.20
@@ -37,10 +38,18 @@ public abstract class TransactionSupport
   private int retries = 0;
 
   private String reason = DEFAULT_REASON;
+  
+  /**
+   * Stores the thread ID of the thread that began this transaction.
+   * Used to verify thread identity for proper isolation in Virtual Thread environments.
+   */
+  private long ownerThreadId = -1;
 
   @Override
   public final void begin() {
     checkState(!active, "Transaction has already begun");
+    // Store the current thread ID for thread identity verification
+    ownerThreadId = Thread.currentThread().threadId();
     doBegin();
     active = true;
   }
@@ -51,17 +60,23 @@ public abstract class TransactionSupport
 
   @Override
   public final void commit() {
+    verifyThreadIdentity();
     active = false;
     doCommit();
     retries = 0;
+    // Clear thread ID after transaction is complete
+    ownerThreadId = -1;
   }
 
   protected abstract void doCommit();
 
   @Override
   public final void rollback() {
+    verifyThreadIdentity();
     active = false;
     doRollback();
+    // Clear thread ID after transaction is complete
+    ownerThreadId = -1;
   }
 
   protected abstract void doRollback();
@@ -73,6 +88,7 @@ public abstract class TransactionSupport
 
   @Override
   public boolean allowRetry(final Exception cause) {
+    verifyThreadIdentity();
     if (RetryController.INSTANCE.allowRetry(retries, cause)) {
       retries++;
       return true;
@@ -91,5 +107,20 @@ public abstract class TransactionSupport
   @Override
   public String reason() {
     return reason;
+  }
+  
+  /**
+   * Verifies that the current thread is the same thread that began this transaction.
+   * This is critical for maintaining proper isolation in Virtual Thread environments
+   * where threads may be migrated between carriers.
+   * 
+   * @throws IllegalStateException if called from a different thread than the one that began the transaction
+   */
+  protected void verifyThreadIdentity() {
+    if (ownerThreadId != -1 && Thread.currentThread().threadId() != ownerThreadId) {
+      // Using Java 21 string template for better diagnostic message
+      String errorMessage = STR."Transaction thread identity violation: started on thread ID \{ownerThreadId} but accessed on thread ID \{Thread.currentThread().threadId()}";
+      throw new IllegalStateException(errorMessage);
+    }
   }
 }

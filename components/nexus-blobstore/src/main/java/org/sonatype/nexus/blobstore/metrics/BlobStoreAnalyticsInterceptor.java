@@ -13,6 +13,7 @@
 package org.sonatype.nexus.blobstore.metrics;
 
 import java.lang.reflect.Method;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.blobstore.BlobSupport;
@@ -27,6 +28,8 @@ import static com.google.common.base.Preconditions.checkState;
 
 /**
  * A method interceptor which monitor blob store operations (see {@link OperationType}) of the annotated method.
+ * This implementation supports both platform threads and Java 21 virtual threads, ensuring accurate metrics
+ * collection even when operations span across virtual thread yields.
  *
  * @since 3.38
  */
@@ -34,11 +37,16 @@ public class BlobStoreAnalyticsInterceptor
     extends ComponentSupport
     implements MethodInterceptor
 {
+  // Thread-local storage for operation start times, maintained across virtual thread yields
+  private static final ThreadLocal<ConcurrentHashMap<String, Long>> OPERATION_START_TIMES = 
+      ThreadLocal.withInitial(ConcurrentHashMap::new);
+
   @Override
   public Object invoke(final MethodInvocation invocation) throws Throwable {
     String clazz = invocation.getThis().getClass().getSimpleName();
     Method method = invocation.getMethod();
     String methodName = method.getName();
+    String operationKey = clazz + "." + methodName;
 
     MonitoringBlobStoreMetrics metricsAnnotation = method.getAnnotation(MonitoringBlobStoreMetrics.class);
     checkState(metricsAnnotation != null);
@@ -55,13 +63,27 @@ public class BlobStoreAnalyticsInterceptor
       return invocation.proceed();
     }
 
-    long start = System.currentTimeMillis();
+    // Use nanoTime for more precise timing, especially important for virtual threads
+    // that may yield during execution
+    long startNanos = System.nanoTime();
+    
+    // Store the start time in thread-local storage to maintain it across virtual thread yields
+    OPERATION_START_TIMES.get().put(operationKey, startNanos);
+    
     try {
       Object result = invocation.proceed();
 
-      // record metrics only in case of successful processing.
+      // Retrieve the start time from thread-local storage to ensure correct timing
+      // even if the virtual thread yielded during execution
+      Long storedStartTime = OPERATION_START_TIMES.get().remove(operationKey);
+      long elapsedNanos = System.nanoTime() - (storedStartTime != null ? storedStartTime : startNanos);
+      
+      // Convert nanoseconds to milliseconds for the metrics
+      long elapsedMillis = elapsedNanos / 1_000_000;
+
+      // Record metrics only in case of successful processing
       operationMetrics.addSuccessfulRequest();
-      operationMetrics.addTimeOnRequests(System.currentTimeMillis() - start);
+      operationMetrics.addTimeOnRequests(elapsedMillis);
 
       if (result instanceof BlobSupport) {
         long totalSize = ((BlobSupport) result).getMetrics().getContentSize();
@@ -73,6 +95,10 @@ public class BlobStoreAnalyticsInterceptor
     catch (Exception e) {
       operationMetrics.addErrorRequest();
       throw e;
+    }
+    finally {
+      // Clean up thread-local storage to prevent memory leaks
+      OPERATION_START_TIMES.get().remove(operationKey);
     }
   }
 }

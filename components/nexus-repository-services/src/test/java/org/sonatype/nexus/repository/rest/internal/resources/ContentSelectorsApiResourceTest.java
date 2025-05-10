@@ -31,13 +31,13 @@ import org.sonatype.nexus.selector.SelectorConfigurationStore;
 import org.sonatype.nexus.selector.SelectorFactory;
 import org.sonatype.nexus.selector.SelectorManager;
 
-import org.junit.Before;
-import org.junit.Ignore;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.Arrays.asList;
 import static java.util.Collections.emptyMap;
@@ -46,6 +46,7 @@ import static java.util.Collections.singletonMap;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.hasProperty;
 import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -54,13 +55,11 @@ import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.repository.http.HttpStatus.NOT_FOUND;
 import static org.sonatype.nexus.selector.SelectorConfiguration.EXPRESSION;
 
-@Ignore("NEXUS-43375")
+@Disabled("NEXUS-43375")
+@ExtendWith(MockitoExtension.class)
 public class ContentSelectorsApiResourceTest
     extends TestSupport
 {
-  @Rule
-  public ExpectedException exceptionRule = ExpectedException.none();
-
   private ContentSelectorsApiResource underTest;
 
   @Mock
@@ -75,7 +74,7 @@ public class ContentSelectorsApiResourceTest
   @Mock
   private EventManager eventManager;
 
-  @Before
+  @BeforeEach
   public void setup() {
     underTest = new ContentSelectorsApiResource(selectorFactory, selectorManager, store, eventManager);
   }
@@ -105,8 +104,7 @@ public class ContentSelectorsApiResourceTest
     doThrow(new ConstraintViolationException(emptySet())).when(selectorFactory)
         .validateSelector(CselSelector.TYPE, request.getExpression());
 
-    exceptionRule.expect(ConstraintViolationException.class);
-    underTest.createContentSelector(request);
+    assertThrows(ConstraintViolationException.class, () -> underTest.createContentSelector(request));
   }
 
   @Test
@@ -141,10 +139,9 @@ public class ContentSelectorsApiResourceTest
   public void getContentSelectorThrowNotFoundForSelectorNotFound() {
     when(selectorManager.findByName(any())).thenReturn(Optional.empty());
 
-    exceptionRule.expect(WebApplicationMessageException.class);
-    exceptionRule.expect(hasProperty("response", hasProperty("status", is(NOT_FOUND))));
-
-    underTest.getContentSelector("any");
+    WebApplicationMessageException exception = assertThrows(WebApplicationMessageException.class, 
+        () -> underTest.getContentSelector("any"));
+    assertThat(exception.getResponse().getStatus(), is(NOT_FOUND));
   }
 
   @Test
@@ -159,9 +156,7 @@ public class ContentSelectorsApiResourceTest
     doThrow(new ConstraintViolationException("", emptySet())).when(selectorFactory)
         .validateSelector(CselSelector.TYPE, request.getExpression());
 
-    exceptionRule.expect(ConstraintViolationException.class);
-
-    underTest.updateContentSelector("any", request);
+    assertThrows(ConstraintViolationException.class, () -> underTest.updateContentSelector("any", request));
   }
 
   @Test
@@ -171,10 +166,9 @@ public class ContentSelectorsApiResourceTest
 
     when(selectorManager.findByName(any())).thenReturn(Optional.empty());
 
-    exceptionRule.expect(WebApplicationMessageException.class);
-    exceptionRule.expect(hasProperty("response", hasProperty("status", is(NOT_FOUND))));
-
-    underTest.updateContentSelector("any", request);
+    WebApplicationMessageException exception = assertThrows(WebApplicationMessageException.class, 
+        () -> underTest.updateContentSelector("any", request));
+    assertThat(exception.getResponse().getStatus(), is(NOT_FOUND));
   }
 
   @Test
@@ -207,10 +201,9 @@ public class ContentSelectorsApiResourceTest
 
     when(selectorManager.findByName(any())).thenReturn(Optional.empty());
 
-    exceptionRule.expect(WebApplicationMessageException.class);
-    exceptionRule.expect(hasProperty("response", hasProperty("status", is(NOT_FOUND))));
-
-    underTest.deleteContentSelector(selector.getName());
+    WebApplicationMessageException exception = assertThrows(WebApplicationMessageException.class, 
+        () -> underTest.deleteContentSelector(selector.getName()));
+    assertThat(exception.getResponse().getStatus(), is(NOT_FOUND));
   }
 
   @Test

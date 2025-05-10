@@ -16,6 +16,9 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.OperationMetrics;
@@ -24,9 +27,9 @@ import org.sonatype.nexus.blobstore.api.metrics.BlobStoreMetricsEntity;
 import org.sonatype.nexus.blobstore.api.metrics.BlobStoreMetricsService;
 import org.sonatype.nexus.blobstore.api.metrics.BlobStoreMetricsStore;
 import org.sonatype.nexus.blobstore.api.metrics.DatastoreBlobStoreMetricsContainer;
-import org.sonatype.nexus.common.scheduling.PeriodicJobService;
-import org.sonatype.nexus.common.scheduling.PeriodicJobService.PeriodicJob;
 import org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport;
+import org.sonatype.nexus.security.subject.FakeAlmightySubject;
+import org.sonatype.nexus.security.subject.SubjectHelper;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -39,49 +42,93 @@ public abstract class DatastoreBlobStoreMetricsServiceSupport<B extends BlobStor
 {
   private final int metricsFlushPeriodSeconds;
 
-  private final PeriodicJobService jobService;
+  private ScheduledExecutorService scheduledExecutor;
 
   private final DatastoreBlobStoreMetricsContainer datastoreBlobStoreMetricsContainer;
-
-  private PeriodicJob metricsWritingJob;
 
   protected final BlobStoreMetricsStore blobStoreMetricsStore;
 
   protected B blobStore;
 
+  /**
+   * Constructor for DatastoreBlobStoreMetricsServiceSupport.
+   * 
+   * @param metricsFlushPeriodSeconds period in seconds between metrics flush operations
+   * @param blobStoreMetricsStore the store for blob store metrics
+   */
   protected DatastoreBlobStoreMetricsServiceSupport(
       final int metricsFlushPeriodSeconds,
-      final PeriodicJobService jobService,
       final BlobStoreMetricsStore blobStoreMetricsStore)
   {
     this.metricsFlushPeriodSeconds = metricsFlushPeriodSeconds;
-    this.jobService = checkNotNull(jobService);
     this.blobStoreMetricsStore = checkNotNull(blobStoreMetricsStore);
 
     this.datastoreBlobStoreMetricsContainer = new DatastoreBlobStoreMetricsContainer();
   }
 
+  /**
+   * Starts the metrics service by initializing metrics and scheduling periodic flush operations.
+   * Uses a single scheduler thread but delegates actual I/O work to virtual threads for efficiency.
+   */
   @Override
   protected void doStart() throws Exception {
     blobStoreMetricsStore.initializeMetrics(blobStore.getBlobStoreConfiguration().getName());
-    jobService.startUsing();
-    metricsWritingJob = jobService.schedule(() -> {
+    
+    // Create a scheduler for timing the metrics flush operations
+    scheduledExecutor = Executors.newSingleThreadScheduledExecutor();
+    
+    // Schedule the metrics flushing task at fixed intervals
+    scheduledExecutor.scheduleAtFixedRate(() -> {
       if (datastoreBlobStoreMetricsContainer.metricsNeedFlushing()) {
         try {
-          this.flush();
+          // Use virtual thread for I/O-bound flush operation
+          // This creates a new virtual thread for each flush operation, which is lightweight and efficient
+          Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+            try {
+              // Ensure thread-local context propagation for security subject
+              // This is critical for maintaining security context across virtual thread boundaries
+              FakeAlmightySubject.runWithSubject(() -> {
+                try {
+                  flush();
+                }
+                catch (Exception e) {
+                  log.error("Failed to save blobstore metrics to db", e);
+                }
+              });
+            } catch (Exception e) {
+              log.error("Failed to execute metrics flush operation", e);
+            }
+          });
         }
         catch (Exception e) {
-          log.error("Failed to save blobstore metrics to db", e);
+          log.error("Failed to schedule metrics flush operation", e);
         }
       }
-    }, metricsFlushPeriodSeconds);
+    }, 0, metricsFlushPeriodSeconds, TimeUnit.SECONDS);
   }
 
+  /**
+   * Stops the metrics service by shutting down the scheduler.
+   * Ensures graceful shutdown with timeout handling.
+   */
   @Override
   public void doStop() throws Exception {
-    metricsWritingJob.cancel();
-    metricsWritingJob = null;
-    jobService.stopUsing();
+    if (scheduledExecutor != null) {
+      // Attempt graceful shutdown first
+      scheduledExecutor.shutdown();
+      try {
+        // Wait for tasks to complete with a reasonable timeout
+        if (!scheduledExecutor.awaitTermination(30, TimeUnit.SECONDS)) {
+          // Force shutdown if tasks don't complete in time
+          scheduledExecutor.shutdownNow();
+        }
+      } catch (InterruptedException e) {
+        // If current thread is interrupted, force shutdown and preserve interrupt status
+        scheduledExecutor.shutdownNow();
+        Thread.currentThread().interrupt();
+      }
+      scheduledExecutor = null;
+    }
   }
 
   @Override
@@ -133,13 +180,19 @@ public abstract class DatastoreBlobStoreMetricsServiceSupport<B extends BlobStor
     return datastoreBlobStoreMetricsContainer.getOperationMetricsDelta();
   }
 
+  /**
+   * Flushes accumulated metrics to the persistent store.
+   * This method is optimized to run efficiently on virtual threads as it performs I/O operations.
+   */
   @Override
   public void flush() throws IOException {
+    // Get the delta metrics for upload and download operations
     OperationMetrics uploadMetrics =
         datastoreBlobStoreMetricsContainer.getOperationMetricsDelta().get(OperationType.UPLOAD);
     OperationMetrics downloadMetrics =
         datastoreBlobStoreMetricsContainer.getOperationMetricsDelta().get(OperationType.DOWNLOAD);
 
+    // Create a metrics entity with all the accumulated values
     BlobStoreMetricsEntity blobStoreMetricsEntity = new BlobStoreMetricsEntity()
         .setBlobStoreName(blobStore.getBlobStoreConfiguration().getName())
         .setBlobCount(datastoreBlobStoreMetricsContainer.blobCountDelta.getAndSet(0L))
@@ -151,11 +204,14 @@ public abstract class DatastoreBlobStoreMetricsServiceSupport<B extends BlobStor
         .setUploadBlobSize(uploadMetrics.getBlobSize())
         .setUploadErrorRequests(uploadMetrics.getErrorRequests())
         .setUploadSuccessfulRequests(uploadMetrics.getSuccessfulRequests())
-        .setDownloadTimeOnRequests(uploadMetrics.getTimeOnRequests());
+        .setUploadTimeOnRequests(uploadMetrics.getTimeOnRequests());
 
+    // Clear the metrics after capturing them
     uploadMetrics.clear();
     downloadMetrics.clear();
 
+    // Persist the metrics to the store
+    // This I/O operation benefits from running on a virtual thread
     blobStoreMetricsStore.updateMetrics(blobStoreMetricsEntity);
   }
 

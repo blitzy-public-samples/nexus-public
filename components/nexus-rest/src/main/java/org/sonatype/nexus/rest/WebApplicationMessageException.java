@@ -12,13 +12,13 @@
  */
 package org.sonatype.nexus.rest;
 
-import javax.ws.rs.WebApplicationException;
-import javax.ws.rs.core.GenericEntity;
-import javax.ws.rs.core.Response;
-import javax.ws.rs.core.Response.Status;
+import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.GenericEntity;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response.Status;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static javax.ws.rs.core.MediaType.TEXT_PLAIN;
+import static jakarta.ws.rs.core.MediaType.TEXT_PLAIN;
 
 /**
  * {@link WebApplicationException} with {@link Status} and a text message.
@@ -28,21 +28,60 @@ import static javax.ws.rs.core.MediaType.TEXT_PLAIN;
 public class WebApplicationMessageException
     extends WebApplicationException
 {
+  /**
+   * Creates a new exception with the specified status and message using TEXT_PLAIN media type.
+   *
+   * @param status the HTTP status
+   * @param message the error message
+   */
   public WebApplicationMessageException(final Status status, final String message) {
     this(status, message, TEXT_PLAIN);
   }
 
+  /**
+   * Creates a new exception with the specified status, message, and media type.
+   *
+   * @param status the HTTP status
+   * @param message the error message object
+   * @param mediaType the media type for the response
+   */
   public WebApplicationMessageException(final Status status, final Object message, final String mediaType) {
-    super(Response.status(checkNotNull(status))
-        .entity(new GenericEntity<>(new ValidationErrorXO(checkNotNull(message).toString()), ValidationErrorXO.class))
-        .type(mediaType)
-        .build());
+    super(createResponse(status, message, mediaType));
   }
 
+  /**
+   * Creates a new exception with the specified status code, message, and media type.
+   *
+   * @param status the HTTP status code
+   * @param message the error message object
+   * @param mediaType the media type for the response
+   */
   public WebApplicationMessageException(int status, final Object message, final String mediaType) {
-    super(Response.status(status)
-        .entity(new GenericEntity<>(new ValidationErrorXO(checkNotNull(message).toString()), ValidationErrorXO.class))
-        .type(mediaType)
-        .build());
+    super(createResponse(status, message, mediaType));
+  }
+  
+  /**
+   * Creates a response with the specified status and message.
+   *
+   * @param status the HTTP status (can be Status enum or int code)
+   * @param message the error message object
+   * @param mediaType the media type for the response
+   * @return the Response object
+   */
+  private static Response createResponse(Object status, Object message, String mediaType) {
+    checkNotNull(message, "Message cannot be null");
+    
+    // Use pattern matching for switch to handle different status types
+    return switch (status) {
+      case Status s -> Response.status(s)
+          .entity(new GenericEntity<>(new ValidationErrorXO(message.toString()), ValidationErrorXO.class))
+          .type(mediaType)
+          .build();
+      case Integer i -> Response.status(i)
+          .entity(new GenericEntity<>(new ValidationErrorXO(message.toString()), ValidationErrorXO.class))
+          .type(mediaType)
+          .build();
+      default -> throw new IllegalArgumentException("Unsupported status type: " + status.getClass().getName());
+    };
   }
 }

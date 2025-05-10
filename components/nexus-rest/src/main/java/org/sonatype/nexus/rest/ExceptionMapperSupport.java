@@ -13,15 +13,16 @@
 package org.sonatype.nexus.rest;
 
 import java.util.UUID;
+import java.util.concurrent.Future;
 
-import javax.ws.rs.core.Response;
-import javax.ws.rs.ext.ExceptionMapper;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.ext.ExceptionMapper;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static javax.ws.rs.core.MediaType.TEXT_PLAIN;
+import static jakarta.ws.rs.core.MediaType.TEXT_PLAIN;
 
 /**
  * Support for {@link ExceptionMapper} implementations.
@@ -41,37 +42,45 @@ public abstract class ExceptionMapperSupport<E extends Throwable>
     // Generate unique identifier
     final String id = generateFaultId();
 
-    // debug/trace log exception details
-    if (log.isTraceEnabled()) {
-      log.trace("(ID {}) Mapping exception: " + exception, id, exception);
-    }
-    else {
-      log.debug("(ID {}) Mapping exception: " + exception, id);
-    }
-
-    // Prepare the response
-    Response response;
+    // Process the exception mapping on a virtual thread for improved concurrency
     try {
-      response = convert(exception, id);
+      Future<Response> future = Thread.startVirtualThread(() -> {
+        // debug/trace log exception details
+        if (log.isTraceEnabled()) {
+          log.trace(STR."(ID \{id}) Mapping exception: \{exception}", exception);
+        }
+        else {
+          log.debug(STR."(ID \{id}) Mapping exception: \{exception}");
+        }
+
+        // Prepare the response
+        Response response;
+        try {
+          response = convert(exception, id);
+        }
+        catch (Exception e) {
+          log.warn(STR."(ID \{id}) Failed to map exception", e);
+          response = Response.serverError().entity(new FaultXO(id, e)).build();
+        }
+
+        // Add fault-id to the response as header
+        response.getHeaders().putSingle(X_SIESTA_FAULT_ID, id);
+
+        // Log terse (unless debug enabled) warning with fault details
+        final Object entity = response.getEntity();
+        log.warn(STR."(ID \{id}) Response: [\{response.getStatus()}] \{entity == null ? "(no entity/body)" : String.format("'%s'", entity)}; mapped from: \{exception}",
+            log.isDebugEnabled() ? exception : null);
+
+        return response;
+      }).join();
+      
+      return future;
     }
     catch (Exception e) {
-      log.warn("(ID {}) Failed to map exception", id, e);
-      response = Response.serverError().entity(new FaultXO(id, e)).build();
+      // If virtual thread execution fails, fall back to synchronous processing
+      log.error(STR."(ID \{id}) Virtual thread execution failed: \{e.getMessage()}", e);
+      return unexpectedResponse(e, id);
     }
-
-    // Add fault-id to the response as header
-    response.getHeaders().putSingle(X_SIESTA_FAULT_ID, id);
-
-    // Log terse (unless debug enabled) warning with fault details
-    final Object entity = response.getEntity();
-    log.warn("(ID {}) Response: [{}] {}; mapped from: {}",
-        id,
-        response.getStatus(),
-        entity == null ? "(no entity/body)" : String.format("'%s'", entity),
-        exception,
-        log.isDebugEnabled() ? exception : null);
-
-    return response;
   }
 
   private static String generateFaultId() {
@@ -88,10 +97,10 @@ public abstract class ExceptionMapperSupport<E extends Throwable>
 
   protected Response unexpectedResponse(final Throwable exception, final String id) {
     // always log unexpected exception with stack
-    log.warn("(ID {}) Unexpected exception: {}", id, exception.toString(), exception);
+    log.warn(STR."(ID \{id}) Unexpected exception: \{exception.toString()}", exception);
 
     return Response.serverError()
-        .entity(String.format("ERROR: (ID %s) %s", id, exception))
+        .entity(STR."ERROR: (ID \{id}) \{exception}")
         .type(TEXT_PLAIN)
         .build();
   }

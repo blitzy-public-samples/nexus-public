@@ -14,9 +14,9 @@ package org.sonatype.nexus.repository.security.internal;
 
 import java.util.Map;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.repository.security.VariableResolverAdapter;
@@ -44,14 +44,23 @@ public class VariableResolverAdapterManagerImpl
 
   private final Map<String, VariableResolverAdapter> adaptersByFormat;
 
+  /**
+   * Constructor for the adapter manager.
+   *
+   * @param adaptersByFormat Map of format-specific adapters, injected by Guice
+   */
   @Inject
   public VariableResolverAdapterManagerImpl(final Map<String, VariableResolverAdapter> adaptersByFormat) {
     this.adaptersByFormat = checkNotNull(adaptersByFormat);
     this.defaultAdapter = checkNotNull(adaptersByFormat.get(DEFAULT_ADAPTER_NAME));
   }
 
+  /**
+   * {@inheritDoc}
+   */
   @Override
-  public VariableResolverAdapter get(String format) {
-    return adaptersByFormat.getOrDefault(format, defaultAdapter);
+  @SuppressWarnings("unchecked")
+  public <V extends VariableResolverAdapter> V get(String format) {
+    return (V) adaptersByFormat.getOrDefault(format, defaultAdapter);
   }
 }

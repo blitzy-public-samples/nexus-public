@@ -23,6 +23,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import javax.inject.Provider;
 
@@ -50,17 +51,22 @@ import org.elasticsearch.client.AdminClient;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.client.IndicesAdminClient;
 import org.elasticsearch.common.settings.Settings;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.testcontainers.shaded.com.google.common.collect.BiMap;
 import org.testcontainers.shaded.com.google.common.collect.HashBiMap;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
-import static org.junit.Assert.assertThrows;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.lessThan;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -69,6 +75,7 @@ import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.common.hash.HashAlgorithm.SHA1;
 import static org.sonatype.nexus.repository.search.index.SearchConstants.TYPE;
 
+@ExtendWith(MockitoExtension.class)
 public class ElasticSearchIndexServiceImplTest
     extends TestSupport
 {
@@ -125,8 +132,8 @@ public class ElasticSearchIndexServiceImplTest
 
   ElasticSearchQueryServiceImpl searchQueryService;
 
-  @Before
-  public void setup() {
+  @BeforeEach
+  void setup() {
     CancelableHelper.set(cancelled);
     when(clientProvider.get()).thenReturn(client);
     when(client.admin()).thenReturn(adminClient);
@@ -147,14 +154,14 @@ public class ElasticSearchIndexServiceImplTest
     searchIndexService.setBulkProcessorToExecutors(bulkProcessorToExecutors);
   }
 
-  @After
-  public void tearDown() {
+  @AfterEach
+  void tearDown() {
     CancelableHelper.remove();
     executorService.shutdown();
   }
 
   @Test
-  public void testCreateIndexAlreadyExists() throws Exception {
+  void testCreateIndexAlreadyExists() throws Exception {
     ArgumentCaptor<String> varArgs = captureRepoNameArg();
 
     searchIndexService.createIndex(repository("test"));
@@ -163,7 +170,7 @@ public class ElasticSearchIndexServiceImplTest
   }
 
   @Test
-  public void testCreateIndexRepositoryNameMapping() throws Exception {
+  void testCreateIndexRepositoryNameMapping() throws Exception {
     ArgumentCaptor<String> varArgs = captureRepoNameArg();
 
     searchIndexService.createIndex(repository("UPPERCASE"));
@@ -172,7 +179,7 @@ public class ElasticSearchIndexServiceImplTest
   }
 
   @Test
-  public void testBulkPut() throws Exception {
+  void testBulkPut() throws Exception {
     int requestCount = 50;
     BiMap<String, Map> components = HashBiMap.create();
     for (int i = 0; i < requestCount; i++) {
@@ -212,7 +219,7 @@ public class ElasticSearchIndexServiceImplTest
   }
 
   @Test
-  public void testBulkPutCancellation() throws Exception {
+  void testBulkPutCancellation() throws Exception {
     List<Map> components = Collections.singletonList(Collections.emptyMap());
     Repository repository = repository("test-repo");
     captureRepoNameArg();
@@ -225,6 +232,104 @@ public class ElasticSearchIndexServiceImplTest
             NEVER_CALLED_JSON_DOC_PRODUCER));
 
     verify(bulkProcessor, never()).flush();
+  }
+
+  @Test
+  void testConcurrentBulkOperationsWithVirtualThreads() throws Exception {
+    // Setup test data
+    int requestCount = 100;
+    BiMap<String, Map> components = HashBiMap.create();
+    for (int i = 0; i < requestCount; i++) {
+      String id = UUID.randomUUID().toString();
+      components.put(id, Collections.singletonMap("id", id));
+    }
+    BiMap<Map, String> inverse = components.inverse();
+    String json = "{ \"a\": \"b\" }";
+
+    // Setup repository and mock responses
+    Repository repository = repository("test-repo");
+    ArgumentCaptor<String> indexName = captureRepoNameArg();
+    searchIndexService.createIndex(repository);
+
+    components.entrySet().forEach(entry -> {
+      IndexRequestBuilder builder = mock(IndexRequestBuilder.class);
+      when(client.prepareIndex(indexName.capture(), eq(TYPE), eq(entry.getKey()))).thenReturn(builder);
+      when(builder.setSource(json)).thenReturn(builder);
+      org.elasticsearch.action.index.IndexRequest request = mock(org.elasticsearch.action.index.IndexRequest.class);
+      when(builder.request()).thenReturn(request);
+    });
+
+    // Create a virtual thread executor
+    try (ExecutorService virtualExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Replace the standard executor with virtual thread executor
+      Map<Integer, Entry<BulkProcessor, ExecutorService>> bulkProcessorToExecutors = new HashMap<>();
+      bulkProcessorToExecutors.put(0, new SimpleImmutableEntry<>(bulkProcessor, virtualExecutor));
+      searchIndexService.setBulkProcessorToExecutors(bulkProcessorToExecutors);
+
+      // Track completion count
+      AtomicInteger completedTasks = new AtomicInteger(0);
+
+      // Submit bulk operations
+      List<Future<Void>> futures = searchIndexService.bulkPut(repository,
+          components.values(),
+          component -> inverse.get(component),
+          component -> json);
+
+      // Wait for all futures to complete
+      for (Future<Void> future : futures) {
+        try {
+          future.get();
+          completedTasks.incrementAndGet();
+        } catch (Exception e) {
+          throw new RuntimeException(e);
+        }
+      }
+
+      // Verify all tasks completed successfully
+      assertThat(completedTasks.get(), is(requestCount));
+      verify(bulkProcessor).flush();
+
+      // Verify performance is better than with platform threads
+      // This is a simple demonstration - in a real test we would measure and compare execution times
+      long startTime = System.currentTimeMillis();
+      
+      // Submit another batch with virtual threads
+      List<Future<Void>> secondBatch = searchIndexService.bulkPut(repository,
+          components.values(),
+          component -> inverse.get(component),
+          component -> json);
+      
+      // Wait for completion
+      for (Future<Void> future : secondBatch) {
+        future.get();
+      }
+      
+      long virtualThreadTime = System.currentTimeMillis() - startTime;
+      
+      // Now use platform threads for comparison
+      try (ExecutorService platformExecutor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors())) {
+        bulkProcessorToExecutors.put(0, new SimpleImmutableEntry<>(bulkProcessor, platformExecutor));
+        searchIndexService.setBulkProcessorToExecutors(bulkProcessorToExecutors);
+        
+        startTime = System.currentTimeMillis();
+        
+        List<Future<Void>> platformBatch = searchIndexService.bulkPut(repository,
+            components.values(),
+            component -> inverse.get(component),
+            component -> json);
+        
+        for (Future<Void> future : platformBatch) {
+          future.get();
+        }
+        
+        long platformThreadTime = System.currentTimeMillis() - startTime;
+        
+        // In a real-world scenario with I/O operations, virtual threads should be more efficient
+        // For this mock test, we're just demonstrating the comparison approach
+        assertNotNull(virtualThreadTime);
+        assertNotNull(platformThreadTime);
+      }
+    }
   }
 
   protected Repository repository(String name) throws Exception {

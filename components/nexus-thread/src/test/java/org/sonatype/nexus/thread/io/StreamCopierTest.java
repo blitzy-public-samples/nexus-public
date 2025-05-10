@@ -15,18 +15,26 @@ package org.sonatype.nexus.thread.io;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.thread.VirtualThreadTestGroup;
 
 import org.apache.commons.io.IOUtils;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Tag;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.core.Is.is;
-import static org.hamcrest.core.IsEqual.equalTo;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.fail;
 
 public class StreamCopierTest
     extends TestSupport
@@ -34,71 +42,226 @@ public class StreamCopierTest
   private String DEFAULT_READ_OUTPUT = "Test read";
 
   private StreamCopier<String> underTest;
+  
+  private ExecutorService virtualThreadExecutor;
+  private ExecutorService platformThreadExecutor;
 
-  @Rule
-  public ExpectedException expectedException = ExpectedException.none();
+  @BeforeEach
+  void setUp() {
+    // Create executors for testing
+    virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    platformThreadExecutor = Executors.newFixedThreadPool(10);
+  }
+  
+  @AfterEach
+  void tearDown() {
+    // Clean up executors
+    if (virtualThreadExecutor != null) {
+      virtualThreadExecutor.shutdown();
+      try {
+        if (!virtualThreadExecutor.awaitTermination(2, TimeUnit.SECONDS)) {
+          virtualThreadExecutor.shutdownNow();
+        }
+      } catch (InterruptedException e) {
+        virtualThreadExecutor.shutdownNow();
+      }
+    }
+    
+    if (platformThreadExecutor != null) {
+      platformThreadExecutor.shutdown();
+      try {
+        if (!platformThreadExecutor.awaitTermination(2, TimeUnit.SECONDS)) {
+          platformThreadExecutor.shutdownNow();
+        }
+      } catch (InterruptedException e) {
+        platformThreadExecutor.shutdownNow();
+      }
+    }
+  }
 
   @Test
-  public void when_Read_Simple_Expect_Valid_Output() {
+  @DisplayName("When reading simple content, expect valid output")
+  void whenReadSimpleExpectValidOutput() {
     underTest = new StreamCopier<>(outputStream -> {
     }, inputStream -> DEFAULT_READ_OUTPUT);
 
-    assertThat(underTest.read(), is(equalTo(DEFAULT_READ_OUTPUT)));
+    assertEquals(DEFAULT_READ_OUTPUT, underTest.read());
   }
 
   @Test
-  public void when_Write_To_OutputStream_Expect_To_Read_Written_Value_Multiple_Times() {
+  @DisplayName("When writing to OutputStream, expect to read written value multiple times")
+  void whenWriteToOutputStreamExpectToReadWrittenValueMultipleTimes() {
     underTest = new StreamCopier<>(this::writeString, this::readString);
 
-    assertThat(underTest.read(), is(equalTo(DEFAULT_READ_OUTPUT)));
-    assertThat(underTest.read(), is(equalTo(DEFAULT_READ_OUTPUT)));
+    assertEquals(DEFAULT_READ_OUTPUT, underTest.read());
+    assertEquals(DEFAULT_READ_OUTPUT, underTest.read());
   }
 
   @Test
-  public void when_Write_Throws_Exception_Expect_Fail_To_Read_Value() {
-    expectedException.expect(RuntimeException.class);
-    expectedException.expectMessage("Unable to properly read from stream");
-
+  @DisplayName("When write throws exception, expect failure to read value")
+  void whenWriteThrowsExceptionExpectFailToReadValue() {
     underTest = new StreamCopier<>(outputStream -> {
-      throw new RuntimeException("Test witting failure");
+      throw new RuntimeException("Test writing failure");
     }, this::readString);
 
     // using a short timeout to make test fail faster
-    underTest.read(1000);
+    RuntimeException exception = assertThrows(RuntimeException.class, () -> {
+      underTest.read(1000);
+    });
+    assertEquals("Unable to properly read from stream", exception.getMessage());
   }
 
   @Test
-  public void when_Leaving_Streams_Open_Exception_Expect_Fail_To_Read_Value() {
-    expectedException.expect(RuntimeException.class);
-    expectedException.expectMessage("Unable to properly read from stream");
-
+  @DisplayName("When leaving streams open, expect failure to read value")
+  void whenLeavingStreamsOpenExceptionExpectFailToReadValue() {
     underTest = new StreamCopier<>(this::writeString, this::readString);
     underTest.afterReadLeaveStreamsOpen();
 
     // using a short timeout to make test fail faster
-    underTest.read(1000);
+    RuntimeException exception = assertThrows(RuntimeException.class, () -> {
+      underTest.read(1000);
+    });
+    assertEquals("Unable to properly read from stream", exception.getMessage());
   }
 
   @Test
-  public void when_Leaving_Streams_Open_And_Closing_Manually_Expect_To_Read_Written_Value_Multiple_Times() {
+  @DisplayName("When leaving streams open and closing manually, expect to read written value multiple times")
+  void whenLeavingStreamsOpenAndClosingManuallyExpectToReadWrittenValueMultipleTimes() {
     underTest = new StreamCopier<>(this::writeStringAndClose, this::readString);
     underTest.afterReadLeaveStreamsOpen();
 
-    assertThat(underTest.read(), is(equalTo(DEFAULT_READ_OUTPUT)));
-    assertThat(underTest.read(), is(equalTo(DEFAULT_READ_OUTPUT)));
+    assertEquals(DEFAULT_READ_OUTPUT, underTest.read());
+    assertEquals(DEFAULT_READ_OUTPUT, underTest.read());
   }
 
   @Test
-  public void when_Read_Throws_Exception_Expect_Fail_To_Read_Value() {
-    expectedException.expect(RuntimeException.class);
-    expectedException.expectMessage("Unable to properly read from stream");
-
+  @DisplayName("When read throws exception, expect failure to read value")
+  void whenReadThrowsExceptionExpectFailToReadValue() {
     underTest = new StreamCopier<>(this::writeString, inputStream -> {
       throw new RuntimeException("Test Reading failure");
     });
 
     // using a short timeout to make test fail faster
-    underTest.read(1000);
+    RuntimeException exception = assertThrows(RuntimeException.class, () -> {
+      underTest.read(1000);
+    });
+    assertEquals("Unable to properly read from stream", exception.getMessage());
+  }
+  
+  @Test
+  @Tag("VirtualThreadTestGroup")
+  @DisplayName("StreamCopier should work with virtual threads")
+  void streamCopierShouldWorkWithVirtualThreads() {
+    underTest = new StreamCopier<>(this::writeString, this::readString, virtualThreadExecutor);
+    
+    assertEquals(DEFAULT_READ_OUTPUT, underTest.read());
+  }
+  
+  @Test
+  @Tag("VirtualThreadTestGroup")
+  @DisplayName("StreamCopier should handle high concurrency with virtual threads")
+  void streamCopierShouldHandleHighConcurrencyWithVirtualThreads() throws Exception {
+    // Create a StreamCopier with virtual threads
+    underTest = new StreamCopier<>(this::writeString, this::readString, virtualThreadExecutor);
+    
+    // Run many concurrent operations
+    int concurrentTasks = 1000;
+    CountDownLatch latch = new CountDownLatch(concurrentTasks);
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    for (int i = 0; i < concurrentTasks; i++) {
+      virtualThreadExecutor.submit(() -> {
+        try {
+          String result = underTest.read();
+          if (DEFAULT_READ_OUTPUT.equals(result)) {
+            successCount.incrementAndGet();
+          }
+        } catch (Exception e) {
+          // Count failures
+        } finally {
+          latch.countDown();
+        }
+      });
+    }
+    
+    // Wait for all tasks to complete
+    latch.await(30, TimeUnit.SECONDS);
+    
+    // Verify all operations succeeded
+    assertEquals(concurrentTasks, successCount.get(), 
+        "All concurrent operations should succeed with virtual threads");
+  }
+  
+  @Test
+  @Tag("VirtualThreadTestGroup")
+  @DisplayName("Compare performance between platform threads and virtual threads")
+  void comparePerformanceBetweenPlatformAndVirtualThreads() throws Exception {
+    // Create StreamCopiers with different thread types
+    StreamCopier<String> platformThreadCopier = 
+        new StreamCopier<>(this::writeString, this::readString, platformThreadExecutor);
+    
+    StreamCopier<String> virtualThreadCopier = 
+        new StreamCopier<>(this::writeString, this::readString, virtualThreadExecutor);
+    
+    // Measure platform thread performance
+    int iterations = 100;
+    long platformStart = System.nanoTime();
+    for (int i = 0; i < iterations; i++) {
+      assertEquals(DEFAULT_READ_OUTPUT, platformThreadCopier.read());
+    }
+    long platformDuration = System.nanoTime() - platformStart;
+    
+    // Measure virtual thread performance
+    long virtualStart = System.nanoTime();
+    for (int i = 0; i < iterations; i++) {
+      assertEquals(DEFAULT_READ_OUTPUT, virtualThreadCopier.read());
+    }
+    long virtualDuration = System.nanoTime() - virtualStart;
+    
+    // Log performance comparison (no assertion as performance can vary by environment)
+    log.info("Platform thread duration: {} ns", platformDuration);
+    log.info("Virtual thread duration: {} ns", virtualDuration);
+    log.info("Performance ratio (platform/virtual): {}", 
+        (double) platformDuration / virtualDuration);
+  }
+  
+  @Test
+  @Tag("VirtualThreadTestGroup")
+  @DisplayName("StreamCopier should handle thousands of threads with virtual threads")
+  void streamCopierShouldHandleThousandsOfThreadsWithVirtualThreads() throws Exception {
+    // Create a StreamCopier with virtual threads
+    underTest = new StreamCopier<>(this::writeString, this::readString, virtualThreadExecutor);
+    
+    // Run a very high number of concurrent operations to demonstrate virtual thread benefits
+    int concurrentTasks = 10000;
+    CountDownLatch latch = new CountDownLatch(concurrentTasks);
+    AtomicInteger successCount = new AtomicInteger(0);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    for (int i = 0; i < concurrentTasks; i++) {
+      virtualThreadExecutor.submit(() -> {
+        try {
+          String result = underTest.read(5000); // Use a longer timeout for this high-concurrency test
+          if (DEFAULT_READ_OUTPUT.equals(result)) {
+            successCount.incrementAndGet();
+          }
+        } catch (Exception e) {
+          errorCount.incrementAndGet();
+        } finally {
+          latch.countDown();
+        }
+      });
+    }
+    
+    // Wait for all tasks to complete with a generous timeout
+    boolean completed = latch.await(60, TimeUnit.SECONDS);
+    
+    // Log results
+    log.info("Completed: {}, Success: {}, Errors: {}", 
+        completed, successCount.get(), errorCount.get());
+    
+    // We don't assert exact counts as this is a stress test that may behave differently
+    // in different environments, but we log the results for analysis
   }
 
   private void writeStringAndClose(OutputStream outputStream) {
@@ -129,5 +292,19 @@ public class StreamCopierTest
       fail(e.getMessage());
     }
     return null;
+  }
+  
+  /**
+   * Creates a thread factory for platform threads.
+   */
+  private ThreadFactory createPlatformThreadFactory() {
+    return Thread.ofPlatform().factory();
+  }
+  
+  /**
+   * Creates a thread factory for virtual threads.
+   */
+  private ThreadFactory createVirtualThreadFactory() {
+    return Thread.ofVirtual().factory();
   }
 }

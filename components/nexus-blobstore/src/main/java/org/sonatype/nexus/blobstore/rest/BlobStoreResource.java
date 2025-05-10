@@ -14,6 +14,9 @@ package org.sonatype.nexus.blobstore.rest;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
 import javax.ws.rs.Consumes;
@@ -43,8 +46,8 @@ import org.sonatype.nexus.validation.Validate;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 
+import static java.lang.StringTemplate.STR;
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.lang.String.format;
 import static java.util.stream.Collectors.toList;
 import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
 import static javax.ws.rs.core.Response.Status.BAD_REQUEST;
@@ -111,11 +114,18 @@ public class BlobStoreResource
     if (!blobStoreManager.exists(name)) {
       BlobStoreResourceUtil.throwCreateBlobStoreNotFoundException("", name);
     }
-    try {
-      blobStoreManager.delete(name);
-    }
-    catch (BlobStoreException e) {
-      BlobStoreResourceUtil.throwBlobStoreBadRequestException(e.getMessage());
+    
+    // Use Virtual Threads for I/O-bound blob store deletion operation
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      executor.submit(() -> {
+        try {
+          blobStoreManager.delete(name);
+        }
+        catch (BlobStoreException e) {
+          BlobStoreResourceUtil.throwBlobStoreBadRequestException(e.getMessage());
+        }
+        return null;
+      }).get();
     }
   }
 
@@ -128,12 +138,18 @@ public class BlobStoreResource
     BlobStore blobStore = blobStoreManager.get(name);
 
     if (blobStore == null) {
-      throw new WebApplicationException(format("No blob store found for id '%s' ", name), NOT_FOUND);
+      throw new WebApplicationException(STR."No blob store found for id '\{name}'", NOT_FOUND);
     }
 
-    BlobStoreQuotaResult result = quotaService.checkQuota(blobStore);
-
-    return result != null ? BlobStoreQuotaResultXO.asQuotaXO(result) : BlobStoreQuotaResultXO.asNoQuotaXO(name);
+    // Use Virtual Threads for I/O-bound quota retrieval operation
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      BlobStoreQuotaResult result = executor.submit(() -> quotaService.checkQuota(blobStore)).get();
+      return result != null ? BlobStoreQuotaResultXO.asQuotaXO(result) : BlobStoreQuotaResultXO.asNoQuotaXO(name);
+    }
+    catch (Exception e) {
+      log.error(STR."Error retrieving quota status for blob store '\{name}'", e);
+      throw new WebApplicationException(STR."Failed to retrieve quota status for '\{name}': \{e.getMessage()}", BAD_REQUEST);
+    }
   }
 
   @Override
@@ -143,16 +159,28 @@ public class BlobStoreResource
   @RequiresPermissions("nexus:blobstores:read")
   @Validate
   public void verifyConnection(final @NotNull @Valid BlobStoreConnectionXO blobStoreConnectionXO) {
-    try {
-      ConnectionChecker conChecker = checkNotNull(connectionCheckers.get(blobStoreConnectionXO.getType()));
-      conChecker.verifyConnection(blobStoreConnectionXO.getName(), blobStoreConnectionXO.getAttributes());
-    }
-    catch (BlobStoreConnectionException ce) { // NOSONAR
-      log.error("Can't connect to {} blob store", blobStoreConnectionXO.getType(), ce);
-      throw new WebApplicationException(Response.status(BAD_REQUEST).entity(ce.getMessage()).build());
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      executor.submit(() -> {
+        try {
+          ConnectionChecker conChecker = checkNotNull(connectionCheckers.get(blobStoreConnectionXO.getType()));
+          conChecker.verifyConnection(blobStoreConnectionXO.getName(), blobStoreConnectionXO.getAttributes());
+          return null;
+        }
+        catch (BlobStoreConnectionException ce) { // NOSONAR
+          log.error(STR."Can't connect to \{blobStoreConnectionXO.getType()} blob store", ce);
+          throw new WebApplicationException(Response.status(BAD_REQUEST).entity(ce.getMessage()).build());
+        }
+        catch (Exception e) {
+          log.warn(STR."Can't connect to \{blobStoreConnectionXO.getType()} blob store", e);
+          throw new WebApplicationException(Response.status(BAD_REQUEST).entity(messages.connectionError()).build());
+        }
+      }).get();
     }
     catch (Exception e) {
-      log.warn("Can't connect to {} blob store", blobStoreConnectionXO.getType(), e);
+      if (e.getCause() instanceof WebApplicationException) {
+        throw (WebApplicationException) e.getCause();
+      }
+      log.error(STR."Error during connection verification for \{blobStoreConnectionXO.getType()} blob store", e);
       throw new WebApplicationException(Response.status(BAD_REQUEST).entity(messages.connectionError()).build());
     }
   }

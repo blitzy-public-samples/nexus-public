@@ -18,9 +18,11 @@ import org.sonatype.goodies.testsupport.TestSupport;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.Matchers.hasEntry;
@@ -30,6 +32,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class ComponentXOFactoryTest
     extends TestSupport
 {
@@ -38,7 +41,7 @@ public class ComponentXOFactoryTest
 
   private ComponentXOFactory underTest;
 
-  @Before
+  @BeforeEach
   public void setup() {
     underTest = new ComponentXOFactory(ImmutableSet.of(componentXODecorator));
 

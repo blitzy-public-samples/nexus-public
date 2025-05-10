@@ -20,29 +20,60 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import com.google.common.hash.Hasher;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
- * An {@link MultiHashingInputStream} which uses Java 21 Virtual Threads to asynchronously compute hashes
+ * An {@link MultiHashingInputStream} which uses Java 21 Virtual Threads to asynchronously compute hashes.
+ * This implementation leverages Virtual Threads for I/O-bound operations, providing better scalability
+ * and resource utilization compared to traditional thread pools.
  *
  * @see MultiHashingInputStream
+ * @since 3.0
  */
 public class ParallelMultiHashingInputStream
     extends MultiHashingInputStream
 {
+  private static final Logger log = LoggerFactory.getLogger(ParallelMultiHashingInputStream.class);
+  
   private List<Thread> hashingThreads = Collections.emptyList();
+  private boolean closed = false;
 
+  /**
+   * Creates a new parallel hashing input stream using Virtual Threads.
+   *
+   * @param algorithms the hash algorithms to use
+   * @param inputStream the input stream to hash
+   */
   public ParallelMultiHashingInputStream(final Iterable<HashAlgorithm> algorithms, final InputStream inputStream) {
     super(algorithms, inputStream);
+    if (log.isTraceEnabled()) {
+      log.trace("Created parallel hashing stream with Virtual Threads");
+    }
   }
 
   @Override
   protected void submitHashing(final Consumer<Hasher> runnable) {
+    if (log.isTraceEnabled()) {
+      log.trace("Submitting hash computation to Virtual Threads");
+    }
+    
     hashingThreads = hashers.values()
         .stream()
         .map(hasher -> {
           Thread virtualThread = Thread.ofVirtual()
               .name("hash-computation-" + hasher.hashCode())
-              .start(() -> runnable.accept(hasher));
+              .start(() -> {
+                try {
+                  runnable.accept(hasher);
+                  if (log.isTraceEnabled()) {
+                    log.trace("Virtual Thread hash computation completed for {}", hasher.hashCode());
+                  }
+                }
+                catch (Exception e) {
+                  log.error("Error in Virtual Thread hash computation", e);
+                }
+              });
           return virtualThread;
         })
         .collect(Collectors.toList());
@@ -50,6 +81,14 @@ public class ParallelMultiHashingInputStream
 
   @Override
   protected void waitForHashes() throws IOException {
+    if (hashingThreads.isEmpty()) {
+      return;
+    }
+    
+    if (log.isTraceEnabled()) {
+      log.trace("Waiting for {} Virtual Threads to complete hash computation", hashingThreads.size());
+    }
+    
     for (Thread thread : hashingThreads) {
       if (thread.isAlive()) {
         try {
@@ -57,6 +96,28 @@ public class ParallelMultiHashingInputStream
         }
         catch (InterruptedException e) {
           Thread.currentThread().interrupt();
+          throw new IOException("Interrupted while waiting for hash computation to complete", e);
+        }
+      }
+    }
+  }
+  
+  @Override
+  public void close() throws IOException {
+    if (!closed) {
+      try {
+        // Ensure all hashing threads are completed before closing
+        waitForHashes();
+        super.close();
+      }
+      finally {
+        // Decrement active operations counter
+        MultiHashingInputStreamFactory.decrementActiveOperations();
+        closed = true;
+        
+        if (log.isTraceEnabled()) {
+          log.trace("Closed parallel hashing stream, active operations: {}", 
+              MultiHashingInputStreamFactory.getActiveOperations());
         }
       }
     }

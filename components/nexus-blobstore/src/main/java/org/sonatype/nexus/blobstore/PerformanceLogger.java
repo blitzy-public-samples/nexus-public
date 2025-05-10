@@ -13,6 +13,7 @@
 package org.sonatype.nexus.blobstore;
 
 import java.io.InputStream;
+import java.lang.StringTemplate;
 
 import org.sonatype.goodies.common.Loggers;
 import org.sonatype.nexus.blobstore.api.Blob;
@@ -21,7 +22,6 @@ import org.slf4j.Logger;
 
 /**
  * Logs blob store performance statistics.
- * Updated for Java 21 with String Templates for improved readability.
  *
  * @since 3.21
  */
@@ -48,7 +48,7 @@ public class PerformanceLogger
   }
 
   /**
-   * Logs read performance statistics using Java 21 String Templates.
+   * Logs read operation performance metrics.
    * 
    * @param bytes number of bytes read
    * @param nanos time taken in nanoseconds
@@ -64,13 +64,15 @@ public class PerformanceLogger
       millis = ((double) nanos) / 1e6d;
       mbPerSecond = ((double) bytes) / ((double) nanos) * 1e3d;
     }
-    log.debug(STR."blobstore \{blobStoreName}: \{bytes} bytes read in \{millis} ms (\{mbPerSecond} mb/s)");
+    
+    boolean isVirtualThread = Thread.currentThread().isVirtual();
+    log.debug(STR."blobstore \{blobStoreName}: \{bytes} bytes read in \{millis} ms (\{mbPerSecond} mb/s) \{isVirtualThread ? "[virtual thread]" : ""}");
   }
 
   /**
-   * Logs blob creation performance statistics using Java 21 String Templates.
+   * Logs blob creation performance metrics.
    * 
-   * @param blob the blob that was created
+   * @param blob the created blob
    * @param nanos time taken in nanoseconds
    */
   public void logCreate(final Blob blob, final long nanos) {
@@ -85,11 +87,13 @@ public class PerformanceLogger
       millis = ((double) nanos) / 1e6d;
       mbPerSecond = ((double) bytes) / ((double) nanos) * 1e3d;
     }
-    log.debug(STR."blobstore \{blobStoreName}: \{bytes} bytes written in \{millis} ms (\{mbPerSecond} mb/s)");
+    
+    boolean isVirtualThread = Thread.currentThread().isVirtual();
+    log.debug(STR."blobstore \{blobStoreName}: \{bytes} bytes written in \{millis} ms (\{mbPerSecond} mb/s) \{isVirtualThread ? "[virtual thread]" : ""}");
   }
 
   /**
-   * Logs blob deletion performance statistics using Java 21 String Templates.
+   * Logs blob deletion performance metrics.
    * 
    * @param nanos time taken in nanoseconds
    */
@@ -102,6 +106,28 @@ public class PerformanceLogger
     if (nanos > 0) {
       millis = ((double) nanos) / 1e6d;
     }
-    log.debug(STR."blobstore \{blobStoreName}: blob deleted in \{millis} ms");
+    
+    boolean isVirtualThread = Thread.currentThread().isVirtual();
+    log.debug(STR."blobstore \{blobStoreName}: blob deleted in \{millis} ms \{isVirtualThread ? "[virtual thread]" : ""}");
+  }
+  
+  /**
+   * Determines if the current thread is a virtual thread.
+   * 
+   * @return true if the current thread is a virtual thread, false otherwise
+   */
+  public boolean isVirtualThread() {
+    return Thread.currentThread().isVirtual();
+  }
+  
+  /**
+   * Gets information about the current thread, including whether it's a virtual thread.
+   * 
+   * @return a string containing thread information
+   */
+  public String getThreadInfo() {
+    Thread currentThread = Thread.currentThread();
+    boolean isVirtual = currentThread.isVirtual();
+    return STR."Thread[id=\{currentThread.threadId()}, name=\{currentThread.getName()}, \{isVirtual ? "virtual" : "platform"} thread]";
   }
 }

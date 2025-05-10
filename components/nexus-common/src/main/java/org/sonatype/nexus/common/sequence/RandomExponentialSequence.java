@@ -12,12 +12,13 @@
  */
 package org.sonatype.nexus.common.sequence;
 
-import java.util.Random;
+import java.util.random.RandomGenerator;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
 /**
  * Produces a partially random, exponentially increasing sequence of numeric values.
+ * Uses Java 21's enhanced random number generation APIs for improved performance and thread safety.
  *
  * @since 3.0
  */
@@ -30,7 +31,9 @@ public class RandomExponentialSequence
 
   private final double maxDeviation;
 
-  private final Random random = new Random();
+  // Using Xoshiro256PlusPlus which is recommended for single-threaded applications
+  // as it's fast and has good statistical properties
+  private final RandomGenerator random = RandomGenerator.of("Xoshiro256PlusPlus");
 
   private Long current;
 

@@ -1,0 +1,167 @@
+{
+  "version": "1.0",
+  "description": "Test scenarios for detecting thread pinning in virtual threads",
+  "jvmFlags": [
+    "-Djdk.tracePinnedThreads=full"
+  ],
+  "scenarios": [
+    {
+      "id": "synchronized-block-pinning",
+      "name": "Synchronized Block Pinning",
+      "description": "Tests pinning caused by blocking I/O operations within synchronized blocks",
+      "code": "synchronized(lock) { socket.getInputStream().read(buffer); }",
+      "expectedPinningDuration": 100,
+      "expectedStackTracePattern": "java.lang.VirtualThread.parkOnCarrierThread",
+      "severity": "high",
+      "category": "synchronization"
+    },
+    {
+      "id": "synchronized-method-pinning",
+      "name": "Synchronized Method Pinning",
+      "description": "Tests pinning caused by blocking I/O operations within synchronized methods",
+      "code": "synchronized void readData() { inputStream.read(buffer); }",
+      "expectedPinningDuration": 100,
+      "expectedStackTracePattern": "java.lang.VirtualThread.parkOnCarrierThread",
+      "severity": "high",
+      "category": "synchronization"
+    },
+    {
+      "id": "native-method-pinning",
+      "name": "Native Method Pinning",
+      "description": "Tests pinning caused by calling native methods",
+      "code": "System.loadLibrary(\"native-lib\"); nativeMethod();",
+      "expectedPinningDuration": 50,
+      "expectedStackTracePattern": "java.lang.VirtualThread$VThreadContinuation.onPinned",
+      "severity": "medium",
+      "category": "native"
+    },
+    {
+      "id": "monitor-wait-pinning",
+      "name": "Monitor Wait Pinning",
+      "description": "Tests pinning caused by Object.wait() within synchronized blocks",
+      "code": "synchronized(lock) { lock.wait(timeout); }",
+      "expectedPinningDuration": 200,
+      "expectedStackTracePattern": "java.lang.VirtualThread.parkOnCarrierThread",
+      "severity": "high",
+      "category": "synchronization"
+    },
+    {
+      "id": "jdbc-connection-pinning",
+      "name": "JDBC Connection Pinning",
+      "description": "Tests pinning caused by JDBC operations with non-virtual-thread-compatible drivers",
+      "code": "connection.prepareStatement(sql).executeQuery();",
+      "expectedPinningDuration": 150,
+      "expectedStackTracePattern": "java.sql.Connection.prepareStatement",
+      "severity": "high",
+      "category": "database",
+      "compatibleDrivers": [
+        "org.postgresql.Driver:42.7.2",
+        "com.mysql.cj.jdbc.Driver:8.3.0"
+      ],
+      "incompatibleDrivers": [
+        "org.postgresql.Driver:42.5.0",
+        "com.mysql.cj.jdbc.Driver:8.0.28"
+      ]
+    },
+    {
+      "id": "jdbc-transaction-pinning",
+      "name": "JDBC Transaction Pinning",
+      "description": "Tests pinning caused by JDBC transaction operations",
+      "code": "connection.setAutoCommit(false); /* operations */ connection.commit();",
+      "expectedPinningDuration": 100,
+      "expectedStackTracePattern": "java.sql.Connection.commit",
+      "severity": "medium",
+      "category": "database"
+    },
+    {
+      "id": "nested-synchronized-pinning",
+      "name": "Nested Synchronized Pinning",
+      "description": "Tests pinning caused by nested synchronized blocks with blocking operations",
+      "code": "synchronized(lockA) { synchronized(lockB) { blockingOperation(); } }",
+      "expectedPinningDuration": 250,
+      "expectedStackTracePattern": "java.lang.VirtualThread.parkOnCarrierThread",
+      "severity": "high",
+      "category": "synchronization"
+    },
+    {
+      "id": "thread-sleep-in-synchronized-pinning",
+      "name": "Thread Sleep in Synchronized Pinning",
+      "description": "Tests pinning caused by Thread.sleep() within synchronized blocks",
+      "code": "synchronized(lock) { Thread.sleep(duration); }",
+      "expectedPinningDuration": 300,
+      "expectedStackTracePattern": "java.lang.Thread.sleep",
+      "severity": "high",
+      "category": "synchronization"
+    },
+    {
+      "id": "library-internal-synchronization-pinning",
+      "name": "Library Internal Synchronization Pinning",
+      "description": "Tests pinning caused by internal synchronization in third-party libraries",
+      "code": "thirdPartyLibrary.performOperation();",
+      "expectedPinningDuration": 100,
+      "expectedStackTracePattern": "com.thirdparty.library",
+      "severity": "medium",
+      "category": "library",
+      "problematicLibraries": [
+        "commons-io:commons-io:2.11.0",
+        "org.apache.httpcomponents:httpclient:4.5.13"
+      ],
+      "compatibleAlternatives": [
+        "commons-io:commons-io:2.15.1",
+        "org.apache.httpcomponents.client5:httpclient5:5.3.1"
+      ]
+    },
+    {
+      "id": "scheduler-task-pinning",
+      "name": "Scheduler Task Pinning",
+      "description": "Tests pinning in scheduled tasks with synchronized operations",
+      "code": "scheduler.schedule(() -> { synchronized(lock) { longRunningOperation(); } }, delay);",
+      "expectedPinningDuration": 200,
+      "expectedStackTracePattern": "org.sonatype.nexus.scheduling.internal.PeriodicJobServiceImpl",
+      "severity": "high",
+      "category": "scheduling"
+    },
+    {
+      "id": "concurrent-collection-pinning",
+      "name": "Concurrent Collection Pinning",
+      "description": "Tests pinning caused by synchronized methods in legacy concurrent collections",
+      "code": "Vector<String> vector = new Vector<>(); vector.add(element);",
+      "expectedPinningDuration": 50,
+      "expectedStackTracePattern": "java.util.Vector.add",
+      "severity": "low",
+      "category": "collections",
+      "recommendedAlternatives": [
+        "java.util.concurrent.CopyOnWriteArrayList",
+        "java.util.concurrent.ConcurrentHashMap"
+      ]
+    }
+  ],
+  "thresholds": {
+    "warningPinningDuration": 50,
+    "criticalPinningDuration": 200,
+    "maxAcceptablePinningFrequency": 10,
+    "pinningFrequencyTimeWindow": 60000
+  },
+  "detectionConfig": {
+    "enableJfrEvents": true,
+    "jfrEventName": "jdk.VirtualThreadPinned",
+    "stackTraceDepth": 64,
+    "samplingInterval": 20,
+    "reportingThreshold": 50
+  },
+  "jdbcTestConfig": {
+    "connectionPoolSize": 10,
+    "testQueries": [
+      "SELECT 1",
+      "SELECT pg_sleep(0.1)",
+      "SELECT * FROM large_table LIMIT 1000"
+    ],
+    "concurrentConnections": 100,
+    "expectedMaxPinnedThreads": 5,
+    "compatibleDriverVersions": {
+      "postgresql": ">=42.6.0",
+      "mysql": ">=8.1.0",
+      "oracle": ">=23.3.0"
+    }
+  }
+}

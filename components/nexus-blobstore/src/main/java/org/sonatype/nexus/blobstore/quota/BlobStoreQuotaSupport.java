@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.blobstore.quota;
 
+import java.util.concurrent.atomic.AtomicReference;
+
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
@@ -37,25 +39,71 @@ public abstract class BlobStoreQuotaSupport
 
   public static final String LIMIT_KEY = "quotaLimitBytes";
 
+  /**
+   * Creates a Runnable that executes the quota check job in a Virtual Thread.
+   * Virtual Threads are lightweight threads that are managed by the JVM rather than the OS,
+   * making them ideal for I/O-bound operations like quota checks.
+   *
+   * @param blobStore    the blob store to check
+   * @param quotaService the quota service to use for checking
+   * @param logger       the logger to use for logging
+   * @return a Runnable that executes the quota check job
+   */
   public static Runnable createQuotaCheckJob(
       final BlobStore blobStore,
       final BlobStoreQuotaService quotaService,
       final Logger logger)
   {
-    return () -> quotaCheckJob(blobStore, quotaService, logger);
+    return () -> {
+      // Use Virtual Threads for executing quota check operations
+      // This improves scalability by not blocking platform threads during I/O operations
+      try {
+        Thread.startVirtualThread(() -> quotaCheckJob(blobStore, quotaService, logger));
+      }
+      catch (Exception e) {
+        // Handle any errors that might occur when starting the virtual thread
+        logger.error("Failed to start virtual thread for quota check on {}", 
+            blobStore.getBlobStoreConfiguration().getName(), e);
+      }
+    };
   }
 
+  /**
+   * Executes the quota check job.
+   * This method is designed to be compatible with Virtual Thread execution context.
+   * It ensures thread safety and proper error handling for operations running in Virtual Threads.
+   *
+   * @param blobStore    the blob store to check
+   * @param quotaService the quota service to use for checking
+   * @param logger       the logger to use for logging
+   */
   @VisibleForTesting
   static void quotaCheckJob(final BlobStore blobStore, final BlobStoreQuotaService quotaService, final Logger logger) {
+    // Use AtomicReference to ensure thread safety when accessing the result
+    AtomicReference<BlobStoreQuotaResult> resultRef = new AtomicReference<>();
+    
     try {
-      BlobStoreQuotaResult result = quotaService.checkQuota(blobStore);
+      // Execute the quota check and store the result in the AtomicReference
+      resultRef.set(quotaService.checkQuota(blobStore));
+      
+      // Check if there's a violation and log it if necessary
+      BlobStoreQuotaResult result = resultRef.get();
       if (result != null && result.isViolation()) {
         logger.warn(result.getMessage());
       }
     }
     catch (Exception e) {
+      // Enhanced error handling for Virtual Thread context
       // Don't propagate, as this stops subsequent executions
-      logger.error("Quota check exception for {}", blobStore.getBlobStoreConfiguration().getName(), e);
+      String blobStoreName = "unknown";
+      try {
+        blobStoreName = blobStore.getBlobStoreConfiguration().getName();
+      }
+      catch (Exception ex) {
+        // If we can't get the blob store name, just use the default
+        logger.debug("Could not get blob store name for error logging", ex);
+      }
+      logger.error("Quota check exception for {}", blobStoreName, e);
     }
   }
 

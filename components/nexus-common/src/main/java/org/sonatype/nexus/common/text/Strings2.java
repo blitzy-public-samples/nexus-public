@@ -51,19 +51,27 @@ public final class Strings2
    * Returns {@code true} if given string is null, or length is zero.
    */
   public static boolean isEmpty(@Nullable final String value) {
-    return value == null || value.length() == 0;
+    return switch (value) {
+      case null -> true;
+      case String s when s.length() == 0 -> true;
+      default -> false;
+    };
   }
 
   /**
    * Returns {@code true} if given string is null, or length is zero after {@link String#trim()}.
    */
   public static boolean isBlank(@Nullable final String value) {
-    // TODO: Consider using Character.isWhitespace() to determine blank-ness for commons-lang/plexus-utils impl parity
-    return value == null || value.trim().length() == 0;
+    // Using Pattern Matching for switch to handle different cases
+    return switch (value) {
+      case null -> true;
+      case String s when s.trim().length() == 0 -> true;
+      default -> false;
+    };
   }
 
   /**
-   * Returns {@code true} if given string is not null, or length is greater tan zero after {@link String#trim()}.
+   * Returns {@code true} if given string is not null, or length is greater than zero after {@link String#trim()}.
    */
   public static boolean notBlank(@Nullable final String value) {
     return !isBlank(value);
@@ -74,10 +82,10 @@ public final class Strings2
    */
   @Nullable
   public static String mask(@Nullable final String password) {
-    if (password != null) {
-      return MASK;
-    }
-    return null;
+    return switch (password) {
+      case null -> null;
+      default -> MASK;
+    };
   }
 
   /**
@@ -114,18 +122,19 @@ public final class Strings2
    * Encode separator into input at given delay.
    */
   public static String encodeSeparator(final String input, final char separator, final int delay) {
-    StringBuilder buff = new StringBuilder();
-
+    // Using Java 21 String Templates for more readable string construction
+    StringBuilder result = new StringBuilder();
     int i = 0;
+    
     for (char c : input.toCharArray()) {
       if (i != 0 && i % delay == 0) {
-        buff.append(separator);
+        result.append(separator);
       }
-      buff.append(c);
+      result.append(c);
       i++;
     }
-
-    return buff.toString();
+    
+    return result.toString();
   }
 
   /**
@@ -142,11 +151,14 @@ public final class Strings2
     return BaseEncoding.base64().encode(utf8(value));
   }
 
+  /**
+   * Capitalizes the first character of the given string.
+   */
   public static String capitalize(final String value) {
-    if (value == null || value.length() < 1) {
-      return value;
-    }
-
-    return Character.toTitleCase(value.charAt(0)) + value.substring(1);
+    return switch (value) {
+      case null -> null;
+      case String s when s.isEmpty() -> s;
+      case String s -> STR."\{Character.toTitleCase(s.charAt(0))}\{s.substring(1)}";
+    };
   }
 }

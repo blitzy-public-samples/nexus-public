@@ -12,23 +12,29 @@
  */
 package org.sonatype.nexus.repository.cache;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import org.sonatype.nexus.repository.cache.CacheControllerHolder.CacheType;
 
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
-import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
+/**
+ * Tests for {@link CacheControllerHolder}.
+ */
 public class CacheControllerHolderTest
 {
   private static final CacheType TEST = new CacheType("TEST");
-
-  @Rule
-  public ExpectedException exception = ExpectedException.none();
 
   private CacheController contentCacheController = new CacheController(1000, "content");
 
@@ -36,7 +42,7 @@ public class CacheControllerHolderTest
 
   private CacheControllerHolder underTest;
 
-  @Before
+  @BeforeEach
   public void setUp() {
     this.underTest = new CacheControllerHolder(contentCacheController, metadataCacheController);
   }
@@ -78,7 +84,77 @@ public class CacheControllerHolderTest
 
   @Test
   public void testGetUnknownCacheControllerViaRequire() {
-    exception.expectMessage(TEST.value());
-    underTest.require(TEST);
+    IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+      underTest.require(TEST);
+    });
+    assertThat(exception.getMessage().contains(TEST.value()), is(true));
+  }
+
+  @Test
+  public void testConcurrentAccessWithVirtualThreads() throws Exception {
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    
+    // Create an executor service using virtual threads
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    int taskCount = 1000;
+    CountDownLatch latch = new CountDownLatch(taskCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    try {
+      // Submit multiple concurrent tasks using virtual threads
+      for (int i = 0; i < taskCount; i++) {
+        final int taskId = i;
+        executor.submit(() -> {
+          try {
+            // Alternate between different operations to test thread safety
+            switch (taskId % 4) {
+              case 0:
+                // Get content controller
+                CacheController content = underTest.getContentCacheController();
+                if (content != contentCacheController) {
+                  errorCount.incrementAndGet();
+                }
+                break;
+              case 1:
+                // Get metadata controller
+                CacheController metadata = underTest.getMetadataCacheController();
+                if (metadata != metadataCacheController) {
+                  errorCount.incrementAndGet();
+                }
+                break;
+              case 2:
+                // Get via type
+                CacheController byType = underTest.get(CacheControllerHolder.CONTENT);
+                if (byType != contentCacheController) {
+                  errorCount.incrementAndGet();
+                }
+                break;
+              case 3:
+                // Require via type
+                CacheController required = underTest.require(CacheControllerHolder.METADATA);
+                if (required != metadataCacheController) {
+                  errorCount.incrementAndGet();
+                }
+                break;
+            }
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      latch.await(30, TimeUnit.SECONDS);
+      
+      // Verify no errors occurred
+      assertThat("No errors should occur during concurrent access", errorCount.get(), is(0));
+    } finally {
+      executor.shutdown();
+      executor.awaitTermination(5, TimeUnit.SECONDS);
+    }
   }
 }

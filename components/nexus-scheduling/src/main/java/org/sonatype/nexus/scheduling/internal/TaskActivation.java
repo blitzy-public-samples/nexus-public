@@ -12,7 +12,9 @@
  */
 package org.sonatype.nexus.scheduling.internal;
 
+import java.lang.Thread.State;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import javax.annotation.Priority;
 import javax.inject.Inject;
@@ -45,6 +47,9 @@ public class TaskActivation
   private final SchedulerSPI scheduler;
 
   private volatile boolean frozen;
+  
+  // Timeout for task cancellation in milliseconds
+  private static final long TASK_CANCELLATION_TIMEOUT_MS = 5000;
 
   @Inject
   public TaskActivation(final SchedulerSPI scheduler) {
@@ -93,8 +98,87 @@ public class TaskActivation
     }
   }
 
+  /**
+   * Attempts to cancel a task, with special handling for virtual threads.
+   * 
+   * @param taskInfo the task to cancel
+   * @return true if cancellation was successful or not needed, false otherwise
+   */
   private boolean maybeCancel(final TaskInfo taskInfo) {
     Future<?> future = taskInfo.getCurrentState().getFuture();
-    return future == null || future.cancel(false);
+    if (future == null) {
+      return true; // No future to cancel
+    }
+    
+    Thread taskThread = getTaskThread(taskInfo);
+    boolean isVirtualThread = taskThread != null && taskThread.isVirtual();
+    
+    if (isVirtualThread) {
+      // For virtual threads, log with thread ID and use enhanced cancellation approach
+      String threadId = taskThread.toString();
+      log.debug("Attempting to cancel virtual thread task: {} (thread: {})", taskInfo.getName(), threadId);
+      
+      // First try gentle cancellation
+      boolean cancelled = future.cancel(false);
+      
+      // If gentle cancellation failed and thread is still alive, try interruption
+      if (!cancelled && taskThread.getState() != State.TERMINATED) {
+        log.debug("Using interruption for virtual thread task: {} (thread: {})", taskInfo.getName(), threadId);
+        future.cancel(true); // Interrupt if running
+        
+        // Wait briefly for the virtual thread to respond to interruption
+        try {
+          taskThread.join(TASK_CANCELLATION_TIMEOUT_MS);
+          cancelled = !taskThread.isAlive();
+          if (!cancelled) {
+            log.warn("Virtual thread task did not respond to interruption: {} (thread: {})", 
+                taskInfo.getName(), threadId);
+          }
+        }
+        catch (InterruptedException e) {
+          Thread.currentThread().interrupt(); // Preserve interrupt status
+          log.warn("Interrupted while waiting for virtual thread task to cancel: {} (thread: {})", 
+              taskInfo.getName(), threadId);
+        }
+      }
+      
+      return cancelled;
+    }
+    else {
+      // For platform threads, use the original approach
+      return future.cancel(false);
+    }
+  }
+  
+  /**
+   * Attempts to get the Thread object associated with a task.
+   * 
+   * @param taskInfo the task information
+   * @return the Thread object if available, null otherwise
+   */
+  private Thread getTaskThread(final TaskInfo taskInfo) {
+    try {
+      // The task's thread might be accessible through the TaskInfo implementation
+      if (taskInfo instanceof ThreadAwareTaskInfo) {
+        return ((ThreadAwareTaskInfo) taskInfo).getThread();
+      }
+      
+      // If not directly accessible, we can't reliably get the thread
+      return null;
+    }
+    catch (Exception e) {
+      log.debug("Unable to get thread for task: {}", taskInfo.getName(), e);
+      return null;
+    }
+  }
+  
+  /**
+   * Interface for TaskInfo implementations that can provide access to their execution thread.
+   */
+  public interface ThreadAwareTaskInfo {
+    /**
+     * @return the Thread that is executing this task, or null if not available
+     */
+    Thread getThread();
   }
 }

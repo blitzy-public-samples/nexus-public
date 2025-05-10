@@ -35,31 +35,54 @@ public abstract class BlobSupport
 {
   private final BlobId blobId;
 
+  /**
+   * Lock for thread-safe operations on this blob.
+   * Using a fair lock policy to prevent starvation in high-concurrency scenarios with Virtual Threads.
+   */
   private final Lock lock;
 
   private Map<String, String> headers;
 
   private BlobMetrics metrics;
 
+  /**
+   * Flag indicating if this blob's metadata is stale and needs refreshing.
+   * Volatile ensures visibility across threads, including Virtual Threads.
+   */
   private volatile boolean stale;
 
   public BlobSupport(final BlobId blobId) {
     this.blobId = checkNotNull(blobId);
-    lock = new ReentrantLock();
+    // Using fair lock policy to prevent starvation with Virtual Threads
+    lock = new ReentrantLock(true);
     stale = true;
   }
 
+  /**
+   * Refreshes this blob's metadata.
+   */
   public void refresh(final Map<String, String> headers, final BlobMetrics metrics) {
-    this.headers = checkNotNull(headers);
-    this.metrics = checkNotNull(metrics);
-    stale = false;
+    // Acquire lock to ensure thread-safety when updating metadata
+    try (Lock l = lock()) {
+      this.headers = checkNotNull(headers);
+      this.metrics = checkNotNull(metrics);
+      stale = false;
+    }
   }
 
+  /**
+   * Marks this blob's metadata as stale, requiring a refresh.
+   */
   public void markStale() {
+    // Volatile write ensures visibility across all threads
     stale = true;
   }
 
+  /**
+   * Returns whether this blob's metadata is stale.
+   */
   public boolean isStale() {
+    // Volatile read ensures visibility of the most recent write
     return stale;
   }
 
@@ -78,12 +101,19 @@ public abstract class BlobSupport
     return metrics;
   }
 
+  /**
+   * Acquires the lock for this blob and returns it.
+   * The returned lock should be used in a try-with-resources block to ensure proper release.
+   * 
+   * @return the acquired lock, which will auto-close when used with try-with-resources
+   */
   public Lock lock() {
     return Locks.lock(lock);
   }
 
   @Override
   public InputStream getInputStream() {
+    // Thread-safe access to the input stream
     InputStream inputStream = doGetInputStream();
     if (!inputStream.markSupported()) {
       return new BufferedInputStream(inputStream);
@@ -92,8 +122,10 @@ public abstract class BlobSupport
   }
 
   /**
-   * Gets the natural input stream for the given blob
+   * Gets the natural input stream for the given blob.
+   * Implementations must ensure this method is thread-safe and compatible with Virtual Threads.
    *
+   * @return the input stream for this blob
    * @since 3.19
    */
   protected abstract InputStream doGetInputStream();

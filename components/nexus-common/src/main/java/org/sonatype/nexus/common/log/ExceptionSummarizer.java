@@ -119,8 +119,7 @@ public class ExceptionSummarizer
     else if (now - lastSummaryMillis >= FIVE_SECONDS) {
 
       // repeating exception, log summary without stack at most every 5 seconds
-      String summary = String.format("%s: %s - occurred %d times in last %d seconds",
-          message, cause, count, (now - lastSummaryMillis) / ONE_SECOND);
+      String summary = STR."{message}: {cause} - occurred {count} times in last {(now - lastSummaryMillis) / ONE_SECOND} seconds";
       logger.accept(summary, null);
 
       lastSummaryMillis = now;

@@ -17,23 +17,26 @@ import org.sonatype.goodies.testsupport.TestSupport;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.hamcrest.Matchers;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 
+@ExtendWith(MockitoExtension.class)
 public class BlankValueElasticSearchContributionTest
     extends TestSupport
 {
   private BlankValueElasticSearchContribution underTest;
 
-  @Before
+  @BeforeEach
   public void setup() {
     underTest = new BlankValueElasticSearchContribution();
   }
 
   @Test
-  public void testContribute() {
+  public void shouldContributeBlankValueQuery() {
     BoolQueryBuilder query = QueryBuilders.boolQuery();
 
     underTest.contribute(query::must, "group", "");

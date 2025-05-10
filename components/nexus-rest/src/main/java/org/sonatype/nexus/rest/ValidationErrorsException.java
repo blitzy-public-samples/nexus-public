@@ -13,10 +13,10 @@
 package org.sonatype.nexus.rest;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 
 /**
  * Thrown when there are request validation errors.
@@ -58,7 +58,7 @@ public class ValidationErrorsException
 
   public ValidationErrorsException withErrors(final ValidationErrorXO... validationErrors) {
     checkNotNull(validationErrors);
-    errors.addAll(Arrays.asList(validationErrors));
+    errors.addAll(List.of(validationErrors));
     return this;
   }
 
@@ -78,13 +78,11 @@ public class ValidationErrorsException
 
   @Override
   public String getMessage() {
-    final StringBuilder sb = new StringBuilder();
-    for (final ValidationErrorXO error : errors) {
-      if (sb.length() > 0) {
-        sb.append(", ");
-      }
-      sb.append(error.getMessage());
+    if (errors.isEmpty()) {
+      return "(No validation errors)";
     }
-    return sb.length() == 0 ? "(No validation errors)" : sb.toString();
+    
+    // Use String Templates with String.join for efficient message formatting
+    return STR."\{String.join(", ", errors.stream().map(ValidationErrorXO::getMessage).toList())}";
   }
 }

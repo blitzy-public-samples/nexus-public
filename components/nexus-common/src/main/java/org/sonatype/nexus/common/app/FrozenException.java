@@ -15,6 +15,18 @@ package org.sonatype.nexus.common.app;
 /**
  * Thrown when something attempts to write while the application is frozen.
  *
+ * <p>
+ * When creating instances of this exception, consider using Java 21 String Templates for more
+ * readable error messages. For example:
+ * <pre>
+ * throw new FrozenException(STR."Application is frozen: \{reason}");
+ * </pre>
+ * instead of:
+ * <pre>
+ * throw new FrozenException("Application is frozen: " + reason);
+ * </pre>
+ * </p>
+ *
  * @since 3.21
  */
 public class FrozenException
@@ -22,10 +34,21 @@ public class FrozenException
 {
   private static final long serialVersionUID = -5328665935242655134L;
 
+  /**
+   * Constructs a new exception with the specified detail message.
+   *
+   * @param message the detail message
+   */
   public FrozenException(final String message) {
     super(message);
   }
 
+  /**
+   * Constructs a new exception with the specified detail message and cause.
+   *
+   * @param message the detail message
+   * @param cause the cause of this exception
+   */
   public FrozenException(final String message, final Throwable cause) {
     super(message, cause);
   }

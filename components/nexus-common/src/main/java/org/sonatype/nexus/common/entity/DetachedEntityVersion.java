@@ -23,15 +23,19 @@ import static com.google.common.base.Preconditions.checkNotNull;
  *
  * @since 3.0
  */
-public class DetachedEntityVersion
+public record DetachedEntityVersion(String value)
     implements EntityVersion, Serializable
 {
   private static final long serialVersionUID = 1L;
 
-  private final String value;
-
-  public DetachedEntityVersion(final String value) {
-    this.value = checkNotNull(value);
+  /**
+   * Creates a new DetachedEntityVersion with the specified value.
+   *
+   * @param value the entity version value (must not be null)
+   * @throws NullPointerException if value is null
+   */
+  public DetachedEntityVersion {
+    checkNotNull(value);
   }
 
   @Override

@@ -31,34 +31,17 @@ final class TransactionalWrapper
   private final Joinpoint aspect;
 
   private final boolean tracing;
-  
-  private final boolean isVirtualThread;
 
-  /**
-   * @since 3.0
-   */
   public TransactionalWrapper(final Transactional spec, final Joinpoint aspect) {
-    this(spec, aspect, false);
-  }
-
-  /**
-   * Constructor with virtual thread awareness.
-   * 
-   * @param spec The transactional specification
-   * @param aspect The joinpoint aspect
-   * @param isVirtualThread Whether the current thread is a virtual thread
-   * @since 3.60
-   */
-  public TransactionalWrapper(final Transactional spec, final Joinpoint aspect, final boolean isVirtualThread) {
     this.spec = spec;
     this.aspect = aspect;
-    this.isVirtualThread = isVirtualThread;
 
     tracing = log.isTraceEnabled();
   }
 
   /**
    * Applies transactional behaviour around the method call, supports automatic retries.
+   * Handles thread migration for Virtual Threads by tracking thread ID at transaction boundaries.
    */
   public Object proceedWithTransaction(final Transaction tx) throws Throwable {
     tx.reason(spec.reason());
@@ -67,9 +50,11 @@ final class TransactionalWrapper
         boolean committed = false;
         Throwable throwing = null;
         Object result = null;
+        // Store the thread ID at transaction begin to detect thread migration
+        long beginThreadId = Thread.currentThread().threadId();
         try {
           if (tracing) {
-            log.trace(STR."BEGIN \{tx} : \{aspect.getStaticPart()} [\{isVirtualThread ? "virtual" : "platform"} thread]");
+            log.trace(STR."BEGIN \{tx} : \{aspect.getStaticPart()} [threadId=\{beginThreadId}]");
           }
           tx.begin();
           try {
@@ -80,9 +65,15 @@ final class TransactionalWrapper
             throwing = e;
           }
           finally {
+            // Verify thread consistency during commit
+            long commitThreadId = Thread.currentThread().threadId();
             if (throwing == null || instanceOf(throwing, spec.commitOn())) {
               if (tracing) {
-                log.trace(STR."COMMIT \{tx} : \{aspect.getStaticPart()} [\{isVirtualThread ? "virtual" : "platform"} thread]", throwing);
+                log.trace(STR."COMMIT \{tx} : \{aspect.getStaticPart()} [threadId=\{commitThreadId}]", throwing);
+              }
+              // Check for thread migration during transaction
+              if (beginThreadId != commitThreadId) {
+                log.debug(STR."Thread migration detected during transaction: begin=\{beginThreadId}, commit=\{commitThreadId}");
               }
               tx.commit();
               committed = true;
@@ -94,28 +85,26 @@ final class TransactionalWrapper
         }
         catch (final Exception e) { // ignore VM errors as here as we don't rollback/retry on them
           if (!committed) {
+            // Verify thread consistency during rollback
+            long rollbackThreadId = Thread.currentThread().threadId();
             if (tracing) {
-              log.trace(STR."ROLLBACK \{tx} : \{aspect.getStaticPart()} [\{isVirtualThread ? "virtual" : "platform"} thread]", e);
+              log.trace(STR."ROLLBACK \{tx} : \{aspect.getStaticPart()} [threadId=\{rollbackThreadId}]", e);
+            }
+            // Check for thread migration during transaction
+            if (beginThreadId != rollbackThreadId) {
+              log.debug(STR."Thread migration detected during transaction: begin=\{beginThreadId}, rollback=\{rollbackThreadId}");
             }
             tx.rollback();
             if (instanceOf(e, spec.retryOn()) && tx.allowRetry(e)) {
               if (tracing) {
-                log.trace(STR."RETRY \{tx} : \{aspect.getStaticPart()} [\{isVirtualThread ? "virtual" : "platform"} thread]", e);
+                log.trace(STR."RETRY \{tx} : \{aspect.getStaticPart()} [threadId=\{rollbackThreadId}]", e);
               }
-              
-              // Optimize retry behavior for virtual threads
-              if (isVirtualThread) {
-                // For virtual threads, we can use a more aggressive retry strategy
-                // since they are lightweight and don't block platform threads
-                Thread.yield(); // Hint to the scheduler that other virtual threads can run
-              }
-              
               continue;
             }
             // only want to swallow commit exceptions distinct from 'throwing'
             if (throwing != e && instanceOf(e, spec.swallow())) {
               if (tracing) {
-                log.trace(STR."SWALLOW \{tx} : \{aspect.getStaticPart()} [\{isVirtualThread ? "virtual" : "platform"} thread]", e);
+                log.trace(STR."SWALLOW \{tx} : \{aspect.getStaticPart()} [threadId=\{rollbackThreadId}]", e);
               }
               if (throwing != null) {
                 throw throwing;
@@ -132,12 +121,16 @@ final class TransactionalWrapper
     }
     finally {
       try {
+        // Verify thread consistency during end
+        long endThreadId = Thread.currentThread().threadId();
         tx.end();
+        if (tracing) {
+          log.trace(STR."END \{tx} [threadId=\{endThreadId}]");
+        }
       }
       catch (Exception e) {
-        if (tracing) {
-          log.trace(STR."END \{tx} [\{isVirtualThread ? "virtual" : "platform"} thread]", e);
-        }
+        long errorThreadId = Thread.currentThread().threadId();
+        log.trace(STR."END \{tx} [threadId=\{errorThreadId}] failed", e);
       }
     }
   }

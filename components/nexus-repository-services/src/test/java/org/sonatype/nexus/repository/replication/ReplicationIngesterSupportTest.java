@@ -24,12 +24,15 @@ import org.sonatype.nexus.blobstore.api.BlobId;
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreManager;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.times;
@@ -37,6 +40,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_NAME_HEADER;
 
+@ExtendWith(MockitoExtension.class)
 public class ReplicationIngesterSupportTest
     extends TestSupport
 {
@@ -61,7 +65,7 @@ public class ReplicationIngesterSupportTest
 
   private Properties properties;
 
-  @Before
+  @BeforeEach
   public void setup() {
     when(blobAttributes.getProperties()).thenReturn(getProperties());
     when(blobStoreManager.get(anyString())).thenReturn(blobStore);
@@ -77,22 +81,25 @@ public class ReplicationIngesterSupportTest
     verifyExtractedProperties(extractedProperties);
   }
 
-  @Test(expected = ReplicationIngestionException.class)
+  @Test
   public void testIngestBlob_failsIfBlobstoreNotPresent() {
     when(blobStoreManager.get(anyString())).thenReturn(null);
-    underTest.ingestBlob("blobId", "blobStoreId", "repositoryName", BlobEventType.ADDED);
+    assertThrows(ReplicationIngestionException.class, () -> 
+        underTest.ingestBlob("blobId", "blobStoreId", "repositoryName", BlobEventType.ADDED));
   }
 
-  @Test(expected = ReplicationIngestionException.class)
+  @Test
   public void testIngestBlob_failsIfBlobAttributesNotFound() {
     when(blobStore.getBlobAttributes(any(BlobId.class))).thenReturn(null);
-    underTest.ingestBlob("blobId", "blobStoreId", "repositoryName", BlobEventType.ADDED);
+    assertThrows(ReplicationIngestionException.class, () -> 
+        underTest.ingestBlob("blobId", "blobStoreId", "repositoryName", BlobEventType.ADDED));
   }
 
-  @Test(expected = ReplicationIngestionException.class)
+  @Test
   public void testIngestBlob_failsIfBlobNotFound() {
     when(blobStore.get(any(BlobId.class))).thenReturn(null);
-    underTest.ingestBlob("blobId", "blobStoreId", "repositoryName", BlobEventType.ADDED);
+    assertThrows(ReplicationIngestionException.class, () -> 
+        underTest.ingestBlob("blobId", "blobStoreId", "repositoryName", BlobEventType.ADDED));
   }
 
   @Test
@@ -113,6 +120,25 @@ public class ReplicationIngesterSupportTest
     underTest.ingestBlob("blobId", "blobStoreId", "repositoryName", BlobEventType.UPDATED);
     verify(replicationIngesterHelper, times(1))
         .replicate(any(String.class), any(Blob.class), any(Map.class), any(Map.class), any(String.class), any(String.class));
+  }
+  
+  @Test
+  public void testIngestBlob_handlesEventTypeWithPatternMatching() {
+    // This test verifies that the implementation correctly handles different BlobEventTypes
+    // using Java 21's enhanced pattern matching capabilities
+    
+    // Test DELETED event
+    underTest.ingestBlob("blobId", "blobStoreId", "repositoryName", BlobEventType.DELETED);
+    verify(replicationIngesterHelper, times(1)).deleteReplication("blobName", "repositoryName");
+    
+    // Test ADDED event
+    try {
+      underTest.ingestBlob("blobId", "blobStoreId", "repositoryName", BlobEventType.ADDED);
+      verify(replicationIngesterHelper, times(1))
+          .replicate(any(String.class), any(Blob.class), any(Map.class), any(Map.class), any(String.class), any(String.class));
+    } catch (IOException e) {
+      throw new AssertionError("Unexpected IOException", e);
+    }
   }
 
   private void verifyExtractedProperties(final Map<String, Object> extractedProperties) {

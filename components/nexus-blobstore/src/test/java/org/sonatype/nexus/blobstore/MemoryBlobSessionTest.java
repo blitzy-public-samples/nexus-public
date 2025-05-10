@@ -15,6 +15,11 @@ package org.sonatype.nexus.blobstore;
 import java.io.InputStream;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.api.Blob;
@@ -24,16 +29,18 @@ import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 
 import com.google.common.hash.HashCode;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.invocation.InvocationOnMock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -45,6 +52,7 @@ import static org.sonatype.nexus.transaction.Transactional.DEFAULT_REASON;
 /**
  * Tests for {@link MemoryBlobSession}.
  */
+@ExtendWith(MockitoExtension.class)
 public class MemoryBlobSessionTest
     extends TestSupport
 {
@@ -76,7 +84,7 @@ public class MemoryBlobSessionTest
 
   private int blobIdSequence = 1;
 
-  @Before
+  @BeforeEach
   public void setUp() {
     Blob restoredBlob = mockBlob(RESTORED_BLOB_ID);
     Blob copiedBlob = mockBlob(COPIED_BLOB_ID);
@@ -95,7 +103,7 @@ public class MemoryBlobSessionTest
   }
 
   @Test
-  public void commitAppliesPendingDeletes() throws Exception {
+  void commitAppliesPendingDeletes() throws Exception {
     try (BlobSession<?> session = new MemoryBlobSession(blobStore)) {
       exerciseBlobSession(session);
 
@@ -116,7 +124,7 @@ public class MemoryBlobSessionTest
   }
 
   @Test
-  public void rollbackDeletesUncommittedBlobs() throws Exception {
+  void rollbackDeletesUncommittedBlobs() throws Exception {
     try (BlobSession<?> session = new MemoryBlobSession(blobStore)) {
       exerciseBlobSession(session);
 
@@ -139,7 +147,7 @@ public class MemoryBlobSessionTest
   }
 
   @Test
-  public void uncommittedChangesRolledBackOnClose() throws Exception {
+  void uncommittedChangesRolledBackOnClose() throws Exception {
     try (BlobSession<?> session = new MemoryBlobSession(blobStore)) {
 
       exerciseBlobSession(session);
@@ -161,7 +169,7 @@ public class MemoryBlobSessionTest
   }
 
   @Test
-  public void getRespectsPendingDeletes() throws Exception {
+  void getRespectsPendingDeletes() throws Exception {
     try (BlobSession<?> session = new MemoryBlobSession(blobStore)) {
       BlobId testId = session.create(blobData, headers).getId();
 
@@ -180,7 +188,7 @@ public class MemoryBlobSessionTest
   }
 
   @Test
-  public void commitNeverFails() throws Exception {
+  void commitNeverFails() throws Exception {
     // use Error to make sure we're also catching serious errors
     when(blobStore.delete(any(), any())).thenThrow(new Error("Simulated store error"));
     try (BlobSession<?> session = new MemoryBlobSession(blobStore)) {
@@ -205,7 +213,7 @@ public class MemoryBlobSessionTest
   }
 
   @Test
-  public void rollbackNeverFails() throws Exception {
+  void rollbackNeverFails() throws Exception {
     // use Error to make sure we're also catching serious errors
     when(blobStore.delete(any(), any())).thenThrow(new Error("Simulated store error"));
     try (BlobSession<?> session = new MemoryBlobSession(blobStore)) {
@@ -226,6 +234,83 @@ public class MemoryBlobSessionTest
     catch (Throwable t) {
       //explictly having an assertion pleases sonar
       fail("rollback may have failed");
+    }
+  }
+
+  @Test
+  void virtualThreadsRespectTransactionalBehavior() throws Exception {
+    // Create a virtual thread executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    try {
+      // Test with multiple concurrent virtual threads
+      int taskCount = 100;
+      CountDownLatch latch = new CountDownLatch(taskCount);
+      AtomicInteger errorCount = new AtomicInteger(0);
+      
+      // Submit multiple concurrent tasks using virtual threads
+      for (int i = 0; i < taskCount; i++) {
+        executor.submit(() -> {
+          try (BlobSession<?> session = new MemoryBlobSession(blobStore)) {
+            // Create a blob and then delete it
+            Blob newBlob = session.create(blobData, headers);
+            session.delete(newBlob.getId());
+            
+            // Commit the transaction
+            session.getTransaction().commit();
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      latch.await(30, TimeUnit.SECONDS);
+      
+      // Verify no errors occurred
+      assertThat(errorCount.get(), is(0));
+    } finally {
+      executor.shutdown();
+    }
+  }
+
+  @Test
+  void virtualThreadsHandleRollbackCorrectly() throws Exception {
+    // Create a virtual thread executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    try {
+      // Test with multiple concurrent virtual threads
+      int taskCount = 100;
+      CountDownLatch latch = new CountDownLatch(taskCount);
+      AtomicInteger errorCount = new AtomicInteger(0);
+      
+      // Submit multiple concurrent tasks using virtual threads
+      for (int i = 0; i < taskCount; i++) {
+        executor.submit(() -> {
+          try (BlobSession<?> session = new MemoryBlobSession(blobStore)) {
+            // Create a blob
+            session.create(blobData, headers);
+            
+            // Rollback the transaction
+            session.getTransaction().rollback();
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      latch.await(30, TimeUnit.SECONDS);
+      
+      // Verify no errors occurred
+      assertThat(errorCount.get(), is(0));
+    } finally {
+      executor.shutdown();
     }
   }
 

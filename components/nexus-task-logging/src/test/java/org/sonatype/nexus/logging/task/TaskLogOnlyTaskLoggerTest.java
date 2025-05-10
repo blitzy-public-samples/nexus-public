@@ -14,14 +14,15 @@ package org.sonatype.nexus.logging.task;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
-import org.junit.Test;
-import org.mockito.InjectMocks;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.Logger;
 import org.slf4j.MDC;
 
-import static org.hamcrest.CoreMatchers.equalTo;
-import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.verify;
@@ -29,6 +30,11 @@ import static org.sonatype.nexus.logging.task.SeparateTaskLogTaskLogger.TASK_LOG
 import static org.sonatype.nexus.logging.task.TaskLogger.TASK_LOG_ONLY_MDC;
 import static org.sonatype.nexus.logging.task.TaskLoggingMarkers.NEXUS_LOG_ONLY;
 
+/**
+ * Tests for {@link TaskLogOnlyTaskLogger}.
+ */
+@ExtendWith(MockitoExtension.class)
+@Java21TestGroup
 public class TaskLogOnlyTaskLoggerTest
     extends TestSupport
 {
@@ -38,20 +44,23 @@ public class TaskLogOnlyTaskLoggerTest
   @Mock
   private TaskLogInfo taskLogInfo;
 
-  @InjectMocks
   private TaskLogOnlyTaskLogger taskLogOnlyTaskLogger;
 
-  @Test
-  public void mdcShouldContainTaskLogOnlyKey() {
-
-    assertThat(MDC.get(TASK_LOG_ONLY_MDC), equalTo("true"));
+  @BeforeEach
+  public void setUp() {
+    taskLogOnlyTaskLogger = new TaskLogOnlyTaskLogger(log, taskLogInfo);
   }
 
   @Test
-  public void shouldWriteLogLocationToNexusLog() {
+  public void mdcShouldContainTaskLogOnlyKey() {
+    assertEquals("true", MDC.get(TASK_LOG_ONLY_MDC));
+  }
+
+  @Test
+  public void shouldWriteLogFileNameToNexusLog() {
     taskLogOnlyTaskLogger.writeLogFileNameToNexusLog();
 
     verify(log).info(eq(NEXUS_LOG_ONLY), startsWith(TASK_LOG_LOCATION_PREFIX));
-    assertThat(MDC.get(TASK_LOG_ONLY_MDC), equalTo("true"));
+    assertEquals("true", MDC.get(TASK_LOG_ONLY_MDC));
   }
 }

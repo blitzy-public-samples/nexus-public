@@ -19,10 +19,9 @@ import org.sonatype.nexus.blobstore.api.Blob;
 
 import org.slf4j.Logger;
 
-import static java.lang.String.format;
-
 /**
  * Logs blob store performance statistics.
+ * Updated for Java 21 with String Templates for improved readability.
  *
  * @since 3.21
  */
@@ -48,6 +47,12 @@ public class PerformanceLogger
     }
   }
 
+  /**
+   * Logs read performance statistics using Java 21 String Templates.
+   * 
+   * @param bytes number of bytes read
+   * @param nanos time taken in nanoseconds
+   */
   public void logRead(final long bytes, final long nanos) {
     if (!log.isDebugEnabled()) {
       return;
@@ -59,9 +64,15 @@ public class PerformanceLogger
       millis = ((double) nanos) / 1e6d;
       mbPerSecond = ((double) bytes) / ((double) nanos) * 1e3d;
     }
-    log.debug(format("blobstore %s: %d bytes read in %g ms (%g mb/s)", blobStoreName, bytes, millis, mbPerSecond));
+    log.debug(STR."blobstore \{blobStoreName}: \{bytes} bytes read in \{millis} ms (\{mbPerSecond} mb/s)");
   }
 
+  /**
+   * Logs blob creation performance statistics using Java 21 String Templates.
+   * 
+   * @param blob the blob that was created
+   * @param nanos time taken in nanoseconds
+   */
   public void logCreate(final Blob blob, final long nanos) {
     if (!log.isDebugEnabled()) {
       return;
@@ -74,9 +85,14 @@ public class PerformanceLogger
       millis = ((double) nanos) / 1e6d;
       mbPerSecond = ((double) bytes) / ((double) nanos) * 1e3d;
     }
-    log.debug(format("blobstore %s: %d bytes written in %g ms (%g mb/s)", blobStoreName, bytes, millis, mbPerSecond));
+    log.debug(STR."blobstore \{blobStoreName}: \{bytes} bytes written in \{millis} ms (\{mbPerSecond} mb/s)");
   }
 
+  /**
+   * Logs blob deletion performance statistics using Java 21 String Templates.
+   * 
+   * @param nanos time taken in nanoseconds
+   */
   public void logDelete(final long nanos) {
     if (!log.isDebugEnabled()) {
       return;
@@ -86,6 +102,6 @@ public class PerformanceLogger
     if (nanos > 0) {
       millis = ((double) nanos) / 1e6d;
     }
-    log.debug(format("blobstore %s: blob deleted in %g ms", blobStoreName, millis));
+    log.debug(STR."blobstore \{blobStoreName}: blob deleted in \{millis} ms");
   }
 }

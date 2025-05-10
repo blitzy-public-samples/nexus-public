@@ -26,33 +26,19 @@ import static java.util.Optional.ofNullable;
  *
  * @since 3.21
  */
-public class FreezeRequest
+public record FreezeRequest(
+    @Nullable String token,
+    String reason,
+    DateTime frozenAt,
+    @Nullable String frozenBy,
+    @Nullable String frozenByIp)
 {
-  @Nullable
-  private final String token;
-
-  private final String reason;
-
-  private final DateTime frozenAt;
-
-  @Nullable
-  private final String frozenBy;
-
-  @Nullable
-  private final String frozenByIp;
-
-  public FreezeRequest(
-      @Nullable final String token,
-      final String reason,
-      final DateTime frozenAt,
-      @Nullable final String frozenBy,
-      @Nullable final String frozenByIp)
-  {
-    this.token = token;
-    this.reason = checkNotNull(reason);
-    this.frozenAt = checkNotNull(frozenAt);
-    this.frozenBy = frozenBy;
-    this.frozenByIp = frozenByIp;
+  /**
+   * Creates a new freeze request with validation.
+   */
+  public FreezeRequest {
+    checkNotNull(reason, "reason");
+    checkNotNull(frozenAt, "frozenAt");
   }
 
   /**
@@ -72,20 +58,6 @@ public class FreezeRequest
   }
 
   /**
-   * The reason for this freeze.
-   */
-  public String reason() {
-    return reason;
-  }
-
-  /**
-   * When the freeze began.
-   */
-  public DateTime frozenAt() {
-    return frozenAt;
-  }
-
-  /**
    * The user that requested the freeze; empty if it was an internal request.
    */
   public Optional<String> frozenBy() {
@@ -97,16 +69,5 @@ public class FreezeRequest
    */
   public Optional<String> frozenByIp() {
     return ofNullable(frozenByIp);
-  }
-
-  @Override
-  public String toString() {
-    return getClass().getSimpleName() + "{" +
-        "token=" + token +
-        ", reason=" + reason +
-        ", frozenAt=" + frozenAt +
-        ", frozenBy=" + frozenBy +
-        ", frozenByIp=" + frozenByIp +
-        '}';
   }
 }

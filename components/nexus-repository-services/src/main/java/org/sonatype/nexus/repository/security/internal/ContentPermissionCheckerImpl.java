@@ -1,4 +1,3 @@
-
 /*
  * Sonatype Nexus (TM) Open Source Version
  * Copyright (c) 2008-present Sonatype, Inc.
@@ -13,9 +12,15 @@
  */
 package org.sonatype.nexus.repository.security.internal;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import javax.inject.Inject;
@@ -49,12 +54,16 @@ public class ContentPermissionCheckerImpl
   private final SecurityHelper securityHelper;
 
   private final SelectorManager selectorManager;
+  
+  // Virtual thread executor for concurrent permission checks
+  private final ExecutorService virtualThreadExecutor;
 
   @Inject
   public ContentPermissionCheckerImpl(final SecurityHelper securityHelper,
                                       final SelectorManager selectorManager) {
     this.securityHelper = checkNotNull(securityHelper);
     this.selectorManager = checkNotNull(selectorManager);
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   @VisibleForTesting
@@ -125,12 +134,7 @@ public class ContentPermissionCheckerImpl
       return securityHelper.anyPermitted(perm) && selectorManager.evaluate(selectorConfiguration, variableSource);
     }
     catch (SelectorEvaluationException e) {
-      if (log.isTraceEnabled()) {
-        log.debug(e.getMessage(), e);
-      }
-      else {
-        log.debug(e.getMessage());
-      }
+      logMsgAndMaybeException(e);
     }
 
     return false;
@@ -179,10 +183,10 @@ public class ContentPermissionCheckerImpl
 
   private void logMsgAndMaybeException(final SelectorEvaluationException ex) {
     if (log.isTraceEnabled()) {
-      log.debug(ex.getMessage(), ex);
+      log.debug(STR."\{ex.getMessage()}", ex);
     }
     else {
-      log.debug(ex.getMessage());
+      log.debug(STR."\{ex.getMessage()}");
     }
   }
 
@@ -202,12 +206,7 @@ public class ContentPermissionCheckerImpl
         return securityHelper.anyPermitted(perms) && selectorManager.evaluate(selectorConfiguration, variableSource);
       }
       catch (SelectorEvaluationException e) {
-        if (log.isTraceEnabled()) {
-          log.debug(e.getMessage(), e);
-        }
-        else {
-          log.debug(e.getMessage());
-        }
+        logMsgAndMaybeException(e);
       }
     }
 
@@ -224,9 +223,37 @@ public class ContentPermissionCheckerImpl
     if (isViewPermitted(repositoryName, repositoryFormat, action)) {
       return true;
     }
-    //otherwise check the content selector perms
-    return selectorManager.browse().stream()
-        .anyMatch(config -> isContentPermitted(repositoryName, repositoryFormat, action, config, variableSource));
+    //otherwise check the content selector perms using virtual threads for concurrent evaluation
+    List<SelectorConfiguration> configs = selectorManager.browse().collect(Collectors.toList());
+    
+    try {
+      // Use CompletableFuture with virtual threads for concurrent permission checks
+      List<CompletableFuture<Boolean>> futures = configs.stream()
+          .map(config -> CompletableFuture.supplyAsync(() -> 
+              isContentPermitted(repositoryName, repositoryFormat, action, config, variableSource),
+              virtualThreadExecutor))
+          .collect(Collectors.toList());
+      
+      // Wait for any future to complete with 'true' result
+      return CompletableFuture.anyOf(futures.toArray(new CompletableFuture[0]))
+          .thenApply(result -> (Boolean) result)
+          .exceptionally(ex -> {
+            log.error(STR."Error during concurrent permission check: \{ex.getMessage()}", ex);
+            return false;
+          })
+          .join() || futures.stream().anyMatch(f -> {
+            try {
+              return f.getNow(false);
+            } catch (Exception e) {
+              return false;
+            }
+          });
+    } catch (Exception e) {
+      log.error(STR."Error setting up concurrent permission checks: \{e.getMessage()}", e);
+      // Fallback to sequential evaluation if concurrent approach fails
+      return configs.stream()
+          .anyMatch(config -> isContentPermitted(repositoryName, repositoryFormat, action, config, variableSource));
+    }
   }
 
   @Override
@@ -239,9 +266,37 @@ public class ContentPermissionCheckerImpl
     if (isViewPermitted(repositoryName, repositoryFormat, action)) {
       return true;
     }
-    // otherwise check the content selector perms
-    return selectorManager.browseJexl().stream()
-        .anyMatch(config -> isContentPermitted(repositoryName, repositoryFormat, action, config, variableSource));
+    // otherwise check the content selector perms using virtual threads for concurrent evaluation
+    List<SelectorConfiguration> configs = selectorManager.browseJexl().collect(Collectors.toList());
+    
+    try {
+      // Use CompletableFuture with virtual threads for concurrent permission checks
+      List<CompletableFuture<Boolean>> futures = configs.stream()
+          .map(config -> CompletableFuture.supplyAsync(() -> 
+              isContentPermitted(repositoryName, repositoryFormat, action, config, variableSource),
+              virtualThreadExecutor))
+          .collect(Collectors.toList());
+      
+      // Wait for any future to complete with 'true' result
+      return CompletableFuture.anyOf(futures.toArray(new CompletableFuture[0]))
+          .thenApply(result -> (Boolean) result)
+          .exceptionally(ex -> {
+            log.error(STR."Error during concurrent JEXL permission check: \{ex.getMessage()}", ex);
+            return false;
+          })
+          .join() || futures.stream().anyMatch(f -> {
+            try {
+              return f.getNow(false);
+            } catch (Exception e) {
+              return false;
+            }
+          });
+    } catch (Exception e) {
+      log.error(STR."Error setting up concurrent JEXL permission checks: \{e.getMessage()}", e);
+      // Fallback to sequential evaluation if concurrent approach fails
+      return configs.stream()
+          .anyMatch(config -> isContentPermitted(repositoryName, repositoryFormat, action, config, variableSource));
+    }
   }
 
   @Override
@@ -257,8 +312,38 @@ public class ContentPermissionCheckerImpl
     if (isViewPermitted(repositoryNames, repositoryFormat, action)) {
       return true;
     }
-    return selectorManager.browseActive(repositoryNames, Collections.singletonList(repositoryFormat)).stream()
-        .anyMatch(config -> isContentPermitted(repositoryNames, repositoryFormat, action, config, variableSource));
+    
+    List<SelectorConfiguration> configs = selectorManager.browseActive(repositoryNames, 
+        Collections.singletonList(repositoryFormat)).collect(Collectors.toList());
+    
+    try {
+      // Use CompletableFuture with virtual threads for concurrent permission checks
+      List<CompletableFuture<Boolean>> futures = configs.stream()
+          .map(config -> CompletableFuture.supplyAsync(() -> 
+              isContentPermitted(repositoryNames, repositoryFormat, action, config, variableSource),
+              virtualThreadExecutor))
+          .collect(Collectors.toList());
+      
+      // Wait for any future to complete with 'true' result
+      return CompletableFuture.anyOf(futures.toArray(new CompletableFuture[0]))
+          .thenApply(result -> (Boolean) result)
+          .exceptionally(ex -> {
+            log.error(STR."Error during concurrent multi-repository permission check: \{ex.getMessage()}", ex);
+            return false;
+          })
+          .join() || futures.stream().anyMatch(f -> {
+            try {
+              return f.getNow(false);
+            } catch (Exception e) {
+              return false;
+            }
+          });
+    } catch (Exception e) {
+      log.error(STR."Error setting up concurrent multi-repository permission checks: \{e.getMessage()}", e);
+      // Fallback to sequential evaluation if concurrent approach fails
+      return configs.stream()
+          .anyMatch(config -> isContentPermitted(repositoryNames, repositoryFormat, action, config, variableSource));
+    }
   }
 
   @Override
@@ -272,9 +357,38 @@ public class ContentPermissionCheckerImpl
     if (isViewPermitted(repositoryName, repositoryFormat, actions)) {
       return true;
     }
-    // otherwise check the content selector perms
-    return selectorManager.browseJexl().stream()
-        .anyMatch(config -> isContentPermittedAnyOf(repositoryName, repositoryFormat, config, variableSource, actions));
+    
+    // otherwise check the content selector perms using virtual threads for concurrent evaluation
+    List<SelectorConfiguration> configs = selectorManager.browseJexl().collect(Collectors.toList());
+    
+    try {
+      // Use CompletableFuture with virtual threads for concurrent permission checks
+      List<CompletableFuture<Boolean>> futures = configs.stream()
+          .map(config -> CompletableFuture.supplyAsync(() -> 
+              isContentPermittedAnyOf(repositoryName, repositoryFormat, config, variableSource, actions),
+              virtualThreadExecutor))
+          .collect(Collectors.toList());
+      
+      // Wait for any future to complete with 'true' result
+      return CompletableFuture.anyOf(futures.toArray(new CompletableFuture[0]))
+          .thenApply(result -> (Boolean) result)
+          .exceptionally(ex -> {
+            log.error(STR."Error during concurrent JEXL any-of permission check: \{ex.getMessage()}", ex);
+            return false;
+          })
+          .join() || futures.stream().anyMatch(f -> {
+            try {
+              return f.getNow(false);
+            } catch (Exception e) {
+              return false;
+            }
+          });
+    } catch (Exception e) {
+      log.error(STR."Error setting up concurrent JEXL any-of permission checks: \{e.getMessage()}", e);
+      // Fallback to sequential evaluation if concurrent approach fails
+      return configs.stream()
+          .anyMatch(config -> isContentPermittedAnyOf(repositoryName, repositoryFormat, config, variableSource, actions));
+    }
   }
 
   @Override
@@ -288,9 +402,38 @@ public class ContentPermissionCheckerImpl
     if (isViewPermitted(repositoryName, repositoryFormat, actions)) {
       return true;
     }
-    //otherwise check the content selector perms
-    return selectorManager.browse().stream()
-        .anyMatch(config -> isContentPermittedAnyOf(repositoryName, repositoryFormat, config, variableSource, actions));
+    
+    //otherwise check the content selector perms using virtual threads for concurrent evaluation
+    List<SelectorConfiguration> configs = selectorManager.browse().collect(Collectors.toList());
+    
+    try {
+      // Use CompletableFuture with virtual threads for concurrent permission checks
+      List<CompletableFuture<Boolean>> futures = configs.stream()
+          .map(config -> CompletableFuture.supplyAsync(() -> 
+              isContentPermittedAnyOf(repositoryName, repositoryFormat, config, variableSource, actions),
+              virtualThreadExecutor))
+          .collect(Collectors.toList());
+      
+      // Wait for any future to complete with 'true' result
+      return CompletableFuture.anyOf(futures.toArray(new CompletableFuture[0]))
+          .thenApply(result -> (Boolean) result)
+          .exceptionally(ex -> {
+            log.error(STR."Error during concurrent any-of permission check: \{ex.getMessage()}", ex);
+            return false;
+          })
+          .join() || futures.stream().anyMatch(f -> {
+            try {
+              return f.getNow(false);
+            } catch (Exception e) {
+              return false;
+            }
+          });
+    } catch (Exception e) {
+      log.error(STR."Error setting up concurrent any-of permission checks: \{e.getMessage()}", e);
+      // Fallback to sequential evaluation if concurrent approach fails
+      return configs.stream()
+          .anyMatch(config -> isContentPermittedAnyOf(repositoryName, repositoryFormat, config, variableSource, actions));
+    }
   }
 
   @Override
@@ -307,7 +450,36 @@ public class ContentPermissionCheckerImpl
     if (isViewPermitted(repositoryNames, repositoryFormat, actions)) {
       return true;
     }
-    return selectorManager.browse().stream()
-        .anyMatch(config -> isContentPermittedAnyOf(repositoryNames, repositoryFormat, config, variableSource, actions));
+    
+    List<SelectorConfiguration> configs = selectorManager.browse().collect(Collectors.toList());
+    
+    try {
+      // Use CompletableFuture with virtual threads for concurrent permission checks
+      List<CompletableFuture<Boolean>> futures = configs.stream()
+          .map(config -> CompletableFuture.supplyAsync(() -> 
+              isContentPermittedAnyOf(repositoryNames, repositoryFormat, config, variableSource, actions),
+              virtualThreadExecutor))
+          .collect(Collectors.toList());
+      
+      // Wait for any future to complete with 'true' result
+      return CompletableFuture.anyOf(futures.toArray(new CompletableFuture[0]))
+          .thenApply(result -> (Boolean) result)
+          .exceptionally(ex -> {
+            log.error(STR."Error during concurrent multi-repository any-of permission check: \{ex.getMessage()}", ex);
+            return false;
+          })
+          .join() || futures.stream().anyMatch(f -> {
+            try {
+              return f.getNow(false);
+            } catch (Exception e) {
+              return false;
+            }
+          });
+    } catch (Exception e) {
+      log.error(STR."Error setting up concurrent multi-repository any-of permission checks: \{e.getMessage()}", e);
+      // Fallback to sequential evaluation if concurrent approach fails
+      return configs.stream()
+          .anyMatch(config -> isContentPermittedAnyOf(repositoryNames, repositoryFormat, config, variableSource, actions));
+    }
   }
 }

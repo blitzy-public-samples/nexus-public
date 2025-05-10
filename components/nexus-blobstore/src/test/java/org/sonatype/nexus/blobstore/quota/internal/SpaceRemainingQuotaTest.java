@@ -19,17 +19,21 @@ import org.sonatype.nexus.blobstore.api.BlobStoreMetrics;
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import org.sonatype.nexus.rest.ValidationErrorsException;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.blobstore.quota.BlobStoreQuotaSupport.LIMIT_KEY;
 import static org.sonatype.nexus.blobstore.quota.BlobStoreQuotaSupport.ROOT_KEY;
 
+@ExtendWith(MockitoExtension.class)
 public class SpaceRemainingQuotaTest
     extends TestSupport
 {
@@ -47,7 +51,7 @@ public class SpaceRemainingQuotaTest
   @Mock
   NestedAttributesMap attributesMap;
 
-  @Before
+  @BeforeEach
   public void setup() {
     when(blobStore.getMetrics()).thenReturn(metrics);
     when(blobStore.getBlobStoreConfiguration()).thenReturn(config);
@@ -88,15 +92,15 @@ public class SpaceRemainingQuotaTest
     quota.validateConfig(config);
   }
 
-  @Test(expected = ValidationErrorsException.class)
+  @Test
   public void zeroLimitIsInvalid() {
     when(attributesMap.get(eq(LIMIT_KEY), eq(Number.class))).thenReturn(0);
-    quota.validateConfig(config);
+    assertThrows(ValidationErrorsException.class, () -> quota.validateConfig(config));
   }
 
-  @Test(expected = IllegalArgumentException.class)
+  @Test
   public void noLimitIsInvalid() {
     when(attributesMap.get(eq(LIMIT_KEY), eq(Number.class))).thenReturn(null);
-    quota.validateConfig(config);
+    assertThrows(IllegalArgumentException.class, () -> quota.validateConfig(config));
   }
 }

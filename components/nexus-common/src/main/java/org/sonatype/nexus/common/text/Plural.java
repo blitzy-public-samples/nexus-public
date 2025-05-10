@@ -35,18 +35,20 @@ public final class Plural
   {
     checkNotNull(buff);
     checkNotNull(singular);
-    buff.append(value).append(" ");
+    
+    String pluralText;
     if (value == 1) {
-      buff.append(singular);
+      pluralText = STR."\{value} \{singular}";
     }
     else {
       if (plural == null) {
-        buff.append(singular).append("s");
+        pluralText = STR."\{value} \{singular}s";
       }
       else {
-        buff.append(plural);
+        pluralText = STR."\{value} \{plural}";
       }
     }
+    buff.append(pluralText);
     return buff;
   }
 
@@ -59,7 +61,17 @@ public final class Plural
   }
 
   public static String of(final int value, final String singular, @Nullable final String plural) {
-    return append(new StringBuilder(), value, singular, plural).toString();
+    if (value == 1) {
+      return STR."\{value} \{singular}";
+    }
+    else {
+      if (plural == null) {
+        return STR."\{value} \{singular}s";
+      }
+      else {
+        return STR."\{value} \{plural}";
+      }
+    }
   }
 
   public static String of(final int value, final String singular) {

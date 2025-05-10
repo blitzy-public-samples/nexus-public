@@ -17,6 +17,14 @@ package org.sonatype.nexus.common.app;
  *
  * This may be because the underlying storage is not accessible.
  *
+ * <p>When creating messages for this exception, consider using Java 21 String Templates
+ * for improved readability and maintainability:</p>
+ * <pre>
+ * // Example using String Templates (Java 21+)
+ * String resource = "database";
+ * throw new NotReadableException(STR."Unable to read from \{resource}: connection refused");
+ * </pre>
+ *
  * @since 3.21
  */
 public class NotReadableException
@@ -24,10 +32,21 @@ public class NotReadableException
 {
   private static final long serialVersionUID = 3425411938965871948L;
 
+  /**
+   * Constructs a new exception with the specified detail message.
+   * 
+   * @param message the detail message
+   */
   public NotReadableException(final String message) {
     super(message);
   }
 
+  /**
+   * Constructs a new exception with the specified detail message and cause.
+   * 
+   * @param message the detail message
+   * @param cause the cause
+   */
   public NotReadableException(final String message, final Throwable cause) {
     super(message, cause);
   }

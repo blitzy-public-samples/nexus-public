@@ -24,19 +24,23 @@ import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaSupport;
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import org.sonatype.nexus.rest.ValidationErrorsException;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.core.IsNull.nullValue;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class BlobStoreQuotaServiceImplTest
     extends TestSupport
 {
@@ -57,7 +61,7 @@ public class BlobStoreQuotaServiceImplTest
   @Mock
   NestedAttributesMap attributes;
 
-  @Before
+  @BeforeEach
   public void setup() {
     when(blobStore.getBlobStoreConfiguration()).thenReturn(config);
     when(config.attributes(eq(BlobStoreQuotaSupport.ROOT_KEY))).thenReturn(attributes);
@@ -106,16 +110,20 @@ public class BlobStoreQuotaServiceImplTest
     service.validateSoftQuotaConfig(config);
   }
 
-  @Test(expected = ValidationErrorsException.class)
+  @Test
   public void emptyStringQuotaTypeFails() {
     when(attributes.get(BlobStoreQuotaSupport.TYPE_KEY, String.class)).thenReturn("");
-    service.validateSoftQuotaConfig(config);
+    assertThrows(ValidationErrorsException.class, () -> {
+      service.validateSoftQuotaConfig(config);
+    });
   }
 
-  @Test(expected = ValidationErrorsException.class)
+  @Test
   public void unknownQuotaTypeFails() {
     when(attributes.get(BlobStoreQuotaSupport.TYPE_KEY, String.class)).thenReturn("TOTALLY_FAKE");
-    service.validateSoftQuotaConfig(config);
+    assertThrows(ValidationErrorsException.class, () -> {
+      service.validateSoftQuotaConfig(config);
+    });
   }
 
   @Test

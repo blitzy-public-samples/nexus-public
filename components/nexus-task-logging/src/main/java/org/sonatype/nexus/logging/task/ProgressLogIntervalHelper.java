@@ -18,10 +18,14 @@ import com.google.common.base.Stopwatch;
 import org.slf4j.Logger;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.logging.task.TaskLoggingMarkers.PROGRESS;
 
 /**
  * Helper for logging progress messages, one per defined interval.
+ * 
+ * <p>This implementation is compatible with Virtual Threads introduced in Java 21.
+ * It uses String Templates for more efficient and readable log message formatting.</p>
  */
 public class ProgressLogIntervalHelper
     implements AutoCloseable
@@ -55,33 +59,44 @@ public class ProgressLogIntervalHelper
     return formatDuration(elapsed.elapsed().getSeconds());
   }
 
+  /**
+   * Format duration in seconds to a human-readable string using String Templates.
+   * 
+   * @param durationSeconds Duration in seconds
+   * @return Formatted duration string (e.g. "2d 5h 30m 15s")
+   */
   private String formatDuration(final long durationSeconds) {
-    StringBuilder builder = new StringBuilder();
     long seconds = durationSeconds;
-
     long days = seconds / SECONDS_PER_DAY;
     seconds = seconds - (days * SECONDS_PER_DAY);
-    if (days > 0) {
-      builder.append(days).append("d ");
-    }
+    
     long hours = seconds / SECONDS_PER_HOUR;
     seconds = seconds - (hours * SECONDS_PER_HOUR);
-    if (hours > 0 || builder.length() > 0) {
-      builder.append(hours).append("h ");
-    }
+    
     long minutes = seconds / SECONDS_PER_MINUTE;
     seconds = seconds - (minutes * SECONDS_PER_MINUTE);
-    if (minutes > 0 || builder.length() > 0) {
-      builder.append(minutes).append("m ");
+    
+    // Use String Templates for more efficient string composition
+    if (days > 0) {
+      return STR."{days}d {hours}h {minutes}m {seconds}s";
+    } else if (hours > 0) {
+      return STR."{hours}h {minutes}m {seconds}s";
+    } else if (minutes > 0) {
+      return STR."{minutes}m {seconds}s";
+    } else {
+      return STR."{seconds}s";
     }
-    builder.append(seconds).append("s");
-
-    return builder.toString();
   }
 
   /**
    * Log the message using the PROGRESS marker. Will only send the log message to logback once per interval, otherwise
-   * will store the message in the task logger context
+   * will store the message in the task logger context.
+   * 
+   * <p>This method is compatible with Virtual Threads and uses String Templates for more efficient
+   * message formatting when possible.</p>
+   * 
+   * @param message The message template or format string
+   * @param args The arguments to be formatted into the message
    */
   public void info(String message, Object... args) {
     if (hasIntervalElapsed()) {
@@ -89,6 +104,26 @@ public class ProgressLogIntervalHelper
     }
     else {
       TaskLoggerHelper.progress(logger, message, args);
+    }
+  }
+  
+  /**
+   * Log a message using String Templates for improved efficiency and readability.
+   * Will only send the log message to logback once per interval, otherwise
+   * will store the message in the task logger context.
+   * 
+   * <p>This method is compatible with Virtual Threads and provides a more efficient
+   * alternative to traditional string formatting.</p>
+   * 
+   * @param template The String Template to use for the message
+   */
+  public void info(StringTemplate template) {
+    String message = template.toString();
+    if (hasIntervalElapsed()) {
+      logger.info(PROGRESS, message);
+    }
+    else {
+      TaskLoggerHelper.progress(logger, message);
     }
   }
 

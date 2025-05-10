@@ -33,7 +33,7 @@ public class BlobStoreResourceUtil
   public static void throwBlobStoreBadRequestException(final String message) throws WebApplicationMessageException {
     throw new WebApplicationMessageException(
         BAD_REQUEST,
-        "\"" + message + "\"",
+        STR."\"\{message}\"",
         APPLICATION_JSON);
   }
 
@@ -50,7 +50,7 @@ public class BlobStoreResourceUtil
   {
     return new WebApplicationMessageException(
         NOT_FOUND,
-        String.format("Unable to find %s '%s' blobstore", blobStoreType, blobStoreName),
+        STR."Unable to find \{blobStoreType} '\{blobStoreName}' blobstore",
         APPLICATION_JSON);
   }
 

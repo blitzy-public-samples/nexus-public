@@ -24,18 +24,21 @@ import static com.google.common.base.Preconditions.checkNotNull;
  *
  * @since 3.0
  */
-public class DetachedEntityMetadata
+public record DetachedEntityMetadata(DetachedEntityId id, DetachedEntityVersion version)
     implements EntityMetadata, Serializable
 {
   private static final long serialVersionUID = 1L;
 
-  private final DetachedEntityId id;
-
-  private final DetachedEntityVersion version;
-
-  public DetachedEntityMetadata(final DetachedEntityId id, final DetachedEntityVersion version) {
-    this.id = checkNotNull(id);
-    this.version = checkNotNull(version);
+  /**
+   * Creates a new DetachedEntityMetadata with the specified id and version.
+   *
+   * @param id the entity id (must not be null)
+   * @param version the entity version (must not be null)
+   * @throws NullPointerException if id or version is null
+   */
+  public DetachedEntityMetadata {
+    checkNotNull(id);
+    checkNotNull(version);
   }
 
   @Override

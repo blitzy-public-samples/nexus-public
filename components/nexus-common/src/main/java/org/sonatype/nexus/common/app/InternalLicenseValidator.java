@@ -17,6 +17,7 @@ package org.sonatype.nexus.common.app;
  *
  * Exposed for informative use only, replacing this component does not actually change how licensing is applied.
  */
+@FunctionalInterface
 public interface InternalLicenseValidator
 {
   /**

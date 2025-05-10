@@ -23,6 +23,11 @@ import javax.annotation.Nullable;
 public abstract class AbstractEntity
     implements Entity
 {
+  /**
+   * Transient, volatile field to ensure thread-safe access to entity metadata.
+   * The volatile keyword ensures visibility of changes across threads without
+   * additional synchronization, providing happens-before guarantees for reads and writes.
+   */
   private transient volatile EntityMetadata metadata;
 
   @Nullable

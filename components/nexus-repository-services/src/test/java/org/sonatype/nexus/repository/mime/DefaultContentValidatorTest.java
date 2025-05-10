@@ -22,12 +22,15 @@ import org.sonatype.nexus.mime.internal.DefaultMimeSupport;
 import org.sonatype.nexus.repository.InvalidContentException;
 import org.sonatype.nexus.repository.view.ContentTypes;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.CoreMatchers.equalTo;
-import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
+@ExtendWith(MockitoExtension.class)
 public class DefaultContentValidatorTest
     extends TestSupport
 {
@@ -35,7 +38,7 @@ public class DefaultContentValidatorTest
 
   private final byte[] emptyZip = {80, 75, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-  @Before
+  @BeforeEach
   public void setUp() {
     testSubject = new DefaultContentValidator(new DefaultMimeSupport());
   }
@@ -52,7 +55,7 @@ public class DefaultContentValidatorTest
         MimeRulesSource.NOOP,
         "test.txt",
         ContentTypes.TEXT_PLAIN);
-    assertThat(type, equalTo(ContentTypes.TEXT_PLAIN));
+    assertEquals(ContentTypes.TEXT_PLAIN, type);
   }
 
   @Test
@@ -63,7 +66,7 @@ public class DefaultContentValidatorTest
         MimeRulesSource.NOOP,
         "test.txt",
         null);
-    assertThat(type, equalTo(ContentTypes.TEXT_PLAIN));
+    assertEquals(ContentTypes.TEXT_PLAIN, type);
   }
 
   @Test
@@ -74,7 +77,7 @@ public class DefaultContentValidatorTest
         MimeRulesSource.NOOP,
         "test.txt",
         "application/zip");
-    assertThat(type, equalTo(ContentTypes.TEXT_PLAIN));
+    assertEquals(ContentTypes.TEXT_PLAIN, type);
   }
 
   @Test
@@ -85,7 +88,7 @@ public class DefaultContentValidatorTest
         MimeRulesSource.NOOP,
         "test.txt",
         "application/zip");
-    assertThat(type, equalTo(ContentTypes.TEXT_PLAIN));
+    assertEquals(ContentTypes.TEXT_PLAIN, type);
   }
 
   @Test
@@ -96,7 +99,7 @@ public class DefaultContentValidatorTest
         MimeRulesSource.NOOP,
         "test.zip",
         null);
-    assertThat(type, equalTo("application/zip"));
+    assertEquals("application/zip", type);
   }
 
   @Test
@@ -107,7 +110,7 @@ public class DefaultContentValidatorTest
         MimeRulesSource.NOOP,
         "test.zip",
         "application/zip");
-    assertThat(type, equalTo("application/zip"));
+    assertEquals("application/zip", type);
   }
 
   @Test
@@ -118,7 +121,7 @@ public class DefaultContentValidatorTest
         MimeRulesSource.NOOP,
         "test.zip",
         "application/zip");
-    assertThat(type, equalTo("application/zip"));
+    assertEquals("application/zip", type);
   }
 
   @Test
@@ -129,27 +132,31 @@ public class DefaultContentValidatorTest
         MimeRulesSource.NOOP,
         "test.zip",
         ContentTypes.TEXT_PLAIN);
-    assertThat(type, equalTo("application/zip"));
+    assertEquals("application/zip", type);
   }
 
-  @Test(expected = InvalidContentException.class)
-  public void strictWrongZipContentAsText() throws IOException {
-    testSubject.determineContentType(
-        true,
-        supplier(emptyZip),
-        MimeRulesSource.NOOP,
-        "test.txt",
-        ContentTypes.TEXT_PLAIN);
+  @Test
+  public void strictWrongZipContentAsText() {
+    assertThrows(InvalidContentException.class, () -> {
+      testSubject.determineContentType(
+          true,
+          supplier(emptyZip),
+          MimeRulesSource.NOOP,
+          "test.txt",
+          ContentTypes.TEXT_PLAIN);
+    });
   }
 
-  @Test(expected = InvalidContentException.class)
-  public void strictWrongTextContentAsZip() throws IOException {
-    testSubject.determineContentType(
-        true,
-        supplier("simple text".getBytes()),
-        MimeRulesSource.NOOP,
-        "test.zip",
-        "application/zip");
+  @Test
+  public void strictWrongTextContentAsZip() {
+    assertThrows(InvalidContentException.class, () -> {
+      testSubject.determineContentType(
+          true,
+          supplier("simple text".getBytes()),
+          MimeRulesSource.NOOP,
+          "test.zip",
+          "application/zip");
+    });
   }
 
   @Test
@@ -160,7 +167,7 @@ public class DefaultContentValidatorTest
         MimeRulesSource.NOOP,
         "test.txt",
         ContentTypes.TEXT_PLAIN);
-    assertThat(type, equalTo(ContentTypes.TEXT_PLAIN));
+    assertEquals(ContentTypes.TEXT_PLAIN, type);
   }
 
   @Test
@@ -171,27 +178,31 @@ public class DefaultContentValidatorTest
         MimeRulesSource.NOOP,
         "test.zip",
         "application/zip");
-    assertThat(type, equalTo("application/zip"));
+    assertEquals("application/zip", type);
   }
 
-  @Test(expected = InvalidContentException.class)
-  public void strictWrongZipContentAsTextUndeclared() throws IOException {
-    testSubject.determineContentType(
-        true,
-        supplier(emptyZip),
-        MimeRulesSource.NOOP,
-        "test.txt",
-        null);
+  @Test
+  public void strictWrongZipContentAsTextUndeclared() {
+    assertThrows(InvalidContentException.class, () -> {
+      testSubject.determineContentType(
+          true,
+          supplier(emptyZip),
+          MimeRulesSource.NOOP,
+          "test.txt",
+          null);
+    });
   }
 
-  @Test(expected = InvalidContentException.class)
-  public void strictWrongTextContentAsZipUndeclared() throws IOException {
-    testSubject.determineContentType(
-        true,
-        supplier("simple text".getBytes()),
-        MimeRulesSource.NOOP,
-        "test.zip",
-        null);
+  @Test
+  public void strictWrongTextContentAsZipUndeclared() {
+    assertThrows(InvalidContentException.class, () -> {
+      testSubject.determineContentType(
+          true,
+          supplier("simple text".getBytes()),
+          MimeRulesSource.NOOP,
+          "test.zip",
+          null);
+    });
   }
 
   @Test
@@ -202,7 +213,7 @@ public class DefaultContentValidatorTest
         MimeRulesSource.NOOP,
         "test.txt",
         null);
-    assertThat(type, equalTo(ContentTypes.TEXT_PLAIN));
+    assertEquals(ContentTypes.TEXT_PLAIN, type);
   }
 
   @Test
@@ -213,7 +224,7 @@ public class DefaultContentValidatorTest
         MimeRulesSource.NOOP,
         "test.zip",
         null);
-    assertThat(type, equalTo("application/zip"));
+    assertEquals("application/zip", type);
   }
 
   @Test
@@ -224,17 +235,19 @@ public class DefaultContentValidatorTest
         MimeRulesSource.NOOP,
         "test.txt",
         ContentTypes.TEXT_PLAIN + "; charset=");
-    assertThat(type, equalTo(ContentTypes.TEXT_PLAIN));
+    assertEquals(ContentTypes.TEXT_PLAIN, type);
   }
 
-  @Test(expected = InvalidContentException.class)
-  public void completelyInvalid() throws IOException {
-    testSubject.determineContentType(
-        true,
-        supplier("simple text".getBytes()),
-        MimeRulesSource.NOOP,
-        "test.txt",
-        "@#$*(#&%$*(%)k;lasj;klfjsdfas");
+  @Test
+  public void completelyInvalid() {
+    assertThrows(InvalidContentException.class, () -> {
+      testSubject.determineContentType(
+          true,
+          supplier("simple text".getBytes()),
+          MimeRulesSource.NOOP,
+          "test.txt",
+          "@#$*(#&%$*(%)k;lasj;klfjsdfas");
+    });
   }
 
   @Test
@@ -255,7 +268,7 @@ public class DefaultContentValidatorTest
         MimeRulesSource.NOOP,
         "org/jboss/weld/weld-core-parent/1.1.12.Final/weld-core-parent-1.1.12.Final.pom.xml",
         "text/xml");
-    assertThat(type, equalTo(ContentTypes.APPLICATION_XML));
+    assertEquals(ContentTypes.APPLICATION_XML, type);
   }
 
   @Test
@@ -268,18 +281,20 @@ public class DefaultContentValidatorTest
         MimeRulesSource.NOOP,
         "vim",
         null);
-    assertThat(type, equalTo(ContentTypes.APPLICATION_OCTET_STREAM));
+    assertEquals(ContentTypes.APPLICATION_OCTET_STREAM, type);
   }
 
-  @Test(expected = InvalidContentException.class)
-  public void binaryContentStrict() throws IOException {
+  @Test
+  public void binaryContentStrict() {
     byte[] binaryFile = {1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-    testSubject.determineContentType(
-        true,
-        supplier(binaryFile),
-        MimeRulesSource.NOOP,
-        "vim",
-        null);
+    assertThrows(InvalidContentException.class, () -> {
+      testSubject.determineContentType(
+          true,
+          supplier(binaryFile),
+          MimeRulesSource.NOOP,
+          "vim",
+          null);
+    });
   }
 }

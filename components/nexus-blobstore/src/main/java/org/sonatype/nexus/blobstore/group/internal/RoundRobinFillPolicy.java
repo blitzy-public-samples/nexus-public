@@ -83,35 +83,50 @@ public class RoundRobinFillPolicy
       return null;
     }
     final int index = nextIndex() % members.size();
-    log.trace("Using index {}", index);
+    log.trace(STR."Using index \{index}");
 
     ArrayList<BlobStore> rotatedMembers = new ArrayList<>(members);
     rotate(rotatedMembers, index);
-    return rotatedMembers.stream()
-        .filter(BlobStore::isWritable)
-        .filter(BlobStore::isStorageAvailable)
-        .filter(skipOnSoftQuotaViolation ? this::hasNoQuotaViolation : s -> true)
-        .findFirst()
-        .orElse(null);
+    
+    // Use pattern matching to find the first suitable BlobStore
+    for (BlobStore blobStore : rotatedMembers) {
+      switch (blobStore) {
+        case BlobStore bs when bs.isWritable() && bs.isStorageAvailable() && (!skipOnSoftQuotaViolation || hasNoQuotaViolation(bs)) -> {
+          return bs;
+        }
+        default -> {
+          // Continue to next member
+        }
+      }
+    }
+    
+    return null;
   }
 
   @VisibleForTesting
   int nextIndex() {
-    return sequence.getAndUpdate(i -> {
-      i += 1;
-      return i < 0 ? 0 : i;
-    });
+    // Optimized for Virtual Thread compatibility - avoid lambda in getAndUpdate
+    int current, next;
+    do {
+      current = sequence.get();
+      next = current + 1;
+      if (next < 0) { // Handle overflow
+        next = 0;
+      }
+    } while (!sequence.compareAndSet(current, next));
+    
+    return current;
   }
 
   private boolean hasNoQuotaViolation(final BlobStore blobStore) {
     BlobStoreQuotaResult result = quotaService.checkQuota(blobStore);
     if (result != null && result.isViolation()) {
+      String blobStoreName = result.getBlobStoreName();
       if (log.isTraceEnabled()) {
-        log.info("Skipping blobStore {} due to soft-quota violation: {}", result.getBlobStoreName(),
-            result.getMessage());
+        log.info(STR."Skipping blobStore \{blobStoreName} due to soft-quota violation: \{result.getMessage()}");
       }
       else {
-        log.info("Skipping blobStore {} due to soft-quota violation", result.getBlobStoreName());
+        log.info(STR."Skipping blobStore \{blobStoreName} due to soft-quota violation");
       }
       return false;
     }

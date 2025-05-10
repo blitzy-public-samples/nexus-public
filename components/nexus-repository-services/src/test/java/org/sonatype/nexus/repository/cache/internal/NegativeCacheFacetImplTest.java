@@ -12,8 +12,15 @@
  */
 package org.sonatype.nexus.repository.cache.internal;
 
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Iterator;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import javax.cache.Cache;
 
 import org.sonatype.goodies.testsupport.TestSupport;
@@ -25,14 +32,16 @@ import org.sonatype.nexus.repository.config.ConfigurationFacet;
 import org.sonatype.nexus.repository.http.HttpStatus;
 import org.sonatype.nexus.repository.view.Status;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.CoreMatchers.equalTo;
-import static org.hamcrest.CoreMatchers.nullValue;
-import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTimeout;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -40,7 +49,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-public class NegativeCacheFacetImplTest
+@ExtendWith(MockitoExtension.class)
+class NegativeCacheFacetImplTest
     extends TestSupport
 {
   @Mock
@@ -61,8 +71,8 @@ public class NegativeCacheFacetImplTest
 
   private NegativeCacheFacetImpl underTest;
 
-  @Before
-  public void setUp() {
+  @BeforeEach
+  void setUp() {
     cacheHelper = mock(CacheHelper.class);
     cache = mock(Cache.class);
     when(cacheHelper.maybeCreateCache(any(), any(), any(), any())).thenReturn(cache);
@@ -85,13 +95,13 @@ public class NegativeCacheFacetImplTest
   }
 
   @Test
-  public void noConfigurationPresentNoCache() throws Exception {
+  void noConfigurationPresentNoCache() throws Exception {
     config = null;
     underTest.attach(repository);
     underTest.init();
     underTest.start();
     verify(cacheHelper, never()).maybeCreateCache(any(String.class), any(Class.class), any(Class.class), any());
-    assertThat(underTest.get(key), nullValue());
+    assertNull(underTest.get(key));
     underTest.put(key, Status.failure(HttpStatus.NOT_FOUND, "404"));
     underTest.invalidate(key);
     underTest.invalidate();
@@ -101,13 +111,13 @@ public class NegativeCacheFacetImplTest
   }
 
   @Test
-  public void notEnabledNoCache() throws Exception {
+  void notEnabledNoCache() throws Exception {
     config.enabled = false;
     underTest.attach(repository);
     underTest.init();
     underTest.start();
     verify(cacheHelper, never()).maybeCreateCache(any(String.class), any(Class.class), any(Class.class), any());
-    assertThat(underTest.get(key), nullValue());
+    assertNull(underTest.get(key));
     underTest.put(key, Status.failure(HttpStatus.NOT_FOUND, "404"));
     underTest.invalidate(key);
     underTest.invalidate();
@@ -117,7 +127,7 @@ public class NegativeCacheFacetImplTest
   }
 
   @Test
-  public void cacheIsCreatedAndRemoved() throws Exception {
+  void cacheIsCreatedAndRemoved() throws Exception {
     config.enabled = true;
     underTest.attach(repository);
     underTest.init();
@@ -131,7 +141,7 @@ public class NegativeCacheFacetImplTest
   }
 
   @Test
-  public void cacheIsNotRemovedWhenManagerIsNotActive() throws Exception {
+  void cacheIsNotRemovedWhenManagerIsNotActive() throws Exception {
     config.enabled = true;
     underTest.attach(repository);
     underTest.init();
@@ -142,7 +152,7 @@ public class NegativeCacheFacetImplTest
   }
 
   @Test
-  public void putCachesElement() throws Exception {
+  void putCachesElement() throws Exception {
     config.enabled = true;
     underTest.attach(repository);
     underTest.init();
@@ -151,34 +161,34 @@ public class NegativeCacheFacetImplTest
     ArgumentCaptor<NegativeCacheKey> keyCaptor = ArgumentCaptor.forClass(NegativeCacheKey.class);
     ArgumentCaptor<Status> statusCaptor = ArgumentCaptor.forClass(Status.class);
     verify(cache).put(keyCaptor.capture(), statusCaptor.capture());
-    assertThat(keyCaptor.getValue(), equalTo(key));
-    assertThat(statusCaptor.getValue(), equalTo(status));
+    assertEquals(key, keyCaptor.getValue());
+    assertEquals(status, statusCaptor.getValue());
   }
 
   @Test
-  public void getReturnsStatus() throws Exception {
+  void getReturnsStatus() throws Exception {
     config.enabled = true;
     underTest.attach(repository);
     underTest.init();
     underTest.start();
     when(cache.get(key)).thenReturn(status);
     Status actualStatus = underTest.get(key);
-    assertThat(actualStatus, equalTo(status));
+    assertEquals(status, actualStatus);
   }
 
   @Test
-  public void getReturnsNullWhenCacheReturnsNull() throws Exception {
+  void getReturnsNullWhenCacheReturnsNull() throws Exception {
     config.enabled = true;
     underTest.attach(repository);
     underTest.init();
     underTest.start();
     when(cache.get(key)).thenReturn(null);
     Status actualStatus = underTest.get(key);
-    assertThat(actualStatus, nullValue());
+    assertNull(actualStatus);
   }
 
   @Test
-  public void invalidateRemovesElement() throws Exception {
+  void invalidateRemovesElement() throws Exception {
     config.enabled = true;
     underTest.attach(repository);
     underTest.init();
@@ -188,7 +198,7 @@ public class NegativeCacheFacetImplTest
   }
 
   @Test
-  public void invalidateRemovesAllElements() throws Exception {
+  void invalidateRemovesAllElements() throws Exception {
     config.enabled = true;
     underTest.attach(repository);
     underTest.init();
@@ -198,7 +208,7 @@ public class NegativeCacheFacetImplTest
   }
 
   @Test
-  public void invalidateSubsetRemovesKeyAndAllChildKeys() throws Exception {
+  void invalidateSubsetRemovesKeyAndAllChildKeys() throws Exception {
     NegativeCacheKey key1 = mock(NegativeCacheKey.class);
     NegativeCacheKey key2 = mock(NegativeCacheKey.class);
     Cache.Entry<NegativeCacheKey, Status> entry1 = mock(Cache.Entry.class);
@@ -216,6 +226,149 @@ public class NegativeCacheFacetImplTest
     verify(cache).remove(key);
     verify(cache, never()).remove(key1);
     verify(cache).remove(key2);
+  }
+
+  @Test
+  void virtualThreadsConcurrentCacheOperations() throws Exception {
+    // Setup cache
+    config.enabled = true;
+    underTest.attach(repository);
+    underTest.init();
+    underTest.start();
+    
+    // Prepare test data
+    int threadCount = 100;
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch completionLatch = new CountDownLatch(threadCount);
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    // Create virtual thread executor
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit tasks to virtual threads
+      for (int i = 0; i < threadCount; i++) {
+        final int index = i;
+        executor.submit(() -> {
+          try {
+            NegativeCacheKey threadKey = mock(NegativeCacheKey.class);
+            Status threadStatus = Status.failure(HttpStatus.NOT_FOUND, "404-" + index);
+            
+            // Wait for all threads to be ready
+            startLatch.await();
+            
+            // Perform cache operations
+            underTest.put(threadKey, threadStatus);
+            underTest.get(threadKey);
+            underTest.invalidate(threadKey);
+            
+            successCount.incrementAndGet();
+          } catch (Exception e) {
+            // Count failures
+          } finally {
+            completionLatch.countDown();
+          }
+        });
+      }
+      
+      // Start all threads simultaneously
+      startLatch.countDown();
+      
+      // Wait for all threads to complete
+      completionLatch.await(5, TimeUnit.SECONDS);
+      
+      // Verify all operations completed successfully
+      assertEquals(threadCount, successCount.get(), "All virtual thread operations should complete successfully");
+    }
+  }
+
+  @Test
+  void comparePerformanceBetweenPlatformAndVirtualThreads() {
+    // Setup cache
+    config.enabled = true;
+    underTest.attach(repository);
+    underTest.init();
+    underTest.start();
+    
+    // Test parameters
+    int threadCount = 1000;
+    int operationsPerThread = 10;
+    
+    // Measure platform threads performance
+    long platformThreadTime = assertTimeout(Duration.ofSeconds(30), () -> {
+      return measureThreadPerformance(threadCount, operationsPerThread, false);
+    });
+    
+    // Measure virtual threads performance
+    long virtualThreadTime = assertTimeout(Duration.ofSeconds(30), () -> {
+      return measureThreadPerformance(threadCount, operationsPerThread, true);
+    });
+    
+    // Log performance comparison
+    log.info("Performance comparison - Platform threads: {} ms, Virtual threads: {} ms", 
+             platformThreadTime, virtualThreadTime);
+  }
+  
+  private long measureThreadPerformance(int threadCount, int operationsPerThread, boolean useVirtualThreads) 
+      throws Exception {
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch completionLatch = new CountDownLatch(threadCount);
+    List<NegativeCacheKey> testKeys = new java.util.ArrayList<>();
+    List<Status> testStatuses = new java.util.ArrayList<>();
+    
+    // Prepare test data
+    for (int i = 0; i < operationsPerThread; i++) {
+      testKeys.add(mock(NegativeCacheKey.class));
+      testStatuses.add(Status.failure(HttpStatus.NOT_FOUND, "404-" + i));
+    }
+    
+    // Create appropriate executor
+    ExecutorService executor = useVirtualThreads ? 
+        Executors.newVirtualThreadPerTaskExecutor() : 
+        Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+    
+    try {
+      // Start timing
+      long startTime = System.currentTimeMillis();
+      
+      // Submit tasks
+      for (int i = 0; i < threadCount; i++) {
+        final int threadIndex = i;
+        executor.submit(() -> {
+          try {
+            // Wait for all threads to be ready
+            startLatch.await();
+            
+            // Perform cache operations
+            for (int j = 0; j < operationsPerThread; j++) {
+              NegativeCacheKey threadKey = testKeys.get(j);
+              Status threadStatus = testStatuses.get(j);
+              
+              // Simulate cache operations with slight delay to emphasize thread differences
+              underTest.put(threadKey, threadStatus);
+              Thread.sleep(1); // Small delay to simulate real work
+              underTest.get(threadKey);
+              Thread.sleep(1); // Small delay to simulate real work
+              underTest.invalidate(threadKey);
+            }
+          } catch (Exception e) {
+            log.error("Error in thread {}: {}", threadIndex, e.getMessage());
+          } finally {
+            completionLatch.countDown();
+          }
+        });
+      }
+      
+      // Start all threads simultaneously
+      startLatch.countDown();
+      
+      // Wait for all threads to complete
+      completionLatch.await();
+      
+      // Calculate elapsed time
+      return System.currentTimeMillis() - startTime;
+    } finally {
+      executor.shutdown();
+      executor.awaitTermination(10, TimeUnit.SECONDS);
+    }
   }
 
   private static void mockIterable(

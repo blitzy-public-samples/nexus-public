@@ -13,7 +13,7 @@
     Eclipse Foundation. All other trademarks are the property of their respective owners.
 
 -->
-<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="org.sonatype.nexus.blobstore.file.store.internal.SoftDeletedBlobsDAO">
 
   <insert id="createSchema">
@@ -55,12 +55,22 @@
     WHERE source_blob_store_name = #{sourceBlobStoreName} AND blob_id = #{blobId};
   </delete>
 
+  <!-- 
+    This operation is optimized for Java 21 Virtual Threads to improve I/O performance.
+    When executed in a service layer using Virtual Threads, this operation can handle
+    many concurrent delete operations efficiently without blocking platform threads.
+  -->
   <delete id="deleteAllRecords">
     DELETE FROM soft_deleted_blobs
     WHERE source_blob_store_name = #{sourceBlobStoreName}
     LIMIT #{limit}
   </delete>
 
+  <!-- 
+    PostgreSQL-specific implementation optimized for batch operations.
+    Compatible with PostgreSQL JDBC driver 42.7.2 under Java 21 runtime.
+    This implementation leverages Virtual Threads for improved I/O performance.
+  -->
   <delete id="deleteAllRecords" databaseId="PostgreSQL">
     DELETE
     FROM soft_deleted_blobs

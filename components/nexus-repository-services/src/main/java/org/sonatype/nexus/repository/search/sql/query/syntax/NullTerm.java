@@ -19,9 +19,36 @@ public class NullTerm
     extends TermSupport<String>
     implements StringTerm
 {
-  public static final NullTerm INSTANCE = new NullTerm();
+  /**
+   * Singleton holder class for thread-safe lazy initialization with
+   * improved Java 21 memory model guarantees.
+   */
+  private static final class Holder {
+    // The instance is created when the Holder class is loaded and initialized
+    // This happens only when the getInstance method is called for the first time
+    private static final NullTerm INSTANCE = new NullTerm();
+  }
 
+  /**
+   * Returns the singleton instance of NullTerm.
+   * Thread-safe with Java 21 memory model guarantees.
+   *
+   * @return the singleton instance
+   */
+  public static NullTerm getInstance() {
+    return Holder.INSTANCE;
+  }
+
+  /**
+   * Private constructor to prevent instantiation outside of this class.
+   */
   private NullTerm() {
     super(null);
   }
+
+  /**
+   * Backward compatibility field for code that directly accesses the INSTANCE field.
+   * New code should use getInstance() method instead.
+   */
+  public static final NullTerm INSTANCE = getInstance();
 }

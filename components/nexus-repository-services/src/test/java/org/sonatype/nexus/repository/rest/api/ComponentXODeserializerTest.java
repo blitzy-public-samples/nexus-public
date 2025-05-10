@@ -23,9 +23,11 @@ import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static com.google.common.collect.Sets.newHashSet;
 import static java.util.Collections.emptyMap;
@@ -35,6 +37,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.common.decorator.DecoratorUtils.getDecoratedEntity;
 
+@ExtendWith(MockitoExtension.class)
 public class ComponentXODeserializerTest
     extends TestSupport
 {
@@ -54,7 +57,7 @@ public class ComponentXODeserializerTest
 
   private ComponentXODeserializer underTest;
 
-  @Before
+  @BeforeEach
   public void setup() {
     objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     underTest = new ComponentXODeserializer(componentXOFactory, objectMapper, newHashSet(foo, bar));
@@ -159,6 +162,54 @@ public class ComponentXODeserializerTest
       JsonNode data = jsonNode.get("bar");
       barComponentXO.setBar(data.asText());
       return componentXO;
+    }
+  }
+  
+  /**
+   * Record used to demonstrate record pattern matching with ComponentXO objects.
+   */
+  private record ComponentWrapper(ComponentXO component, String metadata) {}
+  
+  /**
+   * Test to demonstrate record pattern usage with ComponentXO objects.
+   * This test shows how Java 21's record patterns can be used to extract and work with
+   * ComponentXO objects that are wrapped in records.
+   */
+  @Test
+  public void testRecordPatternWithComponentXO() throws IOException {
+    // Create a ComponentXO with nested decorators
+    ComponentXO componentXO = new FooComponentXO(new BarComponentXO(new DefaultComponentXO()));
+    when(componentXOFactory.createComponentXO()).thenReturn(componentXO);
+    
+    // Set up the JSON and deserialize
+    String json = "{\"id\": \"record-pattern-test\", \"foo\": \"foo-value\", \"bar\": \"bar-value\"}";
+    JsonParser jsonParser = jsonFactory.createParser(json);
+    jsonParser.setCodec(objectMapper);
+    ComponentXO result = underTest.deserialize(jsonParser, deserializationContext);
+    
+    // Wrap the result in our test record
+    ComponentWrapper wrapper = new ComponentWrapper(result, "test-metadata");
+    
+    // Use record pattern to extract the component and metadata in one step
+    if (wrapper instanceof ComponentWrapper(ComponentXO comp, String meta)) {
+      // Verify the extracted component properties
+      assertThat(comp.getId(), equalTo("record-pattern-test"));
+      
+      // Verify the metadata from the record
+      assertThat(meta, equalTo("test-metadata"));
+      
+      // We can still use the decorated entity approach with the extracted component
+      FooComponentXO extractedFoo = getDecoratedEntity(comp, FooComponentXO.class);
+      assertThat(extractedFoo, notNullValue());
+      assertThat(extractedFoo.getFoo(), equalTo("foo-value"));
+      
+      BarComponentXO extractedBar = getDecoratedEntity(comp, BarComponentXO.class);
+      assertThat(extractedBar, notNullValue());
+      assertThat(extractedBar.getBar(), equalTo("bar-value"));
+    }
+    else {
+      // This should never happen if record patterns are working correctly
+      throw new AssertionError("Record pattern matching failed");
     }
   }
 }

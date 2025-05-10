@@ -19,9 +19,11 @@ import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.app.FreezeService;
 import org.sonatype.nexus.common.app.NotWritableException;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.awaitility.Awaitility.await;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
@@ -34,7 +36,8 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
-public class DatabaseStatusDelayedExecutorTest
+@ExtendWith(MockitoExtension.class)
+class DatabaseStatusDelayedExecutorTest
     extends TestSupport
 {
 
@@ -47,14 +50,14 @@ public class DatabaseStatusDelayedExecutorTest
 
   DatabaseStatusDelayedExecutor statusDelayedExecutor;
 
-  @Before
-  public void setup() throws Exception {
-    statusDelayedExecutor = new DatabaseStatusDelayedExecutor(freezeService, 1, SLEEP_INTERVAL_MS, MAX_RETRIES);
+  @BeforeEach
+  void setup() throws Exception {
+    statusDelayedExecutor = new DatabaseStatusDelayedExecutor(freezeService, 1, SLEEP_INTERVAL_MS, MAX_RETRIES, false);
     statusDelayedExecutor.start();
   }
 
   @Test
-  public void ensureThatTaskEventuallyRuns() {
+  void ensureThatTaskEventuallyRuns() {
     doThrow(NotWritableException.class).when(freezeService).checkWritable(anyString());
 
     Future<String> result = statusDelayedExecutor.submit(() -> "Done");
@@ -68,7 +71,7 @@ public class DatabaseStatusDelayedExecutorTest
   }
 
   @Test
-  public void noWritableDelaysTask() {
+  void noWritableDelaysTask() {
     final AtomicInteger callCount = new AtomicInteger(0);
     doAnswer(invocation -> {
       if (callCount.incrementAndGet() <= 4) {
@@ -92,5 +95,80 @@ public class DatabaseStatusDelayedExecutorTest
         .until(() -> result.isDone());
 
     assertThat(callCount.get(), is(5));
+  }
+
+  @Test
+  void testVirtualThreadExecution() {
+    // Create a new executor with virtual threads enabled
+    DatabaseStatusDelayedExecutor virtualThreadExecutor = 
+        new DatabaseStatusDelayedExecutor(freezeService, 1, SLEEP_INTERVAL_MS, MAX_RETRIES, true);
+    virtualThreadExecutor.start();
+    
+    try {
+      // Configure mock to succeed immediately
+      doAnswer(invocation -> null).when(freezeService).checkWritable(anyString());
+      
+      // Submit a task that verifies it's running on a virtual thread
+      Future<Boolean> result = virtualThreadExecutor.submit(() -> Thread.currentThread().isVirtual());
+      
+      await()
+          .pollDelay(SLEEP_INTERVAL_MS / 2, MILLISECONDS)
+          .atMost(2 * SLEEP_INTERVAL_MS, MILLISECONDS)
+          .until(() -> result.isDone());
+      
+      // Verify the task ran on a virtual thread
+      assertThat(result.isDone(), is(true));
+      assertThat(result.get(), is(true));
+      
+      // Verify the freeze service was called
+      verify(freezeService).checkWritable(anyString());
+    } catch (Exception e) {
+      throw new RuntimeException("Test failed", e);
+    } finally {
+      virtualThreadExecutor.stop();
+    }
+  }
+  
+  @Test
+  void testVirtualThreadRetryLogic() {
+    // Create a new executor with virtual threads enabled
+    DatabaseStatusDelayedExecutor virtualThreadExecutor = 
+        new DatabaseStatusDelayedExecutor(freezeService, 1, SLEEP_INTERVAL_MS, MAX_RETRIES, true);
+    virtualThreadExecutor.start();
+    
+    try {
+      final AtomicInteger callCount = new AtomicInteger(0);
+      doAnswer(invocation -> {
+        if (callCount.incrementAndGet() <= 3) {
+          throw new NotWritableException("Database not writable");
+        }
+        return null;
+      }).when(freezeService).checkWritable(anyString());
+      
+      // Submit a task that should be delayed until the database is writable
+      Future<String> result = virtualThreadExecutor.submit(() -> "Done with virtual thread");
+      
+      // Verify the task is delayed
+      await()
+          .pollDelay(SLEEP_INTERVAL_MS / 2, MILLISECONDS)
+          .atMost(2 * SLEEP_INTERVAL_MS, MILLISECONDS)
+          .until(callCount::get, greaterThanOrEqualTo(1));
+      
+      assertThat(result.isDone(), is(false));
+      
+      // Wait for the task to complete after retries
+      await()
+          .pollDelay(SLEEP_INTERVAL_MS / 2, MILLISECONDS)
+          .atMost(10 * SLEEP_INTERVAL_MS, MILLISECONDS)
+          .until(() -> result.isDone());
+      
+      // Verify the retry count and result
+      assertThat(callCount.get(), is(4)); // 3 failures + 1 success
+      assertThat(result.get(), is("Done with virtual thread"));
+    } catch (Exception e) {
+      throw new RuntimeException("Test failed", e);
+    } finally {
+      virtualThreadExecutor.stop();
+    }
   }
 }

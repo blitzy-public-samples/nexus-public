@@ -12,15 +12,25 @@
  */
 package org.sonatype.nexus.repository.search.index;
 
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+
 import org.sonatype.goodies.testsupport.TestSupport;
 
 import org.elasticsearch.action.bulk.BulkProcessor;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
 
+@ExtendWith(MockitoExtension.class)
 public class BulkProcessorFlusherTest
     extends TestSupport
 {
@@ -36,5 +46,21 @@ public class BulkProcessorFlusherTest
     underTest.call();
 
     verify(bulkProcessor).flush();
+  }
+  
+  @Test
+  @Tag("VirtualThreadTestGroup")
+  public void runShouldFlushBulkProcessorInVirtualThread() throws Exception {
+    // Create a virtual thread executor
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit the BulkProcessorFlusher to run in a virtual thread
+      Future<?> future = executor.submit(underTest);
+      
+      // Wait for completion
+      future.get(5, TimeUnit.SECONDS);
+      
+      // Verify that flush was called
+      verify(bulkProcessor).flush();
+    }
   }
 }

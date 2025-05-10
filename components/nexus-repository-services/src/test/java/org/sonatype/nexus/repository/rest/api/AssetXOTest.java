@@ -12,6 +12,7 @@
  */
 package org.sonatype.nexus.repository.rest.api;
 
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -28,30 +29,28 @@ import org.sonatype.nexus.repository.rest.api.SimpleApiRepositoryAdapterTest.Sim
 import org.sonatype.nexus.repository.search.AssetSearchResult;
 import org.sonatype.nexus.repository.types.HostedType;
 
-import junitparams.JUnitParamsRunner;
-import junitparams.Parameters;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.Mockito;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
-@RunWith(JUnitParamsRunner.class)
 public class AssetXOTest
     extends TestSupport
 {
 
-  @Before
+  @BeforeEach
   public void setup() {
     BaseUrlHolder.set("https://nexus-url", "");
   }
 
-  @Test
-  @Parameters({
+  @ParameterizedTest
+  @CsvSource({
       "hosted, /path/to/resource, /hosted/path/to/resource",
       "hosted, path/to/resource, /hosted/path/to/resource"
   })
@@ -62,7 +61,7 @@ public class AssetXOTest
     when(assetSearchResult.getId()).thenReturn("resource-id");
     when(assetSearchResult.getFormat()).thenReturn("test-format");
     AssetXO assetXO = AssetXO.from(assetSearchResult, repository, null);
-    Assert.assertTrue(assetXO.getDownloadUrl().contains(expectedUrl));
+    assertTrue(assetXO.getDownloadUrl().contains(expectedUrl));
   }
 
   @Test
@@ -121,6 +120,32 @@ public class AssetXOTest
     Map<String, Object> resultFormatAttributes = (Map<String, Object>) result.get("test-format");
     assertTrue(resultFormatAttributes.isEmpty());
   }
+  
+  @Test
+  public void testRecordPatternWithAssetXO() {
+    // Create an AssetXO instance with specific properties
+    AssetXO assetXO = AssetXO.builder()
+        .path("/test/path")
+        .downloadUrl("https://nexus-url/test/path")
+        .id("test-id")
+        .repository("test-repo")
+        .format("test-format")
+        .contentType("application/json")
+        .lastModified(new Date())
+        .build();
+    
+    // Using Java 21 record pattern matching to extract fields
+    if (assetXO instanceof AssetXO(var path, var id, var repository, var format, var contentType)) {
+      // Verify extracted fields match expected values
+      assertEquals("/test/path", path);
+      assertEquals("test-id", id);
+      assertEquals("test-repo", repository);
+      assertEquals("test-format", format);
+      assertEquals("application/json", contentType);
+    } else {
+      Assertions.fail("Record pattern matching failed");
+    }
+  }
 
   private static Repository createRepository(final Type type, String repositoryName) throws Exception {
     Repository repository = new RepositoryImpl(
@@ -138,6 +163,20 @@ public class AssetXOTest
     configuration.setOnline(true);
     configuration.setRepositoryName(repositoryName);
     return configuration;
+  }
+
+  // Helper record for pattern matching with AssetXO
+  private record AssetXO(String path, String id, String repository, String format, String contentType) {
+    // This record is used for pattern matching with the AssetXO class
+    static AssetXO(org.sonatype.nexus.repository.rest.api.AssetXO assetXO) {
+      return new AssetXO(
+          assetXO.getPath(),
+          assetXO.getId(),
+          assetXO.getRepository(),
+          assetXO.getFormat(),
+          assetXO.getContentType()
+      );
+    }
   }
 
   static class TestAssetXODescriptor

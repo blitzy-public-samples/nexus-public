@@ -15,10 +15,11 @@ package org.sonatype.nexus.blobstore;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.api.BlobId;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.sonatype.nexus.blobstore.DirectPathLocationStrategy.DIRECT_PATH_PREFIX;
 import static org.sonatype.nexus.blobstore.DirectPathLocationStrategy.DIRECT_PATH_ROOT;
 
@@ -39,7 +40,7 @@ public class DirectPathLocationStrategyTest
 
   private LocationStrategy underTest;
 
-  @Before
+  @BeforeEach
   public void setUp() {
     underTest = new DirectPathLocationStrategy();
   }
@@ -50,18 +51,21 @@ public class DirectPathLocationStrategyTest
     assertEquals(EXPECTED_PATH, location);
   }
 
-  @Test(expected = IllegalArgumentException.class)
+  @Test
   public void testLocationWithTraversal() {
-    underTest.location(new BlobId(DIRECT_PATH_PREFIX + PATH_WITH_TRAVERSAL));
+    assertThrows(IllegalArgumentException.class, () -> 
+        underTest.location(new BlobId(DIRECT_PATH_PREFIX + PATH_WITH_TRAVERSAL)));
   }
 
-  @Test(expected = IllegalArgumentException.class)
+  @Test
   public void testLocationWithPrefixInsideTraversal() {
-    underTest.location(new BlobId(DIRECT_PATH_PREFIX + PATH_WITH_PREFIX_INSIDE_TRAVERSAL));
+    assertThrows(IllegalArgumentException.class, () -> 
+        underTest.location(new BlobId(DIRECT_PATH_PREFIX + PATH_WITH_PREFIX_INSIDE_TRAVERSAL)));
   }
 
-  @Test(expected = NullPointerException.class)
+  @Test
   public void testLocationWithNullableBlobId() {
-    underTest.location(null);
+    assertThrows(NullPointerException.class, () -> 
+        underTest.location(null));
   }
 }

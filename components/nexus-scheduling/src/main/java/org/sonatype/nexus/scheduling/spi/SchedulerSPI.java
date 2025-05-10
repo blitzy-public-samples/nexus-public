@@ -32,6 +32,23 @@ public interface SchedulerSPI
     extends Lifecycle
 {
   /**
+   * Thread type to use for task execution.
+   * 
+   * @since 3.60
+   */
+  enum ThreadType {
+    /**
+     * Traditional platform thread (heavyweight).
+     */
+    PLATFORM,
+    
+    /**
+     * Java 21 virtual thread (lightweight).
+     */
+    VIRTUAL
+  }
+  
+  /**
    * Returns the SPI specific {@link ScheduleFactory}.
    */
   ScheduleFactory scheduleFactory();
@@ -80,6 +97,10 @@ public interface SchedulerSPI
    * If a task already exists with the same task identifier, the task will be updated.
    *
    * Task must not be running.
+   * 
+   * The scheduler will determine the appropriate thread type (platform or virtual) based on the task configuration
+   * and system settings. Tasks that are I/O-bound and compatible with virtual threads will benefit from improved
+   * concurrency and reduced resource usage when virtual threads are enabled.
    */
   TaskInfo scheduleTask(TaskConfiguration config, Schedule schedule);
 
@@ -159,4 +180,56 @@ public interface SchedulerSPI
    * @return {@code true} if a task is found, {@code false} otherwise
    */
   boolean findAndSubmit(String typeId, Map<String, String> config);
+  
+  /**
+   * Checks if virtual threads are enabled for task execution.
+   * 
+   * When enabled, compatible tasks will be executed using Java 21 virtual threads,
+   * which provide significant concurrency benefits for I/O-bound operations with minimal
+   * resource overhead compared to traditional platform threads.
+   * 
+   * @return {@code true} if virtual threads are enabled, {@code false} otherwise
+   * @since 3.60
+   */
+  boolean isVirtualThreadsEnabled();
+  
+  /**
+   * Controls whether virtual threads should be used for task execution when possible.
+   * 
+   * Virtual threads are lightweight threads that are particularly beneficial for I/O-bound tasks,
+   * allowing thousands of concurrent operations with minimal overhead. However, not all tasks
+   * are compatible with virtual threads, and the scheduler will automatically select the
+   * appropriate thread type based on task compatibility.
+   * 
+   * @param enabled {@code true} to enable virtual threads, {@code false} to disable
+   * @since 3.60
+   */
+  void setVirtualThreadsEnabled(boolean enabled);
+  
+  /**
+   * Determines if a task is compatible with virtual threads based on its configuration.
+   * 
+   * Tasks that are I/O-bound (such as network operations, file system access, or database queries)
+   * are typically good candidates for virtual threads. Tasks that are CPU-bound or use thread-local
+   * variables extensively may not be suitable for virtual threads.
+   * 
+   * @param config the task configuration to evaluate
+   * @return {@code true} if the task can safely use virtual threads, {@code false} otherwise
+   * @since 3.60
+   */
+  boolean isTaskVirtualThreadCompatible(TaskConfiguration config);
+  
+  /**
+   * Determines the preferred thread type for executing a task based on its configuration
+   * and the current system settings.
+   * 
+   * This method considers both the task's compatibility with virtual threads and whether
+   * virtual threads are enabled in the system. It returns the optimal thread type for
+   * executing the task to maximize performance and resource efficiency.
+   * 
+   * @param config the task configuration to evaluate
+   * @return the preferred {@link ThreadType} for executing the task
+   * @since 3.60
+   */
+  ThreadType getPreferredThreadType(TaskConfiguration config);
 }

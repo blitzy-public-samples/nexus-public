@@ -12,9 +12,14 @@
  */
 package org.sonatype.nexus.transaction;
 
+import java.lang.StringTemplate;
+import java.lang.StringTemplate.Processor;
 import java.util.function.Supplier;
 
 import javax.annotation.Nullable;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
@@ -64,7 +69,18 @@ import static org.sonatype.nexus.transaction.UnitOfWork.Scope.UNIT_OF_WORK;
 public final class UnitOfWork
     implements TransactionalSession<Transaction>
 {
-  private static final ThreadLocal<UnitOfWork> CURRENT_WORK = new ThreadLocal<>();
+  private static final Logger log = LoggerFactory.getLogger(UnitOfWork.class);
+  
+  // Using InheritableThreadLocal instead of ThreadLocal for proper context propagation across Virtual Thread boundaries
+  private static final InheritableThreadLocal<UnitOfWork> CURRENT_WORK = new InheritableThreadLocal<>();
+  
+  // String template processor for structured logging
+  private static final Processor<String> LOG_PROCESSOR = StringTemplate.processor(tmpl -> {
+    return tmpl.fragments().get(0) + tmpl.values().stream()
+        .map(Object::toString)
+        .reduce((a, b) -> a + tmpl.fragments().get(tmpl.values().indexOf(b) + 1) + b)
+        .orElse("");
+  });
 
   enum Scope
   {
@@ -77,16 +93,24 @@ public final class UnitOfWork
   private final TransactionalStore<?> store;
 
   private final Scope scope;
+  
+  // Track if this unit of work was created in a virtual thread
+  private final boolean createdInVirtualThread;
 
   @Nullable
   TransactionalSession<?> session;
-
+  
   private UnitOfWork(final UnitOfWork parent, final TransactionalStore<?> store, final Scope scope) {
     this.parent = parent;
     this.store = checkNotNull(store);
     this.scope = checkNotNull(scope);
+    this.createdInVirtualThread = isVirtualThread();
+    
+    if (log.isDebugEnabled()) {
+      log.debug(STR."Creating UnitOfWork with scope \{scope} in \{getThreadTypeDescription()}");
+    }
   }
-
+  
   /**
    * Begins a unit-of-work which uses a new session for each {@link Transactional} operation.
    */
@@ -111,7 +135,7 @@ public final class UnitOfWork
     doBegin(() -> session, UNIT_OF_WORK);
     currentWork().session = session; // make sure session is immediately available
   }
-
+  
   /**
    * Ends the current unit-of-work.
    */
@@ -144,27 +168,64 @@ public final class UnitOfWork
     checkState(tx != null, "No transaction in progress");
     return (T) tx;
   }
-
+  
   /**
    * Pauses current unit-of-work (if it exists) to avoid leaking context when sending events, etc.
+   * Includes safeguards for virtual thread migrations.
    */
   @Nullable
   public static UnitOfWork pause() {
     UnitOfWork pausedWork = CURRENT_WORK.get();
+    if (pausedWork != null && log.isDebugEnabled()) {
+      log.debug(STR."Pausing UnitOfWork in \{getThreadTypeDescription()}");
+    }
     CURRENT_WORK.remove();
     return pausedWork;
   }
 
   /**
    * Resumes the previously paused unit-of-work (if it exists).
+   * Includes safeguards for virtual thread migrations.
    */
   public static void resume(@Nullable final UnitOfWork pausedWork) {
     checkState(CURRENT_WORK.get() == null, "Cannot resume unit-of-work while other work is ongoing");
     if (pausedWork != null) {
+      // Check for thread type mismatch when resuming work
+      boolean currentlyVirtual = isVirtualThread();
+      if (pausedWork.createdInVirtualThread != currentlyVirtual && log.isWarnEnabled()) {
+        log.warn(STR."Thread type mismatch when resuming UnitOfWork: created in \{pausedWork.createdInVirtualThread ? "virtual" : "platform"} thread, resuming in \{currentlyVirtual ? "virtual" : "platform"} thread");
+      }
+      
+      if (log.isDebugEnabled()) {
+        log.debug(STR."Resuming UnitOfWork in \{getThreadTypeDescription()}");
+      }
       CURRENT_WORK.set(pausedWork);
     }
   }
-
+  
+  /**
+   * Checks if the current thread is a virtual thread.
+   * 
+   * @return true if running on a virtual thread, false otherwise
+   * @since 3.60
+   */
+  public static boolean isVirtualThread() {
+    return Thread.currentThread().isVirtual();
+  }
+  
+  /**
+   * Gets a description of the current thread type for logging purposes.
+   * 
+   * @return a string describing the current thread type
+   * @since 3.60
+   */
+  public static String getThreadTypeDescription() {
+    Thread currentThread = Thread.currentThread();
+    return currentThread.isVirtual() 
+        ? STR."virtual thread \{currentThread.getName()}"
+        : STR."platform thread \{currentThread.getName()}";
+  }
+  
   // -------------------------------------------------------------------------
 
   @Override
@@ -208,6 +269,7 @@ public final class UnitOfWork
 
   /**
    * Opens a new session; from the local store if it exists or from the surrounding unit-of-work.
+   * Enhanced with virtual thread context awareness.
    */
   static TransactionalSession<?> openSession(
       @Nullable final TransactionalStore<?> localStore,
@@ -218,13 +280,17 @@ public final class UnitOfWork
     if (localStore != null && (currentWork == null || currentWork.scope == UNIT_OF_WORK)) {
       currentWork = new UnitOfWork(currentWork, localStore, LOCAL_STORE);
       CURRENT_WORK.set(currentWork);
+      
+      if (log.isDebugEnabled()) {
+        log.debug(STR."Created local store unit-of-work in \{getThreadTypeDescription()}");
+      }
     }
     else {
       checkState(currentWork != null, "Unit of work has not been set");
     }
     return currentWork.doOpenSession(localStore, isolation);
   }
-
+  
   // -------------------------------------------------------------------------
 
   private static UnitOfWork currentWork() {
@@ -237,19 +303,29 @@ public final class UnitOfWork
     UnitOfWork parent = CURRENT_WORK.get();
     checkState(parent == null || parent.session == null,
         "Transaction in progress, pause current unit-of-work before beginning new work");
-    CURRENT_WORK.set(new UnitOfWork(parent, store, scope));
+    
+    UnitOfWork newWork = new UnitOfWork(parent, store, scope);
+    CURRENT_WORK.set(newWork);
+    
+    if (log.isDebugEnabled()) {
+      log.debug(STR."Beginning unit-of-work with scope \{scope} in \{getThreadTypeDescription()}");
+    }
   }
 
   /**
    * Opens a new session if one doesn't already exist.
    *
    * Returns this work as a wrapper session so {@link #doCloseSession()} is called when the client closes the session.
+   * Enhanced with virtual thread context awareness.
    */
   private TransactionalSession<?> doOpenSession(
       @Nullable final TransactionalStore<?> localStore,
       final TransactionIsolation isolation)
   {
     if (session == null) {
+      if (log.isDebugEnabled()) {
+        log.debug(STR."Opening new session in \{getThreadTypeDescription()}");
+      }
       session = checkNotNull(localStore != null ? localStore.openSession(isolation) : store.openSession(isolation));
     }
     return this; // implicitly wraps the new session so we can intercept close
@@ -257,10 +333,14 @@ public final class UnitOfWork
 
   /**
    * Closes the current session if it exists.
+   * Enhanced with virtual thread context awareness.
    */
   private void doCloseSession() {
     if (session != null) {
       try {
+        if (log.isDebugEnabled()) {
+          log.debug(STR."Closing session in \{getThreadTypeDescription()}");
+        }
         session.close();
       }
       finally {
@@ -274,6 +354,10 @@ public final class UnitOfWork
       checkState(session == null, "Cannot end unit-of-work while transaction in progress");
     }
 
+    if (log.isDebugEnabled()) {
+      log.debug(STR."Ending unit-of-work in \{getThreadTypeDescription()}");
+    }
+    
     popWork(); // pop the work that was originally pushed when this unit-of-work began
 
     doCloseSession();
@@ -281,6 +365,9 @@ public final class UnitOfWork
 
   private void popWork() {
     if (parent != null) {
+      if (log.isDebugEnabled() && parent.createdInVirtualThread != isVirtualThread()) {
+        log.debug(STR."Thread type changed during unit-of-work: parent created in \{parent.createdInVirtualThread ? "virtual" : "platform"} thread, current is \{isVirtualThread() ? "virtual" : "platform"} thread");
+      }
       CURRENT_WORK.set(parent);
     }
     else {

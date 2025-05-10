@@ -21,8 +21,7 @@ import com.google.inject.Key;
  * Helper to lookup components in global context.
  *
  * In a few places, components need to be looked up by class-name and need to use the uber class-loader to resolve
- * classes.
- * This helper contains this logic in one place for re-use.
+ * classes. This helper contains this logic in one place for re-use.
  *
  * @since 3.0
  */
@@ -31,6 +30,7 @@ public interface GlobalComponentLookupHelper
   /**
    * Lookup a component by class-name.
    *
+   * @param className The fully qualified name of the class to lookup
    * @return Component reference, or {@code null} if the component was not found.
    */
   @Nullable
@@ -39,6 +39,8 @@ public interface GlobalComponentLookupHelper
   /**
    * Lookup a component by {@link Class}.
    *
+   * @param <T> The type of the component
+   * @param clazz The class object representing the component type
    * @return Component reference, or {@code null} if the component was not found.
    * @since 3.6.1
    */
@@ -47,6 +49,9 @@ public interface GlobalComponentLookupHelper
   /**
    * Lookup a component by {@link Class} and @{@link Named} name.
    *
+   * @param <T> The type of the component
+   * @param clazz The class object representing the component type
+   * @param name The name qualifier for the component
    * @return Component reference, or {@code null} if the component was not found.
    * @since 3.6.1
    */
@@ -55,14 +60,16 @@ public interface GlobalComponentLookupHelper
   /**
    * Lookup a component by {@link Key}.
    *
+   * @param key The Guice key for the component
    * @return Component reference, or {@code null} if the component was not found.
    * @since 3.6.1
    */
-  Object lookup(Key key);
+  Object lookup(Key<?> key);
 
   /**
    * Lookup a type by class-name.
    *
+   * @param className The fully qualified name of the class to lookup
    * @return Type reference, or {@code null} if the type was not found.
    */
   @Nullable

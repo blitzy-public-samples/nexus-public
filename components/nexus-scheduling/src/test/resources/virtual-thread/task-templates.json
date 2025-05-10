@@ -1,0 +1,144 @@
+{
+  "templates": [
+    {
+      "id": "io-bound-repository-task",
+      "name": "I/O-bound Repository Task",
+      "description": "Simulates repository operations with high I/O and low CPU usage, ideal for virtual threads",
+      "type": "io-bound",
+      "parameters": {
+        "repositoryName": "maven-central",
+        "assetCount": 1000,
+        "ioOperationsPerAsset": 5,
+        "ioLatencyMs": 20,
+        "cpuWorkPerAsset": "minimal"
+      }
+    },
+    {
+      "id": "io-bound-blobstore-task",
+      "name": "I/O-bound BlobStore Task",
+      "description": "Simulates blob storage operations with high I/O throughput, ideal for virtual threads",
+      "type": "io-bound",
+      "parameters": {
+        "blobStoreType": "file",
+        "blobCount": 500,
+        "blobSizeBytes": 1048576,
+        "readWriteRatio": 4,
+        "ioLatencyMs": 25,
+        "concurrentOperations": 100
+      }
+    },
+    {
+      "id": "io-bound-s3-task",
+      "name": "I/O-bound S3 BlobStore Task",
+      "description": "Simulates S3 blob storage operations with network latency, excellent for virtual threads",
+      "type": "io-bound",
+      "parameters": {
+        "blobStoreType": "s3",
+        "blobCount": 300,
+        "blobSizeBytes": 2097152,
+        "readWriteRatio": 3,
+        "networkLatencyMs": 50,
+        "concurrentOperations": 200,
+        "retryCount": 3
+      }
+    },
+    {
+      "id": "io-bound-db-task",
+      "name": "I/O-bound Database Task",
+      "description": "Simulates database operations with connection pooling, ideal for virtual threads",
+      "type": "io-bound",
+      "parameters": {
+        "queryType": "select",
+        "queryCount": 1000,
+        "rowsPerQuery": 50,
+        "dbLatencyMs": 15,
+        "concurrentQueries": 150,
+        "useTransactions": true
+      }
+    },
+    {
+      "id": "cpu-bound-task",
+      "name": "CPU-bound Computation Task",
+      "description": "Simulates CPU-intensive operations, better suited for platform threads",
+      "type": "cpu-bound",
+      "parameters": {
+        "computationIterations": 10000,
+        "computationComplexity": "high",
+        "memoryUsageMb": 50,
+        "concurrentComputations": 8
+      }
+    },
+    {
+      "id": "cpu-bound-compression-task",
+      "name": "CPU-bound Compression Task",
+      "description": "Simulates data compression operations, better suited for platform threads",
+      "type": "cpu-bound",
+      "parameters": {
+        "dataSize": 10485760,
+        "compressionLevel": 9,
+        "compressionAlgorithm": "gzip",
+        "iterations": 50,
+        "concurrentOperations": 4
+      }
+    },
+    {
+      "id": "mixed-proxy-repository-task",
+      "name": "Mixed Workload Proxy Repository Task",
+      "description": "Simulates proxy repository operations with mixed I/O and CPU workloads",
+      "type": "mixed",
+      "parameters": {
+        "repositoryName": "maven-central-proxy",
+        "assetCount": 500,
+        "remoteRequestCount": 100,
+        "remoteLatencyMs": 100,
+        "processingTimePerAssetMs": 5,
+        "cachingEnabled": true,
+        "concurrentOperations": 50,
+        "ioToCpuRatio": 7
+      }
+    },
+    {
+      "id": "mixed-search-task",
+      "name": "Mixed Workload Search Task",
+      "description": "Simulates repository search operations with mixed I/O and CPU workloads",
+      "type": "mixed",
+      "parameters": {
+        "searchQueries": 200,
+        "resultsPerQuery": 25,
+        "dbLatencyMs": 30,
+        "resultProcessingTimeMs": 10,
+        "concurrentSearches": 40,
+        "ioToCpuRatio": 3
+      }
+    },
+    {
+      "id": "scalability-test-task",
+      "name": "Scalability Test Task",
+      "description": "Tests scalability with increasing concurrent operations, ideal for comparing thread models",
+      "type": "scalability",
+      "parameters": {
+        "startConcurrency": 10,
+        "maxConcurrency": 10000,
+        "concurrencyStep": 10,
+        "operationsPerStep": 1000,
+        "ioLatencyMs": 20,
+        "cpuWorkMs": 1,
+        "ioToCpuRatio": 10,
+        "measureMemoryUsage": true
+      }
+    },
+    {
+      "id": "thread-pinning-test-task",
+      "name": "Thread Pinning Test Task",
+      "description": "Tests operations that may cause thread pinning with virtual threads",
+      "type": "thread-pinning",
+      "parameters": {
+        "synchronizedBlockCount": 10,
+        "blockingNativeCallCount": 5,
+        "monitorWaitTimeMs": 50,
+        "concurrentOperations": 100,
+        "detectPinning": true
+      }
+    }
+  ]
+}

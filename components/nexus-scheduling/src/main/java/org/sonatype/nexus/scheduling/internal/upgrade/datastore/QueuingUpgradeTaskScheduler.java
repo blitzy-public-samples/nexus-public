@@ -14,6 +14,8 @@ package org.sonatype.nexus.scheduling.internal.upgrade.datastore;
 
 import java.time.Duration;
 import java.util.Optional;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -42,6 +44,7 @@ import org.sonatype.nexus.scheduling.events.TaskEventStoppedDone;
 import org.sonatype.nexus.scheduling.events.TaskEventStoppedFailed;
 
 import com.google.common.eventbus.Subscribe;
+import org.slf4j.MDC;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.TASKS;
@@ -72,6 +75,9 @@ public class QueuingUpgradeTaskScheduler
   private final TaskScheduler taskScheduler;
 
   private final UpgradeTaskStore upgradeTaskStore;
+  
+  // Virtual thread factory for asynchronous operations
+  private final ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("upgrade-task-", 0).factory();
 
   @Inject
   public QueuingUpgradeTaskScheduler(
@@ -89,6 +95,7 @@ public class QueuingUpgradeTaskScheduler
     this.delayOnStart = checkNotNull(delayOnStart);
     this.cooperation = checkNotNull(cooperationFactory)
         .configure()
+        .virtualThreadAware(true) // Configure Cooperation2 to be virtual thread aware
         .build("reschedule-upgrade-task");
   }
 
@@ -105,7 +112,7 @@ public class QueuingUpgradeTaskScheduler
   @Override
   protected void doStart() {
     if (!checkRequiresMigration) {
-      log.warn("Configured not to reschedule failed upgrade tasks. This may lead to missing features or bugs.");
+      log.warn(STR."Configured not to reschedule failed upgrade tasks. This may lead to missing features or bugs.");
       return;
     }
 
@@ -119,8 +126,23 @@ public class QueuingUpgradeTaskScheduler
   @Subscribe
   public void on(final UpgradeCompletedEvent event) {
     if (this.isStarted() && !EventHelper.isReplicating()) {
-      log.debug("Starting queue due to event {}", event);
-      maybeStartQueue();
+      // Capture MDC context for propagation to virtual thread
+      final var mdcContext = MDC.getCopyOfContextMap();
+      
+      // Execute event handler in a virtual thread
+      Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+        try {
+          // Restore MDC context in the virtual thread
+          if (mdcContext != null) {
+            MDC.setContextMap(mdcContext);
+          }
+          
+          log.debug(STR."Starting queue due to event \{event}");
+          maybeStartQueue();
+        } finally {
+          MDC.clear();
+        }
+      });
     }
   }
 
@@ -131,48 +153,95 @@ public class QueuingUpgradeTaskScheduler
   @Subscribe
   public void on(final UpgradeFailedEvent event) {
     if (this.isStarted() && !EventHelper.isReplicating()) {
-      log.debug("Starting queue due to event {}", event);
-      maybeStartQueue();
+      // Capture MDC context for propagation to virtual thread
+      final var mdcContext = MDC.getCopyOfContextMap();
+      
+      // Execute event handler in a virtual thread
+      Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+        try {
+          // Restore MDC context in the virtual thread
+          if (mdcContext != null) {
+            MDC.setContextMap(mdcContext);
+          }
+          
+          log.debug(STR."Starting queue due to event \{event}");
+          maybeStartQueue();
+        } finally {
+          MDC.clear();
+        }
+      });
     }
   }
 
   @Subscribe
   public void on(final TaskEventStopped event) {
-    log.debug("on event: {}", event);
+    // Capture MDC context for propagation to virtual thread
+    final var mdcContext = MDC.getCopyOfContextMap();
+    
+    // Execute event handler in a virtual thread
+    Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+      try {
+        // Restore MDC context in the virtual thread
+        if (mdcContext != null) {
+          MDC.setContextMap(mdcContext);
+        }
+        
+        log.debug(STR."on event: \{event}");
 
-    TaskInfo taskInfo = event.getTaskInfo();
+        TaskInfo taskInfo = event.getTaskInfo();
 
-    if (event instanceof TaskEventStoppedFailed && upgradeTaskStore.markFailed(taskInfo.getId()) > 0) {
-      log.error("Upgrade task failed: {}. Queue will be restarted on startup.", taskInfo.getName());
-    }
-    else if (event instanceof TaskEventStoppedCanceled && upgradeTaskStore.markCanceled(taskInfo.getId()) > 0) {
-      log.error("Upgrade task cancelled: {}. Queue will be restarted on startup.", taskInfo.getName());
-      // Nexus could be shutting down and the task scheduler is canceling running jobs
-    }
-    else if (event instanceof TaskEventStoppedDone && upgradeTaskStore.deleteByTaskId(taskInfo.getId()) > 0) {
-      log.debug("Task {} completed.", taskInfo);
-      maybeStartQueue();
-    }
+        if (event instanceof TaskEventStoppedFailed && upgradeTaskStore.markFailed(taskInfo.getId()) > 0) {
+          log.error(STR."Upgrade task failed: \{taskInfo.getName()}. Queue will be restarted on startup.");
+        }
+        else if (event instanceof TaskEventStoppedCanceled && upgradeTaskStore.markCanceled(taskInfo.getId()) > 0) {
+          log.error(STR."Upgrade task cancelled: \{taskInfo.getName()}. Queue will be restarted on startup.");
+          // Nexus could be shutting down and the task scheduler is canceling running jobs
+        }
+        else if (event instanceof TaskEventStoppedDone && upgradeTaskStore.deleteByTaskId(taskInfo.getId()) > 0) {
+          log.debug(STR."Task \{taskInfo} completed.");
+          maybeStartQueue();
+        }
+      } finally {
+        MDC.clear();
+      }
+    });
   }
 
   @Guarded(by = STARTED)
   protected void maybeStartQueue() {
     try {
+      // Use virtual threads for I/O operations in the cooperation block
+      var executor = Executors.newVirtualThreadPerTaskExecutor();
+      
       cooperation.on(() -> {
-        Optional<UpgradeTaskData> next = upgradeTaskStore.next();
-        if (!next.isPresent()) {
-          return null;
-        }
-        if (notRunningAndNotDone(next.get())) {
-          scheduleTask(next.get());
-        }
-        return null;
+        // Capture MDC context for propagation to virtual thread
+        final var mdcContext = MDC.getCopyOfContextMap();
+        
+        return executor.submit(() -> {
+          try {
+            // Restore MDC context in the virtual thread
+            if (mdcContext != null) {
+              MDC.setContextMap(mdcContext);
+            }
+            
+            Optional<UpgradeTaskData> next = upgradeTaskStore.next();
+            if (!next.isPresent()) {
+              return null;
+            }
+            if (notRunningAndNotDone(next.get())) {
+              scheduleTask(next.get());
+            }
+            return null;
+          } finally {
+            MDC.clear();
+          }
+        }).get(); // Wait for the virtual thread to complete
       })
           .checkFunction(Optional::empty)
           .cooperate("queue");
     }
     catch (Exception e) {
-      log.error("An error occurred while starting the upgrade task queue.", e);
+      log.error(STR."An error occurred while starting the upgrade task queue.", e);
     }
   }
 
@@ -190,15 +259,15 @@ public class QueuingUpgradeTaskScheduler
     try {
       if (taskInfo.isPresent()) {
         if (notRunningAndNotDone(taskInfo)) {
-          log.info("Re-running failed upgrade task {}", taskName);
+          log.info(STR."Re-running failed upgrade task \{taskName}");
           taskInfo.get().runNow();
         }
-        log.debug("Task already running for {}", taskName);
+        log.debug(STR."Task already running for \{taskName}");
         return taskInfo.get();
       }
 
       TaskConfiguration config = new TaskConfiguration();
-      log.info("Running failed upgrade task {}", taskName);
+      log.info(STR."Running failed upgrade task \{taskName}");
       config.addAll(task.getConfiguration());
       TaskInfo result = taskScheduler.submit(config);
       task.setTaskId(result.getId());
@@ -206,13 +275,13 @@ public class QueuingUpgradeTaskScheduler
       return result;
     }
     catch (Exception e) {
-      log.error("Failed to restart upgrade task: {}", taskName, e);
+      log.error(STR."Failed to restart upgrade task: \{taskName}", e);
       return null;
     }
   }
 
   private boolean notRunningAndNotDone(final UpgradeTaskData upgradetask) {
-    log.trace("Checking state of taskId {}", upgradetask.getId());
+    log.trace(STR."Checking state of taskId \{upgradetask.getId()}");
     return notRunningAndNotDone(getExistingTask(upgradetask));
   }
 

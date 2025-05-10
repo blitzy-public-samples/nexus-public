@@ -18,13 +18,16 @@ import java.util.Map;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.repository.security.VariableResolverAdapter;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 
+@ExtendWith(MockitoExtension.class)
 public class VariableResolverAdapterManagerImplTest
     extends TestSupport
 {
@@ -36,7 +39,7 @@ public class VariableResolverAdapterManagerImplTest
 
   private VariableResolverAdapterManagerImpl manager;
 
-  @Before
+  @BeforeEach
   public void setUp() {
     Map<String, VariableResolverAdapter> adaptersByFormat = new HashMap<>();
     adaptersByFormat.put("special", specializedAdapter);

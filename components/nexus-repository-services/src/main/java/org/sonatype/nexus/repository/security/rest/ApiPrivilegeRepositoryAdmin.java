@@ -18,30 +18,70 @@ import org.sonatype.nexus.repository.security.RepositoryAdminPrivilegeDescriptor
 import org.sonatype.nexus.security.privilege.Privilege;
 import org.sonatype.nexus.security.privilege.rest.PrivilegeAction;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
+
 /**
+ * Repository admin privilege API model.
+ * 
  * @since 3.19
  */
+@Schema(description = "Repository admin privilege")
 public class ApiPrivilegeRepositoryAdmin
     extends ApiPrivilegeWithRepository
 {
   /**
-   * for deserialization
+   * Default constructor for Jackson deserialization.
    */
-  private ApiPrivilegeRepositoryAdmin() {
+  @JsonCreator
+  protected ApiPrivilegeRepositoryAdmin() {
     super(RepositoryAdminPrivilegeDescriptor.TYPE);
   }
 
-  public ApiPrivilegeRepositoryAdmin(final String name,
-                                     final String description,
-                                     final boolean readOnly,
-                                     final String format,
-                                     final String repository,
-                                     final Collection<PrivilegeAction> actions)
+  /**
+   * Constructor for creating a new repository admin privilege.
+   *
+   * @param name the privilege name
+   * @param description the privilege description
+   * @param readOnly whether the privilege is read-only
+   * @param format the repository format
+   * @param repository the repository name
+   * @param actions the allowed actions
+   */
+  public ApiPrivilegeRepositoryAdmin(
+      @JsonProperty("name") final String name,
+      @JsonProperty("description") final String description,
+      @JsonProperty("readOnly") final boolean readOnly,
+      @JsonProperty("format") final String format,
+      @JsonProperty("repository") final String repository,
+      @JsonProperty("actions") final Collection<PrivilegeAction> actions)
   {
     super(RepositoryAdminPrivilegeDescriptor.TYPE, name, description, readOnly, format, repository, actions);
   }
 
+  /**
+   * Constructor for creating from an existing privilege.
+   *
+   * @param privilege the privilege to create from
+   */
   public ApiPrivilegeRepositoryAdmin(final Privilege privilege) {
     super(privilege);
+  }
+  
+  /**
+   * Pattern matching example for handling different privilege types.
+   * This demonstrates how Java 21 pattern matching could be used with this class.
+   *
+   * @param obj the object to check
+   * @return true if the object is a compatible privilege type
+   */
+  public boolean isCompatiblePrivilege(Object obj) {
+    return switch (obj) {
+      case ApiPrivilegeRepositoryAdmin admin -> true;
+      case ApiPrivilegeWithRepository repo when repo.getType().equals(RepositoryAdminPrivilegeDescriptor.TYPE) -> true;
+      case Privilege p when p.getType().equals(RepositoryAdminPrivilegeDescriptor.TYPE) -> true;
+      default -> false;
+    };
   }
 }

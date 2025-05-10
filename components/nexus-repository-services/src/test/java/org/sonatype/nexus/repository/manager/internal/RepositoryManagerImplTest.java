@@ -23,6 +23,9 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.inject.Provider;
@@ -47,11 +50,12 @@ import org.sonatype.nexus.repository.group.GroupFacet;
 import org.sonatype.nexus.repository.manager.DefaultRepositoriesContributor;
 
 import com.google.common.collect.ImmutableMap;
-import org.junit.Before;
-import org.junit.Ignore;
-import org.junit.Test;
-import org.junit.Test.None;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static com.google.common.collect.Iterables.size;
 import static com.google.common.collect.Maps.newHashMap;
@@ -67,7 +71,7 @@ import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -78,6 +82,7 @@ import static org.sonatype.nexus.blobstore.api.BlobStoreManager.DEFAULT_BLOBSTOR
 import static org.sonatype.nexus.repository.manager.internal.RepositoryManagerImpl.CLEANUP_ATTRIBUTES_KEY;
 import static org.sonatype.nexus.repository.manager.internal.RepositoryManagerImpl.CLEANUP_NAME_KEY;
 
+@ExtendWith(MockitoExtension.class)
 public class RepositoryManagerImplTest
     extends TestSupport
 {
@@ -201,7 +206,7 @@ public class RepositoryManagerImplTest
   //Subject of the test
   private RepositoryManagerImpl repositoryManager;
 
-  @Before
+  @BeforeEach
   public void setup() {
     setupRecipe();
     setupRepositories();
@@ -327,7 +332,7 @@ public class RepositoryManagerImplTest
   }
 
   @Test
-  public void testLoadsExistingConfigurationOnStartup() throws Exception {
+  void loadsExistingConfigurationOnStartup() throws Exception {
     repositoryManager = buildRepositoryManagerImpl(true);
     when(configurationStore.list()).
         thenReturn(asList(mavenCentralConfiguration, apacheSnapshotsConfiguration, thirdPartyConfiguration));
@@ -345,7 +350,7 @@ public class RepositoryManagerImplTest
   }
 
   @Test
-  public void testStartup_createsDefaultRepositoriesWhenEmpty() throws Exception {
+  void startup_createsDefaultRepositoriesWhenEmpty() throws Exception {
     repositoryManager = buildRepositoryManagerImpl(false);
 
     verify(configurationStore).create(mavenCentralConfiguration);
@@ -354,14 +359,14 @@ public class RepositoryManagerImplTest
   }
 
   @Test
-  public void testStartup_obeysSkipDefaults() throws Exception {
+  void startup_obeysSkipDefaults() throws Exception {
     repositoryManager = buildRepositoryManagerImpl(false, true);
 
     verify(configurationStore, times(0)).create(any(Configuration.class));
   }
 
   @Test
-  public void testStartup_clusteredSkipsDefaults() throws Exception {
+  void startup_clusteredSkipsDefaults() throws Exception {
     when(nodeAccess.isClustered()).thenReturn(true);
     blobstoreProvisionDefaults(false, true);
     repositoryManager = buildRepositoryManagerImpl(false);
@@ -370,7 +375,7 @@ public class RepositoryManagerImplTest
   }
 
   @Test
-  public void testStartup_clusteredCreatesDefaultsWhenBlobStoreExists() throws Exception {
+  void startup_clusteredCreatesDefaultsWhenBlobStoreExists() throws Exception {
     when(nodeAccess.isClustered()).thenReturn(true);
     blobstoreProvisionDefaults(true, true);
     repositoryManager = buildRepositoryManagerImpl(false);
@@ -381,7 +386,7 @@ public class RepositoryManagerImplTest
   }
 
   @Test
-  public void testStartup_noDefaultsProvided() throws Exception {
+  void startup_noDefaultsProvided() throws Exception {
     when(defaultRepositoriesContributor.getRepositoryConfigurations()).thenReturn(emptyList());
 
     repositoryManager = buildRepositoryManagerImpl(false, false);
@@ -390,14 +395,14 @@ public class RepositoryManagerImplTest
   }
 
   @Test
-  public void testExists_dbFallback() throws Exception {
+  void exists_dbFallback() throws Exception {
     repositoryManager = buildRepositoryManagerImpl(true);
     when(configurationStore.exists("not-yet-loaded")).thenReturn(true);
     assertThat(repositoryManager.exists("not-yet-loaded"), is(true));
   }
 
   @Test
-  public void testExists_caseInsensitivity() throws Exception {
+  void exists_caseInsensitivity() throws Exception {
     repositoryManager = buildRepositoryManagerImpl(true);
     assertThat(repositoryManager.exists(MAVEN_CENTRAL_NAME), is(true));
     assertThat(repositoryManager.exists(MAVEN_CENTRAL_NAME.toUpperCase()), is(true));
@@ -405,34 +410,34 @@ public class RepositoryManagerImplTest
   }
 
   @Test
-  public void testBlobStoreUsageCount() throws Exception {
+  void blobStoreUsageCount() throws Exception {
     repositoryManager = buildRepositoryManagerImpl(true);
     assertThat(repositoryManager.blobstoreUsageCount("default"), equalTo(3L));
     assertThat(repositoryManager.blobstoreUsageCount("third-party"), equalTo(1L));
   }
 
   @Test
-  public void testDelete_checksUnfrozen() throws Exception {
+  void delete_checksUnfrozen() throws Exception {
     repositoryManager = buildRepositoryManagerImpl(true);
     repositoryManager.delete("maven-central");
     verify(freezeService).checkWritable("Unable to delete repository when database is frozen.");
   }
 
   @Test
-  public void testDelete_remotesFromGroupRepositories() throws Exception {
+  void delete_remotesFromGroupRepositories() throws Exception {
     buildRepositoryManagerImpl(true).delete(MAVEN_CENTRAL_NAME);
     assertFalse(
         groupConfiguration.attributes("group").get("memberNames", Collection.class).contains(mavenCentralRepository));
   }
 
   @Test
-  public void testDelete_updateGroupRepositoryWhenMemberDeleted() throws Exception {
+  void delete_updateGroupRepositoryWhenMemberDeleted() throws Exception {
     buildRepositoryManagerImpl(true).delete(MAVEN_CENTRAL_NAME);
     verify(configurationStore).update(groupConfiguration);
   }
 
   @Test
-  public void testCreate_concurrentCreatesShouldNotFail() throws Exception {
+  void create_concurrentCreatesShouldNotFail() throws Exception {
     RepositoryManagerImpl repositoryManager = initializeAndStartRepositoryManager(true);
     repositoryManager.create(makeRepo("r1"));
     repositoryManager.create(makeRepo("r2"));
@@ -443,6 +448,54 @@ public class RepositoryManagerImplTest
     repositoryManager.create(makeRepo("r3"));
     // this call will fail with ConcurrentModificationException if the private repositories map is not thread safe
     iterator.next();
+  }
+
+  @Test
+  void concurrentRepositoryCreationWithVirtualThreads() throws Exception {
+    // Initialize repository manager
+    RepositoryManagerImpl repositoryManager = initializeAndStartRepositoryManager(true);
+    
+    // Number of threads to create
+    int threadCount = 50;
+    
+    // Use CountDownLatch to track completion
+    CountDownLatch latch = new CountDownLatch(threadCount);
+    
+    // Track any errors that occur
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    // Create a virtual thread factory
+    try (var executor = Thread.ofVirtual().factory().executor()) {
+        // Submit tasks to create repositories concurrently
+        for (int i = 0; i < threadCount; i++) {
+            final String repoName = "virtual-repo-" + i;
+            executor.submit(() -> {
+                try {
+                    repositoryManager.create(makeRepo(repoName));
+                } 
+                catch (Exception e) {
+                    errorCount.incrementAndGet();
+                    log.error("Error creating repository {}", repoName, e);
+                }
+                finally {
+                    latch.countDown();
+                }
+            });
+        }
+        
+        // Wait for all threads to complete (with timeout)
+        boolean completed = latch.await(30, TimeUnit.SECONDS);
+        
+        // Verify all threads completed successfully
+        assertThat(completed, is(true));
+        assertThat(errorCount.get(), is(0));
+        
+        // Verify repositories were created
+        for (int i = 0; i < threadCount; i++) {
+            String repoName = "virtual-repo-" + i;
+            assertThat(repositoryManager.exists(repoName), is(true));
+        }
+    }
   }
 
   private Map<String, Repository> reflectRepositories() {
@@ -464,7 +517,7 @@ public class RepositoryManagerImplTest
   }
 
   @Test
-  public void testLoadsRepositoryWithCleanupPolicy() throws Exception {
+  void loadsRepositoryWithCleanupPolicy() throws Exception {
     repositoryManager = buildRepositoryManagerImpl(true);
 
     String cleanupPolicy1 = randomUUID().toString().replace("-", "");
@@ -491,7 +544,7 @@ public class RepositoryManagerImplTest
   }
 
   @Test
-  public void testMultipleRepositoryWithSameCleanupPolicy() throws Exception {
+  void multipleRepositoryWithSameCleanupPolicy() throws Exception {
     repositoryManager = buildRepositoryManagerImpl(true);
 
     String name = randomUUID().toString().replace("-", "");
@@ -510,7 +563,7 @@ public class RepositoryManagerImplTest
   }
 
   @Test
-  public void testNoRepositoriesLoadedForUnknownCleanupPolicy() throws Exception {
+  void noRepositoriesLoadedForUnknownCleanupPolicy() throws Exception {
     repositoryManager = buildRepositoryManagerImpl(true);
 
     Stream<Repository> stream = repositoryManager.browseForCleanupPolicy(randomUUID().toString());
@@ -519,7 +572,7 @@ public class RepositoryManagerImplTest
   }
 
   @Test
-  public void testMemberToGroupCacheFunctionsWithNoRepositories() throws Exception {
+  void memberToGroupCacheFunctionsWithNoRepositories() throws Exception {
     repositoryManager = buildRepositoryManagerImpl(false, true);
 
     //this would throw an NPE previously
@@ -527,7 +580,7 @@ public class RepositoryManagerImplTest
   }
 
   @Test
-  public void getFunctionalityShouldFallBackToDbIfMissing() throws Exception {
+  void getFunctionalityShouldFallBackToDbIfMissing() throws Exception {
     repositoryManager = buildRepositoryManagerImpl(false, true);
 
     when(configurationStore.list()).thenReturn(Collections.singletonList(mavenCentralConfiguration));
@@ -538,7 +591,7 @@ public class RepositoryManagerImplTest
   }
 
   @Test
-  public void repoNotInCacheOrDbReturnsNullForGet() throws Exception {
+  void repoNotInCacheOrDbReturnsNullForGet() throws Exception {
     repositoryManager = buildRepositoryManagerImpl(false, true);
 
     when(configurationStore.readByNames(any(Set.class))).thenReturn(Collections.emptySet());
@@ -549,7 +602,7 @@ public class RepositoryManagerImplTest
   }
 
   @Test
-  public void repoNotInCacheReturnsNullForSoftGet() throws Exception {
+  void repoNotInCacheReturnsNullForSoftGet() throws Exception {
     repositoryManager = buildRepositoryManagerImpl(false, true);
 
     Repository repository = repositoryManager.softGet("maven-central");
@@ -558,7 +611,7 @@ public class RepositoryManagerImplTest
   }
 
   @Test
-  public void repoInCacheReturnsObjectForSoftGet() throws Exception {
+  void repoInCacheReturnsObjectForSoftGet() throws Exception {
     repositoryManager = buildRepositoryManagerImpl(true, false);
 
     Repository repository = repositoryManager.softGet(MAVEN_CENTRAL_NAME);
@@ -567,9 +620,9 @@ public class RepositoryManagerImplTest
     assertThat(repository.getName(), is(MAVEN_CENTRAL_NAME));
   }
 
-  @Test(expected = None.class)
-  @Ignore("NEXUS-36615")
-  public void createEventForAlreadyCreatedRepositoryIsHandledGracefully() throws Exception {
+  @Test
+  @Disabled("NEXUS-36615")
+  void createEventForAlreadyCreatedRepositoryIsHandledGracefully() throws Exception {
     repositoryManager = buildRepositoryManagerImpl(true, true);
     ConfigurationCreatedEvent repositoryConfigurationEvent = new ConfigurationCreatedEvent(mavenCentralConfiguration);
     repositoryConfigurationEvent.setRemoteNodeId("remote");

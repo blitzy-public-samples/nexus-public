@@ -14,13 +14,16 @@ package org.sonatype.nexus.logging.task;
 
 import javax.annotation.Nullable;
 
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.Logger;
 import org.slf4j.MDC;
 import org.slf4j.Marker;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.notNullValue;
@@ -31,6 +34,8 @@ import static org.sonatype.nexus.logging.task.TaskLogger.LOGBACK_TASK_DISCRIMINA
 import static org.sonatype.nexus.logging.task.TaskLogger.TASK_LOG_ONLY_MDC;
 import static org.sonatype.nexus.logging.task.TaskLoggingMarkers.TASK_LOG_ONLY;
 
+@ExtendWith(MockitoExtension.class)
+@org.junit.jupiter.api.Tag("Java21")
 public class SeparateTaskLogTaskLoggerTest
     extends ProgressTaskLoggerTest
 {
@@ -40,7 +45,7 @@ public class SeparateTaskLogTaskLoggerTest
 
   private SeparateTaskLogTaskLogger underTest;
 
-  @Before
+  @BeforeEach
   public void setUp() throws Exception {
     super.setUp();
     TaskLogInfo taskLogInfo = createTaskLogInfo();
@@ -59,13 +64,13 @@ public class SeparateTaskLogTaskLoggerTest
     assertThat(MDC.get(LOGBACK_TASK_DISCRIMINATOR_ID).matches("typeId-\\d{17}\\b"), is(true));
   }
 
-  @After
+  @AfterEach
   public void tearDown() throws Exception {
     underTest.finish();
   }
 
   @Test
-  public void testFinishClearsMDCValues() {
+  void finishClearsMDCValues() {
     MDC.put(TASK_LOG_ONLY_MDC, "something");
     assertThat(MDC.get(TASK_LOG_ONLY_MDC), notNullValue());
     assertThat(MDC.get(LOGBACK_TASK_DISCRIMINATOR_ID), notNullValue());

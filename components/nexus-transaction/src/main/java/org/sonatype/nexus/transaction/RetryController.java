@@ -13,10 +13,10 @@
 package org.sonatype.nexus.transaction;
 
 import java.io.IOException;
+import java.util.concurrent.ThreadLocalRandom;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.goodies.common.Time;
-import org.sonatype.nexus.common.sequence.ThreadLocalSplittableRandom;
 
 import com.google.common.annotations.VisibleForTesting;
 
@@ -37,8 +37,6 @@ import static org.sonatype.nexus.common.property.SystemPropertiesHelper.getTime;
 public class RetryController
     extends ComponentSupport
 {
-  private static final ThreadLocalSplittableRandom randomHolder = new ThreadLocalSplittableRandom();
-
   private static final int DEFAULT_RETRY_LIMIT = 8;
 
   private static final int DEFAULT_MIN_SLOTS = 2;
@@ -182,10 +180,10 @@ public class RetryController
     int nextRetry = retriesSoFar + 1;
     if (nextRetry > retryLimit) {
       if (log.isTraceEnabled()) {
-        log.warn("Exceeded retry limit: {}/{}", retriesSoFar, retryLimit, cause);
+        log.warn(STR."Exceeded retry limit: \{retriesSoFar}/\{retryLimit}", cause);
       }
       else {
-        log.warn("Exceeded retry limit: {}/{} ({})", retriesSoFar, retryLimit, cause.toString());
+        log.warn(STR."Exceeded retry limit: \{retriesSoFar}/\{retryLimit} (\{cause.toString()})");
       }
 
       return false;
@@ -203,10 +201,10 @@ public class RetryController
     long delay = randomDelay(nextRetry, cause);
 
     if (log.isTraceEnabled()) {
-      log.debug("Allowing retry: {}/{} in {}ms", nextRetry, retryLimit, delay, cause);
+      log.debug(STR."Allowing retry: \{nextRetry}/\{retryLimit} in \{delay}ms", cause);
     }
     else {
-      log.debug("Allowing retry: {}/{} in {}ms ({})", nextRetry, retryLimit, delay, cause.toString());
+      log.debug(STR."Allowing retry: \{nextRetry}/\{retryLimit} in \{delay}ms (\{cause.toString()})");
     }
 
     backoff(delay);
@@ -229,11 +227,27 @@ public class RetryController
 
   /**
    * Applies backoff by waiting for the given delay before allowing the retry.
+   * If running on a Virtual Thread, yields periodically to allow other Virtual Threads to run.
    */
   @VisibleForTesting
   protected void backoff(final long delay) {
     try {
-      Thread.sleep(delay);
+      if (Thread.currentThread().isVirtual()) {
+        // For Virtual Threads, we yield periodically to allow other Virtual Threads to run
+        long start = System.currentTimeMillis();
+        long elapsed;
+        do {
+          // Yield to allow other Virtual Threads to run
+          Thread.yield();
+          
+          // Sleep for a small interval to avoid busy waiting
+          Thread.sleep(Math.min(10, delay - (System.currentTimeMillis() - start)));
+          elapsed = System.currentTimeMillis() - start;
+        } while (elapsed < delay);
+      } else {
+        // For platform threads, just sleep for the full duration
+        Thread.sleep(delay);
+      }
     }
     catch (InterruptedException e) {
       throw new RuntimeException(e);
@@ -247,7 +261,7 @@ public class RetryController
    */
   private long randomDelay(final int nextRetry, final Exception cause) {
     int slots = min(max(1 << nextRetry, minSlots), maxSlots);
-    int randomSlot = randomHolder.get().nextInt(slots);
+    int randomSlot = ThreadLocalRandom.current().nextInt(slots);
     if (majorExceptionFilter.test(cause)) {
       // avoid zero wait if it's a major exception
       return majorDelayMillis * (randomSlot + 1);

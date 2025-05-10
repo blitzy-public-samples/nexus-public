@@ -15,7 +15,9 @@ package org.sonatype.nexus.logging.task;
 import java.io.File;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Callable;
 
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.ILoggingEvent;
@@ -47,6 +49,9 @@ public class SeparateTaskLogTaskLogger
   private final TaskLogInfo taskLogInfo;
 
   private final String taskLogIdentifier;
+  
+  // Store MDC context for Virtual Thread compatibility
+  private final Map<String, String> mdcContext;
 
   SeparateTaskLogTaskLogger(final Logger log, final TaskLogInfo taskLogInfo) {
     super(log);
@@ -56,48 +61,130 @@ public class SeparateTaskLogTaskLogger
     taskLogIdentifier = format("%s-%s", taskLogInfo.getTypeId(),
         LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS")));
     MDC.put(LOGBACK_TASK_DISCRIMINATOR_ID, taskLogIdentifier);
+    
+    // Store MDC context for Virtual Thread compatibility
+    this.mdcContext = MDC.getCopyOfContextMap();
+  }
+
+  /**
+   * Executes the given task with the proper MDC context, ensuring compatibility with Virtual Threads.
+   * This method ensures that the MDC context is properly set before executing the task and restored
+   * afterward, which is especially important in Virtual Thread environments where thread-local
+   * variables might not behave as expected.
+   *
+   * @param task the task to execute with the proper MDC context
+   * @param <V> the return type of the task
+   * @return the result of the task execution
+   * @throws Exception if the task throws an exception
+   */
+  private <V> V withMdcContext(Callable<V> task) throws Exception {
+    Map<String, String> previousContext = MDC.getCopyOfContextMap();
+    try {
+      if (mdcContext != null) {
+        MDC.setContextMap(mdcContext);
+      }
+      return task.call();
+    } finally {
+      if (previousContext != null) {
+        MDC.setContextMap(previousContext);
+      } else {
+        MDC.clear();
+      }
+    }
+  }
+
+  /**
+   * Executes the given runnable with the proper MDC context, ensuring compatibility with Virtual Threads.
+   *
+   * @param runnable the runnable to execute with the proper MDC context
+   */
+  private void withMdcContext(Runnable runnable) {
+    Map<String, String> previousContext = MDC.getCopyOfContextMap();
+    try {
+      if (mdcContext != null) {
+        MDC.setContextMap(mdcContext);
+      }
+      runnable.run();
+    } finally {
+      if (previousContext != null) {
+        MDC.setContextMap(previousContext);
+      } else {
+        MDC.clear();
+      }
+    }
   }
 
   private void logTaskInfo() {
     // dump task details to task log
-    log.info(TASK_LOG_ONLY, "Task information:");
-    log.info(TASK_LOG_ONLY, " ID: {}", taskLogInfo.getId());
-    log.info(TASK_LOG_ONLY, " Type: {}", taskLogInfo.getTypeId());
-    log.info(TASK_LOG_ONLY, " Name: {}", taskLogInfo.getName());
-    log.info(TASK_LOG_ONLY, " Description: {}", taskLogInfo.getMessage());
-    log.debug(TASK_LOG_ONLY, "Task configuration: {}", taskLogInfo);
+    withMdcContext(() -> {
+      log.info(TASK_LOG_ONLY, "Task information:");
+      log.info(TASK_LOG_ONLY, " ID: {}", taskLogInfo.getId());
+      log.info(TASK_LOG_ONLY, " Type: {}", taskLogInfo.getTypeId());
+      log.info(TASK_LOG_ONLY, " Name: {}", taskLogInfo.getName());
+      log.info(TASK_LOG_ONLY, " Description: {}", taskLogInfo.getMessage());
+      log.debug(TASK_LOG_ONLY, "Task configuration: {}", taskLogInfo);
+    });
 
     writeLogFileNameToNexusLog();
   }
 
+  /**
+   * Writes the log file name to the Nexus log, ensuring proper MDC context propagation
+   * in Virtual Thread environments.
+   */
   protected void writeLogFileNameToNexusLog() {
-    String taskLogsHome = TaskLogHome.getTaskLogsHome();
-    if (taskLogsHome != null) {
-      String filename = format("%s/%s", taskLogsHome, getTaskLogIdentifier());
-      log.info(NEXUS_LOG_ONLY, TASK_LOG_LOCATION_PREFIX + filename);
-    }
+    withMdcContext(() -> {
+      String taskLogsHome = TaskLogHome.getTaskLogsHome();
+      if (taskLogsHome != null) {
+        String filename = format("%s/%s", taskLogsHome, getTaskLogIdentifier());
+        log.info(NEXUS_LOG_ONLY, TASK_LOG_LOCATION_PREFIX + filename);
+      }
+    });
   }
 
+  /**
+   * Gets the task log identifier, ensuring proper context access across thread boundaries.
+   * This method handles both platform threads and virtual threads correctly.
+   *
+   * @return the task log identifier
+   */
   private String getTaskLogIdentifier() {
-    LoggerContext loggerContext = (LoggerContext) StaticLoggerBinder.getSingleton().getLoggerFactory();
-    Appender<ILoggingEvent> appender = loggerContext.getLogger(ROOT_LOGGER_NAME).getAppender("tasklogfile");
-    if (appender instanceof RollingFileAppender) {
-      File file = new File(((RollingFileAppender<ILoggingEvent>) appender).getFile());
-      return file.getName();
+    try {
+      return withMdcContext(() -> {
+        LoggerContext loggerContext = (LoggerContext) StaticLoggerBinder.getSingleton().getLoggerFactory();
+        Appender<ILoggingEvent> appender = loggerContext.getLogger(ROOT_LOGGER_NAME).getAppender("tasklogfile");
+        if (appender instanceof RollingFileAppender) {
+          File file = new File(((RollingFileAppender<ILoggingEvent>) appender).getFile());
+          return file.getName();
+        }
+        return taskLogIdentifier + ".log";
+      });
+    } catch (Exception e) {
+      // Fallback in case of any issues
+      log.debug("Error getting task log identifier", e);
+      return taskLogIdentifier + ".log";
     }
-    return taskLogIdentifier + ".log";
   }
 
   @Override
   public final void start() {
-    super.start();
+    // Check if running in a Virtual Thread and log for debugging purposes
+    if (Thread.currentThread().isVirtual()) {
+      log.debug("Task starting on Virtual Thread: {}", Thread.currentThread().getName());
+    }
+    
+    withMdcContext(() -> super.start());
     logTaskInfo();
   }
 
   @Override
   public final void finish() {
-    super.finish();
-    log.info(TASK_LOG_ONLY, "Task complete");
+    withMdcContext(() -> {
+      super.finish();
+      log.info(TASK_LOG_ONLY, "Task complete");
+    });
+    
+    // Clear MDC context after task completion
     MDC.remove(LOGBACK_TASK_DISCRIMINATOR_ID);
     MDC.remove(TASK_LOG_ONLY_MDC);
     MDC.remove(TASK_LOG_WITH_PROGRESS_MDC);
@@ -105,10 +192,12 @@ public class SeparateTaskLogTaskLogger
 
   @Override
   public void flush() {
-    if (lastProgressEvent != null) {
-      Logger logger = Optional.ofNullable(lastProgressEvent.getLogger()).orElse(log);
-      logger.info(PROGRESS, lastProgressEvent.getMessage(), lastProgressEvent.getArgumentArray());
-    }
-    super.flush();
+    withMdcContext(() -> {
+      if (lastProgressEvent != null) {
+        Logger logger = Optional.ofNullable(lastProgressEvent.getLogger()).orElse(log);
+        logger.info(PROGRESS, lastProgressEvent.getMessage(), lastProgressEvent.getArgumentArray());
+      }
+      super.flush();
+    });
   }
 }

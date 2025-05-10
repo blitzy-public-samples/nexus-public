@@ -22,16 +22,19 @@ import javax.inject.Named;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * Test {@link Operations} builder methods.
  */
+@ExtendWith(MockitoExtension.class)
 public class OperationsBuilderTest
     extends TestSupport
 {

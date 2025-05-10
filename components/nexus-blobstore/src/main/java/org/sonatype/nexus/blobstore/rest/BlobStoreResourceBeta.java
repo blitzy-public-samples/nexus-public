@@ -12,13 +12,20 @@
  */
 package org.sonatype.nexus.blobstore.rest;
 
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.Path;
-import javax.ws.rs.core.Response.Status;
+import jakarta.annotation.PreDestroy;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response.Status;
 
 import org.sonatype.nexus.blobstore.ConnectionChecker;
 import org.sonatype.nexus.blobstore.api.BlobStoreManager;
@@ -46,7 +53,12 @@ public class BlobStoreResourceBeta
     extends BlobStoreResource
 {
   static final String RESOURCE_URI = BETA_API_PREFIX + "/blobstores";
+  
+  private final ExecutorService virtualThreadExecutor;
 
+  /**
+   * Constructor with dependency injection compatible with Guice 7.0.0
+   */
   @Inject
   public BlobStoreResourceBeta(
       final BlobStoreManager blobStoreManager,
@@ -55,11 +67,79 @@ public class BlobStoreResourceBeta
       final Map<String, ConnectionChecker> connectionCheckers)
   {
     super(blobStoreManager, store, quotaService, connectionCheckers);
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
+  /**
+   * Override to implement Virtual Threads for I/O-bound operations
+   */
+  @Override
+  public List<GenericBlobStoreApiResponse> listBlobStores() {
+    try {
+      return CompletableFuture.supplyAsync(super::listBlobStores, virtualThreadExecutor).join();
+    } catch (Exception e) {
+      log.error("Error listing blob stores using virtual threads", e);
+      throw e;
+    }
+  }
+  
+  /**
+   * Override to implement Virtual Threads for I/O-bound operations
+   */
+  @Override
+  public void deleteBlobStore(final String name) throws Exception {
+    try {
+      CompletableFuture.runAsync(() -> {
+        try {
+          super.deleteBlobStore(name);
+        } catch (Exception e) {
+          throw new RuntimeException(e);
+        }
+      }, virtualThreadExecutor).join();
+    } catch (RuntimeException e) {
+      if (e.getCause() instanceof Exception) {
+        throw (Exception) e.getCause();
+      }
+      throw e;
+    }
+  }
+
+  /**
+   * Override to implement Virtual Threads for I/O-bound operations and use String Templates for error messages
+   */
   @Override
   @Deprecated
   public BlobStoreQuotaResultXO quotaStatus(final String name) {
-    throw new WebApplicationMessageException(Status.BAD_REQUEST, "not supported");
+    String errorMessage = STR."Beta API endpoint for quota status (\{name}) is not supported";
+    throw new WebApplicationMessageException(Status.BAD_REQUEST, errorMessage);
+  }
+  
+  /**
+   * Override to implement Virtual Threads for I/O-bound operations
+   */
+  @Override
+  public void verifyConnection(final BlobStoreConnectionXO blobStoreConnectionXO) {
+    try {
+      CompletableFuture.runAsync(() -> super.verifyConnection(blobStoreConnectionXO), virtualThreadExecutor).join();
+    } catch (Exception e) {
+      log.error("Error verifying connection using virtual threads", e);
+      if (e.getCause() instanceof WebApplicationException) {
+        throw (WebApplicationException) e.getCause();
+      }
+      throw new WebApplicationException(Response.status(Status.BAD_REQUEST)
+          .entity(STR."Connection verification failed: \{e.getMessage()}")
+          .build());
+    }
+  }
+  
+  /**
+   * Cleanup resources when the component is destroyed
+   */
+  @PreDestroy
+  public void shutdown() {
+    if (virtualThreadExecutor != null && !virtualThreadExecutor.isShutdown()) {
+      log.debug("Shutting down virtual thread executor");
+      virtualThreadExecutor.shutdown();
+    }
   }
 }

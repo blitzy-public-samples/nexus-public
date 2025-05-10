@@ -18,9 +18,13 @@ import static java.lang.Math.abs;
 import static java.lang.Math.floor;
 import static java.lang.Math.log10;
 import static java.lang.Math.pow;
-import static java.lang.String.format;
+import static java.lang.StringTemplate.STR;
+// Note: FMT processor could be used for more advanced formatting but requires preview features
+// import static java.util.FormatProcessor.FMT;
 
 /**
+ * Utility for formatting values with appropriate units.
+ * 
  * @since 3.24
  */
 public final class UnitFormatter {
@@ -46,17 +50,26 @@ public final class UnitFormatter {
     }
   }
 
+  /**
+   * Formats a byte value with appropriate storage unit prefix.
+   *
+   * @param bytes the number of bytes to format
+   * @return the formatted string with appropriate unit
+   */
   public static String formatStorage(final long bytes) {
-    StoragePrefix prefix;
+    // Using Pattern Matching for switch to select the appropriate prefix
+    StoragePrefix prefix = switch (bytes) {
+      case 0 -> StoragePrefix.BYTE;
+      default -> {
+        double exponent = floor(log10(abs(bytes)));
+        yield StoragePrefix.values()[(int) exponent / 3];
+      }
+    };
 
-    if (bytes == 0) {
-      prefix = StoragePrefix.BYTE;
-    }
-    else {
-      double exponent = floor(log10(abs(bytes)));
-      prefix = StoragePrefix.values()[(int) exponent / 3];
-    }
-
-    return format(Locale.ENGLISH, "%.2f %s", bytes / prefix.value, prefix.name);
+    // Format the numeric value with 2 decimal places
+    String formattedValue = String.format(Locale.ENGLISH, "%.2f", bytes / prefix.value);
+    
+    // Using Java 21 String Templates for combining the formatted value and unit
+    return STR."\{formattedValue} \{prefix.name}";
   }
 }

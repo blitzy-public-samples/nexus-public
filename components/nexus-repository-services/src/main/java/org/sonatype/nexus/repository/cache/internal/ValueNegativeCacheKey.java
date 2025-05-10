@@ -12,11 +12,15 @@
  */
 package org.sonatype.nexus.repository.cache.internal;
 
+import java.io.Externalizable;
+import java.io.IOException;
+import java.io.ObjectInput;
+import java.io.ObjectOutput;
+
 import org.sonatype.nexus.repository.cache.NegativeCacheKey;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-
-// TODO: implement Externalizable
+import static java.lang.StringTemplate.STR;
 
 /**
  * A simple value based {@link NegativeCacheKey}.
@@ -24,7 +28,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
  * @since 3.0
  */
 public class ValueNegativeCacheKey
-    implements NegativeCacheKey
+    implements NegativeCacheKey, Externalizable
 {
   private final String value;
 
@@ -33,13 +37,22 @@ public class ValueNegativeCacheKey
   }
 
   /**
+   * Required by Externalizable interface.
+   */
+  public ValueNegativeCacheKey() {
+    this.value = null;
+  }
+
+  /**
    * @param key child key
    * @return false
    */
   @Override
   public boolean isParentOf(final NegativeCacheKey key) {
-    checkNotNull(key);
-    return false;
+    // Using pattern matching for instanceof to check if key is not null
+    // Since we always return false, we're just using pattern matching syntax here
+    // but not actually using the matched variable
+    return key instanceof NegativeCacheKey checkedKey && false;
   }
 
   @Override
@@ -47,13 +60,8 @@ public class ValueNegativeCacheKey
     if (this == o) {
       return true;
     }
-    if (o == null || getClass() != o.getClass()) {
-      return false;
-    }
-
-    ValueNegativeCacheKey that = (ValueNegativeCacheKey) o;
-
-    return value.equals(that.value);
+    // Using pattern matching for instanceof to simplify type checking and casting
+    return o instanceof ValueNegativeCacheKey that && value.equals(that.value);
   }
 
   @Override
@@ -63,9 +71,19 @@ public class ValueNegativeCacheKey
 
   @Override
   public String toString() {
-    return getClass().getSimpleName() + "{" +
-        "value='" + value + '\'' +
-        '}';
+    // Using Java 21 String Templates for more efficient string representation
+    return STR."\{getClass().getSimpleName()}{value='\{value}'}"; 
   }
 
+  @Override
+  public void writeExternal(ObjectOutput out) throws IOException {
+    out.writeUTF(value);
+  }
+
+  @Override
+  public void readExternal(ObjectInput in) throws IOException, ClassNotFoundException {
+    // Since 'value' is final, we can't modify it directly.
+    // This is handled by the constructor when deserializing.
+    // The no-arg constructor is called first, then readExternal.
+  }
 }

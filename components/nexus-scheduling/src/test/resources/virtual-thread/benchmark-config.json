@@ -1,0 +1,136 @@
+{
+  "benchmarkName": "VirtualThreadVsPlatformThreadBenchmark",
+  "description": "Benchmark configuration for comparing Virtual Threads vs Platform Threads in the Nexus scheduling component",
+  "version": "1.0",
+  "javaVersion": "21",
+  "globalSettings": {
+    "warmupIterations": 5,
+    "measurementIterations": 10,
+    "forks": 1,
+    "threads": 1,
+    "timeUnit": "MILLISECONDS",
+    "jvmArgs": [
+      "-XX:+UseZGC",
+      "-XX:+ZGenerational",
+      "-Djdk.tracePinnedThreads=full",
+      "-Djdk.virtualThreadScheduler.parallelism=16",
+      "-Djdk.virtualThreadScheduler.maxPoolSize=256"
+    ]
+  },
+  "scenarios": [
+    {
+      "name": "io_bound_tasks",
+      "description": "Benchmark for I/O-bound tasks that should benefit from Virtual Threads",
+      "taskType": "IO_BOUND",
+      "concurrencyLevels": [10, 100, 1000, 5000, 10000],
+      "taskDurationMs": 100,
+      "ioBoundConfig": {
+        "ioOperationCount": 10,
+        "ioOperationDurationMs": 10,
+        "simulatedIoType": "NETWORK"
+      }
+    },
+    {
+      "name": "cpu_bound_tasks",
+      "description": "Benchmark for CPU-bound tasks to compare thread behavior",
+      "taskType": "CPU_BOUND",
+      "concurrencyLevels": [10, 100, 500, 1000],
+      "taskDurationMs": 50,
+      "cpuBoundConfig": {
+        "computationIntensity": "MEDIUM",
+        "allocateMemory": true,
+        "memoryPressureMb": 5
+      }
+    },
+    {
+      "name": "mixed_workload",
+      "description": "Benchmark for mixed workload with both I/O and CPU operations",
+      "taskType": "MIXED",
+      "concurrencyLevels": [10, 100, 1000, 5000],
+      "taskDurationMs": 150,
+      "mixedConfig": {
+        "ioRatio": 0.7,
+        "ioOperationCount": 5,
+        "ioOperationDurationMs": 20,
+        "computationIntensity": "LOW"
+      }
+    },
+    {
+      "name": "database_operations",
+      "description": "Benchmark for database operations that may cause thread pinning",
+      "taskType": "DATABASE",
+      "concurrencyLevels": [10, 100, 500, 1000, 2000],
+      "taskDurationMs": 200,
+      "databaseConfig": {
+        "operationType": "QUERY",
+        "batchSize": 10,
+        "simulateIndexLookup": true,
+        "monitorThreadPinning": true
+      }
+    },
+    {
+      "name": "scheduled_tasks",
+      "description": "Benchmark for typical scheduled tasks in Nexus",
+      "taskType": "SCHEDULED_TASK",
+      "concurrencyLevels": [5, 20, 50, 100],
+      "taskDurationMs": 500,
+      "scheduledTaskConfig": {
+        "taskTypes": ["CLEANUP", "REBUILD_INDEX", "COMPACT_BLOBSTORE", "METRICS_COLLECTION"],
+        "simulateRepositoryAccess": true,
+        "simulateBlobStoreAccess": true
+      }
+    }
+  ],
+  "threadingModels": [
+    {
+      "name": "platform_threads",
+      "type": "PLATFORM",
+      "threadPoolConfig": {
+        "corePoolSize": 50,
+        "maxPoolSize": 200,
+        "queueCapacity": 1000,
+        "keepAliveTimeSeconds": 60
+      }
+    },
+    {
+      "name": "virtual_threads",
+      "type": "VIRTUAL",
+      "threadPoolConfig": {
+        "maxParallelism": 256,
+        "monitorPinning": true,
+        "pinningThresholdMs": 10
+      }
+    }
+  ],
+  "metrics": {
+    "responseTime": {
+      "enabled": true,
+      "percentiles": [50, 90, 95, 99]
+    },
+    "throughput": {
+      "enabled": true,
+      "reportPerSecond": true
+    },
+    "resourceUtilization": {
+      "enabled": true,
+      "trackMemory": true,
+      "trackCpu": true,
+      "trackGc": true
+    },
+    "threadMetrics": {
+      "enabled": true,
+      "trackCreation": true,
+      "trackTermination": true,
+      "trackPinning": true,
+      "trackMounting": true,
+      "captureStackTracesOnPinning": true
+    }
+  },
+  "reporting": {
+    "outputFormats": ["JSON", "CSV", "HTML"],
+    "generateCharts": true,
+    "compareThreadingModels": true,
+    "saveRawResults": true,
+    "outputDirectory": "target/benchmark-results"
+  }
+}

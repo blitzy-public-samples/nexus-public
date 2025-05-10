@@ -17,15 +17,19 @@ import java.io.IOException;
 import org.sonatype.goodies.testsupport.TestSupport;
 
 import com.google.common.base.Suppliers;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -37,6 +41,8 @@ import static org.sonatype.nexus.transaction.Transactional.DEFAULT_REASON;
  * Test operations behaviour.
  */
 @SuppressWarnings("boxing")
+@ExtendWith(MockitoExtension.class)
+@Tag("Java21TestGroup")
 public class OperationsTest
     extends TestSupport
 {
@@ -48,13 +54,13 @@ public class OperationsTest
   @Mock
   Transaction tx;
 
-  @Before
+  @BeforeEach
   public void setUp() {
     when(session.getTransaction()).thenReturn(tx);
     UnitOfWork.begin(Suppliers.ofInstance(session));
   }
 
-  @After
+  @AfterEach
   public void tearDown() {
     UnitOfWork.end();
   }
@@ -103,31 +109,30 @@ public class OperationsTest
     verifyNoMoreInteractions(session, tx);
   }
 
-  @Test(expected = IOException.class)
+  @Test
   public void testRetryFailure() throws Exception {
     when(tx.allowRetry(any(Exception.class))).thenReturn(true).thenReturn(false);
 
     methods.setCountdownToSuccess(100);
-    try {
+    IOException exception = assertThrows(IOException.class, () -> {
       Transactional.operation
           .retryOn(IOException.class)
           .throwing(IOException.class)
           .call(() -> methods.retryOnCheckedException());
-    }
-    finally {
-      InOrder order = inOrder(session, tx);
-      order.verify(session).getTransaction();
-      order.verify(tx).reason(DEFAULT_REASON);
-      order.verify(tx).begin();
-      order.verify(tx).rollback();
-      order.verify(tx).allowRetry(any(IOException.class));
-      order.verify(tx).begin();
-      order.verify(tx).rollback();
-      order.verify(tx).allowRetry(any(IOException.class));
-      order.verify(tx).end();
-      order.verify(session).close();
-      verifyNoMoreInteractions(session, tx);
-    }
+    });
+    
+    InOrder order = inOrder(session, tx);
+    order.verify(session).getTransaction();
+    order.verify(tx).reason(DEFAULT_REASON);
+    order.verify(tx).begin();
+    order.verify(tx).rollback();
+    order.verify(tx).allowRetry(any(IOException.class));
+    order.verify(tx).begin();
+    order.verify(tx).rollback();
+    order.verify(tx).allowRetry(any(IOException.class));
+    order.verify(tx).end();
+    order.verify(session).close();
+    verifyNoMoreInteractions(session, tx);
   }
 
   @Test

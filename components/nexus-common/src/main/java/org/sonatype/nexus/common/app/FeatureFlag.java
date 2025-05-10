@@ -18,24 +18,48 @@ import java.lang.annotation.Target;
 
 import static java.lang.annotation.ElementType.PACKAGE;
 import static java.lang.annotation.ElementType.TYPE;
+import static java.lang.annotation.ElementType.TYPE_PARAMETER;
 import static java.lang.annotation.RetentionPolicy.RUNTIME;
 
 /**
  * Flags packages or components that should only exist when the named system property is {@code true}.
+ * 
+ * <p>This annotation is compatible with Java 21 reflection and annotation processing.</p>
+ *
+ * <p>Usage example:</p>
+ * <pre>
+ * {@literal @}FeatureFlag(name = "nexus.my.feature", enabledByDefault = true)
+ * public class MyFeature {
+ *     // This class will only be active when the system property "nexus.my.feature" is true
+ *     // or not specified (due to enabledByDefault = true)
+ * }
+ * </pre>
  *
  * @since 3.19
  */
 @Retention(RUNTIME)
-@Target({PACKAGE, TYPE})
+@Target({PACKAGE, TYPE, TYPE_PARAMETER})
 @Repeatable(FeatureFlagGroup.class)
 public @interface FeatureFlag
 {
+  /**
+   * The name of the system property to check.
+   * 
+   * @return the system property name
+   */
   String name();
 
+  /**
+   * Whether the feature is enabled by default when the system property is not set.
+   * 
+   * @return true if the feature should be enabled by default, false otherwise
+   */
   boolean enabledByDefault() default false;
 
   /**
-   * The feature flag is enabled when the property evaluates to false instead of true
+   * The feature flag is enabled when the property evaluates to false instead of true.
+   * 
+   * @return true if the logic should be inverted, false otherwise
    */
   boolean inverse() default false;
 }

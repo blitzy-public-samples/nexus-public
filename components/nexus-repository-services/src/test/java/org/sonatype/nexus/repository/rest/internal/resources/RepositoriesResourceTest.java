@@ -14,6 +14,8 @@ package org.sonatype.nexus.repository.rest.internal.resources;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
@@ -26,15 +28,21 @@ import org.sonatype.nexus.repository.rest.api.RepositoryXO;
 import org.sonatype.nexus.repository.types.HostedType;
 import org.sonatype.nexus.repository.types.ProxyType;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class RepositoriesResourceTest
     extends TestSupport
 {
@@ -81,7 +89,7 @@ public class RepositoriesResourceTest
 
   private RepositoriesResource underTest;
 
-  @Before
+  @BeforeEach
   public void setup() {
     Repository repository1 =
         createMockRepository(REPOSITORY_1_NAME, REPOSITORY_1_FORMAT, REPOSITORY_1_TYPE, REPOSITORY_1_URL,
@@ -105,6 +113,40 @@ public class RepositoriesResourceTest
   public void testGetRepository() {
     assertThat(underTest.getRepository(REPOSITORY_1_NAME), is(REPOSITORY_XO_1));
     assertThat(underTest.getRepository(REPOSITORY_2_NAME), is(REPOSITORY_XO_2));
+  }
+  
+  @Test
+  public void testGetRepositoriesWithVirtualThreads() throws Exception {
+    // Number of virtual threads to create for concurrent repository access
+    int threadCount = 100;
+    CountDownLatch latch = new CountDownLatch(threadCount);
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    // Create and start virtual threads to concurrently access repositories
+    for (int i = 0; i < threadCount; i++) {
+      Thread.ofVirtual().start(() -> {
+        try {
+          // Get repositories and verify the result
+          List<RepositoryXO> repositories = underTest.getRepositories();
+          if (repositories.size() == 2 && 
+              repositories.contains(REPOSITORY_XO_1) && 
+              repositories.contains(REPOSITORY_XO_2)) {
+            successCount.incrementAndGet();
+          }
+        } finally {
+          latch.countDown();
+        }
+      });
+    }
+    
+    // Wait for all threads to complete
+    latch.await();
+    
+    // Verify that all threads successfully retrieved the repositories
+    assertEquals(threadCount, successCount.get(), "All virtual threads should successfully retrieve repositories");
+    
+    // Verify that the repository manager was called the expected number of times
+    verify(repositoryManagerRESTAdapter, times(threadCount)).getRepositories();
   }
 
   private static Repository createMockRepository(String name, Format format, Type type, String url, String remoteUrl) {

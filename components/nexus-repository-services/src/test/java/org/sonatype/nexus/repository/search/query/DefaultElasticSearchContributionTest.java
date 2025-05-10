@@ -15,17 +15,20 @@ package org.sonatype.nexus.repository.search.query;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.hamcrest.Matchers;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 
-public class DefaultElasticSearchContributionTest
+@ExtendWith(MockitoExtension.class)
+class DefaultElasticSearchContributionTest
 {
   private DefaultElasticSearchContribution
       defaultSearchContribution = new DefaultElasticSearchContribution();
 
   @Test
-  public void defaultSearchContributionEscapesStartingSlash() {
+  void defaultSearchContributionEscapesStartingSlash() {
     BoolQueryBuilder query = QueryBuilders.boolQuery();
     String field = "name";
     String value = "/foo";
@@ -36,7 +39,7 @@ public class DefaultElasticSearchContributionTest
   }
 
   @Test
-  public void defaultSearchContributionEscapesContainedSlashes() {
+  void defaultSearchContributionEscapesContainedSlashes() {
     BoolQueryBuilder query = QueryBuilders.boolQuery();
     String field = "name";
     String value = "a/b/";

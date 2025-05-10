@@ -14,6 +14,8 @@ package org.sonatype.nexus.transaction;
 
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicIntegerArray;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.lang.System.currentTimeMillis;
@@ -23,6 +25,7 @@ import static java.util.stream.LongStream.rangeClosed;
 
 /**
  * Maintains a rolling window of counts for the given time period.
+ * Optimized for high-concurrency environments with Java 21 Virtual Threads.
  *
  * @since 3.16
  */
@@ -31,6 +34,9 @@ class RollingStats
   private final AtomicIntegerArray buckets;
 
   private final TimeUnit tickUnit;
+  
+  // Using a lock instead of synchronized block for more fine-grained control
+  private final Lock windowShiftLock = new ReentrantLock();
 
   private volatile long tick;
 
@@ -72,18 +78,39 @@ class RollingStats
 
   /**
    * Compares the last tick to the current tick and shifts the window accordingly, zeroing out stale elements.
+   * Optimized for Virtual Threads by minimizing the synchronized block scope.
    */
   private void maybeShiftWindow() {
+    // Get current tick outside of any lock to reduce contention
     long newTick = currentTick();
-    if (tick < newTick) {
-      synchronized (this) {
+    
+    // Fast path: if no shift is needed, return immediately without locking
+    if (tick >= newTick) {
+      return;
+    }
+    
+    // Only try to acquire the lock if we might need to shift the window
+    // This reduces contention in high-concurrency environments
+    boolean lockAcquired = windowShiftLock.tryLock();
+    if (lockAcquired) {
+      try {
+        // Re-check condition after acquiring the lock
+        // Another thread might have already shifted the window
         if (tick < newTick) {
-          // move round circular window: any elements after the last tick, up to and including current tick, is now
-          // stale
-          rangeClosed(tick + 1, newTick).limit(buckets.length()).mapToInt(this::index).forEach(i -> buckets.set(i, 0));
+          // Move round circular window: any elements after the last tick, up to and including current tick, is now stale
+          rangeClosed(tick + 1, newTick)
+              .limit(buckets.length())
+              .mapToInt(this::index)
+              .forEach(i -> buckets.set(i, 0));
+          
+          // Update tick with volatile write to ensure visibility across threads
           tick = newTick;
         }
+      } finally {
+        windowShiftLock.unlock();
       }
     }
+    // If we couldn't acquire the lock, another thread is already shifting the window
+    // We can continue with our operation as the other thread will update the tick value
   }
 }

@@ -16,6 +16,9 @@ import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * @since 3.0
@@ -24,9 +27,62 @@ import java.lang.annotation.Target;
 @Target(ElementType.TYPE)
 public @interface ManagedLifecycle
 {
+  /**
+   * Lifecycle phases in order of execution.
+   * <p>
+   * Provides sequenced collection-like behavior for working with phases in order.
+   * </p>
+   */
   enum Phase
   {
-    OFF, KERNEL, STORAGE, RESTORE, UPGRADE, SCHEMAS, EVENTS, SECURITY, SERVICES, REPOSITORIES, CAPABILITIES, TASKS
+    OFF, KERNEL, STORAGE, RESTORE, UPGRADE, SCHEMAS, EVENTS, SECURITY, SERVICES, REPOSITORIES, CAPABILITIES, TASKS;
+    
+    // Cache the values to avoid creating a new array for each call to values()
+    private static final Phase[] PHASES = values();
+    
+    // Unmodifiable list of phases in declaration order
+    private static final List<Phase> PHASES_LIST = Collections.unmodifiableList(Arrays.asList(PHASES));
+    
+    // Unmodifiable list of phases in reverse declaration order
+    private static final List<Phase> REVERSED_PHASES_LIST = Collections.unmodifiableList(Arrays.asList(PHASES)).reversed();
+    
+    /**
+     * Returns all phases in declaration order.
+     *
+     * @return unmodifiable list of phases in declaration order
+     */
+    public static List<Phase> sequencedValues() {
+      return PHASES_LIST;
+    }
+    
+    /**
+     * Returns all phases in reverse declaration order.
+     *
+     * @return unmodifiable list of phases in reverse declaration order
+     */
+    public static List<Phase> reversedValues() {
+      return REVERSED_PHASES_LIST;
+    }
+    
+    /**
+     * Returns the next phase in declaration order, or null if this is the last phase.
+     *
+     * @return the next phase or null
+     */
+    public Phase next() {
+      int ordinal = this.ordinal();
+      return ordinal < PHASES.length - 1 ? PHASES[ordinal + 1] : null;
+    }
+    
+    /**
+     * Returns the previous phase in declaration order, or null if this is the first phase.
+     *
+     * @return the previous phase or null
+     */
+    public Phase previous() {
+      int ordinal = this.ordinal();
+      return ordinal > 0 ? PHASES[ordinal - 1] : null;
+    }
   }
 
   Phase phase();

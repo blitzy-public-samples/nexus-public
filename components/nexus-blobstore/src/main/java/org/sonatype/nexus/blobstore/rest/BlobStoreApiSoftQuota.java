@@ -18,20 +18,29 @@ import javax.validation.constraints.NotBlank;
 import org.sonatype.nexus.blobstore.quota.internal.SpaceRemainingQuota;
 import org.sonatype.nexus.blobstore.quota.internal.SpaceUsedQuota;
 
-import io.swagger.annotations.ApiModelProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
+ * API model for BlobStore soft quota configuration.
+ * 
  * @since 3.19
  */
 public class BlobStoreApiSoftQuota
 {
+  /**
+   * The type of quota to apply.
+   * Uses Java 21 String Templates for message formatting (requires --enable-preview flag).
+   */
   @NotBlank
-  @ApiModelProperty(value = "The type to use such as " + SpaceRemainingQuota.ID + ", or " + SpaceUsedQuota.ID,
-      allowableValues = SpaceRemainingQuota.ID + "," + SpaceUsedQuota.ID)
+  @Schema(description = STR."The type to use such as \{SpaceRemainingQuota.ID}, or \{SpaceUsedQuota.ID}",
+      allowableValues = STR."\{SpaceRemainingQuota.ID},\{SpaceUsedQuota.ID}")
   private String type;
 
+  /**
+   * The quota limit in MB.
+   */
   @Min(0)
-  @ApiModelProperty("The limit in MB.")
+  @Schema(description = "The limit in MB.")
   private Long limit;
 
   public String getType() {

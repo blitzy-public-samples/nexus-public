@@ -18,14 +18,17 @@ import java.io.UncheckedIOException;
 import org.sonatype.goodies.testsupport.TestSupport;
 
 import org.aopalliance.intercept.Joinpoint;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Answers.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
@@ -35,6 +38,7 @@ import static org.sonatype.nexus.transaction.Transactional.DEFAULT_REASON;
 /**
  * Test {@link TransactionSupport}.
  */
+@ExtendWith(MockitoExtension.class)
 public class TransactionSupportTest
     extends TestSupport
 {
@@ -49,7 +53,7 @@ public class TransactionSupportTest
 
   private TransactionalWrapper txWrapper;
 
-  @Before
+  @BeforeEach
   @SuppressWarnings("unchecked")
   public void setUp() {
     doNothing().when(tx).doBegin();
@@ -77,12 +81,15 @@ public class TransactionSupportTest
     assertThat(tx.isActive(), is(false));
   }
 
-  @Test(expected = IllegalStateException.class)
+  @Test
   public void cannotBeginTwice() {
     assertThat(tx.isActive(), is(false));
     tx.begin();
     assertThat(tx.isActive(), is(true));
-    tx.begin();
+    
+    assertThrows(IllegalStateException.class, () -> {
+      tx.begin();
+    });
   }
 
   @Test
@@ -101,9 +108,11 @@ public class TransactionSupportTest
     assertThat(tx.reason(), is("testing!"));
   }
 
-  @Test(expected = NullPointerException.class)
+  @Test
   public void reasonCannotBeNull() {
-    tx.reason(null);
+    assertThrows(NullPointerException.class, () -> {
+      tx.reason(null);
+    });
   }
 
   @Test

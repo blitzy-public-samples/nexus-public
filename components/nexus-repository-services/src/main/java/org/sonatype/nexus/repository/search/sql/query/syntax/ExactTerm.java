@@ -12,8 +12,6 @@
  */
 package org.sonatype.nexus.repository.search.sql.query.syntax;
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
 /**
  * A term which is expected to be matched precisely.
  */
@@ -21,7 +19,28 @@ public class ExactTerm
     extends TermSupport<String>
     implements StringTerm
 {
+  /**
+   * Creates a new ExactTerm with the specified term string.
+   * Uses pattern matching for null validation instead of Preconditions.checkNotNull.
+   *
+   * @param term the term string (must not be null)
+   * @throws NullPointerException if term is null
+   */
   public ExactTerm(final String term) {
-    super(checkNotNull(term));
+    super(switch(term) {
+      case null -> throw new NullPointerException("Term cannot be null");
+      case String s -> s;
+    });
+  }
+  
+  /**
+   * Optimized equality check using pattern matching for instanceof.
+   */
+  @Override
+  public boolean equals(final Object obj) {
+    if (this == obj) {
+      return true;
+    }
+    return obj instanceof ExactTerm that && get().equals(that.get());
   }
 }

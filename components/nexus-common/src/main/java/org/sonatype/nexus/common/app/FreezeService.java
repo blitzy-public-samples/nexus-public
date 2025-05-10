@@ -13,6 +13,7 @@
 package org.sonatype.nexus.common.app;
 
 import java.util.List;
+import java.util.concurrent.Executors;
 import java.util.function.Supplier;
 
 import static java.util.UUID.randomUUID;
@@ -104,6 +105,75 @@ public interface FreezeService
     taskRequestFreeze(token, reason);
     try {
       return operation.get();
+    }
+    finally {
+      taskCancelFreeze(token);
+    }
+  }
+
+  /**
+   * Temporarily freezes the application during the given system task, executing it on a virtual thread.
+   * This is particularly beneficial for I/O-bound operations as virtual threads are lightweight and can be
+   * suspended when blocked, allowing the carrier thread to be used for other tasks.
+   *
+   * @param reason Human-readable reason why the application was frozen
+   * @param operation The system task to perform while frozen
+   * @since 3.60
+   */
+  default void freezeDuringVirtual(String reason, Runnable operation) {
+    // generate a unique freeze token for this request
+    String token = randomUUID() + "@" + operation.hashCode();
+    taskRequestFreeze(token, reason);
+    try {
+      // Use virtual thread for the operation
+      var executor = Executors.newVirtualThreadPerTaskExecutor();
+      try {
+        executor.submit(operation).get();
+      }
+      catch (Exception e) {
+        if (e instanceof RuntimeException) {
+          throw (RuntimeException) e;
+        }
+        throw new RuntimeException("Error executing operation on virtual thread", e);
+      }
+      finally {
+        executor.close();
+      }
+    }
+    finally {
+      taskCancelFreeze(token);
+    }
+  }
+
+  /**
+   * Temporarily freezes the application during the given system task, executing it on a virtual thread.
+   * This is particularly beneficial for I/O-bound operations as virtual threads are lightweight and can be
+   * suspended when blocked, allowing the carrier thread to be used for other tasks.
+   *
+   * @param reason Human-readable reason why the application was frozen
+   * @param operation The system task to perform while frozen
+   * @return The result of the operation
+   * @since 3.60
+   */
+  default <T> T freezeDuringVirtual(String reason, Supplier<T> operation) {
+    // generate a unique freeze token for this request
+    String token = randomUUID() + "@" + operation.hashCode();
+    taskRequestFreeze(token, reason);
+    try {
+      // Use virtual thread for the operation
+      var executor = Executors.newVirtualThreadPerTaskExecutor();
+      try {
+        return executor.submit(operation::get).get();
+      }
+      catch (Exception e) {
+        if (e instanceof RuntimeException) {
+          throw (RuntimeException) e;
+        }
+        throw new RuntimeException("Error executing operation on virtual thread", e);
+      }
+      finally {
+        executor.close();
+      }
     }
     finally {
       taskCancelFreeze(token);

@@ -17,6 +17,9 @@ package org.sonatype.nexus.common.app;
  *
  * Accessors will return {@link ApplicationVersionSupport#UNKNOWN} if unable to determine value.
  *
+ * <p>Implementation note: This interface is compatible with Java 21 and can be efficiently
+ * implemented using modern Java features such as records for immutable version data.</p>
+ *
  * @since 3.0
  */
 public interface ApplicationVersion
@@ -52,4 +55,18 @@ public interface ApplicationVersion
    * @since 3.4
    */
   String getNexus2CompatibleVersion();
+  
+  /**
+   * Returns a formatted string containing all version information.
+   * 
+   * <p>This default implementation uses modern string formatting to combine all version details.
+   * Implementations can override this method to provide custom formatting.</p>
+   * 
+   * @return A formatted string with complete version information
+   * @since 3.60
+   */
+  default String getVersionDetails() {
+    return String.format("Version: %s, Edition: %s, Build: %s, Timestamp: %s",
+        getVersion(), getEdition(), getBuildRevision(), getBuildTimestamp());
+  }
 }

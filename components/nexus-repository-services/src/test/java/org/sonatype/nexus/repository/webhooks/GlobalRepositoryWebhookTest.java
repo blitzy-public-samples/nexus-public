@@ -12,6 +12,13 @@
  */
 package org.sonatype.nexus.repository.webhooks;
 
+import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.audit.InitiatorProvider;
 import org.sonatype.nexus.common.event.EventManager;
@@ -24,21 +31,28 @@ import org.sonatype.nexus.repository.manager.RepositoryDeletedEvent;
 import org.sonatype.nexus.repository.manager.RepositoryUpdatedEvent;
 import org.sonatype.nexus.repository.types.ProxyType;
 import org.sonatype.nexus.repository.webhooks.GlobalRepositoryWebhook.RepositoryWebhookPayload;
+import org.sonatype.nexus.webhooks.WebhookRequest;
 import org.sonatype.nexus.webhooks.WebhookRequestSendEvent;
 
 import com.google.common.collect.Lists;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.core.Is.is;
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.is;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.sonatype.goodies.testsupport.hamcrest.DiffMatchers.equalTo;
 
+@ExtendWith(MockitoExtension.class)
 public class GlobalRepositoryWebhookTest
     extends TestSupport
 {
@@ -62,7 +76,7 @@ public class GlobalRepositoryWebhookTest
 
   private GlobalRepositoryWebhook globalRepositoryWebhook;
 
-  @Before
+  @BeforeEach
   public void before() {
     globalRepositoryWebhook = new GlobalRepositoryWebhook(nodeAccess, initiatorProvider);
     globalRepositoryWebhook.setEventManager(eventManager);
@@ -113,16 +127,59 @@ public class GlobalRepositoryWebhookTest
         ArgumentCaptor.forClass(WebhookRequestSendEvent.class);
     verify(eventManager).post(assetArgumentCaptor.capture());
 
-    RepositoryWebhookPayload repositoryPayload =
-        (RepositoryWebhookPayload) assetArgumentCaptor.getValue().getRequest().getPayload();
+    WebhookRequestSendEvent event = assetArgumentCaptor.getValue();
+    if (event instanceof WebhookRequestSendEvent webhookEvent) {
+      WebhookRequest request = webhookEvent.getRequest();
+      if (request.getPayload() instanceof RepositoryWebhookPayload repositoryPayload) {
+        assertThat(repositoryPayload.getInitiator(), is(equalTo("initiator")));
+        assertThat(repositoryPayload.getNodeId(), is(equalTo("nodeId")));
+        assertThat(repositoryPayload.getAction().toString(), is(equalTo(action)));
 
-    assertThat(repositoryPayload.getInitiator(), is(equalTo("initiator")));
-    assertThat(repositoryPayload.getNodeId(), is(equalTo("nodeId")));
-    assertThat(repositoryPayload.getAction().toString(), is(equalTo(action)));
+        assertThat(repositoryPayload.getRepository().getName(), is(equalTo("name")));
+        assertThat(repositoryPayload.getRepository().getFormat(), is(equalTo("format")));
+        assertThat(repositoryPayload.getRepository().getType(), is(equalTo("proxy")));
+      }
+    }
+  }
 
-    assertThat(repositoryPayload.getRepository().getName(), is(equalTo("name")));
-    assertThat(repositoryPayload.getRepository().getFormat(), is(equalTo("format")));
-    assertThat(repositoryPayload.getRepository().getType(), is(equalTo("proxy")));
+  @Test
+  public void testConcurrentEventsWithVirtualThreads() throws Exception {
+    // Number of concurrent events to process
+    int eventCount = 100;
+    CountDownLatch latch = new CountDownLatch(eventCount);
+    List<WebhookRequestSendEvent> capturedEvents = new CopyOnWriteArrayList<>();
+    
+    // Capture events posted to the event manager
+    when(eventManager.post(any(WebhookRequestSendEvent.class))).thenAnswer(invocation -> {
+      WebhookRequestSendEvent event = invocation.getArgument(0);
+      capturedEvents.add(event);
+      latch.countDown();
+      return null;
+    });
+    
+    // Create and start virtual threads to process events concurrently
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      for (int i = 0; i < eventCount; i++) {
+        executor.submit(() -> globalRepositoryWebhook.on(repositoryCreatedEvent));
+      }
+      
+      // Wait for all events to be processed
+      boolean allProcessed = latch.await(5, TimeUnit.SECONDS);
+      assertThat("All events should be processed within timeout", allProcessed, is(true));
+      
+      // Verify that all events were captured
+      assertThat(capturedEvents, hasSize(eventCount));
+      
+      // Verify that the event manager received the expected number of events
+      verify(eventManager, times(eventCount)).post(any(WebhookRequestSendEvent.class));
+      
+      // Verify the content of a sample event
+      WebhookRequestSendEvent sampleEvent = capturedEvents.get(0);
+      if (sampleEvent.getRequest().getPayload() instanceof RepositoryWebhookPayload payload) {
+        assertThat(payload.getAction().toString(), is(equalTo("CREATED")));
+        assertThat(payload.getRepository().getName(), is(equalTo("name")));
+      }
+    }
   }
 
   public class TestFormat

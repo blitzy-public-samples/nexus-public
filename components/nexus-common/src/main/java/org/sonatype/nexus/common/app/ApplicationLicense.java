@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.common.app;
 
-import java.util.Map;
+import java.util.SequencedMap;
 
 import javax.annotation.Nullable;
 
@@ -51,13 +51,14 @@ public interface ApplicationLicense
   boolean isEvaluation();
 
   /**
-   * Returns license attributes.
+   * Returns license attributes in a defined encounter order.
    *
    * This is an immutable view of additional information about the current license.
    * Could be an empty-map if no license was installed.
+   * The attributes maintain the order defined in the Attributes enum.
    *
    */
-  Map<String,Object> getAttributes();
+  SequencedMap<String,Object> getAttributes();
 
   /**
    * Returns the license finger-print, or {@code null} if not installed.

@@ -18,36 +18,62 @@ import org.sonatype.nexus.repository.security.RepositoryAdminPrivilegeDescriptor
 import org.sonatype.nexus.security.privilege.Privilege;
 import org.sonatype.nexus.security.privilege.rest.PrivilegeAction;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 /**
+ * Repository admin privilege request DTO for the REST API.
+ * 
  * @since 3.19
  */
 public class ApiPrivilegeRepositoryAdminRequest
     extends ApiPrivilegeWithRepositoryRequest
 {
   /**
-   * for deserialization
+   * Default constructor for Jackson deserialization.
+   * Uses {@link JsonCreator} to ensure proper instantiation with Jackson 2.16.1.
    */
+  @JsonCreator
   private ApiPrivilegeRepositoryAdminRequest() {
     super();
   }
 
-  public ApiPrivilegeRepositoryAdminRequest(final String name,
-                                            final String description,
-                                            final String format,
-                                            final String repository,
-                                            final Collection<PrivilegeAction> actions)
+  /**
+   * Creates a new repository admin privilege request with the specified properties.
+   *
+   * @param name the privilege name
+   * @param description the privilege description
+   * @param format the repository format
+   * @param repository the repository name
+   * @param actions the collection of privilege actions
+   */
+  public ApiPrivilegeRepositoryAdminRequest(
+      @JsonProperty("name") final String name,
+      @JsonProperty("description") final String description,
+      @JsonProperty("format") final String format,
+      @JsonProperty("repository") final String repository,
+      @JsonProperty("actions") final Collection<PrivilegeAction> actions)
   {
     super(name, description, format, repository, actions);
   }
 
+  /**
+   * Creates a new repository admin privilege request from an existing privilege.
+   *
+   * @param privilege the privilege to convert
+   */
   public ApiPrivilegeRepositoryAdminRequest(final Privilege privilege) {
     super(privilege);
   }
 
   @Override
   protected Privilege doAsPrivilege(final Privilege privilege) {
-    super.doAsPrivilege(privilege);
-    privilege.setType(RepositoryAdminPrivilegeDescriptor.TYPE);
+    // Using pattern matching to ensure privilege is of the correct type
+    if (privilege instanceof Privilege p) {
+      super.doAsPrivilege(p);
+      p.setType(RepositoryAdminPrivilegeDescriptor.TYPE);
+      return p;
+    }
     return privilege;
   }
 }

@@ -13,9 +13,11 @@
 package org.sonatype.nexus.blobstore.group;
 
 import com.google.common.hash.HashCode;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import org.sonatype.goodies.common.Time;
 import org.sonatype.goodies.testsupport.TestSupport;
@@ -39,16 +41,20 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static java.util.Collections.emptyList;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.*;
 
+@ExtendWith(MockitoExtension.class)
 public class BlobStoreGroupTest
     extends TestSupport
 {
@@ -85,7 +91,7 @@ public class BlobStoreGroupTest
 
   private final WriteToFirstMemberFillPolicy writeToFirstMemberFillPolicy = new WriteToFirstMemberFillPolicy();
 
-  @Before
+  @BeforeEach
   public void setUp() {
     when(cacheHelperProvider.get()).thenReturn(cacheHelper);
     when(cacheHelper.maybeCreateCache(anyString(), any(MutableConfiguration.class))).thenReturn(cache);
@@ -119,7 +125,7 @@ public class BlobStoreGroupTest
 
     Blob foundBlob = blobStore.get(new BlobId("doesntexist"));
 
-    assertThat(foundBlob, nullValue());
+    assertNull(foundBlob);
   }
 
   @Test
@@ -135,13 +141,13 @@ public class BlobStoreGroupTest
     when(two.get(new BlobId("in_two"))).thenReturn(blobTwo);
 
     Blob foundBlob = blobStore.get(new BlobId("in_one"));
-    assertThat(foundBlob, is(blobOne));
+    assertEquals(blobOne, foundBlob);
 
     foundBlob = blobStore.get(new BlobId("in_two"));
-    assertThat(foundBlob, is(blobTwo));
+    assertEquals(blobTwo, foundBlob);
 
     foundBlob = blobStore.get(new BlobId("doesntexist"));
-    assertThat(foundBlob, nullValue());
+    assertNull(foundBlob);
   }
 
   @Test
@@ -192,7 +198,7 @@ public class BlobStoreGroupTest
 
   private void assertBlobStoreGet(String blobId, boolean includeDeleted, Blob expectedBlob) {
     Blob foundBlob = blobStore.get(new BlobId(blobId), includeDeleted);
-    assertThat(foundBlob, is(expectedBlob));
+    assertEquals(expectedBlob, foundBlob);
   }
 
   @Test
@@ -255,7 +261,7 @@ public class BlobStoreGroupTest
     Stream<BlobId> stream = blobStore.getBlobIdStream();
 
     List<String> result = stream.map(BlobId::toString).collect(Collectors.toList());
-    assertThat(result, is(Arrays.asList("a", "b", "c", "d", "e", "f")));
+    assertEquals(Arrays.asList("a", "b", "c", "d", "e", "f"), result);
   }
 
   @Test
@@ -312,12 +318,12 @@ public class BlobStoreGroupTest
 
   private void assertBlobStoreDeleteHard(String blobId, boolean expectedDeleted) {
     boolean deleted = blobStore.deleteHard(new BlobId(blobId));
-    assertThat(deleted, is(expectedDeleted));
+    assertEquals(expectedDeleted, deleted);
   }
 
   private void assertBlobStoreDelete(String blobId, boolean expectedDeleted) {
     boolean deleted = blobStore.delete(new BlobId(blobId), "just because");
-    assertThat(deleted, is(expectedDeleted));
+    assertEquals(expectedDeleted, deleted);
   }
 
   @Test
@@ -326,7 +332,7 @@ public class BlobStoreGroupTest
 
     blobStore.init(config);
 
-    assertThat(blobStore.fillPolicy, is(writeToFirstMemberFillPolicy));
+    assertEquals(writeToFirstMemberFillPolicy, blobStore.fillPolicy);
   }
 
   @Test
@@ -347,7 +353,7 @@ public class BlobStoreGroupTest
 
     verify(one).exists(blobId);
     verify(two, never()).exists(blobId);
-    assertThat(locatedMember.get(), is(one));
+    assertEquals(one, locatedMember.get());
     verify(cache).put(blobId, "one");
   }
 
@@ -370,7 +376,80 @@ public class BlobStoreGroupTest
 
     verify(one).exists(blobId);
     verify(two).exists(blobId);
-    assertThat(locatedMember.get(), is(two));
+    assertEquals(two, locatedMember.get());
     verify(cache, never()).put(any(), any());
+  }
+  
+  @Test
+  public void concurrentBlobStoreGroupOperationsWithVirtualThreads() throws Exception {
+    // Setup BlobStoreGroup with two members
+    config.setAttributes(buildAttributes(Arrays.asList("one", "two"), "test"));
+    blobStore.init(config);
+    blobStore.doStart();
+    when(blobStoreManager.get("one")).thenReturn(one);
+    when(blobStoreManager.get("two")).thenReturn(two);
+    
+    // Configure mock behavior for exists and get operations
+    when(one.exists(any())).thenAnswer(invocation -> {
+      BlobId id = invocation.getArgument(0);
+      return id.toString().startsWith("one-");
+    });
+    when(two.exists(any())).thenAnswer(invocation -> {
+      BlobId id = invocation.getArgument(0);
+      return id.toString().startsWith("two-");
+    });
+    
+    // Setup blob retrieval behavior
+    when(one.get(any(BlobId.class))).thenAnswer(invocation -> {
+      BlobId id = invocation.getArgument(0);
+      return id.toString().startsWith("one-") ? blobOne : null;
+    });
+    when(two.get(any(BlobId.class))).thenAnswer(invocation -> {
+      BlobId id = invocation.getArgument(0);
+      return id.toString().startsWith("two-") ? blobTwo : null;
+    });
+    
+    // Create virtual thread executor
+    int taskCount = 100;
+    CountDownLatch latch = new CountDownLatch(taskCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().factory())) {
+      // Submit concurrent tasks using virtual threads
+      for (int i = 0; i < taskCount; i++) {
+        final int index = i;
+        executor.submit(() -> {
+          try {
+            // Alternate between accessing blobs from different stores
+            String prefix = index % 2 == 0 ? "one-" : "two-";
+            BlobId blobId = new BlobId(prefix + index);
+            Blob blob = blobStore.get(blobId);
+            
+            // Verify correct blob is returned
+            if (prefix.equals("one-")) {
+              assertEquals(blobOne, blob);
+            } else {
+              assertEquals(blobTwo, blob);
+            }
+          } 
+          catch (Exception e) {
+            errorCount.incrementAndGet();
+          } 
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      latch.await(30, TimeUnit.SECONDS);
+      
+      // Verify no errors occurred
+      assertEquals(0, errorCount.get(), "No errors should occur during concurrent operations");
+      
+      // Verify the expected number of calls to each blob store
+      verify(one, atLeast(taskCount / 2)).exists(any(BlobId.class));
+      verify(two, atLeast(taskCount / 2)).exists(any(BlobId.class));
+    }
   }
 }

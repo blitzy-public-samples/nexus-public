@@ -18,29 +18,51 @@ import org.sonatype.nexus.repository.security.RepositoryViewPrivilegeDescriptor;
 import org.sonatype.nexus.security.privilege.Privilege;
 import org.sonatype.nexus.security.privilege.rest.PrivilegeAction;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 /**
+ * REST API model for repository view privileges.
+ *
  * @since 3.19
  */
 public class ApiPrivilegeRepositoryView
     extends ApiPrivilegeWithRepository
 {
   /**
-   * for deserialization
+   * Default constructor for Jackson deserialization.
    */
-  private ApiPrivilegeRepositoryView() {
+  @JsonCreator
+  public ApiPrivilegeRepositoryView() {
     super(RepositoryViewPrivilegeDescriptor.TYPE);
   }
 
-  public ApiPrivilegeRepositoryView(final String name,
-                                    final String description,
-                                    final boolean readOnly,
-                                    final String format,
-                                    final String repository,
-                                    final Collection<PrivilegeAction> actions)
+  /**
+   * Constructor for creating a new repository view privilege.
+   *
+   * @param name        the privilege name
+   * @param description the privilege description
+   * @param readOnly    whether the privilege is read-only
+   * @param format      the repository format
+   * @param repository  the repository name
+   * @param actions     the collection of privilege actions
+   */
+  public ApiPrivilegeRepositoryView(
+      @JsonProperty("name") final String name,
+      @JsonProperty("description") final String description,
+      @JsonProperty("readOnly") final boolean readOnly,
+      @JsonProperty("format") final String format,
+      @JsonProperty("repository") final String repository,
+      @JsonProperty("actions") final Collection<PrivilegeAction> actions)
   {
     super(RepositoryViewPrivilegeDescriptor.TYPE, name, description, readOnly, format, repository, actions);
   }
 
+  /**
+   * Constructor for converting from a {@link Privilege} domain object.
+   *
+   * @param privilege the privilege to convert from
+   */
   public ApiPrivilegeRepositoryView(final Privilege privilege) {
     super(privilege);
   }

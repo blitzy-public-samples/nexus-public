@@ -13,6 +13,12 @@
 package org.sonatype.nexus.transaction;
 
 import java.io.IOException;
+import java.lang.Thread;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicReference;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -24,6 +30,9 @@ import static com.google.common.base.Preconditions.checkState;
 
 /**
  * Miscellaneous methods to exercise transactional aspects.
+ * 
+ * Includes methods for testing with Virtual Thread execution context and
+ * thread-local variable propagation with Virtual Threads.
  */
 @SuppressWarnings("unused")
 @Singleton
@@ -173,5 +182,186 @@ public class ExampleMethods
       throw new IOException();
     }
     return "success";
+  }
+  
+  /**
+   * Tests transaction execution in a Virtual Thread context.
+   * 
+   * @return result of the transaction
+   * @since 3.60
+   */
+  @Transactional
+  public String transactionalInVirtualThread() {
+    // Check if we're running in a virtual thread
+    boolean isVirtual = UnitOfWork.isVirtualThread();
+    return "success in " + (isVirtual ? "virtual" : "platform") + " thread";
+  }
+  
+  /**
+   * Tests asynchronous transaction execution with Virtual Threads.
+   * 
+   * @return result of the transaction
+   * @throws Exception if an error occurs
+   * @since 3.60
+   */
+  public String asyncTransactionalWithVirtualThreads() throws Exception {
+    // Create a virtual thread executor
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    try {
+      // Execute transaction in a virtual thread
+      CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
+        UnitOfWork.begin(Suppliers.ofInstance((TransactionalSession<?>) null));
+        try {
+          return transactional();
+        } finally {
+          UnitOfWork.end();
+        }
+      }, executor);
+      
+      // Wait for the result
+      return future.get();
+    } finally {
+      executor.shutdown();
+    }
+  }
+  
+  /**
+   * Tests thread-local variable propagation with Virtual Threads.
+   * 
+   * @return result indicating if thread-local was properly propagated
+   * @throws Exception if an error occurs
+   * @since 3.60
+   */
+  public String testThreadLocalPropagation() throws Exception {
+    // Create a thread-local variable
+    ThreadLocal<String> threadLocal = new ThreadLocal<>();
+    // Use InheritableThreadLocal for proper propagation to virtual threads
+    InheritableThreadLocal<String> inheritableThreadLocal = new InheritableThreadLocal<>();
+    
+    // Set values in the current thread
+    threadLocal.set("regular-thread-local");
+    inheritableThreadLocal.set("inheritable-thread-local");
+    
+    // Create a virtual thread executor
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    try {
+      // Capture values in virtual thread
+      AtomicReference<String> regularValue = new AtomicReference<>();
+      AtomicReference<String> inheritableValue = new AtomicReference<>();
+      
+      CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
+        regularValue.set(threadLocal.get());
+        inheritableValue.set(inheritableThreadLocal.get());
+        return "completed";
+      }, executor);
+      
+      future.get();
+      
+      // Regular ThreadLocal won't propagate to virtual threads
+      // InheritableThreadLocal will propagate to virtual threads
+      return "Regular: " + (regularValue.get() == null ? "not propagated" : "propagated") + 
+             ", Inheritable: " + (inheritableValue.get() == null ? "not propagated" : "propagated");
+    } finally {
+      executor.shutdown();
+      threadLocal.remove();
+      inheritableThreadLocal.remove();
+    }
+  }
+  
+  /**
+   * Tests UnitOfWork context propagation with Virtual Threads.
+   * 
+   * @return result indicating if UnitOfWork context was properly propagated
+   * @throws Exception if an error occurs
+   * @since 3.60
+   */
+  public String testUnitOfWorkPropagation() throws Exception {
+    // Create a virtual thread executor
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    try {
+      // Begin a unit of work in the current thread
+      UnitOfWork.begin(Suppliers.ofInstance((TransactionalSession<?>) null));
+      
+      try {
+        // Execute in a virtual thread and check if UnitOfWork context is available
+        CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
+          try {
+            // This should succeed if UnitOfWork context is propagated
+            UnitOfWork.currentTx();
+            return "UnitOfWork propagated to virtual thread";
+          } catch (IllegalStateException e) {
+            return "UnitOfWork not propagated to virtual thread";
+          }
+        }, executor);
+        
+        return future.get();
+      } finally {
+        UnitOfWork.end();
+      }
+    } finally {
+      executor.shutdown();
+    }
+  }
+  
+  /**
+   * Tests pausing and resuming UnitOfWork in Virtual Threads.
+   * 
+   * @return result of the operation
+   * @throws Exception if an error occurs
+   * @since 3.60
+   */
+  public String testPauseResumeUnitOfWork() throws Exception {
+    // Create a virtual thread executor
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    try {
+      // Begin a unit of work in the current thread
+      UnitOfWork.begin(Suppliers.ofInstance((TransactionalSession<?>) null));
+      
+      try {
+        // Pause the current unit of work
+        UnitOfWork pausedWork = UnitOfWork.pause();
+        
+        try {
+          // Execute in a virtual thread
+          CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
+            // Resume the paused unit of work in the virtual thread
+            UnitOfWork.resume(pausedWork);
+            
+            try {
+              // This should succeed if UnitOfWork was properly resumed
+              UnitOfWork.currentTx();
+              return "UnitOfWork successfully paused and resumed in virtual thread";
+            } catch (IllegalStateException e) {
+              return "Failed to resume UnitOfWork in virtual thread";
+            } finally {
+              // Pause again so we can resume in the original thread
+              UnitOfWork.pause();
+            }
+          }, executor);
+          
+          String result = future.get();
+          
+          // Resume in the original thread
+          UnitOfWork.resume(pausedWork);
+          return result;
+        } catch (Exception e) {
+          // Make sure we resume in case of exception
+          UnitOfWork.resume(pausedWork);
+          throw e;
+        }
+      } finally {
+        UnitOfWork.end();
+      }
+    } finally {
+      executor.shutdown();
+    }
   }
 }

@@ -36,6 +36,7 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.blobstore.DefaultBlobIdLocationResolver.TEMPORARY_BLOB_ID_PREFIX;
 
 /**
@@ -73,7 +74,7 @@ public class BlobStoreReconciliationLogger
     if (isNotTemporaryBlob(blobId)) {
       MDC.put(BLOBSTORE, reconciliationLogPath.toString());
       // blobId.getBlobCreatedRef() != null means the blob was stored under the date-based layout
-      reconciliationLogger.info("{},{}", blobId.asUniqueString(), blobId.getBlobCreatedRef() != null);
+      reconciliationLogger.info(STR."{blobId.asUniqueString()},{blobId.getBlobCreatedRef() != null}");
       MDC.remove(BLOBSTORE);
     }
   }
@@ -116,7 +117,7 @@ public class BlobStoreReconciliationLogger
             }
           }
           else {
-            LOGGER.info("Cannot find blob id on line, skipping: {}", line);
+            LOGGER.info(STR."Cannot find blob id on line, skipping: {line}");
             return null;
           }
         })
@@ -129,7 +130,7 @@ public class BlobStoreReconciliationLogger
       return Files.lines(file.toPath());
     }
     catch (IOException e) {
-      LOGGER.error("Problem when reading file '{}'", file.getName(), e);
+      LOGGER.error(STR."Problem when reading file '{file.getName()}'", e);
       return Stream.empty();
     }
   }
@@ -144,7 +145,7 @@ public class BlobStoreReconciliationLogger
     if (Objects.nonNull(logs)) {
       return Stream.of(logs)
           .filter(isFileNameInDateRange(fromDate, toDate))
-          .peek(file -> LOGGER.info("Processing file '{}'", file.getName()));
+          .peek(file -> LOGGER.info(STR."Processing file '{file.getName()}'"));
     }
     else {
       LOGGER.info("No files found to process");

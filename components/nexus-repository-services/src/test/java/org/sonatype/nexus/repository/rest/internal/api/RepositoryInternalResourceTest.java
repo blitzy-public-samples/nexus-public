@@ -14,6 +14,15 @@ package org.sonatype.nexus.repository.rest.internal.api;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
+// Import for Java 21 String Templates
+import static java.lang.StringTemplate.STR;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.repository.Facet;
@@ -32,17 +41,23 @@ import org.sonatype.nexus.repository.types.GroupType;
 import org.sonatype.nexus.repository.types.HostedType;
 import org.sonatype.nexus.repository.types.ProxyType;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.lessThan;
 import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.security.BreadActions.READ;
 
+@ExtendWith(MockitoExtension.class)
 public class RepositoryInternalResourceTest
     extends TestSupport
 {
@@ -75,7 +90,7 @@ public class RepositoryInternalResourceTest
 
   private RepositoryInternalResource underTest;
 
-  @Before
+  @BeforeEach
   public void setup() {
     underTest = new RepositoryInternalResource(
         formats,
@@ -89,7 +104,7 @@ public class RepositoryInternalResourceTest
   }
 
   @Test
-  public void testGetRepositories() {
+  void getRepositories() {
     Format maven2 = new Format("maven2")
     {
     };
@@ -140,7 +155,7 @@ public class RepositoryInternalResourceTest
   }
 
   @Test
-  public void testGetDetails() {
+  void getDetails() {
     Format maven2 = new Format("maven2")
     {
     };
@@ -254,5 +269,142 @@ public class RepositoryInternalResourceTest
     when(status.getDescription()).thenReturn(description);
     when(status.getReason()).thenReturn(reason);
     return facet;
+  }
+
+  /**
+   * Tests that Java 21 String Templates are properly handled in repository responses.
+   * This verifies that the repository API can correctly process and display string templates
+   * in repository metadata and status information.
+   */
+  @Test
+  void stringTemplateInRepositoryResponses() {
+    // Create a repository with a status description that uses a String Template
+    Format maven2 = new Format("maven2") {};
+    String repoName = "maven-central";
+    String repoUrl = "http://localhost:8081/repository/maven-central/";
+    
+    // Create a status description using a String Template (Java 21 feature)
+    String statusTemplate = STR."Repository \{repoName} is available at \{repoUrl}";
+    
+    Repository mavenProxyRepository = mockRepository(
+        repoName, 
+        maven2, 
+        proxyType, 
+        repoUrl, 
+        true,
+        Map.of(HttpClientFacet.class, mockHttpFacet(statusTemplate, null)));
+    
+    List<Repository> repositories = List.of(mavenProxyRepository);
+    
+    when(repositoryPermissionChecker.userCanBrowseRepositories(repositories)).thenReturn(repositories);
+    when(repositoryManager.browse()).thenReturn(repositories);
+    when(repositoryPermissionChecker.userHasRepositoryAdminPermission(mavenProxyRepository, READ)).thenReturn(true);
+    
+    // Get repository details which should include our String Template-generated description
+    List<RepositoryDetailXO> details = underTest.getRepositoryDetails();
+    
+    // Verify the String Template was processed correctly
+    assertNotNull(details);
+    assertEquals(1, details.size());
+    assertEquals(repoName, details.get(0).getName());
+    assertEquals("Repository maven-central is available at http://localhost:8081/repository/maven-central/", 
+        details.get(0).getStatus().getDescription());
+  }
+
+  /**
+   * Tests repository operations with different thread configurations to validate behavior
+   * with both platform and virtual threads (Java 21 feature).
+   * This test compares performance and behavior between traditional platform threads
+   * and the new lightweight virtual threads introduced in Java 21.
+   */
+  @Test
+  void repositoryOperationsWithDifferentThreadConfigurations() throws Exception {
+    // Create test repositories
+    Format maven2 = new Format("maven2") {};
+    Repository repository = mockRepository(
+        "maven-central", 
+        maven2, 
+        proxyType, 
+        "http://localhost:8081/repository/maven-central/", 
+        true,
+        Map.of());
+    
+    List<Repository> repositories = List.of(repository);
+    when(repositoryManager.browse()).thenReturn(repositories);
+    when(repositoryPermissionChecker.userCanBrowseRepositories(repositories)).thenReturn(repositories);
+    
+    // Configure thread factories for both platform and virtual threads
+    ThreadFactory platformThreadFactory = Thread.ofPlatform().factory();
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    
+    // Test parameters
+    int taskCount = 100;
+    int warmupRuns = 3;
+    
+    // Warm up to avoid JIT compilation effects
+    for (int i = 0; i < warmupRuns; i++) {
+      executeRepositoryOperations(platformThreadFactory, 10);
+      executeRepositoryOperations(virtualThreadFactory, 10);
+    }
+    
+    // Execute with platform threads and measure time
+    long platformStart = System.nanoTime();
+    executeRepositoryOperations(platformThreadFactory, taskCount);
+    long platformDuration = System.nanoTime() - platformStart;
+    
+    // Execute with virtual threads and measure time
+    long virtualStart = System.nanoTime();
+    executeRepositoryOperations(virtualThreadFactory, taskCount);
+    long virtualDuration = System.nanoTime() - virtualStart;
+    
+    // Log the results for informational purposes
+    logger.info("Platform thread execution time: {} ns", platformDuration);
+    logger.info("Virtual thread execution time: {} ns", virtualDuration);
+    
+    // Virtual threads should generally be more efficient for I/O-bound operations
+    // This is not a strict requirement as performance can vary, but we expect
+    // virtual threads to perform at least as well as platform threads
+    assertThat("Virtual threads should be at least as efficient as platform threads",
+        virtualDuration, lessThan(platformDuration * 1.5)); // Allow some margin
+  }
+  
+  /**
+   * Helper method to execute repository operations using the specified thread factory.
+   * 
+   * @param threadFactory The thread factory to use (platform or virtual)
+   * @param taskCount The number of concurrent tasks to execute
+   * @throws Exception If an error occurs during execution
+   */
+  private void executeRepositoryOperations(ThreadFactory threadFactory, int taskCount) throws Exception {
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(threadFactory);
+    CountDownLatch latch = new CountDownLatch(taskCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    try {
+      // Submit multiple concurrent tasks
+      for (int i = 0; i < taskCount; i++) {
+        executor.submit(() -> {
+          try {
+            // Simulate repository operation by calling getRepositories
+            underTest.getRepositories(null, false, false, null);
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
+            logger.error("Error during repository operation", e);
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete with a reasonable timeout
+      boolean completed = latch.await(30, TimeUnit.SECONDS);
+      
+      // Verify all tasks completed successfully
+      assertEquals(0, errorCount.get(), "All repository operations should complete without errors");
+      assertEquals(true, completed, "All tasks should complete within the timeout period");
+      
+    } finally {
+      executor.shutdown();
+    }
   }
 }

@@ -12,6 +12,7 @@
  */
 package org.sonatype.nexus.common.app;
 
+import java.lang.annotation.Documented;
 import java.lang.annotation.Retention;
 import java.lang.annotation.Target;
 
@@ -19,9 +20,26 @@ import static java.lang.annotation.ElementType.PACKAGE;
 import static java.lang.annotation.ElementType.TYPE;
 import static java.lang.annotation.RetentionPolicy.RUNTIME;
 
+/**
+ * Container annotation for multiple {@link FeatureFlag} annotations on the same element.
+ * <p>
+ * This annotation is not meant to be used directly. It is automatically applied when
+ * multiple {@link FeatureFlag} annotations are used on the same element due to the
+ * {@link java.lang.annotation.Repeatable} nature of the {@link FeatureFlag} annotation.
+ * <p>
+ * This annotation is retained at runtime to support reflection-based feature flag detection.
+ *
+ * @since 3.19
+ */
+@Documented
 @Retention(RUNTIME)
 @Target({PACKAGE, TYPE})
 public @interface FeatureFlagGroup
 {
+  /**
+   * Returns the array of {@link FeatureFlag} annotations contained in this group.
+   *
+   * @return array of feature flag annotations
+   */
   FeatureFlag[] value();
 }

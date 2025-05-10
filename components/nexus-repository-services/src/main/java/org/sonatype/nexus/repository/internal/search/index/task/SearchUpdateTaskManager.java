@@ -13,8 +13,10 @@
 package org.sonatype.nexus.repository.internal.search.index.task;
 
 import java.util.List;
-import java.util.stream.Collectors;
-import java.util.stream.StreamSupport;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -81,10 +83,48 @@ public class SearchUpdateTaskManager
 
   private void maybeScheduleReIndex() {
     try {
-      List<String> reindexList = StreamSupport.stream(repositoryManager.browse().spliterator(), false)
-          .filter(searchUpdateService::needsReindex)
-          .map(Repository::getName)
-          .collect(Collectors.toList());
+      // Use a thread-safe collection to gather repositories that need reindexing
+      CopyOnWriteArrayList<String> reindexList = new CopyOnWriteArrayList<>();
+      
+      // Create a virtual thread executor for parallel processing
+      try (ExecutorService virtualExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
+        // Use parallel stream with virtual threads for repository scanning
+        repositoryManager.browse().forEach(repository -> {
+          virtualExecutor.submit(() -> {
+            try {
+              // Log with virtual thread context information
+              if (log.isDebugEnabled()) {
+                log.debug("Checking if repository {} needs reindexing on {}", 
+                    repository.getName(), Thread.currentThread());
+              }
+              
+              // Check if repository needs reindexing
+              if (searchUpdateService.needsReindex(repository)) {
+                reindexList.add(repository.getName());
+                if (log.isDebugEnabled()) {
+                  log.debug("Repository {} needs reindexing", repository.getName());
+                }
+              }
+            } catch (Exception e) {
+              // Handle exceptions in virtual thread processing
+              log.error("Error checking if repository {} needs reindexing: {}", 
+                  repository.getName(), e.getMessage(), e);
+            }
+          });
+        });
+        
+        // Wait for all virtual threads to complete (with timeout)
+        virtualExecutor.shutdown();
+        if (!virtualExecutor.awaitTermination(5, TimeUnit.MINUTES)) {
+          log.warn("Repository scanning timed out after 5 minutes");
+          virtualExecutor.shutdownNow();
+        }
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        log.error("Repository scanning was interrupted", e);
+      } catch (Exception e) {
+        log.error("Error during parallel repository scanning", e);
+      }
 
       if (!reindexList.isEmpty()) {
         boolean existingTask = taskScheduler.findAndSubmit(SearchUpdateTaskDescriptor.TYPE_ID);

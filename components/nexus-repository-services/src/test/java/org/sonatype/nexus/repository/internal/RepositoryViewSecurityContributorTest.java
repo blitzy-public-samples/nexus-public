@@ -16,20 +16,23 @@ import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.security.config.CPrivilege;
 import org.sonatype.nexus.security.config.SecurityConfiguration;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.stream.Collectors.toList;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.is;
 
+@ExtendWith(MockitoExtension.class)
 public class RepositoryViewSecurityContributorTest
     extends TestSupport
 {
   private RepositoryViewSecurityContributor underTest;
 
-  @Before
+  @BeforeEach
   public void setup() {
     underTest = new RepositoryViewSecurityContributor();
   }

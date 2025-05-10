@@ -12,15 +12,22 @@
  */
 package org.sonatype.nexus.common.app;
 
-import java.util.Map;
+import java.util.SequencedMap;
 
 import org.sonatype.nexus.common.atlas.SystemInformationGenerator;
 
 /**
  * Helper interface to populate system information {@link SystemInformationGenerator}
  *
+ * @since 3.0
  */
 public interface SystemInformationHelper
 {
-  Map<String, Object> getValue();
+  /**
+   * Returns system information as a sequenced map with preserved insertion order.
+   * 
+   * @return A sequenced map containing system information with keys as String identifiers
+   *         and values as the corresponding information objects
+   */
+  SequencedMap<String, Object> getValue();
 }

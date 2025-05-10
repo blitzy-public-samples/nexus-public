@@ -12,8 +12,10 @@
  */
 package org.sonatype.nexus.blobstore.quota;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.Logger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
@@ -23,8 +25,10 @@ import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
 
+@ExtendWith(MockitoExtension.class)
 public class BlobStoreQuotaSupportTest
     extends TestSupport
 {
@@ -51,11 +55,11 @@ public class BlobStoreQuotaSupportTest
     assertThat(BlobStoreQuotaSupport.getLimit(config), is(-1L));
   }
 
-  @Test(expected = IllegalArgumentException.class)
+  @Test
   public void getLimitHandlesErrorCases() {
     BlobStoreConfiguration config = new MockBlobStoreConfiguration();
     config.attributes(BlobStoreQuotaSupport.ROOT_KEY).set(BlobStoreQuotaSupport.LIMIT_KEY, null);
-    BlobStoreQuotaSupport.getLimit(config);
+    assertThrows(IllegalArgumentException.class, () -> BlobStoreQuotaSupport.getLimit(config));
   }
 
   @Test

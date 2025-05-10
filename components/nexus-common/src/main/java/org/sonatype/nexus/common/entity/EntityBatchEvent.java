@@ -22,7 +22,7 @@ import org.sonatype.nexus.common.event.HasAffinity;
  *
  * @since 3.1
  */
-public class EntityBatchEvent
+public record EntityBatchEvent(List<EntityEvent> events)
     implements HasAffinity
 {
   /**
@@ -34,25 +34,17 @@ public class EntityBatchEvent
     // empty
   }
 
-  private final List<EntityEvent> events;
-
+  /**
+   * Creates a new EntityBatchEvent with an unmodifiable list of events.
+   *
+   * @param events the list of entity events to batch
+   */
   public EntityBatchEvent(final List<EntityEvent> events) {
     this.events = Collections.unmodifiableList(events);
-  }
-
-  public List<EntityEvent> getEvents() {
-    return events;
   }
 
   @Override
   public String getAffinity() {
     return events.get(0).getAffinity(); // first event in the batch declares the affinity for the rest
-  }
-
-  @Override
-  public String toString() {
-    return getClass().getSimpleName() + "{" +
-        "events=" + events +
-        '}';
   }
 }

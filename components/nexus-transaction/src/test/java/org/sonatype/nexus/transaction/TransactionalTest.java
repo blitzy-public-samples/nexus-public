@@ -19,12 +19,15 @@ import org.sonatype.goodies.testsupport.TestSupport;
 
 import com.google.common.base.Suppliers;
 import com.google.inject.Guice;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.Assertions;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.invocation.InvocationOnMock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.stubbing.Answer;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -39,6 +42,7 @@ import static org.sonatype.nexus.transaction.Transactional.DEFAULT_REASON;
  * Test transactional behaviour.
  */
 @SuppressWarnings("boxing")
+@ExtendWith(MockitoExtension.class)
 public class TransactionalTest
     extends TestSupport
 {
@@ -54,7 +58,7 @@ public class TransactionalTest
 
   boolean throwExceptionOnCommit;
 
-  @Before
+  @BeforeEach
   public void setUp() throws Exception {
     when(session.getTransaction()).thenReturn(tx);
     UnitOfWork.begin(Suppliers.ofInstance(session));
@@ -98,7 +102,7 @@ public class TransactionalTest
     }).when(tx).rollback();
   }
 
-  @After
+  @AfterEach
   public void tearDown() {
     UnitOfWork.end();
   }
@@ -348,77 +352,87 @@ public class TransactionalTest
     methods.canSeeTransactionInsideTransactional();
   }
 
-  @Test(expected = IllegalStateException.class)
+  @Test
   public void testCannotSeeTransactionOutsideTransactional() {
-    methods.cannotSeeTransactionOutsideTransactional();
+    Assertions.assertThrows(IllegalStateException.class, () -> {
+      methods.cannotSeeTransactionOutsideTransactional();
+    });
   }
 
-  @Test(expected = IOException.class)
+  @Test
   public void testRollbackOnCheckedException() throws Exception {
-    try {
-      methods.rollbackOnCheckedException();
-    }
-    finally {
-      InOrder order = inOrder(session, tx);
-      order.verify(session).getTransaction();
-      order.verify(tx).reason(DEFAULT_REASON);
-      order.verify(tx).begin();
-      order.verify(tx).rollback();
-      order.verify(tx).end();
-      order.verify(session).close();
-      verifyNoMoreInteractions(session, tx);
-    }
+    Assertions.assertThrows(IOException.class, () -> {
+      try {
+        methods.rollbackOnCheckedException();
+      }
+      finally {
+        InOrder order = inOrder(session, tx);
+        order.verify(session).getTransaction();
+        order.verify(tx).reason(DEFAULT_REASON);
+        order.verify(tx).begin();
+        order.verify(tx).rollback();
+        order.verify(tx).end();
+        order.verify(session).close();
+        verifyNoMoreInteractions(session, tx);
+      }
+    });
   }
 
-  @Test(expected = IllegalStateException.class)
+  @Test
   public void testRollbackOnUncheckedException() throws Exception {
-    try {
-      methods.rollbackOnUncheckedException();
-    }
-    finally {
-      InOrder order = inOrder(session, tx);
-      order.verify(session).getTransaction();
-      order.verify(tx).reason(DEFAULT_REASON);
-      order.verify(tx).begin();
-      order.verify(tx).rollback();
-      order.verify(tx).end();
-      order.verify(session).close();
-      verifyNoMoreInteractions(session, tx);
-    }
+    Assertions.assertThrows(IllegalStateException.class, () -> {
+      try {
+        methods.rollbackOnUncheckedException();
+      }
+      finally {
+        InOrder order = inOrder(session, tx);
+        order.verify(session).getTransaction();
+        order.verify(tx).reason(DEFAULT_REASON);
+        order.verify(tx).begin();
+        order.verify(tx).rollback();
+        order.verify(tx).end();
+        order.verify(session).close();
+        verifyNoMoreInteractions(session, tx);
+      }
+    });
   }
 
-  @Test(expected = IOException.class)
+  @Test
   public void testCommitOnCheckedException() throws Exception {
-    try {
-      methods.commitOnCheckedException();
-    }
-    finally {
-      InOrder order = inOrder(session, tx);
-      order.verify(session).getTransaction();
-      order.verify(tx).reason(DEFAULT_REASON);
-      order.verify(tx).begin();
-      order.verify(tx).commit();
-      order.verify(tx).end();
-      order.verify(session).close();
-      verifyNoMoreInteractions(session, tx);
-    }
+    Assertions.assertThrows(IOException.class, () -> {
+      try {
+        methods.commitOnCheckedException();
+      }
+      finally {
+        InOrder order = inOrder(session, tx);
+        order.verify(session).getTransaction();
+        order.verify(tx).reason(DEFAULT_REASON);
+        order.verify(tx).begin();
+        order.verify(tx).commit();
+        order.verify(tx).end();
+        order.verify(session).close();
+        verifyNoMoreInteractions(session, tx);
+      }
+    });
   }
 
-  @Test(expected = IllegalStateException.class)
+  @Test
   public void testCommitOnUncheckedException() throws Exception {
-    try {
-      methods.commitOnUncheckedException();
-    }
-    finally {
-      InOrder order = inOrder(session, tx);
-      order.verify(session).getTransaction();
-      order.verify(tx).reason(DEFAULT_REASON);
-      order.verify(tx).begin();
-      order.verify(tx).commit();
-      order.verify(tx).end();
-      order.verify(session).close();
-      verifyNoMoreInteractions(session, tx);
-    }
+    Assertions.assertThrows(IllegalStateException.class, () -> {
+      try {
+        methods.commitOnUncheckedException();
+      }
+      finally {
+        InOrder order = inOrder(session, tx);
+        order.verify(session).getTransaction();
+        order.verify(tx).reason(DEFAULT_REASON);
+        order.verify(tx).begin();
+        order.verify(tx).commit();
+        order.verify(tx).end();
+        order.verify(session).close();
+        verifyNoMoreInteractions(session, tx);
+      }
+    });
   }
 
   @Test
@@ -447,28 +461,30 @@ public class TransactionalTest
     verifyNoMoreInteractions(session, tx);
   }
 
-  @Test(expected = IOException.class)
+  @Test
   public void testRetryFailureOnCheckedException() throws Exception {
     when(tx.allowRetry(any(Exception.class))).thenReturn(true).thenReturn(false);
 
     methods.setCountdownToSuccess(100);
-    try {
-      methods.retryOnCheckedException();
-    }
-    finally {
-      InOrder order = inOrder(session, tx);
-      order.verify(session).getTransaction();
-      order.verify(tx).reason(DEFAULT_REASON);
-      order.verify(tx).begin();
-      order.verify(tx).rollback();
-      order.verify(tx).allowRetry(any(IOException.class));
-      order.verify(tx).begin();
-      order.verify(tx).rollback();
-      order.verify(tx).allowRetry(any(IOException.class));
-      order.verify(tx).end();
-      order.verify(session).close();
-      verifyNoMoreInteractions(session, tx);
-    }
+    Assertions.assertThrows(IOException.class, () -> {
+      try {
+        methods.retryOnCheckedException();
+      }
+      finally {
+        InOrder order = inOrder(session, tx);
+        order.verify(session).getTransaction();
+        order.verify(tx).reason(DEFAULT_REASON);
+        order.verify(tx).begin();
+        order.verify(tx).rollback();
+        order.verify(tx).allowRetry(any(IOException.class));
+        order.verify(tx).begin();
+        order.verify(tx).rollback();
+        order.verify(tx).allowRetry(any(IOException.class));
+        order.verify(tx).end();
+        order.verify(session).close();
+        verifyNoMoreInteractions(session, tx);
+      }
+    });
   }
 
   @Test
@@ -497,28 +513,30 @@ public class TransactionalTest
     verifyNoMoreInteractions(session, tx);
   }
 
-  @Test(expected = IllegalStateException.class)
+  @Test
   public void testRetryFailureOnUncheckedException() throws Exception {
     when(tx.allowRetry(any(Exception.class))).thenReturn(true).thenReturn(false);
 
     methods.setCountdownToSuccess(100);
-    try {
-      methods.retryOnUncheckedException();
-    }
-    finally {
-      InOrder order = inOrder(session, tx);
-      order.verify(session).getTransaction();
-      order.verify(tx).reason(DEFAULT_REASON);
-      order.verify(tx).begin();
-      order.verify(tx).rollback();
-      order.verify(tx).allowRetry(any(IllegalStateException.class));
-      order.verify(tx).begin();
-      order.verify(tx).rollback();
-      order.verify(tx).allowRetry(any(IllegalStateException.class));
-      order.verify(tx).end();
-      order.verify(session).close();
-      verifyNoMoreInteractions(session, tx);
-    }
+    Assertions.assertThrows(IllegalStateException.class, () -> {
+      try {
+        methods.retryOnUncheckedException();
+      }
+      finally {
+        InOrder order = inOrder(session, tx);
+        order.verify(session).getTransaction();
+        order.verify(tx).reason(DEFAULT_REASON);
+        order.verify(tx).begin();
+        order.verify(tx).rollback();
+        order.verify(tx).allowRetry(any(IllegalStateException.class));
+        order.verify(tx).begin();
+        order.verify(tx).rollback();
+        order.verify(tx).allowRetry(any(IllegalStateException.class));
+        order.verify(tx).end();
+        order.verify(session).close();
+        verifyNoMoreInteractions(session, tx);
+      }
+    });
   }
 
   @Test
@@ -547,65 +565,73 @@ public class TransactionalTest
     verifyNoMoreInteractions(session, tx);
   }
 
-  @Test(expected = IllegalStateException.class)
+  @Test
   public void testRetryFailureOnExceptionCause() throws Exception {
     when(tx.allowRetry(any(Exception.class))).thenReturn(true).thenReturn(false);
 
     methods.setCountdownToSuccess(100);
-    try {
-      methods.retryOnExceptionCause();
-    }
-    finally {
-      InOrder order = inOrder(session, tx);
-      order.verify(session).getTransaction();
-      order.verify(tx).reason(DEFAULT_REASON);
-      order.verify(tx).begin();
-      order.verify(tx).rollback();
-      order.verify(tx).allowRetry(any(IllegalStateException.class));
-      order.verify(tx).begin();
-      order.verify(tx).rollback();
-      order.verify(tx).allowRetry(any(IllegalStateException.class));
-      order.verify(tx).end();
-      order.verify(session).close();
-      verifyNoMoreInteractions(session, tx);
-    }
+    Assertions.assertThrows(IllegalStateException.class, () -> {
+      try {
+        methods.retryOnExceptionCause();
+      }
+      finally {
+        InOrder order = inOrder(session, tx);
+        order.verify(session).getTransaction();
+        order.verify(tx).reason(DEFAULT_REASON);
+        order.verify(tx).begin();
+        order.verify(tx).rollback();
+        order.verify(tx).allowRetry(any(IllegalStateException.class));
+        order.verify(tx).begin();
+        order.verify(tx).rollback();
+        order.verify(tx).allowRetry(any(IllegalStateException.class));
+        order.verify(tx).end();
+        order.verify(session).close();
+        verifyNoMoreInteractions(session, tx);
+      }
+    });
   }
 
-  @Test(expected = IllegalStateException.class)
+  @Test
   public void testCannotBeginWorkInTransaction() {
-    methods.beginWorkInTransaction();
+    Assertions.assertThrows(IllegalStateException.class, () -> {
+      methods.beginWorkInTransaction();
+    });
   }
 
-  @Test(expected = IllegalStateException.class)
+  @Test
   public void testCannotEndWorkInTransaction() {
-    methods.endWorkInTransaction();
+    Assertions.assertThrows(IllegalStateException.class, () -> {
+      methods.endWorkInTransaction();
+    });
   }
 
-  @Test(expected = ConcurrentModificationException.class)
+  @Test
   public void testRetryOnCommitFailure() throws Exception {
     when(tx.allowRetry(any(Exception.class))).thenReturn(true).thenReturn(false);
 
-    try {
-      throwExceptionOnCommit = true;
-      methods.retryOnCommitFailure();
-    }
-    finally {
-      throwExceptionOnCommit = false;
-      InOrder order = inOrder(session, tx);
-      order.verify(session).getTransaction();
-      order.verify(tx).reason(DEFAULT_REASON);
-      order.verify(tx).begin();
-      order.verify(tx).commit();
-      order.verify(tx).rollback();
-      order.verify(tx).allowRetry(any(ConcurrentModificationException.class));
-      order.verify(tx).begin();
-      order.verify(tx).commit();
-      order.verify(tx).rollback();
-      order.verify(tx).allowRetry(any(ConcurrentModificationException.class));
-      order.verify(tx).end();
-      order.verify(session).close();
-      verifyNoMoreInteractions(session, tx);
-    }
+    Assertions.assertThrows(ConcurrentModificationException.class, () -> {
+      try {
+        throwExceptionOnCommit = true;
+        methods.retryOnCommitFailure();
+      }
+      finally {
+        throwExceptionOnCommit = false;
+        InOrder order = inOrder(session, tx);
+        order.verify(session).getTransaction();
+        order.verify(tx).reason(DEFAULT_REASON);
+        order.verify(tx).begin();
+        order.verify(tx).commit();
+        order.verify(tx).rollback();
+        order.verify(tx).allowRetry(any(ConcurrentModificationException.class));
+        order.verify(tx).begin();
+        order.verify(tx).commit();
+        order.verify(tx).rollback();
+        order.verify(tx).allowRetry(any(ConcurrentModificationException.class));
+        order.verify(tx).end();
+        order.verify(session).close();
+        verifyNoMoreInteractions(session, tx);
+      }
+    });
   }
 
   @Test
@@ -630,26 +656,28 @@ public class TransactionalTest
     }
   }
 
-  @Test(expected = IllegalStateException.class)
+  @Test
   public void testSwallowWontHideOriginalCause() throws Exception {
     when(tx.allowRetry(any(Exception.class))).thenReturn(true).thenReturn(false);
 
-    try {
-      throwExceptionOnCommit = true;
-      methods.commitOnUncheckedSwallowCommitFailure();
-    }
-    finally {
-      throwExceptionOnCommit = false;
-      InOrder order = inOrder(session, tx);
-      order.verify(session).getTransaction();
-      order.verify(tx).reason(DEFAULT_REASON);
-      order.verify(tx).begin();
-      order.verify(tx).commit();
-      order.verify(tx).rollback();
-      order.verify(tx).end();
-      order.verify(session).close();
-      verifyNoMoreInteractions(session, tx);
-    }
+    Assertions.assertThrows(IllegalStateException.class, () -> {
+      try {
+        throwExceptionOnCommit = true;
+        methods.commitOnUncheckedSwallowCommitFailure();
+      }
+      finally {
+        throwExceptionOnCommit = false;
+        InOrder order = inOrder(session, tx);
+        order.verify(session).getTransaction();
+        order.verify(tx).reason(DEFAULT_REASON);
+        order.verify(tx).begin();
+        order.verify(tx).commit();
+        order.verify(tx).rollback();
+        order.verify(tx).end();
+        order.verify(session).close();
+        verifyNoMoreInteractions(session, tx);
+      }
+    });
   }
 
   @Test

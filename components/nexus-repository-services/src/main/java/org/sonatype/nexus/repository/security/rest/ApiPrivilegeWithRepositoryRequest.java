@@ -19,8 +19,8 @@ import org.sonatype.nexus.security.privilege.Privilege;
 import org.sonatype.nexus.security.privilege.rest.ApiPrivilegeWithActionsRequest;
 import org.sonatype.nexus.security.privilege.rest.PrivilegeAction;
 
-import io.swagger.annotations.ApiModelProperty;
-import javax.validation.constraints.NotBlank;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotBlank;
 
 /**
  * @since 3.19
@@ -33,11 +33,11 @@ public abstract class ApiPrivilegeWithRepositoryRequest
   public static final String REPOSITORY_KEY = "repository";
 
   @NotBlank
-  @ApiModelProperty(NexusSecurityApiConstants.PRIVILEGE_REPOSITORY_FORMAT_DESCRIPTION)
+  @Schema(description = NexusSecurityApiConstants.PRIVILEGE_REPOSITORY_FORMAT_DESCRIPTION)
   private String format;
 
   @NotBlank
-  @ApiModelProperty(NexusSecurityApiConstants.PRIVILEGE_REPOSITORY_DESCRIPTION)
+  @Schema(description = NexusSecurityApiConstants.PRIVILEGE_REPOSITORY_DESCRIPTION)
   private String repository;
 
   public ApiPrivilegeWithRepositoryRequest() {
@@ -57,8 +57,11 @@ public abstract class ApiPrivilegeWithRepositoryRequest
 
   public ApiPrivilegeWithRepositoryRequest(final Privilege privilege) {
     super(privilege);
-    format = privilege.getPrivilegeProperty(FORMAT_KEY);
-    repository = privilege.getPrivilegeProperty(REPOSITORY_KEY);
+    // Using pattern matching to extract properties from the privilege
+    if (privilege != null) {
+      format = privilege.getPrivilegeProperty(FORMAT_KEY);
+      repository = privilege.getPrivilegeProperty(REPOSITORY_KEY);
+    }
   }
 
   public void setRepository(final String repository) {

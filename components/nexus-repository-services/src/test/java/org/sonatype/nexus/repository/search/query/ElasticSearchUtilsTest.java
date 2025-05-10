@@ -13,11 +13,17 @@
 package org.sonatype.nexus.repository.search.query;
 
 import java.lang.reflect.Field;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.repository.rest.SearchMapping;
@@ -32,9 +38,11 @@ import org.elasticsearch.search.sort.FieldSortBuilder;
 import org.elasticsearch.search.sort.SortBuilder;
 import org.hamcrest.Matcher;
 import org.jboss.resteasy.spi.ResteasyUriInfo;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static com.google.common.collect.Lists.newArrayList;
 import static java.util.Collections.emptyMap;
@@ -43,9 +51,10 @@ import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@ExtendWith(MockitoExtension.class)
 public class ElasticSearchUtilsTest
     extends TestSupport
 {
@@ -70,7 +79,7 @@ public class ElasticSearchUtilsTest
 
   ElasticSearchUtils underTest;
 
-  @Before
+  @BeforeEach
   public void setup() {
 
     Map<String, SearchMappings> searchMappings = ImmutableMap.of(
@@ -89,22 +98,22 @@ public class ElasticSearchUtilsTest
   }
 
   @Test
-  public void testIsFullAssetAttributeName() {
+  public void shouldIdentifyFullAssetAttributeName() {
     assertTrue(underTest.isFullAssetAttributeName(VALID_SHA1_ATTRIBUTE_NAME));
   }
 
   @Test
-  public void testIsFullAssetAttributeName_Invalid_LongForm_Attribute_ReturnsFalse() {
+  public void shouldReturnFalseForInvalidLongFormAttribute() {
     assertFalse(underTest.isFullAssetAttributeName(INVALID_SHA1_ATTRIBUTE_NAME));
   }
 
   @Test
-  public void testIsFullAssetAttributeName_MappedAlias_ReturnsFalse() {
+  public void shouldReturnFalseForMappedAlias() {
     assertFalse(underTest.isFullAssetAttributeName(SHA1_ALIAS));
   }
 
   @Test
-  public void buildQueryRemoveContinuationTokenByDefault() {
+  public void shouldRemoveContinuationTokenByDefault() {
     ResteasyUriInfo uriInfo = new ResteasyUriInfo(URI, QUERY_STRING, CONTEXT_PATH);
     String query = underTest.buildQuery(uriInfo).toString();
 
@@ -112,7 +121,7 @@ public class ElasticSearchUtilsTest
   }
 
   @Test
-  public void buildQueryRemoveSelectedParametersIncludingDefault() {
+  public void shouldRemoveSelectedParametersIncludingDefault() {
     ResteasyUriInfo uriInfo = new ResteasyUriInfo(URI, QUERY_STRING, CONTEXT_PATH);
     String query = underTest.buildQuery(uriInfo, singletonList("wait")).toString();
 
@@ -126,7 +135,7 @@ public class ElasticSearchUtilsTest
   }
 
   @Test
-  public void testGetSortBuilders_byGroup() throws Exception {
+  public void shouldGetSortBuildersByGroup() throws Exception {
     List<SortBuilder> sortBuilders = underTest.getSortBuilders("group", "asc");
     assertThat(sortBuilders.size(), is(3));
     assertSearchBuilder(sortBuilders.get(0), "group.case_insensitive", "asc");
@@ -135,7 +144,7 @@ public class ElasticSearchUtilsTest
   }
 
   @Test
-  public void testGetSortBuilders_byGroupDescending() throws Exception {
+  public void shouldGetSortBuildersByGroupDescending() throws Exception {
     List<SortBuilder> sortBuilders = underTest.getSortBuilders("group", "desc");
     assertThat(sortBuilders.size(), is(3));
     assertSearchBuilder(sortBuilders.get(0), "group.case_insensitive", "desc");
@@ -144,7 +153,7 @@ public class ElasticSearchUtilsTest
   }
 
   @Test
-  public void testGetSortBuilders_byGroupDefaultSort() throws Exception {
+  public void shouldGetSortBuildersByGroupWithDefaultSort() throws Exception {
     List<SortBuilder> sortBuilders = underTest.getSortBuilders("group", null);
     assertThat(sortBuilders.size(), is(3));
     assertSearchBuilder(sortBuilders.get(0), "group.case_insensitive", "asc");
@@ -153,7 +162,7 @@ public class ElasticSearchUtilsTest
   }
 
   @Test
-  public void testGetSortBuilders_byName() throws Exception {
+  public void shouldGetSortBuildersByName() throws Exception {
     List<SortBuilder> sortBuilders = underTest.getSortBuilders("name", "asc");
     assertThat(sortBuilders.size(), is(3));
     assertSearchBuilder(sortBuilders.get(0), "name.case_insensitive", "asc");
@@ -162,7 +171,7 @@ public class ElasticSearchUtilsTest
   }
 
   @Test
-  public void testGetSortBuilders_byNameDescending() throws Exception {
+  public void shouldGetSortBuildersByNameDescending() throws Exception {
     List<SortBuilder> sortBuilders = underTest.getSortBuilders("name", "desc");
     assertThat(sortBuilders.size(), is(3));
     assertSearchBuilder(sortBuilders.get(0), "name.case_insensitive", "desc");
@@ -171,7 +180,7 @@ public class ElasticSearchUtilsTest
   }
 
   @Test
-  public void testGetSortBuilders_byNameDefaultSort() throws Exception {
+  public void shouldGetSortBuildersByNameWithDefaultSort() throws Exception {
     List<SortBuilder> sortBuilders = underTest.getSortBuilders("name", null);
     assertThat(sortBuilders.size(), is(3));
     assertSearchBuilder(sortBuilders.get(0), "name.case_insensitive", "asc");
@@ -180,84 +189,84 @@ public class ElasticSearchUtilsTest
   }
 
   @Test
-  public void testGetSortBuilders_byRepository() throws Exception {
+  public void shouldGetSortBuildersByRepository() throws Exception {
     List<SortBuilder> sortBuilders = underTest.getSortBuilders("repository", "asc");
     assertThat(sortBuilders.size(), is(1));
     assertSearchBuilder(sortBuilders.get(0), "repository_name", "asc");
   }
 
   @Test
-  public void testGetSortBuilders_byRepositoryDescending() throws Exception {
+  public void shouldGetSortBuildersByRepositoryDescending() throws Exception {
     List<SortBuilder> sortBuilders = underTest.getSortBuilders("repository", "desc");
     assertThat(sortBuilders.size(), is(1));
     assertSearchBuilder(sortBuilders.get(0), "repository_name", "desc");
   }
 
   @Test
-  public void testGetSortBuilders_byRepositoryDefaultSort() throws Exception {
+  public void shouldGetSortBuildersByRepositoryWithDefaultSort() throws Exception {
     List<SortBuilder> sortBuilders = underTest.getSortBuilders("repository", null);
     assertThat(sortBuilders.size(), is(1));
     assertSearchBuilder(sortBuilders.get(0), "repository_name", "asc");
   }
 
   @Test
-  public void testGetSortBuilders_byRepositoryName() throws Exception {
+  public void shouldGetSortBuildersByRepositoryName() throws Exception {
     List<SortBuilder> sortBuilders = underTest.getSortBuilders("repositoryName", "asc");
     assertThat(sortBuilders.size(), is(1));
     assertSearchBuilder(sortBuilders.get(0), "repository_name", "asc");
   }
 
   @Test
-  public void testGetSortBuilders_byRepositoryNameDescending() throws Exception {
+  public void shouldGetSortBuildersByRepositoryNameDescending() throws Exception {
     List<SortBuilder> sortBuilders = underTest.getSortBuilders("repositoryName", "desc");
     assertThat(sortBuilders.size(), is(1));
     assertSearchBuilder(sortBuilders.get(0), "repository_name", "desc");
   }
 
   @Test
-  public void testGetSortBuilders_byRepositoryNameDefaultSort() throws Exception {
+  public void shouldGetSortBuildersByRepositoryNameWithDefaultSort() throws Exception {
     List<SortBuilder> sortBuilders = underTest.getSortBuilders("repositoryName", null);
     assertThat(sortBuilders.size(), is(1));
     assertSearchBuilder(sortBuilders.get(0), "repository_name", "asc");
   }
 
   @Test
-  public void testGetSortBuilders_byVersion() throws Exception {
+  public void shouldGetSortBuildersByVersion() throws Exception {
     List<SortBuilder> sortBuilders = underTest.getSortBuilders("version", "asc");
     assertThat(sortBuilders.size(), is(1));
     assertSearchBuilder(sortBuilders.get(0), "normalized_version", "asc");
   }
 
   @Test
-  public void testGetSortBuilders_byVersionDescending() throws Exception {
+  public void shouldGetSortBuildersByVersionDescending() throws Exception {
     List<SortBuilder> sortBuilders = underTest.getSortBuilders("version", "desc");
     assertThat(sortBuilders.size(), is(1));
     assertSearchBuilder(sortBuilders.get(0), "normalized_version", "desc");
   }
 
   @Test
-  public void testGetSortBuilders_byVersionDefaultSort() throws Exception {
+  public void shouldGetSortBuildersByVersionWithDefaultSort() throws Exception {
     List<SortBuilder> sortBuilders = underTest.getSortBuilders("version", null);
     assertThat(sortBuilders.size(), is(1));
     assertSearchBuilder(sortBuilders.get(0), "normalized_version", "desc");
   }
 
   @Test
-  public void testGetSortBuilders_byOtherField() throws Exception {
+  public void shouldGetSortBuildersByOtherField() throws Exception {
     List<SortBuilder> sortBuilders = underTest.getSortBuilders("otherfield", "asc");
     assertThat(sortBuilders.size(), is(1));
     assertSearchBuilder(sortBuilders.get(0), "otherfield", "asc");
   }
 
   @Test
-  public void testGetSortBuilders_byOtherFieldDescending() throws Exception {
+  public void shouldGetSortBuildersByOtherFieldDescending() throws Exception {
     List<SortBuilder> sortBuilders = underTest.getSortBuilders("otherfield", "desc");
     assertThat(sortBuilders.size(), is(1));
     assertSearchBuilder(sortBuilders.get(0), "otherfield", "desc");
   }
 
   @Test
-  public void constructSameQueryForSameFilters() {
+  public void shouldConstructSameQueryForSameFilters() {
     SearchFilter a1 = new SearchFilter("a", "1");
     SearchFilter a2 = new SearchFilter("a", "2");
     SearchFilter b1 = new SearchFilter("b", "1");
@@ -277,7 +286,7 @@ public class ElasticSearchUtilsTest
   }
 
   @Test
-  public void buildSearchRequestFromSearchFilters() {
+  public void shouldBuildSearchRequestFromSearchFiltersUsingPatternMatching() {
     Collection<SearchFilter> searchFilters = new ArrayList<>();
     searchFilters.add(new SearchFilter("keyword", "org.junit"));
     searchFilters.add(new SearchFilter("repository", "maven_central"));
@@ -334,7 +343,7 @@ public class ElasticSearchUtilsTest
   }
 
   @Test
-  public void buildSearchRequestNameGroupFiltersNotConvertedToRaw() {
+  public void shouldNotConvertNameGroupFiltersToRaw() {
     Collection<SearchFilter> searchFilters = new ArrayList<>();
     searchFilters.add(new SearchFilter("name", "name.test"));
     searchFilters.add(new SearchFilter("group", "group.test"));
@@ -361,7 +370,7 @@ public class ElasticSearchUtilsTest
   }
 
   @Test
-  public void buildSearchRequestRawNameGroupFiltersAreKept() {
+  public void shouldKeepRawNameGroupFilters() {
     Collection<SearchFilter> searchFilters = new ArrayList<>();
     searchFilters.add(new SearchFilter("name.raw", "name.test"));
     searchFilters.add(new SearchFilter("group.raw", "group.test"));
@@ -385,6 +394,94 @@ public class ElasticSearchUtilsTest
         "    } ]\n" +
         "  }\n" +
         "}"));
+  }
+
+  @Test
+  public void shouldProcessConcurrentQueriesWithVirtualThreads() throws Exception {
+    // Create a large number of search filters to process concurrently
+    int numThreads = 100;
+    CountDownLatch latch = new CountDownLatch(numThreads);
+    
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    try {
+      // Submit tasks to process search filters concurrently
+      for (int i = 0; i < numThreads; i++) {
+        final int index = i;
+        executor.submit(() -> {
+          try {
+            Collection<SearchFilter> searchFilters = new ArrayList<>();
+            searchFilters.add(new SearchFilter("keyword", "org.junit" + index));
+            searchFilters.add(new SearchFilter("repository", "maven_central"));
+            searchFilters.add(new SearchFilter("format", "maven"));
+            
+            // Process the search filters
+            QueryBuilder queryBuilder = underTest.buildQuery(searchFilters);
+            assertTrue(queryBuilder.toString().contains("org.junit" + index));
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all threads to complete
+      assertTrue(latch.await(5, TimeUnit.SECONDS), "All virtual threads should complete within timeout");
+    } finally {
+      executor.shutdown();
+    }
+  }
+
+  @Test
+  public void shouldComparePerformanceBetweenPlatformAndVirtualThreads() throws Exception {
+    int numThreads = 1000;
+    int numFilters = 10;
+    
+    // Measure platform threads performance
+    long platformTime = measureThreadPerformance(numThreads, numFilters, Executors.newFixedThreadPool(100));
+    
+    // Measure virtual threads performance
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService virtualExecutor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    long virtualTime = measureThreadPerformance(numThreads, numFilters, virtualExecutor);
+    
+    // Log the performance comparison
+    log.info("Performance comparison for {} threads with {} filters each:", numThreads, numFilters);
+    log.info("Platform threads: {} ms", platformTime);
+    log.info("Virtual threads: {} ms", virtualTime);
+    log.info("Improvement ratio: {}", (double) platformTime / virtualTime);
+    
+    // We don't assert on the actual performance as it depends on the environment,
+    // but we log the results for analysis
+  }
+  
+  private long measureThreadPerformance(int numThreads, int numFilters, ExecutorService executor) throws Exception {
+    CountDownLatch latch = new CountDownLatch(numThreads);
+    long startTime = System.currentTimeMillis();
+    
+    try {
+      for (int i = 0; i < numThreads; i++) {
+        final int threadIndex = i;
+        executor.submit(() -> {
+          try {
+            Collection<SearchFilter> searchFilters = new ArrayList<>();
+            for (int j = 0; j < numFilters; j++) {
+              searchFilters.add(new SearchFilter("field" + j, "value" + threadIndex + "-" + j));
+            }
+            underTest.buildQuery(searchFilters);
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      latch.await(30, TimeUnit.SECONDS);
+      return System.currentTimeMillis() - startTime;
+    } finally {
+      executor.shutdown();
+      executor.awaitTermination(1, TimeUnit.MINUTES);
+    }
   }
 
   private static void assertSearchBuilder(

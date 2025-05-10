@@ -12,89 +12,93 @@
  */
 package org.sonatype.nexus.rest;
 
-import org.junit.Test;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
-import javax.ws.rs.core.Response;
-import javax.ws.rs.core.Response.Status;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response.Status;
 
-import static javax.ws.rs.core.Response.Status.*;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.*;
+import static jakarta.ws.rs.core.Response.Status.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
+@DisplayName("SimpleApiResponse Tests")
 public class SimpleApiResponseTest
 {
-
   @Test
-  public void testOkResponseWithoutData() {
+  @DisplayName("OK response without data should be created correctly")
+  void okResponseWithoutDataShouldBeCreatedCorrectly() {
     Response simpleApiResponse = SimpleApiResponse.ok("message");
     assertResponse(simpleApiResponse, OK, null);
   }
 
   @Test
-  public void testOkResponseWithData() {
+  @DisplayName("OK response with data should be created correctly")
+  void okResponseWithDataShouldBeCreatedCorrectly() {
     Response simpleApiResponse = SimpleApiResponse.ok("message", new Data("bar"));
     assertResponse(simpleApiResponse, OK, "bar");
   }
 
   @Test
-  public void testNotFoundResponseWithoutData() {
+  @DisplayName("Not Found response without data should be created correctly")
+  void notFoundResponseWithoutDataShouldBeCreatedCorrectly() {
     Response simpleApiResponse = SimpleApiResponse.notFound("message");
     assertResponse(simpleApiResponse, NOT_FOUND, null);
   }
 
   @Test
-  public void testNotFoundResponseWithData() {
+  @DisplayName("Not Found response with data should be created correctly")
+  void notFoundResponseWithDataShouldBeCreatedCorrectly() {
     Response simpleApiResponse = SimpleApiResponse.notFound("message", new Data("bar"));
     assertResponse(simpleApiResponse, NOT_FOUND, "bar");
   }
 
   @Test
-  public void testBadRequestResponseWithoutData() {
+  @DisplayName("Bad Request response without data should be created correctly")
+  void badRequestResponseWithoutDataShouldBeCreatedCorrectly() {
     Response simpleApiResponse = SimpleApiResponse.badRequest("message");
     assertResponse(simpleApiResponse, BAD_REQUEST, null);
   }
 
   @Test
-  public void testBadRequestResponseWithData() {
+  @DisplayName("Bad Request response with data should be created correctly")
+  void badRequestResponseWithDataShouldBeCreatedCorrectly() {
     Response simpleApiResponse = SimpleApiResponse.badRequest("message", new Data("bar"));
     assertResponse(simpleApiResponse, BAD_REQUEST, "bar");
   }
 
   @Test
-  public void testUnauthorizedResponseWithoutData() {
+  @DisplayName("Unauthorized response without data should be created correctly")
+  void unauthorizedResponseWithoutDataShouldBeCreatedCorrectly() {
     Response simpleApiResponse = SimpleApiResponse.unauthorized("message");
     assertResponse(simpleApiResponse, UNAUTHORIZED, null);
   }
 
   @Test
-  public void testUnauthorizedResponseWithData() {
+  @DisplayName("Unauthorized response with data should be created correctly")
+  void unauthorizedResponseWithDataShouldBeCreatedCorrectly() {
     Response simpleApiResponse = SimpleApiResponse.unauthorized("message", new Data("bar"));
     assertResponse(simpleApiResponse, UNAUTHORIZED, "bar");
   }
 
-  private void assertResponse(Response simpleApiResponse, Status status, String value) {
-    assertThat(simpleApiResponse.getStatus(), is(status.getStatusCode()));
+  private void assertResponse(Response simpleApiResponse, Status status, String expectedValue) {
+    assertEquals(status.getStatusCode(), simpleApiResponse.getStatus());
+    
     SimpleApiResponse entity = (SimpleApiResponse) simpleApiResponse.getEntity();
-    assertThat(entity.getStatus(), is(status.getStatusCode()));
-    assertThat(entity.getMessage(), is("message"));
-    if (value == null) {
-      assertThat(entity.getData(), is(nullValue()));
+    assertEquals(status.getStatusCode(), entity.getStatus());
+    assertEquals("message", entity.getMessage());
+    
+    if (expectedValue == null) {
+      assertNull(entity.getData());
     }
     else {
-      assertThat(((Data) entity.getData()).getFoo(), is("bar"));
+      // Using Java 21 Record Pattern matching
+      if (entity.getData() instanceof Data(String foo)) {
+        assertEquals("bar", foo);
+      }
     }
   }
 
-  private static class Data
-  {
-    private final String foo;
-
-    public Data(String foo) {
-      this.foo = foo;
-    }
-
-    public String getFoo() {
-      return foo;
-    }
-  }
+  // Converted to a Java record
+  private record Data(String foo) {}
 }

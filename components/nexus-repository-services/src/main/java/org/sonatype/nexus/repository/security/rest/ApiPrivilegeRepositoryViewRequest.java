@@ -19,18 +19,30 @@ import org.sonatype.nexus.security.privilege.Privilege;
 import org.sonatype.nexus.security.privilege.rest.PrivilegeAction;
 
 /**
+ * Repository view privilege request.
+ *
  * @since 3.19
  */
 public class ApiPrivilegeRepositoryViewRequest
     extends ApiPrivilegeWithRepositoryRequest
 {
   /**
-   * for deserialization
+   * Default constructor for deserialization by Jackson.
+   * Required for Jackson 2.16.1 compatibility.
    */
   private ApiPrivilegeRepositoryViewRequest() {
     super();
   }
 
+  /**
+   * Constructor for creating a new repository view privilege request.
+   *
+   * @param name the privilege name
+   * @param description the privilege description
+   * @param format the repository format
+   * @param repository the repository name
+   * @param actions the collection of privilege actions
+   */
   public ApiPrivilegeRepositoryViewRequest(final String name,
                                            final String description,
                                            final String format,
@@ -40,14 +52,23 @@ public class ApiPrivilegeRepositoryViewRequest
     super(name, description, format, repository, actions);
   }
 
+  /**
+   * Constructor for creating a repository view privilege request from an existing privilege.
+   *
+   * @param privilege the privilege to create the request from
+   */
   public ApiPrivilegeRepositoryViewRequest(final Privilege privilege) {
     super(privilege);
   }
 
   @Override
   protected Privilege doAsPrivilege(final Privilege privilege) {
-    super.doAsPrivilege(privilege);
-    privilege.setType(RepositoryViewPrivilegeDescriptor.TYPE);
+    // Use Java 21 pattern matching for more concise and type-safe code
+    if (privilege instanceof Privilege p) {
+      super.doAsPrivilege(p);
+      p.setType(RepositoryViewPrivilegeDescriptor.TYPE);
+      return p;
+    }
     return privilege;
   }
 }

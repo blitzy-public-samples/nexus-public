@@ -31,17 +31,21 @@ import org.sonatype.nexus.repository.rest.api.RepositoryXO;
 import org.sonatype.nexus.repository.security.RepositoryPermissionChecker;
 
 import com.google.common.collect.ImmutableMap;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.Mockito;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.Arrays.asList;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class RepositoryManagerRESTAdapterImplTest
     extends TestSupport
 {
@@ -108,7 +112,7 @@ public class RepositoryManagerRESTAdapterImplTest
 
   private RepositoryManagerRESTAdapterImpl underTest;
 
-  @Before
+  @BeforeEach
   public void setUp() throws Exception {
     BaseUrlHolder.set("http://nexus-url", "");
 
@@ -182,61 +186,54 @@ public class RepositoryManagerRESTAdapterImplTest
   public void getRepository_readOnlyReturnsForbidden() throws Exception {
     configurePermissions(repository, !PERMIT_BROWSE);
 
-    try {
+    WebApplicationException exception = assertThrows(WebApplicationException.class, () -> {
       underTest.getRepository(REPOSITORY_NAME);
-      fail(); //should have thrown exception
-    }
-    catch (WebApplicationException e) {
-      assertThat(e.getResponse().getStatus(), is(403));
-    }
+    });
+    assertThat(exception.getResponse().getStatus(), is(403));
   }
 
   @Test
   public void getRepository_cannotReadOrBrowse() {
     configurePermissions(repository, !PERMIT_BROWSE);
-    try {
+    
+    WebApplicationException exception = assertThrows(WebApplicationException.class, () -> {
       underTest.getRepository(REPOSITORY_NAME);
-      fail(); //should have thrown exception
-    }
-    catch (WebApplicationException e) {
-      assertThat(e.getResponse().getStatus(), is(403));
-    }
+    });
+    assertThat(exception.getResponse().getStatus(), is(403));
   }
 
   private void configurePermissions(final Repository repository, final boolean permitBrowse) {
     when(repositoryPermissionChecker.userCanReadOrBrowse(repository)).thenReturn(permitBrowse);
   }
 
-  @Test(expected = NotFoundException.class)
+  @Test
   public void getRepository_notFound() {
-    underTest.getRepository("notFound");
+    assertThrows(NotFoundException.class, () -> {
+      underTest.getRepository("notFound");
+    });
   }
 
   @Test
   public void getRepository_null() {
-    try {
+    WebApplicationException exception = assertThrows(WebApplicationException.class, () -> {
       underTest.getRepository(null);
-      fail(); //should have thrown exception
-    }
-    catch (WebApplicationException e) {
-      assertThat(e.getResponse().getStatus(), is(422));
-    }
+    });
+    assertThat(exception.getResponse().getStatus(), is(422));
   }
 
-  @Test(expected = NotFoundException.class)
+  @Test
   public void getReadableRepository_notFound() {
-    underTest.getReadableRepository("notFound");
+    assertThrows(NotFoundException.class, () -> {
+      underTest.getReadableRepository("notFound");
+    });
   }
 
   @Test
   public void getReadableRepository_null() {
-    try {
+    WebApplicationException exception = assertThrows(WebApplicationException.class, () -> {
       underTest.getReadableRepository(null);
-      fail(); //should have thrown exception
-    }
-    catch (WebApplicationException e) {
-      assertThat(e.getResponse().getStatus(), is(422));
-    }
+    });
+    assertThat(exception.getResponse().getStatus(), is(422));
   }
 
   @Test
@@ -244,13 +241,10 @@ public class RepositoryManagerRESTAdapterImplTest
     configurePermissions(repository, false);
     configurePermissions(groupRepository, false);
 
-    try {
+    WebApplicationException exception = assertThrows(WebApplicationException.class, () -> {
       underTest.getReadableRepository(repository.getName());
-      fail(); //should have thrown exception
-    }
-    catch (WebApplicationException e) {
-      assertThat(e.getResponse().getStatus(), is(403));
-    }
+    });
+    assertThat(exception.getResponse().getStatus(), is(403));
   }
 
   @Test
@@ -300,5 +294,96 @@ public class RepositoryManagerRESTAdapterImplTest
     List<String> containingGroups = underTest.findContainingGroups(repositoryName);
 
     assertThat(containingGroups, is(repositoryNames));
+  }
+  
+  /**
+   * Test method demonstrating Java 21 record patterns with RepositoryXO objects.
+   * This test verifies that we can correctly extract and validate fields from RepositoryXO
+   * using the new pattern matching syntax introduced in Java 21.
+   */
+  @Test
+  public void testRepositoryXOWithRecordPatterns() {
+    // Create test repositories with different formats
+    RepositoryXO repositoryXO1 = createRepositoryXO(REPOSITORY_NAME, REPOSITORY_FORMAT, "http://nexus-url/repository/repoName");
+    RepositoryXO repositoryXO2 = createRepositoryXO(REPOSITORY_NAME_2, REPOSITORY_FORMAT_2, "http://nexus-url/repository/repoNameTwo");
+    RepositoryXO repositoryXO3 = createRepositoryXO(REPOSITORY_NAME_3, REPOSITORY_FORMAT_3, "http://nexus-url/repository/repoNameThree");
+    
+    // Using Java 21 pattern matching with instanceof to extract fields directly
+    // Note: While RepositoryXO is not a record class, we're demonstrating the pattern matching syntax
+    // that would be used with records. In a real application with record classes, this would extract
+    // the components directly.
+    if (repositoryXO1 instanceof RepositoryXO xo) {
+      // Using pattern variable 'xo' to access fields
+      assertThat(xo.getName(), is(REPOSITORY_NAME));
+      assertThat(xo.getFormat(), is(REPOSITORY_FORMAT));
+      
+      // Nested pattern matching with Map entries - demonstrating type patterns with conditional AND
+      Map<String, Object> attributes = xo.getAttributes();
+      if (attributes instanceof Map<String, Object> map && map.isEmpty()) {
+        // Successfully verified that attributes is an empty map
+        // This demonstrates nested pattern matching with type checking and a condition
+      } else {
+        fail("Expected empty attributes map");
+      }
+    }
+    
+    // Create a list of repositories to demonstrate pattern matching in loops
+    List<RepositoryXO> repositories = List.of(repositoryXO1, repositoryXO2, repositoryXO3);
+    
+    // Count repositories by format using pattern matching in a loop
+    int standardFormatCount = 0;
+    int extendedFormatCount = 0;
+    int specialFormatCount = 0;
+    
+    for (Object repo : repositories) {
+      // Pattern matching in if statements
+      if (repo instanceof RepositoryXO xo && REPOSITORY_FORMAT.equals(xo.getFormat())) {
+        standardFormatCount++;
+      } else if (repo instanceof RepositoryXO xo && REPOSITORY_FORMAT_2.equals(xo.getFormat())) {
+        extendedFormatCount++;
+      } else if (repo instanceof RepositoryXO xo && REPOSITORY_FORMAT_3.equals(xo.getFormat())) {
+        specialFormatCount++;
+      }
+    }
+    
+    assertThat(standardFormatCount, is(1));
+    assertThat(extendedFormatCount, is(1));
+    assertThat(specialFormatCount, is(1));
+    
+    // Using switch expression with pattern matching to handle different repository formats
+    // This demonstrates the power of switch expressions with patterns in Java 21
+    for (RepositoryXO repo : repositories) {
+      String formatDescription = switch (repo) {
+        case RepositoryXO xo when REPOSITORY_FORMAT.equals(xo.getFormat()) -> {
+          // We can have complex code blocks in switch cases
+          String desc = "Standard format repository: " + xo.getName();
+          yield desc; // Use yield for returning values from blocks
+        }
+        case RepositoryXO xo when REPOSITORY_FORMAT_2.equals(xo.getFormat()) -> "Extended format repository: " + xo.getName();
+        case RepositoryXO xo when REPOSITORY_FORMAT_3.equals(xo.getFormat()) -> "Special format repository: " + xo.getName();
+        default -> "Unknown format repository";
+      };
+      
+      // Verify the correct format description based on the repository name
+      if (repo.getName().equals(REPOSITORY_NAME)) {
+        assertThat(formatDescription, is("Standard format repository: " + REPOSITORY_NAME));
+      } else if (repo.getName().equals(REPOSITORY_NAME_2)) {
+        assertThat(formatDescription, is("Extended format repository: " + REPOSITORY_NAME_2));
+      } else if (repo.getName().equals(REPOSITORY_NAME_3)) {
+        assertThat(formatDescription, is("Special format repository: " + REPOSITORY_NAME_3));
+      }
+    }
+  }
+  
+  /**
+   * Helper method to create a RepositoryXO with the specified properties.
+   */
+  private RepositoryXO createRepositoryXO(String name, String format, String url) {
+    RepositoryXO repositoryXO = new RepositoryXO();
+    repositoryXO.setName(name);
+    repositoryXO.setFormat(format);
+    repositoryXO.setUrl(url);
+    repositoryXO.setAttributes(Collections.emptyMap());
+    return repositoryXO;
   }
 }

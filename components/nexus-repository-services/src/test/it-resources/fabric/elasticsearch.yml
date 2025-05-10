@@ -7,14 +7,28 @@ path:
   logs: ${testdir}/log
   work: ${testdir}/tmp
 
+# Node configuration
 node.data: true
 node.master: true
 
-# Disable groovy script integration
-script.groovy.sandbox.enabled: false
+# Disable script execution for security
+script.allowed_types: none
+script.allowed_contexts: none
 
-# Disable networking
-node.local: true
+# Modern discovery settings (replacing deprecated zen discovery)
+discovery.type: single-node
+discovery.seed_hosts: []
+
+# Disable HTTP as this is a test configuration
 http.enabled: false
-discovery.zen.ping.multicast.enabled: false
 
+# JVM options for ZGC garbage collector
+jvm.options: [
+  "-XX:+UseZGC",
+  "-XX:+ZGenerational",
+  "-Xlog:gc*:file=${testdir}/log/gc.log:time,uptimemillis:filecount=5,filesize=20m"
+]
+
+# Virtual Thread configuration to prevent pinning
+jvm.virtual_threads.enabled: true
+jvm.virtual_threads.prevent_pinning: true

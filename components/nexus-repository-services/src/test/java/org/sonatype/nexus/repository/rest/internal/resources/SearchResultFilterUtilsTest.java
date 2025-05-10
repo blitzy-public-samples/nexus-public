@@ -18,6 +18,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import javax.ws.rs.core.MultivaluedHashMap;
@@ -31,9 +36,11 @@ import org.sonatype.nexus.repository.search.ComponentSearchResult;
 import org.sonatype.nexus.repository.search.SearchUtils;
 
 import com.google.common.collect.ImmutableMap;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static com.google.common.collect.ImmutableMap.of;
 import static java.util.Optional.empty;
@@ -41,12 +48,14 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.core.IsEqual.equalTo;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.repository.rest.internal.resources.SearchResultFilterUtils.getValueFromAssetMap;
 
+@ExtendWith(MockitoExtension.class)
 public class SearchResultFilterUtilsTest
     extends TestSupport
 {
@@ -76,7 +85,7 @@ public class SearchResultFilterUtilsTest
   @Mock
   private SearchMapping descriptionMapping;
 
-  @Before
+  @BeforeEach
   public void setup() {
     when(repository.getUrl()).thenReturn("http://localhost/repository/maven/");
 
@@ -248,6 +257,45 @@ public class SearchResultFilterUtilsTest
     assertTrue(nonEmptyAssetParamsList.containsKey(EXTENSION_ATTRIBUTE_NAME));
     assertThat(nonEmptyAssetParamsList.get(EXTENSION_ATTRIBUTE_NAME), equalTo("jar"));
     assertFalse(nonEmptyAssetParamsList.containsKey(CLASSIFIER_ATTRIBUTE_NAME));
+  }
+
+  @Test
+  public void testFilterComponentAssetsWithVirtualThreads() throws InterruptedException {
+    // Setup test parameters
+    int numThreads = 100;
+    CountDownLatch latch = new CountDownLatch(numThreads);
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    // Setup asset parameters for filtering
+    when(searchUtils.getFullAssetAttributeName(EXTENSION_ATTRIBUTE_NAME)).thenReturn(EXTENSION_ATTRIBUTE_NAME);
+    MultivaluedMap<String, String> assetParams = new MultivaluedHashMap<>();
+    assetParams.add(EXTENSION_ATTRIBUTE_NAME, "jar");
+    
+    // Create a virtual thread executor
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit tasks to filter component assets concurrently
+      for (int i = 0; i < numThreads; i++) {
+        executor.submit(() -> {
+          try {
+            List<?> assets = underTest.filterComponentAssets(component, assetParams)
+                .collect(Collectors.toList());
+            
+            // Verify each filtered result has the expected size
+            if (assets.size() == 2) { // Both assets have "jar" extension
+              successCount.incrementAndGet();
+            }
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all threads to complete (with timeout)
+      assertTrue(latch.await(5, TimeUnit.SECONDS), "Timed out waiting for virtual threads to complete");
+      
+      // Verify all operations completed successfully
+      assertEquals(numThreads, successCount.get(), "Not all virtual thread operations completed successfully");
+    }
   }
 
   private Map<String, String> getPopulatedMultiValueMap() {

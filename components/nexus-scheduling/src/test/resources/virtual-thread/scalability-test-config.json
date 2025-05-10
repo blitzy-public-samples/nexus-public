@@ -1,0 +1,287 @@
+{
+  "testName": "VirtualThreadScalabilityTest",
+  "description": "Configuration for testing scalability of the scheduling component using virtual threads vs platform threads",
+  "version": "1.0",
+  
+  "threadModels": [
+    {
+      "name": "virtualThreads",
+      "description": "Java 21 Virtual Threads",
+      "factoryClass": "org.sonatype.nexus.thread.VirtualThreadFactory",
+      "jvmArgs": [
+        "-Djdk.virtualThreadScheduler.parallelism=0",
+        "-Djdk.virtualThreadScheduler.maxPoolSize=256",
+        "-Djdk.tracePinnedThreads=full"
+      ]
+    },
+    {
+      "name": "platformThreads",
+      "description": "Traditional Platform Threads",
+      "factoryClass": "org.sonatype.nexus.thread.PlatformThreadFactory",
+      "jvmArgs": []
+    }
+  ],
+  
+  "loadScenarios": [
+    {
+      "name": "baseline",
+      "concurrentTasks": 100,
+      "taskDurationMs": 500,
+      "rampUpPeriodSec": 10,
+      "steadyStatePeriodSec": 60,
+      "taskType": "io-bound",
+      "taskTemplate": "repository-proxy-fetch"
+    },
+    {
+      "name": "medium-load",
+      "concurrentTasks": 500,
+      "taskDurationMs": 500,
+      "rampUpPeriodSec": 20,
+      "steadyStatePeriodSec": 120,
+      "taskType": "io-bound",
+      "taskTemplate": "repository-proxy-fetch"
+    },
+    {
+      "name": "high-load",
+      "concurrentTasks": 1000,
+      "taskDurationMs": 500,
+      "rampUpPeriodSec": 30,
+      "steadyStatePeriodSec": 180,
+      "taskType": "io-bound",
+      "taskTemplate": "repository-proxy-fetch"
+    },
+    {
+      "name": "very-high-load",
+      "concurrentTasks": 5000,
+      "taskDurationMs": 500,
+      "rampUpPeriodSec": 60,
+      "steadyStatePeriodSec": 240,
+      "taskType": "io-bound",
+      "taskTemplate": "repository-proxy-fetch"
+    },
+    {
+      "name": "extreme-load",
+      "concurrentTasks": 10000,
+      "taskDurationMs": 500,
+      "rampUpPeriodSec": 120,
+      "steadyStatePeriodSec": 300,
+      "taskType": "io-bound",
+      "taskTemplate": "repository-proxy-fetch"
+    }
+  ],
+  
+  "taskTypes": {
+    "io-bound": {
+      "description": "I/O-bound tasks that simulate repository operations",
+      "templates": [
+        {
+          "name": "repository-proxy-fetch",
+          "className": "org.sonatype.nexus.scheduling.test.SimulatedProxyFetchTask",
+          "parameters": {
+            "remoteLatencyMs": 200,
+            "blobSizeBytes": 1048576,
+            "useVirtualThreads": true
+          }
+        },
+        {
+          "name": "s3-blobstore-operation",
+          "className": "org.sonatype.nexus.scheduling.test.SimulatedS3BlobStoreTask",
+          "parameters": {
+            "operationType": "READ",
+            "blobSizeBytes": 5242880,
+            "useVirtualThreads": true
+          }
+        },
+        {
+          "name": "db-query-operation",
+          "className": "org.sonatype.nexus.scheduling.test.SimulatedDatabaseQueryTask",
+          "parameters": {
+            "queryComplexity": "MEDIUM",
+            "resultSetSize": 1000,
+            "useVirtualThreads": true
+          }
+        }
+      ]
+    },
+    "cpu-bound": {
+      "description": "CPU-bound tasks that simulate computational operations",
+      "templates": [
+        {
+          "name": "content-indexing",
+          "className": "org.sonatype.nexus.scheduling.test.SimulatedContentIndexingTask",
+          "parameters": {
+            "documentCount": 1000,
+            "complexityFactor": 5,
+            "useVirtualThreads": true
+          }
+        }
+      ]
+    },
+    "mixed": {
+      "description": "Mixed workload tasks with both I/O and CPU operations",
+      "templates": [
+        {
+          "name": "repository-rebuild",
+          "className": "org.sonatype.nexus.scheduling.test.SimulatedRepositoryRebuildTask",
+          "parameters": {
+            "componentCount": 5000,
+            "ioRatio": 0.7,
+            "cpuRatio": 0.3,
+            "useVirtualThreads": true
+          }
+        }
+      ]
+    }
+  },
+  
+  "resourceMonitoring": {
+    "enabled": true,
+    "samplingIntervalMs": 1000,
+    "metrics": [
+      {
+        "name": "jvm.memory.heap.used",
+        "thresholds": {
+          "warning": 0.75,
+          "critical": 0.9
+        }
+      },
+      {
+        "name": "jvm.memory.nonheap.used",
+        "thresholds": {
+          "warning": 0.8,
+          "critical": 0.95
+        }
+      },
+      {
+        "name": "jvm.cpu.usage",
+        "thresholds": {
+          "warning": 0.8,
+          "critical": 0.95
+        }
+      },
+      {
+        "name": "jvm.gc.collections",
+        "thresholds": {
+          "warning": 10,
+          "critical": 20
+        }
+      },
+      {
+        "name": "jvm.gc.pause",
+        "thresholds": {
+          "warning": 200,
+          "critical": 500
+        }
+      }
+    ]
+  },
+  
+  "threadMetrics": {
+    "enabled": true,
+    "samplingIntervalMs": 500,
+    "metrics": [
+      {
+        "name": "jvm.threads.virtual.count",
+        "description": "Total number of virtual threads"
+      },
+      {
+        "name": "jvm.threads.virtual.active",
+        "description": "Number of active virtual threads"
+      },
+      {
+        "name": "jvm.threads.virtual.pinned",
+        "description": "Number of pinned virtual threads"
+      },
+      {
+        "name": "jvm.threads.virtual.mounting.rate",
+        "description": "Rate of virtual thread mounting operations per second"
+      },
+      {
+        "name": "jvm.threads.virtual.unmounting.rate",
+        "description": "Rate of virtual thread unmounting operations per second"
+      },
+      {
+        "name": "jvm.threads.virtual.blocking.time",
+        "description": "Time spent by virtual threads in blocking operations"
+      },
+      {
+        "name": "jvm.threads.platform.count",
+        "description": "Total number of platform threads"
+      },
+      {
+        "name": "jvm.threads.platform.active",
+        "description": "Number of active platform threads"
+      },
+      {
+        "name": "jvm.threads.carrier.utilization",
+        "description": "Utilization ratio of carrier threads for virtual threads"
+      }
+    ]
+  },
+  
+  "performanceMetrics": {
+    "enabled": true,
+    "metrics": [
+      {
+        "name": "task.throughput",
+        "description": "Number of tasks completed per second",
+        "unit": "tasks/sec"
+      },
+      {
+        "name": "task.latency",
+        "description": "End-to-end task execution time",
+        "unit": "ms",
+        "percentiles": [50, 90, 95, 99]
+      },
+      {
+        "name": "task.queue.time",
+        "description": "Time spent in queue before execution",
+        "unit": "ms",
+        "percentiles": [50, 90, 95, 99]
+      },
+      {
+        "name": "task.execution.time",
+        "description": "Actual task execution time",
+        "unit": "ms",
+        "percentiles": [50, 90, 95, 99]
+      },
+      {
+        "name": "system.memory.per.task",
+        "description": "Memory consumed per concurrent task",
+        "unit": "bytes"
+      }
+    ]
+  },
+  
+  "comparisonAnalysis": {
+    "enabled": true,
+    "metrics": [
+      {
+        "name": "throughput.ratio",
+        "description": "Ratio of virtual thread throughput to platform thread throughput"
+      },
+      {
+        "name": "latency.ratio",
+        "description": "Ratio of virtual thread latency to platform thread latency"
+      },
+      {
+        "name": "memory.ratio",
+        "description": "Ratio of virtual thread memory usage to platform thread memory usage"
+      },
+      {
+        "name": "scalability.factor",
+        "description": "How much better virtual threads scale with increasing load compared to platform threads"
+      }
+    ]
+  },
+  
+  "reporting": {
+    "outputDirectory": "${project.build.directory}/virtual-thread-test-reports",
+    "formats": ["JSON", "CSV", "HTML"],
+    "generateCharts": true,
+    "saveRawMetrics": true,
+    "includeSystemInfo": true,
+    "includeJfrRecording": true,
+    "jfrSettings": "profile"
+  }
+}

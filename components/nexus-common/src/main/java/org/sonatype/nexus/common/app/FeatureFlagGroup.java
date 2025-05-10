@@ -18,6 +18,7 @@ import java.lang.annotation.Target;
 
 import static java.lang.annotation.ElementType.PACKAGE;
 import static java.lang.annotation.ElementType.TYPE;
+import static java.lang.annotation.ElementType.TYPE_PARAMETER;
 import static java.lang.annotation.RetentionPolicy.RUNTIME;
 
 /**
@@ -28,12 +29,14 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
  * {@link java.lang.annotation.Repeatable} nature of the {@link FeatureFlag} annotation.
  * <p>
  * This annotation is retained at runtime to support reflection-based feature flag detection.
+ * <p>
+ * This annotation is compatible with Java 21 reflection and annotation processing.
  *
  * @since 3.19
  */
 @Documented
 @Retention(RUNTIME)
-@Target({PACKAGE, TYPE})
+@Target({PACKAGE, TYPE, TYPE_PARAMETER})
 public @interface FeatureFlagGroup
 {
   /**

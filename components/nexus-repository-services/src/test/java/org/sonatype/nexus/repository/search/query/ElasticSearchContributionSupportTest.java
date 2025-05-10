@@ -12,30 +12,33 @@
  */
 package org.sonatype.nexus.repository.search.query;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 
-public class ElasticSearchContributionSupportTest
+@ExtendWith(MockitoExtension.class)
+class ElasticSearchContributionSupportTest
 {
   private ElasticSearchContributionSupport
       elasticSearchContributionSupport = new ElasticSearchContributionSupport();
 
   @Test
-  public void escapeLeavesRegularCharactersAsIs() {
+  void escapeLeavesRegularCharactersAsIs() {
     String regularCharacters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890.";
     assertThat(elasticSearchContributionSupport.escape(regularCharacters), is(regularCharacters));
   }
 
   @Test
-  public void escapeLeavesSupportedSpecialCharactersUnescaped() {
+  void escapeLeavesSupportedSpecialCharactersUnescaped() {
     String supportedSpecialCharacters = "?*\"\"";
     assertThat(elasticSearchContributionSupport.escape(supportedSpecialCharacters), is(supportedSpecialCharacters));
   }
 
   @Test
-  public void escapeEscapesAllUnsupportedSpecialCharacters() {
+  void escapeEscapesAllUnsupportedSpecialCharacters() {
     assertThat(
         elasticSearchContributionSupport.escape(":[]-+!(){}^~/\\"),
         is("\\:\\[\\]\\-\\+\\!\\(\\)\\{\\}\\^\\~\\/\\\\")
@@ -43,20 +46,20 @@ public class ElasticSearchContributionSupportTest
   }
 
   @Test
-  public void escapeEscapesOddNumberOfDoubleQuotes() {
+  void escapeEscapesOddNumberOfDoubleQuotes() {
     assertThat(elasticSearchContributionSupport.escape("\""), is("\\\""));
     assertThat(elasticSearchContributionSupport.escape("\"a\"b\""), is("\\\"a\\\"b\\\""));
   }
 
   @Test
-  public void escapeIgnoresEvenNumberOfDoubleQuotes() {
+  void escapeIgnoresEvenNumberOfDoubleQuotes() {
     assertThat(elasticSearchContributionSupport.escape("\"ab\""), is("\"ab\""));
     assertThat(elasticSearchContributionSupport.escape("\"ab\" \"ab\""), is("\"ab\" \"ab\""));
     assertThat(elasticSearchContributionSupport.escape("\"\"\"\""), is("\"\"\"\""));
   }
 
   @Test
-  public void escapeSupportsCommonSearches() {
+  void escapeSupportsCommonSearches() {
     assertThat(elasticSearchContributionSupport.escape("library/alpine-dev"), is("library\\/alpine\\-dev"));
 
     String mavenGroup = "org.sonatype.nexus";

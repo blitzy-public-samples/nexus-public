@@ -15,6 +15,10 @@ package org.sonatype.nexus.repository.rest.api;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -47,9 +51,11 @@ import org.sonatype.nexus.repository.types.HostedType;
 import org.sonatype.nexus.repository.types.ProxyType;
 
 import com.google.common.collect.Maps;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.hamcrest.Matchers.contains;
@@ -62,6 +68,7 @@ import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.repository.config.ConfigurationConstants.COMPONENT;
 import static org.sonatype.nexus.repository.config.ConfigurationConstants.PROPRIETARY_COMPONENTS;
 
+@ExtendWith(MockitoExtension.class)
 public class SimpleApiRepositoryAdapterTest
     extends TestSupport
 {
@@ -75,7 +82,7 @@ public class SimpleApiRepositoryAdapterTest
   @Mock
   private DatabaseCheck databaseCheck;
 
-  @Before
+  @BeforeEach
   public void setup() {
     underTest = new SimpleApiRepositoryAdapter(routingRuleStore);
     underTest.setDatabaseCheck(databaseCheck);
@@ -289,6 +296,78 @@ public class SimpleApiRepositoryAdapterTest
     proxyRepository = (SimpleApiProxyRepository) underTest.adapt(repository);
     assertConnection(proxyRepository.getHttpClient().getConnection(), /* circular redirects */ true, /* cookies */ true,
         /* retries */ 9, /* timeout */ 7, "hi-yall");
+  }
+
+  /**
+   * Test to verify that the adapter methods work correctly when executed in a virtual thread.
+   * This ensures compatibility with Java 21's virtual thread implementation.
+   */
+  @Test
+  public void testAdaptWithVirtualThreads() throws Exception {
+    // Create test repositories
+    Repository hostedRepository = createRepository(new HostedType());
+    Repository proxyRepository = createRepository(new ProxyType());
+    Repository groupRepository = createRepository(new GroupType());
+    
+    // Configure proxy repository with remote URL
+    modifyConfiguration(proxyRepository, configuration -> {
+      NestedAttributesMap proxy = configuration.attributes("proxy");
+      proxy.set("remoteUrl", "https://repo1.maven.org/maven2/");
+    });
+    
+    // Configure group repository with members
+    modifyConfiguration(groupRepository, configuration -> 
+        configuration.attributes("group").set("memberNames", Arrays.asList("a", "b")));
+
+    // Create a virtual thread executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    CountDownLatch latch = new CountDownLatch(3);
+    
+    try {
+      // Test hosted repository adaptation in virtual thread
+      executor.submit(() -> {
+        try {
+          SimpleApiHostedRepository adapted = (SimpleApiHostedRepository) underTest.adapt(hostedRepository);
+          assertRepository(adapted, "hosted", true);
+        } catch (Exception e) {
+          fail("Virtual thread execution failed for hosted repository", e);
+        } finally {
+          latch.countDown();
+        }
+      });
+      
+      // Test proxy repository adaptation in virtual thread
+      executor.submit(() -> {
+        try {
+          SimpleApiProxyRepository adapted = (SimpleApiProxyRepository) underTest.adapt(proxyRepository);
+          assertRepository(adapted, "proxy", true);
+          assertThat(adapted.getProxy().getRemoteUrl(), is("https://repo1.maven.org/maven2/"));
+        } catch (Exception e) {
+          fail("Virtual thread execution failed for proxy repository", e);
+        } finally {
+          latch.countDown();
+        }
+      });
+      
+      // Test group repository adaptation in virtual thread
+      executor.submit(() -> {
+        try {
+          SimpleApiGroupRepository adapted = (SimpleApiGroupRepository) underTest.adapt(groupRepository);
+          assertRepository(adapted, "group", true);
+          assertThat(adapted.getGroup().getMemberNames(), contains("a", "b"));
+        } catch (Exception e) {
+          fail("Virtual thread execution failed for group repository", e);
+        } finally {
+          latch.countDown();
+        }
+      });
+      
+      // Wait for all tasks to complete
+      boolean completed = latch.await(10, TimeUnit.SECONDS);
+      assertThat("All virtual thread tasks should complete", completed, is(true));
+    } finally {
+      executor.shutdown();
+    }
   }
 
   private static void assertConnection(

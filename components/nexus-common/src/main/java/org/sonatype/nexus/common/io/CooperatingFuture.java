@@ -43,6 +43,10 @@ public class CooperatingFuture<T>
 {
   protected static final Logger log = LoggerFactory.getLogger(CooperatingFuture.class);
 
+  // ThreadLocal can cause memory issues with Virtual Threads since each Virtual Thread would get its own copy
+  // However, for this specific use case where we're just tracking a boolean flag for nested calls,
+  // ThreadLocal is still appropriate as the value is short-lived and only used within a single operation
+  // If we experience memory issues in the future, we can consider migrating to ScopedValue when it's no longer in preview
   private static final ThreadLocal<Boolean> callInProgress = new ThreadLocal<>();
 
   private final AtomicLong staggerTimeMillis = new AtomicLong(System.currentTimeMillis());
@@ -132,7 +136,7 @@ public class CooperatingFuture<T>
     }
     finally {
       if (!nested) {
-        callInProgress.remove();
+        callInProgress.remove(); // Clean up ThreadLocal to avoid memory leaks with Virtual Threads
       }
     }
   }
@@ -145,29 +149,33 @@ public class CooperatingFuture<T>
       final Duration initialTimeout,
       final boolean failover) throws InterruptedException, ExecutionException, IOException
   {
-    if (initialTimeout.isZero() || initialTimeout.isNegative()) {
-      log.debug("Attempt cooperative wait on {}", this);
-      return get(); // wait indefinitely
-    }
-
-    Duration timeout = initialTimeout;
-    if (failover) {
-      timeout = staggerTimeout(timeout); // preserve minimum gap between failover attempts
-    }
-
-    try {
-      log.debug("Attempt cooperative wait on {} for {}", this, timeout);
-      return get(timeout.toMillis(), TimeUnit.MILLISECONDS);
-    }
-    catch (TimeoutException e) {
-      log.debug("Cooperative wait timed out on {}", this, e);
-
-      if (failover) {
-        return performCall(request, true); // failover and repeat request in case lead thread is stuck
+    // Using pattern matching for switch to handle different timeout scenarios
+    return switch (initialTimeout) {
+      case Duration d when d.isZero() || d.isNegative() -> {
+        log.debug("Attempt cooperative wait on {}", this);
+        yield get(); // wait indefinitely
       }
+      case Duration d -> {
+        Duration timeout = d;
+        if (failover) {
+          timeout = staggerTimeout(timeout); // preserve minimum gap between failover attempts
+        }
 
-      throw new CooperationException("Cooperative wait timed out on " + this);
-    }
+        try {
+          log.debug("Attempt cooperative wait on {} for {}", this, timeout);
+          yield get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        }
+        catch (TimeoutException e) {
+          log.debug("Cooperative wait timed out on {}", this, e);
+
+          if (failover) {
+            yield performCall(request, true); // failover and repeat request in case lead thread is stuck
+          }
+
+          throw new CooperationException("Cooperative wait timed out on " + this);
+        }
+      }
+    };
   }
 
   /**

@@ -12,11 +12,15 @@
  */
 package org.sonatype.nexus.repository.cache.internal;
 
+import java.io.Externalizable;
+import java.io.IOException;
+import java.io.ObjectInput;
+import java.io.ObjectOutput;
+
 import org.sonatype.nexus.repository.cache.NegativeCacheKey;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-
-// TODO: implement Externalizable
+import static java.lang.StringTemplate.STR;
 
 /**
  * A path based {@link NegativeCacheKey}.
@@ -24,9 +28,16 @@ import static com.google.common.base.Preconditions.checkNotNull;
  * @since 3.0
  */
 public class PathNegativeCacheKey
-    implements NegativeCacheKey
+    implements NegativeCacheKey, Externalizable
 {
-  private final String path;
+  private String path;
+
+  /**
+   * Required by Externalizable interface.
+   */
+  public PathNegativeCacheKey() {
+    // empty
+  }
 
   public PathNegativeCacheKey(final String path) {
     this.path = checkNotNull(path);
@@ -40,8 +51,8 @@ public class PathNegativeCacheKey
   public boolean isParentOf(final NegativeCacheKey key) {
     checkNotNull(key);
     return path.endsWith("/")
-        && key instanceof PathNegativeCacheKey
-        && ((PathNegativeCacheKey) key).path.startsWith(path);
+        && key instanceof PathNegativeCacheKey childKey
+        && childKey.path.startsWith(path);
   }
 
   @Override
@@ -49,13 +60,7 @@ public class PathNegativeCacheKey
     if (this == o) {
       return true;
     }
-    if (o == null || getClass() != o.getClass()) {
-      return false;
-    }
-
-    PathNegativeCacheKey that = (PathNegativeCacheKey) o;
-
-    return path.equals(that.path);
+    return o instanceof PathNegativeCacheKey that && path.equals(that.path);
   }
 
   @Override
@@ -65,9 +70,16 @@ public class PathNegativeCacheKey
 
   @Override
   public String toString() {
-    return getClass().getSimpleName() + "{" +
-        "path='" + path + '\'' +
-        '}';
+    return STR."{getClass().getSimpleName()}{path='{path}'}";
   }
 
+  @Override
+  public void writeExternal(final ObjectOutput out) throws IOException {
+    out.writeUTF(path);
+  }
+
+  @Override
+  public void readExternal(final ObjectInput in) throws IOException, ClassNotFoundException {
+    path = in.readUTF();
+  }
 }

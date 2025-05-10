@@ -12,11 +12,12 @@
  */
 package org.sonatype.nexus.blobstore.group.internal;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.BlobStoreUtil;
 import org.sonatype.nexus.blobstore.MockBlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.api.BlobId;
@@ -34,6 +35,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -41,11 +48,11 @@ import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
 
+@ExtendWith(MockitoExtension.class)
 public class BlobStoreGroupDescriptorTest
-    extends TestSupport
 {
   private static final String FILE = "File";
 
@@ -65,8 +72,8 @@ public class BlobStoreGroupDescriptorTest
 
   private Map<String, BlobStore> blobStores;
 
-  @Before
-  public void setup() {
+  @BeforeEach
+  void setup() {
     Map<String, FillPolicy> fillPolicies = new HashMap<>();
     fillPolicies.put(RoundRobinFillPolicy.TYPE, new RoundRobinFillPolicy());
     fillPolicies.put(WriteToFirstMemberFillPolicy.TYPE, new WriteToFirstMemberFillPolicy());
@@ -92,7 +99,7 @@ public class BlobStoreGroupDescriptorTest
   }
 
   @Test
-  public void validateWithValidMembers() {
+  void validateWithValidMembers() {
     BlobStoreConfiguration blobConfig =
         buildBlobStoreConfiguration("group", Arrays.asList("store1", "store2"), WriteToFirstMemberFillPolicy.TYPE);
     blobStoreGroupDescriptor.validateConfig(blobConfig);
@@ -100,7 +107,7 @@ public class BlobStoreGroupDescriptorTest
   }
 
   @Test
-  public void validateInvalidMembers() {
+  void validateInvalidMembers() {
     // members cannot be empty
     BlobStoreConfiguration config = buildBlobStoreConfiguration("self", emptyList(), WriteToFirstMemberFillPolicy.TYPE);
 
@@ -132,7 +139,7 @@ public class BlobStoreGroupDescriptorTest
   }
 
   @Test
-  public void validateBlobStoreWithConflictingTasksRunning() {
+  void validateBlobStoreWithConflictingTasksRunning() {
     BlobStore hosted0 = mockBlobStore("hosted-0", FILE);
     BlobStore hosted1 = mockBlobStore("hosted-1", FILE);
     blobStores.put("hosted-0", hosted0);
@@ -149,7 +156,7 @@ public class BlobStoreGroupDescriptorTest
   }
 
   @Test
-  public void blobStoresCanOnlyBeMembersOfOneGroup() {
+  void blobStoresCanOnlyBeMembersOfOneGroup() {
     BlobStore store1 = mockBlobStore("store1", FILE);
     BlobStore group1 = mockBlobStoreGroup(singletonList(store1));
     blobStores.put("store1", store1);
@@ -165,7 +172,7 @@ public class BlobStoreGroupDescriptorTest
   }
 
   @Test
-  public void blobStoresCantBeGroupMembersIfSetAsRepoStorage() {
+  void blobStoresCantBeGroupMembersIfSetAsRepoStorage() {
     BlobStoreConfiguration config =
         buildBlobStoreConfiguration("invalidGroup", singletonList("store1"), WriteToFirstMemberFillPolicy.TYPE);
 
@@ -177,7 +184,7 @@ public class BlobStoreGroupDescriptorTest
   }
 
   @Test
-  public void membersCantBeRemovedDirectlyUnlessReadOnlyAndEmpty() {
+  void membersCantBeRemovedDirectlyUnlessReadOnlyAndEmpty() {
     BlobStore store1 = mockBlobStore("store1", FILE);
     BlobStore nonEmptyStore = mockBlobStore("nonEmptyStore", FILE, new HashMap<>(), true);
     when(nonEmptyStore.getBlobIdStream()).thenReturn(Stream.of(mock(BlobId.class)));
@@ -197,7 +204,7 @@ public class BlobStoreGroupDescriptorTest
   }
 
   @Test
-  public void aGroupBlobStoreValidatesItsQuota() {
+  void aGroupBlobStoreValidatesItsQuota() {
     BlobStoreConfiguration config =
         buildBlobStoreConfiguration("group", singletonList("single"), WriteToFirstMemberFillPolicy.TYPE);
     blobStoreGroupDescriptor.validateConfig(config);
@@ -262,5 +269,80 @@ public class BlobStoreGroupDescriptorTest
     when(blobStore.getBlobStoreConfiguration()).thenReturn(config);
     when(blobStore.isGroupable()).thenReturn(groupable);
     return blobStore;
+  }
+  
+  @Test
+  void validateConfigWithVirtualThreads() throws Exception {
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    try {
+      // Prepare test data
+      BlobStoreConfiguration blobConfig =
+          buildBlobStoreConfiguration("group", Arrays.asList("store1", "store2"), WriteToFirstMemberFillPolicy.TYPE);
+      
+      // Number of concurrent validation operations to perform
+      int taskCount = 100;
+      CountDownLatch latch = new CountDownLatch(taskCount);
+      AtomicInteger errorCount = new AtomicInteger(0);
+      
+      // Submit multiple concurrent validation tasks using virtual threads
+      for (int i = 0; i < taskCount; i++) {
+        executor.submit(() -> {
+          try {
+            blobStoreGroupDescriptor.validateConfig(blobConfig);
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      latch.await(30, TimeUnit.SECONDS);
+      
+      // Verify results
+      assertThat("All validation operations should succeed", errorCount.get(), is(0));
+      verify(blobStoreManager, atLeast(taskCount * 2)).hasConflictingTasks(any());
+      verify(quotaService, atLeast(taskCount)).validateSoftQuotaConfig(any());
+    } finally {
+      executor.shutdown();
+    }
+  }
+  
+  @Test
+  void validateInvalidMembersWithVirtualThreads() throws Exception {
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    try {
+      // Prepare test data - members cannot be empty
+      BlobStoreConfiguration config = buildBlobStoreConfiguration("self", emptyList(), WriteToFirstMemberFillPolicy.TYPE);
+      blobStores.put("nested", mockBlobStore("nested", BlobStoreGroup.TYPE, config.getAttributes(), false));
+      
+      // Submit validation task using virtual thread
+      ValidationErrorsException exception = executor.submit(() -> 
+          assertThrows(ValidationErrorsException.class, () -> blobStoreGroupDescriptor.validateConfig(config))
+      ).get(10, TimeUnit.SECONDS);
+      
+      // Verify results
+      assertThat(exception.getMessage(), is("Blob Store 'self' cannot be empty"));
+      
+      // Test another invalid case - members cannot contain itself
+      BlobStoreConfiguration config2 =
+          buildBlobStoreConfiguration("self", singletonList("self"), WriteToFirstMemberFillPolicy.TYPE);
+      blobStores.put("nested", mockBlobStore("nested", BlobStoreGroup.TYPE, config2.getAttributes(), false));
+      
+      ValidationErrorsException exception2 = executor.submit(() -> 
+          assertThrows(ValidationErrorsException.class, () -> blobStoreGroupDescriptor.validateConfig(config2))
+      ).get(10, TimeUnit.SECONDS);
+      
+      assertThat(exception2.getMessage(), is("Blob Store 'self' cannot contain itself"));
+    } finally {
+      executor.shutdown();
+    }
   }
 }

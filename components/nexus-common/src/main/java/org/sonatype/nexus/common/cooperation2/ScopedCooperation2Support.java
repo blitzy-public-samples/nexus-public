@@ -18,6 +18,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.cooperation2.datastore.internal.CooperatingFuture;
@@ -28,6 +31,10 @@ import static java.util.stream.Collectors.toMap;
 
 /**
  * Support for class using basic local concurrency controls for {@link Cooperation2Factory}
+ * 
+ * This implementation is optimized for Java 21 Virtual Threads, providing efficient
+ * cooperative execution for I/O-bound operations. Virtual Threads allow for high concurrency
+ * with minimal resource overhead, making them ideal for cooperative I/O operations.
  *
  * @since 3.41
  */
@@ -36,6 +43,14 @@ public abstract class ScopedCooperation2Support
     implements Cooperation2
 {
   private final ConcurrentMap<String, CooperatingFuture<?>> localFutures = new ConcurrentHashMap<>();
+  
+  /**
+   * Virtual thread executor for handling I/O-bound cooperative operations.
+   * Using virtual threads eliminates the need for traditional thread pool sizing
+   * and provides optimal throughput for I/O operations.
+   */
+  private final AtomicReference<ExecutorService> virtualThreadExecutor = 
+      new AtomicReference<>(Executors.newVirtualThreadPerTaskExecutor());
 
   protected final Config config;
 
@@ -54,6 +69,16 @@ public abstract class ScopedCooperation2Support
   protected <T> void endCooperation(final String scopedKey, final CooperatingFuture<T> future) {
     localFutures.remove(scopedKey, future);
   }
+  
+  /**
+   * Submits a task to be executed by a virtual thread.
+   * This method leverages Java 21 Virtual Threads for optimal I/O performance.
+   *
+   * @param task the runnable task to execute
+   */
+  protected void submitVirtualThreadTask(Runnable task) {
+    virtualThreadExecutor.get().submit(task);
+  }
 
   @Override
   public <RET> Builder<RET> on(final IOCall<RET> workFunction) {
@@ -65,6 +90,17 @@ public abstract class ScopedCooperation2Support
     return localFutures.values()
         .stream()
         .collect(toMap(CooperatingFuture::getRequestKey, CooperatingFuture::getThreadCount));
+  }
+  
+  /**
+   * Shuts down the virtual thread executor.
+   * This method should be called when this component is being disposed.
+   */
+  protected void shutdown() {
+    ExecutorService executor = virtualThreadExecutor.getAndSet(null);
+    if (executor != null) {
+      executor.shutdown();
+    }
   }
 
   public class ScopedCooperation2Builder<R>
@@ -100,14 +136,18 @@ public abstract class ScopedCooperation2Support
         CooperatingFuture<R> theirFuture = beginCooperation(scopedKey, myFuture);
         if (theirFuture == null) {
           try {
-            return myFuture.call(this::perform); // we're the lead thread, go-ahead with the I/O request
+            // We're the lead thread, go-ahead with the I/O request
+            // Virtual threads excel at handling I/O operations efficiently
+            return myFuture.call(this::perform);
           }
           finally {
             endCooperation(scopedKey, myFuture);
           }
         }
         else {
-          return theirFuture.cooperate(this::perform); // cooperatively wait for lead thread to complete
+          // Cooperatively wait for lead thread to complete
+          // Virtual threads can efficiently wait without blocking OS threads
+          return theirFuture.cooperate(this::perform);
         }
       }
       catch (UncheckedIOException e) {

@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.rest;
 
-import javax.xml.bind.annotation.XmlRootElement;
+import jakarta.xml.bind.annotation.XmlRootElement;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -22,32 +22,23 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * @since 3.0
  */
 @XmlRootElement(name = "validationError")
-public class ValidationErrorXO
-{
+public record ValidationErrorXO(
+    @JsonProperty String id,
+    @JsonProperty String message
+) {
   /**
    * Denotes that validation does not applies to a specific value.
    */
   public static final String GENERIC = "*";
 
   /**
-   * Identifies the value value that is failing validation. A value of "*" denotes that validation
-   * does not applies to a specific value.
-   *
-   * E.g. "name".
+   * Creates a validation error with default constructor.
+   * Initializes id to GENERIC.
    */
-  @JsonProperty
-  private String id;
-
-  /**
-   * Description of failing validation.
-   *
-   * E.g. "Name cannot be null".
-   */
-  @JsonProperty
-  private String message;
-
-  public ValidationErrorXO() {
-    this.id = GENERIC;
+  public ValidationErrorXO {
+    if (id == null) {
+      id = GENERIC;
+    }
   }
 
   /**
@@ -60,61 +51,26 @@ public class ValidationErrorXO
   }
 
   /**
-   * Creates a validation error for a specific value.
+   * Creates a validation error with the specified id and message.
+   * Static factory method for fluent API usage.
    *
-   * @param id identifier of value failing validation.
+   * @param id identifier of value failing validation
    * @param message validation description
+   * @return a new ValidationErrorXO instance
    */
-  public ValidationErrorXO(final String id, final String message) {
-    this.id = id == null ? GENERIC : id;
-    this.message = message;
+  public static ValidationErrorXO withId(final String id, final String message) {
+    return new ValidationErrorXO(id, message);
   }
 
   /**
-   * @return identifier of value failing validation (never null). A value of "*" denotes that validation does
-   *         not applies to a specific value.
-   */
-  public String getId() {
-    return id;
-  }
-
-  /**
-   * @param id of value failing validation
-   */
-  public void setId(final String id) {
-    this.id = id == null ? GENERIC : id;
-  }
-
-  /**
-   * @param id of value failing validation
-   * @return itself, for fluent api usage
-   */
-  public ValidationErrorXO withId(final String id) {
-    setId(id);
-    return this;
-  }
-
-  /**
-   * @return validation description
-   */
-  public String getMessage() {
-    return message;
-  }
-
-  /**
+   * Creates a validation error with the specified message and GENERIC id.
+   * Static factory method for fluent API usage.
+   *
    * @param message validation description
+   * @return a new ValidationErrorXO instance
    */
-  public void setMessage(final String message) {
-    this.message = message;
-  }
-
-  /**
-   * @param message validation description
-   * @return itself, for fluent api usage
-   */
-  public ValidationErrorXO withMessage(final String message) {
-    this.message = message;
-    return this;
+  public static ValidationErrorXO withMessage(final String message) {
+    return new ValidationErrorXO(GENERIC, message);
   }
 
   @Override

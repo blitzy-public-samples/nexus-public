@@ -23,15 +23,18 @@ import org.sonatype.nexus.repository.manager.RepositoryManager;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.hamcrest.Matchers;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.repository.search.index.SearchConstants.REPOSITORY_NAME;
 
+@ExtendWith(MockitoExtension.class)
 public class RepositoryElasticSearchContributionTest
   extends TestSupport
 {
@@ -40,13 +43,13 @@ public class RepositoryElasticSearchContributionTest
 
   private RepositoryElasticSearchContribution underTest;
 
-  @Before
+  @BeforeEach
   public void setup() {
     underTest = new RepositoryElasticSearchContribution(repositoryManager);
   }
 
   @Test
-  public void testContribute() {
+  public void shouldContributeQueryForRepository() {
     mockRepo("repo");
 
     BoolQueryBuilder query = QueryBuilders.boolQuery();
@@ -59,7 +62,7 @@ public class RepositoryElasticSearchContributionTest
   }
 
   @Test
-  public void testContribute_noRepoMatch() {
+  public void shouldContributeQueryWhenRepositoryDoesNotExist() {
     //this isn't necessary, null will be returned by default, but I think it helps point out exactly what is going on
     when(repositoryManager.get("repo")).thenReturn(null);
 
@@ -73,7 +76,7 @@ public class RepositoryElasticSearchContributionTest
   }
 
   @Test
-  public void testContribute_withGroup() {
+  public void shouldContributeQueryForGroupRepository() {
     Repository repository = mockRepo("repo");
     Repository repository2 = mockRepo("repo2");
     mockRepo("group", repository, repository2);

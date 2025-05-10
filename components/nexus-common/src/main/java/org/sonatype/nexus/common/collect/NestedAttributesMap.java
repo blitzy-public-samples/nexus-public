@@ -13,8 +13,10 @@
 package org.sonatype.nexus.common.collect;
 
 import java.util.Map;
+import java.util.SequencedMap;
 
 import javax.annotation.Nullable;
+
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.annotations.VisibleForTesting;
@@ -68,16 +70,18 @@ public class NestedAttributesMap
     return parent;
   }
 
+  /**
+   * Gets the parent key, fully qualified if it has a grandparent.
+   */
   @VisibleForTesting
   String getParentKey() {
-    if (parent != null) {
-      // fully-qualify parent key if it has a grandparent
-      if (parent.parent != null) {
-        return parent.getParentKey() + SEPARATOR + parent.getKey();
-      }
-      return parent.getKey();
-    }
-    return null;
+    // Using Pattern Matching for switch to handle parent qualification logic
+    return switch (parent) {
+      case null -> null;
+      case NestedAttributesMap p when p.parent != null -> 
+          p.getParentKey() + SEPARATOR + p.getKey();
+      case NestedAttributesMap p -> p.getKey();
+    };
   }
 
   /**
@@ -92,10 +96,11 @@ public class NestedAttributesMap
    */
   @VisibleForTesting
   String getQualifiedKey() {
-    if (parent != null) {
-      return getParentKey() + SEPARATOR + key;
-    }
-    return key;
+    // Using Pattern Matching for switch to handle key qualification logic
+    return switch (parent) {
+      case null -> key;
+      case NestedAttributesMap p -> getParentKey() + SEPARATOR + key;
+    };
   }
 
   /**
@@ -108,28 +113,33 @@ public class NestedAttributesMap
 
   /**
    * Create new backing for new children attributes backing.
+   * Uses SequencedMap to maintain insertion order of elements.
    */
   protected Map<String, Object> newChildBacking() {
-    return Maps.newHashMap();
+    return Maps.newLinkedHashMap(); // LinkedHashMap implements SequencedMap in Java 21
   }
 
-  /**
+    /**
    * Returns nested children attributes for given name.
+   * Uses Java 21 features for more concise code.
    */
   @SuppressWarnings("unchecked")
   public NestedAttributesMap child(final String name) {
     checkNotNull(name);
 
+    // Get the child or create a new backing if it doesn't exist
     Object child = backing.get(name);
     if (child == null) {
       child = newChildBacking();
       backing.put(name, child);
     }
-    else {
-      checkState(child instanceof Map, "child '%s' not a Map", name);
-    }
-    // noinspection unchecked,ConstantConditions
-    return new NestedAttributesMap(this, name, (Map<String, Object>) child);
+    
+    // Using Pattern Matching for switch to check the type
+    // This is more expressive than the previous instanceof check
+    return switch (child) {
+      case Map<?, ?> m -> new NestedAttributesMap(this, name, (Map<String, Object>) m);
+      default -> throw new IllegalStateException("child '" + name + "' not a Map");
+    };
   }
 
   @Override

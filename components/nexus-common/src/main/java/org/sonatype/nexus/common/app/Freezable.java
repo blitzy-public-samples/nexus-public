@@ -12,10 +12,12 @@
  */
 package org.sonatype.nexus.common.app;
 
-import static com.google.common.base.Preconditions.checkState;
-
 /**
  * Some kind of writable component that can be temporarily frozen.
+ * 
+ * Implementations of this interface should ensure thread-safety, especially when used with
+ * Java 21 virtual threads for I/O operations. The frozen state should be consistently visible
+ * across all threads accessing the component.
  *
  * @since 3.21
  */
@@ -38,6 +40,9 @@ public interface Freezable
 
   /**
    * Ensures that this component is currently readable.
+   * 
+   * Default implementation assumes components are always readable,
+   * but implementations may override this if they have states where reading is not allowed.
    */
   default void checkReadable() {
     // assume readable by default
@@ -45,8 +50,12 @@ public interface Freezable
 
   /**
    * Ensures that this component is currently writable.
+   * 
+   * @throws IllegalStateException if the component is frozen
    */
   default void checkWritable() {
-    checkState(!isFrozen());
+    if (isFrozen()) {
+      throw new IllegalStateException("Component is frozen");
+    }
   }
 }

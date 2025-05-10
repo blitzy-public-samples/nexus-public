@@ -13,6 +13,7 @@
 package org.sonatype.nexus.common.app;
 
 import java.io.File;
+import java.nio.file.Path;
 
 /**
  * Provides access to application directories.
@@ -21,40 +22,113 @@ import java.io.File;
  */
 public interface ApplicationDirectories
 {
-  // TODO: Add nio path equivalents
-
   /**
    * Installation directory.
+   * 
+   * @return The installation directory as a File
    */
   File getInstallDirectory();
+
+  /**
+   * Installation directory as a Path.
+   * 
+   * @return The installation directory as a Path
+   * @since 3.60
+   */
+  default Path getInstallPath() {
+    return getInstallDirectory().toPath();
+  }
 
   /**
    * Configuration directory.
    *
    * @param subsystem Sub-system name
+   * @return The configuration directory as a File
    */
   File getConfigDirectory(String subsystem);
 
   /**
+   * Configuration directory as a Path.
+   *
+   * @param subsystem Sub-system name
+   * @return The configuration directory as a Path
+   * @since 3.60
+   */
+  default Path getConfigPath(String subsystem) {
+    return getConfigDirectory(subsystem).toPath();
+  }
+
+  /**
    * Temporary directory.
+   * 
+   * @return The temporary directory as a File
    */
   File getTemporaryDirectory();
 
   /**
+   * Temporary directory as a Path.
+   * 
+   * @return The temporary directory as a Path
+   * @since 3.60
+   */
+  default Path getTemporaryPath() {
+    return getTemporaryDirectory().toPath();
+  }
+
+  /**
    * Work directory.
+   * 
+   * @return The work directory as a File
    */
   File getWorkDirectory();
+
+  /**
+   * Work directory as a Path.
+   * 
+   * @return The work directory as a Path
+   * @since 3.60
+   */
+  default Path getWorkPath() {
+    return getWorkDirectory().toPath();
+  }
 
   /**
    * Work sub-directory.
    *
    * @param path Sub-directory path.
    * @param create True to create the directory if it does not exist.
+   * @return The work sub-directory as a File
    */
   File getWorkDirectory(String path, boolean create);
 
   /**
+   * Work sub-directory as a Path.
+   *
+   * @param path Sub-directory path.
+   * @param create True to create the directory if it does not exist.
+   * @return The work sub-directory as a Path
+   * @since 3.60
+   */
+  default Path getWorkPath(String path, boolean create) {
+    return getWorkDirectory(path, create).toPath();
+  }
+
+  /**
    * Work sub-directory.
+   * 
+   * @param path Sub-directory path.
+   * @return The work sub-directory as a File
    */
   File getWorkDirectory(String path);
+
+  /**
+   * Work sub-directory as a Path.
+   * 
+   * @param path Sub-directory path.
+   * @return The work sub-directory as a Path
+   * @since 3.60
+   */
+  default Path getWorkPath(String path) {
+    return getWorkDirectory(path).toPath();
+  }
 }

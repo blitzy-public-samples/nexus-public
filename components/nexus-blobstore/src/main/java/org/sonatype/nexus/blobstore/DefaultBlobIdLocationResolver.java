@@ -71,22 +71,19 @@ public class DefaultBlobIdLocationResolver
 
   @Override
   public String getLocation(final BlobId id) {
-    if (id.asUniqueString().startsWith(TEMPORARY_BLOB_ID_PREFIX)) {
-      return temporaryLocationStrategy.location(id);
-    }
-    else if (id.asUniqueString().startsWith(DIRECT_PATH_BLOB_ID_PREFIX)) {
-      return directLocationStrategy.location(id);
-    }
-    return getBlobIdLocation(id);
+    String uniqueString = id.asUniqueString();
+    return switch (uniqueString) {
+      case String s when s.startsWith(TEMPORARY_BLOB_ID_PREFIX) -> temporaryLocationStrategy.location(id);
+      case String s when s.startsWith(DIRECT_PATH_BLOB_ID_PREFIX) -> directLocationStrategy.location(id);
+      default -> getBlobIdLocation(id);
+    };
   }
 
   private String getBlobIdLocation(final BlobId blobId) {
-    if (blobId.getBlobCreatedRef() != null) {
-      return dateBasedLocationStrategy.location(blobId);
-    }
-    else {
-      return volumeChapterLocationStrategy.location(blobId);
-    }
+    return switch (blobId) {
+      case BlobId id when id.getBlobCreatedRef() != null -> dateBasedLocationStrategy.location(blobId);
+      default -> volumeChapterLocationStrategy.location(blobId);
+    };
   }
 
   @Override
@@ -97,12 +94,13 @@ public class DefaultBlobIdLocationResolver
   @Override
   public BlobId fromHeaders(final Map<String, String> headers) {
     OffsetDateTime blobCreatedRef = dateBasedLayoutEnabled ? UTC.now() : null;
-    if (headers.containsKey(TEMPORARY_BLOB_HEADER)) {
-      return new BlobId(TEMPORARY_BLOB_ID_PREFIX + randomUUID(), blobCreatedRef);
-    }
-    else if (headers.containsKey(DIRECT_PATH_BLOB_HEADER)) {
-      return new BlobId(DIRECT_PATH_BLOB_ID_PREFIX + headers.get(BLOB_NAME_HEADER), blobCreatedRef);
-    }
-    return new BlobId(randomUUID().toString(), blobCreatedRef);
+    
+    return switch (headers) {
+      case Map<String, String> h when h.containsKey(TEMPORARY_BLOB_HEADER) -> 
+          new BlobId(TEMPORARY_BLOB_ID_PREFIX + randomUUID(), blobCreatedRef);
+      case Map<String, String> h when h.containsKey(DIRECT_PATH_BLOB_HEADER) -> 
+          new BlobId(DIRECT_PATH_BLOB_ID_PREFIX + h.get(BLOB_NAME_HEADER), blobCreatedRef);
+      default -> new BlobId(randomUUID().toString(), blobCreatedRef);
+    };
   }
 }

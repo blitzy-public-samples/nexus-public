@@ -16,22 +16,26 @@ import org.sonatype.goodies.testsupport.TestSupport;
 
 import com.google.common.base.Suppliers;
 import com.google.inject.Guice;
-import org.junit.Test;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Test unit-of-work behaviour.
  */
+@Tag("Java21TestGroup")
 public class UnitOfWorkTest
     extends TestSupport
 {
-  @Test(expected = NullPointerException.class)
+  @Test
   public void testCannotBeginNullWork() {
-    UnitOfWork.begin(null);
+    assertThrows(NullPointerException.class, () -> UnitOfWork.begin(null));
   }
 
-  @Test(expected = IllegalStateException.class)
+  @Test
   public void testCannotEndNoWork() {
-    UnitOfWork.end();
+    assertThrows(IllegalStateException.class, () -> UnitOfWork.end());
   }
 
   @SuppressWarnings("java:S2699") // sonar expects assertions, but best to let this exception bubble up
@@ -40,21 +44,22 @@ public class UnitOfWorkTest
     UnitOfWork.resume(UnitOfWork.pause());
   }
 
-  @Test(expected = IllegalStateException.class)
+  @Test
   public void testCannotResumeTwice() {
     UnitOfWork.begin(Suppliers.<TransactionalSession<Transaction>> ofInstance(null));
     try {
       UnitOfWork work = UnitOfWork.pause();
       UnitOfWork.resume(work);
-      UnitOfWork.resume(work);
+      assertThrows(IllegalStateException.class, () -> UnitOfWork.resume(work));
     }
     finally {
       UnitOfWork.end();
     }
   }
 
-  @Test(expected = IllegalStateException.class)
+  @Test
   public void testCannotStartTransactionWithNoWork() {
-    Guice.createInjector(new TransactionModule()).getInstance(ExampleMethods.class).transactional();
+    assertThrows(IllegalStateException.class, () -> 
+        Guice.createInjector(new TransactionModule()).getInstance(ExampleMethods.class).transactional());
   }
 }

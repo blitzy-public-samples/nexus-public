@@ -13,6 +13,8 @@
 package org.sonatype.nexus.scheduling.internal;
 
 import java.time.Duration;
+import java.util.Map;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -26,11 +28,14 @@ import org.sonatype.nexus.common.stateguard.Guarded;
 import org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport;
 import org.sonatype.nexus.thread.NexusThreadFactory;
 
+import org.slf4j.MDC;
+
 import static com.google.common.base.Preconditions.checkState;
 import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.State.STARTED;
 
 /**
  * Default implementation of {@link PeriodicJobService}, based on a ScheduledExecutorService.
+ * Enhanced with Java 21 Virtual Threads support for task execution.
  *
  * @since 3.0
  */
@@ -40,9 +45,30 @@ public class PeriodicJobServiceImpl
     extends StateGuardLifecycleSupport
     implements PeriodicJobService
 {
-  private ScheduledExecutorService executor;
+  /**
+   * Property to control whether to use virtual threads for task execution.
+   */
+  private static final String USE_VIRTUAL_THREADS_PROPERTY = "nexus.scheduler.useVirtualThreads";
+  
+  /**
+   * Default setting for virtual threads usage.
+   */
+  private static final boolean DEFAULT_USE_VIRTUAL_THREADS = true;
+
+  private ScheduledExecutorService schedulerExecutor;
+  
+  private Executor taskExecutor;
 
   private int activeClients;
+  
+  private final boolean useVirtualThreads;
+
+  public PeriodicJobServiceImpl() {
+    this.useVirtualThreads = Boolean.parseBoolean(
+        System.getProperty(USE_VIRTUAL_THREADS_PROPERTY, String.valueOf(DEFAULT_USE_VIRTUAL_THREADS)));
+    log.info("PeriodicJobService configured to use {} threads for task execution", 
+        useVirtualThreads ? "virtual" : "platform");
+  }
 
   @Override
   public synchronized void startUsing() {
@@ -73,24 +99,45 @@ public class PeriodicJobServiceImpl
 
   @Override
   protected void doStart() throws Exception {
-    executor = Executors.newScheduledThreadPool(1, new NexusThreadFactory("periodic", "scheduling"));
+    // Create a platform thread pool for scheduling tasks
+    schedulerExecutor = Executors.newScheduledThreadPool(1, new NexusThreadFactory("periodic", "scheduling"));
+    
+    // Create an executor for task execution - either virtual or platform threads based on configuration
+    if (useVirtualThreads) {
+      taskExecutor = Executors.newVirtualThreadPerTaskExecutor();
+      log.debug("Using virtual threads for task execution");
+    } else {
+      taskExecutor = Executors.newCachedThreadPool(new NexusThreadFactory("periodic", "task"));
+      log.debug("Using platform threads for task execution");
+    }
   }
 
   @Override
   protected void doStop() throws Exception {
-    executor.shutdown();
-    if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
-      log.warn("Failed to terminate thread pool in allotted time");
+    schedulerExecutor.shutdown();
+    if (!schedulerExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
+      log.warn("Failed to terminate scheduler thread pool in allotted time");
     }
-    executor = null;
+    schedulerExecutor = null;
+    
+    // If taskExecutor is a platform thread pool, shut it down
+    if (!useVirtualThreads && taskExecutor instanceof java.util.concurrent.ExecutorService) {
+      java.util.concurrent.ExecutorService executorService = (java.util.concurrent.ExecutorService) taskExecutor;
+      executorService.shutdown();
+      if (!executorService.awaitTermination(10, TimeUnit.SECONDS)) {
+        log.warn("Failed to terminate task thread pool in allotted time");
+      }
+    }
+    taskExecutor = null;
   }
 
   @Override
   public void runOnce(final Runnable runnable, final int delaySeconds) {
     startUsing();
-    executor.schedule(() -> {
+    schedulerExecutor.schedule(() -> {
       try {
-        runnable.run();
+        // Execute the task on the task executor
+        taskExecutor.execute(wrap(runnable));
         return null;
       }
       finally {
@@ -102,8 +149,8 @@ public class PeriodicJobServiceImpl
   @Override
   @Guarded(by = STARTED)
   public PeriodicJob schedule(final Runnable runnable, final int repeatPeriodSeconds) {
-    ScheduledFuture<?> scheduledFuture = executor.scheduleAtFixedRate(
-        wrap(runnable),
+    ScheduledFuture<?> scheduledFuture = schedulerExecutor.scheduleAtFixedRate(
+        () -> taskExecutor.execute(wrap(runnable)),
         repeatPeriodSeconds,
         repeatPeriodSeconds,
         TimeUnit.SECONDS);
@@ -114,8 +161,8 @@ public class PeriodicJobServiceImpl
   @Override
   @Guarded(by = STARTED)
   public PeriodicJob schedule(final Runnable runnable, final Duration delay, final Duration repeatPeriod) {
-    ScheduledFuture<?> scheduledFuture = executor.scheduleAtFixedRate(
-        wrap(runnable),
+    ScheduledFuture<?> scheduledFuture = schedulerExecutor.scheduleAtFixedRate(
+        () -> taskExecutor.execute(wrap(runnable)),
         delay.toMillis(),
         repeatPeriod.toMillis(),
         TimeUnit.MILLISECONDS);
@@ -123,14 +170,37 @@ public class PeriodicJobServiceImpl
     return () -> scheduledFuture.cancel(false);
   }
 
+  /**
+   * Wraps a runnable to catch exceptions and propagate MDC context.
+   * This ensures that logging context is preserved when tasks are executed on virtual threads.
+   */
   private Runnable wrap(final Runnable inner) {
+    // Capture the current MDC context
+    final Map<String, String> mdcContext = MDC.getCopyOfContextMap();
+    
     return () -> {
+      // Set up MDC context for this thread
+      Map<String, String> previousMdc = MDC.getCopyOfContextMap();
+      if (mdcContext != null) {
+        MDC.setContextMap(mdcContext);
+      } else {
+        MDC.clear();
+      }
+      
       try {
         inner.run();
       }
       catch (Exception e) {
         // Do not propagate as this will cancel the recurring job
         log.error("Periodic job threw exception", e);
+      }
+      finally {
+        // Restore the previous MDC context or clear it
+        if (previousMdc != null) {
+          MDC.setContextMap(previousMdc);
+        } else {
+          MDC.clear();
+        }
       }
     };
   }

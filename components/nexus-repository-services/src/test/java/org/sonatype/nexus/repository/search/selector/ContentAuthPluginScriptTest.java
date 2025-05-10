@@ -24,9 +24,11 @@ import org.sonatype.nexus.selector.VariableSource;
 import com.google.common.collect.ImmutableMap;
 import org.apache.shiro.subject.Subject;
 import org.elasticsearch.search.lookup.SourceLookup;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -42,6 +44,7 @@ import static org.sonatype.nexus.security.BreadActions.BROWSE;
 /**
  * Tests for {@link ContentAuthPluginScript}.
  */
+@ExtendWith(MockitoExtension.class)
 public class ContentAuthPluginScriptTest
     extends TestSupport
 {
@@ -73,7 +76,7 @@ public class ContentAuthPluginScriptTest
 
   ContentAuthPluginScript underTest;
 
-  @Before
+  @BeforeEach
   public void setup() {
     sourceLookup = new SourceLookup();
     when(variableResolverAdapterManager.get(FORMAT)).thenReturn(variableResolverAdapter);

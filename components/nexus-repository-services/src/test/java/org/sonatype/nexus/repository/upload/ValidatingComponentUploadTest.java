@@ -15,6 +15,12 @@ package org.sonatype.nexus.repository.upload;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.repository.view.PartPayload;
@@ -22,9 +28,11 @@ import org.sonatype.nexus.rest.ValidationErrorXO;
 import org.sonatype.nexus.rest.ValidationErrorsException;
 
 import com.google.common.collect.ImmutableMap;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.lang.String.format;
 import static java.util.Collections.emptyList;
@@ -32,10 +40,12 @@ import static java.util.Collections.singletonMap;
 import static java.util.stream.Collectors.toList;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.repository.upload.UploadFieldDefinition.Type.STRING;
 
+@ExtendWith(MockitoExtension.class)
 public class ValidatingComponentUploadTest
     extends TestSupport
 {
@@ -51,7 +61,7 @@ public class ValidatingComponentUploadTest
   @Mock
   private PartPayload payload;
 
-  @Before
+  @BeforeEach
   public void setup() {
     when(uploadDefinition.getComponentFields()).thenReturn(emptyList());
     when(uploadDefinition.getAssetFields()).thenReturn(emptyList());
@@ -150,6 +160,73 @@ public class ValidatingComponentUploadTest
 
     expectExceptionOnValidate(componentUpload,
         "Unknown component field 'bar'", "Unknown field 'foo' on asset '1'");
+  }
+
+  @Test
+  public void testConcurrentValidationWithVirtualThreads() throws Exception {
+    // Setup valid component upload
+    when(uploadDefinition.getAssetFields()).thenReturn(
+        Collections.singletonList(new UploadFieldDefinition("foo", false, STRING)));
+    when(uploadDefinition.getComponentFields()).thenReturn(
+        Collections.singletonList(new UploadFieldDefinition("bar", false, STRING)));
+
+    when(assetUpload.getPayload()).thenReturn(payload);
+    when(assetUpload.getFields()).thenReturn(singletonMap("foo", "fooValue"));
+    when(assetUpload.getField("foo")).thenReturn("fooValue");
+
+    when(componentUpload.getAssetUploads()).thenReturn(Collections.singletonList(assetUpload));
+    when(componentUpload.getFields()).thenReturn(singletonMap("bar", "barValue"));
+    when(componentUpload.getField("bar")).thenReturn("barValue");
+    
+    // Create virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    
+    // Setup concurrent validation test
+    int concurrentThreads = 100;
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch completionLatch = new CountDownLatch(concurrentThreads);
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    // Create executor service with virtual threads
+    ExecutorService executorService = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    // Submit validation tasks
+    for (int i = 0; i < concurrentThreads; i++) {
+      executorService.submit(() -> {
+        try {
+          // Wait for all threads to be ready
+          startLatch.await();
+          
+          // Perform validation
+          ValidatingComponentUpload validated = new ValidatingComponentUpload(uploadDefinition, componentUpload);
+          validated.getComponentUpload();
+          
+          // Count successful validations
+          successCount.incrementAndGet();
+        }
+        catch (Exception e) {
+          // Validation failed
+        }
+        finally {
+          // Signal task completion
+          completionLatch.countDown();
+        }
+      });
+    }
+    
+    // Start all threads simultaneously
+    startLatch.countDown();
+    
+    // Wait for all threads to complete (with timeout)
+    completionLatch.await(5, TimeUnit.SECONDS);
+    
+    // Shutdown executor
+    executorService.shutdown();
+    executorService.awaitTermination(1, TimeUnit.SECONDS);
+    
+    // Verify all validations were successful
+    assertEquals(concurrentThreads, successCount.get(), 
+        "All concurrent validations should succeed with virtual threads");
   }
 
   private void expectExceptionOnValidate(final ComponentUpload component, final String... message)

@@ -212,6 +212,15 @@ public class Operations<E extends Exception, B extends Operations<E, B>>
   }
 
   /**
+   * Detects if the current thread is a Virtual Thread (Java 21 feature).
+   * 
+   * @since 3.60
+   */
+  protected static boolean isVirtualThread() {
+    return Thread.currentThread().isVirtual();
+  }
+
+  /**
    * Invokes the given {@link OperationPoint} using the current settings.
    */
   private <T> T transactional(final OperationPoint<T, E> point) throws E {
@@ -232,13 +241,20 @@ public class Operations<E extends Exception, B extends Operations<E, B>>
   }
 
   private <T> T proceedWithTransaction(final OperationPoint<T, E> point, final Transaction tx) throws E {
-
-    log.trace("Invoking: {} -> {}", spec, point);
+    // Use Java 21 string templates for improved diagnostic output
+    boolean isVirtual = isVirtualThread();
+    if (log.isTraceEnabled()) {
+      log.trace(STR."Invoking: \{spec} -> \{point} on \{isVirtual ? "virtual" : "platform"} thread");
+    }
 
     try {
-      return (T) new TransactionalWrapper(spec, point).proceedWithTransaction(tx);
+      // Pass the thread type information to the TransactionalWrapper for optimized execution
+      return (T) new TransactionalWrapper(spec, point, isVirtual).proceedWithTransaction(tx);
     }
     catch (final Throwable e) {
+      if (log.isTraceEnabled()) {
+        log.trace(STR."Exception in transaction on \{isVirtual ? "virtual" : "platform"} thread: \{e.getMessage()}");
+      }
       if (throwing != null) {
         Throwables.propagateIfPossible(e, throwing);
       }

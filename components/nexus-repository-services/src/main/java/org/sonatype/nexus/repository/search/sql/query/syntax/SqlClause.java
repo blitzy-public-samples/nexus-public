@@ -16,10 +16,9 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
-import java.util.stream.Collectors;
+import java.util.SequencedCollection;
 
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -76,24 +75,25 @@ public class SqlClause
 
   @Override
   public String toString() {
-    return expressions.stream()
+    return STR."(\{expressions.stream()
         .map(Object::toString)
-        .collect(Collectors.joining(' ' + operand.toString() + ' ', "(", ")"));
+        .collect(java.util.stream.Collectors.joining(' ' + operand.toString() + ' '))})"; 
   }
 
   public static Expression create(final Operand operand, final Expression... expressions) {
-    if (expressions.length == 1) {
-      // optimization we avoid creating the clause and return the only expression provided
-      return expressions[0];
-    }
-    return new SqlClause(operand, Arrays.asList(expressions));
+    return switch (expressions.length) {
+      case 0 -> throw new IllegalArgumentException("Must have at least 1 expression");
+      case 1 -> expressions[0]; // optimization: avoid creating the clause and return the only expression provided
+      default -> new SqlClause(operand, Arrays.asList(expressions));
+    };
   }
 
   public static Expression create(final Operand operand, final List<? extends Expression> expressions) {
-    if (expressions.size() == 1) {
-      // optimization we avoid creating the clause and return the only expression provided
-      return Iterables.getOnlyElement(expressions);
-    }
-    return new SqlClause(operand, expressions);
+    return switch (expressions) {
+      case List<?> list when list.isEmpty() -> throw new IllegalArgumentException("Must have at least 1 expression");
+      case SequencedCollection<?> seq when seq.size() == 1 -> seq.getFirst(); // optimization using SequencedCollection
+      case List<?> list when list.size() == 1 -> list.get(0); // fallback for non-sequenced lists
+      default -> new SqlClause(operand, expressions);
+    };
   }
 }

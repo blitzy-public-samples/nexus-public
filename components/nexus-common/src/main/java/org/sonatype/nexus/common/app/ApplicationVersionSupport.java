@@ -15,6 +15,8 @@ package org.sonatype.nexus.common.app;
 import java.io.InputStream;
 import java.net.URL;
 import java.util.Properties;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.Objects;
 
 import org.sonatype.goodies.common.ComponentSupport;
 
@@ -48,25 +50,37 @@ public abstract class ApplicationVersionSupport
    */
   private static final String RESOURCE_NAME = "version.properties";
 
-  private Properties properties;
+  /**
+   * Thread-safe lazy initialization of properties.
+   */
+  private final AtomicReference<Properties> propertiesRef = new AtomicReference<>();
 
   /**
    * Load or return cached properties.
+   * Thread-safe implementation using AtomicReference for lazy initialization.
+   * 
+   * This implementation ensures that:
+   * 1. Properties are loaded only once (lazy initialization)
+   * 2. Thread safety is maintained during initialization
+   * 3. All threads see the same instance after initialization
    */
   @VisibleForTesting
   Properties getProperties() {
+    // Fast path - check if properties are already loaded
+    Properties properties = propertiesRef.get();
     if (properties != null) {
       return properties;
     }
 
-    Properties props = new Properties();
+    // Slow path - load properties (may happen concurrently in multiple threads)
+    Properties newProps = new Properties();
     URL url = ApplicationVersionSupport.class.getResource(RESOURCE_NAME);
     if (url != null) {
       log.debug("Loading properties from: {}", url);
 
       try (InputStream input = url.openStream()) {
-        props.load(input);
-        log.trace("Loaded properties: {}", props);
+        newProps.load(input);
+        log.trace("Loaded properties: {}", newProps);
       }
       catch (Exception e) {
         log.error("Failed to load properties from: {}", url, e);
@@ -76,11 +90,22 @@ public abstract class ApplicationVersionSupport
       log.error("Missing required resource: {}", RESOURCE_NAME);
     }
 
-    properties = props;
-    return properties;
+    // Use compareAndSet to ensure thread safety during initialization
+    if (!propertiesRef.compareAndSet(null, newProps)) {
+      // Another thread initialized the properties first, use that instance
+      return propertiesRef.get();
+    }
+    return newProps;
   }
 
+  /**
+   * Retrieves a property value by key, returning UNKNOWN if not found.
+   * 
+   * @param key the property key to look up
+   * @return the property value or UNKNOWN if not found
+   */
   private String property(final String key) {
+    Objects.requireNonNull(key, "Property key cannot be null");
     return getProperties().getProperty(key, UNKNOWN);
   }
 

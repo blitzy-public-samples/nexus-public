@@ -23,6 +23,10 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 import javax.annotation.Nullable;
 import javax.cache.Cache;
@@ -61,12 +65,9 @@ import org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport;
 import org.sonatype.nexus.common.stateguard.Transitions;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Supplier;
-import com.google.common.base.Suppliers;
 import com.google.common.hash.HashCode;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.util.Collections.synchronizedList;
 import static java.util.Collections.unmodifiableList;
 import static java.util.function.Function.identity;
 import static java.util.stream.Collectors.toList;
@@ -110,7 +111,8 @@ public class BlobStoreGroup
 
   private Time blobIdCacheTimeout;
 
-  private Supplier<List<BlobStore>> members;
+  private volatile List<BlobStore> members;
+  private final ReentrantReadWriteLock membersLock = new ReentrantReadWriteLock();
 
   @VisibleForTesting
   FillPolicy fillPolicy;
@@ -136,7 +138,7 @@ public class BlobStoreGroup
   @Override
   public void init(final BlobStoreConfiguration configuration) {
     this.blobStoreConfiguration = configuration;
-    this.members = Suppliers.memoize(new MembersSupplier());
+    this.members = initializeMembers();
     String fillPolicyName = BlobStoreGroupConfigurationHelper.fillPolicyName(configuration);
     if (fillPolicyProviders.containsKey(fillPolicyName)) {
       this.fillPolicy = fillPolicyProviders.get(fillPolicyName).get();
@@ -148,9 +150,22 @@ public class BlobStoreGroup
     }
   }
 
+  private List<BlobStore> initializeMembers() {
+    List<BlobStore> memberList = new ArrayList<>();
+    for (String name : BlobStoreGroupConfigurationHelper.memberNames(blobStoreConfiguration)) {
+      BlobStore blobStore = blobStoreManager.get(name);
+      if (blobStore == null) {
+        throw new BlobStoreException("Blob Store '" + name + "' not found", null);
+      }
+      memberList.add(blobStore);
+    }
+    return memberList;
+  }
+
   @Override
   protected void doStart() throws Exception {
-    locatedBlobs = cacheHelperProvider.get().maybeCreateCache(CACHE_NAME, getCacheConfiguration());
+    MutableConfiguration<BlobId, String> config = getCacheConfiguration();
+    locatedBlobs = cacheHelperProvider.get().maybeCreateCache(CACHE_NAME, config);
   }
 
   private MutableConfiguration<BlobId, String> getCacheConfiguration() {
@@ -188,14 +203,18 @@ public class BlobStoreGroup
   @Guarded(by = STARTED)
   @MonitoringBlobStoreMetrics(operationType = UPLOAD)
   public Blob create(final InputStream blobData, final Map<String, String> headers, @Nullable final BlobId blobId) {
-    return create(headers, target -> target.create(blobData, headers, blobId));
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+      return create(headers, target -> target.create(blobData, headers, blobId));
+    }).join();
   }
 
   @Override
   @Guarded(by = STARTED)
   @MonitoringBlobStoreMetrics(operationType = UPLOAD)
   public Blob create(final Path sourceFile, final Map<String, String> headers, final long size, final HashCode sha1) {
-    return create(headers, target -> target.create(sourceFile, headers, size, sha1));
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+      return create(headers, target -> target.create(sourceFile, headers, size, sha1));
+    }).join();
   }
 
   private Blob create(final Map<String, String> headers, final CreateBlobFunction createBlobFunction) {
@@ -232,11 +251,13 @@ public class BlobStoreGroup
   @Override
   @Guarded(by = STARTED)
   public Blob copy(final BlobId blobId, final Map<String, String> headers) {
-    BlobStore target = locate(blobId)
-        .orElseThrow(() -> new BlobStoreException("Unable to find blob", blobId));
-    Blob blob = target.copy(blobId, headers);
-    locatedBlobs.put(blob.getId(), target.getBlobStoreConfiguration().getName());
-    return blob;
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+      BlobStore target = locate(blobId)
+          .orElseThrow(() -> new BlobStoreException("Unable to find blob", blobId));
+      Blob blob = target.copy(blobId, headers);
+      locatedBlobs.put(blob.getId(), target.getBlobStoreConfiguration().getName());
+      return blob;
+    }).join();
   }
 
   @Nullable
@@ -244,9 +265,11 @@ public class BlobStoreGroup
   @Guarded(by = STARTED)
   @MonitoringBlobStoreMetrics(operationType = DOWNLOAD)
   public Blob get(final BlobId blobId) {
-    return locate(blobId)
-        .map((BlobStore target) -> target.get(blobId))
-        .orElse(null);
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+      return locate(blobId)
+          .map((BlobStore target) -> target.get(blobId))
+          .orElse(null);
+    }).join();
   }
 
   @Nullable
@@ -254,38 +277,50 @@ public class BlobStoreGroup
   @Guarded(by = STARTED)
   @MonitoringBlobStoreMetrics(operationType = DOWNLOAD)
   public Blob get(final BlobId blobId, final boolean includeDeleted) {
-    if (includeDeleted) {
-      // check directly without using cache
-      return members.get()
-          .stream()
-          .filter((BlobStore member) -> member.exists(blobId))
-          .map((BlobStore member) -> member.get(blobId, true))
-          .filter(Objects::nonNull)
-          .findAny()
-          .orElse(null);
-    }
-    else {
-      return locate(blobId)
-          .map((BlobStore target) -> target.get(blobId, false))
-          .orElse(null);
-    }
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+      if (includeDeleted) {
+        // check directly without using cache
+        return getMembers().stream()
+            .filter((BlobStore member) -> member.exists(blobId))
+            .map((BlobStore member) -> member.get(blobId, true))
+            .filter(Objects::nonNull)
+            .findAny()
+            .orElse(null);
+      }
+      else {
+        return locate(blobId)
+            .map((BlobStore target) -> target.get(blobId, false))
+            .orElse(null);
+      }
+    }).join();
   }
 
   @Override
   @Guarded(by = STARTED)
   public boolean delete(final BlobId blobId, final String reason) {
     locatedBlobs.remove(blobId);
-    List<BlobStore> locations = members.get()
-        .stream()
-        .filter((BlobStore member) -> member.exists(blobId))
-        .collect(toList());
+    try (var scope = new java.util.concurrent.StructuredTaskScope.ShutdownOnFailure()) {
+      List<BlobStore> locations = getMembers().stream()
+          .filter((BlobStore member) -> member.exists(blobId))
+          .collect(toList());
 
-    if (!locations.isEmpty()) {
-      return locations.stream()
-          .allMatch((BlobStore member) -> member.delete(blobId, reason));
-    }
-    else {
-      return false;
+      if (!locations.isEmpty()) {
+        var futures = locations.stream()
+            .map(member -> scope.fork(() -> member.delete(blobId, reason)))
+            .collect(toList());
+
+        try {
+          scope.join();
+          scope.throwIfFailed();
+          return futures.stream().allMatch(future -> future.resultNow());
+        } catch (Exception e) {
+          log.error("Error deleting blob {}", blobId, e);
+          return false;
+        }
+      }
+      else {
+        return false;
+      }
     }
   }
 
@@ -293,17 +328,28 @@ public class BlobStoreGroup
   @Guarded(by = STARTED)
   public boolean deleteHard(final BlobId blobId) {
     locatedBlobs.remove(blobId);
-    List<BlobStore> locations = members.get()
-        .stream()
-        .filter((BlobStore member) -> member.exists(blobId))
-        .collect(toList());
+    try (var scope = new java.util.concurrent.StructuredTaskScope.ShutdownOnFailure()) {
+      List<BlobStore> locations = getMembers().stream()
+          .filter((BlobStore member) -> member.exists(blobId))
+          .collect(toList());
 
-    if (!locations.isEmpty()) {
-      return locations.stream()
-          .allMatch((BlobStore member) -> member.deleteHard(blobId));
-    }
-    else {
-      return false;
+      if (!locations.isEmpty()) {
+        var futures = locations.stream()
+            .map(member -> scope.fork(() -> member.deleteHard(blobId)))
+            .collect(toList());
+
+        try {
+          scope.join();
+          scope.throwIfFailed();
+          return futures.stream().allMatch(future -> future.resultNow());
+        } catch (Exception e) {
+          log.error("Error hard deleting blob {}", blobId, e);
+          return false;
+        }
+      }
+      else {
+        return false;
+      }
     }
   }
 
@@ -316,7 +362,7 @@ public class BlobStoreGroup
   @Override
   @Guarded(by = STARTED)
   public BlobStoreMetrics getMetrics() {
-    Iterable<BlobStoreMetrics> membersMetrics = members.get()
+    Iterable<BlobStoreMetrics> membersMetrics = getMembers()
         .stream()
         .filter(BlobStore::isStarted)
         .map(BlobStore::getMetrics)::iterator;
@@ -326,7 +372,7 @@ public class BlobStoreGroup
   @Override
   public Map<OperationType, OperationMetrics> getOperationMetricsByType() {
     Map<OperationType, OperationMetrics> result = new EnumMap<>(OperationType.class);
-    Iterable<Map<OperationType, OperationMetrics>> metrics = members.get()
+    Iterable<Map<OperationType, OperationMetrics>> metrics = getMembers()
         .stream()
         .map(BlobStore::getOperationMetricsByType)::iterator;
     for (Map<OperationType, OperationMetrics> metric : metrics) {
@@ -349,7 +395,7 @@ public class BlobStoreGroup
   @Override
   public Map<OperationType, OperationMetrics> getOperationMetricsDelta() {
     Map<OperationType, OperationMetrics> result = new EnumMap<>(OperationType.class);
-    Iterable<Map<OperationType, OperationMetrics>> metrics = members.get()
+    Iterable<Map<OperationType, OperationMetrics>> metrics = getMembers()
         .stream()
         .map(BlobStore::getOperationMetricsDelta)::iterator;
     for (Map<OperationType, OperationMetrics> metric : metrics) {
@@ -377,13 +423,37 @@ public class BlobStoreGroup
   @Override
   @Guarded(by = STARTED)
   public synchronized void compact(@Nullable final BlobStoreUsageChecker inUseChecker) {
-    members.get().stream().forEach((BlobStore member) -> member.compact(inUseChecker));
+    try (var scope = new java.util.concurrent.StructuredTaskScope.ShutdownOnFailure()) {
+      getMembers().forEach(member -> scope.fork(() -> {
+        member.compact(inUseChecker);
+        return null;
+      }));
+      
+      try {
+        scope.join();
+        scope.throwIfFailed();
+      } catch (Exception e) {
+        log.error("Error during compact operation", e);
+      }
+    }
   }
 
   @Override
   @Guarded(by = STARTED)
   public synchronized void deleteTempFiles(@Nullable final Integer daysOlderThan) {
-    members.get().forEach((BlobStore member) -> deleteTempFiles(daysOlderThan));
+    try (var scope = new java.util.concurrent.StructuredTaskScope.ShutdownOnFailure()) {
+      getMembers().forEach(member -> scope.fork(() -> {
+        member.deleteTempFiles(daysOlderThan);
+        return null;
+      }));
+      
+      try {
+        scope.join();
+        scope.throwIfFailed();
+      } catch (Exception e) {
+        log.error("Error during deleteTempFiles operation", e);
+      }
+    }
   }
 
   @Override
@@ -393,10 +463,12 @@ public class BlobStoreGroup
       final BlobAttributes attributes,
       final boolean isDryRun)
   {
-    return members.get()
-        .stream()
-        .map((BlobStore member) -> member.undelete(inUseChecker, blobId, attributes, isDryRun))
-        .anyMatch((Boolean deleted) -> deleted);
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+      return getMembers()
+          .stream()
+          .map((BlobStore member) -> member.undelete(inUseChecker, blobId, attributes, isDryRun))
+          .anyMatch((Boolean deleted) -> deleted);
+    }).join();
   }
 
   @Override
@@ -416,7 +488,7 @@ public class BlobStoreGroup
 
   @Override
   public boolean isEmpty() {
-    return members.get().stream().map(BlobStore::isEmpty).reduce(true, Boolean::logicalAnd);
+    return getMembers().stream().map(BlobStore::isEmpty).reduce(true, Boolean::logicalAnd);
   }
 
   /**
@@ -432,21 +504,21 @@ public class BlobStoreGroup
 
   @Override
   public boolean exists(final BlobId blobId) {
-    return members.get()
+    return getMembers()
         .stream()
         .anyMatch((BlobStore member) -> member.exists(blobId));
   }
 
   @Override
   public boolean bytesExists(final BlobId blobId) {
-    return members.get()
+    return getMembers()
         .stream()
         .anyMatch((BlobStore member) -> member.bytesExists(blobId));
   }
 
   @Override
   public boolean isBlobEmpty(final BlobId blobId) {
-    return members.get()
+    return getMembers()
         .stream()
         .anyMatch((BlobStore member) -> member.isBlobEmpty(blobId));
   }
@@ -459,18 +531,21 @@ public class BlobStoreGroup
 
   @Override
   public Stream<BlobId> getBlobIdStream() {
-    return members.get()
-        .stream()
-        .map((BlobStore member) -> member.getBlobIdStream())
-        .flatMap(identity());
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+      return getMembers()
+          .stream()
+          .map((BlobStore member) -> member.getBlobIdStream())
+          .flatMap(identity());
+    }).join();
   }
 
   @Override
   public Stream<BlobId> getBlobIdUpdatedSinceStream(final java.time.Duration duration) {
-    return members
-        .get()
-        .stream()
-        .flatMap((BlobStore member) -> member.getBlobIdUpdatedSinceStream(duration));
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+      return getMembers()
+          .stream()
+          .flatMap((BlobStore member) -> member.getBlobIdUpdatedSinceStream(duration));
+    }).join();
   }
 
   @Override
@@ -486,52 +561,40 @@ public class BlobStoreGroup
 
   @Override
   public Stream<BlobId> getDirectPathBlobIdStream(final String prefix) {
-    return members.get()
-        .stream()
-        .map((BlobStore member) -> member.getDirectPathBlobIdStream(prefix))
-        .flatMap(identity());
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+      return getMembers()
+          .stream()
+          .map((BlobStore member) -> member.getDirectPathBlobIdStream(prefix))
+          .flatMap(identity());
+    }).join();
   }
 
   @Nullable
   @Override
   public BlobAttributes getBlobAttributes(final BlobId blobId) {
-    return locate(blobId)
-        .map((BlobStore target) -> target.getBlobAttributes(blobId))
-        .orElse(null);
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+      return locate(blobId)
+          .map((BlobStore target) -> target.getBlobAttributes(blobId))
+          .orElse(null);
+    }).join();
   }
 
   @Override
   public void setBlobAttributes(BlobId blobId, BlobAttributes blobAttributes) {
-    locate(blobId)
-        .ifPresent((BlobStore target) -> target.setBlobAttributes(blobId, blobAttributes));
+    Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+      locate(blobId)
+          .ifPresent((BlobStore target) -> target.setBlobAttributes(blobId, blobAttributes));
+      return null;
+    }).join();
   }
 
   public List<BlobStore> getMembers() {
-    return unmodifiableList(members.get());
+    return unmodifiableList(members);
   }
 
   @Override
   public RawObjectAccess getRawObjectAccess() {
     return new UnimplementedRawObjectAccess();
-  }
-
-  /**
-   * Supplier for thread-safe lazy initialization of members.
-   */
-  private class MembersSupplier
-      implements Supplier<List<BlobStore>>
-  {
-    public List<BlobStore> get() {
-      List<BlobStore> memberList = new ArrayList<>();
-      for (String name : BlobStoreGroupConfigurationHelper.memberNames(blobStoreConfiguration)) {
-        BlobStore blobStore = blobStoreManager.get(name);
-        if (blobStore == null) {
-          throw new BlobStoreException("Blob Store '" + name + "' not found", null);
-        }
-        memberList.add(blobStore);
-      }
-      return synchronizedList(memberList);
-    }
   }
 
   @VisibleForTesting
@@ -554,7 +617,7 @@ public class BlobStoreGroup
 
   private BlobStore search(BlobId blobId) {
     log.trace("Searching for {} in {}", blobId, members);
-    return members.get()
+    return getMembers()
         .stream()
         .sorted(Comparator.comparing(BlobStore::isWritable).reversed())
         .filter((BlobStore member) -> member.exists(blobId))
@@ -567,7 +630,7 @@ public class BlobStoreGroup
     String name = blobStoreConfiguration != null ? blobStoreConfiguration.getName() : null;
     return getClass().getSimpleName() + "{" +
         "name='" + name + "'," +
-        "members='" + members.get() + '\'' +
+        "members='" + getMembers() + '\'' +
         '}';
   }
 

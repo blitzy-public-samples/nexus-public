@@ -20,10 +20,13 @@ import java.lang.annotation.Target;
 
 /**
  * Example @{@link Transactional} stereotype annotation.
+ * <p>
+ * This annotation is compatible with JUnit Jupiter and can be used on test methods
+ * or test classes to automatically retry operations that fail with IOException.
  */
 @Transactional(retryOn = IOException.class)
 @Retention(RetentionPolicy.RUNTIME)
-@Target(ElementType.METHOD)
+@Target({ElementType.METHOD, ElementType.TYPE, ElementType.ANNOTATION_TYPE, ElementType.TYPE_USE, ElementType.TYPE_PARAMETER})
 public @interface RetryOnIOException
 {
   // empty

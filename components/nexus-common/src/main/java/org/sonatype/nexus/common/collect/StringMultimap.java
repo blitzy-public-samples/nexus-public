@@ -18,6 +18,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.SequencedCollection;
 
 import javax.annotation.Nullable;
 
@@ -71,6 +72,26 @@ public class StringMultimap
   }
 
   /**
+   * Returns first value of named entry.
+   * Leverages Java 21 Sequenced Collections API concept.
+   */
+  @Nullable
+  public String getFirst(final String name) {
+    List<String> values = backing.get(name);
+    return values.isEmpty() ? null : values.getFirst();
+  }
+
+  /**
+   * Returns last value of named entry.
+   * Leverages Java 21 Sequenced Collections API concept.
+   */
+  @Nullable
+  public String getLast(final String name) {
+    List<String> values = backing.get(name);
+    return values.isEmpty() ? null : values.getLast();
+  }
+
+  /**
    * Set one or more named entry values.
    */
   public void set(final String name, final String... values) {
@@ -94,10 +115,61 @@ public class StringMultimap
   }
 
   /**
+   * Add a value as the first entry for the given name.
+   * Leverages Java 21 Sequenced Collections API concept.
+   */
+  public void addFirst(final String name, final String value) {
+    List<String> values = backing.get(name);
+    values.addFirst(value);
+  }
+
+  /**
+   * Add a value as the last entry for the given name.
+   * Leverages Java 21 Sequenced Collections API concept.
+   */
+  public void addLast(final String name, final String value) {
+    backing.put(name, value); // Same as regular put since ListMultimap appends to the end
+  }
+
+  /**
    * Remove named entry values.
    */
   public void remove(final String name) {
     backing.removeAll(name);
+  }
+
+  /**
+   * Remove and return the first value of named entry.
+   * Leverages Java 21 Sequenced Collections API concept.
+   */
+  @Nullable
+  public String removeFirst(final String name) {
+    List<String> values = backing.get(name);
+    if (values.isEmpty()) {
+      return null;
+    }
+    String first = values.removeFirst();
+    if (values.isEmpty()) {
+      backing.removeAll(name); // Clean up the key if no values remain
+    }
+    return first;
+  }
+
+  /**
+   * Remove and return the last value of named entry.
+   * Leverages Java 21 Sequenced Collections API concept.
+   */
+  @Nullable
+  public String removeLast(final String name) {
+    List<String> values = backing.get(name);
+    if (values.isEmpty()) {
+      return null;
+    }
+    String last = values.removeLast();
+    if (values.isEmpty()) {
+      backing.removeAll(name); // Clean up the key if no values remain
+    }
+    return last;
   }
 
   public void clear() {
@@ -126,6 +198,14 @@ public class StringMultimap
 
   public Collection<Entry<String, String>> entries() {
     return backing.entries();
+  }
+
+  /**
+   * Returns a reversed view of the values for the named entry.
+   * Leverages Java 21 Sequenced Collections API concept.
+   */
+  public SequencedCollection<String> reversed(final String name) {
+    return backing.get(name).reversed();
   }
 
   @Override

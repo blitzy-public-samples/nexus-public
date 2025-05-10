@@ -1,0 +1,158 @@
+{
+  "description": "Test scenarios for MDC (Mapped Diagnostic Context) propagation in virtual threads",
+  "scenarios": [
+    {
+      "name": "Standard MDC Propagation",
+      "description": "Tests that standard MDC context is properly propagated to virtual threads",
+      "mdcContext": {
+        "userId": "admin",
+        "requestId": "req-12345",
+        "sessionId": "sess-67890"
+      },
+      "expectedPropagation": true,
+      "assertions": [
+        "All MDC keys should be available in the virtual thread",
+        "Values should match the original context",
+        "Context should be preserved after task completion"
+      ]
+    },
+    {
+      "name": "Non-Inheritable MDC Context",
+      "description": "Tests that MDC context marked as non-inheritable is not propagated",
+      "mdcContext": {
+        "userId": "system",
+        "requestId": "req-54321",
+        "sessionId": "sess-09876",
+        "non-inheritable": "true"
+      },
+      "expectedPropagation": false,
+      "assertions": [
+        "MDC context should not be propagated to virtual thread",
+        "Virtual thread should have empty MDC context",
+        "UserIdMdcHelper.set() should still be called to set default userId"
+      ]
+    },
+    {
+      "name": "Partial MDC Propagation",
+      "description": "Tests propagation of specific MDC keys",
+      "mdcContext": {
+        "userId": "guest",
+        "requestId": "req-67890",
+        "customKey": "custom-value",
+        "sensitiveData": "sensitive-info"
+      },
+      "keysToPropagate": ["userId", "requestId"],
+      "expectedPropagation": true,
+      "assertions": [
+        "Only specified keys should be propagated",
+        "Non-specified keys should not be available in virtual thread",
+        "Values for propagated keys should match original context"
+      ]
+    },
+    {
+      "name": "Empty MDC Context",
+      "description": "Tests behavior with empty MDC context",
+      "mdcContext": {},
+      "expectedPropagation": true,
+      "assertions": [
+        "Virtual thread should have empty MDC context",
+        "UserIdMdcHelper.set() should be called to set default userId"
+      ]
+    },
+    {
+      "name": "Large MDC Context",
+      "description": "Tests propagation of MDC context with many entries",
+      "mdcContext": {
+        "userId": "developer",
+        "requestId": "req-99999",
+        "sessionId": "sess-88888",
+        "traceId": "trace-77777",
+        "spanId": "span-66666",
+        "applicationName": "nexus-repository",
+        "environment": "test",
+        "clientIp": "192.168.1.1",
+        "userAgent": "Mozilla/5.0",
+        "requestPath": "/api/v1/repositories"
+      },
+      "expectedPropagation": true,
+      "assertions": [
+        "All MDC keys should be available in the virtual thread",
+        "Values should match the original context",
+        "Performance should not be significantly impacted"
+      ]
+    },
+    {
+      "name": "MDC Context Modification",
+      "description": "Tests that modifications to MDC in virtual thread don't affect parent thread",
+      "mdcContext": {
+        "userId": "operator",
+        "requestId": "req-24680",
+        "environment": "staging"
+      },
+      "virtualThreadModifications": {
+        "add": {
+          "threadSpecific": "virtual-thread-value"
+        },
+        "modify": {
+          "environment": "virtual-env"
+        },
+        "remove": ["requestId"]
+      },
+      "expectedPropagation": true,
+      "assertions": [
+        "Virtual thread should receive a copy of the MDC context",
+        "Modifications in virtual thread should not affect parent thread",
+        "Parent thread context should remain unchanged after task completion"
+      ]
+    },
+    {
+      "name": "Nested Virtual Threads",
+      "description": "Tests MDC propagation across nested virtual threads",
+      "mdcContext": {
+        "userId": "nested-user",
+        "requestId": "req-nested",
+        "level": "parent"
+      },
+      "nestedContext": {
+        "level": "child",
+        "childSpecific": "child-value"
+      },
+      "expectedPropagation": true,
+      "assertions": [
+        "First level virtual thread should receive parent MDC context",
+        "Second level virtual thread should receive first level's modified context",
+        "Each thread should maintain its own copy of the context"
+      ]
+    },
+    {
+      "name": "MDC Context with Special Characters",
+      "description": "Tests MDC propagation with special characters in keys and values",
+      "mdcContext": {
+        "userId": "user@example.com",
+        "complex-key.with.dots": "value with spaces",
+        "key-with-unicode": "值 with 混合 characters",
+        "empty-value": ""
+      },
+      "expectedPropagation": true,
+      "assertions": [
+        "Special characters in keys and values should be preserved",
+        "Empty values should be propagated correctly"
+      ]
+    }
+  ],
+  "validationMethods": [
+    {
+      "name": "Direct MDC Access",
+      "description": "Validates MDC context by directly accessing MDC in the virtual thread"
+    },
+    {
+      "name": "Log Pattern Validation",
+      "description": "Validates MDC context by examining log output with MDC pattern",
+      "logPattern": "%d %-5level [%t] %X{userId} %X{requestId} %logger{36} - %msg%n"
+    },
+    {
+      "name": "Context Capture",
+      "description": "Captures MDC context in virtual thread and returns it to parent for validation"
+    }
+  ]
+}

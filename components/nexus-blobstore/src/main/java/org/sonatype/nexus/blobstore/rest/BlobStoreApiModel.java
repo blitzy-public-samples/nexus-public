@@ -15,8 +15,9 @@ package org.sonatype.nexus.blobstore.rest;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaSupport;
 
-import io.swagger.annotations.ApiModelProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 
+import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.blobstore.quota.BlobStoreQuotaSupport.LIMIT_KEY;
 import static org.sonatype.nexus.blobstore.quota.BlobStoreQuotaSupport.ROOT_KEY;
 import static org.sonatype.nexus.blobstore.quota.BlobStoreQuotaSupport.TYPE_KEY;
@@ -26,13 +27,16 @@ import static org.sonatype.nexus.blobstore.quota.BlobStoreQuotaSupport.TYPE_KEY;
  */
 public abstract class BlobStoreApiModel
 {
-  @ApiModelProperty("Settings to control the soft quota")
+  @Schema(description = "Settings to control the soft quota")
   private BlobStoreApiSoftQuota softQuota;
 
   public BlobStoreApiModel() {
   }
 
   public BlobStoreApiModel(BlobStoreConfiguration configuration) {
+    if (configuration == null) {
+      throw new IllegalArgumentException(STR."Configuration cannot be null when creating \{this.getClass().getSimpleName()}");
+    }
     softQuota = createSoftQuota(configuration);
   }
 
@@ -45,18 +49,30 @@ public abstract class BlobStoreApiModel
   }
 
   public BlobStoreConfiguration toBlobStoreConfiguration(final BlobStoreConfiguration configuration) {
+    if (configuration == null) {
+      throw new IllegalArgumentException(STR."Configuration cannot be null when converting to BlobStoreConfiguration");
+    }
     setSoftQuotaAttributes(configuration);
     return configuration;
   }
 
   private void setSoftQuotaAttributes(BlobStoreConfiguration configuration) {
+    if (configuration == null) {
+      throw new IllegalArgumentException(STR."Configuration cannot be null when setting soft quota attributes");
+    }
+    
     if (softQuota == null) {
       return;
     }
 
-    configuration.attributes(ROOT_KEY).set(TYPE_KEY, softQuota.getType());
+    String quotaType = softQuota.getType();
+    if (quotaType == null) {
+      throw new IllegalStateException(STR."Soft quota type cannot be null for \{this.getClass().getSimpleName()}");
+    }
+    
+    configuration.attributes(ROOT_KEY).set(TYPE_KEY, quotaType);
     if (softQuota.getLimit() == null) {
-      configuration.attributes(ROOT_KEY).set(LIMIT_KEY, -1l);
+      configuration.attributes(ROOT_KEY).set(LIMIT_KEY, -1L);
     }
     else {
       configuration.attributes(ROOT_KEY).set(LIMIT_KEY, softQuota.getLimit());
@@ -64,13 +80,25 @@ public abstract class BlobStoreApiModel
   }
 
   private BlobStoreApiSoftQuota createSoftQuota(BlobStoreConfiguration configuration) {
+    if (configuration == null) {
+      throw new IllegalArgumentException(STR."Configuration cannot be null when creating soft quota");
+    }
+    
     if (configuration.attributes(BlobStoreQuotaSupport.ROOT_KEY).isEmpty()) {
       return null;
     }
 
-    BlobStoreApiSoftQuota newSoftQuota = new BlobStoreApiSoftQuota();
-    newSoftQuota.setType(BlobStoreQuotaSupport.getType(configuration));
-    newSoftQuota.setLimit(BlobStoreQuotaSupport.getLimit(configuration));
-    return newSoftQuota;
+    try {
+      BlobStoreApiSoftQuota newSoftQuota = new BlobStoreApiSoftQuota();
+      String type = BlobStoreQuotaSupport.getType(configuration);
+      if (type == null) {
+        throw new IllegalStateException(STR."Quota type is missing in configuration for \{configuration.getName()}");
+      }
+      newSoftQuota.setType(type);
+      newSoftQuota.setLimit(BlobStoreQuotaSupport.getLimit(configuration));
+      return newSoftQuota;
+    } catch (Exception e) {
+      throw new IllegalStateException(STR."Failed to create soft quota from configuration \{configuration.getName()}: \{e.getMessage()}", e);
+    }
   }
 }

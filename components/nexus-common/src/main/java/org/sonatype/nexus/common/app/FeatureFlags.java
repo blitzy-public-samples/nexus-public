@@ -14,9 +14,10 @@ package org.sonatype.nexus.common.app;
 
 /**
  * List of available feature flags
- * You can change it's values by editing ${data-dir}/nexus.properties configuration file.
+ * You can change its values by editing ${data-dir}/nexus.properties configuration file.
  *
  * @since 3.20
+ * @updated 21.0 - Updated for Java 21 compatibility
  */
 public interface FeatureFlags
 {
@@ -235,4 +236,44 @@ public interface FeatureFlags
   String S3_LOGGING_ENABLED = "nexus.s3.logging.enabled";
 
   String S3_LOGGING_ENABLED_ENV = "S3_LOGGING_ENABLED";
+  
+  /**
+   * Feature flag to enable Virtual Threads for I/O-bound operations.
+   * When enabled, the application will use Java 21 Virtual Threads for operations like:
+   * - Remote repository connections
+   * - File and S3 blob store operations
+   * - Database interactions
+   * 
+   * Available values: true, false. Default value: true
+   */
+  String VIRTUAL_THREADS_ENABLED = "nexus.virtualthreads.enabled";
+  
+  String VIRTUAL_THREADS_ENABLED_NAMED = "${nexus.virtualthreads.enabled:-true}";
+  
+  /**
+   * Feature flag to enable Sequenced Collections API usage for ordered collections.
+   * When enabled, the application will use Java 21 Sequenced Collections API for:
+   * - Repository ordering operations
+   * - Format-specific component listings
+   * - Search result ordering
+   * 
+   * Available values: true, false. Default value: true
+   */
+  String SEQUENCED_COLLECTIONS_ENABLED = "nexus.sequencedcollections.enabled";
+  
+  String SEQUENCED_COLLECTIONS_ENABLED_NAMED = "${nexus.sequencedcollections.enabled:-true}";
+  
+  /**
+   * Feature flag to enable String Templates for structured logging.
+   * When enabled, the application will use Java 21 String Templates for:
+   * - Structured log messages
+   * - Error reporting
+   * - Audit entries
+   * 
+   * Available values: true, false. Default value: true
+   * Note: This is a preview feature in Java 21
+   */
+  String STRING_TEMPLATES_ENABLED = "nexus.stringtemplates.enabled";
+  
+  String STRING_TEMPLATES_ENABLED_NAMED = "${nexus.stringtemplates.enabled:-true}";
 }

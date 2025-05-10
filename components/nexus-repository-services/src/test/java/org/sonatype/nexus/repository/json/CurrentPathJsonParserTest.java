@@ -17,13 +17,15 @@ import java.io.IOException;
 import org.sonatype.goodies.testsupport.TestSupport;
 
 import com.fasterxml.jackson.core.JsonFactory;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.CoreMatchers.equalTo;
-import static org.hamcrest.CoreMatchers.notNullValue;
-import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+@ExtendWith(MockitoExtension.class)
 public class CurrentPathJsonParserTest
     extends TestSupport
 {
@@ -31,64 +33,64 @@ public class CurrentPathJsonParserTest
 
   private CurrentPathJsonParser underTest;
 
-  @Before
+  @BeforeEach
   public void setUp() throws IOException {
     underTest = new CurrentPathJsonParser(new JsonFactory().createParser(SIMPLE_JSON));
   }
 
   @Test
   public void should_Return_CurrentPath_For_Parser() throws IOException {
-    assertThat(underTest.currentPath(), equalTo("/"));
+    assertEquals("/", underTest.currentPath());
 
     underTest.nextValue();
-    assertThat(underTest.currentPath(), equalTo("/"));
+    assertEquals("/", underTest.currentPath());
 
     underTest.nextValue();
-    assertThat(underTest.currentPath(), equalTo("/_id"));
+    assertEquals("/_id", underTest.currentPath());
 
     underTest.nextValue();
-    assertThat(underTest.currentPath(), equalTo("/user"));
+    assertEquals("/user", underTest.currentPath());
 
     underTest.nextValue();
-    assertThat(underTest.currentPath(), equalTo("/user/description"));
+    assertEquals("/user/description", underTest.currentPath());
 
     underTest.nextValue();
-    assertThat(underTest.currentPath(), equalTo("/user"));
+    assertEquals("/user", underTest.currentPath());
 
     underTest.nextValue();
-    assertThat(underTest.currentPath(), equalTo("/"));
+    assertEquals("/", underTest.currentPath());
   }
 
   @Test
   public void should_Return_CurrentPath_InParts_For_Parser() throws IOException {
-    assertThat(underTest.currentPathInParts().length, equalTo(0));
+    assertEquals(0, underTest.currentPathInParts().length);
 
     underTest.nextValue();
-    assertThat(underTest.currentPathInParts().length, equalTo(0));
+    assertEquals(0, underTest.currentPathInParts().length);
 
     underTest.nextValue();
-    assertThat(underTest.currentPathInParts().length, equalTo(1));
-    assertThat(underTest.currentPathInParts()[0], equalTo("_id"));
+    assertEquals(1, underTest.currentPathInParts().length);
+    assertEquals("_id", underTest.currentPathInParts()[0]);
 
     underTest.nextValue();
-    assertThat(underTest.currentPathInParts().length, equalTo(1));
-    assertThat(underTest.currentPathInParts()[0], equalTo("user"));
+    assertEquals(1, underTest.currentPathInParts().length);
+    assertEquals("user", underTest.currentPathInParts()[0]);
 
     underTest.nextValue();
-    assertThat(underTest.currentPathInParts().length, equalTo(2));
-    assertThat(underTest.currentPathInParts()[0], equalTo("user"));
-    assertThat(underTest.currentPathInParts()[1], equalTo("description"));
+    assertEquals(2, underTest.currentPathInParts().length);
+    assertEquals("user", underTest.currentPathInParts()[0]);
+    assertEquals("description", underTest.currentPathInParts()[1]);
 
     underTest.nextValue();
-    assertThat(underTest.currentPathInParts().length, equalTo(1));
-    assertThat(underTest.currentPathInParts()[0], equalTo("user"));
+    assertEquals(1, underTest.currentPathInParts().length);
+    assertEquals("user", underTest.currentPathInParts()[0]);
 
     underTest.nextValue();
-    assertThat(underTest.currentPathInParts().length, equalTo(0));
+    assertEquals(0, underTest.currentPathInParts().length);
   }
 
   @Test
   public void should_Return_CurrentPointer() {
-    assertThat(underTest.currentPointer(), notNullValue());
+    assertNotNull(underTest.currentPointer());
   }
 }

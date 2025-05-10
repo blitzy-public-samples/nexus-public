@@ -27,9 +27,11 @@ import org.sonatype.nexus.selector.SelectorManager;
 import org.sonatype.nexus.selector.VariableSource;
 
 import com.google.common.collect.Sets;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -39,6 +41,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class ContentPermissionCheckerImplTest
     extends TestSupport
 {
@@ -55,7 +58,7 @@ public class ContentPermissionCheckerImplTest
 
   ContentPermissionCheckerImpl impl;
 
-  @Before
+  @BeforeEach
   public void setup() {
     impl = new ContentPermissionCheckerImpl(securityHelper, selectorManager);
 

@@ -20,6 +20,9 @@ import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -72,6 +75,12 @@ public abstract class BlobStoreSupport<T extends AttributesLocation>
   protected final PerformanceLogger performanceLogger = new PerformanceLogger();
 
   private MetricRegistry metricRegistry;
+  
+  /**
+   * Virtual thread executor for I/O-bound operations.
+   * Uses Java 21's virtual threads for improved throughput and concurrency.
+   */
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   protected final BlobIdLocationResolver blobIdLocationResolver;
 
@@ -149,7 +158,12 @@ public abstract class BlobStoreSupport<T extends AttributesLocation>
     long start = System.nanoTime();
     Blob blob = null;
     try {
-      blob = doCreate(blobData, headers, blobId);
+      // Use virtual threads for I/O-bound blob creation
+      Future<Blob> future = virtualThreadExecutor.submit(() -> doCreate(blobData, headers, blobId));
+      blob = future.get(); // Wait for the operation to complete
+    }
+    catch (Exception e) {
+      throw new RuntimeException("Error creating blob", e);
     }
     finally {
       long elapsed = System.nanoTime() - start;
@@ -169,14 +183,21 @@ public abstract class BlobStoreSupport<T extends AttributesLocation>
     checkNotNull(blobId);
 
     long start = System.nanoTime();
+    boolean result;
     try {
-      return doDelete(blobId, reason);
+      // Use virtual threads for I/O-bound blob deletion
+      Future<Boolean> future = virtualThreadExecutor.submit(() -> doDelete(blobId, reason));
+      result = future.get(); // Wait for the operation to complete
+    }
+    catch (Exception e) {
+      throw new RuntimeException("Error deleting blob", e);
     }
     finally {
       long elapsed = System.nanoTime() - start;
       updateTimer("delete", elapsed);
       performanceLogger.logDelete(elapsed);
     }
+    return result;
   }
 
   protected abstract boolean doDelete(BlobId blobId, String reason);
@@ -256,12 +277,19 @@ public abstract class BlobStoreSupport<T extends AttributesLocation>
     checkNotNull(blobId);
 
     long start = System.nanoTime();
+    boolean result;
     try {
-      return doDeleteHard(blobId);
+      // Use virtual threads for I/O-bound hard deletion
+      Future<Boolean> future = virtualThreadExecutor.submit(() -> doDeleteHard(blobId));
+      result = future.get(); // Wait for the operation to complete
+    }
+    catch (Exception e) {
+      throw new RuntimeException("Error performing hard delete", e);
     }
     finally {
       updateTimer("deleteHard", System.nanoTime() - start);
     }
+    return result;
   }
 
   protected abstract boolean doDeleteHard(final BlobId blobId);
@@ -271,7 +299,11 @@ public abstract class BlobStoreSupport<T extends AttributesLocation>
   public synchronized void compact(@Nullable final BlobStoreUsageChecker inUseChecker) {
     long start = System.nanoTime();
     try {
-      doCompact(inUseChecker);
+      // Use virtual threads for I/O-bound compaction
+      virtualThreadExecutor.submit(() -> doCompact(inUseChecker)).get();
+    }
+    catch (Exception e) {
+      throw new RuntimeException("Error during compaction", e);
     }
     finally {
       updateTimer("compact", System.nanoTime() - start);
@@ -287,7 +319,11 @@ public abstract class BlobStoreSupport<T extends AttributesLocation>
   public synchronized void deleteTempFiles(final Integer daysOlderThan) {
     long start = System.nanoTime();
     try {
-      doDeleteTempFiles(daysOlderThan);
+      // Use virtual threads for I/O-bound temp file deletion
+      virtualThreadExecutor.submit(() -> doDeleteTempFiles(daysOlderThan)).get();
+    }
+    catch (Exception e) {
+      throw new RuntimeException("Error deleting temp files", e);
     }
     finally {
       updateTimer("delete temp files", System.nanoTime() - start);
@@ -368,6 +404,17 @@ public abstract class BlobStoreSupport<T extends AttributesLocation>
   public void shutdown() throws Exception {
     if (isStarted()) {
       doStop();
+    }
+    // Shutdown the virtual thread executor
+    virtualThreadExecutor.shutdown();
+    try {
+      if (!virtualThreadExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
+        virtualThreadExecutor.shutdownNow();
+      }
+    }
+    catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      virtualThreadExecutor.shutdownNow();
     }
   }
 

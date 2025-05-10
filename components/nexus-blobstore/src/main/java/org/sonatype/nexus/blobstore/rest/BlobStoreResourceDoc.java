@@ -17,11 +17,11 @@ import java.util.List;
 import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
 
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
-import io.swagger.annotations.ApiParam;
-import io.swagger.annotations.ApiResponse;
-import io.swagger.annotations.ApiResponses;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 import static org.apache.http.HttpStatus.SC_BAD_REQUEST;
 import static org.apache.http.HttpStatus.SC_FORBIDDEN;
@@ -33,26 +33,65 @@ import static org.sonatype.nexus.rest.ApiDocConstants.INSUFFICIENT_PERMISSIONS;
 /**
  * REST facade for {@link BlobStoreResource}
  *
+ * This interface defines the REST API operations for BlobStore management.
+ * Implementation leverages Java 21 Virtual Threads for improved performance
+ * on I/O-bound operations such as blob store connections and quota status checks.
+ *
  * @since 3.14
  */
-@Api(value = "Blob store")
+@Tag(name = "Blob store")
 public interface BlobStoreResourceDoc
 {
-  @ApiOperation("List the blob stores")
+  /**
+   * List all configured blob stores.
+   * 
+   * This operation benefits from Virtual Threads to efficiently handle concurrent requests
+   * without blocking platform threads, especially when many blob stores need to be listed.
+   *
+   * @return List of blob store information
+   */
+  @Operation(summary = "List the blob stores")
   List<GenericBlobStoreApiResponse> listBlobStores();
 
-  @ApiOperation("Delete a blob store by name")
-  void deleteBlobStore(@ApiParam("The name of the blob store to delete") String name) throws Exception;
+  /**
+   * Delete a blob store by name.
+   * 
+   * This operation uses Virtual Threads to handle the potentially long-running I/O operations
+   * involved in blob store deletion without blocking platform threads.
+   *
+   * @param name The name of the blob store to delete
+   * @throws Exception if deletion fails
+   */
+  @Operation(summary = "Delete a blob store by name")
+  void deleteBlobStore(@Parameter(description = "The name of the blob store to delete") String name) throws Exception;
 
-  @ApiOperation("Get quota status for a given blob store")
+  /**
+   * Get quota status for a given blob store.
+   * 
+   * This operation uses Virtual Threads to efficiently retrieve quota information
+   * without blocking platform threads, especially important for remote blob stores like S3.
+   *
+   * @param id The blob store identifier
+   * @return Quota status information
+   */
+  @Operation(summary = "Get quota status for a given blob store")
   BlobStoreQuotaResultXO quotaStatus(String id);
 
-  @ApiOperation(value = "Verify connection using supplied Blob Store settings", hidden = true)
+  /**
+   * Verify connection using supplied Blob Store settings.
+   * 
+   * This operation leverages Virtual Threads to perform connection testing without blocking
+   * platform threads, allowing for efficient handling of multiple concurrent connection tests
+   * and improved responsiveness under load.
+   *
+   * @param blobStoreConnectionXO The connection settings to verify
+   */
+  @Operation(summary = "Verify connection using supplied Blob Store settings", hidden = true)
   @ApiResponses(value = {
-      @ApiResponse(code = SC_NO_CONTENT, message = "Blob Store connection was successful"),
-      @ApiResponse(code = SC_BAD_REQUEST, message = "Blob Store connection failed"),
-      @ApiResponse(code = SC_UNAUTHORIZED, message = AUTHENTICATION_REQUIRED),
-      @ApiResponse(code = SC_FORBIDDEN, message = INSUFFICIENT_PERMISSIONS)
+      @ApiResponse(responseCode = "204", description = "Blob Store connection was successful"),
+      @ApiResponse(responseCode = "400", description = "Blob Store connection failed"),
+      @ApiResponse(responseCode = "401", description = AUTHENTICATION_REQUIRED),
+      @ApiResponse(responseCode = "403", description = INSUFFICIENT_PERMISSIONS)
   })
   void verifyConnection(final @NotNull @Valid BlobStoreConnectionXO blobStoreConnectionXO);
 }

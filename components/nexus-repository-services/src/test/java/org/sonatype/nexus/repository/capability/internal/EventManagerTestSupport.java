@@ -24,7 +24,7 @@ import org.sonatype.nexus.common.event.EventManager;
 import org.hamcrest.BaseMatcher;
 import org.hamcrest.Description;
 import org.hamcrest.Matcher;
-import org.junit.Before;
+import org.junit.jupiter.api.BeforeEach;
 import org.mockito.Mock;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
@@ -51,7 +51,7 @@ public class EventManagerTestSupport
 
   protected List<Object> eventManagerEvents;
 
-  @Before
+  @BeforeEach
   public final void setUpEventManager()
       throws Exception
   {
@@ -86,7 +86,7 @@ public class EventManagerTestSupport
         {
           @Override
           public boolean matches(final Object argument) {
-            return ((Satisfied) argument).getCondition() == condition;
+            return argument instanceof Satisfied satisfied && satisfied.getCondition() == condition;
           }
 
           @Override
@@ -104,7 +104,7 @@ public class EventManagerTestSupport
         {
           @Override
           public boolean matches(final Object argument) {
-            return ((Unsatisfied) argument).getCondition() == condition;
+            return argument instanceof Unsatisfied unsatisfied && unsatisfied.getCondition() == condition;
           }
 
           @Override

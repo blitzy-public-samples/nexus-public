@@ -14,7 +14,7 @@ package org.sonatype.nexus.common.app;
 
 import java.util.List;
 
-import static java.lang.String.format;
+import static java.lang.StringTemplate.STR;
 
 /**
  * Summary object representing read-only state.
@@ -44,8 +44,8 @@ public class ReadOnlyState
     return "Requested by " + state.stream()
         .filter(r -> !r.token().isPresent())
         .findAny()
-        .map(u -> format("an administrator at %s", u.frozenAt().toString("yyyy-MM-dd HH:mm:ss ZZ")))
-        .orElse(format("%s running system task(s)", state.size()));
+        .map(u -> STR."an administrator at \{u.frozenAt().toString(\"yyyy-MM-dd HH:mm:ss ZZ\")}")
+        .orElse(STR."\{state.size()} running system task(s)");
   }
 
   public boolean isSystemInitiated() {

@@ -1,0 +1,541 @@
+{
+  "version": "1.0",
+  "description": "Test scenarios for validating concurrent task execution with Java 21 virtual threads",
+  "scenarios": [
+    {
+      "id": "basic-concurrency-low",
+      "name": "Basic Concurrency - Low Load",
+      "description": "Tests basic concurrent execution with a small number of tasks",
+      "taskCount": 10,
+      "taskType": "simple",
+      "executionTimeMs": 100,
+      "expectedMaxConcurrency": 10,
+      "maxExecutionTimeMs": 500,
+      "validateMemoryUsage": true,
+      "expectedMemoryOverheadPerTask": 10240
+    },
+    {
+      "id": "basic-concurrency-medium",
+      "name": "Basic Concurrency - Medium Load",
+      "description": "Tests basic concurrent execution with a moderate number of tasks",
+      "taskCount": 100,
+      "taskType": "simple",
+      "executionTimeMs": 100,
+      "expectedMaxConcurrency": 100,
+      "maxExecutionTimeMs": 1000,
+      "validateMemoryUsage": true,
+      "expectedMemoryOverheadPerTask": 10240
+    },
+    {
+      "id": "basic-concurrency-high",
+      "name": "Basic Concurrency - High Load",
+      "description": "Tests basic concurrent execution with a large number of tasks",
+      "taskCount": 1000,
+      "taskType": "simple",
+      "executionTimeMs": 100,
+      "expectedMaxConcurrency": 1000,
+      "maxExecutionTimeMs": 3000,
+      "validateMemoryUsage": true,
+      "expectedMemoryOverheadPerTask": 10240
+    },
+    {
+      "id": "basic-concurrency-extreme",
+      "name": "Basic Concurrency - Extreme Load",
+      "description": "Tests basic concurrent execution with an extremely large number of tasks",
+      "taskCount": 10000,
+      "taskType": "simple",
+      "executionTimeMs": 100,
+      "expectedMaxConcurrency": 10000,
+      "maxExecutionTimeMs": 10000,
+      "validateMemoryUsage": true,
+      "expectedMemoryOverheadPerTask": 10240
+    },
+    {
+      "id": "io-bound-low",
+      "name": "I/O-Bound Tasks - Low Load",
+      "description": "Tests concurrent execution of I/O-bound tasks with a small number of tasks",
+      "taskCount": 10,
+      "taskType": "io",
+      "ioOperations": [
+        {
+          "type": "read",
+          "latencyMs": 50,
+          "count": 5
+        },
+        {
+          "type": "write",
+          "latencyMs": 100,
+          "count": 2
+        }
+      ],
+      "expectedMaxConcurrency": 10,
+      "maxExecutionTimeMs": 1000,
+      "validateMemoryUsage": true,
+      "expectedMemoryOverheadPerTask": 5120
+    },
+    {
+      "id": "io-bound-high",
+      "name": "I/O-Bound Tasks - High Load",
+      "description": "Tests concurrent execution of I/O-bound tasks with a large number of tasks",
+      "taskCount": 1000,
+      "taskType": "io",
+      "ioOperations": [
+        {
+          "type": "read",
+          "latencyMs": 50,
+          "count": 5
+        },
+        {
+          "type": "write",
+          "latencyMs": 100,
+          "count": 2
+        }
+      ],
+      "expectedMaxConcurrency": 1000,
+      "maxExecutionTimeMs": 5000,
+      "validateMemoryUsage": true,
+      "expectedMemoryOverheadPerTask": 5120
+    },
+    {
+      "id": "cpu-bound-low",
+      "name": "CPU-Bound Tasks - Low Load",
+      "description": "Tests concurrent execution of CPU-bound tasks with a small number of tasks",
+      "taskCount": 10,
+      "taskType": "cpu",
+      "cpuIntensity": 0.8,
+      "executionTimeMs": 200,
+      "expectedMaxConcurrency": 10,
+      "maxExecutionTimeMs": 1000,
+      "validateMemoryUsage": true,
+      "expectedMemoryOverheadPerTask": 5120
+    },
+    {
+      "id": "cpu-bound-high",
+      "name": "CPU-Bound Tasks - High Load",
+      "description": "Tests concurrent execution of CPU-bound tasks with a large number of tasks",
+      "taskCount": 1000,
+      "taskType": "cpu",
+      "cpuIntensity": 0.8,
+      "executionTimeMs": 200,
+      "expectedMaxConcurrency": 1000,
+      "maxExecutionTimeMs": 10000,
+      "validateMemoryUsage": true,
+      "expectedMemoryOverheadPerTask": 5120
+    },
+    {
+      "id": "mixed-workload-medium",
+      "name": "Mixed Workload - Medium Load",
+      "description": "Tests concurrent execution of mixed I/O-bound and CPU-bound tasks",
+      "taskCount": 500,
+      "taskMix": [
+        {
+          "taskType": "io",
+          "percentage": 70,
+          "ioOperations": [
+            {
+              "type": "read",
+              "latencyMs": 50,
+              "count": 5
+            },
+            {
+              "type": "write",
+              "latencyMs": 100,
+              "count": 2
+            }
+          ]
+        },
+        {
+          "taskType": "cpu",
+          "percentage": 30,
+          "cpuIntensity": 0.8,
+          "executionTimeMs": 200
+        }
+      ],
+      "expectedMaxConcurrency": 500,
+      "maxExecutionTimeMs": 5000,
+      "validateMemoryUsage": true,
+      "expectedMemoryOverheadPerTask": 5120
+    },
+    {
+      "id": "resource-contention-low",
+      "name": "Resource Contention - Low Load",
+      "description": "Tests concurrent execution with resource contention at low load",
+      "taskCount": 10,
+      "taskType": "resource-contention",
+      "resources": [
+        {
+          "id": "database-connection",
+          "maxConcurrent": 5,
+          "acquisitionTimeMs": 20,
+          "holdTimeMs": 100
+        },
+        {
+          "id": "file-lock",
+          "maxConcurrent": 1,
+          "acquisitionTimeMs": 10,
+          "holdTimeMs": 50
+        }
+      ],
+      "expectedMaxConcurrency": 10,
+      "maxExecutionTimeMs": 2000,
+      "validateResourceUtilization": true
+    },
+    {
+      "id": "resource-contention-high",
+      "name": "Resource Contention - High Load",
+      "description": "Tests concurrent execution with resource contention at high load",
+      "taskCount": 1000,
+      "taskType": "resource-contention",
+      "resources": [
+        {
+          "id": "database-connection",
+          "maxConcurrent": 20,
+          "acquisitionTimeMs": 20,
+          "holdTimeMs": 100
+        },
+        {
+          "id": "file-lock",
+          "maxConcurrent": 5,
+          "acquisitionTimeMs": 10,
+          "holdTimeMs": 50
+        }
+      ],
+      "expectedMaxConcurrency": 1000,
+      "maxExecutionTimeMs": 10000,
+      "validateResourceUtilization": true
+    },
+    {
+      "id": "dependency-chain-simple",
+      "name": "Dependency Chain - Simple",
+      "description": "Tests execution of tasks with simple dependency chains",
+      "taskChains": [
+        {
+          "chainId": "chain-1",
+          "tasks": [
+            {
+              "id": "task-1",
+              "executionTimeMs": 100,
+              "taskType": "simple"
+            },
+            {
+              "id": "task-2",
+              "executionTimeMs": 150,
+              "taskType": "simple",
+              "dependsOn": ["task-1"]
+            },
+            {
+              "id": "task-3",
+              "executionTimeMs": 200,
+              "taskType": "simple",
+              "dependsOn": ["task-2"]
+            }
+          ]
+        },
+        {
+          "chainId": "chain-2",
+          "tasks": [
+            {
+              "id": "task-4",
+              "executionTimeMs": 120,
+              "taskType": "simple"
+            },
+            {
+              "id": "task-5",
+              "executionTimeMs": 180,
+              "taskType": "simple",
+              "dependsOn": ["task-4"]
+            }
+          ]
+        }
+      ],
+      "expectedMaxConcurrency": 5,
+      "maxExecutionTimeMs": 1000,
+      "validateExecutionOrder": true
+    },
+    {
+      "id": "dependency-chain-complex",
+      "name": "Dependency Chain - Complex",
+      "description": "Tests execution of tasks with complex dependency chains",
+      "taskChains": [
+        {
+          "chainId": "chain-1",
+          "tasks": [
+            {
+              "id": "task-1",
+              "executionTimeMs": 100,
+              "taskType": "simple"
+            },
+            {
+              "id": "task-2",
+              "executionTimeMs": 150,
+              "taskType": "simple",
+              "dependsOn": ["task-1"]
+            },
+            {
+              "id": "task-3",
+              "executionTimeMs": 200,
+              "taskType": "simple",
+              "dependsOn": ["task-2"]
+            }
+          ]
+        },
+        {
+          "chainId": "chain-2",
+          "tasks": [
+            {
+              "id": "task-4",
+              "executionTimeMs": 120,
+              "taskType": "simple"
+            },
+            {
+              "id": "task-5",
+              "executionTimeMs": 180,
+              "taskType": "simple",
+              "dependsOn": ["task-4"]
+            }
+          ]
+        },
+        {
+          "chainId": "chain-3",
+          "tasks": [
+            {
+              "id": "task-6",
+              "executionTimeMs": 90,
+              "taskType": "simple",
+              "dependsOn": ["task-2", "task-4"]
+            },
+            {
+              "id": "task-7",
+              "executionTimeMs": 130,
+              "taskType": "simple",
+              "dependsOn": ["task-6"]
+            },
+            {
+              "id": "task-8",
+              "executionTimeMs": 110,
+              "taskType": "simple",
+              "dependsOn": ["task-5", "task-7"]
+            }
+          ]
+        }
+      ],
+      "expectedMaxConcurrency": 8,
+      "maxExecutionTimeMs": 2000,
+      "validateExecutionOrder": true
+    },
+    {
+      "id": "thread-pinning-synchronized",
+      "name": "Thread Pinning - Synchronized Blocks",
+      "description": "Tests behavior with thread pinning caused by synchronized blocks",
+      "taskCount": 100,
+      "taskType": "synchronized",
+      "synchronizedBlockDurationMs": 50,
+      "executionTimeMs": 100,
+      "expectedMaxConcurrency": 100,
+      "maxExecutionTimeMs": 3000,
+      "validateThreadPinning": true,
+      "expectedPinnedThreadPercentage": 50
+    },
+    {
+      "id": "thread-pinning-native",
+      "name": "Thread Pinning - Native Methods",
+      "description": "Tests behavior with thread pinning caused by native method calls",
+      "taskCount": 100,
+      "taskType": "native-call",
+      "nativeCallDurationMs": 50,
+      "executionTimeMs": 100,
+      "expectedMaxConcurrency": 100,
+      "maxExecutionTimeMs": 3000,
+      "validateThreadPinning": true,
+      "expectedPinnedThreadPercentage": 50
+    },
+    {
+      "id": "execution-window-strict",
+      "name": "Execution Window - Strict",
+      "description": "Tests execution of tasks with strict timing constraints",
+      "taskCount": 100,
+      "taskType": "simple",
+      "executionTimeMs": 100,
+      "executionWindow": {
+        "startDelayMs": 0,
+        "durationMs": 1000,
+        "strictEnforcement": true
+      },
+      "expectedMaxConcurrency": 100,
+      "maxExecutionTimeMs": 1500,
+      "validateExecutionWindow": true
+    },
+    {
+      "id": "execution-window-flexible",
+      "name": "Execution Window - Flexible",
+      "description": "Tests execution of tasks with flexible timing constraints",
+      "taskCount": 1000,
+      "taskType": "simple",
+      "executionTimeMs": 100,
+      "executionWindow": {
+        "startDelayMs": 0,
+        "durationMs": 5000,
+        "strictEnforcement": false
+      },
+      "expectedMaxConcurrency": 1000,
+      "maxExecutionTimeMs": 7000,
+      "validateExecutionWindow": true
+    },
+    {
+      "id": "repository-operations-simulation",
+      "name": "Repository Operations Simulation",
+      "description": "Simulates repository operations with a mix of I/O and CPU tasks",
+      "taskCount": 500,
+      "taskMix": [
+        {
+          "taskType": "repository-read",
+          "percentage": 60,
+          "ioOperations": [
+            {
+              "type": "metadata-read",
+              "latencyMs": 20,
+              "count": 5
+            },
+            {
+              "type": "blob-read",
+              "latencyMs": 100,
+              "count": 2,
+              "sizeKb": 1024
+            }
+          ]
+        },
+        {
+          "taskType": "repository-write",
+          "percentage": 20,
+          "ioOperations": [
+            {
+              "type": "metadata-write",
+              "latencyMs": 30,
+              "count": 3
+            },
+            {
+              "type": "blob-write",
+              "latencyMs": 150,
+              "count": 1,
+              "sizeKb": 2048
+            }
+          ]
+        },
+        {
+          "taskType": "repository-search",
+          "percentage": 20,
+          "cpuIntensity": 0.6,
+          "executionTimeMs": 150,
+          "ioOperations": [
+            {
+              "type": "index-read",
+              "latencyMs": 40,
+              "count": 10
+            }
+          ]
+        }
+      ],
+      "expectedMaxConcurrency": 500,
+      "maxExecutionTimeMs": 8000,
+      "validateMemoryUsage": true,
+      "expectedMemoryOverheadPerTask": 5120,
+      "validateResourceUtilization": true
+    },
+    {
+      "id": "database-operations-simulation",
+      "name": "Database Operations Simulation",
+      "description": "Simulates database operations with JDBC interactions",
+      "taskCount": 500,
+      "taskType": "database",
+      "databaseOperations": [
+        {
+          "type": "select",
+          "percentage": 70,
+          "latencyMs": 30,
+          "rowCount": 100
+        },
+        {
+          "type": "insert",
+          "percentage": 20,
+          "latencyMs": 50,
+          "batchSize": 10
+        },
+        {
+          "type": "update",
+          "percentage": 10,
+          "latencyMs": 40,
+          "rowCount": 5
+        }
+      ],
+      "connectionPoolSize": 20,
+      "expectedMaxConcurrency": 500,
+      "maxExecutionTimeMs": 5000,
+      "validateThreadPinning": true,
+      "expectedPinnedThreadPercentage": 10
+    },
+    {
+      "id": "s3-blobstore-simulation",
+      "name": "S3 BlobStore Simulation",
+      "description": "Simulates S3 BlobStore operations with virtual threads",
+      "taskCount": 200,
+      "taskType": "s3",
+      "s3Operations": [
+        {
+          "type": "get",
+          "percentage": 60,
+          "latencyMs": 200,
+          "sizeKb": 1024
+        },
+        {
+          "type": "put",
+          "percentage": 30,
+          "latencyMs": 300,
+          "sizeKb": 2048
+        },
+        {
+          "type": "delete",
+          "percentage": 10,
+          "latencyMs": 100
+        }
+      ],
+      "expectedMaxConcurrency": 200,
+      "maxExecutionTimeMs": 10000,
+      "validateMemoryUsage": true,
+      "expectedMemoryOverheadPerTask": 8192
+    },
+    {
+      "id": "scheduled-task-burst",
+      "name": "Scheduled Task Burst",
+      "description": "Tests behavior when many scheduled tasks become eligible simultaneously",
+      "taskCount": 1000,
+      "taskType": "simple",
+      "executionTimeMs": 100,
+      "schedulingPattern": {
+        "type": "burst",
+        "burstSizePercentage": 100,
+        "burstIntervalMs": 0
+      },
+      "expectedMaxConcurrency": 1000,
+      "maxExecutionTimeMs": 5000,
+      "validateMemoryUsage": true,
+      "expectedMemoryOverheadPerTask": 5120
+    },
+    {
+      "id": "scheduled-task-staggered",
+      "name": "Scheduled Task Staggered",
+      "description": "Tests behavior when scheduled tasks become eligible in a staggered pattern",
+      "taskCount": 1000,
+      "taskType": "simple",
+      "executionTimeMs": 100,
+      "schedulingPattern": {
+        "type": "staggered",
+        "staggerIntervalMs": 10,
+        "batchSize": 50
+      },
+      "expectedMaxConcurrency": 1000,
+      "maxExecutionTimeMs": 5000,
+      "validateMemoryUsage": true,
+      "expectedMemoryOverheadPerTask": 5120
+    }
+  ]
+}

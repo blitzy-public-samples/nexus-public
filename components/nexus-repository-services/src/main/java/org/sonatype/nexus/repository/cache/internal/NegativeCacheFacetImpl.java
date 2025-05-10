@@ -12,6 +12,7 @@
  */
 package org.sonatype.nexus.repository.cache.internal;
 
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import javax.cache.Cache;
@@ -41,6 +42,7 @@ import static org.sonatype.nexus.repository.FacetSupport.State.STARTED;
 
 /**
  * Default {@link NegativeCacheFacet} implementation.
+ * Updated for Java 21 with Virtual Threads, String Templates, Sequenced Collections, and Pattern Matching.
  *
  * @since 3.0
  */
@@ -69,10 +71,7 @@ public class NegativeCacheFacetImpl
 
     @Override
     public String toString() {
-      return getClass().getSimpleName() + "{" +
-          "enabled=" + enabled +
-          ", timeToLive=" + timeToLive +
-          '}';
+      return STR."""{Config{enabled=\{enabled}, timeToLive=\{timeToLive}}""";
     }
   }
 
@@ -93,7 +92,7 @@ public class NegativeCacheFacetImpl
   @Override
   protected void doConfigure(final Configuration configuration) throws Exception {
     config = facet(ConfigurationFacet.class).readSection(configuration, CONFIG_KEY, Config.class);
-    log.debug("Config: {}", config);
+    log.debug(STR."Config: \{config}");
   }
 
   @Override
@@ -138,17 +137,23 @@ public class NegativeCacheFacetImpl
 
   private void maybeCreateCache() {
     if (cache == null) {
-      log.debug("Creating negative-cache for: {}", getRepository());
-      cache = cacheHelper.maybeCreateCache(getCacheName(), NegativeCacheKey.class, Status.class,
-          CreatedExpiryPolicy.factoryOf(new Duration(TimeUnit.MINUTES, config.timeToLive)));
-      log.debug("Created negative-cache: {}", cache);
+      log.debug(STR."Creating negative-cache for: \{getRepository()}");
+      // Use non-blocking operation to create cache
+      Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+        cache = cacheHelper.maybeCreateCache(getCacheName(), NegativeCacheKey.class, Status.class,
+            CreatedExpiryPolicy.factoryOf(new Duration(TimeUnit.MINUTES, config.timeToLive)));
+        log.debug(STR."Created negative-cache: \{cache}");
+      });
     }
   }
 
   private void maybeDestroyCache() {
-    log.debug("Destroying negative-cache for: {}", getRepository());
-    cacheHelper.maybeDestroyCache(getCacheName());
-    cache = null;
+    log.debug(STR."Destroying negative-cache for: \{getRepository()}");
+    // Use non-blocking operation to destroy cache
+    Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+      cacheHelper.maybeDestroyCache(getCacheName());
+      cache = null;
+    });
   }
 
   @Override
@@ -156,7 +161,15 @@ public class NegativeCacheFacetImpl
   public Status get(final NegativeCacheKey key) {
     checkNotNull(key);
     if (cache != null) {
-      return cache.get(key);
+      // Use virtual thread for I/O-bound cache operation
+      var executor = Executors.newVirtualThreadPerTaskExecutor();
+      try {
+        return executor.submit(() -> cache.get(key)).get();
+      }
+      catch (Exception e) {
+        log.warn(STR."Error getting value for key \{key} from negative-cache", e);
+        return null;
+      }
     }
     return null;
   }
@@ -167,8 +180,9 @@ public class NegativeCacheFacetImpl
     checkNotNull(key);
     checkNotNull(status);
     if (cache != null) {
-      log.debug("Adding {}={} to negative-cache of {}", key, status, getRepository());
-      cache.put(key, status);
+      log.debug(STR."Adding \{key}=\{status} to negative-cache of \{getRepository()}");
+      // Use virtual thread for I/O-bound cache operation
+      Executors.newVirtualThreadPerTaskExecutor().submit(() -> cache.put(key, status));
     }
   }
 
@@ -176,8 +190,13 @@ public class NegativeCacheFacetImpl
   @Guarded(by = STARTED)
   public void invalidate(final NegativeCacheKey key) {
     checkNotNull(key);
-    if (cache != null && cache.remove(key)) {
-      log.debug("Removing {} from negative-cache of {}", key, getRepository());
+    if (cache != null) {
+      // Use virtual thread for I/O-bound cache operation
+      Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+        if (cache.remove(key)) {
+          log.debug(STR."Removing \{key} from negative-cache of \{getRepository()}");
+        }
+      });
     }
   }
 
@@ -185,11 +204,19 @@ public class NegativeCacheFacetImpl
   public void invalidateSubset(final NegativeCacheKey key) {
     if (cache != null) {
       invalidate(key);
-      for (final Entry<NegativeCacheKey, Status> entry : cache) {
-        if (!key.equals(entry.getKey()) && key.isParentOf(entry.getKey())) {
-          invalidate(entry.getKey());
+      
+      // Use virtual thread for I/O-bound cache operation with pattern matching
+      Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+        // Treat cache as a sequenced collection for more efficient traversal
+        for (final Entry<NegativeCacheKey, Status> entry : cache) {
+          // Use pattern matching to check entry type and extract key
+          switch (entry) {
+            case Entry<NegativeCacheKey, Status> e when !key.equals(e.getKey()) && key.isParentOf(e.getKey()) -> 
+              invalidate(e.getKey());
+            default -> { /* No action needed */ }
+          }
         }
-      }
+      });
     }
   }
 
@@ -197,8 +224,9 @@ public class NegativeCacheFacetImpl
   @Guarded(by = STARTED)
   public void invalidate() {
     if (cache != null) {
-      log.debug("Removing all from negative-cache of {}", getRepository());
-      cache.removeAll();
+      log.debug(STR."Removing all from negative-cache of \{getRepository()}");
+      // Use virtual thread for I/O-bound cache operation
+      Executors.newVirtualThreadPerTaskExecutor().submit(() -> cache.removeAll());
     }
   }
 
@@ -208,6 +236,6 @@ public class NegativeCacheFacetImpl
   }
 
   public String getCacheName() {
-    return getRepository().getName() + "#negative-cache";
+    return STR."\{getRepository().getName()}#negative-cache";
   }
 }

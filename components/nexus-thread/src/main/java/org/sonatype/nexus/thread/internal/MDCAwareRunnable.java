@@ -19,6 +19,10 @@ import static com.google.common.base.Preconditions.checkNotNull;
 /**
  * Runnable that properly sets MDC context before invoking the delegate. The delegate will execute in a
  * managed thread with properly set MDC context. To be used with managed threads.
+ * <p>
+ * This implementation is compatible with both platform threads and virtual threads (Java 21+).
+ * When running on virtual threads, it ensures proper MDC context propagation and cleanup to prevent
+ * context leakage between tasks, as virtual threads may be reused by the JVM.
  *
  * @since 2.6
  */
@@ -29,6 +33,14 @@ public class MDCAwareRunnable
 
   private final Map<String, String> mdcContext;
 
+  /**
+   * Creates a new MDC-aware runnable that will execute the given delegate with the current MDC context.
+   * <p>
+   * The MDC context is captured at construction time and will be applied when the runnable is executed,
+   * regardless of which thread (platform or virtual) executes it.
+   *
+   * @param delegate the runnable to execute with the captured MDC context
+   */
   public MDCAwareRunnable(final Runnable delegate) {
     this.delegate = checkNotNull(delegate);
     this.mdcContext = MDCUtils.getCopyOfContextMap();
@@ -36,7 +48,28 @@ public class MDCAwareRunnable
 
   @Override
   public void run() {
-    MDCUtils.setContextMap(mdcContext);
-    delegate.run();
+    // Save the original MDC context to restore after execution if needed
+    Map<String, String> originalContext = null;
+    
+    // For virtual threads, always capture the original context to ensure proper cleanup
+    boolean isVirtual = Thread.currentThread().isVirtual();
+    if (isVirtual) {
+      originalContext = MDCUtils.getCopyOfContextMap();
+    }
+    
+    try {
+      // Set the captured MDC context for this execution
+      MDCUtils.setContextMap(mdcContext);
+      
+      // Execute the delegate with the proper MDC context
+      delegate.run();
+    }
+    finally {
+      // For virtual threads, restore the original context to prevent context leakage
+      // For platform threads, simply leave the MDC context as is (backward compatible behavior)
+      if (isVirtual) {
+        MDCUtils.setContextMap(originalContext);
+      }
+    }
   }
 }

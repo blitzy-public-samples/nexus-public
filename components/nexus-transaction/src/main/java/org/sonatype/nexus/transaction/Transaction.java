@@ -64,4 +64,15 @@ public interface Transaction
    * @since 3.20
    */
   String reason();
+  
+  /**
+   * Determines if this transaction is running on a virtual thread.
+   * Default implementation checks the current thread type.
+   * 
+   * @return true if the transaction is running on a virtual thread
+   * @since 3.60
+   */
+  default boolean isVirtualThread() {
+    return Thread.currentThread().isVirtual();
+  }
 }

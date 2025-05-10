@@ -56,22 +56,17 @@ public class VersionComparator
     boolean firstObjectLooksLikeVersion = isVersionLike(o1);
     boolean secondObjectLooksLikeVersion = isVersionLike(o2);
 
-    if (firstObjectLooksLikeVersion ^ secondObjectLooksLikeVersion) {
-      if (firstObjectLooksLikeVersion) {
-        return 1;
+    return switch (firstObjectLooksLikeVersion) {
+      case true when !secondObjectLooksLikeVersion -> 1; // First is version-like, second is not
+      case false when secondObjectLooksLikeVersion -> -1; // First is not version-like, second is
+      case true when secondObjectLooksLikeVersion -> {
+        // Both are version-like, compare using Aether's version comparison
+        Version v1 = version(o1);
+        Version v2 = version(o2);
+        yield v1.compareTo(v2);
       }
-      else {
-        return -1;
-      }
-    }
-    else if (firstObjectLooksLikeVersion) {
-      Version v1 = version(o1);
-      Version v2 = version(o2);
-      return v1.compareTo(v2);
-    }
-    else {
-      return compareNotVersionLikeStrings(o1, o2);
-    }
+      case false when !secondObjectLooksLikeVersion -> compareNotVersionLikeStrings(o1, o2); // Neither is version-like
+    };
   }
 
   protected int compareNotVersionLikeStrings(final String o1, final String o2) {

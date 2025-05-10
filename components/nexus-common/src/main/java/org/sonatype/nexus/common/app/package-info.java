@@ -13,6 +13,10 @@
 
 /**
  * Low-level application components and helpers.
+ * 
+ * This package is compatible with Java 21 and leverages modern language features including
+ * Virtual Threads for improved concurrency, Pattern Matching for more expressive code,
+ * Record Patterns for simplified data handling, and String Templates for enhanced string formatting.
  *
  * @since 3.0
  */

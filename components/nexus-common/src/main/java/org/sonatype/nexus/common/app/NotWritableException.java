@@ -17,6 +17,18 @@ package org.sonatype.nexus.common.app;
  *
  * This may be because the application is frozen or the underlying storage is read-only.
  *
+ * <p>
+ * When creating instances of this exception, consider using Java 21 String Templates for more
+ * readable error messages. For example:
+ * <pre>
+ * throw new NotWritableException(STR."Repository \{repoName} is read-only");
+ * </pre>
+ * instead of:
+ * <pre>
+ * throw new NotWritableException("Repository " + repoName + " is read-only");
+ * </pre>
+ * </p>
+ *
  * @since 3.21
  */
 public class NotWritableException
@@ -24,10 +36,21 @@ public class NotWritableException
 {
   private static final long serialVersionUID = 50364435356863049L;
 
+  /**
+   * Constructs a new exception with the specified detail message.
+   *
+   * @param message the detail message
+   */
   public NotWritableException(final String message) {
     super(message);
   }
 
+  /**
+   * Constructs a new exception with the specified detail message and cause.
+   *
+   * @param message the detail message
+   * @param cause the cause of this exception
+   */
   public NotWritableException(final String message, final Throwable cause) {
     super(message, cause);
   }

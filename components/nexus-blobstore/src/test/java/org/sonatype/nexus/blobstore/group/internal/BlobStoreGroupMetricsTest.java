@@ -14,25 +14,26 @@ package org.sonatype.nexus.blobstore.group.internal;
 
 import java.util.Arrays;
 
-import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.api.BlobStoreMetrics;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.Collections.emptyList;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class BlobStoreGroupMetricsTest
-    extends TestSupport
 {
 
   @Test
   public void emptyMetricsIsAvailable() {
-    assertThat(new BlobStoreGroupMetrics(emptyList()).isUnavailable(), is(false));
+    assertFalse(new BlobStoreGroupMetrics(emptyList()).isUnavailable());
   }
 
   @Test
@@ -47,7 +48,7 @@ public class BlobStoreGroupMetricsTest
     verify(blobStoreMetrics).getAvailableSpaceByFileStore();
     verify(otherBlobStoreMetrics).isUnavailable();
     verify(otherBlobStoreMetrics).getAvailableSpaceByFileStore();
-    assertThat(groupMetrics.isUnavailable(), is(true));
+    assertTrue(groupMetrics.isUnavailable());
   }
 
   @Test
@@ -61,6 +62,6 @@ public class BlobStoreGroupMetricsTest
     verify(blobStoreMetrics).getAvailableSpaceByFileStore();
     verify(otherBlobStoreMetrics).isUnavailable();
     verify(otherBlobStoreMetrics).getAvailableSpaceByFileStore();
-    assertThat(groupMetrics.isUnavailable(), is(false));
+    assertFalse(groupMetrics.isUnavailable());
   }
 }

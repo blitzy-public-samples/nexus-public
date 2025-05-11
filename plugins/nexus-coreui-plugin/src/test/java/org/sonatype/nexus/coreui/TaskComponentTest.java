@@ -29,28 +29,30 @@ import org.sonatype.nexus.scheduling.schedule.Schedule;
 import org.sonatype.nexus.scheduling.schedule.Weekly;
 
 import com.google.common.collect.ImmutableMap;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.Mockito;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
  * Tests {@link TaskComponent}.
+ * <p>
+ * Updated for Java 21 compatibility using JUnit Jupiter (JUnit 5.10.1) and Mockito 4.11.0.
  */
+@ExtendWith(MockitoExtension.class)
 public class TaskComponentTest
     extends TestSupport
 {
-  @Rule
-  public ExpectedException thrown = ExpectedException.none();
-
   private TaskComponent component;
 
+  @Mock
   private TaskScheduler scheduler;
 
   @Mock
@@ -58,8 +60,9 @@ public class TaskComponentTest
 
   private final Provider<Validator> validatorProvider = () -> validator;
 
-  @Before
+  @BeforeEach
   public void setUp() {
+    // Configure scheduler with deep stubs since @Mock doesn't support it directly
     scheduler = mock(TaskScheduler.class, Mockito.RETURNS_DEEP_STUBS);
     component = new TaskComponent(scheduler, validatorProvider, false);
   }
@@ -75,9 +78,11 @@ public class TaskComponentTest
     when(extState.getState()).thenReturn(TaskState.RUNNING);
     when(scheduler.toExternalTaskState(taskInfo)).thenReturn(extState);
 
-    thrown.expect(IllegalStateException.class);
-    thrown.expectMessage("Task can not be edited while it is being executed or it is in line to be executed");
-    component.validateState("taskId", taskInfo);
+    IllegalStateException exception = assertThrows(IllegalStateException.class, () -> {
+      component.validateState("taskId", taskInfo);
+    });
+    assertEquals("Task can not be edited while it is being executed or it is in line to be executed", 
+        exception.getMessage());
   }
 
   @Test
@@ -134,14 +139,14 @@ public class TaskComponentTest
     TaskXO taskXO = new TaskXO();
     taskXO.setProperties(ImmutableMap.of("source", "println 'hello world'"));
 
-    thrown.expect(IllegalStateException.class);
-    thrown.expectMessage("Script source updates are not allowed");
-
-    component.validateScriptUpdate(taskInfo, taskXO);
+    IllegalStateException exception = assertThrows(IllegalStateException.class, () -> {
+      component.validateScriptUpdate(taskInfo, taskXO);
+    });
+    assertEquals("Script source updates are not allowed", exception.getMessage());
   }
 
   @Test
-  public void testNotExposedTaskCannotBeCreated() throws Exception {
+  public void testNotExposedTaskCannotBeCreated() {
     TaskConfiguration taskConfiguration = new TaskConfiguration();
     taskConfiguration.setString("source", "println 'hello'");
     taskConfiguration.setExposed(false);
@@ -154,10 +159,10 @@ public class TaskComponentTest
     taskXO.setProperties(ImmutableMap.of("source", "println 'hello world'"));
     taskXO.setSchedule("manual");
 
-    thrown.expect(IllegalStateException.class);
-    thrown.expectMessage("This task is not allowed to be created");
-
-    component.create(taskXO);
+    IllegalStateException exception = assertThrows(IllegalStateException.class, () -> {
+      component.create(taskXO);
+    });
+    assertEquals("This task is not allowed to be created", exception.getMessage());
   }
 
   @Test

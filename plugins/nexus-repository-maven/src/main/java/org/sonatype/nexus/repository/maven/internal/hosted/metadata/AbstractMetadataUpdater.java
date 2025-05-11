@@ -13,6 +13,7 @@
 package org.sonatype.nexus.repository.maven.internal.hosted.metadata;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -31,7 +32,6 @@ import com.google.common.collect.Lists;
 import org.apache.maven.artifact.repository.metadata.Metadata;
 import org.apache.maven.artifact.repository.metadata.SnapshotVersion;
 import org.apache.maven.artifact.repository.metadata.Versioning;
-import org.joda.time.DateTime;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -178,7 +178,7 @@ abstract public class AbstractMetadataUpdater
       final org.apache.maven.artifact.repository.metadata.Snapshot snapshot = new org.apache.maven.artifact.repository.metadata.Snapshot();
       if (maven2Metadata.getSnapshots().getSnapshotTimestamp() != null) {
         snapshot.setTimestamp(Constants.METADATA_DOTTED_TIMESTAMP.print(
-            new DateTime(maven2Metadata.getSnapshots().getSnapshotTimestamp())));
+            Instant.ofEpochMilli(maven2Metadata.getSnapshots().getSnapshotTimestamp())));
       }
       snapshot.setBuildNumber(maven2Metadata.getSnapshots().getSnapshotBuildNumber());
       versioning.setSnapshot(snapshot);

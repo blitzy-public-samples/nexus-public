@@ -24,7 +24,16 @@ public class MavenNx2MetaFilesMatcher
 {
   private static final String META_FILES_REQ_PATH = "/.meta/";
 
+  /**
+   * Constructs a matcher for legacy .meta folder paths.
+   * Uses Java 21 pattern matching with a switch expression to check if the path starts with "/.meta/".
+   *
+   * @param mavenPathParser The Maven path parser to use
+   */
   public MavenNx2MetaFilesMatcher(final MavenPathParser mavenPathParser) {
-    super(mavenPathParser, (String path) -> path != null && path.startsWith(META_FILES_REQ_PATH));
+    super(mavenPathParser, (String path) -> switch (path) {
+      case String s when s.startsWith(META_FILES_REQ_PATH) -> true;
+      case null, default -> false;
+    });
   }
 }

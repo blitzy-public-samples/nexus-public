@@ -19,6 +19,8 @@ import org.sonatype.nexus.common.template.TemplateHelper;
 import org.sonatype.nexus.common.template.TemplateParameters;
 
 /**
+ * Generator for Maven POM files based on provided coordinates.
+ * 
  * @since 3.8
  */
 public class MavenPomGenerator
@@ -30,12 +32,21 @@ public class MavenPomGenerator
     this.templateHelper = templateHelper;
   }
 
+  /**
+   * Generates a Maven POM XML string based on the provided coordinates.
+   *
+   * @param groupId    the Maven group ID
+   * @param artifactId the Maven artifact ID
+   * @param version    the Maven version
+   * @param packaging  the Maven packaging type (jar, war, etc.), can be null
+   * @return a formatted POM XML string
+   */
   public String generatePom(final String groupId,
                             final String artifactId,
                             final String version,
                             @Nullable final String packaging)
   {
-    TemplateParameters params = templateHelper.parameters();
+    var params = templateHelper.parameters();
     params.set("groupId", groupId);
     params.set("artifactId", artifactId);
     params.set("version", version);

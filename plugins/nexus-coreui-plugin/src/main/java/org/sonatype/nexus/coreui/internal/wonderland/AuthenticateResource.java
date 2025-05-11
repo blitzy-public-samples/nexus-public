@@ -37,6 +37,7 @@ import org.apache.shiro.authc.UsernamePasswordToken;
 import org.apache.shiro.subject.Subject;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 
 /**
  * Authenticate a user's credentials.
@@ -79,17 +80,19 @@ public class AuthenticateResource
 
     // Require current user to be the requested user to authenticate
     final Subject subject = SecurityUtils.getSubject();
-    final Object principal = subject.getPrincipal();
-    final String principalName = principal == null ? "" : principal.toString();
+    // Using Java 21 pattern matching for instanceof
+    final String principalName = switch (subject.getPrincipal()) {
+      case String s -> s;
+      case null -> "";
+      default -> subject.getPrincipal().toString();
+    };
 
     if (log.isDebugEnabled()) {
-      log.debug("payload username: {}, payload password: {}, principal: {}", username, Strings2.mask(password),
-          principalName);
+      log.debug(STR."payload username: \{username}, payload password: \{Strings2.mask(password)}, principal: \{principalName}");
     }
 
     if (!principalName.equals(username)) {
-      log.warn("auth token request denied - authenticated user {} does not match payload user {}",
-          principalName, username);
+      log.warn(STR."auth token request denied - authenticated user \{principalName} does not match payload user \{username}");
       throw new WebApplicationException("Username mismatch", Status.BAD_REQUEST);
     }
 
@@ -103,7 +106,13 @@ public class AuthenticateResource
     }
 
     // At this point we should be authenticated, return a new ticket
-    Optional<String> realmName = subject.getPrincipals().getRealmNames().stream().findFirst();
-    return new AuthTicketXO().withT(authTickets.createTicket(username, realmName.orElse(null)));
+    // Using Java 21's Sequenced Collections API pattern if available
+    var realmNames = subject.getPrincipals().getRealmNames();
+    String realmName = null;
+    if (realmNames != null && !realmNames.isEmpty()) {
+      // Get the first realm name using iterator, which works with any Collection
+      realmName = realmNames.iterator().next();
+    }
+    return new AuthTicketXO().withT(authTickets.createTicket(username, realmName));
   }
 }

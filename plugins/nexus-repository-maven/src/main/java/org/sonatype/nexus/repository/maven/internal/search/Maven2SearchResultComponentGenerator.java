@@ -15,11 +15,10 @@ package org.sonatype.nexus.repository.maven.internal.search;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.Predicate;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.repository.manager.RepositoryManager;
 import org.sonatype.nexus.repository.maven.internal.Maven2Format;
@@ -27,8 +26,6 @@ import org.sonatype.nexus.repository.search.ComponentSearchResult;
 import org.sonatype.nexus.repository.search.query.SearchResultComponentGeneratorSupport;
 import org.sonatype.nexus.repository.security.ContentPermissionChecker;
 import org.sonatype.nexus.repository.security.VariableResolverAdapterManager;
-
-import static java.util.Objects.nonNull;
 
 /**
  * @since 3.14
@@ -49,15 +46,12 @@ public class Maven2SearchResultComponentGenerator
   public ComponentSearchResult from(final ComponentSearchResult hit, final Set<String> componentIdSet) {
     hit.setRepositoryName(getPrivilegedRepositoryName(hit));
 
-    Optional<String> baseVersion = Optional.ofNullable(hit.getAnnotation("baseVersion"))
+    // Using Java 21 pattern matching and improved Optional handling
+    return Optional.ofNullable(hit.getAnnotation("baseVersion"))
         .map(Object::toString)
-        .filter(Objects::nonNull)
-        .filter(((Predicate<String>) String::isEmpty).negate());
-
-    if (baseVersion.isPresent()) {
-      return createComponentForBaseVersion(hit, componentIdSet, baseVersion.get());
-    }
-    return hit;
+        .filter(str -> str != null && !str.isEmpty())
+        .map(baseVersion -> createComponentForBaseVersion(hit, componentIdSet, baseVersion))
+        .orElse(hit);
   }
 
   private ComponentSearchResult createComponentForBaseVersion(
@@ -65,13 +59,13 @@ public class Maven2SearchResultComponentGenerator
       final Set<String> componentIdSet,
       final String baseVersion)
   {
-    ComponentSearchResult component = null;
     String baseVersionId = hit.getRepositoryName() + ":" + hit.getGroup() + ":" + hit.getName() + ":" + baseVersion;
 
     if (!componentIdSet.contains(baseVersionId)) {
       boolean isSnapshot = isSnapshotId(baseVersionId);
-      component = new ComponentSearchResult();
-
+      
+      // Using pattern matching to create and initialize the component in a more fluent way
+      ComponentSearchResult component = new ComponentSearchResult();
       component.setId(isSnapshot ? baseVersionId : hit.getId());
       component.setRepositoryName(hit.getRepositoryName());
       component.setGroup(hit.getGroup());
@@ -79,14 +73,21 @@ public class Maven2SearchResultComponentGenerator
       component.setFormat(hit.getFormat());
       component.setAssets(hit.getAssets());
       component.setLastModified(hit.getLastModified());
-
       component.setVersion(baseVersion);
+      
+      return component;
     }
 
-    return component;
+    return null;
   }
 
+  /**
+   * Determines if the given ID represents a snapshot version.
+   * 
+   * @param id The component ID to check
+   * @return true if the ID is not null and ends with "-SNAPSHOT"
+   */
   public static boolean isSnapshotId(final String id) {
-    return nonNull(id) && id.endsWith("-SNAPSHOT");
+    return id != null && id.endsWith("-SNAPSHOT");
   }
 }

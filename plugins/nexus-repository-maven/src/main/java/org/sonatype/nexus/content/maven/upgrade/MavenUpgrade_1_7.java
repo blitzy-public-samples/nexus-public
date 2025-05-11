@@ -14,21 +14,31 @@ package org.sonatype.nexus.content.maven.upgrade;
 
 import java.util.Optional;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 /**
  * Re-index for update to search normalization format.
+ * 
+ * This upgrade step marks existing Maven repositories as needing to be re-indexed
+ * for search normalization format updates.
+ * 
+ * <p>Updated for Java 21 compatibility with Jakarta EE injection annotations.</p>
+ * 
+ * @deprecated This class extends {@link MavenIndexUpgrade} which is deprecated.
+ *             New database migrations should use {@link org.sonatype.nexus.repository.content.search.upgrade.SearchIndexUpgrade}
  *
  * @since 3.37
  */
 @Named
 @Singleton
+@Deprecated
 public class MavenUpgrade_1_7 // NOSONAR
     extends MavenIndexUpgrade
 {
   @Override
   public Optional<String> version() {
+    // Using simple String return as String Templates would be overkill for this case
     return Optional.of("1.7");
   }
 }

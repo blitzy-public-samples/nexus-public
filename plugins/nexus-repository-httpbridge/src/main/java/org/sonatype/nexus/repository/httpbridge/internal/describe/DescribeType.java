@@ -31,15 +31,20 @@ public enum DescribeType
    */
   public static DescribeType parse(String flags) {
     checkNotNull(flags);
-    flags = Strings2.upper(flags).trim();
-    if (flags.isEmpty()) {
-      return HTML;
-    }
-    try {
-      return valueOf(flags);
-    }
-    catch (IllegalArgumentException e) {
-      return HTML;
-    }
+    String normalizedFlags = Strings2.upper(flags).trim();
+    
+    // Using Java 21 pattern matching with switch expression for cleaner code
+    return switch (normalizedFlags) {
+      case "" -> HTML;
+      case "HTML" -> HTML;
+      case "JSON" -> JSON;
+      default -> {
+        try {
+          yield valueOf(normalizedFlags);
+        } catch (IllegalArgumentException e) {
+          yield HTML;
+        }
+      }
+    };
   }
 }

@@ -14,8 +14,9 @@ package org.sonatype.nexus.blobstore.compact.internal;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
-import javax.annotation.Nullable;
+import java.util.concurrent.Executors;
 import javax.inject.Inject;
 import javax.inject.Named;
 
@@ -29,11 +30,11 @@ import org.sonatype.nexus.scheduling.TaskSupport;
 import org.sonatype.nexus.scheduling.TaskUtils;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableMap;
 
-import static com.google.common.base.Preconditions.checkNotNull;
 import static java.lang.String.format;
-import static java.util.Arrays.asList;
+import static java.lang.StringTemplate.STR;
+import static java.util.List.of;
+import static java.util.Objects.checkNotNull;
 import static org.sonatype.nexus.blobstore.compact.internal.CompactBlobStoreTaskDescriptor.BLOB_STORE_NAME_FIELD_ID;
 import static org.sonatype.nexus.logging.task.TaskLoggingMarkers.TASK_LOG_ONLY;
 
@@ -59,7 +60,7 @@ public class CompactBlobStoreTask
   @Inject
   public CompactBlobStoreTask(
       final BlobStoreManager blobStoreManager,
-      @Nullable final ChangeRepositoryBlobStoreStore changeBlobstoreStore,
+      final ChangeRepositoryBlobStoreStore changeBlobstoreStore,
       final BlobStoreUsageChecker blobStoreUsageChecker,
       final TaskUtils taskUtils)
   {
@@ -73,8 +74,8 @@ public class CompactBlobStoreTask
   void checkForConflicts() {
     String blobStoreName = checkNotNull(getBlobStoreField());
 
-    taskUtils.checkForConflictingTasks(getId(), getName(), asList("repository.move"), ImmutableMap
-        .of("moveInitialBlobstore", asList(blobStoreName), "moveTargetBlobstore", asList(blobStoreName)));
+    taskUtils.checkForConflictingTasks(getId(), getName(), of("repository.move"), 
+        Map.of("moveInitialBlobstore", of(blobStoreName), "moveTargetBlobstore", of(blobStoreName)));
 
     checkForUnfinishedMoveTask(blobStoreName);
   }
@@ -85,11 +86,10 @@ public class CompactBlobStoreTask
         .orElseGet(Collections::emptyList);
 
     if (!existingMoves.isEmpty()) {
-      log.info(TASK_LOG_ONLY, "found {} unfinished move tasks using blobstore '{}', unable to run task '{}'",
-          existingMoves.size(), blobStoreName, getName());
+      log.info(TASK_LOG_ONLY, STR."found \{existingMoves.size()} unfinished move tasks using blobstore '\{blobStoreName}', unable to run task '\{getName()}'";
 
       throw new IllegalStateException(
-          format("found unfinished move task(s) using blobstore '%s', task can't be executed", blobStoreName));
+          STR."found unfinished move task(s) using blobstore '\{blobStoreName}', task can't be executed");
     }
   }
 
@@ -97,19 +97,22 @@ public class CompactBlobStoreTask
   protected Object execute() throws Exception {
     checkForConflicts();
 
-    BlobStore blobStore = blobStoreManager.get(getBlobStoreField());
-    if (blobStore != null) {
-      blobStore.compact(blobStoreUsageChecker);
+    String blobStoreName = getBlobStoreField();
+    if (blobStoreManager.get(blobStoreName) instanceof BlobStore blobStore) {
+      // Use virtual threads for I/O-bound compaction operation
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        executor.submit(() -> blobStore.compact(blobStoreUsageChecker)).get();
+      }
     }
     else {
-      log.warn("Unable to find blob store: {}", getBlobStoreField());
+      log.warn(STR."Unable to find blob store: \{blobStoreName}");
     }
     return null;
   }
 
   @Override
   public String getMessage() {
-    return "Compacting " + getBlobStoreField() + " blob store";
+    return STR."Compacting \{getBlobStoreField()} blob store";
   }
 
   private String getBlobStoreField() {

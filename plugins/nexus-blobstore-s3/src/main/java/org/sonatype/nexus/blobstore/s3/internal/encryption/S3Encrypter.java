@@ -12,18 +12,36 @@
  */
 package org.sonatype.nexus.blobstore.s3.internal.encryption;
 
-import com.amazonaws.services.s3.model.AbstractPutObjectRequest;
-import com.amazonaws.services.s3.model.CopyObjectRequest;
-import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
+import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 /**
- * Adds any encryption necessary to S3 requests.
+ * Interface for adding encryption to S3 requests.
+ * Updated to work with AWS SDK for Java 2.x.
  *
  * @since 3.19
  */
 public interface S3Encrypter
 {
-  <T extends InitiateMultipartUploadRequest> T addEncryption(T request);
-  <T extends AbstractPutObjectRequest> T addEncryption(T request);
-  <T extends CopyObjectRequest> T addEncryption(T request);
+  /**
+   * Adds encryption settings to a PutObjectRequest.
+   *
+   * @param request the request to add encryption to
+   */
+  void addEncryption(PutObjectRequest.Builder request);
+
+  /**
+   * Adds encryption settings to a CopyObjectRequest.
+   *
+   * @param request the request to add encryption to
+   */
+  void addEncryption(CopyObjectRequest.Builder request);
+
+  /**
+   * Adds encryption settings to a CreateMultipartUploadRequest.
+   *
+   * @param request the request to add encryption to
+   */
+  void addEncryption(CreateMultipartUploadRequest.Builder request);
 }

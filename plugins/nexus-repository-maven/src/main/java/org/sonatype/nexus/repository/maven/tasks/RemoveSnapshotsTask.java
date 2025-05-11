@@ -12,6 +12,12 @@
  */
 package org.sonatype.nexus.repository.maven.tasks;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.ArrayList;
+import java.util.List;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 
@@ -25,6 +31,7 @@ import org.sonatype.nexus.repository.maven.VersionPolicy;
 import org.sonatype.nexus.repository.maven.internal.Maven2Format;
 import org.sonatype.nexus.scheduling.TaskConfiguration;
 
+import static java.lang.StringTemplate.STR;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.repository.maven.tasks.RemoveSnapshotsTaskDescriptor.GRACE_PERIOD;
 import static org.sonatype.nexus.repository.maven.tasks.RemoveSnapshotsTaskDescriptor.MINIMUM_SNAPSHOT_RETAINED_COUNT;
@@ -51,17 +58,40 @@ public class RemoveSnapshotsTask
   @Override
   protected void execute(final Repository repository) {
     if (hasBeenProcessed(repository)) {
-      log.debug("Skipping repository '{}'; it has already been processed", repository.getName());
+      log.debug(STR."Skipping repository '\{repository.getName()}'; it has already been processed");
       return;
     }
 
     if (isGroupRepository(repository)) {
       markProcessed(repository); // nothing to do for the group itself
 
-      repository.facet(GroupFacet.class).members().stream().filter(this::appliesTo).forEach(this::execute);
+      // Use virtual threads for concurrent processing of group members
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        List<Future<?>> futures = new ArrayList<>();
+        
+        repository.facet(GroupFacet.class).members().stream()
+            .filter(this::appliesTo)
+            .forEach(member -> {
+              futures.add(executor.submit(() -> {
+                execute(member);
+                return null;
+              }));
+            });
+        
+        // Wait for all tasks to complete
+        for (Future<?> future : futures) {
+          try {
+            future.get();
+          } catch (Exception e) {
+            log.error(STR."Error executing removal of snapshots on member repository: \{e.getMessage()}", e);
+          }
+        }
+      } catch (Exception e) {
+        log.error(STR."Error executing removal of snapshots on repository group '\{repository.getName()}'", e);
+      }
     }
     else {
-      log.info("Executing removal of snapshots on repository '{}'", repository.getName());
+      log.info(STR."Executing removal of snapshots on repository '\{repository.getName()}'");
 
       TaskConfiguration config = getConfiguration();
       RemoveSnapshotsConfig removeSnapshotsConfig = new RemoveSnapshotsConfig(
@@ -83,6 +113,6 @@ public class RemoveSnapshotsTask
 
   @Override
   public String getMessage() {
-    return "Remove Maven snapshots from " + getRepositoryField();
+    return STR."Remove Maven snapshots from \{getRepositoryField()}";
   }
 }

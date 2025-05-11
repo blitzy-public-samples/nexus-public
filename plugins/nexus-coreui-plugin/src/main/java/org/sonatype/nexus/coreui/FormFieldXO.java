@@ -12,9 +12,12 @@
  */
 package org.sonatype.nexus.coreui;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.SequencedMap;
+
 import javax.annotation.Nullable;
 
 import org.sonatype.nexus.formfields.FormField;
@@ -53,7 +56,7 @@ public class FormFieldXO
   /**
    * @since 3.1
    */
-  private Map<String, Object> attributes;
+  private SequencedMap<String, Object> attributes;
 
   /**
    * @see NumberTextFormField
@@ -77,7 +80,7 @@ public class FormFieldXO
    * @see Selectable
    */
   @Nullable
-  private Map<String, String> storeFilters;
+  private SequencedMap<String, String> storeFilters;
 
   /**
    * @see Selectable
@@ -165,12 +168,18 @@ public class FormFieldXO
     this.initialValue = initialValue;
   }
 
-  public Map<String, Object> getAttributes() {
+  public SequencedMap<String, Object> getAttributes() {
     return attributes;
   }
 
   public void setAttributes(Map<String, Object> attributes) {
-    this.attributes = attributes;
+    if (attributes instanceof SequencedMap<String, Object> sequencedAttributes) {
+      this.attributes = sequencedAttributes;
+    } else if (attributes != null) {
+      this.attributes = new LinkedHashMap<>(attributes);
+    } else {
+      this.attributes = null;
+    }
   }
 
   public String getMinValue() {
@@ -197,12 +206,18 @@ public class FormFieldXO
     this.storeApi = storeApi;
   }
 
-  public Map<String, String> getStoreFilters() {
+  public SequencedMap<String, String> getStoreFilters() {
     return storeFilters;
   }
 
   public void setStoreFilters(Map<String, String> storeFilters) {
-    this.storeFilters = storeFilters;
+    if (storeFilters instanceof SequencedMap<String, String> sequencedFilters) {
+      this.storeFilters = sequencedFilters;
+    } else if (storeFilters != null) {
+      this.storeFilters = new LinkedHashMap<>(storeFilters);
+    } else {
+      this.storeFilters = null;
+    }
   }
 
   public String getIdMapping() {

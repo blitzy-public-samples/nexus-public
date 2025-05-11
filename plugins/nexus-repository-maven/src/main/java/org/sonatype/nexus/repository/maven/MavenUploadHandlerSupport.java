@@ -20,6 +20,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import javax.annotation.Nullable;
 
@@ -51,6 +53,8 @@ import org.sonatype.nexus.repository.view.payloads.StringPayload;
 import org.sonatype.nexus.repository.view.payloads.TempBlob;
 import org.sonatype.nexus.repository.view.payloads.TempBlobPartPayload;
 import org.sonatype.nexus.rest.ValidationErrorsException;
+import org.sonatype.nexus.thread.NexusExecutorService;
+import org.sonatype.nexus.security.subject.FakeAlmightySubject;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Sets;
@@ -67,6 +71,12 @@ import static org.sonatype.nexus.repository.maven.internal.Constants.ARCHETYPE_C
 
 /**
  * Common base for maven upload handlers
+ * <p>
+ * This class has been updated for Java 21 compatibility and leverages virtual threads
+ * for I/O-bound operations to improve throughput and reduce resource consumption.
+ * Virtual threads are particularly beneficial for file upload operations, which are
+ * typically I/O-bound and can benefit from higher concurrency without the overhead
+ * of traditional platform threads.
  *
  * @since 3.26
  */
@@ -96,6 +106,14 @@ public abstract class MavenUploadHandlerSupport
   private static final String ARTIFACT_ID_DISPLAY = "Artifact ID";
 
   private static final String GROUP_ID_DISPLAY = "Group ID";
+  
+  /**
+   * Executor service using Java 21 virtual threads for I/O-bound operations.
+   * Virtual threads provide higher throughput with minimal resource overhead,
+   * making them ideal for file upload/download operations.
+   */
+  private static final ExecutorService VIRTUAL_THREAD_EXECUTOR = 
+      NexusExecutorService.forFixedSubject(Executors.newVirtualThreadPerTaskExecutor(), FakeAlmightySubject.TASK_SUBJECT);
 
   private static final Set<String> ignoredPaths = Sets.newHashSet(
       "/" + ARCHETYPE_CATALOG_FILENAME,
@@ -167,6 +185,58 @@ public abstract class MavenUploadHandlerSupport
       }
     }
   }
+  
+  /**
+   * Handles the component upload asynchronously using Java 21 virtual threads.
+   * This method provides the same functionality as {@link #handle(Repository, ComponentUpload)}
+   * but leverages virtual threads for improved throughput on I/O-bound operations.
+   *
+   * @param repository the repository to upload to
+   * @param upload the component upload data
+   * @return the upload response
+   * @throws IOException if an I/O error occurs
+   * @since 3.60
+   */
+  public UploadResponse handleWithVirtualThreads(final Repository repository, final ComponentUpload upload) throws IOException {
+    checkNotNull(repository);
+    checkNotNull(upload);
+
+    if (VersionPolicy.SNAPSHOT.equals(getVersionPolicy(repository))) {
+      throw new ValidationErrorsException("Upload to snapshot repositories not supported, use the maven client.");
+    }
+    
+    try {
+      return VIRTUAL_THREAD_EXECUTOR.submit(() -> {
+        AssetUpload pomAsset = findPomAsset(upload);
+        TempBlob pom = null;
+        
+        try {
+          if (pomAsset != null) {
+            PartPayload payload = pomAsset.getPayload();
+            pom = createTempBlob(repository, payload);
+            pomAsset.setPayload(new TempBlobPartPayload(payload, pom));
+          }
+
+          String basePath = getBasePath(upload, pom);
+
+          doValidation(repository, basePath, upload.getAssetUploads());
+
+          return getUploadResponse(repository, upload, basePath);
+        }
+        finally {
+          if (pom != null) {
+            pom.close();
+          }
+        }
+      }).get();
+    }
+    catch (Exception e) {
+      if (e.getCause() instanceof IOException) {
+        throw (IOException) e.getCause();
+      }
+      throw new IOException("Error handling upload with virtual threads", e);
+    }
+  }
 
   @Override
   public Content handle(final Repository repository, final File content, final String path) throws IOException {
@@ -199,6 +269,52 @@ public abstract class MavenUploadHandlerSupport
     }
 
     return doPut(configuration);
+  }
+  
+  /**
+   * Handles the import file configuration asynchronously using Java 21 virtual threads.
+   * This method provides the same functionality as {@link #handle(ImportFileConfiguration)}
+   * but leverages virtual threads for improved throughput on I/O-bound operations.
+   *
+   * @param configuration the import file configuration
+   * @return the content or null if the file was skipped
+   * @throws IOException if an I/O error occurs
+   * @since 3.60
+   */
+  public Content handleWithVirtualThreads(final ImportFileConfiguration configuration) throws IOException {
+    try {
+      return VIRTUAL_THREAD_EXECUTOR.submit(() -> {
+        final Repository repository = configuration.getRepository();
+        final String path = configuration.getAssetName();
+
+        if (ignoredPaths.contains(path)) {
+          log.debug("skipping {} as it is on the ignore list.", path);
+          return null;
+        }
+
+        MavenPath mavenPath = parser.parsePath(path);
+
+        try {
+          doImportValidation(repository, mavenPath);
+        } catch (ValidationErrorsException e) {
+          log.warn(e.getMessage(), log.isDebugEnabled() ? e : null);
+          return null;
+        }
+
+        if (!configuration.isHardLinkingEnabled() && mavenPath.getHashType() != null) {
+          log.debug("skipping hash file {}", mavenPath);
+          return null;
+        }
+
+        return doPut(configuration);
+      }).get();
+    }
+    catch (Exception e) {
+      if (e.getCause() instanceof IOException) {
+        throw (IOException) e.getCause();
+      }
+      throw new IOException("Error handling import with virtual threads", e);
+    }
   }
 
   @Override
@@ -240,6 +356,15 @@ public abstract class MavenUploadHandlerSupport
     return new MavenValidatingComponentUpload(getDefinition(), componentUpload);
   }
 
+  /**
+   * Generates a POM file if requested in the component upload.
+   *
+   * @param repository the repository to store the POM in
+   * @param componentUpload the component upload data
+   * @param basePath the base path for the POM
+   * @param responseData the response data to update with the POM path
+   * @throws IOException if an I/O error occurs during POM generation
+   */
   protected void maybeGeneratePom(final Repository repository,
                                   final ComponentUpload componentUpload,
                                   final String basePath,
@@ -248,6 +373,31 @@ public abstract class MavenUploadHandlerSupport
   {
     if (isGeneratePom(componentUpload.getField(GENERATE_POM))) {
       String pomPath = generatePom(repository, basePath, componentUpload.getFields().get(GROUP_ID),
+          componentUpload.getFields().get(ARTIFACT_ID), componentUpload.getFields().get(VERSION),
+          componentUpload.getFields().get(PACKAGING));
+
+      responseData.addAssetPath(pomPath);
+    }
+  }
+  
+  /**
+   * Generates a POM file if requested in the component upload, using virtual threads for improved I/O throughput.
+   *
+   * @param repository the repository to store the POM in
+   * @param componentUpload the component upload data
+   * @param basePath the base path for the POM
+   * @param responseData the response data to update with the POM path
+   * @throws IOException if an I/O error occurs during POM generation
+   * @since 3.60
+   */
+  protected void maybeGeneratePomWithVirtualThreads(final Repository repository,
+                                                   final ComponentUpload componentUpload,
+                                                   final String basePath,
+                                                   final ContentAndAssetPathResponseData responseData)
+      throws IOException
+  {
+    if (isGeneratePom(componentUpload.getField(GENERATE_POM))) {
+      String pomPath = generatePomWithVirtualThreads(repository, basePath, componentUpload.getFields().get(GROUP_ID),
           componentUpload.getFields().get(ARTIFACT_ID), componentUpload.getFields().get(VERSION),
           componentUpload.getFields().get(PACKAGING));
 
@@ -317,6 +467,18 @@ public abstract class MavenUploadHandlerSupport
     }
   }
 
+  /**
+   * Generates a POM file and stores it in the repository.
+   *
+   * @param repository the repository to store the POM in
+   * @param basePath the base path for the POM
+   * @param groupId the group ID for the POM
+   * @param artifactId the artifact ID for the POM
+   * @param version the version for the POM
+   * @param packaging the packaging type for the POM (may be null)
+   * @return the path of the stored POM
+   * @throws IOException if an I/O error occurs during POM generation or storage
+   */
   protected String generatePom(final Repository repository,
                                final String basePath,
                                final String groupId,
@@ -335,6 +497,48 @@ public abstract class MavenUploadHandlerSupport
 
     return mavenPath.getPath();
   }
+  
+  /**
+   * Generates a POM file and stores it in the repository using virtual threads for improved I/O throughput.
+   *
+   * @param repository the repository to store the POM in
+   * @param basePath the base path for the POM
+   * @param groupId the group ID for the POM
+   * @param artifactId the artifact ID for the POM
+   * @param version the version for the POM
+   * @param packaging the packaging type for the POM (may be null)
+   * @return the path of the stored POM
+   * @throws IOException if an I/O error occurs during POM generation or storage
+   * @since 3.60
+   */
+  protected String generatePomWithVirtualThreads(final Repository repository,
+                                                final String basePath,
+                                                final String groupId,
+                                                final String artifactId,
+                                                final String version,
+                                                @Nullable final String packaging)
+      throws IOException
+  {
+    try {
+      return VIRTUAL_THREAD_EXECUTOR.submit(() -> {
+        log.debug("Generating pom for {} {} {} with packaging {}", groupId, artifactId, version, packaging);
+
+        String pom = mavenPomGenerator.generatePom(groupId, artifactId, version, packaging);
+
+        MavenPath mavenPath = parser.parsePath(basePath + ".pom");
+
+        storeAssetContent(repository, mavenPath, new StringPayload(pom, "text/xml"));
+
+        return mavenPath.getPath();
+      }).get();
+    }
+    catch (Exception e) {
+      if (e.getCause() instanceof IOException) {
+        throw (IOException) e.getCause();
+      }
+      throw new IOException("Error generating POM with virtual threads", e);
+    }
+  }
 
   protected AssetUpload findPomAsset(final ComponentUpload componentUpload) {
     return componentUpload.getAssetUploads().stream()
@@ -346,6 +550,18 @@ public abstract class MavenUploadHandlerSupport
     return ("on".equals(generatePom) || Boolean.parseBoolean(generatePom));
   }
 
+  /**
+   * Creates assets in the repository from the provided asset uploads.
+   * <p>
+   * This method processes each asset upload, stores the content in the repository,
+   * and collects information about the created assets for the response.
+   *
+   * @param repository the repository to store assets in
+   * @param basePath the base path for the assets
+   * @param assetUploads the list of asset uploads to process
+   * @return data about the created assets and content
+   * @throws IOException if an I/O error occurs during asset creation
+   */
   protected ContentAndAssetPathResponseData createAssets(final Repository repository,
                                                          final String basePath,
                                                          final List<AssetUpload> assetUploads)
@@ -372,6 +588,57 @@ public abstract class MavenUploadHandlerSupport
 
     return responseData;
   }
+  
+  /**
+   * Creates assets in the repository from the provided asset uploads using virtual threads.
+   * <p>
+   * This method provides the same functionality as {@link #createAssets(Repository, String, List)}
+   * but processes each asset upload using Java 21 virtual threads for improved throughput
+   * on I/O-bound operations.
+   *
+   * @param repository the repository to store assets in
+   * @param basePath the base path for the assets
+   * @param assetUploads the list of asset uploads to process
+   * @return data about the created assets and content
+   * @throws IOException if an I/O error occurs during asset creation
+   * @since 3.60
+   */
+  protected ContentAndAssetPathResponseData createAssetsWithVirtualThreads(final Repository repository,
+                                                                          final String basePath,
+                                                                          final List<AssetUpload> assetUploads)
+      throws IOException
+  {
+    try {
+      return VIRTUAL_THREAD_EXECUTOR.submit(() -> {
+        ContentAndAssetPathResponseData responseData = new ContentAndAssetPathResponseData();
+
+        for (AssetUpload asset : assetUploads) {
+          MavenPath mavenPath = getMavenPath(basePath, asset);
+
+          Content content = storeAssetContent(repository, mavenPath, asset.getPayload());
+
+          //We only need to set the component id one time
+          if(responseData.getContent() == null) {
+            responseData.setContent(content);
+          }
+          responseData.addAssetPath(mavenPath.getPath());
+
+          //All assets belong to same component, so just grab the coordinates for one of them
+          if (responseData.getCoordinates() == null) {
+            responseData.setCoordinates(mavenPath.getCoordinates());
+          }
+        }
+
+        return responseData;
+      }).get();
+    }
+    catch (Exception e) {
+      if (e.getCause() instanceof IOException) {
+        throw (IOException) e.getCause();
+      }
+      throw new IOException("Error creating assets with virtual threads", e);
+    }
+  }
 
   private MavenPath getMavenPath(final String basePath, final AssetUpload asset) {
     StringBuilder path = new StringBuilder(basePath);
@@ -385,12 +652,45 @@ public abstract class MavenUploadHandlerSupport
     return parser.parsePath(path.toString());
   }
 
+  /**
+   * Stores asset content in the repository.
+   *
+   * @param repository the repository to store the content in
+   * @param mavenPath the Maven path for the asset
+   * @param payload the payload containing the asset content
+   * @return the stored content
+   * @throws IOException if an I/O error occurs during storage
+   */
   protected Content storeAssetContent(final Repository repository,
                                       final MavenPath mavenPath,
                                       final Payload payload) throws IOException
   {
-
     return doPut(repository, mavenPath, payload);
+  }
+  
+  /**
+   * Stores asset content in the repository using virtual threads for improved I/O throughput.
+   *
+   * @param repository the repository to store the content in
+   * @param mavenPath the Maven path for the asset
+   * @param payload the payload containing the asset content
+   * @return the stored content
+   * @throws IOException if an I/O error occurs during storage
+   * @since 3.60
+   */
+  protected Content storeAssetContentWithVirtualThreads(final Repository repository,
+                                                       final MavenPath mavenPath,
+                                                       final Payload payload) throws IOException
+  {
+    try {
+      return VIRTUAL_THREAD_EXECUTOR.submit(() -> doPut(repository, mavenPath, payload)).get();
+    }
+    catch (Exception e) {
+      if (e.getCause() instanceof IOException) {
+        throw (IOException) e.getCause();
+      }
+      throw new IOException("Error storing asset content with virtual threads", e);
+    }
   }
 
   protected String getBasePath(final ComponentUpload componentUpload, final TempBlob pom) throws IOException

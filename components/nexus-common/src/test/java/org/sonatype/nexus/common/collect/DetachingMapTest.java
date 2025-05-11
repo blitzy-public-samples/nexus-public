@@ -19,8 +19,8 @@ import java.util.function.Function;
 import org.sonatype.goodies.testsupport.TestSupport;
 
 import com.google.common.collect.ImmutableMap;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 
@@ -48,7 +48,7 @@ public class DetachingMapTest
 
   private DetachingMap<String, String> underTest;
 
-  @Before
+  @BeforeEach
   public void setUp() {
     underTest = new DetachingMap<>(backing, allowDetach, detach);
   }

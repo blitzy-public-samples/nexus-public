@@ -41,7 +41,7 @@ public class MavenMetadataContentValidator
       Metadata metadata = MavenModels.readMetadata(mavenMetadata);
 
       if (metadata == null) {
-        throw new InvalidContentException("Metadata at path " + path + " is not a valid maven-metadata.xml");
+        throw new InvalidContentException(STR."Metadata at path \{path} is not a valid maven-metadata.xml");
       }
 
       // maven-metadata.xml files for plugins do not contain groupId and therefore cannot be validated
@@ -53,9 +53,9 @@ public class MavenMetadataContentValidator
       }
     }
     catch (IOException e) {
-      log.warn("Unable to read maven-metadata.xml at path {}", path, e );
+      log.warn(STR."Unable to read maven-metadata.xml at path \{path}", e);
       
-      throw new InvalidContentException("Unable to read maven-metadata.xml reason: " + e.getMessage());
+      throw new InvalidContentException(STR."Unable to read maven-metadata.xml reason: \{e.getMessage()}");
     }
   }
 
@@ -65,29 +65,23 @@ public class MavenMetadataContentValidator
     MavenPath expectedPath = metadataPath(metadata.getGroupId(), metadata.getArtifactId(), version);
 
     if (!path.equals(expectedPath.getPath())) {
-      String pattern = "Invalid maven-metadata.xml GAV %s, %s, %s does not match request path %s";
+      log.warn(STR."maven-metadata.xml path \{path} does not match the expected path \{expectedPath.getPath()}");
 
-      String message = String
-          .format(pattern, metadata.getGroupId(), metadata.getArtifactId(), metadata.getVersion(), path);
-
-      log.warn("maven-metadata.xml path {} does not match the expected path {}", path, expectedPath.getPath());
-
-      throw new InvalidContentException(message);
+      throw new InvalidContentException(
+          STR."Invalid maven-metadata.xml GAV \{metadata.getGroupId()}, \{metadata.getArtifactId()}, \{metadata.getVersion()} does not match request path \{path}");
     }
   }
 
   private String getMetadataVersion(final Metadata metadata) {
-    if (metadata.getVersion() != null && metadata.getVersion().contains("-SNAPSHOT")) {
-      log.debug("maven-metadata.xml contains a SNAPSHOT version ({}) therefore the version is expected to be part of " +
-              "the path", metadata.getVersion());
-
-      return metadata.getVersion();
-    }
-    else {
-      log.debug("maven-metadata.xml version ({}) is either null or not a SNAPSHOT therefore not expected in the path",
-          metadata.getVersion());
-      
-      return null;
-    }
+    return switch (metadata.getVersion()) {
+      case String v when v != null && v.contains("-SNAPSHOT") -> {
+        log.debug(STR."maven-metadata.xml contains a SNAPSHOT version (\{v}) therefore the version is expected to be part of the path");
+        yield v;
+      }
+      default -> {
+        log.debug(STR."maven-metadata.xml version (\{metadata.getVersion()}) is either null or not a SNAPSHOT therefore not expected in the path");
+        yield null;
+      }
+    };
   }
 }

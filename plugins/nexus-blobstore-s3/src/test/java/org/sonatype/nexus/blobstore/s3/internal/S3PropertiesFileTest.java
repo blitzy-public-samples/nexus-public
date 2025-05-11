@@ -18,11 +18,12 @@ import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectInputStream;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
-import org.sonatype.goodies.testsupport.TestSupport;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
@@ -30,12 +31,18 @@ import static org.hamcrest.Matchers.hasEntry;
 import static org.hamcrest.Matchers.hasKey;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.blobstore.api.BlobAttributesConstants.HEADER_PREFIX;
 import static org.sonatype.nexus.blobstore.api.BlobStore.TEMPORARY_BLOB_HEADER;
 
+/**
+ * Tests for {@link S3PropertiesFile} that verify the S3 property file operations.
+ */
+@ExtendWith(MockitoExtension.class)
 public class S3PropertiesFileTest
-    extends TestSupport
 {
   private static final String TEST_PROPERTIES = "propertyName = value\n";
 
@@ -48,8 +55,11 @@ public class S3PropertiesFileTest
   @Captor
   private ArgumentCaptor<ObjectMetadata> metadataCaptor;
 
+  /**
+   * Verifies that the load method correctly reads properties from an S3 object.
+   */
   @Test
-  public void testLoadIngestsPropertiesFromS3Object() throws Exception {
+  public void shouldLoadPropertiesFromS3Object() throws Exception {
     S3PropertiesFile propertiesFile = new S3PropertiesFile(s3, "mybucket", "mykey");
     S3Object s3Object = mock(S3Object.class);
 
@@ -62,8 +72,11 @@ public class S3PropertiesFileTest
     assertThat(propertiesFile.getProperty("propertyName"), is("value"));
   }
 
+  /**
+   * Verifies that the store method correctly writes properties to an S3 object.
+   */
   @Test
-  public void testStoreWritesPropertiesToS3Object() throws Exception {
+  public void shouldStorePropertiesToS3Object() throws Exception {
     S3PropertiesFile propertiesFile = new S3PropertiesFile(s3, "mybucket", "mykey");
 
     propertiesFile.setProperty("testProperty", "newValue");
@@ -71,7 +84,7 @@ public class S3PropertiesFileTest
 
     verify(s3).putObject(eq("mybucket"), eq("mykey"), byteArrayCaptor.capture(), metadataCaptor.capture());
 
-    String text = new String(byteArrayCaptor.getValue().readAllBytes());
+    String text = new String(byteArrayCaptor.getValue().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
     ObjectMetadata metadata = metadataCaptor.getValue();
 
     assertThat(text, containsString("testProperty=newValue\n"));
@@ -79,8 +92,11 @@ public class S3PropertiesFileTest
     assertThat(metadata.getUserMetadata(), not(hasKey(TEMPORARY_BLOB_HEADER)));
   }
 
+  /**
+   * Verifies that the toString method formats the output correctly.
+   */
   @Test
-  public void testToStringIsFormattedProperly() {
+  public void shouldFormatToStringProperly() {
     S3PropertiesFile propertiesFile = new S3PropertiesFile(s3, "mybucket", "mykey/with/nesting/");
 
     propertiesFile.setProperty("testProperty", "newValue");
@@ -90,8 +106,12 @@ public class S3PropertiesFileTest
         is("s3://mybucket/mykey/with/nesting/ {testProperty=newValue, otherKey=otherValue}"));
   }
 
+  /**
+   * Verifies that temporary blob metadata is correctly added to the S3 object metadata
+   * when the temporary blob header is present in the properties.
+   */
   @Test
-  public void testAddsBlobStoreTemporaryBlobUserMetadataToObjectMetadataWhenBlobStoreTemporaryBlobIsInHeaders() throws Exception {
+  public void shouldAddTemporaryBlobMetadataWhenHeaderIsPresent() throws Exception {
     S3PropertiesFile propertiesFile = new S3PropertiesFile(s3, "mybucket", "mykey");
 
     propertiesFile.setProperty(HEADER_PREFIX + TEMPORARY_BLOB_HEADER, "true");
@@ -99,7 +119,7 @@ public class S3PropertiesFileTest
 
     verify(s3).putObject(eq("mybucket"), eq("mykey"), byteArrayCaptor.capture(), metadataCaptor.capture());
 
-    String text = new String(byteArrayCaptor.getValue().readAllBytes());
+    String text = new String(byteArrayCaptor.getValue().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
     ObjectMetadata metadata = metadataCaptor.getValue();
 
     assertThat(text, containsString("BlobStore.temporary-blob=true\n"));

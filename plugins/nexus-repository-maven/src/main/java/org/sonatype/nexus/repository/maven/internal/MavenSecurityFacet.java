@@ -21,6 +21,10 @@ import org.sonatype.nexus.repository.security.VariableResolverAdapter;
 
 /**
  * Maven 2 security facet.
+ * 
+ * Updated for Java 21 compatibility with enhanced security model and
+ * Apache Shiro 2.0.0 integration. This facet leverages the updated
+ * SecurityFacetSupport which has been optimized for Java 21's security features.
  *
  * @since 3.0
  */
@@ -28,6 +32,13 @@ import org.sonatype.nexus.repository.security.VariableResolverAdapter;
 public class MavenSecurityFacet
     extends SecurityFacetSupport
 {
+  /**
+   * Constructor with required dependencies.
+   * 
+   * @param securityContributor the Maven format security contributor
+   * @param variableResolverAdapter the variable resolver adapter for Maven format
+   * @param contentPermissionChecker the content permission checker
+   */
   @Inject
   public MavenSecurityFacet(final MavenFormatSecurityContributor securityContributor,
                             @Named(Maven2Format.NAME) final VariableResolverAdapter variableResolverAdapter,

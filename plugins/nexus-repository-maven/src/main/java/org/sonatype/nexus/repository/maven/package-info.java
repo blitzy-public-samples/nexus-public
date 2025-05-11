@@ -14,6 +14,14 @@
 /**
  * Maven repository format.
  *
+ * This package and its subpackages provide Maven repository format support, optimized for Java 21 runtime.
+ * The implementation leverages Java 21 features including:
+ * <ul>
+ *   <li>Virtual Threads for improved concurrency in repository operations</li>
+ *   <li>Pattern Matching for more expressive and maintainable code</li>
+ *   <li>Enhanced security features for repository content protection</li>
+ * </ul>
+ *
  * @since 3.0
  */
 package org.sonatype.nexus.repository.maven;

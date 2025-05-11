@@ -56,12 +56,16 @@ public class AssetBlobRefFormatCheck
     final String format = repository.getFormat().getValue();
     final boolean notMigrated = ofNullable(formatStoreManagers.get(format))
         .map(storeManager -> storeManager.assetBlobStore(dataStoreName))
-        .map(assetBlobStore -> ((AssetBlobStore<?>) assetBlobStore).notMigratedAssetBlobRefsExists())
+        .map(assetBlobStore -> {
+          if (assetBlobStore instanceof AssetBlobStore<?> store) {
+            return store.notMigratedAssetBlobRefsExists();
+          }
+          throw new IllegalStateException("Expected AssetBlobStore but got " + assetBlobStore.getClass().getName());
+        })
         .orElseThrow(() -> new RuntimeException("Cannot determine asset blob ref migration status"));
 
     if (notMigrated) {
-      log.warn("Cannot restore {} repository '{}' " + "because legacy blob ref migration is not complete.",
-          repository.getFormat().getValue(), repository.getName());
+      log.warn(STR."Cannot restore \{repository.getFormat().getValue()} repository '\{repository.getName()}' because legacy blob ref migration is not complete.");
     }
 
     return notMigrated;

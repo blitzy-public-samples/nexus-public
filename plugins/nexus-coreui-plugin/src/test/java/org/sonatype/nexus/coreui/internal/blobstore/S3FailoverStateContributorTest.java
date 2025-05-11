@@ -15,8 +15,10 @@ package org.sonatype.nexus.coreui.internal.blobstore;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.db.DatabaseCheck;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.hasEntry;
@@ -25,7 +27,11 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
-public class S3FailoverStateContributorTest
+/**
+ * Tests for {@link S3FailoverStateContributor} with Java 21 and JUnit Jupiter.
+ */
+@ExtendWith(MockitoExtension.class)
+class S3FailoverStateContributorTest
     extends TestSupport
 {
   @Mock
@@ -34,14 +40,14 @@ public class S3FailoverStateContributorTest
   private S3FailoverStateContributor underTest;
 
   @Test
-  public void failoverAvailableNotZdu() {
+  void failoverAvailableNotZdu() {
     underTest = new S3FailoverStateContributor(databaseCheck, false);
     assertThat(underTest.getState(), hasEntry("S3FailoverEnabled", true));
     verifyNoInteractions(databaseCheck);
   }
 
   @Test
-  public void failoverNotAvailableZduAndNotInVersion() {
+  void failoverNotAvailableZduAndNotInVersion() {
     when(databaseCheck.isAtLeast("2.6")).thenReturn(false);
     underTest = new S3FailoverStateContributor(databaseCheck, true);
     assertThat(underTest.getState(), hasEntry("S3FailoverEnabled", false));
@@ -50,7 +56,7 @@ public class S3FailoverStateContributorTest
   }
 
   @Test
-  public void failoverAvailableZduAndMinimumVersion() {
+  void failoverAvailableZduAndMinimumVersion() {
     when(databaseCheck.isAtLeast("2.6")).thenReturn(true);
     underTest = new S3FailoverStateContributor(databaseCheck, true);
     assertThat(underTest.getState(), hasEntry("S3FailoverEnabled", true));

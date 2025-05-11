@@ -24,6 +24,8 @@ import static org.sonatype.nexus.formfields.FormField.MANDATORY;
 import static org.sonatype.nexus.formfields.FormField.OPTIONAL;
 
 /**
+ * Base task descriptor for restore metadata tasks that provides common form fields and configuration.
+ * 
  * @since 3.29
  */
 public abstract class BaseRestoreMetadataTaskDescriptor

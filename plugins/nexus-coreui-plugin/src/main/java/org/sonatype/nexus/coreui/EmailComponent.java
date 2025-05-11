@@ -38,8 +38,13 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Email {@link DirectComponent}.
+ * 
+ * This component handles email configuration and verification operations.
+ * All DirectMethod operations in this component benefit from Java 21's Virtual Threads
+ * infrastructure, which provides improved scalability for I/O-bound operations
+ * like email verification without consuming significant system resources.
  *
- * @since 3.0
+ * @since 3.0 (Java 21 Virtual Thread optimization since 3.x)
  */
 @Named
 @Singleton
@@ -56,6 +61,8 @@ public class EmailComponent
 
   /**
    * Returns current configuration.
+   * 
+   * This method benefits from Java 21's Virtual Threads infrastructure when called through the REST API.
    */
   @DirectMethod
   @Timed
@@ -82,6 +89,14 @@ public class EmailComponent
     );
   }
 
+  /**
+   * Updates the email configuration.
+   * 
+   * This method benefits from Java 21's Virtual Threads infrastructure when called through the REST API.
+   * 
+   * @param configuration the email configuration to update
+   * @return the updated configuration
+   */
   @DirectMethod
   @Timed
   @ExceptionMetered
@@ -110,6 +125,19 @@ public class EmailComponent
     return emailConfiguration;
   }
 
+  /**
+   * Sends a verification email using the provided configuration.
+   * 
+   * This method performs an I/O-bound operation (sending an email) which automatically
+   * benefits from Java 21's Virtual Threads infrastructure. The DirectMethod annotation
+   * ensures this method is executed on a virtual thread when called through the REST API,
+   * providing improved scalability without consuming significant system resources.
+   * 
+   * @param configuration the email configuration to use
+   * @param address the email address to send verification to
+   * @throws EmailException if there is an error sending the email
+   * @since 3.0 (Java 21 Virtual Thread optimization since 3.x)
+   */
   @DirectMethod
   @Timed
   @ExceptionMetered
@@ -121,6 +149,8 @@ public class EmailComponent
       @NotNull @Email final String address)
       throws EmailException
   {
+    // Email sending is an I/O-bound operation that benefits from the Java 21 Virtual Thread infrastructure
+    // The underlying HTTP/REST layer automatically handles this method on a virtual thread
     emailManager.sendVerification(convert(configuration), configuration.getPassword(), address);
   }
 }

@@ -12,10 +12,12 @@
  */
 package org.sonatype.nexus.coreui;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.crypto.secrets.Secret;
@@ -27,6 +29,11 @@ import static org.mockito.Mockito.*;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
+/**
+ * Tests for {@link EmailComponent} using JUnit Jupiter (JUnit 5) with Mockito 4.11.0 extension.
+ * Updated for Java 21 compatibility.
+ */
+@ExtendWith(MockitoExtension.class)
 public class EmailComponentTest
     extends TestSupport
 {
@@ -40,7 +47,7 @@ public class EmailComponentTest
 
   private EmailConfiguration emailConfiguration;
 
-  @Before
+  @BeforeEach
   public void setUp() {
     emailConfiguration = mock(EmailConfiguration.class);
     when(emailManager.getConfiguration()).thenReturn(emailConfiguration);
@@ -55,6 +62,10 @@ public class EmailComponentTest
     when(emailConfiguration.getSubjectPrefix()).thenReturn("prefix");
   }
 
+  /**
+   * Tests that reading the configuration returns the current configuration with a password placeholder
+   * when a password is set.
+   */
   @Test
   public void readReturnsCurrentConfigurationWithPasswordPlaceHolder() {
     when(emailConfiguration.getPassword()).thenReturn(mock(Secret.class));
@@ -76,6 +87,10 @@ public class EmailComponentTest
     assertThat(actualConfig.isSslCheckServerIdentityEnabled(), is(false));
   }
 
+  /**
+   * Tests that reading the configuration returns the current configuration with a null password
+   * when no password is set.
+   */
   @Test
   public void readReturnsCurrentConfigurationWithEmptyPasswordPlaceHolder() {
     when(emailConfiguration.getPassword()).thenReturn(null);
@@ -97,6 +112,9 @@ public class EmailComponentTest
     assertThat(actualConfig.isSslCheckServerIdentityEnabled(), is(false));
   }
 
+  /**
+   * Tests that updating the configuration saves it correctly.
+   */
   @Test
   public void updateSavesConfiguration() {
     when(emailManager.newConfiguration()).thenReturn(emailConfiguration);
@@ -107,6 +125,9 @@ public class EmailComponentTest
     verify(emailManager).getConfiguration();
   }
 
+  /**
+   * Tests that sending a verification email works correctly.
+   */
   @Test
   public void sendVerification() throws Exception {
     EmailConfigurationXO formCredentials = getConfigurationXO("baz");
@@ -118,6 +139,12 @@ public class EmailComponentTest
     verify(emailManager).sendVerification(emailConfig, "baz", ADDRESS);
   }
 
+  /**
+   * Helper method to create an {@link EmailConfigurationXO} with the given password.
+   * 
+   * @param password the password to set in the configuration
+   * @return a new email configuration object
+   */
   private static EmailConfigurationXO getConfigurationXO(final String password) {
     return new EmailConfigurationXO(
         false, "localhost", 25,

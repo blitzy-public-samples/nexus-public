@@ -12,12 +12,11 @@
  */
 package org.sonatype.nexus.repository.maven.internal;
 
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 
 import org.sonatype.nexus.repository.view.ContentTypes;
-
-import org.joda.time.format.DateTimeFormat;
-import org.joda.time.format.DateTimeFormatter;
 
 /**
  * Maven 2 constants.
@@ -42,19 +41,19 @@ public class Constants
   /**
    * Layout to be used for a DateTimeFormatter, which maven typically uses in snapshot versions.
    */
-  public static final String DOTTED_TIMESTAMP_VERSION_FORMAT = "YYYYMMdd.HHmmss";
+  public static final String DOTTED_TIMESTAMP_VERSION_FORMAT = "uuuuMMdd.HHmmss";
 
   /**
    * {@link DateTimeFormatter} for dotted timestamps used in Maven2 repository metadata.
    */
-  public static final DateTimeFormatter METADATA_DOTTED_TIMESTAMP = DateTimeFormat
-      .forPattern(DOTTED_TIMESTAMP_VERSION_FORMAT).withZoneUTC().withLocale(Locale.ENGLISH);
+  public static final DateTimeFormatter METADATA_DOTTED_TIMESTAMP = DateTimeFormatter
+      .ofPattern(DOTTED_TIMESTAMP_VERSION_FORMAT, Locale.ENGLISH).withZone(ZoneOffset.UTC);
 
   /**
    * {@link DateTimeFormatter} for dotless timestamps used in Maven2 repository metadata.
    */
-  public static final DateTimeFormatter METADATA_DOTLESS_TIMESTAMP = DateTimeFormat.forPattern("YYYYMMddHHmmss")
-      .withZoneUTC().withLocale(Locale.ENGLISH);
+  public static final DateTimeFormatter METADATA_DOTLESS_TIMESTAMP = DateTimeFormatter
+      .ofPattern("uuuuMMddHHmmss", Locale.ENGLISH).withZone(ZoneOffset.UTC);
 
   /**
    * Content Type of Maven2 checksum files (sha1, md5).

@@ -19,18 +19,39 @@ import com.amazonaws.services.s3.model.S3ObjectSummary;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
- * Location for S3BlobStore attributes files
+ * Location for S3BlobStore attributes files.
+ * 
+ * Implemented as a Java Record for immutability and concise data representation.
  *
  * @since 3.15
+ * @see AttributesLocation
+ * @see S3ObjectSummary
+ * 
+ * @note Requires Java 21 or higher
  */
-public class S3AttributesLocation
-    implements AttributesLocation
-{
-  private final String key;
+public record S3AttributesLocation(String key) implements AttributesLocation {
 
+  /**
+   * Creates a new S3AttributesLocation from an S3ObjectSummary.
+   * Uses pattern matching to extract the key from the summary.
+   *
+   * @param summary the S3ObjectSummary containing the key
+   * @throws NullPointerException if summary is null
+   */
   public S3AttributesLocation(final S3ObjectSummary summary) {
+    this(extractKey(summary));
+  }
+  
+  /**
+   * Extracts the key from an S3ObjectSummary, with null check.
+   *
+   * @param summary the S3ObjectSummary to extract the key from
+   * @return the extracted key
+   * @throws NullPointerException if summary is null
+   */
+  private static String extractKey(final S3ObjectSummary summary) {
     checkNotNull(summary);
-    this.key = summary.getKey();
+    return summary.getKey();
   }
 
   @Override

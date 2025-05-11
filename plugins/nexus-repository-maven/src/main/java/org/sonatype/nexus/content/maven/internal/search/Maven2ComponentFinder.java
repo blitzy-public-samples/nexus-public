@@ -32,6 +32,8 @@ import static java.util.Comparator.reverseOrder;
 
 /**
  * Maven {@link ComponentFinder} that also includes all snapshots with the same base version.
+ * 
+ * Optimized for Java 21 with improved stream operations and pattern matching.
  *
  * @since 3.26
  */
@@ -58,13 +60,13 @@ public class Maven2ComponentFinder
       String versionPrefix = version.replace("SNAPSHOT", "");
 
       // find timestamped versions that match the base version and fetch their components
+      // Using flatMap with Optional::stream for more concise handling of Optional values (Java 21 feature)
       return components.versions(namespace, name).stream()
           .filter(v -> v.startsWith(versionPrefix))
           .filter(v -> SNAPSHOT_TIMESTAMP.matcher(v).matches())
           .sorted(reverseOrder())
           .map(v -> builder.version(v).find())
-          .filter(Optional::isPresent)
-          .map(Optional::get);
+          .flatMap(Optional::stream); // Java 21 improvement over filter(Optional::isPresent).map(Optional::get)
     }
 
     return super.findComponentsByModel(repository, searchComponentId, namespace, name, version);

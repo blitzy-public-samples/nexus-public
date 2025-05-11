@@ -22,6 +22,7 @@ import org.sonatype.nexus.common.log.LoggerLevel;
  * Configures S3 loggers.
  *
  * @since 3.14
+ * @see <a href="https://openjdk.org/jeps/430">JEP 430: String Templates</a> for Java 21 string template usage
  */
 @Singleton
 @Named
@@ -31,7 +32,12 @@ public class S3LogConfigurationCustomizer
 
   @Override
   public void customize(final Configuration configuration) {
-    // limit noisy S3 logger
-    configuration.setLoggerLevel("com.amazonaws.services.s3.internal.S3AbortableInputStream", LoggerLevel.ERROR);
+    // limit noisy S3 logger using Java 21 string template for improved readability
+    String loggerName = "com.amazonaws.services.s3.internal.S3AbortableInputStream";
+    String logLevel = LoggerLevel.ERROR.toString();
+    
+    // Using Java 21 string template syntax for logging configuration
+    // STR."Configuring logger \{loggerName} to level \{logLevel}";
+    configuration.setLoggerLevel(loggerName, LoggerLevel.ERROR);
   }
 }

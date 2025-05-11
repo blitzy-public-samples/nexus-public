@@ -32,23 +32,34 @@ import org.sonatype.nexus.validation.ValidationModule;
 import com.google.inject.Binder;
 import org.apache.shiro.authc.credential.PasswordService;
 import org.eclipse.sisu.space.BeanScanning;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.file.Path;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+/**
+ * Tests for {@link RoleXO} validation.
+ * <p>
+ * This test class has been updated for Java 21 compatibility and uses JUnit Jupiter (JUnit 5).
+ * It demonstrates the use of modern testing practices including:
+ * - JUnit Jupiter annotations and lifecycle management
+ * - Mockito 4.11.0 for mocking
+ * - Hamcrest 2.2 for assertions
+ * - Java 21 compatible temporary directory handling
+ */
 public class RoleXOTest
   extends InjectedTestSupport
 {
   @Inject
   Validator validator;
 
-  @Rule
-  public TemporaryFolder tmp = new TemporaryFolder();
+  @TempDir
+  Path tempDir;
 
   @Override
   public void configure(final Binder binder) {
@@ -62,7 +73,7 @@ public class RoleXOTest
     binder.bind(PasswordService.class).toInstance(mock(PasswordService.class));
 
     ApplicationDirectories directories = mock(ApplicationDirectories.class);
-    when(directories.getWorkDirectory()).thenAnswer(i -> tmp.newFolder());
+    when(directories.getWorkDirectory()).thenAnswer(i -> tempDir.toFile());
     binder.bind(ApplicationDirectories.class).toInstance(directories);
   }
 
@@ -72,7 +83,7 @@ public class RoleXOTest
   }
 
   @Test
-  public void testValidation_success() {
+  void testValidationSuccess() {
     RoleXO roleXO = new RoleXO();
     roleXO.setId("test");
     roleXO.setName("test");
@@ -84,7 +95,7 @@ public class RoleXOTest
   }
 
   @Test
-  public void testValidation_failure_includesSelf() {
+  void testValidationFailureIncludesSelf() {
     RoleXO roleXO = new RoleXO();
     roleXO.setId("test");
     roleXO.setName("test");

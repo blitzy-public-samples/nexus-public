@@ -14,6 +14,8 @@ package org.sonatype.nexus.repository.httpbridge.internal;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import java.util.regex.Pattern;
 
 import javax.inject.Inject;
@@ -52,18 +54,25 @@ public class ExhaustRequestFilter
     implements Filter
 {
   private final Pattern exhaustForAgentsPattern;
+  private final Executor virtualThreadExecutor;
+  private final boolean useVirtualThreads;
 
   @Inject
   public ExhaustRequestFilter(
-      @Named("${nexus.view.exhaustForAgents:-Apache-Maven.*|Apache Ivy.*}") final String exhaustForAgents)
+      @Named("${nexus.view.exhaustForAgents:-Apache-Maven.*|Apache Ivy.*}") final String exhaustForAgents,
+      @Named("${nexus.view.useVirtualThreads:-true}") final boolean useVirtualThreads)
   {
     /*
       NOTE: An exhaustForAgents pattern delimited by "\\s,\\s" is supported for backwards-compatibility reasons but
             using a pattern that is instead pipe-delimited is recommended.
      */
     this.exhaustForAgentsPattern = Pattern.compile(exhaustForAgents.replace("\\s,\\s", "|"));
+    this.useVirtualThreads = useVirtualThreads;
+    this.virtualThreadExecutor = useVirtualThreads ? Executors.newVirtualThreadPerTaskExecutor() : null;
+    
     if (log.isDebugEnabled()) {
       log.debug("nexus.view.exhaustForAgents={}", exhaustForAgentsPattern.pattern());
+      log.debug("nexus.view.useVirtualThreads={}", useVirtualThreads);
     }
   }
 
@@ -81,11 +90,25 @@ public class ExhaustRequestFilter
     }
     finally {
       if (exhaustRequest(request, response)) {
-        try (InputStream in = request.getInputStream()) {
-          ByteStreams.exhaust(in);
+        if (useVirtualThreads) {
+          // Use virtual threads for I/O-bound operations to improve scalability
+          virtualThreadExecutor.execute(() -> {
+            try (InputStream in = request.getInputStream()) {
+              ByteStreams.exhaust(in);
+            }
+            catch (Exception e) {
+              log.debug("Unable to exhaust request", e);
+            }
+          });
         }
-        catch (Exception e) {
-          log.debug("Unable to exhaust request", e);
+        else {
+          // Traditional approach for Java 17 compatibility
+          try (InputStream in = request.getInputStream()) {
+            ByteStreams.exhaust(in);
+          }
+          catch (Exception e) {
+            log.debug("Unable to exhaust request", e);
+          }
         }
       }
     }
@@ -100,11 +123,8 @@ public class ExhaustRequestFilter
    * Returns {@code true} if we need to exhaust the request before responding to the client.
    */
   private boolean exhaustRequest(final ServletRequest request, final ServletResponse response) {
-    if (request instanceof HttpServletRequest && response instanceof HttpServletResponse) {
-
-      HttpServletRequest httpRequest = (HttpServletRequest) request;
-      HttpServletResponse httpResponse = (HttpServletResponse) response;
-
+    // Using Java 21 pattern matching for instanceof
+    if (request instanceof HttpServletRequest httpRequest && response instanceof HttpServletResponse httpResponse) {
       if (log.isTraceEnabled()) {
         final String agent = httpRequest.getHeader(HttpHeaders.USER_AGENT);
         log.trace("status: {}, method: {}, agent: {}, match: {}", httpResponse.getStatus(), httpRequest.getMethod(),

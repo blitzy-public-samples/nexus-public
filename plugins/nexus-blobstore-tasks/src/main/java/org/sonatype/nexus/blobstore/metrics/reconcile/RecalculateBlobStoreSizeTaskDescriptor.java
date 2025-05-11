@@ -25,7 +25,10 @@ import static org.sonatype.nexus.common.app.FeatureFlags.RECALCULATE_BLOBSTORE_S
 import static org.sonatype.nexus.formfields.FormField.MANDATORY;
 
 /**
- * Task descriptor for  {@link RecalculateBlobStoreSizeTask}
+ * Task descriptor for {@link RecalculateBlobStoreSizeTask}
+ *
+ * @since 3.0
+ * @updated 21.0 - Updated for Java 21 compatibility
  */
 @AvailabilityVersion(from = "1.0")
 @Named
@@ -35,6 +38,11 @@ public class RecalculateBlobStoreSizeTaskDescriptor
 {
   public static final String TYPE_ID = "blobstore.metrics.reconcile";
 
+  /**
+   * Creates a new RecalculateBlobStoreSizeTaskDescriptor instance.
+   *
+   * @param taskEnabled flag indicating whether this task is enabled via feature flag
+   */
   @Inject
   public RecalculateBlobStoreSizeTaskDescriptor(
       @Named(RECALCULATE_BLOBSTORE_SIZE_TASK_ENABLED_NAMED) final boolean taskEnabled)

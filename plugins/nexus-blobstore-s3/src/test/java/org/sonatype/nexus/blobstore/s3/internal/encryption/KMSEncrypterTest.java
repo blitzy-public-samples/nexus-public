@@ -20,20 +20,26 @@ import com.amazonaws.services.s3.model.AbstractPutObjectRequest;
 import com.amazonaws.services.s3.model.CopyObjectRequest;
 import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
 import com.amazonaws.services.s3.model.SSEAwsKeyManagementParams;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.Mockito.verify;
 
+/**
+ * Tests for {@link KMSEncrypter} that verify AWS KMS encryption parameters are correctly applied
+ * to various S3 request types.
+ */
+@ExtendWith(MockitoExtension.class)
 public class KMSEncrypterTest
     extends TestSupport
 {
-
   @Mock
   private InitiateMultipartUploadRequest initiateMultipartUploadRequest;
 
@@ -46,8 +52,11 @@ public class KMSEncrypterTest
   @Captor
   private ArgumentCaptor<SSEAwsKeyManagementParams> sseAwsKeyManagementParamsCaptor;
 
+  /**
+   * Verifies that the constructor correctly handles different KMS ID inputs.
+   */
   @Test
-  public void testConstructorHandlesKmsId() {
+  void constructorHandlesKmsId() {
     assertThat(new KMSEncrypter(Optional.empty()).getKmsParameters().getAwsKmsKeyId(), nullValue());
     assertThat(new KMSEncrypter(Optional.of("")).getKmsParameters().getAwsKmsKeyId(), nullValue());
     assertThat(new KMSEncrypter(Optional.of(" ")).getKmsParameters().getAwsKmsKeyId(), nullValue());
@@ -55,8 +64,12 @@ public class KMSEncrypterTest
     assertThat(new KMSEncrypter(Optional.of("aProperKeyId")).getKmsParameters().getAwsKmsKeyId(), is("aProperKeyId"));
   }
 
+  /**
+   * Verifies that when no KMS ID is provided, the correct KMS parameters are still added to
+   * various S3 request types with a null key ID.
+   */
   @Test
-  public void testSupplyingNoKmsIdAddsCorrectKmsParameters() {
+  void supplyingNoKmsIdAddsCorrectKmsParameters() {
     KMSEncrypter kmsEncrypter = new KMSEncrypter();
 
     kmsEncrypter.addEncryption(initiateMultipartUploadRequest);
@@ -72,8 +85,12 @@ public class KMSEncrypterTest
     assertThat(sseAwsKeyManagementParamsCaptor.getValue().getAwsKmsKeyId(), nullValue());
   }
 
+  /**
+   * Verifies that when a KMS ID is provided, it is correctly added to the KMS parameters
+   * for various S3 request types.
+   */
   @Test
-  public void testAddsCorrectKmsParametersWithKeyId() {
+  void addsCorrectKmsParametersWithKeyId() {
     KMSEncrypter kmsEncrypter = new KMSEncrypter(Optional.of("FakeKeyId"));
 
     kmsEncrypter.addEncryption(initiateMultipartUploadRequest);

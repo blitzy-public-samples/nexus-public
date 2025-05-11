@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.blobstore.deletetemp;
 
+import java.util.concurrent.Executors;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 
@@ -24,6 +26,11 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.blobstore.deletetemp.DeleteBlobstoreTempFilesTaskDescriptor.BLOB_STORE_NAME_FIELD_ID;
 import static org.sonatype.nexus.blobstore.deletetemp.DeleteBlobstoreTempFilesTaskDescriptor.DAYS_OLDER_THAN;
 
+/**
+ * Task to delete temporary files from a blob store.
+ * 
+ * @since 3.0
+ */
 @Named
 public class DeleteBlobstoreTempFilesTask
     extends TaskSupport
@@ -39,25 +46,40 @@ public class DeleteBlobstoreTempFilesTask
 
   @Override
   protected Object execute() throws Exception {
-    BlobStore blobStore = blobStoreManager.get(getBlobStoreField());
+    String blobStoreName = getBlobStoreField();
+    BlobStore blobStore = blobStoreManager.get(blobStoreName);
+    
     if (blobStore != null) {
-      int daysOlderThan = getDaysOlderThan() == null ? 0 : Integer.parseInt(getDaysOlderThan());
-      blobStore.deleteTempFiles(daysOlderThan);
+      String daysOlderThanStr = getDaysOlderThan();
+      int daysOlderThan = switch(daysOlderThanStr) {
+        case null -> 0;
+        default -> Integer.parseInt(daysOlderThanStr);
+      };
+      
+      // Use virtual threads for I/O-bound file deletion operations
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        executor.submit(() -> {
+          blobStore.deleteTempFiles(daysOlderThan);
+          return null;
+        }).get(); // Wait for completion
+      }
     }
     else {
-      log.warn("Unable to find blob store: {}", getBlobStoreField());
+      log.warn(STR."Unable to find blob store: \{blobStoreName}");
     }
     return null;
   }
 
   @Override
   public String getMessage() {
-    return "Deleting " + getBlobStoreField() + " blob store temporary files";
+    return STR."Deleting \{getBlobStoreField()} blob store temporary files";
   }
 
   private String getBlobStoreField() {
     return getConfiguration().getString(BLOB_STORE_NAME_FIELD_ID);
   }
 
-  private String getDaysOlderThan() { return getConfiguration().getString(DAYS_OLDER_THAN); }
+  private String getDaysOlderThan() {
+    return getConfiguration().getString(DAYS_OLDER_THAN);
+  }
 }

@@ -10,6 +10,15 @@
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  */
+/**
+ * Maven repository content implementation package.
+ * <p>
+ * This package contains the implementation of Maven repository content functionality.
+ * It is compatible with Java 21 and leverages the datastore feature.
+ *
+ * @since 3.19
+ * @updated 21.0 - Updated for Java 21 compatibility
+ */
 @FeatureFlag(name = DATASTORE_ENABLED)
 package org.sonatype.nexus.repository.maven.internal.content;
 

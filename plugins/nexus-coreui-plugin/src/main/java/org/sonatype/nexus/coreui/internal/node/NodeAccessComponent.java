@@ -53,10 +53,10 @@ public class NodeAccessComponent
   }
 
   private NodeInfoXO asNodeInfoXO(final Entry<String, String> entry) {
-    NodeInfoXO nodeInfoXO = new NodeInfoXO();
-    nodeInfoXO.setName(entry.getKey());
-    nodeInfoXO.setLocal(entry.getKey().equals(nodeAccess.getId()));
-    nodeInfoXO.setDisplayName(entry.getValue());
-    return nodeInfoXO;
+    return new NodeInfoXO(
+        entry.getKey(),
+        entry.getKey().equals(nodeAccess.getId()),
+        entry.getValue()
+    );
   }
 }

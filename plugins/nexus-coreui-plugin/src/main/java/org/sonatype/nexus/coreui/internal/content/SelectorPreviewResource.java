@@ -45,6 +45,11 @@ import static java.util.stream.Collectors.toList;
 import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
 
 /**
+ * REST endpoint for previewing content selector results.
+ * 
+ * This resource is designed to be compatible with Java 21 Virtual Threads,
+ * allowing for efficient handling of concurrent preview requests.
+ *
  * @since 3.29
  */
 @Named
@@ -75,39 +80,71 @@ public class SelectorPreviewResource
     this.selectorFactory = checkNotNull(selectorFactory);
   }
 
+  /**
+   * Preview content based on a selector expression.
+   * 
+   * This endpoint is compatible with the virtual thread-per-request model in Java 21,
+   * allowing for efficient handling of concurrent preview requests.
+   *
+   * @param request the selector preview request containing repository, type and expression
+   * @return page result containing matching assets
+   */
   @POST
   @Path("/preview")
   @RequiresAuthentication
   @RequiresPermissions(value = {"nexus:selectors:create", "nexus:selectors:update"}, logical = Logical.OR)
   public PageResult<AssetXO> previewContent(SelectorPreviewRequest request)
   {
-    selectorFactory.validateSelector(request.getType().toLowerCase(), request.getExpression());
+    String selectorType = request.getType().toLowerCase();
+    String expression = request.getExpression();
+    
+    log.debug(STR."Validating selector of type \{selectorType} with expression: \{expression}");
+    selectorFactory.validateSelector(selectorType, expression);
 
     RepositorySelector repositorySelector = RepositorySelector.fromSelector(request.getRepository());
     List<Repository> selectedRepositories = getPreviewRepositories(repositorySelector);
+    
     if (selectedRepositories.isEmpty()) {
+      log.debug(STR."No repositories matched selector: \{repositorySelector}");
       return new PageResult<>(0, emptyList());
     }
 
+    log.debug(STR."Previewing assets for \{selectedRepositories.size()} repositories with expression: \{expression}");
     return componentHelper.previewAssets(
         repositorySelector,
         selectedRepositories,
-        request.getExpression(),
+        expression,
         new QueryOptions(null, null, null, 0, 10)
     );
   }
 
+  /**
+   * Get repositories matching the repository selector using pattern matching.
+   * 
+   * @param repositorySelector the repository selector to match against
+   * @return list of matching repositories
+   */
   private List<Repository> getPreviewRepositories(final RepositorySelector repositorySelector) {
-    if (!repositorySelector.isAllRepositories()) {
-      return ImmutableList.of(repositoryManager.get(repositorySelector.getName()));
-    }
-
-    if (!repositorySelector.isAllFormats()) {
-      return stream(repositoryManager.browse())
-          .filter(repository -> repository.getFormat().toString().equals(repositorySelector.getFormat()))
-          .collect(toList());
-    }
-
-    return stream(repositoryManager.browse()).collect(toList());
+    return switch (repositorySelector) {
+      // Case 1: Specific repository selected
+      case RepositorySelector selector when !selector.isAllRepositories() ->
+        ImmutableList.of(repositoryManager.get(selector.getName()));
+      
+      // Case 2: All repositories of a specific format
+      case RepositorySelector selector when !selector.isAllFormats() ->
+        stream(repositoryManager.browse())
+            .filter(repository -> repository.getFormat().toString().equals(selector.getFormat()))
+            .collect(toList());
+      
+      // Case 3: All repositories of all formats
+      case RepositorySelector selector when selector.isAllRepositories() && selector.isAllFormats() ->
+        stream(repositoryManager.browse()).collect(toList());
+      
+      // Default case (should not happen with proper RepositorySelector instances)
+      default -> {
+        log.warn(STR."Unexpected repository selector configuration: \{repositorySelector}");
+        yield emptyList();
+      }
+    };
   }
 }

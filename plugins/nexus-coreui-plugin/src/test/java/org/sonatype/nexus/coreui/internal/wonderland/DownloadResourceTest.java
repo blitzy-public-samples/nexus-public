@@ -21,7 +21,7 @@ import org.sonatype.nexus.common.wonderland.AuthTicketService;
 import org.sonatype.nexus.common.wonderland.DownloadService;
 import org.sonatype.nexus.common.wonderland.DownloadService.Download;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 
 import static com.google.common.net.HttpHeaders.CONTENT_DISPOSITION;
@@ -30,6 +30,9 @@ import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+/**
+ * Tests for {@link DownloadResource} with Java 21 and JUnit Jupiter.
+ */
 public class DownloadResourceTest
     extends TestSupport
 {
@@ -41,6 +44,7 @@ public class DownloadResourceTest
 
   /**
    * Fix for NEXUS-40992
+   * Verifies that the downloadZip method sets the correct Content-Disposition header.
    */
   @Test
   public void downloadZipUsesCorrectFileNameHeader() throws IOException {
@@ -53,6 +57,11 @@ public class DownloadResourceTest
     assertThat(response.getHeaderString(CONTENT_DISPOSITION), is("attachment; filename=\"" + fileName + "\""));
   }
 
+  /**
+   * Helper method to mock the authentication and download process.
+   * 
+   * @param fileName the name of the file to download
+   */
   private void mockAuthenticatedDownload(String fileName) {
     Download mockDownload = mock(Download.class);
     String fileAuthTicket = fileName + "-authTicket";
@@ -63,5 +72,4 @@ public class DownloadResourceTest
       // swallow exception that will never happen
     }
   }
-
 }

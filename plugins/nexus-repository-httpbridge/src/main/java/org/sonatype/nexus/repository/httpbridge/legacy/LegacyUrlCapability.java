@@ -24,6 +24,8 @@ import org.sonatype.nexus.capability.CapabilitySupport;
  * Legacy URL capability.
  *
  * @since 3.7
+ * @see LegacyUrlCapabilityDescriptor
+ * @see LegacyUrlCapabilityConfiguration
  */
 @Named(LegacyUrlCapabilityDescriptor.TYPE_ID)
 public class LegacyUrlCapability

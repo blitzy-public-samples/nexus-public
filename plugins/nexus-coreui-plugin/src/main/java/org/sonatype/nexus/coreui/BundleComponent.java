@@ -13,14 +13,18 @@
 package org.sonatype.nexus.coreui;
 
 import java.util.Dictionary;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.sonatype.nexus.extdirect.DirectComponentSupport;
 
@@ -36,6 +40,7 @@ import org.osgi.framework.BundleContext;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.Arrays.stream;
+import static java.lang.StringTemplate.STR;
 
 /**
  * OSGI bundle component.
@@ -48,6 +53,8 @@ import static java.util.Arrays.stream;
 public class BundleComponent
     extends DirectComponentSupport
 {
+  private static final Logger log = LoggerFactory.getLogger(BundleComponent.class);
+  
   private final BundleContext bundleContext;
 
   private final BundleService bundleService;
@@ -63,32 +70,40 @@ public class BundleComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:bundles:read")
   public List<BundleXO> read() {
-    return stream(bundleContext.getBundles()).map(bundle -> {
-      BundleInfo info = bundleService.getInfo(bundle);
-      BundleXO entry = new BundleXO()
-          .withId(info.getBundleId())
-          .withState(info.getState().name())
-          .withName(info.getName())
-          .withSymbolicName(info.getSymbolicName())
-          .withVersion(info.getVersion())
-          .withLocation(info.getUpdateLocation())
-          .withStartLevel(info.getStartLevel())
-          .withLastModified(bundle.getLastModified())
-          .withFragment(info.isFragment())
-          .withFragments(info.getFragments().stream().map(Bundle::getBundleId).collect(Collectors.toList())) // NOSONAR
-          .withFragmentHosts(info.getFragmentHosts().stream().map(Bundle::getBundleId).collect(Collectors.toList())); // NOSONAR
+    log.debug(STR."Reading bundle information for \{bundleContext.getBundles().length} bundles");
+    
+    try {
+      // Process bundles using a virtual thread for better I/O performance
+      return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+        return stream(bundleContext.getBundles()).map(bundle -> {
+          BundleInfo info = bundleService.getInfo(bundle);
+          BundleXO entry = new BundleXO()
+              .withId(info.getBundleId())
+              .withState(info.getState().name())
+              .withName(info.getName())
+              .withSymbolicName(info.getSymbolicName())
+              .withVersion(info.getVersion())
+              .withLocation(info.getUpdateLocation())
+              .withStartLevel(info.getStartLevel())
+              .withLastModified(bundle.getLastModified())
+              .withFragment(info.isFragment())
+              .withFragments(info.getFragments().stream().map(Bundle::getBundleId).collect(Collectors.toList()))
+              .withFragmentHosts(info.getFragmentHosts().stream().map(Bundle::getBundleId).collect(Collectors.toList()));
 
-      // convert header dict
-      Map<String, String> headers = new LinkedHashMap<>();
-      Dictionary<String, String> bundleHeaders = bundle.getHeaders();
-      for (Iterator<String> it = bundleHeaders.keys().asIterator(); it.hasNext();) {
-        String key = it.next();
-        String value = bundleHeaders.get(key);
-        headers.put(key, value);
-      }
-      entry.withHeaders(headers);
-
-      return entry;
-    }).collect(Collectors.toList()); // NOSONAR
+          // convert header dict using modern approach with Java 21 features
+          Map<String, String> headers = new LinkedHashMap<>();
+          Dictionary<String, String> bundleHeaders = bundle.getHeaders();
+          bundleHeaders.keys().asEnumeration().forEachRemaining(key -> headers.put(key, bundleHeaders.get(key)));
+          entry.withHeaders(headers);
+          
+          log.trace(STR."Processed bundle: \{info.getSymbolicName()} (\{info.getBundleId()})");
+          return entry;
+        }).collect(Collectors.toList());
+      }).get();
+    }
+    catch (Exception e) {
+      log.error(STR."Error reading bundle information: \{e.getMessage()}", e);
+      throw new RuntimeException("Failed to read bundle information", e);
+    }
   }
 }

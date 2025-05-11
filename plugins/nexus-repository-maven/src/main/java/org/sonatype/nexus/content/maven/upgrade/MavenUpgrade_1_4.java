@@ -14,13 +14,17 @@ package org.sonatype.nexus.content.maven.upgrade;
 
 import java.util.Optional;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 /**
  * Re-index for new search normalization format.
+ * 
+ * This upgrade step marks existing Maven repositories as needing to be re-indexed
+ * to support the updated search normalization format introduced in version 1.4.
  *
  * @since 3.37
+ * @see MavenIndexUpgrade
  */
 @Named
 @Singleton

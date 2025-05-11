@@ -16,6 +16,10 @@ import org.sonatype.nexus.repository.Facet;
 
 /**
  * Facet for purging unused Maven snapshots.
+ * <p>
+ * Implementations of this facet can leverage Java 21 features such as Virtual Threads
+ * for improved performance when purging unused snapshots, as this operation is typically
+ * I/O-bound and would benefit from the high-concurrency capabilities of Virtual Threads.
  *
  * @since 3.0
  */
@@ -25,6 +29,9 @@ public interface PurgeUnusedSnapshotsFacet
 {
   /**
    * Purges snapshots that were not used/accessed for a number of days.
+   * <p>
+   * This operation may involve significant I/O operations and can benefit from
+   * Java 21's Virtual Threads when implemented by facet providers.
    *
    * @param numberOfDays number of days from the moment the method is invoked. Must be > 0.
    */

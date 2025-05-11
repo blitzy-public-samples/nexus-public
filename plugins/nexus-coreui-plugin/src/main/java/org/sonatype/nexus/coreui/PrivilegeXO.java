@@ -25,116 +25,118 @@ import org.sonatype.nexus.validation.group.Update;
 
 /**
  * Privilege exchange object.
+ * Implemented as a Java Record for immutability and pattern matching support in Java 21.
  */
-public class PrivilegeXO
-{
+public record PrivilegeXO(
   @NotBlank(groups = Update.class)
   @UniquePrivilegeId(groups = Create.class)
-  private String id;
+  String id,
 
   @NotBlank(groups = Update.class)
-  private String version;
+  String version,
 
   @NotBlank
   @Pattern(regexp = NamePatternConstants.REGEX, message = NamePatternConstants.MESSAGE)
   @UniquePrivilegeName(groups = Create.class)
-  private String name;
+  String name,
 
-  private String description;
+  String description,
 
   @NotBlank
-  private String type;
+  String type,
 
-  private Boolean readOnly;
+  Boolean readOnly,
 
   @NotEmpty
-  private Map<String, String> properties;
+  Map<String, String> properties,
 
-  private String permission;
-
-  public String getId() {
-    return id;
-  }
-
+  String permission
+) {
+  /**
+   * Returns a new PrivilegeXO with the specified id.
+   *
+   * @param id the id to set
+   * @return a new PrivilegeXO with the updated id
+   */
   public PrivilegeXO withId(final String id) {
-    this.id = id;
-    return this;
+    return new PrivilegeXO(id, this.version, this.name, this.description, this.type, this.readOnly, 
+        this.properties, this.permission);
   }
 
-  public String getVersion() {
-    return version;
-  }
-
+  /**
+   * Returns a new PrivilegeXO with the specified version.
+   *
+   * @param version the version to set
+   * @return a new PrivilegeXO with the updated version
+   */
   public PrivilegeXO withVersion(final String version) {
-    this.version = version;
-    return this;
+    return new PrivilegeXO(this.id, version, this.name, this.description, this.type, this.readOnly, 
+        this.properties, this.permission);
   }
 
-  public String getName() {
-    return name;
-  }
-
+  /**
+   * Returns a new PrivilegeXO with the specified name.
+   *
+   * @param name the name to set
+   * @return a new PrivilegeXO with the updated name
+   */
   public PrivilegeXO withName(final String name) {
-    this.name = name;
-    return this;
+    return new PrivilegeXO(this.id, this.version, name, this.description, this.type, this.readOnly, 
+        this.properties, this.permission);
   }
 
-  public String getDescription() {
-    return description;
-  }
-
+  /**
+   * Returns a new PrivilegeXO with the specified description.
+   *
+   * @param description the description to set
+   * @return a new PrivilegeXO with the updated description
+   */
   public PrivilegeXO withDescription(final String description) {
-    this.description = description;
-    return this;
+    return new PrivilegeXO(this.id, this.version, this.name, description, this.type, this.readOnly, 
+        this.properties, this.permission);
   }
 
-  public String getType() {
-    return type;
-  }
-
+  /**
+   * Returns a new PrivilegeXO with the specified type.
+   *
+   * @param type the type to set
+   * @return a new PrivilegeXO with the updated type
+   */
   public PrivilegeXO withType(final String type) {
-    this.type = type;
-    return this;
+    return new PrivilegeXO(this.id, this.version, this.name, this.description, type, this.readOnly, 
+        this.properties, this.permission);
   }
 
-  public Boolean getReadOnly() {
-    return readOnly;
-  }
-
+  /**
+   * Returns a new PrivilegeXO with the specified readOnly flag.
+   *
+   * @param readOnly the readOnly flag to set
+   * @return a new PrivilegeXO with the updated readOnly flag
+   */
   public PrivilegeXO withReadOnly(final Boolean readOnly) {
-    this.readOnly = readOnly;
-    return this;
+    return new PrivilegeXO(this.id, this.version, this.name, this.description, this.type, readOnly, 
+        this.properties, this.permission);
   }
 
-  public Map<String, String> getProperties() {
-    return properties;
-  }
-
+  /**
+   * Returns a new PrivilegeXO with the specified properties.
+   *
+   * @param properties the properties to set
+   * @return a new PrivilegeXO with the updated properties
+   */
   public PrivilegeXO withProperties(final Map<String, String> properties) {
-    this.properties = properties;
-    return this;
+    return new PrivilegeXO(this.id, this.version, this.name, this.description, this.type, this.readOnly, 
+        properties, this.permission);
   }
 
-  public String getPermission() {
-    return permission;
-  }
-
+  /**
+   * Returns a new PrivilegeXO with the specified permission.
+   *
+   * @param permission the permission to set
+   * @return a new PrivilegeXO with the updated permission
+   */
   public PrivilegeXO withPermission(final String permission) {
-    this.permission = permission;
-    return this;
-  }
-
-  @Override
-  public String toString() {
-    return "PrivilegeXO{" +
-        "id='" + id + '\'' +
-        ", version='" + version + '\'' +
-        ", name='" + name + '\'' +
-        ", description='" + description + '\'' +
-        ", type='" + type + '\'' +
-        ", readOnly=" + readOnly +
-        ", properties=" + properties +
-        ", permission='" + permission + '\'' +
-        '}';
+    return new PrivilegeXO(this.id, this.version, this.name, this.description, this.type, this.readOnly, 
+        this.properties, permission);
   }
 }

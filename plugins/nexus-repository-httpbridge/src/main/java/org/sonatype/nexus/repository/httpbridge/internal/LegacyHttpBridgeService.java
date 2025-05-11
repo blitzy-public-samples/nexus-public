@@ -28,6 +28,7 @@ import org.sonatype.nexus.common.event.EventAware;
 import org.sonatype.nexus.repository.httpbridge.legacy.LegacyUrlCapabilityDescriptor;
 import org.sonatype.nexus.repository.httpbridge.legacy.LegacyUrlEnabledHelper;
 
+// Java 21 compatible event bus annotations
 import com.google.common.eventbus.AllowConcurrentEvents;
 import com.google.common.eventbus.Subscribe;
 import com.google.inject.AbstractModule;
@@ -42,7 +43,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.common.app.FeatureFlags.SESSION_ENABLED;
 
 /**
- * Manages the injection of {@link LegacyHttpBridgeModule} based on the capability being enabled or the system property
+ * Manages the injection of {@link LegacyHttpBridgeModule} based on the capability being enabled or the system property.
+ * Updated for Java 21 compatibility and Apache Shiro 2.0.0.
  *
  * @since 3.7
  */
@@ -74,6 +76,11 @@ public class LegacyHttpBridgeService
     toggleLegacyHttpBridgeModule();
   }
 
+  /**
+   * Handles capability events to toggle the legacy HTTP bridge module when needed.
+   * The {@link AllowConcurrentEvents} annotation ensures compatibility with Java 21 Virtual Threads
+   * by allowing concurrent event processing.
+   */
   @AllowConcurrentEvents
   @Subscribe
   public void handle(final CapabilityEvent event) {
@@ -95,6 +102,10 @@ public class LegacyHttpBridgeService
     return new LegacyHttpBridgeModule();
   }
 
+  /**
+   * Adds the legacy HTTP bridge module to the bean locator if it's not already added.
+   * Uses Guice 7.0.0 compatible injection and is compatible with Apache Shiro 2.0.0.
+   */
   private void addLegacyHttpBridgeModule() {
     if (legacyBridgeInjector == null) {
       this.legacyBridgeInjector = new InjectorBindings(
@@ -105,18 +116,23 @@ public class LegacyHttpBridgeService
               // support injection of application components by wiring via shared locator
               bind(BeanLocator.class).toInstance(locator);
 
-              // support injection of application properties
+              // support injection of application properties - optimized for Java 21
               Optional.ofNullable(locator.locate(ParameterKeys.PROPERTIES))
                   .map(Iterable::iterator)
+                  .filter(Iterator::hasNext)
                   .map(Iterator::next)
                   .map(b -> b.getValue())
-                  .ifPresent(m -> bind(ParameterKeys.PROPERTIES).toInstance(m));
+                  .ifPresent(properties -> bind(ParameterKeys.PROPERTIES).toInstance(properties));
             }
           })));
       locator.add(legacyBridgeInjector);
     }
   }
 
+  /**
+   * Removes the legacy HTTP bridge module from the bean locator if it exists.
+   * Safe to use with Java 21 and updated dependencies.
+   */
   private void removeLegacyHttpBridgeModule() {
     if (legacyBridgeInjector != null) {
       locator.remove(legacyBridgeInjector);

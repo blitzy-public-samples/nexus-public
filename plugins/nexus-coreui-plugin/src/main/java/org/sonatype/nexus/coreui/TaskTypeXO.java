@@ -21,70 +21,65 @@ import javax.validation.constraints.NotNull;
  *
  * @since 3.0
  */
-public class TaskTypeXO
-{
-  @NotBlank
-  private String id;
-
-  @NotBlank
-  private String name;
-
-  @NotNull
-  private Boolean exposed;
-
-  @NotNull
-  private Boolean concurrentRun;
-
-  private List<FormFieldXO> formFields;
-
+public record TaskTypeXO(
+  @NotBlank String id,
+  @NotBlank String name,
+  @NotNull Boolean exposed,
+  @NotNull Boolean concurrentRun,
+  List<FormFieldXO> formFields
+) {
+  /**
+   * Returns the id of this task type.
+   * 
+   * @return the id
+   * @deprecated Use {@link #id()} instead, as provided by the record pattern.
+   */
+  @Deprecated
   public String getId() {
     return id;
   }
 
-  public void setId(String id) {
-    this.id = id;
-  }
-
+  /**
+   * Returns the name of this task type.
+   * 
+   * @return the name
+   * @deprecated Use {@link #name()} instead, as provided by the record pattern.
+   */
+  @Deprecated
   public String getName() {
     return name;
   }
 
-  public void setName(String name) {
-    this.name = name;
-  }
-
+  /**
+   * Returns whether this task type is exposed.
+   * 
+   * @return whether exposed
+   * @deprecated Use {@link #exposed()} instead, as provided by the record pattern.
+   */
+  @Deprecated
   public Boolean getExposed() {
     return exposed;
   }
 
-  public void setExposed(Boolean exposed) {
-    this.exposed = exposed;
-  }
-
+  /**
+   * Returns whether this task type supports concurrent runs.
+   * 
+   * @return whether concurrent run is supported
+   * @deprecated Use {@link #concurrentRun()} instead, as provided by the record pattern.
+   */
+  @Deprecated
   public Boolean getConcurrentRun() {
     return concurrentRun;
   }
 
-  public void setConcurrentRun(Boolean concurrentRun) {
-    this.concurrentRun = concurrentRun;
-  }
-
+  /**
+   * Returns the form fields for this task type.
+   * 
+   * @return the form fields
+   * @deprecated Use {@link #formFields()} instead, as provided by the record pattern.
+   */
+  @Deprecated
   public List<FormFieldXO> getFormFields() {
     return formFields;
-  }
-
-  public void setFormFields(List<FormFieldXO> formFields) {
-    this.formFields = formFields;
-  }
-
-  @Override
-  public String toString() {
-    return "TaskTypeXO{" +
-        "id='" + id + '\'' +
-        ", name='" + name + '\'' +
-        ", exposed=" + exposed +
-        ", concurrentRun=" + concurrentRun +
-        ", formFields=" + formFields +
-        '}';
   }
 }

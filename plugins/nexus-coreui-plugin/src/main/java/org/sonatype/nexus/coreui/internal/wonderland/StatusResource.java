@@ -12,21 +12,21 @@
  */
 package org.sonatype.nexus.coreui.internal.wonderland;
 
+import java.util.Objects;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
 import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
+import javax.ws.rs.MediaType;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.app.ApplicationVersion;
 import org.sonatype.nexus.rest.Resource;
 
 import org.apache.shiro.authz.annotation.RequiresUser;
-
-import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Status resource.
@@ -46,13 +46,15 @@ public class StatusResource
 
   @Inject
   public StatusResource(final ApplicationVersion applicationVersion) {
-    this.applicationVersion = checkNotNull(applicationVersion);
+    this.applicationVersion = Objects.requireNonNull(applicationVersion, "applicationVersion");
   }
 
   @GET
   @Produces({MediaType.APPLICATION_XML, MediaType.APPLICATION_JSON})
   @RequiresUser
   public StatusXO get() {
+    log.debug(STR."Retrieving application status information (version: \{applicationVersion.getVersion()}, edition: \{applicationVersion.getEdition()})");
+    
     StatusXO result = new StatusXO();
     result.setVersion(applicationVersion.getVersion());
     result.setEdition(applicationVersion.getEdition());

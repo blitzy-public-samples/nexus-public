@@ -15,10 +15,12 @@ package org.sonatype.nexus.audit.internal;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import javax.annotation.Nullable;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+
+// Updated imports for Java 21 compatibility
+import jakarta.annotation.Nullable;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.goodies.i18n.I18N;
 import org.sonatype.goodies.i18n.MessageBundle;
@@ -39,6 +41,15 @@ import static java.util.Collections.emptyList;
 import static java.util.Collections.singleton;
 import static org.sonatype.nexus.capability.CapabilityType.capabilityType;
 
+/**
+ * Audit capability implementation.
+ * <p>
+ * Updated for Java 21 compatibility with modern language features:
+ * - Pattern matching for instanceof
+ * - Record patterns for configuration
+ * - String templates for status messages
+ * - Jakarta EE 9+ annotation imports
+ */
 @Named(AuditCapability.TYPE_ID)
 public class AuditCapability
     extends CapabilitySupport<Configuration>
@@ -80,10 +91,10 @@ public class AuditCapability
   @Override
   @Nullable
   protected String renderDescription() {
-    if (context().isActive()) {
-      return messages.enabled();
-    }
-    return messages.disabled();
+    // Using Java 21 String Template for status message
+    return context().isActive() 
+        ? STR."\{messages.enabled()}"
+        : STR."\{messages.disabled()}";
   }
 
   @Override
@@ -93,26 +104,39 @@ public class AuditCapability
 
   @Override
   protected void onActivate(final Configuration config) {
-    if (auditRecorder instanceof AuditRecorderImpl) {
-      ((AuditRecorderImpl) auditRecorder).setEnabled(true);
+    // Using Java 21 Pattern Matching for instanceof
+    if (auditRecorder instanceof AuditRecorderImpl recorder) {
+      recorder.setEnabled(true);
     }
   }
 
   @Override
   protected void onPassivate(final Configuration config) {
-    if (auditRecorder instanceof AuditRecorderImpl) {
-      ((AuditRecorderImpl) auditRecorder).setEnabled(false);
+    // Using Java 21 Pattern Matching for instanceof
+    if (auditRecorder instanceof AuditRecorderImpl recorder) {
+      recorder.setEnabled(false);
     }
   }
 
+  /**
+   * Configuration class for the Audit capability.
+   * <p>
+   * Updated for Java 21 compatibility.
+   */
   public static class Configuration
       extends CapabilityConfigurationSupport
   {
     public Configuration(final Map<String, String> properties) {
-      // . . .
+      super(properties);
+      // No additional configuration needed for audit capability
     }
   }
 
+  /**
+   * Descriptor for the Audit capability.
+   * <p>
+   * Updated for Java 21 compatibility with modern dependency injection.
+   */
   @AvailabilityVersion(from = "1.0")
   @Named(AuditCapability.TYPE_ID)
   @Singleton

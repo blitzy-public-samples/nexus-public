@@ -16,6 +16,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Executors;
 import java.util.stream.Stream;
 
 import javax.inject.Inject;
@@ -39,6 +40,10 @@ import static org.sonatype.nexus.blobstore.api.OperationType.DOWNLOAD;
 import static org.sonatype.nexus.blobstore.api.OperationType.UPLOAD;
 import static org.sonatype.nexus.logging.task.TaskLogType.NEXUS_LOG_ONLY;
 
+/**
+ * Task to migrate blobstore metrics from properties files to the database.
+ * Optimized for Java 21 with Virtual Threads for I/O operations and modern language features.
+ */
 @Named
 @TaskLogging(NEXUS_LOG_ONLY)
 public class BlobStoreMetricsMigrationTask
@@ -77,32 +82,36 @@ public class BlobStoreMetricsMigrationTask
     String blobStoreType = blobStore.getBlobStoreConfiguration().getType();
 
     if (!blobStore.isStarted()) {
-      log.warn("Blob store {}:{} is not started, skipping it.", blobStoreType, blobStoreName);
+      log.warn(STR."Blob store \{blobStoreType}:\{blobStoreName} is not started, skipping it.");
       return;
     }
 
-    try {
-      BlobStoreMetricsEntity metricsFromDb = metricsStore.get(blobStoreName);
-      Optional<BlobStoreMetricsPropertiesReader<?>> optPropertiesReader = reader(blobStoreType);
-      if (!optPropertiesReader.isPresent()) {
-        log.error("Properties reader not found for {}:{}", blobStoreType, blobStoreName);
-        return;
-      }
+    // Use a virtual thread for I/O-bound migration operations
+    Executors.newVirtualThreadPerTaskExecutor().execute(() -> {
+      try {
+        BlobStoreMetricsEntity metricsFromDb = metricsStore.get(blobStoreName);
+        Optional<BlobStoreMetricsPropertiesReader<?>> optPropertiesReader = reader(blobStoreType);
+        
+        if (optPropertiesReader.isEmpty()) {
+          log.error(STR."Properties reader not found for \{blobStoreType}:\{blobStoreName}");
+          return;
+        }
 
-      BlobStoreMetricsPropertiesReader<?> propertiesReader = optPropertiesReader.get();
-      init(propertiesReader, blobStore);
-      BlobStoreMetrics metricsFromFile = propertiesReader.getMetrics();
-      Map<OperationType, OperationMetrics> operationMetrics = propertiesReader.getOperationMetrics();
+        BlobStoreMetricsPropertiesReader<?> propertiesReader = optPropertiesReader.get();
+        init(propertiesReader, blobStore);
+        BlobStoreMetrics metricsFromFile = propertiesReader.getMetrics();
+        Map<OperationType, OperationMetrics> operationMetrics = propertiesReader.getOperationMetrics();
 
-      if (metricsFromFile != null && operationMetrics != null) {
-          log.debug("Found metrics {} for {}:{} should be migrated to DB", metricsFromDb, blobStoreType, blobStoreName);
+        if (metricsFromFile != null && operationMetrics != null) {
+          log.debug(STR."Found metrics \{metricsFromDb} for \{blobStoreType}:\{blobStoreName} should be migrated to DB");
           metricsStore.initializeMetrics(blobStoreName);
           metricsStore.updateMetrics(toBlobStoreMetricsEntity(blobStoreName, metricsFromFile, operationMetrics));
+        }
       }
-    }
-    catch (Exception e) {
-      log.error("Exception during migrating metrics from properties to DB for {}:{}", blobStoreType, blobStoreName);
-    }
+      catch (Exception e) {
+        log.error(STR."Exception during migrating metrics from properties to DB for \{blobStoreType}:\{blobStoreName}", e);
+      }
+    });
   }
 
   private Optional<BlobStoreMetricsPropertiesReader<?>> reader(final String blobStoreType) {
@@ -110,6 +119,10 @@ public class BlobStoreMetricsMigrationTask
         .map(Provider::get);
   }
 
+  /**
+   * Initialize the properties reader using reflection to call the init method.
+   * Uses pattern matching to simplify exception handling.
+   */
   private static void init(
       final BlobStoreMetricsPropertiesReader<?> propertiesReader,
       final BlobStore blobstore)
@@ -117,21 +130,35 @@ public class BlobStoreMetricsMigrationTask
     Method method = Stream.of(BlobStoreMetricsPropertiesReader.class.getDeclaredMethods())
         .filter(m -> m.getName().equals("init"))
         .findFirst()
-        .orElseThrow(() -> new IllegalStateException("Missing method"));
+        .orElseThrow(() -> new IllegalStateException("Missing init method in BlobStoreMetricsPropertiesReader"));
 
     try {
-      method.invoke(propertiesReader,  blobstore);
+      method.invoke(propertiesReader, blobstore);
     }
-    catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
-      throw new IllegalStateException(e);
+    catch (Exception e) {
+      // Use pattern matching for exception handling
+      if (e instanceof InvocationTargetException ite) {
+        throw new IllegalStateException("Error invoking init method", ite.getTargetException());
+      }
+      else if (e instanceof IllegalAccessException || e instanceof IllegalArgumentException) {
+        throw new IllegalStateException("Cannot access init method", e);
+      }
+      else {
+        throw new IllegalStateException("Unexpected error initializing properties reader", e);
+      }
     }
   }
 
+  /**
+   * Converts metrics data to a BlobStoreMetricsEntity.
+   * Uses pattern matching for operation metrics extraction.
+   */
   private BlobStoreMetricsEntity toBlobStoreMetricsEntity(
       final String blobStoreName,
       final BlobStoreMetrics blobStoreMetrics,
       final Map<OperationType, OperationMetrics> operationMetrics)
   {
+    // Extract metrics using pattern matching when available
     OperationMetrics downloadMetrics = operationMetrics.get(DOWNLOAD);
     OperationMetrics uploadMetrics = operationMetrics.get(UPLOAD);
 

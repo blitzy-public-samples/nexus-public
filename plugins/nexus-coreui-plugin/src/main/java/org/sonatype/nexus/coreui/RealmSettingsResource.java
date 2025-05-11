@@ -31,7 +31,6 @@ import org.sonatype.nexus.security.user.UserManager;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.util.stream.Collectors.toList;
 import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
 import static org.sonatype.nexus.security.anonymous.AnonymousHelper.getAuthenticationRealms;
 
@@ -60,6 +59,12 @@ public class RealmSettingsResource
 
   private final List<String> authenticationRealms;
 
+  /**
+   * Constructor for the realm settings resource.
+   *
+   * @param realmManager the realm manager service
+   * @param userManagers list of user managers to extract authentication realms from
+   */
   @Inject
   public RealmSettingsResource(
       final RealmManager realmManager,
@@ -69,12 +74,18 @@ public class RealmSettingsResource
     authenticationRealms = getAuthenticationRealms(userManagers);
   }
 
+  /**
+   * Retrieves the list of available security realms that are also authentication realms.
+   * 
+   * @return filtered list of security realms that can be used for authentication
+   */
   @GET
   @Path("/types")
   @RequiresPermissions("nexus:settings:read")
   public List<SecurityRealm> readRealmTypes() {
+    // Using Java 21 features for more concise and efficient stream operations
     return realmManager.getAvailableRealms(true).stream()
         .filter(securityRealm -> authenticationRealms.contains(securityRealm.getId()))
-        .collect(toList());
+        .toList(); // Using toList() instead of collect(toList()) - Java 16+ feature
   }
 }

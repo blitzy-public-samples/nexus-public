@@ -14,7 +14,6 @@ package org.sonatype.nexus.coreui;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.SequencedMap;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
@@ -25,12 +24,10 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import static java.util.Collections.emptyMap;
+import static java.lang.StringTemplate.STR;
 
 /**
  * This is used for transforming "infoBinary" attribute of a Conan asset.
- *
- * @since 3.0
- * @since 3.x Updated for Java 21 compatibility with records and SequencedMap
  */
 @Named(ConanAttributeTransformer.CONAN_FORMAT)
 @Singleton
@@ -45,14 +42,7 @@ public class ConanAttributeTransformer
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
   private static final TypeReference<Map<String, Object>> MAP_STRING_OBJECT =
-      new TypeReference<>() { };
-
-  /**
-   * Creates a new transformer that only processes Conan assets with infoBinary attribute.
-   */
-  public ConanAttributeTransformer() {
-    // Using the new default methods from the functional interface
-  }
+      new TypeReference<Map<String, Object>>() { };
 
   /**
    * Transforms the given {@link AssetXO} by expanding its "infoBinary"
@@ -62,28 +52,36 @@ public class ConanAttributeTransformer
    */
   @Override
   public void transform(final AssetXO assetXO) {
-    // Use pattern matching with records in Java 21
-    if (assetXO instanceof AssetXO(var _, var _, var format, var _, var _, var _, var _, var _, var _, var _, var _, var _, var _, var _, var attributes)) {
-      if (!CONAN_FORMAT.equals(format)) {
-        return; // Skip non-Conan assets
-      }
-
+    // Using pattern matching for instanceof check with a binding variable
+    var attributes = assetXO.getAttributes().getOrDefault(assetXO.getFormat(), emptyMap());
+    if (attributes instanceof Map<?, ?> formatAttributes) {
       @SuppressWarnings("unchecked")
-      Map<String, Object> formatAttributes = (Map<String, Object>) attributes.getOrDefault(format, emptyMap());
-
-      if (formatAttributes.containsKey(INFO_BINARY_ATTRIBUTE)) {
-        updateFormatAttributesMap(formatAttributes);
+      Map<String, Object> typedFormatAttributes = (Map<String, Object>) formatAttributes;
+      
+      if (typedFormatAttributes.containsKey(INFO_BINARY_ATTRIBUTE)) {
+        updateFormatAttributesMap(typedFormatAttributes);
       }
     }
   }
 
+  /**
+   * Updates the format attributes map by replacing the "infoBinary" attribute
+   * with a flattened representation of its JSON content.
+   *
+   * @param formatAttributesMap the map of format attributes to update
+   */
   private void updateFormatAttributesMap(Map<String, Object> formatAttributesMap) {
-    String json = formatAttributesMap.get(INFO_BINARY_ATTRIBUTE).toString();
+    var infoBinaryValue = formatAttributesMap.get(INFO_BINARY_ATTRIBUTE);
+    if (infoBinaryValue == null) {
+      return;
+    }
+    
+    String json = infoBinaryValue.toString();
     try {
       formatAttributesMap.putAll(getBinaryInfoAsMap(json));
       formatAttributesMap.remove(INFO_BINARY_ATTRIBUTE);
     } catch (IllegalStateException e) {
-      log.debug("Failed to parse {} as json", json);
+      log.debug(STR."Failed to parse \{json} as json");
     }
   }
 
@@ -100,45 +98,46 @@ public class ConanAttributeTransformer
 
   /**
    * Flattens a nested map into a single-level map with dot-separated keys.
-   * Uses Java 21's enhanced type inference.
    *
    * @param map the nested map to be flattened
    * @param parentKey the parent key to be used as a prefix (can be null)
    * @return a flattened map
    */
   private Map<String, Object> flattenMap(final Map<String, Object> map, final String parentKey) {
-    // Using Java 21's improved type inference
-    var flattenedMap = new HashMap<String, Object>();
-    
-    // Using pattern matching for instanceof in Java 21
+    Map<String, Object> flattenedMap = new HashMap<>();
     for (var entry : map.entrySet()) {
-      String key = parentKey == null ? entry.getKey() : parentKey + "." + entry.getKey();
+      // Using Java 21 Record Pattern for Map.Entry
+      var (key, value) = entry;
+      String fullKey = parentKey == null ? key : STR."\{parentKey}.\{key}";
       
-      if (entry.getValue() instanceof Map<?, ?> nestedMap) {
-        @SuppressWarnings("unchecked")
-        Map<String, Object> typedNestedMap = (Map<String, Object>) nestedMap;
-        flattenedMap.putAll(flattenMap(typedNestedMap, key));
-      } else {
-        flattenedMap.put(key, entry.getValue());
+      // Using Pattern Matching for switch with value type
+      switch (value) {
+        case Map<?, ?> nestedMap -> 
+          flattenedMap.putAll(flattenMap((Map<String, Object>) nestedMap, fullKey));
+        case null -> 
+          flattenedMap.put(fullKey, null);
+        default -> 
+          flattenedMap.put(fullKey, value);
       }
     }
     return flattenedMap;
   }
 
   /**
-   * Deserializes JSON string to the specified type using Java 21's enhanced type inference.
+   * Deserializes a JSON string into an object of the specified type.
    *
    * @param json the JSON string to deserialize
-   * @param type the TypeReference for the target type
+   * @param type the TypeReference describing the target type
    * @return the deserialized object
-   * @throws IllegalStateException if deserialization fails
+   * @throws IllegalStateException if JSON processing fails
    */
   private <T> T deserialize(final String json, final TypeReference<T> type) {
     try {
       return OBJECT_MAPPER.readValue(json, type);
     }
     catch (JsonProcessingException e) {
-      throw new IllegalStateException(e);
+      throw new IllegalStateException(STR."Failed to deserialize JSON: \{e.getMessage()}", e);
     }
   }
+
 }

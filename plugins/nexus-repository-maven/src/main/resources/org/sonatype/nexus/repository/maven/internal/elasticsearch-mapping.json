@@ -1,3 +1,10 @@
+/*
+ * Elasticsearch mapping for Maven repository components
+ * Updated for Java 21 compatibility:
+ * - Replaced deprecated "type": "string" with "type": "keyword" for non-analyzed fields
+ * - Replaced deprecated "type": "string" with "type": "text" for analyzed fields
+ * - Removed deprecated "index": "not_analyzed" setting (keyword type implies not_analyzed)
+ */
 {
   "settings": {
     "analysis": {
@@ -15,8 +22,7 @@
           "dates": {
             "match_mapping_type": "date",
             "mapping": {
-              "type": "string",
-              "index": "not_analyzed"
+              "type": "keyword"
             }
           }
         },
@@ -25,8 +31,7 @@
             "path_match": "attributes.maven2.*",
             "match_mapping_type": "string",
             "mapping": {
-              "type": "string",
-              "index": "not_analyzed"
+              "type": "keyword"
             }
           }
         },
@@ -35,8 +40,7 @@
             "path_match": "assets.attributes.maven2.*",
             "match_mapping_type": "string",
             "mapping": {
-              "type": "string",
-              "index": "not_analyzed"
+              "type": "keyword"
             }
           }
         }
@@ -49,11 +53,10 @@
                 "maven2": {
                   "properties": {
                     "path": {
-                      "type": "string",
-                      "index": "not_analyzed",
+                      "type": "keyword",
                       "fields": {
                         "tree": {
-                          "type": "string",
+                          "type": "text",
                           "analyzer": "paths"
                         }
                       }

@@ -14,7 +14,7 @@ package org.sonatype.nexus.common.entity;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -27,7 +27,7 @@ public class DetachedEntityIdTest
     extends TestSupport
 {
   @Test
-  public void testDetachedEquality() {
+  void testDetachedEquality() {
     DetachedEntityId a = new DetachedEntityId("a");
     assertThat(a, is(a));
     assertThat(a, is(new DetachedEntityId("a")));

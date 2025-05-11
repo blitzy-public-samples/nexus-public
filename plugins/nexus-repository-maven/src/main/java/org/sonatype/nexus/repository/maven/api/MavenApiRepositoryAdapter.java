@@ -12,8 +12,8 @@
  */
 package org.sonatype.nexus.repository.maven.api;
 
-import javax.inject.Inject;
-import javax.inject.Named;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
 
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import org.sonatype.nexus.repository.Repository;
@@ -50,29 +50,26 @@ public class MavenApiRepositoryAdapter
     String name = repository.getName();
     String url = repository.getUrl();
 
-    switch (repository.getType().toString()) {
-      case HostedType.NAME:
-        return new MavenHostedApiRepository(
-            name,
-            url,
-            online,
-            getHostedStorageAttributes(repository),
-            getCleanupPolicyAttributes(repository),
-            createMavenAttributes(repository),
-            getComponentAttributes(repository));
-      case ProxyType.NAME:
-        return new MavenProxyApiRepository(name, url, online,
-            getHostedStorageAttributes(repository),
-            getCleanupPolicyAttributes(repository),
-            getProxyAttributes(repository),
-            getNegativeCacheAttributes(repository),
-            getHttpClientAttributes(repository),
-            getRoutingRuleName(repository),
-            createMavenAttributes(repository),
-            getReplicationAttributes(repository));
-      default:
-        return super.adapt(repository);
-    }
+    return switch (repository.getType()) {
+      case HostedType hostedType -> new MavenHostedApiRepository(
+          name,
+          url,
+          online,
+          getHostedStorageAttributes(repository),
+          getCleanupPolicyAttributes(repository),
+          createMavenAttributes(repository),
+          getComponentAttributes(repository));
+      case ProxyType proxyType -> new MavenProxyApiRepository(name, url, online,
+          getHostedStorageAttributes(repository),
+          getCleanupPolicyAttributes(repository),
+          getProxyAttributes(repository),
+          getNegativeCacheAttributes(repository),
+          getHttpClientAttributes(repository),
+          getRoutingRuleName(repository),
+          createMavenAttributes(repository),
+          getReplicationAttributes(repository));
+      default -> super.adapt(repository);
+    };
   }
 
   private MavenAttributes createMavenAttributes(final Repository repository) {

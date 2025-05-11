@@ -27,6 +27,8 @@ import static org.sonatype.nexus.repository.maven.internal.Attributes.P_BASE_VER
 
 /**
  * An {@link SqlSearchResultDecorator} which annotates {@link ComponentSearchResult} with the maven baseVersion.
+ * 
+ * <p>This implementation leverages Java 21 Pattern Matching for instanceof to simplify type checking and casting.</p>
  */
 @Singleton
 @Named(Maven2Format.NAME)
@@ -37,10 +39,10 @@ public class MavenSqlSearchResultDecorator
   public void updateComponent(final ComponentSearchResult component, final SearchResult searchResult) {
     if (Maven2Format.NAME.equals(component.getFormat())) {
       Object formatAttributes = searchResult.attributes().get(Maven2Format.NAME);
-
-      @SuppressWarnings("unchecked")
+      
+      // Using Java 21 Pattern Matching for instanceof to simplify type checking and casting
       Map<String, String> attributes =
-          formatAttributes instanceof Map ? (Map<String, String>) formatAttributes : emptyMap();
+          formatAttributes instanceof Map<?, ?> map ? (Map<String, String>) map : emptyMap();
 
       component.addAnnotation(P_BASE_VERSION, attributes.get(P_BASE_VERSION));
     }

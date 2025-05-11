@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.repository.maven.rest;
 
-import javax.validation.Valid;
+import jakarta.validation.Valid;
 
 import org.sonatype.nexus.repository.rest.api.model.HttpClientAttributes;
 import org.sonatype.nexus.repository.rest.api.model.HttpClientConnectionAttributes;
@@ -32,6 +32,14 @@ public class HttpClientAttributesWithPreemptiveAuth
   @Valid
   protected final HttpClientConnectionAuthenticationAttributesWithPreemptive authenticationWithPreemptive;
 
+  /**
+   * Creates a new instance with the specified attributes.
+   *
+   * @param blocked whether the client is blocked
+   * @param autoBlock whether auto-blocking is enabled
+   * @param connection the connection attributes
+   * @param authentication the authentication attributes with preemptive support
+   */
   @JsonCreator
   public HttpClientAttributesWithPreemptiveAuth(
       @JsonProperty("blocked") final Boolean blocked,
@@ -43,6 +51,12 @@ public class HttpClientAttributesWithPreemptiveAuth
     this.authenticationWithPreemptive = authentication;
   }
 
+  /**
+   * Creates a new instance based on existing HTTP client attributes.
+   *
+   * @param httpClientAttributes the base HTTP client attributes
+   * @param authentication the authentication attributes with preemptive support
+   */
   public HttpClientAttributesWithPreemptiveAuth(
       final HttpClientAttributes httpClientAttributes,
       final HttpClientConnectionAuthenticationAttributesWithPreemptive authentication)

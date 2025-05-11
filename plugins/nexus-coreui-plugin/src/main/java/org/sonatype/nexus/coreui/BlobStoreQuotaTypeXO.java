@@ -16,38 +16,24 @@ import javax.validation.constraints.NotBlank;
 
 /**
  * BlobStore Quota Type exchange object.
+ * 
+ * Implemented as a Java 21 Record for immutability and concise representation.
+ * Maintains validation annotations for API consistency.
  *
  * @since 3.14
  */
-public class BlobStoreQuotaTypeXO
+public record BlobStoreQuotaTypeXO(
+    @NotBlank String id,
+    @NotBlank String name
+)
 {
-  @NotBlank
-  private String id;
-
-  @NotBlank
-  private String name;
-
-  public String getId() {
-    return id;
-  }
-
-  public void setId(String id) {
-    this.id = id;
-  }
-
-  public String getName() {
-    return name;
-  }
-
-  public void setName(String name) {
-    this.name = name;
-  }
-
+  /**
+   * Custom toString implementation using Java 21 String Templates for improved readability.
+   *
+   * @return a string representation of this record
+   */
   @Override
   public String toString() {
-    return "BlobStoreQuotaTypeXO{" +
-        "id='" + id + '\'' +
-        ", name='" + name + '\'' +
-        '}';
+    return STR."BlobStoreQuotaTypeXO{id='\{id}', name='\{name}'}";
   }
 }

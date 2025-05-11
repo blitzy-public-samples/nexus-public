@@ -16,6 +16,7 @@ package org.sonatype.nexus.repository.maven.internal;
  * Maven format specific attributes.
  *
  * @since 3.0
+ * @see Java 21 compatible
  */
 public final class Attributes
 {
@@ -74,6 +75,8 @@ public final class Attributes
   /**
    * Enum for asset kinds regarding repository layout. This enum <strong>should not</strong> contain details like
    * "archetype catalog" or "index files", and should be pretty much complete already.
+   * 
+   * <p>Optimized for Java 21 pattern matching in switch statements.</p>
    */
   public enum AssetKind
   {
@@ -96,9 +99,36 @@ public final class Attributes
      * Represents a full or incremental index for the repository.
      */
     REPOSITORY_INDEX,
+    
     /**
      * Represents some other resource not belonging to Maven2 repository layout.
      */
-    OTHER
+    OTHER;
+    
+    /**
+     * Determines if this asset kind represents an artifact or artifact-related content.
+     * 
+     * @return true if this is an artifact or artifact subordinate, false otherwise
+     */
+    public boolean isArtifactKind() {
+      // Using Java 21 pattern matching for switch expressions
+      return switch(this) {
+        case ARTIFACT, ARTIFACT_SUBORDINATE -> true;
+        case REPOSITORY_METADATA, REPOSITORY_INDEX, OTHER -> false;
+      };
+    }
+    
+    /**
+     * Determines if this asset kind represents repository metadata or index content.
+     * 
+     * @return true if this is repository metadata or index, false otherwise
+     */
+    public boolean isRepositoryContent() {
+      // Using Java 21 pattern matching for switch expressions
+      return switch(this) {
+        case REPOSITORY_METADATA, REPOSITORY_INDEX -> true;
+        case ARTIFACT, ARTIFACT_SUBORDINATE, OTHER -> false;
+      };
+    }
   }
 }

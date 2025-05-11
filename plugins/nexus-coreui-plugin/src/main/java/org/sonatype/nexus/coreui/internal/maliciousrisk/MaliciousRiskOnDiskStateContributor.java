@@ -19,13 +19,15 @@ import javax.inject.Singleton;
 
 import org.sonatype.nexus.rapture.StateContributor;
 
-import com.google.common.collect.ImmutableMap;
-
 import static org.sonatype.nexus.common.app.FeatureFlags.MALWARE_RISK_ON_DISK_ENABLED;
 import static org.sonatype.nexus.common.app.FeatureFlags.MALWARE_RISK_ON_DISK_ENABLED_NAMED;
 import static org.sonatype.nexus.common.app.FeatureFlags.MALWARE_RISK_ON_DISK_NONADMIN_OVERRIDE_ENABLED;
 import static org.sonatype.nexus.common.app.FeatureFlags.MALWARE_RISK_ON_DISK_NONADMIN_OVERRIDE_ENABLED_NAMED;
 
+/**
+ * State contributor for malicious risk on disk feature flags.
+ * Updated for Java 21 compatibility by replacing Guava's ImmutableMap with Java's Map.of().
+ */
 @Named
 @Singleton
 public class MaliciousRiskOnDiskStateContributor
@@ -39,7 +41,7 @@ public class MaliciousRiskOnDiskStateContributor
       @Named(MALWARE_RISK_ON_DISK_NONADMIN_OVERRIDE_ENABLED_NAMED)
       final boolean maliciousRiskOnDiskNoneAdminOverrideEnabled)
   {
-    this.state = ImmutableMap.of(
+    this.state = Map.of(
         MALWARE_RISK_ON_DISK_ENABLED, maliciousRiskOnDiskEnabled,
         MALWARE_RISK_ON_DISK_NONADMIN_OVERRIDE_ENABLED, maliciousRiskOnDiskNoneAdminOverrideEnabled
     );

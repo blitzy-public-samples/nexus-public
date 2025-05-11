@@ -13,6 +13,18 @@
 
 /**
  * Core UI support.
+ * <p>
+ * This package provides core UI support for the Nexus Repository Manager web interface.
+ * It is compatible with Java 21 and leverages modern language features for improved
+ * performance, readability, and maintainability:
+ * <ul>
+ *   <li>Virtual Threads - For improved concurrency in I/O-bound operations and UI request handling</li>
+ *   <li>Pattern Matching - For more concise and type-safe code when handling different UI component types</li>
+ *   <li>Record Patterns - For simplified data extraction and transformation of UI models and DTOs</li>
+ *   <li>String Templates - For more readable logging and message formatting in UI components</li>
+ *   <li>Sequenced Collections - For improved handling of ordered UI elements and data structures</li>
+ * </ul>
+ * </p>
  *
  * @since 3.0
  */

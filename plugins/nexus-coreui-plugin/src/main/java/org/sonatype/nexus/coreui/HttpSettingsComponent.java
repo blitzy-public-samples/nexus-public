@@ -15,6 +15,9 @@ package org.sonatype.nexus.coreui;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -67,11 +70,19 @@ public class HttpSettingsComponent
   private final HttpClientManager httpClientManager;
 
   private final SecretsService secretsService;
+  
+  /**
+   * ExecutorService using Virtual Threads for I/O-bound operations.
+   * Virtual threads are lightweight and efficient for operations that spend most of their time
+   * waiting for I/O, such as HTTP client operations and database access.
+   */
+  private final ExecutorService virtualThreadExecutor;
 
   @Inject
   public HttpSettingsComponent(final HttpClientManager httpClientManager, final SecretsService secretsService) {
     this.httpClientManager = checkNotNull(httpClientManager);
     this.secretsService = checkNotNull(secretsService);
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   /**
@@ -82,7 +93,17 @@ public class HttpSettingsComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:settings:read")
   public HttpSettingsXO read() {
-    return convert(httpClientManager.getConfiguration());
+    try {
+      // Execute the I/O-bound operation in a virtual thread for improved scalability
+      CompletableFuture<HttpClientConfiguration> configFuture = CompletableFuture.supplyAsync(
+          httpClientManager::getConfiguration, virtualThreadExecutor);
+      
+      // Convert the configuration to XO once retrieved
+      return convert(configFuture.join());
+    } catch (Exception e) {
+      log.error("Error retrieving HTTP settings", e);
+      throw e;
+    }
   }
 
   private HttpSettingsXO convert(final HttpClientConfiguration value) {
@@ -124,18 +145,35 @@ public class HttpSettingsComponent
   @RequiresPermissions("nexus:settings:update")
   @Validate
   public HttpSettingsXO update(@NotNull @Valid final HttpSettingsXO settings) {
-    HttpClientConfiguration previous = httpClientManager.getConfiguration();
-    HttpClientConfiguration model = null;
     try {
-      model = convert(settings, previous);
-    }
-    catch (Exception e) {
+      // Get the current configuration using a virtual thread
+      CompletableFuture<HttpClientConfiguration> previousFuture = CompletableFuture.supplyAsync(
+          httpClientManager::getConfiguration, virtualThreadExecutor);
+      
+      HttpClientConfiguration previous = previousFuture.join();
+      HttpClientConfiguration model = null;
+      
+      try {
+        model = convert(settings, previous);
+      }
+      catch (Exception e) {
+        removeSecrets(previous, model);
+        throw e;
+      }
+      
+      // Set the new configuration using a virtual thread
+      CompletableFuture<Void> setConfigFuture = CompletableFuture.runAsync(
+          () -> httpClientManager.setConfiguration(model), virtualThreadExecutor);
+      
+      // Wait for the configuration to be set
+      setConfigFuture.join();
+      
       removeSecrets(previous, model);
+      return read();
+    } catch (Exception e) {
+      log.error("Error updating HTTP settings", e);
       throw e;
     }
-    httpClientManager.setConfiguration(model);
-    removeSecrets(previous, model);
-    return read();
   }
 
   private HttpClientConfiguration convert(final HttpSettingsXO value, final HttpClientConfiguration previous) {
@@ -228,10 +266,15 @@ public class HttpSettingsComponent
       return previous;
     }
     else {
-      return secretsService.encryptMaven(
-          AuthenticationConfiguration.AUTHENTICATION_CONFIGURATION,
-          password.toCharArray(),
-          UserIdHelper.get());
+      // Execute encryption in a virtual thread as it may involve I/O operations
+      CompletableFuture<Secret> encryptFuture = CompletableFuture.supplyAsync(
+          () -> secretsService.encryptMaven(
+              AuthenticationConfiguration.AUTHENTICATION_CONFIGURATION,
+              password.toCharArray(),
+              UserIdHelper.get()),
+          virtualThreadExecutor);
+      
+      return encryptFuture.join();
     }
   }
 
@@ -248,11 +291,17 @@ public class HttpSettingsComponent
     if (authConfig != null) {
       if (NtlmAuthenticationConfiguration.TYPE.equals(authConfig.getType())) {
         NtlmAuthenticationConfiguration ntlmAuth = (NtlmAuthenticationConfiguration) authConfig;
-        secretsService.remove(ntlmAuth.getPassword());
+        // Execute secret removal in a virtual thread as it may involve I/O operations
+        CompletableFuture.runAsync(
+            () -> secretsService.remove(ntlmAuth.getPassword()),
+            virtualThreadExecutor);
       }
       else {
         UsernameAuthenticationConfiguration userNameAuth = (UsernameAuthenticationConfiguration) authConfig;
-        secretsService.remove(userNameAuth.getPassword());
+        // Execute secret removal in a virtual thread as it may involve I/O operations
+        CompletableFuture.runAsync(
+            () -> secretsService.remove(userNameAuth.getPassword()),
+            virtualThreadExecutor);
       }
     }
   }

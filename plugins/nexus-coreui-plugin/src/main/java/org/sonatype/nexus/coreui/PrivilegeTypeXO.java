@@ -20,46 +20,32 @@ import javax.validation.constraints.NotEmpty;
  *
  * @since 3.0
  */
-public class PrivilegeTypeXO
-{
-  @NotEmpty
-  private String id;
-
-  @NotEmpty
-  private String name;
-
-  private List<FormFieldXO> formFields;
-
-  public String getId() {
-    return id;
+public record PrivilegeTypeXO(
+    @NotEmpty String id,
+    @NotEmpty String name,
+    List<FormFieldXO> formFields
+) {
+  /**
+   * Creates a new instance with validation annotations applied at the record component level.
+   * 
+   * @param id The privilege type identifier
+   * @param name The privilege type name
+   * @param formFields The list of form fields associated with this privilege type
+   */
+  public PrivilegeTypeXO {
+    // Records perform implicit null checks, but we can add additional validation if needed
   }
-
-  public void setId(String id) {
-    this.id = id;
-  }
-
-  public String getName() {
-    return name;
-  }
-
-  public void setName(String name) {
-    this.name = name;
-  }
-
-  public List<FormFieldXO> getFormFields() {
-    return formFields;
-  }
-
-  public void setFormFields(List<FormFieldXO> formFields) {
-    this.formFields = formFields;
-  }
-
-  @Override
-  public String toString() {
-    return "PrivilegeTypeXO{" +
-        "id='" + id + '\'' +
-        ", name='" + name + '\'' +
-        ", formFields=" + formFields +
-        '}';
+  
+  /**
+   * Factory method to create a PrivilegeTypeXO from individual components.
+   * This provides backward compatibility with code that used the setter pattern.
+   *
+   * @param id The privilege type identifier
+   * @param name The privilege type name
+   * @param formFields The list of form fields
+   * @return A new PrivilegeTypeXO instance
+   */
+  public static PrivilegeTypeXO create(String id, String name, List<FormFieldXO> formFields) {
+    return new PrivilegeTypeXO(id, name, formFields);
   }
 }

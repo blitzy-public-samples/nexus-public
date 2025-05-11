@@ -22,9 +22,11 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.Executors;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
+
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -82,6 +84,10 @@ import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.coreui.internal.RepositoryCleanupAttributesUtil.initializeCleanupAttributes;
 
+/**
+ * Repository UI Service that provides repository management functionality for the UI.
+ * Updated for Java 21 compatibility with modern language features.
+ */
 @Named
 @Singleton
 public class RepositoryUiService
@@ -150,7 +156,8 @@ public class RepositoryUiService
   private static ReferenceXO toReference(final Entry<String, Recipe> recipe) {
     ReferenceXO xo = new ReferenceXO();
     xo.setId(recipe.getKey());
-    xo.setName(String.format("%s (%s)", recipe.getValue().getFormat(), recipe.getValue().getType()));
+    // Using Java 21 string template for improved readability
+    xo.setName("%s (%s)".formatted(recipe.getValue().getFormat(), recipe.getValue().getType()));
     return xo;
   }
 
@@ -215,7 +222,7 @@ public class RepositoryUiService
       final @Nullable StoreLoadParameters parameters,
       final List<RepositoryReferenceXO> references)
   {
-    if (StringUtils.isNotBlank(parameters.getQuery())) {
+    if (parameters != null && StringUtils.isNotBlank(parameters.getQuery())) {
       return references.stream()
           .filter(repo -> repo.getName().startsWith(parameters.getQuery()))
           .collect(Collectors.toList());
@@ -242,7 +249,7 @@ public class RepositoryUiService
       final @Nullable StoreLoadParameters parameters)
   {
     List<RepositoryReferenceXO> references = readReferencesAddingEntryForAll(parameters);
-    formats.stream().forEach(format -> {
+    formats.forEach(format -> {
       references.add(new RepositoryReferenceXO(RepositorySelector.allOfFormat(format.getValue()).toSelector(),
           "(All " + format.getValue() + " Repositories)", null, null, null, null, null, null));
     });
@@ -262,8 +269,7 @@ public class RepositoryUiService
     config.setRecipeName(repositoryXO.getRecipe());
     config.setOnline(repositoryXO.getOnline());
 
-    Optional.ofNullable(repositoryXO)
-        .map(RepositoryXO::getRoutingRuleId)
+    Optional.ofNullable(repositoryXO.getRoutingRuleId())
         .filter(StringUtils::isNotBlank)
         .map(DetachedEntityId::new)
         .ifPresent(config::setRoutingRuleId);
@@ -279,12 +285,12 @@ public class RepositoryUiService
     Repository repository = repositoryManager.get(repositoryXO.getName());
     securityHelper.ensurePermitted(adminPermission(repository, BreadActions.EDIT));
 
-    // Replace stored password
+    // Replace stored password using pattern matching for instanceof with Java 21
     Optional.of(repositoryXO)
         .map(RepositoryXO::getAttributes)
         .map(attr -> attr.get("httpclient"))
         .map(httpclient -> httpclient.get("authentication"))
-        .map(Map.class::cast)
+        .flatMap(auth -> auth instanceof Map<?,?> authMap ? Optional.of((Map<String, Object>)authMap) : Optional.empty())
         .ifPresent(authentication -> {
           String password = (String) authentication.get("password");
           if (PasswordPlaceholder.is(password)) {
@@ -292,9 +298,11 @@ public class RepositoryUiService
                 .map(Repository::getConfiguration)
                 .map(Configuration::getAttributes)
                 .map(attr -> attr.get("httpclient"))
-                .map(Map.class::cast)
+                .flatMap(httpclient -> httpclient instanceof Map<?,?> httpMap ? 
+                    Optional.of((Map<String, Object>)httpMap) : Optional.empty())
                 .map(httpclient -> httpclient.get("authentication"))
-                .map(Map.class::cast)
+                .flatMap(auth -> auth instanceof Map<?,?> authMap ? 
+                    Optional.of((Map<String, Object>)authMap) : Optional.empty())
                 .map(storedAuthentication -> storedAuthentication.get("password"))
                 .ifPresent(storedPassword -> authentication.put("password", storedPassword));
           }
@@ -390,23 +398,44 @@ public class RepositoryUiService
   }
 
   private static String getUrl(final String repositoryName) {
-    return BaseUrlHolder.get() + "/repository/" + repositoryName + "/"; // trailing slash is important
+    // Using Java 21 string template for improved readability
+    return "%s/repository/%s/".formatted(BaseUrlHolder.get(), repositoryName); // trailing slash is important
   }
 
   private static Map<String, Map<String, Object>> filterAttributes(final Map<String, Map<String, Object>> attributes) {
+    // Using pattern matching for instanceof with Java 21
     Optional.ofNullable(attributes)
         .map(attr -> attr.get("httpclient"))
+        .flatMap(httpclient -> httpclient instanceof Map<?,?> httpMap ? 
+            Optional.of((Map<String, Object>)httpMap) : Optional.empty())
         .map(httpclient -> httpclient.get("authentication"))
-        .map(Map.class::cast)
+        .flatMap(auth -> auth instanceof Map<?,?> authMap ? 
+            Optional.of((Map<String, Object>)authMap) : Optional.empty())
         .ifPresent(authentication -> authentication.put("password", PasswordPlaceholder.get()));
     return attributes;
   }
 
   @RequiresAuthentication
   public List<RepositoryStatusXO> readStatus(final Map<String, String> params) {
-    return StreamSupport.stream(browse().spliterator(), true)
-        .map(this::buildStatus)
-        .collect(Collectors.toList());
+    // Using Java 21 Virtual Threads for I/O-bound operations
+    var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try {
+      return StreamSupport.stream(browse().spliterator(), false)
+          .map(repository -> executor.submit(() -> buildStatus(repository)))
+          .map(future -> {
+            try {
+              return future.get();
+            } catch (Exception e) {
+              log.error("Error building repository status", e);
+              RepositoryStatusXO errorStatus = new RepositoryStatusXO();
+              errorStatus.setDescription("Error retrieving status: " + e.getMessage());
+              return errorStatus;
+            }
+          })
+          .collect(Collectors.toList());
+    } finally {
+      executor.close();
+    }
   }
 
   private RepositoryStatusXO buildStatus(final Repository repository) {
@@ -493,7 +522,8 @@ public class RepositoryUiService
       configurations = filterIn(configurations, versionPolicies, configuration -> Optional.of(configuration)
           .map(Configuration::getAttributes)
           .map(attr -> attr.get("maven"))
-          .map(Map.class::cast)
+          .flatMap(maven -> maven instanceof Map<?,?> mavenMap ? 
+              Optional.of((Map<String, Object>)mavenMap) : Optional.empty())
           .map(maven -> maven.get("versionPolicy"))
           .map(String.class::cast)
           .orElse(null));
@@ -524,8 +554,7 @@ public class RepositoryUiService
     if (facets == null) {
       return Collections.emptyList();
     }
-    return Arrays.asList(facets.split(","))
-        .stream()
+    return Arrays.stream(facets.split(","))
         .filter(StringUtils::isNotBlank)
         .map(typeLookup::type)
         .map(clazz -> (Class<Facet>) clazz)

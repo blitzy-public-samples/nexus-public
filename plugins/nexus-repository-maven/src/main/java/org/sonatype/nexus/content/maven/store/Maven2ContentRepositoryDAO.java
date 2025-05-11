@@ -16,6 +16,13 @@ package org.sonatype.nexus.content.maven.store;
 import org.sonatype.nexus.repository.content.store.ContentRepositoryDAO;
 
 /**
+ * Maven 2 content repository DAO.
+ * 
+ * Implementations of this interface benefit from Java 21 features such as:
+ * - Virtual Threads for high-throughput, non-blocking database operations
+ * - Pattern Matching for type-safe data handling
+ * - Record Patterns for efficient data transfer objects
+ * 
  * @since 3.25
  */
 public interface Maven2ContentRepositoryDAO

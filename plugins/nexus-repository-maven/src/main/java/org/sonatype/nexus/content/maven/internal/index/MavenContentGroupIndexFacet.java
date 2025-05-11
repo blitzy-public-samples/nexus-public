@@ -13,10 +13,13 @@
 package org.sonatype.nexus.content.maven.internal.index;
 
 import java.io.IOException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import javax.inject.Inject;
 import javax.inject.Named;
 
+import org.sonatype.nexus.repository.Facet;
 import org.sonatype.nexus.repository.group.GroupFacet;
 import org.sonatype.nexus.repository.maven.MavenIndexFacet;
 import org.sonatype.nexus.repository.maven.internal.MavenIndexPublisher;
@@ -27,12 +30,19 @@ import org.apache.maven.index.reader.Record;
 
 /**
  * Group implementation of {@link MavenIndexFacet}.
+ * <p>
+ * This implementation leverages Java 21 features:
+ * <ul>
+ *   <li>Virtual Threads for I/O-bound index publishing operations</li>
+ *   <li>Pattern Matching for instanceof when retrieving facets</li>
+ * </ul>
  *
  * @since 3.26
  */
 @Named
 public class MavenContentGroupIndexFacet
     extends MavenContentIndexFacetSupport
+    implements MavenIndexFacet
 {
   private final DuplicateDetectionStrategyProvider duplicateDetectionStrategyProvider;
 
@@ -44,10 +54,45 @@ public class MavenContentGroupIndexFacet
     this.duplicateDetectionStrategyProvider = duplicateDetectionStrategyProvider;
   }
 
+  /**
+   * Publishes the Maven index for this group repository.
+   * <p>
+   * This method uses Java 21 Virtual Threads to handle the I/O-bound index publishing operation,
+   * which improves scalability by reducing the number of platform threads needed for concurrent operations.
+   *
+   * @throws IOException if an error occurs during index publishing
+   */
   @Override
   public void publishIndex() throws IOException {
     try (DuplicateDetectionStrategy<Record> strategy = duplicateDetectionStrategyProvider.get()) {
-      mavenIndexPublisher.publishGroupIndex(getRepository(), facet(GroupFacet.class).leafMembers(), strategy);
+      // Execute the I/O-bound index publishing operation on a virtual thread
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        Future<?> future = executor.submit(() -> {
+          try {
+            // Use pattern matching for instanceof with the GroupFacet
+            if (var facet = facet(GroupFacet.class); facet instanceof GroupFacet groupFacet) {
+              mavenIndexPublisher.publishGroupIndex(getRepository(), groupFacet.leafMembers(), strategy);
+            } else {
+              throw new IOException(STR."GroupFacet not available for repository: \{getRepository().getName()}");
+            }
+            return null;
+          } catch (IOException e) {
+            throw new RuntimeException(STR."Failed to publish group index for repository: \{getRepository().getName()}", e);
+          }
+        });
+        
+        try {
+          future.get(); // Wait for the virtual thread to complete
+        } catch (Exception e) {
+          Throwable cause = e.getCause();
+          if (cause instanceof IOException ioe) {
+            throw ioe;
+          } else if (cause instanceof RuntimeException re && re.getCause() instanceof IOException ioe) {
+            throw ioe;
+          }
+          throw new IOException(STR."Error during index publishing for repository: \{getRepository().getName()}", e);
+        }
+      }
     }
   }
 }

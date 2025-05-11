@@ -26,6 +26,14 @@ import org.sonatype.nexus.repository.manager.RepositoryManager;
  */
 public class DataStoreRestoreBlobData extends RestoreBlobData
 {
+  /**
+   * Constructs a new DataStoreRestoreBlobData instance.
+   *
+   * @param blob the blob to restore
+   * @param blobProperties the properties of the blob
+   * @param blobStore the blob store containing the blob
+   * @param repositoryManager the repository manager
+   */
   public DataStoreRestoreBlobData(
       final Blob blob,
       final Properties blobProperties,
@@ -35,12 +43,18 @@ public class DataStoreRestoreBlobData extends RestoreBlobData
     super(blob, blobProperties, blobStore, repositoryManager);
   }
 
+  /**
+   * Gets the blob name, ensuring it always has a leading slash.
+   * 
+   * @return the blob name with a leading slash
+   */
   @Override
   public String getBlobName() {
     String blobName = super.getBlobName();
-    if (blobName.startsWith("/")) {
-      return blobName;
+    // Using Java 21 pattern matching for string operations
+    if (blobName instanceof String s && !s.startsWith("/")) {
+      return "/" + s;
     }
-    return "/" + blobName;
+    return blobName;
   }
 }

@@ -19,12 +19,14 @@ import org.sonatype.nexus.audit.InitiatorProvider;
 import org.sonatype.nexus.common.event.EventManager;
 import org.sonatype.nexus.common.node.NodeAccess;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -38,6 +40,12 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+/**
+ * Tests for {@link AuditRecorderImpl} with JUnit Jupiter.
+ * 
+ * This test class has been migrated to JUnit Jupiter (JUnit 5) and is compatible with Java 21.
+ */
+@ExtendWith(MockitoExtension.class)
 public class AuditRecorderImplTest
     extends TestSupport
 {
@@ -60,7 +68,7 @@ public class AuditRecorderImplTest
   @InjectMocks
   private AuditRecorderImpl underTest;
 
-  @Before
+  @BeforeEach
   public void setUp() {
     when(initiatorProvider.get()).thenReturn(INITIATOR);
     when(nodeAccess.getId()).thenReturn(NODE_ID);
@@ -75,8 +83,11 @@ public class AuditRecorderImplTest
     return auditData;
   }
 
+  /**
+   * Verifies that no audit record is stored when the recorder is disabled.
+   */
   @Test
-  public void testNoRecordStoredIfDisabled() {
+  public void shouldNotRecordWhenDisabled() {
     AuditData data = makeAuditData();
     underTest.setEnabled(false);
     underTest.record(data);
@@ -84,8 +95,11 @@ public class AuditRecorderImplTest
     verifyNoInteractions(eventManager);
   }
 
+  /**
+   * Verifies that default values are filled in when missing from the audit data.
+   */
   @Test
-  public void testDefaultsAreFilledInIfMissing() {
+  public void shouldFillInDefaultsWhenMissing() {
     AuditData data = makeAuditData();
     underTest.record(data);
 
@@ -98,8 +112,11 @@ public class AuditRecorderImplTest
     assertThat(captured.getData().getInitiator(), is(INITIATOR));
   }
 
+  /**
+   * Verifies that unknown initiator is replaced with principal when present.
+   */
   @Test
-  public void testUnknownIsReplacedIfPrincipalIsPresent() {
+  public void shouldReplaceUnknownWithPrincipalWhenPresent() {
     when(initiatorProvider.get()).thenReturn("*UNKNOWN/1.2.3.4");
 
     AuditData data = makeAuditData();
@@ -117,8 +134,11 @@ public class AuditRecorderImplTest
     assertThat(captured.getData().getInitiator(), is("someuser/1.2.3.4"));
   }
 
+  /**
+   * Verifies that an event is fired when audit data is recorded.
+   */
   @Test
-  public void testEventFiredWhenDataRecorded() {
+  public void shouldFireEventWhenDataRecorded() {
     AuditData data = makeAuditData();
     underTest.record(data);
 

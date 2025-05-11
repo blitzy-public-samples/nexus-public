@@ -12,9 +12,11 @@
  */
 package org.sonatype.nexus.coreui;
 
-import java.util.Arrays;
 import java.util.Date;
-import java.util.Map;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.SequencedMap;
+import java.util.Arrays;
 import javax.validation.constraints.Future;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
@@ -65,7 +67,7 @@ public class TaskXO
 
   private TaskNotificationCondition notificationCondition;
 
-  private Map<String, String> properties;
+  private SequencedMap<String, String> properties;
 
   @NotBlank(groups = Create.class)
   private String schedule;
@@ -74,7 +76,7 @@ public class TaskXO
   @Future(groups = OnceSchedule.class)
   private Date startDate;
 
-  private Integer[] recurringDays;
+  private List<Integer> recurringDays;
 
   @NotBlank(groups = AdvancedSchedule.class)
   @CronExpression(groups = AdvancedSchedule.class)
@@ -202,12 +204,24 @@ public class TaskXO
     this.notificationCondition = notificationCondition;
   }
 
-  public Map<String, String> getProperties() {
+  public SequencedMap<String, String> getProperties() {
     return properties;
   }
 
-  public void setProperties(Map<String, String> properties) {
+  public void setProperties(SequencedMap<String, String> properties) {
     this.properties = properties;
+  }
+  
+  /**
+   * Sets properties from a regular Map, converting to a SequencedMap internally.
+   * Provided for backward compatibility.
+   */
+  public void setProperties(java.util.Map<String, String> properties) {
+    if (properties == null) {
+      this.properties = null;
+    } else {
+      this.properties = new LinkedHashMap<>(properties);
+    }
   }
 
   public String getSchedule() {
@@ -226,12 +240,24 @@ public class TaskXO
     this.startDate = startDate;
   }
 
-  public Integer[] getRecurringDays() {
+  public List<Integer> getRecurringDays() {
     return recurringDays;
   }
 
-  public void setRecurringDays(Integer[] recurringDays) {
+  public void setRecurringDays(List<Integer> recurringDays) {
     this.recurringDays = recurringDays;
+  }
+  
+  /**
+   * Sets recurring days from an array, converting to a List internally.
+   * Provided for backward compatibility.
+   */
+  public void setRecurringDays(Integer[] recurringDays) {
+    if (recurringDays == null) {
+      this.recurringDays = null;
+    } else {
+      this.recurringDays = Arrays.asList(recurringDays);
+    }
   }
 
   public String getCronExpression() {
@@ -249,6 +275,45 @@ public class TaskXO
   public void setIsReadOnlyUi(Boolean isReadOnlyUi) {
     this.isReadOnlyUi = isReadOnlyUi;
   }
+  
+  /**
+   * Deconstructs this TaskXO into its component parts for use with Java 21 record patterns.
+   * 
+   * @return A record containing all the fields of this TaskXO
+   */
+  public TaskRecord toRecord() {
+    return new TaskRecord(
+        id, enabled, name, typeId, typeName, status, statusDescription,
+        nextRun, lastRun, lastRunResult, runnable, stoppable, timeZoneOffset,
+        alertEmail, notificationCondition, properties, schedule, startDate,
+        recurringDays, cronExpression, isReadOnlyUi);
+  }
+  
+  /**
+   * Record representation of TaskXO for use with Java 21 record patterns.
+   */
+  public record TaskRecord(
+      String id,
+      Boolean enabled,
+      String name,
+      String typeId,
+      String typeName,
+      String status,
+      String statusDescription,
+      Date nextRun,
+      Date lastRun,
+      String lastRunResult,
+      Boolean runnable,
+      Boolean stoppable,
+      String timeZoneOffset,
+      String alertEmail,
+      TaskNotificationCondition notificationCondition,
+      SequencedMap<String, String> properties,
+      String schedule,
+      Date startDate,
+      List<Integer> recurringDays,
+      String cronExpression,
+      Boolean isReadOnlyUi) {}
 
   public interface Schedule
   {
@@ -268,28 +333,30 @@ public class TaskXO
 
   @Override
   public String toString() {
-    return "TaskXO{" +
-        "id='" + id + '\'' +
-        ", enabled=" + enabled +
-        ", name='" + name + '\'' +
-        ", typeId='" + typeId + '\'' +
-        ", typeName='" + typeName + '\'' +
-        ", status='" + status + '\'' +
-        ", statusDescription='" + statusDescription + '\'' +
-        ", nextRun=" + nextRun +
-        ", lastRun=" + lastRun +
-        ", lastRunResult='" + lastRunResult + '\'' +
-        ", runnable=" + runnable +
-        ", stoppable=" + stoppable +
-        ", timeZoneOffset='" + timeZoneOffset + '\'' +
-        ", alertEmail='" + alertEmail + '\'' +
-        ", notificationCondition=" + notificationCondition +
-        ", properties=" + properties +
-        ", schedule='" + schedule + '\'' +
-        ", startDate=" + startDate +
-        ", recurringDays=" + Arrays.toString(recurringDays) +
-        ", cronExpression='" + cronExpression + '\'' +
-        ", isReadOnlyUi=" + isReadOnlyUi +
-        '}';
+    return STR."""
+        TaskXO{
+          id='{id}'
+          enabled={enabled}
+          name='{name}'
+          typeId='{typeId}'
+          typeName='{typeName}'
+          status='{status}'
+          statusDescription='{statusDescription}'
+          nextRun={nextRun}
+          lastRun={lastRun}
+          lastRunResult='{lastRunResult}'
+          runnable={runnable}
+          stoppable={stoppable}
+          timeZoneOffset='{timeZoneOffset}'
+          alertEmail='{alertEmail}'
+          notificationCondition={notificationCondition}
+          properties={properties}
+          schedule='{schedule}'
+          startDate={startDate}
+          recurringDays={recurringDays}
+          cronExpression='{cronExpression}'
+          isReadOnlyUi={isReadOnlyUi}
+        }
+        """;
   }
 }

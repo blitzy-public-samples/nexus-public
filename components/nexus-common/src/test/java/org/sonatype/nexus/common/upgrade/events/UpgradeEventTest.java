@@ -19,16 +19,24 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 import com.google.common.collect.ImmutableList;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 
 /**
  * Test Serialization/Deserialization {@link UpgradeEventSupport} sub-classes.
+ * 
+ * <p>This test ensures that all upgrade event classes can be properly serialized and deserialized
+ * under Java 21, including correct handling of Optional fields, node ID collections, error messages,
+ * and migrations arrays.</p>
  */
 public class UpgradeEventTest
 {
+  /**
+   * Jackson ObjectMapper configured with Jdk8Module for proper handling of Optional fields
+   * in Java 21 environment.
+   */
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper().registerModule(new Jdk8Module());
 
   @Test
@@ -44,8 +52,8 @@ public class UpgradeEventTest
   @Test
   public void testUpgradeCompletedEvent_Deserialization() throws JsonProcessingException {
     List<String> nodeIds = ImmutableList.of("node_1", "node_2");
-    UpgradeCompletedEvent upgradeStartedEvent = new UpgradeCompletedEvent("admin", "1.0", nodeIds, "1.1", "1.2", "1.3");
-    String event = OBJECT_MAPPER.writeValueAsString(upgradeStartedEvent);
+    UpgradeCompletedEvent upgradeCompletedEvent = new UpgradeCompletedEvent("admin", "1.0", nodeIds, "1.1", "1.2", "1.3");
+    String event = OBJECT_MAPPER.writeValueAsString(upgradeCompletedEvent);
     UpgradeCompletedEvent result = OBJECT_MAPPER.readValue(event, UpgradeCompletedEvent.class);
     assertThat(result.getUser(), is(Optional.of("admin")));
     assertThat(result.getNodeIds(), is(nodeIds));
@@ -55,8 +63,8 @@ public class UpgradeEventTest
 
   @Test
   public void testUpgradeFailedEvent_Deserialization() throws JsonProcessingException {
-    UpgradeFailedEvent upgradeStartedEvent = new UpgradeFailedEvent("admin", "1.0", "Error", "1.1", "1.2", "1.3");
-    String event = OBJECT_MAPPER.writeValueAsString(upgradeStartedEvent);
+    UpgradeFailedEvent upgradeFailedEvent = new UpgradeFailedEvent("admin", "1.0", "Error", "1.1", "1.2", "1.3");
+    String event = OBJECT_MAPPER.writeValueAsString(upgradeFailedEvent);
     UpgradeFailedEvent result = OBJECT_MAPPER.readValue(event, UpgradeFailedEvent.class);
     assertThat(result.getUser(), is(Optional.of("admin")));
     assertThat(result.getSchemaVersion(), is(Optional.of("1.0")));

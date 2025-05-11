@@ -19,8 +19,6 @@ import org.sonatype.nexus.coreui.RepositoryXO;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.collect.Sets.newLinkedHashSet;
-import static java.util.Objects.isNull;
-import static java.util.Objects.nonNull;
 
 /**
  * Repository / Cleanup Util that provide utilities for the the cleanup attributes.
@@ -43,20 +41,32 @@ public class RepositoryCleanupAttributesUtil
    *
    * @param repositoryXO - {@link RepositoryXO}
    */
+  /**
+   * Based on a given {@link RepositoryXO} we will assure that we remove the <code>cleanup</code> attribute if it has
+   * <code>policyName</code> field but without value. If it does have value we update it to make sure it's
+   * a {@link java.util.Set} and not any other type of collections.
+   *
+   * @param repositoryXO - {@link RepositoryXO}
+   */
   public static void initializeCleanupAttributes(final RepositoryXO repositoryXO) {
     checkNotNull(repositoryXO);
 
     Map<String, Map<String, Object>> attributes = checkNotNull(repositoryXO.getAttributes());
-    Map<String, Object> cleanup = attributes.get(CLEANUP_ATTRIBUTES_KEY);
-    if (nonNull(cleanup)) {
-
-      @SuppressWarnings("unchecked")
-      Collection<String> policyNames = (Collection<String>) cleanup.get(CLEANUP_NAME_KEY);
-
-      if(isNull(policyNames) || policyNames.isEmpty()) {
-        attributes.remove(CLEANUP_ATTRIBUTES_KEY);
+    
+    // Using pattern matching to check for cleanup attributes
+    if (attributes.get(CLEANUP_ATTRIBUTES_KEY) instanceof Map<?, ?> cleanup) {
+      // Using pattern matching for type-safe cast
+      Object policyNamesObj = cleanup.get(CLEANUP_NAME_KEY);
+      if (policyNamesObj instanceof Collection<?> policyNames) {
+        // Using pattern matching in switch for more concise code
+        switch (policyNames) {
+          case Collection<?> c when c.isEmpty() -> attributes.remove(CLEANUP_ATTRIBUTES_KEY);
+          case Collection<String> c -> cleanup.put(CLEANUP_NAME_KEY, newLinkedHashSet(c));
+          default -> attributes.remove(CLEANUP_ATTRIBUTES_KEY); // Invalid type in collection
+        }
       } else {
-        cleanup.put(CLEANUP_NAME_KEY, newLinkedHashSet(policyNames));
+        // No policy names or invalid type
+        attributes.remove(CLEANUP_ATTRIBUTES_KEY);
       }
     }
   }

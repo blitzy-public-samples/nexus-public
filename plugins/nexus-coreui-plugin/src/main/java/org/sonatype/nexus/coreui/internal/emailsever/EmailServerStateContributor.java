@@ -20,8 +20,6 @@ import javax.inject.Singleton;
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.rapture.StateContributor;
 
-import com.google.common.collect.ImmutableMap;
-
 @Named
 @Singleton
 public class EmailServerStateContributor
@@ -32,7 +30,7 @@ public class EmailServerStateContributor
 
   @Inject
   public EmailServerStateContributor(@Named("${nexus.react.emailServer:-true}") final Boolean featureFlag) {
-    state = ImmutableMap.of("nexus.react.emailServer", featureFlag);
+    state = Map.of("nexus.react.emailServer", featureFlag);
   }
 
   @Override

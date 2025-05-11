@@ -39,15 +39,32 @@ public class MavenVariableResolverAdapterUtil
   private static final String CLASSIFIER = "classifier";
 
   private MavenVariableResolverAdapterUtil() {
+    // Utility class, no instances
   }
 
+  /**
+   * Creates a map of Maven coordinate values from a {@link Coordinates} object.
+   * Uses Java 21 pattern matching for null handling of classifier.
+   *
+   * @param coordinates the Maven coordinates to convert to a map
+   * @return a map containing the coordinate values with standard keys
+   */
   public static Map<String, String> createCoordinateMap(Coordinates coordinates) {
+    // Using HashMap for mutable map creation as we need to add multiple entries
+    // Map.of() would be limited to 10 entries and is immutable
     Map<String, String> coordMap = new HashMap<>();
     coordMap.put(GROUP_ID, coordinates.getGroupId());
     coordMap.put(ARTIFACT_ID, coordinates.getArtifactId());
     coordMap.put(VERSION, coordinates.getBaseVersion());
     coordMap.put(EXTENSION, coordinates.getExtension());
-    coordMap.put(CLASSIFIER, coordinates.getClassifier() == null ? EMPTY : coordinates.getClassifier());
+    
+    // Using Java 21 pattern matching for instanceof with type patterns
+    String classifier = switch (coordinates.getClassifier()) {
+      case String s -> s;
+      case null -> EMPTY;
+    };
+    coordMap.put(CLASSIFIER, classifier);
+    
     return coordMap;
   }
 }

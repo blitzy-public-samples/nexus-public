@@ -33,11 +33,13 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import org.apache.commons.lang3.tuple.Pair;
 import org.joda.time.DateTime;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.Assert.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
@@ -49,6 +51,11 @@ import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.blobstore.common.BlobStoreTaskSupport.ALL;
 import static org.sonatype.nexus.blobstore.common.BlobStoreTaskSupport.BLOBSTORE_NAME_FIELD_ID;
 
+/**
+ * Tests for {@link RecalculateBlobStoreSizeTask} that verify the task correctly recalculates
+ * blob store sizes by processing blob attributes and updating metrics.
+ */
+@ExtendWith(MockitoExtension.class)
 public class RecalculateBlobStoreSizeTaskTest
     extends TestSupport
 {
@@ -57,13 +64,17 @@ public class RecalculateBlobStoreSizeTaskTest
 
   private RecalculateBlobStoreSizeTask underTest;
 
-  @Before
-  public void setUp() {
+  @BeforeEach
+  void setUp() {
     underTest = spy(new RecalculateBlobStoreSizeTask(blobStoreManager));
   }
 
+  /**
+   * Verifies that the task correctly processes a single blob store,
+   * retrieving blob attributes and recording metrics for each blob.
+   */
   @Test
-  public void testTaskWorksAsExpectedWithSingleBlobStore() throws Exception {
+  void singleBlobStoreProcessesAllBlobs() throws Exception {
     Pair<BlobStore, BlobStoreMetricsService> mocks = mockBlobStore("single-blobstore", 10, false);
 
     TaskConfiguration configuration = buildTaskConfiguration("test-single-blobstore", "single-blobstore");
@@ -76,8 +87,12 @@ public class RecalculateBlobStoreSizeTaskTest
     verify(mocks.getRight(), times(10)).recordAddition(anyLong());
   }
 
+  /**
+   * Verifies that the task correctly processes all blob stores when configured with ALL,
+   * retrieving blob attributes and recording metrics for each blob in each store.
+   */
   @Test
-  public void testTaskWorksAsExpectedWithAllBlobStores() throws Exception {
+  void allBlobStoresProcessAllBlobs() throws Exception {
     Pair<BlobStore, BlobStoreMetricsService> blobstore1Mocks = mockBlobStore("test-blobstore-1", 10, false);
     Pair<BlobStore, BlobStoreMetricsService> blobstore2Mocks = mockBlobStore("test-blobstore-2", 25, false);
     Pair<BlobStore, BlobStoreMetricsService> blobstore3Mocks = mockBlobStore("test-blobstore-3", 12, false);
@@ -96,8 +111,12 @@ public class RecalculateBlobStoreSizeTaskTest
     verify(blobstore3Mocks.getRight(), times(12)).recordAddition(anyLong());
   }
 
+  /**
+   * Verifies that the task correctly propagates failures when processing multiple blob stores,
+   * continuing to process available stores even when some are unavailable.
+   */
   @Test
-  public void testTaskPropagateFailuresAsExpected() {
+  void propagatesFailuresWhenProcessingMultipleStores() {
     Pair<BlobStore, BlobStoreMetricsService> unavailableMocks = mockBlobStore("unavailable-blobstore", 3, true);
     Pair<BlobStore, BlobStoreMetricsService> available1Mocks = mockBlobStore("available-blobstore-1", 56, false);
     Pair<BlobStore, BlobStoreMetricsService> available2Mocks = mockBlobStore("available-blobstore-2", 23, false);
@@ -115,6 +134,14 @@ public class RecalculateBlobStoreSizeTaskTest
     verify(available2Mocks.getRight(), times(23)).recordAddition(anyLong());
   }
 
+  /**
+   * Creates a mock BlobStore and BlobStoreMetricsService pair for testing.
+   *
+   * @param blobstoreName the name of the blob store
+   * @param blobsCount the number of blobs to simulate in the store
+   * @param throwException whether to simulate the store being unavailable
+   * @return a pair containing the mocked BlobStore and its BlobStoreMetricsService
+   */
   private Pair<BlobStore, BlobStoreMetricsService> mockBlobStore(
       final String blobstoreName,
       final int blobsCount,
@@ -149,6 +176,13 @@ public class RecalculateBlobStoreSizeTaskTest
     return Pair.of(blobStore, metricsService);
   }
 
+  /**
+   * Builds a task configuration for testing.
+   *
+   * @param taskName the name of the task
+   * @param blobStoreField the blob store field value (specific store name or ALL)
+   * @return the configured TaskConfiguration
+   */
   private TaskConfiguration buildTaskConfiguration(final String taskName, final String blobStoreField) {
     TaskConfiguration taskConfiguration = new TaskConfiguration();
     taskConfiguration.setId(taskName);
@@ -159,6 +193,9 @@ public class RecalculateBlobStoreSizeTaskTest
     return taskConfiguration;
   }
 
+  /**
+   * Test implementation of BlobAttributesSupport for testing purposes.
+   */
   private static class TestBlobAttributes
       extends BlobAttributesSupport<Properties>
   {

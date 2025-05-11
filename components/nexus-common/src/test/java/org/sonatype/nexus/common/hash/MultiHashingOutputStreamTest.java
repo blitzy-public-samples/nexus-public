@@ -22,13 +22,16 @@ import org.sonatype.goodies.testsupport.TestSupport;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.hash.HashCode;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.sonatype.nexus.common.hash.HashAlgorithm.MD5;
@@ -36,6 +39,7 @@ import static org.sonatype.nexus.common.hash.HashAlgorithm.SHA1;
 import static org.sonatype.nexus.common.hash.HashAlgorithm.SHA256;
 import static org.sonatype.nexus.common.hash.HashAlgorithm.SHA512;
 
+@ExtendWith(MockitoExtension.class)
 public class MultiHashingOutputStreamTest
     extends TestSupport
 {
@@ -46,20 +50,24 @@ public class MultiHashingOutputStreamTest
 
   MultiHashingOutputStream underTest;
 
-  @Before
+  @BeforeEach
   public void setup() throws Exception {
     hashes = ImmutableList.of(SHA256, SHA1, SHA512, MD5);
     underTest = new MultiHashingOutputStream(hashes, outputStream);
   }
 
-  @Test(expected = NullPointerException.class)
-  public void throwNpeWhenPassedNullHashes() throws Exception {
-    underTest = new MultiHashingOutputStream(null, outputStream);
+  @Test
+  public void throwNpeWhenPassedNullHashes() {
+    assertThrows(NullPointerException.class, () -> {
+      underTest = new MultiHashingOutputStream(null, outputStream);
+    });
   }
 
-  @Test(expected = NullPointerException.class)
-  public void throwNpeWhenPassedNullOutputStream() throws Exception {
-    underTest = new MultiHashingOutputStream(hashes, null);
+  @Test
+  public void throwNpeWhenPassedNullOutputStream() {
+    assertThrows(NullPointerException.class, () -> {
+      underTest = new MultiHashingOutputStream(hashes, null);
+    });
   }
 
   @Test
@@ -94,7 +102,7 @@ public class MultiHashingOutputStreamTest
 
   @Test
   public void writeIntegerToHashes() throws Exception {
-    InputStream inputStream = new ByteArrayInputStream("test".getBytes());
+    InputStream inputStream = new ByteArrayInputStream("test".getBytes(java.nio.charset.StandardCharsets.UTF_8));
     int b;
     while ((b = inputStream.read()) != -1) {
       underTest.write(b);
@@ -120,11 +128,15 @@ public class MultiHashingOutputStreamTest
     assertThat(sha256.toString(), is(equalTo("0679246d6c4216de0daa08e5523fb2674db2b6599c3b72ff946b488a15290b62")));
   }
 
-  @Test(expected = IllegalStateException.class)
+  @Test
   public void exceptionOnMultipleHashesCalls() throws Exception {
     underTest.write(new byte[50], 10, 30);
 
-    underTest.hashes();
-    underTest.hashes();
+    underTest.hashes(); // First call is fine
+    
+    // Second call should throw exception
+    assertThrows(IllegalStateException.class, () -> {
+      underTest.hashes();
+    });
   }
 }

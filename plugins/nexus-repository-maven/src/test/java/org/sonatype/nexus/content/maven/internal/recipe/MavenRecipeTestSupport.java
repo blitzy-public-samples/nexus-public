@@ -40,11 +40,23 @@ import org.sonatype.nexus.repository.view.handlers.LastDownloadedHandler;
 import org.sonatype.nexus.repository.view.handlers.TimingHandler;
 
 import com.google.common.collect.ImmutableList;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+/**
+ * Test support class for Maven recipe tests, providing common mock setup for handlers and facets.
+ * <p>
+ * Updated for Java 21 compatibility with JUnit Jupiter and Mockito 4.11.0.
+ * This class leverages MockitoExtension for JUnit Jupiter integration and supports
+ * Java 21 features like pattern matching and virtual threads in test implementations.
+ *
+ * @since 3.60.0
+ */
+@ExtendWith(MockitoExtension.class)
 public abstract class MavenRecipeTestSupport
     extends TestSupport
 {
@@ -142,6 +154,15 @@ public abstract class MavenRecipeTestSupport
   private final Provider<MavenArchetypeCatalogFacet> mavenArchetypeCatalogFacetProvider =
       () -> mavenArchetypeCatalogFacet;
 
+  /**
+   * Sets up all handlers on the provided recipe support instance.
+   * <p>
+   * This method configures all necessary handlers for Maven repository operation,
+   * ensuring proper request processing flow.
+   *
+   * @param underTest the recipe support instance to configure
+   * @param <T> the type of MavenRecipeSupport
+   */
   protected <T extends MavenRecipeSupport> void mockHandlers(T underTest) {
     underTest.setBrowseUnsupportedHandler(browseUnsupportedHandler);
     when(browseUnsupportedHandler.getRoute()).thenReturn(
@@ -163,6 +184,15 @@ public abstract class MavenRecipeTestSupport
     underTest.setMavenContentHandler(mavenContentHandler);
   }
 
+  /**
+   * Sets up all facets on the provided recipe support instance.
+   * <p>
+   * This method configures all necessary facets for Maven repository operation,
+   * ensuring proper repository functionality.
+   *
+   * @param underTest the recipe support instance to configure
+   * @param <T> the type of MavenRecipeSupport
+   */
   protected <T extends MavenRecipeSupport> void mockFacets(T underTest) {
     underTest.setSecurityFacet(securityFacetProvider);
     underTest.setMavenContentFacet(mavenContentFacetProvider);

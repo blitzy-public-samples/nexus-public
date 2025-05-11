@@ -33,16 +33,25 @@ import org.sonatype.nexus.repository.blobstore.BlobStoreConfigurationStore;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
 
 import com.google.common.collect.ImmutableMap;
-import org.junit.Before;
-import org.junit.Test;
-import org.mockito.Mock;
 
-import static org.hamcrest.CoreMatchers.is;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-public class BlobStoreInternalResourceTest
+/**
+ * Tests for {@link BlobStoreInternalResource} using JUnit Jupiter (JUnit 5) with Java 21 compatibility.
+ * 
+ * @since 3.60
+ */
+@ExtendWith(MockitoExtension.class)
+class BlobStoreInternalResourceTest
     extends TestSupport
 {
   public static final String FILE_TYPE = "File";
@@ -71,8 +80,8 @@ public class BlobStoreInternalResourceTest
 
   private BlobStoreInternalResource underTest;
 
-  @Before
-  public void setup() {
+  @BeforeEach
+  void setup() {
     addDescriptor(FILE_TYPE, FILE_TYPE_ID);
     addDescriptor(S3_TYPE, S3_TYPE_ID);
     addDescriptor(BlobStoreGroup.TYPE, BlobStoreGroup.CONFIG_KEY);
@@ -85,13 +94,13 @@ public class BlobStoreInternalResourceTest
   }
 
   @Test
-  public void listNoBlobStores() {
+  void listNoBlobStores() {
     List<BlobStoreUIResponse> responses = underTest.listBlobStores();
     assertThat(responses.isEmpty(), is(true));
   }
 
   @Test
-  public void noDataInBlobStoreDescriptorProvider() {
+  void noDataInBlobStoreDescriptorProvider() {
     addBlobStore("fileStore1", FILE_TYPE);
     addBlobStore("s3BlobStore", S3_TYPE);
 
@@ -105,7 +114,7 @@ public class BlobStoreInternalResourceTest
   }
 
   @Test
-  public void listOneBlobStore() {
+  void listOneBlobStore() {
     addBlobStore("fileStore", FILE_TYPE);
 
     List<BlobStoreUIResponse> responses = underTest.listBlobStores();
@@ -121,7 +130,7 @@ public class BlobStoreInternalResourceTest
   }
 
   @Test
-  public void listMultipleBlobStores() {
+  void listMultipleBlobStores() {
     addBlobStore("fileStore1", FILE_TYPE);
     addBlobStore("fileStore2", FILE_TYPE);
     addBlobStore("s3BlobStore", S3_TYPE);
@@ -153,11 +162,11 @@ public class BlobStoreInternalResourceTest
     assertThat(response3.getTypeName(), is(S3_TYPE));
     assertThat(response3.getTotalSizeInBytes(), is(100L));
     assertThat(response3.getAvailableSpaceInBytes(), is(1000L));
-    assertThat(response2.isUnavailable(), is(false));
+    assertThat(response3.isUnavailable(), is(false));
   }
 
   @Test
-  public void listNonStartedBlobStore() {
+  void listNonStartedBlobStore() {
     BlobStore fileBS = addBlobStore("fileStore", FILE_TYPE);
     BlobStore s3BS = addBlobStore("s3BlobStore", S3_TYPE, false);
     addGroupBlobStore("groupBS", BlobStoreGroup.TYPE, true, Arrays.asList(fileBS, s3BS));

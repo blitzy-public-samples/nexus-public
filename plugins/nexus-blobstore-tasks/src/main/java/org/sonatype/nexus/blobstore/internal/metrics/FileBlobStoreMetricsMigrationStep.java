@@ -18,14 +18,22 @@ import javax.inject.Singleton;
 import org.sonatype.nexus.blobstore.file.FileBlobStore;
 
 /**
- * Migration step to move metrics from properties files in the blob store to the DB
+ * Migration step to move metrics from properties files in the File blob store to the database.
+ * <p>
+ * This step is responsible for migrating metrics data for FileBlobStore instances
+ * from the legacy file-based storage to the centralized database storage.
+ * </p>
+ * 
+ * @since 3.0
  */
 @Named
 @Singleton
 public class FileBlobStoreMetricsMigrationStep
     extends BlobStoreMetricsDatabaseMigrationStepSupport
 {
-
+  /**
+   * Creates a new migration step for FileBlobStore metrics.
+   */
   public FileBlobStoreMetricsMigrationStep() {
     super(FileBlobStore.TYPE);
   }

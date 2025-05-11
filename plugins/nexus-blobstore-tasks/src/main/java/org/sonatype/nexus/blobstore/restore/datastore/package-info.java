@@ -10,6 +10,13 @@
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  */
+
+/**
+ * Datastore implementation for blob store restore functionality.
+ * 
+ * <p>This package is compatible with Java 21 and leverages the module system for proper encapsulation.
+ * It requires JDK 21 or later for both development and runtime environments.</p>
+ */
 @FeatureFlag(name = DATASTORE_ENABLED)
 package org.sonatype.nexus.blobstore.restore.datastore;
 

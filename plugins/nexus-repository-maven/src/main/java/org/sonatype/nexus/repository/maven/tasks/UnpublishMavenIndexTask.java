@@ -16,6 +16,9 @@ import java.io.IOException;
 
 import javax.inject.Named;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.RepositoryTaskSupport;
 import org.sonatype.nexus.repository.maven.MavenIndexFacet;
@@ -30,24 +33,32 @@ import org.sonatype.nexus.repository.maven.internal.Maven2Format;
 public class UnpublishMavenIndexTask
     extends RepositoryTaskSupport
 {
+  private static final Logger log = LoggerFactory.getLogger(UnpublishMavenIndexTask.class);
   @Override
   protected void execute(final Repository repository) {
+    log.debug(STR."Unpublishing Maven index for repository: \{repository.getName()}");
     MavenIndexFacet mavenIndexFacet = repository.facet(MavenIndexFacet.class);
     try {
       mavenIndexFacet.unpublishIndex();
+      log.debug(STR."Successfully unpublished Maven index for repository: \{repository.getName()}");
     }
     catch (IOException e) {
-      throw new RuntimeException(e);
+      log.error(STR."Failed to unpublish Maven index for repository: \{repository.getName()}", e);
+      throw new RuntimeException(STR."Failed to unpublish Maven index for repository: \{repository.getName()}", e);
     }
   }
 
   @Override
   protected boolean appliesTo(final Repository repository) {
-    return repository.getFormat().getValue().equals(Maven2Format.NAME);
+    boolean applies = repository.getFormat().getValue().equals(Maven2Format.NAME);
+    if (applies) {
+      log.debug(STR."Task applies to Maven repository: \{repository.getName()}");
+    }
+    return applies;
   }
 
   @Override
   public String getMessage() {
-    return "Remove Maven indexes of " + getRepositoryField();
+    return STR."Remove Maven indexes of \{getRepositoryField()}";
   }
 }

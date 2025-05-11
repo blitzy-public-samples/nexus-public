@@ -38,7 +38,10 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.repository.http.HttpHandlers.notFound;
 
 /**
+ * Maven group repository recipe.
+ *
  * @since 3.25
+ * @see <a href="https://maven.apache.org/">Maven</a>
  */
 @AvailabilityVersion(from = "1.0")
 @Named(Maven2GroupRecipe.NAME)
@@ -59,6 +62,18 @@ public class MavenGroupRecipe
 
   private final MavenContentIndexGroupHandler indexGroupHandler;
 
+  /**
+   * Constructor for the Maven group repository recipe.
+   * 
+   * @param type the repository type (group)
+   * @param format the repository format (maven2)
+   * @param mavenGroupIndexFacet provider for the Maven group index facet
+   * @param mavenGroupFacet provider for the Maven group facet
+   * @param mavenPurgeSnapshotsFacet provider for the Maven purge snapshots facet
+   * @param groupHandler the group handler for standard content
+   * @param mergingGroupHandler the merging group handler for metadata
+   * @param indexGroupHandler the index group handler for Maven indexes
+   */
   @Inject
   public MavenGroupRecipe(
       @Named(GroupType.NAME) final Type type,
@@ -92,6 +107,12 @@ public class MavenGroupRecipe
     repository.attach(removeSnapshotsFacet.get());
   }
 
+  /**
+   * Configures the {@link ViewFacet} for a Maven group repository.
+   * 
+   * @param facet the view facet to configure
+   * @return the configured view facet
+   */
   private ViewFacet configure(final ConfigurableViewFacet facet) {
     Router.Builder builder = new Router.Builder();
 

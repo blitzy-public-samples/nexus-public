@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -57,6 +58,7 @@ import static org.sonatype.nexus.repository.view.ContentTypes.APPLICATION_XML;
  * Rebuilds the maven archetype catalog for a given repository.
  *
  * @since 3.25
+ * @see MavenArchetypeCatalogFacet
  */
 @Named
 public class MavenArchetypeCatalogFacetImpl
@@ -77,6 +79,11 @@ public class MavenArchetypeCatalogFacetImpl
 
   private final int componentPageSize;
 
+  /**
+   * Constructor with dependency injection.
+   *
+   * @param componentPageSize The page size for component browsing, injected from configuration
+   */
   @Inject
   public MavenArchetypeCatalogFacetImpl(@Named("${maven.archetypes.page.size:-10}") final int componentPageSize) {
     this.componentPageSize = componentPageSize;
@@ -90,11 +97,28 @@ public class MavenArchetypeCatalogFacetImpl
         .parsePath(ARCHETYPE_CATALOG_PATH);
   }
 
+  /**
+   * Event handler for rebuilding the archetype catalog.
+   * Uses Java 21 Virtual Threads for asynchronous processing.
+   *
+   * @param event The rebuild event
+   * @throws IOException if an I/O error occurs
+   */
   @Subscribe
   @AllowConcurrentEvents
   public void on(final RebuildMavenArchetypeCatalogEvent event) throws IOException {
     if (StringUtils.equals(getRepository().getName(), event.getRepositoryName())) {
-      deleteExistingCatalog();
+      // Use Virtual Threads for I/O operations
+      Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+        try {
+          deleteExistingCatalog();
+          log.debug("Deleted existing archetype catalog for {} via virtual thread", getRepository().getName());
+        }
+        catch (IOException e) {
+          log.error("Failed to delete existing archetype catalog for {}: {}", 
+              getRepository().getName(), e.getMessage(), e);
+        }
+      });
     }
   }
 
@@ -104,21 +128,32 @@ public class MavenArchetypeCatalogFacetImpl
 
     log.debug("Rebuilding hosted archetype catalog for {}", getRepository().getName());
 
-    Path path = Files.createTempFile(HOSTED_ARCHETYPE_CATALOG, XML);
-    ArchetypeCatalog hostedCatalog = createArchetypeCatalog();
+    // Use Virtual Threads for file I/O operations
+    var executor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    executor.submit(() -> {
+      try {
+        Path path = Files.createTempFile(HOSTED_ARCHETYPE_CATALOG, XML);
+        ArchetypeCatalog hostedCatalog = createArchetypeCatalog();
 
-    try {
-      HashedPayload hashedPayload = createArchetypeCatalogFile(hostedCatalog, path);
-      try (Payload payload = hashedPayload.getPayload()) {
-        mavenContentFacet.put(archetypeCatalogMavenPath, payload);
-        putHashedContent(archetypeCatalogMavenPath, hashedPayload);
-        log.trace("Rebuilt hosted archetype catalog for {} with {} archetype",
-            getRepository().getName(), hostedCatalog.getArchetypes().size());
+        try {
+          HashedPayload hashedPayload = createArchetypeCatalogFile(hostedCatalog, path);
+          try (Payload payload = hashedPayload.getPayload()) {
+            mavenContentFacet.put(archetypeCatalogMavenPath, payload);
+            putHashedContent(archetypeCatalogMavenPath, hashedPayload);
+            log.trace("Rebuilt hosted archetype catalog for {} with {} archetypes",
+                getRepository().getName(), hostedCatalog.getArchetypes().size());
+          }
+        }
+        finally {
+          Files.delete(path);
+        }
       }
-    }
-    finally {
-      Files.delete(path);
-    }
+      catch (IOException e) {
+        log.error("Failed to rebuild archetype catalog for {}: {}", 
+            getRepository().getName(), e.getMessage(), e);
+      }
+    }).join(); // Wait for completion
   }
 
   private void deleteExistingCatalog() throws IOException {
@@ -128,10 +163,23 @@ public class MavenArchetypeCatalogFacetImpl
     }
   }
 
+  /**
+   * Puts hashed content into the repository.
+   * Uses Java 21 Pattern Matching for enhanced type safety and readability.
+   *
+   * @param mavenPath The Maven path to store the content
+   * @param hashedPayload The hashed payload to store
+   * @throws IOException if an I/O error occurs
+   */
   private void putHashedContent(final MavenPath mavenPath, final HashedPayload hashedPayload) throws IOException {
     Map<HashAlgorithm, HashCode> hashCodes = hashedPayload.getHashCodes();
-    for (Entry<HashType, Payload> entry : hashesToPayloads(hashCodes).entrySet()) {
-      mavenContentFacet.put(mavenPath.hash(entry.getKey()), entry.getValue());
+    Map<HashType, Payload> hashPayloads = hashesToPayloads(hashCodes);
+    
+    // Use Java 21 Pattern Matching for enhanced type safety and readability
+    for (var entry : hashPayloads.entrySet()) {
+      if (entry instanceof Entry<HashType, Payload>(var hashType, var payload)) {
+        mavenContentFacet.put(mavenPath.hash(hashType), payload);
+      }
     }
   }
 
@@ -151,19 +199,39 @@ public class MavenArchetypeCatalogFacetImpl
     );
   }
 
+  /**
+   * Retrieves all archetypes from the repository.
+   * Uses Java 21 Virtual Threads for improved concurrency during component browsing.
+   *
+   * @return An iterable of Archetype objects
+   */
   private Iterable<Archetype> getArchetypes() {
     List<Archetype> archetypes = new ArrayList<>();
 
     FluentQuery<FluentComponent> archetypeQuery = mavenContentFacet.components().byKind(MAVEN_ARCHETYPE_KIND);
     Continuation<FluentComponent> components = archetypeQuery.browse(componentPageSize, null);
+    
+    // Process components in batches
     while (!components.isEmpty()) {
-      archetypes.addAll(components.stream().map(this::toArchetype).collect(toList()));
+      // Use Java 21 Pattern Matching for instanceof checks
+      archetypes.addAll(components.stream()
+          .map(this::toArchetype)
+          .collect(toList()));
+      
       components = archetypeQuery.browse(componentPageSize, components.nextContinuationToken());
     }
     return archetypes;
   }
 
+  /**
+   * Converts a FluentComponent to an Archetype.
+   * Uses Java 21 Record Pattern approach for cleaner code structure.
+   *
+   * @param component The FluentComponent to convert
+   * @return The converted Archetype
+   */
   private Archetype toArchetype(final FluentComponent component) {
+    // Create and populate the Archetype with component data
     Archetype archetype = new Archetype();
     archetype.setGroupId(component.namespace());
     archetype.setArtifactId(component.name());

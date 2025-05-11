@@ -13,9 +13,11 @@
 package org.sonatype.nexus.coreui.internal.http;
 
 import java.util.Map;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+
+// Updated to jakarta.inject for Java 21 and Guice 7.0.0 compatibility
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.rapture.StateContributor;
@@ -23,6 +25,11 @@ import org.sonatype.nexus.httpclient.HttpDefaultsCustomizer;
 
 import com.google.common.collect.ImmutableMap;
 
+/**
+ * Contributes HTTP client configuration state to the UI.
+ * 
+ * Updated for Java 21 compatibility with modern dependency injection.
+ */
 @Named
 @Singleton
 public class HttpStateContributor
@@ -30,23 +37,39 @@ public class HttpStateContributor
     implements StateContributor
 {
   private final HttpDefaultsCustomizer customizer;
+  private final boolean featureFlag;
 
-  private boolean featureFlag;
-
+  /**
+   * Creates a new HTTP state contributor.
+   *
+   * @param featureFlag whether the React HTTP settings UI is enabled
+   * @param customizer the HTTP defaults customizer providing configuration values
+   */
   @Inject
   public HttpStateContributor(
-    @Named("${nexus.react.httpSettings:-true}") final Boolean featureFlag,
-    final HttpDefaultsCustomizer customizer) {
+      @Named("${nexus.react.httpSettings:-true}") final Boolean featureFlag,
+      final HttpDefaultsCustomizer customizer) {
     this.customizer = customizer;
     this.featureFlag = featureFlag;
+    
+    // Using Java 21 String Templates for improved logging
+    log.debug(STR."Initialized HTTP state contributor with feature flag: \{featureFlag}");
   }
 
+  /**
+   * Returns the HTTP client configuration state for the UI.
+   *
+   * @return map of state values including feature flag, request timeout, and retry count
+   */
   @Override
   public Map<String, Object> getState() {
+    // Using Java 21 String Templates for improved logging
+    log.trace(STR."Providing HTTP state with timeout: \{customizer.getRequestTimeout()} and retry count: \{customizer.getRetryCount()}");
+    
     return ImmutableMap.of(
-      "nexus.react.httpSettings", featureFlag,
-      "requestTimeout", customizer.getRequestTimeout(),
-      "retryCount", customizer.getRetryCount()
+        "nexus.react.httpSettings", featureFlag,
+        "requestTimeout", customizer.getRequestTimeout(),
+        "retryCount", customizer.getRetryCount()
     );
   }
 }

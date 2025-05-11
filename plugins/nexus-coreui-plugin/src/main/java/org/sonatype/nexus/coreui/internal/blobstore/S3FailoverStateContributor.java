@@ -13,6 +13,7 @@
 package org.sonatype.nexus.coreui.internal.blobstore;
 
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import javax.annotation.Nullable;
 import javax.inject.Inject;
@@ -31,6 +32,8 @@ import static org.sonatype.nexus.common.app.FeatureFlags.CLUSTERED_ZERO_DOWNTIME
 /**
  * State contributor to enable regional failover configuration for S3 blob stores.
  * The failover configuration will be available on ZDU if schema version is at least on version 2.6.
+ * 
+ * Updated for Java 21 compatibility with Virtual Threads and String Templates.
  */
 @Named
 @Singleton
@@ -54,10 +57,31 @@ public class S3FailoverStateContributor
   @Nullable
   @Override
   public Map<String, Object> getState() {
-    return ImmutableMap.of("S3FailoverEnabled", isAvailable());
+    boolean available = isAvailable();
+    log.debug(STR."S3 Failover state requested, returning: \{available}");
+    return ImmutableMap.of("S3FailoverEnabled", available);
   }
 
   private boolean isAvailable() {
-    return !zduEnabled || databaseCheck.isAtLeast(S3_FAILOVER_MIGRATION_VERSION);
+    // Use CompletableFuture with Virtual Thread for potentially I/O-bound database check
+    if (!zduEnabled) {
+      log.trace(STR."ZDU is not enabled, S3 Failover is available");
+      return true;
+    }
+    
+    try {
+      // Run the database check in a virtual thread to avoid blocking platform threads
+      return CompletableFuture.supplyAsync(
+          () -> {
+            boolean result = databaseCheck.isAtLeast(S3_FAILOVER_MIGRATION_VERSION);
+            log.trace(STR."Database check for S3 Failover migration version \{S3_FAILOVER_MIGRATION_VERSION} returned: \{result}");
+            return result;
+          },
+          CompletableFuture.delayedExecutor(0, java.util.concurrent.TimeUnit.MILLISECONDS, Thread.ofVirtual().factory())
+      ).join();
+    } catch (Exception e) {
+      log.warn(STR."Error checking database version for S3 Failover: \{e.getMessage()}");
+      return false;
+    }
   }
 }

@@ -16,7 +16,14 @@ package org.sonatype.nexus.content.maven.store;
 import org.sonatype.nexus.repository.content.store.AssetBlobDAO;
 
 /**
+ * Maven 2 specific extension of {@link AssetBlobDAO}.
+ * 
+ * <p>Implementations of this interface can leverage Java 21 features such as Virtual Threads 
+ * for improved I/O performance when handling blob operations. This is particularly beneficial 
+ * for Maven repositories which often deal with large artifacts and high concurrency.</p>
+ *
  * @since 3.25
+ * @see AssetBlobDAO
  */
 public interface Maven2AssetBlobDAO
     extends AssetBlobDAO

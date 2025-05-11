@@ -22,6 +22,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
@@ -152,7 +155,7 @@ public class RestoreMetadataTask
           existingMoves.size(), blobStoreName, getName());
 
       throw new IllegalStateException(
-          format("found unfinished move task using blobstore '%s', task can't be executed", blobStoreName));
+          STR."found unfinished move task using blobstore '\{blobStoreName}', task can't be executed");
     }
   }
 
@@ -195,7 +198,7 @@ public class RestoreMetadataTask
     Set<Repository> touchedRepositories = new HashSet<>();
 
     if (dryRun) {
-      log.info("{}Actions will be logged, but no changes will be made.", logPrefix);
+      log.info(STR."\{logPrefix}Actions will be logged, but no changes will be made.");
     }
 
     formatAssetBlobRefMigrated.clear();
@@ -203,7 +206,7 @@ public class RestoreMetadataTask
       for (BlobId blobId : getBlobIdStream(blobStore, sinceDays)) {
         try {
           if (isCanceled()) {
-            log.info("Restore metadata task for {} was canceled", blobStore.getBlobStoreConfiguration().getName());
+            log.info(STR."Restore metadata task for \{blobStore.getBlobStoreConfiguration().getName()} was canceled");
             break;
           }
 
@@ -231,11 +234,10 @@ public class RestoreMetadataTask
           processed++;
 
           progressLogger
-              .info("{}Elapsed time: {}, processed: {}, un-deleted: {}", logPrefix, progressLogger.getElapsed(),
-                  processed, undeleted);
+              .info(STR."\{logPrefix}Elapsed time: \{progressLogger.getElapsed()}, processed: \{processed}, un-deleted: \{undeleted}");
         }
         catch (Exception e) {
-          log.error("Error restoring blob {}", blobId, e);
+          log.error(STR."Error restoring blob \{blobId}", e);
         }
       }
 
@@ -288,7 +290,7 @@ public class RestoreMetadataTask
     BlobStore blobStore = blobStoreManager.get(blobStoreId);
 
     if (blobStore == null) {
-      log.error("Unable to find blob store '{}' in the blob store manager", blobStoreId);
+      log.error(STR."Unable to find blob store '\{blobStoreId}' in the blob store manager");
       return;
     }
 
@@ -297,21 +299,33 @@ public class RestoreMetadataTask
     List<Repository> syncList = Collections.synchronizedList(StreamSupport.stream(repositories.spliterator(), false)
         .collect(Collectors.toList()));
 
-    syncList.stream()
-        .filter(Objects::nonNull)
-        .filter(repository -> !(repository.getType() instanceof GroupType))
-        .filter(Repository::isStarted)
-        .forEach(repository ->
-            integrityCheckStrategies
-                .getOrDefault(repository.getFormat().getValue(), defaultIntegrityCheckStrategy)
-                .check(repository, blobStore, this::isCanceled, sinceDays,
-                    a -> this.integrityCheckFailedHandler(repository, a, dryRun))
-        );
+    // Use Virtual Threads for concurrent integrity checks
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      AtomicBoolean canceled = new AtomicBoolean(false);
+      
+      syncList.stream()
+          .filter(Objects::nonNull)
+          .filter(repository -> !(repository.getType() instanceof GroupType))
+          .filter(Repository::isStarted)
+          .forEach(repository -> {
+            executor.submit(() -> {
+              if (!canceled.get() && !isCanceled()) {
+                try {
+                  integrityCheckStrategies
+                      .getOrDefault(repository.getFormat().getValue(), defaultIntegrityCheckStrategy)
+                      .check(repository, blobStore, () -> canceled.get() || isCanceled(), sinceDays,
+                          a -> this.integrityCheckFailedHandler(repository, a, dryRun));
+                } catch (Exception e) {
+                  log.error(STR."Error checking integrity for repository \{repository.getName()}", e);
+                }
+              }
+            });
+          });
+    }
   }
 
   protected void integrityCheckFailedHandler(final Repository repository, final Asset asset, final boolean isDryRun) {
-    log.info("{}Removing asset {} from repository {}, blob integrity check failed", isDryRun ? dryRunPrefix.get() : "",
-        asset.path(), repository.getName());
+    log.info(STR."\{isDryRun ? dryRunPrefix.get() : ""}Removing asset \{asset.path()} from repository \{repository.getName()}, blob integrity check failed");
 
     if (!isDryRun) {
       maintenanceService.deleteAsset(repository, asset);
@@ -321,11 +335,11 @@ public class RestoreMetadataTask
   private Optional<Context> buildContext(final BlobStore blobStore, final BlobId blobId)
   {
     return Optional.of(new Context(blobStore, blobId))
-        .map(c -> c.blob(c.blobStore.get(c.blobId, true)))
-        .map(c -> c.blobAttributes(c.blobStore.getBlobAttributes(c.blobId)))
-        .map(c -> c.properties(c.blobAttributes.getProperties()))
-        .map(c -> c.repositoryName(c.properties.getProperty(HEADER_PREFIX + REPO_NAME_HEADER)))
-        .map(c -> c.repository(repositoryManager.get(c.repositoryName)))
+        .flatMap(c -> Optional.ofNullable(c.blobStore.get(c.blobId, true)).map(c::blob))
+        .flatMap(c -> Optional.ofNullable(c.blobStore.getBlobAttributes(c.blobId)).map(c::blobAttributes))
+        .flatMap(c -> Optional.ofNullable(c.blobAttributes.getProperties()).map(c::properties))
+        .flatMap(c -> Optional.ofNullable(c.properties.getProperty(HEADER_PREFIX + REPO_NAME_HEADER)).map(c::repositoryName))
+        .flatMap(c -> Optional.ofNullable(repositoryManager.get(c.repositoryName)).map(c::repository))
         .map(c -> c.restoreBlobStrategy(restoreBlobStrategies.get(c.repository.getFormat().getValue())));
   }
 
@@ -353,53 +367,28 @@ public class RestoreMetadataTask
     }
 
     Context blob(final Blob blob) {
-      if (blob == null) {
-        return null;
-      }
-      else {
-        this.blob = blob;
-        return this;
-      }
+      this.blob = blob;
+      return this;
     }
 
     Context blobAttributes(final BlobAttributes blobAttributes) {
-      if (blobAttributes == null) {
-        return null;
-      }
-      else {
-        this.blobAttributes = blobAttributes;
-        return this;
-      }
+      this.blobAttributes = blobAttributes;
+      return this;
     }
 
     Context properties(final Properties properties) {
-      if (properties == null) {
-        return null;
-      }
-      else {
-        this.properties = properties;
-        return this;
-      }
+      this.properties = properties;
+      return this;
     }
 
     Context repositoryName(final String repositoryName) {
-      if (repositoryName == null) {
-        return null;
-      }
-      else {
-        this.repositoryName = repositoryName;
-        return this;
-      }
+      this.repositoryName = repositoryName;
+      return this;
     }
 
     Context repository(final Repository repository) {
-      if (repository == null) {
-        return null;
-      }
-      else {
-        this.repository = repository;
-        return this;
-      }
+      this.repository = repository;
+      return this;
     }
 
     Context restoreBlobStrategy(final RestoreBlobStrategy restoreBlobStrategy) {

@@ -15,6 +15,7 @@ package org.sonatype.nexus.repository.httpbridge.internal;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Iterator;
+import java.util.concurrent.Executors;
 
 import javax.annotation.Nullable;
 import javax.servlet.http.HttpServletRequest;
@@ -32,7 +33,8 @@ import org.apache.commons.fileupload.servlet.ServletRequestContext;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
- * Servlet multipart-payload adapter.
+ * Servlet multipart-payload adapter with Java 21 enhancements.
+ * Uses Virtual Threads for I/O operations and Pattern Matching for type checking.
  *
  * @since 3.0
  */
@@ -48,11 +50,23 @@ class HttpPartIteratorAdapter
   @Override
   public Iterator<PartPayload> iterator() {
     try {
-      final FileItemIterator itemIterator = new ServletFileUpload().getItemIterator(httpRequest);
-      return new PayloadIterator(itemIterator);
+      // Create a ServletFileUpload instance
+      ServletFileUpload upload = new ServletFileUpload();
+      
+      // Use a virtual thread to process the multipart data
+      // This allows for efficient handling of I/O operations during file uploads
+      return Thread.ofVirtual().name("multipart-parser").start(() -> {
+        try {
+          final FileItemIterator itemIterator = upload.getItemIterator(httpRequest);
+          return new PayloadIterator(itemIterator);
+        }
+        catch (FileUploadException | IOException e) {
+          throw new RuntimeException("Failed to process multipart request", e);
+        }
+      }).join();
     }
-    catch (FileUploadException | IOException e) {
-      throw new RuntimeException(e);
+    catch (Exception e) {
+      throw new RuntimeException("Error creating multipart iterator", e);
     }
   }
 
@@ -62,15 +76,24 @@ class HttpPartIteratorAdapter
   private static class FileItemStreamPayload
       implements PartPayload
   {
-    private final FileItemStream next;
+    private final FileItemStream fileItemStream;
 
-    public FileItemStreamPayload(final FileItemStream next) {
-      this.next = next;
+    public FileItemStreamPayload(final FileItemStream fileItemStream) {
+      this.fileItemStream = checkNotNull(fileItemStream);
     }
 
     @Override
     public InputStream openInputStream() throws IOException {
-      return next.openStream();
+      // Using a virtual thread for I/O operations to improve scalability
+      // This allows the system to handle many concurrent file uploads efficiently
+      return Thread.ofVirtual().name("stream-reader").start(() -> {
+        try {
+          return fileItemStream.openStream();
+        }
+        catch (IOException e) {
+          throw new RuntimeException("Failed to open input stream", e);
+        }
+      }).join();
     }
 
     @Override
@@ -81,23 +104,23 @@ class HttpPartIteratorAdapter
     @Nullable
     @Override
     public String getContentType() {
-      return next.getContentType();
+      return fileItemStream.getContentType();
     }
 
     @Nullable
     @Override
     public String getName() {
-      return next.getName();
+      return fileItemStream.getName();
     }
 
     @Override
     public String getFieldName() {
-      return next.getFieldName();
+      return fileItemStream.getFieldName();
     }
 
     @Override
     public boolean isFormField() {
-      return next.isFormField();
+      return fileItemStream.isFormField();
     }
   }
 
@@ -110,7 +133,7 @@ class HttpPartIteratorAdapter
     private final FileItemIterator itemIterator;
 
     public PayloadIterator(final FileItemIterator itemIterator) {
-      this.itemIterator = itemIterator;
+      this.itemIterator = checkNotNull(itemIterator);
     }
 
     @Override
@@ -119,17 +142,24 @@ class HttpPartIteratorAdapter
         return itemIterator.hasNext();
       }
       catch (FileUploadException | IOException e) {
-        throw new RuntimeException(e);
+        throw new RuntimeException("Error checking for next item", e);
       }
     }
 
     @Override
     public PartPayload next() {
       try {
-        return new FileItemStreamPayload(itemIterator.next());
+        // Using pattern matching for instanceof in Java 21
+        // This simplifies type checking and casting in a single step
+        var nextItem = itemIterator.next();
+        if (nextItem instanceof FileItemStream fileItem) {
+          // The pattern variable 'fileItem' is automatically cast and available for use
+          return new FileItemStreamPayload(fileItem);
+        }
+        throw new IllegalStateException("Unexpected item type: " + nextItem.getClass().getName());
       }
       catch (FileUploadException | IOException e) {
-        throw new RuntimeException(e);
+        throw new RuntimeException("Error getting next item", e);
       }
     }
 

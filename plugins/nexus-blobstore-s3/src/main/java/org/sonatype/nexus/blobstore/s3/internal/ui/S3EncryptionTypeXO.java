@@ -13,54 +13,42 @@
 package org.sonatype.nexus.blobstore.s3.internal.ui;
 
 /**
- * S3 Encryption exchange object.
+ * S3 Encryption exchange object implemented as an immutable Java 21 record.
+ * <p>
+ * This record provides accessor methods for each component and "with" methods
+ * that return new instances with modified values to maintain compatibility
+ * with the fluent API style of the original class.
  *
  * @since 3.19
  */
-public class S3EncryptionTypeXO
-{
-  private int order;
-
-  private String id;
-
-  private String name;
-
-  public int getOrder() {
-    return order;
-  }
-
-  public void setOrder(final int order) {
-    this.order = order;
-  }
-
+public record S3EncryptionTypeXO(int order, String id, String name) {
+  /**
+   * Returns a new instance with the specified order value.
+   *
+   * @param order the new order value
+   * @return a new instance with the updated order
+   */
   public S3EncryptionTypeXO withOrder(final int order) {
-    this.order = order;
-    return this;
+    return new S3EncryptionTypeXO(order, this.id, this.name);
   }
 
-  public String getId() {
-    return id;
-  }
-
-  public void setId(final String id) {
-    this.id = id;
-  }
-
+  /**
+   * Returns a new instance with the specified id value.
+   *
+   * @param id the new id value
+   * @return a new instance with the updated id
+   */
   public S3EncryptionTypeXO withId(final String id) {
-    this.id = id;
-    return this;
+    return new S3EncryptionTypeXO(this.order, id, this.name);
   }
 
-  public String getName() {
-    return name;
-  }
-
-  public void setName(final String name) {
-    this.name = name;
-  }
-
+  /**
+   * Returns a new instance with the specified name value.
+   *
+   * @param name the new name value
+   * @return a new instance with the updated name
+   */
   public S3EncryptionTypeXO withName(final String name) {
-    this.name = name;
-    return this;
+    return new S3EncryptionTypeXO(this.order, this.id, name);
   }
 }

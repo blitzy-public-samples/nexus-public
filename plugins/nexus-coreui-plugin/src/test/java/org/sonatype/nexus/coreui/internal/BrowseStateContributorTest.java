@@ -27,9 +27,11 @@ import org.sonatype.nexus.scheduling.TaskScheduler;
 import org.sonatype.nexus.scheduling.TaskState;
 
 import com.google.common.collect.Sets;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -38,6 +40,12 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.repository.RepositoryTaskSupport.ALL_REPOSITORIES;
 
+/**
+ * Tests for {@link BrowseStateContributor}.
+ * 
+ * Updated for Java 21 compatibility using JUnit Jupiter and Mockito 4.11.0.
+ */
+@ExtendWith(MockitoExtension.class)
 public class BrowseStateContributorTest
     extends TestSupport
 {
@@ -49,7 +57,7 @@ public class BrowseStateContributorTest
 
   private BrowseStateContributor underTest;
 
-  @Before
+  @BeforeEach
   public void setup() {
     when(browseNodeConfiguration.getMaxNodes()).thenReturn(10);
     underTest = new BrowseStateContributor(browseNodeConfiguration, taskScheduler, 60);
@@ -115,6 +123,9 @@ public class BrowseStateContributorTest
     assertThat(state.get("browseTreeMaxNodes"), is(10));
   }
 
+  /**
+   * Creates a mock TaskInfo for testing.
+   */
   private TaskInfo createTaskInfo(String typeId, TaskState runState, String repositoryName) {
     CurrentState currentState = mock(CurrentState.class);
     when(currentState.getRunState()).thenReturn(runState);

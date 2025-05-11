@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.repository.maven;
 
-import javax.annotation.Nonnull;
+import jakarta.annotation.Nonnull;
 
 import org.sonatype.nexus.repository.Facet;
 
@@ -20,6 +20,7 @@ import org.sonatype.nexus.repository.Facet;
  * Maven facet, present on all Maven repositories.
  *
  * @since 3.0
+ * @see Facet
  */
 @Facet.Exposed
 public interface MavenFacet
@@ -27,26 +28,33 @@ public interface MavenFacet
 {
   /**
    * Returns the format specific {@link MavenPathParser}.
+   *
+   * @return the Maven path parser
    */
   @Nonnull
   MavenPathParser getMavenPathParser();
 
   /**
    * Returns the version policy in effect for this repository.
+   *
+   * @return the version policy
    */
   @Nonnull
   VersionPolicy getVersionPolicy();
 
   /**
    * Returns the layout policy in effect for this repository.
+   *
+   * @return the layout policy
    */
   LayoutPolicy layoutPolicy();
 
   /**
-   * @since 3.14
+   * Checks if an asset exists at the given path.
    *
    * @param path of the asset to check
    * @return true if it exists
+   * @since 3.14
    */
   boolean exists(final MavenPath path);
 }

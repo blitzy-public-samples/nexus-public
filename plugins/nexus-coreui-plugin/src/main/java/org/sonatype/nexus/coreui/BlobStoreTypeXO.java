@@ -12,7 +12,11 @@
  */
 package org.sonatype.nexus.coreui;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.SequencedCollection;
+
+import javax.annotation.Nullable;
 import javax.validation.constraints.NotBlank;
 
 /**
@@ -20,90 +24,151 @@ import javax.validation.constraints.NotBlank;
  *
  * @since 3.6
  */
-public class BlobStoreTypeXO
-{
-  @NotBlank
-  private String id;
-
-  @NotBlank
-  private String name;
-
-  private List<FormFieldXO> formFields;
-
-  private String customFormName;
-
-  private boolean isModifiable;
-
-  private boolean isEnabled;
-
-  private boolean isConnectionTestable;
-
-  public String getId() {
-    return id;
+public record BlobStoreTypeXO(
+    @NotBlank String id,
+    @NotBlank String name,
+    @Nullable SequencedCollection<FormFieldXO> formFields,
+    @Nullable String customFormName,
+    boolean isModifiable,
+    boolean isEnabled,
+    boolean isConnectionTestable
+) {
+  /**
+   * Default constructor for deserialization.
+   */
+  public BlobStoreTypeXO {
+    // Convert non-sequenced collections to sequenced collections if needed
+    if (formFields != null && !(formFields instanceof SequencedCollection)) {
+      formFields = new ArrayList<>(formFields);
+    }
   }
 
-  public void setId(String id) {
-    this.id = id;
+  /**
+   * Constructor that accepts a List for backward compatibility.
+   */
+  public BlobStoreTypeXO(
+      String id,
+      String name,
+      @Nullable List<FormFieldXO> formFields,
+      @Nullable String customFormName,
+      boolean isModifiable,
+      boolean isEnabled,
+      boolean isConnectionTestable
+  ) {
+    this(id, name, formFields != null ? new ArrayList<>(formFields) : null, customFormName, isModifiable, isEnabled, isConnectionTestable);
   }
 
-  public String getName() {
-    return name;
-  }
-
-  public void setName(String name) {
-    this.name = name;
-  }
-
+  /**
+   * @return the form fields as a List for backward compatibility
+   */
+  @SuppressWarnings("unchecked")
   public List<FormFieldXO> getFormFields() {
-    return formFields;
+    return formFields instanceof List ? (List<FormFieldXO>) formFields : 
+           formFields != null ? new ArrayList<>(formFields) : null;
   }
 
+  /**
+   * @deprecated Use the constructor or withFormFields() instead
+   */
+  @Deprecated
   public void setFormFields(List<FormFieldXO> formFields) {
-    this.formFields = formFields;
+    throw new UnsupportedOperationException("Records are immutable, use the constructor or withFormFields() instead");
   }
 
-  public String getCustomFormName() {
-    return customFormName;
-  }
-
+  /**
+   * @deprecated Use the constructor or withCustomFormName() instead
+   */
+  @Deprecated
   public void setCustomFormName(String customFormName) {
-    this.customFormName = customFormName;
+    throw new UnsupportedOperationException("Records are immutable, use the constructor or withCustomFormName() instead");
   }
 
-  public boolean isModifiable() {
-    return isModifiable;
+  /**
+   * @deprecated Use the constructor or withId() instead
+   */
+  @Deprecated
+  public void setId(String id) {
+    throw new UnsupportedOperationException("Records are immutable, use the constructor or withId() instead");
   }
 
+  /**
+   * @deprecated Use the constructor or withName() instead
+   */
+  @Deprecated
+  public void setName(String name) {
+    throw new UnsupportedOperationException("Records are immutable, use the constructor or withName() instead");
+  }
+
+  /**
+   * @deprecated Use the constructor or withIsModifiable() instead
+   */
+  @Deprecated
   public void setIsModifiable(boolean isModifiable) {
-    this.isModifiable = isModifiable;
+    throw new UnsupportedOperationException("Records are immutable, use the constructor or withIsModifiable() instead");
   }
 
-  public boolean isEnabled() {
-    return isEnabled;
-  }
-
+  /**
+   * @deprecated Use the constructor or withIsEnabled() instead
+   */
+  @Deprecated
   public void setIsEnabled(boolean isEnabled) {
-    this.isEnabled = isEnabled;
+    throw new UnsupportedOperationException("Records are immutable, use the constructor or withIsEnabled() instead");
   }
 
-  public boolean isConnectionTestable() {
-    return isConnectionTestable;
-  }
-
+  /**
+   * @deprecated Use the constructor or withIsConnectionTestable() instead
+   */
+  @Deprecated
   public void setConnectionTestable(boolean isConnectionTestable) {
-    this.isConnectionTestable = isConnectionTestable;
+    throw new UnsupportedOperationException("Records are immutable, use the constructor or withIsConnectionTestable() instead");
   }
 
-  @Override
-  public String toString() {
-    return "BlobStoreTypeXO{" +
-        "id='" + id + '\'' +
-        ", name='" + name + '\'' +
-        ", formFields=" + formFields +
-        ", customFormName='" + customFormName + '\'' +
-        ", isModifiable=" + isModifiable +
-        ", isEnabled=" + isEnabled +
-        ", isConnectionTestable=" + isConnectionTestable +
-        '}';
+  /**
+   * Creates a new instance with the specified form fields.
+   */
+  public BlobStoreTypeXO withFormFields(SequencedCollection<FormFieldXO> formFields) {
+    return new BlobStoreTypeXO(id, name, formFields, customFormName, isModifiable, isEnabled, isConnectionTestable);
+  }
+
+  /**
+   * Creates a new instance with the specified custom form name.
+   */
+  public BlobStoreTypeXO withCustomFormName(String customFormName) {
+    return new BlobStoreTypeXO(id, name, formFields, customFormName, isModifiable, isEnabled, isConnectionTestable);
+  }
+
+  /**
+   * Creates a new instance with the specified ID.
+   */
+  public BlobStoreTypeXO withId(String id) {
+    return new BlobStoreTypeXO(id, name, formFields, customFormName, isModifiable, isEnabled, isConnectionTestable);
+  }
+
+  /**
+   * Creates a new instance with the specified name.
+   */
+  public BlobStoreTypeXO withName(String name) {
+    return new BlobStoreTypeXO(id, name, formFields, customFormName, isModifiable, isEnabled, isConnectionTestable);
+  }
+
+  /**
+   * Creates a new instance with the specified modifiable flag.
+   */
+  public BlobStoreTypeXO withIsModifiable(boolean isModifiable) {
+    return new BlobStoreTypeXO(id, name, formFields, customFormName, isModifiable, isEnabled, isConnectionTestable);
+  }
+
+  /**
+   * Creates a new instance with the specified enabled flag.
+   */
+  public BlobStoreTypeXO withIsEnabled(boolean isEnabled) {
+    return new BlobStoreTypeXO(id, name, formFields, customFormName, isModifiable, isEnabled, isConnectionTestable);
+  }
+
+  /**
+   * Creates a new instance with the specified connection testable flag.
+   */
+  public BlobStoreTypeXO withIsConnectionTestable(boolean isConnectionTestable) {
+    return new BlobStoreTypeXO(id, name, formFields, customFormName, isModifiable, isEnabled, isConnectionTestable);
   }
 }

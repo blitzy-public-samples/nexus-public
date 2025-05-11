@@ -20,8 +20,10 @@ import javax.inject.Singleton;
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.rapture.StateContributor;
 
-import com.google.common.collect.ImmutableMap;
-
+/**
+ * Contributes user-related state to the Nexus UI.
+ * Updated for Java 21 compatibility by replacing Guava's ImmutableMap with Java's Map.of.
+ */
 @Named
 @Singleton
 public class UsersStateContributor
@@ -32,7 +34,7 @@ public class UsersStateContributor
 
   @Inject
   public UsersStateContributor(@Named("${nexus.react.users:-false}") final Boolean featureFlag) {
-    state = ImmutableMap.of("nexus.react.users", featureFlag);
+    state = Map.of("nexus.react.users", featureFlag);
   }
 
   @Override

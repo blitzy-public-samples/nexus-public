@@ -21,7 +21,10 @@ import org.sonatype.nexus.repository.rest.api.RepositoriesApiResourceV1;
 import static org.sonatype.nexus.repository.maven.rest.MavenProxyRepositoriesApiResourceV1.RESOURCE_URI;
 
 /**
+ * REST resource for Maven proxy repositories.
+ *
  * @since 3.26
+ * @see MavenProxyRepositoriesApiResource
  */
 @Named
 @Singleton

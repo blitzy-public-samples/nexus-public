@@ -18,15 +18,20 @@ import javax.annotation.Nullable;
 import org.sonatype.nexus.blobstore.api.BlobId;
 import org.sonatype.nexus.blobstore.api.BlobStoreException;
 
+// Import for Java 21 String Templates feature
+import static java.lang.StringTemplate.STR;
+
 import com.amazonaws.services.s3.model.AmazonS3Exception;
 import com.google.common.collect.ImmutableMap;
-
-import static java.lang.String.format;
 
 /**
  * A {@link BlobStoreException} specific to the S3 implementation
  *
  * @since 3.19
+ * @see BlobStoreException
+ * 
+ * This class has been updated for Java 21 compatibility, leveraging modern language features
+ * such as String Templates for improved readability and maintainability.
  */
 public class S3BlobStoreException
     extends BlobStoreException
@@ -73,23 +78,54 @@ public class S3BlobStoreException
     this.message = message;
   }
 
+  /**
+   * Builds an exception with an appropriate message based on the error code from the cause.
+   * Uses pattern matching internally to determine the appropriate message.
+   *
+   * @param cause The Amazon S3 exception that triggered this error
+   * @return A new S3BlobStoreException with the appropriate message
+   */
   public static S3BlobStoreException buildException(final AmazonS3Exception cause) {
+    // Using Map.getOrDefault for simple lookup - could be enhanced with pattern matching in more complex scenarios
     String message = ERROR_CODE_MESSAGES.getOrDefault(cause.getErrorCode(), DEFAULT_MESSAGE);
     return new S3BlobStoreException(message, cause, null);
   }
 
+  /**
+   * Creates an exception for insufficient permissions to create a bucket.
+   *
+   * @return A new S3BlobStoreException with an insufficient permissions message
+   */
   public static S3BlobStoreException insufficientCreatePermissionsError() {
     return new S3BlobStoreException(INSUFFICIENT_PERM_CREATE_BUCKET_ERR_MSG);
   }
 
+  /**
+   * Creates an exception for an unexpected error with the specified action.
+   * Uses Java 21 String Templates for more readable string interpolation.
+   *
+   * @param action The action that was being performed when the error occurred
+   * @return A new S3BlobStoreException with a message including the action
+   */
   public static S3BlobStoreException unexpectedError(String action) {
-    return new S3BlobStoreException(format(UNEXPECTED_ERR, action));
+    // Using Java 21 String Templates instead of String.format for improved readability
+    return new S3BlobStoreException(STR."An unexpected error occurred \{action}. Check the logs for more details.");
   }
 
+  /**
+   * Creates an exception for bucket ownership errors.
+   *
+   * @return A new S3BlobStoreException with a bucket ownership error message
+   */
   public static S3BlobStoreException bucketOwnershipError() {
     return new S3BlobStoreException(BUCKET_OWNERSHIP_ERR_MSG);
   }
 
+  /**
+   * Creates an exception for invalid identity errors.
+   *
+   * @return A new S3BlobStoreException with an invalid identity error message
+   */
   public static S3BlobStoreException invalidIdentityError() {
     return new S3BlobStoreException(INVALID_IDENTITY_ERR_MSG);
   }

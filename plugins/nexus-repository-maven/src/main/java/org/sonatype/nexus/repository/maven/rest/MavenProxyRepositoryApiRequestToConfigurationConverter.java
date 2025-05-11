@@ -12,8 +12,6 @@
  */
 package org.sonatype.nexus.repository.maven.rest;
 
-import java.util.Objects;
-
 import javax.inject.Inject;
 import javax.inject.Named;
 
@@ -23,6 +21,8 @@ import org.sonatype.nexus.repository.rest.api.ProxyRepositoryApiRequestToConfigu
 import org.sonatype.nexus.repository.routing.RoutingRuleStore;
 
 /**
+ * Converter for Maven proxy repository API requests to repository configuration.
+ *
  * @since 3.20
  */
 @Named
@@ -39,13 +39,20 @@ public class MavenProxyRepositoryApiRequestToConfigurationConverter
   @Override
   public Configuration convert(final MavenProxyRepositoryApiRequest request) {
     Configuration configuration = super.convert(request);
-    configuration.attributes(MAVEN).set("versionPolicy", request.getMaven().getVersionPolicy());
-    configuration.attributes(MAVEN).set("layoutPolicy", request.getMaven().getLayoutPolicy());
-    configuration.attributes(MAVEN).set("contentDisposition", request.getMaven().getContentDisposition());
+    
+    // Set Maven-specific attributes
+    NestedAttributesMap mavenAttributes = configuration.attributes(MAVEN);
+    mavenAttributes.set("versionPolicy", request.getMaven().getVersionPolicy());
+    mavenAttributes.set("layoutPolicy", request.getMaven().getLayoutPolicy());
+    mavenAttributes.set("contentDisposition", request.getMaven().getContentDisposition());
+    
+    // Configure HTTP client authentication if present
     NestedAttributesMap httpclient = configuration.attributes("httpclient");
-    if (Objects.nonNull(httpclient.get("authentication"))) {
+    var authentication = httpclient.get("authentication");
+    if (authentication != null) {
       httpclient.child("authentication").set("preemptive", request.getHttpClient().getAuthentication().isPreemptive());
     }
+    
     return configuration;
   }
 }

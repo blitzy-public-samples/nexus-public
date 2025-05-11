@@ -12,19 +12,26 @@
  */
 package org.sonatype.nexus.coreui;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import org.sonatype.goodies.testsupport.TestSupport;
 
+// JUnit Jupiter (JUnit 5) imports - updated for Java 21 compatibility
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+// Hamcrest 2.2 compatible imports
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 import static org.sonatype.nexus.coreui.ConanAttributeTransformer.CONAN_FORMAT;
 import static org.sonatype.nexus.coreui.ConanAttributeTransformer.INFO_BINARY_ATTRIBUTE;
 
-import org.junit.Before;
-import org.junit.Test;
-
-import java.util.HashMap;
-import java.util.Map;
-
+/**
+ * Tests for {@link ConanAttributeTransformer}.
+ * 
+ * Updated for Java 21 compatibility and migrated to JUnit Jupiter (JUnit 5.10.1).
+ */
 public class ConanAttributeTransformerTest
     extends TestSupport
 {
@@ -34,12 +41,12 @@ public class ConanAttributeTransformerTest
 
   private ConanAttributeTransformer underTest;
 
-  @Before
+  @BeforeEach // Updated from JUnit 4's @Before to JUnit Jupiter's @BeforeEach
   public void setUp() {
     underTest = new ConanAttributeTransformer();
   }
 
-  @Test
+  @Test // Using JUnit Jupiter's @Test annotation
   public void testTransform() {
     AssetXO assetXO = getAssetXO(JSON);
     underTest.transform(assetXO);
@@ -68,7 +75,7 @@ public class ConanAttributeTransformerTest
     assertThat(result, hasEntry("options.shared", "True"));
   }
 
-  @Test
+  @Test // Using JUnit Jupiter's @Test annotation
   public void testTransformInvalidJson() {
     AssetXO assetXO = getAssetXO(INVALID_JSON);
     underTest.transform(assetXO);
@@ -79,7 +86,7 @@ public class ConanAttributeTransformerTest
     assertThat(result.size(), equalTo(1));
   }
 
-  @Test
+  @Test // Using JUnit Jupiter's @Test annotation
   public void testTransformNoInfoBinary() {
     AssetXO assetXO = new AssetXO();
     Map<String, Object> attributes = new HashMap<>();
@@ -95,8 +102,13 @@ public class ConanAttributeTransformerTest
     assertThat(result.size(), equalTo(1));
   }
 
+  /**
+   * Helper method to create an AssetXO with the given JSON content.
+   * 
+   * @param json The JSON string to use as the INFO_BINARY_ATTRIBUTE value
+   * @return A configured AssetXO instance
+   */
   private static AssetXO getAssetXO(final String json) {
-
     AssetXO assetXO = new AssetXO();
     Map<String, Object> attributes = new HashMap<>();
     Map<String, Object> formatAttributes = new HashMap<>();

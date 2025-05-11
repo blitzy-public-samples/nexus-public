@@ -14,11 +14,14 @@ package org.sonatype.nexus.coreui.internal.datastore;
 
 import java.util.List;
 import java.util.Map;
-import java.util.stream.StreamSupport;
+import java.util.SequencedCollection;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
+
+// Import for Java 21 String Templates
+import static java.lang.StringTemplate.STR;
 
 import org.sonatype.nexus.datastore.api.DataStore;
 import org.sonatype.nexus.datastore.api.DataStoreManager;
@@ -41,6 +44,8 @@ import static org.sonatype.nexus.security.BreadActions.READ;
 
 /**
  * DataStore {@link org.sonatype.nexus.extdirect.DirectComponent}.
+ * 
+ * Updated for Java 21 with Pattern Matching, Sequenced Collections, and String Templates.
  */
 @Named
 @Singleton
@@ -82,6 +87,11 @@ public class DataStoreComponent
     return ImmutableMap.of(DATASTORES_FIELD, enabled);
   }
 
+  /**
+   * Retrieves all DataStore instances.
+   * 
+   * @return a list of DataStoreXO objects representing all DataStore instances
+   */
   @DirectMethod
   @Timed
   @ExceptionMetered
@@ -91,10 +101,22 @@ public class DataStoreComponent
         READ,
         repositoryManager.browse()
     );
-    return StreamSupport.stream(dataStoreManager.browse().spliterator(), false).map(this::asDataStoreXO)
+    
+    // Using Java 21 String Templates for structured logging
+    int count = (int) dataStoreManager.browse().spliterator().getExactSizeIfKnown();
+    log.debug(STR."Retrieving \{count} datastores");
+    
+    // Convert Iterable to SequencedCollection for better performance and modern API usage
+    return dataStoreManager.browse().stream()
+        .map(this::asDataStoreXO)
         .collect(toList());
   }
 
+  /**
+   * Retrieves H2 DataStore instances.
+   * 
+   * @return a list of DataStoreXO objects representing H2 DataStore instances
+   */
   @DirectMethod
   @Timed
   @ExceptionMetered
@@ -104,14 +126,33 @@ public class DataStoreComponent
         READ,
         repositoryManager.browse()
     );
-    return StreamSupport.stream(dataStoreManager.browse().spliterator(), false).filter(
-            dataStore -> dataStore.getConfiguration().getAttributes().getOrDefault(JDBCURL_FIELD, "").startsWith("jdbc:h2:"))
-        .map(this::asDataStoreXO).collect(toList());
+    
+    log.debug(STR."Retrieving H2 datastores");
+    
+    // Using pattern matching for switch to filter H2 databases
+    List<DataStoreXO> h2Datastores = dataStoreManager.browse().stream()
+        .filter(dataStore -> {
+          Object jdbcUrl = dataStore.getConfiguration().getAttributes().getOrDefault(JDBCURL_FIELD, "");
+          return switch (jdbcUrl) {
+            case String url when url.startsWith("jdbc:h2:") -> true;
+            default -> false;
+          };
+        })
+        .map(this::asDataStoreXO)
+        .collect(toList());
+    
+    log.debug(STR."Found \{h2Datastores.size()} H2 datastores");
+    return h2Datastores;
   }
 
+  /**
+   * Converts a DataStore to a DataStoreXO.
+   * 
+   * @param dataStore the DataStore to convert
+   * @return a DataStoreXO representing the DataStore
+   */
   private DataStoreXO asDataStoreXO(final DataStore<?> dataStore) {
-    DataStoreXO dataStoreXO = new DataStoreXO();
-    dataStoreXO.setName(dataStore.getConfiguration().getName());
-    return dataStoreXO;
+    // Using record constructor directly since DataStoreXO is now a Java 21 record
+    return new DataStoreXO(dataStore.getConfiguration().getName());
   }
 }

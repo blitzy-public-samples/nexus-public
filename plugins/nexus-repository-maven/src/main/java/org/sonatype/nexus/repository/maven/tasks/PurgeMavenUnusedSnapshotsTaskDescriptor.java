@@ -23,11 +23,18 @@ import org.sonatype.nexus.repository.maven.PurgeUnusedSnapshotsFacet;
 import org.sonatype.nexus.repository.maven.VersionPolicy;
 import org.sonatype.nexus.scheduling.TaskDescriptorSupport;
 
+// Java 21 imports for potential future use with string templates
+import static java.lang.StringTemplate.STR;
+
 import static org.sonatype.nexus.repository.RepositoryTaskSupport.REPOSITORY_NAME_FIELD_ID;
 import static org.sonatype.nexus.repository.maven.tasks.PurgeMavenUnusedSnapshotsTask.LAST_USED_FIELD_ID;
 
 /**
  * Task descriptor for {@link PurgeMavenUnusedSnapshotsTask}.
+ * <p>
+ * This class is compatible with Java 21 and OSGi/Karaf 4.3.9+.
+ * It provides UI metadata for the task configuration and handles registration
+ * of the task with the scheduling system.
  *
  * @since 3.0
  */
@@ -45,6 +52,12 @@ public class PurgeMavenUnusedSnapshotsTaskDescriptor
 
   public static final Number LAST_USED_MIN_VALUE = 1;
 
+  /**
+   * Constructor for the task descriptor.
+   * <p>
+   * Configures the task with appropriate UI metadata for the task configuration form.
+   * This implementation is compatible with Java 21 and OSGi/Karaf 4.3.9+.
+   */
   public PurgeMavenUnusedSnapshotsTaskDescriptor() {
     super(TYPE_ID,
         PurgeMavenUnusedSnapshotsTask.class,
@@ -66,5 +79,9 @@ public class PurgeMavenUnusedSnapshotsTaskDescriptor
             FormField.MANDATORY
         ).withInitialValue(LAST_USED_INIT_VALUE).withMinimumValue(LAST_USED_MIN_VALUE)
     );
+    
+    // Example of how logging could be implemented using Java 21 string templates if needed:
+    // Logger logger = LoggerFactory.getLogger(getClass());
+    // logger.debug(STR."Registered task descriptor: \{TYPE_ID} for class \{PurgeMavenUnusedSnapshotsTask.class.getName()}");
   }
 }

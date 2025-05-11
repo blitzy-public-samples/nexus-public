@@ -12,9 +12,9 @@
  */
 package org.sonatype.nexus.blobstore.internal.datastore;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.blobstore.api.Blob;
 import org.sonatype.nexus.blobstore.api.BlobId;
@@ -28,7 +28,7 @@ import org.sonatype.nexus.repository.manager.RepositoryManager;
 
 import com.codahale.metrics.annotation.Timed;
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import java.util.Objects;
 import static java.util.Optional.of;
 import static org.sonatype.nexus.blobstore.api.BlobStore.REPO_NAME_HEADER;
 import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_ENABLED;
@@ -49,7 +49,7 @@ public class DefaultBlobStoreUsageChecker
   @Inject
   public DefaultBlobStoreUsageChecker(final RepositoryManager repositoryManager)
   {
-    this.repositoryManager = checkNotNull(repositoryManager);
+    this.repositoryManager = Objects.requireNonNull(repositoryManager);
   }
 
   @Override
@@ -60,13 +60,15 @@ public class DefaultBlobStoreUsageChecker
         .map(Blob::getHeaders)
         .map(headers -> headers.get(REPO_NAME_HEADER))
         .map(repositoryManager::get)
-        .map(repository -> (ContentFacetSupport) repository.facet(ContentFacet.class))
-        .flatMap(contentFacetSupport -> {
-          String blobStoreName = blobStore.getBlobStoreConfiguration().getName();
-          BlobRef blobRef = new BlobRef(
-              contentFacetSupport.nodeName(), blobStoreName, blobId.asUniqueString(), blobId.getBlobCreatedRef());
-          return contentFacetSupport.stores().assetBlobStore.readAssetBlob(blobRef);
+        .map(repository -> {
+          if (repository instanceof ContentFacetSupport contentFacetSupport) {
+            String blobStoreName = blobStore.getBlobStoreConfiguration().getName();
+            BlobRef blobRef = new BlobRef(
+                contentFacetSupport.nodeName(), blobStoreName, blobId.asUniqueString(), blobId.getBlobCreatedRef());
+            return contentFacetSupport.stores().assetBlobStore.readAssetBlob(blobRef).isPresent();
+          }
+          return false;
         })
-        .isPresent();
+        .orElse(false);
   }
 }

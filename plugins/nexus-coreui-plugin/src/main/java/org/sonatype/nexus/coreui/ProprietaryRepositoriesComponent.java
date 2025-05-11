@@ -16,6 +16,9 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -44,6 +47,8 @@ import static org.sonatype.nexus.repository.config.ConfigurationConstants.PROPRI
 
 /**
  * Proprietary Repositories Settings {@link DirectComponent}.
+ * 
+ * Updated for Java 21 with Virtual Threads for improved concurrency in repository operations.
  */
 @Named
 @Singleton
@@ -73,7 +78,7 @@ public class ProprietaryRepositoriesComponent
         .filter(ProprietaryRepositoriesComponent::isProprietary)
         .map(Repository::getName)
         .sorted()
-        .collect(Collectors.toList()); // NOSONAR
+        .collect(Collectors.toList());
     ProprietaryRepositoriesXO proprietaryRepositoriesXO = new ProprietaryRepositoriesXO();
     proprietaryRepositoriesXO.setEnabledRepositories(enabledRepositories);
     return proprietaryRepositoriesXO;
@@ -94,7 +99,7 @@ public class ProprietaryRepositoriesComponent
         .filter(ProprietaryRepositoriesComponent::isHosted)
         .map(repo -> new ReferenceXO(repo.getName(), repo.getName()))
         .sorted(Comparator.comparing(ReferenceXO::getName))
-        .collect(Collectors.toList()); // NOSONAR
+        .collect(Collectors.toList());
   }
 
   /**
@@ -110,12 +115,41 @@ public class ProprietaryRepositoriesComponent
   @Validate
   ProprietaryRepositoriesXO update(@NotNull @Valid final ProprietaryRepositoriesXO proprietaryRepositoriesXO) {
     Set<String> shouldBeEnabled = new HashSet<>(proprietaryRepositoriesXO.getEnabledRepositories());
-    repositoryManager.getRepositoriesWithAdmin()
+    
+    // Get repositories that need to be updated
+    List<Repository> reposToUpdate = repositoryManager.getRepositoriesWithAdmin()
         .stream()
         .filter(ProprietaryRepositoriesComponent::isHosted)
         .filter(repo -> (!isProprietary(repo) && shouldBeEnabled.contains(repo.getName()))
             || (isProprietary(repo) && !shouldBeEnabled.contains(repo.getName())))
-        .forEach(repo -> setProprietaryStatus(repo, shouldBeEnabled.contains(repo.getName())));
+        .toList();
+    
+    // Use virtual threads to update repositories concurrently
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      List<Future<?>> futures = reposToUpdate.stream()
+          .map(repo -> executor.submit(() -> {
+            try {
+              setProprietaryStatus(repo, shouldBeEnabled.contains(repo.getName()));
+            } catch (Exception e) {
+              log.error(STR."Error updating proprietary status in repo: \{repo.getName()}", e);
+              throw new RuntimeException(e);
+            }
+          }))
+          .toList();
+      
+      // Wait for all updates to complete
+      for (Future<?> future : futures) {
+        try {
+          future.get();
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          throw new RuntimeException("Repository update interrupted", e);
+        } catch (ExecutionException e) {
+          throw new RuntimeException("Repository update failed", e.getCause());
+        }
+      }
+    }
+    
     return read();
   }
 
@@ -131,12 +165,6 @@ public class ProprietaryRepositoriesComponent
   private void setProprietaryStatus(final Repository repository, final boolean status) {
     Configuration newConfig = repository.getConfiguration().copy();
     newConfig.attributes(COMPONENT).set(PROPRIETARY_COMPONENTS, status);
-    try {
-      repositoryManager.update(newConfig);
-    }
-    catch (Exception e) {
-      log.error("Error updating proprietary status in repo: {}", repository.getName(), e);
-      throw new RuntimeException(e);
-    }
+    repositoryManager.update(newConfig);
   }
 }

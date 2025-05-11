@@ -35,33 +35,44 @@ import org.sonatype.nexus.security.privilege.PrivilegeDescriptor;
 import org.sonatype.nexus.selector.SelectorConfiguration;
 import org.sonatype.nexus.selector.SelectorManager;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-public class PrivilegesUIResourceTest
+/**
+ * Tests for {@link PrivilegesUIResource}.
+ * 
+ * Updated for Java 21 compatibility and JUnit Jupiter (JUnit 5.10.1).
+ * Uses Mockito 5.x with MockitoExtension for JUnit Jupiter integration.
+ */
+@ExtendWith(MockitoExtension.class)
+class PrivilegesUIResourceTest
     extends TestSupport
 {
-  public static final String HELP_TEXT = "The actions you wish to allow";
+  private static final String HELP_TEXT = "The actions you wish to allow";
 
-  public static final String FORM_TYPE = "setOfCheckboxes";
+  private static final String FORM_TYPE = "setOfCheckboxes";
 
-  public static final String FORM_ID = "actions";
+  private static final String FORM_ID = "actions";
 
-  public static final String ACTIONS_KEY = "options";
+  private static final String ACTIONS_KEY = "options";
 
-  public static final List<String> CRUD_ACTION_STRINGS = Arrays.asList(
+  private static final List<String> CRUD_ACTION_STRINGS = Arrays.asList(
     "create", "read", "update", "delete", "start", "stop", "associate", "disassociate");
 
-  public static final List<String> BREAD_ACTION_STRINGS = Arrays.asList("browse", "read", "edit", "add", "delete");
+  private static final List<String> BREAD_ACTION_STRINGS = Arrays.asList("browse", "read", "edit", "add", "delete");
 
-  public static final List<String> BREAD_RUN_ACTION_STRINGS = Arrays.asList("browse", "read", "edit", "add", "delete", "run");
+  private static final List<String> BREAD_RUN_ACTION_STRINGS = Arrays.asList("browse", "read", "edit", "add", "delete", "run");
 
   @Mock
   private RepositoryManager repositoryManager;
@@ -86,8 +97,9 @@ public class PrivilegesUIResourceTest
 
   private PrivilegesUIResource underTest;
 
-  @Before
-  public void setup() {
+  @BeforeEach
+  void setup() {
+    // Setup mock behavior
     when(repository1.getFormat()).thenReturn(format1);
     when(repository2.getFormat()).thenReturn(format2);
     when(repositoryManager.get("repository1")).thenReturn(repository1);
@@ -99,6 +111,7 @@ public class PrivilegesUIResourceTest
 
     List<Format> formats = Arrays.asList(format1, format2);
 
+    // Create privilege descriptors map
     Map<String, PrivilegeDescriptor> privilegeDescriptors = new HashMap<>();
     privilegeDescriptors.put(ApplicationPrivilegeDescriptor.TYPE, new ApplicationPrivilegeDescriptor(true));
     privilegeDescriptors.put(RepositoryAdminPrivilegeDescriptor.TYPE,
@@ -109,40 +122,58 @@ public class PrivilegesUIResourceTest
         new RepositoryContentSelectorPrivilegeDescriptor(repositoryManager, selectorManager, formats, true));
     privilegeDescriptors.put(ScriptPrivilegeDescriptor.TYPE, new ScriptPrivilegeDescriptor(scriptManager, true));
 
+    // Initialize the class under test
     underTest = new PrivilegesUIResource(privilegeDescriptors);
   }
 
   @Test
-  public void listPrivilegesTypes() {
+  @DisplayName("Should list all privilege types with correct form fields")
+  void listPrivilegesTypes() {
+    // When: listing privilege types
     List<PrivilegesTypesUIResponse> responses = underTest.listPrivilegesTypes();
+    
+    // Then: should return 5 privilege types
     assertThat(responses.size(), is(5));
 
+    // And: Application privilege should have CRUD actions
     PrivilegesTypesUIResponse responseApplication = responses.stream()
         .filter(r -> r.getId() == ApplicationPrivilegeDescriptor.TYPE)
         .findFirst().orElse(null);
     assertSetOfCheckboxesFormField(responseApplication, HELP_TEXT, FORM_TYPE, CRUD_ACTION_STRINGS);
 
+    // And: Repository Admin privilege should have BREAD actions
     PrivilegesTypesUIResponse responseRepositoryAdmin = responses.stream()
         .filter(r -> r.getId() == RepositoryAdminPrivilegeDescriptor.TYPE)
         .findFirst().orElse(null);
     assertSetOfCheckboxesFormField(responseRepositoryAdmin, HELP_TEXT, FORM_TYPE, BREAD_ACTION_STRINGS);
 
+    // And: Repository View privilege should have BREAD actions
     PrivilegesTypesUIResponse responseRepositoryView = responses.stream()
         .filter(r -> r.getId() == RepositoryViewPrivilegeDescriptor.TYPE)
         .findFirst().orElse(null);
     assertSetOfCheckboxesFormField(responseRepositoryView, HELP_TEXT, FORM_TYPE, BREAD_ACTION_STRINGS);
 
+    // And: Repository Content Selector privilege should have BREAD actions
     PrivilegesTypesUIResponse responseRepositoryContentSelector = responses.stream()
         .filter(r -> r.getId() == RepositoryContentSelectorPrivilegeDescriptor.TYPE)
         .findFirst().orElse(null);
     assertSetOfCheckboxesFormField(responseRepositoryContentSelector, HELP_TEXT, FORM_TYPE, BREAD_ACTION_STRINGS);
 
+    // And: Script privilege should have BREAD_RUN actions
     PrivilegesTypesUIResponse responseScript = responses.stream()
         .filter(r -> r.getId() == ScriptPrivilegeDescriptor.TYPE)
         .findFirst().orElse(null);
     assertSetOfCheckboxesFormField(responseScript, HELP_TEXT, FORM_TYPE, BREAD_RUN_ACTION_STRINGS);
   }
 
+  /**
+   * Helper method to assert that a form field has the expected properties.
+   * 
+   * @param response The response containing form fields to check
+   * @param helpText The expected help text
+   * @param type The expected form field type
+   * @param actions The expected actions list
+   */
   private void assertSetOfCheckboxesFormField(PrivilegesTypesUIResponse response,
                                String helpText,
                                String type,

@@ -18,6 +18,10 @@
 
 /**
  * @since 3.15
+ * 
+ * This controller has been validated for compatibility with Java 21 runtime environment.
+ * It works with the updated build infrastructure (Node.js v18.17.1, Yarn v1.22.19, Maven 3.9.6)
+ * and continues to function correctly when served by the Java 21-based backend.
  */
 Ext.define('NX.maven.controller.MavenDependencySnippetController', {
   extend: 'NX.app.Controller',

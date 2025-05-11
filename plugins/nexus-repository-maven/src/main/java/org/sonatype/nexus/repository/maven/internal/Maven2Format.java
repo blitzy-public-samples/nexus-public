@@ -17,6 +17,8 @@ import javax.inject.Singleton;
 
 import org.sonatype.nexus.repository.Format;
 
+import org.osgi.service.component.annotations.Component;
+
 /**
  * Maven 2 format.
  *
@@ -24,6 +26,7 @@ import org.sonatype.nexus.repository.Format;
  */
 @Named(Maven2Format.NAME)
 @Singleton
+@Component(service = Format.class)
 public class Maven2Format
     extends Format
 {

@@ -19,11 +19,23 @@ import org.sonatype.nexus.repository.Facet;
 /**
  * Facet for rebuilding maven archetype catalog.
  *
+ * This interface is compatible with Java 21 and can be implemented by classes
+ * leveraging Java 21 features such as Virtual Threads for improved I/O performance
+ * during catalog rebuilding operations.
+ *
  * @since 3.25
  */
 @Facet.Exposed
 public interface MavenArchetypeCatalogFacet
     extends Facet
 {
+  /**
+   * Rebuilds the maven archetype catalog.
+   * 
+   * Implementations may leverage Java 21 Virtual Threads for improved I/O performance
+   * when performing catalog rebuilding operations.
+   *
+   * @throws IOException if an I/O error occurs during catalog rebuilding
+   */
   void rebuildArchetypeCatalog() throws IOException;
 }

@@ -14,19 +14,13 @@ package org.sonatype.nexus.content.maven.internal.event;
 
 /**
  * Event used to indicate when the archetype catalog for a given maven repository should be rebuilt.
+ * 
+ * Implemented as a Java 21 record for immutability and conciseness. Records automatically provide
+ * constructor, accessor methods, equals, hashCode, and toString implementations.
+ * 
+ * Note: When migrating from the original class implementation, code that called getRepositoryName()
+ * will need to use repositoryName() instead, as records use component names directly for accessor methods.
  *
  * @since 3.26
  */
-public final class RebuildMavenArchetypeCatalogEvent
-{
-  private final String repositoryName;
-
-  public RebuildMavenArchetypeCatalogEvent(final String repositoryName)
-  {
-    this.repositoryName = repositoryName;
-  }
-
-  public String getRepositoryName() {
-    return repositoryName;
-  }
-}
+public record RebuildMavenArchetypeCatalogEvent(String repositoryName) {}

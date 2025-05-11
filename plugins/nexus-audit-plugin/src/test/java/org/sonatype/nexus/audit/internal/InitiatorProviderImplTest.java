@@ -18,10 +18,13 @@ import org.sonatype.nexus.security.ClientInfoProvider;
 
 import org.apache.shiro.subject.Subject;
 import org.apache.shiro.util.ThreadContext;
-import org.junit.After;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
@@ -30,24 +33,27 @@ import static org.mockito.Mockito.when;
 
 /**
  * Tests for {@link InitiatorProviderImpl}.
+ * <p>
+ * Updated for Java 21 compatibility using JUnit Jupiter and Mockito 4.11.0+.
  */
-public class InitiatorProviderImplTest
+@ExtendWith(MockitoExtension.class)
+class InitiatorProviderImplTest
     extends TestSupport
 {
-
   @Mock
   private ClientInfoProvider clientInfoProvider;
 
   @InjectMocks
   private InitiatorProviderImpl underTest;
 
-  @After
-  public void tearDown() {
+  @AfterEach
+  void tearDown() {
     reset();
   }
 
   @Test
-  public void testPreferClientInfoWhenAvailable() {
+  @DisplayName("Should prefer client info when available")
+  void preferClientInfoWhenAvailable() {
     ClientInfo clientInfo = ClientInfo.builder().userId("foo").remoteIP("1.2.3.4").userAgent("bar").build();
     when(clientInfoProvider.getCurrentThreadClientInfo()).thenReturn(clientInfo);
 
@@ -56,7 +62,8 @@ public class InitiatorProviderImplTest
   }
 
   @Test
-  public void testClientInfoMissingUsesSubject() {
+  @DisplayName("Should use subject when client info is missing")
+  void useSubjectWhenClientInfoMissing() {
     ThreadContext.bind(subject("foo"));
     String result = underTest.get();
     assertThat(result, equalTo("foo"));

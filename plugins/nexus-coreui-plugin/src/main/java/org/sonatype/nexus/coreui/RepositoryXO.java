@@ -12,7 +12,9 @@
  */
 package org.sonatype.nexus.coreui;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.SequencedMap;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotEmpty;
 import javax.validation.constraints.NotNull;
@@ -27,114 +29,46 @@ import org.sonatype.nexus.validation.group.Create;
  *
  * @since 3.0
  */
-public class RepositoryXO
-{
-  @Pattern(regexp = NamePatternConstants.REGEX, message = NamePatternConstants.MESSAGE)
-  @NotEmpty
-  @UniqueRepositoryName(groups = Create.class)
-  private String name;
-
-  private String type;
-
-  private String format;
-
-  private Long size;
-
-  @NotBlank(groups = Create.class)
-  private String recipe;
-
-  @NotNull
-  private Boolean online;
-
-  private String routingRuleId;
-
-  @NotEmpty
-  private Map<String, Map<String, Object>> attributes;
-
-  private String url;
-
-  private RepositoryStatusXO status;
-
-  public String getName() {
-    return name;
+public record RepositoryXO(
+    @Pattern(regexp = NamePatternConstants.REGEX, message = NamePatternConstants.MESSAGE)
+    @NotEmpty
+    @UniqueRepositoryName(groups = Create.class)
+    String name,
+    
+    String type,
+    
+    String format,
+    
+    Long size,
+    
+    @NotBlank(groups = Create.class)
+    String recipe,
+    
+    @NotNull
+    Boolean online,
+    
+    String routingRuleId,
+    
+    @NotEmpty
+    SequencedMap<String, Map<String, Object>> attributes,
+    
+    String url,
+    
+    RepositoryStatusXO status
+) {
+  /**
+   * Constructor with Map parameter for backward compatibility.
+   */
+  public RepositoryXO {
+    // Convert Map to SequencedMap if needed
+    if (attributes != null && !(attributes instanceof SequencedMap)) {
+      attributes = new LinkedHashMap<>(attributes);
+    }
   }
-
-  public void setName(String name) {
-    this.name = name;
-  }
-
-  public String getType() {
-    return type;
-  }
-
-  public void setType(String type) {
-    this.type = type;
-  }
-
-  public String getFormat() {
-    return format;
-  }
-
-  public void setFormat(String format) {
-    this.format = format;
-  }
-
-  public Long getSize() {
-    return size;
-  }
-
-  public void setSize(Long size) {
-    this.size = size;
-  }
-
-  public String getRecipe() {
-    return recipe;
-  }
-
-  public void setRecipe(String recipe) {
-    this.recipe = recipe;
-  }
-
-  public Boolean getOnline() {
-    return online;
-  }
-
-  public void setOnline(Boolean online) {
-    this.online = online;
-  }
-
-  public String getRoutingRuleId() {
-    return routingRuleId;
-  }
-
-  public void setRoutingRuleId(String routingRuleId) {
-    this.routingRuleId = routingRuleId;
-  }
-
-  public Map<String, Map<String, Object>> getAttributes() {
-    return attributes;
-  }
-
-  public void setAttributes(Map<String, Map<String, Object>> attributes) {
-    this.attributes = attributes;
-  }
-
-  public String getUrl() {
-    return url;
-  }
-
-  public void setUrl(String url) {
-    this.url = url;
-  }
-
-  public RepositoryStatusXO getStatus() {
-    return status;
-  }
-
-  public void setStatus(RepositoryStatusXO status) {
-    this.status = status;
-  }
-
+  
+  /**
+   * Maintains the original toString format for backward compatibility.
+   */
   @Override
   public String toString() {
     return "RepositoryXO{" +

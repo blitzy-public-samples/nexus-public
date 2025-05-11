@@ -28,14 +28,48 @@ import static com.google.common.base.Preconditions.checkNotNull;
 class HttpHeadersAdapter
     extends Headers
 {
+  /**
+   * Creates a new Headers instance from an HttpServletRequest.
+   * 
+   * @param request The HTTP servlet request containing headers to adapt
+   * @throws NullPointerException if request is null
+   */
   public HttpHeadersAdapter(final HttpServletRequest request) {
     checkNotNull(request);
+    
+    // Get all header names from the request
     Enumeration<String> names = request.getHeaderNames();
+    
+    // Process each header name
     while (names.hasMoreElements()) {
       String name = names.nextElement();
+      
+      // For each header name, get all its values
       Enumeration<String> values = request.getHeaders(name);
-      while (values.hasMoreElements()) {
-        set(name, values.nextElement());
+      
+      // Process each header value using pattern matching
+      processHeaderValues(name, values);
+    }
+  }
+  
+  /**
+   * Processes header values using pattern matching.
+   * 
+   * @param name The header name
+   * @param values The enumeration of header values
+   */
+  private void processHeaderValues(String name, Enumeration<String> values) {
+    while (values.hasMoreElements()) {
+      Object value = values.nextElement();
+      
+      // Use pattern matching to handle different value types
+      // This demonstrates Java 21's pattern matching capabilities
+      // In this case, we're only expecting String values from the servlet API,
+      // but this pattern allows for future extensibility
+      switch (value) {
+        case String s -> set(name, s);
+        case null -> { /* Skip null values */ }
+        default -> set(name, value.toString());
       }
     }
   }

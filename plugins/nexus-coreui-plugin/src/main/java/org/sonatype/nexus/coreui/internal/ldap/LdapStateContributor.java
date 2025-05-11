@@ -20,8 +20,11 @@ import javax.inject.Singleton;
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.rapture.StateContributor;
 
-import com.google.common.collect.ImmutableMap;
-
+/**
+ * Contributes LDAP-related state to the Nexus UI.
+ * 
+ * @since 3.0
+ */
 @Named
 @Singleton
 public class LdapStateContributor
@@ -43,7 +46,8 @@ public class LdapStateContributor
 
   @Override
   public Map<String, Object> getState() {
-    return ImmutableMap.of(
+    // Using Java's Map.of() instead of Guava's ImmutableMap for Java 21 compatibility
+    return Map.of(
       "nexus.react.ldap", featureFlag,
       "nexus.ldap.mapped.role.query.character.limit", mappedRoleQueryCharacterLimit
     );

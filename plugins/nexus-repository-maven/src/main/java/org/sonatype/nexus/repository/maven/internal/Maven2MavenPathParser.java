@@ -108,19 +108,31 @@ public class Maven2MavenPathParser
 
       StringBuilder extSuffix = new StringBuilder();
       SignatureType signatureType = null;
-      for (HashType hashType : HashType.values()) {
-        if (str.endsWith("." + hashType.getExt())) {
-          extSuffix.insert(0, "." + hashType.getExt());
-          str = str.substring(0, str.length() - (hashType.getExt().length() + 1));
-          break;
+      
+      // Using pattern matching with switch for hash type detection
+      String fileExtension = getFileExtension(str);
+      if (fileExtension != null) {
+        switch (fileExtension) {
+          case String s when isHashType(s) -> {
+            HashType hashType = HashType.valueOf(s.toUpperCase());
+            extSuffix.insert(0, "." + hashType.getExt());
+            str = str.substring(0, str.length() - (hashType.getExt().length() + 1));
+          }
+          default -> { /* Not a hash type extension */ }
         }
       }
 
-      for (SignatureType sType : SignatureType.values()) {
-        if (str.endsWith("." + sType.getExt())) {
-          extSuffix.insert(0, "." + sType.getExt());
-          str = str.substring(0, str.length() - (sType.getExt().length() + 1));
-          signatureType = sType;
+      // Using pattern matching with switch for signature type detection
+      fileExtension = getFileExtension(str);
+      if (fileExtension != null) {
+        switch (fileExtension) {
+          case String s when isSignatureType(s) -> {
+            SignatureType sType = SignatureType.valueOf(s.toUpperCase());
+            extSuffix.insert(0, "." + sType.getExt());
+            str = str.substring(0, str.length() - (sType.getExt().length() + 1));
+            signatureType = sType;
+          }
+          default -> { /* Not a signature type extension */ }
         }
       }
 
@@ -170,7 +182,7 @@ public class Maven2MavenPathParser
                 snapshotTimestampedVersion.toString()).getMillis();
           }
           catch (IllegalArgumentException e) {
-            log.trace("metadata dotted timestamp failed parsing to millis {}", snapshotTimestampedVersion.toString());
+            log.trace(STR."metadata dotted timestamp failed parsing to millis \{snapshotTimestampedVersion}");
           }
 
           // add the dash between timestamp and buildNo
@@ -178,7 +190,7 @@ public class Maven2MavenPathParser
 
           int buildNumberPos = vSnapshotStart + snapshotTimestampedVersion.length();
           final StringBuilder bnr = new StringBuilder();
-          while (str.charAt(buildNumberPos) >= '0' && str.charAt(buildNumberPos) <= '9') {
+          while (buildNumberPos < str.length() && str.charAt(buildNumberPos) >= '0' && str.charAt(buildNumberPos) <= '9') {
             snapshotTimestampedVersion.append(str.charAt(buildNumberPos));
             bnr.append(str.charAt(buildNumberPos));
             buildNumberPos++;
@@ -187,7 +199,7 @@ public class Maven2MavenPathParser
             buildNumber = Integer.parseInt(bnr.toString());
           }
           catch (NumberFormatException e) {
-            log.trace("build number failed parsing {}", bnr);
+            log.trace(STR."build number failed parsing \{bnr}");
           }
           tail = str.substring(vSnapshotStart + snapshotTimestampedVersion.length());
           version = baseVersion.substring(0, baseVersion.length() - Constants.SNAPSHOT_VERSION_SUFFIX.length())
@@ -236,6 +248,39 @@ public class Maven2MavenPathParser
     }
     catch (StringIndexOutOfBoundsException e) {
       return null;
+    }
+  }
+
+  /**
+   * Gets the file extension from a string.
+   */
+  @Nullable
+  private String getFileExtension(final String str) {
+    int lastDotIndex = str.lastIndexOf('.');
+    return lastDotIndex > 0 ? str.substring(lastDotIndex + 1) : null;
+  }
+
+  /**
+   * Checks if the given extension is a valid hash type.
+   */
+  private boolean isHashType(final String extension) {
+    try {
+      HashType.valueOf(extension.toUpperCase());
+      return true;
+    } catch (IllegalArgumentException e) {
+      return false;
+    }
+  }
+
+  /**
+   * Checks if the given extension is a valid signature type.
+   */
+  private boolean isSignatureType(final String extension) {
+    try {
+      SignatureType.valueOf(extension.toUpperCase());
+      return true;
+    } catch (IllegalArgumentException e) {
+      return false;
     }
   }
 

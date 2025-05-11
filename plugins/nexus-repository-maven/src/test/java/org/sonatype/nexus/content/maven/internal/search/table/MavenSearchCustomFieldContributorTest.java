@@ -21,10 +21,12 @@ import org.sonatype.nexus.repository.content.Component;
 import org.sonatype.nexus.repository.maven.internal.Maven2Format;
 import org.sonatype.nexus.repository.search.sql.SearchRecord;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.Mockito;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -32,7 +34,13 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-public class MavenSearchCustomFieldContributorTest
+/**
+ * Test for {@link MavenSearchCustomFieldContributor} with Java 21 compatibility.
+ * <p>
+ * This test has been updated to use JUnit Jupiter (JUnit 5) and is compatible with Java 21.
+ */
+@ExtendWith(MockitoExtension.class)
+class MavenSearchCustomFieldContributorTest
     extends TestSupport
 {
   @Mock
@@ -46,8 +54,8 @@ public class MavenSearchCustomFieldContributorTest
 
   private MavenSearchCustomFieldContributor underTest;
 
-  @Before
-  public void setup() {
+  @BeforeEach
+  void setup() {
     underTest = new MavenSearchCustomFieldContributor();
 
     asset = Mockito.mock(Asset.class);
@@ -57,7 +65,7 @@ public class MavenSearchCustomFieldContributorTest
   }
 
   @Test
-  public void customSearchFieldsAreSetCorrectly() {
+  void customSearchFieldsAreSetCorrectly() {
     mockAttributes();
     mockComponentAttributes();
 
@@ -77,7 +85,7 @@ public class MavenSearchCustomFieldContributorTest
   }
 
   @Test
-  public void operationIsSuccessfulWithNoCustomSearchData() {
+  void operationIsSuccessfulWithNoCustomSearchData() {
     SearchRecord searchRecord = mock(SearchRecord.class);
 
     when(asset.attributes()).thenReturn(attributes);

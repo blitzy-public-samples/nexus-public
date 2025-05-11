@@ -25,113 +25,72 @@ import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 /**
- * Simple DTO for writing audit data to log file in JSON format
+ * Simple DTO for writing audit data to log file in JSON format.
+ * Implemented as a Java 21 Record for improved data handling and immutability.
  *
  * @since 3.16
  */
 @JsonInclude(Include.NON_NULL)
-public class AuditDTO
-{
-  private String timestamp;
-
-  private String nodeId;
-
-  private String initiator;
-
-  private String domain;
-
-  private String type;
-
-  private String context;
-
-  private String thread;
-
-  private Map<String, Object> attributes;
-
+public record AuditDTO(
+    String timestamp,
+    String nodeId,
+    String initiator,
+    String domain,
+    String type,
+    String context,
+    String thread,
+    Map<String, Object> attributes
+) {
+  /**
+   * DateTimeFormatter for consistent timestamp formatting.
+   * Pattern: yyyy-MM-dd HH:mm:ss,SSSZ
+   */
   private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss,SSSZ");
 
+  /**
+   * ObjectMapper configured with Java 21 compatible modules for JSON serialization.
+   * Uses Jdk8Module and JavaTimeModule for handling modern Java types.
+   */
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
       .registerModule(new Jdk8Module())
       .registerModule(new JavaTimeModule());
 
+  /**
+   * No-args constructor for deserialization.
+   */
   public AuditDTO() {
-    // deserialization
+    this(null, null, null, null, null, null, null, null);
   }
 
+  /**
+   * Constructs an AuditDTO from AuditData.
+   * Formats timestamp using the system default timezone and captures thread information.
+   * Compatible with Java 21 Virtual Threads.
+   *
+   * @param auditData The audit data to convert
+   */
   public AuditDTO(final AuditData auditData) {
-    if (auditData.getTimestamp() != null) {
-      this.timestamp =
-          auditData.getTimestamp().toInstant().atZone(ZoneId.systemDefault()).toOffsetDateTime().format(DATE_FORMAT);
-    }
-    this.nodeId = auditData.getNodeId();
-    this.initiator = auditData.getInitiator();
-    this.domain = auditData.getDomain();
-    this.type = auditData.getType();
-    this.context = auditData.getContext();
-    this.thread = Thread.currentThread().getName();
-    this.attributes = auditData.getAttributes();
+    this(
+        auditData.getTimestamp() != null
+            ? auditData.getTimestamp().toInstant().atZone(ZoneId.systemDefault()).toOffsetDateTime().format(DATE_FORMAT)
+            : null,
+        auditData.getNodeId(),
+        auditData.getInitiator(),
+        auditData.getDomain(),
+        auditData.getType(),
+        auditData.getContext(),
+        // Capture thread information in a way that's compatible with both platform and virtual threads
+        Thread.currentThread().getName() + " (" + Thread.currentThread().threadId() + ")",
+        auditData.getAttributes()
+    );
   }
 
-  public String getTimestamp() {
-    return timestamp;
-  }
-
-  public void setTimestamp(String timestamp) {
-    this.timestamp = timestamp;
-  }
-
-  public String getNodeId() {
-    return nodeId;
-  }
-
-  public void setNodeId(String nodeId) {
-    this.nodeId = nodeId;
-  }
-
-  public String getInitiator() {
-    return initiator;
-  }
-
-  public void setInitiator(String initiator) {
-    this.initiator = initiator;
-  }
-
-  public String getDomain() {
-    return domain;
-  }
-
-  public void setDomain(String domain) {
-    this.domain = domain;
-  }
-
-  public String getType() {
-    return type;
-  }
-
-  public void setType(String type) {
-    this.type = type;
-  }
-
-  public String getContext() {
-    return context;
-  }
-
-  public void setContext(String context) {
-    this.context = context;
-  }
-
-  public String getThread() {
-    return thread;
-  }
-
-  public Map<String, Object> getAttributes() {
-    return attributes;
-  }
-
-  public void setAttributes(Map<String, Object> attributes) {
-    this.attributes = attributes;
-  }
-
+  /**
+   * Returns a JSON string representation of this record.
+   * Uses the configured ObjectMapper to convert the record to a JSON tree and then to a string.
+   *
+   * @return JSON string representation
+   */
   @Override
   public String toString() {
     return OBJECT_MAPPER.valueToTree(this).toString();

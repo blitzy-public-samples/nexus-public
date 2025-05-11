@@ -20,54 +20,25 @@ import org.sonatype.nexus.common.log.LoggerLevel;
 
 /**
  * Logger exchange object.
+ * Refactored as a Java 21 record for immutability and simplified data handling.
  */
-public class LoggerXO
-{
-  @NotEmpty
-  private String name;
-
-  @NotNull
-  private LoggerLevel level;
-
-  private boolean override;
-
-  public String getName() {
-    return name;
-  }
-
-  public void setName(final String name) {
-    this.name = name;
-  }
-
-  public LoggerLevel getLevel() {
-    return level;
-  }
-
-  public void setLevel(final LoggerLevel level) {
-    this.level = level;
-  }
-
-  public boolean isOverride() {
-    return override;
-  }
-
-  public void setOverride(final boolean override) {
-    this.override = override;
-  }
-
-  @Override
-  public String toString() {
-    return "LoggerXO(" +
-        "name:" + name +
-        ", level:" + level +
-        ", override:" + override +
-        ")";
-  }
-
+public record LoggerXO(
+    @NotEmpty String name,
+    @NotNull LoggerLevel level,
+    boolean override
+) {
+  /**
+   * Creates a LoggerXO instance from a Map.Entry containing logger name and level.
+   * Uses pattern matching to extract key-value pairs from the entry.
+   *
+   * @param entry Map.Entry containing logger name and level
+   * @return new LoggerXO instance with override set to true
+   */
   public static LoggerXO fromEntry(Map.Entry<String, LoggerLevel> entry) {
-    LoggerXO loggerXO = new LoggerXO();
-    loggerXO.setName(entry.getKey());
-    loggerXO.setLevel(entry.getValue());
-    return loggerXO;
+    // Using record pattern matching to destructure the Map.Entry
+    if (entry instanceof Map.Entry<String, LoggerLevel>(var name, var level)) {
+      return new LoggerXO(name, level, true);
+    }
+    throw new IllegalArgumentException("Invalid Map.Entry provided");
   }
 }

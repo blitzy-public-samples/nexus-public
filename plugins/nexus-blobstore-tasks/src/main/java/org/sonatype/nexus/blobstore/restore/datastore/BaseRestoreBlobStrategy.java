@@ -18,6 +18,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.concurrent.Executors;
 import javax.annotation.Nonnull;
 import javax.inject.Inject;
 
@@ -33,8 +34,7 @@ import org.sonatype.nexus.repository.content.facet.ContentFacet;
 import org.sonatype.nexus.repository.content.fluent.FluentAsset;
 import org.sonatype.nexus.repository.content.handlers.LastDownloadedAttributeHandler;
 
-import org.joda.time.DateTime;
-
+import static java.lang.StringTemplate.STR;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.apache.commons.lang3.StringUtils.prependIfMissing;
 
@@ -67,6 +67,14 @@ public abstract class BaseRestoreBlobStrategy<T extends DataStoreRestoreBlobData
   @Override
   public void restore(final Properties properties, final Blob blob, final BlobStore blobStore, final boolean isDryRun)
   {
+    // Use virtual threads for I/O-bound operations
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      executor.submit(() -> restoreInternal(properties, blob, blobStore, isDryRun)).join();
+    }
+  }
+  
+  private void restoreInternal(final Properties properties, final Blob blob, final BlobStore blobStore, final boolean isDryRun)
+  {
     String logPrefix = isDryRun ? dryRunPrefix.get() : "";
 
     T restoreData = createRestoreData(properties, blob, blobStore);
@@ -76,14 +84,12 @@ public abstract class BaseRestoreBlobStrategy<T extends DataStoreRestoreBlobData
     String blobStoreName = blobStore.getBlobStoreConfiguration().getName();
 
     if (!canAttemptRestore(restoreData)) {
-      log.info("Skipping asset for blob store: {}, repository: {}, blob name: {}, blob id: {}", blobStoreName,
-          repoName, blobName, blob.getId());
+      log.info(STR."Skipping asset for blob store: \{blobStoreName}, repository: \{repoName}, blob name: \{blobName}, blob id: \{blob.getId()}");
       return;
     }
 
     if (isDeleted(restoreData, blobStore)) {
-      log.info("Skipping soft-deleted asset for blob store: {}, repository: {}, blob name: {}, blob id: {}", blobStoreName,
-          repoName, blobName, blob.getId());
+      log.info(STR."Skipping soft-deleted asset for blob store: \{blobStoreName}, repository: \{repoName}, blob name: \{blobName}, blob id: \{blob.getId()}");
       return;
     }
 
@@ -105,16 +111,14 @@ public abstract class BaseRestoreBlobStrategy<T extends DataStoreRestoreBlobData
 
         if (shouldDeleteAsset(restoreData, fluentAsset)) {
           log.info(
-              "{} Deleting asset as component is required but is not found, blob store: {}, repository: {}, path: {}, blob name: {}, blob id: {}",
-              logPrefix, blobStoreName, repoName, fluentAsset.path(), blobName, blob.getId());
+              STR."\{logPrefix} Deleting asset as component is required but is not found, blob store: \{blobStoreName}, repository: \{repoName}, path: \{fluentAsset.path()}, blob name: \{blobName}, blob id: \{blob.getId()}");
           if (!isDryRun) {
             fluentAsset.delete();
           }
         }
         else if (isRestoreDataMoreRecent(restoreData, fluentAsset)) {
           log.info(
-              "{} Deleting asset as more recent blob will be restored, blob store: {}, repository: {}, path: {}, blob name: {}, blob id: {}",
-              logPrefix, blobStoreName, repoName, fluentAsset.path(), blobName, blob.getId());
+              STR."\{logPrefix} Deleting asset as more recent blob will be restored, blob store: \{blobStoreName}, repository: \{repoName}, path: \{fluentAsset.path()}, blob name: \{blobName}, blob id: \{blob.getId()}");
 
           if (!isDryRun) {
             fluentAsset.delete();
@@ -122,8 +126,7 @@ public abstract class BaseRestoreBlobStrategy<T extends DataStoreRestoreBlobData
         }
         else {
           log.info(
-              "Skipping as asset already exists, blob store: {}, repository: {}, path: {}, blob name: {}, blob id: {}",
-              blobStoreName, repoName, fluentAsset.path(), blobName, blob.getId());
+              STR."Skipping as asset already exists, blob store: \{blobStoreName}, repository: \{repoName}, path: \{fluentAsset.path()}, blob name: \{blobName}, blob id: \{blob.getId()}");
           return;
         }
       }
@@ -140,12 +143,10 @@ public abstract class BaseRestoreBlobStrategy<T extends DataStoreRestoreBlobData
         }
       }
 
-      log.info("{} Restored asset, blob store: {}, repository: {}, path: {}, blob name: {}, blob id: {}",
-          logPrefix, blobStoreName, repoName, assetPath, blobName, blob.getId());
+      log.info(STR."\{logPrefix} Restored asset, blob store: \{blobStoreName}, repository: \{repoName}, path: \{assetPath}, blob name: \{blobName}, blob id: \{blob.getId()}");
     }
     catch (Exception ex) {
-      log.error("Error while restoring asset: blob store: {}, repository: {}, path: {}, blob name: {}, blob id: {}",
-          blobStoreName, repoName, assetPath, blobName, blob.getId(), ex);
+      log.error(STR."Error while restoring asset: blob store: \{blobStoreName}, repository: \{repoName}, path: \{assetPath}, blob name: \{blobName}, blob id: \{blob.getId()}", ex);
     }
   }
 
@@ -177,9 +178,9 @@ public abstract class BaseRestoreBlobStrategy<T extends DataStoreRestoreBlobData
         .blob()
         .map(AssetBlob::blobCreated)
         .map(blobCreated -> {
-          DateTime dateTime = restoreData.getBlob().getMetrics().getCreationTime();
-          Instant instant = Instant.ofEpochMilli(dateTime.getMillis());
-          OffsetDateTime restoredBlob = OffsetDateTime.ofInstant(instant, ZoneId.of(dateTime.getZone().getID()));
+          // Convert blob creation time to OffsetDateTime for comparison
+          Instant blobInstant = restoreData.getBlob().getMetrics().getCreationTime();
+          OffsetDateTime restoredBlob = OffsetDateTime.ofInstant(blobInstant, ZoneId.systemDefault());
           return blobCreated.isBefore(restoredBlob);
         }).orElse(false);
   }

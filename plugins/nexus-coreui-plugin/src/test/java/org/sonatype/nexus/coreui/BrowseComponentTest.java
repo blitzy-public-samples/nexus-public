@@ -12,9 +12,14 @@
  */
 package org.sonatype.nexus.coreui;
 
-import org.junit.Before;
-import org.junit.Test;
+import java.util.Collections;
+import java.util.List;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.entity.EntityId;
 import org.sonatype.nexus.repository.Repository;
@@ -23,18 +28,21 @@ import org.sonatype.nexus.repository.browse.node.BrowseNodeConfiguration;
 import org.sonatype.nexus.repository.browse.node.BrowseNodeQueryService;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
 
-import java.util.Collections;
-import java.util.List;
-
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-public class BrowseComponentTest
+/**
+ * Test for {@link BrowseComponent} that validates repository browsing functionality.
+ * <p>
+ * Updated for Java 21 compatibility using JUnit Jupiter (JUnit 5.10.1) and Mockito 4.11.0.
+ */
+@ExtendWith(MockitoExtension.class)
+class BrowseComponentTest
     extends TestSupport
 {
   private static final String REPOSITORY_NAME = "repositoryName";
@@ -60,16 +68,20 @@ public class BrowseComponentTest
 
   private BrowseComponent underTest;
 
-  @Before
-  public void setUp() {
+  @BeforeEach
+  void setUp() {
     when(repository.getName()).thenReturn(REPOSITORY_NAME);
     when(componentId.getValue()).thenReturn("componentId");
     when(assetId.getValue()).thenReturn("assetId");
     underTest = new BrowseComponent(configuration, browseNodeQueryService, repositoryManager);
   }
 
+  /**
+   * Tests browsing the root node of a repository.
+   * Verifies that the component correctly processes and transforms browse nodes into XO objects.  
+   */
   @Test
-  public void testRootNodeListQuery() {
+  void testRootNodeListQuery() {
     BrowseNode browseNode1 = mock(BrowseNode.class);
     when(browseNode1.getName()).thenReturn("com");
 
@@ -109,8 +121,12 @@ public class BrowseComponentTest
     assertTrue(xos.get(2).isLeaf());
   }
 
+  /**
+   * Tests browsing a non-root path in a repository.
+   * Verifies that the component correctly handles path segments and builds appropriate IDs.
+   */
   @Test
-  public void testNonRootListQuery() {
+  void testNonRootListQuery() {
     BrowseNode browseNode1 = mock(BrowseNode.class);
     when(browseNode1.getName()).thenReturn("com");
 
@@ -150,8 +166,12 @@ public class BrowseComponentTest
     assertTrue(xos.get(2).isLeaf());
   }
 
+  /**
+   * Tests handling of URL-encoded path segments in repository browsing.
+   * Verifies that the component correctly handles encoding and decoding of special characters in paths.
+   */
   @Test
-  public void testValidateEncodedSegments() {
+  void testValidateEncodedSegments() {
     BrowseNode browseNode1 = mock(BrowseNode.class);
     when(browseNode1.getName()).thenReturn("com");
 

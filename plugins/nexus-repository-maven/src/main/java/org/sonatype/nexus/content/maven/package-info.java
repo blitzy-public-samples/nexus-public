@@ -10,6 +10,22 @@
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  */
+
+/**
+ * Maven content package for Nexus Repository Manager.
+ * <p>
+ * This package is enabled via the DATASTORE_ENABLED feature flag.
+ * <p>
+ * Java 21 compatibility note: The feature flag annotation usage in this package
+ * is fully compatible with Java 21. The annotation processing mechanism remains
+ * unchanged in Java 21, ensuring consistent behavior with previous versions.
+ * <p>
+ * When using this package with Java 21, you can leverage new language features such as:
+ * - Virtual Threads for improved I/O operations
+ * - Pattern Matching for more concise type checking
+ * - Record Patterns for simplified data extraction
+ * - String Templates for more readable string formatting
+ */
 @FeatureFlag(name = DATASTORE_ENABLED)
 
 package org.sonatype.nexus.content.maven;

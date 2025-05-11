@@ -16,35 +16,40 @@ import org.sonatype.nexus.repository.security.RepositorySelector;
 import org.sonatype.nexus.selector.CselSelector;
 
 /**
+ * Request object for content selector preview operations.
+ * 
+ * Implemented as an immutable record with default values for repository and type fields.
+ * This implementation leverages Java 21 record patterns for improved immutability and concise syntax.
+ *
  * @since 3.29
  */
-public class SelectorPreviewRequest
-{
-  private String repository = RepositorySelector.ALL;
-  private String type = CselSelector.TYPE;
-  private String expression;
-
-  public String getRepository() {
-    return repository;
+public record SelectorPreviewRequest(
+    String repository,
+    String type,
+    String expression
+) {
+  /**
+   * Default constructor with all fields.
+   * Provides default values for repository and type when not explicitly specified.
+   */
+  public SelectorPreviewRequest {
+    // Apply defaults if null values are provided
+    if (repository == null) {
+      repository = RepositorySelector.ALL;
+    }
+    
+    if (type == null) {
+      type = CselSelector.TYPE;
+    }
   }
-
-  public void setRepository(final String repository) {
-    this.repository = repository;
-  }
-
-  public String getType() {
-    return type;
-  }
-
-  public void setType(final String type) {
-    this.type = type;
-  }
-
-  public String getExpression() {
-    return expression;
-  }
-
-  public void setExpression(final String expression) {
-    this.expression = expression;
+  
+  /**
+   * Convenience constructor that only requires the expression.
+   * Uses default values for repository and type.
+   *
+   * @param expression the selector expression
+   */
+  public SelectorPreviewRequest(String expression) {
+    this(RepositorySelector.ALL, CselSelector.TYPE, expression);
   }
 }

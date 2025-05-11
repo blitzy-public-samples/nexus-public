@@ -63,7 +63,7 @@ class FreezeComponent
   @RequiresPermissions("nexus:*")
   @Validate
   public FreezeStatusXO update(final @NotNull @Valid FreezeStatusXO freezeStatusXO) {
-    if (freezeStatusXO.isFrozen()) {
+    if (freezeStatusXO.frozen()) {
       freezeService.requestFreeze("UI request");
     }
     else {
@@ -84,8 +84,6 @@ class FreezeComponent
   }
 
   private FreezeStatusXO buildStatus() {
-    FreezeStatusXO freezeStatus = new FreezeStatusXO();
-    freezeStatus.setFrozen(freezeService.isFrozen());
-    return freezeStatus;
+    return new FreezeStatusXO(freezeService.isFrozen());
   }
 }

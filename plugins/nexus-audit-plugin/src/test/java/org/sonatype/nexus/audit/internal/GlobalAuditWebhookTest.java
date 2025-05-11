@@ -23,11 +23,14 @@ import org.sonatype.nexus.common.event.EventManager;
 import org.sonatype.nexus.webhooks.WebhookConfiguration;
 import org.sonatype.nexus.webhooks.WebhookRequestSendEvent;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.hasEntry;
@@ -35,7 +38,13 @@ import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
-public class GlobalAuditWebhookTest
+/**
+ * Tests for {@link GlobalAuditWebhook} using JUnit Jupiter and Mockito 4.11.0+.
+ * 
+ * @since 3.60
+ */
+@ExtendWith(MockitoExtension.class)
+class GlobalAuditWebhookTest
     extends TestSupport
 {
 
@@ -47,19 +56,21 @@ public class GlobalAuditWebhookTest
   @Captor
   private ArgumentCaptor<WebhookRequestSendEvent> argumentCaptor;
 
-  @Before
-  public void setUp() {
+  @BeforeEach
+  void setUp() {
     underTest = new GlobalAuditWebhook();
     underTest.setEventManager(eventManager);
   }
 
   @Test
-  public void testShouldHaveTheCorrectEventId() {
+  @DisplayName("Should have the correct event ID")
+  void shouldHaveTheCorrectEventId() {
     assertThat(underTest.getId(), is("rm:global:audit"));
   }
 
   @Test
-  public void testShouldQueueAuditWebhook() {
+  @DisplayName("Should queue audit webhook with correct payload")
+  void shouldQueueAuditWebhook() {
     WebhookConfiguration configuration = mock(WebhookConfiguration.class);
     underTest.subscribe(configuration);
 

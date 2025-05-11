@@ -31,38 +31,31 @@ import com.fasterxml.jackson.annotation.JsonProperty;
     "value"
 })
 @XmlRootElement(name = "property")
-public class PropertyXO
-{
-  @XmlElement(required = true)
-  @JsonProperty("key")
-  private String key;
-
-  @JsonProperty("value")
-  private String value;
-
-  public String getKey() {
-    return key;
+public record PropertyXO(
+    @XmlElement(required = true)
+    @JsonProperty("key")
+    String key,
+    
+    @JsonProperty("value")
+    String value
+) {
+  /**
+   * Creates a new instance with the specified key.
+   *
+   * @param key the key value
+   * @return a new instance with the updated key
+   */
+  public PropertyXO withKey(String key) {
+    return new PropertyXO(key, this.value);
   }
 
-  public void setKey(String value) {
-    this.key = value;
-  }
-
-  public String getValue() {
-    return value;
-  }
-
-  public void setValue(String value) {
-    this.value = value;
-  }
-
-  public PropertyXO withKey(String value) {
-    setKey(value);
-    return this;
-  }
-
+  /**
+   * Creates a new instance with the specified value.
+   *
+   * @param value the value
+   * @return a new instance with the updated value
+   */
   public PropertyXO withValue(String value) {
-    setValue(value);
-    return this;
+    return new PropertyXO(this.key, value);
   }
 }

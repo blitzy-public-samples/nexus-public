@@ -16,10 +16,10 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
-import javax.validation.ConstraintViolation;
-import javax.validation.Validation;
-import javax.validation.Validator;
-import javax.validation.ValidatorFactory;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
+import jakarta.validation.ValidatorFactory;
 
 import com.google.common.base.Strings;
 import org.junit.Before;
@@ -42,18 +42,21 @@ public class BlobStoreXOTest
 
   @Test
   public void checkNullValues() {
-    BlobStoreXO blobStoreXOAllNullValues = new BlobStoreXO();
+    // Using the static factory method with null values for required fields
+    BlobStoreXO blobStoreXOAllNullValues = BlobStoreXO.create(
+        null, null, false, null, null, null, 0, 0, 0, 0, false, false, 0, false, false, 0, null);
     Set<ConstraintViolation<BlobStoreXO>> violationsAllNullValues = validator.validate(blobStoreXOAllNullValues);
     assertThat(NULL_VIOLATES_RULE, violationsAllNullValues, hasSize(3));
 
-    BlobStoreXO blobStoreXOJustName = new BlobStoreXO();
-    blobStoreXOJustName.withName("someName");
+    // With just name
+    BlobStoreXO blobStoreXOJustName = BlobStoreXO.create(
+        "someName", null, false, null, null, null, 0, 0, 0, 0, false, false, 0, false, false, 0, null);
     Set<ConstraintViolation<BlobStoreXO>> violationsJustName = validator.validate(blobStoreXOJustName);
     assertThat(NULL_VIOLATES_RULE, violationsJustName, hasSize(2));
 
-    BlobStoreXO blobStoreXONoAttibutes = new BlobStoreXO();
-    blobStoreXONoAttibutes.withName("someName");
-    blobStoreXONoAttibutes.withType("someType");
+    // With name and type but no attributes
+    BlobStoreXO blobStoreXONoAttibutes = BlobStoreXO.create(
+        "someName", "someType", false, null, null, null, 0, 0, 0, 0, false, false, 0, false, false, 0, null);
     Set<ConstraintViolation<BlobStoreXO>> violationsNoAttributes = validator.validate(blobStoreXONoAttibutes);
     assertThat(NULL_VIOLATES_RULE, violationsNoAttributes, hasSize(1));
   }
@@ -84,10 +87,25 @@ public class BlobStoreXOTest
     attribute.put("testAttribute", null);
     attributes.put("attibute1", attribute);
 
-    BlobStoreXO blobStore = new BlobStoreXO();
-    blobStore.withType("someType");
-    blobStore.withAttributes(attributes);
-    blobStore.withName(name);
-    return(blobStore);
+    // Using the record constructor directly
+    return new BlobStoreXO(
+        name,                  // name
+        "someType",           // type
+        false,                // isQuotaEnabled
+        null,                 // quotaType
+        null,                 // quotaLimit
+        attributes,           // attributes
+        0,                    // blobCount
+        0,                    // totalSize
+        0,                    // availableSpace
+        0,                    // repositoryUseCount
+        false,                // unlimited
+        false,                // unavailable
+        0,                    // blobStoreUseCount
+        false,                // inUse
+        false,                // convertable
+        0,                    // taskUseCount
+        null                  // groupName
+    );
   }
 }

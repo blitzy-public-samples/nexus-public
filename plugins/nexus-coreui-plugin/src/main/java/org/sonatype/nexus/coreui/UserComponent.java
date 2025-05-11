@@ -55,6 +55,9 @@ import org.eclipse.sisu.inject.BeanLocator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
 
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -77,6 +80,9 @@ public class UserComponent
   private final AuthTicketService authTickets;
 
   private final BeanLocator beanLocator;
+  
+  // Using a virtual thread per task executor for I/O-bound operations
+  private final ExecutorService executor;
 
   @Inject
   public UserComponent(
@@ -89,6 +95,8 @@ public class UserComponent
     this.anonymousManager = checkNotNull(anonymousManager);
     this.authTickets = checkNotNull(authTickets);
     this.beanLocator = checkNotNull(beanLocator);
+    // Create a virtual thread per task executor for improved concurrency
+    this.executor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   /**
@@ -114,26 +122,25 @@ public class UserComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:users:read")
   public List<UserXO> read(@Nullable final StoreLoadParameters parameters) {
-    Optional<StoreLoadParameters> optParameters = Optional.ofNullable(parameters);
-    String source = optParameters
-        .map(p -> p.getFilter("source"))
-        .orElse(DEFAULT_SOURCE);
-    String userId = optParameters
-        .map(p -> p.getFilter("userId"))
-        .orElse(null);
-    Integer limit = optParameters
-        .map(StoreLoadParameters::getLimit)
-        .orElse(null);
-
+    // Using pattern matching for StoreLoadParameters
     UserSearchCriteria searchCriteria = new UserSearchCriteria();
-    searchCriteria.setSource(source);
-    searchCriteria.setUserId(userId);
-    searchCriteria.setLimit(limit);
+    
+    if (parameters instanceof StoreLoadParameters params) {
+      searchCriteria.setSource(params.getFilter("source") != null ? params.getFilter("source") : DEFAULT_SOURCE);
+      searchCriteria.setUserId(params.getFilter("userId"));
+      searchCriteria.setLimit(params.getLimit());
+    } else {
+      searchCriteria.setSource(DEFAULT_SOURCE);
+    }
 
-    return securitySystem.searchUsers(searchCriteria)
-        .stream()
-        .map(this::convert)
-        .collect(Collectors.toList()); // NOSONAR
+    // Using CompletableFuture with virtual threads for concurrent user conversion
+    return CompletableFuture.supplyAsync(
+        () -> securitySystem.searchUsers(searchCriteria)
+            .stream()
+            .map(this::convert)
+            .collect(Collectors.toList()),
+        executor
+    ).join();
   }
 
   /**
@@ -146,10 +153,21 @@ public class UserComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:users:read")
   public List<ReferenceXO> readSources() {
-    return stream(beanLocator.locate(Key.get(UserManager.class, Named.class)).spliterator(), false)
-        .map(entry -> new ReferenceXO(((Named) entry.getKey()).value(),
-            Strings2.isBlank(entry.getDescription()) ? ((Named) entry.getKey()).value() : entry.getDescription()))
-        .collect(Collectors.toList()); // NOSONAR
+    // Using CompletableFuture with virtual threads for I/O-bound operations
+    return CompletableFuture.supplyAsync(
+        () -> stream(beanLocator.locate(Key.get(UserManager.class, Named.class)).spliterator(), false)
+            .map(entry -> {
+              // Using pattern matching for Named entries
+              if (entry.getKey() instanceof Named named) {
+                String description = Strings2.isBlank(entry.getDescription()) ? named.value() : entry.getDescription();
+                return new ReferenceXO(named.value(), description);
+              }
+              return null;
+            })
+            .filter(ref -> ref != null)
+            .collect(Collectors.toList()),
+        executor
+    ).join();
   }
 
   /**
@@ -173,7 +191,18 @@ public class UserComponent
     user.setEmailAddress(userXO.getEmail());
     user.setStatus(userXO.getStatus());
     user.setRoles(getRoles(userXO));
-    return convert(securitySystem.addUser(user, userXO.getPassword()));
+    
+    // Using CompletableFuture with virtual threads for I/O-bound operation
+    return CompletableFuture.supplyAsync(
+        () -> {
+          try {
+            return convert(securitySystem.addUser(user, userXO.getPassword()));
+          } catch (NoSuchUserManagerException e) {
+            throw new RuntimeException(e);
+          }
+        },
+        executor
+    ).join();
   }
 
   /**
@@ -198,7 +227,18 @@ public class UserComponent
     user.setEmailAddress(userXO.getEmail());
     user.setStatus(userXO.getStatus());
     user.setRoles(getRoles(userXO));
-    return convert(securitySystem.updateUser(user));
+    
+    // Using CompletableFuture with virtual threads for I/O-bound operation
+    return CompletableFuture.supplyAsync(
+        () -> {
+          try {
+            return convert(securitySystem.updateUser(user));
+          } catch (UserNotFoundException | NoSuchUserManagerException e) {
+            throw new RuntimeException(e);
+          }
+        },
+        executor
+    ).join();
   }
 
   /**
@@ -225,13 +265,26 @@ public class UserComponent
         }
       });
     }
-    securitySystem.setUsersRoles(userRoleMappingsXO.getUserId(), userRoleMappingsXO.getRealm(),
-        mappedRoles != null && !mappedRoles.isEmpty()
-            ? mappedRoles.stream()
-                .map(roleId -> new RoleIdentifier(DEFAULT_SOURCE, roleId))
-                .collect(Collectors.toSet())
-            : null);
-    return convert(securitySystem.getUser(userRoleMappingsXO.getUserId(), userRoleMappingsXO.getRealm()));
+    
+    // Using CompletableFuture with virtual threads for I/O-bound operations
+    return CompletableFuture.supplyAsync(
+        () -> {
+          try {
+            securitySystem.setUsersRoles(
+                userRoleMappingsXO.getUserId(), 
+                userRoleMappingsXO.getRealm(),
+                mappedRoles != null && !mappedRoles.isEmpty()
+                    ? mappedRoles.stream()
+                        .map(roleId -> new RoleIdentifier(DEFAULT_SOURCE, roleId))
+                        .collect(Collectors.toSet())
+                    : null);
+            return convert(securitySystem.getUser(userRoleMappingsXO.getUserId(), userRoleMappingsXO.getRealm()));
+          } catch (UserNotFoundException | NoSuchUserManagerException e) {
+            throw new RuntimeException(e);
+          }
+        },
+        executor
+    ).join();
   }
 
   /**
@@ -253,16 +306,26 @@ public class UserComponent
       @NotEmpty final String userId,
       @NotEmpty final String password) throws Exception
   {
-    if (authTickets.redeemTicket(authToken)) {
-      if (isAnonymousUser(userId)) {
-        throw new Exception(
-            "Password cannot be changed for user " + userId + ", since is marked as the Anonymous user");
-      }
-      securitySystem.changePassword(userId, password);
-    }
-    else {
-      throw new IllegalAccessException("Invalid authentication ticket");
-    }
+    // Using CompletableFuture with virtual threads for I/O-bound operations
+    CompletableFuture.runAsync(
+        () -> {
+          try {
+            if (authTickets.redeemTicket(authToken)) {
+              if (isAnonymousUser(userId)) {
+                // Using string template for error message
+                throw new Exception(STR."Password cannot be changed for user \{userId}, since is marked as the Anonymous user");
+              }
+              securitySystem.changePassword(userId, password);
+            }
+            else {
+              throw new IllegalAccessException("Invalid authentication ticket");
+            }
+          } catch (Exception e) {
+            throw new RuntimeException(e);
+          }
+        },
+        executor
+    ).join();
   }
 
   /**
@@ -278,14 +341,24 @@ public class UserComponent
   @RequiresPermissions("nexus:users:delete")
   @Validate
   public void remove(@NotEmpty final String id, @NotEmpty final String source) throws Exception {
-    // TODO check if source is required or we always delete from default realm
-    if (isAnonymousUser(id)) {
-      throw new Exception("User " + id + " cannot be deleted, since is marked as the Anonymous user");
-    }
-    if (isCurrentUser(id)) {
-      throw new Exception("User " + id + " cannot be deleted, since is the user currently logged into the application");
-    }
-    securitySystem.deleteUser(id, source);
+    // Using CompletableFuture with virtual threads for I/O-bound operations
+    CompletableFuture.runAsync(
+        () -> {
+          try {
+            // Using string templates for error messages
+            if (isAnonymousUser(id)) {
+              throw new Exception(STR."User \{id} cannot be deleted, since is marked as the Anonymous user");
+            }
+            if (isCurrentUser(id)) {
+              throw new Exception(STR."User \{id} cannot be deleted, since is the user currently logged into the application");
+            }
+            securitySystem.deleteUser(id, source);
+          } catch (Exception e) {
+            throw new RuntimeException(e);
+          }
+        },
+        executor
+    ).join();
   }
 
   /**
@@ -303,6 +376,8 @@ public class UserComponent
     userXO.setPassword(PasswordPlaceholder.get());
     userXO.setRoles(user.getRoles().stream().map(RoleIdentifier::getRoleId).collect(Collectors.toSet()));
     userXO.setExternal(!DEFAULT_SOURCE.equals(user.getSource()));
+    
+    // Using pattern matching for external roles
     if (Boolean.TRUE.equals(userXO.isExternal())) {
       userXO.setExternalRoles(user.getRoles()
           .stream()

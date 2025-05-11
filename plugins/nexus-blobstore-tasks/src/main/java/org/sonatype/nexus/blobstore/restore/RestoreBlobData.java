@@ -27,7 +27,9 @@ import static org.sonatype.nexus.blobstore.api.BlobStore.CONTENT_TYPE_HEADER;
 import static org.sonatype.nexus.blobstore.api.BlobStore.REPO_NAME_HEADER;
 
 /**
- * Simple structure for relevant data for a blob during metadata restoration
+ * Simple structure for relevant data for a blob during metadata restoration.
+ * 
+ * This class has been updated for Java 21 compatibility.
  *
  * @since 3.6.1
  */
@@ -55,8 +57,10 @@ public abstract class RestoreBlobData
     this.blob = blob;
     this.blobProperties = blobProperties;
     this.blobStore = blobStore;
+    String repoNameHeader = HEADER_PREFIX + REPO_NAME_HEADER;
+    String repoName = getProperty(repoNameHeader);
     this.repository = repositoryManager
-        .get(checkNotNull(getProperty(HEADER_PREFIX + REPO_NAME_HEADER), "Blob properties missing repository name"));
+        .get(checkNotNull(repoName, STR."Blob properties missing repository name for header: \{repoNameHeader}"));
   }
 
   public Blob getBlob() {

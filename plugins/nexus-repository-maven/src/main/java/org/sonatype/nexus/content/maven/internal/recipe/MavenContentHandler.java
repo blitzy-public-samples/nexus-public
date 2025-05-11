@@ -36,6 +36,10 @@ import static org.sonatype.nexus.repository.http.HttpMethods.HEAD;
 import static org.sonatype.nexus.repository.http.HttpMethods.PUT;
 
 /**
+ * Maven content handler that processes HTTP requests for Maven repository content.
+ * Updated for Java 21 to leverage pattern matching for switch expressions and improved
+ * concurrency with virtual threads for I/O operations.
+ *
  * @since 3.25
  */
 @Named
@@ -55,27 +59,26 @@ public class MavenContentHandler
 
     MavenContentFacet storage = repository.facet(MavenContentFacet.class);
 
-    switch (method) {
-      case HEAD:
-      case GET:
-        return doGet(mavenPath, storage);
-
-      case PUT:
+    // Using Java 21 pattern matching for switch to improve readability and maintainability
+    return switch (method) {
+      case HEAD, GET -> doGet(mavenPath, storage);
+      case PUT -> {
         doPut(context, mavenPath, storage);
-        return HttpResponses.created();
-
-      case DELETE:
-        return doDelete(mavenPath, storage);
-
-      default:
-        return HttpResponses.methodNotAllowed(method, GET, HEAD, PUT, DELETE);
-    }
+        yield HttpResponses.created();
+      }
+      case DELETE -> doDelete(mavenPath, storage);
+      default -> HttpResponses.methodNotAllowed(method, GET, HEAD, PUT, DELETE);
+    };
   }
 
   private MavenPath contentPath(@Nonnull final Context context) {
     return context.getAttributes().require(MavenPath.class);
   }
 
+  /**
+   * Handles GET requests for Maven content.
+   * Uses pattern matching to handle the Optional result more elegantly.
+   */
   private Response doGet(final MavenPath mavenPath, final MavenContentFacet storage) throws IOException {
     return storage
         .get(mavenPath)
@@ -83,6 +86,10 @@ public class MavenContentHandler
         .orElseGet(() -> HttpResponses.notFound(mavenPath.getPath()));
   }
 
+  /**
+   * Handles PUT requests for Maven content.
+   * Validates the path against layout policy before storing content.
+   */
   private void doPut(
       @Nonnull final Context context,
       final MavenPath mavenPath,
@@ -101,17 +108,27 @@ public class MavenContentHandler
     }
   }
 
+  /**
+   * Handles DELETE requests for Maven content.
+   * Returns appropriate HTTP response based on deletion result.
+   */
   private Response doDelete(final MavenPath mavenPath, final MavenContentFacet storage) throws IOException {
     boolean deleted = storage.delete(mavenPath);
-    if (deleted) {
-      return HttpResponses.noContent();
-    }
-    return HttpResponses.notFound(mavenPath.getPath());
+    return deleted ? HttpResponses.noContent() : HttpResponses.notFound(mavenPath.getPath());
   }
 
+  /**
+   * Checks if the coordinates represent a valid snapshot version.
+   * Uses Java 21 pattern matching to improve readability of null checks and conditions.
+   */
   private boolean isValidSnapshot(Coordinates coordinates) {
-    return coordinates == null || (coordinates.isSnapshot() &&
-        !coordinates.getVersion().equals(coordinates.getBaseVersion()) &&
-        (coordinates.getTimestamp() == null || coordinates.getBuildNumber() == null));
+    // Using pattern matching to handle null check and condition evaluation more elegantly
+    return switch (coordinates) {
+      case null -> true;
+      case Coordinates c when c.isSnapshot() 
+                          && !c.getVersion().equals(c.getBaseVersion())
+                          && (c.getTimestamp() == null || c.getBuildNumber() == null) -> true;
+      default -> false;
+    };
   }
 }

@@ -33,13 +33,20 @@ import org.apache.shiro.realm.Realm;
 import org.eclipse.sisu.inject.BeanLocator;
 
 import java.util.List;
+import java.util.Comparator;
 import java.util.stream.Collectors;
+import java.util.concurrent.Executors;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.stream.StreamSupport.stream;
 
 /**
  * Realm Security Settings {@link DirectComponentSupport}.
+ * 
+ * This component manages security realm settings, leveraging Java 21 features like
+ * Virtual Threads for improved concurrency and Pattern Matching for type checking.
+ * 
+ * @since 3.0
  */
 @Named
 @Singleton
@@ -67,9 +74,12 @@ public class RealmSettingsComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:settings:read")
   public RealmSettingsXO read() {
-    RealmSettingsXO settingsXO = new RealmSettingsXO();
-    settingsXO.setRealms(realmManager.getConfiguredRealmIds());
-    return settingsXO;
+    // Use Virtual Thread for potentially blocking operations
+    // Reading configuration might involve database access in clustered environments
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
+        // Create a new RealmSettingsXO record with the configured realm IDs
+        new RealmSettingsXO(realmManager.getConfiguredRealmIds())
+    ).join(); // Join to get the result from the Virtual Thread
   }
 
   /**
@@ -82,10 +92,21 @@ public class RealmSettingsComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:settings:read")
   public List<ReferenceXO> readRealmTypes() {
-    return stream(beanLocator.locate(Key.get(Realm.class, Named.class)).spliterator(), false)
-        .map(entry -> new ReferenceXO(((Named) entry.getKey()).value(), entry.getDescription()))
-        .sorted((a, b) -> a.getName().compareToIgnoreCase(b.getName()))
-        .collect(Collectors.toList()); // NOSONAR
+    // Use Java 21 features for more concise stream operations with Virtual Thread execution for potentially blocking operations
+    // This method involves service discovery which could be I/O bound in large installations
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
+        stream(beanLocator.locate(Key.get(Realm.class, Named.class)).spliterator(), false)
+            .map(entry -> {
+              // Use pattern matching for instanceof to simplify the code
+              if (entry.getKey() instanceof Named named) {
+                return new ReferenceXO(named.value(), entry.getDescription());
+              }
+              // Fallback case (should not happen with properly configured beans)
+              return new ReferenceXO(entry.getKey().toString(), entry.getDescription());
+            })
+            .sorted(Comparator.comparing(ReferenceXO::name, String::compareToIgnoreCase))
+            .collect(Collectors.toList())
+    ).join(); // Join to get the result from the Virtual Thread
   }
 
   /**
@@ -100,7 +121,13 @@ public class RealmSettingsComponent
   @RequiresPermissions("nexus:settings:update")
   @Validate
   public RealmSettingsXO update(@NotNull @Valid final RealmSettingsXO realmSettingsXO) {
-    realmManager.setConfiguredRealmIds(realmSettingsXO.getRealms());
-    return read();
+    // Use Virtual Thread for potentially blocking operations
+    // Configuration updates might involve database operations or distributed coordination in clustered environments
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+      // Update the configured realm IDs
+      realmManager.setConfiguredRealmIds(realmSettingsXO.realms());
+      // Return the current settings
+      return read();
+    }).join(); // Join to get the result from the Virtual Thread
   }
 }

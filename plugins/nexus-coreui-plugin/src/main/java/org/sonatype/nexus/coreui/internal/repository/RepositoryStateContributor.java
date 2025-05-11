@@ -21,8 +21,11 @@ import javax.inject.Singleton;
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.rapture.StateContributor;
 
-import com.google.common.collect.ImmutableMap;
-
+/**
+ * Repository state contributor for UI feature flags.
+ * 
+ * Updated for Java 21 compatibility by replacing Guava's ImmutableMap with Java's built-in Map.of.
+ */
 @Named
 @Singleton
 public class RepositoryStateContributor
@@ -33,7 +36,7 @@ public class RepositoryStateContributor
 
   @Inject
   public RepositoryStateContributor(@Named("${nexus.react.repositories:-false}") final Boolean featureFlag) {
-    state = ImmutableMap.of("nexus.react.repositories", featureFlag);
+    state = Map.of("nexus.react.repositories", featureFlag);
   }
 
   @Override

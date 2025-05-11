@@ -24,6 +24,12 @@ import org.sonatype.nexus.scheduling.TaskDescriptorSupport;
 
 import static org.sonatype.nexus.repository.RepositoryTaskSupport.REPOSITORY_NAME_FIELD_ID;
 
+/**
+ * Task descriptor for {@link RepairMaven2BaseVersionTask}.
+ * 
+ * @since 3.0
+ * @see RepairMaven2BaseVersionTask
+ */
 @AvailabilityVersion(from = "1.0")
 @Named
 @Singleton
@@ -34,6 +40,10 @@ public class RepairMaven2BaseVersionTaskDescriptor
 
   public static final String TYPE_ID = "repository.maven.repair-base-version";
 
+  /**
+   * Constructor configuring the task descriptor with required form fields.
+   * Compatible with Java 21 runtime environment.
+   */
   public RepairMaven2BaseVersionTaskDescriptor()
   {
     super(TYPE_ID,

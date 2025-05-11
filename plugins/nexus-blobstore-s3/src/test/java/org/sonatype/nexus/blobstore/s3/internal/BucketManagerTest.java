@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.MockBlobStoreConfiguration;
@@ -37,21 +38,22 @@ import com.amazonaws.services.s3.model.lifecycle.LifecyclePrefixPredicate;
 import com.amazonaws.services.s3.model.lifecycle.LifecycleTagPredicate;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import junitparams.JUnitParamsRunner;
-import junitparams.NamedParameters;
-import junitparams.Parameters;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertThrows;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -73,10 +75,10 @@ import static org.sonatype.nexus.blobstore.s3.internal.S3BlobStoreException.INVA
 import static org.sonatype.nexus.blobstore.s3.internal.S3BlobStoreException.SIGNATURE_DOES_NOT_MATCH_CODE;
 
 /**
- * {@link BucketManager} tests.
+ * Tests for {@link BucketManager} with JUnit Jupiter and Mockito 4.11.0+.
  */
-@RunWith(JUnitParamsRunner.class)
-public class BucketManagerTest
+@ExtendWith(MockitoExtension.class)
+class BucketManagerTest
     extends TestSupport
 {
 
@@ -92,13 +94,13 @@ public class BucketManagerTest
   @InjectMocks
   private BucketManager underTest;
 
-  @Before
-  public void setup() {
+  @BeforeEach
+  void setup() {
     when(featureFlag.isDisabled()).thenReturn(false);
   }
 
   @Test
-  public void setLifeCycleOnExistingBucketIfNotPresent() {
+  void setLifeCycleOnExistingBucketIfNotPresent() {
     when(s3.doesBucketExistV2(anyString())).thenReturn(true);
     BlobStoreConfiguration cfg = new MockBlobStoreConfiguration();
     Map<String, Map<String, Object>> attr = ImmutableMap.of("s3", ImmutableMap
@@ -113,7 +115,7 @@ public class BucketManagerTest
   }
 
   @Test
-  public void isExpirationLifeCycleCfgPresentReturnsFalseOnEmptyConfig() {
+  void isExpirationLifeCycleCfgPresentReturnsFalseOnEmptyConfig() {
     BlobStoreConfiguration cfg = new MockBlobStoreConfiguration();
     Map<String, Map<String, Object>> attr = ImmutableMap.of("s3", ImmutableMap
         .of("bucket", "mybucket", "prefix", "myprefix", "expiration", "3"));
@@ -128,7 +130,7 @@ public class BucketManagerTest
    * Make sure if admins have set other lifecycle rules we don't clobber them.
    */
   @Test
-  public void addingLifecycleRuleLeavesOtherRulesAlone() {
+  void addingLifecycleRuleLeavesOtherRulesAlone() {
     BlobStoreConfiguration cfg = new MockBlobStoreConfiguration().withName("blobs");
     Map<String, Map<String, Object>> attr = ImmutableMap.of("s3", ImmutableMap
         .of("bucket", "mybucket", "prefix", "myprefix", "expiration", "3"));
@@ -172,7 +174,7 @@ public class BucketManagerTest
   }
 
   @Test
-  public void lifecycleRuleUpdatedWhenExpiryDateChanges() {
+  void lifecycleRuleUpdatedWhenExpiryDateChanges() {
     BlobStoreConfiguration cfg = new MockBlobStoreConfiguration().withName("blobs");
     Map<String, Map<String, Object>> attr = ImmutableMap.of("s3", ImmutableMap
         .of("bucket", "mybucket", "prefix", "myprefix", "expiration", "3"));
@@ -209,7 +211,7 @@ public class BucketManagerTest
   }
 
   @Test
-  public void lifecycleConfigurationRemovedIfAllRulesRemoved() {
+  void lifecycleConfigurationRemovedIfAllRulesRemoved() {
     BlobStoreConfiguration cfg = new MockBlobStoreConfiguration().withName("mybucket");
     Map<String, Map<String, Object>> attr = ImmutableMap.of("s3", ImmutableMap
         .of("bucket", "mybucket", "expiration", "0"));
@@ -236,7 +238,7 @@ public class BucketManagerTest
   }
 
   @Test
-  public void globalLifecycleRuleSwitchedToBlobStoreSpecificIfPresent() {
+  void globalLifecycleRuleSwitchedToBlobStoreSpecificIfPresent() {
     BlobStoreConfiguration cfg = new MockBlobStoreConfiguration().withName("blobs");
     Map<String, Map<String, Object>> attr = ImmutableMap.of("s3", ImmutableMap
         .of("bucket", "mybucket", "expiration", "4"));
@@ -267,7 +269,7 @@ public class BucketManagerTest
   }
 
   @Test
-  public void deleteStorageLocationRemovesBucketIfEmpty() {
+  void deleteStorageLocationRemovesBucketIfEmpty() {
     ObjectListing listingMock = mock(ObjectListing.class);
     when(listingMock.getObjectSummaries()).thenReturn(new ArrayList<>());
     when(s3.listObjects(any(ListObjectsRequest.class))).thenReturn(listingMock);
@@ -284,7 +286,7 @@ public class BucketManagerTest
   }
 
   @Test
-  public void deleteStorageLocationDoesNotRemoveBucketIfNotEmpty() {
+  void deleteStorageLocationDoesNotRemoveBucketIfNotEmpty() {
     ObjectListing listingMock = mock(ObjectListing.class);
     when(listingMock.getObjectSummaries()).thenReturn(ImmutableList.of(new S3ObjectSummary()));
     when(s3.listObjects(any(ListObjectsRequest.class))).thenReturn(listingMock);
@@ -302,7 +304,7 @@ public class BucketManagerTest
   }
 
   @Test
-  public void testOwnershipErrorIsNotThrownOnDisabledOwnershipCheck() {
+  void testOwnershipErrorIsNotThrownOnDisabledOwnershipCheck() {
     String bucketName = "bucketName";
     when(s3.doesBucketExistV2(anyString())).thenReturn(true);
     when(s3.getBucketPolicy(anyString())).thenThrow(AmazonClientException.class);
@@ -319,9 +321,12 @@ public class BucketManagerTest
     verify(s3, times(0)).getBucketPolicy(anyString());
   }
 
-  @Test
-  @Parameters(named = "ruleSetAndDeleteLifeCycleParams")
-  public void itWillOnlyRemoveNxrmManagedLifeCyclesFromTheBucket(
+  /**
+   * Tests that only NXRM-managed lifecycle rules are removed from the bucket.
+   */
+  @ParameterizedTest
+  @MethodSource("ruleSetAndDeleteLifeCycleParams")
+  void onlyRemoveNxrmManagedLifeCyclesFromTheBucket(
       List<Rule> rules, int deleteLifeCycleCallCount, int setLifeCycleCallCount
   ) {
     ObjectListing listingMock = mock(ObjectListing.class);
@@ -345,33 +350,26 @@ public class BucketManagerTest
         any(BucketLifecycleConfiguration.class));
   }
 
-  @NamedParameters("ruleSetAndDeleteLifeCycleParams")
-  private Object[] ruleSetAndDeleteLifeCycleParams() {
-    return new Object[] {
-        new Object[]{
-            Collections.emptyList(), 1, 0
-        },
-        new Object[]{
-            ImmutableList.of(oldNxrmRule()), 1, 0
-        },
-        new Object[]{
-            ImmutableList.of(newNxrmRule("my_s3_blob_store")), 1, 0
-        },
-        new Object[]{
-            ImmutableList.of(userRule()), 0, 1
-        },
-        new Object[]{
-            ImmutableList.of(userRule(), oldNxrmRule(), userRule()), 0, 1
-        },
-        new Object[]{
-            ImmutableList.of(userRule(), newNxrmRule("my_s3_blob_store"), userRule()), 0, 1
-        }
-    };
+  /**
+   * Provides test parameters for lifecycle rule removal tests.
+   */
+  static Stream<Arguments> ruleSetAndDeleteLifeCycleParams() {
+    return Stream.of(
+        Arguments.of(Collections.emptyList(), 1, 0),
+        Arguments.of(ImmutableList.of(oldNxrmRule()), 1, 0),
+        Arguments.of(ImmutableList.of(newNxrmRule("my_s3_blob_store")), 1, 0),
+        Arguments.of(ImmutableList.of(userRule()), 0, 1),
+        Arguments.of(ImmutableList.of(userRule(), oldNxrmRule(), userRule()), 0, 1),
+        Arguments.of(ImmutableList.of(userRule(), newNxrmRule("my_s3_blob_store"), userRule()), 0, 1)
+    );
   }
 
-  @Test
-  @Parameters(named = "errorCodeAndMessageParams")
-  public void errorThrownWhenBucketCannotBeCreated(
+  /**
+   * Tests error handling when a bucket cannot be created.
+   */
+  @ParameterizedTest
+  @MethodSource("errorCodeAndMessageParams")
+  void errorThrownWhenBucketCannotBeCreated(
       String errorCode, String message
   ) {
     String bucketName = "bucketName";
@@ -390,21 +388,22 @@ public class BucketManagerTest
     assertEquals(message, ex.getMessage());
   }
 
-  @NamedParameters("errorCodeAndMessageParams")
-  private Object[] errorCodeAndMessageParams() {
-    return new Object[] {
-        new Object[]{
-            ACCESS_DENIED_CODE, INSUFFICIENT_PERM_CREATE_BUCKET_ERR_MSG
-        },
-        new Object[]{
-            "Some_Unexpected_Code", "An unexpected error occurred creating bucket. Check the logs for more details."
-        }
-    };
+  /**
+   * Provides test parameters for bucket creation error tests.
+   */
+  static Stream<Arguments> errorCodeAndMessageParams() {
+    return Stream.of(
+        Arguments.of(ACCESS_DENIED_CODE, INSUFFICIENT_PERM_CREATE_BUCKET_ERR_MSG),
+        Arguments.of("Some_Unexpected_Code", "An unexpected error occurred creating bucket. Check the logs for more details.")
+    );
   }
 
-  @Test
-  @Parameters(named = "errorCodeAndMessageInvalidPermissionsParams")
-  public void errorCodeAndMessageInvalidPermissionsParams(
+  /**
+   * Tests error handling for invalid permissions.
+   */
+  @ParameterizedTest
+  @MethodSource("errorCodeAndMessageInvalidPermissionsParams")
+  void handleErrorCodeAndMessageInvalidPermissions(
       String errorCode, String message
   ) {
     String bucketName = "bucketName";
@@ -422,24 +421,23 @@ public class BucketManagerTest
     assertEquals(message, ex.getMessage());
   }
 
-  @NamedParameters("errorCodeAndMessageInvalidPermissionsParams")
-  private Object[] errorCodeAndMessageInvalidPermissionsParams() {
-    return new Object[] {
-        new Object[]{
-            "InvalidAccessKeyId", ERROR_CODE_MESSAGES.get(INVALID_ACCESS_KEY_ID_CODE)
-        },
-        new Object[]{
-            "SignatureDoesNotMatch", ERROR_CODE_MESSAGES.get(SIGNATURE_DOES_NOT_MATCH_CODE)
-        },
-        new Object[]{
-            "Some_Unexpected_Code", "An unexpected error occurred checking credentials. Check the logs for more details."
-        }
-    };
+  /**
+   * Provides test parameters for invalid permissions tests.
+   */
+  static Stream<Arguments> errorCodeAndMessageInvalidPermissionsParams() {
+    return Stream.of(
+        Arguments.of("InvalidAccessKeyId", ERROR_CODE_MESSAGES.get(INVALID_ACCESS_KEY_ID_CODE)),
+        Arguments.of("SignatureDoesNotMatch", ERROR_CODE_MESSAGES.get(SIGNATURE_DOES_NOT_MATCH_CODE)),
+        Arguments.of("Some_Unexpected_Code", "An unexpected error occurred checking credentials. Check the logs for more details.")
+    );
   }
 
-  @Test
-  @Parameters(named = "errorCodeAndMessageUserWithoutAccessParams")
-  public void errorThrownIfUserDoesNotHaveAccessToAnExistingBucket(
+  /**
+   * Tests error handling when a user doesn't have access to an existing bucket.
+   */
+  @ParameterizedTest
+  @MethodSource("errorCodeAndMessageUserWithoutAccessParams")
+  void errorThrownIfUserDoesNotHaveAccessToAnExistingBucket(
       String errorCode, String message
   ) {
     String bucketName = "bucketName";
@@ -458,34 +456,39 @@ public class BucketManagerTest
     assertEquals(message, ex.getMessage());
   }
 
-  @NamedParameters("errorCodeAndMessageUserWithoutAccessParams")
-  private Object[] errorCodeAndMessageUserWithoutAccessParams() {
-    return new Object[] {
-        new Object[]{
-            "AccessDenied", BUCKET_OWNERSHIP_ERR_MSG
-        },
-        new Object[]{
-            "Some_Unexpected_Code", "An unexpected error occurred checking bucket ownership. Check the logs for more details."
-        },
-        new Object[]{
-            "MethodNotAllowed", INVALID_IDENTITY_ERR_MSG
-        }
-    };
+  /**
+   * Provides test parameters for bucket access error tests.
+   */
+  static Stream<Arguments> errorCodeAndMessageUserWithoutAccessParams() {
+    return Stream.of(
+        Arguments.of("AccessDenied", BUCKET_OWNERSHIP_ERR_MSG),
+        Arguments.of("Some_Unexpected_Code", "An unexpected error occurred checking bucket ownership. Check the logs for more details."),
+        Arguments.of("MethodNotAllowed", INVALID_IDENTITY_ERR_MSG)
+    );
   }
 
-  private Rule userRule() {
+  /**
+   * Creates a mock user rule for testing.
+   */
+  private static Rule userRule() {
     Rule userRule = mock(Rule.class);
     when(userRule.getId()).thenReturn("user_rule_id");
     return userRule;
   }
 
-  private Rule oldNxrmRule() {
+  /**
+   * Creates a mock old NXRM rule for testing.
+   */
+  private static Rule oldNxrmRule() {
     Rule oldRule = mock(Rule.class);
     when(oldRule.getId()).thenReturn(OLD_LIFECYCLE_EXPIRATION_RULE_ID);
     return oldRule;
   }
 
-  private Rule newNxrmRule(String name) {
+  /**
+   * Creates a mock new NXRM rule for testing.
+   */
+  private static Rule newNxrmRule(String name) {
     Rule newRule = mock(Rule.class);
     when(newRule.getId()).thenReturn(LIFECYCLE_EXPIRATION_RULE_ID_PREFIX + name);
     return newRule;

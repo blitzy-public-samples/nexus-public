@@ -14,45 +14,10 @@ package org.sonatype.nexus.coreui;
 
 /**
  * Anonymous Security Settings exchange object.
+ * 
+ * Implemented as a Java 21 record for immutability and automatic generation of
+ * accessors, equals, hashCode, and toString methods.
  */
-public class AnonymousSettingsXO
-{
-  private Boolean enabled;
-
-  private String userId;
-
-  private String realmName;
-
-  public Boolean getEnabled() {
-    return enabled;
-  }
-
-  public void setEnabled(final Boolean enabled) {
-    this.enabled = enabled;
-  }
-
-  public String getUserId() {
-    return userId;
-  }
-
-  public void setUserId(final String userId) {
-    this.userId = userId;
-  }
-
-  public String getRealmName() {
-    return realmName;
-  }
-
-  public void setRealmName(final String realmName) {
-    this.realmName = realmName;
-  }
-
-  @Override
-  public String toString() {
-    return "AnonymousSettingsXO(" +
-        "enabled:" + enabled +
-        ", userId:" + userId +
-        ", realmName:" + realmName +
-        ")";
-  }
+public record AnonymousSettingsXO(Boolean enabled, String userId, String realmName) {
+  // Record automatically generates accessors, equals, hashCode, and toString methods
 }

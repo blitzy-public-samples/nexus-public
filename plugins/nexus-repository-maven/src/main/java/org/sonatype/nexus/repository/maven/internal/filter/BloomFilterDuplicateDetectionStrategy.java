@@ -34,19 +34,25 @@ import static org.sonatype.nexus.repository.maven.internal.utils.RecordUtils.gav
 public class BloomFilterDuplicateDetectionStrategy
     implements DuplicateDetectionStrategy<Record>
 {
-  private static double MAX_PROBABILITY = 10e-17;
+  private static final double MAX_PROBABILITY = 10e-17;
 
   // Bloom filter size of 1,000,000 with a probability of 0.01% (0.00001) uses 2.857 MB)
   // As we scale we will get a filter each time the number of elements exceeds NUMBER_OF_ELEMENTS_BEFORE_NEW_FILTER
   // i.e. 100,000. Therefore for 1m entries we will use ~28MB.
   // More info on memory usage can be found here https://github.com/google/guava/issues/2520#issuecomment-231233736
-  private static int BLOOM_FILTER_SIZE = 1000000;
+  private static final int BLOOM_FILTER_SIZE = 1000000;
 
   private final ScalableBloomFilter<String> bloomFilter =
       new ScalableBloomFilter<>(stringFunnel(UTF_8), BLOOM_FILTER_SIZE, MAX_PROBABILITY);
 
+  /**
+   * Tests if the record should be accepted (not a duplicate).
+   * 
+   * @param record the record to test
+   * @return true if the record is not a duplicate and was added to the filter, false otherwise
+   */
   @Override
-  public boolean apply(final Record record) {
+  public boolean test(final Record record) {
     return bloomFilter.put(gavceForRecord(record));
   }
 }

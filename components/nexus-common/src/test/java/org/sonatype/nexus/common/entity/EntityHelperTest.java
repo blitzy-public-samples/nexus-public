@@ -14,23 +14,26 @@ package org.sonatype.nexus.common.entity;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertThrows;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for {@link EntityHelper}
  */
-public class EntityHelperTest
+@ExtendWith(MockitoExtension.class)
+class EntityHelperTest
     extends TestSupport
 {
   @Test
-  public void testEntityWithoutMetadata() {
+  void testEntityWithoutMetadata() {
     AbstractEntity entity = new AbstractEntity()
     {
     };
@@ -46,7 +49,7 @@ public class EntityHelperTest
   }
 
   @Test
-  public void testEntityWithMetadata() {
+  void testEntityWithMetadata() {
     AbstractEntity entity = new AbstractEntity()
     {
     };

@@ -22,8 +22,10 @@ import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import com.amazonaws.regions.Region;
 import com.amazonaws.regions.Regions;
 import com.google.common.collect.ImmutableMap;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.MockedStatic;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -34,20 +36,37 @@ import static org.sonatype.nexus.blobstore.s3.S3BlobStoreConfigurationHelper.CON
 import static org.sonatype.nexus.blobstore.s3.S3BlobStoreConfigurationHelper.getConfiguredBucket;
 import static org.sonatype.nexus.blobstore.s3.S3BlobStoreConfigurationHelper.getConfiguredRegion;
 
+/**
+ * Tests for {@link S3BlobStoreConfigurationHelper} that verify the correct behavior of region and bucket configuration.
+ * <p>
+ * This test has been updated to use JUnit Jupiter (JUnit 5) and Mockito 4.11.0+ for Java 21 compatibility.
+ * It demonstrates proper static mocking techniques using Mockito's built-in static mocking capabilities.
+ */
+@ExtendWith(MockitoExtension.class)
 public class S3BlobStoreConfigurationHelperTest
     extends TestSupport
 {
+  /**
+   * Verifies that the correct bucket is returned based on the configuration and current region.
+   * Tests various scenarios including null region, empty failover map, and region matching/non-matching cases.
+   */
   @Test
-  public void testGetConfiguredBucket() {
+  void nullRegionUsesDefaultBucket() {
     // null doesn't cause failure
     withRegion(null,
         () -> assertThat(getConfiguredBucket(configuration("default", "def-bucket", null)), is("def-bucket")));
-
+  }
+  
+  @Test
+  void emptyFailoverMapUsesDefaultBucket() {
     // empty doesn't cause failure
     withRegion(null,
         () -> assertThat(getConfiguredBucket(configuration("default", "def-bucket", Collections.emptyMap())),
             is("def-bucket")));
-
+  }
+  
+  @Test
+  void regionSelectionReturnsCorrectBucket() {
     BlobStoreConfiguration configuration =
         configuration("default", "def-bucket", ImmutableMap.of("us-east-1", "us-e-bucket"));
 
@@ -61,17 +80,27 @@ public class S3BlobStoreConfigurationHelperTest
     withRegion(Regions.AF_SOUTH_1, () -> assertThat(getConfiguredBucket(configuration), is("def-bucket")));
   }
 
+  /**
+   * Verifies that the correct region is returned based on the configuration and current region.
+   * Tests various scenarios including null region, empty failover map, and region matching/non-matching cases.
+   */
   @Test
-  public void testGetConfiguredRegion() {
+  void nullRegionUsesDefaultRegion() {
     // null doesn't cause failure
     withRegion(null,
         () -> assertThat(getConfiguredRegion(configuration("default", "def-bucket", null)), is("default")));
-
+  }
+  
+  @Test
+  void emptyFailoverMapUsesDefaultRegion() {
     // empty doesn't cause failure
     withRegion(null,
         () -> assertThat(getConfiguredRegion(configuration("default", "def-bucket", Collections.emptyMap())),
             is("default")));
-
+  }
+  
+  @Test
+  void regionSelectionReturnsCorrectRegion() {
     BlobStoreConfiguration configuration =
         configuration("default", "def-bucket", ImmutableMap.of("us-east-1", "us-e-bucket"));
 
@@ -85,12 +114,20 @@ public class S3BlobStoreConfigurationHelperTest
     withRegion(Regions.AF_SOUTH_1, () -> assertThat(getConfiguredRegion(configuration), is("default")));
   }
 
+  /**
+   * Helper method to mock the AWS region for testing.
+   * Uses Mockito's static mocking capabilities to simulate different AWS region environments.
+   * 
+   * @param regions The AWS region to simulate, or null for no region
+   * @param runnable The test code to execute within the mocked region context
+   */
   private static void withRegion(final Regions regions, final Runnable runnable) {
+    // Reset the helper's cached region state before each test
     S3BlobStoreConfigurationHelper.region = null;
     S3BlobStoreConfigurationHelper.regionLoaded = false;
 
+    // Use Mockito's built-in static mocking for Java 21 compatibility
     try (MockedStatic<Regions> regionsMock = mockStatic(Regions.class)) {
-
       Region region = null;
       if (regions != null) {
         region = mock(Region.class);
@@ -101,6 +138,15 @@ public class S3BlobStoreConfigurationHelperTest
     }
   }
 
+  /**
+   * Creates a test blob store configuration with the specified region, bucket name, and failover buckets.
+   * Uses the builder pattern to create a realistic configuration object for testing.
+   * 
+   * @param region The primary AWS region for the configuration
+   * @param bucketName The primary bucket name for the configuration
+   * @param failoverBuckets Map of failover regions to bucket names, or null for no failover
+   * @return A configured BlobStoreConfiguration for testing
+   */
   private static BlobStoreConfiguration configuration(
       final String region,
       final String bucketName,

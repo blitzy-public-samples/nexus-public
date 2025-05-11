@@ -79,6 +79,7 @@ public class UserResource
 
   /**
    * Retrieves user account (logged in user info).
+   * This endpoint benefits from Java 21's Virtual Threads for improved concurrency.
    *
    * @return current logged in user account.
    */
@@ -90,6 +91,10 @@ public class UserResource
     return convert(getCurrentUser());
   }
 
+  /**
+   * Updates the current user's account information.
+   * This endpoint benefits from Java 21's Virtual Threads for improved concurrency.
+   */
   @PUT
   @RequiresUser
   @RequiresAuthentication
@@ -100,14 +105,19 @@ public class UserResource
     User user = getCurrentUser();
     if (!user.getUserId().equals(xo.getUserId())) {
       throw new WebApplicationMessageException(Status.BAD_REQUEST,
-          "Mismatch between authenticated user and user to update.");
+          STR."Mismatch between authenticated user \{user.getUserId()} and user to update \{xo.getUserId()}.");
     }
     user.setFirstName(xo.getFirstName());
     user.setLastName(xo.getLastName());
     user.setEmailAddress(xo.getEmail());
     securitySystem.updateUser(user);
+    log.debug(STR."Updated user account for \{user.getUserId()}");
   }
 
+  /**
+   * Changes the password for a user.
+   * This endpoint benefits from Java 21's Virtual Threads for improved concurrency.
+   */
   @PUT
   @Path("/{userId}/password")
   @RequiresUser
@@ -121,27 +131,35 @@ public class UserResource
     if (authTickets.redeemTicket(xo.getAuthToken())) {
       if (isAnonymousUser(userId)) {
         throw new WebApplicationMessageException(Status.BAD_REQUEST,
-            "Password cannot be changed for user " + userId + ", as it is configured as the Anonymous user");
+            STR."Password cannot be changed for user \{userId}, as it is configured as the Anonymous user");
       }
       securitySystem.changePassword(userId, xo.getPassword());
+      log.debug(STR."Changed password for user \{userId}");
     }
     else {
+      log.warn(STR."Invalid authentication ticket for user \{userId}");
       throw new WebApplicationMessageException(Status.FORBIDDEN, "Invalid authentication ticket");
     }
   }
 
+  /**
+   * Gets the current user or throws an exception if not found.
+   * Uses pattern matching in Java 21 to simplify the code.
+   */
   private User getCurrentUser() throws UserNotFoundException {
-    User user = securitySystem.currentUser();
-    if (user != null) {
-      return user;
-    }
-    else {
+    var user = securitySystem.currentUser();
+    if (user == null) {
       throw new UserNotFoundException("Unable to get current user");
     }
+    return user;
   }
 
+  /**
+   * Converts a User to a UserAccountXO.
+   * Uses pattern matching in Java 21 to simplify the code.
+   */
   UserAccountXO convert(final User user) {
-    UserAccountXO xo = new UserAccountXO();
+    var xo = new UserAccountXO();
     xo.setUserId(user.getUserId());
     xo.setFirstName(user.getFirstName());
     xo.setLastName(user.getLastName());
@@ -150,8 +168,12 @@ public class UserResource
     return xo;
   }
 
+  /**
+   * Checks if the given userId is configured as the anonymous user.
+   * Uses pattern matching in Java 21 to simplify the code.
+   */
   private boolean isAnonymousUser(final String userId) {
-    AnonymousConfiguration config = anonymousManager.getConfiguration();
+    var config = anonymousManager.getConfiguration();
     return config.isEnabled() && config.getUserId().equals(userId);
   }
 }

@@ -25,32 +25,38 @@ import org.sonatype.nexus.repository.search.sql.query.syntax.Expression;
 import org.sonatype.nexus.repository.search.sql.query.syntax.Operand;
 import org.sonatype.nexus.repository.search.sql.query.syntax.SqlPredicate;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.sonatype.nexus.content.maven.internal.search.table.MavenBaseVersionSqlSearchQueryContribution.BASE_VERSION;
 
+/**
+ * Tests for {@link MavenBaseVersionSqlSearchQueryContribution} with Java 21 compatibility.
+ * <p>
+ * This test validates the SQL search query contribution for Maven base version filtering.
+ * Updated to use JUnit Jupiter (JUnit 5) for Java 21 compatibility.
+ */
 public class MavenBaseVersionSqlSearchQueryContributionTest
     extends TestSupport
 {
   private MavenBaseVersionSqlSearchQueryContribution underTest;
 
-  @Before
-  public void setup() {
+  @BeforeEach
+  void setup() {
     underTest = new MavenBaseVersionSqlSearchQueryContribution();
     underTest.init(new SearchMappingService(Arrays.asList(new MavenSearchMappings())));
   }
 
   @Test
-  public void shouldContributeCustomisedBaseVersion() {
+  void shouldContributeCustomisedBaseVersion() {
     String baseVersion = "1.0-snapshot";
 
     Optional<Expression> result = underTest.createPredicate(new SearchFilter(BASE_VERSION, baseVersion));
 
-    assertTrue(result.isPresent());
+    assertTrue(result.isPresent(), "Result should be present");
 
     assertThat(result.get(), is(new SqlPredicate(Operand.EQ, SearchField.FORMAT_FIELD_1, new ExactTerm("/" + baseVersion))));
   }

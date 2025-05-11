@@ -14,8 +14,15 @@ package org.sonatype.nexus.blobstore.internal.datastore;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.blobstore.api.Blob;
 import org.sonatype.nexus.blobstore.api.BlobId;
 import org.sonatype.nexus.blobstore.api.BlobRef;
@@ -30,20 +37,25 @@ import org.sonatype.nexus.repository.content.store.AssetBlobStore;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
 import org.sonatype.nexus.test.util.Whitebox;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.Optional.empty;
 import static java.util.Optional.of;
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.blobstore.api.BlobStore.REPO_NAME_HEADER;
 
-public class DefaultBlobStoreUsageCheckerTest
+@ExtendWith(MockitoExtension.class)
+class DefaultBlobStoreUsageCheckerTest
     extends TestSupport
 {
   private static final String REPO_NAME = "repoName";
@@ -89,8 +101,8 @@ public class DefaultBlobStoreUsageCheckerTest
 
   DefaultBlobStoreUsageChecker underTest;
 
-  @Before
-  public void setUp() {
+  @BeforeEach
+  void setUp() {
     Whitebox.setInternalState(contentFacetStores, "assetBlobStore", assetBlobStore);
 
     when(contentFacet.stores()).thenReturn(contentFacetStores);
@@ -118,19 +130,84 @@ public class DefaultBlobStoreUsageCheckerTest
   }
 
   @Test
-  public void blobIsReferenced() {
+  void blobIsReferenced() {
     assertThat(underTest.test(blobStore, BLOB_ID, BLOB_NAME), equalTo(true));
   }
 
   @Test
-  public void blobIdDoesNotMatch() {
+  void blobIdDoesNotMatch() {
     assertThat(underTest.test(blobStore, new BlobId("0"), BLOB_NAME), equalTo(false));
   }
 
   @Test
-  public void blobStoreNameDoesNotMatch() {
+  void blobStoreNameDoesNotMatch() {
     when(blobStoreConfiguration.getName()).thenReturn(NOT_DEFAULT);
 
     assertThat(underTest.test(blobStore, BLOB_ID, BLOB_NAME), equalTo(false));
+  }
+  
+  /**
+   * Tests the usage checker with pattern matching for different blob types.
+   * This test demonstrates Java 21's pattern matching capabilities.
+   */
+  @Test
+  void patternMatchingWithDifferentBlobTypes() {
+    // Create a blob with a different ID for testing pattern matching
+    BlobId testBlobId = new BlobId("test-pattern-matching");
+    
+    // Test with different blob types using pattern matching
+    Object result = underTest.test(blobStore, testBlobId, BLOB_NAME) ? "Referenced" : "Not Referenced";
+    
+    // Using pattern matching to handle the result
+    switch (result) {
+      case String s when s.equals("Referenced") -> 
+          assertTrue(false, "Blob should not be referenced");
+      case String s when s.equals("Not Referenced") -> 
+          assertTrue(true, "Blob is correctly identified as not referenced");
+      default -> 
+          assertTrue(false, "Unexpected result type");
+    }
+  }
+  
+  /**
+   * Tests the usage checker with concurrent operations using Java 21 Virtual Threads.
+   * This demonstrates how to leverage virtual threads for concurrent testing.
+   */
+  @Test
+  @org.junit.jupiter.api.Tag("Java21")
+  @org.junit.jupiter.api.Tag("VirtualThread")
+  void concurrentBlobChecksWithVirtualThreads() throws Exception {
+    // Create a virtual thread executor
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      int taskCount = 100;
+      CountDownLatch latch = new CountDownLatch(taskCount);
+      AtomicInteger successCount = new AtomicInteger(0);
+      
+      // Submit multiple concurrent tasks using virtual threads
+      for (int i = 0; i < taskCount; i++) {
+        final int index = i;
+        executor.submit(() -> {
+          try {
+            // Test with the main blob ID for even numbers, and a non-existent one for odd numbers
+            BlobId blobId = (index % 2 == 0) ? BLOB_ID : new BlobId("non-existent-" + index);
+            boolean result = underTest.test(blobStore, blobId, BLOB_NAME);
+            
+            // For even indices, we expect true (blob exists)
+            // For odd indices, we expect false (blob doesn't exist)
+            if ((index % 2 == 0 && result) || (index % 2 != 0 && !result)) {
+              successCount.incrementAndGet();
+            }
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete (with timeout for safety)
+      assertTrue(latch.await(5, TimeUnit.SECONDS), "All tasks should complete within timeout");
+      
+      // Verify all checks produced the expected results
+      assertEquals(taskCount, successCount.get(), "All blob checks should produce expected results");
+    }
   }
 }

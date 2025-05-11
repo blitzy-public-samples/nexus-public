@@ -12,17 +12,18 @@
  */
 package org.sonatype.nexus.coreui.internal.atlas;
 
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.GET;
-import javax.ws.rs.NotFoundException;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
+
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.rest.Resource;
@@ -38,7 +39,7 @@ import org.sonatype.nexus.security.user.UserNotFoundException;
 
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import static java.util.Objects.requireNonNull;
 import static org.sonatype.nexus.coreui.internal.atlas.SecurityDiagnosticResource.RESOURCE_URI;
 
 /**
@@ -86,7 +87,7 @@ public class SecurityDiagnosticResource
 
   @Inject
   public SecurityDiagnosticResource(final SecuritySystem securitySystem) {
-    this.securitySystem = checkNotNull(securitySystem);
+    this.securitySystem = requireNonNull(securitySystem);
   }
 
   /**
@@ -97,13 +98,13 @@ public class SecurityDiagnosticResource
   @RequiresPermissions("nexus:atlas:read")
   public Map<String, Object> userDiagnostic(final @PathParam("userId") String userId) {
     try {
-      log.info("Generating security diagnostics for user: {}", userId);
-      Map<String, Object> userDataMap = new HashMap<>();
+      log.info(STR."Generating security diagnostics for user: \{userId}");
+      Map<String, Object> userDataMap = new LinkedHashMap<>();
       populateUserDataMap(userDataMap, securitySystem.getAuthorizationManager("default"), userId);
       return userDataMap;
     }
     catch (NoSuchAuthorizationManagerException e) {
-      log.debug("Default AuthorizationManager not found", e);
+      log.debug(STR."Default AuthorizationManager not found", e);
       throw new RuntimeException(e);
     }
   }
@@ -117,7 +118,7 @@ public class SecurityDiagnosticResource
       userDataMap.put(USER_FIELD, toMap(securitySystem.getUser(id), authorizationManager));
     }
     catch (UserNotFoundException e) {
-      log.debug("User not found: {}", id, e);
+      log.debug(STR."User not found: \{id}", e);
       throw new NotFoundException("User not found");
     }
   }
@@ -131,7 +132,7 @@ public class SecurityDiagnosticResource
       roleDataMap.put(id, toMap(authorizationManager.getRole(id), authorizationManager));
     }
     catch (NoSuchRoleException e) {
-      roleDataMap.put(id, "ERROR: Failed to resolve role: " + id + " caused by: " + e.getMessage());
+      roleDataMap.put(id, STR."ERROR: Failed to resolve role: \{id} caused by: \{e.getMessage()}");
     }
   }
 
@@ -144,12 +145,12 @@ public class SecurityDiagnosticResource
       privilegeDataMap.put(id, toMap(authorizationManager.getPrivilege(id)));
     }
     catch (NoSuchPrivilegeException e) {
-      privilegeDataMap.put(id, "ERROR: Failed to resolve privilege: " + id + " caused by: " + e.getMessage());
+      privilegeDataMap.put(id, STR."ERROR: Failed to resolve privilege: \{id} caused by: \{e.getMessage()}");
     }
   }
 
   private Map<String, Object> toMap(final User user, final AuthorizationManager authorizationManager) {
-    Map<String, Object> userData = new HashMap<>();
+    Map<String, Object> userData = new LinkedHashMap<>();
     userData.put(USERID_FIELD, user.getUserId());
     userData.put(NAME_FIELD, user.getName());
     userData.put(FIRST_NAME_FIELD, user.getFirstName());
@@ -158,7 +159,7 @@ public class SecurityDiagnosticResource
     userData.put(SOURCE_FIELD, user.getSource());
     userData.put(STATUS_FIELD, user.getStatus());
     userData.put(VERSION_FIELD, user.getVersion());
-    Map<String, Object> roleDataMap = new HashMap<>();
+    Map<String, Object> roleDataMap = new LinkedHashMap<>();
     userData.put(ROLES_FIELD, roleDataMap);
     user.getRoles()
         .forEach(childRole -> populateRoleDataMap(roleDataMap, authorizationManager, childRole.getRoleId()));
@@ -166,15 +167,15 @@ public class SecurityDiagnosticResource
   }
 
   private Map<String, Object> toMap(final Role role, final AuthorizationManager authorizationManager) {
-    Map<String, Object> roleData = new HashMap<>();
+    Map<String, Object> roleData = new LinkedHashMap<>();
     roleData.put(NAME_FIELD, role.getName());
     roleData.put(SOURCE_FIELD, role.getSource());
     roleData.put(DESCRIPTION_FIELD, role.getDescription());
     roleData.put(VERSION_FIELD, role.getVersion());
-    Map<String, Object> childRoleData = new HashMap<>();
+    Map<String, Object> childRoleData = new LinkedHashMap<>();
     roleData.put(ROLES_FIELD, childRoleData);
     role.getRoles().forEach(childRole -> populateRoleDataMap(childRoleData, authorizationManager, childRole));
-    Map<String, Object> privilegeData = new HashMap<>();
+    Map<String, Object> privilegeData = new LinkedHashMap<>();
     roleData.put(PRIVILEGES_FIELD, privilegeData);
     role.getPrivileges()
         .forEach(privilege -> populatePrivilegeDataMap(privilegeData, authorizationManager, privilege));
@@ -182,7 +183,7 @@ public class SecurityDiagnosticResource
   }
 
   private Map<String, Object> toMap(final Privilege privilege) {
-    Map<String, Object> privilegeData = new HashMap<>();
+    Map<String, Object> privilegeData = new LinkedHashMap<>();
     privilegeData.put(DESCRIPTION_FIELD, privilege.getDescription());
     privilegeData.put(NAME_FIELD, privilege.getName());
     privilegeData.put(PERMISSION_FIELD, privilege.getPermission());

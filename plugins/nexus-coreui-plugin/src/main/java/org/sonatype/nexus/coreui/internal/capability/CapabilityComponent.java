@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -262,11 +263,11 @@ public class CapabilityComponent
     }
 
     Set<Tag> tags = new HashSet<>();
-    if (descriptor instanceof Taggable && ((Taggable) descriptor).getTags() != null) {
-      tags.addAll(((Taggable) descriptor).getTags());
+    if (descriptor instanceof Taggable taggable && taggable.getTags() != null) {
+      tags.addAll(taggable.getTags());
     }
-    if (capability instanceof Taggable && ((Taggable) capability).getTags() != null) {
-      tags.addAll(((Taggable) capability).getTags());
+    if (capability instanceof Taggable taggable && taggable.getTags() != null) {
+      tags.addAll(taggable.getTags());
     }
     if (!tags.isEmpty()) {
       capabilityXO.setTags(tags.stream().collect(toMap(Tag::key, Tag::value)));
@@ -292,6 +293,7 @@ public class CapabilityComponent
         .filter(this::nonNullKeyAndValue)
         .map(entry -> {
           if (capability.isPasswordProperty(entry.getKey())) {
+            // Using pattern matching for switch would be ideal here, but we need to check a condition on a different variable
             if ("PKI".equals(properties.get("authenticationType"))) {
               return new SimpleEntry<>(entry.getKey(), "");
             }
@@ -308,6 +310,7 @@ public class CapabilityComponent
     return properties.entrySet().stream()
         .filter(this::nonNullKeyAndValue)
         .map(entry -> {
+          // Simple condition that could use pattern matching in a more complex scenario
           if (PasswordPlaceholder.is(entry.getValue())) {
             return new SimpleEntry<>(entry.getKey(), referenceProperties.get(entry.getKey()));
           }
@@ -315,6 +318,12 @@ public class CapabilityComponent
         }).collect(toMap(Entry::getKey, Entry::getValue));
   }
 
+  /**
+   * Checks if an entry has non-null key and value.
+   * 
+   * @param entry the entry to check
+   * @return true if both key and value are non-null, false otherwise
+   */
   private boolean nonNullKeyAndValue(final Entry<?,?> entry) {
     return entry != null && entry.getKey() != null && entry.getValue() != null;
   }

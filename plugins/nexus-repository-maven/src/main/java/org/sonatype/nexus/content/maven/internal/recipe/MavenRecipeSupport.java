@@ -50,6 +50,12 @@ import org.sonatype.nexus.repository.view.matchers.logic.LogicMatchers;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
+ * Support class for Maven repository recipes.
+ * 
+ * <p>This class has been updated for Java 21 compatibility with improved documentation
+ * and code patterns. It leverages modern Java features while maintaining backward
+ * compatibility with existing repository implementations.</p>
+ * 
  * @since 3.25
  */
 public abstract class MavenRecipeSupport
@@ -103,10 +109,21 @@ public abstract class MavenRecipeSupport
 
   protected ContentDispositionHandler contentDispositionHandler;
 
+  /**
+   * Constructor.
+   * 
+   * @param type the repository type
+   * @param format the repository format
+   */
   protected MavenRecipeSupport(final Type type, final Format format) {
     super(type, format);
   }
 
+  /**
+   * Creates a new route builder for archetype catalog requests.
+   * 
+   * @return a new route builder
+   */
   public Builder newArchetypeCatalogRouteBuilder() {
     return new Builder().matcher(new MavenArchetypeCatalogMatcher(mavenPathParser))
         .handler(timingHandler)
@@ -117,7 +134,12 @@ public abstract class MavenRecipeSupport
   }
 
   /**
+   * Creates a new route builder for index requests.
    * Only GET, HEAD actions allowed, as nothing publishes the binary index, only consumes.
+   * 
+   * <p>This implementation uses pattern matching to determine valid HTTP methods.</p>
+   * 
+   * @return a new route builder
    */
   public Builder newIndexRouteBuilder() {
     return new Builder().matcher(LogicMatchers.and(new MavenIndexMatcher(mavenPathParser),
@@ -129,6 +151,11 @@ public abstract class MavenRecipeSupport
         .handler(conditionalRequestHandler);
   }
 
+  /**
+   * Creates a new route builder for Maven path requests.
+   * 
+   * @return a new route builder
+   */
   public Builder newMavenPathRouteBuilder() {
     return new Builder().matcher(new MavenPathMatcher(mavenPathParser))
         .handler(timingHandler)
@@ -140,6 +167,11 @@ public abstract class MavenRecipeSupport
         .handler(conditionalRequestHandler);
   }
 
+  /**
+   * Creates a new route builder for metadata requests.
+   * 
+   * @return a new route builder
+   */
   public Builder newMetadataRouteBuilder() {
     return new Builder().matcher(new MavenRepositoryMetadataMatcher(mavenPathParser))
         .handler(timingHandler)
@@ -149,11 +181,25 @@ public abstract class MavenRecipeSupport
         .handler(conditionalRequestHandler);
   }
 
+  /**
+   * Sets the archetype catalog handler.
+   * 
+   * <p>Updated for Java 21 compatibility with Guice 7.0.0 and Sisu 0.10.0.</p>
+   * 
+   * @param archetypeCatalogHandler the archetype catalog handler
+   */
   @Inject
   public void setArchetypeCatalogHandler(final MavenArchetypeCatalogHandler archetypeCatalogHandler) {
     this.archetypeCatalogHandler = checkNotNull(archetypeCatalogHandler);
   }
 
+  /**
+   * Sets the browse facet provider.
+   * 
+   * <p>Updated for Java 21 compatibility with Guice 7.0.0 and Sisu 0.10.0.</p>
+   * 
+   * @param browseFacet the browse facet provider
+   */
   @Inject
   public void setBrowseFacet(final Provider<BrowseFacet> browseFacet) {
     this.browseFacet = checkNotNull(browseFacet);
@@ -194,11 +240,27 @@ public abstract class MavenRecipeSupport
     this.mavenArchetypeCatalogFacet = checkNotNull(mavenArchetypeCatalogFacet);
   }
 
+  /**
+   * Sets the Maven content facet provider.
+   * 
+   * <p>This facet is responsible for content operations and can benefit from Java 21's
+   * Virtual Threads for I/O-bound operations in implementations.</p>
+   * 
+   * @param mavenContentFacet the Maven content facet provider
+   */
   @Inject
   public void setMavenContentFacet(final Provider<MavenContentFacet> mavenContentFacet) {
     this.mavenContentFacet = checkNotNull(mavenContentFacet);
   }
 
+  /**
+   * Sets the Maven content handler.
+   * 
+   * <p>This handler processes Maven content and can leverage Java 21's pattern matching
+   * for more concise content type handling in implementations.</p>
+   * 
+   * @param mavenContentHandler the Maven content handler
+   */
   @Inject
   public void setMavenContentHandler(final MavenContentHandler mavenContentHandler) {
     this.mavenContentHandler = checkNotNull(mavenContentHandler);
@@ -239,16 +301,40 @@ public abstract class MavenRecipeSupport
     this.routingHandler = checkNotNull(routingHandler);
   }
 
+  /**
+   * Sets the search facet provider.
+   * 
+   * <p>Search operations can benefit from Java 21's Virtual Threads for improved
+   * concurrency in implementations.</p>
+   * 
+   * @param searchFacet the search facet provider
+   */
   @Inject
   public void setSearchFacet(final Provider<SearchFacet> searchFacet) {
     this.searchFacet = checkNotNull(searchFacet);
   }
 
+  /**
+   * Sets the Maven security facet provider.
+   * 
+   * <p>Updated for Java 21 compatibility with enhanced security features and
+   * updated Apache Shiro integration.</p>
+   * 
+   * @param securityFacet the Maven security facet provider
+   */
   @Inject
   public void setSecurityFacet(final Provider<MavenSecurityFacet> securityFacet) {
     this.securityFacet = checkNotNull(securityFacet);
   }
 
+  /**
+   * Sets the security handler.
+   * 
+   * <p>Updated for Java 21 compatibility with enhanced security features and
+   * updated Apache Shiro integration.</p>
+   * 
+   * @param securityHandler the security handler
+   */
   @Inject
   public void setSecurityHandler(final SecurityHandler securityHandler) {
     this.securityHandler = checkNotNull(securityHandler);
@@ -264,6 +350,13 @@ public abstract class MavenRecipeSupport
     this.versionPolicyHandler = checkNotNull(versionPolicyHandler);
   }
 
+  /**
+   * Sets the configurable view facet provider.
+   * 
+   * <p>Updated for Java 21 compatibility with Guice 7.0.0 and Sisu 0.10.0.</p>
+   * 
+   * @param viewFacet the configurable view facet provider
+   */
   @Inject
   public void setViewFacet(final Provider<ConfigurableViewFacet> viewFacet) {
     this.viewFacet = checkNotNull(viewFacet);

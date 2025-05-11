@@ -15,29 +15,12 @@ package org.sonatype.nexus.coreui;
 import javax.validation.constraints.NotEmpty;
 
 /**
+ * Data transfer object for user account password changes.
+ * Refactored to use Java Record for improved immutability and conciseness.
+ *
  * @since 3.24
  */
-public class UserAccountPasswordXO
-{
-  @NotEmpty
-  private String authToken;
-
-  @NotEmpty
-  private String password;
-
-  public String getAuthToken() {
-    return authToken;
-  }
-
-  public void setAuthToken(String authToken) {
-    this.authToken = authToken;
-  }
-
-  public String getPassword() {
-    return password;
-  }
-
-  public void setPassword(String password) {
-    this.password = password;
-  }
-}
+public record UserAccountPasswordXO(
+    @NotEmpty String authToken,
+    @NotEmpty String password
+) {}

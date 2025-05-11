@@ -15,19 +15,27 @@ package org.sonatype.nexus.content.maven.internal.search.table;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.repository.content.utils.SearchComponentPathFilter;
 import org.sonatype.nexus.repository.maven.internal.Maven2Format;
 
 import static org.sonatype.nexus.content.maven.internal.search.table.MavenSearchComponentPathFilter.MavenType.getMavenTypes;
 
+/**
+ * Maven implementation of {@link SearchComponentPathFilter} that filters paths based on Maven artifact types.
+ * 
+ * @since 3.38
+ */
 @Named(Maven2Format.NAME)
 @Singleton
 public class MavenSearchComponentPathFilter
     implements SearchComponentPathFilter
 {
+  /**
+   * Enumeration of Maven artifact types used for filtering.
+   */
   enum MavenType
   {
     POM(".pom"),
@@ -48,10 +56,15 @@ public class MavenSearchComponentPathFilter
       return mavenType;
     }
 
+    /**
+     * Returns an unmodifiable list of all Maven types defined in this enum.
+     * 
+     * @return unmodifiable list of Maven types
+     */
     static List<String> getMavenTypes() {
       return Arrays.stream(MavenType.values())
           .map(MavenType::getMavenType)
-          .collect(Collectors.toList());
+          .collect(Collectors.toUnmodifiableList());
     }
   }
 

@@ -12,6 +12,7 @@
  */
 package org.sonatype.nexus.coreui.internal.wonderland;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import javax.inject.Named;
@@ -23,8 +24,6 @@ import javax.ws.rs.Produces;
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.property.SystemPropertiesHelper;
 import org.sonatype.nexus.rest.Resource;
-
-import com.google.common.collect.Lists;
 
 import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
 import static javax.ws.rs.core.MediaType.APPLICATION_XML;
@@ -46,7 +45,8 @@ public class SettingsResource
   @GET
   @Produces({APPLICATION_JSON, APPLICATION_XML})
   public List<PropertyXO> get() {
-    List<PropertyXO> properties = Lists.newArrayList();
+    // Using Java's ArrayList instead of Guava's Lists for Java 21 compatibility
+    List<PropertyXO> properties = new ArrayList<>();
 
     properties.add(
         new PropertyXO().withKey("keepAlive")

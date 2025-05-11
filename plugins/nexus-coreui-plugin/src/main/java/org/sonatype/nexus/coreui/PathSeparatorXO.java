@@ -15,29 +15,12 @@ package org.sonatype.nexus.coreui;
 import javax.validation.constraints.NotEmpty;
 
 /**
+ * Data transfer object for path separator information.
+ * Refactored as a record for Java 21 compatibility.
+ *
  * @since 3.0
  */
-public class PathSeparatorXO
-{
-  @NotEmpty
-  private String path;
-
-  @NotEmpty
-  private String fileSeparator;
-
-  public String getPath() {
-    return path;
-  }
-
-  public void setPath(String path) {
-    this.path = path;
-  }
-
-  public String getFileSeparator() {
-    return fileSeparator;
-  }
-
-  public void setFileSeparator(String fileSeparator) {
-    this.fileSeparator = fileSeparator;
-  }
-}
+public record PathSeparatorXO(
+    @NotEmpty String path,
+    @NotEmpty String fileSeparator
+) {}

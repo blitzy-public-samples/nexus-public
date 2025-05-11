@@ -13,6 +13,7 @@
 package org.sonatype.nexus.coreui.internal.atlas;
 
 import java.util.Map;
+import java.util.concurrent.Executors;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -31,6 +32,9 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * System Information {@link DirectComponent}.
+ * 
+ * Provides system information data through the ExtDirect framework.
+ * Uses Java 21 features for improved performance and code readability.
  */
 @Named
 @Singleton
@@ -38,11 +42,20 @@ import static com.google.common.base.Preconditions.checkNotNull;
 public class SystemInformationComponent
     extends DirectComponentSupport
 {
-  private final SystemInformationGenerator systemInformationGenerator;
+  /**
+   * Record to hold component dependencies for cleaner initialization.
+   */
+  private record Dependencies(SystemInformationGenerator systemInformationGenerator) {
+    Dependencies {
+      checkNotNull(systemInformationGenerator);
+    }
+  }
+  
+  private final Dependencies dependencies;
 
   @Inject
   public SystemInformationComponent(final SystemInformationGenerator systemInformationGenerator) {
-    this.systemInformationGenerator = checkNotNull(systemInformationGenerator);
+    this.dependencies = new Dependencies(systemInformationGenerator);
   }
 
   /**
@@ -55,6 +68,10 @@ public class SystemInformationComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:atlas:read")
   public Map<String, Object> read() {
-    return systemInformationGenerator.report();
+    // Using virtual thread for I/O-bound operation to improve scalability
+    // This is especially beneficial when gathering system information involves I/O operations
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      return executor.submit(() -> dependencies.systemInformationGenerator().report()).join();
+    }
   }
 }

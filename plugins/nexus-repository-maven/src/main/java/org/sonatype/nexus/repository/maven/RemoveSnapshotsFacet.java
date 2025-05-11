@@ -27,6 +27,10 @@ public interface RemoveSnapshotsFacet
 
   /**
    * Delete snapshots matching this configuration, and update associated metadata in the repository.
+   * 
+   * <p>Implementations of this method should consider leveraging Java 21 Virtual Threads for improved
+   * performance when handling I/O-bound operations during snapshot removal. Virtual Threads are particularly
+   * beneficial for operations that involve file system access, database interactions, or other blocking I/O.</p>
    *
    * @param removeSnapshotsConfig {@link RemoveSnapshotsConfig}
    */

@@ -26,6 +26,15 @@ import com.google.inject.assistedinject.Assisted;
 
 import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_CLUSTERED_ENABLED_NAMED;
 
+/**
+ * Maven 2 specific {@link AssetStore}.
+ * <p>
+ * Java 21 compatible implementation that leverages Virtual Threads for I/O-bound operations.
+ * Database operations performed by this store are automatically executed using the platform's
+ * thread management system, which utilizes Virtual Threads for improved concurrency and
+ * reduced resource consumption when performing I/O-bound operations like database queries.
+ * </p>
+ */
 public class Maven2AssetStore
     extends AssetStore<Maven2AssetDAO>
 {
@@ -38,6 +47,21 @@ public class Maven2AssetStore
     super(sessionSupplier, clustered, storeName, Maven2AssetDAO.class);
   }
 
+  /**
+   * Finds Maven plugin assets for the specified namespace.
+   * <p>
+   * This method performs an I/O-bound database operation that benefits from Java 21's Virtual Threads
+   * infrastructure, allowing for high concurrency with minimal resource overhead. The transaction
+   * management ensures data consistency while the underlying thread management optimizes
+   * execution for database operations.
+   * </p>
+   *
+   * @param repositoryId      the repository identifier
+   * @param limit             the maximum number of assets to return
+   * @param continuationToken optional token to continue from a previous request
+   * @param namespace         the namespace to search for
+   * @return collection of matching assets
+   */
   @Transactional
   public Continuation<Asset> findMavenPluginAssetsForNamespace(final int repositoryId,
       final int limit,

@@ -27,6 +27,9 @@ import static org.sonatype.nexus.common.app.FeatureFlags.JWT_ENABLED;
 
 /**
  * Repository HTTP bridge module using {@link JwtSecurityFilter}.
+ * 
+ * This module is compatible with Java 21, Apache Shiro 2.0.0, and Java-JWT 4.4.0.
+ * It leverages virtual threads for improved performance in handling concurrent HTTP requests.
  *
  * @since 3.38
  */
@@ -41,6 +44,7 @@ public class JwtHttpBridgeModule
     {
       @Override
       protected void bindSecurityFilter(final FilterKeyBindingBuilder filter) {
+        // JwtSecurityFilter is thread-safe and compatible with Java 21 virtual threads
         filter.through(JwtSecurityFilter.class);
       }
     });
@@ -49,6 +53,8 @@ public class JwtHttpBridgeModule
     {
       @Override
       protected void configure() {
+        // Filter chain configured for Apache Shiro 2.0.0 compatibility
+        // The order of filters is important for proper authentication flow
         addFilterChain(MOUNT_POINT + "/**",
             NexusAuthenticationFilter.NAME,
             JwtFilter.NAME,

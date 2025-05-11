@@ -15,7 +15,15 @@ package org.sonatype.nexus.content.maven.internal.browse;
 import org.sonatype.nexus.repository.content.browse.store.BrowseNodeDAO;
 
 /**
+ * Maven 2 specific extension of {@link BrowseNodeDAO}. This interface provides the data access layer
+ * for Maven 2 repository browse nodes, enabling specialized browsing functionality for Maven 2 repositories.
+ * 
+ * This interface is designed to work with Java 21 and leverages the dependency injection framework
+ * provided by Google Guice 7.0.0 and Eclipse Sisu 0.10.0 for service registration and discovery.
+ * Implementations of this interface are automatically discovered and registered through component scanning.
+ *
  * @since 3.26
+ * @see BrowseNodeDAO
  */
 public interface Maven2BrowseNodeDAO
     extends BrowseNodeDAO

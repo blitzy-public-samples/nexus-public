@@ -12,21 +12,24 @@
  */
 package org.sonatype.nexus.blobstore.s3.internal.encryption;
 
-import org.sonatype.goodies.testsupport.TestSupport;
-
 import com.amazonaws.services.s3.model.AbstractPutObjectRequest;
 import com.amazonaws.services.s3.model.CopyObjectRequest;
 import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
 import com.amazonaws.services.s3.model.ObjectMetadata;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.mockito.Mockito.*;
 
-public class S3ManagedEncrypterTest
-    extends TestSupport
+/**
+ * Tests for {@link S3ManagedEncrypter} that verify server-side encryption is properly applied
+ * to different types of S3 requests.
+ */
+@ExtendWith(MockitoExtension.class)
+class S3ManagedEncrypterTest
 {
-
   @Mock
   private InitiateMultipartUploadRequest initiateMultipartUploadRequest;
 
@@ -42,7 +45,7 @@ public class S3ManagedEncrypterTest
   private final S3ManagedEncrypter encrypter = new S3ManagedEncrypter();
 
   @Test
-  public void testS3ManagedServerSideEncWorksForInitiateMultipartUploadRequest() {
+  void shouldApplyServerSideEncryptionToInitiateMultipartUploadRequest() {
     when(initiateMultipartUploadRequest.getObjectMetadata()).thenReturn(objectMetadata);
 
     encrypter.addEncryption(initiateMultipartUploadRequest);
@@ -52,7 +55,7 @@ public class S3ManagedEncrypterTest
   }
 
   @Test
-  public void testS3ManagedServerSideEncWorksForAbstractPutObjectRequest() {
+  void shouldApplyServerSideEncryptionToAbstractPutObjectRequest() {
     when(abstractPutObjectRequest.getMetadata()).thenReturn(objectMetadata);
 
     encrypter.addEncryption(abstractPutObjectRequest);
@@ -62,7 +65,7 @@ public class S3ManagedEncrypterTest
   }
 
   @Test
-  public void testS3ManagedServerSideEncWorksForCopyObjectRequest() {
+  void shouldApplyServerSideEncryptionToCopyObjectRequest() {
     when(copyObjectRequest.getNewObjectMetadata()).thenReturn(objectMetadata);
 
     encrypter.addEncryption(copyObjectRequest);

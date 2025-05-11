@@ -18,6 +18,8 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
@@ -35,6 +37,7 @@ import org.sonatype.nexus.kv.ValueType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor;
 import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.UPGRADE;
 
 /**
@@ -78,26 +81,46 @@ public class S3BlobStoreMetricsMigrationStep
     // On clustered systems upgrades may not run at startup, so we need to determine what needs migrating before the
     // system might write to the DB.
     // Cooperation is used to avoid a race where a secondary node overwrites the first values
-    cooperation.on(() -> {
-        namesToMigrate = load();
+    // Use Virtual Thread for startup operations
+    try (var executor = newVirtualThreadPerTaskExecutor()) {
+      CompletableFuture<Set<String>> startupTask = CompletableFuture.supplyAsync(() -> {
+        return cooperation.on(() -> {
+            namesToMigrate = load();
 
-        if (namesToMigrate == null) {
-          Collection<String> s3BlobStores = compute();
+            if (namesToMigrate == null) {
+              Collection<String> s3BlobStores = compute();
 
-          kv.setKey(new NexusKeyValue(NAME, ValueType.OBJECT, s3BlobStores));
-        }
+              kv.setKey(new NexusKeyValue(NAME, ValueType.OBJECT, s3BlobStores));
+            }
 
-        return namesToMigrate;
-      })
-      // Always check when the remote did the work just in case
-      .checkFunction(() -> Optional.ofNullable(load()))
-      .cooperate(NAME);
+            return namesToMigrate;
+          })
+          // Always check when the remote did the work just in case
+          .checkFunction(() -> Optional.ofNullable(load()))
+          .cooperate(NAME);
+      }, executor);
+      
+      // Wait for the startup task to complete
+      startupTask.join();
+    }
   }
 
   @Override
   public void migrate(final Connection connection) throws Exception {
-    super.migrate(connection);
-    kv.removeKey(NAME);
+    // Use Virtual Thread for database migration operations
+    try (var executor = newVirtualThreadPerTaskExecutor()) {
+      CompletableFuture<Void> migrationTask = CompletableFuture.runAsync(() -> {
+        try {
+          super.migrate(connection);
+          kv.removeKey(NAME);
+        } catch (Exception e) {
+          throw new RuntimeException("Error during S3 metrics migration", e);
+        }
+      }, executor);
+      
+      // Wait for the migration to complete
+      migrationTask.join();
+    }
   }
 
   @Override
@@ -114,20 +137,27 @@ public class S3BlobStoreMetricsMigrationStep
   }
 
   private Set<String> load() {
+    // Use enhanced Optional handling with pattern matching in Java 21
     return kv.getKey(NAME)
       .map(val -> val.getAsObjectList(objectMapper, String.class))
-      .map(HashSet::new)
+      .map(list -> new HashSet<>(list))
       .orElse(null);
   }
 
   private Set<String> compute() {
+    // Use parallel stream for potentially better performance with Virtual Threads
     return getBlobStoreConfigurations()
+      .parallel()
       .filter(this::emptyOrWrong)
       .collect(Collectors.toSet());
   }
 
   private boolean emptyOrWrong(final String blobStoreName) {
     BlobStoreMetricsEntity metricsFromDb = metricsStore.get(blobStoreName);
-    return metricsFromDb == null || metricsFromDb.getBlobCount() <= 0L;
+    // Use pattern matching for instanceof check with Java 21
+    if (metricsFromDb instanceof BlobStoreMetricsEntity metrics) {
+      return metrics.getBlobCount() <= 0L;
+    }
+    return true; // No metrics found, needs migration
   }
 }

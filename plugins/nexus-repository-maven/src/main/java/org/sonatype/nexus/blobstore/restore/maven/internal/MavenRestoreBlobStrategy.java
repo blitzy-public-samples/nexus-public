@@ -15,6 +15,8 @@ package org.sonatype.nexus.blobstore.restore.maven.internal;
 import java.io.IOException;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 
 import javax.annotation.Nonnull;
 import javax.inject.Inject;
@@ -35,9 +37,14 @@ import org.sonatype.nexus.repository.maven.internal.Maven2Format;
 import org.sonatype.nexus.repository.view.payloads.DetachedBlobPayload;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor;
 import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_ENABLED;
 
 /**
+ * Maven implementation of {@link BaseRestoreBlobStrategy} that restores Maven repository content from blobs.
+ * This implementation leverages Java 21 features including Virtual Threads for I/O operations,
+ * Pattern Matching for type checks, and String Templates for improved logging.
+ * 
  * @since 3.29
  */
 @FeatureFlag(name = DATASTORE_ENABLED)
@@ -66,20 +73,18 @@ public class MavenRestoreBlobStrategy
     MavenPath mavenPath = data.getMavenPath();
     Repository repository = data.getRepository();
 
+    // Check if the Maven path has coordinates or is repository metadata
     if (mavenPath.getCoordinates() == null && !mavenPathParser.isRepositoryMetadata(mavenPath)) {
       log.warn(
-          "Skipping blob in repository named {}, because no maven coordinates found for blob named {} in blob store named {} and the blob not maven metadata",
-          repository.getName(),
-          data.getBlobName(),
-          data.getBlobStore().getBlobStoreConfiguration().getName());
+          STR."Skipping blob in repository named \{repository.getName()}, because no maven coordinates found for blob named \{data.getBlobName()} in blob store named \{data.getBlobStore().getBlobStoreConfiguration().getName()} and the blob not maven metadata");
       return false;
     }
 
-    Optional<MavenContentFacet> mavenFacet = repository.optionalFacet(MavenContentFacet.class);
-
-    if (!mavenFacet.isPresent()) {
+    // Use pattern matching for Optional - Java 21 feature
+    if (repository.optionalFacet(MavenContentFacet.class) instanceof Optional<MavenContentFacet> mavenFacet
+        && mavenFacet.isEmpty()) {
       if (log.isWarnEnabled()) {
-        log.warn("Skipping as Maven Content Facet not found on repository: {}", repository.getName());
+        log.warn(STR."Skipping as Maven Content Facet not found on repository: \{repository.getName()}");
       }
       return false;
     }
@@ -89,8 +94,29 @@ public class MavenRestoreBlobStrategy
 
   @Override
   protected void createAssetFromBlob(final Blob assetBlob, final MavenRestoreBlobData data) throws IOException {
-    MavenContentFacet mavenFacet = data.getRepository().facet(MavenContentFacet.class);
-    mavenFacet.put(data.getMavenPath(), new DetachedBlobPayload(assetBlob));
+    // Use Virtual Thread for I/O-bound operation - Java 21 feature
+    try (var executor = newVirtualThreadPerTaskExecutor()) {
+      Future<?> future = executor.submit(() -> {
+        try {
+          MavenContentFacet mavenFacet = data.getRepository().facet(MavenContentFacet.class);
+          mavenFacet.put(data.getMavenPath(), new DetachedBlobPayload(assetBlob));
+          log.debug(STR."Successfully restored Maven asset from blob \{data.getBlobName()} to path \{data.getMavenPath().getPath()}");
+        } catch (Exception e) {
+          log.error(STR."Error restoring Maven asset from blob \{data.getBlobName()}", e);
+          throw new RuntimeException(e);
+        }
+        return null;
+      });
+      
+      try {
+        future.get(); // Wait for completion
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new IOException(STR."Interrupted while restoring Maven asset from blob \{data.getBlobName()}", e);
+      } catch (ExecutionException e) {
+        throw new IOException(STR."Failed to restore Maven asset from blob \{data.getBlobName()}", e.getCause());
+      }
+    }
   }
 
   @Override
@@ -109,12 +135,17 @@ public class MavenRestoreBlobStrategy
 
   @Override
   protected boolean isComponentRequired(final MavenRestoreBlobData data) {
+    // Use pattern matching for MavenPath - Java 21 feature
     MavenPath path = data.getMavenPath();
-    return !(mavenPathParser.isRepositoryIndex(path) || mavenPathParser.isRepositoryMetadata(path));
+    return switch (path) {
+      case MavenPath p when mavenPathParser.isRepositoryIndex(p) -> false;
+      case MavenPath p when mavenPathParser.isRepositoryMetadata(p) -> false;
+      default -> true;
+    };
   }
 
   @Override
   public void after(final boolean updateAssets, final Repository repository) {
-    //no-op
+    // no-op
   }
 }

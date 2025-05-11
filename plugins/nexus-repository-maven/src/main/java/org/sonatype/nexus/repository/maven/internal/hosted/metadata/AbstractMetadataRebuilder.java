@@ -21,6 +21,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
+
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -269,7 +270,7 @@ public abstract class AbstractMetadataRebuilder
           metadataBuilder.onEnterGroupId(groupId);
           if (nonNull(artifactId) && nonNull(baseVersion)) {
             log.debug("Refreshing Group: {} Artifact: {}", groupId, artifactId);
-            refreshArtifact(groupId, artifactId, emptySet(), failures);
+            rebuilt = refreshArtifact(groupId, artifactId, emptySet(), failures);
           }
           rebuildMetadataExitGroup(groupId, failures);
         }
@@ -290,7 +291,7 @@ public abstract class AbstractMetadataRebuilder
             prevGroupId = g;
             metadataBuilder.onEnterGroupId(g);
           }
-          boolean rebuildGA =  refreshArtifact(g, a, bv, failures);
+          boolean rebuildGA = refreshArtifact(g, a, bv, failures);
           rebuilt = rebuilt || rebuildGA;
         }
 
@@ -370,7 +371,7 @@ public abstract class AbstractMetadataRebuilder
      */
     protected boolean mayUpdateChecksum(final MavenPath mavenPath, final HashType hashType) {
       Optional<HashCode> checksum = getChecksum(mavenPath, hashType);
-      if (!checksum.isPresent()) {
+      if (checksum.isEmpty()) {
         // this means that an asset stored in maven repository lacks checksum required by maven repository (see maven facet)
         log.warn("Asset with path {} lacks checksum {}", mavenPath, hashType);
         return false;

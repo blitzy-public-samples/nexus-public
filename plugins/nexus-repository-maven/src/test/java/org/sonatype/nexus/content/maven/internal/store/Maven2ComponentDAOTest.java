@@ -37,16 +37,24 @@ import org.sonatype.nexus.repository.search.normalize.VersionNumberExpander;
 import org.sonatype.nexus.testdb.DataSessionRule;
 
 import com.google.common.collect.ImmutableMap;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
 
-import static junit.framework.TestCase.assertTrue;
+// JUnit Jupiter imports for Java 21 compatibility
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
+
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.sonatype.nexus.datastore.api.DataStoreManager.DEFAULT_DATASTORE_NAME;
 import static org.sonatype.nexus.datastore.mybatis.CombUUID.combUUID;
 
+/**
+ * Test for {@link Maven2ComponentDAO} with Java 21 compatibility using JUnit Jupiter.
+ * 
+ * This test has been updated to use JUnit Jupiter (JUnit 5) annotations and assertions
+ * as part of the Java 21 migration.
+ */
 public class Maven2ComponentDAOTest
     extends TestSupport
 {
@@ -54,7 +62,8 @@ public class Maven2ComponentDAOTest
 
   private int repositoryId;
 
-  @Rule
+  // Updated from @Rule to @RegisterExtension for JUnit Jupiter compatibility
+  @RegisterExtension
   public DataSessionRule sessionRule = new DataSessionRule(DEFAULT_DATASTORE_NAME)
       .handle(new BlobRefTypeHandler())
       .access(Maven2ContentRepositoryDAO.class)
@@ -62,7 +71,8 @@ public class Maven2ComponentDAOTest
       .access(Maven2AssetBlobDAO.class)
       .access(Maven2AssetDAO.class);
 
-  @Before
+  // Updated from @Before to @BeforeEach for JUnit Jupiter compatibility
+  @BeforeEach
   public void setupContent() {
     contentRepository = new ContentRepositoryData();
     contentRepository.setConfigRepositoryId(new EntityUUID(combUUID()));
@@ -87,7 +97,8 @@ public class Maven2ComponentDAOTest
     try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
       Maven2ComponentDAO dao = session.access(Maven2ComponentDAO.class);
       Optional<Component> component = dao.readComponent(1);
-      assertTrue(component.isPresent());
+      // Using JUnit Jupiter assertion
+      assertTrue(component.isPresent(), "Component should be present");
     }
   }
 

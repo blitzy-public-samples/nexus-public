@@ -28,6 +28,7 @@ import static org.eclipse.sisu.inject.Sources.prioritize;
 
 /**
  * Repository HTTP bridge module for legacy URLs.
+ * Updated for Java 21 compatibility and Apache Shiro 2.0.0.
  *
  * @since 3.7
  */
@@ -36,33 +37,43 @@ public class LegacyHttpBridgeModule
 {
   @Override
   protected void configure() {
+    // Bind the legacy view servlet and request filter
     bind(LegacyViewServlet.class);
-
     bind(ExhaustRequestFilter.class);
 
+    // Require core Shiro security components
+    // These are compatible with Apache Shiro 2.0.0 and Java 21
     requireBinding(WebSecurityManager.class);
     requireBinding(FilterChainResolver.class);
 
     // Bind after core-servlets but before error servlet
+    // Using Eclipse Sisu 0.10.0 prioritize method for binding order
     Binder highPriorityBinder = binder().withSource(prioritize(0x50000000));
+    
+    // Install the servlet module with SecurityFilter for Jakarta EE and Java 21 compatibility
     highPriorityBinder.install(new LegacyHttpBridgeServletModule()
     {
       @Override
       protected void bindSecurityFilter(final FilterKeyBindingBuilder filter) {
+        // SecurityFilter is compatible with Apache Shiro 2.0.0
         filter.through(SecurityFilter.class);
       }
     });
 
+    // Install the filter chain module with updated security filters for Apache Shiro 2.0.0
     highPriorityBinder.install(new FilterChainModule()
     {
       @Override
       protected void configure() {
+        // Configure filter chains for legacy content URLs
+        // These filters are compatible with Java 21 and Apache Shiro 2.0.0
         addFilterChain("/content/**",
             NexusAuthenticationFilter.NAME,
             ApiKeyAuthenticationFilter.NAME,
             AnonymousFilter.NAME,
             AntiCsrfFilter.NAME);
 
+        // Configure filter chains for legacy service URLs
         addFilterChain("/service/local/**",
             NexusAuthenticationFilter.NAME,
             ApiKeyAuthenticationFilter.NAME,

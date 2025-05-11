@@ -26,18 +26,22 @@ import java.util.Map;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.io.ObjectInputStreamWithClassLoader.LoadingFunction;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.core.Is.is;
-import static org.hamcrest.core.IsEqual.equalTo;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.equalTo;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-public class ObjectInputStreamWithClassLoaderTest
+@ExtendWith(MockitoExtension.class)
+class ObjectInputStreamWithClassLoaderTest
     extends TestSupport
 {
   private static final String OBJECT_TO_SERIALIZE = "test";
@@ -50,16 +54,18 @@ public class ObjectInputStreamWithClassLoaderTest
   @Mock
   private ObjectStreamClass classDescription;
 
-  @Test(expected = NullPointerException.class)
-  public void failFastWhenClassLoaderNull() throws Exception {
-    try (ObjectInputStreamWithClassLoader in = new ObjectInputStreamWithClassLoader(
-        serialize(OBJECT_TO_SERIALIZE), (ClassLoader) null)) {
-      // exception expected
-    }
+  @Test
+  void failFastWhenClassLoaderNull() {
+    assertThrows(NullPointerException.class, () -> {
+      try (ObjectInputStreamWithClassLoader in = new ObjectInputStreamWithClassLoader(
+          serialize(OBJECT_TO_SERIALIZE), (ClassLoader) null)) {
+        // exception expected
+      }
+    });
   }
 
   @Test
-  public void useCustomClassLoaderToResolveClass() throws Exception {
+  void useCustomClassLoaderToResolveClass() throws Exception {
     String name = "testClassName";
     when(classDescription.getName()).thenReturn(name);
     try (ObjectInputStreamWithClassLoader underTest = new ObjectInputStreamWithClassLoader(
@@ -73,7 +79,7 @@ public class ObjectInputStreamWithClassLoaderTest
   }
 
   @Test
-  public void deserializeUsingCustomClassLoader() throws Exception {
+  void deserializeUsingCustomClassLoader() throws Exception {
     String contents = "contents";
     TestFixture deserialized;
     try (ObjectInputStream objects = new ObjectInputStreamWithClassLoader(
@@ -83,16 +89,18 @@ public class ObjectInputStreamWithClassLoaderTest
     assertThat(deserialized.contents, is(equalTo(contents)));
   }
 
-  @Test(expected = NullPointerException.class)
-  public void failFastWhenLoadingFunctionNull() throws Exception {
-    try (ObjectInputStreamWithClassLoader in = new ObjectInputStreamWithClassLoader(
-        serialize(OBJECT_TO_SERIALIZE), (LoadingFunction) null)) {
-      // exception expected
-    }
+  @Test
+  void failFastWhenLoadingFunctionNull() {
+    assertThrows(NullPointerException.class, () -> {
+      try (ObjectInputStreamWithClassLoader in = new ObjectInputStreamWithClassLoader(
+          serialize(OBJECT_TO_SERIALIZE), (LoadingFunction) null)) {
+        // exception expected
+      }
+    });
   }
 
   @Test
-  public void useCustomLoadingFunctionToResolveClass() throws Exception {
+  void useCustomLoadingFunctionToResolveClass() throws Exception {
     String name = "testClassName";
     when(classDescription.getName()).thenReturn(name);
     doReturn(getClass()).when(loadingFunction).loadClass(anyString());
@@ -107,7 +115,7 @@ public class ObjectInputStreamWithClassLoaderTest
   }
 
   @Test
-  public void deserializeUsingCustomLoadingFunction() throws Exception {
+  void deserializeUsingCustomLoadingFunction() throws Exception {
     String contents = "contents";
     TestFixture deserialized;
     doReturn(TestFixture.class).when(loadingFunction).loadClass(anyString());

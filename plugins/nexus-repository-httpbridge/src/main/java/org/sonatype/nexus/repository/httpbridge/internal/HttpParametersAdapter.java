@@ -13,6 +13,7 @@
 package org.sonatype.nexus.repository.httpbridge.internal;
 
 import java.util.Enumeration;
+import java.util.Iterator;
 
 import javax.servlet.http.HttpServletRequest;
 
@@ -28,11 +29,18 @@ import static com.google.common.base.Preconditions.checkNotNull;
 class HttpParametersAdapter
     extends Parameters
 {
+  /**
+   * Creates a new adapter for the given HTTP request.
+   *
+   * @param request the HTTP request to adapt (must not be null)
+   */
   public HttpParametersAdapter(final HttpServletRequest request) {
-    checkNotNull(request);
-    Enumeration<String> names = request.getParameterNames();
-    while (names.hasMoreElements()) {
-      String name = names.nextElement();
+    checkNotNull(request, "HTTP request cannot be null");
+    
+    // Use Java 21's Enumeration.asIterator() for more modern iteration
+    Iterator<String> paramNames = request.getParameterNames().asIterator();
+    while (paramNames.hasNext()) {
+      String name = paramNames.next();
       set(name, request.getParameterValues(name));
     }
   }

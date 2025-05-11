@@ -36,7 +36,6 @@ import org.sonatype.nexus.common.stateguard.Guarded;
 import org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport;
 import org.sonatype.nexus.jmx.reflect.ManagedObject;
 import org.sonatype.nexus.jmx.reflect.ManagedOperation;
-import org.sonatype.nexus.thread.NexusThreadFactory;
 
 import com.amazonaws.SdkBaseException;
 import com.amazonaws.SdkClientException;
@@ -57,13 +56,13 @@ import static java.lang.Integer.MIN_VALUE;
 import static java.lang.String.format;
 import static java.util.Optional.empty;
 import static java.util.Optional.of;
-import static java.util.concurrent.Executors.newFixedThreadPool;
+import static java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor;
 import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.STORAGE;
 import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.State.STARTED;
 
 /**
  * Uploads are published to a queue via the calling thread.
- * A pool of tasks consumes the upload requests and returns the {@link PartETag}
+ * A pool of virtual threads consumes the upload requests and returns the {@link PartETag}
  *
  * @since 3.28
  */
@@ -114,8 +113,8 @@ public class ProducerConsumerUploader
 
   @Override
   protected void doStart() {
-    executorService = newFixedThreadPool(threadCount,
-        new NexusThreadFactory("s3-parallel", "producerConsumerThreads"));
+    // Use Java 21 Virtual Threads for I/O-bound operations
+    executorService = newVirtualThreadPerTaskExecutor();
     for (int workerCount = 0; workerCount < threadCount; workerCount++) {
       executorService.submit(new ChunkUploader(waitingRequests));
     }
@@ -172,8 +171,7 @@ public class ProducerConsumerUploader
           catch (CancellationException | SdkBaseException ex) {
             s3.abortMultipartUpload(new AbortMultipartUploadRequest(bucket, key, uploadId));
             throw new BlobStoreException(
-                format("Error executing parallel requests for bucket:%s key:%s with uploadId:%s", bucket, key,
-                    uploadId),
+                STR."Error executing parallel requests for bucket:\{bucket} key:\{key} with uploadId:\{uploadId}",
                 ex,
                 null);
           }
@@ -181,7 +179,7 @@ public class ProducerConsumerUploader
         log.debug("Finished upload to key {} in bucket {}", key, bucket);
       }
       catch (IOException | SdkClientException e) { // NOSONAR
-        throw new BlobStoreException(format("Error uploading blob to bucket:%s key:%s", bucket, key), e, null);
+        throw new BlobStoreException(STR."Error uploading blob to bucket:\{bucket} key:\{key}", e, null);
       }
   }
 
@@ -301,6 +299,10 @@ public class ProducerConsumerUploader
     }
   }
 
+  /**
+   * Chunk uploader that runs on a virtual thread to handle I/O-bound S3 upload operations.
+   * Each instance processes upload requests from the shared queue.
+   */
   private class ChunkUploader
       implements Runnable
   {

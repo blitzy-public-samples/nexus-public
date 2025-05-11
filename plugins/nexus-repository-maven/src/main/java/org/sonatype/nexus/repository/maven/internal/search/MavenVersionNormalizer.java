@@ -189,20 +189,17 @@ public class MavenVersionNormalizer
       String numberPart = matcher.group(2);
       String suffix = matcher.group(3);
 
-      if (numberPart != null && !numberPart.equals("")) {
-        if (alphaPart.equals("a")) {
-          alphaPart = ALPHA;
-        }
-        else if (alphaPart.equals("b")) {
-          alphaPart = BETA;
-        }
-        else if (alphaPart.equals("m")) {
-          alphaPart = MILESTONE;
-        }
+      if (numberPart != null && !numberPart.isEmpty()) {
+        String standardizedAlpha = switch (alphaPart) {
+          case "a" -> ALPHA;
+          case "b" -> BETA;
+          case "m" -> MILESTONE;
+          default -> alphaPart;
+        };
 
-        String result = alphaPart + "-" + numberPart;
-        if (!suffix.equals("")) {
-          result = result + "-" + suffix;
+        String result = standardizedAlpha + "-" + numberPart;
+        if (!suffix.isEmpty()) {
+          result = STR."{result}-{suffix}";
         }
         return result;
       }
@@ -211,25 +208,15 @@ public class MavenVersionNormalizer
   }
 
   private QualifierType getQualifierType(final String qualifier, final String originalVersion) {
-    if (Strings2.isBlank(qualifier) || qualifier.equals(GA) || qualifier.equals(RELEASE) || qualifier.equals(FINAL)) {
-      return QualifierType.RELEASE;
-    }
-    else if (SNAPSHOT_TIMESTAMP.matcher(originalVersion).matches()) {
-      return QualifierType.SNAPSHOT;
-    }
-    else if (qualifier.startsWith(ALPHA) || qualifier.startsWith(BETA) ||
-        qualifier.startsWith(MILESTONE) || qualifier.startsWith(RC)) {
-      return QualifierType.BEFORE_RELEASE;
-    }
-    else if (qualifier.startsWith(SP)) {
-      return QualifierType.AFTER_RELEASE;
-    }
-    else if (Character.isDigit(qualifier.charAt(0))) {
-      return QualifierType.BUILD_NUMBER;
-    }
-    else {
-      return QualifierType.UNKNOWN;
-    }
+    return switch (qualifier) {
+      case null, "", GA, RELEASE, FINAL -> QualifierType.RELEASE;
+      case String s when SNAPSHOT_TIMESTAMP.matcher(originalVersion).matches() -> QualifierType.SNAPSHOT;
+      case String s when s.startsWith(ALPHA) || s.startsWith(BETA) || 
+                       s.startsWith(MILESTONE) || s.startsWith(RC) -> QualifierType.BEFORE_RELEASE;
+      case String s when s.startsWith(SP) -> QualifierType.AFTER_RELEASE;
+      case String s when !s.isEmpty() && Character.isDigit(s.charAt(0)) -> QualifierType.BUILD_NUMBER;
+      default -> QualifierType.UNKNOWN;
+    };
   }
 
   private String getNormalizedValue(final String[] versionList, final String qualifier, final String originalVersion) {
@@ -237,7 +224,7 @@ public class MavenVersionNormalizer
 
     String v = String.join(".", versionList) + "." + type.getKey();
     if (type != QualifierType.RELEASE) {
-      v += "." + qualifier;
+      v = STR."{v}.{qualifier}";
     }
 
     return VersionNumberExpander.expand(v);

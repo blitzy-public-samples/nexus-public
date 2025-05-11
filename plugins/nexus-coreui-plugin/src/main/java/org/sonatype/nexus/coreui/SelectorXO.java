@@ -26,94 +26,26 @@ import org.sonatype.nexus.validation.group.Update;
  *
  * @since 3.0
  */
-public class SelectorXO
-{
-  @NotBlank(groups = Update.class)
-  private String id;
+public record SelectorXO(
+    @NotBlank(groups = Update.class)
+    String id,
 
-  @Pattern(regexp = NamePatternConstants.REGEX, message = NamePatternConstants.MESSAGE)
-  @NotBlank(groups = Create.class)
-  @UniqueSelectorName(groups = Create.class)
-  private String name;
+    @Pattern(regexp = NamePatternConstants.REGEX, message = NamePatternConstants.MESSAGE)
+    @NotBlank(groups = Create.class)
+    @UniqueSelectorName(groups = Create.class)
+    String name,
 
-  @NotBlank(groups = Create.class)
-  private String type;
+    @NotBlank(groups = Create.class)
+    String type,
 
-  private String description;
+    String description,
 
-  @NotBlank
-  private String expression;
+    @NotBlank
+    String expression,
 
-  private List<String> usedBy;
+    List<String> usedBy,
 
-  private int usedByCount;
-
-  public String getId() {
-    return id;
-  }
-
-  public void setId(String id) {
-    this.id = id;
-  }
-
-  public String getName() {
-    return name;
-  }
-
-  public void setName(String name) {
-    this.name = name;
-  }
-
-  public String getType() {
-    return type;
-  }
-
-  public void setType(String type) {
-    this.type = type;
-  }
-
-  public String getDescription() {
-    return description;
-  }
-
-  public void setDescription(String description) {
-    this.description = description;
-  }
-
-  public String getExpression() {
-    return expression;
-  }
-
-  public void setExpression(String expression) {
-    this.expression = expression;
-  }
-
-  public List<String> getUsedBy() {
-    return usedBy;
-  }
-
-  public void setUsedBy(List<String> usedBy) {
-    this.usedBy = usedBy;
-  }
-
-  public int getUsedByCount() {
-    return usedByCount;
-  }
-
-  public void setUsedByCount(int usedByCount) {
-    this.usedByCount = usedByCount;
-  }
-
-  @Override
-  public String toString() {
-    return "SelectorXO{" +
-        "id='" + id + '\'' +
-        ", name='" + name + '\'' +
-        ", type='" + type + '\'' +
-        ", description='" + description + '\'' +
-        ", expression='" + expression + '\'' +
-        ", usedBy=" + usedBy +
-        ", usedByCount=" + usedByCount +
-        '}';
-  }
+    int usedByCount
+) {
+  // Record automatically generates getters, equals, hashCode, and toString methods
 }

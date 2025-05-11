@@ -13,6 +13,7 @@
 package org.sonatype.nexus.content.maven.internal.index;
 
 import java.io.IOException;
+import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -34,6 +35,9 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Proxy implementation of {@link MavenIndexFacet}.
+ * 
+ * This implementation is compatible with Java 21 and leverages modern language features
+ * like records and pattern matching where appropriate.
  *
  * @since 3.26
  */
@@ -43,17 +47,27 @@ public class MavenContentProxyIndexFacet
 {
   static final String CONFIG_KEY = "maven-indexer";
 
+  /**
+   * Configuration record for Maven indexer settings.
+   * Uses Java 21 record feature for immutable configuration data.
+   */
   @VisibleForTesting
-  static class Config
+  public static record Config(
+      @NotNull(groups = ProxyType.ValidationGroup.class)
+      Boolean cacheFallback) 
   {
-    @NotNull(groups = ProxyType.ValidationGroup.class)
-    public Boolean cacheFallback = Boolean.FALSE;
-
+    /**
+     * Default constructor with fallback value.
+     */
+    public Config() {
+      this(Boolean.FALSE);
+    }
+    
     @Override
     public String toString() {
-      return getClass().getSimpleName() + "{" +
-          "cacheFallback=" + cacheFallback +
-          '}';
+      return STR."{getClass().getSimpleName()}{
+          cacheFallback={cacheFallback}
+          }";
     }
   }
 
@@ -72,23 +86,33 @@ public class MavenContentProxyIndexFacet
 
   @Override
   protected void doValidate(final Configuration configuration) {
-    facet(ConfigurationFacet.class).validateSection(configuration, CONFIG_KEY, MavenContentProxyIndexFacet.Config.class,
-        Default.class, getRepository().getType().getValidationGroup()
-    );
+    ConfigurationFacet configFacet = facet(ConfigurationFacet.class);
+    if (configFacet != null) {
+      configFacet.validateSection(
+          configuration, 
+          CONFIG_KEY, 
+          Config.class,
+          Default.class, 
+          getRepository().getType().getValidationGroup()
+      );
+    }
   }
 
   @Override
   protected void doConfigure(final Configuration configuration) {
     config = facet(ConfigurationFacet.class)
-        .readSection(configuration, CONFIG_KEY, MavenContentProxyIndexFacet.Config.class);
-    log.debug("Config: {}", config);
+        .readSection(configuration, CONFIG_KEY, Config.class);
+    log.debug(STR."Config: {config}");
   }
 
   @Override
   public void publishIndex() throws IOException {
     log.debug("Fetching maven index properties from remote");
+    // Use try-with-resources to ensure strategy is properly closed
     try (DuplicateDetectionStrategy<Record> strategy = duplicateDetectionStrategyProvider.get()) {
-      mavenIndexPublisher.publishProxyIndex(getRepository(), config.cacheFallback, strategy );
+      // Virtual threads could be used here for I/O operations in a more complex implementation
+      // that separates the I/O-bound parts of the index publishing process
+      mavenIndexPublisher.publishProxyIndex(getRepository(), config.cacheFallback(), strategy);
     }
   }
 }

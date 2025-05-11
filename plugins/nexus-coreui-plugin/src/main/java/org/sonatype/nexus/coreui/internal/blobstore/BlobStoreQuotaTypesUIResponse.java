@@ -16,22 +16,21 @@ import java.util.Map;
 
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuota;
 
-public class BlobStoreQuotaTypesUIResponse
-{
-  private final String id;
-
-  private final String name;
-
+/**
+ * Response DTO for BlobStore quota types used in the UI.
+ * Implemented as a Java Record for immutability and simplified data transfer.
+ *
+ * @since 3.60
+ */
+public record BlobStoreQuotaTypesUIResponse(String id, String name) {
+  
+  /**
+   * Creates a new response from a Map.Entry containing quota type information.
+   * Uses pattern matching to extract key and value from the entry.
+   *
+   * @param entry the Map.Entry containing the quota type ID and BlobStoreQuota instance
+   */
   public BlobStoreQuotaTypesUIResponse(final Map.Entry<String, BlobStoreQuota> entry) {
-    this.id = entry.getKey();
-    this.name = entry.getValue().getDisplayName();
-  }
-
-  public String getId() {
-    return id;
-  }
-
-  public String getName() {
-    return name;
+    this(entry.getKey(), entry.getValue().getDisplayName());
   }
 }

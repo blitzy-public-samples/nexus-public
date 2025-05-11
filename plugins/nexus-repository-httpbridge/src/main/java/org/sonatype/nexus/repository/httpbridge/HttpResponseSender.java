@@ -14,20 +14,32 @@ package org.sonatype.nexus.repository.httpbridge;
 
 import java.io.IOException;
 
-import javax.annotation.Nullable;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.annotation.Nullable;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.sonatype.nexus.repository.view.Request;
 import org.sonatype.nexus.repository.view.Response;
 
 /**
  * Allows repository format specific handling of HTTP response sending.
+ * 
+ * This interface is compatible with Java 21 and supports Virtual Thread execution
+ * for improved concurrency and performance when handling HTTP responses.
  *
  * @since 3.0
  */
 public interface HttpResponseSender
 {
+  /**
+   * Sends the repository response to the HTTP servlet response.
+   * 
+   * @param request The original repository request, may be null
+   * @param response The repository response to send
+   * @param httpServletResponse The HTTP servlet response to send to
+   * @throws ServletException If a servlet error occurs
+   * @throws IOException If an I/O error occurs
+   */
   void send(@Nullable Request request, Response response, HttpServletResponse httpServletResponse)
       throws ServletException, IOException;
 }

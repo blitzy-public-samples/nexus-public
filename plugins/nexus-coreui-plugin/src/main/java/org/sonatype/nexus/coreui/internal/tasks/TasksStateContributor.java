@@ -22,6 +22,13 @@ import org.sonatype.nexus.rapture.StateContributor;
 
 import com.google.common.collect.ImmutableMap;
 
+/**
+ * Contributes task-related state to the UI.
+ * 
+ * <p>Java 21 compatible implementation that maintains the use of Guava's ImmutableMap.
+ * Could alternatively use Java's built-in Map.of() for immutable maps, but keeping
+ * Guava for consistency with the rest of the codebase.</p>
+ */
 @Named
 @Singleton
 public class TasksStateContributor
@@ -32,6 +39,8 @@ public class TasksStateContributor
 
   @Inject
   public TasksStateContributor(@Named("${nexus.react.tasks:-false}") final Boolean featureFlag) {
+    // Using Guava's ImmutableMap for consistency with the rest of the codebase
+    // Java 21 alternative: state = Map.of("nexus.react.tasks", featureFlag);
     state = ImmutableMap.of("nexus.react.tasks", featureFlag);
   }
 

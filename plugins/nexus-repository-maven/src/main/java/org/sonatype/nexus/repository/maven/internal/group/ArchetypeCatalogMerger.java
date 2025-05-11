@@ -19,6 +19,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.repository.Repository;
@@ -26,7 +27,6 @@ import org.sonatype.nexus.repository.maven.MavenPath;
 import org.sonatype.nexus.repository.maven.internal.MavenModels;
 import org.sonatype.nexus.repository.view.Content;
 
-import com.google.common.base.Predicate;
 import org.apache.maven.archetype.catalog.Archetype;
 import org.apache.maven.archetype.catalog.ArchetypeCatalog;
 
@@ -47,20 +47,20 @@ public class ArchetypeCatalogMerger
                     final MavenPath mavenPath,
                     final Map<Repository, Content> contents)
   {
-    log.debug("Merge archetype catalog for {}", mavenPath.getPath());
+    log.debug(STR."Merge archetype catalog for \{mavenPath.getPath()}");
     ArchetypeCatalog mergedCatalog = new ArchetypeCatalog();
     UniqueFilter uniqueFilter = new UniqueFilter();
 
     try {
-      for (Map.Entry<Repository, Content> entry : contents.entrySet()) {
-        String origin = entry.getKey().getName() + " @ " + mavenPath.getPath();
+      for (var entry : contents.entrySet()) {
+        String origin = STR."\{entry.getKey().getName()} @ \{mavenPath.getPath()}";
         ArchetypeCatalog catalog = MavenModels.readArchetypeCatalog(entry.getValue().openInputStream());
         if (catalog == null) {
-          log.debug("Corrupted archetype catalog: {}", origin);
+          log.debug(STR."Corrupted archetype catalog: \{origin}");
           continue;
         }
         for (Archetype archetype : catalog.getArchetypes()) {
-          if (uniqueFilter.apply(archetype)) {
+          if (uniqueFilter.test(archetype)) {
             archetype.setRepository(null);
             mergedCatalog.addArchetype(archetype);
           }
@@ -71,14 +71,13 @@ public class ArchetypeCatalogMerger
       MavenModels.writeArchetypeCatalog(outputStream, mergedCatalog);
     }
     catch (IOException e) {
-      log.error("Unable to merge {}", mavenPath, e);
+      log.error(STR."Unable to merge \{mavenPath}", e);
     }
   }
 
   private void sortArchetypes(final ArchetypeCatalog mergedCatalog) {
     Collections.sort(mergedCatalog.getArchetypes(),
-        (Archetype o1, Archetype o2) ->
-        {
+        (o1, o2) -> {
           int gc = o1.getGroupId().compareTo(o2.getGroupId());
           if (gc != 0) {
             return gc;
@@ -103,7 +102,7 @@ public class ArchetypeCatalogMerger
     private Map<String, Map<String, Set<String>>> gav = new HashMap<>();
 
     @Override
-    public boolean apply(final Archetype input) {
+    public boolean test(final Archetype input) {
       String g = input.getGroupId();
       String a = input.getArtifactId();
       String v = input.getVersion();
@@ -123,5 +122,4 @@ public class ArchetypeCatalogMerger
       return vSet.add(v);
     }
   }
-
 }

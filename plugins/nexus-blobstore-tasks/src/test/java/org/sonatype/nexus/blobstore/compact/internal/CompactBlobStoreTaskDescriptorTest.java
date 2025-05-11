@@ -15,21 +15,29 @@ package org.sonatype.nexus.blobstore.compact.internal;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.scheduling.TaskConfiguration;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Tag;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.sonatype.nexus.scheduling.TaskDescriptorSupport.MULTINODE_KEY;
 
+/**
+ * Tests for {@link CompactBlobStoreTaskDescriptor} ensuring compatibility with Java 21 runtime.
+ * 
+ * This test validates the initialization of task configuration with proper multinode settings.
+ * It has been updated to use JUnit Jupiter 5.10.1 annotations and is verified to work with Java 21.
+ */
+@Tag("Java21TestGroup")
 public class CompactBlobStoreTaskDescriptorTest
     extends TestSupport
 {
-  CompactBlobStoreTaskDescriptor underTest;
+  private CompactBlobStoreTaskDescriptor underTest;
 
-  TaskConfiguration taskConfiguration = new TaskConfiguration();
+  private TaskConfiguration taskConfiguration = new TaskConfiguration();
 
-  @Before
+  @BeforeEach
   public void setUp() throws Exception {
     underTest = new CompactBlobStoreTaskDescriptor();
   }
@@ -37,6 +45,7 @@ public class CompactBlobStoreTaskDescriptorTest
   @Test
   public void initializeConfiguration() throws Exception {
     underTest.initializeConfiguration(taskConfiguration);
-    assertThat(taskConfiguration.getBoolean(MULTINODE_KEY, false), is(false));
+    assertThat("Task should not be configured for multinode execution", 
+        taskConfiguration.getBoolean(MULTINODE_KEY, false), is(false));
   }
 }

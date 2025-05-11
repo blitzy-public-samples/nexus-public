@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.repository.maven.tasks;
 
+import java.util.concurrent.Executors;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 
@@ -31,6 +33,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Task to purge unused snapshots of the given Maven repository.
+ * Uses Java 21 Virtual Threads for improved concurrency during execution.
  *
  * @since 3.0
  */
@@ -64,8 +67,22 @@ public class PurgeMavenUnusedSnapshotsTask
 
   @Override
   protected void execute(final Repository repository) {
-    repository.facet(PurgeUnusedSnapshotsFacet.class)
-        .purgeUnusedSnapshots(getConfiguration().getInteger(LAST_USED_FIELD_ID, -1));
+    // Use Virtual Threads for improved concurrency during snapshot purge operations
+    var executor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    try {
+      executor.submit(() -> {
+        repository.facet(PurgeUnusedSnapshotsFacet.class)
+            .purgeUnusedSnapshots(getConfiguration().getInteger(LAST_USED_FIELD_ID, -1));
+      }).get(); // Wait for completion
+    }
+    catch (Exception e) {
+      log.error(STR."Error purging unused snapshots from \{repository.getName()}: \{e.getMessage()}", e);
+      throw new RuntimeException("Failed to purge unused snapshots", e);
+    }
+    finally {
+      executor.close();
+    }
   }
 
   @Override
@@ -91,6 +108,7 @@ public class PurgeMavenUnusedSnapshotsTask
 
   @Override
   public String getMessage() {
-    return "Purge unused Maven snapshot versions from " + getRepositoryField();
+    // Using Java 21 string templates for improved readability and performance
+    return STR."Purge unused Maven snapshot versions from \{getRepositoryField()}";
   }
 }

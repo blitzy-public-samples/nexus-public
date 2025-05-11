@@ -16,11 +16,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import java.util.function.BiPredicate;
 
-import org.sonatype.goodies.testsupport.TestSupport;
-
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.Logger;
 
 import static org.mockito.Mockito.inOrder;
@@ -30,9 +30,11 @@ import static org.sonatype.nexus.common.log.ExceptionSummarizer.warn;
 
 /**
  * Tests for {@link ExceptionSummarizer}.
+ * <p>
+ * Updated for Java 21 and JUnit Jupiter 5.10.1.
  */
+@ExtendWith(MockitoExtension.class)
 public class ExceptionSummarizerTest
-    extends TestSupport
 {
   @Mock
   private Logger log;
@@ -48,7 +50,7 @@ public class ExceptionSummarizerTest
   private TestExceptionSummarizer underTest;
 
   @Test
-  public void summarizeExceptionsByType() throws Exception {
+  void summarizeExceptionsByType() {
     underTest = new TestExceptionSummarizer(sameType(), warn(log));
 
     underTest.log("oops", firstCause); // <-- full stack
@@ -89,7 +91,7 @@ public class ExceptionSummarizerTest
   }
 
   @Test
-  public void summarizeExceptionsByText() throws Exception {
+  void summarizeExceptionsByText() {
     underTest = new TestExceptionSummarizer(sameText(), warn(log));
 
     underTest.log("oops", firstCause); // <-- full stack
@@ -135,6 +137,7 @@ public class ExceptionSummarizerTest
 
   /**
    * Stubbed {@link ExceptionSummarizer} that lets tests move time forward without sleeping.
+   * Compatible with Java 21 and JUnit Jupiter 5.10.1.
    */
   private static class TestExceptionSummarizer
       extends ExceptionSummarizer

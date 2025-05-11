@@ -21,6 +21,8 @@ import org.sonatype.nexus.repository.rest.api.RepositoriesApiResourceV1;
 import static org.sonatype.nexus.repository.maven.rest.MavenGroupRepositoriesApiResourceV1.RESOURCE_URI;
 
 /**
+ * REST resource for handling Maven group repository operations.
+ * 
  * @since 3.26
  */
 @Named
@@ -29,5 +31,8 @@ import static org.sonatype.nexus.repository.maven.rest.MavenGroupRepositoriesApi
 public class MavenGroupRepositoriesApiResourceV1
     extends MavenGroupRepositoriesApiResource
 {
+  /**
+   * The URI path for Maven group repository REST resources.
+   */
   static final String RESOURCE_URI = RepositoriesApiResourceV1.RESOURCE_URI + "/maven/group";
 }

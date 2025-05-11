@@ -24,6 +24,11 @@ import org.sonatype.nexus.scheduling.TaskDescriptorSupport;
 import static org.sonatype.nexus.formfields.FormField.MANDATORY;
 import static org.sonatype.nexus.formfields.FormField.OPTIONAL;
 
+/**
+ * Task descriptor for the delete temporary files task.
+ * 
+ * @since 3.0
+ */
 @AvailabilityVersion(from = "1.0")
 @Named
 @Singleton

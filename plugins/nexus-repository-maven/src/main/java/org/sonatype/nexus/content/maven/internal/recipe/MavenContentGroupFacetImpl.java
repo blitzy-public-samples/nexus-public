@@ -78,6 +78,7 @@ import static org.sonatype.nexus.repository.view.ContentTypes.TEXT_PLAIN;
 
 /**
  * Maven2 specific implementation of {@link GroupFacetImpl} using the content store.
+ * Updated for Java 21 compatibility with pattern matching and virtual threads support.
  *
  * @since 3.27
  */
@@ -262,8 +263,8 @@ public class MavenContentGroupFacetImpl
     for (Map.Entry<Repository, Response> entry : responses.entrySet()) {
       if (entry.getValue().getStatus().getCode() == HttpStatus.OK) {
         Response response = entry.getValue();
-        if (response.getPayload() instanceof Content) {
-          contents.put(entry.getKey(), (Content) response.getPayload());
+        if (response.getPayload() instanceof Content content) {
+          contents.put(entry.getKey(), content);
         }
       }
     }

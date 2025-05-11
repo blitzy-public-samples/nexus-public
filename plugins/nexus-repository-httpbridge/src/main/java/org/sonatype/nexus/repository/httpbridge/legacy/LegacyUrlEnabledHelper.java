@@ -26,10 +26,19 @@ import org.sonatype.nexus.repository.httpbridge.internal.HttpBridgeModule;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.capability.CapabilityReferenceFilterBuilder.capabilities;
 
+/**
+ * Helper class to determine if legacy URL support is enabled.
+ * 
+ * This class checks both system properties and capability registry to determine
+ * if legacy URL support should be active.
+ * 
+ * @since 3.7
+ */
 @Named
 @Singleton
 public class LegacyUrlEnabledHelper
 {
+  // Use the system property to determine if legacy content is supported by default
   private final boolean supportLegacyContent = SystemPropertiesHelper
       .getBoolean(HttpBridgeModule.class.getName() + ".legacy", false);
 
@@ -41,11 +50,22 @@ public class LegacyUrlEnabledHelper
     this.capabilities = checkNotNull(capabilities);
   }
 
+  /**
+   * Determines if legacy URL support is enabled.
+   * 
+   * @return true if legacy URL support is enabled via system property or active capability
+   */
   public boolean isEnabled() {
     return supportLegacyContent || isLegacyUrlCapabilityActive();
   }
 
+  /**
+   * Checks if the legacy URL capability is active in the capability registry.
+   * 
+   * @return true if the legacy URL capability is active
+   */
   private boolean isLegacyUrlCapabilityActive() {
+    // Get all capability references matching the LegacyUrlCapabilityDescriptor type
     Collection<? extends CapabilityReference> references = capabilities
         .get(capabilities().withType(LegacyUrlCapabilityDescriptor.TYPE));
 
@@ -53,6 +73,7 @@ public class LegacyUrlEnabledHelper
       return false;
     }
 
+    // Check if the first matching capability is active
     return references.iterator().next().context().isActive();
   }
 }

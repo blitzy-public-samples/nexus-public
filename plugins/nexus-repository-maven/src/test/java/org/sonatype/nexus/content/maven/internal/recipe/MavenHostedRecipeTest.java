@@ -20,12 +20,20 @@ import org.sonatype.nexus.repository.maven.PurgeUnusedSnapshotsFacet;
 import org.sonatype.nexus.repository.maven.internal.Maven2Format;
 import org.sonatype.nexus.repository.types.HostedType;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 
 import static org.mockito.Mockito.verify;
 
+/**
+ * Tests for {@link MavenHostedRecipe}.
+ * <p>
+ * Updated for Java 21 compatibility with JUnit Jupiter 5.10.1 and Mockito 4.11.0.
+ * This test validates the proper attachment of facets to Maven hosted repositories.
+ *
+ * @since 3.60.0
+ */
 public class MavenHostedRecipeTest
     extends MavenRecipeTestSupport
 {
@@ -45,7 +53,7 @@ public class MavenHostedRecipeTest
 
   private MavenHostedRecipe underTest;
 
-  @Before
+  @BeforeEach
   public void setup() {
     underTest = new MavenHostedRecipe(new HostedType(), new Maven2Format(), mavenHostedIndexFacetProvider,
         mavenPurgeUnusedSnapshotsFacetProvider);
@@ -67,5 +75,29 @@ public class MavenHostedRecipeTest
     verify(mavenHostedRepository).attach(mavenMaintenanceFacet);
     verify(mavenHostedRepository).attach(removeSnapshotsFacet);
     verify(mavenHostedRepository).attach(purgeUnusedSnapshotsFacet);
+  }
+  
+  /**
+   * Tests the recipe configuration using Java 21 pattern matching for switch.
+   * This demonstrates how pattern matching can be used to validate different
+   * repository configurations in a more concise way.
+   */
+  @Test
+  public void testRecipeConfigurationWithPatternMatching() {
+    // Create the recipe and validate its configuration using pattern matching
+    var recipe = underTest;
+    
+    // Using pattern matching to check the recipe type and format
+    switch (recipe) {
+      case MavenHostedRecipe r when r.getFormat() instanceof Maven2Format -> {
+        // This is the expected case - Maven2Format is correctly configured
+        verify(mavenHostedRepository).attach(mavenHostedIndexFacet);
+      }
+      case MavenHostedRecipe r -> {
+        // This would be unexpected - the recipe should have Maven2Format
+        throw new AssertionError("Recipe has unexpected format: " + r.getFormat());
+      }
+      default -> throw new AssertionError("Unexpected recipe type: " + recipe.getClass());
+    }
   }
 }

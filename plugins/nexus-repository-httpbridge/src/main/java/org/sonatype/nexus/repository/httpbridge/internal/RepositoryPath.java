@@ -21,32 +21,7 @@ import org.apache.commons.io.FilenameUtils;
  *
  * @since 3.0
  */
-class RepositoryPath
-{
-  private final String repositoryName;
-
-  private final String remainingPath;
-
-  private RepositoryPath(final String repositoryName, final String remainingPath) {
-    this.repositoryName = repositoryName;
-    this.remainingPath = remainingPath;
-  }
-
-  public String getRepositoryName() {
-    return repositoryName;
-  }
-
-  public String getRemainingPath() {
-    return remainingPath;
-  }
-
-  @Override
-  public String toString() {
-    return getClass().getSimpleName() + "{" +
-        "repositoryName='" + repositoryName + '\'' +
-        ", remainingPath='" + remainingPath + '\'' +
-        '}';
-  }
+record RepositoryPath(String repositoryName, String remainingPath) {
 
   /**
    * Validate and parse the path.
@@ -56,39 +31,37 @@ class RepositoryPath
    * @return The parsed path
    */
   public static RepositoryPath parse(final String input) {
-    String repo = validateAndExtractRepo(input);
-    String path = validateAndExtractPath(input);
-    return new RepositoryPath(repo, path);
+    return switch (input) {
+      case null, "" -> throw new BadRequestException("Repository path must not be null or empty");
+      case String s when !s.startsWith("/") -> 
+          throw new BadRequestException("Repository path must start with '/'");
+      case String s -> {
+        int secondSlashIndex = s.indexOf('/', 1);
+        if (secondSlashIndex == -1) {
+          throw new BadRequestException("Repository path must have another '/' after initial '/'");
+        }
+        
+        String repo = s.substring(1, secondSlashIndex);
+        if (".".equals(repo) || "..".equals(repo)) {
+          throw new BadRequestException("Repository path must not contain a relative token");
+        }
+        
+        String path = s.substring(secondSlashIndex);
+        String normalizedPath = FilenameUtils.normalize(path, true); // unixSeparator:true is necessary to make this work on Windows
+        if (normalizedPath == null) {
+          throw new BadRequestException("Repository path contains invalid relative tokens");
+        }
+        
+        yield new RepositoryPath(repo, normalizedPath);
+      }
+    };
   }
-
-  private static String validateAndExtractRepo(final String input) {
-    if (input == null || input.isEmpty()) {
-      throw new BadRequestException("Repository path must not be null or empty");
-    }
-
-    if (!(input.charAt(0) == '/')) {
-      throw new BadRequestException("Repository path must start with '/'");
-    }
-
-    int i = input.indexOf('/', 1);
-    if (i == -1) {
-      throw new BadRequestException("Repository path must have another '/' after initial '/'");
-    }
-
-    String repo = input.substring(1, i);
-    if (".".equals(repo) || "..".equals(repo)) {
-      throw new BadRequestException("Repository path must not contain a relative token");
-    }
-
-    return repo;
-  }
-
-  private static String validateAndExtractPath(final String input) {
-    String path = input.substring(input.indexOf('/', 1), input.length());
-    path = FilenameUtils.normalize(path, true); //unixSeparator:true is necessary to make this work on Windows.
-    if (path == null) {
-      throw new BadRequestException("Repository path must not contain a relative token");
-    }
-    return path;
+  
+  @Override
+  public String toString() {
+    return getClass().getSimpleName() + "{" +
+        "repositoryName='" + repositoryName + '\'' +
+        ", remainingPath='" + remainingPath + '\'' +
+        '}';
   }
 }

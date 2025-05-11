@@ -12,6 +12,7 @@
  */
 package org.sonatype.nexus.repository.maven.internal.hosted.metadata;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -21,6 +22,7 @@ import java.util.NavigableSet;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.TreeSet;
+import java.util.function.Function;
 
 import javax.annotation.Nullable;
 
@@ -31,13 +33,11 @@ import org.sonatype.nexus.repository.maven.internal.Constants;
 import org.sonatype.nexus.repository.maven.internal.hosted.metadata.Maven2Metadata.Plugin;
 import org.sonatype.nexus.repository.maven.internal.hosted.metadata.Maven2Metadata.Snapshot;
 
-import com.google.common.base.Function;
-import com.google.common.collect.Iterables;
 import org.eclipse.aether.util.version.GenericVersionScheme;
 import org.eclipse.aether.version.InvalidVersionSpecificationException;
 import org.eclipse.aether.version.Version;
 import org.eclipse.aether.version.VersionScheme;
-import org.joda.time.DateTime;
+import org.joda.time.DateTime; // TODO: Replace with java.time when Maven2Metadata is updated
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
@@ -71,6 +71,12 @@ public class MetadataBuilder
   private final Map<String, VersionCoordinates> latestVersionCoordinatesMap;
 
   private VersionCoordinates latestVersionCoordinates;
+
+  /**
+   * Internal record to hold parsed Aether {@link Version} and {@link Coordinates}.
+   * Converted to a record for Java 21 compatibility and improved code clarity.
+   */
+  private record VersionCoordinates(Version version, Coordinates coordinates) {}
 
   public MetadataBuilder() {
     this.versionScheme = new GenericVersionScheme();
@@ -160,19 +166,14 @@ public class MetadataBuilder
     if (release.endsWith(Constants.SNAPSHOT_VERSION_SUFFIX)) {
       release = null;
     }
+    // Using stream API instead of Guava's transform for Java 21 compatibility
     return Maven2Metadata.newArtifactLevel(
         DateTime.now(),
         groupId,
         artifactId,
         latest,
         release,
-        Iterables.transform(baseVersions, new Function<Version, String>()
-        {
-          @Override
-          public String apply(final Version input) {
-            return input.toString();
-          }
-        }));
+        baseVersions.stream().map(Version::toString).toList());
   }
 
   public void addBaseVersion(final String baseVersion) {
@@ -191,21 +192,6 @@ public class MetadataBuilder
 
   // -----------------------------------
   // baseVersion
-
-  /**
-   * Internal structure to hold parsed Aether {@link Version} and {@link Coordinates}.
-   */
-  private static class VersionCoordinates
-  {
-    private final Version version;
-
-    private final Coordinates coordinates;
-
-    private VersionCoordinates(final Version version, final Coordinates coordinates) {
-      this.version = version;
-      this.coordinates = coordinates;
-    }
-  }
 
   public boolean onEnterBaseVersion(final String baseVersion) {
     checkState(groupId != null);
@@ -240,7 +226,7 @@ public class MetadataBuilder
     }
     final List<Snapshot> snapshots = new ArrayList<>();
     for (VersionCoordinates versionCoordinates : latestVersionCoordinatesMap.values()) {
-      final Coordinates coordinates = versionCoordinates.coordinates;
+      final Coordinates coordinates = versionCoordinates.coordinates();
       final Snapshot snapshotVersion = Maven2Metadata.newSnapshot(
           new DateTime(coordinates.getTimestamp()),
           coordinates.getExtension(),
@@ -250,14 +236,16 @@ public class MetadataBuilder
       snapshots.add(snapshotVersion);
     }
 
-    Optional<Long> timestamp = Optional.ofNullable(latestVersionCoordinates.coordinates.getTimestamp());
-    Optional<Integer> buildNumber = Optional.ofNullable(latestVersionCoordinates.coordinates.getBuildNumber());
+    Optional<Long> timestamp = Optional.ofNullable(latestVersionCoordinates.coordinates().getTimestamp());
+    Optional<Integer> buildNumber = Optional.ofNullable(latestVersionCoordinates.coordinates().getBuildNumber());
 
-    if (!timestamp.isPresent()) {
+    // Using pattern matching with instanceof would be ideal here in Java 21,
+    // but we're keeping it simple with isEmpty() for now
+    if (timestamp.isEmpty()) {
       log.warn("Unique timestamp snapshot {}:{}:{} is missing the timestamp and cannot be processed, " +
               "consider removing it manually.", groupId, artifactId, baseVersion);
       log.warn("Missing timestamps might be caused by an invalid version," +
-              " check the timestamp in the version {}.", latestVersionCoordinates.version);
+              " check the timestamp in the version {}.", latestVersionCoordinates.version());
       return null;
     }
 
@@ -308,7 +296,7 @@ public class MetadataBuilder
     final VersionCoordinates versionCoordinates = new VersionCoordinates(version, coordinates);
 
     // maintain latestVersionCoordinates
-    if (latestVersionCoordinates == null || latestVersionCoordinates.version.compareTo(version) < 0) {
+    if (latestVersionCoordinates == null || latestVersionCoordinates.version().compareTo(version) < 0) {
       latestVersionCoordinates = versionCoordinates;
     }
 
@@ -316,7 +304,7 @@ public class MetadataBuilder
     final String key = key(coordinates);
     final VersionCoordinates other = latestVersionCoordinatesMap.get(key);
     // add if contained version is less than version
-    if (other == null || other.version.compareTo(versionCoordinates.version) < 0) {
+    if (other == null || other.version().compareTo(versionCoordinates.version()) < 0) {
       latestVersionCoordinatesMap.put(key, versionCoordinates);
     }
   }

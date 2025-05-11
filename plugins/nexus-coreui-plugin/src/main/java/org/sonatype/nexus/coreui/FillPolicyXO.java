@@ -17,33 +17,7 @@ package org.sonatype.nexus.coreui;
  *
  * @since 3.14
  */
-public class FillPolicyXO
-{
-  private String id;
-
-  private String name;
-
-  public String getId() {
-    return id;
-  }
-
-  public void setId(String id) {
-    this.id = id;
-  }
-
-  public String getName() {
-    return name;
-  }
-
-  public void setName(String name) {
-    this.name = name;
-  }
-
-  @Override
-  public String toString() {
-    return "FillPolicyXO{" +
-        "id='" + id + '\'' +
-        ", name='" + name + '\'' +
-        '}';
-  }
+public record FillPolicyXO(String id, String name) {
+  // Java Record automatically provides constructor, accessors, equals/hashCode, and toString
+  // This is part of the Java 21 migration to leverage modern language features
 }

@@ -78,22 +78,22 @@ public class RebuildMaven2MetadataTaskDescriptor
         new StringTextFormField(
             BASEVERSION_FIELD_ID,
             "Base Version (only if ArtifactId given)",
-            "Maven base version to narrow operation (limit to given groupId:artifactId:baseVersion, used if groupId " +
-                "and artifactId set!)",
+            // Using Java 21 string template for improved readability
+            STR."Maven base version to narrow operation (limit to given groupId:artifactId:baseVersion, used if groupId and artifactId set!)",
             false
         ),
         new CheckboxFormField(
             REBUILD_CHECKSUMS,
             "Rebuild checksums",
-            "Compare maven checksum files with recorded metadata, creating files if they are missing and updating " +
-                "them if they are incorrect. This can significantly increase the time needed for this task.",
+            // Using Java 21 string template for improved readability
+            STR."Compare maven checksum files with recorded metadata, creating files if they are missing and updating them if they are incorrect. This can significantly increase the time needed for this task.",
             OPTIONAL
         ).withInitialValue(false),
         new CheckboxFormField(
             CASCADE_REBUILD,
             "Cascade rebuild",
-            "If you do not specify groupId and/or artifactId and/or base version, all nested components will be rebuilt. " +
-                "If there is no groupId - all repository components will be rebuilt; no artifactId - all artifacts related to groupId will be rebuilt etc.",
+            // Using Java 21 string template for improved readability
+            STR."If you do not specify groupId and/or artifactId and/or base version, all nested components will be rebuilt. If there is no groupId - all repository components will be rebuilt; no artifactId - all artifacts related to groupId will be rebuilt etc.",
             OPTIONAL
         ).withInitialValue(true)
     );

@@ -10,6 +10,19 @@
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  */
+
+/**
+ * Maven repository table-based search implementation.
+ * <p>
+ * This package provides table-based search functionality for Maven repositories.
+ * <p>
+ * <strong>Java 21 Requirement:</strong> This implementation requires Java 21 or later
+ * and leverages Java 21 features such as Virtual Threads for improved search performance
+ * and concurrency when handling large result sets.
+ *
+ * @since 3.60.0
+ * @requires Java 21
+ */
 @FeatureFlag(name = DATASTORE_TABLE_SEARCH)
 package org.sonatype.nexus.content.maven.internal.search.table;
 

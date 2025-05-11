@@ -12,23 +12,23 @@
  */
 package org.sonatype.nexus.coreui.internal.log;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
+import java.util.Objects;
+
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.log.LogMarker;
 import org.sonatype.nexus.rest.APIConstants;
 import org.sonatype.nexus.rest.Resource;
 
-import com.google.common.base.Strings;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static javax.ws.rs.core.MediaType.TEXT_PLAIN;
+import static jakarta.ws.rs.core.MediaType.TEXT_PLAIN;
 
 /**
  * Log REST resource.
@@ -50,21 +50,24 @@ public class LogResource
 
   @Inject
   public LogResource(final LogMarker logMarker) {
-    this.logMarker = checkNotNull(logMarker);
+    this.logMarker = Objects.requireNonNull(logMarker, "logMarker cannot be null");
   }
 
   /**
+   * Marks the log with a message or default mark.
    */
   @POST
   @Path("/mark")
   @Consumes({TEXT_PLAIN})
   @RequiresPermissions("nexus:logging:create")
   public void mark(final String message) {
-    if (Strings.isNullOrEmpty(message)) {
-      logMarker.markLog(DEFAULT_MARK);
+    // Using pattern matching with String type
+    switch (message) {
+      case null, "" -> logMarker.markLog(DEFAULT_MARK);
+      case String msg -> logMarker.markLog(msg);
     }
-    else {
-      logMarker.markLog(message);
-    }
+    
+    // Log the action using String Template
+    log.debug(STR."Log marked with message: \{message == null || message.isEmpty() ? DEFAULT_MARK : message}");
   }
 }

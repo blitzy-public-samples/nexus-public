@@ -15,23 +15,27 @@ package org.sonatype.nexus.common.io;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
+
 import com.google.common.io.ByteStreams;
 import com.google.common.io.Resources;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * UT for {@link SanitizingJsonOutputStream}.
  *
  * @since 3.0
  */
+@ExtendWith(MockitoExtension.class)
 public class SanitizingJsonOutputStreamTest
     extends TestSupport
 {
@@ -44,15 +48,15 @@ public class SanitizingJsonOutputStreamTest
    */
   @Test
   public void testSanitizeContent() throws IOException {
-    String input = Resources.toString(Resources.getResource(getClass(), "input.json"), Charset.forName("UTF-8"));
-    String output = Resources.toString(Resources.getResource(getClass(), "output.json"), Charset.forName("UTF-8"));
+    String input = Resources.toString(Resources.getResource(getClass(), "input.json"), StandardCharsets.UTF_8);
+    String output = Resources.toString(Resources.getResource(getClass(), "output.json"), StandardCharsets.UTF_8);
 
-    ByteArrayInputStream is = new ByteArrayInputStream(input.getBytes(Charset.forName("UTF-8")));
+    ByteArrayInputStream is = new ByteArrayInputStream(input.getBytes(StandardCharsets.UTF_8));
     ByteArrayOutputStream os = new ByteArrayOutputStream();
     try (SanitizingJsonOutputStream stream = new SanitizingJsonOutputStream(os, FIELDS, REPLACEMENT)) {
       ByteStreams.copy(is, stream);
     }
 
-    assertEquals(output, os.toString("UTF-8"));
+    assertEquals(output, os.toString(StandardCharsets.UTF_8.name()));
   }
 }

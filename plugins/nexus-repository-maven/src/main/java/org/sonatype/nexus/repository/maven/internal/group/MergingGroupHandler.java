@@ -18,6 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Executors;
 
 import javax.annotation.Nonnull;
 import javax.inject.Inject;
@@ -40,9 +41,7 @@ import org.sonatype.nexus.repository.view.Context;
 import org.sonatype.nexus.repository.view.Response;
 import org.sonatype.nexus.transaction.RetryDeniedException;
 
-import com.google.common.base.Predicate;
-
-import static com.google.common.base.Predicates.or;
+import static java.lang.StringTemplate.STR;
 import static java.util.Optional.empty;
 import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.toList;
@@ -58,8 +57,9 @@ import static java.util.stream.Collectors.toList;
 public class MergingGroupHandler
     extends GroupHandler
 {
-  private static final Predicate<Repository> PROXY_OR_GROUP =
-      or(new HasFacet(ProxyFacet.class), new HasFacet(GroupFacet.class));
+  private static final HasFacet PROXY_OR_GROUP =
+      repository -> repository instanceof HasFacet hasFacet && 
+          (hasFacet.hasFacet(ProxyFacet.class) || hasFacet.hasFacet(GroupFacet.class));
 
   private Cooperation2 metadataCooperation;
 
@@ -84,7 +84,7 @@ public class MergingGroupHandler
     final MavenPath mavenPath = context.getAttributes().require(MavenPath.class);
     final MavenGroupFacet groupFacet = context.getRepository().facet(MavenGroupFacet.class);
     final Repository repository = context.getRepository();
-    log.trace("Incoming request for {} : {}", context.getRepository().getName(), mavenPath.getPath());
+    log.trace(STR."Incoming request for \{repository.getName()}: \{mavenPath.getPath()}");
 
     //hashes need the parent asset(s) loaded into cache, they are calculated as a side effect of that
     final MavenPath parentPath = mavenPath.subordinateOf();
@@ -113,12 +113,12 @@ public class MergingGroupHandler
 
     Optional<Content> cachedContent = checkCache(groupFacet, mavenPath, repository);
     if (cachedContent.isPresent()) {
-      log.trace("Serving cached content {} : {}", repository.getName(), mavenPath.getPath());
+      log.trace(STR."Serving cached content \{repository.getName()}: \{mavenPath.getPath()}");
       return HttpResponses.ok(cachedContent.get());
     }
     else {
       // hash should be available if corresponding content fetched. out of bound request?
-      log.trace("Outbound request for hash {} : {}", repository.getName(), mavenPath.getPath());
+      log.trace(STR."Outbound request for hash \{repository.getName()}: \{mavenPath.getPath()}");
       return HttpResponses.notFound();
     }
   }
@@ -132,7 +132,7 @@ public class MergingGroupHandler
     final Repository repository = context.getRepository();
     final List<Repository> members = groupFacet.members();
 
-    log.trace("Incoming request for {} : {}", context.getRepository().getName(), mavenPath.getPath());
+    log.trace(STR."Incoming request for \{context.getRepository().getName()}: \{mavenPath.getPath()}");
 
     List<Repository> proxiesOrGroups =
         members.stream().filter(PROXY_OR_GROUP::apply).collect(toList());
@@ -145,7 +145,7 @@ public class MergingGroupHandler
         Optional<Content> cached = checkCache(groupFacet, mavenPath, repository);
 
         if (cached.isPresent()) {
-          log.trace("Serving cached content {} : {}", repository.getName(), mavenPath.getPath());
+          log.trace(STR."Serving cached content \{repository.getName()}: \{mavenPath.getPath()}");
           return cached.get();
         }
 
@@ -167,7 +167,7 @@ public class MergingGroupHandler
         // merge the individual responses and cache the result
         Content mergedContent = groupFacet.mergeAndCache(mavenPath, responses);
         if (mergedContent != null) {
-          log.trace("Responses merged {} : {}", context.getRepository().getName(), mavenPath.getPath());
+          log.trace(STR."Responses merged \{context.getRepository().getName()}: \{mavenPath.getPath()}");
         }
         return mergedContent;
       }
@@ -181,7 +181,7 @@ public class MergingGroupHandler
       return HttpResponses.ok(content);
     }
     else {
-      log.trace("Not found response to merge {} : {}", repository.getName(), mavenPath.getPath());
+      log.trace(STR."Not found response to merge \{repository.getName()}: \{mavenPath.getPath()}");
       return HttpResponses.notFound();
     }
   }
@@ -197,7 +197,7 @@ public class MergingGroupHandler
       return ofNullable(groupFacet.getCached(mavenPath));
     }
     catch (RetryDeniedException e) {
-      log.debug("Conflict fetching cached content {} : {}", repository.getName(), mavenPath.getPath(), e);
+      log.debug(STR."Conflict fetching cached content \{repository.getName()}: \{mavenPath.getPath()}", e);
     }
     return empty();
   }
@@ -209,23 +209,24 @@ public class MergingGroupHandler
   {
     final MavenPath mavenPath = context.getAttributes().require(MavenPath.class);
 
-    if (mavenPath.isHash()) {
-      return doGetHash(context);
-    }
-    else {
-      return doGetContent(context, dispatched);
-    }
+    return switch (mavenPath) {
+      case MavenPath path when path.isHash() -> doGetHash(context);
+      default -> doGetContent(context, dispatched);
+    };
   }
 
   /*
    * Invoke the call with co-operation if available, if not invoke the call directly.
+   * Uses virtual threads for I/O-bound operations to improve scalability.
    */
   private <T> T maybeCooperate(
       final Repository repository,
       final MavenPath path,
       final IOCall<T> call) throws IOException
   {
-    return metadataCooperation.on(call)
-        .cooperate(repository.getName(), path.toString());
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
+        metadataCooperation.on(call)
+            .cooperate(repository.getName(), path.toString())
+    ).join();
   }
 }

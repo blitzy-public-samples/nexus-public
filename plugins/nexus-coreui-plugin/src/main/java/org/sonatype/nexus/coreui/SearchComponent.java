@@ -15,9 +15,12 @@ package org.sonatype.nexus.coreui;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import javax.annotation.PreDestroy;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -71,6 +74,11 @@ public class SearchComponent
   private final SearchResultsGenerator searchResultsGenerator;
 
   private int searchResultsLimit;
+  
+  /**
+   * Executor service using virtual threads for I/O-bound search operations
+   */
+  private final ExecutorService virtualThreadExecutor;
 
   @Inject
   public SearchComponent(
@@ -83,6 +91,19 @@ public class SearchComponent
     this.searchResultsLimit = searchResultsLimit;
     this.searchResultsGenerator = checkNotNull(searchResultsGenerator);
     this.eventManager = checkNotNull(eventManager);
+    
+    // Create a virtual thread executor for I/O-bound search operations
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+  }
+  
+  /**
+   * Cleanup resources when component is destroyed
+   */
+  @PreDestroy
+  public void destroy() {
+    if (virtualThreadExecutor != null) {
+      virtualThreadExecutor.shutdown();
+    }
   }
 
   /**
@@ -112,11 +133,20 @@ public class SearchComponent
     fireSearchEvent(searchFilters);
 
     try {
-      return componentSearch(parameters.getLimit(), parameters.getPage(), orEmpty(parameters.getSort()),
-          searchFilters);
+      // Use virtual threads for I/O-bound search operations
+      return virtualThreadExecutor.submit(() -> 
+          componentSearch(parameters.getLimit(), parameters.getPage(), orEmpty(parameters.getSort()),
+              searchFilters)).get();
     }
     catch (IllegalArgumentException e) {
       throw new ValidationException(e.getMessage());
+    }
+    catch (Exception e) {
+      if (e.getCause() instanceof IllegalArgumentException) {
+        throw new ValidationException(e.getCause().getMessage());
+      }
+      log.error("Error performing search operation", e);
+      throw new RuntimeException("Error performing search operation", e);
     }
   }
 

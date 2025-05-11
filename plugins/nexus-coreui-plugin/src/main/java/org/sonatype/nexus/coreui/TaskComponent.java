@@ -21,6 +21,8 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
 import javax.annotation.Nullable;
@@ -174,6 +176,7 @@ public class TaskComponent
     taskConfiguration.setName(taskXO.getName());
     taskConfiguration.setEnabled(taskXO.getEnabled());
 
+    // Use Virtual Threads for I/O-bound task scheduling operations
     TaskInfo task = scheduleTask(() -> taskScheduler.scheduleTask(taskConfiguration, schedule));
     log.debug("Created task with type '{}': {} {}", taskConfiguration.getClass(), taskConfiguration.getName(),
         taskConfiguration.getId());
@@ -207,6 +210,7 @@ public class TaskComponent
     taskConfiguration.setNotificationCondition(taskXO.getNotificationCondition());
     taskXO.getProperties().forEach(taskConfiguration::setString);
 
+    // Use Virtual Threads for I/O-bound task scheduling operations
     task = scheduleTask(() -> taskScheduler.scheduleTask(taskConfiguration, schedule));
 
     return asTaskXO(task);
@@ -219,9 +223,15 @@ public class TaskComponent
   @RequiresPermissions("nexus:tasks:delete")
   @Validate
   public void remove(final @NotEmpty String id) {
-    TaskInfo taskInfo = taskScheduler.getTaskById(id);
-    if (taskInfo != null) {
-      taskInfo.remove();
+    // Use Virtual Threads for I/O-bound task removal operations
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      executor.submit(() -> {
+        TaskInfo taskInfo = taskScheduler.getTaskById(id);
+        if (taskInfo != null) {
+          taskInfo.remove();
+        }
+        return null;
+      });
     }
   }
 
@@ -232,9 +242,17 @@ public class TaskComponent
   @RequiresPermissions("nexus:tasks:start")
   @Validate
   public void run(final @NotEmpty String id) throws Exception {
-    TaskInfo taskInfo = taskScheduler.getTaskById(id);
-    if (taskInfo != null) {
-      taskInfo.runNow();
+    // Use Virtual Threads for I/O-bound task execution operations
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      Future<?> future = executor.submit(() -> {
+        TaskInfo taskInfo = taskScheduler.getTaskById(id);
+        if (taskInfo != null) {
+          taskInfo.runNow();
+        }
+        return null;
+      });
+      // Wait for the task to be submitted
+      future.get();
     }
   }
 
@@ -245,7 +263,34 @@ public class TaskComponent
   @RequiresPermissions("nexus:tasks:stop")
   @Validate
   public void stop(final @NotEmpty String id) {
-    taskScheduler.cancel(id, false);
+    // Use Virtual Threads for I/O-bound task stopping operations
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      executor.submit(() -> {
+        taskScheduler.cancel(id, false);
+        return null;
+      });
+    }
+  }
+
+  /**
+   * Schedules a task using Virtual Threads for improved I/O operation performance.
+   * Virtual Threads are lightweight threads that dramatically reduce the effort of writing,
+   * maintaining, and observing high-throughput concurrent applications.
+   *
+   * @param callable the task scheduling operation to execute
+   * @return the scheduled TaskInfo
+   */
+  private TaskInfo scheduleTask(Callable<TaskInfo> callable) throws Exception {
+    try {
+      // Use Virtual Threads for I/O-bound operations
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        return executor.submit(callable).get();
+      }
+    }
+    catch (Exception e) {
+      log.error("Failed to schedule task", e);
+      throw e;
+    }
   }
 
   private TaskXO asTaskXO(final TaskInfo taskInfo) {
@@ -384,20 +429,6 @@ public class TaskComponent
 
     if (!allowCreation && originalSource != null && !originalSource.equals(updateSource)) {
       throw new IllegalStateException("Script source updates are not allowed");
-    }
-  }
-
-  /**
-   * Handle parsing errors at the quartz level, which include logically incorrect settings in addition to the purely
-   * syntactic validations (regex) we already apply.
-   */
-  private TaskInfo scheduleTask(Callable<TaskInfo> callable) throws Exception {
-    try {
-      return callable.call();
-    }
-    catch (Exception e) {
-      log.error("Failed to schedule task", e);
-      throw e;
     }
   }
 

@@ -19,45 +19,57 @@ import java.util.Map;
 import org.sonatype.nexus.capability.CapabilityType;
 import org.sonatype.nexus.formfields.FormField;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.DisplayName;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+/**
+ * Tests for {@link CustomS3RegionCapabilityDescriptor}.
+ * 
+ * Note: If Mockito is needed in the future, use MockitoExtension with JUnit Jupiter:
+ * @ExtendWith(MockitoExtension.class)
+ */
+@DisplayName("CustomS3RegionCapabilityDescriptor Tests")
 public class CustomS3RegionCapabilityDescriptorTest {
 
   private CustomS3RegionCapabilityDescriptor descriptor;
 
-  @Before
-  public void setUp() {
+  @BeforeEach
+  void setUp() {
     descriptor = new CustomS3RegionCapabilityDescriptor();
   }
 
   @Test
-  public void testType() {
+  @DisplayName("Capability type should be 'customs3regions'")
+  void typeShouldReturnCorrectCapabilityType() {
     CapabilityType type = descriptor.type();
     assertEquals("customs3regions", type.toString());
   }
 
   @Test
-  public void testName() {
+  @DisplayName("Capability name should be 'Custom S3 Regions'")
+  void nameShouldReturnCorrectDisplayName() {
     String name = descriptor.name();
     assertEquals("Custom S3 Regions", name);
   }
 
   @Test
-  public void testFormFields() {
+  @DisplayName("Form fields should contain a 'regions' field")
+  void formFieldsShouldContainRegionsField() {
     List<FormField> formFields = descriptor.formFields();
-    assertNotNull(formFields);
-    assertEquals(1, formFields.size());
-    assertEquals("regions", formFields.get(0).getId());
+    assertNotNull(formFields, "Form fields should not be null");
+    assertEquals(1, formFields.size(), "Should have exactly one form field");
+    assertEquals("regions", formFields.get(0).getId(), "Form field ID should be 'regions'");
   }
 
   @Test
-  public void testCreateConfig() {
+  @DisplayName("Should create config from properties")
+  void createConfigShouldReturnValidConfiguration() {
     Map<String, String> properties = new HashMap<>();
     properties.put("regions", "us-east-1,us-west-2");
-    assertNotNull(descriptor.createConfig(properties));
+    assertNotNull(descriptor.createConfig(properties), "Created config should not be null");
   }
 }

@@ -12,15 +12,17 @@
  */
 package org.sonatype.nexus.repository.maven.rest;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.Path;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.Path;
 
 import org.sonatype.nexus.repository.rest.api.RepositoriesApiResourceV1;
 
 import static org.sonatype.nexus.repository.maven.rest.MavenHostedRepositoriesApiResourceV1.RESOURCE_URI;
 
 /**
+ * REST resource providing API endpoints for Maven hosted repository management.
+ *
  * @since 3.26
  */
 @Named

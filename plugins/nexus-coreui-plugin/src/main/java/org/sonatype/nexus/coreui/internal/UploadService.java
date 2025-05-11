@@ -14,6 +14,7 @@ package org.sonatype.nexus.coreui.internal;
 
 import java.io.IOException;
 import java.util.Collection;
+import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -34,6 +35,8 @@ import com.google.common.collect.Iterables;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
+ * Service for handling repository content uploads.
+ * 
  * @since 3.7
  */
 @Named
@@ -41,11 +44,11 @@ import static com.google.common.base.Preconditions.checkNotNull;
 public class UploadService
   extends ComponentSupport
 {
-  private UploadManager uploadManager;
+  private final UploadManager uploadManager;
 
-  private RepositoryManager repositoryManager;
+  private final RepositoryManager repositoryManager;
 
-  private RepositoryCacheInvalidationService repositoryCacheInvalidationService;
+  private final RepositoryCacheInvalidationService repositoryCacheInvalidationService;
 
   private static final String NPM_FORMAT = "npm";
 
@@ -61,38 +64,68 @@ public class UploadService
 
   /**
    * Get a list of available definitions for upload.
+   *
+   * @return collection of available upload definitions
    */
   public Collection<UploadDefinition> getAvailableDefinitions() {
     return uploadManager.getAvailableDefinitions();
   }
 
   /**
-   * Perform an upload of assets
+   * Perform an upload of assets using Virtual Threads for improved I/O handling.
    *
    * @since 3.16
    *
    * @param repositoryName the repository to upload to
    * @param request a multipart form request
    * @return the query term for results in search (depending on upload could show additional results)
-   * @throws IOException
+   * @throws IOException if an error occurs during upload processing
    */
   public String upload(final String repositoryName, final HttpServletRequest request) throws IOException {
-    checkNotNull(repositoryName);
-    checkNotNull(request);
+    checkNotNull(repositoryName, "Repository name cannot be null");
+    checkNotNull(request, "HTTP request cannot be null");
 
-    Repository repository = checkNotNull(repositoryManager.get(repositoryName), "Specified repository is missing");
+    log.debug(STR."Processing upload request for repository: \{repositoryName}");
+    
+    Repository repository = checkNotNull(repositoryManager.get(repositoryName), 
+        STR."Specified repository '\{repositoryName}' is missing");
 
-    UploadResponse uploadResponse = uploadManager.handle(repository, request);
+    // Handle the upload using a virtual thread for better I/O performance
+    UploadResponse uploadResponse = Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+      try {
+        log.debug(STR."Handling upload for repository \{repository.getName()} with format \{repository.getFormat().getValue()}");
+        return uploadManager.handle(repository, request);
+      } catch (IOException e) {
+        log.error(STR."Error processing upload for repository \{repository.getName()}", e);
+        throw new RuntimeException(e);
+      }
+    }).join();
 
-    if (NPM_FORMAT.equals(repository.getFormat().getValue())) {
-      repositoryManager.findContainingGroups(repositoryName)
-          .forEach(groupRepoName -> repositoryCacheInvalidationService.processCachesInvalidation(
-              repositoryManager.get(groupRepoName)));
+    // Use pattern matching for format-specific processing
+    String format = repository.getFormat().getValue();
+    switch (format) {
+      case NPM_FORMAT -> {
+        log.debug(STR."Invalidating npm caches for repository groups containing \{repositoryName}");
+        repositoryManager.findContainingGroups(repositoryName)
+            .forEach(groupRepoName -> {
+              Repository groupRepo = repositoryManager.get(groupRepoName);
+              if (groupRepo != null) {
+                repositoryCacheInvalidationService.processCachesInvalidation(groupRepo);
+              }
+            });
+      }
+      default -> log.debug(STR."No cache invalidation needed for format: \{format}");
     }
 
     return createSearchTerm(uploadResponse.getAssetPaths());
   }
 
+  /**
+   * Creates a search term based on the common prefix of all created asset paths.
+   *
+   * @param createdPaths collection of asset paths created during upload
+   * @return the common prefix to use as a search term, or null if no paths
+   */
   @VisibleForTesting
   String createSearchTerm(final Collection<String> createdPaths) {
     if (createdPaths.isEmpty()) {
@@ -105,9 +138,16 @@ public class UploadService
       prefix = longestPrefix(prefix, path);
     }
 
+    log.debug(STR."Created search term: '\{prefix}' from \{createdPaths.size()} paths");
     return prefix;
   }
 
+  /**
+   * Removes the last segment from a path.
+   *
+   * @param path the path to process
+   * @return the path with the last segment removed
+   */
   private String removeLastSegment(final String path) {
     int index = path.lastIndexOf('/');
     if (index != -1) {
@@ -116,6 +156,13 @@ public class UploadService
     return path;
   }
 
+  /**
+   * Finds the longest common prefix between the given prefix and path.
+   *
+   * @param prefix the current prefix
+   * @param path the path to compare against
+   * @return the longest common prefix
+   */
   private String longestPrefix(final String prefix, final String path) {
     String result = prefix;
     while (result.length() > 0 && !path.startsWith(result)) {

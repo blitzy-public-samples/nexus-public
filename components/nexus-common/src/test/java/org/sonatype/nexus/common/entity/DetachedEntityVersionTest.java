@@ -14,9 +14,9 @@ package org.sonatype.nexus.common.entity;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Tests for {@link DetachedEntityVersion}
@@ -27,10 +27,12 @@ public class DetachedEntityVersionTest
   @Test
   public void testDetachedEquality() {
     DetachedEntityVersion a = new DetachedEntityVersion("a");
-    assertTrue(a.equals(a));
-    assertTrue(a.equals(new DetachedEntityVersion("a")));
+    assertTrue(a.equals(a), "An entity should be equal to itself");
+    assertEquals(a, a, "An entity should be equal to itself");
+    assertEquals(a, new DetachedEntityVersion("a"), "Entities with the same value should be equal");
 
     DetachedEntityVersion b = new DetachedEntityVersion("b");
-    assertTrue(!a.equals(b));
+    assertFalse(a.equals(b), "Entities with different values should not be equal");
+    assertNotEquals(a, b, "Entities with different values should not be equal");
   }
 }

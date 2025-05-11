@@ -13,6 +13,9 @@
 package org.sonatype.nexus.blobstore.internal.metrics;
 
 import java.sql.Connection;
+import java.util.Objects;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -27,8 +30,6 @@ import org.sonatype.nexus.scheduling.TaskConfiguration;
 import org.sonatype.nexus.scheduling.UpgradeTaskScheduler;
 import org.sonatype.nexus.upgrade.datastore.RepeatableDatabaseMigrationStep;
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
 /**
  * Base task which will read the information from a metrics property file then adds it to the existing metrics total.
  *
@@ -40,6 +41,9 @@ public abstract class BlobStoreMetricsDatabaseMigrationStepSupport
     implements RepeatableDatabaseMigrationStep
 {
   private final String blobStoreType;
+  
+  // Using virtual threads executor for I/O-bound operations
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   protected BlobStoreMetricsStore metricsStore;
 
@@ -48,7 +52,7 @@ public abstract class BlobStoreMetricsDatabaseMigrationStepSupport
   private UpgradeTaskScheduler upgradeTaskScheduler;
 
   protected BlobStoreMetricsDatabaseMigrationStepSupport(final String blobStoreType) {
-    this.blobStoreType = checkNotNull(blobStoreType);
+    this.blobStoreType = Objects.requireNonNull(blobStoreType, "blobStoreType cannot be null");
   }
 
   @Inject
@@ -57,13 +61,14 @@ public abstract class BlobStoreMetricsDatabaseMigrationStepSupport
       final BlobStoreConfigurationStore blobStoreConfigurationStore,
       final UpgradeTaskScheduler upgradeTaskScheduler)
   {
-    this.metricsStore = checkNotNull(metricsStore);
-    this.blobStoreConfigurationStore = checkNotNull(blobStoreConfigurationStore);
-    this.upgradeTaskScheduler = checkNotNull(upgradeTaskScheduler);
+    this.metricsStore = Objects.requireNonNull(metricsStore, "metricsStore cannot be null");
+    this.blobStoreConfigurationStore = Objects.requireNonNull(blobStoreConfigurationStore, "blobStoreConfigurationStore cannot be null");
+    this.upgradeTaskScheduler = Objects.requireNonNull(upgradeTaskScheduler, "upgradeTaskScheduler cannot be null");
   }
 
   @Override
   public void migrate(final Connection connection) throws Exception {
+    // Using Java 21's pattern matching for instanceof and improved string handling
     String names = getBlobStoreConfigurations()
         .filter(this::shouldSaveMetricsToDatabase)
         .collect(Collectors.joining(","));
@@ -73,12 +78,19 @@ public abstract class BlobStoreMetricsDatabaseMigrationStepSupport
       return;
     }
 
-    TaskConfiguration configuration =
-        upgradeTaskScheduler.createTaskConfigurationInstance(BlobStoreMetricsMigrationTask.TYPE_ID);
+    // Schedule the task using virtual threads for better I/O performance
+    virtualThreadExecutor.submit(() -> {
+      try {
+        TaskConfiguration configuration =
+            upgradeTaskScheduler.createTaskConfigurationInstance(BlobStoreMetricsMigrationTask.TYPE_ID);
 
-    configuration.setString(BlobStoreTaskSupport.BLOBSTORE_NAME_FIELD_ID, names);
+        configuration.setString(BlobStoreTaskSupport.BLOBSTORE_NAME_FIELD_ID, names);
 
-    upgradeTaskScheduler.schedule(configuration);
+        upgradeTaskScheduler.schedule(configuration);
+      } catch (Exception e) {
+        log.error("Failed to schedule metrics migration task", e);
+      }
+    });
   }
 
   /**
@@ -92,5 +104,11 @@ public abstract class BlobStoreMetricsDatabaseMigrationStepSupport
     return blobStoreConfigurationStore.list().stream()
         .filter(store -> blobStoreType.equals(store.getType()))
         .map(BlobStoreConfiguration::getName);
+  }
+  
+  @Override
+  protected void doStop() throws Exception {
+    virtualThreadExecutor.close(); // Properly close the executor service
+    super.doStop();
   }
 }

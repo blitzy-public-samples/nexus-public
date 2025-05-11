@@ -12,10 +12,10 @@
  */
 package org.sonatype.nexus.blobstore.s3.internal;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
-import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.api.BlobStoreException;
 
 import com.amazonaws.SdkClientException;
@@ -25,14 +25,17 @@ import com.amazonaws.services.s3.model.InitiateMultipartUploadResult;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.Assert.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
 
-public class MultipartCopierTest
-    extends TestSupport
+/**
+ * Tests for {@link MultipartCopier} that verify S3 multipart copy operations.
+ */
+@ExtendWith(MockitoExtension.class)
+class MultipartCopierTest
 {
-
   private MultipartCopier multipartCopier;
 
   @Mock
@@ -41,13 +44,16 @@ public class MultipartCopierTest
   @Mock
   private InitiateMultipartUploadResult initiateMultipartUploadResult;
 
-  @Before
-  public void setUp() {
+  @BeforeEach
+  void setUp() {
     multipartCopier = new MultipartCopier(100);
   }
 
+  /**
+   * Verifies that the multipart API is used correctly for copying objects larger than the part size threshold.
+   */
   @Test
-  public void testCopyWithMultipartApi() {
+  void copyWithMultipartApi() {
     when(s3.initiateMultipartUpload(any())).thenReturn(initiateMultipartUploadResult);
     when(s3.getObjectMetadata("bucketName", "source")).thenReturn(new ObjectMetadata() {{
       setContentLength(101);
@@ -63,8 +69,11 @@ public class MultipartCopierTest
     verify(s3, never()).abortMultipartUpload(any());
   }
 
+  /**
+   * Verifies that multipart upload is aborted when an error occurs during the copy operation.
+   */
   @Test
-  public void testCopyAbortsMultipartOnError() {
+  void copyAbortsMultipartOnError() {
     when(initiateMultipartUploadResult.getUploadId()).thenReturn("uploadId");
     when(s3.initiateMultipartUpload(any())).thenReturn(initiateMultipartUploadResult);
     when(s3.getObjectMetadata("bucketName", "source")).thenReturn(new ObjectMetadata() {{
@@ -72,7 +81,8 @@ public class MultipartCopierTest
     }});
     when(s3.copyPart(any())).thenThrow(new SdkClientException(""));
 
-    assertThrows(BlobStoreException.class , () -> multipartCopier.copy(s3, "bucketName", "source", "destination"));
+    assertThrows(BlobStoreException.class, 
+        () -> multipartCopier.copy(s3, "bucketName", "source", "destination"));
 
     verify(s3).initiateMultipartUpload(any());
     verify(s3).getObjectMetadata("bucketName", "source");
@@ -80,8 +90,11 @@ public class MultipartCopierTest
     verify(s3).abortMultipartUpload(any());
   }
 
+  /**
+   * Verifies that large objects are correctly split into multiple parts during copy operations.
+   */
   @Test
-  public void testCopySplitsParts() {
+  void copySplitsParts() {
     when(s3.initiateMultipartUpload(any())).thenReturn(initiateMultipartUploadResult);
     when(s3.getObjectMetadata("bucketName", "source")).thenReturn(new ObjectMetadata() {{
       setContentLength(345);
@@ -97,8 +110,11 @@ public class MultipartCopierTest
     verify(s3, never()).abortMultipartUpload(any());
   }
 
+  /**
+   * Verifies that small objects use the simple copyObject method instead of multipart API.
+   */
   @Test
-  public void testCopyUsesCopyObjectForSmallCopies() {
+  void copyUsesCopyObjectForSmallCopies() {
     when(s3.getObjectMetadata("bucketName", "source")).thenReturn(new ObjectMetadata() {{
       setContentLength(99);
     }});

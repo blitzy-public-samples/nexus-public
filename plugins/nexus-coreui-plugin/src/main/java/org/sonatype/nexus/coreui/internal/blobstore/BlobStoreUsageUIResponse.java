@@ -12,22 +12,14 @@
  */
 package org.sonatype.nexus.coreui.internal.blobstore;
 
-public class BlobStoreUsageUIResponse
-{
-  private final long repositoryUsage;
-
-  private final long blobStoreUsage;
-
-  public BlobStoreUsageUIResponse(final long repositoryUsage, final long blobStoreUsage) {
-    this.repositoryUsage = repositoryUsage;
-    this.blobStoreUsage = blobStoreUsage;
-  }
-
-  public long getRepositoryUsage() {
-    return repositoryUsage;
-  }
-
-  public long getBlobStoreUsage() {
-    return blobStoreUsage;
-  }
+/**
+ * Data transfer object for blob store usage information.
+ * <p>
+ * Implemented as a Java Record for immutability and simplified serialization with Jackson.
+ * Compatible with Java 21 and modern REST API serialization frameworks.
+ *
+ * @since 3.60
+ */
+public record BlobStoreUsageUIResponse(long repositoryUsage, long blobStoreUsage) {
+  // Record automatically provides constructor, accessors, equals, hashCode, and toString
 }

@@ -12,7 +12,8 @@
  */
 package org.sonatype.nexus.content.maven.store;
 
-import javax.inject.Named;
+// Updated for Java 21 compatibility - using jakarta.inject instead of javax.inject
+import jakarta.inject.Named;
 
 import org.sonatype.nexus.repository.content.store.AssetBlobStore;
 import org.sonatype.nexus.repository.content.store.BespokeFormatStoreModule;
@@ -23,6 +24,14 @@ import org.sonatype.nexus.repository.maven.internal.Maven2Format;
  * Configures the content store bindings for a maven format.
  *
  * @since 3.25
+ * @see BespokeFormatStoreModule
+ * @see ContentRepositoryStore
+ * @see Maven2ComponentStore
+ * @see Maven2AssetStore
+ * @see AssetBlobStore
+ * 
+ * @note Updated for Java 21 compatibility with Guice 7.0.0 and Sisu 0.10.0
+ *       using jakarta.inject.Named instead of javax.inject.Named
  */
 @Named(Maven2Format.NAME)
 public class Maven2StoreModule

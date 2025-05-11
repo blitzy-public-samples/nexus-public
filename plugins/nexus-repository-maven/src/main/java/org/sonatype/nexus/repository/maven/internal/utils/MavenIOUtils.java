@@ -20,7 +20,7 @@ import java.nio.file.Path;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Map.Entry;
+import java.util.concurrent.Executors;
 
 import org.sonatype.nexus.common.hash.HashAlgorithm;
 import org.sonatype.nexus.repository.maven.MavenPath.HashType;
@@ -54,11 +54,27 @@ public final class MavenIOUtils
   /**
    * Wrapper to pass in into {@link #createStreamPayload(Path, String, Writer)} to write out actual content.
    */
+  @FunctionalInterface
   public interface Writer
   {
+    /**
+     * Writes content to the provided output stream.
+     *
+     * @param outputStream the stream to write to
+     * @throws IOException if an I/O error occurs
+     */
     void write(OutputStream outputStream) throws IOException;
   }
 
+  /**
+   * Creates a stream payload with calculated hash codes.
+   *
+   * @param path the path to write to
+   * @param contentType the content type of the payload
+   * @param writer the writer to write the content
+   * @return a hashed payload containing the payload and its hash codes
+   * @throws IOException if an I/O error occurs
+   */
   public static HashedPayload createStreamPayload(
       final Path path, final String contentType,
       final Writer writer) throws IOException
@@ -68,11 +84,20 @@ public final class MavenIOUtils
     return new HashedPayload(asPayload(path, contentType), hashCodes);
   }
 
+  /**
+   * Writes content to a path using the provided writer, calculating hash codes during the process.
+   * Uses a buffered output stream for efficiency.
+   *
+   * @param path the path to write to
+   * @param writer the writer to write the content
+   * @return a map of hash algorithms to their corresponding hashing output streams
+   * @throws IOException if an I/O error occurs
+   */
   private static Map<HashAlgorithm, HashingOutputStream> writeToPath(final Path path, final Writer writer)
       throws IOException
   {
     Map<HashAlgorithm, HashingOutputStream> hashingStreams = new HashMap<>();
-    try (OutputStream outputStream = new BufferedOutputStream(Files.newOutputStream(path))) {
+    try (var outputStream = new BufferedOutputStream(Files.newOutputStream(path))) {
       OutputStream os = outputStream;
       for (HashType hashType : HashType.values()) {
         os = new HashingOutputStream(hashType.getHashAlgorithm().function(), os);
@@ -84,27 +109,47 @@ public final class MavenIOUtils
     return hashingStreams;
   }
 
+  /**
+   * Generates hash codes from the provided hashing output streams.
+   *
+   * @param hashingStreams a map of hash algorithms to their corresponding hashing output streams
+   * @return a map of hash algorithms to their calculated hash codes
+   */
   private static Map<HashAlgorithm, HashCode> generateHashCodes(
       final Map<HashAlgorithm, HashingOutputStream> hashingStreams)
   {
     Map<HashAlgorithm, HashCode> hashCodes = new HashMap<>();
-    for (Entry<HashAlgorithm, HashingOutputStream> entry : hashingStreams.entrySet()) {
+    for (var entry : hashingStreams.entrySet()) {
       hashCodes.put(entry.getKey(), entry.getValue().hash());
     }
     return hashCodes;
   }
 
+  /**
+   * Creates a payload from a path and content type.
+   *
+   * @param path the path to create the payload from
+   * @param contentType the content type of the payload
+   * @return a payload representing the path and content type
+   * @throws IOException if an I/O error occurs
+   */
   private static Payload asPayload(final Path path, final String contentType) throws IOException {
     return new PathPayload(path, contentType);
   }
 
+  /**
+   * Converts hash codes to payloads.
+   *
+   * @param hashCodes a map of hash algorithms to their hash codes
+   * @return a map of hash types to their corresponding payloads
+   */
   public static Map<HashType, Payload> hashesToPayloads(final Map<HashAlgorithm, HashCode> hashCodes)
   {
     Map<HashType, Payload> payloadByHash = new EnumMap<>(HashType.class);
     for (HashType hashType : HashType.values()) {
       HashCode hashCode = hashCodes.get(hashType.getHashAlgorithm());
       if (hashCode != null) {
-        Payload payload = new StringPayload(hashCode.toString(), CHECKSUM_CONTENT_TYPE);
+        var payload = new StringPayload(hashCode.toString(), CHECKSUM_CONTENT_TYPE);
         payloadByHash.put(hashType, payload);
       }
     }

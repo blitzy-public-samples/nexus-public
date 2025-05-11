@@ -12,8 +12,8 @@
  */
 package org.sonatype.nexus.blobstore.s3.rest.internal;
 
-import javax.validation.Valid;
-import javax.ws.rs.core.Response;
+import jakarta.validation.Valid;
+import jakarta.ws.rs.core.Response;
 
 import org.sonatype.nexus.blobstore.s3.rest.internal.model.S3BlobStoreApiModel;
 
@@ -35,6 +35,7 @@ import static org.sonatype.nexus.rest.ApiDocConstants.UNKNOWN_S3_BLOB_STORE;
  * API documentation for operations provided by {@link S3BlobStoreApiResource}.
  *
  * @since 3.20
+ * @see <a href="https://openjdk.org/projects/jdk/21/">Java 21 compatibility</a>
  */
 @Api(API_BLOB_STORE)
 public interface S3BlobStoreApiResourceDoc
@@ -79,4 +80,3 @@ public interface S3BlobStoreApiResourceDoc
   })
   Response deleteBlobStoreWithEmptyName();
 }
-

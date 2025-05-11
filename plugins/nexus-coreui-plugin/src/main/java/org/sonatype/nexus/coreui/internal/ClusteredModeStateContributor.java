@@ -21,8 +21,6 @@ import javax.inject.Singleton;
 
 import org.sonatype.nexus.rapture.StateContributor;
 
-import com.google.common.collect.ImmutableMap;
-
 import static org.sonatype.nexus.common.app.FeatureFlags.CLUSTERED_ZERO_DOWNTIME_ENABLED;
 import static org.sonatype.nexus.common.app.FeatureFlags.CLUSTERED_ZERO_DOWNTIME_ENABLED_NAMED;
 import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_CLUSTERED_ENABLED;
@@ -49,7 +47,7 @@ public class ClusteredModeStateContributor
   @Nullable
   @Override
   public Map<String, Object> getState() {
-    return ImmutableMap.of(
+    return Map.of(
         DATASTORE_CLUSTERED_ENABLED, clusteredModeEnabled,
         CLUSTERED_ZERO_DOWNTIME_ENABLED, zeroDowntimeEnabled
     );

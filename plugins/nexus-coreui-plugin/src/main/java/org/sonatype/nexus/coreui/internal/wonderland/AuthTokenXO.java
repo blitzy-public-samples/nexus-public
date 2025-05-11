@@ -31,39 +31,32 @@ import com.fasterxml.jackson.annotation.JsonProperty;
     "p"
 })
 @XmlRootElement(name = "authToken")
-public class AuthTokenXO
-{
+public record AuthTokenXO(
   @XmlElement(required = true)
   @JsonProperty("u")
-  private String u;
-
+  String u,
+  
   @XmlElement(required = true)
   @JsonProperty("p")
-  private String p;
-
-  public String getU() {
-    return u;
-  }
-
-  public void setU(String value) {
-    this.u = value;
-  }
-
-  public String getP() {
-    return p;
-  }
-
-  public void setP(String value) {
-    this.p = value;
-  }
-
+  String p
+) {
+  /**
+   * Returns a new AuthTokenXO with the specified username.
+   *
+   * @param value the username value
+   * @return a new AuthTokenXO with the updated username
+   */
   public AuthTokenXO withU(String value) {
-    setU(value);
-    return this;
+    return new AuthTokenXO(value, p);
   }
 
+  /**
+   * Returns a new AuthTokenXO with the specified password.
+   *
+   * @param value the password value
+   * @return a new AuthTokenXO with the updated password
+   */
   public AuthTokenXO withP(String value) {
-    setP(value);
-    return this;
+    return new AuthTokenXO(u, value);
   }
 }

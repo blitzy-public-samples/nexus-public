@@ -21,10 +21,17 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.blobstore.api.Blob;
 import org.sonatype.nexus.blobstore.api.BlobAttributes;
 import org.sonatype.nexus.blobstore.api.BlobId;
@@ -44,9 +51,11 @@ import org.sonatype.nexus.repository.content.fluent.FluentAssets;
 
 import com.google.common.hash.HashCode;
 import org.joda.time.DateTime;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.Logger;
 
 import static java.lang.String.format;
@@ -54,6 +63,12 @@ import static java.util.Collections.addAll;
 import static java.util.Optional.empty;
 import static java.util.Optional.of;
 import static java.util.Optional.ofNullable;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.lessThan;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
@@ -71,7 +86,8 @@ import static org.sonatype.nexus.blobstore.api.BlobAttributesConstants.HEADER_PR
 import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_NAME_HEADER;
 import static org.sonatype.nexus.blobstore.restore.datastore.DefaultIntegrityCheckStrategy.*;
 
-public class DefaultIntegrityCheckStrategyTest
+@ExtendWith(MockitoExtension.class)
+class DefaultIntegrityCheckStrategyTest
     extends TestSupport
 {
   private static final Optional<HashCode> TEST_HASH1 = of(HashCode.fromString("aa"));
@@ -102,8 +118,8 @@ public class DefaultIntegrityCheckStrategyTest
 
   private DefaultIntegrityCheckStrategy defaultIntegrityCheckStrategy;
 
-  @Before
-  public void setup() throws Exception {
+  @BeforeEach
+  void setup() throws Exception {
     BlobStoreConfiguration blobStoreConfiguration = mock(BlobStoreConfiguration.class);
     when(blobStoreConfiguration.getName()).thenReturn("testBlobStore");
 
@@ -118,7 +134,7 @@ public class DefaultIntegrityCheckStrategyTest
   }
 
   @Test
-  public void testNoBlobAttributes() {
+  void noBlobAttributesReportsError() {
     BlobId blobId = mock(BlobId.class);
     AssetBlob assetBlob = mockBlob(blobId, TEST_HASH1);
     FluentAsset mockAsset = getMockAsset("name", of(assetBlob));
@@ -137,7 +153,7 @@ public class DefaultIntegrityCheckStrategyTest
   }
 
   @Test
-  public void testBlobDeleted() {
+  void blobDeletedGeneratesWarning() {
     BlobId blobId = mock(BlobId.class);
     AssetBlob assetBlob = mockBlob(blobId, TEST_HASH1);
     FluentAsset mockAsset = getMockAsset("name", of(assetBlob));
@@ -156,7 +172,7 @@ public class DefaultIntegrityCheckStrategyTest
   }
 
   @Test
-  public void testMissingAssetBlob() {
+  void missingAssetBlobReportsError() {
     BlobId blobId = mock(BlobId.class);
     AssetBlob assetBlob = mockBlob(blobId, TEST_HASH1);
     FluentAsset mockAsset = getMockAsset("name", of(assetBlob));
@@ -174,7 +190,7 @@ public class DefaultIntegrityCheckStrategyTest
   }
 
   @Test
-  public void testUnexpectedException() {
+  void unexpectedExceptionIsHandledGracefully() {
     BlobId blobId = mock(BlobId.class);
     AssetBlob assetBlob = mockBlob(blobId, TEST_HASH1);
     FluentAsset mockAsset = getMockAsset("name", of(assetBlob));
@@ -193,7 +209,7 @@ public class DefaultIntegrityCheckStrategyTest
   }
 
   @Test
-  public void testCheck_EverythingMatches() {
+  void checkSucceedsWhenEverythingMatches() {
     runTest("name", TEST_HASH1, "name", TEST_HASH1, () -> false);
 
     verifyNoMoreInteractions(logger);
@@ -201,7 +217,7 @@ public class DefaultIntegrityCheckStrategyTest
   }
 
   @Test
-  public void testCheck_MissingAssetSha1() {
+  void checkFailsWhenAssetSha1IsMissing() {
     runTest("name", empty(), "name", TEST_HASH1, () -> false);
 
     verify(logger, never()).error(eq(NAME_MISMATCH), nullable(String.class), nullable(String.class));
@@ -210,7 +226,7 @@ public class DefaultIntegrityCheckStrategyTest
   }
 
   @Test
-  public void testCheck_MismatchAssetSha1() {
+  void checkFailsWhenAssetSha1Mismatches() {
     runTest("name", TEST_HASH1, "name", TEST_HASH2, () -> false);
 
     verify(logger, never()).error(eq(NAME_MISMATCH), nullable(String.class), nullable(String.class));
@@ -219,7 +235,7 @@ public class DefaultIntegrityCheckStrategyTest
   }
 
   @Test
-  public void testCheck_MissingAssetName() {
+  void checkFailsWhenAssetNameIsMissing() {
     runTest(null, TEST_HASH1, "name", TEST_HASH1, () -> false);
 
     verify(logger, never()).error(eq(NAME_MISMATCH), nullable(String.class), nullable(String.class));
@@ -228,7 +244,7 @@ public class DefaultIntegrityCheckStrategyTest
   }
 
   @Test
-  public void testCheck_MissingBlobName() {
+  void checkFailsWhenBlobNameIsMissing() {
     runTest("name", TEST_HASH1, null, TEST_HASH1, () -> false);
 
     verify(logger, never()).error(eq(NAME_MISMATCH), nullable(String.class), nullable(String.class));
@@ -237,7 +253,7 @@ public class DefaultIntegrityCheckStrategyTest
   }
 
   @Test
-  public void test_missingBlobSha1() {
+  void checkFailsWhenBlobSha1IsMissing() {
     runTest("name", TEST_HASH1, "name", empty(), () -> false);
 
     verify(logger, never()).error(eq(NAME_MISMATCH), nullable(String.class), nullable(String.class));
@@ -246,7 +262,7 @@ public class DefaultIntegrityCheckStrategyTest
   }
 
   @Test
-  public void testCheck_MismatchName() {
+  void checkFailsWhenNameMismatches() {
     runTest("aa", TEST_HASH1, "bb", TEST_HASH1, () -> false);
 
     verify(logger).error(eq(NAME_MISMATCH), nullable(String.class), nullable(String.class));
@@ -257,7 +273,7 @@ public class DefaultIntegrityCheckStrategyTest
 
   /* This will happen in the case of Orient data migrated to NewDB */
   @Test
-  public void testCheck_BlobNameMissingSlash() {
+  void checkSucceedsWhenBlobNameMissingSlash() {
     runTest("/aa", TEST_HASH1, "aa", TEST_HASH1, () -> false);
 
     verifyNoMoreInteractions(logger);
@@ -265,7 +281,7 @@ public class DefaultIntegrityCheckStrategyTest
   }
 
   @Test
-  public void testCheck_MissingBlobData() throws IOException {
+  void checkFailsWhenBlobDataIsMissing() throws IOException {
     doThrow(new BlobStoreException("bse", new BlobId("blob"))).when(blobData).close();
     runTest("name", TEST_HASH1, "name", TEST_HASH1, () -> false);
 
@@ -274,7 +290,7 @@ public class DefaultIntegrityCheckStrategyTest
   }
 
   @Test
-  public void testCheckAsset_Canceled() {
+  void checkStopsWhenCanceled() {
     runTest("name", TEST_HASH1, "name", TEST_HASH1, () -> true);
 
     verify(logger).warn(eq(CANCEL_WARNING));
@@ -283,7 +299,7 @@ public class DefaultIntegrityCheckStrategyTest
   }
 
   @Test
-  public void shouldNotGetBlobsFromBeforeSinceDays() {
+  void shouldNotGetBlobsFromBeforeSinceDays() {
     BlobId blobId = mock(BlobId.class);
     AssetBlob assetBlob = mockBlob(blobId, TEST_HASH1);
     FluentAsset mockAsset = getMockAsset("name", of(assetBlob));
@@ -309,7 +325,7 @@ public class DefaultIntegrityCheckStrategyTest
   }
 
   @Test
-  public void shouldOnlyGetBlobsFromSinceDays() {
+  void shouldOnlyGetBlobsFromSinceDays() {
     BlobId blobId = mock(BlobId.class);
     AssetBlob assetBlob = mockBlob(blobId, TEST_HASH1);
     FluentAsset mockAsset = getMockAsset("name", of(assetBlob));
@@ -435,6 +451,56 @@ public class DefaultIntegrityCheckStrategyTest
     @Override
     protected Logger createLogger() {
       return logger;
+    }
+  }
+  /**
+   * Test to validate that integrity checking works correctly with virtual threads.
+   * This test simulates multiple concurrent integrity checks using virtual threads.
+   */
+  @Test
+  @org.junit.jupiter.api.Tag("Java21")
+  @org.junit.jupiter.api.Tag("VirtualThread")
+  void concurrentIntegrityChecksWithVirtualThreads() throws Exception {
+    // Create test data
+    BlobId blobId = mock(BlobId.class);
+    AssetBlob assetBlob = mockBlob(blobId, TEST_HASH1);
+    FluentAsset mockAsset = getMockAsset("name", of(assetBlob));
+    BlobAttributes blobAttributes = getMockBlobAttributes(of("name"), TEST_HASH1, false);
+    
+    // Setup mocks for successful integrity check
+    when(blobStore.getBlobAttributes(blobId)).thenReturn(blobAttributes);
+    Continuation<FluentAsset> continuation = buildContinuation(mockAsset);
+    when(assets.browse(anyInt(), nullable(String.class))).thenReturn(continuation)
+        .thenReturn(new ContinuationArrayList<>());
+    
+    // Create virtual thread executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    int taskCount = 50;
+    CountDownLatch latch = new CountDownLatch(taskCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    try {
+      // Submit multiple concurrent integrity check tasks using virtual threads
+      for (int i = 0; i < taskCount; i++) {
+        executor.submit(() -> {
+          try {
+            defaultIntegrityCheckStrategy.check(repository, blobStore, NO_CANCEL, SINCE_NO_DAYS, checkFailedHandler);
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      boolean completed = latch.await(30, TimeUnit.SECONDS);
+      
+      // Verify results
+      assertTrue(completed, "All virtual thread tasks should complete within timeout");
+      assertEquals(0, errorCount.get(), "No errors should occur during concurrent integrity checks");
+    } finally {
+      executor.shutdown();
     }
   }
 }

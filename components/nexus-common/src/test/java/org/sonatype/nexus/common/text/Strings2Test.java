@@ -14,35 +14,37 @@ package org.sonatype.nexus.common.text;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for {@link Strings2}
+ * 
+ * @since 3.0
  */
 public class Strings2Test
     extends TestSupport
 {
   @Test
   public void testIsBlank() {
-    assertTrue(Strings2.isBlank(null));
-    assertTrue(Strings2.isBlank(""));
-    assertTrue(Strings2.isBlank("   "));
-    assertFalse(Strings2.isBlank("foo"));
+    assertTrue(Strings2.isBlank(null), "null should be considered blank");
+    assertTrue(Strings2.isBlank(""), "empty string should be considered blank");
+    assertTrue(Strings2.isBlank("   "), "whitespace should be considered blank");
+    assertFalse(Strings2.isBlank("foo"), "non-blank string should not be considered blank");
   }
 
   @Test
   public void testIsEmpty() {
-    assertTrue(Strings2.isEmpty(null));
-    assertTrue(Strings2.isEmpty(""));
-    assertFalse(Strings2.isEmpty("   "));
-    assertFalse(Strings2.isEmpty("foo"));
+    assertTrue(Strings2.isEmpty(null), "null should be considered empty");
+    assertTrue(Strings2.isEmpty(""), "empty string should be considered empty");
+    assertFalse(Strings2.isEmpty("   "), "whitespace should not be considered empty");
+    assertFalse(Strings2.isEmpty("foo"), "non-empty string should not be considered empty");
   }
 
   @Test

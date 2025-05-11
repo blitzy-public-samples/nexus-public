@@ -30,6 +30,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
  * paths have non-null coordinates.
  *
  * @since 3.0
+ * @since Java 21 Updated to use Java 21 features like record patterns and pattern matching for instanceof
  */
 @Immutable
 public class MavenPath
@@ -80,99 +81,45 @@ public class MavenPath
     }
   }
 
-  public static class Coordinates
+  /**
+   * Maven coordinates for a path.
+   * 
+   * @since Java 21 Implemented as a record for improved immutability and conciseness
+   */
+  public record Coordinates(
+      boolean snapshot,
+      @Nonnull String groupId,
+      @Nonnull String artifactId,
+      @Nonnull String version,
+      @Nullable Long timestamp,
+      @Nullable Integer buildNumber,
+      @Nonnull String baseVersion,
+      @Nullable String classifier,
+      @Nonnull String extension,
+      @Nullable SignatureType signatureType)
   {
-    private final boolean snapshot;
-
-    private final String groupId;
-
-    private final String artifactId;
-
-    private final String version;
-
-    private final Long timestamp;
-
-    private final Integer buildNumber;
-
-    private final String baseVersion;
-
-    private final String classifier;
-
-    private final String extension;
-
-    private final SignatureType signatureType;
-
-    public Coordinates(
-        final boolean snapshot,
-        final String groupId,
-        final String artifactId,
-        final String version,
-        @Nullable final Long timestamp,
-        @Nullable final Integer buildNumber,
-        final String baseVersion,
-        @Nullable final String classifier,
-        final String extension,
-        final SignatureType signatureType)
-    {
-      this.snapshot = snapshot;
-      this.groupId = checkNotNull(groupId);
-      this.artifactId = checkNotNull(artifactId);
-      this.version = checkNotNull(version);
-      this.timestamp = snapshot ? timestamp : null;
-      this.buildNumber = snapshot ? buildNumber : null;
-      this.baseVersion = checkNotNull(baseVersion);
-      this.classifier = classifier;
-      this.extension = checkNotNull(extension);
-      this.signatureType = signatureType;
+    /**
+     * Constructor with validation for required fields.
+     */
+    public Coordinates {
+      checkNotNull(groupId);
+      checkNotNull(artifactId);
+      checkNotNull(version);
+      checkNotNull(baseVersion);
+      checkNotNull(extension);
+      
+      // Ensure timestamp and buildNumber are only set for snapshots
+      if (!snapshot) {
+        timestamp = null;
+        buildNumber = null;
+      }
     }
 
+    /**
+     * @return true if this represents a snapshot version
+     */
     public boolean isSnapshot() {
       return snapshot;
-    }
-
-    @Nonnull
-    public String getGroupId() {
-      return groupId;
-    }
-
-    @Nonnull
-    public String getArtifactId() {
-      return artifactId;
-    }
-
-    @Nonnull
-    public String getVersion() {
-      return version;
-    }
-
-    @Nullable
-    public Long getTimestamp() {
-      return timestamp;
-    }
-
-    @Nullable
-    public Integer getBuildNumber() {
-      return buildNumber;
-    }
-
-    @Nonnull
-    public String getBaseVersion() {
-      return baseVersion;
-    }
-
-    @Nullable
-    public String getClassifier() {
-      return classifier;
-    }
-
-    @Nonnull
-    public String getExtension() {
-      return extension;
-    }
-
-    @Nullable
-    public SignatureType getSignatureType() {
-      return signatureType;
     }
   }
 
@@ -247,14 +194,14 @@ public class MavenPath
    * Returns {@code true} if this path represents a signature.
    */
   public boolean isSignature() {
-    return coordinates != null && coordinates.getSignatureType() != null;
+    return coordinates != null && coordinates.signatureType() != null;
   }
 
   /**
    * Returns {@code true} if this path represents an artifact POM.
    */
   public boolean isPom() {
-    return coordinates != null && "pom".equals(coordinates.getExtension());
+    return coordinates != null && "pom".equals(coordinates.extension());
   }
 
   /**
@@ -279,16 +226,16 @@ public class MavenPath
       Coordinates mainCoordinates = null;
       if (coordinates != null) {
         mainCoordinates = new Coordinates(
-            coordinates.isSnapshot(),
-            coordinates.getGroupId(),
-            coordinates.getArtifactId(),
-            coordinates.getVersion(),
-            coordinates.getTimestamp(),
-            coordinates.getBuildNumber(),
-            coordinates.getBaseVersion(),
-            coordinates.getClassifier(),
-            coordinates.getExtension().substring(0, coordinates.getExtension().length() - hashSuffixLen),
-            coordinates.getSignatureType()
+            coordinates.snapshot(),
+            coordinates.groupId(),
+            coordinates.artifactId(),
+            coordinates.version(),
+            coordinates.timestamp(),
+            coordinates.buildNumber(),
+            coordinates.baseVersion(),
+            coordinates.classifier(),
+            coordinates.extension().substring(0, coordinates.extension().length() - hashSuffixLen),
+            coordinates.signatureType()
         );
       }
       return new MavenPath(
@@ -296,18 +243,18 @@ public class MavenPath
           mainCoordinates
       );
     }
-    else if (coordinates != null && coordinates.getSignatureType() != null) {
-      int signatureSuffixLen = coordinates.getSignatureType().getExt().length() + 1; // the dot
+    else if (coordinates != null && coordinates.signatureType() != null) {
+      int signatureSuffixLen = coordinates.signatureType().getExt().length() + 1; // the dot
       Coordinates mainCoordinates = new Coordinates(
-          coordinates.isSnapshot(),
-          coordinates.getGroupId(),
-          coordinates.getArtifactId(),
-          coordinates.getVersion(),
-          coordinates.getTimestamp(),
-          coordinates.getBuildNumber(),
-          coordinates.getBaseVersion(),
-          coordinates.getClassifier(),
-          coordinates.getExtension().substring(0, coordinates.getExtension().length() - signatureSuffixLen),
+          coordinates.snapshot(),
+          coordinates.groupId(),
+          coordinates.artifactId(),
+          coordinates.version(),
+          coordinates.timestamp(),
+          coordinates.buildNumber(),
+          coordinates.baseVersion(),
+          coordinates.classifier(),
+          coordinates.extension().substring(0, coordinates.extension().length() - signatureSuffixLen),
           null
       );
       return new MavenPath(
@@ -344,16 +291,16 @@ public class MavenPath
     Coordinates hashCoordinates = null;
     if (coordinates != null) {
       hashCoordinates = new Coordinates(
-          coordinates.isSnapshot(),
-          coordinates.getGroupId(),
-          coordinates.getArtifactId(),
-          coordinates.getVersion(),
-          coordinates.getTimestamp(),
-          coordinates.getBuildNumber(),
-          coordinates.getBaseVersion(),
-          coordinates.getClassifier(),
-          coordinates.getExtension() + "." + hashExtension,
-          coordinates.getSignatureType()
+          coordinates.snapshot(),
+          coordinates.groupId(),
+          coordinates.artifactId(),
+          coordinates.version(),
+          coordinates.timestamp(),
+          coordinates.buildNumber(),
+          coordinates.baseVersion(),
+          coordinates.classifier(),
+          coordinates.extension() + "." + hashExtension,
+          coordinates.signatureType()
       );
     }
     return new MavenPath(
@@ -370,17 +317,17 @@ public class MavenPath
     checkNotNull(signatureType);
     checkArgument(hashType == null, "This path is already a hash: %s", this);
     checkArgument(coordinates != null, "Only artifact paths may have signatures: %s", this);
-    checkArgument(coordinates.getSignatureType() == null, "This path is already a signature: %s", this);
+    checkArgument(coordinates.signatureType() == null, "This path is already a signature: %s", this);
     Coordinates signatureCoordinates = new Coordinates(
-        coordinates.isSnapshot(),
-        coordinates.getGroupId(),
-        coordinates.getArtifactId(),
-        coordinates.getVersion(),
-        coordinates.getTimestamp(),
-        coordinates.getBuildNumber(),
-        coordinates.getBaseVersion(),
-        coordinates.getClassifier(),
-        coordinates.getExtension() + "." + signatureType.getExt(),
+        coordinates.snapshot(),
+        coordinates.groupId(),
+        coordinates.artifactId(),
+        coordinates.version(),
+        coordinates.timestamp(),
+        coordinates.buildNumber(),
+        coordinates.baseVersion(),
+        coordinates.classifier(),
+        coordinates.extension() + "." + signatureType.getExt(),
         signatureType
     );
     return new MavenPath(
@@ -400,22 +347,22 @@ public class MavenPath
 
     MavenPath origin = main();
     Coordinates newCoordinates = new Coordinates(
-        origin.coordinates.isSnapshot(),
-        origin.coordinates.getGroupId(),
-        origin.coordinates.getArtifactId(),
-        origin.coordinates.getVersion(),
-        origin.coordinates.getTimestamp(),
-        origin.coordinates.getBuildNumber(),
-        origin.coordinates.getBaseVersion(),
+        origin.coordinates.snapshot(),
+        origin.coordinates.groupId(),
+        origin.coordinates.artifactId(),
+        origin.coordinates.version(),
+        origin.coordinates.timestamp(),
+        origin.coordinates.buildNumber(),
+        origin.coordinates.baseVersion(),
         classifier,
         extension,
         null
     );
     // strip ".ext"
-    String newPath = origin.path.substring(0, origin.path.length() - origin.coordinates.extension.length() - 1);
-    if (origin.coordinates.classifier != null) {
+    String newPath = origin.path.substring(0, origin.path.length() - origin.coordinates.extension().length() - 1);
+    if (origin.coordinates.classifier() != null) {
       // strip "-classifier"
-      newPath = newPath.substring(0, newPath.length() - origin.coordinates.classifier.length() - 1);
+      newPath = newPath.substring(0, newPath.length() - origin.coordinates.classifier().length() - 1);
     }
     if (classifier != null) {
       newPath += "-" + classifier;
@@ -450,11 +397,8 @@ public class MavenPath
     if (this == o) {
       return true;
     }
-    if (!(o instanceof MavenPath)) {
-      return false;
-    }
-    MavenPath that = (MavenPath) o;
-    return path.equals(that.path);
+    // Using pattern matching for instanceof (Java 21 feature)
+    return o instanceof MavenPath that && path.equals(that.path);
   }
 
   @Override

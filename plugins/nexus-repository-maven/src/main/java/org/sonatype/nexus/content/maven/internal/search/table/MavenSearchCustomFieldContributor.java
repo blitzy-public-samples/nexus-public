@@ -34,19 +34,45 @@ import static org.sonatype.nexus.repository.maven.internal.Attributes.P_CLASSIFI
 import static org.sonatype.nexus.repository.maven.internal.Attributes.P_EXTENSION;
 import static org.sonatype.nexus.repository.maven.internal.Attributes.P_GROUP_ID;
 
+/**
+ * Maven implementation of {@link SearchCustomFieldContributor} that populates search records
+ * with Maven-specific attributes.
+ * 
+ * This implementation leverages Java 21 features such as Pattern Matching for instanceof
+ * and Record Patterns for cleaner data handling.
+ */
 @Singleton
 @Named(Maven2Format.NAME)
 public class MavenSearchCustomFieldContributor
     implements SearchCustomFieldContributor
 {
+  /**
+   * Record representing Maven artifact attributes for cleaner data handling.
+   * Leverages Java 21 Record feature for immutable data carriers.
+   */
+  private record MavenAttribute(String groupId, String artifactId, String baseVersion, String extension, String classifier) {
+    /**
+     * Factory method to create a MavenAttribute from a map of attributes.
+     */
+    static MavenAttribute from(Map<String, String> attributes) {
+      return new MavenAttribute(
+          attributes.get(P_GROUP_ID),
+          attributes.get(P_ARTIFACT_ID),
+          attributes.get(P_BASE_VERSION),
+          attributes.get(P_EXTENSION),
+          attributes.get(P_CLASSIFIER)
+      );
+    }
+  }
+  
   @Override
   public void populateSearchCustomFields(final SearchRecord searchTableData, final Asset asset) {
 
     Object formatAttributes = asset.attributes().get(Maven2Format.NAME);
 
-    @SuppressWarnings("unchecked")
+    // Using Java 21 Pattern Matching for instanceof to simplify type checking and casting
     Map<String, String> attributes =
-        formatAttributes instanceof Map ? (Map<String, String>) formatAttributes : Collections.emptyMap();
+        formatAttributes instanceof Map<?, ?> map ? (Map<String, String>) map : Collections.emptyMap();
 
     Optional.ofNullable(attributes.get(P_BASE_VERSION))
         .map(MavenSearchCustomFieldContributor::preventTokenization)
@@ -67,12 +93,15 @@ public class MavenSearchCustomFieldContributor
     );
   }
 
+  /**
+   * Extracts Maven attributes from the attribute map using the MavenAttribute record.
+   * Demonstrates Java 21 Record Pattern usage for cleaner data extraction.
+   */
   private Stream<String> getMavenAttributes(final Map<String, String> attributes) {
-    return Stream.of(attributes.get(P_GROUP_ID),
-        attributes.get(P_ARTIFACT_ID),
-        attributes.get(P_BASE_VERSION),
-        attributes.get(P_EXTENSION),
-        attributes.get(P_CLASSIFIER));
+    // Create a MavenAttribute record from the map and then extract its components
+    MavenAttribute mavenAttr = MavenAttribute.from(attributes);
+    return Stream.of(mavenAttr.groupId(), mavenAttr.artifactId(), mavenAttr.baseVersion(), 
+                     mavenAttr.extension(), mavenAttr.classifier());
   }
 
   /**

@@ -19,45 +19,31 @@ import org.sonatype.nexus.blobstore.BlobStoreDescriptor;
 import org.sonatype.nexus.blobstore.SelectOption;
 import org.sonatype.nexus.formfields.FormField;
 
-public class BlobStoreTypesUIResponse
-{
-  private final String id;
-
-  private final String name;
-
-  private final List<FormField> fields;
-
-  private final String customSettingsForm;
-
-  private final Map<String, List<SelectOption>> dropDownValues;
-
+/**
+ * Data transfer object for blob store type information used in the UI.
+ * Converted to a record for Java 21 compatibility.
+ *
+ * @since 3.next
+ */
+public record BlobStoreTypesUIResponse(
+    String id,
+    String name,
+    List<FormField> fields,
+    String customSettingsForm,
+    Map<String, List<SelectOption>> dropDownValues
+) {
+  /**
+   * Constructs a response from a blob store descriptor entry.
+   *
+   * @param entry the map entry containing the blob store descriptor
+   */
   public BlobStoreTypesUIResponse(final Map.Entry<String, BlobStoreDescriptor> entry) {
-    BlobStoreDescriptor descriptor = entry.getValue();
-
-    this.id = descriptor.getId();
-    this.name = descriptor.getName();
-    this.fields = descriptor.getFormFields();
-    this.customSettingsForm = descriptor.customFormName();
-    this.dropDownValues = descriptor.getDropDownValues();
-  }
-
-  public String getId() {
-    return id;
-  }
-
-  public String getName() {
-    return name;
-  }
-
-  public List<FormField> getFields() {
-    return fields;
-  }
-
-  public String getCustomSettingsForm() {
-    return customSettingsForm;
-  }
-
-  public Map<String, List<SelectOption>> getDropDownValues() {
-    return dropDownValues;
+    this(
+        entry.getValue().getId(),
+        entry.getValue().getName(),
+        entry.getValue().getFormFields(),
+        entry.getValue().customFormName(),
+        entry.getValue().getDropDownValues()
+    );
   }
 }

@@ -22,39 +22,15 @@ import org.sonatype.nexus.repository.routing.RoutingMode;
  *
  * @since 3.16
  */
-public class RoutingRuleTestXO
-{
-  @NotBlank
-  private RoutingMode mode;
-
-  @NotBlank
-  private List<String> matchers;
-
-  @NotBlank
-  private String path;
-
-  public RoutingMode getMode() {
-    return mode;
-  }
-
-  public void setMode(RoutingMode mode) {
-    this.mode = mode;
-  }
-
-  public List<String> getMatchers() {
-    return matchers;
-  }
-
-  public void setMatchers(List<String> matchers) {
-    this.matchers = matchers;
-  }
-
-  public String getPath() {
-    return path;
-  }
-
-  public void setPath(String path) {
-    this.path = path;
-  }
-
+public record RoutingRuleTestXO(
+    @NotBlank
+    RoutingMode mode,
+    
+    @NotBlank
+    List<String> matchers,
+    
+    @NotBlank
+    String path
+) {
+  // Record automatically provides getters, equals, hashCode, and toString methods
 }

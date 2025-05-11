@@ -13,6 +13,10 @@
 
 /**
  * Exposes repositories via HTTP.
+ * 
+ * This package is compatible with Java 21 and leverages its performance improvements
+ * for HTTP request handling, particularly benefiting from Virtual Threads for improved
+ * concurrency in I/O-bound operations.
  *
  * @since 3.0
  */

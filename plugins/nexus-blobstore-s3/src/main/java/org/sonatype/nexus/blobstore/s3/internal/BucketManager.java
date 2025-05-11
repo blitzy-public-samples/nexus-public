@@ -55,6 +55,7 @@ import static org.sonatype.nexus.blobstore.s3.internal.S3BlobStoreException.unex
  * Creates and deletes buckets for the {@link S3BlobStore}.
  *
  * @since 3.16
+ * @Java21 This class has been updated for Java 21 compatibility with pattern matching and string templates.
  */
 @Named
 public class BucketManager
@@ -210,12 +211,10 @@ public class BucketManager
   }
 
   private boolean isDeletedTagPredicate(final LifecycleFilterPredicate filterPredicate, final String bucketPrefix) {
-    if (filterPredicate instanceof LifecycleTagPredicate) {
-      LifecycleTagPredicate tagPredicate = (LifecycleTagPredicate) filterPredicate;
+    if (filterPredicate instanceof LifecycleTagPredicate tagPredicate) {
       return S3BlobStore.DELETED_TAG.equals(tagPredicate.getTag());
     }
-    else if (filterPredicate instanceof LifecycleAndOperator) {
-      LifecycleAndOperator andOperator = (LifecycleAndOperator) filterPredicate;
+    else if (filterPredicate instanceof LifecycleAndOperator andOperator) {
       return andOperator.getOperands().stream().anyMatch(op -> isDeletedTagPredicate(op, bucketPrefix)) &&
           andOperator.getOperands().stream().anyMatch(op -> isBucketPrefixPredicate(op, bucketPrefix));
     }
@@ -225,8 +224,7 @@ public class BucketManager
   }
 
   private boolean isBucketPrefixPredicate(final LifecycleFilterPredicate filterPredicate, final String bucketPrefix) {
-    if (filterPredicate instanceof LifecyclePrefixPredicate) {
-      LifecyclePrefixPredicate prefixPredicate = (LifecyclePrefixPredicate) filterPredicate;
+    if (filterPredicate instanceof LifecyclePrefixPredicate prefixPredicate) {
       return prefixPredicate.getPrefix().equals(bucketPrefix);
     }
     else {
@@ -262,7 +260,7 @@ public class BucketManager
     }
     catch (AmazonS3Exception e) {
       String errorCode = e.getErrorCode();
-      String logMessage = String.format("Exception thrown checking ownership of \"%s\" bucket.", bucket);
+      String logMessage = STR."Exception thrown checking ownership of \"\{bucket}\" bucket.";
       if (ACCESS_DENIED_CODE.equals(errorCode)) {
         log.debug(logMessage, e);
         throw bucketOwnershipError();

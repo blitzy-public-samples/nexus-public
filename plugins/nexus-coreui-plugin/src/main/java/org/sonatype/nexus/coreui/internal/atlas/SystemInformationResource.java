@@ -13,14 +13,15 @@
 package org.sonatype.nexus.coreui.internal.atlas;
 
 import java.util.Map;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.GET;
-import javax.ws.rs.Path;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
+
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.atlas.SystemInformationGenerator;
@@ -28,6 +29,7 @@ import org.sonatype.nexus.rest.Resource;
 
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 
+import static java.lang.StringTemplate.STR;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.coreui.internal.atlas.SystemInformationResource.RESOURCE_URI;
 
@@ -56,9 +58,9 @@ public class SystemInformationResource
   public Response report() {
     Map<String, Object> report = systemInformationGenerator.report();
 
-    // support downloading the json directly
+    // support downloading the json directly using Java 21 String Templates
     return Response.ok(report)
-        .header("Content-Disposition", "attachment; filename=\"sysinfo.json\"")
+        .header("Content-Disposition", STR."attachment; filename=\"sysinfo.json\"")
         .build();
   }
 }

@@ -14,10 +14,14 @@ package org.sonatype.nexus.coreui.internal.log;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.StringTemplate;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Set;
 import java.util.stream.Stream;
+// Import for Java 21 String Templates is included for clarity
+import static java.lang.StringTemplate.STR;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -39,13 +43,14 @@ import org.apache.shiro.authz.annotation.RequiresPermissions;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.net.HttpHeaders.CONTENT_DISPOSITION;
-import static java.lang.String.format;
 import static java.util.stream.Collectors.toSet;
 import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
 import static javax.ws.rs.core.MediaType.TEXT_PLAIN;
 
 /**
  * Logs REST resource.
+ * 
+ * Updated for Java 21 to use String Templates for improved readability and type safety.
  *
  * @since 3.3
  */
@@ -68,7 +73,13 @@ public class LogsResource
   }
 
   /**
-   * List the log files known by the system
+   * List the log files known by the system.
+   * 
+   * This method collects log files from the main log directory and additional log homes
+   * if they exist, using Java streams for efficient processing.
+   * 
+   * @return A set of LogXO objects representing the available log files
+   * @throws IOException If an I/O error occurs while accessing log files
    */
   @GET
   @Produces({APPLICATION_JSON})
@@ -88,6 +99,14 @@ public class LogsResource
     return logs;
   }
 
+  /**
+   * Aggregates logs from the specified pathname into the provided logs set.
+   * Uses method reference for filtering and a lambda for adding to the set.
+   *
+   * @param logs The set of logs to aggregate into
+   * @param pathname The path to search for log files
+   * @throws IOException If an I/O error occurs
+   */
   private void aggregateLogs(final Set<LogXO> logs, final String pathname) throws IOException {
     if (pathname != null) {
       try (Stream<java.nio.file.Path> paths = Files.list(Paths.get(pathname))) {
@@ -98,6 +117,8 @@ public class LogsResource
 
   /**
    * Downloads a part of a log file or the complete log file if fromByte/bytesCount are null.
+   * 
+   * This method uses Java 21 String Templates for error messages and response headers.
    */
   @GET
   @Path("/{filename: .*\\.log}")
@@ -109,20 +130,21 @@ public class LogsResource
       @QueryParam("bytesCount") final Long bytesCount)
       throws NotFoundException, IOException
   {
-    Long from = fromByte;
-    if (from == null || from < 0) {
-      from = 0L;
-    }
-    Long count = bytesCount;
-    if (count == null) {
-      count = Long.MAX_VALUE;
-    }
+    // Using pattern-like approach for parameter validation and defaults
+    // This is more readable than nested if-else statements
+    Long from = switch(fromByte) {
+      case null, Long l when l < 0 -> 0L;
+      default -> fromByte;
+    };
+    
+    Long count = bytesCount == null ? Long.MAX_VALUE : bytesCount;
     InputStream log = logManager.getLogFileStream(filename, from, count);
     if (log == null) {
-      throw new NotFoundException(format("%s not found", filename));
+      // Using Java 21 String Templates for improved readability and type safety
+      throw new NotFoundException(STR."\{filename} not found");
     }
     return Response.ok(log)
-        .header(CONTENT_DISPOSITION, format("attachment; filename=\"%s\"", filename))
+        .header(CONTENT_DISPOSITION, STR."attachment; filename=\"\{filename}\"")
         .build();
   }
 }

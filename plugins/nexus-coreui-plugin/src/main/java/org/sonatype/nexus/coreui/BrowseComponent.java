@@ -17,9 +17,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.common.encoding.EncodingUtil;
 import org.sonatype.nexus.extdirect.DirectComponent;
@@ -87,7 +87,7 @@ public class BrowseComponent
     else {
       pathSegments = Arrays.stream(path.split("/"))
           .map(EncodingUtil::urlDecode)
-          .collect(Collectors.toList()); // NOSONAR
+          .collect(Collectors.toList());
     }
 
     return StreamSupport.stream(
@@ -104,7 +104,7 @@ public class BrowseComponent
               .withAssetId(browseNode.getAssetId() == null ? null : browseNode.getAssetId().getValue())
               .withPackageUrl(browseNode.getPackageUrl());
         })
-        .collect(Collectors.toList()); // NOSONAR
+        .collect(Collectors.toList());
   }
 
   public boolean isRoot(String path) {

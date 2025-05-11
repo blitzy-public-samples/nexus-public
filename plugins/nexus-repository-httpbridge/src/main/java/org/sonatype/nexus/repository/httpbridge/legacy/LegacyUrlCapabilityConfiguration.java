@@ -18,10 +18,17 @@ import org.sonatype.nexus.capability.CapabilityConfigurationSupport;
  * {@link LegacyUrlCapability} configuration.
  *
  * @since 3.7
+ * @see LegacyUrlCapability
+ * @see LegacyUrlCapabilityDescriptor
  */
 public class LegacyUrlCapabilityConfiguration
     extends CapabilityConfigurationSupport
 {
+  /**
+   * Returns a string representation of this configuration.
+   * 
+   * @return A string representation of this configuration
+   */
   @Override
   public String toString() {
     return getClass().getSimpleName() + "{}";

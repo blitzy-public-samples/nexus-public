@@ -12,12 +12,14 @@
  */
 package org.sonatype.nexus.repository.maven.rest;
 
+import java.util.Objects;
+
 import org.sonatype.nexus.repository.rest.api.model.HttpClientConnectionAuthenticationAttributes;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonProperty.Access;
-import io.swagger.annotations.ApiModelProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * REST API model for describing authentication for HTTP connections used by a proxy repository supporting preemptive
@@ -28,10 +30,21 @@ import io.swagger.annotations.ApiModelProperty;
 public class HttpClientConnectionAuthenticationAttributesWithPreemptive
     extends HttpClientConnectionAuthenticationAttributes
 {
-  @ApiModelProperty(value = "Whether to use pre-emptive authentication. Use with caution. Defaults to false.",
+  @Schema(description = "Whether to use pre-emptive authentication. Use with caution. Defaults to false.",
       example = "false")
-  protected final Boolean preemptive;
+  private final Boolean preemptive;
 
+  /**
+   * Creates a new instance with the specified authentication attributes and preemptive flag.
+   *
+   * @param type the authentication type
+   * @param preemptive whether to use preemptive authentication
+   * @param username the username for authentication
+   * @param password the password for authentication
+   * @param ntlmHost the NTLM host
+   * @param ntlmDomain the NTLM domain
+   * @param bearerToken the bearer token for authentication
+   */
   @JsonCreator
   public HttpClientConnectionAuthenticationAttributesWithPreemptive(
       @JsonProperty("type") final String type,
@@ -46,6 +59,12 @@ public class HttpClientConnectionAuthenticationAttributesWithPreemptive
     this.preemptive = preemptive;
   }
 
+  /**
+   * Creates a new instance from existing authentication attributes and a preemptive flag.
+   *
+   * @param auth the existing authentication attributes
+   * @param preemptive whether to use preemptive authentication
+   */
   public HttpClientConnectionAuthenticationAttributesWithPreemptive(
       final HttpClientConnectionAuthenticationAttributes auth,
       final Boolean preemptive)
@@ -55,7 +74,46 @@ public class HttpClientConnectionAuthenticationAttributesWithPreemptive
     this.preemptive = preemptive;
   }
 
+  /**
+   * Returns whether pre-emptive authentication is enabled.
+   *
+   * @return true if pre-emptive authentication is enabled, false otherwise
+   */
+  @Override
   public Boolean isPreemptive() {
     return preemptive;
+  }
+
+  @Override
+  public boolean equals(final Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+    if (!super.equals(o)) {
+      return false;
+    }
+    
+    HttpClientConnectionAuthenticationAttributesWithPreemptive that = 
+        (HttpClientConnectionAuthenticationAttributesWithPreemptive) o;
+    return Objects.equals(preemptive, that.preemptive);
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hash(super.hashCode(), preemptive);
+  }
+
+  @Override
+  public String toString() {
+    return "HttpClientConnectionAuthenticationAttributesWithPreemptive{" +
+        "type='" + getType() + '\'' +
+        ", username='" + getUsername() + '\'' +
+        ", ntlmHost='" + getNtlmHost() + '\'' +
+        ", ntlmDomain='" + getNtlmDomain() + '\'' +
+        ", preemptive=" + preemptive +
+        '}'; // Note: password and bearerToken are intentionally excluded for security
   }
 }

@@ -29,6 +29,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
  * Maven 2 specific {@link MimeRulesSource} that specifies known and format specific file MIME types.
  *
  * @since 3.0
+ * @since Java 21 Updated to use Java 21 features like enhanced switch expressions
  */
 @Named(Maven2Format.NAME)
 @Singleton
@@ -87,19 +88,14 @@ public class MavenMimeRulesSource
   @Override
   public MimeRule getRuleForName(final String name) {
     MavenPath mavenPath = mavenPathParser.parsePath(name);
-    if (mavenPath.isPom()) {
-      return POM_RULE;
-    }
-    else if (mavenPath.isHash()) {
-      return HASH_RULE;
-    }
-    else if (mavenPath.isSignature()) {
-      return SIGNATURE_RULE;
-    }
-    else if (Constants.METADATA_FILENAME.equals(mavenPath.getFileName())) {
-      return METADATA_RULE;
-    }
-    // otherwise no format-specific rule, use common rules
-    return null;
+    
+    // Using enhanced switch expression with pattern matching (Java 21 feature)
+    return switch (mavenPath) {
+      case MavenPath path when path.isPom() -> POM_RULE;
+      case MavenPath path when path.isHash() -> HASH_RULE;
+      case MavenPath path when path.isSignature() -> SIGNATURE_RULE;
+      case MavenPath path when Constants.METADATA_FILENAME.equals(path.getFileName()) -> METADATA_RULE;
+      default -> null; // otherwise no format-specific rule, use common rules
+    };
   }
 }

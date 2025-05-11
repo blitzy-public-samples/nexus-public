@@ -21,8 +21,6 @@ import javax.inject.Singleton;
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.rapture.StateContributor;
 
-import com.google.common.collect.ImmutableMap;
-
 @Named
 @Singleton
 public class TagStateContributor
@@ -33,7 +31,7 @@ public class TagStateContributor
 
   @Inject
   public TagStateContributor(@Named("${nexus.react.tags:-true}") final boolean featureFlag) {
-    state = ImmutableMap.of("nexus.react.tags", featureFlag);
+    state = Map.of("nexus.react.tags", featureFlag);
   }
 
   @Override

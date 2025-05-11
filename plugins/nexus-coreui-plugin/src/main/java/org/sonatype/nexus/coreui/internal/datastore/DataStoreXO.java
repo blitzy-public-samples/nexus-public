@@ -12,22 +12,15 @@
  */
 package org.sonatype.nexus.coreui.internal.datastore;
 
-public class DataStoreXO
-{
-  private String name;
-
-  public String getName() {
-    return name;
-  }
-
-  public void setName(final String name) {
-    this.name = name;
-  }
-
-  @Override
-  public String toString() {
-    return "DataStoreXO(" +
-        "name:" + name +
-        ")";
-  }
+/**
+ * Data transfer object for DataStore information.
+ * 
+ * Implemented as a Java 21 record for immutability and simplified data handling.
+ */
+public record DataStoreXO(String name) {
+  // Record automatically provides:
+  // - Constructor for the name field
+  // - Accessor method for name (without 'get' prefix)
+  // - equals(), hashCode(), and toString() methods
+  // - Immutability (all fields are final)
 }

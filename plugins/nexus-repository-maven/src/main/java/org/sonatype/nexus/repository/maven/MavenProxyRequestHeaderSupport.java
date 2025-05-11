@@ -14,9 +14,11 @@
 package org.sonatype.nexus.repository.maven;
 
 import java.util.Collection;
-import javax.annotation.Nullable;
-import javax.inject.Inject;
-import javax.inject.Named;
+import java.util.Objects;
+
+import jakarta.annotation.Nullable;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
 
 import org.sonatype.nexus.capability.CapabilityReference;
 import org.sonatype.nexus.capability.CapabilityReferenceFilterBuilder;
@@ -24,8 +26,11 @@ import org.sonatype.nexus.capability.CapabilityRegistry;
 import org.sonatype.nexus.capability.CapabilityType;
 import org.sonatype.nexus.utils.httpclient.UserAgentGenerator;
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
+/**
+ * Support class for Maven proxy request headers.
+ * <p>
+ * Updated for Java 21 compatibility with Jakarta EE annotations.
+ */
 @Named
 public class MavenProxyRequestHeaderSupport
 {
@@ -34,20 +39,36 @@ public class MavenProxyRequestHeaderSupport
   private final CapabilityRegistry capabilityRegistry;
   private final UserAgentGenerator userAgentGenerator;
 
+  /**
+   * Constructor with dependency injection.
+   *
+   * @param capabilityRegistry the capability registry
+   * @param userAgentGenerator the user agent generator
+   */
   @Inject
   public MavenProxyRequestHeaderSupport(
       final CapabilityRegistry capabilityRegistry,
       final UserAgentGenerator userAgentGenerator)
   {
-    this.capabilityRegistry = checkNotNull(capabilityRegistry);
-    this.userAgentGenerator = checkNotNull(userAgentGenerator);
+    this.capabilityRegistry = Objects.requireNonNull(capabilityRegistry);
+    this.userAgentGenerator = Objects.requireNonNull(userAgentGenerator);
   }
 
+  /**
+   * Gets the user agent string for analytics.
+   *
+   * @return the user agent string
+   */
   public String getUserAgentForAnalytics() {
     CapabilityReference capabilityReference = getCapabilityReference();
     return userAgentGenerator.buildUserAgentForAnalytics(capabilityReference);
   }
 
+  /**
+   * Gets the capability reference for analytics.
+   *
+   * @return the capability reference, or null if not found
+   */
   @Nullable
   public CapabilityReference getCapabilityReference()
   {

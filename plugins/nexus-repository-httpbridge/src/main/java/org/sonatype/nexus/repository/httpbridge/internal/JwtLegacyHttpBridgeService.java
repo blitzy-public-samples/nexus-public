@@ -12,9 +12,9 @@
  */
 package org.sonatype.nexus.repository.httpbridge.internal;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.repository.httpbridge.legacy.LegacyUrlEnabledHelper;
@@ -23,8 +23,10 @@ import com.google.inject.AbstractModule;
 import org.eclipse.sisu.inject.MutableBeanLocator;
 
 import static org.sonatype.nexus.common.app.FeatureFlags.JWT_ENABLED;
+
 /**
- * Manages the injection of {@link JwtLegacyHttpBridgeModule} based on the capability being enabled or the system property
+ * Manages the injection of {@link JwtLegacyHttpBridgeModule} based on the capability being enabled or the system property.
+ * Updated for Java 21 compatibility and Apache Shiro 2.0.0 with Java-JWT 4.4.0.
  *
  * @since 3.38
  */
@@ -34,6 +36,12 @@ import static org.sonatype.nexus.common.app.FeatureFlags.JWT_ENABLED;
 public class JwtLegacyHttpBridgeService
   extends LegacyHttpBridgeService
 {
+  /**
+   * Constructor with dependency injection compatible with Java 21 and Apache Shiro 2.0.0.
+   *
+   * @param locator The bean locator for dependency injection
+   * @param legacyUrlEnabledHelper Helper to determine if legacy URLs are enabled
+   */
   @Inject
   public JwtLegacyHttpBridgeService(
       final MutableBeanLocator locator,
@@ -42,6 +50,12 @@ public class JwtLegacyHttpBridgeService
     super(locator, legacyUrlEnabledHelper);
   }
 
+  /**
+   * Returns the JWT-specific legacy HTTP bridge module.
+   * Compatible with Java 21 and updated JWT implementation.
+   *
+   * @return The JWT legacy HTTP bridge module
+   */
   @Override
   protected AbstractModule getLegacyHttpBridgeModule() {
     return new JwtLegacyHttpBridgeModule();

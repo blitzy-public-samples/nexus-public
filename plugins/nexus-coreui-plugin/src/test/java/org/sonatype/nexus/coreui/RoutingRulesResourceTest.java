@@ -29,9 +29,11 @@ import org.sonatype.nexus.repository.routing.RoutingRuleStore;
 import org.sonatype.nexus.repository.routing.internal.RoutingRuleData;
 import org.sonatype.nexus.repository.security.RepositoryPermissionChecker;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -39,6 +41,11 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+/**
+ * Test for {@link RoutingRulesResource} using JUnit Jupiter (JUnit 5) and Mockito 4.11.0.
+ * Updated for Java 21 compatibility.
+ */
+@ExtendWith(MockitoExtension.class)
 public class RoutingRulesResourceTest
   extends TestSupport
 {
@@ -65,13 +72,16 @@ public class RoutingRulesResourceTest
 
   private Repository repository3 = repository("repository3");
 
-  @Before
-  public void setup() {
+  @BeforeEach
+  void setup() {
     underTest = new RoutingRulesResource(routingRuleStore, routingRuleHelper, repositoryPermissionChecker);
   }
 
+  /**
+   * Tests retrieving routing rules with assigned repositories.
+   */
   @Test
-  public void testGetRoutingRules_AssignedRepositories() {
+  void testGetRoutingRules_AssignedRepositories() {
     when(routingRuleStore.list()).thenReturn(Arrays.asList(rule1, rule2, rule3));
 
     Map<EntityId,List<Repository>> ruleRepoMap = new HashMap<>();
@@ -100,8 +110,11 @@ public class RoutingRulesResourceTest
     assertXO(xos.get(2), "rule3", 1, "repository3");
   }
 
+  /**
+   * Tests retrieving routing rules with no assigned repositories.
+   */
   @Test
-  public void testGetRoutingRules_NoAssignedRepositories() {
+  void testGetRoutingRules_NoAssignedRepositories() {
     when(routingRuleStore.list()).thenReturn(Arrays.asList(rule1, rule2, rule3));
 
     Map<EntityId,List<Repository>> ruleRepoMap = new HashMap<>();
@@ -119,8 +132,11 @@ public class RoutingRulesResourceTest
     assertXO(xos.get(2), "rule3", 0);
   }
 
+  /**
+   * Tests retrieving routing rules with assigned repositories that are hidden by permissions.
+   */
   @Test
-  public void testGetRoutingRules_AssignedRepositoriesHiddenByPerms() {
+  void testGetRoutingRules_AssignedRepositoriesHiddenByPerms() {
     when(routingRuleStore.list()).thenReturn(Arrays.asList(rule1, rule2, rule3));
 
     Map<EntityId,List<Repository>> ruleRepoMap = new HashMap<>();
@@ -147,8 +163,11 @@ public class RoutingRulesResourceTest
     assertXO(xos.get(2), "rule3", 1, "repository3");
   }
 
+  /**
+   * Tests retrieving routing rules with multiple assigned repositories where some are hidden by permissions.
+   */
   @Test
-  public void testGetRoutingRules_AssignedRepositoriesMultipleHiddenByPerms() {
+  void testGetRoutingRules_AssignedRepositoriesMultipleHiddenByPerms() {
     when(routingRuleStore.list()).thenReturn(Arrays.asList(rule1, rule2, rule3));
 
     Map<EntityId,List<Repository>> ruleRepoMap = new HashMap<>();
@@ -174,6 +193,12 @@ public class RoutingRulesResourceTest
     assertXO(xos.get(2), "rule3", 0);
   }
 
+  /**
+   * Creates a routing rule with the given name.
+   * 
+   * @param name the name of the routing rule
+   * @return the created routing rule
+   */
   private RoutingRule routingRule(String name) {
     RoutingRuleData routingRule = new RoutingRuleData().name(name).mode(RoutingMode.ALLOW).matchers(Collections.singletonList(".*"));
     EntityId entityId = new DetachedEntityId(name);
@@ -181,12 +206,26 @@ public class RoutingRulesResourceTest
     return routingRule;
   }
 
+  /**
+   * Creates a mock repository with the given name.
+   * 
+   * @param name the name of the repository
+   * @return the created mock repository
+   */
   private Repository repository(String name) {
     Repository repository = mock(Repository.class);
     when(repository.getName()).thenReturn(name);
     return repository;
   }
 
+  /**
+   * Asserts that the routing rule XO has the expected properties.
+   * 
+   * @param xo the routing rule XO to check
+   * @param name the expected name
+   * @param count the expected repository count
+   * @param repositoryNames the expected repository names (optional)
+   */
   private void assertXO(final RoutingRuleXO xo, final String name, final int count, final String... repositoryNames) {
     assertThat(xo.getName(), is(name));
     assertThat(xo.getId(), is(name));

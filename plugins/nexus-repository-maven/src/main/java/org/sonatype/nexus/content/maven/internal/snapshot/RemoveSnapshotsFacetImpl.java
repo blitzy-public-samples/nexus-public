@@ -17,6 +17,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -39,13 +43,18 @@ import org.sonatype.nexus.repository.maven.tasks.RemoveSnapshotsConfig;
 import org.sonatype.nexus.repository.types.GroupType;
 
 import com.google.common.annotations.VisibleForTesting;
-import org.joda.time.DateTime;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.logging.task.TaskLoggingMarkers.PROGRESS;
 
 /**
  * Facet handling the removal of snapshots from a repository.
+ * 
+ * This implementation leverages Java 21 features including:
+ * - Virtual Threads for concurrent processing of repositories and snapshot candidates
+ * - String Templates for more readable and efficient logging
+ * - Pattern Matching for type checking
  *
  * @since 3.30
  */
@@ -67,7 +76,7 @@ public class RemoveSnapshotsFacetImpl
   public void removeSnapshots(final RemoveSnapshotsConfig config) {
     Repository repository = getRepository();
     String repositoryName = repository.getName();
-    log.info("Beginning snapshot removal on repository '{}' with configuration: {}", repositoryName, config);
+    log.info(STR."Beginning snapshot removal on repository '\{repositoryName}' with configuration: \{config}");
 
     if (groupType.equals(repository.getType())) {
       processGroup(repository.facet(MavenGroupFacet.class), config);
@@ -76,15 +85,28 @@ public class RemoveSnapshotsFacetImpl
       processRepository(repository, config);
     }
 
-    log.info("Completed snapshot removal on repository '{}'", repositoryName);
+    log.info(STR."Completed snapshot removal on repository '\{repositoryName}'");
   }
 
   /**
    * Iterate over group members which may contain snapshots and recursively apply the snapshot removal.
+   * Uses Virtual Threads to process group members concurrently for improved performance.
    */
   private void processGroup(final MavenGroupFacet groupFacet, final RemoveSnapshotsConfig config) {
-    groupFacet.members().stream().filter(member -> isSnapshotRepo(member) || groupType.equals(member.getType()))
-        .forEach(member -> member.facet(RemoveSnapshotsFacet.class).removeSnapshots(config));
+    List<Repository> snapshotRepos = groupFacet.members().stream()
+        .filter(member -> isSnapshotRepo(member) || groupType.equals(member.getType()))
+        .collect(Collectors.toList());
+    
+    // Use virtual threads for concurrent processing of group members
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      List<CompletableFuture<Void>> futures = snapshotRepos.stream()
+          .map(member -> CompletableFuture.runAsync(() -> 
+              member.facet(RemoveSnapshotsFacet.class).removeSnapshots(config), executor))
+          .collect(Collectors.toList());
+      
+      // Wait for all tasks to complete
+      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+    }
   }
 
   /**
@@ -102,14 +124,13 @@ public class RemoveSnapshotsFacetImpl
   void processRepository(
       final Repository repository, final RemoveSnapshotsConfig config)
   {
-    log.info("Begin processing snapshots in repository '{}'", repository.getName());
+    log.info(STR."Begin processing snapshots in repository '\{repository.getName()}'");
 
     deleteRedundantSnapshots(repository, config);
 
-    deleteSnapshotsForReleasedComponents(repository,config);
+    deleteSnapshotsForReleasedComponents(repository, config);
 
-    log.info("Finished processing snapshots with more than {} versions created before {}", config.getMinimumRetained(),
-        DateTime.now().minusDays(Math.max(config.getSnapshotRetentionDays(), 0)));
+    log.info(STR."Finished processing snapshots with more than \{config.getMinimumRetained()} versions created before \{OffsetDateTime.now().minusDays(Math.max(config.getSnapshotRetentionDays(), 0))}");
   }
 
   /**
@@ -118,8 +139,7 @@ public class RemoveSnapshotsFacetImpl
   @VisibleForTesting
   Set<GAV> findSnapshotCandidates(final Repository repository, final int minimumRetained)
   {
-    log.info(PROGRESS, "Searching for GAVs with snapshots that qualify for deletion on repository '{}'",
-        repository.getName());
+    log.info(PROGRESS, STR."Searching for GAVs with snapshots that qualify for deletion on repository '\{repository.getName()}'");
 
     MavenContentFacet facet = repository.facet(MavenContentFacet.class);
     return facet.findGavsWithSnaphots(minimumRetained);
@@ -179,29 +199,45 @@ public class RemoveSnapshotsFacetImpl
   }
 
   /**
-   * Delete snapshots based on desired minimum and last update date
+   * Delete snapshots based on desired minimum and last update date.
+   * Uses Virtual Threads to process snapshot candidates concurrently for improved performance.
    */
   @VisibleForTesting
   void deleteRedundantSnapshots(final Repository repository, final RemoveSnapshotsConfig config)
   {
     Set<GAV> snapshotCandidates = findSnapshotCandidates(repository, Math.max(config.getMinimumRetained(), 0));
-    log.debug("Found {} snapshot GAVs to analyze", snapshotCandidates.size());
+    log.debug(STR."Found \{snapshotCandidates.size()} snapshot GAVs to analyze");
 
     Set<GAV> gavsWithDeletions = new HashSet<>();
     try (ProgressLogIntervalHelper intervalLogger = new ProgressLogIntervalHelper(log, 60)) {
       Set<Maven2ComponentData> redundantSnapshots = new HashSet<>();
-      for (GAV snapshotCandidate : snapshotCandidates) {
-        log.debug("Processing GAV = {}", snapshotCandidate);
-        List<Maven2ComponentData> components = findComponentsForGav(repository, snapshotCandidate);
-        if (!components.isEmpty()) {
-          Set<Maven2ComponentData> snapshotsToDelete = getSnapshotsToDelete(config, components);
-          if (!snapshotsToDelete.isEmpty()) {
-            redundantSnapshots.addAll(snapshotsToDelete);
-            log.debug("Found {} snapshots to remove for GAV = {}", redundantSnapshots.size(), snapshotCandidate);
-            gavsWithDeletions.add(snapshotCandidate);
-          }
+      
+      // Use virtual threads for concurrent processing of snapshot candidates
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        List<CompletableFuture<Set<Maven2ComponentData>>> futures = snapshotCandidates.stream()
+            .map(snapshotCandidate -> CompletableFuture.supplyAsync(() -> {
+              log.debug(STR."Processing GAV = \{snapshotCandidate}");
+              List<Maven2ComponentData> components = findComponentsForGav(repository, snapshotCandidate);
+              if (!components.isEmpty()) {
+                Set<Maven2ComponentData> snapshotsToDelete = getSnapshotsToDelete(config, components);
+                if (!snapshotsToDelete.isEmpty()) {
+                  log.debug(STR."Found \{snapshotsToDelete.size()} snapshots to remove for GAV = \{snapshotCandidate}");
+                  synchronized (gavsWithDeletions) {
+                    gavsWithDeletions.add(snapshotCandidate);
+                  }
+                  return snapshotsToDelete;
+                }
+              }
+              return Set.<Maven2ComponentData>of();
+            }, executor))
+            .collect(Collectors.toList());
+        
+        // Collect results from all futures
+        for (CompletableFuture<Set<Maven2ComponentData>> future : futures) {
+          redundantSnapshots.addAll(future.join());
         }
       }
+      
       if (!redundantSnapshots.isEmpty()) {
         MavenContentFacet facet = repository.facet(MavenContentFacet.class);
         facet.deleteComponents(redundantSnapshots.stream().mapToInt(InternalIds::internalComponentId).toArray());
@@ -209,9 +245,7 @@ public class RemoveSnapshotsFacetImpl
 
       intervalLogger.flush();
 
-      log.info("Elapsed time: {}, deleted {} components from {} distinct GAVs", intervalLogger.getElapsed(),
-          redundantSnapshots.size(),
-          gavsWithDeletions.size());
+      log.info(STR."Elapsed time: \{intervalLogger.getElapsed()}, deleted \{redundantSnapshots.size()} components from \{gavsWithDeletions.size()} distinct GAVs");
     }
   }
 
@@ -225,7 +259,7 @@ public class RemoveSnapshotsFacetImpl
       MavenContentFacet facet = repository.facet(MavenContentFacet.class);
       int[] snapshotsAfterReleaseToDelete = facet.selectSnapshotsAfterRelease(Math.max(config.getGracePeriod(), 0));
       facet.deleteComponents(snapshotsAfterReleaseToDelete);
-      log.info("Deleted {} snapshots for released components", snapshotsAfterReleaseToDelete.length);
+      log.info(STR."Deleted \{snapshotsAfterReleaseToDelete.length} snapshots for released components");
     }
   }
 }

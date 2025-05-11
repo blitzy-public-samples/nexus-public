@@ -25,7 +25,6 @@ import java.util.function.Supplier;
 
 import org.sonatype.nexus.blobstore.api.BlobStoreException;
 import org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport;
-import org.sonatype.nexus.thread.NexusThreadFactory;
 
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.model.AbortMultipartUploadRequest;
@@ -34,10 +33,10 @@ import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
 import com.amazonaws.services.s3.model.PartETag;
 
 import static com.google.common.base.Preconditions.checkArgument;
-import static java.lang.String.format;
 
 /**
- * Common class to execute parallel requests to S3 for a MultipartUpload operation
+ * Common class to execute parallel requests to S3 for a MultipartUpload operation.
+ * Uses Java 21 Virtual Threads for improved throughput and resource efficiency.
  *
  * @since 3.19
  */
@@ -46,15 +45,19 @@ public abstract class ParallelRequester
 {
   protected final int chunkSize;
 
+  /**
+   * Determines the number of parallel tasks to submit, even though we're using virtual threads
+   * which don't require traditional thread pool sizing.
+   */
   private final int parallelism;
 
   private final ExecutorService executorService;
 
   /**
    * @param chunkSize       - the number of bytes to be processed in one parallel request
-   * @param numberOfThreads - a non-negative integer, either 0 to indicate that number of threads should be dynamically
-   *                        selected based on the env, or a postive int to set a fixed number of threads
-   * @param threadGroupName - a human readable name for the threads
+   * @param numberOfThreads - a non-negative integer, either 0 to indicate that number of parallel tasks should be dynamically
+   *                        selected based on the env, or a positive int to set a fixed number of parallel tasks
+   * @param threadGroupName - a human readable name (retained for API compatibility but no longer used for thread naming)
    */
   public ParallelRequester(final int chunkSize, final int numberOfThreads, final String threadGroupName)
   {
@@ -63,8 +66,8 @@ public abstract class ParallelRequester
     this.chunkSize = chunkSize;
     this.parallelism = (numberOfThreads > 0) ? numberOfThreads : Runtime.getRuntime().availableProcessors();
 
-    this.executorService = Executors.newFixedThreadPool(parallelism,
-        new NexusThreadFactory("s3-parallel", threadGroupName));
+    // Using Java 21 Virtual Threads for improved throughput and resource efficiency
+    this.executorService = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   @Override
@@ -111,7 +114,7 @@ public abstract class ParallelRequester
     catch (CancellationException | ExecutionException ex) {
       s3.abortMultipartUpload(new AbortMultipartUploadRequest(bucket, key, uploadId));
       throw new BlobStoreException(
-          format("Error executing parallel requests for bucket:%s key:%s with uploadId:%s", bucket, key, uploadId), ex,
+          STR."Error executing parallel requests for bucket:\{bucket} key:\{key} with uploadId:\{uploadId}", ex,
           null);
     }
   }

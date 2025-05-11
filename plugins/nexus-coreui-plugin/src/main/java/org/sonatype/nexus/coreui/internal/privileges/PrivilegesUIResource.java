@@ -33,6 +33,11 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.stream.Collectors.toList;
 import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
 
+/**
+ * REST resource providing privilege type information for the UI.
+ * 
+ * @since 3.0
+ */
 @Named
 @Singleton
 @Consumes(APPLICATION_JSON)
@@ -49,12 +54,18 @@ public class PrivilegesUIResource
     this.privilegeDescriptors = checkNotNull(privilegeDescriptors);
   }
 
+  /**
+   * Retrieves a list of all available privilege types.
+   *
+   * @return list of privilege types with their associated metadata
+   */
   @RequiresAuthentication
   @RequiresPermissions("nexus:privileges:read")
   @GET
   @Path("/types")
   public List<PrivilegesTypesUIResponse> listPrivilegesTypes() {
-    return privilegeDescriptors.entrySet().stream().map(PrivilegesTypesUIResponse::new)
+    return privilegeDescriptors.entrySet().stream()
+        .map(PrivilegesTypesUIResponse::new)
         .collect(toList());
   }
 }

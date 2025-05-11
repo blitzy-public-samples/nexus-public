@@ -14,17 +14,24 @@ package org.sonatype.nexus.common.text;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 
 /**
  * Tests for {@link Plural}
+ * 
+ * Migrated to JUnit Jupiter (JUnit 5) and Java 21 compatibility.
+ *
+ * @since 3.0
  */
 public class PluralTest
     extends TestSupport
 {
+  /**
+   * Tests simple plural form with default 's' suffix.
+   */
   @Test
   public void testSimplePlural() {
     assertThat(Plural.of(-1, "dog"), is("-1 dogs"));
@@ -33,6 +40,9 @@ public class PluralTest
     assertThat(Plural.of(2, "dog"), is("2 dogs"));
   }
 
+  /**
+   * Tests complex plural form with custom irregular plural suffix.
+   */
   @Test
   public void testComplexPlural() {
     assertThat(Plural.of(-1, "candy", "candies"), is("-1 candies"));

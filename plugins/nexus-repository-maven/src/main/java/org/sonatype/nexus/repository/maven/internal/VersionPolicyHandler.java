@@ -53,11 +53,14 @@ public class VersionPolicyHandler
     final MavenPath path = context.getAttributes().require(MavenPath.class);
     final MavenFacet mavenFacet = context.getRepository().facet(MavenFacet.class);
     final VersionPolicy versionPolicy = mavenFacet.getVersionPolicy();
-    final Coordinates coordinates = path.getCoordinates();
-    if (coordinates != null && !versionPolicyValidator.validArtifactPath(versionPolicy, coordinates)) {
+    
+    // Using pattern matching for instanceof check with coordinates
+    if (path.getCoordinates() instanceof Coordinates coordinates && 
+        !versionPolicyValidator.validArtifactPath(versionPolicy, coordinates)) {
       return createResponse(context,
           "Repository version policy: " + versionPolicy + " does not allow version: " + coordinates.getVersion());
     }
+    
     if (!versionPolicyValidator.validMetadataPath(versionPolicy, path.main().getPath())) {
       return createResponse(context,
           "Repository version policy: " + versionPolicy + " does not allow metadata in path: " + path.getPath());
@@ -66,12 +69,10 @@ public class VersionPolicyHandler
   }
 
   private static Response createResponse(final Context context, final String message) {
-    switch (context.getRequest().getAction()) {
-      case GET:
-      case HEAD:
-        return HttpResponses.notFound(message);
-      default:
-        return HttpResponses.badRequest(message);
-    }
+    // Using Java 21 pattern matching for switch expression
+    return switch (context.getRequest().getAction()) {
+      case GET, HEAD -> HttpResponses.notFound(message);
+      default -> HttpResponses.badRequest(message);
+    };
   }
 }

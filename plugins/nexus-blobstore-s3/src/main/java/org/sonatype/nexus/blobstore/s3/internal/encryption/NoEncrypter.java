@@ -12,35 +12,41 @@
  */
 package org.sonatype.nexus.blobstore.s3.internal.encryption;
 
-import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
-import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
-import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import javax.inject.Named;
+
+import com.amazonaws.services.s3.model.AbstractPutObjectRequest;
+import com.amazonaws.services.s3.model.CopyObjectRequest;
+import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
 
 /**
- * An {@link S3Encrypter} that does not add any encryption to requests.
- * Updated to work with AWS SDK for Java 2.x.
+ * Adds no encryption to a S3 request.
+ * 
+ * This implementation is compatible with Java 21 and uses AWS SDK for Java 1.x.
+ * For long-term compatibility beyond 2025, consider migrating to AWS SDK for Java 2.x.
  *
  * @since 3.19
  */
+@Named(NoEncrypter.ID)
 public class NoEncrypter
     implements S3Encrypter
 {
   public static final String ID = "none";
+  public static final String NAME = "None";
 
   public static final NoEncrypter INSTANCE = new NoEncrypter();
 
   @Override
-  public void addEncryption(final PutObjectRequest.Builder request) {
-    // No encryption to add
+  public <T extends InitiateMultipartUploadRequest> T addEncryption(final T request) {
+    return request;
   }
 
   @Override
-  public void addEncryption(final CopyObjectRequest.Builder request) {
-    // No encryption to add
+  public <T extends AbstractPutObjectRequest> T addEncryption(final T request) {
+    return request;
   }
 
   @Override
-  public void addEncryption(final CreateMultipartUploadRequest.Builder request) {
-    // No encryption to add
+  public <T extends CopyObjectRequest> T addEncryption(final T request) {
+    return request;
   }
 }

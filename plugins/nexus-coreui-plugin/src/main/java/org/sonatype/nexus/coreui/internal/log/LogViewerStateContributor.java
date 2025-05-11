@@ -12,7 +12,6 @@
  */
 package org.sonatype.nexus.coreui.internal.log;
 
-import java.util.Collections;
 import java.util.Map;
 
 import javax.annotation.Nullable;
@@ -34,6 +33,6 @@ public class LogViewerStateContributor
   @Override
   @Nullable
   public Map<String, Object> getState() {
-    return Collections.singletonMap("log.viewer.enabled", !enabled);
+    return Map.of("log.viewer.enabled", !enabled);
   }
 }

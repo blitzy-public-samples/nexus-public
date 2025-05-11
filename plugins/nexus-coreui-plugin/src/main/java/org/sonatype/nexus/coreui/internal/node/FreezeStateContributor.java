@@ -12,7 +12,6 @@
  */
 package org.sonatype.nexus.coreui.internal.node;
 
-import java.util.HashMap;
 import java.util.Map;
 
 import javax.inject.Inject;
@@ -43,9 +42,11 @@ public class FreezeStateContributor
 
   @Override
   public Map<String, Object> getState() {
-    Map<String, Object> state = new HashMap<>();
-    state.put("frozen", freezeService.isFrozen());
-    state.put("frozenManually", freezeService.isFrozenByUser());
-    return state;
+    // Using Map.of() for creating an immutable map with key-value pairs
+    // This is more concise and efficient than using HashMap for small maps
+    return Map.of(
+        "frozen", freezeService.isFrozen(),
+        "frozenManually", freezeService.isFrozenByUser()
+    );
   }
 }

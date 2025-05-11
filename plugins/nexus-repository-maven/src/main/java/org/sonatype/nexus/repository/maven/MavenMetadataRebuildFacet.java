@@ -14,12 +14,16 @@ package org.sonatype.nexus.repository.maven;
 
 import java.io.IOException;
 
-import javax.annotation.Nullable;
+// Updated from javax.annotation.Nullable to jakarta.annotation.Nullable for Java 21 compatibility
+import jakarta.annotation.Nullable;
 
 import org.sonatype.nexus.repository.Facet;
 
 /**
+ * Maven metadata rebuild facet for managing Maven metadata files.
+ * 
  * @since 3.29
+ * @see <a href="https://jakarta.ee/specifications/annotations/">Jakarta Annotations</a> for information about the migration from javax to jakarta annotations
  */
 @Facet.Exposed
 public interface MavenMetadataRebuildFacet
@@ -87,12 +91,15 @@ public interface MavenMetadataRebuildFacet
    * Rebuilds/updates Maven metadata if an asset is available at {@code path} which has an associated
    * blob.
    *
-   * @param path
-   * @param update
-   * @param rebuildChecksums
-   * @throws IOException
+   * @param path             the path to check for an asset
+   * @param update           whether to update or replace metadata
+   * @param rebuildChecksums whether or not checksums should be checked and corrected if found
+   *                         missing or incorrect
+   * @throws IOException if an I/O error occurs
    *
    * @since 3.30
+   * @implNote Implementations of this method can benefit from Java 21's Virtual Threads for improved
+   *           performance when handling I/O operations, especially when processing multiple assets concurrently.
    */
   default void maybeRebuildMavenMetadata(
       String path,

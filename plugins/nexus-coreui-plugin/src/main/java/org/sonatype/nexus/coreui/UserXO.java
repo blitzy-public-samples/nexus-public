@@ -31,6 +31,35 @@ import org.sonatype.nexus.validation.group.Update;
  */
 public class UserXO
 {
+  /**
+   * Record pattern for UserXO data.
+   * Used for pattern matching in Java 21.
+   *
+   * @since 3.60
+   */
+  public record UserData(
+      String userId,
+      String version,
+      String realm,
+      String firstName,
+      String lastName,
+      String email,
+      UserStatus status,
+      String password,
+      Set<String> roles,
+      Boolean external,
+      Set<String> externalRoles
+  ) {
+    /**
+     * Factory method to create a UserXO from this record.
+     *
+     * @return A new UserXO instance with data from this record
+     */
+    public UserXO toUserXO() {
+      return new UserXO(this);
+    }
+  }
+
   @NotBlank
   @UniqueUserId(groups = Create.class)
   private String userId;
@@ -65,6 +94,79 @@ public class UserXO
 
   // FIXME: Sort out what this is used for
   private Set<String> externalRoles;
+
+  /**
+   * Default constructor.
+   */
+  public UserXO() {
+    // Empty constructor for serialization frameworks
+  }
+
+  /**
+   * Constructor using UserData record for pattern matching.
+   *
+   * @param data The user data record
+   * @since 3.60
+   */
+  public UserXO(UserData data) {
+    this.userId = data.userId();
+    this.version = data.version();
+    this.realm = data.realm();
+    this.firstName = data.firstName();
+    this.lastName = data.lastName();
+    this.email = data.email();
+    this.status = data.status();
+    this.password = data.password();
+    this.roles = data.roles();
+    this.external = data.external();
+    this.externalRoles = data.externalRoles();
+  }
+
+  /**
+   * Creates a UserData record from this object for pattern matching.
+   * This enables pattern matching with Java 21 Record Patterns.
+   *
+   * <p>Example usage with pattern matching:</p>
+   * <pre>
+   * UserXO user = getUser();
+   * var userData = user.toUserData();
+   * 
+   * // Pattern matching with records in Java 21
+   * if (userData instanceof UserXO.UserData(var id, _, _, var first, var last, _, _, _, _, _, _)) {
+   *     System.out.println("User: " + first + " " + last + " (" + id + ")");
+   * }
+   * </pre>
+   *
+   * @return A UserData record containing this object's data
+   * @since 3.60
+   */
+  public UserData toUserData() {
+    return new UserData(
+        userId,
+        version,
+        realm,
+        firstName,
+        lastName,
+        email,
+        status,
+        password,
+        roles,
+        external,
+        externalRoles
+    );
+  }
+
+  /**
+   * Static factory method to create a UserXO from a UserData record.
+   * This is useful for pattern matching in Java 21.
+   *
+   * @param data The user data record
+   * @return A new UserXO instance
+   * @since 3.60
+   */
+  public static UserXO from(UserData data) {
+    return new UserXO(data);
+  }
 
   public String getUserId() {
     return userId;
@@ -152,6 +254,17 @@ public class UserXO
 
   public void setExternalRoles(Set<String> externalRoles) {
     this.externalRoles = externalRoles;
+  }
+
+  /**
+   * Checks if this user has the specified role.
+   *
+   * @param roleId The role ID to check
+   * @return true if the user has the role, false otherwise
+   * @since 3.60
+   */
+  public boolean hasRole(String roleId) {
+    return roles != null && roles.contains(roleId);
   }
 
   @Override

@@ -43,7 +43,6 @@ import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.amazonaws.services.s3.NexusS3ClientBuilder;
 import com.amazonaws.services.securitytoken.AWSSecurityTokenService;
 import com.amazonaws.services.securitytoken.AWSSecurityTokenServiceClientBuilder;
-import com.google.common.base.Predicates;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Strings.isNullOrEmpty;
@@ -61,6 +60,7 @@ import static org.sonatype.nexus.blobstore.s3.internal.S3BlobStore.SIGNERTYPE_KE
  * Creates configured AmazonS3 clients.
  *
  * @since 3.6.1
+ * @note Compatible with Java 21 and AWS SDK for Java 1.x
  */
 @Named
 public class AmazonS3Factory
@@ -93,6 +93,12 @@ public class AmazonS3Factory
     this.secretsFactory = checkNotNull(secretsFactory);
   }
 
+  /**
+   * Creates an AmazonS3 client configured with the provided blob store configuration.
+   * 
+   * @param blobStoreConfiguration the blob store configuration
+   * @return a configured AmazonS3 client
+   */
   public AmazonS3 create(final BlobStoreConfiguration blobStoreConfiguration) {
     NexusS3ClientBuilder builder = NexusS3ClientBuilder.standard();
 
@@ -104,7 +110,7 @@ public class AmazonS3Factory
     String forcePathStyle = s3Configuration.get(FORCE_PATH_STYLE_KEY, String.class);
 
     int maximumConnectionPoolSize = Optional.ofNullable(s3Configuration.get(MAX_CONNECTION_POOL_KEY, String.class))
-        .filter(Predicates.not(Strings2::isBlank))
+        .filter(value -> !Strings2.isBlank(value))
         .map(Integer::valueOf)
         .orElse(-1);
 
@@ -161,6 +167,14 @@ public class AmazonS3Factory
     return builder.build();
   }
 
+  /**
+   * Builds AWS credentials based on the provided parameters.
+   * 
+   * @param accessKeyId the AWS access key ID
+   * @param secretAccessKey the AWS secret access key
+   * @param sessionToken the AWS session token (optional)
+   * @return the AWS credentials
+   */
   private AWSCredentials buildCredentials(
       final String accessKeyId,
       final String secretAccessKey,
@@ -174,6 +188,14 @@ public class AmazonS3Factory
     }
   }
 
+  /**
+   * Builds an AWS credentials provider based on the provided parameters.
+   * 
+   * @param credentials the AWS credentials
+   * @param region the AWS region
+   * @param assumeRole the AWS role to assume (optional)
+   * @return the AWS credentials provider
+   */
   private AWSCredentialsProvider buildCredentialsProvider(
       final AWSCredentials credentials,
       final String region,
@@ -203,6 +225,11 @@ public class AmazonS3Factory
     }
   }
 
+  /**
+   * Gets the default AWS region.
+   * 
+   * @return the default AWS region
+   */
   private String defaultRegion() {
     try {
       return new DefaultAwsRegionProviderChain().getRegion();
@@ -214,6 +241,12 @@ public class AmazonS3Factory
     }
   }
 
+  /**
+   * Gets the session token from the S3 configuration.
+   * 
+   * @param s3Configuration the S3 configuration
+   * @return the session token, or null if not present
+   */
   private String getSessionToken(final NestedAttributesMap s3Configuration) {
     if (s3Configuration.contains(SESSION_TOKEN_KEY)) {
       return new String(secretsFactory.from(s3Configuration.get(SESSION_TOKEN_KEY, String.class)).decrypt());
@@ -221,6 +254,12 @@ public class AmazonS3Factory
     return null;
   }
 
+  /**
+   * Checks if a value is null, empty, or the default value.
+   * 
+   * @param value the value to check
+   * @return true if the value is null, empty, or the default value
+   */
   private boolean isNullOrEmptyOrDefault(final String value) {
     return isNullOrEmpty(value) || DEFAULT.equals(value);
   }

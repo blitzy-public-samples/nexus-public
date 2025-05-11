@@ -13,19 +13,33 @@
 package org.sonatype.nexus.repository.maven;
 
 /**
- * Layout policy.
- *
+ * Layout policy for Maven repositories.
+ * 
+ * This enum is compatible with Java 21 pattern matching for switch expressions and statements.
+ * Example usage with Java 21 pattern matching:
+ * <pre>
+ * {@code
+ * String description = switch(layoutPolicy) {
+ *   case STRICT -> "Standard Maven 2 layout only";
+ *   case PERMISSIVE -> "Any repository path allowed";
+ * };
+ * }
+ * </pre>
+ * 
  * @since 3.0
+ * @see <a href="https://openjdk.org/jeps/441">JEP 441: Pattern Matching for switch</a>
  */
 public enum LayoutPolicy
 {
   /**
    * Only allow repository paths that are Maven 2 standard layout compliant.
+   * This enforces the standard Maven directory structure and naming conventions.
    */
   STRICT,
 
   /**
-   * Allow any repository paths.
+   * Allow any repository paths without enforcing Maven layout standards.
+   * This provides flexibility for non-standard Maven repository structures.
    */
   PERMISSIVE
 }

@@ -20,88 +20,19 @@ import javax.validation.constraints.NotBlank;
  *
  * @since 3.6
  */
-public class BrowseNodeXO
-{
-  @NotBlank
-  private String id;
-
-  @NotBlank
-  private String text;
-
-  @NotBlank
-  private String type;
-
-  private boolean leaf;
-
-  private String componentId;
-
-  private String assetId;
-
-  private String packageUrl;
-
-  public String getId() {
-    return id;
-  }
-
-  public BrowseNodeXO withId(final String id) {
-    this.id = id;
-    return this;
-  }
-
-  public String getText() {
-    return text;
-  }
-
-  public BrowseNodeXO withText(final String text) {
-    this.text = text;
-    return this;
-  }
-
-  public String getType() {
-    return type;
-  }
-
-  public BrowseNodeXO withType(final String type) {
-    this.type = type;
-    return this;
-  }
-
-  public boolean isLeaf() {
-    return leaf;
-  }
-
-  public BrowseNodeXO withLeaf(final boolean leaf) {
-    this.leaf = leaf;
-    return this;
-  }
-
-  public String getComponentId() {
-    return componentId;
-  }
-
-  public BrowseNodeXO withComponentId(final String componentId) {
-    this.componentId = componentId;
-    return this;
-  }
-
-  public String getAssetId() {
-    return assetId;
-  }
-
-  public BrowseNodeXO withAssetId(final String assetId) {
-    this.assetId = assetId;
-    return this;
-  }
-
-  public String getPackageUrl() {
-    return packageUrl;
-  }
-
-  public BrowseNodeXO withPackageUrl(final String packageUrl) {
-    this.packageUrl = packageUrl;
-    return this;
-  }
-
+public record BrowseNodeXO(
+    @NotBlank String id,
+    @NotBlank String text,
+    @NotBlank String type,
+    boolean leaf,
+    String componentId,
+    String assetId,
+    String packageUrl
+) {
+  /**
+   * Custom equals method that only compares the id field.
+   * This maintains compatibility with the previous implementation.
+   */
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -114,21 +45,89 @@ public class BrowseNodeXO
     return Objects.equals(id, other.id);
   }
 
+  /**
+   * Custom hashCode method that only uses the id field.
+   * This maintains compatibility with the previous implementation.
+   */
   @Override
   public int hashCode() {
     return Objects.hash(id);
   }
+  
+  /**
+   * Creates a new BrowseNodeXO with the specified id.
+   * This maintains the fluent API style of the previous implementation.
+   *
+   * @param id the id to set
+   * @return a new BrowseNodeXO with the updated id
+   */
+  public BrowseNodeXO withId(final String id) {
+    return new BrowseNodeXO(id, this.text, this.type, this.leaf, this.componentId, this.assetId, this.packageUrl);
+  }
 
-  @Override
-  public String toString() {
-    return "BrowseNodeXO{" +
-        "id='" + id + '\'' +
-        ", text='" + text + '\'' +
-        ", type='" + type + '\'' +
-        ", leaf=" + leaf +
-        ", componentId='" + componentId + '\'' +
-        ", assetId='" + assetId + '\'' +
-        ", packageUrl='" + packageUrl + '\'' +
-        '}';
+  /**
+   * Creates a new BrowseNodeXO with the specified text.
+   * This maintains the fluent API style of the previous implementation.
+   *
+   * @param text the text to set
+   * @return a new BrowseNodeXO with the updated text
+   */
+  public BrowseNodeXO withText(final String text) {
+    return new BrowseNodeXO(this.id, text, this.type, this.leaf, this.componentId, this.assetId, this.packageUrl);
+  }
+
+  /**
+   * Creates a new BrowseNodeXO with the specified type.
+   * This maintains the fluent API style of the previous implementation.
+   *
+   * @param type the type to set
+   * @return a new BrowseNodeXO with the updated type
+   */
+  public BrowseNodeXO withType(final String type) {
+    return new BrowseNodeXO(this.id, this.text, type, this.leaf, this.componentId, this.assetId, this.packageUrl);
+  }
+
+  /**
+   * Creates a new BrowseNodeXO with the specified leaf value.
+   * This maintains the fluent API style of the previous implementation.
+   *
+   * @param leaf the leaf value to set
+   * @return a new BrowseNodeXO with the updated leaf value
+   */
+  public BrowseNodeXO withLeaf(final boolean leaf) {
+    return new BrowseNodeXO(this.id, this.text, this.type, leaf, this.componentId, this.assetId, this.packageUrl);
+  }
+
+  /**
+   * Creates a new BrowseNodeXO with the specified componentId.
+   * This maintains the fluent API style of the previous implementation.
+   *
+   * @param componentId the componentId to set
+   * @return a new BrowseNodeXO with the updated componentId
+   */
+  public BrowseNodeXO withComponentId(final String componentId) {
+    return new BrowseNodeXO(this.id, this.text, this.type, this.leaf, componentId, this.assetId, this.packageUrl);
+  }
+
+  /**
+   * Creates a new BrowseNodeXO with the specified assetId.
+   * This maintains the fluent API style of the previous implementation.
+   *
+   * @param assetId the assetId to set
+   * @return a new BrowseNodeXO with the updated assetId
+   */
+  public BrowseNodeXO withAssetId(final String assetId) {
+    return new BrowseNodeXO(this.id, this.text, this.type, this.leaf, this.componentId, assetId, this.packageUrl);
+  }
+
+  /**
+   * Creates a new BrowseNodeXO with the specified packageUrl.
+   * This maintains the fluent API style of the previous implementation.
+   *
+   * @param packageUrl the packageUrl to set
+   * @return a new BrowseNodeXO with the updated packageUrl
+   */
+  public BrowseNodeXO withPackageUrl(final String packageUrl) {
+    return new BrowseNodeXO(this.id, this.text, this.type, this.leaf, this.componentId, this.assetId, packageUrl);
   }
 }

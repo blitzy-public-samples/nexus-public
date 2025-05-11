@@ -12,6 +12,7 @@
  */
 package org.sonatype.nexus.coreui.internal;
 
+import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
@@ -31,6 +32,7 @@ import org.eclipse.sisu.Priority;
 public class UiPluginDescriptorImpl
     extends UiPluginDescriptorSupport
 {
+  @Inject
   public UiPluginDescriptorImpl() {
     super("nexus-coreui-plugin");
     setNamespace("NX.coreui");

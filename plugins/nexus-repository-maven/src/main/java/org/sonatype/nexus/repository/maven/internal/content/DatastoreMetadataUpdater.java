@@ -16,6 +16,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import org.sonatype.nexus.content.maven.MavenContentFacet;
 import org.sonatype.nexus.repository.Repository;
@@ -27,6 +30,7 @@ import org.sonatype.nexus.repository.maven.internal.Constants;
 import org.sonatype.nexus.repository.maven.internal.MavenMimeRulesSource;
 import org.sonatype.nexus.repository.maven.internal.MavenModels;
 import org.sonatype.nexus.repository.maven.internal.hosted.metadata.AbstractMetadataUpdater;
+import org.sonatype.nexus.repository.view.Content;
 import org.sonatype.nexus.repository.view.payloads.BytesPayload;
 import org.sonatype.nexus.repository.view.payloads.StringPayload;
 
@@ -34,8 +38,11 @@ import org.apache.maven.artifact.repository.metadata.Metadata;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
+import static java.lang.StringTemplate.STR;
 
 /**
+ * Maven metadata updater implementation for datastore repositories.
+ * 
  * @since 3.26
  */
 public class DatastoreMetadataUpdater
@@ -47,41 +54,81 @@ public class DatastoreMetadataUpdater
 
   @Override
   protected void write(final MavenPath mavenPath, final Metadata metadata) throws IOException {
-    MavenContentFacet mavenContentFacet = repository.facet(MavenContentFacet.class);
-    final ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-    MavenModels.writeMetadata(buffer, metadata);
-    mavenContentFacet.put(mavenPath, new BytesPayload(buffer.toByteArray(), MavenMimeRulesSource.METADATA_TYPE));
+    // Use a virtual thread for I/O operations
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      Future<Void> writeTask = executor.submit(() -> {
+        MavenContentFacet mavenContentFacet = repository.facet(MavenContentFacet.class);
+        final ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        MavenModels.writeMetadata(buffer, metadata);
+        mavenContentFacet.put(mavenPath, new BytesPayload(buffer.toByteArray(), MavenMimeRulesSource.METADATA_TYPE));
 
-    final Optional<Map<String, String>> hashCodes = mavenContentFacet
-        .assets()
-        .path("/" + mavenPath.getPath())
-        .find()
-        .flatMap(Asset::blob)
-        .map(AssetBlob::checksums);
-    checkState(hashCodes.isPresent(), "hashCodes");
+        final Optional<Map<String, String>> hashCodes = mavenContentFacet
+            .assets()
+            .path("/" + mavenPath.getPath())
+            .find()
+            .flatMap(Asset::blob)
+            .map(AssetBlob::checksums);
+        checkState(hashCodes.isPresent(), "hashCodes");
 
-    for (HashType hashType : HashType.values()) {
-      MavenPath checksumPath = mavenPath.hash(hashType);
-      String hashCode = hashCodes.get().get(hashType.getHashAlgorithm().name());
-      checkState(hashCode != null, "hashCode: type=%s", hashType);
-      mavenContentFacet.put(checksumPath, new StringPayload(hashCode, Constants.CHECKSUM_CONTENT_TYPE));
+        for (HashType hashType : HashType.values()) {
+          MavenPath checksumPath = mavenPath.hash(hashType);
+          String hashCode = hashCodes.get().get(hashType.getHashAlgorithm().name());
+          checkState(hashCode != null, STR."hashCode: type=\{hashType}");
+          mavenContentFacet.put(checksumPath, new StringPayload(hashCode, Constants.CHECKSUM_CONTENT_TYPE));
+        }
+        return null;
+      });
+      
+      try {
+        writeTask.get(); // Wait for the task to complete
+      } 
+      catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new IOException("Interrupted while writing metadata", e);
+      } 
+      catch (ExecutionException e) {
+        Throwable cause = e.getCause();
+        if (cause instanceof IOException) {
+          throw (IOException) cause;
+        }
+        throw new IOException("Error writing metadata", cause);
+      }
     }
   }
 
   @Override
   protected Optional<Metadata> read(final MavenPath mavenPath) throws IOException {
-    return repository.facet(MavenContentFacet.class)
-        .get(mavenPath)
-        .map(content -> {
-          Metadata metadata = null;
-          try {
-            metadata = MavenModels.readMetadata(content.openInputStream());
-          }
-          catch (IOException e) {
-            log.warn("Corrupted metadata {} @ {}", repository.getName(), mavenPath.getPath());
-          }
-          return metadata;
-        });
+    // Use a virtual thread for I/O operations
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      Future<Optional<Metadata>> readTask = executor.submit(() -> {
+        return repository.facet(MavenContentFacet.class)
+            .get(mavenPath)
+            .map(content -> {
+              try {
+                return MavenModels.readMetadata(content.openInputStream());
+              }
+              catch (IOException e) {
+                log.warn(STR."Corrupted metadata \{repository.getName()} @ \{mavenPath.getPath()}");
+                return null;
+              }
+            });
+      });
+      
+      try {
+        return readTask.get(); // Wait for the task to complete
+      } 
+      catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new IOException("Interrupted while reading metadata", e);
+      } 
+      catch (ExecutionException e) {
+        Throwable cause = e.getCause();
+        if (cause instanceof IOException) {
+          throw (IOException) cause;
+        }
+        throw new IOException("Error reading metadata", cause);
+      }
+    }
   }
 
   @Override
@@ -89,7 +136,28 @@ public class DatastoreMetadataUpdater
     checkNotNull(repository);
     checkNotNull(mavenPath);
     try {
-      repository.facet(MavenContentFacet.class).deleteWithHashes(mavenPath);
+      // Use a virtual thread for I/O operations
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        Future<Void> deleteTask = executor.submit(() -> {
+          repository.facet(MavenContentFacet.class).deleteWithHashes(mavenPath);
+          return null;
+        });
+        
+        try {
+          deleteTask.get(); // Wait for the task to complete
+        } 
+        catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          throw new IOException("Interrupted while deleting metadata", e);
+        } 
+        catch (ExecutionException e) {
+          Throwable cause = e.getCause();
+          if (cause instanceof IOException) {
+            throw (IOException) cause;
+          }
+          throw new IOException("Error deleting metadata", cause);
+        }
+      }
     }
     catch (IOException e) {
       throw new RuntimeException(e);

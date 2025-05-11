@@ -24,7 +24,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Provide a mock RepositoryManager
+ * Provide a mock RepositoryManager for testing purposes.
+ * 
+ * This module is compatible with Java 21 and uses Mockito 4.11.0 for mocking.
+ * It creates a mock RepositoryManager that responds to the exists() method
+ * by checking if the provided name is in the predefined list of repository names.
  *
  * @since 3.0
  */

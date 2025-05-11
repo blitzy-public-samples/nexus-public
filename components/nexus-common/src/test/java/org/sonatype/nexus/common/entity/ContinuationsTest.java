@@ -22,7 +22,12 @@ import java.util.function.BiFunction;
 import org.sonatype.goodies.testsupport.TestSupport;
 
 import com.google.common.collect.ForwardingCollection;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.Spy;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.stream.Collectors.toList;
 import static java.util.stream.StreamSupport.stream;
@@ -30,6 +35,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.hasSize;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -38,16 +44,22 @@ import static org.sonatype.nexus.common.entity.Continuations.iterableOf;
 import static org.sonatype.nexus.common.entity.Continuations.iteratorOf;
 import static org.sonatype.nexus.common.entity.Continuations.streamOf;
 
+@ExtendWith(MockitoExtension.class)
 public class ContinuationsTest
     extends TestSupport
 {
   private static final String[] STRINGS =
       new String[]{"one", "two", "three", "four", "five", "six", "seven", "eight"};
 
-  private BrowseMock browseMock = spy(new BrowseMock(STRINGS));
+  private BrowseMock browseMock;
+
+  @BeforeEach
+  void setUp() {
+    browseMock = spy(new BrowseMock(STRINGS));
+  }
 
   @Test
-  public void testStreamOfLimit_Default() {
+  void testStreamOfLimit_Default() {
     int limit = BROWSE_LIMIT;
     assertThat(streamOf(browseMock::browse).collect(toList()), contains(STRINGS));
     verify(browseMock).browse(limit, null);
@@ -55,7 +67,7 @@ public class ContinuationsTest
   }
 
   @Test
-  public void testStreamOfLimit_9() {
+  void testStreamOfLimit_9() {
     int limit = 9;
     assertThat(streamOf(browseMock::browse, limit).collect(toList()), contains(STRINGS));
     verify(browseMock).browse(limit, null);
@@ -63,7 +75,7 @@ public class ContinuationsTest
   }
 
   @Test
-  public void testStreamOfLimit_8() {
+  void testStreamOfLimit_8() {
     int limit = 8;
     assertThat(streamOf(browseMock::browse, limit).collect(toList()), contains(STRINGS));
     verify(browseMock).browse(limit, null);
@@ -72,7 +84,7 @@ public class ContinuationsTest
   }
 
   @Test
-  public void testStreamOfLimit_7() {
+  void testStreamOfLimit_7() {
     int limit = 7;
     assertThat(streamOf(browseMock::browse, limit).collect(toList()), contains(STRINGS));
     verify(browseMock).browse(limit, null);
@@ -81,7 +93,7 @@ public class ContinuationsTest
   }
 
   @Test
-  public void testStreamOfLimit_6() {
+  void testStreamOfLimit_6() {
     int limit = 6;
     assertThat(streamOf(browseMock::browse, limit).collect(toList()), contains(STRINGS));
     verify(browseMock).browse(limit, null);
@@ -90,7 +102,7 @@ public class ContinuationsTest
   }
 
   @Test
-  public void testStreamOfLimit_5() {
+  void testStreamOfLimit_5() {
     int limit = 5;
     assertThat(streamOf(browseMock::browse, limit).collect(toList()), contains(STRINGS));
     verify(browseMock).browse(limit, null);
@@ -99,7 +111,7 @@ public class ContinuationsTest
   }
 
   @Test
-  public void testStreamOfLimit_4() {
+  void testStreamOfLimit_4() {
     int limit = 4;
     assertThat(streamOf(browseMock::browse, limit).collect(toList()), contains(STRINGS));
     verify(browseMock).browse(limit, null);
@@ -109,7 +121,7 @@ public class ContinuationsTest
   }
 
   @Test
-  public void testStreamOfLimit_3() {
+  void testStreamOfLimit_3() {
     int limit = 3;
     assertThat(streamOf(browseMock::browse, limit).collect(toList()), contains(STRINGS));
     verify(browseMock).browse(limit, null);
@@ -119,7 +131,7 @@ public class ContinuationsTest
   }
 
   @Test
-  public void testStreamOfLimit_2() {
+  void testStreamOfLimit_2() {
     int limit = 2;
     assertThat(streamOf(browseMock::browse, limit).collect(toList()), contains(STRINGS));
     verify(browseMock).browse(limit, null);
@@ -131,7 +143,7 @@ public class ContinuationsTest
   }
 
   @Test
-  public void testStreamOfLimit_1() {
+  void testStreamOfLimit_1() {
     int limit = 1;
     assertThat(streamOf(browseMock::browse, limit).collect(toList()), contains(STRINGS));
     verify(browseMock).browse(limit, null);
@@ -147,7 +159,7 @@ public class ContinuationsTest
   }
 
   @Test
-  public void testStreamOfLimit_0() {
+  void testStreamOfLimit_0() {
     int limit = 0;
     assertThat(streamOf(browseMock::browse, limit).collect(toList()), empty());
     verify(browseMock).browse(limit, null);
@@ -155,7 +167,7 @@ public class ContinuationsTest
   }
 
   @Test
-  public void testStreamOfEmptyList() {
+  void testStreamOfEmptyList() {
     browseMock = spy(new BrowseMock());
     assertThat(streamOf(browseMock::browse).collect(toList()), empty());
     verify(browseMock).browse(BROWSE_LIMIT, null);
@@ -163,7 +175,7 @@ public class ContinuationsTest
   }
 
   @Test
-  public void testStreamOfSingleton() {
+  void testStreamOfSingleton() {
     browseMock = spy(new BrowseMock("one"));
     List<String> result = streamOf(browseMock::browse).collect(toList());
     assertThat(result, contains("one"));
@@ -173,7 +185,7 @@ public class ContinuationsTest
   }
 
   @Test
-  public void testStreamOfSingletonWithNull() {
+  void testStreamOfSingletonWithNull() {
     browseMock = spy(new BrowseMock(true, "one"));
     List<String> result = streamOf(browseMock::browse).collect(toList());
     assertThat(result, contains("one"));
@@ -183,46 +195,46 @@ public class ContinuationsTest
   }
 
   @Test
-  public void testIteratorReuse() {
+  void testIteratorReuse() {
     Iterable<String> it = iterableOf(browseMock::browse, 3);
 
     assertThat(stream(it.spliterator(), false).collect(toList()), contains(STRINGS));
     assertThat(stream(it.spliterator(), false).collect(toList()), contains(STRINGS));
   }
 
-  @Test(expected = IllegalArgumentException.class)
-  public void testIteratorNullFunction() {
-    iteratorOf(null);
+  @Test
+  void testIteratorNullFunction() {
+    assertThrows(IllegalArgumentException.class, () -> iteratorOf(null));
   }
 
-  @Test(expected = IllegalArgumentException.class)
-  public void testIteratorNegativeLimit() {
-    iteratorOf(browseMock::browse, -1);
+  @Test
+  void testIteratorNegativeLimit() {
+    assertThrows(IllegalArgumentException.class, () -> iteratorOf(browseMock::browse, -1));
   }
 
-  @Test(expected = IllegalArgumentException.class)
-  public void testIterableNullFunction() {
-    iterableOf(null);
+  @Test
+  void testIterableNullFunction() {
+    assertThrows(IllegalArgumentException.class, () -> iterableOf(null));
   }
 
-  @Test(expected = IllegalArgumentException.class)
-  public void testIterableNegativeLimit() {
-    iterableOf(browseMock::browse, -1);
+  @Test
+  void testIterableNegativeLimit() {
+    assertThrows(IllegalArgumentException.class, () -> iterableOf(browseMock::browse, -1));
   }
 
-  @Test(expected = IllegalArgumentException.class)
-  public void testStreamNullIterable() {
-    streamOf((Iterable<?>) null);
+  @Test
+  void testStreamNullIterable() {
+    assertThrows(IllegalArgumentException.class, () -> streamOf((Iterable<?>) null));
   }
 
-  @Test(expected = IllegalArgumentException.class)
-  public void testStreamNullFunction() {
-    streamOf((BiFunction<Integer, String, Continuation<Object>>) null);
+  @Test
+  void testStreamNullFunction() {
+    assertThrows(IllegalArgumentException.class, () -> streamOf((BiFunction<Integer, String, Continuation<Object>>) null));
   }
 
-  @Test(expected = IllegalArgumentException.class)
-  public void testStreamNegativeLimit() {
-    streamOf(browseMock::browse, -1);
+  @Test
+  void testStreamNegativeLimit() {
+    assertThrows(IllegalArgumentException.class, () -> streamOf(browseMock::browse, -1));
   }
 
   private static class BrowseMock

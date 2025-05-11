@@ -16,18 +16,29 @@ import java.util.regex.Pattern;
 
 /**
  * Legacy format-specific view configuration.
+ * <p>
+ * Implementations of this interface define how legacy URL formats are matched and processed.
+ * When implementing this interface, consider using Java 21 features such as Pattern Matching
+ * for switch expressions in your pattern handling logic for more concise and readable code.
  *
  * @since 3.7
  */
 public interface LegacyViewConfiguration
 {
-  /*
-   * What format is this configuration for?
+  /**
+   * Returns the repository format identifier that this configuration applies to.
+   * 
+   * @return the format identifier as a String
    */
   String getFormat();
 
-  /*
-   * Used to match against the incoming request URL.
+  /**
+   * Returns the pattern used to match against incoming request URLs.
+   * <p>
+   * The pattern is used to determine if a request should be handled by this legacy view.
+   * Implementations can leverage Java 21's enhanced regex capabilities when constructing patterns.
+   * 
+   * @return the regex pattern for matching request URLs
    */
   Pattern getRequestPattern();
 }

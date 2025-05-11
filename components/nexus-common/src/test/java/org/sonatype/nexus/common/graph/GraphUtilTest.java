@@ -15,32 +15,40 @@ package org.sonatype.nexus.common.graph;
 import com.google.common.graph.Graph;
 import com.google.common.graph.GraphBuilder;
 import com.google.common.graph.MutableGraph;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
+/**
+ * Tests for {@link GraphUtil}.
+ */
 public class GraphUtilTest
 {
   private static final String ROOT_NODE = "root";
 
   private static final String TEST_NODE = "test";
 
-  @Test(expected = IllegalStateException.class)
+  @Test
   public void depthRequiresADirectedGraph() {
     Graph<String> undirectedGraph = GraphBuilder.undirected().allowsSelfLoops(false).build();
 
-    GraphUtil.depth(undirectedGraph, "", 0);
+    assertThrows(IllegalStateException.class, () -> {
+      GraphUtil.depth(undirectedGraph, "", 0);
+    });
   }
 
-  @Test(expected = IllegalStateException.class)
+  @Test
   public void depthRequiresNoLoops() {
     MutableGraph<String> directedGraphWithLoops = GraphBuilder.directed().build();
     directedGraphWithLoops.addNode(ROOT_NODE);
     directedGraphWithLoops.putEdge(ROOT_NODE, TEST_NODE);
     directedGraphWithLoops.putEdge(TEST_NODE, ROOT_NODE);
 
-    GraphUtil.depth(directedGraphWithLoops, "", 0);
+    assertThrows(IllegalStateException.class, () -> {
+      GraphUtil.depth(directedGraphWithLoops, "", 0);
+    });
   }
 
   @Test
@@ -66,5 +74,41 @@ public class GraphUtilTest
 
     assertThat(GraphUtil.depth(graph, TEST_NODE, 0), is(5));
     assertThat(GraphUtil.depth(graph, "A", 0), is(4));
+  }
+
+  @Test
+  public void depthHandlesEmptyGraph() {
+    MutableGraph<String> graph = GraphBuilder.directed().allowsSelfLoops(false).build();
+    graph.addNode(ROOT_NODE);
+
+    assertThat(GraphUtil.depth(graph, ROOT_NODE, 0), is(1));
+  }
+
+  @Test
+  public void depthHandlesComplexGraphStructures() {
+    // Create a more complex graph structure to test depth calculation
+    MutableGraph<String> graph = GraphBuilder.directed().allowsSelfLoops(false).build();
+    
+    // Add nodes
+    graph.addNode(ROOT_NODE);
+    graph.addNode(TEST_NODE);
+    graph.addNode("A");
+    graph.addNode("B");
+    graph.addNode("C");
+    graph.addNode("D");
+    graph.addNode("E");
+    
+    // Create a diamond pattern
+    graph.putEdge(ROOT_NODE, TEST_NODE);
+    graph.putEdge(TEST_NODE, "A");
+    graph.putEdge(TEST_NODE, "B");
+    graph.putEdge("A", "C");
+    graph.putEdge("B", "C");
+    graph.putEdge("C", "D");
+    graph.putEdge("D", "E");
+    
+    // The depth should be the longest path from TEST_NODE
+    assertThat(GraphUtil.depth(graph, TEST_NODE, 0), is(5)); // TEST_NODE -> A/B -> C -> D -> E
+    assertThat(GraphUtil.depth(graph, "C", 0), is(3)); // C -> D -> E
   }
 }

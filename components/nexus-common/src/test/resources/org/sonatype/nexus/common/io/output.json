@@ -1,1 +1,106 @@
-{"a":10,"b":[{"m":"foo","n":3.1416,"o":{"x":true,"y":false,"z":null},"A":"*","B":"*","C":"*","D":"*","E":"*","F":{},"G":[],"H":{"I":"foo"},"J":["foo"],"K":{"L":"*"},"M":"*"}],"c":"foo","A":"*","B":"*","C":"*","D":"*","E":"*","F":{},"G":[],"H":{"I":"foo"},"J":["foo"],"K":{"L":"*"},"M":"*"}
+{
+  "a": 10,
+  "b": [
+    {
+      "m": "foo",
+      "n": 3.1416,
+      "o": {
+        "x": true,
+        "y": false,
+        "z": null
+      },
+      "A": "*",
+      "B": "*",
+      "C": "*",
+      "D": "*",
+      "E": "*",
+      "F": {},
+      "G": [],
+      "H": {"I": "foo"},
+      "J": ["foo"],
+      "K": {"L": "*"},
+      "M": "*"
+    }
+  ],
+  "c": "foo",
+  "A": "*",
+  "B": "*",
+  "C": "*",
+  "D": "*",
+  "E": "*",
+  "F": {},
+  "G": [],
+  "H": {"I": "foo"},
+  "J": ["foo"],
+  "K": {"L": "*"},
+  "M": "*",
+  "metadata": {
+    "purpose": "Test fixture for SanitizingJsonOutputStream with Java 21 compatibility",
+    "version": "2.0",
+    "compatibleWith": "Java 21",
+    "lastUpdated": "2023-09-19"
+  },
+  "java21Features": {
+    "virtualThreads": {
+      "threadType": "virtual",
+      "concurrencyModel": "lightweight",
+      "maxConcurrentOperations": 10000,
+      "ioOperations": [
+        {"name": "fileRead", "path": "/tmp/test.txt", "A": "*", "M": "*"},
+        {"name": "httpRequest", "url": "https://example.com/api", "A": "*", "M": "*"},
+        {"name": "databaseQuery", "sql": "SELECT * FROM components", "A": "*", "M": "*"}
+      ],
+      "scheduledTasks": {
+        "taskName": "blobstore-compact",
+        "A": "*",
+        "B": "*",
+        "threadPoolSize": 50
+      }
+    },
+    "recordPatterns": {
+      "componentRecord": {
+        "group": "org.sonatype",
+        "name": "nexus-common",
+        "version": "3.42.0",
+        "A": "*",
+        "B": "*"
+      },
+      "nestedRecords": {
+        "outer": {
+          "middle": {
+            "inner": {
+              "value": 42,
+              "A": "*",
+              "name": "deepNested"
+            }
+          }
+        }
+      },
+      "recordArray": [
+        {"id": 1, "name": "first", "A": "*"},
+        {"id": 2, "name": "second", "A": "*"},
+        {"id": 3, "name": "third", "A": "*"}
+      ]
+    },
+    "stringTemplates": {
+      "simple": "Hello, {name}!",
+      "complex": "User {username} performed {action} on {resource} at {timestamp}",
+      "A": "*",
+      "B": "*",
+      "formatted": "Value: {value}, Formatted: {formattedValue}",
+      "multiline": "Line 1\nLine 2\nLine {lineNumber}",
+      "withExpressions": "The result of {2 + 2} should be 4"
+    },
+    "sequencedCollections": {
+      "orderedList": ["first", "second", "third", "fourth", "fifth"],
+      "A": "*",
+      "B": "*",
+      "orderedMap": [
+        {"key": "a", "value": 1},
+        {"key": "b", "value": 2},
+        {"key": "c", "value": 3}
+      ],
+      "reversedSequence": ["last", "penultimate", "antepenultimate", "first"]
+    }
+  }
+}

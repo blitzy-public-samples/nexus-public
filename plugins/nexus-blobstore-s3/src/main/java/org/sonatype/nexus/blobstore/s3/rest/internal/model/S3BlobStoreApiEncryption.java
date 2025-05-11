@@ -15,7 +15,7 @@ package org.sonatype.nexus.blobstore.s3.rest.internal.model;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import io.swagger.annotations.ApiModelProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import static com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL;
 
@@ -24,31 +24,27 @@ import static com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL;
  * encryption.
  *
  * @since 3.20
+ * @since Java 21 - Converted to record for improved immutability and conciseness
  */
 @JsonInclude(NON_NULL)
-public class S3BlobStoreApiEncryption
-{
-  @ApiModelProperty(value = "The type of S3 server side encryption to use.",
-      allowableValues = "s3ManagedEncryption,kmsManagedEncryption")
-  private final String encryptionType;
+public record S3BlobStoreApiEncryption(
+    @Schema(description = "The type of S3 server side encryption to use.",
+        allowableValues = "s3ManagedEncryption,kmsManagedEncryption")
+    @JsonProperty("encryptionType")
+    String encryptionType,
 
-  @ApiModelProperty("The encryption key.")
-  private final String encryptionKey;
-
+    @Schema(description = "The encryption key.")
+    @JsonProperty("encryptionKey")
+    String encryptionKey
+) {
+  /**
+   * Constructor with explicit property names for Jackson deserialization.
+   * 
+   * @param encryptionType The type of S3 server side encryption to use
+   * @param encryptionKey The encryption key
+   */
   @JsonCreator
-  public S3BlobStoreApiEncryption(
-      @JsonProperty("encryptionType") final String encryptionType,
-      @JsonProperty("encryptionKey") final String encryptionKey)
-  {
-    this.encryptionType = encryptionType;
-    this.encryptionKey = encryptionKey;
-  }
-
-  public String getEncryptionType() {
-    return encryptionType;
-  }
-
-  public String getEncryptionKey() {
-    return encryptionKey;
+  public S3BlobStoreApiEncryption {
+    // Record compact constructor - validation could be added here if needed
   }
 }

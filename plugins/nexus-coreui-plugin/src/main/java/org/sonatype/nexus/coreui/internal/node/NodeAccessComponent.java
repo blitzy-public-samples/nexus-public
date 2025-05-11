@@ -14,9 +14,10 @@ package org.sonatype.nexus.coreui.internal.node;
 
 import java.util.List;
 import java.util.Map.Entry;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import java.util.SequencedCollection;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.common.node.NodeAccess;
 import org.sonatype.nexus.extdirect.DirectComponentSupport;
@@ -28,9 +29,18 @@ import com.softwarementors.extjs.djn.config.annotations.DirectMethod;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.stream.Collectors.toList;
+import static java.lang.StringTemplate.STR;
 
 /**
- * NodeAccessComponent {@link DirectComponentSupport}.
+ * NodeAccessComponent {@link DirectComponentSupport} provides node information for the UI.
+ * <p>
+ * This component has been updated for Java 21 compatibility with the following enhancements:
+ * <ul>
+ *   <li>Uses {@link SequencedCollection} instead of List for ordered collections</li>
+ *   <li>Implements pattern matching for instanceof checks</li>
+ *   <li>Uses String Templates for string formatting</li>
+ *   <li>Uses Jakarta EE injection annotations</li>
+ * </ul>
  */
 @Named
 @Singleton
@@ -40,23 +50,44 @@ public class NodeAccessComponent
 {
   private final NodeAccess nodeAccess;
 
+  /**
+   * Constructor with dependency injection.
+   * 
+   * @param nodeAccess The NodeAccess service to retrieve node information
+   */
   @Inject
   public NodeAccessComponent(final NodeAccess nodeAccess) {
-    this.nodeAccess = checkNotNull(nodeAccess);
+    this.nodeAccess = checkNotNull(nodeAccess, STR."NodeAccess cannot be null");
   }
 
   @DirectMethod
   @Timed
   @ExceptionMetered
-  public List<NodeInfoXO> nodes() {
+  public SequencedCollection<NodeInfoXO> nodes() {
     return nodeAccess.getMemberAliases().entrySet().stream().map(this::asNodeInfoXO).collect(toList());
   }
 
+  /**
+   * Converts a Map.Entry to a NodeInfoXO using pattern matching.
+   * 
+   * @param entry The entry containing node ID and display name
+   * @return A NodeInfoXO with the node information
+   */
   private NodeInfoXO asNodeInfoXO(final Entry<String, String> entry) {
-    return new NodeInfoXO(
-        entry.getKey(),
-        entry.getKey().equals(nodeAccess.getId()),
-        entry.getValue()
-    );
+    // Using pattern matching for Entry
+    if (entry instanceof Entry<String, String> e) {
+      var nodeId = e.getKey();
+      var displayName = e.getValue();
+      var isLocal = nodeId.equals(nodeAccess.getId());
+      
+      var nodeInfoXO = new NodeInfoXO();
+      nodeInfoXO.setName(nodeId);
+      nodeInfoXO.setLocal(isLocal);
+      nodeInfoXO.setDisplayName(displayName);
+      return nodeInfoXO;
+    }
+    
+    // This should never happen as we're already checking the type in the stream
+    throw new IllegalArgumentException(STR."Unexpected entry type: \{entry.getClass().getName()}");
   }
 }

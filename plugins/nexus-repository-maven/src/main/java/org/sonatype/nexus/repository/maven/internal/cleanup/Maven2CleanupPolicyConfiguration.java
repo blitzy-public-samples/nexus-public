@@ -31,6 +31,8 @@ import static org.sonatype.nexus.cleanup.config.CleanupPolicyConstants.RETAIN_SO
 
 /**
  * Defines which cleanup policy fields to display for maven.
+ * 
+ * Compatible with Java 21.
  *
  * @since 3.14
  */

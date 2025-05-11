@@ -12,12 +12,14 @@
  */
 package org.sonatype.nexus.repository.maven.rest;
 
-import javax.inject.Named;
+import jakarta.inject.Named;
 
 import org.sonatype.nexus.repository.config.Configuration;
 import org.sonatype.nexus.repository.rest.api.HostedRepositoryApiRequestToConfigurationConverter;
 
 /**
+ * Converter for Maven hosted repository API requests to repository configuration.
+ * 
  * @since 3.20
  */
 @Named
@@ -26,12 +28,22 @@ public class MavenHostedRepositoryApiRequestToConfigurationConverter
 {
   private static final String MAVEN = "maven";
 
+  /**
+   * Converts a Maven hosted repository API request to a repository configuration.
+   *
+   * @param request the Maven hosted repository API request
+   * @return the repository configuration
+   */
   @Override
   public Configuration convert(final MavenHostedRepositoryApiRequest request) {
-    Configuration configuration = super.convert(request);
-    configuration.attributes(MAVEN).set("versionPolicy", request.getMaven().getVersionPolicy());
-    configuration.attributes(MAVEN).set("layoutPolicy", request.getMaven().getLayoutPolicy());
-    configuration.attributes(MAVEN).set("contentDisposition", request.getMaven().getContentDisposition());
+    var configuration = super.convert(request);
+    var mavenAttributes = configuration.attributes(MAVEN);
+    
+    // Set Maven-specific attributes
+    mavenAttributes.set("versionPolicy", request.getMaven().getVersionPolicy());
+    mavenAttributes.set("layoutPolicy", request.getMaven().getLayoutPolicy());
+    mavenAttributes.set("contentDisposition", request.getMaven().getContentDisposition());
+    
     return configuration;
   }
 }

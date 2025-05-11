@@ -12,19 +12,79 @@
  */
 package org.sonatype.nexus.common.cooperation2.datastore.internal;
 
+import java.util.concurrent.Callable;
+import java.util.function.Supplier;
+
 import org.sonatype.nexus.common.cooperation2.Config;
 import org.sonatype.nexus.common.cooperation2.Cooperation2Factory;
 import org.sonatype.nexus.common.cooperation2.ScopedCooperation2Support;
 
 /**
- * An implementation of {@link Cooperation2Factory} which uses local concurrency controls.
+ * An implementation of {@link Cooperation2Factory} which uses local concurrency controls
+ * optimized for Java 21 Virtual Threads.
+ * 
+ * This implementation leverages Virtual Threads to efficiently handle I/O-bound operations
+ * with minimal resource overhead. Virtual Threads are particularly well-suited for cooperative
+ * execution patterns where multiple threads may be waiting on I/O operations.
  *
  * @since 3.41
  */
 public class LocalCooperation2
     extends ScopedCooperation2Support
 {
+  /**
+   * Creates a new instance with the given scope and configuration.
+   *
+   * @param scope the cooperation scope identifier
+   * @param config the cooperation configuration
+   */
   public LocalCooperation2(final String scope, final Config config) {
     super(scope, config);
+  }
+  
+  /**
+   * Executes the given task using a Virtual Thread.
+   * 
+   * @param <T> the return type of the task
+   * @param task the task to execute
+   * @return the result of the task
+   */
+  public <T> T executeWithVirtualThread(final Callable<T> task) {
+    try {
+      // Create a holder for the result
+      final Supplier<T>[] resultHolder = new Supplier[1];
+      
+      // Submit the task to be executed by a virtual thread
+      submitVirtualThreadTask(() -> {
+        try {
+          T result = task.call();
+          resultHolder[0] = () -> result;
+        }
+        catch (Exception e) {
+          resultHolder[0] = () -> { throw new RuntimeException(e); };
+        }
+      });
+      
+      // Wait for the result
+      while (resultHolder[0] == null) {
+        Thread.yield();
+      }
+      
+      // Return the result
+      return resultHolder[0].get();
+    }
+    catch (RuntimeException e) {
+      if (e.getCause() != null) {
+        throw new RuntimeException(e.getCause());
+      }
+      throw e;
+    }
+  }
+  
+  /**
+   * Releases resources when this component is being disposed.
+   */
+  public void dispose() {
+    shutdown();
   }
 }

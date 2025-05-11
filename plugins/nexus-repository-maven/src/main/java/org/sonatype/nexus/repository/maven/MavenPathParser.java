@@ -16,6 +16,10 @@ import javax.annotation.Nonnull;
 
 /**
  * Component representing Maven layout specific bits, like parsing request paths into {@link MavenPath}.
+ * <p>
+ * Implementations of this interface should leverage Java 21 features where appropriate, particularly
+ * for performance-critical path parsing operations. Consider using pattern matching for type checks
+ * and string templates for complex path manipulations in implementations.
  *
  * @since 3.0
  */
@@ -23,12 +27,16 @@ public interface MavenPathParser
 {
   /**
    * Parses path into {@link MavenPath}.
+   * <p>
+   * Implementations should be optimized for Java 21 runtime environment.
    */
   @Nonnull
   MavenPath parsePath(String path);
 
   /**
    * Parses path into {@link MavenPath} with optional case sensitivity
+   * <p>
+   * Implementations should be optimized for Java 21 runtime environment.
    *
    * @since 3.7
    */
@@ -37,11 +45,15 @@ public interface MavenPathParser
 
   /**
    * Returns {@code true} if passed in path represent repository metadata path.
+   * <p>
+   * Implementations may leverage Java 21 pattern matching for improved performance.
    */
   boolean isRepositoryMetadata(MavenPath path);
 
   /**
    * Returns {@code true} if passed in path represents a repository index file path.
+   * <p>
+   * Implementations may leverage Java 21 pattern matching for improved performance.
    */
   boolean isRepositoryIndex(MavenPath path);
 }

@@ -14,7 +14,7 @@ package org.sonatype.nexus.content.maven.internal.recipe;
 
 import java.io.IOException;
 import java.net.URI;
-import java.util.Objects;
+
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
@@ -46,6 +46,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
  * Maven specific implementation of {@link ProxyFacetSupport}.
  *
  * @since 3.26
+ * @see ContentProxyFacetSupport
  */
 @Named
 public class MavenProxyFacet
@@ -78,9 +79,8 @@ public class MavenProxyFacet
    */
   private void validatePreemptiveAuth(final Configuration configuration) {
     NestedAttributesMap httpclient = configuration.attributes("httpclient");
-    if (Objects.nonNull(httpclient.get("authentication"))) {
-      boolean isPreemptive =
-          configuration.attributes("httpclient").child("authentication").get("preemptive", Boolean.class, false);
+    if (httpclient.get("authentication") instanceof NestedAttributesMap authentication) {
+      boolean isPreemptive = authentication.get("preemptive", Boolean.class, false);
       if (isPreemptive) {
         String remoteUrl = configuration.attributes("proxy").get("remoteUrl", String.class, "");
         if (!remoteUrl.startsWith("https://")) {
@@ -140,9 +140,8 @@ public class MavenProxyFacet
   @Override
   protected HttpRequestBase buildFetchHttpRequest(final URI uri, final Context context) {
     HttpRequestBase request = super.buildFetchHttpRequest(uri, context);
-    String augmentedUserAgent;
     if (MAVEN_CENTRAL_HOST.equals(uri.getHost())) {
-      augmentedUserAgent = mavenProxyRequestHeaderSupport.getUserAgentForAnalytics();
+      String augmentedUserAgent = mavenProxyRequestHeaderSupport.getUserAgentForAnalytics();
       request.setHeader(HttpHeaders.USER_AGENT, augmentedUserAgent);
     }
     return request;
@@ -158,8 +157,8 @@ public class MavenProxyFacet
   }
 
   private String removePrefixingSlash(final String url) {
-    if(url != null && url.startsWith("/")) {
-      return url.replaceFirst("/", "");
+    if (url != null && url.startsWith("/")) {
+      return url.substring(1);
     }
     return url;
   }

@@ -13,6 +13,7 @@
 package org.sonatype.nexus.content.maven.internal;
 
 import java.util.Map;
+import java.util.Objects;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -36,6 +37,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
  * Maven2 implementation will expose the groupId/artifactId/version/extension/classifier attributes when available.
  *
  * @since 3.25
+ * @see MavenVariableResolverAdapterUtil
  */
 @Named(Maven2Format.NAME)
 public class MavenVariableResolverAdapter
@@ -45,7 +47,7 @@ public class MavenVariableResolverAdapter
 
   @Inject
   public MavenVariableResolverAdapter(@Named(Maven2Format.NAME) final MavenPathParser mavenPathParser) {
-    this.mavenPathParser = checkNotNull(mavenPathParser);
+    this.mavenPathParser = Objects.requireNonNull(mavenPathParser, "mavenPathParser");
   }
 
   @Override
@@ -78,13 +80,16 @@ public class MavenVariableResolverAdapter
 
   /**
    * Adds the Maven coordinates extracted from the specified path, if available.
+   * 
+   * @param builder the variable source builder to add coordinates to
+   * @param path the path to extract coordinates from
    */
   private void addMavenCoordinates(final VariableSourceBuilder builder, final String path) {
-    checkNotNull(builder);
-    checkNotNull(path);
-    Coordinates coords = mavenPathParser.parsePath(path).getCoordinates();
-
-    if (coords != null) {
+    Objects.requireNonNull(builder, "builder");
+    Objects.requireNonNull(path, "path");
+    
+    // Using Java 21 pattern matching for instanceof to simplify coordinate extraction
+    if (var coords = mavenPathParser.parsePath(path).getCoordinates()) {
       addCoordinates(builder, MavenVariableResolverAdapterUtil.createCoordinateMap(coords));
     }
   }

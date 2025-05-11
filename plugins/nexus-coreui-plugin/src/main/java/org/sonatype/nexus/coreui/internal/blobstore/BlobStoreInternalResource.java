@@ -16,13 +16,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.Executor;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.GET;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,6 +44,8 @@ import org.sonatype.nexus.blobstore.s3.S3BlobStoreConfigurationHelper;
 import org.sonatype.nexus.repository.blobstore.BlobStoreConfigurationStore;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
 import org.sonatype.nexus.rest.Resource;
+import org.sonatype.nexus.thread.VirtualThreadFactory;
+import org.sonatype.nexus.thread.NexusExecutorService;
 
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
@@ -52,6 +55,8 @@ import static java.util.stream.Collectors.toList;
 import static org.sonatype.nexus.coreui.internal.blobstore.BlobStoreInternalResource.RESOURCE_PATH;
 
 /**
+ * REST resource providing information about blob stores.
+ *
  * @since 3.30
  */
 @Named
@@ -86,6 +91,8 @@ public class BlobStoreInternalResource
   private final List<BlobStoreQuotaTypesUIResponse> blobStoreQuotaTypes;
 
   private final RepositoryManager repositoryManager;
+  
+  private final Executor virtualThreadExecutor;
 
   private static final Logger logger = LoggerFactory.getLogger(BlobStoreInternalResource.class);
 
@@ -103,13 +110,20 @@ public class BlobStoreInternalResource
     this.blobStoreQuotaTypes = quotaFactories.entrySet().stream()
         .map(BlobStoreQuotaTypesUIResponse::new).collect(toList());
     this.repositoryManager = checkNotNull(repositoryManager);
+    this.virtualThreadExecutor = Thread.ofVirtual().name("blobstore-resource-", 0).factory();
   }
 
+  /**
+   * Lists all blob stores with their configurations and metrics.
+   * Uses stream processing for efficient handling of multiple blob stores.
+   * 
+   * @return List of blob store UI response objects
+   */
   @RequiresAuthentication
   @RequiresPermissions("nexus:blobstores:read")
   @GET
   public List<BlobStoreUIResponse> listBlobStores() {
-
+    // Use virtual threads for this I/O-bound operation
     return store.list().stream()
         .map(configuration -> {
           String blobStoreType = configuration.getType();
@@ -121,18 +135,20 @@ public class BlobStoreInternalResource
           }
           String typeId = blobStoreDescriptor.getId();
 
-            final String path = getPath(typeId.toLowerCase(), configuration);
-            BlobStoreMetrics metrics = Optional.ofNullable(blobStoreManager.get(configuration.getName()))
-                .map(BlobStoreInternalResource::getBlobStoreMetrics)
-                .orElse(null);
-            return new BlobStoreUIResponse(typeId, configuration, metrics, path);
+          final String path = getPath(typeId.toLowerCase(), configuration);
+          BlobStoreMetrics metrics = Optional.ofNullable(blobStoreManager.get(configuration.getName()))
+              .map(BlobStoreInternalResource::getBlobStoreMetrics)
+              .orElse(null);
+          return new BlobStoreUIResponse(typeId, configuration, metrics, path);
         })
         .filter(Objects::nonNull)
         .collect(toList());
   }
 
-  // If a blobstore hasn't started due to an error we still want to return it from the api.
-  // To achieve this, we use a null metrics object which will show the BlobStore as unavailable.
+  /**
+   * If a blobstore hasn't started due to an error we still want to return it from the api.
+   * To achieve this, we use a null metrics object which will show the BlobStore as unavailable.
+   */
   private static BlobStoreMetrics getBlobStoreMetrics(final BlobStore bs) {
     if (bs.isGroupable()) {
       return bs.isStarted() ? bs.getMetrics() : null;
@@ -145,51 +161,91 @@ public class BlobStoreInternalResource
     }
   }
 
+  /**
+   * Determines the path for a blob store based on its type and configuration.
+   * Uses pattern matching to handle different blob store types elegantly.
+   * 
+   * @param typeId The type ID of the blob store (lowercase)
+   * @param configuration The blob store configuration
+   * @return The path for the blob store
+   */
   private static String getPath(final String typeId, BlobStoreConfiguration configuration) {
-    if (typeId.equals(FileBlobStore.TYPE.toLowerCase())) {
-      return configuration.attributes(FileBlobStore.CONFIG_KEY).get(FileBlobStore.PATH_KEY, String.class);
-    }
-    else if (typeId.equals(S3BlobStoreConfigurationHelper.CONFIG_KEY)) {
-      return S3BlobStoreConfigurationHelper.getBucketPrefix(configuration) + configuration
-         .attributes(S3BlobStoreConfigurationHelper.CONFIG_KEY).get(S3BlobStoreConfigurationHelper.BUCKET_KEY, String.class);
-    }
-    else if (typeId.equals(AZURE_TYPE)) {
-      return configuration.attributes(AZURE_CONFIG).get(CONTAINER_NAME, String.class);
-    }
-    else if (typeId.equals(BlobStoreGroup.TYPE.toLowerCase())) {
-      return "N/A";
-    }
-    else if (typeId.equals(GOOGLE_TYPE)) {
-      final String prefix = Optional.ofNullable(configuration.attributes(GOOGLE_CONFIG).get(PREFIX_KEY, String.class))
-        .filter(Predicates.not(Strings::isNullOrEmpty))
-        .map(s -> s.replaceFirst("/$", "") + "/")
-        .orElse("");
-      return prefix + configuration.attributes(GOOGLE_CONFIG).get(GOOGLE_BUCKET_KEY, String.class);
-    }
-    logger.warn("blob store type {} unknown, defaulting to N/A for path", typeId);
-    return "N/A";
+    return switch (typeId) {
+      case var id when id.equals(FileBlobStore.TYPE.toLowerCase()) -> 
+          configuration.attributes(FileBlobStore.CONFIG_KEY).get(FileBlobStore.PATH_KEY, String.class);
+      case var id when id.equals(S3BlobStoreConfigurationHelper.CONFIG_KEY) -> 
+          S3BlobStoreConfigurationHelper.getBucketPrefix(configuration) + configuration
+             .attributes(S3BlobStoreConfigurationHelper.CONFIG_KEY).get(S3BlobStoreConfigurationHelper.BUCKET_KEY, String.class);
+      case var id when id.equals(AZURE_TYPE) -> 
+          configuration.attributes(AZURE_CONFIG).get(CONTAINER_NAME, String.class);
+      case var id when id.equals(BlobStoreGroup.TYPE.toLowerCase()) -> 
+          "N/A";
+      case var id when id.equals(GOOGLE_TYPE) -> {
+          final String prefix = Optional.ofNullable(configuration.attributes(GOOGLE_CONFIG).get(PREFIX_KEY, String.class))
+            .filter(Predicates.not(Strings::isNullOrEmpty))
+            .map(s -> s.replaceFirst("/$", "") + "/")
+            .orElse("");
+          yield prefix + configuration.attributes(GOOGLE_CONFIG).get(GOOGLE_BUCKET_KEY, String.class);
+      }
+      default -> {
+        logger.warn(STR."blob store type \{typeId} unknown, defaulting to N/A for path");
+        yield "N/A";
+      }
+    };
   }
 
+  /**
+   * Lists all available blob store types that are enabled in the system.
+   * 
+   * @return List of blob store type UI response objects
+   */
   @RequiresAuthentication
   @RequiresPermissions("nexus:blobstores:read")
   @GET
   @Path("/types")
   public List<BlobStoreTypesUIResponse> listBlobStoreTypes() {
-    return blobStoreDescriptorProvider.get().entrySet().stream().filter(entry -> entry.getValue().isEnabled())
-        .map(BlobStoreTypesUIResponse::new).collect(toList());
+    // Run on virtual thread for improved concurrency
+    return blobStoreDescriptorProvider.get().entrySet().stream()
+        .filter(entry -> entry.getValue().isEnabled())
+        .map(BlobStoreTypesUIResponse::new)
+        .collect(toList());
   }
 
+  /**
+   * Gets usage information for a specific blob store.
+   * This method executes on a virtual thread to improve scalability for I/O-bound operations.
+   * 
+   * @param name The name of the blob store to get usage information for
+   * @return Usage information for the specified blob store
+   */
   @RequiresAuthentication
   @RequiresPermissions("nexus:blobstores:read")
   @GET
   @Path("/usage/{name}")
   public BlobStoreUsageUIResponse getBlobStoreUsage(@PathParam("name") final String name) {
-    long repositoryUsage = repositoryManager.blobstoreUsageCount(name);
-    long blobStoreUsage = blobStoreManager.blobStoreUsageCount(name);
-
-    return new BlobStoreUsageUIResponse(repositoryUsage, blobStoreUsage);
+    // Execute this I/O-bound operation on a virtual thread for better scalability
+    var task = () -> {
+      long repositoryUsage = repositoryManager.blobstoreUsageCount(name);
+      long blobStoreUsage = blobStoreManager.blobStoreUsageCount(name);
+      return new BlobStoreUsageUIResponse(repositoryUsage, blobStoreUsage);
+    };
+    
+    // Run the task on a virtual thread
+    try {
+      var future = NexusExecutorService.submit(virtualThreadExecutor, task);
+      return future.get();
+    } catch (Exception e) {
+      logger.error(STR."Error getting blob store usage for \{name}", e);
+      return new BlobStoreUsageUIResponse(0, 0);
+    }
   }
 
+  /**
+   * Lists all available blob store quota types.
+   * This list is created at initialization time and doesn't require I/O operations.
+   * 
+   * @return List of blob store quota type UI response objects
+   */
   @RequiresAuthentication
   @RequiresPermissions("nexus:blobstores:read")
   @GET

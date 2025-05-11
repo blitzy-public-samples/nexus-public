@@ -15,7 +15,7 @@ package org.sonatype.nexus.repository.maven.internal.hosted.metadata;
 import java.util.List;
 import java.util.Set;
 
-import javax.annotation.Nullable;
+import jakarta.annotation.Nullable;
 
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.transaction.Transactional;

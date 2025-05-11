@@ -15,23 +15,34 @@ package org.sonatype.nexus.coreui.internal;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.db.DatabaseCheck;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+/**
+ * Tests for {@link DatastoreStateContributor} with Java 21 and JUnit Jupiter compatibility.
+ */
+@ExtendWith(MockitoExtension.class)
 public class DatastoreStateContributorTest
     extends TestSupport
 {
+  @Mock
+  private DatabaseCheck dbCheck;
+
   @Test
-  public void datastoreStateContributorExposesIsPostgresqlState() {
-    DatabaseCheck dbCheck = mock(DatabaseCheck.class);
+  public void shouldExposeIsPostgresqlState() {
+    // Configure mock behavior
     when(dbCheck.isPostgresql()).thenReturn(true);
 
+    // Create the component under test
     DatastoreStateContributor contributor = new DatastoreStateContributor(false, false, dbCheck);
 
+    // Verify the expected behavior
     assertThat(contributor.getState().get("datastore.isPostgresql"), is(true));
   }
 }

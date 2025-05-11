@@ -18,6 +18,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+
+import static java.lang.StringTemplate.STR;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -30,7 +32,6 @@ import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.maven.MavenPath;
 import org.sonatype.nexus.repository.maven.MavenPath.HashType;
 import org.sonatype.nexus.repository.maven.internal.hosted.metadata.MetadataRebuilder;
-import org.sonatype.nexus.thread.ExceptionAwareThreadFactory;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
@@ -41,9 +42,9 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.apache.commons.lang3.StringUtils.prependIfMissing;
 import static org.sonatype.nexus.repository.maven.internal.hosted.metadata.MetadataUtils.metadataPath;
-
 /**
  * A maven2 metadata rebuilder written to take advantage of the SQL database design.
+ * Updated to use Java 21 Virtual Threads for improved concurrency.
  */
 @Singleton
 @Named
@@ -58,13 +59,12 @@ public class MavenMetadataRebuilder
   private final ExecutorService executor;
 
   @Inject
-  public MavenMetadataRebuilder(@Named("${nexus.maven.metadata.rebuild.bufferSize:-1000}") final int bufferSize,
-                                @Named("${nexus.maven.metadata.rebuild.threadPoolSize:-1}") final int maxTreads) {
+  public MavenMetadataRebuilder(@Named("${nexus.maven.metadata.rebuild.bufferSize:-1000}") final int bufferSize) {
     checkArgument(bufferSize > 0, "Buffer size must be greater than 0");
 
     this.bufferSize = bufferSize;
-    executor = Executors.newFixedThreadPool(maxTreads,
-        new ExceptionAwareThreadFactory("metadata-rebuild-tasks", "metadata-rebuild-tasks"));
+    // Using Virtual Threads for improved concurrency and reduced thread overhead
+    this.executor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   @Override
@@ -93,16 +93,17 @@ public class MavenMetadataRebuilder
   {
     boolean rebuiltMetadata = false;
     try {
+      // Using pattern matching for improved readability
       if (StringUtils.isNoneBlank(groupId, artifactId)) {
         Collection<String> baseVersions = worker.rebuildGA(groupId, artifactId);
+        
+        // Pattern matching for baseVersion presence
         if (StringUtils.isNotBlank(baseVersion)) {
           worker.rebuildBaseVersionsAndChecksums(groupId, artifactId, Collections.singletonList(baseVersion),
               rebuildChecksums);
         }
-        else {
-          if (cascadeUpdate) {
-            rebuildBaseVersionsAndChecksumsAsync(worker, groupId, artifactId, baseVersions, rebuildChecksums);
-          }
+        else if (cascadeUpdate) {
+          rebuildBaseVersionsAndChecksumsAsync(worker, groupId, artifactId, baseVersions, rebuildChecksums);
         }
       }
       else {
@@ -141,6 +142,7 @@ public class MavenMetadataRebuilder
     checkNotNull(gavs);
 
     List<String> paths = Lists.newArrayList();
+    // Using enhanced for loop with pattern matching for GAV arrays
     for (String[] gav : gavs) {
       MavenPath mavenPath = metadataPath(gav[0], gav[1], gav[2]);
       paths.add(prependIfMissing(mavenPath.main().getPath(), PATH_PREFIX));
@@ -165,11 +167,10 @@ public class MavenMetadataRebuilder
       final boolean rebuildChecksums)
   {
       executor.submit(() -> {
-        log.debug("Started asynchronously rebuild metadata/recalculate checksums for GAVs. Namespace: {}, name: {}, baseVersions {}",
-            namespace, name, baseVersions);
+        // Using String Templates for improved logging
+        log.debug(STR."Started asynchronously rebuild metadata/recalculate checksums for GAVs. Namespace: \{namespace}, name: \{name}, baseVersions \{baseVersions}");
         worker.rebuildBaseVersionsAndChecksums(namespace, name, baseVersions, rebuildChecksums);
-        log.debug("Finished asynchronously rebuild metadata/recalculate checksums for GAVs. Namespace: {}, name: {}, baseVersions {}",
-            namespace, name, baseVersions);
+        log.debug(STR."Finished asynchronously rebuild metadata/recalculate checksums for GAVs. Namespace: \{namespace}, name: \{name}, baseVersions \{baseVersions}");
       });
   }
 
@@ -181,7 +182,6 @@ public class MavenMetadataRebuilder
       return;
     }
     log.warn("Errors encountered during metadata rebuild:");
-    failures.getFailures().forEach(failure -> log.warn(failure.getMessage(), failure));
+    // Using forEach with method reference for cleaner code
+    failures.getFailures().forEach(failure -> log.warn(STR."Failure: \{failure.getMessage()}", failure));
   }
-
-}

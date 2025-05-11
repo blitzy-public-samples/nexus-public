@@ -15,31 +15,40 @@ package org.sonatype.nexus.blobstore.restore.datastore;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
-import javax.annotation.Nullable;
-
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.content.Asset;
 
 /**
- * Strategy for checking the integrity of the assets in a repository against its blobstore
+ * Strategy for checking the integrity of the assets in a repository against its blobstore.
+ * 
+ * <p>Implementations of this interface should leverage Java 21 features such as Virtual Threads
+ * for I/O-bound operations and pattern matching for type checks where appropriate.</p>
+ * 
+ * <p>This interface is designed to be compatible with OSGi service registration and can be
+ * implemented by multiple providers to support different integrity check strategies.</p>
  *
  * @since 3.29
  */
 public interface IntegrityCheckStrategy
 {
   /**
-   * Run the integrity check on the given repository and blob store
+   * Run the integrity check on the given repository and blob store.
+   * 
+   * <p>Implementations should consider using Virtual Threads for I/O operations
+   * to improve performance when checking large repositories.</p>
    *
    * @param repository  repository to check
    * @param blobStore   blob store to check
-   * @param isCancelled Supplier to check during processing if the task is cancelled
-   * @param integrityCheckFailedHandler will be called with Asset if unable to validate blob integrity
+   * @param isCancelled supplier to check during processing if the task is cancelled
+   * @param sinceDays   number of days to look back for assets to check, or 0 for all assets
+   * @param integrityCheckFailedHandler will be called with Asset if unable to validate blob integrity;
+   *                                    may be null if no special handling is needed
    */
   void check(
-      final Repository repository,
-      final BlobStore blobStore,
-      final BooleanSupplier isCancelled,
-      final int sinceDays,
-      @Nullable final Consumer<Asset> integrityCheckFailedHandler);
+      Repository repository,
+      BlobStore blobStore,
+      BooleanSupplier isCancelled,
+      int sinceDays,
+      Consumer<Asset> integrityCheckFailedHandler);
 }

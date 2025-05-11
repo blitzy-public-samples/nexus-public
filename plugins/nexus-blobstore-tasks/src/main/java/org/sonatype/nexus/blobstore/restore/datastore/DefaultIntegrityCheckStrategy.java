@@ -15,8 +15,14 @@ package org.sonatype.nexus.blobstore.restore.datastore;
 import java.time.LocalDate;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+import java.util.List;
+import java.util.ArrayList;
 
 import javax.annotation.Nullable;
 import javax.inject.Inject;
@@ -42,13 +48,18 @@ import org.sonatype.nexus.repository.content.fluent.FluentAssets;
 import org.apache.commons.lang.StringUtils;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static java.lang.StringTemplate.STR;
 import static java.time.LocalDate.now;
+import static java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor;
 import static org.sonatype.nexus.blobstore.api.BlobAttributesConstants.HEADER_PREFIX;
 import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_NAME_HEADER;
 import static org.sonatype.nexus.common.hash.HashAlgorithm.SHA1;
 
 /**
  * Default {@link IntegrityCheckStrategy} which checks name and SHA1 checksum
+ * 
+ * This implementation leverages Java 21 Virtual Threads for improved performance
+ * with I/O-bound operations and uses string templates for structured logging.
  *
  * @since 3.29
  */
@@ -99,6 +110,12 @@ public class DefaultIntegrityCheckStrategy
     this.browseBatchSize = browseBatchSize;
   }
 
+  /**
+   * Checks the integrity of assets in a repository using virtual threads for improved performance.
+   * This implementation leverages Java 21 virtual threads to process assets concurrently,
+   * which is particularly beneficial for I/O-bound operations like blob attribute retrieval
+   * and blob data existence checks.
+   */
   @Override
   public void check(
       final Repository repository,
@@ -107,8 +124,7 @@ public class DefaultIntegrityCheckStrategy
       final int sinceDays,
       @Nullable final Consumer<Asset> integrityCheckFailedHandler)
   {
-    log.info("Checking integrity of assets in repository '{}' with blob store '{}'", repository.getName(),
-        blobStore.getBlobStoreConfiguration().getName());
+    log.info(STR."Checking integrity of assets in repository '\{repository.getName()}' with blob store '\{blobStore.getBlobStoreConfiguration().getName()}'")
 
     long processed = 0;
     long failures = 0;
@@ -118,42 +134,71 @@ public class DefaultIntegrityCheckStrategy
       sinceDate = now().minusDays(sinceDays);
     }
 
-    try (ProgressLogIntervalHelper progressLogger = new ProgressLogIntervalHelper(log, 60)) {
+    // Create a virtual thread executor that will automatically create a new virtual thread for each task
+    // Virtual threads are lightweight and efficient for I/O-bound operations
+    try (ProgressLogIntervalHelper progressLogger = new ProgressLogIntervalHelper(log, 60);
+         ExecutorService executor = newVirtualThreadPerTaskExecutor()) {
       FluentAssets fluentAssets = repository.facet(ContentFacet.class).assets();
       Continuation<FluentAsset> assets = fluentAssets.browse(browseBatchSize, null);
+      
       while (!assets.isEmpty()) {
+        if (isCancelled.getAsBoolean()) {
+          log.warn(CANCEL_WARNING);
+          return;
+        }
+        
+        // Create a list to hold assets that pass the date filter
+        List<FluentAsset> filteredAssets = new ArrayList<>();
         for (FluentAsset asset : assets) {
-          if (isCancelled.getAsBoolean()) {
-            log.warn(CANCEL_WARNING);
-            return;
-          }
-
           if (sinceDate != null) {
             LocalDate assetDate = asset.blob().get().blobCreated().toLocalDate();
             if (sinceDate.isAfter(assetDate)) {
               continue;
             }
           }
-
-          log.debug("Checking asset {}", asset.path());
-          boolean failed = checkAsset(asset, blobStore);
-
-          if (failed) {
-            failures++;
-            if (integrityCheckFailedHandler != null) {
-              integrityCheckFailedHandler.accept(asset);
-            }
-          }
-
-          progressLogger
-              .info("Elapsed time: {}, processed: {}, failed integrity check: {}", progressLogger.getElapsed(),
-                  ++processed, failures);
+          filteredAssets.add(asset);
         }
-
+        
+        // Process assets in parallel using virtual threads
+        // Each asset check is submitted as a separate task to the virtual thread executor
+        List<Future<AssetCheckResult>> futures = new ArrayList<>();
+        for (FluentAsset asset : filteredAssets) {
+          futures.add(executor.submit(() -> {
+            log.debug(STR."Checking asset \{asset.path()}");
+            boolean failed = checkAsset(asset, blobStore);
+            return new AssetCheckResult(asset, failed);
+          }));
+        }
+        
+        // Process results as they complete
+        for (Future<AssetCheckResult> future : futures) {
+          try {
+            AssetCheckResult result = future.get(); // This will block until the result is available
+            if (result.failed) {
+              failures++;
+              if (integrityCheckFailedHandler != null) {
+                integrityCheckFailedHandler.accept(result.asset);
+              }
+            }
+            processed++;
+            
+            // Log progress periodically
+            progressLogger.info(STR."Elapsed time: \{progressLogger.getElapsed()}, processed: \{processed}, failed integrity check: \{failures}");
+          } catch (Exception e) {
+            log.error(STR."Error processing asset: \{e.getMessage()}", e);
+          }
+        }
+        
         assets = fluentAssets.browse(browseBatchSize, assets.nextContinuationToken());
       }
     }
   }
+  
+  /**
+   * Helper record class to hold the result of an asset check operation.
+   * Using Java record for immutable data transfer objects is a best practice in Java 21.
+   */
+  private record AssetCheckResult(FluentAsset asset, boolean failed) {}
 
   private boolean checkAsset(final Asset asset, final BlobStore blobStore) {
     try {
@@ -162,26 +207,28 @@ public class DefaultIntegrityCheckStrategy
           .map(BlobRef::getBlobId);
 
       if (!blobId.isPresent()) {
-        log.error(ERROR_ACCESSING_BLOB, asset.path());
+        log.error(STR."Error accessing blob for asset '\{asset.path()}'")
         return true;
       }
 
+      // This method is already running in a virtual thread, so we can directly make I/O calls
+      // which will automatically yield when blocked
       BlobAttributes blobAttributes = blobStore.getBlobAttributes(blobId.get());
 
       if (blobAttributes == null) {
-        log.error(BLOB_PROPERTIES_MISSING_FOR_ASSET, asset.path());
+        log.error(STR."Blob properties missing for asset '\{asset.path()}'")
         return true;
       }
       else if (blobAttributes.isDeleted()) {
-        log.warn(BLOB_PROPERTIES_MARKED_AS_DELETED, asset.path());
+        log.warn(STR."Blob properties marked as deleted for asset '\{asset.path()}'. Will be removed on next compact.")
         return true;
       }
       else if (!blobDataExists(blobStore.get(blobId.get()))) {
-        log.error(BLOB_DATA_MISSING_FOR_ASSET, asset.path());
+        log.error(STR."Blob data missing for asset '\{asset.path()}'")
         return true;
       }
       else if (!checkAssetIntegrity(blobAttributes, asset)) {
-        log.error(ASSET_INTEGRITY_CHECK_FAILED, asset.path());
+        log.error(STR."Asset integrity check failed for \{asset.path()}")
         return true;
       }
       else {
@@ -190,11 +237,15 @@ public class DefaultIntegrityCheckStrategy
     }
     catch (IllegalArgumentException e) {
       // thrown by checkAsset inner methods
-      log.error(ERROR_PROCESSING_ASSET_WITH_EX, asset.toString(), e.getMessage(), log.isDebugEnabled() ? e : null);
+      if (log.isDebugEnabled()) {
+        log.error(STR."Error processing asset '\{asset}'. \{e.getMessage()}", e);
+      } else {
+        log.error(STR."Error processing asset '\{asset}'. \{e.getMessage()}");
+      }
       return true;
     }
     catch (Exception e) {
-      log.error(ERROR_PROCESSING_ASSET, asset.toString(), e);
+      log.error(STR."Error processing asset '\{asset}'", e);
       return true;
     }
   }
@@ -220,7 +271,7 @@ public class DefaultIntegrityCheckStrategy
     String blobSha1 = getBlobSha1(blobAttributes);
 
     if (!Objects.equals(assetSha1, blobSha1)) {
-      log.error(SHA1_MISMATCH, asset.path(), assetSha1, blobSha1);
+      log.error(STR."SHA1 does not match on asset '\{asset.path()}'! Metadata SHA1: '\{assetSha1}', Blob SHA1: '\{blobSha1}'")
       return false;
     }
 
@@ -262,7 +313,7 @@ public class DefaultIntegrityCheckStrategy
     }
 
     if (!StringUtils.equals(assetName, blobName)) {
-      log.error(NAME_MISMATCH, blobName, assetName);
+      log.error(STR."Name does not match on asset! Metadata name: '\{blobName}', Blob name: '\{assetName}'")
       return false;
     }
 
@@ -270,10 +321,17 @@ public class DefaultIntegrityCheckStrategy
   }
 
   /**
-   * returns true if the blobs data is accessible, false otherwise
+   * Returns true if the blob's data is accessible, false otherwise.
+   * 
+   * This method performs I/O operations which are automatically optimized when running on a virtual thread.
+   * When a virtual thread executes this method and encounters the I/O operation (getInputStream()),
+   * it will automatically yield to allow other virtual threads to execute, improving overall throughput.
+   * This is a key benefit of Java 21's virtual threads for I/O-bound operations.
    */
   protected boolean blobDataExists(final Blob blob) {
     try {
+      // This I/O operation will automatically yield the virtual thread when blocked
+      // allowing other virtual threads to execute while waiting for I/O to complete
       blob.getInputStream().close();
       return true;
     }

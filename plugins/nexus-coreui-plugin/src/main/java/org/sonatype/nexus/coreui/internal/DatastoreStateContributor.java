@@ -29,16 +29,24 @@ import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_ENABLED;
 import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_ENABLED_NAMED;
 import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_IS_POSTGRESQL;
 
+/**
+ * Contributes datastore-related state information to the UI.
+ *
+ * @since 3.0
+ * @updated 21.0 - Updated for Java 21 compatibility with Record Patterns
+ */
 @Singleton
 @Named
 public class DatastoreStateContributor
     implements StateContributor
 {
-  private boolean datastoreEnabled;
-
-  private boolean datastoreDeveloper;
-
-  private boolean isPostgresql;
+  /**
+   * Record to encapsulate datastore state information.
+   * Using Java 21 Record feature for immutable data representation.
+   */
+  private record DatastoreState(boolean enabled, boolean developer, boolean postgresql) {}
+  
+  private final DatastoreState state;
 
   @Inject
   public DatastoreStateContributor(
@@ -46,17 +54,18 @@ public class DatastoreStateContributor
       @Named(DATASTORE_DEVELOPER_NAMED) boolean datastoreDeveloper,
       DatabaseCheck dbCheck)
   {
-    this.datastoreEnabled = datastoreEnabled;
-    this.datastoreDeveloper = datastoreDeveloper;
-    this.isPostgresql = dbCheck.isPostgresql();
+    this.state = new DatastoreState(datastoreEnabled, datastoreDeveloper, dbCheck.isPostgresql());
   }
 
   @Override
   public Map<String, Object> getState() {
+    // Using Java 21 Record Pattern Matching to destructure the state record
+    DatastoreState(var enabled, var developer, var postgresql) = state;
+    
     return ImmutableMap.of(
-        DATASTORE_ENABLED, datastoreEnabled,
-        DATASTORE_DEVELOPER, datastoreDeveloper,
-        DATASTORE_IS_POSTGRESQL, isPostgresql
+        DATASTORE_ENABLED, enabled,
+        DATASTORE_DEVELOPER, developer,
+        DATASTORE_IS_POSTGRESQL, postgresql
     );
   }
 }

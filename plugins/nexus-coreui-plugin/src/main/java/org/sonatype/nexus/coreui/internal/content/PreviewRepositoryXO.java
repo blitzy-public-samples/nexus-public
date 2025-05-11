@@ -12,24 +12,24 @@
  */
 package org.sonatype.nexus.coreui.internal.content;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 /**
+ * Data transfer object for preview repository information.
+ * Implemented as a Java record for immutability and concise syntax.
+ *
  * @since 3.29
  */
-public class PreviewRepositoryXO
-{
-  private final String id;
-  private final String name;
-
-  public PreviewRepositoryXO(final String id, final String name) {
-    this.id = id;
-    this.name = name;
-  }
-
-  public String getId() {
-    return id;
-  }
-
-  public String getName() {
-    return name;
+public record PreviewRepositoryXO(
+    @JsonProperty("id") String id,
+    @JsonProperty("name") String name
+) {
+  /**
+   * Constructor with explicit Jackson annotations for RESTEasy compatibility.
+   */
+  @JsonCreator
+  public PreviewRepositoryXO {
+    // Compact constructor for validation if needed in the future
   }
 }

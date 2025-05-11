@@ -14,6 +14,7 @@ package org.sonatype.nexus.content.maven;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -58,13 +59,15 @@ import org.sonatype.nexus.selector.VariableSource;
 import org.apache.maven.model.Model;
 import org.apache.maven.model.Parent;
 import org.joda.time.DateTime;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.Collections.emptySet;
 import static java.util.Collections.singleton;
@@ -73,11 +76,11 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -87,6 +90,13 @@ import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.repository.upload.UploadFieldDefinition.Type.BOOLEAN;
 import static org.sonatype.nexus.repository.upload.UploadFieldDefinition.Type.STRING;
 
+/**
+ * Test class for {@link MavenUploadHandler} with Java 21 compatibility.
+ * 
+ * @since 3.60.0
+ */
+@ExtendWith(MockitoExtension.class)
+@Tag("java21")
 public class MavenUploadHandlerTest
     extends TestSupport
 {
@@ -96,8 +106,8 @@ public class MavenUploadHandlerTest
 
   private MavenUploadHandler underTest;
 
-  @Rule
-  public TemporaryFolder temporaryFolder = new TemporaryFolder();
+  @TempDir
+  Path temporaryFolder;
 
   @Mock
   Repository repository;
@@ -129,7 +139,7 @@ public class MavenUploadHandlerTest
   @Captor
   private ArgumentCaptor<VariableSource> captor;
 
-  @Before
+  @BeforeEach
   public void setup() throws IOException {
     when(versionPolicyValidator.validArtifactPath(any(), any())).thenReturn(true);
     when(contentPermissionChecker.isPermitted(eq(REPO_NAME), eq(Maven2Format.NAME), eq(BreadActions.EDIT), any()))
@@ -237,8 +247,9 @@ public class MavenUploadHandlerTest
     componentUpload.getAssetUploads().add(assetUpload);
 
     UploadResponse uploadResponse = underTest.handle(repository, componentUpload);
-    assertThat(uploadResponse.getAssetPaths(), contains("/org/apache/maven/tomcat/5.0.28/tomcat-5.0.28.jar",
-        "/org/apache/maven/tomcat/5.0.28/tomcat-5.0.28-sources.jar"));
+    assertThat(uploadResponse.getAssetPaths(), contains(
+        STR."/org/apache/maven/tomcat/5.0.28/tomcat-5.0.28.jar",
+        STR."/org/apache/maven/tomcat/5.0.28/tomcat-5.0.28-sources.jar"));
 
     ArgumentCaptor<MavenPath> pathCapture = ArgumentCaptor.forClass(MavenPath.class);
     verify(mavenFacet, times(4)).put(pathCapture.capture(), any(Payload.class));
@@ -295,8 +306,9 @@ public class MavenUploadHandlerTest
     componentUpload.getAssetUploads().add(assetUpload);
 
     UploadResponse uploadResponse = underTest.handle(repository, componentUpload);
-    assertThat(uploadResponse.getAssetPaths(), contains("/org/apache/maven/tomcat/5.0.28/tomcat-5.0.28.jar",
-        "/org/apache/maven/tomcat/5.0.28/tomcat-5.0.28.pom"));
+    assertThat(uploadResponse.getAssetPaths(), contains(
+        STR."/org/apache/maven/tomcat/5.0.28/tomcat-5.0.28.jar",
+        STR."/org/apache/maven/tomcat/5.0.28/tomcat-5.0.28.pom"));
 
     ArgumentCaptor<MavenPath> paths = ArgumentCaptor.forClass(MavenPath.class);
     verify(mavenFacet, times(4)).put(paths.capture(), any());
@@ -333,15 +345,19 @@ public class MavenUploadHandlerTest
     assetUpload.setPayload(jarPayload);
     componentUpload.getAssetUploads().add(assetUpload);
 
+    ValidationErrorsException exception = null;
     try {
       underTest.handle(repository, componentUpload);
       fail("Expected validation exception");
     }
     catch (ValidationErrorsException e) {
-      assertThat(e.getValidationErrors().size(), is(1));
-      assertThat(e.getValidationErrors().get(0).getMessage(),
-          is("Not authorized for requested path '/org/apache/maven/tomcat/5.0.28/tomcat-5.0.28.jar'"));
+      exception = e;
     }
+    
+    assertNotNull(exception);
+    assertThat(exception.getValidationErrors().size(), is(1));
+    assertThat(exception.getValidationErrors().get(0).getMessage(),
+        is(STR."Not authorized for requested path '/org/apache/maven/tomcat/5.0.28/tomcat-5.0.28.jar'"));
   }
 
   @Test
@@ -360,15 +376,19 @@ public class MavenUploadHandlerTest
     assetUpload.setPayload(jarPayload);
     componentUpload.getAssetUploads().add(assetUpload);
 
+    ValidationErrorsException exception = null;
     try {
       underTest.handle(repository, componentUpload);
       fail("Expected version policy mismatch exception");
     }
     catch (ValidationErrorsException e) {
-      assertThat(e.getValidationErrors().size(), is(1));
-      assertThat(e.getValidationErrors().get(0).getMessage(),
-          is("Version policy mismatch, cannot upload SNAPSHOT content to RELEASE repositories for file 'org/apache/maven/tomcat/5.0.28-SNAPSHOT/tomcat-5.0.28-SNAPSHOT.jar'"));
+      exception = e;
     }
+    
+    assertNotNull(exception);
+    assertThat(exception.getValidationErrors().size(), is(1));
+    assertThat(exception.getValidationErrors().get(0).getMessage(),
+        is(STR."Version policy mismatch, cannot upload SNAPSHOT content to RELEASE repositories for file 'org/apache/maven/tomcat/5.0.28-SNAPSHOT/tomcat-5.0.28-SNAPSHOT.jar'"));
   }
 
   @Test
@@ -387,15 +407,19 @@ public class MavenUploadHandlerTest
     assetUpload.setPayload(jarPayload);
     componentUpload.getAssetUploads().add(assetUpload);
 
+    ValidationErrorsException exception = null;
     try {
       underTest.handle(repository, componentUpload);
       fail("Expected version policy mismatch exception");
     }
     catch (ValidationErrorsException e) {
-      assertThat(e.getValidationErrors().size(), is(1));
-      assertThat(e.getValidationErrors().get(0).getMessage(),
-          is("Upload to snapshot repositories not supported, use the maven client."));
+      exception = e;
     }
+    
+    assertNotNull(exception);
+    assertThat(exception.getValidationErrors().size(), is(1));
+    assertThat(exception.getValidationErrors().get(0).getMessage(),
+        is("Upload to snapshot repositories not supported, use the maven client."));
   }
 
   @Test
@@ -462,15 +486,19 @@ public class MavenUploadHandlerTest
     assetUpload.setPayload(jarPayload);
     componentUpload.getAssetUploads().add(assetUpload);
 
+    ValidationErrorsException exception = null;
     try {
       underTest.handle(repository, componentUpload);
       fail("Expected invalid coordinates exception");
     }
     catch (ValidationErrorsException e) {
-      assertThat(e.getValidationErrors().size(), is(1));
-      assertThat(e.getValidationErrors().get(0).getMessage(),
-          is("Cannot generate maven coordinate from assembled path 'a</groupId>/a</artifactId>/a</version>/a</artifactId>-a</version>.jar'"));
+      exception = e;
     }
+    
+    assertNotNull(exception);
+    assertThat(exception.getValidationErrors().size(), is(1));
+    assertThat(exception.getValidationErrors().get(0).getMessage(),
+        is(STR."Cannot generate maven coordinate from assembled path 'a</groupId>/a</artifactId>/a</version>/a</artifactId>-a</version>.jar'"));
   }
 
   @Test
@@ -505,60 +533,122 @@ public class MavenUploadHandlerTest
     underTest.validatePom(model);
   }
 
-  @Test(expected = ValidationErrorsException.class)
+  @Test
   public void testValidatePom_nullModel() {
-    underTest.validatePom(null);
+    ValidationErrorsException exception = null;
+    try {
+      underTest.validatePom(null);
+    }
+    catch (ValidationErrorsException e) {
+      exception = e;
+    }
+    
+    assertNotNull(exception);
   }
 
-  @Test(expected = ValidationErrorsException.class)
+  @Test
   public void testValidatePom_missingGroupId() {
     Model model = new Model();
     model.setArtifactId("testArtifact");
     model.setVersion("1.0");
-    underTest.validatePom(model);
+    
+    ValidationErrorsException exception = null;
+    try {
+      underTest.validatePom(model);
+    }
+    catch (ValidationErrorsException e) {
+      exception = e;
+    }
+    
+    assertNotNull(exception);
   }
 
-  @Test(expected = ValidationErrorsException.class)
+  @Test
   public void testValidatePom_missingArtifactId() {
     Model model = new Model();
     model.setGroupId("testGroup");
     model.setVersion("1.0");
-    underTest.validatePom(model);
+    
+    ValidationErrorsException exception = null;
+    try {
+      underTest.validatePom(model);
+    }
+    catch (ValidationErrorsException e) {
+      exception = e;
+    }
+    
+    assertNotNull(exception);
   }
 
-  @Test(expected = ValidationErrorsException.class)
+  @Test
   public void testValidatePom_missingVersion() {
     Model model = new Model();
     model.setArtifactId("testArtifact");
     model.setGroupId("testGroup");
-    underTest.validatePom(model);
+    
+    ValidationErrorsException exception = null;
+    try {
+      underTest.validatePom(model);
+    }
+    catch (ValidationErrorsException e) {
+      exception = e;
+    }
+    
+    assertNotNull(exception);
   }
 
-  @Test(expected = ValidationErrorsException.class)
+  @Test
   public void testValidatePom_groupIdWithProperty() {
     Model model = new Model();
     model.setGroupId("${aProperty}");
     model.setArtifactId("testArtifact");
     model.setVersion("1.0");
-    underTest.validatePom(model);
+    
+    ValidationErrorsException exception = null;
+    try {
+      underTest.validatePom(model);
+    }
+    catch (ValidationErrorsException e) {
+      exception = e;
+    }
+    
+    assertNotNull(exception);
   }
 
-  @Test(expected = ValidationErrorsException.class)
+  @Test
   public void testValidatePom_artifactIdWithProperty() {
     Model model = new Model();
     model.setGroupId("testGroup");
     model.setArtifactId("${aProperty}");
     model.setVersion("1.0");
-    underTest.validatePom(model);
+    
+    ValidationErrorsException exception = null;
+    try {
+      underTest.validatePom(model);
+    }
+    catch (ValidationErrorsException e) {
+      exception = e;
+    }
+    
+    assertNotNull(exception);
   }
 
-  @Test(expected = ValidationErrorsException.class)
+  @Test
   public void testValidatePom_versionWithProperty() {
     Model model = new Model();
     model.setArtifactId("testArtifact");
     model.setGroupId("testGroup");
     model.setVersion("${aProperty}");
-    underTest.validatePom(model);
+    
+    ValidationErrorsException exception = null;
+    try {
+      underTest.validatePom(model);
+    }
+    catch (ValidationErrorsException e) {
+      exception = e;
+    }
+    
+    assertNotNull(exception);
   }
 
   @Test
@@ -587,7 +677,6 @@ public class MavenUploadHandlerTest
     assertNotNull(path);
     assertThat(path.getPath(), is("foo////g/a/v/a-v/jar/artifactId/version/artifactId-version.jar"));
     assertCoordinates(path.getCoordinates(), "foo....g.a.v.a-v.jar", "artifactId", "version", null, "jar");
-
   }
 
   @Test
@@ -603,15 +692,19 @@ public class MavenUploadHandlerTest
     assetUpload.setPayload(jarPayload);
     componentUpload.getAssetUploads().add(assetUpload);
 
+    ValidationErrorsException exception = null;
     try {
       underTest.handle(repository, componentUpload);
       fail("Expected ValidationErrorsException");
     }
     catch (ValidationErrorsException e) {
-      assertThat(e.getValidationErrors().size(), is(1));
-      assertThat(e.getValidationErrors().get(0).getMessage(),
-          is("Path is not allowed to have '.' or '..' segments: '/groupId//../g/a/v/a-v.jar/version//../g/a/v/a-v.jar-version.jar'"));
+      exception = e;
     }
+    
+    assertNotNull(exception);
+    assertThat(exception.getValidationErrors().size(), is(1));
+    assertThat(exception.getValidationErrors().get(0).getMessage(),
+        is(STR."Path is not allowed to have '.' or '..' segments: '/groupId//../g/a/v/a-v.jar/version//../g/a/v/a-v.jar-version.jar'"));
   }
 
   @Test
@@ -627,15 +720,19 @@ public class MavenUploadHandlerTest
     assetUpload.setPayload(jarPayload);
     componentUpload.getAssetUploads().add(assetUpload);
 
+    ValidationErrorsException exception = null;
     try {
       underTest.handle(repository, componentUpload);
       fail("Expected ValidationErrorsException");
     }
     catch (ValidationErrorsException e) {
-      assertThat(e.getValidationErrors().size(), is(1));
-      assertThat(e.getValidationErrors().get(0).getMessage(),
-          is("Path is not allowed to have '.' or '..' segments: '/groupId/artifactId//../g/a/v/a-v.jar/artifactId-/../g/a/v/a-v.jar.jar'"));
+      exception = e;
     }
+    
+    assertNotNull(exception);
+    assertThat(exception.getValidationErrors().size(), is(1));
+    assertThat(exception.getValidationErrors().get(0).getMessage(),
+        is(STR."Path is not allowed to have '.' or '..' segments: '/groupId/artifactId//../g/a/v/a-v.jar/artifactId-/../g/a/v/a-v.jar.jar'"));
   }
 
   @Test
@@ -651,21 +748,26 @@ public class MavenUploadHandlerTest
     assetUpload.setPayload(jarPayload);
     componentUpload.getAssetUploads().add(assetUpload);
 
+    ValidationErrorsException exception = null;
     try {
       underTest.handle(repository, componentUpload);
       fail("Expected ValidationErrorsException");
     }
     catch (ValidationErrorsException e) {
-      assertThat(e.getValidationErrors().size(), is(1));
-      assertThat(e.getValidationErrors().get(0).getMessage(),
-          is("Path is not allowed to have '.' or '..' segments: '/groupId/artifactId/version/artifactId-version./../g/a/v/a-v.jar'"));
+      exception = e;
     }
+    
+    assertNotNull(exception);
+    assertThat(exception.getValidationErrors().size(), is(1));
+    assertThat(exception.getValidationErrors().get(0).getMessage(),
+        is(STR."Path is not allowed to have '.' or '..' segments: '/groupId/artifactId/version/artifactId-version./../g/a/v/a-v.jar'"));
   }
 
   @Test
   public void testHandle_snapshot_asset() throws IOException {
     when(versionPolicyValidator.validArtifactPath(any(), any())).thenReturn(false);
-    File file = temporaryFolder.newFile("artifact-1.0-20201124.222716-1.jar");
+    File file = new File(temporaryFolder.toFile(), "artifact-1.0-20201124.222716-1.jar");
+    file.createNewFile();
     Content result = underTest.handle(repository, file, "group/artifact/1.0-SNAPSHOT/artifact-1.0-20201124.222716-1.jar");
 
     assertNull(result);
@@ -674,10 +776,27 @@ public class MavenUploadHandlerTest
   @Test
   public void testHandle_snapshot_metadata() throws IOException {
     when(versionPolicyValidator.validMetadataPath(any(), any())).thenReturn(false);
-    File file = temporaryFolder.newFile("maven-metadata.xml");
+    File file = new File(temporaryFolder.toFile(), "maven-metadata.xml");
+    file.createNewFile();
     Content result = underTest.handle(repository, file, "group/artifact/1.0-SNAPSHOT/maven-metadata.xml");
 
     assertNull(result);
+  }
+
+  /**
+   * Tests pattern matching with instanceof using Java 21 pattern matching.
+   */
+  @Test
+  @Tag("pattern-matching")
+  public void testPatternMatching() {
+    Object obj = new MavenPath("test/path", null);
+    
+    if (obj instanceof MavenPath path) {
+      assertThat(path.getPath(), is("test/path"));
+      assertNull(path.getCoordinates());
+    } else {
+      fail("Expected obj to be a MavenPath");
+    }
   }
 
   private static void assertVariableSource(final VariableSource source,
@@ -733,10 +852,10 @@ public class MavenUploadHandlerTest
     return singleton(new TestUploadDefinitionExtension());
   }
 
-  private class TestUploadDefinitionExtension
-      implements UploadDefinitionExtension
-  {
-
+  /**
+   * Test extension implementation using a record for Java 21 compatibility.
+   */
+  private record TestUploadDefinitionExtension() implements UploadDefinitionExtension {
     @Override
     public UploadFieldDefinition contribute() {
       return new UploadFieldDefinition("foo", "Foo", null, true, STRING, "bar");

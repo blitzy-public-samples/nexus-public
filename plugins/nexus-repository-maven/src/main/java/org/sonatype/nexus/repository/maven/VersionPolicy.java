@@ -14,6 +14,22 @@ package org.sonatype.nexus.repository.maven;
 
 /**
  * Repository version policy.
+ * <p>
+ * This enum is compatible with Java 21 pattern matching for switch expressions and statements.
+ * In Java 21, you can use this enum with enhanced pattern matching capabilities, including
+ * qualified enum constants in case labels.
+ * <p>
+ * Example usage with Java 21 pattern matching:
+ * <pre>
+ * {@code
+ * VersionPolicy policy = ...
+ * String description = switch (policy) {
+ *   case RELEASE -> "Only release artifacts"; 
+ *   case SNAPSHOT -> "Only snapshot artifacts";
+ *   case MIXED -> "Both release and snapshot artifacts";
+ * };
+ * }
+ * </pre>
  *
  * @since 3.0
  */

@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.repository.maven.internal.datastore;
 
+import javax.annotation.Nonnull;
+
 import org.sonatype.nexus.repository.content.Component;
 import org.sonatype.nexus.repository.maven.internal.Maven2Format;
 
@@ -22,16 +24,22 @@ import static org.sonatype.nexus.repository.maven.internal.Constants.SNAPSHOT_VE
  * Maven facet utilities for datastore implementation.
  *
  * @since 3.31
+ * @see Java 21 compatible
  */
 public final class MavenFacetUtils
 {
   private MavenFacetUtils() {
+    // Empty constructor to prevent instantiation
   }
 
   /**
-   * Is a given Component a snapshot
+   * Determines if a given Component is a snapshot version.
+   *
+   * @param component the component to check, must not be null
+   * @return true if the component is a snapshot version, false otherwise
+   * @throws NullPointerException if component is null
    */
-  public static boolean isSnapshot(final Component component) {
+  public static boolean isSnapshot(@Nonnull final Component component) {
     String baseVersion = (String) component.attributes().child(Maven2Format.NAME).get(P_BASE_VERSION);
     return baseVersion != null && baseVersion.endsWith(SNAPSHOT_VERSION_SUFFIX);
   }

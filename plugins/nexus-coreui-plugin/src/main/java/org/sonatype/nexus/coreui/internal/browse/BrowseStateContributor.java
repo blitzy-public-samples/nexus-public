@@ -21,8 +21,6 @@ import javax.inject.Singleton;
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.rapture.StateContributor;
 
-import com.google.common.collect.ImmutableMap;
-
 @Named
 @Singleton
 public class BrowseStateContributor
@@ -33,7 +31,7 @@ public class BrowseStateContributor
 
   @Inject
   public BrowseStateContributor(@Named("${nexus.react.browse:-false}") final boolean featureFlag) {
-    state = ImmutableMap.of("nexus.react.browse", featureFlag);
+    state = Map.of("nexus.react.browse", featureFlag);
   }
 
   @Override

@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.repository.httpbridge.internal;
 
-import javax.inject.Named;
+import jakarta.inject.Named;
 
 import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.security.FilterChainModule;
@@ -28,6 +28,9 @@ import static org.sonatype.nexus.common.app.FeatureFlags.SESSION_ENABLED;
 
 /**
  * Repository HTTP bridge module.
+ * 
+ * Updated for Java 21 compatibility with Guice 7.0.0 and Apache Shiro 2.0.0.
+ * Security filter chain validated for Java 21 compliance.
  *
  * @since 3.0
  */

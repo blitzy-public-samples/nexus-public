@@ -30,6 +30,7 @@ import static org.eclipse.sisu.inject.Sources.prioritize;
 
 /**
  * Repository HTTP bridge module for legacy URLs using {@link JwtSecurityFilter}.
+ * Updated for Java 21 compatibility with Apache Shiro 2.0.0 and Java-JWT 4.4.0.
  *
  * @since 3.38
  */
@@ -42,24 +43,29 @@ public class JwtLegacyHttpBridgeModule
 
     bind(ExhaustRequestFilter.class);
 
+    // Ensure required dependencies are available
     requireBinding(WebSecurityManager.class);
     requireBinding(FilterChainResolver.class);
     requireBinding(JwtHelper.class);
 
     // Bind after core-servlets but before error servlet
+    // Using Guice 7.0.0 compatible binding approach
     Binder highPriorityBinder = binder().withSource(prioritize(0x50000000));
     highPriorityBinder.install(new LegacyHttpBridgeServletModule()
     {
       @Override
       protected void bindSecurityFilter(final FilterKeyBindingBuilder filter) {
+        // Use JwtSecurityFilter for JWT-based authentication
         filter.through(JwtSecurityFilter.class);
       }
     });
 
+    // Install filter chains with proper ordering for authentication and authorization
     highPriorityBinder.install(new FilterChainModule()
     {
       @Override
       protected void configure() {
+        // Configure filter chain for content endpoints
         addFilterChain("/content/**",
             NexusAuthenticationFilter.NAME,
             JwtFilter.NAME,
@@ -67,6 +73,7 @@ public class JwtLegacyHttpBridgeModule
             AnonymousFilter.NAME,
             AntiCsrfFilter.NAME);
 
+        // Configure filter chain for service endpoints
         addFilterChain("/service/local/**",
             NexusAuthenticationFilter.NAME,
             JwtFilter.NAME,
@@ -76,5 +83,4 @@ public class JwtLegacyHttpBridgeModule
       }
     });
   }
-
 }

@@ -15,44 +15,17 @@ package org.sonatype.nexus.coreui.internal.node;
 /**
  * For transmitting info about nodes in cluster
  */
-public class NodeInfoXO
+public record NodeInfoXO(
+    String name,
+    Boolean local,
+    String displayName
+)
 {
-  private String name;
-
-  private Boolean local;
-
-  private String displayName;
-
-  public String getName() {
-    return name;
-  }
-
-  public void setName(final String name) {
-    this.name = name;
-  }
-
-  public Boolean getLocal() {
-    return local;
-  }
-
-  public void setLocal(final Boolean local) {
-    this.local = local;
-  }
-
-  public String getDisplayName() {
-    return displayName;
-  }
-
-  public void setDisplayName(final String displayName) {
-    this.displayName = displayName;
-  }
-
+  /**
+   * Custom toString implementation using Java 21 String Templates
+   */
   @Override
   public String toString() {
-    return "NodeInfoXO(" +
-        "name=" + name +
-        ", local=" + local +
-        ", displayName=" + displayName +
-        ")";
+    return STR."NodeInfoXO(name=\{name}, local=\{local}, displayName=\{displayName})";
   }
 }

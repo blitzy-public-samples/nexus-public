@@ -12,16 +12,27 @@
  */
 package org.sonatype.nexus.blobstore.s3.internal;
 
-import com.amazonaws.services.s3.AmazonS3;
+import software.amazon.awssdk.services.s3.S3Client;
 
 /**
  * Copies a file in S3.
+ * 
+ * <p>Updated for Java 21 compatibility using AWS SDK for Java v2.x.</p>
+ * 
  * @since 3.15
  */
 public interface S3Copier {
 
   /**
-   * Copies a file in s3.
+   * Copies a file in S3.
+   * 
+   * <p>This method leverages AWS SDK for Java v2.x and is compatible with Java 21 features
+   * such as virtual threads for improved I/O performance.</p>
+   *
+   * @param s3Client the S3Client instance used to interact with the AWS S3 service
+   * @param bucket the source bucket name
+   * @param sourcePath the source object key path
+   * @param destinationPath the destination object key path
    */
-  void copy(AmazonS3 s3, String bucket, String sourcePath, String destinationPath);
+  void copy(S3Client s3Client, String bucket, String sourcePath, String destinationPath);
 }

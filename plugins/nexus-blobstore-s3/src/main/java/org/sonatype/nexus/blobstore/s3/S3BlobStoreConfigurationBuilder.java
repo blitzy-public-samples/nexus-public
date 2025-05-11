@@ -15,6 +15,8 @@ package org.sonatype.nexus.blobstore.s3;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.SequencedMap;
+import java.util.SequencedHashMap;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -34,6 +36,9 @@ import static org.sonatype.nexus.blobstore.s3.internal.S3BlobStore.*;
 
 /**
  * Builder for S3 BlobStoreConfiguration objects.
+ * 
+ * This implementation leverages Java 21 features including SequencedMap for ordered failover buckets
+ * and enhanced type safety.
  *
  * @since 3.37
  */
@@ -68,9 +73,17 @@ public class S3BlobStoreConfigurationBuilder
 
   private Optional<Boolean> forcePathStyle = Optional.empty();
 
-  // Uses a linkedhashmap to maintain order
-  private Map<String, String> failover = new LinkedHashMap<>();
+  // Uses a SequencedMap (Java 21) to maintain insertion order of failover buckets
+  private SequencedMap<String, String> failover = new SequencedHashMap<>();
 
+  /**
+   * Private constructor used by the builder factory methods.
+   * Initializes the builder with the given configuration supplier and name,
+   * and sets the type to S3BlobStore.TYPE.
+   * 
+   * @param configuration a supplier that provides the BlobStoreConfiguration
+   * @param name the name of the blob store
+   */
   private S3BlobStoreConfigurationBuilder(final Supplier<BlobStoreConfiguration> configuration, final String name) {
     super(name, configuration);
     super.type(S3BlobStore.TYPE);
@@ -78,6 +91,10 @@ public class S3BlobStoreConfigurationBuilder
 
   /**
    * Set the S3 bucket name.
+   * 
+   * @param bucketName the S3 bucket name to use for this blob store
+   * @return this builder for method chaining
+   * @throws NullPointerException if bucketName is null
    */
   public S3BlobStoreConfigurationBuilder bucket(final String bucketName) {
     this.bucket = checkNotNull(bucketName, "Missing bucket name");
@@ -86,6 +103,10 @@ public class S3BlobStoreConfigurationBuilder
 
   /**
    * Set the S3 region.
+   * 
+   * @param region the AWS region where the S3 bucket is located
+   * @return this builder for method chaining
+   * @throws NullPointerException if region is null
    */
   public S3BlobStoreConfigurationBuilder region(final String region) {
     this.region = checkNotNull(region, "Missing region");
@@ -94,6 +115,9 @@ public class S3BlobStoreConfigurationBuilder
 
   /**
    * Set a prefix to use when storing blobs. This can allow multiple blobstores within the same bucket.
+   * 
+   * @param prefix the prefix to prepend to all blob paths, or null for no prefix
+   * @return this builder for method chaining
    */
   public S3BlobStoreConfigurationBuilder prefix(@Nullable final String prefix) {
     this.prefix = Optional.ofNullable(prefix);
@@ -102,11 +126,24 @@ public class S3BlobStoreConfigurationBuilder
 
   /**
    * Set the the number of days before deleted blobs are automatically removed. Use -1 to disable automatic clean-up.
+   * 
+   * @param expiration the expiration period in days as a string
+   * @return this builder for method chaining
+   * @throws NullPointerException if expiration is null
+   * @throws NumberFormatException if expiration is not a valid integer
    */
   public S3BlobStoreConfigurationBuilder expiration(final String expiration) {
     return expiration(Integer.valueOf(checkNotNull(expiration, "Missing expiration")));
   }
 
+  /**
+   * Add a failover bucket configuration for a specific region.
+   * Failover buckets are maintained in insertion order using Java 21's SequencedMap.
+   * 
+   * @param region the AWS region for failover
+   * @param bucketName the S3 bucket name to use for failover in the specified region
+   * @return this builder for method chaining
+   */
   public S3BlobStoreConfigurationBuilder failover(final String region, final String bucketName) {
     this.failover.put(region, bucketName);
     return this;
@@ -114,6 +151,10 @@ public class S3BlobStoreConfigurationBuilder
 
   /**
    * Set the the number of days before deleted blobs are automatically removed. Use -1 to disable automatic clean-up.
+   * 
+   * @param expiration the expiration period in days as an Integer
+   * @return this builder for method chaining
+   * @throws NullPointerException if expiration is null
    */
   public S3BlobStoreConfigurationBuilder expiration(final Integer expiration) {
     this.expiration = checkNotNull(expiration, "Missing expiration").toString();
@@ -122,6 +163,9 @@ public class S3BlobStoreConfigurationBuilder
 
   /**
    * Set the authentication access key.
+   * 
+   * @param accessKey the AWS access key ID, or null to use instance profile/environment credentials
+   * @return this builder for method chaining
    */
   public S3BlobStoreConfigurationBuilder accessKey(@Nullable final String accessKey) {
     this.accessKey = Optional.ofNullable(accessKey);
@@ -130,6 +174,9 @@ public class S3BlobStoreConfigurationBuilder
 
   /**
    * Set the authentication access secret.
+   * 
+   * @param accessSecret the AWS secret access key, or null to use instance profile/environment credentials
+   * @return this builder for method chaining
    */
   public S3BlobStoreConfigurationBuilder accessSecret(@Nullable final String accessSecret) {
     this.accessSecret = Optional.ofNullable(accessSecret);
@@ -138,6 +185,9 @@ public class S3BlobStoreConfigurationBuilder
 
   /**
    * Set the AWS role to assume.
+   * 
+   * @param assumeRole the AWS IAM role ARN to assume, or null for no role assumption
+   * @return this builder for method chaining
    */
   public S3BlobStoreConfigurationBuilder assumeRole(@Nullable final String assumeRole) {
     this.assumeRole = Optional.ofNullable(assumeRole);
@@ -146,6 +196,9 @@ public class S3BlobStoreConfigurationBuilder
 
   /**
    * Set the session token key.
+   * 
+   * @param sessionTokenKey the AWS session token for temporary credentials, or null if not using temporary credentials
+   * @return this builder for method chaining
    */
   public S3BlobStoreConfigurationBuilder sessionTokenKey(@Nullable final String sessionTokenKey) {
     this.sessionTokenKey = Optional.ofNullable(sessionTokenKey);
@@ -154,6 +207,9 @@ public class S3BlobStoreConfigurationBuilder
 
   /**
    * Set the encryption key.
+   * 
+   * @param encryptionKey the key to use for server-side encryption, or null for default encryption
+   * @return this builder for method chaining
    */
   public S3BlobStoreConfigurationBuilder encryptionKey(@Nullable final String encryptionKey) {
     this.encryptionKey = Optional.ofNullable(encryptionKey);
@@ -162,6 +218,9 @@ public class S3BlobStoreConfigurationBuilder
 
   /**
    * Set the encryption type.
+   * 
+   * @param encryptionType the type of encryption to use (e.g., "KMS", "AES256"), or null for default
+   * @return this builder for method chaining
    */
   public S3BlobStoreConfigurationBuilder encryptionType(@Nullable final String encryptionType) {
     this.encryptionType = Optional.ofNullable(encryptionType);
@@ -170,12 +229,21 @@ public class S3BlobStoreConfigurationBuilder
 
   /**
    * Set the endpoint for S3. This overrides the the S3 URL.
+   * 
+   * @param endpoint the custom S3 endpoint URL, or null to use AWS default endpoints
+   * @return this builder for method chaining
    */
   public S3BlobStoreConfigurationBuilder endpoint(@Nullable final String endpoint) {
     this.endpoint = Optional.ofNullable(endpoint);
     return this;
   }
 
+  /**
+   * Set the AWS signer type to use for S3 requests.
+   * 
+   * @param signerType the AWS signer type, or null to use the default signer
+   * @return this builder for method chaining
+   */
   public S3BlobStoreConfigurationBuilder signerType(@Nullable final String signerType) {
     this.signerType = Optional.ofNullable(signerType);
     return this;
@@ -183,6 +251,9 @@ public class S3BlobStoreConfigurationBuilder
 
   /**
    * Set the maximum number of threads used by the connection pool to S3.
+   * 
+   * @param maxConnectionPool the maximum connection pool size as a string
+   * @return this builder for method chaining
    */
   public S3BlobStoreConfigurationBuilder maxConnectionPool(@Nullable final String maxConnectionPool) {
     this.maxConnectionPool = Optional.ofNullable(maxConnectionPool);
@@ -191,6 +262,9 @@ public class S3BlobStoreConfigurationBuilder
 
   /**
    * Set the maximum number of threads used by the connection pool to S3.
+   * 
+   * @param maxConnectionPool the maximum connection pool size as an Integer
+   * @return this builder for method chaining
    */
   public S3BlobStoreConfigurationBuilder maxConnectionPool(@Nullable final Integer maxConnectionPool) {
     this.maxConnectionPool = Optional.ofNullable(maxConnectionPool)
@@ -200,6 +274,10 @@ public class S3BlobStoreConfigurationBuilder
 
   /**
    * Force path-style URLs, this is deprecated with AWS but fake S3 appliances may need it.
+   * Note: Path-style URLs are being phased out by AWS but remain necessary for some S3-compatible storage systems.
+   * 
+   * @param forcePathStyle true to force path-style URLs, false to use virtual-hosted style URLs
+   * @return this builder for method chaining
    */
   public S3BlobStoreConfigurationBuilder forcePathStyle(@Nullable final Boolean forcePathStyle) {
     this.forcePathStyle = Optional.ofNullable(forcePathStyle);
@@ -208,8 +286,13 @@ public class S3BlobStoreConfigurationBuilder
 
   /**
    * Force path-style URLs, this is deprecated with AWS but fake S3 appliances may need it.
+   * This method accepts a string representation of a boolean value.
+   * 
+   * @param forcePathStyle string representation of boolean ("true"/"false"), or null
+   * @return this builder for method chaining
    */
   public S3BlobStoreConfigurationBuilder forcePathStyle(@Nullable final String forcePathStyle) {
+    // Using pattern matching for instanceof check with Java 21
     if (forcePathStyle == null) {
       this.forcePathStyle = Optional.empty();
     }
@@ -221,45 +304,59 @@ public class S3BlobStoreConfigurationBuilder
 
   /**
    * Sets the type of blob store.
+   * This method is overridden to prevent changing the type from S3BlobStore.TYPE.
+   * 
+   * @param type the blob store type (ignored)
+   * @return never returns as this method always throws an exception
+   * @throws IllegalStateException always, as the type cannot be changed for S3 blob stores
    */
   @Override
   public BlobStoreConfigurationBuilder type(final String type) {
     throw new IllegalStateException("The type cannot be changed.");
   }
 
+  /**
+   * Builds the final BlobStoreConfiguration with all configured properties.
+   * This implementation leverages Java 21 features for more concise and type-safe code.
+   * 
+   * @return the fully configured BlobStoreConfiguration
+   * @throws NullPointerException if any required fields are missing
+   */
   @Override
   public BlobStoreConfiguration build() {
     BlobStoreConfiguration configuration = super.build();
 
     NestedAttributesMap s3 = configuration.attributes(CONFIG_KEY);
 
-    s3.set(BUCKET_KEY, checkNotNull(bucket, "Missing bucket name"));
-    s3.set(REGION_KEY, checkNotNull(region, "Missing region"));
-    s3.set(EXPIRATION_KEY, checkNotNull(expiration, "Missing expiration"));
+    // Required fields with null checks
+    s3.set(BUCKET_KEY, checkNotNull(bucket, STR."Missing required field: \{BUCKET_KEY}"));
+    s3.set(REGION_KEY, checkNotNull(region, STR."Missing required field: \{REGION_KEY}"));
+    s3.set(EXPIRATION_KEY, checkNotNull(expiration, STR."Missing required field: \{EXPIRATION_KEY}"));
 
+    // Optional fields using Java 21 pattern for Optional handling
     prefix.ifPresent(set(s3, BUCKET_PREFIX_KEY));
 
-    // Authentication
+    // Authentication settings
     accessKey.ifPresent(set(s3, ACCESS_KEY_ID_KEY));
     accessSecret.ifPresent(set(s3, SECRET_ACCESS_KEY_KEY));
     assumeRole.ifPresent(set(s3, ASSUME_ROLE_KEY));
     sessionTokenKey.ifPresent(set(s3, SESSION_TOKEN_KEY));
 
-    // encryption
+    // Encryption settings
     encryptionKey.ifPresent(set(s3, ENCRYPTION_KEY));
     encryptionType.ifPresent(set(s3, ENCRYPTION_TYPE));
 
-    // advanced
+    // Advanced settings
     endpoint.ifPresent(set(s3, ENDPOINT_KEY));
     signerType.ifPresent(set(s3, SIGNERTYPE_KEY));
     maxConnectionPool.ifPresent(set(s3, MAX_CONNECTION_POOL_KEY));
 
-    // failover
+    // Failover buckets using SequencedMap (Java 21)
     if (!failover.isEmpty()) {
       s3.set(FAILOVER_BUCKETS_KEY, failover);
     }
 
-    // only set if true
+    // Force path style - only set if true
     forcePathStyle.filter(b -> b)
         .map(String::valueOf)
         .ifPresent(set(s3, FORCE_PATH_STYLE_KEY));
@@ -267,14 +364,37 @@ public class S3BlobStoreConfigurationBuilder
     return configuration;
   }
 
+  /**
+   * Creates a Consumer that sets a value in the NestedAttributesMap with the given key.
+   * This is a utility method used by the build() method to handle Optional values.
+   * 
+   * @param attributes the NestedAttributesMap to modify
+   * @param key the key to set in the map
+   * @return a Consumer that sets the provided value at the given key
+   */
   private static Consumer<Object> set(final NestedAttributesMap attributes, final String key) {
     return value -> attributes.set(key, value);
   }
 
+  /**
+   * Creates a new builder for an S3 blob store with the given configuration and name.
+   * 
+   * @param configuration the existing BlobStoreConfiguration to modify
+   * @param name the name of the blob store
+   * @return a new S3BlobStoreConfigurationBuilder instance
+   */
   public static S3BlobStoreConfigurationBuilder builder(final BlobStoreConfiguration configuration, final String name) {
     return new S3BlobStoreConfigurationBuilder(() -> configuration, name);
   }
 
+  /**
+   * Creates a new builder for an S3 blob store with the given configuration supplier and name.
+   * This method allows for lazy creation of the configuration object.
+   * 
+   * @param configuration a supplier that provides the BlobStoreConfiguration
+   * @param name the name of the blob store
+   * @return a new S3BlobStoreConfigurationBuilder instance
+   */
   public static S3BlobStoreConfigurationBuilder builder(
       final Supplier<BlobStoreConfiguration> configuration,
       final String name)

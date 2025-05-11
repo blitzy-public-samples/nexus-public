@@ -24,6 +24,10 @@ import org.sonatype.nexus.security.UserIdHelper;
 
 /**
  * Default {@link InitiatorProvider} implementation.
+ * 
+ * <p>
+ * Updated for Java 21 compatibility with enhanced string handling using String Templates.
+ * </p>
  *
  * @since 3.1
  */
@@ -42,16 +46,17 @@ public class InitiatorProviderImpl
 
   /**
    * When {@link ClientInfo} is available, returns {@code user-id/remote-ip}, else returns {@code user-id}.
+   * 
+   * <p>
+   * Implementation uses Java 21 String Templates for efficient string concatenation.
+   * </p>
    */
   @Override
   public String get() {
     ClientInfo clientInfo = clientInfoProvider.getCurrentThreadClientInfo();
     if (clientInfo != null) {
-      return new StringBuilder()
-          .append(clientInfo.getUserid())
-          .append('/')
-          .append(clientInfo.getRemoteIP())
-          .toString();
+      // Using Java 21 String Templates for more efficient and readable string concatenation
+      return STR."\{clientInfo.getUserid()}/\{clientInfo.getRemoteIP()}";
     }
     else {
       return UserIdHelper.get();

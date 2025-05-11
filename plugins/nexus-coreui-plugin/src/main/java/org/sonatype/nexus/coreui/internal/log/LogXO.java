@@ -22,52 +22,66 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.lang.String.format;
 
 /**
  * Log information object
  *
  * @since 3.39
  */
-public class LogXO
-{
-  private final Logger log = LoggerFactory.getLogger(getClass().getName());
+public record LogXO(String fileName, long size, long lastModified) {
+  private static final Logger log = LoggerFactory.getLogger(LogXO.class);
 
-  private String fileName = null;
-
-  private long size = -1;
-
-  private long lastModified = -1;
-
-  public LogXO(Path path) {
+  /**
+   * Creates a LogXO from a file path.
+   */
+  public static LogXO fromPath(Path path) {
     checkNotNull(path);
+    
+    String fileName;
+    long size = -1;
+    long lastModified = -1;
+    
     try {
-      if (LogManager.TASKS_PREFIX.startsWith(path.getParent().getFileName().toString())) {
-        this.fileName = LogManager.TASKS_PREFIX + path.getFileName().toString();
+      // Use pattern matching to determine the file name prefix
+      if (path.getParent() instanceof Path parent && 
+          parent.getFileName() instanceof Path parentName && 
+          LogManager.TASKS_PREFIX.startsWith(parentName.toString())) {
+        fileName = LogManager.TASKS_PREFIX + path.getFileName().toString();
       }
-      else if (LogManager.REPLICATION_PREFIX.startsWith(path.getParent().getFileName().toString())) {
-        this.fileName = LogManager.REPLICATION_PREFIX + path.getFileName().toString();
+      else if (path.getParent() instanceof Path parent && 
+               parent.getFileName() instanceof Path parentName && 
+               LogManager.REPLICATION_PREFIX.startsWith(parentName.toString())) {
+        fileName = LogManager.REPLICATION_PREFIX + path.getFileName().toString();
       }
       else {
-        this.fileName = path.getFileName().toString();
+        fileName = path.getFileName().toString();
       }
-      this.size = Files.size(path);
-      this.lastModified = Files.getLastModifiedTime(path).toMillis();
+      
+      size = Files.size(path);
+      lastModified = Files.getLastModifiedTime(path).toMillis();
     }
     catch (IOException e) {
-      log.debug(format("Unable to get information about log file at {%s}", path));
+      // Use String template (STR) for more readable logging
+      log.debug(STR."Unable to get information about log file at \{path}");
+      fileName = path.getFileName().toString();
     }
+    
+    return new LogXO(fileName, size, lastModified);
   }
-
-  public String getFileName() {
-    return fileName;
+  
+  /**
+   * Constructor for backward compatibility with existing code.
+   * @deprecated Use {@link #fromPath(Path)} instead.
+   */
+  @Deprecated
+  public LogXO(Path path) {
+    this(fromPath(path));
   }
-
-  public long getSize() {
-    return size;
-  }
-
-  public long getLastModified() {
-    return lastModified;
+  
+  /**
+   * Copy constructor.
+   */
+  private LogXO(LogXO other) {
+    this(other.fileName, other.size, other.lastModified);
   }
 }

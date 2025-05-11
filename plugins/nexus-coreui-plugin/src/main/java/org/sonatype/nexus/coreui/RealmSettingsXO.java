@@ -19,22 +19,6 @@ import java.util.List;
  *
  * @since 3.0
  */
-public class RealmSettingsXO
-{
-  private List<String> realms;
-
-  public List<String> getRealms() {
-    return realms;
-  }
-
-  public void setRealms(List<String> realms) {
-    this.realms = realms;
-  }
-
-  @Override
-  public String toString() {
-    return "RealmSettingsXO{" +
-        "realms=" + realms +
-        '}';
-  }
+public record RealmSettingsXO(List<String> realms) {
+  // Record automatically provides constructor, accessors, equals(), hashCode(), and toString()
 }

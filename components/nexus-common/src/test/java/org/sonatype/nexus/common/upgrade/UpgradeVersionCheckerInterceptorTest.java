@@ -19,11 +19,11 @@ import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.db.DatabaseCheck;
 
 import org.aopalliance.intercept.MethodInvocation;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 
-import static org.junit.Assert.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -38,7 +38,7 @@ public class UpgradeVersionCheckerInterceptorTest
 
   private AvailabilityVersionCheckerInterceptor underTest;
 
-  @Before
+  @BeforeEach
   public void setUp() {
     underTest = new AvailabilityVersionCheckerInterceptor(databaseCheckProvider);
   }

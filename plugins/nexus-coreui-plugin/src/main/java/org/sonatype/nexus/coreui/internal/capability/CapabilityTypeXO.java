@@ -12,62 +12,29 @@
  */
 package org.sonatype.nexus.coreui.internal.capability;
 
-import java.util.List;
+import java.util.SequencedCollection;
+import java.util.ArrayList;
+
 import javax.validation.constraints.NotEmpty;
 
 import org.sonatype.nexus.coreui.FormFieldXO;
 
-public class CapabilityTypeXO
-{
-  @NotEmpty
-  private String id;
-
-  @NotEmpty
-  private String name;
-
-  private String about;
-
-  private List<FormFieldXO> formFields;
-
-  public String getId() {
-    return id;
-  }
-
-  public void setId(final String id) {
-    this.id = id;
-  }
-
-  public String getName() {
-    return name;
-  }
-
-  public void setName(final String name) {
-    this.name = name;
-  }
-
-  public String getAbout() {
-    return about;
-  }
-
-  public void setAbout(final String about) {
-    this.about = about;
-  }
-
-  public List<FormFieldXO> getFormFields() {
-    return formFields;
-  }
-
-  public void setFormFields(final List<FormFieldXO> formFields) {
-    this.formFields = formFields;
-  }
-
-  @Override
-  public String toString() {
-    return "CapabilityTypeXO(" +
-        "id:" + id +
-        ", name:" + name +
-        ", about:" + about +
-        ", formFields:" + formFields +
-        ")";
+/**
+ * Data transfer object for capability type information.
+ * Converted to a record for Java 21 compatibility.
+ */
+public record CapabilityTypeXO(
+    @NotEmpty String id,
+    @NotEmpty String name,
+    String about,
+    SequencedCollection<FormFieldXO> formFields
+) {
+  /**
+   * Constructor with default values for formFields.
+   */
+  public CapabilityTypeXO {
+    if (formFields == null) {
+      formFields = new ArrayList<>();
+    }
   }
 }

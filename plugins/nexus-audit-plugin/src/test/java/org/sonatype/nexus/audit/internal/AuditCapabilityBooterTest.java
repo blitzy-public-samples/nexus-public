@@ -16,15 +16,25 @@ import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.capability.CapabilityReferenceFilterBuilder.CapabilityReferenceFilter;
 import org.sonatype.nexus.capability.CapabilityRegistry;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * Tests for {@link AuditCapabilityBooter} with JUnit Jupiter and Mockito 4.11.0+.
+ * 
+ * <p>This test verifies that the AuditCapability is correctly registered during system boot.</p>
+ *
+ * <p>Updated for Java 21 compatibility as part of the migration from JUnit 4 to JUnit Jupiter.</p>
+ */
+@ExtendWith(MockitoExtension.class)
 public class AuditCapabilityBooterTest
     extends TestSupport
 {
@@ -33,16 +43,25 @@ public class AuditCapabilityBooterTest
   @Mock
   private CapabilityRegistry capabilityRegistry;
 
-  @Before
+  @BeforeEach
   public void setup() {
     underTest = new AuditCapabilityBooter();
   }
 
+  /**
+   * Verifies that the AuditCapability is added to the registry during boot when it doesn't already exist.
+   * 
+   * <p>This test ensures that the capability is registered with the correct type and enabled state.</p>
+   */
   @Test
-  public void testBoot_isEnabled() throws Exception {
+  public void shouldAddAuditCapabilityWhenNotPresent() throws Exception {
+    // Given the capability doesn't exist in the registry
     when(capabilityRegistry.get(any(CapabilityReferenceFilter.class))).thenReturn(null);
+    
+    // When the booter is executed
     underTest.boot(capabilityRegistry);
 
+    // Then the capability should be added with the correct parameters
     verify(capabilityRegistry).addNonExposed(eq(AuditCapability.TYPE), eq(true), any(), any());
   }
 }

@@ -25,8 +25,6 @@ import org.sonatype.nexus.ui.UiUtil;
 import org.eclipse.sisu.Priority;
 import org.eclipse.sisu.space.ClassSpace;
 
-import static java.util.Arrays.asList;
-
 /**
  * {@link UiPluginDescriptor} for {@code nexus-coreui-plugin} react code.
  *
@@ -46,9 +44,9 @@ public class CoreUiReactPluginDescriptorImpl
 
   @Inject
   public CoreUiReactPluginDescriptorImpl(final ClassSpace space) {
-    scripts = asList(UiUtil.getPathForFile("nexus-coreui-bundle.js", space));
-    debugScripts = asList(UiUtil.getPathForFile("nexus-coreui-bundle.debug.js", space));
-    styles = asList(UiUtil.getPathForFile("nexus-coreui-bundle.css", space));
+    scripts = List.of(UiUtil.getPathForFile("nexus-coreui-bundle.js", space));
+    debugScripts = List.of(UiUtil.getPathForFile("nexus-coreui-bundle.debug.js", space));
+    styles = List.of(UiUtil.getPathForFile("nexus-coreui-bundle.css", space));
   }
 
   @Override
@@ -59,7 +57,10 @@ public class CoreUiReactPluginDescriptorImpl
   @Nullable
   @Override
   public List<String> getScripts(final boolean isDebug) {
-    return isDebug ? debugScripts : scripts;
+    return switch(isDebug) {
+      case true -> debugScripts;
+      case false -> scripts;
+    };
   }
 
   @Nullable

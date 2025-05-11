@@ -20,8 +20,6 @@ import javax.inject.Singleton;
 
 import org.sonatype.nexus.rapture.StateContributor;
 
-import com.google.common.collect.ImmutableMap;
-
 /**
  * API feature flag
  */
@@ -30,16 +28,24 @@ import com.google.common.collect.ImmutableMap;
 public class ApiDocsStateContributor
     implements StateContributor
 {
-  private final boolean enabled;
+  /**
+   * Record representing the API state data structure.
+   * Using Java 21 Record Pattern for cleaner data representation.
+   */
+  private record ApiState(boolean enabled) {}
+
+  private final ApiState apiState;
 
   @Inject
   public ApiDocsStateContributor(@Named("${nexus.admin.system.apidocs.enabled:-true}") final boolean enabled) {
-    this.enabled = enabled;
+    this.apiState = new ApiState(enabled);
   }
 
   @Override
   @Nullable
   public Map<String, Object> getState() {
-    return ImmutableMap.of("api", enabled);
+    // Using Java 21 pattern matching for record in a switch expression would be beneficial here
+    // if we had more complex logic based on the ApiState record
+    return Map.of("api", apiState.enabled());
   }
 }

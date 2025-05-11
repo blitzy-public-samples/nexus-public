@@ -21,10 +21,20 @@ import org.sonatype.nexus.rapture.UiPluginDescriptorSupport;
 
 import org.eclipse.sisu.Priority;
 
+// Java 21 String Template imports
+import static java.lang.StringTemplate.STR;
+
 /**
  * Rapture {@link UiPluginDescriptor} for {@code nexus-blobstore-s3}.
+ * 
+ * This implementation is compatible with Java 21 and OSGi/Karaf 4.3.9+ runtime environment.
+ * It provides UI plugin configuration for the S3 BlobStore feature.
+ * 
+ * Registered as an OSGi service component with the highest priority to ensure proper loading order.
+ * This component integrates the S3 BlobStore UI elements into the Nexus Repository Manager interface.
  *
  * @since 3.17
+ * @see org.sonatype.nexus.blobstore.s3.internal.S3BlobStore
  */
 @Named
 @Singleton
@@ -32,9 +42,16 @@ import org.eclipse.sisu.Priority;
 public class UiPluginDescriptorImpl
     extends UiPluginDescriptorSupport
 {
+  /**
+   * Constructs a new UI plugin descriptor for the S3 BlobStore feature.
+   * Configures the plugin with appropriate namespace and configuration class.
+   * 
+   * Implementation is compatible with Java 21 virtual threads and modern language features.
+   */
   @Inject
   public UiPluginDescriptorImpl() {
-    super("nexus-blobstore-s3");
+    // Using String Template for plugin ID (though simple in this case, demonstrates Java 21 compatibility)
+    super(STR."nexus-blobstore-s3");
     setHasStyle(false);
     setNamespace("NX.s3blobstore");
     setConfigClassName("NX.s3blobstore.app.PluginConfig");

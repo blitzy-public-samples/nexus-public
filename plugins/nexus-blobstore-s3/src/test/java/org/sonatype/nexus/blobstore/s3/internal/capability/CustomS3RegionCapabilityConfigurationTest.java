@@ -15,24 +15,30 @@ package org.sonatype.nexus.blobstore.s3.internal.capability;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
+/**
+ * Tests for {@link CustomS3RegionCapabilityConfiguration}.
+ */
 public class CustomS3RegionCapabilityConfigurationTest {
 
   private CustomS3RegionCapabilityConfiguration config;
 
-  @Before
+  @BeforeEach
   public void setUp() {
     Map<String, String> properties = new HashMap<>();
     properties.put("regions", "us-east-1,us-west-2");
     config = new CustomS3RegionCapabilityConfiguration(properties);
   }
 
+  /**
+   * Verifies that the configured regions are correctly returned by the configuration object.
+   */
   @Test
-  public void testGetRegions() {
+  public void shouldReturnConfiguredRegions() {
     assertEquals("us-east-1,us-west-2", config.getRegions());
   }
 }

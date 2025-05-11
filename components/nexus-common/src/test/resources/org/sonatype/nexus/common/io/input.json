@@ -1,4 +1,10 @@
 {
+  "_metadata": {
+    "description": "Test fixture for Java 21 compatibility testing",
+    "version": "2.0",
+    "features": ["VirtualThreads", "RecordPatterns", "StringTemplates"],
+    "lastUpdated": "2023-09-19"
+  },
   "a": 10,
   "b": [
     {
@@ -41,5 +47,135 @@
   "K": {
     "L" : "foo"
   },
-  "M" : "foo"
+  "M" : "foo",
+  
+  "recordPatterns": [
+    {
+      "firstName": "John",
+      "lastName": "Doe",
+      "age": 30,
+      "address": {
+        "street": "123 Main St",
+        "city": "Anytown",
+        "zipCode": "12345"
+      }
+    },
+    {
+      "firstName": "Jane",
+      "lastName": "Smith",
+      "age": 25,
+      "address": {
+        "street": "456 Oak Ave",
+        "city": "Somewhere",
+        "zipCode": "67890"
+      }
+    }
+  ],
+  
+  "nestedRecords": {
+    "user": {
+      "id": 1001,
+      "username": "jdoe",
+      "profile": {
+        "fullName": "John Doe",
+        "email": "jdoe@example.com",
+        "preferences": {
+          "theme": "dark",
+          "notifications": true,
+          "language": "en-US"
+        }
+      },
+      "roles": ["user", "admin", "developer"]
+    }
+  },
+  
+  "stringTemplates": {
+    "messages": [
+      {
+        "template": "Hello, {name}! Welcome to {application}.",
+        "variables": {
+          "name": "User",
+          "application": "Nexus Repository"
+        }
+      },
+      {
+        "template": "Your {itemType} has been {action} successfully.",
+        "variables": {
+          "itemType": "repository",
+          "action": "created"
+        }
+      },
+      {
+        "template": "Error {code}: {message}",
+        "variables": {
+          "code": "404",
+          "message": "Resource not found"
+        }
+      }
+    ],
+    "complexTemplate": {
+      "template": "User {user.name} ({user.id}) performed {action.name} on {resource.type} at {timestamp}",
+      "variables": {
+        "user": {
+          "name": "admin",
+          "id": "system"
+        },
+        "action": {
+          "name": "update",
+          "id": "UPD"
+        },
+        "resource": {
+          "type": "repository",
+          "id": "maven-central"
+        },
+        "timestamp": "2023-09-19T14:30:00Z"
+      }
+    }
+  },
+  
+  "virtualThreads": {
+    "operations": [
+      {
+        "id": "op-1",
+        "name": "Download Artifact",
+        "io_bound": true,
+        "expected_duration_ms": 250,
+        "dependencies": []
+      },
+      {
+        "id": "op-2",
+        "name": "Validate Checksum",
+        "io_bound": false,
+        "expected_duration_ms": 50,
+        "dependencies": ["op-1"]
+      },
+      {
+        "id": "op-3",
+        "name": "Store in BlobStore",
+        "io_bound": true,
+        "expected_duration_ms": 150,
+        "dependencies": ["op-2"]
+      },
+      {
+        "id": "op-4",
+        "name": "Update Database",
+        "io_bound": true,
+        "expected_duration_ms": 100,
+        "dependencies": ["op-3"]
+      },
+      {
+        "id": "op-5",
+        "name": "Send Notification",
+        "io_bound": true,
+        "expected_duration_ms": 75,
+        "dependencies": ["op-4"]
+      }
+    ],
+    "concurrencySettings": {
+      "maxVirtualThreads": 10000,
+      "pinned": false,
+      "delayedExecutor": true,
+      "structuredTaskScope": true
+    }
+  }
 }

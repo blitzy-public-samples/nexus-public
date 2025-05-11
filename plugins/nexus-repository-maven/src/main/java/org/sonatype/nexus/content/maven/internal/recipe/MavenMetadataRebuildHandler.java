@@ -29,6 +29,10 @@ import static org.sonatype.nexus.repository.http.HttpMethods.GET;
 import static org.sonatype.nexus.repository.http.HttpMethods.HEAD;
 
 /**
+ * Handler for rebuilding Maven metadata when appropriate.
+ * <p>
+ * Updated for Java 21 to leverage pattern matching for switch expressions and statements.
+ * 
  * @since 3.26
  */
 @Named
@@ -45,14 +49,30 @@ public class MavenMetadataRebuildHandler
   {
     String method = context.getRequest().getAction();
     Repository repository = context.getRepository();
-    if ((GET.equals(method) || HEAD.equals(method)) && isNotProxy(repository)) {
-      repository.facet(MavenMetadataRebuildFacet.class)
-          .maybeRebuildMavenMetadata(prependIfMissing(context.getRequest().getPath(), PATH_PREFIX), false, true);
+    
+    // Using Java 21 pattern matching for switch to handle HTTP method checking
+    switch (method) {
+      case GET, HEAD when isNotProxy(repository) -> {
+        repository.facet(MavenMetadataRebuildFacet.class)
+            .maybeRebuildMavenMetadata(prependIfMissing(context.getRequest().getPath(), PATH_PREFIX), false, true);
+      }
+      default -> { /* No action needed for other methods */ }
     }
+    
     return context.proceed();
   }
 
+  /**
+   * Determines if the repository is not a proxy type repository.
+   * 
+   * @param repository The repository to check
+   * @return true if the repository is not a proxy type, false otherwise
+   */
   protected boolean isNotProxy(@Nonnull final Repository repository) {
-    return !ProxyType.NAME.equals(repository.getType().getValue());
+    // Using Java 21 pattern matching for switch to check repository type
+    return switch (repository.getType().getValue()) {
+      case ProxyType.NAME -> false;
+      default -> true;
+    };
   }
 }

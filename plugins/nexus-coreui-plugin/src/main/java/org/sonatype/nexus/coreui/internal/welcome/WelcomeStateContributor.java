@@ -21,7 +21,6 @@ import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.rapture.StateContributor;
 import org.sonatype.nexus.common.node.NodeAccess;
 
-import com.google.common.collect.ImmutableMap;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 @Named
@@ -47,7 +46,7 @@ public class WelcomeStateContributor
 
   @Override
   public Map<String, Object> getState() {
-    return ImmutableMap.of(
+    return Map.of(
         "nexus.react.welcome", featureFlag,
         NODE_ID, nodeAccess.getId());
   }

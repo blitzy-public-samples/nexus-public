@@ -12,10 +12,10 @@
  */
 package org.sonatype.nexus.blobstore.s3.rest.internal;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.Path;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.Path;
 
 import org.sonatype.nexus.blobstore.api.BlobStoreManager;
 import org.sonatype.nexus.crypto.secrets.SecretsFactory;
@@ -25,8 +25,20 @@ import static org.sonatype.nexus.rest.APIConstants.V1_API_PREFIX;
 
 /**
  * v1 endpoint for S3 BlobStore REST API
+ * 
+ * This class has been updated for Java 21 compatibility, leveraging Jakarta EE 10 APIs
+ * and supporting Virtual Threads for improved I/O performance in the parent class.
  *
  * @since 3.24
+ */
+/*
+ * OSGi Bundle Metadata for Java 21 compatibility:
+ * 
+ * Bundle-RequiredExecutionEnvironment: JavaSE-21
+ * Import-Package: jakarta.inject;version="[2.0,3)",
+ *               jakarta.ws.rs;version="[3.0,4)",
+ *               org.sonatype.nexus.blobstore.api;version="[3.0,4)",
+ *               org.sonatype.nexus.crypto.secrets;version="[3.0,4)"
  */
 @Named
 @Singleton
@@ -36,6 +48,13 @@ public class S3BlobStoreApiResourceV1
 {
   static final String RESOURCE_URI = V1_API_PREFIX + "/blobstores";
 
+  /**
+   * Constructor for S3BlobStoreApiResourceV1.
+   * 
+   * @param blobStoreManager the blob store manager
+   * @param validation the validation service for S3 blob store API updates
+   * @param secretsFactory the factory for handling secrets
+   */
   @Inject
   public S3BlobStoreApiResourceV1(final BlobStoreManager blobStoreManager,
                                   final S3BlobStoreApiUpdateValidation validation,

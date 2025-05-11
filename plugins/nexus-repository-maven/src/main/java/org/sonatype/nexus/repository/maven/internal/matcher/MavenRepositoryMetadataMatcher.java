@@ -26,9 +26,19 @@ public class MavenRepositoryMetadataMatcher
 {
   private static final String MAVEN_METADATA_REQ_PATH = "/" + Constants.METADATA_FILENAME;
 
+  /**
+   * Constructs a new matcher for Maven repository metadata.
+   * 
+   * @param mavenPathParser The parser for Maven paths
+   */
   public MavenRepositoryMetadataMatcher(final MavenPathParser mavenPathParser) {
     super(mavenPathParser,
-        withHashes((String path) -> path.endsWith(MAVEN_METADATA_REQ_PATH))
+        withHashes((String path) -> {
+          return switch (path) {
+            case String s when s.endsWith(MAVEN_METADATA_REQ_PATH) -> true;
+            default -> false;
+          };
+        })
     );
   }
 }

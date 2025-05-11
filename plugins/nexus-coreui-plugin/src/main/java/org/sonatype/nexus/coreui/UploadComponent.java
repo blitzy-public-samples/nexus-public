@@ -31,6 +31,7 @@ import com.softwarementors.extjs.djn.config.annotations.DirectMethod;
 
 import java.util.Collection;
 import java.util.Map;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -55,14 +56,24 @@ public class UploadComponent
     this.configuration = checkNotNull(configuration);
   }
 
+  /**
+   * Retrieves upload definitions that are available for UI upload.
+   * 
+   * This method uses a Virtual Thread for execution as it involves I/O operations
+   * when retrieving definitions from the upload service.
+   *
+   * @return Collection of upload definitions available for UI upload
+   */
   @DirectMethod
   @Timed
   @ExceptionMetered
   public Collection<UploadDefinition> getUploadDefinitions() {
-    return uploadService.getAvailableDefinitions()
-        .stream()
-        .filter(UploadDefinition::isUiUpload)
-        .collect(Collectors.toList()); // NOSONAR
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
+        uploadService.getAvailableDefinitions()
+            .stream()
+            .filter(UploadDefinition::isUiUpload)
+            .collect(Collectors.toList()) // NOSONAR
+    ).join();
   }
 
   @Override

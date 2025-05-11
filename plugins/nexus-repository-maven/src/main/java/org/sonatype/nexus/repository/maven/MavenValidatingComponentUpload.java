@@ -24,6 +24,8 @@ import static org.sonatype.nexus.common.text.Strings2.isBlank;
 /**
  * A holder of {@link ComponentUpload} that's meant to validate it based on provided {@link UploadDefinition} for Maven
  *
+ * This class is compatible with Java 21 and leverages modern language features for improved performance and reliability.
+ *
  * @since 3.8
  */
 public class MavenValidatingComponentUpload

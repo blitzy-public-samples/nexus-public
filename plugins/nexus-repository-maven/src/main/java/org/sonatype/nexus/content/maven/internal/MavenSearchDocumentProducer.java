@@ -12,6 +12,7 @@
  */
 package org.sonatype.nexus.content.maven.internal;
 
+import java.util.Objects;
 import java.util.Set;
 
 import javax.inject.Inject;
@@ -24,10 +25,10 @@ import org.sonatype.nexus.repository.content.search.elasticsearch.SearchDocument
 import org.sonatype.nexus.repository.maven.internal.Maven2Format;
 import org.sonatype.nexus.repository.maven.internal.search.MavenVersionNormalizer;
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
 /**
  * Maven implementation of {@link DefaultSearchDocumentProducer}
+ *
+ * <p>Updated for Java 21 compatibility with improved null checking and dependency injection.</p>
  *
  * @since 3.26
  */
@@ -40,6 +41,13 @@ public class MavenSearchDocumentProducer
 
   private final MavenPreReleaseEvaluator preReleaseEvaluator;
 
+  /**
+   * Constructor with dependency injection for required components.
+   *
+   * @param documentExtensions extensions for search document production
+   * @param versionNormalizer normalizes Maven version strings
+   * @param preReleaseEvaluator evaluates if a component is a pre-release
+   */
   @Inject
   public MavenSearchDocumentProducer(
       final Set<SearchDocumentExtension> documentExtensions,
@@ -47,8 +55,8 @@ public class MavenSearchDocumentProducer
       final MavenPreReleaseEvaluator preReleaseEvaluator)
   {
     super(documentExtensions);
-    this.versionNormalizer = checkNotNull(versionNormalizer);
-    this.preReleaseEvaluator = checkNotNull(preReleaseEvaluator);
+    this.versionNormalizer = Objects.requireNonNull(versionNormalizer, "Version normalizer cannot be null");
+    this.preReleaseEvaluator = Objects.requireNonNull(preReleaseEvaluator, "Pre-release evaluator cannot be null");
   }
 
   @Override

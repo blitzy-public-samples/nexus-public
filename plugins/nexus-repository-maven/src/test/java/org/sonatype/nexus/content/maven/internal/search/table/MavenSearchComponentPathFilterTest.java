@@ -16,41 +16,64 @@ import java.util.List;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
 import static java.util.Arrays.asList;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/**
+ * Tests for {@link MavenSearchComponentPathFilter}.
+ * 
+ * This test validates the path filtering logic for Maven repository search components.
+ * The filter determines which file paths should be included or excluded from search results
+ * based on their extensions.
+ *
+ * @since 3.38
+ */
+@DisplayName("MavenSearchComponentPathFilter Tests")
 public class MavenSearchComponentPathFilterTest
     extends TestSupport
 {
   private MavenSearchComponentPathFilter underTest;
 
-  @Before
+  @BeforeEach
   public void setup() {
     underTest = new MavenSearchComponentPathFilter();
   }
 
   @Test
+  @DisplayName("Should filter Maven uncommon type extensions")
   public void shouldFilterMavenUncommonType() {
     String path = "foo/bar/foobar.jar.sha1";
-    assertTrue(underTest.shouldFilterPathExtension(path));
+    assertTrue(underTest.shouldFilterPathExtension(path), 
+        "Path with uncommon extension should be filtered");
   }
 
   @Test
+  @DisplayName("Should not filter Maven common type extensions")
   public void shouldNotFilterMavenCommonTypes() {
-    validMavenPaths().forEach(path -> assertFalse(underTest.shouldFilterPathExtension(path)));
+    validMavenPaths().forEach(path -> 
+        assertFalse(underTest.shouldFilterPathExtension(path),
+            "Path with common extension should not be filtered: " + path));
   }
 
+  /**
+   * Returns a list of valid Maven artifact paths with common extensions.
+   * These extensions represent the standard Maven artifact types that should not be filtered
+   * from search results.
+   * 
+   * @return list of valid Maven paths with common extensions
+   */
   private List<String> validMavenPaths() {
-    return asList("foo/bar/foobar.jar",
+    return asList(
+        "foo/bar/foobar.jar",
         "foo/bar/foobar.war",
         "foo/bar/foobar.aar",
         "foo/bar/foobar.zip",
         "foo/bar/foobar.pom",
         "foo/bar/foobar.tar.gz");
   }
-
 }

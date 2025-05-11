@@ -18,31 +18,24 @@ import java.util.Map;
 import org.sonatype.nexus.formfields.FormField;
 import org.sonatype.nexus.security.privilege.PrivilegeDescriptor;
 
-public class PrivilegesTypesUIResponse
+/**
+ * Response object for privilege types UI data.
+ * 
+ * Converted to a Java record for Java 21 compatibility, providing immutability
+ * and automatic implementations of equals(), hashCode(), and toString().
+ */
+public record PrivilegesTypesUIResponse(String id, String name, List<FormField> formFields)
 {
-  private final String id;
-
-  private final String name;
-
-  private final List<FormField> formFields;
-
+  /**
+   * Constructs a new instance from a privilege descriptor entry.
+   *
+   * @param entry the map entry containing the privilege descriptor
+   */
   public PrivilegesTypesUIResponse(final Map.Entry<String, PrivilegeDescriptor> entry) {
-    PrivilegeDescriptor privilegeDescriptor = entry.getValue();
-
-    this.id = privilegeDescriptor.getType();
-    this.name = privilegeDescriptor.getName();
-    this.formFields = privilegeDescriptor.getFormFields();
-  }
-
-  public String getId() {
-    return id;
-  }
-
-  public String getName() {
-    return name;
-  }
-
-  public List<FormField> getFormFields() {
-    return formFields;
+    this(
+        entry.getValue().getType(),
+        entry.getValue().getName(),
+        entry.getValue().getFormFields()
+    );
   }
 }

@@ -16,6 +16,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -64,6 +65,8 @@ import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
 import static org.sonatype.nexus.common.entity.EntityHelper.id;
 
 /**
+ * REST resource for managing routing rules.
+ *
  * @since 3.16
  */
 @Named
@@ -101,6 +104,11 @@ public class RoutingRulesResource
   @Inject
   private RepositoryManager repositoryManager;
 
+  /**
+   * Creates a new routing rule.
+   *
+   * @param routingRuleXO the routing rule to create
+   */
   @POST
   @RequiresAuthentication
   @RequiresPermissions("nexus:*")
@@ -109,6 +117,12 @@ public class RoutingRulesResource
     routingRuleStore.create(fromXO(routingRuleXO));
   }
 
+  /**
+   * Tests if a path is allowed by the given routing rule configuration.
+   *
+   * @param routingRuleTestXO the routing rule test configuration
+   * @return true if the path is allowed, false otherwise
+   */
   @POST
   @Path("/test")
   @RequiresAuthentication
@@ -121,6 +135,12 @@ public class RoutingRulesResource
     return routingRuleHelper.isAllowed(mode, matchers, path);
   }
 
+  /**
+   * Retrieves all routing rules.
+   *
+   * @param includeRepositoryNames whether to include repository names in the response
+   * @return a list of routing rules
+   */
   @GET
   public List<RoutingRuleXO> getRoutingRules(@QueryParam("includeRepositoryNames") boolean includeRepositoryNames) {
     routingRuleHelper.ensureUserHasPermissionToRead();
@@ -128,15 +148,23 @@ public class RoutingRulesResource
     List<RoutingRuleXO> rules = routingRuleStore.list()
             .stream()
             .map(RoutingRulesResource::toXO)
-        .collect(toList());
+            .collect(toList());
 
     if (includeRepositoryNames) {
-      setAssignedRepositories(rules);
+      // Use virtual thread for this potentially I/O-bound operation
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        executor.submit(() -> setAssignedRepositories(rules)).join();
+      }
     }
 
     return rules;
   }
 
+  /**
+   * Sets the assigned repositories for each routing rule.
+   *
+   * @param rules the routing rules to update
+   */
   @RequiresAuthentication
   @RequiresPermissions("nexus:*")
   private void setAssignedRepositories(final List<RoutingRuleXO> rules) {
@@ -144,8 +172,10 @@ public class RoutingRulesResource
     for (RoutingRuleXO rule : rules) {
       List<Repository> repositories = assignedRepositories.computeIfAbsent(id(rule.getId()), id -> emptyList());
       List<String> repositoryNames = repositoryPermissionChecker
-          .userHasRepositoryAdminPermission(repositories, BreadActions.READ).stream().map(Repository::getName)
-          .sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList());
+          .userHasRepositoryAdminPermission(repositories, BreadActions.READ).stream()
+          .map(Repository::getName)
+          .sorted(String.CASE_INSENSITIVE_ORDER)
+          .collect(Collectors.toList());
 
       rule.setAssignedRepositoryCount(repositories.size());
       rule.setAssignedRepositoryNames(repositoryNames);
@@ -153,6 +183,10 @@ public class RoutingRulesResource
   }
 
   /**
+   * Retrieves a routing rule by name.
+   *
+   * @param name the name of the routing rule
+   * @return the routing rule
    * @since 3.29
    */
   @GET
@@ -160,19 +194,32 @@ public class RoutingRulesResource
   public RoutingRuleXO getRoutingRule(@PathParam("name") final String name) {
     routingRuleHelper.ensureUserHasPermissionToRead();
     RoutingRuleXO routingRule = RoutingRulesResource.toXO(routingRuleStore.getByName(name));
-    Map<EntityId, List<Repository>> assignedRepositories = routingRuleHelper.calculateAssignedRepositories();
-    populateAssignedRepositoryNames(assignedRepositories, routingRule);
+    
+    // Use virtual thread for this potentially I/O-bound operation
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      executor.submit(() -> {
+        Map<EntityId, List<Repository>> assignedRepositories = routingRuleHelper.calculateAssignedRepositories();
+        populateAssignedRepositoryNames(assignedRepositories, routingRule);
+      }).join();
+    }
+    
     return routingRule;
   }
 
+  /**
+   * Updates a routing rule.
+   *
+   * @param name the name of the routing rule to update
+   * @param routingRuleXO the updated routing rule
+   */
   @PUT
   @Path("/{name}")
   @RequiresAuthentication
   @RequiresPermissions("nexus:*")
   public void updateRoutingRule(@PathParam("name") final String name, RoutingRuleXO routingRuleXO) {
     RoutingRule routingRule = routingRuleStore.getByName(name);
-    if (null == routingRule) {
-      throw new WebApplicationException(Status.NOT_FOUND);
+    if (routingRule == null) {
+      throw new WebApplicationException(STR."Routing rule '\{name}' not found", Status.NOT_FOUND);
     }
     routingRule.name(routingRuleXO.getName());
     routingRule.description(routingRuleXO.getDescription());
@@ -181,25 +228,39 @@ public class RoutingRulesResource
     routingRuleStore.update(routingRule);
   }
 
+  /**
+   * Deletes a routing rule.
+   *
+   * @param name the name of the routing rule to delete
+   */
   @DELETE
   @Path("/{name}")
   @RequiresAuthentication
   @RequiresPermissions("nexus:*")
   public void deleteRoutingRule(@PathParam("name") final String name) {
     RoutingRule routingRule = routingRuleStore.getByName(name);
-    if (null == routingRule) {
-      throw new WebApplicationException(Status.NOT_FOUND);
+    if (routingRule == null) {
+      throw new WebApplicationException(STR."Routing rule '\{name}' not found", Status.NOT_FOUND);
     }
 
     Map<EntityId, List<Repository>> assignedRepositories = routingRuleHelper.calculateAssignedRepositories();
     List<Repository> repositories = assignedRepositories.getOrDefault(routingRule.id(), emptyList());
     if (repositories.size() > 0) {
-      throw new WebApplicationException("Routing rule is still in use by " + repositories.size() + " repositories.", Status.BAD_REQUEST);
+      throw new WebApplicationException(
+          STR."Routing rule is still in use by \{repositories.size()} repositories.", 
+          Status.BAD_REQUEST);
     }
 
     routingRuleStore.delete(routingRule);
   }
 
+  /**
+   * Previews routing rules for a given path.
+   *
+   * @param path the path to preview
+   * @param filter the filter to apply ("groups", "proxies", or null for all)
+   * @return a preview of routing rules for the path
+   */
   @GET
   @Path("/preview")
   @RequiresPermissions("nexus:*")
@@ -207,34 +268,60 @@ public class RoutingRulesResource
   public RoutingRulePreviewXO getRoutingRulesPreview(@QueryParam("path") final String path,
                                                      @QueryParam("filter") final String filter)
   {
+    // Use virtual thread for this potentially I/O-bound operation
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      return executor.submit(() -> generateRoutingRulesPreview(path, filter)).join();
+    }
+  }
+
+  /**
+   * Generates a preview of routing rules for a given path.
+   *
+   * @param path the path to preview
+   * @param filter the filter to apply ("groups", "proxies", or null for all)
+   * @return a preview of routing rules for the path
+   */
+  private RoutingRulePreviewXO generateRoutingRulesPreview(final String path, final String filter) {
     Map<Class<?>, List<Repository>> repositoriesByType = stream(repositoryManager.browse())
         .collect(groupingBy(r -> r.getType().getClass()));
     List<Repository> groupRepositories = repositoriesByType.get(GroupType.class);
     List<Repository> proxyRepositories = repositoriesByType.get(ProxyType.class);
 
     Map<RoutingRule, Boolean> routingRulePathMapping = routingRuleStore.list().stream()
-        .collect(toMap(identity(), (RoutingRule rule) -> routingRuleHelper.isAllowed(rule, path)));
+        .collect(toMap(identity(), rule -> routingRuleHelper.isAllowed(rule, path)));
 
-    final Stream<Repository> repositories;
-    if (GROUPS.equals(filter)) {
-      repositories = groupRepositories.stream();
-    }
-    else if (PROXIES.equals(filter)) {
-      repositories = proxyRepositories.stream();
-    }
-    else {
-      repositories = Stream.of(groupRepositories, proxyRepositories).flatMap(Collection::stream);
-    }
+    final Stream<Repository> repositories = switch (filter) {
+      case GROUPS -> groupRepositories.stream();
+      case PROXIES -> proxyRepositories.stream();
+      default -> Stream.of(groupRepositories, proxyRepositories)
+                       .filter(list -> list != null)
+                       .flatMap(Collection::stream);
+    };
 
-    List<RoutingRulePreviewXO> rootRepositories = repositories.map(repository -> {
-      List<Repository> children = repository.optionalFacet(GroupFacet.class)
-          .map(facet -> facet.members()).orElse(null);
-      return toPreviewXO(repository, children, routingRulePathMapping);
-    }).collect(toList());
+    List<RoutingRulePreviewXO> rootRepositories = repositories
+        .map(repository -> {
+          var children = repository.optionalFacet(GroupFacet.class)
+              .map(GroupFacet::members)
+              .orElse(null);
+          return toPreviewXO(repository, children, routingRulePathMapping);
+        })
+        .collect(toList());
 
-    return RoutingRulePreviewXO.builder().children(rootRepositories).expanded(!rootRepositories.isEmpty()).expandable(true).build();
+    return RoutingRulePreviewXO.builder()
+        .children(rootRepositories)
+        .expanded(!rootRepositories.isEmpty())
+        .expandable(true)
+        .build();
   }
 
+  /**
+   * Converts a repository to a preview XO.
+   *
+   * @param repository the repository
+   * @param childRepositories the child repositories
+   * @param routingRulePathMapping the routing rule path mapping
+   * @return the preview XO
+   */
   private RoutingRulePreviewXO toPreviewXO(final Repository repository,
                                            final List<Repository> childRepositories,
                                            Map<RoutingRule, Boolean> routingRulePathMapping)
@@ -248,6 +335,8 @@ public class RoutingRulesResource
         .map(childRepository -> toPreviewXO(childRepository, null, routingRulePathMapping))
         .collect(toList());
 
+    boolean hasChildren = children != null && !children.isEmpty();
+    
     return RoutingRulePreviewXO.builder()
         .repository(repository.getName())
         .type(repository.getType().getValue())
@@ -255,17 +344,29 @@ public class RoutingRulesResource
         .allowed(allowed)
         .rule(ruleName)
         .children(children)
-        .expanded(children != null && !children.isEmpty())
-        .expandable(children != null && !children.isEmpty())
+        .expanded(hasChildren)
+        .expandable(hasChildren)
         .build();
   }
 
+  /**
+   * Gets the routing rule for a repository.
+   *
+   * @param repository the repository
+   * @return the routing rule, if any
+   */
   private Optional<RoutingRule> getRoutingRule(final Repository repository) {
     return Optional.ofNullable(repository.getConfiguration().getRoutingRuleId())
         .map(EntityId::getValue)
         .map(routingRuleStore::getById);
   }
 
+  /**
+   * Converts a routing rule XO to a routing rule.
+   *
+   * @param routingRuleXO the routing rule XO
+   * @return the routing rule
+   */
   private RoutingRule fromXO(RoutingRuleXO routingRuleXO) {
     final RoutingRule routingRule = routingRuleStore.newRoutingRule();
     routingRule.name(routingRuleXO.getName());
@@ -275,6 +376,12 @@ public class RoutingRulesResource
     return routingRule;
   }
 
+  /**
+   * Converts a routing rule to a routing rule XO.
+   *
+   * @param routingRule the routing rule
+   * @return the routing rule XO
+   */
   private static RoutingRuleXO toXO(RoutingRule routingRule) {
     RoutingRuleXO routingRuleXO = new RoutingRuleXO();
     routingRuleXO.setId(routingRule.id().getValue());
@@ -285,6 +392,12 @@ public class RoutingRulesResource
     return routingRuleXO;
   }
 
+  /**
+   * Populates the assigned repository names for a routing rule.
+   *
+   * @param assignedRepositories the assigned repositories
+   * @param routingRule the routing rule
+   */
   private void populateAssignedRepositoryNames(Map<EntityId, List<Repository>> assignedRepositories, RoutingRuleXO routingRule) {
     List<Repository> repositories = assignedRepositories.computeIfAbsent(id(routingRule.getId()), id -> emptyList());
     List<String> repositoryNames = repositoryPermissionChecker

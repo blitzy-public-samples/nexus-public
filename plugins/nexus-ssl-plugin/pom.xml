@@ -28,6 +28,12 @@
   <name>${project.groupId}:${project.artifactId}</name>
   <packaging>bundle</packaging>
 
+  <properties>
+    <!-- Java 21 compatibility -->
+    <maven.compiler.source>21</maven.compiler.source>
+    <maven.compiler.target>21</maven.compiler.target>
+  </properties>
+
   <dependencies>
     <dependency>
       <groupId>org.sonatype.nexus</groupId>
@@ -80,12 +86,14 @@
     <dependency>
       <groupId>org.spockframework</groupId>
       <artifactId>spock-core</artifactId>
+      <version>2.3-groovy-4.0</version>
       <scope>test</scope>
     </dependency>
 
     <dependency>
       <groupId>org.spockframework</groupId>
       <artifactId>spock-junit4</artifactId>
+      <version>2.3-groovy-4.0</version>
       <scope>test</scope>
     </dependency>
   </dependencies>
@@ -95,8 +103,104 @@
       <plugin>
         <groupId>org.apache.karaf.tooling</groupId>
         <artifactId>karaf-maven-plugin</artifactId>
+        <version>4.4.4</version>
+        <extensions>true</extensions>
+        <configuration>
+          <!-- Java 21 compatibility configuration -->
+          <javase>21</javase>
+        </configuration>
+      </plugin>
+      
+      <!-- Configure Surefire for Java 21 compatibility -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.2.5</version>
+        <configuration>
+          <argLine>-Djava.version=21 ${test.additional.args}</argLine>
+          <systemPropertyVariables>
+            <java.util.concurrent.ForkJoinPool.common.parallelism>16</java.util.concurrent.ForkJoinPool.common.parallelism>
+            <test.virtual.threads>${virtual.threads}</test.virtual.threads>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+      
+      <!-- Configure Failsafe for Java 21 compatibility -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <version>3.2.5</version>
+        <configuration>
+          <argLine>-Djava.version=21 ${test.additional.args}</argLine>
+          <systemPropertyVariables>
+            <java.util.concurrent.ForkJoinPool.common.parallelism>16</java.util.concurrent.ForkJoinPool.common.parallelism>
+            <test.virtual.threads>${virtual.threads}</test.virtual.threads>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+      
+      <!-- Configure JaCoCo for Java 21 bytecode compatibility -->
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <version>0.8.11</version>
+        <configuration>
+          <excludes>
+            <exclude>**/generated-sources/**</exclude>
+          </excludes>
+          <propertyName>jacocoArgLine</propertyName>
+        </configuration>
       </plugin>
     </plugins>
   </build>
+  
+  <profiles>
+    <!-- Profile for Java 21-specific tests -->
+    <profile>
+      <id>java21-tests</id>
+      <activation>
+        <property>
+          <name>java21-tests</name>
+          <value>true</value>
+        </property>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration>
+              <groups>org.sonatype.goodies.testsupport.group.Java21TestGroup</groups>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+    
+    <!-- Profile for Virtual Thread tests -->
+    <profile>
+      <id>virtual-threads</id>
+      <activation>
+        <property>
+          <name>virtual-threads</name>
+          <value>true</value>
+        </property>
+      </activation>
+      <properties>
+        <virtual.threads>true</virtual.threads>
+      </properties>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration>
+              <groups>org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup</groups>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 
 </project>

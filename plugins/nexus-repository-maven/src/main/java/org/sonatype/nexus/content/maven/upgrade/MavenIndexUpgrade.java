@@ -57,7 +57,7 @@ public abstract class MavenIndexUpgrade
 
   @Override
   public void migrate(final Connection connection) throws Exception {
-    log.info("Searching for maven repositories that need a search index update");
+    log.info(STR."Searching for maven repositories that need a search index update");
 
     ObjectMapper objectMapper = new ObjectMapper();
 
@@ -66,9 +66,10 @@ public abstract class MavenIndexUpgrade
       String attributes = getRepositoryAttributes(connection, id);
       if (attributes != null) {
         // add the outdated flag to the existing attributes
-        ObjectNode json = (ObjectNode) objectMapper.readTree(attributes);
-        json.put(SEARCH_INDEX_OUTDATED, true);
-        setRepositoryAttributes(connection, id, objectMapper.writeValueAsBytes(json));
+        if (objectMapper.readTree(attributes) instanceof ObjectNode json) {
+          json.put(SEARCH_INDEX_OUTDATED, true);
+          setRepositoryAttributes(connection, id, objectMapper.writeValueAsBytes(json));
+        }
       }
     }
   }
@@ -93,7 +94,7 @@ public abstract class MavenIndexUpgrade
       if (rs.next()) {
         return rs.getString(1);
       } else {
-        log.warn("Could not find row in maven2_content_repository for config_repository_id = {}", repositoryId);
+        log.warn(STR."Could not find row in maven2_content_repository for config_repository_id = \{repositoryId}");
         return null;
       }
     }

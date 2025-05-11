@@ -14,16 +14,16 @@ package org.sonatype.nexus.repository.httpbridge.internal;
 
 import java.util.Map;
 
-import javax.annotation.Nonnull;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.annotation.Nonnull;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.httpbridge.HttpResponseSender;
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import static java.util.Objects.requireNonNull;
 
 /**
  * Response sender selector.
@@ -43,8 +43,8 @@ class HttpResponseSenderSelector
   public HttpResponseSenderSelector(final Map<String, HttpResponseSender> responseSenders,
                                     final DefaultHttpResponseSender defaultHttpResponseSender)
   {
-    this.responseSenders = checkNotNull(responseSenders);
-    this.defaultHttpResponseSender = checkNotNull(defaultHttpResponseSender);
+    this.responseSenders = requireNonNull(responseSenders, "responseSenders");
+    this.defaultHttpResponseSender = requireNonNull(defaultHttpResponseSender, "defaultHttpResponseSender");
   }
 
   /**
@@ -64,10 +64,17 @@ class HttpResponseSenderSelector
   public HttpResponseSender sender(final Repository repository) {
     String format = repository.getFormat().getValue();
     log.debug("Looking for HTTP response sender: {}", format);
-    HttpResponseSender sender = responseSenders.get(format);
-    if (sender == null) {
-      return defaultHttpResponseSender;
-    }
-    return sender;
+    
+    // Using pattern matching with switch expression for cleaner code
+    return switch (responseSenders.get(format)) {
+      case HttpResponseSender sender when sender != null -> {
+        log.trace("Found format-specific sender for: {}", format);
+        yield sender;
+      }
+      case null -> {
+        log.trace("No format-specific sender found for: {}, using default", format);
+        yield defaultHttpResponseSender;
+      }
+    };
   }
 }

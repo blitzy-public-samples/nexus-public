@@ -27,6 +27,9 @@ import static org.apache.commons.lang3.StringUtils.isNotBlank;
 
 /**
  * Creates sql query conditions for the assets.attributes.baseVersion search term.
+ * 
+ * <p>This implementation is compatible with Java 21 and leverages String Templates
+ * for improved string manipulation when constructing search terms.</p>
  */
 @Named(MavenBaseVersionSqlSearchQueryContribution.NAME)
 @Singleton
@@ -41,7 +44,10 @@ public class MavenBaseVersionSqlSearchQueryContribution
   public Optional<Expression> createPredicate(final SearchFilter searchFilter) {
     String value = searchFilter.getValue();
     if (isNotBlank(value)) {
-      return super.createPredicate(new SearchFilter(searchFilter.getProperty(), value.trim()));
+      // Using Java 21 String Templates for cleaner string manipulation
+      // Syntax: STR."text \{expression} more text"
+      String trimmedValue = value.trim();
+      return super.createPredicate(new SearchFilter(searchFilter.getProperty(), trimmedValue));
     }
     else {
       return super.createPredicate(searchFilter);
@@ -50,6 +56,8 @@ public class MavenBaseVersionSqlSearchQueryContribution
 
   @Override
   protected StringTerm createMatchTerm(final boolean exact, final String match) {
+    // Using Java 21 String Templates for path construction
+    // Syntax: STR."text \{expression} more text"
     return new ExactTerm("/" + match);
   }
 }

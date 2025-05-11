@@ -24,21 +24,27 @@ import com.google.common.hash.HashCode;
  *
  * @since 3.25
  */
-public class HashedPayload
-{
-  private final Payload payload;
-
-  private final Map<HashAlgorithm, HashCode> hashCodes;
-
-  HashedPayload(final Payload payload, final Map<HashAlgorithm, HashCode> hashCodes) {
-    this.payload = payload;
-    this.hashCodes = hashCodes;
+public record HashedPayload(Payload payload, Map<HashAlgorithm, HashCode> hashCodes) {
+  /**
+   * Creates a new HashedPayload instance.
+   *
+   * @param payload the payload
+   * @param hashCodes the hash codes for the payload
+   */
+  HashedPayload {
+    // Compact constructor for validation if needed in the future
   }
-
+  
+  /**
+   * @return the payload
+   */
   public Payload getPayload() {
     return payload;
   }
-
+  
+  /**
+   * @return the hash codes for the payload
+   */
   public Map<HashAlgorithm, HashCode> getHashCodes() {
     return hashCodes;
   }

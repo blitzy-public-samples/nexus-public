@@ -26,18 +26,27 @@ import org.sonatype.nexus.repository.manager.RepositoryManager;
 import org.sonatype.nexus.repository.upload.UploadManager;
 import org.sonatype.nexus.repository.upload.UploadResponse;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-public class UploadServiceTest
+/**
+ * Tests for {@link UploadService} with Java 21 and JUnit Jupiter compatibility.
+ *
+ * @since 3.60
+ */
+@ExtendWith(MockitoExtension.class)
+class UploadServiceTest
     extends TestSupport
 {
   private static final String REPO_NAME = "repo";
@@ -59,8 +68,8 @@ public class UploadServiceTest
   @Mock
   private HttpServletRequest request;
 
-  @Before
-  public void setup() throws IOException {
+  @BeforeEach
+  void setup() throws IOException {
     when(repositoryManager.get(REPO_NAME)).thenReturn(repo);
 
     UploadResponse uploadResponse = new UploadResponse(Collections.singletonList("foo"));
@@ -71,18 +80,15 @@ public class UploadServiceTest
   }
 
   @Test
-  public void testUpload_unknownRepository() throws IOException {
-    try {
+  void testUpload_unknownRepository() {
+    NullPointerException exception = assertThrows(NullPointerException.class, () -> {
       component.upload("foo", request);
-      fail("Expected exception to be thrown");
-    }
-    catch (NullPointerException e) {
-      assertThat(e.getMessage(), is("Specified repository is missing"));
-    }
+    });
+    assertThat(exception.getMessage(), is("Specified repository is missing"));
   }
 
   @Test
-  public void testUpload() throws IOException {
+  void testUpload() throws IOException {
     Format format = mock(Format.class);
     when(repo.getFormat()).thenReturn(format);
     when(format.getValue()).thenReturn(null);
@@ -90,7 +96,7 @@ public class UploadServiceTest
   }
 
   @Test
-  public void testUploadNpm() throws IOException {
+  void testUploadNpm() throws IOException {
     Format format = mock(Format.class);
     when(repo.getFormat()).thenReturn(format);
     when(format.getValue()).thenReturn("npm");
@@ -99,7 +105,7 @@ public class UploadServiceTest
   }
 
   @Test
-  public void testCreateSearchTerm() {
+  void testCreateSearchTerm() {
     String result = component
         .createSearchTerm(Arrays.asList("foo-x.z/bar/bar", "foo-x.z/bar/foo", "foo-x.z/bar/foo/bar"));
 

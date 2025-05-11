@@ -22,9 +22,11 @@ import org.sonatype.nexus.repository.manager.RepositoryManager;
 import org.sonatype.nexus.repository.security.RepositoryPermissionChecker;
 
 import com.google.common.collect.ImmutableMap;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.Arrays.asList;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -32,7 +34,13 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.when;
 
-public class DataStoreComponentTest
+/**
+ * Tests for {@link DataStoreComponent} with Java 21 compatibility.
+ * 
+ * @since 3.60
+ */
+@ExtendWith(MockitoExtension.class)
+class DataStoreComponentTest
     extends TestSupport
 {
   @Mock
@@ -52,8 +60,8 @@ public class DataStoreComponentTest
 
   private DataStoreComponent underTest;
 
-  @Before
-  public void setup() {
+  @BeforeEach
+  void setup() {
     DataStoreConfiguration contentConfig = new DataStoreConfiguration();
     contentConfig.setName("content");
     contentConfig.setType("jdbc");
@@ -75,7 +83,7 @@ public class DataStoreComponentTest
   }
 
   @Test
-  public void testReadingDatabase() {
+  void testReadingDatabase() {
     List<DataStoreXO> dataStores = underTest.read();
     assertThat(dataStores, hasSize(2));
     assertThat(dataStores.get(0).getName(), is("content"));
@@ -83,7 +91,7 @@ public class DataStoreComponentTest
   }
 
   @Test
-  public void testReadingH2Database() {
+  void testReadingH2Database() {
     List<DataStoreXO> dataStores = underTest.readH2();
     assertThat(dataStores, hasSize(1));
     assertThat(dataStores.get(0).getName(), is("content"));

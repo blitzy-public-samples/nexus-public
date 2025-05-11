@@ -28,7 +28,11 @@ import org.apache.maven.index.reader.Record;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
- * Hosted implementation of {@link MavenIndexFacet}.
+ * Hosted implementation of {@link MavenIndexFacet} with Java 21 enhancements.
+ *
+ * <p>This implementation leverages Java 21 features such as Virtual Threads for I/O operations
+ * through the parent class {@link MavenContentIndexFacetSupport}. The index publishing operation
+ * is executed on a virtual thread to improve performance for this I/O-bound task.</p>
  *
  * @since 3.26
  */
@@ -39,6 +43,12 @@ public class MavenContentHostedIndexFacet
 {
   private final DuplicateDetectionStrategyProvider duplicateDetectionStrategyProvider;
 
+  /**
+   * Constructor with dependency injection support for Java 21 environment.
+   *
+   * @param duplicateDetectionStrategyProvider provider for duplicate detection strategies
+   * @param mavenIndexPublisher publisher for Maven indexes
+   */
   @Inject
   public MavenContentHostedIndexFacet(
       final DuplicateDetectionStrategyProvider duplicateDetectionStrategyProvider,
@@ -48,10 +58,24 @@ public class MavenContentHostedIndexFacet
     this.duplicateDetectionStrategyProvider = checkNotNull(duplicateDetectionStrategyProvider);
   }
 
+  /**
+   * Implementation of the abstract method from the parent class.
+   * This method is called by the parent's {@link MavenContentIndexFacetSupport#publishIndex()}
+   * which executes this I/O-bound operation on a virtual thread for improved performance.
+   *
+   * @throws IOException if an I/O error occurs during publishing
+   */
   @Override
-  public void publishIndex() throws IOException {
-    try (DuplicateDetectionStrategy<Record> strategy = duplicateDetectionStrategyProvider.get()) {
+  protected void doPublishIndex() throws IOException {
+    try (var strategy = duplicateDetectionStrategyProvider.get()) {
       mavenIndexPublisher.publishHostedIndex(getRepository(), strategy);
+    }
+    catch (Exception e) {
+      // Use pattern matching for exception handling (Java 21 feature)
+      if (e instanceof IOException ioe) {
+        throw ioe;
+      }
+      throw new IOException(STR."Error publishing hosted index for \{getRepository().getName()}", e);
     }
   }
 }

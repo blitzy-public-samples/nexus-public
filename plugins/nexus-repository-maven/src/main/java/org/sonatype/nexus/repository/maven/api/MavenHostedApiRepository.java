@@ -12,8 +12,8 @@
  */
 package org.sonatype.nexus.repository.maven.api;
 
-import javax.validation.Valid;
-import javax.validation.constraints.NotNull;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 
 import org.sonatype.nexus.repository.maven.internal.Maven2Format;
 import org.sonatype.nexus.repository.rest.api.model.CleanupPolicyAttributes;
@@ -22,6 +22,7 @@ import org.sonatype.nexus.repository.rest.api.model.HostedStorageAttributes;
 import org.sonatype.nexus.repository.rest.api.model.SimpleApiHostedRepository;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -31,13 +32,20 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * @since 3.20
  */
 @JsonIgnoreProperties(value = {"format", "type", "url"}, allowGetters = true)
-public class MavenHostedApiRepository
-    extends SimpleApiHostedRepository
+public record MavenHostedApiRepository(
+    @JsonProperty("name") String name,
+    @JsonProperty("url") String url,
+    @JsonProperty("online") Boolean online,
+    @JsonProperty("storage") HostedStorageAttributes storage,
+    @JsonProperty("cleanup") CleanupPolicyAttributes cleanup,
+    @Valid @NotNull @JsonProperty("maven") MavenAttributes maven,
+    @JsonProperty("component") ComponentAttributes component,
+    // This field holds the delegate SimpleApiHostedRepository instance
+    @JsonIgnore SimpleApiHostedRepository delegate)
 {
-  @Valid
-  @NotNull
-  protected final MavenAttributes maven;
-
+  /**
+   * Creates a new MavenHostedApiRepository with the specified attributes.
+   */
   @JsonCreator
   public MavenHostedApiRepository(
       @JsonProperty("name") final String name,
@@ -48,11 +56,21 @@ public class MavenHostedApiRepository
       @JsonProperty("maven") final MavenAttributes maven,
       @JsonProperty("component") final ComponentAttributes component)
   {
-    super(name, Maven2Format.NAME, url, online, storage, cleanup, component);
-    this.maven = maven;
+    this(name, url, online, storage, cleanup, maven, component,
+        new SimpleApiHostedRepository(name, Maven2Format.NAME, url, online, storage, cleanup, component));
   }
-
-  public MavenAttributes getMaven() {
-    return maven;
+  
+  /**
+   * @return the format of the repository
+   */
+  public String getFormat() {
+    return delegate.getFormat();
+  }
+  
+  /**
+   * @return the type of the repository
+   */
+  public String getType() {
+    return delegate.getType();
   }
 }

@@ -15,55 +15,73 @@ package org.sonatype.nexus.coreui;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.app.FreezeService;
 
-import org.junit.Before;
-import org.junit.Test;
+// JUnit Jupiter imports (JUnit 5)
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 
+// Updated Hamcrest imports for 2.2 compatibility
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
+// Updated Mockito imports for 4.11.0
 import static org.mockito.ArgumentMatchers.isA;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * Test for {@link FreezeComponent}.
+ * 
+ * Updated for Java 21 compatibility and JUnit Jupiter (JUnit 5.10.1).
+ */
 public class FreezeComponentTest
     extends TestSupport
 {
-
-  FreezeComponent underTest;
+  private FreezeComponent underTest;
 
   @Mock
-  FreezeService freezeService;
+  private FreezeService freezeService;
 
-  @Before
+  /**
+   * Setup test fixture.
+   */
+  @BeforeEach
   public void setup() {
     underTest = new FreezeComponent(freezeService);
   }
 
+  /**
+   * Test reading freeze status.
+   */
   @Test
-  public void read() throws Exception {
+  public void read() {
     when(freezeService.isFrozen()).thenReturn(true);
     FreezeStatusXO freezeStatusXO = underTest.read();
-    assertThat(freezeStatusXO.isFrozen(), is(true));
+    assertThat(freezeStatusXO.frozen(), is(true));
   }
 
+  /**
+   * Test updating to release (unfreeze) state.
+   */
   @Test
-  public void testUpdateRelease() throws Exception {
-    FreezeStatusXO freezeStatusXO = new FreezeStatusXO();
-    freezeStatusXO.setFrozen(false);
+  public void testUpdateRelease() {
+    // Create a new record instance with frozen=false
+    FreezeStatusXO freezeStatusXO = new FreezeStatusXO(false);
 
     underTest.update(freezeStatusXO);
 
     verify(freezeService).cancelFreeze();
   }
 
+  /**
+   * Test updating to freeze state.
+   */
   @Test
-  public void testUpdateFreeze() throws Exception {
-    FreezeStatusXO freezeStatusXO = new FreezeStatusXO();
-    freezeStatusXO.setFrozen(true);
+  public void testUpdateFreeze() {
+    // Create a new record instance with frozen=true
+    FreezeStatusXO freezeStatusXO = new FreezeStatusXO(true);
 
     underTest.update(freezeStatusXO);
 
     verify(freezeService).requestFreeze(isA(String.class));
   }
-
 }

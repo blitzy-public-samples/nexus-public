@@ -14,50 +14,105 @@ package org.sonatype.nexus.blobstore.s3.internal.encryption;
 
 import java.util.Optional;
 
-import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
-import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
-import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-import software.amazon.awssdk.services.s3.model.ServerSideEncryption;
+import javax.inject.Named;
 
+import com.amazonaws.services.s3.model.AbstractPutObjectRequest;
+import com.amazonaws.services.s3.model.CopyObjectRequest;
+import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
+import com.amazonaws.services.s3.model.SSEAwsKeyManagementParams;
+import com.google.common.annotations.VisibleForTesting;
+
+import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.Optional.empty;
 
 /**
- * An {@link S3Encrypter} that adds KMS server-side encryption to requests.
- * Updated to work with AWS SDK for Java 2.x.
+ * Adds KMS encryption to S3 requests.
+ * The keyID is optional and in the params.
+ * 
+ * This implementation is compatible with Java 21 and uses AWS SDK for S3 KMS encryption.
+ * It ensures secure key management through AWS KMS service while maintaining compatibility
+ * with Java 21's enhanced security model.
  *
  * @since 3.19
  */
+@Named(KMSEncrypter.ID)
 public class KMSEncrypter
     implements S3Encrypter
 {
-  public static final String ID = "kms";
+  public static final String ID = "kmsManagedEncryption";
 
-  private final Optional<String> key;
+  public static final String NAME = "KMS Managed Encryption";
 
   /**
-   * Creates a new KMSEncrypter with the specified key.
-   *
-   * @param key the KMS key to use for encryption
+   * Returns the KMS parameters used for encryption.
+   * Exposed for testing purposes only.
+   * 
+   * @return The SSEAwsKeyManagementParams instance used for encryption
    */
-  public KMSEncrypter(final Optional<String> key) {
-    this.key = key;
+  @VisibleForTesting
+  SSEAwsKeyManagementParams getKmsParameters() {
+    return kmsParameters;
   }
 
-  @Override
-  public void addEncryption(final PutObjectRequest.Builder request) {
-    request.serverSideEncryption(ServerSideEncryption.AWS_KMS);
-    key.ifPresent(request::ssekmsKeyId);
+  private final SSEAwsKeyManagementParams kmsParameters;
+
+  /**
+   * Creates a KMSEncrypter with default parameters (no specific KMS key ID).
+   */
+  public KMSEncrypter() {
+    this(empty());
   }
 
-  @Override
-  public void addEncryption(final CopyObjectRequest.Builder request) {
-    request.serverSideEncryption(ServerSideEncryption.AWS_KMS);
-    key.ifPresent(request::ssekmsKeyId);
+  /**
+   * Creates a KMSEncrypter with the specified KMS ID.
+   * 
+   * @param kmsId Optional KMS key ID to use for encryption. If empty or contains only whitespace,
+   *              a default SSEAwsKeyManagementParams instance will be used.
+   */
+  public KMSEncrypter(final Optional<String> kmsId) {
+    this.kmsParameters = checkNotNull(kmsId)
+        .map(String::trim)
+        .filter(id -> !id.isEmpty())
+        .map(SSEAwsKeyManagementParams::new)
+        .orElse(new SSEAwsKeyManagementParams());
   }
 
+  /**
+   * Adds KMS encryption parameters to a multipart upload request.
+   * 
+   * @param request The multipart upload request to add encryption to
+   * @param <T> The type of request
+   * @return The modified request with encryption parameters
+   */
   @Override
-  public void addEncryption(final CreateMultipartUploadRequest.Builder request) {
-    request.serverSideEncryption(ServerSideEncryption.AWS_KMS);
-    key.ifPresent(request::ssekmsKeyId);
+  public <T extends InitiateMultipartUploadRequest> T addEncryption(final T request) {
+    request.setSSEAwsKeyManagementParams(kmsParameters);
+    return request;
+  }
+
+  /**
+   * Adds KMS encryption parameters to a put object request.
+   * 
+   * @param request The put object request to add encryption to
+   * @param <T> The type of request
+   * @return The modified request with encryption parameters
+   */
+  @Override
+  public <T extends AbstractPutObjectRequest> T addEncryption(final T request) {
+    request.setSSEAwsKeyManagementParams(kmsParameters);
+    return request;
+  }
+
+  /**
+   * Adds KMS encryption parameters to a copy object request.
+   * 
+   * @param request The copy object request to add encryption to
+   * @param <T> The type of request
+   * @return The modified request with encryption parameters
+   */
+  @Override
+  public <T extends CopyObjectRequest> T addEncryption(final T request) {
+    request.setSSEAwsKeyManagementParams(kmsParameters);
+    return request;
   }
 }

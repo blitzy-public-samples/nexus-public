@@ -27,6 +27,11 @@
   <name>${project.groupId}:${project.artifactId}</name>
   <packaging>bundle</packaging>
 
+  <properties>
+    <maven.compiler.source>21</maven.compiler.source>
+    <maven.compiler.target>21</maven.compiler.target>
+  </properties>
+
   <dependencies>
     <dependency>
       <groupId>org.sonatype.nexus</groupId>
@@ -55,8 +60,26 @@
   <build>
     <plugins>
       <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <release>21</release>
+        </configuration>
+      </plugin>
+      <plugin>
         <groupId>org.apache.karaf.tooling</groupId>
         <artifactId>karaf-maven-plugin</artifactId>
+        <version>4.4.3</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.felix</groupId>
+        <artifactId>maven-bundle-plugin</artifactId>
+        <configuration>
+          <instructions>
+            <Bundle-RequiredExecutionEnvironment>JavaSE-21</Bundle-RequiredExecutionEnvironment>
+            <_removeheaders>Bnd-LastModified,Built-By,Private-Package,Tool</_removeheaders>
+          </instructions>
+        </configuration>
       </plugin>
     </plugins>
   </build>

@@ -29,6 +29,8 @@ import static org.sonatype.nexus.repository.http.HttpMethods.HEAD;
 
 /**
  * Fetches or rebuilds the maven archetype catalog for a given repository.
+ * 
+ * Updated for Java 21 to use pattern matching for switch expressions.
  *
  * @since 3.25
  */
@@ -38,31 +40,38 @@ public class MavenArchetypeCatalogHandler
     extends ComponentSupport
     implements Handler
 {
+  /**
+   * Handles the request using Java 21 pattern matching for switch expressions.
+   * This implementation uses the enhanced switch syntax with arrow notation
+   * which eliminates the need for break statements and provides more concise code.
+   */
   @Nonnull
   @Override
   public Response handle(
       @Nonnull final Context context) throws Exception
   {
     String method = context.getRequest().getAction();
-    switch (method) {
-      case GET:
-      case HEAD:
-        return fetchOrGenerateArchetypeCatalog(context);
-      default:
-        return HttpResponses.methodNotAllowed(context.getRequest().getAction(), GET, HEAD);
-    }
+    return switch (method) {
+      case GET, HEAD -> fetchOrGenerateArchetypeCatalog(context);
+      default -> HttpResponses.methodNotAllowed(context.getRequest().getAction(), GET, HEAD);
+    };
   }
 
+  /**
+   * Attempts to fetch the archetype catalog, and generates it if not found.
+   * Uses a more concise conditional expression style aligned with Java 21 practices.
+   */
   private Response fetchOrGenerateArchetypeCatalog(final Context context) throws Exception {
     Response response = context.proceed();
-    if (!response.getStatus().isSuccessful()) {
-      return generateArchetypeCatalog(context);
-    }
-    else {
-      return response;
-    }
+    return response.getStatus().isSuccessful() 
+        ? response 
+        : generateArchetypeCatalog(context);
   }
 
+  /**
+   * Generates the archetype catalog for the repository.
+   * This method uses the repository's MavenArchetypeCatalogFacet to rebuild the catalog.
+   */
   private Response generateArchetypeCatalog(final Context context) throws Exception {
     Repository repository = context.getRepository();
     MavenArchetypeCatalogFacet archetypeCatalogFacet = repository.facet(MavenArchetypeCatalogFacet.class);

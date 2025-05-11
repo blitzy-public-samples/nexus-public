@@ -16,7 +16,6 @@ import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import org.sonatype.nexus.coreui.AssetXO;
 import org.sonatype.nexus.repository.Repository;
@@ -32,16 +31,23 @@ import org.sonatype.nexus.repository.types.HostedType;
 import org.sonatype.nexus.repository.types.ProxyType;
 import org.sonatype.nexus.selector.SelectorFactory;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-public class ContentComponentHelperTest
-    extends TestSupport
+/**
+ * Tests for {@link ContentComponentHelper}.
+ * 
+ * @since 3.38
+ */
+@ExtendWith(MockitoExtension.class)
+class ContentComponentHelperTest
 {
   @Mock
   MaintenanceService maintenanceService;
@@ -71,8 +77,7 @@ public class ContentComponentHelperTest
   Repository repository;
 
   @Test
-  public void toAssetXOTestHosted() {
-
+  void toAssetXOTestHosted() {
     when(repositoryManager.get("maven-hosted")).thenReturn(repository);
     when(repository.getType()).thenReturn(new HostedType());
     when(componentFinders.get("default")).thenReturn(componentFinder);
@@ -91,12 +96,14 @@ public class ContentComponentHelperTest
         "maven2",
         createAsset()
     );
-    assertThat(((Map) assetXO.getAttributes().get("content")).containsKey("last_modified"), is(false));
+    
+    @SuppressWarnings("unchecked")
+    Map<String, Object> contentMap = (Map<String, Object>) assetXO.getAttributes().get("content");
+    assertThat(contentMap.containsKey("last_modified"), is(false));
   }
 
   @Test
-  public void toAssetXOTestProxy() {
-
+  void toAssetXOTestProxy() {
     when(repositoryManager.get("maven-hosted")).thenReturn(repository);
     when(repository.getType()).thenReturn(new ProxyType());
     when(componentFinders.get("default")).thenReturn(componentFinder);
@@ -115,29 +122,42 @@ public class ContentComponentHelperTest
         "maven2",
         createAsset()
     );
-    Map<String, Object> contentMap =(Map<String, Object>) assetXO.getAttributes().get("content");
+    
+    @SuppressWarnings("unchecked")
+    Map<String, Object> contentMap = (Map<String, Object>) assetXO.getAttributes().get("content");
     assertThat(contentMap.containsKey("last_modified"), is(true));
     assertThat(contentMap.get("last_modified"), is("2023-11-13T16:00:20.450+02:00"));
   }
 
+  /**
+   * Creates a mock asset for testing.
+   * 
+   * @return a mocked Asset instance
+   */
   private Asset createAsset() {
-
     FluentAssetImpl asset = mock(FluentAssetImpl.class);
     when(asset.path()).thenReturn("/org/apache/logging/log4j/log4j-core/maven-metadata.xml");
+    
     Map<String, String> contentMap = new HashMap<>();
     contentMap.put("last_modified", "2023-11-13T16:00:20.450+02:00");
+    
     Map<String, Object> backingMap = new HashMap<>();
     backingMap.put("content", contentMap);
+    
     when(assetAttributes.backing()).thenReturn(backingMap);
     when(asset.attributes()).thenReturn(assetAttributes);
     when(asset.kind()).thenReturn("REPOSITORY_METADATA");
+    
     OffsetDateTime blobCreated = OffsetDateTime.now();
     when(blob.blobCreated()).thenReturn(blobCreated);
+    
     OffsetDateTime assetCreated = OffsetDateTime.now();
     when(asset.created()).thenReturn(assetCreated);
+    
     AssetData assetData = new AssetData();
     assetData.setAssetId(1);
     when(asset.unwrap()).thenReturn(assetData);
+    
     return asset;
   }
 }

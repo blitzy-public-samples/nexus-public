@@ -37,6 +37,11 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.repository.RepositoryTaskSupport.ALL_REPOSITORIES;
 import static org.sonatype.nexus.repository.browse.node.RebuildBrowseNodesTaskDescriptor.REPOSITORY_NAME_FIELD_ID;
 
+/**
+ * Contributes browse-related state information to the UI.
+ * 
+ * @since 3.0
+ */
 @Singleton
 @Named
 public class BrowseStateContributor
@@ -49,6 +54,11 @@ public class BrowseStateContributor
   private final Supplier<Set<String>> rebuildingRepositoriesCache;
 
   private static final long DEFAULT_REBUILDING_REPOSITORIES_CACHE_TTL = 60;
+
+  /**
+   * Record for state data to leverage Java 21 record patterns
+   */
+  private record BrowseState(Set<String> rebuildingRepositories, int browseTreeMaxNodes) {}
 
   @Inject
   public BrowseStateContributor(
@@ -68,21 +78,33 @@ public class BrowseStateContributor
 
   @Override
   public Map<String, Object> getState() {
-    Map<String, Object> state = new HashMap<>();
-    state.put("rebuildingRepositories", rebuildingRepositoriesCache.get());
-    state.put("browseTreeMaxNodes", browseNodeConfiguration.getMaxNodes());
-
-    return state;
+    // Create a record instance with the state data
+    BrowseState state = new BrowseState(
+        rebuildingRepositoriesCache.get(),
+        browseNodeConfiguration.getMaxNodes());
+    
+    // Use pattern matching to extract values from the record
+    Map<String, Object> stateMap = new HashMap<>();
+    if (state instanceof BrowseState(var rebuildingRepositories, var browseTreeMaxNodes)) {
+      stateMap.put("rebuildingRepositories", rebuildingRepositories);
+      stateMap.put("browseTreeMaxNodes", browseTreeMaxNodes);
+    }
+    
+    return stateMap;
   }
 
   private Set<String> getRepositoryNamesForRunningTasks() {
     Set<String> repositoryNames = new HashSet<>();
     for (TaskInfo taskInfo : taskScheduler.listsTasks()) {
-      if (RebuildBrowseNodesTaskDescriptor.TYPE_ID.equals(taskInfo.getTypeId()) && TaskState.RUNNING
-          .equals(taskInfo.getCurrentState().getRunState())) {
+      // Use pattern matching for instanceof check with conditional extraction
+      if (taskInfo.getTypeId() instanceof String typeId && 
+          RebuildBrowseNodesTaskDescriptor.TYPE_ID.equals(typeId) && 
+          taskInfo.getCurrentState().getRunState() instanceof TaskState runState && 
+          TaskState.RUNNING.equals(runState)) {
+        
         String repositoryName = taskInfo.getConfiguration().getString(REPOSITORY_NAME_FIELD_ID);
         if (ALL_REPOSITORIES.equals(repositoryName)) {
-          //if all repos, just return a single entry denoting that, save the time to check other tasks
+          // If all repos, just return a single entry denoting that, save the time to check other tasks
           return Collections.singleton(ALL_REPOSITORIES);
         }
         else {

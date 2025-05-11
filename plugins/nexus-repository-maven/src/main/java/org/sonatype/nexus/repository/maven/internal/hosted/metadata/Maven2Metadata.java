@@ -74,11 +74,9 @@ public class Maven2Metadata
       if (this == o) {
         return true;
       }
-      if (!(o instanceof Plugin)) {
+      if (!(o instanceof Plugin plugin)) {
         return false;
       }
-
-      Plugin plugin = (Plugin) o;
 
       if (!artifactId.equals(plugin.artifactId)) {
         return false;
@@ -196,11 +194,9 @@ public class Maven2Metadata
       if (this == o) {
         return true;
       }
-      if (!(o instanceof Snapshot)) {
+      if (!(o instanceof Snapshot snapshot)) {
         return false;
       }
-
-      Snapshot snapshot = (Snapshot) o;
 
       if (!lastUpdated.equals(snapshot.lastUpdated)) {
         return false;

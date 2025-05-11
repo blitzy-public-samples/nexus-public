@@ -28,6 +28,23 @@ import org.sonatype.nexus.common.log.LoggerLevel;
 public class LogConfigurationCustomizerImpl
     implements LogConfigurationCustomizer
 {
+  /**
+   * Customizes the logging configuration for the Core UI component.
+   * 
+   * <p>Note: When implementing logging within this package, Java 21 String Templates
+   * can be leveraged for more readable and maintainable log messages. For example:</p>
+   * 
+   * <pre>
+   * // Instead of concatenation:
+   * log.debug("Processing request for user: " + username + " with role: " + role);
+   * 
+   * // Use String Templates (Java 21):
+   * log.debug(STR."Processing request for user: \{username} with role: \{role}");
+   * </pre>
+   * 
+   * <p>String Templates provide better readability and performance compared to
+   * traditional string concatenation or format methods.</p>
+   */
   @Override
   public void customize(final Configuration configuration) {
     configuration.setLoggerLevel("org.sonatype.nexus.coreui", LoggerLevel.DEFAULT);

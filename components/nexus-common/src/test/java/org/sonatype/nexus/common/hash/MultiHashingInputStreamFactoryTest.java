@@ -15,49 +15,52 @@ package org.sonatype.nexus.common.hash;
 import java.io.ByteArrayInputStream;
 import java.util.Collections;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 
-public class MultiHashingInputStreamFactoryTest
+/**
+ * Tests for {@link MultiHashingInputStreamFactory}.
+ */
+class MultiHashingInputStreamFactoryTest
 {
-  @Before
-  public void teardown() {
+  @BeforeEach
+  void setUp() {
     MultiHashingInputStreamFactory.enableParallel();
     MultiHashingInputStreamFactory.setThreshold(-1);
   }
 
   @Test
-  public void testDisableParallel() {
+  void disableParallel() {
     MultiHashingInputStreamFactory.disableParallel();
 
     assertThat(MultiHashingInputStreamFactory.input(Collections.emptyList(), in()).getClass(),
-        is((Object) MultiHashingInputStream.class));
+        is(MultiHashingInputStream.class));
   }
 
   @Test
-  public void testEnableParallel() {
+  void enableParallel() {
     MultiHashingInputStreamFactory.disableParallel();
     MultiHashingInputStreamFactory.enableParallel();
 
     assertThat(MultiHashingInputStreamFactory.input(Collections.emptyList(), in()).getClass(),
-        is((Object) ParallelMultiHashingInputStream.class));
+        is(ParallelMultiHashingInputStream.class));
   }
 
   @Test
-  public void testThreshold() {
+  void threshold() {
     // default value should result in a parallel
     assertThat(MultiHashingInputStreamFactory.input(Collections.emptyList(), in()).getClass(),
-        is((Object) ParallelMultiHashingInputStream.class));
+        is(ParallelMultiHashingInputStream.class));
 
     // White box - we know the threshold is multiplied by parallism resulting in zero, and zero isn't less than the
     // expected zero queued tasks (or if the JVM is using the pool a positive number)
     MultiHashingInputStreamFactory.setThreshold(0);
 
     assertThat(MultiHashingInputStreamFactory.input(Collections.emptyList(), in()).getClass(),
-        is((Object) MultiHashingInputStream.class));
+        is(MultiHashingInputStream.class));
   }
 
   private static ByteArrayInputStream in() {

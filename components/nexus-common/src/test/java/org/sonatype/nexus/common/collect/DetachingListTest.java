@@ -13,20 +13,22 @@
 package org.sonatype.nexus.common.collect;
 
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
 import com.google.common.collect.ImmutableList;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.AdditionalAnswers.returnsFirstArg;
 import static org.mockito.ArgumentMatchers.isNotNull;
 import static org.mockito.Mockito.inOrder;
@@ -48,7 +50,7 @@ public class DetachingListTest
 
   private DetachingList<String> underTest;
 
-  @Before
+  @BeforeEach
   public void setUp() {
     underTest = new DetachingList<>(backing, allowDetach, detach);
   }
@@ -187,5 +189,108 @@ public class DetachingListTest
     inOrder.verify(detach).apply("THERE");
 
     verifyNoMoreInteractions(allowDetach, detach);
+  }
+  
+  @Test
+  public void testSequencedCollectionGetMethods() {
+    // Setup a real list with elements for testing getFirst/getLast
+    List<String> original = ImmutableList.of("FIRST", "MIDDLE", "LAST");
+    underTest = new DetachingList<>(original, allowDetach, detach);
+    
+    // These methods should not trigger detaching
+    assertThat(underTest.getFirst(), is("FIRST"));
+    assertThat(underTest.getLast(), is("LAST"));
+    
+    // Verify no detaching occurred
+    verifyNoInteractions(allowDetach, detach);
+  }
+  
+  @Test
+  public void testSequencedCollectionGetMethodsWithEmptyList() {
+    // Setup an empty list
+    List<String> original = ImmutableList.of();
+    underTest = new DetachingList<>(original, allowDetach, detach);
+    
+    // These methods should throw NoSuchElementException for empty lists
+    assertThrows(NoSuchElementException.class, () -> underTest.getFirst());
+    assertThrows(NoSuchElementException.class, () -> underTest.getLast());
+    
+    // Verify no detaching occurred
+    verifyNoInteractions(allowDetach, detach);
+  }
+  
+  @Test
+  public void testSequencedCollectionMutatingMethods() {
+    List<String> original = ImmutableList.of("HELLO", "THERE");
+    underTest = new DetachingList<>(original, allowDetach, detach);
+    
+    when(allowDetach.getAsBoolean()).thenReturn(true);
+    when(detach.apply(isNotNull())).thenAnswer(returnsFirstArg());
+    
+    // These methods should trigger detaching
+    underTest.addFirst("START");
+    underTest.addLast("END");
+    
+    // Verify the list was detached
+    InOrder inOrder = inOrder(allowDetach, detach);
+    inOrder.verify(allowDetach).getAsBoolean();
+    inOrder.verify(detach).apply("HELLO");
+    inOrder.verify(detach).apply("THERE");
+    
+    // original list contents should be unchanged
+    assertThat(original, contains("HELLO", "THERE"));
+  }
+  
+  @Test
+  public void testSequencedCollectionRemoveMethods() {
+    List<String> original = ImmutableList.of("FIRST", "MIDDLE", "LAST");
+    underTest = new DetachingList<>(original, allowDetach, detach);
+    
+    when(allowDetach.getAsBoolean()).thenReturn(true);
+    when(detach.apply(isNotNull())).thenAnswer(returnsFirstArg());
+    
+    // These methods should trigger detaching
+    String first = underTest.removeFirst();
+    String last = underTest.removeLast();
+    
+    // Verify correct elements were removed
+    assertThat(first, is("FIRST"));
+    assertThat(last, is("LAST"));
+    assertThat(underTest, contains("MIDDLE"));
+    
+    // Verify the list was detached
+    InOrder inOrder = inOrder(allowDetach, detach);
+    inOrder.verify(allowDetach).getAsBoolean();
+    inOrder.verify(detach).apply("FIRST");
+    inOrder.verify(detach).apply("MIDDLE");
+    inOrder.verify(detach).apply("LAST");
+    
+    // original list contents should be unchanged
+    assertThat(original, contains("FIRST", "MIDDLE", "LAST"));
+  }
+  
+  @Test
+  public void testSequencedCollectionReversed() {
+    List<String> original = ImmutableList.of("FIRST", "MIDDLE", "LAST");
+    underTest = new DetachingList<>(original, allowDetach, detach);
+    
+    when(allowDetach.getAsBoolean()).thenReturn(true);
+    when(detach.apply(isNotNull())).thenAnswer(returnsFirstArg());
+    
+    // This method should trigger detaching
+    List<String> reversed = underTest.reversed();
+    
+    // Verify the reversed list has elements in correct order
+    assertThat(reversed, contains("LAST", "MIDDLE", "FIRST"));
+    
+    // Verify the list was detached
+    InOrder inOrder = inOrder(allowDetach, detach);
+    inOrder.verify(allowDetach).getAsBoolean();
+    inOrder.verify(detach).apply("FIRST");
+    inOrder.verify(detach).apply("MIDDLE");
+    inOrder.verify(detach).apply("LAST");
+    
+    // original list contents should be unchanged
+    assertThat(original, contains("FIRST", "MIDDLE", "LAST"));
   }
 }

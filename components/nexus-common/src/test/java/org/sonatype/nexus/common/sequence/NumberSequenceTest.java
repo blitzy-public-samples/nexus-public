@@ -14,8 +14,9 @@ package org.sonatype.nexus.common.sequence;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Tests for various {@link NumberSequence} implementations.
@@ -30,13 +31,13 @@ public class NumberSequenceTest
     ConstantNumberSequence cs = new ConstantNumberSequence(startValue);
 
     for (int i = 0; i < 20; i++) {
-      Assert.assertEquals(startValue, cs.next());
+      assertEquals(startValue, cs.next());
     }
 
     cs.reset();
 
     for (int i = 0; i < 20; i++) {
-      Assert.assertEquals(startValue, cs.next());
+      assertEquals(startValue, cs.next());
     }
   }
 
@@ -49,17 +50,17 @@ public class NumberSequenceTest
     LinearNumberSequence ls = new LinearNumberSequence(startValue, 1, 1, 0);
 
     for (int i = 1; i < 20; i++) {
-      Assert.assertEquals(i, ls.next());
+      assertEquals(i, ls.next());
     }
 
     ls.reset();
 
     // forth and back
     for (int i = 1; i < 20; i++) {
-      Assert.assertEquals(i, ls.next());
+      assertEquals(i, ls.next());
     }
     for (int i = 18; i >= 1; i--) {
-      Assert.assertEquals(i, ls.prev());
+      assertEquals(i, ls.prev());
     }
   }
 
@@ -75,7 +76,7 @@ public class NumberSequenceTest
 
     for (int i = 1; i < 20; i++) {
       f = 2 * (i * 10) + 10;
-      Assert.assertEquals(f, ls.next());
+      assertEquals(f, ls.next());
     }
 
     ls.reset();
@@ -83,11 +84,11 @@ public class NumberSequenceTest
     // forth and back
     for (int i = 1; i < 20; i++) {
       f = 2 * (i * 10) + 10;
-      Assert.assertEquals(f, ls.next());
+      assertEquals(f, ls.next());
     }
     for (int i = 18; i >= 1; i--) {
       f = 2 * (i * 10) + 10;
-      Assert.assertEquals(f, ls.prev());
+      assertEquals(f, ls.prev());
     }
   }
 
@@ -98,13 +99,13 @@ public class NumberSequenceTest
     FibonacciNumberSequence fs = new FibonacciNumberSequence();
 
     for (int f : fibonacciNumbers) {
-      Assert.assertEquals(f, fs.next());
+      assertEquals(f, fs.next());
     }
 
     fs.reset();
 
     for (int f : fibonacciNumbers) {
-      Assert.assertEquals(f, fs.next());
+      assertEquals(f, fs.next());
     }
   }
 
@@ -115,13 +116,13 @@ public class NumberSequenceTest
     FibonacciNumberSequence fs = new FibonacciNumberSequence(10);
 
     for (int f : fibonacciNumbers) {
-      Assert.assertEquals(f, fs.next());
+      assertEquals(f, fs.next());
     }
 
     fs.reset();
 
     for (int f : fibonacciNumbers) {
-      Assert.assertEquals(f, fs.next());
+      assertEquals(f, fs.next());
     }
   }
 
@@ -148,19 +149,19 @@ public class NumberSequenceTest
     FibonacciNumberSequence fs = new FibonacciNumberSequence(10);
 
     for (int f : fibonacciNumbers) {
-      Assert.assertEquals(f, fs.next());
+      assertEquals(f, fs.next());
     }
 
     fs.reset();
 
     for (int f : fibonacciNumbers) {
-      Assert.assertEquals(f, fs.next());
+      assertEquals(f, fs.next());
     }
 
     ArrayUtils_reverse(fibonacciNumbers);
 
     for (int f : fibonacciNumbers) {
-      Assert.assertEquals(f, fs.prev());
+      assertEquals(f, fs.prev());
     }
   }
 
@@ -175,18 +176,18 @@ public class NumberSequenceTest
 
     // go prev 5 times, it should actually result in ONE state change
     for (int i = 1; i < 5; i++) {
-      Assert.assertEquals(1, seq.prev());
+      assertEquals(1, seq.prev());
     }
 
-    Assert.assertEquals(1, seq.peek());
+    assertEquals(1, seq.peek());
 
-    Assert.assertEquals(1, seq.next());
-    Assert.assertEquals(2, seq.next());
+    assertEquals(1, seq.next());
+    assertEquals(2, seq.next());
 
     seq.reset();
 
-    Assert.assertEquals(1, seq.next());
-    Assert.assertEquals(2, seq.next());
+    assertEquals(1, seq.next());
+    assertEquals(2, seq.next());
   }
 
 }

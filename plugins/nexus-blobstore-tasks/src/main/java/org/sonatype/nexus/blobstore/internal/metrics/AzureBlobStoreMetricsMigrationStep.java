@@ -17,6 +17,8 @@ import javax.inject.Singleton;
 
 /**
  * Migration step to move metrics from properties files in the blob store to the DB
+ * 
+ * @since 3.38
  */
 @Named
 @Singleton

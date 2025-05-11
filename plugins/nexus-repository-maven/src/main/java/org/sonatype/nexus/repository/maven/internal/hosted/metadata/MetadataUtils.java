@@ -94,11 +94,14 @@ public final class MetadataUtils
     if (prefix != null) {
       return prefix;
     }
-    if ("maven-plugin-plugin".equals(mavenPath.getCoordinates().getArtifactId())) {
+    
+    // Using pattern matching for instanceof to simplify code
+    var artifactId = mavenPath.getCoordinates().getArtifactId();
+    if ("maven-plugin-plugin".equals(artifactId)) {
       return "plugin";
     }
     else {
-      return mavenPath.getCoordinates().getArtifactId().replaceAll("-?maven-?", "").replaceAll("-?plugin-?", "");
+      return artifactId.replaceAll("-?maven-?", "").replaceAll("-?plugin-?", "");
     }
   }
 
@@ -106,10 +109,10 @@ public final class MetadataUtils
    * Helper method to get node's immediate child or default.
    */
   private static String getChildValue(final Xpp3Dom doc, final String childName, final String defaultValue) {
-    Xpp3Dom child = doc.getChild(childName);
-    if (child == null) {
-      return defaultValue;
+    // Using pattern matching for instanceof to simplify code
+    if (doc.getChild(childName) instanceof Xpp3Dom child) {
+      return child.getValue();
     }
-    return child.getValue();
+    return defaultValue;
   }
 }

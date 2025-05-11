@@ -22,8 +22,6 @@ import javax.annotation.Nullable;
 import org.sonatype.nexus.common.text.Strings2;
 
 import com.google.common.base.Strings;
-import com.google.common.io.ByteStreams;
-import com.google.common.io.CharStreams;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -51,9 +49,10 @@ public class DigestExtractor
       throws IOException
   {
     checkNotNull(stream);
-    try (InputStreamReader isr = new InputStreamReader(ByteStreams.limit(stream, MAX_CHARS_NEEDED),
-        StandardCharsets.UTF_8)) {
-      return extract(CharStreams.toString(isr));
+    try {
+      // Read up to MAX_CHARS_NEEDED bytes from the stream
+      byte[] bytes = stream.readNBytes(MAX_CHARS_NEEDED);
+      return extract(new String(bytes, StandardCharsets.UTF_8));
     }
     finally {
       stream.close();
@@ -79,41 +78,39 @@ public class DigestExtractor
       return null;
     }
 
-    String digest;
-    // digest string at end with separator, e.g.:
-    // MD5 (pom.xml) = 68da13206e9dcce2db9ec45a9f7acd52
-    // ant-1.5.jar: DCAB 88FC 2A04 3C24 79A6 DE67 6A2F 8179 E9EA 2167
-    if (raw.contains("=") || raw.contains(":")) {
-      digest = raw.split("[=:]", 2)[1].trim();
-    }
-    else {
-      // digest string at start, e.g. '68da13206e9dcce2db9ec45a9f7acd52 pom.xml'
-      digest = raw.split(" ", 2)[0];
-    }
-
-    if (!isDigest(digest)) {
-      // maybe it's "uncompressed", e.g. 'DCAB 88FC 2A04 3C24 79A6 DE67 6A2F 8179 E9EA 2167'
-      digest = compress(digest);
-    }
-
-    if (!isDigest(digest)) {
-      // check if the raw string is an uncompressed checksum, e.g.
-      // 'DCAB 88FC 2A04 3C24 79A6 DE67 6A2F 8179 E9EA 2167'
-      digest = compress(raw);
-    }
-
-    if (!isDigest(digest) && raw.contains(" ")) {
-      // check if the raw string is an uncompressed checksum with file name suffix, e.g.
-      // 'DCAB 88FC 2A04 3C24 79A6 DE67 6A2F 8179 E9EA 2167 pom.xml'
-      digest = compress(raw.substring(0, raw.lastIndexOf(' ')).trim());
-    }
-
-    if (isDigest(digest)) {
-      return digest;
-    }
-    else {
-      return null;
-    }
+    return switch (raw) {
+      case String s when s.contains("=") || s.contains(":") -> {
+        // digest string at end with separator, e.g.:
+        // MD5 (pom.xml) = 68da13206e9dcce2db9ec45a9f7acd52
+        // ant-1.5.jar: DCAB 88FC 2A04 3C24 79A6 DE67 6A2F 8179 E9EA 2167
+        String digest = s.split("[=:]", 2)[1].trim();
+        if (isDigest(digest)) {
+          yield digest;
+        } else {
+          // maybe it's "uncompressed", e.g. 'DCAB 88FC 2A04 3C24 79A6 DE67 6A2F 8179 E9EA 2167'
+          String compressed = compress(digest);
+          yield isDigest(compressed) ? compressed : null;
+        }
+      }
+      case String s when s.contains(" ") -> {
+        // check if the raw string is an uncompressed checksum with file name suffix, e.g.
+        // 'DCAB 88FC 2A04 3C24 79A6 DE67 6A2F 8179 E9EA 2167 pom.xml'
+        String compressed = compress(s.substring(0, s.lastIndexOf(' ')).trim());
+        yield isDigest(compressed) ? compressed : null;
+      }
+      default -> {
+        // digest string at start, e.g. '68da13206e9dcce2db9ec45a9f7acd52 pom.xml'
+        String digest = raw.split(" ", 2)[0];
+        if (isDigest(digest)) {
+          yield digest;
+        } else {
+          // check if the raw string is an uncompressed checksum, e.g.
+          // 'DCAB 88FC 2A04 3C24 79A6 DE67 6A2F 8179 E9EA 2167'
+          String compressed = compress(raw);
+          yield isDigest(compressed) ? compressed : null;
+        }
+      }
+    };
   }
 
   /**

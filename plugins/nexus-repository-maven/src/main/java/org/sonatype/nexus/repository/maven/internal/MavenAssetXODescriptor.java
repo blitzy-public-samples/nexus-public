@@ -13,8 +13,6 @@
 package org.sonatype.nexus.repository.maven.internal;
 
 import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import javax.inject.Named;
 
@@ -33,8 +31,7 @@ import static org.sonatype.nexus.repository.maven.internal.Attributes.P_EXTENSIO
 public class MavenAssetXODescriptor
     implements AssetXODescriptor
 {
-  private static final Set<String> attributeKeys =
-      Stream.of(P_GROUP_ID, P_ARTIFACT_ID, P_VERSION, P_CLASSIFIER, P_EXTENSION).collect(Collectors.toSet());
+  private static final Set<String> attributeKeys = Set.of(P_GROUP_ID, P_ARTIFACT_ID, P_VERSION, P_CLASSIFIER, P_EXTENSION);
 
   @Override
   public Set<String> listExposedAttributeKeys() {

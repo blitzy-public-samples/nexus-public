@@ -19,6 +19,9 @@ import org.sonatype.nexus.repository.maven.internal.Maven2Format;
 
 /**
  * Configures the browse bindings for the maven format.
+ * 
+ * This module is compatible with Java 21 and leverages the updated dependency injection
+ * framework (Guice 7.0.0 and Sisu 0.10.0) for OSGi/Karaf integration.
  *
  * @since 3.26
  */

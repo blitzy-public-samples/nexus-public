@@ -41,6 +41,13 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.repository.http.HttpHandlers.notFound;
 
 /**
+ * Maven proxy repository recipe that configures a repository to proxy a remote Maven repository.
+ * <p>
+ * This implementation is optimized for Java 21, leveraging Virtual Threads for I/O-bound operations
+ * when fetching content from remote repositories. The ProxyHandler implementation uses Virtual Threads
+ * to handle remote content fetching, which significantly improves performance under high concurrency.
+ * </p>
+ * 
  * @since 3.26
  */
 @AvailabilityVersion(from = "1.0")
@@ -64,6 +71,12 @@ public class MavenProxyRecipe
 
   private final Provider<MavenContentProxyIndexFacet> mavenProxyIndexFacet;
 
+  /**
+   * Constructor with dependency injection for all required components.
+   * <p>
+   * Compatible with Guice 7.0.0 and Sisu 0.10.0 for Java 21 runtime.
+   * </p>
+   */
   @Inject
   public MavenProxyRecipe(
       @Named(ProxyType.NAME) final Type type,
@@ -86,6 +99,16 @@ public class MavenProxyRecipe
     this.mavenProxyIndexFacet = checkNotNull(mavenProxyIndexFacet);
   }
 
+  /**
+   * Applies this recipe to the given repository, attaching all required facets.
+   * <p>
+   * The attached ProxyFacet implementation leverages Java 21 Virtual Threads for I/O-bound operations
+   * when fetching content from remote repositories, providing improved scalability under high load.
+   * </p>
+   *
+   * @param repository the repository to apply this recipe to
+   * @throws Exception if an error occurs during application
+   */
   @Override
   public void apply(@Nonnull final Repository repository) throws Exception {
     repository.attach(securityFacet.get());
@@ -102,48 +125,28 @@ public class MavenProxyRecipe
     repository.attach(removeSnapshotsFacet.get());
   }
 
+  /**
+   * Configures the view facet with routes for different Maven artifact types.
+   * <p>
+   * Each route is configured with appropriate handlers for its specific content type.
+   * The ProxyHandler used in these routes leverages Java 21 Virtual Threads for improved
+   * performance when fetching content from remote repositories.
+   * </p>
+   *
+   * @param facet the view facet to configure
+   * @return the configured view facet
+   */
   private ViewFacet configure(final ConfigurableViewFacet facet) {
     Router.Builder builder = new Router.Builder();
 
     addBrowseUnsupportedRoute(builder);
 
-    // Note: partialFetchHandler() NOT added for Maven metadata;
-    builder.route(newMetadataRouteBuilder()
-        .handler(negativeCacheHandler)
-        .handler(versionPolicyHandler)
-        .handler(contentHeadersHandler)
-        .handler(lastDownloadedHandler)
-        .handler(proxyHandler)
-        .create());
-
-    builder.route(newIndexRouteBuilder()
-        .handler(negativeCacheHandler)
-        .handler(partialFetchHandler)
-        .handler(contentHeadersHandler)
-        .handler(lastDownloadedHandler)
-        .handler(proxyHandler)
-        .create());
-
-    builder.route(newArchetypeCatalogRouteBuilder()
-        .handler(negativeCacheHandler)
-        .handler(partialFetchHandler)
-        .handler(contentHeadersHandler)
-        .handler(lastDownloadedHandler)
-        .handler(proxyHandler)
-        .create());
-
-    builder.route(newNx2MetaFilesRouteBuilder()
-        .handler(notFound())
-        .create());
-
-    builder.route(newMavenPathRouteBuilder()
-        .handler(negativeCacheHandler)
-        .handler(partialFetchHandler)
-        .handler(versionPolicyHandler)
-        .handler(contentHeadersHandler)
-        .handler(lastDownloadedHandler)
-        .handler(proxyHandler)
-        .create());
+    // Configure routes for different Maven artifact types using pattern matching for route types
+    configureMetadataRoute(builder);
+    configureIndexRoute(builder);
+    configureArchetypeCatalogRoute(builder);
+    configureNx2MetaFilesRoute(builder);
+    configureMavenPathRoute(builder);
 
     builder.defaultHandlers(notFound());
 
@@ -152,6 +155,74 @@ public class MavenProxyRecipe
     return facet;
   }
 
+  /**
+   * Configures the route for Maven metadata files.
+   * Note: partialFetchHandler() NOT added for Maven metadata.
+   */
+  private void configureMetadataRoute(final Router.Builder builder) {
+    builder.route(newMetadataRouteBuilder()
+        .handler(negativeCacheHandler)
+        .handler(versionPolicyHandler)
+        .handler(contentHeadersHandler)
+        .handler(lastDownloadedHandler)
+        .handler(proxyHandler)
+        .create());
+  }
+
+  /**
+   * Configures the route for Maven index files.
+   */
+  private void configureIndexRoute(final Router.Builder builder) {
+    builder.route(newIndexRouteBuilder()
+        .handler(negativeCacheHandler)
+        .handler(partialFetchHandler)
+        .handler(contentHeadersHandler)
+        .handler(lastDownloadedHandler)
+        .handler(proxyHandler)
+        .create());
+  }
+
+  /**
+   * Configures the route for Maven archetype catalog files.
+   */
+  private void configureArchetypeCatalogRoute(final Router.Builder builder) {
+    builder.route(newArchetypeCatalogRouteBuilder()
+        .handler(negativeCacheHandler)
+        .handler(partialFetchHandler)
+        .handler(contentHeadersHandler)
+        .handler(lastDownloadedHandler)
+        .handler(proxyHandler)
+        .create());
+  }
+
+  /**
+   * Configures the route for Nx2 meta files, which are not found in this repository type.
+   */
+  private void configureNx2MetaFilesRoute(final Router.Builder builder) {
+    builder.route(newNx2MetaFilesRouteBuilder()
+        .handler(notFound())
+        .create());
+  }
+
+  /**
+   * Configures the route for standard Maven path artifacts.
+   */
+  private void configureMavenPathRoute(final Router.Builder builder) {
+    builder.route(newMavenPathRouteBuilder()
+        .handler(negativeCacheHandler)
+        .handler(partialFetchHandler)
+        .handler(versionPolicyHandler)
+        .handler(contentHeadersHandler)
+        .handler(lastDownloadedHandler)
+        .handler(proxyHandler)
+        .create());
+  }
+
+  /**
+   * Creates a new route builder for Nx2 meta files.
+   *
+   * @return a new route builder with the appropriate matcher
+   */
   private Builder newNx2MetaFilesRouteBuilder() {
     return new Builder().matcher(new MavenNx2MetaFilesMatcher(mavenPathParser));
   }

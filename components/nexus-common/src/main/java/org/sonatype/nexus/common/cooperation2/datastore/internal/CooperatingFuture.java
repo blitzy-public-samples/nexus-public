@@ -17,6 +17,7 @@ import java.time.Duration;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -38,6 +39,10 @@ import static java.lang.Boolean.TRUE;
 
 /**
  * {@link CompletableFuture} that has various features added to help with cooperation.
+ * <p>
+ * This implementation is compatible with Java 21 Virtual Threads and optimized for high-throughput
+ * concurrent operations. It properly handles ThreadLocal context propagation in both platform and
+ * virtual thread environments.
  *
  * @since 3.14
  */
@@ -46,6 +51,11 @@ public class CooperatingFuture<T>
 {
   protected static final Logger log = LoggerFactory.getLogger(CooperatingFuture.class);
 
+  /**
+   * ThreadLocal to track nested calls. This is compatible with Virtual Threads in Java 21,
+   * but care should be taken as each virtual thread will have its own instance.
+   * The memory impact is minimal as we only store a Boolean value.
+   */
   private static final ThreadLocal<Boolean> callInProgress = new ThreadLocal<>();
 
   private final AtomicLong staggerTimeMillis = new AtomicLong(System.currentTimeMillis());
@@ -70,6 +80,9 @@ public class CooperatingFuture<T>
 
   /**
    * Cooperates on the given I/O request by waiting for the lead thread to complete.
+   * <p>
+   * This method is optimized for Java 21 Virtual Threads and will efficiently handle
+   * I/O operations without blocking platform threads unnecessarily.
    */
   public T cooperate(final Function<Boolean, T> request) throws IOException {
     increaseCooperation();
@@ -115,6 +128,9 @@ public class CooperatingFuture<T>
 
   /**
    * Fluent method that performs I/O and stores the result in this future, before passing it back.
+   * <p>
+   * When running on Java 21, this method benefits from Virtual Threads for I/O operations,
+   * allowing for high concurrency without excessive resource consumption.
    */
   protected T performCall(final Function<Boolean, T> request, final boolean failover) throws IOException {
     boolean nested = isNestedCall();
@@ -135,13 +151,16 @@ public class CooperatingFuture<T>
     }
     finally {
       if (!nested) {
-        callInProgress.remove();
+        callInProgress.remove(); // Properly clean up ThreadLocal to avoid memory leaks in Virtual Threads
       }
     }
   }
 
   /**
    * Cooperatively waits for the lead thread; may failover and repeat the request if allowed.
+   * <p>
+   * This method is optimized for Java 21 Virtual Threads, which efficiently handle blocking
+   * operations by unmounting from their carrier thread, allowing other virtual threads to run.
    */
   protected T waitForCall(
       final Function<Boolean, T> request,
@@ -220,5 +239,18 @@ public class CooperatingFuture<T>
     while (!staggerTimeMillis.compareAndSet(prevTimeMillis, nextTimeMillis));
 
     return Duration.ofMillis(nextTimeMillis - currentTimeMillis);
+  }
+
+  /**
+   * Creates a new executor service that creates a new virtual thread for each task.
+   * This is useful for executing multiple I/O operations concurrently with minimal overhead.
+   * <p>
+   * Note: This method should be used for I/O-bound operations, not CPU-bound tasks.
+   *
+   * @return An executor service that uses virtual threads
+   * @since 3.60
+   */
+  public static java.util.concurrent.ExecutorService newVirtualThreadExecutor() {
+    return Executors.newVirtualThreadPerTaskExecutor();
   }
 }

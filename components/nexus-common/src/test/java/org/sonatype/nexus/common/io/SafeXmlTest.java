@@ -20,6 +20,7 @@ import java.io.Reader;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.Collections;
@@ -37,12 +38,9 @@ import javax.xml.transform.stream.StreamResult;
 import javax.xml.transform.stream.StreamSource;
 
 import org.apache.commons.io.IOUtils;
-import org.junit.BeforeClass;
-import org.junit.ClassRule;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.w3c.dom.Document;
 import org.xml.sax.SAXException;
 import org.xml.sax.SAXParseException;
@@ -50,28 +48,26 @@ import org.xml.sax.helpers.DefaultHandler;
 
 import static javax.xml.stream.XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES;
 import static javax.xml.stream.XMLInputFactory.SUPPORT_DTD;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
-import static org.junit.Assert.assertFalse;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.fail;
 
-public class SafeXmlTest
+class SafeXmlTest
 {
-  @ClassRule
-  public static TemporaryFolder temp = new TemporaryFolder();
-
-  @Rule
-  public ExpectedException thrown = ExpectedException.none();
+  @TempDir
+  static Path tempDir;
 
   private static File xmlDocument;
 
-  @BeforeClass
-  public static void setup() throws IOException {
-    xmlDocument = temp.newFile();
-    File externalFile = temp.newFile();
+  @BeforeAll
+  static void setup() throws IOException {
+    xmlDocument = tempDir.resolve("test.xml").toFile();
+    File externalFile = tempDir.resolve("external.txt").toFile();
 
-    Files.write(externalFile.toPath(), Collections.singleton("bar"), StandardOpenOption.TRUNCATE_EXISTING);
+    Files.write(externalFile.toPath(), Collections.singleton("bar"), StandardOpenOption.CREATE);
 
     try (InputStream content = SafeXmlTest.class.getResourceAsStream("xxe.xml")) {
       StringJoiner joiner = new StringJoiner(System.lineSeparator());
@@ -84,7 +80,7 @@ public class SafeXmlTest
   }
 
   @Test
-  public void testDocumentBuilderFactory() throws IOException, SAXException, ParserConfigurationException {
+  void testDocumentBuilderFactory() throws IOException, SAXException, ParserConfigurationException {
     DocumentBuilder builder = SafeXml.newdocumentBuilderFactory().newDocumentBuilder();
     Document doc = builder.parse(xmlDocument);
 
@@ -92,27 +88,28 @@ public class SafeXmlTest
   }
 
   @Test
-  public void testStrictDocumentBuilderFactory() throws IOException, SAXException, ParserConfigurationException {
-    thrown.expect(SAXParseException.class);
-    thrown.expectMessage(containsString("DOCTYPE is disallowed"));
-
-    DocumentBuilder builder = SafeXml.newStrictDocumentBuilderFactory().newDocumentBuilder();
-    builder.parse(xmlDocument);
+  void testStrictDocumentBuilderFactory() {
+    SAXParseException exception = assertThrows(SAXParseException.class, () -> {
+      DocumentBuilder builder = SafeXml.newStrictDocumentBuilderFactory().newDocumentBuilder();
+      builder.parse(xmlDocument);
+    });
+    
+    assertThat(exception.getMessage(), containsString("DOCTYPE is disallowed"));
   }
 
   @Test
-  public void testTransformerFactory() throws TransformerException {
-    thrown.expect(TransformerException.class);
-    thrown.expectMessage(containsString("accessExternalDTD"));
-
-    StreamSource xmlSource = new StreamSource(xmlDocument);
-    Transformer transformer = SafeXml.newTransformerFactory().newTransformer();
-
-    transformer.transform(xmlSource, new StreamResult(new StringWriter()));
+  void testTransformerFactory() {
+    TransformerException exception = assertThrows(TransformerException.class, () -> {
+      StreamSource xmlSource = new StreamSource(xmlDocument);
+      Transformer transformer = SafeXml.newTransformerFactory().newTransformer();
+      transformer.transform(xmlSource, new StreamResult(new StringWriter()));
+    });
+    
+    assertThat(exception.getMessage(), containsString("accessExternalDTD"));
   }
 
   @Test
-  public void testSAXParserFactory() throws ParserConfigurationException, SAXException, IOException {
+  void testSAXParserFactory() throws ParserConfigurationException, SAXException, IOException {
     StringBuilder sb = new StringBuilder();
 
     DefaultHandler handler = new DefaultHandler()
@@ -127,55 +124,57 @@ public class SafeXmlTest
   }
 
   @Test
-  public void testStrictSAXParserFactory() throws ParserConfigurationException, SAXException, IOException {
-    thrown.expect(SAXParseException.class);
-    thrown.expectMessage(containsString("DOCTYPE is disallowed"));
-
-    SafeXml.newStrictSaxParserFactory().newSAXParser().parse(xmlDocument, new DefaultHandler());
+  void testStrictSAXParserFactory() {
+    SAXParseException exception = assertThrows(SAXParseException.class, () -> {
+      SafeXml.newStrictSaxParserFactory().newSAXParser().parse(xmlDocument, new DefaultHandler());
+    });
+    
+    assertThat(exception.getMessage(), containsString("DOCTYPE is disallowed"));
   }
 
   @Test
-  public void testSaxTransformerFactory() throws TransformerException {
-    thrown.expect(TransformerException.class);
-    thrown.expectMessage(containsString("accessExternalDTD"));
-
-    StreamSource xmlSource = new StreamSource(xmlDocument);
-    Transformer transformer = SafeXml.newSaxTransformerFactory().newTransformer();
-
-    transformer.transform(xmlSource, new StreamResult(new StringWriter()));
+  void testSaxTransformerFactory() {
+    TransformerException exception = assertThrows(TransformerException.class, () -> {
+      StreamSource xmlSource = new StreamSource(xmlDocument);
+      Transformer transformer = SafeXml.newSaxTransformerFactory().newTransformer();
+      transformer.transform(xmlSource, new StreamResult(new StringWriter()));
+    });
+    
+    assertThat(exception.getMessage(), containsString("accessExternalDTD"));
   }
 
   @Test
-  public void testXmlInputFactory() throws XMLStreamException, IOException {
-    thrown.expect(XMLStreamException.class);
-    thrown.expectMessage(containsString("The entity \"xxe\" was referenced, but not declared."));
+  void testXmlInputFactory() {
+    XMLStreamException exception = assertThrows(XMLStreamException.class, () -> {
+      // This code is more complicated than it needs to be to demonstrate finding the XXE content.
+      try (Reader reader = Files.newBufferedReader(xmlDocument.toPath())) {
+        XMLEventReader xmlEventReader = SafeXml.newXmlInputFactory().createXMLEventReader(reader);
 
-    // This code is more complicated than it needs to be to demonstrate finding the XXE content.
-    try (Reader reader = Files.newBufferedReader(xmlDocument.toPath())) {
-      XMLEventReader xmlEventReader = SafeXml.newXmlInputFactory().createXMLEventReader(reader);
+        String content = "";
+        boolean track = false;
+        while (xmlEventReader.hasNext()) {
+          XMLEvent xmlEvent = xmlEventReader.nextEvent();
 
-      String content = "";
-      boolean track = false;
-      while (xmlEventReader.hasNext()) {
-        XMLEvent xmlEvent = xmlEventReader.nextEvent();
-
-        if (xmlEvent.isStartElement() && xmlEvent.asStartElement().getName().getLocalPart().equals("foo")) {
-          track = true;
+          if (xmlEvent.isStartElement() && xmlEvent.asStartElement().getName().getLocalPart().equals("foo")) {
+            track = true;
+          }
+          else if (xmlEvent.isEndElement() && xmlEvent.asEndElement().getName().getLocalPart().equals("foo")) {
+            assertThat(content, not(containsString("bar")));
+            return;
+          }
+          else if (track && xmlEvent.isCharacters()) {
+            content += xmlEvent.asCharacters().getData();
+          }
         }
-        else if (xmlEvent.isEndElement() && xmlEvent.asEndElement().getName().getLocalPart().equals("foo")) {
-          assertThat(content, not(containsString("bar")));
-          return;
-        }
-        else if (track && xmlEvent.isCharacters()) {
-          content += xmlEvent.asCharacters().getData();
-        }
+        fail("Did not find element foo");
       }
-      fail("Did not find element foo");
-    }
+    });
+    
+    assertThat(exception.getMessage(), containsString("The entity \"xxe\" was referenced, but not declared."));
   }
 
   @Test
-  public void shouldNotSupportDocTypeDefinitions() {
+  void shouldNotSupportDocTypeDefinitions() {
     XMLInputFactory xmlInputFactory = SafeXml.newXmlInputFactory();
 
     Object supportDtd = xmlInputFactory.getProperty(SUPPORT_DTD);
@@ -184,7 +183,7 @@ public class SafeXmlTest
   }
 
   @Test
-  public void shouldNotSupportExternalEntities() {
+  void shouldNotSupportExternalEntities() {
     XMLInputFactory xmlInputFactory = SafeXml.newXmlInputFactory();
 
     Object supportExternalEntities = xmlInputFactory.getProperty(IS_SUPPORTING_EXTERNAL_ENTITIES);

@@ -26,9 +26,9 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 import javax.ws.rs.WebApplicationException;
 
 import org.sonatype.goodies.common.ComponentSupport;
@@ -126,6 +126,7 @@ public class ContentComponentHelper
     String repositoryName = repository.getName();
     String format = repository.getFormat().getValue();
 
+    log.debug(STR."Finding permitted assets for component in repository \{repositoryName} with format \{format}");
     return assetPermissionChecker.findPermittedAssets(assets, format, BROWSE)
         .map(entry -> toAssetXO(repositoryName, entry.getValue(), format, entry.getKey()))
         .collect(toList());
@@ -141,7 +142,8 @@ public class ContentComponentHelper
   {
     Set<Repository> previewRepositories = new LinkedHashSet<>();
     selectedRepositories.forEach(r -> {
-      if (r.getType() instanceof GroupType) {
+      if (r.getType() instanceof GroupType groupType) {
+        log.debug(STR."Processing group repository with type \{groupType.getClass().getSimpleName()}");
         previewRepositories.addAll(r.facet(GroupFacet.class).leafMembers());
       }
       else {
@@ -179,6 +181,7 @@ public class ContentComponentHelper
 
       int nextLimit = queryOptions.getLimit() - assets.size();
       if (nextLimit > 0) {
+        log.debug(STR."Browsing assets with limit \{nextLimit} for repository \{r.getName()}");
         assetQuery.browse(nextLimit, null).stream()
             .map(asset -> toAssetXO(r.getName(), r.getName(), format, asset))
             .collect(Collectors.toCollection(() -> assets));
@@ -219,6 +222,7 @@ public class ContentComponentHelper
 
   @Override
   public Set<String> deleteComponent(final Repository repository, final ComponentXO model) {
+    log.info(STR."Deleting component \{model.getName()} from repository \{repository.getName()}");
     return findComponentsByModel(repository, model)
         .flatMap(component -> maintenanceService.deleteComponent(repository, component).stream())
         .collect(toSet());
@@ -248,6 +252,7 @@ public class ContentComponentHelper
 
   @Override
   public Set<String> deleteAsset(final Repository repository, final EntityId assetId) {
+    log.info(STR."Deleting asset with ID \{assetId} from repository \{repository.getName()}");
     return findAssetById(repository, assetId)
         .map(asset -> maintenanceService.deleteAsset(repository, asset))
         .orElse(ImmutableSet.of());
@@ -260,6 +265,7 @@ public class ContentComponentHelper
 
   @Override
   public void deleteFolder(final Repository repository, final String path) {
+    log.info(STR."Deleting folder \{path} from repository \{repository.getName()}");
     maintenanceService.deleteFolder(repository, path);
   }
 
@@ -328,8 +334,8 @@ public class ContentComponentHelper
     Map<String, Object> attributes = new HashMap<>(asset.attributes().backing());
     Object formatAttributes = attributes.get(format);
     if (!Strings2.isEmpty(asset.kind())) {
-      if (formatAttributes instanceof Map) {
-        ((Map<String, Object>) formatAttributes).put("asset_kind", asset.kind());
+      if (formatAttributes instanceof Map<?, ?> formatMap) {
+        ((Map<String, Object>) formatMap).put("asset_kind", asset.kind());
       }
       else {
         attributes.put(format, Collections.singletonMap("asset_kind", asset.kind()));

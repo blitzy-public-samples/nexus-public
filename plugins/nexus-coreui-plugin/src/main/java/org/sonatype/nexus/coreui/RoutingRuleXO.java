@@ -26,92 +26,35 @@ import org.sonatype.nexus.validation.group.Create;
  *
  * @since 3.16
  */
-public class RoutingRuleXO
-{
-  private String id;
-
-  @Pattern(regexp = NamePatternConstants.REGEX, message = NamePatternConstants.MESSAGE)
-  @NotBlank(groups = Create.class)
-  private String name;
-
-  private String description;
-
-  @NotBlank(groups = Create.class)
-  private RoutingMode mode;
-
-  @NotBlank
-  private List<String> matchers;
-
-  private int assignedRepositoryCount;
-
-  private List<String> assignedRepositoryNames;
-
-  public String getId() {
-    return id;
-  }
-
-  public void setId(String id) {
-    this.id = id;
-  }
-
-  public String getName() {
-    return name;
-  }
-
-  public void setName(String name) {
-    this.name = name;
-  }
-
-  public String getDescription() {
-    return description;
-  }
-
-  public void setDescription(String description) {
-    this.description = description;
-  }
-
-  public RoutingMode getMode() {
-    return mode;
-  }
-
-  public void setMode(RoutingMode mode) {
-    this.mode = mode;
-  }
-
-  public List<String> getMatchers() {
-    return matchers;
-  }
-
-  public void setMatchers(List<String> matchers) {
-    this.matchers = matchers;
-  }
-
-  public int getAssignedRepositoryCount() {
-    return assignedRepositoryCount;
-  }
-
-  public void setAssignedRepositoryCount(int assignedRepositoryCount) {
-    this.assignedRepositoryCount = assignedRepositoryCount;
-  }
-
-  public List<String> getAssignedRepositoryNames() {
-    return assignedRepositoryNames;
-  }
-
-  public void setAssignedRepositoryNames(List<String> assignedRepositoryNames) {
-    this.assignedRepositoryNames = assignedRepositoryNames;
-  }
-
+public record RoutingRuleXO(
+    String id,
+    
+    @Pattern(regexp = NamePatternConstants.REGEX, message = NamePatternConstants.MESSAGE)
+    @NotBlank(groups = Create.class)
+    String name,
+    
+    String description,
+    
+    @NotBlank(groups = Create.class)
+    RoutingMode mode,
+    
+    @NotBlank
+    List<String> matchers,
+    
+    int assignedRepositoryCount,
+    
+    List<String> assignedRepositoryNames
+) {
+  /**
+   * Overridden equals method using pattern matching for instanceof check.
+   */
   @Override
   public boolean equals(final Object o) {
     if (this == o) {
       return true;
     }
-    if (o == null || getClass() != o.getClass()) {
-      return false;
-    }
-    RoutingRuleXO that = (RoutingRuleXO) o;
-    return Objects.equals(name, that.name);
+    // Using pattern matching for instanceof check in Java 21
+    return o instanceof RoutingRuleXO that && Objects.equals(name, that.name);
   }
 
   @Override

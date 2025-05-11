@@ -22,7 +22,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.function.BiPredicate;
+import java.util.stream.Collectors;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -62,11 +66,29 @@ public class RepositoryMetadataMerger
                     final MavenPath mavenPath,
                     final Map<Repository, Content> contents)
   {
-    log.debug("Merge metadata for {}", mavenPath.getPath());
+    log.debug(STR."Merge metadata for \{mavenPath.getPath()}");
     List<Envelope> metadatas = new ArrayList<>(contents.size());
     try {
-      for (Map.Entry<Repository, Content> entry : contents.entrySet()) {
-        addReadMetadata(mavenPath, metadatas, entry);
+      // Create a virtual thread per repository for parallel metadata processing
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        List<Future<Envelope>> futures = new ArrayList<>(contents.size());
+        
+        // Submit tasks to read metadata from each repository
+        for (Map.Entry<Repository, Content> entry : contents.entrySet()) {
+          futures.add(executor.submit(() -> readMetadata(mavenPath, entry)));
+        }
+        
+        // Collect results, filtering out nulls
+        for (Future<Envelope> future : futures) {
+          try {
+            Envelope envelope = future.get();
+            if (envelope != null) {
+              metadatas.add(envelope);
+            }
+          } catch (Exception e) {
+            log.error(STR."Error processing metadata: \{e.getMessage()}", e);
+          }
+        }
       }
 
       final Metadata mergedMetadata = merge(metadatas);
@@ -76,26 +98,29 @@ public class RepositoryMetadataMerger
       MavenModels.writeMetadata(outputStream, mergedMetadata);
     }
     catch (IOException e) {
-      log.error("Unable to merge {}", mavenPath, e);
+      log.error(STR."Unable to merge \{mavenPath}", e);
     }
   }
 
-  private void addReadMetadata(final MavenPath mavenPath,
-                               final List<Envelope> metadatas,
+  /**
+   * Reads metadata from a repository entry.
+   */
+  @Nullable
+  private Envelope readMetadata(final MavenPath mavenPath,
                                final Entry<Repository, Content> entry) throws IOException
   {
-    final String origin = entry.getKey().getName() + " @ " + mavenPath.getPath();
+    final String origin = STR."\{entry.getKey().getName()} @ \{mavenPath.getPath()}";
     try {
       final Metadata metadata = MavenModels.readMetadata(entry.getValue().openInputStream());
       if (metadata == null) {
-        log.debug("Corrupted repository metadata: {}, source: {}", origin, entry.getValue());
-        return;
+        log.debug(STR."Corrupted repository metadata: \{origin}, source: \{entry.getValue()}");
+        return null;
       }
-      metadatas.add(new Envelope(origin, metadata));
+      return new Envelope(origin, metadata);
     }
     catch (IOException e) {
-      log.debug("Error downloading repository metadata: {}, source: {}", origin, entry.getValue());
-      throw new IOException("Error downloading repository metadata for " + origin + ": " + e.getMessage(), e);
+      log.debug(STR."Error downloading repository metadata: \{origin}, source: \{entry.getValue()}");
+      throw new IOException(STR."Error downloading repository metadata for \{origin}: \{e.getMessage()}", e);
     }
   }
 
@@ -120,36 +145,19 @@ public class RepositoryMetadataMerger
   /**
    * Plugin comparator that uses artifactId to sort plugin elements.
    */
-  private static final Comparator<Plugin> pluginComparator = new Comparator<Plugin>()
-  {
-    @Override
-    public int compare(final Plugin p1, final Plugin p2) {
-      return p1.getArtifactId().compareTo(p2.getArtifactId());
-    }
-  };
+  private static final Comparator<Plugin> pluginComparator = 
+      (p1, p2) -> p1.getArtifactId().compareTo(p2.getArtifactId());
 
   /**
    * Envelope that tracks origin of the data.
    */
-  public static class Envelope
-  {
-    private final String origin;
-
-    private final Metadata data;
-
-    public Envelope(final String origin, final Metadata data) {
-      this.origin = checkNotNull(origin);
-      this.data = checkNotNull(data);
-    }
-
-    @Nonnull
-    public String getOrigin() {
-      return origin;
-    }
-
-    @Nonnull
-    public Metadata getData() {
-      return data;
+  public static record Envelope(String origin, Metadata data) {
+    /**
+     * Constructor with validation.
+     */
+    public Envelope {
+      checkNotNull(origin);
+      checkNotNull(data);
     }
   }
 
@@ -194,7 +202,7 @@ public class RepositoryMetadataMerger
    * Compute equality of two strings, treating all blank strings as equal.
    * e.g. null, "", " " are all empty
    */
-  private static final boolean stringEquals(final String l, final String r) {
+  private static boolean stringEquals(final String l, final String r) {
     return (isBlank(l) && isBlank(r)) || Objects.equals(l, r);
   }
 
@@ -269,15 +277,15 @@ public class RepositoryMetadataMerger
     Metadata result = null;
     for (Envelope envelope : metadatas) {
       if (result == null) {
-        result = envelope.getData().clone();
+        result = envelope.data().clone();
       }
       else {
         try {
-          result = merge(result, envelope.getData().clone());
+          result = merge(result, envelope.data().clone());
         }
         catch (IllegalArgumentException e) {
           // leave out, log it
-          log.warn("Bad data {}", envelope.getOrigin(), e);
+          log.warn(STR."Bad data \{envelope.origin()}", e);
         }
       }
     }
@@ -341,8 +349,7 @@ public class RepositoryMetadataMerger
 
     // As per NEXUS-13085 allow this and log for support in case the resulting merge leads to downstream problems
     if (!Objects.equals(targetVersion, sourceVersion)) {
-      log.warn("Merging with version mismatch for GA={}:{}, {} vs {}", target.getGroupId(), target.getArtifactId(),
-          targetVersion, sourceVersion);
+      log.warn(STR."Merging with version mismatch for GA=\{target.getGroupId()}:\{target.getArtifactId()}, \{targetVersion} vs \{sourceVersion}");
     }
 
     mergePlugins(target, source);

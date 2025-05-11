@@ -24,6 +24,9 @@ import com.google.common.collect.ImmutableMap;
 import static org.sonatype.nexus.common.app.FeatureFlags.REACT_PRIVILEGES_MODAL_ENABLED;
 import static org.sonatype.nexus.common.app.FeatureFlags.REACT_PRIVILEGES_MODAL_NAMED;
 
+/**
+ * State contributor for the React privileges modal feature flag.
+ */
 @Singleton
 @Named
 public class PrivilegesModalStateContributor
@@ -40,6 +43,8 @@ public class PrivilegesModalStateContributor
 
    @Override
    public Map<String, Object> getState() {
+     // Using ImmutableMap.of for a single entry is still the most efficient approach
+     // even with Java 21's pattern matching capabilities
      return ImmutableMap.of(REACT_PRIVILEGES_MODAL_ENABLED, isPrivilegesModalEnabled);
    }
  }

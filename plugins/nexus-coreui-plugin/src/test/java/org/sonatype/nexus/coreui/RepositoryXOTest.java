@@ -13,11 +13,10 @@
 package org.sonatype.nexus.coreui;
 
 import com.google.inject.Guice;
-import junitparams.Parameters;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import junitparams.JUnitParamsRunner;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import javax.validation.ConstraintViolation;
 import javax.validation.Validator;
@@ -27,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.validation.ValidationModule;
@@ -35,13 +35,17 @@ import org.sonatype.nexus.validation.group.Create;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 
-@RunWith(JUnitParamsRunner.class)
+/**
+ * Tests for {@link RepositoryXO} validation.
+ * <p>
+ * Updated for Java 21 compatibility using JUnit Jupiter (JUnit 5.10.1).
+ */
 public class RepositoryXOTest
     extends TestSupport
 {
   private Validator validator;
 
-  @Before
+  @BeforeEach
   public void setup() {
     validator =
         Guice.createInjector(new ValidationModule(), new TestRepositoryManagerModule())
@@ -58,8 +62,8 @@ public class RepositoryXOTest
     assertThat(violations.iterator().next().getPropertyPath().toString(), is("name"));
   }
 
-  @Test
-  @Parameters(method = "invalidAttributes")
+  @ParameterizedTest
+  @MethodSource("invalidAttributes")
   public void attributesAreAlwaysRequiredAndCannotBeEmpty(Map<String, Map<String, Object>> attributes) {
     RepositoryXO repositoryXO = new RepositoryXO();
     repositoryXO.setName("foo");
@@ -71,12 +75,12 @@ public class RepositoryXOTest
     assertThat(violations.iterator().next().getPropertyPath().toString(), is("attributes"));
   }
 
-  private Object[] invalidAttributes() {
-    return new Object[]{null, Collections.emptyMap()};
+  private static Stream<Map<String, Map<String, Object>>> invalidAttributes() {
+    return Stream.of(null, Collections.emptyMap());
   }
 
-  @Test
-  @Parameters(method = "invalidNames")
+  @ParameterizedTest
+  @MethodSource("invalidNames")
   public void nameShouldNotValidate(String name) {
     RepositoryXO repositoryXO = new RepositoryXO();
     repositoryXO.setName(name);
@@ -87,17 +91,17 @@ public class RepositoryXOTest
     assertThat(violations.iterator().next().getPropertyPath().toString(), is("name"));
   }
 
-  private Object[] invalidNames() {
-    List<Object> noValid = new ArrayList<>("#.,* #'\\/?<>| \r\n\t,+@&å©不βخ".chars()
-        .mapToObj(c -> (char) c)
+  private static Stream<String> invalidNames() {
+    List<String> noValid = new ArrayList<>("#.,* #'\\/?<>| \r\n\t,+@&\u00e5\u00a9\u4e0d\u03b2\u062e".chars()
+        .mapToObj(c -> String.valueOf((char) c))
         .collect(Collectors.toList())); // NOSONAR
     noValid.add("_leadingUnderscore");
     noValid.add("..");
-    return noValid.toArray();
+    return noValid.stream();
   }
 
-  @Test
-  @Parameters(method = "validNames")
+  @ParameterizedTest
+  @MethodSource("validNames")
   public void nameShouldBeValid(String name) {
     RepositoryXO repositoryXO = new RepositoryXO();
     repositoryXO.setName(name);
@@ -107,8 +111,8 @@ public class RepositoryXOTest
     assertThat(violations.isEmpty(), is(true));
   }
 
-  private Object[] validNames() {
-    return new Object[]{"Foo_1.2-3", "foo.", "-0.", "a", "1"};
+  private static Stream<String> validNames() {
+    return Stream.of("Foo_1.2-3", "foo.", "-0.", "a", "1");
   }
 
   @Test
@@ -125,8 +129,8 @@ public class RepositoryXOTest
     assertThat(violations.isEmpty(), is(true));
   }
 
-  @Test
-  @Parameters(method = "nonUniqueNames")
+  @ParameterizedTest
+  @MethodSource("nonUniqueNames")
   public void nameShouldBeValidatedAsCaseInsensitivelyUniqueOnCreation(String repoName) {
     RepositoryXO repositoryXO = new RepositoryXO();
     repositoryXO.setAttributes(Map.of("any", Map.of()));
@@ -140,7 +144,7 @@ public class RepositoryXOTest
     assertThat(violations.iterator().next().getMessage(), is("Name is already used, must be unique (ignoring case)"));
   }
 
-  private Object[] nonUniqueNames() {
-    return new Object[]{"Foo", "bAr", "baZ"};
+  private static Stream<String> nonUniqueNames() {
+    return Stream.of("Foo", "bAr", "baZ");
   }
 }

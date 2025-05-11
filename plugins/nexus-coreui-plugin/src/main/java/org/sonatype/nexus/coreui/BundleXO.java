@@ -22,151 +22,148 @@ import javax.validation.constraints.NotBlank;
  *
  * @since 3.0
  */
-public class BundleXO
-{
-  @Min(0L)
-  private long id;
-
-  @NotBlank
-  private String state;
-
-  @NotBlank
-  private String name;
-
-  @NotBlank
-  private String symbolicName;
-
-  @NotBlank
-  private String location;
-
-  @NotBlank
-  private String version;
-
-  @Min(0L)
-  private int startLevel;
-
-  private boolean fragment;
-
-  private long lastModified;
+public record BundleXO(
+  @Min(0L) long id,
+  @NotBlank String state,
+  @NotBlank String name,
+  @NotBlank String symbolicName,
+  @NotBlank String location,
+  @NotBlank String version,
+  @Min(0L) int startLevel,
+  boolean fragment,
+  long lastModified,
+  List<Long> fragments,
+  List<Long> fragmentHosts,
+  Map<String, String> headers
+) {
+  /**
+   * Creates a new BundleXO with the specified id.
+   *
+   * @param id the bundle id
+   * @return a new BundleXO with the specified id and default values for other fields
+   */
+  public static BundleXO withId(long id) {
+    return new BundleXO(id, "", "", "", "", "", 0, false, 0L, null, null, null);
+  }
 
   /**
-   * Fragment bundle ids.
+   * Creates a new BundleXO with the specified state.
+   *
+   * @param state the bundle state
+   * @return a new BundleXO with the specified state
    */
-  private List<Long> fragments;
-
-  /**
-   * Fragment-host bundle ids.
-   */
-  private List<Long> fragmentHosts;
-
-  private Map<String, String> headers;
-
-  public long getId() {
-    return id;
-  }
-
-  public BundleXO withId(long id) {
-    this.id = id;
-    return this;
-  }
-
-  public String getState() {
-    return state;
-  }
-
   public BundleXO withState(String state) {
-    this.state = state;
-    return this;
+    return new BundleXO(id, state, name, symbolicName, location, version, startLevel, fragment, lastModified, 
+        fragments, fragmentHosts, headers);
   }
 
-  public String getName() {
-    return name;
-  }
-
+  /**
+   * Creates a new BundleXO with the specified name.
+   *
+   * @param name the bundle name
+   * @return a new BundleXO with the specified name
+   */
   public BundleXO withName(String name) {
-    this.name = name;
-    return this;
+    return new BundleXO(id, state, name, symbolicName, location, version, startLevel, fragment, lastModified, 
+        fragments, fragmentHosts, headers);
   }
 
-  public String getSymbolicName() {
-    return symbolicName;
-  }
-
+  /**
+   * Creates a new BundleXO with the specified symbolic name.
+   *
+   * @param symbolicName the bundle symbolic name
+   * @return a new BundleXO with the specified symbolic name
+   */
   public BundleXO withSymbolicName(String symbolicName) {
-    this.symbolicName = symbolicName;
-    return this;
+    return new BundleXO(id, state, name, symbolicName, location, version, startLevel, fragment, lastModified, 
+        fragments, fragmentHosts, headers);
   }
 
-  public String getLocation() {
-    return location;
-  }
-
+  /**
+   * Creates a new BundleXO with the specified location.
+   *
+   * @param location the bundle location
+   * @return a new BundleXO with the specified location
+   */
   public BundleXO withLocation(String location) {
-    this.location = location;
-    return this;
+    return new BundleXO(id, state, name, symbolicName, location, version, startLevel, fragment, lastModified, 
+        fragments, fragmentHosts, headers);
   }
 
-  public String getVersion() {
-    return version;
-  }
-
+  /**
+   * Creates a new BundleXO with the specified version.
+   *
+   * @param version the bundle version
+   * @return a new BundleXO with the specified version
+   */
   public BundleXO withVersion(String version) {
-    this.version = version;
-    return this;
+    return new BundleXO(id, state, name, symbolicName, location, version, startLevel, fragment, lastModified, 
+        fragments, fragmentHosts, headers);
   }
 
-  public int getStartLevel() {
-    return startLevel;
-  }
-
+  /**
+   * Creates a new BundleXO with the specified start level.
+   *
+   * @param startLevel the bundle start level
+   * @return a new BundleXO with the specified start level
+   */
   public BundleXO withStartLevel(int startLevel) {
-    this.startLevel = startLevel;
-    return this;
+    return new BundleXO(id, state, name, symbolicName, location, version, startLevel, fragment, lastModified, 
+        fragments, fragmentHosts, headers);
   }
 
-  public boolean isFragment() {
-    return fragment;
-  }
-
+  /**
+   * Creates a new BundleXO with the specified fragment flag.
+   *
+   * @param fragment the bundle fragment flag
+   * @return a new BundleXO with the specified fragment flag
+   */
   public BundleXO withFragment(boolean fragment) {
-    this.fragment = fragment;
-    return this;
+    return new BundleXO(id, state, name, symbolicName, location, version, startLevel, fragment, lastModified, 
+        fragments, fragmentHosts, headers);
   }
 
-  public long getLastModified() {
-    return lastModified;
-  }
-
+  /**
+   * Creates a new BundleXO with the specified last modified timestamp.
+   *
+   * @param lastModified the bundle last modified timestamp
+   * @return a new BundleXO with the specified last modified timestamp
+   */
   public BundleXO withLastModified(long lastModified) {
-    this.lastModified = lastModified;
-    return this;
+    return new BundleXO(id, state, name, symbolicName, location, version, startLevel, fragment, lastModified, 
+        fragments, fragmentHosts, headers);
   }
 
-  public List<Long> getFragments() {
-    return fragments;
-  }
-
+  /**
+   * Creates a new BundleXO with the specified fragments.
+   *
+   * @param fragments the bundle fragments
+   * @return a new BundleXO with the specified fragments
+   */
   public BundleXO withFragments(List<Long> fragments) {
-    this.fragments = fragments;
-    return this;
+    return new BundleXO(id, state, name, symbolicName, location, version, startLevel, fragment, lastModified, 
+        fragments, fragmentHosts, headers);
   }
 
-  public List<Long> getFragmentHosts() {
-    return fragmentHosts;
-  }
-
+  /**
+   * Creates a new BundleXO with the specified fragment hosts.
+   *
+   * @param fragmentHosts the bundle fragment hosts
+   * @return a new BundleXO with the specified fragment hosts
+   */
   public BundleXO withFragmentHosts(List<Long> fragmentHosts) {
-    this.fragmentHosts = fragmentHosts;
-    return this;
+    return new BundleXO(id, state, name, symbolicName, location, version, startLevel, fragment, lastModified, 
+        fragments, fragmentHosts, headers);
   }
 
-  public Map<String, String> getHeaders() {
-    return headers;
-  }
-
+  /**
+   * Creates a new BundleXO with the specified headers.
+   *
+   * @param headers the bundle headers
+   * @return a new BundleXO with the specified headers
+   */
   public BundleXO withHeaders(Map<String, String> headers) {
-    this.headers = headers;
-    return this;
+    return new BundleXO(id, state, name, symbolicName, location, version, startLevel, fragment, lastModified, 
+        fragments, fragmentHosts, headers);
   }
-
 }

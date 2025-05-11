@@ -12,19 +12,33 @@
  */
 package org.sonatype.nexus.blobstore.restore;
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import java.util.Objects;
 
 /**
+ * Support class that wraps a {@link RestoreBlobData} object, ensuring it's not null
+ * and providing safe access to it during blob restoration operations.
+ *
  * @since 3.14
  */
 public class RestoreBlobDataSupport
 {
   private final RestoreBlobData blobData;
 
+  /**
+   * Creates a new instance with the specified blob data.
+   *
+   * @param blobData the blob data to wrap (must not be null)
+   * @throws NullPointerException if blobData is null
+   */
   public RestoreBlobDataSupport(final RestoreBlobData blobData) {
-    this.blobData = checkNotNull(blobData);
+    this.blobData = Objects.requireNonNull(blobData, "Blob data cannot be null");
   }
 
+  /**
+   * Returns the wrapped blob data.
+   *
+   * @return the non-null blob data
+   */
   public RestoreBlobData getBlobData() {
     return blobData;
   }

@@ -103,13 +103,13 @@ public class UserResource
       throws UserNotFoundException, NoSuchUserManagerException
   {
     User user = getCurrentUser();
-    if (!user.getUserId().equals(xo.getUserId())) {
+    if (!user.getUserId().equals(xo.userId())) {
       throw new WebApplicationMessageException(Status.BAD_REQUEST,
-          STR."Mismatch between authenticated user \{user.getUserId()} and user to update \{xo.getUserId()}.");
+          STR."Mismatch between authenticated user \{user.getUserId()} and user to update \{xo.userId()}");
     }
-    user.setFirstName(xo.getFirstName());
-    user.setLastName(xo.getLastName());
-    user.setEmailAddress(xo.getEmail());
+    user.setFirstName(xo.firstName());
+    user.setLastName(xo.lastName());
+    user.setEmailAddress(xo.email());
     securitySystem.updateUser(user);
     log.debug(STR."Updated user account for \{user.getUserId()}");
   }
@@ -156,16 +156,16 @@ public class UserResource
 
   /**
    * Converts a User to a UserAccountXO.
-   * Uses pattern matching in Java 21 to simplify the code.
+   * Uses pattern matching and record patterns in Java 21 to simplify the code.
    */
   UserAccountXO convert(final User user) {
-    var xo = new UserAccountXO();
-    xo.setUserId(user.getUserId());
-    xo.setFirstName(user.getFirstName());
-    xo.setLastName(user.getLastName());
-    xo.setEmail(user.getEmailAddress());
-    xo.setExternal(!DEFAULT_SOURCE.equals(user.getSource()));
-    return xo;
+    return new UserAccountXO(
+        user.getUserId(),
+        user.getFirstName(),
+        user.getLastName(),
+        user.getEmailAddress(),
+        !DEFAULT_SOURCE.equals(user.getSource())
+    );
   }
 
   /**

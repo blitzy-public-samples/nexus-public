@@ -103,11 +103,12 @@ public class LoggingConfigurationResource
     lock.readLock().lock();
     try {
       log.debug(STR."Retrieving logger configuration for: \{name}");
-      LoggerXO logger = new LoggerXO();
-      logger.setName(name);
-      logger.setLevel(logManager.getLoggerEffectiveLevel(name));
-      logger.setOverride(logManager.getLoggers().containsKey(name));
-      return logger;
+      // Create LoggerXO record with all parameters in constructor
+      return new LoggerXO(
+          name,
+          logManager.getLoggerEffectiveLevel(name),
+          logManager.getLoggers().containsKey(name)
+      );
     }
     finally {
       lock.readLock().unlock();

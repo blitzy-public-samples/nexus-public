@@ -29,12 +29,20 @@ public final class RecordUtils
     //no-op
   }
 
+  /**
+   * Creates a string representation of a Maven artifact's coordinates (group, artifact, version, classifier, extension).
+   *
+   * @param record The Maven index record containing artifact information
+   * @return A string representation of the artifact's coordinates
+   */
   public static String gavceForRecord(final Record record) {
-    String g = record.get(Record.GROUP_ID);
-    String a = record.get(Record.ARTIFACT_ID);
-    String v = record.get(Record.VERSION);
-    String ce = defaultIfBlank(record.get(CLASSIFIER), "n/a") + ":" + record.get(FILE_EXTENSION);
-
-    return g + a + v + ce;
+    String groupId = record.get(Record.GROUP_ID);
+    String artifactId = record.get(Record.ARTIFACT_ID);
+    String version = record.get(Record.VERSION);
+    String classifier = defaultIfBlank(record.get(CLASSIFIER), "n/a");
+    String extension = record.get(FILE_EXTENSION);
+    
+    // Using Java 21 String Template feature
+    return STR."""#{groupId}#{artifactId}#{version}#{classifier}:#{extension}""";
   }
 }

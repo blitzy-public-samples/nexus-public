@@ -29,17 +29,17 @@ import org.sonatype.nexus.capability.CapabilityReference;
 import org.sonatype.nexus.capability.CapabilityRegistry;
 
 import com.google.common.base.Predicate;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.Mockito;
-import org.mockito.MockitoAnnotations;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.Collections.singletonList;
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.doReturn;
@@ -51,8 +51,11 @@ import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.blobstore.s3.S3BlobStoreConfigurationHelper.BUCKET_PREFIX_KEY;
 import static org.sonatype.nexus.blobstore.s3.S3BlobStoreConfigurationHelper.CONFIG_KEY;
 
-@RunWith(MockitoJUnitRunner.class)
-public class S3BlobStoreDescriptorTest {
+/**
+ * Tests for {@link S3BlobStoreDescriptor} validating configuration handling and bucket prefix validation.
+ */
+@ExtendWith(MockitoExtension.class)
+class S3BlobStoreDescriptorTest {
 
   @Mock
   private BlobStoreQuotaService quotaService;
@@ -70,11 +73,8 @@ public class S3BlobStoreDescriptorTest {
 
   private Map<String, BlobStore> blobStores;
 
-  private AutoCloseable closeable;
-
-  @Before
-  public void setup() {
-    closeable = MockitoAnnotations.openMocks(this);
+  @BeforeEach
+  void setUp() {
     underTest = new S3BlobStoreDescriptor(quotaService, blobStoreManager, capabilityRegistryProvider);
     blobStores = new HashMap<>();
 
@@ -84,13 +84,8 @@ public class S3BlobStoreDescriptorTest {
     });
   }
 
-  @After
-  public void tearDown() throws Exception {
-    closeable.close();
-  }
-
   @Test
-  public void testS3BlobStoreValidatesItsQuota() {
+  void validatesSoftQuotaConfiguration() {
     MockBlobStoreConfiguration config = new MockBlobStoreConfiguration();
 
     underTest.validateConfig(config);
@@ -99,7 +94,7 @@ public class S3BlobStoreDescriptorTest {
   }
 
   @Test
-  public void testSingleS3ConfigurationIsValid() {
+  void acceptsSingleS3Configuration() {
     MockBlobStoreConfiguration config = new MockBlobStoreConfiguration();
 
     Map<String, Object> s3Attributes = new HashMap<>();
@@ -115,7 +110,7 @@ public class S3BlobStoreDescriptorTest {
   }
 
   @Test
-  public void testConfigSharesBucketWithNonOverlappingPrefixesIsValid() {
+  void acceptsSharedBucketWithNonOverlappingPrefixes() {
     MockBlobStoreConfiguration config = new MockBlobStoreConfiguration();
 
     Map<String, Object> otherS3Attributes = new HashMap<>();
@@ -141,7 +136,7 @@ public class S3BlobStoreDescriptorTest {
   }
 
   @Test
-  public void testConfigSharesBucketWithNoPrefixIsInvalid() {
+  void rejectsSharedBucketWithNoPrefix() {
     MockBlobStoreConfiguration config = new MockBlobStoreConfiguration();
 
     Map<String, Object> otherS3Attributes = new HashMap<>();
@@ -163,15 +158,15 @@ public class S3BlobStoreDescriptorTest {
     config.setName("self");
     config.setAttributes(selfAttributes);
 
-    try {
+    ValidationException exception = assertThrows(ValidationException.class, () -> {
       underTest.validateConfig(config);
-    } catch (ValidationException e) {
-      assertEquals("Blob Store 'other' is already using bucket 'bucket' with prefix ''", e.getMessage());
-    }
+    });
+    
+    assertEquals("Blob Store 'other' is already using bucket 'bucket' with prefix ''", exception.getMessage());
   }
 
   @Test
-  public void testConfigSharesBucketWithOverlappingPrefixesInvalid() {
+  void rejectsSharedBucketWithOverlappingPrefixes() {
     String[][] prefixes = {
         {"foo", "foo"},
         {"", "foo"},
@@ -202,16 +197,17 @@ public class S3BlobStoreDescriptorTest {
       config.setName("self");
       config.setAttributes(selfAttributes);
 
-      try {
+      ValidationException exception = assertThrows(ValidationException.class, () -> {
         underTest.validateConfig(config);
-      } catch (ValidationException e) {
-        assertEquals("Blob Store 'other' is already using bucket 'bucket' with prefix '" + prefixPair[0] + "'", e.getMessage());
-      }
+      });
+      
+      assertEquals("Blob Store 'other' is already using bucket 'bucket' with prefix '" + prefixPair[0] + "'", 
+          exception.getMessage());
     }
   }
 
   @Test
-  public void testConfigSharesBucketWithNonOverlappingPrefixesValid() {
+  void acceptsSharedBucketWithNonOverlappingPrefixes() {
     String[][] prefixes = {
         {"foo", "bar"},
         {"foo", "bar/foo"},
@@ -245,7 +241,7 @@ public class S3BlobStoreDescriptorTest {
   }
 
   @Test
-  public void testConfigSharesBucketNameWithDifferentEndpointsIsValid() {
+  void acceptsSharedBucketNameWithDifferentEndpoints() {
     MockBlobStoreConfiguration config = new MockBlobStoreConfiguration();
 
     Map<String, Object> otherS3Attributes = new HashMap<>();
@@ -271,7 +267,7 @@ public class S3BlobStoreDescriptorTest {
   }
 
   @Test
-  public void testTransformPrefixByTrimmingAndCollapsingDuplicateSlashes() {
+  void transformsPrefixByTrimmingAndCollapsingDuplicateSlashes() {
     String[][] prefixes = {
         {null, ""},
         {"", ""},
@@ -306,7 +302,7 @@ public class S3BlobStoreDescriptorTest {
   }
 
   @Test
-  public void testCustomS3RegionCapabilityIsEnabled() {
+  void retrievesRegionOptionsWhenCustomS3RegionCapabilityIsEnabled() {
     S3BlobStoreDescriptor spyDescriptor = spy(new S3BlobStoreDescriptor(quotaService, blobStoreManager, capabilityRegistryProvider));
     doReturn(true).when(spyDescriptor).isCustomS3RegionCapabilityEnabled();
 
@@ -329,6 +325,14 @@ public class S3BlobStoreDescriptorTest {
     assertEquals(mockRegionsList, regionOptions);
   }
 
+  /**
+   * Creates a mock BlobStore with the specified configuration.
+   *
+   * @param name the name of the blob store
+   * @param type the type of the blob store
+   * @param attributes the attributes for the blob store configuration
+   * @return a mocked BlobStore instance
+   */
   private BlobStore mockBlobStore(String name, String type, Map<String, Map<String, Object>> attributes) {
     BlobStore blobStore = mock(BlobStore.class);
     MockBlobStoreConfiguration config = new MockBlobStoreConfiguration();

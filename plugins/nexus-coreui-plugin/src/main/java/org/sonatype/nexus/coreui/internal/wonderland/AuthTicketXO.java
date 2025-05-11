@@ -30,22 +30,18 @@ import com.fasterxml.jackson.annotation.JsonProperty;
     "t"
 })
 @XmlRootElement(name = "authTicket")
-public class AuthTicketXO
-{
-  @XmlElement(required = true)
-  @JsonProperty("t")
-  private String t;
-
-  public String getT() {
-    return t;
-  }
-
-  public void setT(String value) {
-    this.t = value;
-  }
-
-  public AuthTicketXO withT(String value) {
-    setT(value);
-    return this;
+public record AuthTicketXO(
+    @XmlElement(required = true)
+    @JsonProperty("t")
+    String t
+) {
+  /**
+   * Creates a new AuthTicketXO with the specified ticket value.
+   *
+   * @param value the ticket value
+   * @return a new AuthTicketXO instance
+   */
+  public static AuthTicketXO withT(String value) {
+    return new AuthTicketXO(value);
   }
 }

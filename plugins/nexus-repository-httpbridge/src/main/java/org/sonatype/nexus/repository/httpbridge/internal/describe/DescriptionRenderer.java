@@ -12,14 +12,62 @@
  */
 package org.sonatype.nexus.repository.httpbridge.internal.describe;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+
 /**
  * Renders {@link Description} into HTML or JSON.
+ * <p>
+ * Java 21 compatible interface with support for both synchronous and asynchronous rendering.
+ * Implementations can leverage Virtual Threads for improved performance with I/O-bound operations.
  *
  * @since 3.0
  */
 public interface DescriptionRenderer
 {
+  /**
+   * Renders the description as HTML.
+   *
+   * @param description the description to render
+   * @return HTML string representation
+   */
   String renderHtml(Description description);
 
+  /**
+   * Renders the description as JSON.
+   *
+   * @param description the description to render
+   * @return JSON string representation
+   */
   String renderJson(Description description);
+  
+  /**
+   * Asynchronously renders the description as HTML using Virtual Threads.
+   * <p>
+   * This method leverages Java 21 Virtual Threads for improved performance
+   * with I/O-bound operations like template rendering.
+   *
+   * @param description the description to render
+   * @param executor the executor to use for asynchronous processing
+   * @return a CompletableFuture that will complete with the HTML string representation
+   * @since 3.41
+   */
+  default CompletableFuture<String> renderHtmlAsync(Description description, Executor executor) {
+    return CompletableFuture.supplyAsync(() -> renderHtml(description), executor);
+  }
+  
+  /**
+   * Asynchronously renders the description as JSON using Virtual Threads.
+   * <p>
+   * This method leverages Java 21 Virtual Threads for improved performance
+   * with I/O-bound operations like JSON serialization.
+   *
+   * @param description the description to render
+   * @param executor the executor to use for asynchronous processing
+   * @return a CompletableFuture that will complete with the JSON string representation
+   * @since 3.41
+   */
+  default CompletableFuture<String> renderJsonAsync(Description description, Executor executor) {
+    return CompletableFuture.supplyAsync(() -> renderJson(description), executor);
+  }
 }

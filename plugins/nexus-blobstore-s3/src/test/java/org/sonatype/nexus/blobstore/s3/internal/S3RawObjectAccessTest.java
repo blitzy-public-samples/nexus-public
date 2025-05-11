@@ -33,15 +33,18 @@ import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectInputStream;
 import com.amazonaws.services.s3.model.S3ObjectSummary;
 import org.apache.commons.io.IOUtils;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.Captor;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.AdditionalAnswers.returnsFirstArg;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -49,7 +52,14 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-public class S3RawObjectAccessTest
+/**
+ * Tests for {@link S3RawObjectAccess} that verify S3 object operations.
+ * 
+ * These tests validate the core functionality for listing, retrieving, storing, and deleting
+ * objects in an S3 bucket through the S3RawObjectAccess interface.
+ */
+@ExtendWith(MockitoExtension.class)
+class S3RawObjectAccessTest
     extends TestSupport
 {
   @Mock
@@ -63,18 +73,22 @@ public class S3RawObjectAccessTest
 
   @Mock
   private PerformanceLogger performanceLogger;
+  
+  @Captor
+  private ArgumentCaptor<DeleteObjectsRequest> deleteRequestCaptor;
 
-  private S3RawObjectAccess underTest = null;
+  private S3RawObjectAccess underTest;
 
-  @Before
-  public void setup() {
+  @BeforeEach
+  void setup() {
     underTest = new S3RawObjectAccess("mybucket", "prefix/", s3, performanceLogger, uploader);
     when(amazonS3Factory.create(any())).thenReturn(s3);
     when(performanceLogger.maybeWrapForPerformanceLogging(any())).then(returnsFirstArg());
   }
 
   @Test
-  public void listRawObjects() {
+  void listRawObjectsReturnsExpectedObjects() {
+    // Prepare test data
     List<S3ObjectSummary> summaries = new ArrayList<>();
 
     S3ObjectSummary summary1 = new S3ObjectSummary();
@@ -85,10 +99,12 @@ public class S3RawObjectAccessTest
     summaries.add(summary1);
     summaries.add(summary2);
 
+    // Mock S3 responses
     ObjectListing response = mock(ObjectListing.class);
     when(s3.listObjects(any(ListObjectsRequest.class))).thenReturn(response);
     when(response.getObjectSummaries()).thenReturn(summaries);
 
+    // Execute and verify
     List<String> objects = underTest.listRawObjects(Paths.get("path", "to")).collect(Collectors.toList());
     assertEquals(2, objects.size());
     assertEquals("object1", objects.get(0));
@@ -96,19 +112,21 @@ public class S3RawObjectAccessTest
   }
 
   @Test
-  public void listRawObjects_empty() {
+  void listRawObjectsReturnsEmptyListWhenNoObjectsExist() {
+    // Prepare empty response
     List<S3ObjectSummary> summaries = new ArrayList<>();
-
     ObjectListing response = mock(ObjectListing.class);
     when(s3.listObjects(any(ListObjectsRequest.class))).thenReturn(response);
     when(response.getObjectSummaries()).thenReturn(summaries);
 
+    // Execute and verify
     List<String> objects = underTest.listRawObjects(Paths.get("path", "to")).collect(Collectors.toList());
     assertTrue(objects.isEmpty());
   }
 
   @Test
-  public void listRawObjects_rootDirectory() {
+  void listRawObjectsHandlesRootDirectoryCorrectly() {
+    // Prepare test data
     List<S3ObjectSummary> summaries = new ArrayList<>();
 
     S3ObjectSummary summary1 = new S3ObjectSummary();
@@ -119,10 +137,12 @@ public class S3RawObjectAccessTest
     summaries.add(summary1);
     summaries.add(summary2);
 
+    // Mock S3 responses
     ObjectListing response = mock(ObjectListing.class);
     when(s3.listObjects(any(ListObjectsRequest.class))).thenReturn(response);
     when(response.getObjectSummaries()).thenReturn(summaries);
 
+    // Execute and verify
     List<String> objects = underTest.listRawObjects(null).collect(Collectors.toList());
     assertEquals(2, objects.size());
     assertEquals("object1", objects.get(0));
@@ -130,38 +150,48 @@ public class S3RawObjectAccessTest
   }
 
   @Test
-  public void getRawObject() throws Exception {
+  void getRawObjectReturnsExpectedContent() throws Exception {
+    // Prepare test data
     S3Object s3Object = mock(S3Object.class);
     when(s3.getObject(anyString(), anyString())).thenReturn(s3Object);
 
     when(s3Object.getObjectContent())
         .thenReturn(new S3ObjectInputStream(new ByteArrayInputStream("hello!".getBytes()), null));
 
+    // Execute and verify
     InputStream in = underTest.getRawObject(Paths.get("path", "to", "object1"));
     assertNotNull(in);
     assertEquals("hello!", IOUtils.toString(in, StandardCharsets.UTF_8.name()));
   }
 
   @Test
-  public void getRawObject_notFound() {
+  void getRawObjectReturnsNullWhenObjectNotFound() {
+    // Prepare 404 exception
     AmazonServiceException e = new AmazonServiceException("Not Found");
     e.setStatusCode(404);
 
     when(s3.getObject(anyString(), anyString())).thenThrow(e);
 
+    // Execute and verify
     InputStream in = underTest.getRawObject(Paths.get("path", "to", "object1"));
     assertNull(in);
   }
 
   @Test
-  public void putRawObject() {
+  void putRawObjectUploadsToCorrectPath() {
+    // Prepare test data
     InputStream in = new ByteArrayInputStream("hello!".getBytes());
+    
+    // Execute
     underTest.putRawObject(Paths.get("path", "to", "object1"), in);
+    
+    // Verify
     verify(uploader).upload(s3, "mybucket", "prefix/path/to/object1", in);
   }
 
   @Test
-  public void deleteRawObjectsInPath() {
+  void deleteRawObjectsInPathRemovesAllObjectsInPath() {
+    // Prepare test data
     List<S3ObjectSummary> summaries = new ArrayList<>();
 
     S3ObjectSummary summary1 = new S3ObjectSummary();
@@ -172,15 +202,17 @@ public class S3RawObjectAccessTest
     summaries.add(summary1);
     summaries.add(summary2);
 
+    // Mock S3 responses
     ObjectListing response = mock(ObjectListing.class);
     when(s3.listObjects(any(ListObjectsRequest.class))).thenReturn(response);
     when(response.getObjectSummaries()).thenReturn(summaries);
 
+    // Execute
     underTest.deleteRawObjectsInPath(Paths.get("path", "to", "folder"));
 
-    ArgumentCaptor<DeleteObjectsRequest> argument = ArgumentCaptor.forClass(DeleteObjectsRequest.class);
-    verify(s3).deleteObjects(argument.capture());
-    DeleteObjectsRequest deleteObjectsRequest = argument.getValue();
+    // Verify
+    verify(s3).deleteObjects(deleteRequestCaptor.capture());
+    DeleteObjectsRequest deleteObjectsRequest = deleteRequestCaptor.getValue();
     List<KeyVersion> keys = deleteObjectsRequest.getKeys();
     assertEquals("object1", keys.get(0).getKey());
     assertEquals("object2", keys.get(1).getKey());

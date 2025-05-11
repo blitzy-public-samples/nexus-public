@@ -13,6 +13,7 @@
 package org.sonatype.nexus.audit.internal;
 
 import java.util.Map;
+import java.util.concurrent.Executors;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
@@ -42,20 +43,40 @@ public class GlobalAuditWebhook
     return NAME;
   }
 
+  /**
+   * Handles audit events and dispatches them to webhook subscribers.
+   * 
+   * Uses Java 21 pattern matching for instanceof to simplify event data extraction.
+   * The actual webhook dispatch is performed asynchronously using Virtual Threads
+   * for improved scalability and reduced resource consumption.
+   *
+   * @param event the audit event to process
+   */
   @Subscribe
   @AllowConcurrentEvents
   public void on(final AuditDataRecordedEvent event) {
+    // Use Java 21 pattern matching for instanceof to extract audit data
+    if (event instanceof AuditDataRecordedEvent auditEvent) {
+      AuditData auditData = auditEvent.getData();
+      AuditWebhookPayload payload = new AuditWebhookPayload();
+      payload.setInitiator(auditData.getInitiator());
+      payload.setNodeId(auditData.getNodeId());
 
-    AuditData auditData = event.getData();
-    AuditWebhookPayload payload = new AuditWebhookPayload();
-    payload.setInitiator(auditData.getInitiator());
-    payload.setNodeId(auditData.getNodeId());
+      Audit audit = new Audit(auditData.getDomain(), auditData.getType(),
+          auditData.getContext(), auditData.getAttributes());
+      payload.setAudit(audit);
 
-    Audit audit = new Audit(auditData.getDomain(), auditData.getType(),
-        auditData.getContext(), auditData.getAttributes());
-    payload.setAudit(audit);
-
-    getSubscriptions().forEach(s -> queue(s, payload));
+      // Use Java 21 Virtual Threads for each webhook subscriber to improve scalability
+      // for I/O-bound webhook HTTP requests without consuming platform thread resources
+      var executor = Executors.newVirtualThreadPerTaskExecutor();
+      try {
+        getSubscriptions().forEach(s -> {
+          executor.submit(() -> queue(s, payload));
+        });
+      } finally {
+        executor.close();
+      }
+    }
   }
 
   public static class AuditWebhookPayload

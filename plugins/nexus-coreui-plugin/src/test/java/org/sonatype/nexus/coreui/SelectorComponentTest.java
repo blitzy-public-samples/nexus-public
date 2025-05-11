@@ -27,13 +27,14 @@ import org.sonatype.nexus.validation.ConstraintViolationFactory;
 
 import com.google.inject.Binder;
 import org.eclipse.sisu.space.BeanScanning;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -43,13 +44,12 @@ import static org.mockito.Mockito.when;
 
 /**
  * Tests {@link SelectorComponent}.
+ * <p>
+ * Updated for Java 21 compatibility using JUnit Jupiter (JUnit 5) and Mockito 4.11.0.
  */
 public class SelectorComponentTest
     extends InjectedTestSupport
 {
-  @Rule
-  public ExpectedException expectedException = ExpectedException.none();
-
   @Inject
   private SelectorComponent component;
 
@@ -78,14 +78,14 @@ public class SelectorComponentTest
   }
 
   @Test
-  public void testCreateJexl_invalidExpression() {
+  void createJexlWithInvalidExpression() {
     SelectorXO xo = new SelectorXO();
     xo.setExpression("a ==== b");
     xo.setType("jexl");
 
     try {
       component.create(xo);
-      fail();
+      fail("Expected ConstraintViolationException was not thrown");
     }
     catch (ConstraintViolationException e) {
       assertThat(e.getConstraintViolations().size(), is(1));
@@ -94,14 +94,14 @@ public class SelectorComponentTest
   }
 
   @Test
-  public void testCreateCsel_invalidExpression() {
+  void createCselWithInvalidExpression() {
     SelectorXO xo = new SelectorXO();
     xo.setExpression("a ==== b");
     xo.setType(CselSelector.TYPE);
 
     try {
       component.create(xo);
-      fail();
+      fail("Expected ConstraintViolationException was not thrown");
     }
     catch (ConstraintViolationException e) {
       assertThat(e.getConstraintViolations().size(), is(1));
@@ -110,14 +110,14 @@ public class SelectorComponentTest
   }
 
   @Test
-  public void testUpdateJexl_invalidExpression() {
+  void updateJexlWithInvalidExpression() {
     SelectorXO xo = new SelectorXO();
     xo.setExpression("a ==== b");
     xo.setType("jexl");
 
     try {
       component.update(xo);
-      fail();
+      fail("Expected ConstraintViolationException was not thrown");
     }
     catch (ConstraintViolationException e) {
       assertThat(e.getConstraintViolations().size(), is(1));
@@ -126,14 +126,14 @@ public class SelectorComponentTest
   }
 
   @Test
-  public void testUpdateCsel_invalidExpression() {
+  void updateCselWithInvalidExpression() {
     SelectorXO xo = new SelectorXO();
     xo.setExpression("a ==== b");
     xo.setType(CselSelector.TYPE);
 
     try {
       component.update(xo);
-      fail();
+      fail("Expected ConstraintViolationException was not thrown");
     }
     catch (ConstraintViolationException e) {
       assertThat(e.getConstraintViolations().size(), is(1));
@@ -142,13 +142,14 @@ public class SelectorComponentTest
   }
 
   @Test
-  public void testDelete_blobStoreInUse() {
+  void deleteBlobStoreInUse() {
     when(mockSelectorManager.readByName(any())).thenReturn(mock(SelectorConfiguration.class));
     doThrow(new IllegalStateException("a message")).when(mockSelectorManager).delete(any());
 
-    expectedException.expect(ConstraintViolationException.class);
-    expectedException.expectMessage("a message");
-
-    component.remove("someSelector");
+    ConstraintViolationException exception = assertThrows(ConstraintViolationException.class, () -> {
+      component.remove("someSelector");
+    });
+    
+    assertThat(exception.getMessage(), is("a message"));
   }
 }

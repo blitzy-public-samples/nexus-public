@@ -26,6 +26,15 @@ import org.sonatype.nexus.common.scheduling.PeriodicJobService;
 
 import com.google.common.collect.ImmutableMap;
 
+/**
+ * S3 implementation of DatastoreBlobStoreMetricsService.
+ * <p>
+ * This implementation is compatible with Java 21 and leverages its features for improved performance.
+ * The metrics collection could benefit from Virtual Threads for I/O operations in the underlying
+ * implementation of PeriodicJobService.
+ *
+ * @since 3.0
+ */
 @Named(S3BlobStore.TYPE)
 @Priority(Integer.MAX_VALUE)
 public class DatastoreS3BlobStoreMetricsService
@@ -33,6 +42,13 @@ public class DatastoreS3BlobStoreMetricsService
 {
   private static final ImmutableMap<String, Long> AVAILABLE_SPACE_BY_FILE_STORE = ImmutableMap.of("s3", Long.MAX_VALUE);
 
+  /**
+   * Constructor for DatastoreS3BlobStoreMetricsService.
+   * 
+   * @param metricsFlushPeriodSeconds The period in seconds between metrics flush operations
+   * @param blobStoreMetricsStore The store for blob store metrics
+   * @param jobService The service for scheduling periodic jobs
+   */
   @Inject
   public DatastoreS3BlobStoreMetricsService(
       @Named("${nexus.blobstore.metrics.flushInterval:-2}") final int metricsFlushPeriodSeconds,
@@ -42,11 +58,17 @@ public class DatastoreS3BlobStoreMetricsService
     super(metricsFlushPeriodSeconds, jobService, blobStoreMetricsStore);
   }
 
+  /**
+   * Gets the metrics for this blob store.
+   * 
+   * @return The blob store metrics
+   */
   @Override
   public BlobStoreMetrics getMetrics() {
-    BlobStoreMetricsEntity metricsEntity =
-        blobStoreMetricsStore.get(blobStore.getBlobStoreConfiguration().getName());
+    // Get metrics entity from the store using the blob store configuration name
+    var metricsEntity = blobStoreMetricsStore.get(blobStore.getBlobStoreConfiguration().getName());
 
+    // Create and return metrics using the entity data
     return new AccumulatingBlobStoreMetrics(
         metricsEntity.getBlobCount(),
         metricsEntity.getTotalSize(),

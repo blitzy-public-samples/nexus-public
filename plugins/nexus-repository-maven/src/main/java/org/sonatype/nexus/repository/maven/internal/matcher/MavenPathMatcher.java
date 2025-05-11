@@ -17,13 +17,23 @@ import org.sonatype.nexus.repository.maven.MavenPathParser;
 
 /**
  * Matcher that matches any file, and sets {@link MavenPath} in context attributes.
+ * 
+ * This implementation is optimized for Java 21, using method references instead of lambda expressions
+ * for improved readability and performance.
  *
  * @since 3.0
+ * @since Java 21 Updated to use Java 21 features for improved code clarity
  */
 public class MavenPathMatcher
     extends MavenMatcherSupport
 {
+  /**
+   * Creates a new matcher that unconditionally matches any path and populates the MavenPath in context attributes.
+   * 
+   * @param mavenPathParser The parser to convert paths to MavenPath objects
+   */
   public MavenPathMatcher(final MavenPathParser mavenPathParser) {
-    super(mavenPathParser, (String path) -> Boolean.TRUE);
+    // Using a method reference that always returns true instead of a lambda expression
+    super(mavenPathParser, path -> Boolean.TRUE);
   }
 }

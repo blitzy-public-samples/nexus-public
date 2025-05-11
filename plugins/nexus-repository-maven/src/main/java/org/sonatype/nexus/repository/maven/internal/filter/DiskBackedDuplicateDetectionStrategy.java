@@ -38,7 +38,7 @@ import static org.sonatype.nexus.repository.maven.internal.utils.RecordUtils.gav
  * @since 3.11
  */
 public class DiskBackedDuplicateDetectionStrategy
-    implements DuplicateDetectionStrategy<Record>
+    implements DuplicateDetectionStrategy<Record>, AutoCloseable
 {
   public static final String CACHE_NAME = "duplicate-detection-cache";
 
@@ -46,14 +46,22 @@ public class DiskBackedDuplicateDetectionStrategy
 
   private final CacheManager cacheManager;
 
+  /**
+   * Creates a new disk-backed duplicate detection strategy.
+   *
+   * @param directories The application directories to use for temporary storage
+   * @param maxHeapGb Maximum heap memory in GB to use before spilling to disk
+   * @param maxDiskGb Maximum disk space in GB to use for storage
+   */
   public DiskBackedDuplicateDetectionStrategy(final ApplicationDirectories directories,
                                               final int maxHeapGb,
                                               final int maxDiskGb)
   {
     String randomDirectory = UUID.randomUUID().toString();
+    String tempPath = directories.getTemporaryDirectory().getPath() + "/" + randomDirectory;
 
     cacheManager = CacheManagerBuilder.newCacheManagerBuilder()
-        .with(CacheManagerBuilder.persistence(directories.getTemporaryDirectory().getPath() + "/" + randomDirectory))
+        .with(CacheManagerBuilder.persistence(tempPath))
         .withCache(CACHE_NAME, newCacheConfigurationBuilder(String.class, String.class,
             ResourcePoolsBuilder.newResourcePoolsBuilder()
                 .heap(maxHeapGb, GB)
@@ -66,6 +74,10 @@ public class DiskBackedDuplicateDetectionStrategy
 
   @Override
   public boolean apply(final Record record) {
+    if (record == null) {
+      return false;
+    }
+    
     String gavce = gavceForRecord(record);
 
     if (map.containsKey(gavce)) {
@@ -73,13 +85,14 @@ public class DiskBackedDuplicateDetectionStrategy
     }
     else {
       map.put(gavce, "");
-
       return true;
     }
   }
 
   @Override
   public void close() {
-    cacheManager.close();
+    if (cacheManager != null) {
+      cacheManager.close();
+    }
   }
 }

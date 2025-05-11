@@ -12,34 +12,58 @@
  */
 package org.sonatype.nexus.blobstore.s3.rest.internal.model;
 
-import javax.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotNull;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import io.swagger.annotations.ApiModelProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 
-public class S3BlobStoreApiFailoverBucket
-{
-  @NotNull
-  @ApiModelProperty("The region containing the bucket")
-  private final String region;
+/**
+ * Represents a failover bucket configuration for S3 blob stores.
+ * 
+ * This class is implemented as a Java Record for immutability and concise data handling.
+ * Compatible with Java 21 record patterns for efficient destructuring.
+ * 
+ * Example usage with Java 21 record patterns:
+ * <pre>
+ * {@code
+ * // Destructuring with record pattern in instanceof
+ * if (bucket instanceof S3BlobStoreApiFailoverBucket(var region, var bucketName)) {
+ *     // Direct access to components without getter calls
+ *     processRegion(region);
+ *     processBucketName(bucketName);
+ * }
+ * 
+ * // Destructuring with record pattern in switch
+ * String result = switch(bucket) {
+ *     case S3BlobStoreApiFailoverBucket(String region, String name) ->
+ *         STR."Failover bucket: \{name} in region \{region}";
+ *     default -> "Unknown bucket";
+ * };
+ * }
+ * </pre>
+ *
+ * @since 3.20
+ */
+public record S3BlobStoreApiFailoverBucket(
+    @NotNull
+    @Schema(description = "The region containing the bucket", requiredMode = Schema.RequiredMode.REQUIRED)
+    String region,
 
-  @NotNull
-  @ApiModelProperty("The name of the bucket in the region")
-  private final String bucketName;
-
+    @NotNull
+    @Schema(description = "The name of the bucket in the region", requiredMode = Schema.RequiredMode.REQUIRED)
+    String bucketName
+) {
+  /**
+   * Constructor with JsonCreator annotation for Jackson deserialization.
+   * 
+   * @param region The region containing the bucket
+   * @param bucketName The name of the bucket in the region
+   */
+  @JsonCreator
   public S3BlobStoreApiFailoverBucket(
       @JsonProperty("region") final String region,
-      @JsonProperty("bucketName") final String bucketName)
-  {
-    this.region = region;
-    this.bucketName = bucketName;
-  }
-
-  public String getRegion() {
-    return region;
-  }
-
-  public String getBucketName() {
-    return bucketName;
+      @JsonProperty("bucketName") final String bucketName) {
+    this(region, bucketName);
   }
 }

@@ -15,28 +15,41 @@ package org.sonatype.nexus.blobstore.s3.internal.capability;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+/**
+ * Tests for {@link CustomS3RegionCapability} to verify proper handling of S3 region configurations.
+ */
+@ExtendWith(MockitoExtension.class)
 public class CustomS3RegionCapabilityTest {
   private CustomS3RegionCapability capability;
 
-  @Before
-  public void setUp() {
+  @BeforeEach
+  void setUp() {
     capability = new CustomS3RegionCapability();
   }
 
+  /**
+   * Verifies that the capability correctly creates a configuration object from properties
+   * containing comma-separated region values.
+   */
   @Test
-  public void testCreateConfig() {
+  void should_create_config_with_valid_regions() {
+    // given
     Map<String, String> properties = new HashMap<>();
     properties.put("regions", "us-east-1,us-west-2");
 
+    // when
     CustomS3RegionCapabilityConfiguration config = capability.createConfig(properties);
 
-    assertNotNull(config);
-    assertEquals("us-east-1,us-west-2", config.getRegions());
+    // then
+    assertNotNull(config, "Configuration should not be null");
+    assertEquals("us-east-1,us-west-2", config.getRegions(), "Regions should match the input string");
   }
 }

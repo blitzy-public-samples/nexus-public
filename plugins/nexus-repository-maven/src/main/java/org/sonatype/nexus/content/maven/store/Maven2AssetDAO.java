@@ -22,6 +22,13 @@ import org.sonatype.nexus.repository.content.store.AssetDAO;
 import org.apache.ibatis.annotations.Param;
 
 /**
+ * Maven 2 specific {@link AssetDAO} that provides specialized queries for Maven plugin assets.
+ * <p>
+ * This interface is compatible with Java 21 and works with the updated MyBatis 3.5.15 dependency.
+ * The implementation of this interface benefits from Java 21's Virtual Threads when performing
+ * I/O-bound database operations, allowing for higher concurrency with minimal resource overhead.
+ * </p>
+ *
  * @since 3.25
  */
 public interface Maven2AssetDAO
@@ -29,6 +36,11 @@ public interface Maven2AssetDAO
 {
   /**
    * Find jar assets associated with Components in the namespace of kind maven-plugin.
+   * <p>
+   * This query is optimized for database operations and benefits from Java 21's Virtual Threads
+   * infrastructure when executed within a transactional context. The implementation automatically
+   * leverages the platform's thread management system for I/O-bound operations.
+   * </p>
    *
    * @param repositoryId the repository to search
    * @param limit maximum number of assets to return

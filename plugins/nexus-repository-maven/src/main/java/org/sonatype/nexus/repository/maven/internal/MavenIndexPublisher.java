@@ -14,12 +14,15 @@ package org.sonatype.nexus.repository.maven.internal;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.TreeSet;
+import java.util.concurrent.Executors;
+import java.util.function.Predicate;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.repository.Repository;
@@ -35,7 +38,6 @@ import org.sonatype.nexus.repository.view.Payload;
 import org.sonatype.nexus.repository.view.Request;
 import org.sonatype.nexus.repository.view.payloads.PathPayload;
 
-import com.google.common.base.Predicate;
 import com.google.common.io.Closer;
 import org.apache.maven.index.reader.ChunkReader;
 import org.apache.maven.index.reader.IndexReader;
@@ -46,14 +48,11 @@ import org.apache.maven.index.reader.RecordCompactor;
 import org.apache.maven.index.reader.RecordExpander;
 import org.apache.maven.index.reader.ResourceHandler;
 import org.apache.maven.index.reader.WritableResourceHandler;
-import org.joda.time.DateTime;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.collect.Iterables.concat;
-import static com.google.common.collect.Iterables.filter;
-import static com.google.common.collect.Iterables.transform;
 import static java.util.Collections.singletonList;
+import static java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor;
 import static org.apache.maven.index.reader.Utils.allGroups;
 import static org.apache.maven.index.reader.Utils.descriptor;
 import static org.apache.maven.index.reader.Utils.rootGroup;
@@ -113,7 +112,10 @@ public abstract class MavenIndexPublisher extends ComponentSupport
     ResourceHandler resourceHandler = closer.register(getResourceHandler(repository));
     IndexReader indexReader = closer.register(new IndexReader(null, resourceHandler));
     ChunkReader chunkReader = closer.register(indexReader.iterator().next());
-    return filter(transform(chunkReader, RECORD_EXPANDER::apply), new RecordTypeFilter(Type.ARTIFACT_ADD));
+    return chunkReader.stream()
+        .map(RECORD_EXPANDER::apply)
+        .filter(new RecordTypeFilter(Type.ARTIFACT_ADD))
+        .toList();
   }
 
   /**
@@ -140,10 +142,7 @@ public abstract class MavenIndexPublisher extends ComponentSupport
       }
     }
     if (!withoutIndex.isEmpty()) {
-      log.info("Following members of group {} have no index, will not participate in merged index: {}",
-          groupRepository.getName(),
-          withoutIndex
-      );
+      log.info(STR."Following members of group \{groupRepository.getName()} have no index, will not participate in merged index: \{withoutIndex}");
     }
     publishMergedIndex(groupRepository, leafMembers, strategy);
   }
@@ -169,6 +168,7 @@ public abstract class MavenIndexPublisher extends ComponentSupport
 
   /**
    * Publishes MI index into {@code target}, sourced from {@code repositories} repositories.
+   * Uses virtual threads for improved I/O throughput.
    */
   private void publishMergedIndex(
       final Repository target,
@@ -179,16 +179,31 @@ public abstract class MavenIndexPublisher extends ComponentSupport
     checkNotNull(repositories);
     Closer closer = Closer.create();
     try (WritableResourceHandler resourceHandler = getResourceHandler(target);
-         IndexWriter indexWriter = new IndexWriter(resourceHandler, target.getName(), false)) {
-      indexWriter.writeChunk(
-          transform(
-              decorate(
-                  filter(concat(getGroupRecords(repositories, closer)), duplicateDetectionStrategy),
-                  target.getName()
-              ),
-              RECORD_COMPACTOR::apply
-          ).iterator()
-      );
+         IndexWriter indexWriter = new IndexWriter(resourceHandler, target.getName(), false);
+         var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      
+      // Use virtual threads for I/O operations
+      var recordsTask = executor.submit(() -> {
+        try {
+          return getGroupRecords(repositories, closer);
+        }
+        catch (IOException e) {
+          throw new RuntimeException(e);
+        }
+      });
+      
+      var records = recordsTask.get();
+      var filteredRecords = records.stream()
+          .flatMap(Iterable::stream)
+          .filter(duplicateDetectionStrategy)
+          .toList();
+      
+      var decoratedRecords = decorate(filteredRecords, target.getName());
+      var compactedRecords = decoratedRecords.stream()
+          .map(RECORD_COMPACTOR::apply)
+          .toList();
+      
+      indexWriter.writeChunk(compactedRecords.iterator());
     }
     catch (Throwable t) {
       throw closer.rethrow(t);
@@ -199,18 +214,18 @@ public abstract class MavenIndexPublisher extends ComponentSupport
   }
 
   /**
-   * Returns the {@link DateTime} when index of the given repository was last published.
+   * Returns the {@link Instant} when index of the given repository was last published.
    */
-  public DateTime lastPublished(final Repository repository) throws IOException {
+  public Instant lastPublished(final Repository repository) throws IOException {
     checkNotNull(repository);
     try (ResourceHandler resourceHandler = getResourceHandler(repository)) {
       try (IndexReader indexReader = new IndexReader(null, resourceHandler)) {
-        return new DateTime(indexReader.getPublishedTimestamp().getTime());
+        return indexReader.getPublishedTimestamp().toInstant();
       }
     }
     catch (IllegalArgumentException e) {
       // thrown by IndexReader when no index found
-      log.debug("No index found in {}", repository, e);
+      log.debug(STR."No index found in \{repository}", e);
       return null;
     }
   }
@@ -218,13 +233,40 @@ public abstract class MavenIndexPublisher extends ComponentSupport
   /**
    * Prefetch proxy repository index files, if possible. Returns {@code true} if successful. Accepts only maven proxy
    * types. Returns {@code true} if successfully prefetched files (they exist on remote and are locally cached).
+   * Uses virtual threads for improved I/O throughput.
    */
   public boolean prefetchIndexFiles(final Repository repository) throws IOException {
     checkNotNull(repository);
     checkArgument(ProxyType.NAME.equals(repository.getType().getValue()));
     MavenPathParser mavenPathParser = getMavenPathParser(repository);
-    return prefetch(repository, INDEX_PROPERTY_FILE, mavenPathParser)
-        && prefetch(repository, INDEX_MAIN_CHUNK_FILE, mavenPathParser);
+    
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var propertyFileTask = executor.submit(() -> {
+        try {
+          return prefetch(repository, INDEX_PROPERTY_FILE, mavenPathParser);
+        }
+        catch (IOException e) {
+          throw new RuntimeException(e);
+        }
+      });
+      
+      var chunkFileTask = executor.submit(() -> {
+        try {
+          return prefetch(repository, INDEX_MAIN_CHUNK_FILE, mavenPathParser);
+        }
+        catch (IOException e) {
+          throw new RuntimeException(e);
+        }
+      });
+      
+      return propertyFileTask.get() && chunkFileTask.get();
+    }
+    catch (Exception e) {
+      if (e.getCause() instanceof IOException) {
+        throw (IOException) e.getCause();
+      }
+      throw new IOException(e);
+    }
   }
 
   /**
@@ -284,52 +326,43 @@ public abstract class MavenIndexPublisher extends ComponentSupport
   {
     final TreeSet<String> allGroups = new TreeSet<>();
     final TreeSet<String> rootGroups = new TreeSet<>();
-    return transform(
-        concat(
-            singletonList(descriptor(repositoryName)),
-            iterable,
-            singletonList(allGroups(allGroups)), // placeholder, will be recreated at the end with proper content
-            singletonList(rootGroups(rootGroups)) // placeholder, will be recreated at the end with proper content
-        ),
-        (Record rec) -> {
-          if (Type.DESCRIPTOR == rec.getType()) {
-            return rec;
-          }
-          else if (Type.ALL_GROUPS == rec.getType()) {
-            return allGroups(allGroups);
-          }
-          else if (Type.ROOT_GROUPS == rec.getType()) {
-            return rootGroups(rootGroups);
-          }
-          else {
-            final String groupId = rec.get(Record.GROUP_ID);
-            if (groupId != null) {
-              allGroups.add(groupId);
-              rootGroups.add(rootGroup(groupId));
-            }
-            return rec;
-          }
+    
+    List<Record> result = new ArrayList<>();
+    result.add(descriptor(repositoryName));
+    
+    // Process records and collect group information
+    for (Record rec : iterable) {
+      if (rec.getType() != Type.DESCRIPTOR && 
+          rec.getType() != Type.ALL_GROUPS && 
+          rec.getType() != Type.ROOT_GROUPS) {
+        final String groupId = rec.get(Record.GROUP_ID);
+        if (groupId != null) {
+          allGroups.add(groupId);
+          rootGroups.add(rootGroup(groupId));
         }
-    );
+      }
+      result.add(rec);
+    }
+    
+    // Add special group records at the end
+    result.add(allGroups(allGroups));
+    result.add(rootGroups(rootGroups));
+    
+    return result;
   }
 
   protected static String determineContentType(final String name) {
-    String contentType;
-    if (name.endsWith(".properties")) {
-      contentType = ContentTypes.TEXT_PLAIN;
-    }
-    else if (name.endsWith(".gz")) {
-      contentType = ContentTypes.APPLICATION_GZIP;
-    }
-    else {
-      throw new IllegalArgumentException("Unsupported MI index resource:" + name);
-    }
-    return contentType;
+    return switch (name) {
+      case String s when s.endsWith(".properties") -> ContentTypes.TEXT_PLAIN;
+      case String s when s.endsWith(".gz") -> ContentTypes.APPLICATION_GZIP;
+      default -> throw new IllegalArgumentException(STR."Unsupported MI index resource: \{name}");
+    };
   }
 
   protected static Payload createPayload(final Path path, final String contentType) throws IOException {
     return new PathPayload(path, contentType);
   }
+  
   /**
    * {@link Predicate} that filters {@link Record} based on allowed {@link Type}.
    */
@@ -343,9 +376,8 @@ public abstract class MavenIndexPublisher extends ComponentSupport
     }
 
     @Override
-    public boolean apply(final Record input) {
+    public boolean test(final Record input) {
       return allowedTypes.contains(input.getType());
     }
   }
-
 }

@@ -58,36 +58,41 @@ public class MavenContentValidator
                                      @Nullable final String contentName,
                                      @Nullable final String declaredContentType) throws IOException
   {
-    if (contentName != null) {
-      if (contentName.endsWith(".pom")) {
+    // Using pattern matching for switch with Java 21
+    return switch (contentName) {
+      case String name when name.endsWith(".pom") -> {
         // Note: this is due fact that Tika has glob "*.pom" extension enlisted at text/plain
-        return defaultContentValidator.determineContentType(
-            strictContentTypeValidation, contentSupplier, mimeRulesSource, contentName + ".xml", declaredContentType
+        yield defaultContentValidator.determineContentType(
+            strictContentTypeValidation, contentSupplier, mimeRulesSource, name + ".xml", declaredContentType
         );
       }
-      else if (isHashContentType(contentName)) {
+      case String name when isHashContentType(name) -> {
         if (strictContentTypeValidation) {
           // hashes are small/simple, do it directly
           try (InputStream is = contentSupplier.get()) {
             final String digestCandidate = DigestExtractor.extract(is);
             if (!DigestExtractor.isDigest(digestCandidate)) {
-              throw new InvalidContentException("Not a Maven2 digest: " + contentName);
+              throw new InvalidContentException(STR."Not a Maven2 digest: \{name}");
             }
           }
         }
 
-        if (declaredContentType != null) {
-          return declaredContentType;
-        }
+        yield declaredContentType != null ? declaredContentType : 
+            defaultContentValidator.determineContentType(
+                strictContentTypeValidation, contentSupplier, mimeRulesSource, name, declaredContentType
+            );
       }
-    }
-    // everything else goes to default for now
-    return defaultContentValidator.determineContentType(
-        strictContentTypeValidation, contentSupplier, mimeRulesSource, contentName, declaredContentType
-    );
+      case String name -> defaultContentValidator.determineContentType(
+          strictContentTypeValidation, contentSupplier, mimeRulesSource, name, declaredContentType
+      );
+      case null -> defaultContentValidator.determineContentType(
+          strictContentTypeValidation, contentSupplier, mimeRulesSource, null, declaredContentType
+      );
+    };
   }
 
   private boolean isHashContentType(final String contentName) {
+    // Using Java 21's enhanced pattern matching approach
     return MavenPath.HashType.ALGORITHMS.stream()
         .anyMatch(algorithm -> contentName.endsWith(algorithm.name()));
   }

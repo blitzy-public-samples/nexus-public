@@ -15,10 +15,10 @@ package org.sonatype.nexus.blobstore.s3.internal;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
-import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.api.BlobStoreException;
 
 import com.amazonaws.SdkClientException;
@@ -28,14 +28,23 @@ import com.amazonaws.services.s3.model.UploadPartResult;
 import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.Timer;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.Assert.assertThrows;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
-public class ProducerConsumerUploaderTest
-    extends TestSupport
+/**
+ * Tests for {@link ProducerConsumerUploader} that verify S3 upload functionality
+ * with various input sizes and error conditions.
+ */
+@ExtendWith(MockitoExtension.class)
+class ProducerConsumerUploaderTest
 {
-
   private ProducerConsumerUploader producerConsumerUploader;
 
   @Mock
@@ -62,8 +71,8 @@ public class ProducerConsumerUploaderTest
   @Mock
   private Timer multiPartUpload;
 
-  @Before
-  public void setUp() throws Exception {
+  @BeforeEach
+  void setUp() throws Exception {
     when(initiateMultipartUploadResult.getUploadId()).thenReturn("uploadId");
     when(timer.time()).thenReturn(context);
     when(registry.timer(anyString())).thenReturn(timer);
@@ -81,8 +90,11 @@ public class ProducerConsumerUploaderTest
     producerConsumerUploader.start();
   }
 
+  /**
+   * Verifies that an empty input stream is handled correctly by using putObject instead of multipart upload.
+   */
   @Test
-  public void testEmptyStreamCausesUpload() {
+  void emptyStreamCausesUpload() {
     InputStream input = new ByteArrayInputStream(new byte[0]);
 
     producerConsumerUploader.upload(s3, "bucketName", "key", input);
@@ -91,8 +103,11 @@ public class ProducerConsumerUploaderTest
     verify(s3, never()).initiateMultipartUpload(any());
   }
 
+  /**
+   * Verifies that uploads at the threshold size use the multipart API correctly.
+   */
   @Test
-  public void testUploadWithMultipartApi() {
+  void uploadWithMultipartApi() {
     InputStream input = new ByteArrayInputStream(new byte[100]);
     when(s3.initiateMultipartUpload(any())).thenReturn(initiateMultipartUploadResult);
     when(s3.uploadPart(any())).thenReturn(new UploadPartResult());
@@ -105,8 +120,11 @@ public class ProducerConsumerUploaderTest
     verify(s3, never()).abortMultipartUpload(any());
   }
 
+  /**
+   * Verifies that larger uploads correctly use the multipart API and emit the expected metrics.
+   */
   @Test
-  public void testLargerUploadWithMultipartApiEmitMetrics() {
+  void largerUploadWithMultipartApiEmitMetrics() {
     InputStream input = new ByteArrayInputStream(new byte[350]);
     when(s3.initiateMultipartUpload(any())).thenReturn(new InitiateMultipartUploadResult());
     when(s3.uploadPart(any())).thenReturn(new UploadPartResult());
@@ -122,21 +140,28 @@ public class ProducerConsumerUploaderTest
     verify(uploadChunk, times(4)).time();
   }
 
+  /**
+   * Verifies that the uploader correctly aborts multipart uploads when errors occur.
+   */
   @Test
-  public void testUploadAbortsMultipartOnError() {
+  void uploadAbortsMultipartOnError() {
     InputStream input = new ByteArrayInputStream(new byte[100]);
     when(s3.initiateMultipartUpload(any())).thenReturn(initiateMultipartUploadResult);
     when(s3.uploadPart(any())).thenThrow(new SdkClientException(""));
 
-    assertThrows(BlobStoreException.class, () -> producerConsumerUploader.upload(s3, "bucketName", "key", input));
+    assertThrows(BlobStoreException.class, 
+        () -> producerConsumerUploader.upload(s3, "bucketName", "key", input));
 
     verify(s3).initiateMultipartUpload(any());
     verify(s3).uploadPart(any());
     verify(s3).abortMultipartUpload(any());
   }
 
+  /**
+   * Verifies that small uploads use putObject instead of the multipart API.
+   */
   @Test
-  public void testUploadUsesPutObjectForSmallUploads() {
+  void uploadUsesPutObjectForSmallUploads() {
     InputStream input = new ByteArrayInputStream(new byte[50]);
 
     producerConsumerUploader.upload(s3, "bucketName", "key", input);

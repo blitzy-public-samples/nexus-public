@@ -12,6 +12,12 @@
  */
 package org.sonatype.nexus.content.maven.internal.tasks;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 import javax.inject.Named;
 
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
@@ -23,6 +29,16 @@ import org.sonatype.nexus.repository.content.fluent.FluentComponent;
 import org.sonatype.nexus.repository.maven.internal.Maven2Format;
 import org.sonatype.nexus.scheduling.Cancelable;
 
+/**
+ * Task to repair Maven 2 base versions in components where they might be missing.
+ * <p>
+ * This implementation leverages Java 21 Virtual Threads for improved performance
+ * when processing multiple components concurrently. Virtual Threads are lightweight
+ * threads that are particularly well-suited for I/O-bound operations like database updates.
+ * </p>
+ *
+ * @since 3.0
+ */
 @Named
 public class RepairMaven2BaseVersionTask
     extends RepositoryTaskSupport
@@ -32,15 +48,49 @@ public class RepairMaven2BaseVersionTask
   protected void execute(final Repository repository) {
     MavenContentFacet mavenContentFacet = repository.facet(MavenContentFacet.class);
     Iterable<FluentComponent> componentsWithMissedBaseVersion = mavenContentFacet.getComponentsWithMissedBaseVersion();
-    for (FluentComponent fluentComponent : componentsWithMissedBaseVersion) {
-      Maven2ComponentData componentData = new Maven2ComponentData();
-      componentData.setNamespace(fluentComponent.namespace());
-      componentData.setName(fluentComponent.name());
-      componentData.setVersion(fluentComponent.version());
-      componentData.setRepositoryId(mavenContentFacet.contentRepositoryId());
-      NestedAttributesMap maven2 = fluentComponent.attributes("maven2");
-      componentData.setBaseVersion(maven2.get("baseVersion", String.class));
-      mavenContentFacet.updateBaseVersion(componentData);
+    
+    // Create a list to hold all components for processing
+    List<FluentComponent> componentList = new ArrayList<>();
+    componentsWithMissedBaseVersion.forEach(componentList::add);
+    
+    if (componentList.isEmpty()) {
+      log.info("No components with missed base version found in repository {}", getRepositoryField());
+      return;
+    }
+    
+    log.info("Found {} components with missed base version in repository {}", componentList.size(), getRepositoryField());
+    
+    // Use Java 21 Virtual Threads for concurrent processing of components
+    // Virtual Threads are ideal for I/O-bound operations like database updates
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      List<CompletableFuture<Void>> futures = new ArrayList<>();
+      
+      for (FluentComponent fluentComponent : componentList) {
+        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+          try {
+            Maven2ComponentData componentData = new Maven2ComponentData();
+            componentData.setNamespace(fluentComponent.namespace());
+            componentData.setName(fluentComponent.name());
+            componentData.setVersion(fluentComponent.version());
+            componentData.setRepositoryId(mavenContentFacet.contentRepositoryId());
+            NestedAttributesMap maven2 = fluentComponent.attributes("maven2");
+            componentData.setBaseVersion(maven2.get("baseVersion", String.class));
+            mavenContentFacet.updateBaseVersion(componentData);
+            log.debug("Updated base version for component: {}:{}", componentData.getNamespace(), componentData.getName());
+          } catch (Exception e) {
+            log.error("Failed to update base version for component: {}:{}", 
+                fluentComponent.namespace(), fluentComponent.name(), e);
+          }
+        }, executor);
+        
+        futures.add(future);
+      }
+      
+      // Wait for all tasks to complete
+      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+      
+      log.info("Completed base version repair for {} components in repository {}", 
+          componentList.size(), getRepositoryField());
     }
   }
 
@@ -51,6 +101,7 @@ public class RepairMaven2BaseVersionTask
 
   @Override
   public String getMessage() {
-    return "Fixed Maven Base Versions of " + getRepositoryField();
+    // Using Java 21 String Template for improved readability
+    return STR."Fixed Maven Base Versions of \{getRepositoryField()}";
   }
 }

@@ -25,7 +25,18 @@ import static org.sonatype.nexus.repository.maven.internal.Constants.INDEX_FILE_
 public class MavenIndexMatcher
     extends MavenMatcherSupport
 {
+  /**
+   * Constructs a matcher for Maven index paths.
+   * 
+   * @param mavenPathParser The parser to convert matched paths into {@link MavenPath} objects
+   */
   public MavenIndexMatcher(final MavenPathParser mavenPathParser) {
-    super(mavenPathParser, (String path) -> path != null && path.startsWith("/" + INDEX_FILE_BASE_PATH));
+    super(mavenPathParser, path -> {
+      // Using pattern matching to handle null check more explicitly
+      if (path instanceof String nonNullPath) {
+        return nonNullPath.startsWith("/" + INDEX_FILE_BASE_PATH);
+      }
+      return false;
+    });
   }
 }

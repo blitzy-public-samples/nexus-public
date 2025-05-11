@@ -12,21 +12,27 @@
  */
 package org.sonatype.nexus.blobstore.s3.internal.encryption;
 
-import org.sonatype.goodies.testsupport.TestSupport;
-
 import com.amazonaws.services.s3.model.AbstractPutObjectRequest;
 import com.amazonaws.services.s3.model.CopyObjectRequest;
 import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.verifyNoInteractions;
 
-public class NoEncrypterTest
-    extends TestSupport
+/**
+ * Tests for {@link NoEncrypter} functionality, verifying that it doesn't modify AWS S3 requests.
+ * 
+ * This test ensures the NoEncrypter implementation correctly follows the null object pattern
+ * by not performing any operations on the S3 request objects passed to it.
+ */
+@ExtendWith(MockitoExtension.class)
+class NoEncrypterTest
 {
-
-  private final NoEncrypter noEncrypter = new NoEncrypter();
+  private NoEncrypter noEncrypter;
 
   @Mock
   private InitiateMultipartUploadRequest initiateMultipartUploadRequest;
@@ -36,21 +42,35 @@ public class NoEncrypterTest
 
   @Mock
   private CopyObjectRequest copyObjectRequest;
+  
+  @BeforeEach
+  void setUp() {
+    noEncrypter = new NoEncrypter();
+  }
 
+  /**
+   * Verifies that NoEncrypter doesn't modify InitiateMultipartUploadRequest objects.
+   */
   @Test
-  public void testNoEncrypterDoesNothingToInitiateMultipartUploadRequest() {
+  void shouldNotModifyInitiateMultipartUploadRequest() {
     noEncrypter.addEncryption(initiateMultipartUploadRequest);
     verifyNoInteractions(initiateMultipartUploadRequest);
   }
 
+  /**
+   * Verifies that NoEncrypter doesn't modify AbstractPutObjectRequest objects.
+   */
   @Test
-  public void testNoEncrypterDoesNothingToAbstractPutObjectRequest() {
+  void shouldNotModifyAbstractPutObjectRequest() {
     noEncrypter.addEncryption(abstractPutObjectRequest);
     verifyNoInteractions(abstractPutObjectRequest);
   }
 
+  /**
+   * Verifies that NoEncrypter doesn't modify CopyObjectRequest objects.
+   */
   @Test
-  public void testNoEncrypterDoesNothingToCopyObjectRequest() {
+  void shouldNotModifyCopyObjectRequest() {
     noEncrypter.addEncryption(copyObjectRequest);
     verifyNoInteractions(copyObjectRequest);
   }

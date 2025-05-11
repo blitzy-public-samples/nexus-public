@@ -18,6 +18,8 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.lang.StringTemplate;
+import java.lang.StringTemplate.Processor;
 
 import javax.annotation.Nullable;
 
@@ -48,6 +50,9 @@ public final class MavenModels
 
   private static final Logger log = LoggerFactory.getLogger(MavenModels.class);
 
+  // String template processor for logging
+  private static final StringTemplate.Processor<String> STR = StringTemplate.Processor.of();
+
   private static final MetadataXpp3Reader METADATA_READER = new MetadataXpp3Reader();
 
   private static final MetadataXpp3Writer METADATA_WRITER = new MetadataXpp3Writer();
@@ -67,7 +72,7 @@ public final class MavenModels
       return Xpp3DomBuilder.build(reader);
     }
     catch (XmlPullParserException e) {
-      log.debug("Could not parse XML into Xpp3Dom", e);
+      log.debug(STR."Could not parse XML into Xpp3Dom: \{e.getMessage()}", e);
       throw new IOException("Could not parse XML into Xpp3Dom", e);
     }
   }
@@ -81,8 +86,12 @@ public final class MavenModels
     try (InputStream is = inputStream) {
       return METADATA_READER.read(is, false);
     }
-    catch (XmlPullParserException | EOFException e ) {
-      log.debug("Could not parse XML into Metadata", e);
+    catch (XmlPullParserException e) {
+      log.debug(STR."Could not parse XML into Metadata: \{e.getMessage()}", e);
+      return null;
+    }
+    catch (EOFException e) {
+      log.debug(STR."Reached end of file while parsing XML into Metadata: \{e.getMessage()}", e);
       return null;
     }
   }
@@ -107,8 +116,12 @@ public final class MavenModels
     try (InputStream is = inputStream) {
       return ARCHETYPE_CATALOG_READER.read(is, false);
     }
-    catch (XmlPullParserException | EOFException e) {
-      log.debug("Could not parse XML into ArchetypeCatalog", e);
+    catch (XmlPullParserException e) {
+      log.debug(STR."Could not parse XML into ArchetypeCatalog: \{e.getMessage()}", e);
+      return null;
+    }
+    catch (EOFException e) {
+      log.debug(STR."Reached end of file while parsing XML into ArchetypeCatalog: \{e.getMessage()}", e);
       return null;
     }
   }
@@ -131,8 +144,12 @@ public final class MavenModels
     try (InputStream is = inputStream) {
       return MODEL_READER.read(is, false);
     }
-    catch (XmlPullParserException | EOFException e ) {
-      log.debug("Could not parse XML into Model", e);
+    catch (XmlPullParserException e) {
+      log.debug(STR."Could not parse XML into Model: \{e.getMessage()}", e);
+      return null;
+    }
+    catch (EOFException e) {
+      log.debug(STR."Reached end of file while parsing XML into Model: \{e.getMessage()}", e);
       return null;
     }
   }

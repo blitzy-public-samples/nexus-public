@@ -12,8 +12,13 @@
  */
 package org.sonatype.nexus.repository.httpbridge.internal.describe;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Set;
 
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -25,9 +30,7 @@ import org.sonatype.nexus.repository.view.Request;
 import org.sonatype.nexus.repository.view.Response;
 import org.sonatype.nexus.repository.view.Status;
 
-import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Maps;
 import com.google.common.primitives.Primitives;
 
 import static com.google.common.base.Preconditions.checkState;
@@ -45,9 +48,9 @@ public class DescriptionHelper
   public void describeRequest(final Description desc, final Request request) {
     desc.topic("Request");
 
-    desc.addTable("Details", ImmutableMap.<String, Object>builder()
-            .put("Action", request.getAction())
-            .put("path", request.getPath()).build()
+    desc.addTable("Details", Map.of(
+            "Action", request.getAction(),
+            "path", request.getPath())
     );
 
     desc.addTable("Parameters", toMap(request.getParameters()));
@@ -72,8 +75,8 @@ public class DescriptionHelper
     desc.topic("Response");
 
     final Status status = response.getStatus();
-    desc.addTable("Status", ImmutableMap.of(
-        "Code", (Object) status.getCode(),
+    desc.addTable("Status", Map.of(
+        "Code", status.getCode(),
         "Message", nullToEmpty(status.getMessage())
     ));
 
@@ -86,8 +89,8 @@ public class DescriptionHelper
     }
   }
 
-  private ImmutableMap<String, Object> toMap(final Payload payload) {
-    return ImmutableMap.<String, Object>of(
+  private Map<String, Object> toMap(final Payload payload) {
+    return Map.of(
         "Content-Type", nullToEmpty(payload.getContentType()),
         "Size", payload.getSize()
     );
@@ -96,14 +99,31 @@ public class DescriptionHelper
   public void describeException(final Description d, final Exception e) {
     d.topic("Exception during handler processing");
 
-    for (Throwable cause : Throwables.getCausalChain(e)) {
+    for (Throwable cause : getCausalChain(e)) {
       d.addTable(cause.getClass().getName(),
-          ImmutableMap.<String, Object>of("Message", nullToEmpty(cause.getMessage())));
+          Map.of("Message", nullToEmpty(cause.getMessage())));
     }
   }
 
+  /**
+   * Gets a throwable's causal chain as a list.
+   * The first entry is the throwable followed by its causes.
+   * Handles circular references safely.
+   */
+  private List<Throwable> getCausalChain(Throwable throwable) {
+    List<Throwable> causes = new ArrayList<>();
+    Set<Throwable> seenCauses = new HashSet<>();
+    
+    while (throwable != null && seenCauses.add(throwable)) {
+      causes.add(throwable);
+      throwable = throwable.getCause();
+    }
+    
+    return causes;
+  }
+
   private Map<String, Object> toMap(final Iterable<Entry<String, Object>> entries) {
-    Map<String, Object> table = Maps.newHashMap();
+    Map<String, Object> table = new HashMap<>();
     for (Entry<String, Object> entry : entries) {
       table.put(entry.getKey(), convert(entry.getValue()));
     }
@@ -111,7 +131,7 @@ public class DescriptionHelper
   }
 
   private Map<String, Object> toMap(final StringMultimap headers) {
-    Map<String, Object> table = Maps.newHashMap();
+    Map<String, Object> table = new HashMap<>();
     final Iterable<Entry<String, String>> entries = headers.entries();
     for (Entry<String, String> e : entries) {
       table.put(e.getKey(), e.getValue());
@@ -128,8 +148,8 @@ public class DescriptionHelper
     if (value == null) {
       return null;
     }
-    if (value instanceof CharSequence) {
-      return value.toString();
+    if (value instanceof CharSequence charSequence) {
+      return charSequence.toString();
     }
     if (value.getClass().isPrimitive() || Primitives.isWrapperType(value.getClass())) {
       return value;

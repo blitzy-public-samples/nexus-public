@@ -31,29 +31,12 @@ import com.fasterxml.jackson.annotation.JsonProperty;
     "version"
 })
 @XmlRootElement(name = "status")
-public class StatusXO
-{
-  @XmlElement(required = true)
-  @JsonProperty("edition")
-  private String edition;
+public record StatusXO(
+    @XmlElement(required = true)
+    @JsonProperty("edition")
+    String edition,
 
-  @XmlElement(required = true)
-  @JsonProperty("version")
-  private String version;
-
-  public String getEdition() {
-    return edition;
-  }
-
-  public void setEdition(final String edition) {
-    this.edition = edition;
-  }
-
-  public String getVersion() {
-    return version;
-  }
-
-  public void setVersion(final String version) {
-    this.version = version;
-  }
-}
+    @XmlElement(required = true)
+    @JsonProperty("version")
+    String version
+) {}

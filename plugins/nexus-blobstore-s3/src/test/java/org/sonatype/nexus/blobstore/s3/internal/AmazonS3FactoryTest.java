@@ -22,11 +22,15 @@ import org.sonatype.nexus.crypto.secrets.SecretsFactory;
 
 import com.amazonaws.services.s3.AmazonS3;
 import org.apache.commons.lang3.reflect.MethodUtils;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -35,18 +39,23 @@ import static org.sonatype.nexus.blobstore.s3.internal.S3BlobStore.SECRET_ACCESS
 import static org.sonatype.nexus.blobstore.s3.internal.S3BlobStore.SESSION_TOKEN_KEY;
 
 /**
- * {@link AmazonS3Factory} tests.
+ * Tests for {@link AmazonS3Factory} that verify S3 client configuration behavior.
+ * 
+ * @since 3.19
  */
-public class AmazonS3FactoryTest
+@ExtendWith(MockitoExtension.class)
+class AmazonS3FactoryTest
 {
-  private SecretsFactory secretsFactory = mock(SecretsFactory.class);
+  @Mock
+  private SecretsFactory secretsFactory;
 
-  private AmazonS3Factory amazonS3Factory = new AmazonS3Factory(-1, null, false, "", secretsFactory);
+  @InjectMocks
+  private AmazonS3Factory amazonS3Factory = new AmazonS3Factory(-1, null, false, "", null);
 
   private MockBlobStoreConfiguration config = new MockBlobStoreConfiguration();
 
-  @Before
-  public void setup() {
+  @BeforeEach
+  void setUp() {
     Map<String, Object> s3Map = new HashMap<>();
     s3Map.put("bucket", "mybucket");
     Map<String, Map<String, Object>> attributes = new HashMap<>();
@@ -55,7 +64,7 @@ public class AmazonS3FactoryTest
   }
 
   @Test
-  public void endpointIsSetWhenProvidedInConfig() throws Exception {
+  void endpointIsSetWhenProvidedInConfig() throws Exception {
     config.getAttributes().get("s3").put("endpoint", "http://localhost/");
     config.getAttributes().get("s3").put("region", "us-west-2");
 
@@ -65,7 +74,7 @@ public class AmazonS3FactoryTest
   }
 
   @Test
-  public void endpointIsSetWhenProvidedInConfigWithDefaultRegion() throws Exception {
+  void endpointIsSetWhenProvidedInConfigWithDefaultRegion() throws Exception {
     config.getAttributes().get("s3").put("endpoint", "http://localhost/");
 
     AmazonS3 s3 = amazonS3Factory.create(config);
@@ -74,7 +83,7 @@ public class AmazonS3FactoryTest
   }
 
   @Test
-  public void signingAlgorithmIsSetWhenProvidedInConfig() throws Exception {
+  void signingAlgorithmIsSetWhenProvidedInConfig() throws Exception {
     config.getAttributes().get("s3").put("signertype", "AWSS3V4SignerType");
     config.getAttributes().get("s3").put("region", "us-west-2");
 
@@ -83,17 +92,17 @@ public class AmazonS3FactoryTest
   }
 
   @Test
-  public void nullSignerDoesNotOverrideConfigValue() throws Exception {
+  void nullSignerDoesNotOverrideConfigValue() throws Exception {
     testSignerOverrideWith(null);
   }
 
   @Test
-  public void emptySignerDoesNotOverrideConfigValue() throws Exception {
+  void emptySignerDoesNotOverrideConfigValue() throws Exception {
     testSignerOverrideWith("");
   }
 
   @Test
-  public void defaultSignerDoesNotOverrideConfigValue() throws Exception {
+  void defaultSignerDoesNotOverrideConfigValue() throws Exception {
     testSignerOverrideWith("DEFAULT");
   }
 
@@ -106,7 +115,7 @@ public class AmazonS3FactoryTest
   }
 
   @Test
-  public void pathStyleAccessIsSetWhenProvidedInConfig() {
+  void pathStyleAccessIsSetWhenProvidedInConfig() {
     config.getAttributes().get("s3").put("region", "us-west-2");
     config.getAttributes().get("s3").put("forcepathstyle", "true");
 
@@ -115,7 +124,7 @@ public class AmazonS3FactoryTest
   }
 
   @Test
-  public void itShouldDecryptTheSecretAccessKeyAndSessionToken() {
+  void shouldDecryptTheSecretAccessKeyAndSessionToken() {
     Secret accessKeyMock = mock(Secret.class);
     Secret sessionTokenMock = mock(Secret.class);
     when(secretsFactory.from("_1")).thenReturn(accessKeyMock);
@@ -136,6 +145,9 @@ public class AmazonS3FactoryTest
     verify(sessionTokenMock).decrypt();
   }
 
+  /**
+   * Helper method to extract the signer override from an AmazonS3 client instance.
+   */
   private String getSignerOverride(AmazonS3 s3) throws Exception {
     Object clientConfiguration = MethodUtils.invokeMethod(s3, true, "getClientConfiguration");
     return (String) MethodUtils.invokeMethod(clientConfiguration, true, "getSignerOverride");

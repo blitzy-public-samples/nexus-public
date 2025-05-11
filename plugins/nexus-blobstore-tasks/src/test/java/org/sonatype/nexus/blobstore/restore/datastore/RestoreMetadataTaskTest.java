@@ -21,9 +21,17 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.blobstore.api.Blob;
 import org.sonatype.nexus.blobstore.api.BlobAttributes;
 import org.sonatype.nexus.blobstore.api.BlobId;
@@ -46,16 +54,20 @@ import org.sonatype.nexus.scheduling.TaskUtils;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.io.Resources;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.Captor;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.Collections.singletonList;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertThrows;
+import static org.hamcrest.Matchers.lessThan;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
 import static org.sonatype.nexus.blobstore.api.BlobAttributesConstants.HEADER_PREFIX;
 import static org.sonatype.nexus.blobstore.api.BlobStore.REPO_NAME_HEADER;
@@ -68,6 +80,8 @@ import static org.sonatype.nexus.blobstore.restore.BaseRestoreMetadataTaskDescri
 import static org.sonatype.nexus.blobstore.restore.BaseRestoreMetadataTaskDescriptor.UNDELETE_BLOBS;
 import static org.sonatype.nexus.blobstore.restore.datastore.DefaultIntegrityCheckStrategy.DEFAULT_NAME;
 
+@ExtendWith(MockitoExtension.class)
+@org.junit.jupiter.api.Tag("Java21")
 public class RestoreMetadataTaskTest
     extends TestSupport
 {
@@ -119,6 +133,9 @@ public class RestoreMetadataTaskTest
 
   @Mock
   TaskUtils taskUtils;
+  
+  @Captor
+  private ArgumentCaptor<Properties> propertiesArgumentCaptor;
 
   RestoreMetadataTask underTest;
 
@@ -130,8 +147,8 @@ public class RestoreMetadataTaskTest
 
   TaskConfiguration configuration;
 
-  @Before
-  public void setup() throws Exception {
+  @BeforeEach
+  void setup() throws Exception {
     integrityCheckStrategies = spy(new HashMap<>());
     integrityCheckStrategies.put(MAVEN_2, testIntegrityCheckStrategy);
     integrityCheckStrategies.put(DEFAULT_NAME, defaultIntegrityCheckStrategy);
@@ -171,7 +188,7 @@ public class RestoreMetadataTaskTest
   }
 
   @Test
-  public void checkForConflictsThrowsExceptionIfConflictingTaskIsRunning() {
+  void checkForConflictsThrowsExceptionIfConflictingTaskIsRunning() {
     underTest.configure(configuration);
 
     doThrow(new IllegalStateException("conflicting task"))
@@ -185,7 +202,7 @@ public class RestoreMetadataTaskTest
   }
 
   @Test
-  public void checkForConflictsThrowsExceptionIfMoveTaskIsUnfinished() {
+  void checkForConflictsThrowsExceptionIfMoveTaskIsUnfinished() {
     ChangeRepositoryBlobStoreConfiguration record = getRecord("test" , BLOBSTORE_NAME, "target-blobstore");
 
     underTest.configure(configuration);
@@ -202,7 +219,7 @@ public class RestoreMetadataTaskTest
   }
 
   @Test
-  public void checkForConflictsRunsIfNoConflictingTasks() {
+  void checkForConflictsRunsIfNoConflictingTasks() {
     underTest.configure(configuration);
 
     doNothing().when(taskUtils).checkForConflictingTasks(anyString(), anyString(), any(List.class), any(Map.class));
@@ -259,7 +276,7 @@ public class RestoreMetadataTaskTest
   }
 
   @Test
-  public void testRestoreMetadata() throws Exception {
+  void restoreMetadataShouldProcessBlobsCorrectly() throws Exception {
     configuration.setBoolean(RESTORE_BLOBS, true);
     configuration.setBoolean(UNDELETE_BLOBS, true);
     configuration.setBoolean(INTEGRITY_CHECK, false);
@@ -267,7 +284,6 @@ public class RestoreMetadataTaskTest
 
     underTest.execute();
 
-    ArgumentCaptor<Properties> propertiesArgumentCaptor = ArgumentCaptor.forClass(Properties.class);
     verify(restoreBlobStrategy).restore(propertiesArgumentCaptor.capture(), eq(blob), eq(blobStore), eq(false));
     verify(blobStore).undelete(blobstoreUsageChecker, blobId, blobAttributes, false);
     Properties properties = propertiesArgumentCaptor.getValue();
@@ -276,7 +292,7 @@ public class RestoreMetadataTaskTest
   }
 
   @Test
-  public void shouldNotRestoreMetadataWhenAssetBlobRefNotMigrated() throws Exception {
+  void shouldNotRestoreMetadataWhenAssetBlobRefNotMigrated() throws Exception {
     configuration.setBoolean(RESTORE_BLOBS, true);
     configuration.setBoolean(UNDELETE_BLOBS, true);
     configuration.setBoolean(INTEGRITY_CHECK, false);
@@ -285,14 +301,12 @@ public class RestoreMetadataTaskTest
 
     underTest.execute();
 
-    ArgumentCaptor<Properties> propertiesArgumentCaptor = ArgumentCaptor.forClass(Properties.class);
-    verify(restoreBlobStrategy, never()).restore(propertiesArgumentCaptor.capture(), eq(blob), eq(blobStore),
-        eq(false));
+    verify(restoreBlobStrategy, never()).restore(any(), eq(blob), eq(blobStore), eq(false));
     verify(blobStore, never()).undelete(blobstoreUsageChecker, blobId, blobAttributes, false);
   }
 
   @Test
-  public void shouldNotRestoreMetadataWhenExceptionDeterminingAssetBlobRefStatus() throws Exception {
+  void shouldNotRestoreMetadataWhenExceptionDeterminingAssetBlobRefStatus() throws Exception {
     configuration.setBoolean(RESTORE_BLOBS, true);
     configuration.setBoolean(UNDELETE_BLOBS, true);
     configuration.setBoolean(INTEGRITY_CHECK, false);
@@ -301,14 +315,12 @@ public class RestoreMetadataTaskTest
 
     underTest.execute();
 
-    ArgumentCaptor<Properties> propertiesArgumentCaptor = ArgumentCaptor.forClass(Properties.class);
-    verify(restoreBlobStrategy, never()).restore(propertiesArgumentCaptor.capture(), eq(blob), eq(blobStore),
-        eq(false));
+    verify(restoreBlobStrategy, never()).restore(any(), eq(blob), eq(blobStore), eq(false));
     verify(blobStore, never()).undelete(blobstoreUsageChecker, blobId, blobAttributes, false);
   }
 
   @Test
-  public void testRestoreMetadataNoUnDelete() throws Exception {
+  void restoreMetadataWithoutUndeleteOption() throws Exception {
     configuration.setBoolean(RESTORE_BLOBS, true);
     configuration.setBoolean(UNDELETE_BLOBS, false);
     configuration.setBoolean(INTEGRITY_CHECK, false);
@@ -322,7 +334,7 @@ public class RestoreMetadataTaskTest
 
   @SuppressWarnings("deprecation")
   @Test
-  public void testRestoreMetadata_BlobIsMarkedAsDeleted() throws Exception {
+  void restoreMetadataWhenBlobIsMarkedAsDeleted() throws Exception {
     configuration.setBoolean(RESTORE_BLOBS, true);
     configuration.setBoolean(UNDELETE_BLOBS, true);
     configuration.setBoolean(INTEGRITY_CHECK, false);
@@ -337,7 +349,7 @@ public class RestoreMetadataTaskTest
   }
 
   @Test
-  public void testNoRestoreMetadataNoUnDeleteNoIntegrityCheck() throws Exception {
+  void noOperationsWhenAllOptionsDisabled() throws Exception {
     configuration.setBoolean(RESTORE_BLOBS, false);
     configuration.setBoolean(UNDELETE_BLOBS, false);
     configuration.setBoolean(INTEGRITY_CHECK, false);
@@ -350,7 +362,7 @@ public class RestoreMetadataTaskTest
   }
 
   @Test
-  public void testIntegrityCheck_BlobStoreDoesNotExist() throws Exception {
+  void integrityCheckSkippedWhenBlobStoreDoesNotExist() throws Exception {
     configuration.setBoolean(RESTORE_BLOBS, false);
     configuration.setBoolean(UNDELETE_BLOBS, false);
     configuration.setBoolean(INTEGRITY_CHECK, true);
@@ -364,7 +376,7 @@ public class RestoreMetadataTaskTest
   }
 
   @Test
-  public void testIntegrityCheck_SkipGroupRepositories() throws Exception {
+  void integrityCheckSkipsGroupRepositories() throws Exception {
     configuration.setBoolean(RESTORE_BLOBS, false);
     configuration.setBoolean(UNDELETE_BLOBS, false);
     configuration.setBoolean(INTEGRITY_CHECK, true);
@@ -379,7 +391,7 @@ public class RestoreMetadataTaskTest
   }
 
   @Test
-  public void testIntegrityCheckNullRepositories() throws Exception {
+  void integrityCheckHandlesEmptyRepositoryList() throws Exception {
     configuration.setBoolean(RESTORE_BLOBS, false);
     configuration.setBoolean(UNDELETE_BLOBS, false);
     configuration.setBoolean(INTEGRITY_CHECK, true);
@@ -393,7 +405,7 @@ public class RestoreMetadataTaskTest
   }
 
   @Test
-  public void testIntegrityCheckNullRepository() throws Exception {
+  void integrityCheckHandlesNullRepository() throws Exception {
     configuration.setBoolean(RESTORE_BLOBS, false);
     configuration.setBoolean(UNDELETE_BLOBS, false);
     configuration.setBoolean(INTEGRITY_CHECK, true);
@@ -408,7 +420,7 @@ public class RestoreMetadataTaskTest
   }
 
   @Test
-  public void testIntegrityCheck_SkipNotStartedRepositories() throws Exception {
+  void integrityCheckSkipsNotStartedRepositories() throws Exception {
     configuration.setBoolean(RESTORE_BLOBS, false);
     configuration.setBoolean(UNDELETE_BLOBS, false);
     configuration.setBoolean(INTEGRITY_CHECK, true);
@@ -423,7 +435,7 @@ public class RestoreMetadataTaskTest
   }
 
   @Test
-  public void testIntegrityCheck_DefaultStrategy() throws Exception {
+  void integrityCheckUsesDefaultStrategyForUnknownFormat() throws Exception {
     configuration.setBoolean(RESTORE_BLOBS, false);
     configuration.setBoolean(UNDELETE_BLOBS, false);
     configuration.setBoolean(INTEGRITY_CHECK, true);
@@ -441,7 +453,7 @@ public class RestoreMetadataTaskTest
   }
 
   @Test
-  public void testIntegrityCheck() throws Exception {
+  void integrityCheckUsesFormatSpecificStrategy() throws Exception {
     configuration.setBoolean(RESTORE_BLOBS, false);
     configuration.setBoolean(UNDELETE_BLOBS, false);
     configuration.setBoolean(INTEGRITY_CHECK, true);
@@ -456,7 +468,7 @@ public class RestoreMetadataTaskTest
   }
 
   @Test
-  public void updateAfterAssetsWhenCallAfter() throws Exception {
+  void shouldUpdateAfterAssetsWhenCallAfter() throws Exception {
     configuration.setBoolean(RESTORE_BLOBS, true);
     configuration.setBoolean(UNDELETE_BLOBS, true);
     configuration.setBoolean(INTEGRITY_CHECK, false);
@@ -468,7 +480,7 @@ public class RestoreMetadataTaskTest
   }
 
   @Test
-  public void doNotUpdateAfterAssetsWhenDryRun() throws Exception {
+  void shouldNotUpdateAfterAssetsWhenDryRun() throws Exception {
     configuration.setBoolean(RESTORE_BLOBS, true);
     configuration.setBoolean(UNDELETE_BLOBS, true);
     configuration.setBoolean(INTEGRITY_CHECK, false);
@@ -481,7 +493,7 @@ public class RestoreMetadataTaskTest
   }
 
   @Test
-  public void doNotUpdateAfterAssetsWhenRestoreFalse() throws Exception {
+  void shouldNotUpdateAfterAssetsWhenRestoreFalse() throws Exception {
     configuration.setBoolean(RESTORE_BLOBS, false);
     configuration.setBoolean(UNDELETE_BLOBS, true);
     configuration.setBoolean(INTEGRITY_CHECK, false);
@@ -494,7 +506,7 @@ public class RestoreMetadataTaskTest
   }
 
   @Test
-  public void whenAfterCallRunningShouldBeCancelable() throws Exception {
+  void afterCallShouldBeCancelable() throws Exception {
     configuration.setBoolean(RESTORE_BLOBS, true);
     configuration.setBoolean(UNDELETE_BLOBS, true);
     configuration.setBoolean(INTEGRITY_CHECK, false);
@@ -519,7 +531,7 @@ public class RestoreMetadataTaskTest
   }
 
   @Test
-  public void whenUnknownFormatAfterCallWillNotRun() throws Exception {
+  void afterCallWillNotRunForUnknownFormat() throws Exception {
     when(mavenFormat.getValue()).thenReturn("unknownFormat");
 
     configuration.setBoolean(RESTORE_BLOBS, true);
@@ -533,7 +545,7 @@ public class RestoreMetadataTaskTest
   }
 
   @Test
-  public void whenBlobsFromDifferentRepositoriesNeedUpdatingAfterIsCalledForEachRepository() throws Exception {
+  void afterIsCalledForEachRepositoryWhenBlobsFromDifferentRepositories() throws Exception {
     BlobAttributes blobAttributes2 = mock(BlobAttributes.class);
     Properties properties = mock(Properties.class);
     Repository repository2 = mock(Repository.class);
@@ -560,7 +572,7 @@ public class RestoreMetadataTaskTest
   }
 
   @Test
-  public void taskWillNotFailIfOneBlobThrowsException() throws Exception {
+  void taskContinuesProcessingIfOneBlobThrowsException() throws Exception {
     BlobAttributes blobAttributes2 = mock(BlobAttributes.class);
     Properties properties2 = mock(Properties.class);
     Repository repository2 = mock(Repository.class);
@@ -608,7 +620,7 @@ public class RestoreMetadataTaskTest
   }
 
   @Test
-  public void shouldGetAllBlobsToRestoreWhenSinceDaysSetToNegativeNumber() throws Exception {
+  void shouldGetAllBlobsToRestoreWhenSinceDaysSetToNegativeNumber() throws Exception {
     configuration.setBoolean(RESTORE_BLOBS, true);
     configuration.setBoolean(UNDELETE_BLOBS, true);
     configuration.setBoolean(INTEGRITY_CHECK, false);
@@ -622,7 +634,7 @@ public class RestoreMetadataTaskTest
   }
 
   @Test
-  public void shouldGetAllBlobsToRestoreWhenSinceDaysNotSet() throws Exception {
+  void shouldGetAllBlobsToRestoreWhenSinceDaysNotSet() throws Exception {
     configuration.setBoolean(RESTORE_BLOBS, true);
     configuration.setBoolean(UNDELETE_BLOBS, true);
     configuration.setBoolean(INTEGRITY_CHECK, false);
@@ -635,7 +647,7 @@ public class RestoreMetadataTaskTest
   }
 
   @Test
-  public void shouldGetRecentBlobsWhenSinceDaysConfigured() throws Exception {
+  void shouldGetRecentBlobsWhenSinceDaysConfigured() throws Exception {
     configuration.setBoolean(RESTORE_BLOBS, true);
     configuration.setBoolean(UNDELETE_BLOBS, true);
     configuration.setBoolean(INTEGRITY_CHECK, false);
@@ -647,5 +659,80 @@ public class RestoreMetadataTaskTest
 
     verify(blobStore).getBlobIdUpdatedSinceStream(Duration.ofDays(2L));
     verify(blobStore, never()).getBlobIdStream();
+  }
+  
+  /**
+   * Test to validate that RestoreMetadataTask can effectively use virtual threads
+   * for concurrent blob processing, demonstrating Java 21 compatibility.
+   */
+  @Test
+  @org.junit.jupiter.api.Tag("VirtualThread")
+  void concurrentBlobProcessingWithVirtualThreads() throws Exception {
+    // Configure the task
+    configuration.setBoolean(RESTORE_BLOBS, true);
+    configuration.setBoolean(UNDELETE_BLOBS, true);
+    configuration.setBoolean(INTEGRITY_CHECK, false);
+    underTest.configure(configuration);
+    
+    // Create a large number of test blobs
+    int blobCount = 1000;
+    BlobId[] blobIds = new BlobId[blobCount];
+    for (int i = 0; i < blobCount; i++) {
+      blobIds[i] = new BlobId("test-blob-" + i);
+    }
+    
+    // Setup virtual thread executor
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    try {
+      // Setup test tracking
+      CountDownLatch latch = new CountDownLatch(blobCount);
+      AtomicInteger processedCount = new AtomicInteger(0);
+      
+      // Mock blob store to return our test blob IDs
+      when(blobStore.getBlobIdStream()).thenReturn(Stream.of(blobIds));
+      
+      // For each blob ID, set up the necessary mocks
+      for (BlobId testBlobId : blobIds) {
+        Blob testBlob = mock(Blob.class);
+        BlobAttributes testAttributes = mock(BlobAttributes.class);
+        Properties testProperties = new Properties();
+        testProperties.setProperty(HEADER_PREFIX + REPO_NAME_HEADER, "maven-central");
+        
+        when(blobStore.get(testBlobId, true)).thenReturn(testBlob);
+        when(blobStore.getBlobAttributes(testBlobId)).thenReturn(testAttributes);
+        when(testAttributes.getProperties()).thenReturn(testProperties);
+        when(testAttributes.isDeleted()).thenReturn(false);
+        
+        // Set up the restore strategy to count processed blobs
+        doAnswer(invocation -> {
+          // Simulate some processing time
+          Thread.sleep(5);
+          processedCount.incrementAndGet();
+          latch.countDown();
+          return null;
+        }).when(restoreBlobStrategy).restore(eq(testProperties), eq(testBlob), eq(blobStore), eq(false));
+      }
+      
+      // Execute the task
+      long startTime = System.currentTimeMillis();
+      underTest.execute();
+      long endTime = System.currentTimeMillis();
+      
+      // Verify all blobs were processed
+      assertThat(processedCount.get(), is(blobCount));
+      
+      // Verify the task completed in a reasonable time (should be much faster with virtual threads)
+      long executionTime = endTime - startTime;
+      // If using virtual threads effectively, processing should be much faster than sequential
+      // Sequential would be ~5ms * 1000 = 5000ms
+      assertThat(executionTime, lessThan(5000L));
+      
+      // Verify after was called for the repository
+      verify(restoreBlobStrategy).after(true, repository);
+    } finally {
+      executor.shutdown();
+    }
   }
 }

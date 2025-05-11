@@ -1,5 +1,27 @@
-<?xml  version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 
+  This XML file is a test fixture for XXE (XML External Entity) vulnerability testing.
+  
+  Purpose:
+  - Validates XML parser security configurations in Java 21
+  - Tests protection against XXE attacks in concurrent processing environments
+  - Verifies that secure processing features properly block external entity resolution
+  
+  Java 21 Security Notes:
+  - Java 21 enhances XML security with improved default protections
+  - DOM and SAX parsers have FEATURE_SECURE_PROCESSING enabled by default
+  - Applications should explicitly disable external entities using:
+    * XMLConstants.FEATURE_SECURE_PROCESSING = true
+    * XMLConstants.ACCESS_EXTERNAL_DTD = ""
+    * XMLConstants.ACCESS_EXTERNAL_SCHEMA = ""
+    * "http://apache.org/xml/features/disallow-doctype-decl" = true
+  
+  Usage:
+  - This file should NOT be parsed with default settings in production
+  - For testing, use with secure parser configurations to verify XXE protection
+  - Can be used with virtual threads to test concurrent XML processing security
+-->
 <!DOCTYPE foo [
    <!ELEMENT foo ANY >
-   <!ENTITY xxe SYSTEM  "${fileUri}" >]>
+   <!ENTITY xxe SYSTEM "${fileUri}" >]>
 <foo>&xxe;</foo>

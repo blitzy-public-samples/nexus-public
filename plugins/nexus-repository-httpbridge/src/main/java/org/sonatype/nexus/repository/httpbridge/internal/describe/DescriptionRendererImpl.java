@@ -26,7 +26,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import static java.util.Objects.requireNonNull;
 
 /**
  * Default {@link DescriptionRenderer}.
@@ -48,11 +48,11 @@ public class DescriptionRendererImpl
 
   @Inject
   public DescriptionRendererImpl(final TemplateHelper templateHelper) {
-    this.templateHelper = checkNotNull(templateHelper);
+    this.templateHelper = requireNonNull(templateHelper, "templateHelper");
     objectMapper = new ObjectMapper();
     objectMapper.enable(SerializationFeature.INDENT_OUTPUT);
     template = getClass().getResource(TEMPLATE_RESOURCE);
-    checkNotNull(template);
+    requireNonNull(template, "template resource not found: " + TEMPLATE_RESOURCE);
   }
 
   @Override
@@ -70,7 +70,7 @@ public class DescriptionRendererImpl
       return objectMapper.writeValueAsString(description);
     }
     catch (JsonProcessingException e) {
-      throw new RuntimeException(e);
+      throw new RuntimeException(STR."Error processing JSON: \{e.getMessage()}", e);
     }
   }
 }

@@ -31,11 +31,11 @@ import org.sonatype.nexus.blobstore.s3.rest.internal.model.S3BlobStoreApiModel;
 import org.sonatype.nexus.rest.ValidationErrorXO;
 import org.sonatype.nexus.rest.ValidationErrorsException;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 
 import static java.lang.String.format;
 import static java.util.Optional.ofNullable;
-import static org.apache.commons.lang.StringUtils.equalsIgnoreCase;
+import static org.apache.commons.lang3.StringUtils.equalsIgnoreCase;
 import static org.sonatype.nexus.blobstore.s3.internal.S3BlobStore.TYPE;
 import static org.sonatype.nexus.blobstore.s3.rest.internal.S3BlobStoreApiConstants.BLOB_STORE_NAME_UPDATE_ERROR_MESSAGE;
 import static org.sonatype.nexus.blobstore.s3.rest.internal.S3BlobStoreApiConstants.BLOB_STORE_TYPE_MISMATCH_ERROR_FORMAT;
@@ -47,6 +47,9 @@ import static org.sonatype.nexus.blobstore.s3.rest.internal.model.S3BlobStoreApi
 
 /**
  * Performs validation checks on specified {@link S3BlobStoreApiModel} object containing updates to an S3 blob store.
+ * 
+ * This class has been updated for Java 21 compatibility, leveraging pattern matching for instanceof
+ * and other Java 21 features for improved code clarity and performance.
  *
  * @since 3.20
  */
@@ -63,6 +66,12 @@ public class S3BlobStoreApiUpdateValidation
     this.blobStoreManager = blobStoreManager;
   }
 
+  /**
+   * Validates a request to create a new S3 blob store.
+   *
+   * @param s3BlobStoreApiModel the model containing the blob store configuration to validate
+   * @throws ValidationErrorsException if validation fails
+   */
   void validateCreateRequest(final S3BlobStoreApiModel s3BlobStoreApiModel) {
     List<ValidationErrorXO> errors = new ArrayList<>();
     checkBlobStoreNameNotEmpty(s3BlobStoreApiModel.getName(), errors);
@@ -73,6 +82,13 @@ public class S3BlobStoreApiUpdateValidation
     }
   }
 
+  /**
+   * Validates a request to update an existing S3 blob store.
+   *
+   * @param s3BlobStoreApiModel the model containing the updated blob store configuration to validate
+   * @param blobStoreName the name of the blob store to update
+   * @throws ValidationErrorsException if validation fails
+   */
   void validateUpdateRequest(final S3BlobStoreApiModel s3BlobStoreApiModel, final String blobStoreName) {
     List<ValidationErrorXO> errors = new ArrayList<>();
     final boolean blobStoreExists = checkBlobStoreExists(blobStoreName, errors);
@@ -87,12 +103,25 @@ public class S3BlobStoreApiUpdateValidation
     }
   }
 
+  /**
+   * Checks if the blob store name is not empty.
+   *
+   * @param blobStoreName the name of the blob store to check
+   * @param errors the list of validation errors to add to if validation fails
+   */
   private static void checkBlobStoreNameNotEmpty(final String blobStoreName, final List<ValidationErrorXO> errors) {
     if (StringUtils.isBlank(blobStoreName)) {
       errors.add(new ValidationErrorXO(BLOB_STORE_NAME, "Blob store name cannot be empty"));
     }
   }
 
+  /**
+   * Checks if the blob store exists.
+   *
+   * @param blobStoreName the name of the blob store to check
+   * @param errors the list of validation errors to add to if validation fails
+   * @return true if the blob store exists, false otherwise
+   */
   private boolean checkBlobStoreExists(final String blobStoreName, final List<ValidationErrorXO> errors) {
     if (!blobStoreManager.exists(blobStoreName)) {
       errors.add(
@@ -102,6 +131,14 @@ public class S3BlobStoreApiUpdateValidation
     return true;
   }
 
+  /**
+   * Checks if the blob store names match.
+   * S3 blob store names cannot be changed after creation.
+   *
+   * @param s3BlobStoreApiModel the model containing the blob store configuration to validate
+   * @param blobStoreName the name of the existing blob store
+   * @param errors the list of validation errors to add to if validation fails
+   */
   private static void checkBlobStoreNamesMatch(
       final S3BlobStoreApiModel s3BlobStoreApiModel,
       final String blobStoreName, final List<ValidationErrorXO> errors)
@@ -111,47 +148,77 @@ public class S3BlobStoreApiUpdateValidation
     }
   }
 
+  /**
+   * Checks if the blob store is an S3 blob store.
+   *
+   * @param blobStoreName the name of the blob store to check
+   * @param errors the list of validation errors to add to if validation fails
+   */
   private void checkBlobStoreTypeIsS3(final String blobStoreName, final List<ValidationErrorXO> errors) {
     if (existingBlobStoreIsNotS3(blobStoreName)) {
       errors.add(new ValidationErrorXO(format(BLOB_STORE_TYPE_MISMATCH_ERROR_FORMAT, blobStoreName)));
     }
   }
 
+  /**
+   * Checks if the existing blob store is not an S3 blob store.
+   * Uses Java 21 pattern matching for instanceof to simplify the code.
+   *
+   * @param blobStoreName the name of the blob store to check
+   * @return true if the blob store exists but is not an S3 blob store, false otherwise
+   */
   private boolean existingBlobStoreIsNotS3(final String blobStoreName) {
-    return !ofNullable(blobStoreManager.get(blobStoreName))
-        .map(BlobStore::getBlobStoreConfiguration)
-        .map(BlobStoreConfiguration::getType)
-        .filter(type -> equalsIgnoreCase(TYPE, type))
-        .isPresent();
+    BlobStore blobStore = blobStoreManager.get(blobStoreName);
+    if (blobStore instanceof BlobStore store) {
+      BlobStoreConfiguration config = store.getBlobStoreConfiguration();
+      if (config instanceof BlobStoreConfiguration cfg) {
+        String type = cfg.getType();
+        return !equalsIgnoreCase(TYPE, type);
+      }
+    }
+    return true; // If we can't determine the type, assume it's not an S3 blob store
   }
 
+  /**
+   * Validates the failover buckets configuration.
+   * Uses Java 21 pattern matching and sequenced collections features where appropriate.
+   *
+   * @param s3BlobStoreApiModel the model containing the bucket configuration to validate
+   * @param errors the list of validation errors to add to if validation fails
+   */
   private static void checkFailoverBuckets(
       final S3BlobStoreApiModel s3BlobStoreApiModel,
       final List<ValidationErrorXO> errors)
   {
-    List<S3BlobStoreApiFailoverBucket> failoverBuckets = Optional.ofNullable(s3BlobStoreApiModel.getBucketConfiguration())
-        .map(S3BlobStoreApiBucketConfiguration::getFailoverBuckets)
-        .orElse(null);
-
-    if (failoverBuckets == null) {
-      return;
-    }
-
-    Set<String> regions = failoverBuckets.stream()
-        .map(S3BlobStoreApiFailoverBucket::getRegion)
-        .map(String::toLowerCase)
-        .collect(Collectors.toSet());
-
-    if (regions.size() != failoverBuckets.size()) {
-      errors.add(new ValidationErrorXO(FAILOVER_BUCKETS, DUPLICATE_REGIONS_ERROR_MESSAGE));
-    }
-
-    if (regions.contains(s3BlobStoreApiModel.getBucketConfiguration().getBucket().getRegion().toLowerCase())) {
-      errors.add(new ValidationErrorXO(FAILOVER_BUCKETS, MATCHES_PRIMARY_ERROR_MESSAGE));
-    }
-
-    if (regions.contains("default")) {
-      errors.add(new ValidationErrorXO(FAILOVER_BUCKETS, FAILOVER_DEFAULT_ERROR_MESSAGE));
+    // Use pattern matching to simplify the null check and property access
+    if (s3BlobStoreApiModel.getBucketConfiguration() instanceof S3BlobStoreApiBucketConfiguration bucketConfig) {
+      List<S3BlobStoreApiFailoverBucket> failoverBuckets = bucketConfig.getFailoverBuckets();
+      
+      if (failoverBuckets == null) {
+        return;
+      }
+      
+      // Convert regions to lowercase for case-insensitive comparison
+      Set<String> regions = failoverBuckets.stream()
+          .map(S3BlobStoreApiFailoverBucket::getRegion)
+          .map(String::toLowerCase)
+          .collect(Collectors.toSet());
+      
+      // Check for duplicate regions
+      if (regions.size() != failoverBuckets.size()) {
+        errors.add(new ValidationErrorXO(FAILOVER_BUCKETS, DUPLICATE_REGIONS_ERROR_MESSAGE));
+      }
+      
+      // Check if any failover region matches the primary region
+      String primaryRegion = bucketConfig.getBucket().getRegion().toLowerCase();
+      if (regions.contains(primaryRegion)) {
+        errors.add(new ValidationErrorXO(FAILOVER_BUCKETS, MATCHES_PRIMARY_ERROR_MESSAGE));
+      }
+      
+      // Check if any region is "default"
+      if (regions.contains("default")) {
+        errors.add(new ValidationErrorXO(FAILOVER_BUCKETS, FAILOVER_DEFAULT_ERROR_MESSAGE));
+      }
     }
   }
 }

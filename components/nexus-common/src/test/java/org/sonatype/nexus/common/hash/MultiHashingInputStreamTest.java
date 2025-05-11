@@ -18,16 +18,16 @@ import java.util.Arrays;
 
 import com.google.common.hash.HashCode;
 import com.google.common.io.ByteStreams;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 
-public class MultiHashingInputStreamTest
+class MultiHashingInputStreamTest
 {
   @Test
-  public void sha512IsAccurate() throws IOException {
+  void sha512IsAccurate() throws IOException {
     byte[] bytes = new byte[100];
 
     final MultiHashingInputStream hashingStream = createAndUseHashingStream(bytes);
@@ -39,7 +39,7 @@ public class MultiHashingInputStreamTest
   }
 
   @Test
-  public void testCountIsAccurate() throws IOException {
+  void testCountIsAccurate() throws IOException {
     final long byteArrayLength = 100;
 
     final MultiHashingInputStream andUseHashingStream = createAndUseHashingStream(new byte[(int) byteArrayLength]);

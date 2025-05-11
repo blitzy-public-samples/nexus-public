@@ -12,10 +12,13 @@
  */
 package org.sonatype.nexus.blobstore.s3.internal;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
-import org.sonatype.goodies.testsupport.TestSupport;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
 import org.sonatype.nexus.blobstore.api.BlobStoreException;
 
 import com.amazonaws.SdkClientException;
@@ -23,15 +26,18 @@ import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.model.CopyPartResult;
 import com.amazonaws.services.s3.model.InitiateMultipartUploadResult;
 import com.amazonaws.services.s3.model.ObjectMetadata;
-import org.mockito.Mock;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
-public class ParallelCopierTest
-    extends TestSupport
+/**
+ * Tests for {@link ParallelCopier} that verify the S3 multipart copy functionality.
+ */
+@ExtendWith(MockitoExtension.class)
+class ParallelCopierTest
 {
   private ParallelCopier copier;
 
@@ -41,14 +47,17 @@ public class ParallelCopierTest
   @Mock
   private InitiateMultipartUploadResult initiateMultipartUploadResult;
 
-  @Before
-  public void setUp() {
+  @BeforeEach
+  void setUp() {
     when(initiateMultipartUploadResult.getUploadId()).thenReturn("uploadId");
     copier = new ParallelCopier(100, 4);
   }
 
+  /**
+   * Verifies that the first and last byte calculations for multipart copy operations are correct.
+   */
   @Test
-  public void testCalcFirstAndLastBytesProperly() {
+  void calcFirstAndLastBytesProperly() {
     assertThat(ParallelCopier.getFirstByte(1, 500), is(0L));
     assertThat(ParallelCopier.getLastByte(1700, 1, 500), is(499L));
     assertThat(ParallelCopier.getFirstByte(2, 500), is(500L));
@@ -61,8 +70,11 @@ public class ParallelCopierTest
     assertThat(ParallelCopier.getLastByte(1700, 5, 500), is(1699L));
   }
 
+  /**
+   * Verifies that the copy operation correctly uses the multipart API for objects larger than the threshold.
+   */
   @Test
-  public void testCopyWithMultipartApi() {
+  void copyWithMultipartApi() {
     when(s3.initiateMultipartUpload(any())).thenReturn(initiateMultipartUploadResult);
     when(s3.getObjectMetadata("bucketName", "source")).thenReturn(new ObjectMetadata() {{
       setContentLength(101);
@@ -78,8 +90,11 @@ public class ParallelCopierTest
     verify(s3, never()).abortMultipartUpload(any());
   }
 
+  /**
+   * Verifies that the copy operation aborts the multipart upload when an error occurs.
+   */
   @Test
-  public void testCopyAbortsMultipartOnError() {
+  void copyAbortsMultipartOnError() {
     when(s3.initiateMultipartUpload(any())).thenReturn(initiateMultipartUploadResult);
     when(s3.getObjectMetadata("bucketName", "source")).thenReturn(new ObjectMetadata() {{
       setContentLength(101);
@@ -94,8 +109,11 @@ public class ParallelCopierTest
     verify(s3).abortMultipartUpload(any());
   }
 
+  /**
+   * Verifies that the copy operation correctly splits the object into multiple parts for large objects.
+   */
   @Test
-  public void testCopySplitsParts() {
+  void copySplitsParts() {
     when(s3.initiateMultipartUpload(any())).thenReturn(initiateMultipartUploadResult);
     when(s3.getObjectMetadata("bucketName", "source")).thenReturn(new ObjectMetadata() {{
       setContentLength(345);
@@ -111,8 +129,11 @@ public class ParallelCopierTest
     verify(s3, never()).abortMultipartUpload(any());
   }
 
+  /**
+   * Verifies that the copy operation uses the simple copyObject API for small objects below the threshold.
+   */
   @Test
-  public void testCopyUsesCopyObjectForSmallCopies() {
+  void copyUsesCopyObjectForSmallCopies() {
     when(s3.getObjectMetadata("bucketName", "source")).thenReturn(new ObjectMetadata() {{
       setContentLength(99);
     }});

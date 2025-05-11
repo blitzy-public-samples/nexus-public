@@ -17,11 +17,12 @@ import java.util.Map;
 import org.sonatype.goodies.testsupport.TestSupport;
 
 import com.google.common.collect.Maps;
-import org.junit.Test;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
-import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertNotNull;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
  * Tests for {@link TemplateParameters}
@@ -30,7 +31,8 @@ public class TemplateParametersTest
     extends TestSupport
 {
   @Test
-  public void empty() {
+  @DisplayName("Empty parameters should return empty map")
+  void empty() {
     Map<String, Object> params = new TemplateParameters().get();
     log(params);
 
@@ -39,7 +41,8 @@ public class TemplateParametersTest
   }
 
   @Test
-  public void mixedTypes() {
+  @DisplayName("Parameters with mixed types should be stored correctly")
+  void mixedTypes() {
     Map<String, Object> params = new TemplateParameters()
         .set("a", "1")
         .set("b", 2)
@@ -53,7 +56,8 @@ public class TemplateParametersTest
   }
 
   @Test
-  public void setAll() {
+  @DisplayName("Setting all parameters from another map should work correctly")
+  void setAll() {
     Map<String, Object> other = Maps.newHashMap();
     other.put("a", "1");
     other.put("b", 2);
@@ -67,5 +71,21 @@ public class TemplateParametersTest
     assertThat(params.size(), is(2));
     assertThat(params.get("a"), is((Object) "1"));
     assertThat(params.get("b"), is((Object) 2));
+  }
+  
+  @Test
+  @DisplayName("String templates should work with TemplateParameters")
+  void stringTemplates() {
+    Map<String, Object> params = new TemplateParameters()
+        .set("name", "World")
+        .set("count", 42)
+        .get();
+    log(params);
+    
+    // Using Java 21 string templates to format a message with parameters
+    String message = STR."Hello \{params.get("name")}! Count: \{params.get("count")}";
+    
+    assertNotNull(message);
+    assertThat(message, is("Hello World! Count: 42"));
   }
 }

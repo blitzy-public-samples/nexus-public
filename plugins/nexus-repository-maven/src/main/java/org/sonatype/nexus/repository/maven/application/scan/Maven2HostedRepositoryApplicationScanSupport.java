@@ -20,6 +20,11 @@ import org.sonatype.nexus.repository.application.scan.RepositoryApplicationScanS
 import org.sonatype.nexus.repository.maven.internal.Maven2Format;
 import org.sonatype.nexus.repository.types.HostedType;
 
+/**
+ * Application scan support for Maven 2 hosted repositories.
+ * 
+ * @since 3.38
+ */
 @Named(Maven2Format.NAME + "-" + HostedType.NAME)
 @Singleton
 public class Maven2HostedRepositoryApplicationScanSupport

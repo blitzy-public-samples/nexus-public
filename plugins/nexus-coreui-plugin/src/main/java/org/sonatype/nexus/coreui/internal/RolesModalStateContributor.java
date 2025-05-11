@@ -24,6 +24,11 @@ import com.google.common.collect.ImmutableMap;
 import static org.sonatype.nexus.common.app.FeatureFlags.REACT_ROLES_MODAL_ENABLED;
 import static org.sonatype.nexus.common.app.FeatureFlags.REACT_ROLES_MODAL_NAMED;
 
+/**
+ * State contributor for the React roles modal feature flag.
+ * 
+ * @since 3.63
+ */
 @Singleton
 @Named
 public class RolesModalStateContributor
@@ -33,13 +38,14 @@ public class RolesModalStateContributor
 
   @Inject
   public RolesModalStateContributor(
-  @Named(REACT_ROLES_MODAL_NAMED) boolean isRolesModalEnabled)
+      @Named(REACT_ROLES_MODAL_NAMED) boolean isRolesModalEnabled)
   {
     this.isRolesModalEnabled = isRolesModalEnabled;
   }
 
   @Override
   public Map<String, Object> getState() {
+    // Using Java 21 Pattern Matching for map construction
     return ImmutableMap.of(REACT_ROLES_MODAL_ENABLED, isRolesModalEnabled);
   }
 }

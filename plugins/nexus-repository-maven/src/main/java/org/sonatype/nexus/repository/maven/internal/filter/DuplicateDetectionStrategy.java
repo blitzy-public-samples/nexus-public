@@ -14,19 +14,36 @@ package org.sonatype.nexus.repository.maven.internal.filter;
 
 import java.io.Closeable;
 import java.io.IOException;
-
-import com.google.common.base.Predicate;
+import java.util.function.Predicate;
 
 /**
  * Strategy for filtering Maven records
  *
  * @since 3.11
  */
+@FunctionalInterface
 public interface DuplicateDetectionStrategy<T>
     extends Predicate<T>, Closeable
 {
+  /**
+   * Closes any resources associated with this strategy.
+   * Default implementation is a no-op.
+   *
+   * @throws IOException if an I/O error occurs during close
+   */
   @Override
   default void close() throws IOException {
     // no-op
+  }
+  
+  /**
+   * Legacy method for compatibility with Guava's Predicate.
+   * Delegates to {@link #test(Object)}.
+   *
+   * @param input the input value to test
+   * @return true if the input should be accepted, false otherwise
+   */
+  default boolean apply(T input) {
+    return test(input);
   }
 }

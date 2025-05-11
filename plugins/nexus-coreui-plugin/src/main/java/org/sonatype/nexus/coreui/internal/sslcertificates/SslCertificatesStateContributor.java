@@ -20,8 +20,9 @@ import javax.inject.Singleton;
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.rapture.StateContributor;
 
-import com.google.common.collect.ImmutableMap;
-
+/**
+ * State contributor for SSL certificates feature flag.
+ */
 @Named
 @Singleton
 public class SslCertificatesStateContributor
@@ -32,7 +33,7 @@ public class SslCertificatesStateContributor
 
   @Inject
   public SslCertificatesStateContributor(@Named("${nexus.react.sslCertificates:-true}") final Boolean featureFlag) {
-    state = ImmutableMap.of("nexus.react.sslCertificates", featureFlag);
+    state = Map.of("nexus.react.sslCertificates", featureFlag);
   }
 
   @Override

@@ -30,7 +30,6 @@ import static com.google.common.base.Preconditions.checkNotNull;
 public class UniqueBlobStoreNameValidator
     extends ConstraintValidatorSupport<UniqueBlobStoreName, String>
 {
-
   private final BlobStoreManager blobStoreManager;
 
   @Inject
@@ -39,7 +38,21 @@ public class UniqueBlobStoreNameValidator
   }
 
   @Override
-  public boolean isValid(final String s, final ConstraintValidatorContext constraintValidatorContext) {
-    return !blobStoreManager.exists(s);
+  public boolean isValid(final String name, final ConstraintValidatorContext context) {
+    if (name == null) {
+      return true; // null validation is handled by @NotNull if required
+    }
+    
+    boolean exists = blobStoreManager.exists(name);
+    
+    if (exists) {
+      // Using Java 21 String Templates (JEP 430) for more descriptive error message
+      String errorMessage = STR."BlobStore with name '\{name}' already exists";
+      context.disableDefaultConstraintViolation();
+      context.buildConstraintViolationWithTemplate(errorMessage)
+          .addConstraintViolation();
+    }
+    
+    return !exists;
   }
 }

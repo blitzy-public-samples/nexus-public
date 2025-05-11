@@ -12,8 +12,8 @@
  */
 package org.sonatype.nexus.repository.maven.rest;
 
-import javax.validation.Valid;
-import javax.validation.constraints.NotNull;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 
 import org.sonatype.nexus.repository.maven.api.MavenAttributes;
 import org.sonatype.nexus.repository.maven.internal.Maven2Format;
@@ -31,6 +31,8 @@ import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
+ * Maven proxy repository API request.
+ *
  * @since 3.20
  */
 @JsonIgnoreProperties({"format", "type"})
@@ -73,5 +75,18 @@ public class MavenProxyRepositoryApiRequest
   @Override
   public HttpClientAttributesWithPreemptiveAuth getHttpClient() {
     return httpClient;
+  }
+  
+  @Override
+  public String toString() {
+    return STR."""
+        MavenProxyRepositoryApiRequest {
+          name: {super.getName()},
+          online: {super.getOnline()},
+          maven: {maven},
+          httpClient: {httpClient},
+          routingRule: {super.getRoutingRule()}
+        }
+        """;
   }
 }

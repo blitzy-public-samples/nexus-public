@@ -25,7 +25,10 @@ import static org.sonatype.nexus.repository.maven.internal.Attributes.P_BASE_VER
 import static org.sonatype.nexus.repository.maven.internal.Constants.SNAPSHOT_VERSION_SUFFIX;
 
 /**
+ * Maven implementation of the {@link PreReleaseEvaluator} that identifies SNAPSHOT versions.
+ *
  * @since 3.38
+ * @see PreReleaseEvaluator
  */
 @Named(Maven2Format.NAME)
 @Singleton
@@ -33,21 +36,46 @@ public class MavenPreReleaseEvaluator
     implements PreReleaseEvaluator
 {
 
+  /**
+   * Determines if a component is a pre-release (SNAPSHOT) version.
+   * 
+   * @param component the component to evaluate
+   * @return true if the component is a SNAPSHOT version
+   */
   @Override
   public boolean isPreRelease(final FluentComponent component) {
-    return isPreRelease((Component) component);
+    // Using Java 21 pattern matching for instanceof to avoid explicit casting
+    if (component instanceof Component c) {
+      return isPreRelease(c);
+    }
+    return false;
   }
 
+  /**
+   * Determines if a component is a pre-release (SNAPSHOT) version, ignoring the assets.
+   * 
+   * @param component the component to evaluate
+   * @param assets the component's assets (not used in this implementation)
+   * @return true if the component is a SNAPSHOT version
+   */
   @Override
   public boolean isPreRelease(final Component component, final Iterable<Asset> assets) {
     return isPreRelease(component);
   }
 
+  /**
+   * Internal helper method to evaluate if a component is a pre-release version.
+   * Uses the Maven-specific base version attribute to determine if it's a SNAPSHOT.
+   *
+   * @param component the component to evaluate
+   * @return true if the component is a SNAPSHOT version
+   */
   private static boolean isPreRelease(final Component component) {
     String baseVersion = component.attributes().child(Maven2Format.NAME).get(P_BASE_VERSION, String.class);
     if (baseVersion == null) {
       return false;
     }
+    // Check if the version ends with the SNAPSHOT suffix
     return baseVersion.endsWith(SNAPSHOT_VERSION_SUFFIX);
   }
 }

@@ -54,6 +54,10 @@ import org.apache.shiro.authz.annotation.RequiresPermissions;
 
 import java.io.File;
 import java.util.*;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -95,6 +99,8 @@ public class BlobStoreComponent
   private final RepositoryPermissionChecker repositoryPermissionChecker;
 
   private final BlobStoreTaskService blobStoreTaskService;
+  
+  private final ExecutorService virtualThreadExecutor;
 
   @Inject
   public BlobStoreComponent(
@@ -115,58 +121,99 @@ public class BlobStoreComponent
     this.repositoryManager = checkNotNull(repositoryManager);
     this.repositoryPermissionChecker = checkNotNull(repositoryPermissionChecker);
     this.blobStoreTaskService = blobStoreTaskService;
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+  }
+
+  /**
+   * Executes a task using a virtual thread for improved I/O performance.
+   *
+   * @param task The task to execute
+   * @param <T> The return type of the task
+   * @return The result of the task execution
+   */
+  private <T> T executeWithVirtualThread(Callable<T> task) {
+    try {
+      return virtualThreadExecutor.submit(task).get();
+    } catch (Exception e) {
+      if (e.getCause() instanceof RuntimeException) {
+        throw (RuntimeException) e.getCause();
+      }
+      throw new RuntimeException("Error executing task with virtual thread", e);
+    }
+  }
+
+  /**
+   * Executes a task using a virtual thread for improved I/O performance.
+   *
+   * @param task The task to execute
+   */
+  private void executeWithVirtualThread(Runnable task) {
+    try {
+      virtualThreadExecutor.submit(task).get();
+    } catch (Exception e) {
+      if (e.getCause() instanceof RuntimeException) {
+        throw (RuntimeException) e.getCause();
+      }
+      throw new RuntimeException("Error executing task with virtual thread", e);
+    }
   }
 
   @DirectMethod
   @Timed
   @ExceptionMetered
   public List<BlobStoreXO> read() {
-    repositoryPermissionChecker.ensureUserHasAnyPermissionOrAdminAccess(
-        singletonList(new ApplicationPermission(BLOB_STORES_DOMAIN, READ)),
-        READ,
-        repositoryManager.browse());
+    return executeWithVirtualThread(() -> {
+      repositoryPermissionChecker.ensureUserHasAnyPermissionOrAdminAccess(
+          singletonList(new ApplicationPermission(BLOB_STORES_DOMAIN, READ)),
+          READ,
+          repositoryManager.browse());
 
-    List<BlobStoreGroup> blobStoreGroups = getBlobStoreGroups();
+      List<BlobStoreGroup> blobStoreGroups = getBlobStoreGroups();
 
-    return store.list()
-        .stream()
-        .map(config -> asBlobStoreXO(config, blobStoreGroups))
-        .collect(Collectors.toList()); // NOSONAR
+      return store.list()
+          .stream()
+          .map(config -> asBlobStoreXO(config, blobStoreGroups))
+          .collect(Collectors.toList()); // NOSONAR
+    });
   }
 
   @DirectMethod
   @Timed
   @ExceptionMetered
   public List<BlobStoreXO> readNoneGroupEntriesIncludingEntryForAll() {
-    repositoryPermissionChecker.ensureUserHasAnyPermissionOrAdminAccess(
-        singletonList(new ApplicationPermission(BLOB_STORES_DOMAIN, READ)),
-        READ,
-        repositoryManager.browse());
+    return executeWithVirtualThread(() -> {
+      repositoryPermissionChecker.ensureUserHasAnyPermissionOrAdminAccess(
+          singletonList(new ApplicationPermission(BLOB_STORES_DOMAIN, READ)),
+          READ,
+          repositoryManager.browse());
 
-    List<BlobStoreXO> blobStores = store.list()
-        .stream()
-        .filter(config -> !BlobStoreGroup.TYPE.equals(config.getType()))
-        .map(this::asBlobStoreXO)
-        .collect(Collectors.toList());
+      List<BlobStoreXO> blobStores = store.list()
+          .stream()
+          .filter(config -> !BlobStoreGroup.TYPE.equals(config.getType()))
+          .map(this::asBlobStoreXO)
+          .collect(Collectors.toList());
 
-    BlobStoreXO allXO = new BlobStoreXO().withName("(All Blob Stores)");
-    blobStores.add(allXO);
+      BlobStoreXO allXO = new BlobStoreXO().withName("(All Blob Stores)");
+      blobStores.add(allXO);
 
-    return blobStores;
+      return blobStores;
+    });
   }
 
   @DirectMethod
   @Timed
   @ExceptionMetered
   public List<BlobStoreXO> readNames() {
-    repositoryPermissionChecker.ensureUserHasAnyPermissionOrAdminAccess(
-        singletonList(new ApplicationPermission(BLOB_STORES_DOMAIN, READ)),
-        READ,
-        repositoryManager.browse());
-    return store.list()
-        .stream()
-        .map(config -> new BlobStoreXO().withName(config.getName()))
-        .collect(Collectors.toList()); // NOSONAR
+    return executeWithVirtualThread(() -> {
+      repositoryPermissionChecker.ensureUserHasAnyPermissionOrAdminAccess(
+          singletonList(new ApplicationPermission(BLOB_STORES_DOMAIN, READ)),
+          READ,
+          repositoryManager.browse());
+      return store.list()
+          .stream()
+          .map(config -> new BlobStoreXO().withName(config.getName()))
+          .collect(Collectors.toList()); // NOSONAR
+    });
   }
 
   @DirectMethod
@@ -174,22 +221,24 @@ public class BlobStoreComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:blobstores:read")
   public List<BlobStoreXO> readGroupable(@Nullable final StoreLoadParameters parameters) {
-    List<BlobStoreGroup> blobStoreGroups = getBlobStoreGroups();
-    String selectedBlobStoreName = Optional.ofNullable(parameters)
-        .map(params -> params.getFilter("blobStoreName"))
-        .orElse(null);
-    List<BlobStoreGroup> otherGroups = blobStoreGroups.stream()
-        .filter(group -> selectedBlobStoreName == null ||
-            !group.getBlobStoreConfiguration().getName().equals(selectedBlobStoreName))
-        .collect(Collectors.toList()); // NOSONAR
+    return executeWithVirtualThread(() -> {
+      List<BlobStoreGroup> blobStoreGroups = getBlobStoreGroups();
+      String selectedBlobStoreName = Optional.ofNullable(parameters)
+          .map(params -> params.getFilter("blobStoreName"))
+          .orElse(null);
+      List<BlobStoreGroup> otherGroups = blobStoreGroups.stream()
+          .filter(group -> selectedBlobStoreName == null ||
+              !group.getBlobStoreConfiguration().getName().equals(selectedBlobStoreName))
+          .collect(Collectors.toList()); // NOSONAR
 
-    return store.list()
-        .stream()
-        .filter(config -> !BlobStoreGroup.TYPE.equals(config.getType()) &&
-            !repositoryManager.browseForBlobStore(config.getName()).iterator().hasNext() &&
-            isNotInOtherGroups(config, otherGroups))
-        .map(this::asBlobStoreXO)
-        .collect(Collectors.toList()); // NOSONAR
+      return store.list()
+          .stream()
+          .filter(config -> !BlobStoreGroup.TYPE.equals(config.getType()) &&
+              !repositoryManager.browseForBlobStore(config.getName()).iterator().hasNext() &&
+              isNotInOtherGroups(config, otherGroups))
+          .map(this::asBlobStoreXO)
+          .collect(Collectors.toList()); // NOSONAR
+    });
   }
 
   @DirectMethod
@@ -197,11 +246,13 @@ public class BlobStoreComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:blobstores:read")
   public List<BlobStoreXO> readGroups() {
-    return store.list()
-        .stream()
-        .filter(config -> BlobStoreGroup.TYPE.equals(config.getType()))
-        .map(this::asBlobStoreXO)
-        .collect(Collectors.toList()); // NOSONAR
+    return executeWithVirtualThread(() -> {
+      return store.list()
+          .stream()
+          .filter(config -> BlobStoreGroup.TYPE.equals(config.getType()))
+          .map(this::asBlobStoreXO)
+          .collect(Collectors.toList()); // NOSONAR
+    });
   }
 
   @DirectMethod
@@ -209,33 +260,35 @@ public class BlobStoreComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:blobstores:read")
   public List<BlobStoreTypeXO> readTypes() {
-    List<BlobStoreTypeXO> readTypes = blobStoreDescriptorProvider.get()
-        .entrySet()
-        .stream()
-        .map(entry -> {
-          BlobStoreDescriptor descriptor = entry.getValue();
-          BlobStoreTypeXO xo = new BlobStoreTypeXO();
-          xo.setId(entry.getKey());
-          xo.setName(descriptor.getName());
-          xo.setFormFields(descriptor.getFormFields()
-              .stream()
-              .map(FormFieldXO::create)
-              .collect(Collectors.toCollection(ArrayList::new)));
-          xo.setCustomFormName(descriptor.customFormName());
-          xo.setIsModifiable(descriptor.isModifiable());
-          xo.setConnectionTestable(descriptor.isConnectionTestable());
-          xo.setIsEnabled(descriptor.isEnabled());
-          return xo;
-        })
-        .collect(Collectors.toList());
-    BlobStoreTypeXO emptyType = new BlobStoreTypeXO();
-    emptyType.setId("");
-    emptyType.setName("");
-    emptyType.setCustomFormName("");
-    emptyType.setIsModifiable(false);
-    emptyType.setIsEnabled(true);
-    readTypes.add(emptyType);
-    return readTypes;
+    return executeWithVirtualThread(() -> {
+      List<BlobStoreTypeXO> readTypes = blobStoreDescriptorProvider.get()
+          .entrySet()
+          .stream()
+          .map(entry -> {
+            BlobStoreDescriptor descriptor = entry.getValue();
+            BlobStoreTypeXO xo = new BlobStoreTypeXO();
+            xo.setId(entry.getKey());
+            xo.setName(descriptor.getName());
+            xo.setFormFields(descriptor.getFormFields()
+                .stream()
+                .map(FormFieldXO::create)
+                .collect(Collectors.toCollection(ArrayList::new)));
+            xo.setCustomFormName(descriptor.customFormName());
+            xo.setIsModifiable(descriptor.isModifiable());
+            xo.setConnectionTestable(descriptor.isConnectionTestable());
+            xo.setIsEnabled(descriptor.isEnabled());
+            return xo;
+          })
+          .collect(Collectors.toList());
+      BlobStoreTypeXO emptyType = new BlobStoreTypeXO();
+      emptyType.setId("");
+      emptyType.setName("");
+      emptyType.setCustomFormName("");
+      emptyType.setIsModifiable(false);
+      emptyType.setIsEnabled(true);
+      readTypes.add(emptyType);
+      return readTypes;
+    });
   }
 
   @DirectMethod
@@ -243,15 +296,17 @@ public class BlobStoreComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:blobstores:read")
   public List<BlobStoreQuotaTypeXO> readQuotaTypes() {
-    return quotaFactories.entrySet()
-        .stream()
-        .map(entry -> {
-          BlobStoreQuotaTypeXO xo = new BlobStoreQuotaTypeXO();
-          xo.setId(entry.getKey());
-          xo.setName(entry.getValue().getDisplayName());
-          return xo;
-        })
-        .collect(Collectors.toList()); // NOSONAR
+    return executeWithVirtualThread(() -> {
+      return quotaFactories.entrySet()
+          .stream()
+          .map(entry -> {
+            BlobStoreQuotaTypeXO xo = new BlobStoreQuotaTypeXO();
+            xo.setId(entry.getKey());
+            xo.setName(entry.getValue().getDisplayName());
+            return xo;
+          })
+          .collect(Collectors.toList()); // NOSONAR
+    });
   }
 
   @DirectMethod
@@ -260,7 +315,9 @@ public class BlobStoreComponent
   @RequiresPermissions("nexus:blobstores:create")
   @Validate(groups = {Create.class, Default.class})
   public BlobStoreXO create(@NotNull @Valid final BlobStoreXO blobStore) throws Exception {
-    return asBlobStoreXO(blobStoreManager.create(asConfiguration(blobStore)).getBlobStoreConfiguration());
+    return executeWithVirtualThread(() -> {
+      return asBlobStoreXO(blobStoreManager.create(asConfiguration(blobStore)).getBlobStoreConfiguration());
+    });
   }
 
   @DirectMethod
@@ -269,22 +326,24 @@ public class BlobStoreComponent
   @RequiresPermissions("nexus:blobstores:update")
   @Validate(groups = {Update.class, Default.class})
   public BlobStoreXO update(@NotNull @Valid final BlobStoreXO blobStoreXO) throws Exception {
-    BlobStore blobStore = blobStoreManager.get(blobStoreXO.getName());
-    if (PasswordPlaceholder.is(getS3SecretAccessKey(blobStoreXO))) {
-      // Did not update the password, just use the password we already have
-      blobStoreXO.getAttributes()
-          .get("s3")
-          .put(SECRET_ACCESS_KEY,
-              blobStore.getBlobStoreConfiguration().getAttributes().get("s3").get(SECRET_ACCESS_KEY));
-    }
-    if (PasswordPlaceholder.is(getAzureAccountKey(blobStoreXO))) {
-      // Did not update the password, just use the password we already have
-      blobStoreXO.getAttributes()
-          .get(AZURE_CONFIG)
-          .put(AZURE_ACCOUNT_KEY,
-              blobStore.getBlobStoreConfiguration().getAttributes().get(AZURE_CONFIG).get(AZURE_ACCOUNT_KEY));
-    }
-    return asBlobStoreXO(blobStoreManager.update(asConfiguration(blobStoreXO)).getBlobStoreConfiguration());
+    return executeWithVirtualThread(() -> {
+      BlobStore blobStore = blobStoreManager.get(blobStoreXO.getName());
+      if (PasswordPlaceholder.is(getS3SecretAccessKey(blobStoreXO))) {
+        // Did not update the password, just use the password we already have
+        blobStoreXO.getAttributes()
+            .get("s3")
+            .put(SECRET_ACCESS_KEY,
+                blobStore.getBlobStoreConfiguration().getAttributes().get("s3").get(SECRET_ACCESS_KEY));
+      }
+      if (PasswordPlaceholder.is(getAzureAccountKey(blobStoreXO))) {
+        // Did not update the password, just use the password we already have
+        blobStoreXO.getAttributes()
+            .get(AZURE_CONFIG)
+            .put(AZURE_ACCOUNT_KEY,
+                blobStore.getBlobStoreConfiguration().getAttributes().get(AZURE_CONFIG).get(AZURE_ACCOUNT_KEY));
+      }
+      return asBlobStoreXO(blobStoreManager.update(asConfiguration(blobStoreXO)).getBlobStoreConfiguration());
+    });
   }
 
   @DirectMethod
@@ -293,13 +352,16 @@ public class BlobStoreComponent
   @RequiresPermissions("nexus:blobstores:delete")
   @Validate
   public void remove(@NotEmpty String name) throws Exception {
-    if (repositoryManager.isBlobstoreUsed(name)) {
-      throw new BlobStoreException("Blob store (" + name + ") is in use by at least one repository", null);
-    }
-    if (blobStoreTaskService.countTasksInUseForBlobStore(name) > 0) {
-      throw new BlobStoreException("Blob store (" + name + ") is in use by a Change Repository Blob Store task", null);
-    }
-    blobStoreManager.delete(name);
+    executeWithVirtualThread(() -> {
+      if (repositoryManager.isBlobstoreUsed(name)) {
+        throw new BlobStoreException("Blob store (" + name + ") is in use by at least one repository", null);
+      }
+      if (blobStoreTaskService.countTasksInUseForBlobStore(name) > 0) {
+        throw new BlobStoreException("Blob store (" + name + ") is in use by a Change Repository Blob Store task", null);
+      }
+      blobStoreManager.delete(name);
+      return null;
+    });
   }
 
   @DirectMethod
@@ -307,10 +369,12 @@ public class BlobStoreComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:blobstores:read")
   public PathSeparatorXO defaultWorkDirectory() {
-    PathSeparatorXO xo = new PathSeparatorXO();
-    xo.setPath(applicationDirectories.getWorkDirectory("blobs").getPath());
-    xo.setFileSeparator(File.separator);
-    return xo;
+    return executeWithVirtualThread(() -> {
+      PathSeparatorXO xo = new PathSeparatorXO();
+      xo.setPath(applicationDirectories.getWorkDirectory("blobs").getPath());
+      xo.setFileSeparator(File.separator);
+      return xo;
+    });
   }
 
   @VisibleForTesting

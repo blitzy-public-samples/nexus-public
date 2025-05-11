@@ -74,7 +74,7 @@ public class DownloadResource
   public Response downloadZip(@PathParam("fileName") final String fileName)
   {
     checkNotNull(fileName);
-    log.info("Download: {}", fileName);
+    log.info(STR."Download: \{fileName}");
 
     String authTicket = authTicketService.createTicket();
 
@@ -90,14 +90,14 @@ public class DownloadResource
         return Response.status(NOT_FOUND).build();
       }
 
-      log.debug("Sending support ZIP file: {}", fileName);
+      log.debug(STR."Sending support ZIP file: \{fileName}");
       return Response.ok(download.getBytes())
-          .header(CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
+          .header(CONTENT_DISPOSITION, STR."attachment; filename=\"\{fileName}\"")
           .header(CONTENT_LENGTH, download.getLength())
           .build();
     }
     catch (IOException e) {
-      log.error("Failed to serve file for download {}", fileName, e);
+      log.error(STR."Failed to serve file for download \{fileName}", e);
       throw new WebApplicationException("Failed to service file for download", INTERNAL_SERVER_ERROR);
     }
   }

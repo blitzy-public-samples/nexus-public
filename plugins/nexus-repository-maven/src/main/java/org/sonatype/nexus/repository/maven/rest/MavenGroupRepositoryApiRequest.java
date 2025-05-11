@@ -22,12 +22,22 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
+ * Maven Group Repository API Request DTO
+ * 
  * @since 3.24
  */
 @JsonIgnoreProperties({"format", "type"})
 public class MavenGroupRepositoryApiRequest
     extends GroupRepositoryApiRequest
 {
+  /**
+   * Constructor for Maven Group Repository API Request
+   *
+   * @param name    repository name
+   * @param online  repository online status
+   * @param storage repository storage attributes
+   * @param group   repository group attributes
+   */
   @JsonCreator
   public MavenGroupRepositoryApiRequest(
       @JsonProperty("name") final String name,

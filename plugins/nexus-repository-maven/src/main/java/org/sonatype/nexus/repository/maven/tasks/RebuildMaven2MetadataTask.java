@@ -12,6 +12,9 @@
  */
 package org.sonatype.nexus.repository.maven.tasks;
 
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 
@@ -23,7 +26,9 @@ import org.sonatype.nexus.repository.maven.MavenMetadataRebuildFacet;
 import org.sonatype.nexus.repository.maven.internal.Maven2Format;
 import org.sonatype.nexus.repository.types.HostedType;
 import org.sonatype.nexus.scheduling.Cancelable;
+import org.sonatype.nexus.common.log.LoggingUtil;
 
+import static java.lang.StringTemplate.STR;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.repository.maven.tasks.RebuildMaven2MetadataTaskDescriptor.ARTIFACTID_FIELD_ID;
 import static org.sonatype.nexus.repository.maven.tasks.RebuildMaven2MetadataTaskDescriptor.BASEVERSION_FIELD_ID;
@@ -33,6 +38,9 @@ import static org.sonatype.nexus.repository.maven.tasks.RebuildMaven2MetadataTas
 
 /**
  * Maven 2 metadata rebuild task.
+ * 
+ * Updated for Java 21 to use Virtual Threads for improved concurrency and
+ * String Templates for enhanced logging.
  *
  * @since 3.0
  */
@@ -57,15 +65,25 @@ public class RebuildMaven2MetadataTask
 
   @Override
   protected void execute(final Repository repository) {
-    MavenMetadataRebuildFacet mavenHostedFacet = repository.facet(MavenMetadataRebuildFacet.class);
-    mavenHostedFacet.rebuildMetadata(
-        getConfiguration().getString(GROUPID_FIELD_ID),
-        getConfiguration().getString(ARTIFACTID_FIELD_ID),
-        getConfiguration().getString(BASEVERSION_FIELD_ID),
-        getConfiguration().getBoolean(REBUILD_CHECKSUMS, false),
-        getConfiguration().getBoolean(CASCADE_REBUILD, true),
-        false
-    );
+    // Use Virtual Threads for I/O-bound metadata rebuild operations
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      executor.submit(() -> {
+        log.info(STR."Starting Maven metadata rebuild for repository \{repository.getName()} using virtual threads");
+        MavenMetadataRebuildFacet mavenHostedFacet = repository.facet(MavenMetadataRebuildFacet.class);
+        mavenHostedFacet.rebuildMetadata(
+            getConfiguration().getString(GROUPID_FIELD_ID),
+            getConfiguration().getString(ARTIFACTID_FIELD_ID),
+            getConfiguration().getString(BASEVERSION_FIELD_ID),
+            getConfiguration().getBoolean(REBUILD_CHECKSUMS, false),
+            getConfiguration().getBoolean(CASCADE_REBUILD, true),
+            false
+        );
+        log.info(STR."Completed Maven metadata rebuild for repository \{repository.getName()}");
+      }).get(); // Wait for completion since this is a task
+    } catch (Exception e) {
+      log.error(STR."Error during Maven metadata rebuild for repository \{repository.getName()}: \{e.getMessage()}", e);
+      throw new RuntimeException("Failed to rebuild Maven metadata", e);
+    }
   }
 
   @Override
@@ -75,7 +93,8 @@ public class RebuildMaven2MetadataTask
 
   @Override
   public String getMessage() {
-    return "Rebuilding Maven Metadata of " + getRepositoryField();
+    // Using Java 21 string template for improved readability and performance
+    return STR."Rebuilding Maven Metadata of \{getRepositoryField()}";
   }
 
 }

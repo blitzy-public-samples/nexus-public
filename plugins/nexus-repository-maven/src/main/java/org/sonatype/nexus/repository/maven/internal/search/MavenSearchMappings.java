@@ -21,15 +21,6 @@ import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.repository.rest.SearchMapping;
 import org.sonatype.nexus.repository.rest.SearchMappings;
 
-import com.google.common.collect.ImmutableList;
-
-import static org.sonatype.nexus.repository.rest.sql.SearchField.FORMAT_FIELD_1;
-import static org.sonatype.nexus.repository.rest.sql.SearchField.FORMAT_FIELD_2;
-import static org.sonatype.nexus.repository.rest.sql.SearchField.FORMAT_FIELD_3;
-import static org.sonatype.nexus.repository.rest.sql.SearchField.FORMAT_FIELD_4;
-import static org.sonatype.nexus.repository.rest.sql.SearchField.NAME;
-import static org.sonatype.nexus.repository.rest.sql.SearchField.NAMESPACE;
-
 /**
  * @since 3.7
  */
@@ -41,7 +32,8 @@ public class MavenSearchMappings
 {
   public static final String GAVEC = "gavec";
 
-  private static final List<SearchMapping> MAPPINGS = ImmutableList.of(
+  // Updated to use Java standard List.of() instead of Guava's ImmutableList.of() for Java 21 compatibility
+  private static final List<SearchMapping> MAPPINGS = List.of(
       new SearchMapping("maven.groupId", "attributes.maven2.groupId", "Maven groupId", NAMESPACE),
       new SearchMapping("maven.artifactId", "attributes.maven2.artifactId", "Maven artifactId", NAME),
       new SearchMapping("maven.baseVersion", "attributes.maven2.baseVersion", "Maven base version", FORMAT_FIELD_1),
@@ -56,3 +48,10 @@ public class MavenSearchMappings
     return MAPPINGS;
   }
 }
+
+import static org.sonatype.nexus.repository.rest.sql.SearchField.FORMAT_FIELD_1;
+import static org.sonatype.nexus.repository.rest.sql.SearchField.FORMAT_FIELD_2;
+import static org.sonatype.nexus.repository.rest.sql.SearchField.FORMAT_FIELD_3;
+import static org.sonatype.nexus.repository.rest.sql.SearchField.FORMAT_FIELD_4;
+import static org.sonatype.nexus.repository.rest.sql.SearchField.NAME;
+import static org.sonatype.nexus.repository.rest.sql.SearchField.NAMESPACE;

@@ -38,6 +38,10 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.stream.Collectors.toSet;
 import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
 
+/**
+ * Resource providing REST API for logging configuration management.
+ * Updated for Java 21 compatibility with String Templates and Pattern Matching.
+ */
 @Named
 @Singleton
 @Consumes(APPLICATION_JSON)
@@ -53,7 +57,7 @@ public class LoggingConfigurationResource
 
   private static final ReadWriteLock lock = new ReentrantReadWriteLock();
 
-  private LogManager logManager;
+  private final LogManager logManager;
 
   @Inject
   public LoggingConfigurationResource(final LogManager logManager) {
@@ -65,6 +69,7 @@ public class LoggingConfigurationResource
   public Collection<LoggerXO> readAll() {
     lock.readLock().lock();
     try {
+      log.debug(STR."Retrieving all logger configurations");
       return logManager.getEffectiveLoggersUpdatedByFetchedOverrides()
           .entrySet()
           .stream()
@@ -83,6 +88,7 @@ public class LoggingConfigurationResource
   public void resetAll() {
     lock.writeLock().lock();
     try {
+      log.debug(STR."Resetting all logger configurations");
       logManager.resetLoggers();
     }
     finally {
@@ -96,6 +102,7 @@ public class LoggingConfigurationResource
   public LoggerXO read(@PathParam("name") final String name) {
     lock.readLock().lock();
     try {
+      log.debug(STR."Retrieving logger configuration for: \{name}");
       LoggerXO logger = new LoggerXO();
       logger.setName(name);
       logger.setLevel(logManager.getLoggerEffectiveLevel(name));
@@ -113,11 +120,16 @@ public class LoggingConfigurationResource
   public void update(@PathParam("name") final String name, final UpdateLoggingConfigurationRequest request) {
     lock.writeLock().lock();
     try {
-      if (request.getLevel() == LoggerLevel.DEFAULT) {
-        logManager.unsetLoggerLevel(name);
-      }
-      else {
-        logManager.setLoggerLevel(name, request.getLevel());
+      // Using pattern matching for switch statement
+      switch (request.getLevel()) {
+        case LoggerLevel.DEFAULT -> {
+          log.debug(STR."Unsetting logger level for: \{name}");
+          logManager.unsetLoggerLevel(name);
+        }
+        case LoggerLevel level -> {
+          log.debug(STR."Setting logger level for: \{name} to: \{level}");
+          logManager.setLoggerLevel(name, level);
+        }
       }
     }
     finally {
@@ -131,6 +143,7 @@ public class LoggingConfigurationResource
   public void reset(@PathParam("name") final String name) {
     lock.writeLock().lock();
     try {
+      log.debug(STR."Resetting logger configuration for: \{name}");
       logManager.unsetLoggerLevel(name);
     }
     finally {

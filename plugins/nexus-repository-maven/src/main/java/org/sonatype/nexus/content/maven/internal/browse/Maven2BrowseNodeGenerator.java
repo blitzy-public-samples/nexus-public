@@ -66,18 +66,25 @@ public class Maven2BrowseNodeGenerator
 {
   static final String BASE_VERSION = "baseVersion";
 
+  /**
+   * Computes asset paths using Java 21 pattern matching for Optional.
+   * 
+   * @param asset the asset to compute paths for
+   * @return the list of browse paths for the asset
+   */
   @Override
   public List<BrowsePath> computeAssetPaths(final Asset asset) {
     checkNotNull(asset);
 
-    return asset.component().map(component -> {
-
+    // Using Java 21 pattern matching for Optional with orElse(null) and instanceof pattern
+    if (asset.component().orElse(null) instanceof Component component) {
       // place asset under component, but use its true path as the request path for permission checks
       List<BrowsePath> assetPaths = computeComponentPaths(asset);
       appendPath(assetPaths, lastSegment(asset.path()), asset.path());
       return assetPaths;
-
-    }).orElseGet(() -> super.computeAssetPaths(asset));
+    } else {
+      return super.computeAssetPaths(asset);
+    }
   }
 
   /**

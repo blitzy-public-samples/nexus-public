@@ -20,9 +20,11 @@ import java.util.Set;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.coreui.RepositoryXO;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.Arrays.asList;
 import static java.util.Collections.emptyList;
@@ -33,9 +35,17 @@ import static org.hamcrest.Matchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.coreui.internal.RepositoryCleanupAttributesUtil.initializeCleanupAttributes;
 
+/**
+ * Tests for {@link RepositoryCleanupAttributesUtil}.
+ * 
+ * This test class validates the behavior of the cleanup attributes initialization process.
+ * Updated for Java 21 compatibility using JUnit Jupiter (JUnit 5) and Mockito 4.11.0.
+ */
+@ExtendWith(MockitoExtension.class)
 public class RepositoryCleanupAttributesUtilTest
     extends TestSupport
 {
@@ -50,18 +60,28 @@ public class RepositoryCleanupAttributesUtilTest
 
   private Map<String, Object> cleanup = new HashMap<>();
 
-  @Before
+  /**
+   * Sets up the test fixture with mock repository and attributes.
+   */
+  @BeforeEach
   public void setup() {
     when(repositoryXO.getAttributes()).thenReturn(attributes);
     attributes.put(CLEANUP_ATTRIBUTES_KEY, cleanup);
     cleanup.put(CLEANUP_NAME_KEY, asList("policy1", "policy2"));
   }
 
-  @Test(expected = NullPointerException.class)
+  /**
+   * Verifies that a NullPointerException is thrown when null is provided as input.
+   * Uses JUnit Jupiter's assertThrows for exception testing.
+   */
+  @Test
   public void when_No_RepositoryXO_Provided_Should_Fail() {
-    initializeCleanupAttributes(null);
+    assertThrows(NullPointerException.class, () -> initializeCleanupAttributes(null));
   }
 
+  /**
+   * Verifies that policy names are converted to a Set when initialized.
+   */
   @Test
   public void when_Policies_Provided_Should_Convert_Into_Set() {
     initializeCleanupAttributes(repositoryXO);
@@ -69,6 +89,9 @@ public class RepositoryCleanupAttributesUtilTest
     assertThat(getCleanupPolicyNames(), is(instanceOf(Set.class)));
   }
 
+  /**
+   * Verifies that the order of policy names is preserved when converted to a Set.
+   */
   @Test
   public void when_CleanupPolicies_Provided_Should_Return_Same_Policies_In_Order() {
     List<String> listPolicyNames = getCleanupPolicyNamesAsList();
@@ -84,6 +107,9 @@ public class RepositoryCleanupAttributesUtilTest
     }
   }
 
+  /**
+   * Verifies that the cleanup attribute is removed when null policies are provided.
+   */
   @Test
   public void when_Null_Policies_Provided_Should_Remove_Cleanup_Attribute() {
     cleanup.put(CLEANUP_NAME_KEY, null);
@@ -93,6 +119,9 @@ public class RepositoryCleanupAttributesUtilTest
     assertThat(getCleanupAttribute(), is(nullValue()));
   }
 
+  /**
+   * Verifies that the cleanup attribute is removed when an empty list of policies is provided.
+   */
   @Test
   public void when_Empty_Policies_Provided_Should_Remove_Cleanup_Attribute() {
     cleanup.put(CLEANUP_NAME_KEY, emptyList());
@@ -102,6 +131,9 @@ public class RepositoryCleanupAttributesUtilTest
     assertThat(getCleanupAttribute(), is(nullValue()));
   }
 
+  /**
+   * Verifies that no cleanup attribute is added when none is provided initially.
+   */
   @Test
   public void when_No_CleanupAttribute_Provided_Should_Not_Add_It() {
     attributes.put(CLEANUP_ATTRIBUTES_KEY, null);

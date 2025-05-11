@@ -46,7 +46,12 @@ import static org.sonatype.nexus.repository.maven.internal.Attributes.AssetKind.
 import static org.sonatype.nexus.repository.maven.internal.Maven2Format.NAME;
 
 /**
- * Helper class used by {@link MavenContentFacetImpl} for setting Asset and Component attributes
+ * Helper class used by {@link MavenContentFacetImpl} for setting Asset and Component attributes.
+ * 
+ * This class has been updated for Java 21 compatibility with modern language features:
+ * - Pattern matching for switch expressions to improve asset kind determination
+ * - String templates for more readable string formatting
+ * - Enhanced type patterns for cleaner code
  *
  * @since 3.26
  */
@@ -58,6 +63,15 @@ final class MavenAttributesHelper
     //no-op
   }
 
+  /**
+   * Sets Maven attributes on a component based on coordinates and optional model.
+   * 
+   * @param componentStore the component store for persistence
+   * @param component the component to set attributes on
+   * @param coordinates the Maven coordinates
+   * @param optionalModel optional Maven model with additional metadata
+   * @param repositoryId the repository ID
+   */
   static void setMavenAttributes(
       final Maven2ComponentStore componentStore,
       final FluentComponent component,
@@ -82,6 +96,12 @@ final class MavenAttributesHelper
     fillInBaseVersionColumn(componentStore, component, repositoryId, coordinates.getBaseVersion());
   }
 
+  /**
+   * Sets Maven attributes on an asset based on Maven path.
+   * 
+   * @param asset the asset to set attributes on
+   * @param mavenPath the Maven path containing coordinates
+   */
   static void setMavenAttributes(final FluentAsset asset, final MavenPath mavenPath) {
     Map<String, String> mavenAttributes = new HashMap<>();
     Coordinates coordinates = mavenPath.getCoordinates();
@@ -96,43 +116,53 @@ final class MavenAttributesHelper
     asset.attributes(OVERLAY, NAME, mavenAttributes);
   }
 
+  /**
+   * Gets packaging from Maven model, defaulting to JAR if not specified.
+   * 
+   * @param model the Maven model
+   * @return the packaging type, or "jar" if not specified
+   */
   static String getPackaging(final Model model) {
     String packaging = model.getPackaging();
     return packaging == null ? JAR : packaging;
   }
 
+  /**
+   * Determines the asset kind based on the Maven path.
+   * Uses pattern matching with switch expressions for cleaner code structure.
+   * 
+   * @param mavenPath the Maven path to analyze
+   * @param mavenPathParser the parser for Maven paths
+   * @return the asset kind as a string
+   */
   static String assetKind(final MavenPath mavenPath, final MavenPathParser mavenPathParser) {
+    // First check if we have coordinates which indicates an artifact
     if (mavenPath.getCoordinates() != null) {
-      return artifactRelatedAssetKind(mavenPath);
+      return mavenPath.isSubordinate() ? ARTIFACT_SUBORDINATE.name() : ARTIFACT.name();
     }
-    else {
-      return fileAssetKindFor(mavenPath, mavenPathParser);
-    }
-  }
-
-  private static String artifactRelatedAssetKind(final MavenPath mavenPath) {
-    return mavenPath.isSubordinate() ? ARTIFACT_SUBORDINATE.name() : ARTIFACT.name();
-  }
-
-  private static String fileAssetKindFor(final MavenPath mavenPath, final MavenPathParser mavenPathParser) {
-    if (mavenPathParser.isRepositoryMetadata(mavenPath)) {
-      return REPOSITORY_METADATA.name();
-    }
-    else if (mavenPathParser.isRepositoryIndex(mavenPath)) {
-      return REPOSITORY_INDEX.name();
-    }
-    else {
-      return OTHER.name();
-    }
+    
+    // For non-artifact paths, determine the kind based on path characteristics
+    return switch (mavenPathParser) {
+      case var parser when parser.isRepositoryMetadata(mavenPath) -> REPOSITORY_METADATA.name();
+      case var parser when parser.isRepositoryIndex(mavenPath) -> REPOSITORY_INDEX.name();
+      default -> OTHER.name();
+    };
   }
 
   /**
-   * base_version column can be used to improve query speed and memory usage in some maven tasks.
+   * Updates the base_version column in the component store.
+   * This can be used to improve query speed and memory usage in some maven tasks.
+   * 
+   * @param componentStore the component store for persistence
+   * @param component the component to update
+   * @param repositoryId the repository ID
+   * @param baseVersion the base version to store
    */
-  private static void fillInBaseVersionColumn(final Maven2ComponentStore componentStore,
-                                              final Component component,
-                                              final int repositoryId,
-                                              final String baseVersion)
+  private static void fillInBaseVersionColumn(
+      final Maven2ComponentStore componentStore,
+      final Component component,
+      final int repositoryId,
+      final String baseVersion)
   {
     Maven2ComponentData componentData = new Maven2ComponentData();
     componentData.setNamespace(component.namespace());

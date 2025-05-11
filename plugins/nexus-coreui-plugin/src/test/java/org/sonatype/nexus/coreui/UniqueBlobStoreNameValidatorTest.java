@@ -15,18 +15,21 @@ package org.sonatype.nexus.coreui;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.api.BlobStoreManager;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
 /**
- * Tests {@link UniqueBlobStoreNameValidator}
+ * Tests {@link UniqueBlobStoreNameValidator} using JUnit Jupiter (JUnit 5) for Java 21 compatibility.
  */
-public class UniqueBlobStoreNameValidatorTest
+@ExtendWith(MockitoExtension.class)
+class UniqueBlobStoreNameValidatorTest
     extends TestSupport
 {
   @Mock
@@ -34,13 +37,13 @@ public class UniqueBlobStoreNameValidatorTest
 
   private UniqueBlobStoreNameValidator underTest;
 
-  @Before
-  public void setup() {
+  @BeforeEach
+  void setup() {
     underTest = new UniqueBlobStoreNameValidator(blobStoreManager);
   }
 
   @Test
-  public void testValidation() {
+  void testValidation() {
     when(blobStoreManager.exists("test")).thenReturn(true);
     when(blobStoreManager.exists("DEFAULT")).thenReturn(false);
 

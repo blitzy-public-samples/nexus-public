@@ -23,6 +23,12 @@ import org.sonatype.nexus.repository.replication.ReplicationIngester;
 import org.sonatype.nexus.repository.replication.ReplicationIngesterSupport;
 
 /**
+ * Maven implementation of {@link ReplicationIngester}.
+ * <p>
+ * This implementation is compatible with Java 21 and can benefit from Virtual Threads
+ * when executed in a Virtual Thread context, particularly for I/O operations during
+ * blob replication.
+ *
  * @since 3.31
  */
 @Named(Maven2Format.NAME)

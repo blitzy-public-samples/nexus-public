@@ -38,6 +38,7 @@ import org.sonatype.nexus.repository.view.Payload;
  * Provides persistence operations for Maven.
  *
  * @since 3.25
+ * @since 3.45 Updated for Java 21 compatibility with support for Virtual Threads and Pattern Matching
  */
 @Facet.Exposed
 public interface MavenContentFacet
@@ -47,6 +48,10 @@ public interface MavenContentFacet
    * Get a maven asset
    *
    * @param mavenPath Path of asset to get
+   * @return Optional containing the Content if found, empty Optional otherwise
+   * @throws IOException if an I/O error occurs
+   * 
+   * @apiNote Implementations should leverage Java 21 Virtual Threads for I/O operations
    */
   Optional<Content> get(MavenPath mavenPath) throws IOException;
 
@@ -55,6 +60,10 @@ public interface MavenContentFacet
    *
    * @param path    The path of the asset to put
    * @param content The content to put
+   * @return The stored Content
+   * @throws IOException if an I/O error occurs
+   * 
+   * @apiNote Implementations should leverage Java 21 Virtual Threads for I/O operations
    */
   Content put(MavenPath path, Payload content) throws IOException;
 
@@ -63,13 +72,20 @@ public interface MavenContentFacet
    *
    * @param path The path of the asset to delete.
    * @return True if asset was deleted or false if not.
+   * @throws IOException if an I/O error occurs
+   * 
+   * @apiNote Implementations should leverage Java 21 Virtual Threads for I/O operations
    */
   boolean delete(MavenPath path) throws IOException;
 
   /**
    * Deletes the assets at the specified paths.
    *
+   * @param paths The list of paths to delete
+   * @return True if all assets were deleted, false otherwise
+   * 
    * @since 3.29
+   * @apiNote Implementations should leverage Java 21 Virtual Threads for I/O operations
    */
   boolean delete(final List<String> paths);
 
@@ -78,6 +94,9 @@ public interface MavenContentFacet
    *
    * @param path The path of the asset to delete
    * @return The paths of the assets deleted
+   * @throws IOException if an I/O error occurs
+   * 
+   * @apiNote Implementations should leverage Java 21 Virtual Threads for I/O operations
    */
   Set<String> deleteWithHashes(MavenPath path) throws IOException;
 
@@ -85,11 +104,30 @@ public interface MavenContentFacet
    * Update component attributes when {@code path} corresponds to a Maven POM
    *
    * @param path for which the corresponding component attributes may be updated
+   * @throws IOException if an I/O error occurs
+   * 
+   * @apiNote Implementations should leverage Java 21 Virtual Threads for I/O operations
    */
   void maybeUpdateComponentAttributes(MavenPath path) throws IOException;
 
+  /**
+   * Delete components by their IDs.
+   *
+   * @param componentIds array of component IDs to delete
+   * @return number of components deleted
+   * 
+   * @apiNote Implementations should leverage Java 21 Virtual Threads for I/O operations
+   */
   int deleteComponents(int[] componentIds);
 
+  /**
+   * Delete components from a stream of FluentComponent objects.
+   *
+   * @param components stream of components to delete
+   * @return number of components deleted
+   * 
+   * @apiNote Implementations should leverage Java 21 Virtual Threads for I/O operations
+   */
   int deleteComponents(Stream<FluentComponent> components);
 
   /**
@@ -98,6 +136,8 @@ public interface MavenContentFacet
    *
    * @param component for which metadata should be deleted or flagged for rebuild
    * @return paths of deleted assets; empty when just flagging for rebuild
+   * 
+   * @apiNote Implementations should use Java 21 Pattern Matching for type checking and Virtual Threads for I/O operations
    */
   Set<String> deleteMetadataOrFlagForRebuild(Component component);
 
@@ -106,8 +146,10 @@ public interface MavenContentFacet
    * Find Snapshot Group Artifact Version(GAVs)
    *
    * @param minimumRetained The minimum number of snapshots to keep.
+   * @return Set of GAVs with snapshots
    *
    * @since 3.30
+   * @apiNote Implementations should leverage Java 21 Virtual Threads for database operations
    */
   Set<GAV> findGavsWithSnaphots(int minimumRetained);
 
@@ -115,12 +157,15 @@ public interface MavenContentFacet
    * Find Components by Group Artifact Version(GAVs)
    * Eagerly fetches {@link org.sonatype.nexus.repository.content.store.AssetBlobData}
    * & {@link org.sonatype.nexus.repository.content.store.AssetData}
+   * 
    * @param name artifact name
    * @param group artifact group
    * @param baseVersion artifact base version
    * @param releaseVersion artifact release version
+   * @return List of Maven2ComponentData objects matching the criteria
    *
    * @since 3.30
+   * @apiNote Implementations should leverage Java 21 Virtual Threads for database operations and Record Patterns for processing results
    */
   List<Maven2ComponentData> findComponentsForGav(final String name,
                                                  final String group,
@@ -137,6 +182,7 @@ public interface MavenContentFacet
    * @return collection of assets and the next continuation token
    *
    * @see Continuation#nextContinuationToken()
+   * @apiNote Implementations should leverage Java 21 Virtual Threads for database operations
    */
   Continuation<Asset> findMavenPluginAssetsForNamespace(
       int limit,
@@ -155,6 +201,7 @@ public interface MavenContentFacet
    * @return collection of assets and the next continuation token
    *
    * @see Continuation#nextContinuationToken()
+   * @apiNote Implementations should leverage Java 21 Virtual Threads for database operations
    */
   Continuation<FluentComponent> findComponentsForBaseVersion(
       int limit,
@@ -174,6 +221,7 @@ public interface MavenContentFacet
    * @return collection of assets and the next continuation token
    *
    * @see Continuation#nextContinuationToken()
+   * @apiNote Implementations should leverage Java 21 Virtual Threads for database operations
    */
   Continuation<FluentComponent> findComponentsInGA(
       int limit,
@@ -188,26 +236,29 @@ public interface MavenContentFacet
    * @param name         the name for the components
    *
    * @return a unique set of base versions
+   * 
+   * @apiNote Implementations should leverage Java 21 Virtual Threads for database operations
    */
   Collection<String> getBaseVersions(String namespace, String name);
 
   /**
    * Find components with missed base version.
    *
-   * @param namespace the namespace
-   * @param name artifact name
-   *
    * @return collection of component data
+   * 
+   * @apiNote Implementations should leverage Java 21 Virtual Threads for database operations
    */
-  public Iterable<FluentComponent> getComponentsWithMissedBaseVersion();
+  Iterable<FluentComponent> getComponentsWithMissedBaseVersion();
 
 
   /**
    * Updates the maven base_version of the given component in the content data store.
    *
    * @param component the component to update
+   * 
+   * @apiNote Implementations should leverage Java 21 Virtual Threads for database operations
    */
-  public void updateBaseVersion(final Maven2ComponentData component);
+  void updateBaseVersion(final Maven2ComponentData component);
 
   /**
    * Find snapshots to delete for which a release version exists
@@ -216,6 +267,7 @@ public interface MavenContentFacet
    * @return array of snapshot components IDs to delete for which a release version exists
    *
    * @since 3.30
+   * @apiNote Implementations should leverage Java 21 Virtual Threads for database operations
    */
   int[] selectSnapshotsAfterRelease(final int gracePeriod);
 
@@ -223,16 +275,21 @@ public interface MavenContentFacet
    * Create a component and asset for a maven path without attaching a blob to the asset. This is primarily used when
    * the blob will be hard linked to the asset afterwards.
    *
-   * @param mavenPath
+   * @param mavenPath the Maven path for the component and asset
    * @return the asset
+   * 
+   * @apiNote Implementations should leverage Java 21 Virtual Threads for database operations
    */
   FluentAsset createComponentAndAsset(final MavenPath mavenPath);
 
   /**
+   * Copy a component from another repository to the current repository.
+   *
    * @param source component to copy
    * @return a new component copied from the source to the current repository
    *
    * @since 3.38
+   * @apiNote Implementations should leverage Java 21 Virtual Threads for I/O operations and Pattern Matching for type checking
    */
   FluentComponent copy(final Component source);
 }

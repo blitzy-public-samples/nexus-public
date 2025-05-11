@@ -20,26 +20,44 @@ import org.sonatype.nexus.repository.maven.VersionPolicy;
 import static org.sonatype.nexus.repository.maven.internal.Constants.METADATA_FILENAME;
 import static org.sonatype.nexus.repository.maven.internal.Constants.SNAPSHOT_VERSION_SUFFIX;
 
+/**
+ * Validates Maven artifacts and metadata paths against repository version policies.
+ *
+ * @since 3.0
+ */
 @Named
 public class VersionPolicyValidator
 {
   private static final String METADATA_SNAPSHOT_PATH_SUFFIX = SNAPSHOT_VERSION_SUFFIX + "/" + METADATA_FILENAME;
 
+  /**
+   * Validates if the artifact coordinates are compatible with the repository version policy.
+   *
+   * @param versionPolicy the repository version policy
+   * @param coordinates the Maven artifact coordinates
+   * @return true if the artifact is valid for the given policy
+   */
   public boolean validArtifactPath(final VersionPolicy versionPolicy, final MavenPath.Coordinates coordinates) {
-    if (versionPolicy == VersionPolicy.SNAPSHOT) {
-      return coordinates.isSnapshot();
-    }
-    if (versionPolicy == VersionPolicy.RELEASE) {
-      return !coordinates.isSnapshot();
-    }
-    return true;
+    return switch (versionPolicy) {
+      case SNAPSHOT -> coordinates.isSnapshot();
+      case RELEASE -> !coordinates.isSnapshot();
+      case MIXED -> true;
+    };
   }
 
+  /**
+   * Validates if the metadata path is compatible with the repository version policy.
+   *
+   * @param versionPolicy the repository version policy
+   * @param path the metadata path
+   * @return true if the metadata is valid for the given policy
+   */
   public boolean validMetadataPath(final VersionPolicy versionPolicy, final String path) {
     boolean isMetadataSnapshot = path.endsWith(METADATA_SNAPSHOT_PATH_SUFFIX);
-    if (isMetadataSnapshot && versionPolicy == VersionPolicy.RELEASE) {
-      return false;
-    }
-    return true;
+    
+    return switch (versionPolicy) {
+      case RELEASE -> !isMetadataSnapshot;
+      case SNAPSHOT, MIXED -> true;
+    };
   }
 }

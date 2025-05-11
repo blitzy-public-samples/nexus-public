@@ -1,17 +1,35 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- Updated for Java 21 compatibility -->
 <configuration>
 
   <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
     <target>System.out</target>
     <encoder>
-      <pattern>%date %level [%thread%X{DC}] %logger - %msg%n</pattern>
+      <!-- Updated pattern to include thread ID which is important for virtual threads in Java 21 -->
+      <pattern>%date %level [%thread (%tid)%X{DC}] %logger - %msg%n</pattern>
     </encoder>
+    <!-- Ensure non-blocking I/O for better performance with virtual threads -->
+    <immediateFlush>true</immediateFlush>
+  </appender>
+
+  <!-- Configure async appender for better performance with virtual threads -->
+  <appender name="ASYNC" class="ch.qos.logback.classic.AsyncAppender">
+    <appender-ref ref="CONSOLE" />
+    <queueSize>512</queueSize>
+    <discardingThreshold>0</discardingThreshold>
+    <includeCallerData>false</includeCallerData>
+    <neverBlock>true</neverBlock>
   </appender>
 
   <logger name="org.sonatype.nexus.common" level="DEBUG"/>
 
+  <!-- System property handling is preserved and compatible with Java 21 -->
   <root level="${test.log.level:-INFO}">
-    <appender-ref ref="CONSOLE"/>
+    <!-- Use async appender for better performance with virtual threads -->
+    <appender-ref ref="ASYNC"/>
   </root>
+
+  <!-- Specific logger for thread-related operations to help with debugging virtual threads -->
+  <logger name="org.sonatype.nexus.thread" level="DEBUG"/>
 
 </configuration>

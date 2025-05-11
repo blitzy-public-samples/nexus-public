@@ -46,14 +46,13 @@ public class Maven2SearchExtension
   private static Optional<String> getBaseVersion(final SearchHit hit) {
     Map<String, Object> source = checkNotNull(hit.getSource());
 
-    return Optional.ofNullable(source.get("attributes"))
-        .filter(attrs -> attrs instanceof Map)
-        .map(Map.class::cast)
-        .map(attrs -> attrs.get(Maven2Format.NAME))
-        .filter(attrs -> attrs instanceof Map)
-        .map(Map.class::cast)
-        .map(attrs -> attrs.get(P_BASE_VERSION))
-        .filter(baseVersion -> baseVersion instanceof String)
-        .map(String.class::cast);
+    // Using Java 21 pattern matching for instanceof with pattern variables
+    if (source.get("attributes") instanceof Map<?, ?> attrMap && 
+        attrMap.get(Maven2Format.NAME) instanceof Map<?, ?> formatMap && 
+        formatMap.get(P_BASE_VERSION) instanceof String baseVersion) {
+      return Optional.of(baseVersion);
+    }
+    
+    return Optional.empty();
   }
 }

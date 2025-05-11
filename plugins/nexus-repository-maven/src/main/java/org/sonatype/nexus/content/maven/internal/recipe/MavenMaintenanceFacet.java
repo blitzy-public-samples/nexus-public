@@ -21,10 +21,12 @@ import org.sonatype.nexus.repository.content.Component;
 import org.sonatype.nexus.repository.content.fluent.FluentComponent;
 import org.sonatype.nexus.repository.content.maintenance.LastAssetMaintenanceFacet;
 
-import com.google.common.collect.Sets;
-
 /**
+ * Maven-specific implementation of the maintenance facet that handles metadata cleanup
+ * when components are deleted.
+ *
  * @since 3.29
+ * @since 3.45 Updated for Java 21 compatibility
  */
 @Named
 public class MavenMaintenanceFacet
@@ -32,7 +34,13 @@ public class MavenMaintenanceFacet
 {
   @Override
   public Set<String> deleteComponent(final Component component) {
-    return Sets.union(super.deleteComponent(component), mavenContentFacet().deleteMetadataOrFlagForRebuild(component));
+    // Use Java 21's Set.copyOf to create an immutable copy of the union of sets
+    // This replaces the Guava Sets.union call with standard Java functionality
+    return Set.copyOf(
+        Stream.concat(
+            super.deleteComponent(component).stream(),
+            mavenContentFacet().deleteMetadataOrFlagForRebuild(component).stream())
+        .toList());
   }
 
   @Override
@@ -40,6 +48,11 @@ public class MavenMaintenanceFacet
     return mavenContentFacet().deleteComponents(components);
   }
 
+  /**
+   * Get the Maven content facet from the repository.
+   * 
+   * @return the Maven content facet
+   */
   private MavenContentFacet mavenContentFacet() {
     return facet(MavenContentFacet.class);
   }

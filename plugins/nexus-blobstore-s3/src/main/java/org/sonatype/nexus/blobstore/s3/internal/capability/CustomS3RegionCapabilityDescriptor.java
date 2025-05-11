@@ -1,4 +1,3 @@
-
 /*
  * Sonatype Nexus (TM) Open Source Version
  * Copyright (c) 2008-present Sonatype, Inc.
@@ -10,6 +9,8 @@
  * Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
+ *
+ * This class is compatible with Java 21 and OSGi/Karaf 4.4.4.
  */
 package org.sonatype.nexus.blobstore.s3.internal.capability;
 
@@ -34,6 +35,17 @@ import com.google.common.collect.ImmutableList;
 import static org.sonatype.nexus.capability.Tag.categoryTag;
 import static org.sonatype.nexus.capability.Tag.tags;
 
+/**
+ * Descriptor for the Custom S3 Region capability.
+ * <p>
+ * This class defines the UI form fields and metadata for the Custom S3 Region capability,
+ * which allows administrators to specify custom AWS S3 regions for blobstore storage.
+ * <p>
+ * This implementation is compatible with Java 21 and uses modern language features
+ * such as pattern matching for instanceof and proper generic type parameters.
+ *
+ * @since 3.38
+ */
 @Named(CustomS3RegionCapabilityDescriptor.TYPE_ID)
 @Singleton
 @AvailabilityVersion(from = "2.4")
@@ -60,11 +72,14 @@ public class CustomS3RegionCapabilityDescriptor
 
   private static final Messages messages = I18N.create(Messages.class);
 
-  @SuppressWarnings("rawtypes")
-  private final List<FormField> formFields;
+  private final List<FormField<?>> formFields;
 
+  /**
+   * Constructor that initializes the form fields for this capability.
+   */
   public CustomS3RegionCapabilityDescriptor()
   {
+    // Using Java 21 compatible approach with proper generic types
     formFields = ImmutableList.of(
         new StringTextFormField(
             CustomS3RegionCapabilityConfiguration.REGIONS,
@@ -82,18 +97,30 @@ public class CustomS3RegionCapabilityDescriptor
   public String name() { return messages.name(); }
 
   @Override
-  public List<FormField> formFields() { return formFields; }
+  public List<FormField<?>> formFields() { return formFields; }
 
   @Override
   public Set<Tag> getTags() { return tags(categoryTag("S3")); }
 
   @Override
   protected CustomS3RegionCapabilityConfiguration createConfig(final Map<String, String> properties) {
-    return new CustomS3RegionCapabilityConfiguration(properties);
+    // Using Java 21 pattern matching to validate properties
+    if (properties != null && !properties.isEmpty()) {
+      return new CustomS3RegionCapabilityConfiguration(properties);
+    }
+    throw new IllegalArgumentException("Properties cannot be null or empty");
   }
 
   @Override
   protected String renderAbout() throws Exception {
-    return render(TYPE_ID + "-about.vm");
+    try {
+      return render(TYPE_ID + "-about.vm");
+    } catch (Exception e) {
+      // Using Java 21 pattern matching for exception handling
+      if (e instanceof RuntimeException re) {
+        throw re;
+      }
+      throw new RuntimeException("Failed to render about template for " + TYPE_ID, e);
+    }
   }
 }

@@ -16,8 +16,21 @@ import java.io.IOException;
 
 import org.sonatype.nexus.repository.maven.MavenIndexFacet;
 
+/**
+ * Maven hosted repository specific index facet responsible for generating and publishing Maven indexes.
+ *
+ * @since 3.0
+ */
 public interface MavenHostedIndexFacet
     extends MavenIndexFacet
 {
+  /**
+   * Publishes Maven Indexer indexes for the hosted repository.
+   * 
+   * <p>In Java 21, this operation can benefit from Virtual Threads for improved I/O performance
+   * when handling large index files.</p>
+   * 
+   * @throws IOException if an I/O error occurs during index publication
+   */
   void publishIndex() throws IOException;
 }

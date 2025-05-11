@@ -19,6 +19,12 @@ import javax.inject.Singleton;
 
 import org.sonatype.nexus.upgrade.datastore.DatabaseMigrationStep;
 
+/**
+ * Database migration step that makes the S3 failover region available.
+ * 
+ * @since 3.29
+ * @see DatabaseMigrationStep
+ */
 @Named
 @Singleton
 public class S3FailoverMigrationStep_2_6
@@ -34,5 +40,6 @@ public class S3FailoverMigrationStep_2_6
   @Override
   public void migrate(final Connection connection) throws Exception {
     // No-op, this makes the S3 failover region available
+    // This migration step is compatible with Java 21
   }
 }

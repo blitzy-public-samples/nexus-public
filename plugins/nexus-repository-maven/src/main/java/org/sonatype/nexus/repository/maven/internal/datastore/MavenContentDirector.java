@@ -54,15 +54,13 @@ public class MavenContentDirector
   public boolean allowMoveTo(final FluentComponent component, final Repository destination)
   {
     VersionPolicy versionPolicy = destination.facet(MavenFacet.class).getVersionPolicy();
-    if (MIXED.equals(versionPolicy)) {
-      return true;
-    }
-    if (isSnapshot(component)) {
-      return SNAPSHOT.equals(versionPolicy);
-    }
-    else {
-      return RELEASE.equals(versionPolicy);
-    }
+    
+    // Using switch expression with pattern matching for cleaner version policy checking
+    return switch (versionPolicy) {
+      case MIXED -> true;
+      case SNAPSHOT -> isSnapshot(component);
+      case RELEASE -> !isSnapshot(component);
+    };
   }
 
   @Override

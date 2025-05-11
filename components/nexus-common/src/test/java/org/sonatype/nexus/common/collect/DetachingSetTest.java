@@ -15,14 +15,17 @@ package org.sonatype.nexus.common.collect;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
+import java.util.SequencedSet;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
 import com.google.common.collect.ImmutableSet;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
@@ -34,6 +37,7 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class DetachingSetTest
     extends TestSupport
 {
@@ -48,13 +52,16 @@ public class DetachingSetTest
 
   private DetachingSet<String> underTest;
 
-  @Before
+  @BeforeEach
   public void setUp() {
     underTest = new DetachingSet<>(backing, allowDetach, detach);
   }
 
+  /**
+   * Test that non-escaping queries never trigger detach operations.
+   */
   @Test
-  public void nonEscapingQueriesNeverDetach() {
+  void nonEscapingQueriesNeverDetach() {
 
     underTest.contains(null);
     underTest.containsAll(null);
@@ -79,8 +86,11 @@ public class DetachingSetTest
     verifyNoInteractions(allowDetach, detach);
   }
 
+  /**
+   * Test that escaping queries trigger detach operations when allowed.
+   */
   @Test
-  public void escapingQueriesTriggerDetach() {
+  void escapingQueriesTriggerDetach() {
     when(allowDetach.getAsBoolean()).thenReturn(true);
 
     underTest.iterator();
@@ -97,8 +107,11 @@ public class DetachingSetTest
     verifyNoMoreInteractions(backing, allowDetach, detach);
   }
 
+  /**
+   * Test that mutation operations trigger detach when allowed.
+   */
   @Test
-  public void mutationsTriggerDetach() {
+  void mutationsTriggerDetach() {
     when(allowDetach.getAsBoolean()).thenReturn(true);
 
     underTest.add("");
@@ -115,8 +128,11 @@ public class DetachingSetTest
     verifyNoMoreInteractions(backing, allowDetach, detach);
   }
 
+  /**
+   * Test that detaching can be disallowed, causing operations to be performed on the backing set.
+   */
   @Test
-  public void detachingCanBeDisallowed() {
+  void detachingCanBeDisallowed() {
     when(allowDetach.getAsBoolean()).thenReturn(false);
 
     underTest.add("");
@@ -144,8 +160,11 @@ public class DetachingSetTest
     verifyNoMoreInteractions(backing, allowDetach, detach);
   }
 
+  /**
+   * Test a simple detach scenario with a real backing set.
+   */
   @Test
-  public void simpleDetach() {
+  void simpleDetach() {
     Set<String> original = ImmutableSet.of("HELLO", "THERE");
 
     underTest = new DetachingSet<>(original, allowDetach, detach);
@@ -167,5 +186,37 @@ public class DetachingSetTest
     inOrder.verify(detach).apply("THERE");
 
     verifyNoMoreInteractions(allowDetach, detach);
+  }
+  
+  /**
+   * Test compatibility with Java 21 SequencedSet interface.
+   * This test verifies that DetachingSet properly handles the SequencedSet methods
+   * when the backing set implements SequencedSet.
+   */
+  @Test
+  void sequencedSetCompatibility() {
+    // Mock a SequencedSet instead of a regular Set
+    @SuppressWarnings("unchecked")
+    SequencedSet<String> sequencedBacking = (SequencedSet<String>) org.mockito.Mockito.mock(SequencedSet.class);
+    
+    // Create DetachingSet with SequencedSet backing
+    DetachingSet<String> sequencedUnderTest = new DetachingSet<>(sequencedBacking, allowDetach, detach);
+    
+    // Test with detaching disallowed to verify delegation to backing set
+    when(allowDetach.getAsBoolean()).thenReturn(false);
+    
+    // Call SequencedSet methods
+    sequencedUnderTest.getFirst();
+    sequencedUnderTest.getLast();
+    
+    // Verify interactions
+    InOrder inOrder = inOrder(sequencedBacking, allowDetach);
+    
+    inOrder.verify(allowDetach).getAsBoolean();
+    inOrder.verify(sequencedBacking).getFirst();
+    inOrder.verify(allowDetach).getAsBoolean();
+    inOrder.verify(sequencedBacking).getLast();
+    
+    verifyNoMoreInteractions(sequencedBacking, allowDetach, detach);
   }
 }

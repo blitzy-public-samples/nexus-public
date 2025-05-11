@@ -19,6 +19,7 @@ import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Date;
 
@@ -26,20 +27,19 @@ import javax.annotation.Nullable;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
-import com.google.common.base.Function;
-import com.google.common.base.Predicate;
 import com.google.common.collect.Lists;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.lessThan;
 import static org.hamcrest.Matchers.not;
+import static org.junit.jupiter.api.Assertions.assertTimeout;
 import static org.sonatype.goodies.testsupport.hamcrest.FileMatchers.exists;
 import static org.sonatype.goodies.testsupport.hamcrest.FileMatchers.isDirectory;
 import static org.sonatype.goodies.testsupport.hamcrest.FileMatchers.isEmptyDirectory;
@@ -48,11 +48,11 @@ import static org.sonatype.goodies.testsupport.hamcrest.FileMatchers.isFile;
 /**
  * Tests for {@link DirectoryHelper}.
  */
-public class DirectoryHelperTest
+class DirectoryHelperTest
     extends TestSupport
 {
-  @Rule
-  public TemporaryFolder temporaryFolder = new TemporaryFolder();
+  @TempDir
+  Path temporaryFolder;
 
   private static final byte[] PAYLOAD = "payload".getBytes(UTF_8);
 
@@ -73,14 +73,14 @@ public class DirectoryHelperTest
     Files.write(dir21.resolve("file212.txt"), PAYLOAD);
   }
 
-  @Before
-  public void prepare() throws IOException {
+  @BeforeEach
+  void prepare() throws IOException {
     root = util.createTempDir();
     createDirectoryStructure(root.toPath());
   }
 
   @Test
-  public void mkdir() throws IOException {
+  void mkdir() throws IOException {
     final File mkdirA = new File(root, "mkdir-a");
     final File mkdirAB = new File(mkdirA, "mkdir-ab");
     final File dir211 = new File(new File(new File(root, "dir2"), "dir21"), "dir211");
@@ -93,7 +93,7 @@ public class DirectoryHelperTest
   }
 
   @Test
-  public void mkdirWithParent() throws IOException {
+  void mkdirWithParent() throws IOException {
     final File mkdirA = DirectoryHelper.mkdir(root, "mkdir-parent-a"); // new
     assertThat(mkdirA, isDirectory());
 
@@ -102,7 +102,7 @@ public class DirectoryHelperTest
   }
 
   @Test
-  public void symlinkMkdir() throws IOException {
+  void symlinkMkdir() throws IOException {
     final Path dir1link = root.toPath().resolve("dir1-link");
     try {
       // not all OSes support symlink creation
@@ -117,7 +117,7 @@ public class DirectoryHelperTest
   }
 
   @Test
-  public void clean() throws IOException {
+  void clean() throws IOException {
     DirectoryHelper.clean(root.toPath());
     assertThat(root, exists());
     assertThat(root, isDirectory());
@@ -126,7 +126,7 @@ public class DirectoryHelperTest
   }
 
   @Test
-  public void cleanIfExists() throws IOException {
+  void cleanIfExists() throws IOException {
     assertThat(DirectoryHelper.cleanIfExists(root.toPath().resolve("not-existing")), is(false));
     assertThat(DirectoryHelper.cleanIfExists(root.toPath()), is(true));
     assertThat(root, exists());
@@ -136,7 +136,7 @@ public class DirectoryHelperTest
   }
 
   @Test
-  public void empty() throws IOException {
+  void empty() throws IOException {
     DirectoryHelper.empty(root.toPath());
     assertThat(root, exists());
     assertThat(root, isDirectory());
@@ -144,7 +144,7 @@ public class DirectoryHelperTest
   }
 
   @Test
-  public void emptyIfExists() throws IOException {
+  void emptyIfExists() throws IOException {
     assertThat(DirectoryHelper.emptyIfExists(root.toPath().resolve("not-existing")), is(false));
     assertThat(DirectoryHelper.emptyIfExists(root.toPath()), is(true));
     assertThat(root, exists());
@@ -153,20 +153,20 @@ public class DirectoryHelperTest
   }
 
   @Test
-  public void delete() throws IOException {
+  void delete() throws IOException {
     DirectoryHelper.delete(root.toPath());
     assertThat(root, not(exists()));
   }
 
   @Test
-  public void deleteIfExists() throws IOException {
+  void deleteIfExists() throws IOException {
     assertThat(DirectoryHelper.deleteIfExists(root.toPath().resolve("not-existing")), is(false));
     assertThat(DirectoryHelper.deleteIfExists(root.toPath()), is(true));
     assertThat(root, not(exists()));
   }
 
   @Test
-  public void copy() throws IOException {
+  void copy() throws IOException {
     final Path target = util.createTempDir().toPath();
     DirectoryHelper.copy(root.toPath(), target);
     assertThat(target.toFile(), exists());
@@ -177,7 +177,7 @@ public class DirectoryHelperTest
   }
 
   @Test
-  public void copyIfExists() throws IOException {
+  void copyIfExists() throws IOException {
     final Path target = util.createTempDir().toPath();
     assertThat(DirectoryHelper.copyIfExists(root.toPath().resolve("not-existing"), target), is(false));
     assertThat(DirectoryHelper.copyIfExists(root.toPath(), target), is(true));
@@ -189,7 +189,7 @@ public class DirectoryHelperTest
   }
 
   @Test
-  public void move() throws IOException {
+  void move() throws IOException {
     final Path target = util.createTempDir().toPath();
     DirectoryHelper.move(root.toPath(), target);
     assertThat(root, not(exists()));
@@ -201,15 +201,9 @@ public class DirectoryHelperTest
   }
 
   @Test
-  public void copyDeleteMoveToSubdir() throws IOException {
+  void copyDeleteMoveToSubdir() throws IOException {
     final Path target = root.toPath().resolve("dir2/dir21");
-    DirectoryHelper.copyDeleteMove(root.toPath(), target, new Predicate<Path>()
-    {
-      @Override
-      public boolean apply(@Nullable final Path input) {
-        return input.startsWith(target);
-      }
-    });
+    DirectoryHelper.copyDeleteMove(root.toPath(), target, input -> input.startsWith(target));
     assertThat(root, exists());
     assertThat(root.toPath().resolve("dir1").toFile(), not(exists()));
     assertThat(root.toPath().resolve("dir2").toFile(), exists());
@@ -242,20 +236,38 @@ public class DirectoryHelperTest
    * and deeper. {@link FileSystemException} is thrown once file path length reaches OS limit. In case
    * of repo local storage, the root was being moved under "/.nexus/trash".
    */
-  @Test(expected = FileSystemException.class)
-  public void moveToSubdir() throws IOException {
+  @Test
+  void moveToSubdir() {
     final Path target = root.toPath().resolve("dir2/dir21");
-    DirectoryHelper.move(root.toPath(), target);
-  }
-
-  @Test(expected = IllegalArgumentException.class)
-  public void copyingToChildDirDisallowedWithoutFilter() throws IOException {
-    final Path target = root.toPath().resolve("dir2/dir21");
-    DirectoryHelper.copyDeleteMove(root.toPath(), target, null);
+    assertTimeout(Duration.ofSeconds(5), () -> {
+      try {
+        DirectoryHelper.move(root.toPath(), target);
+      }
+      catch (FileSystemException e) {
+        // Expected exception
+        return;
+      }
+      throw new AssertionError("Expected FileSystemException was not thrown");
+    });
   }
 
   @Test
-  public void moveIfExists() throws IOException {
+  void copyingToChildDirDisallowedWithoutFilter() {
+    final Path target = root.toPath().resolve("dir2/dir21");
+    assertTimeout(Duration.ofSeconds(5), () -> {
+      try {
+        DirectoryHelper.copyDeleteMove(root.toPath(), target, null);
+      }
+      catch (IllegalArgumentException e) {
+        // Expected exception
+        return;
+      }
+      throw new AssertionError("Expected IllegalArgumentException was not thrown");
+    });
+  }
+
+  @Test
+  void moveIfExists() throws IOException {
     final Path target = util.createTempDir().toPath();
     assertThat(DirectoryHelper.moveIfExists(root.toPath().resolve("not-existing"), target), is(false));
     assertThat(DirectoryHelper.moveIfExists(root.toPath(), target), is(true));
@@ -268,23 +280,18 @@ public class DirectoryHelperTest
   }
 
   @Test
-  public void apply() throws IOException {
+  void apply() throws IOException {
     final ArrayList<String> fileNames = Lists.newArrayList();
     final ArrayList<String> dirNames = Lists.newArrayList();
-    final Function<Path, FileVisitResult> tf = new Function<Path, FileVisitResult>()
-    {
-      @Override
-      public FileVisitResult apply(final Path input) {
-        if (Files.isDirectory(input)) {
-          dirNames.add(input.getFileName().toString());
-        }
-        else if (Files.isRegularFile(input)) {
-          fileNames.add(input.getFileName().toString());
-        }
-        return FileVisitResult.CONTINUE;
+    DirectoryHelper.apply(root.toPath(), input -> {
+      if (Files.isDirectory(input)) {
+        dirNames.add(input.getFileName().toString());
       }
-    };
-    DirectoryHelper.apply(root.toPath(), tf);
+      else if (Files.isRegularFile(input)) {
+        fileNames.add(input.getFileName().toString());
+      }
+      return FileVisitResult.CONTINUE;
+    });
 
     assertThat(fileNames, hasSize(9));
     // root + 3dirs
@@ -292,23 +299,18 @@ public class DirectoryHelperTest
   }
 
   @Test
-  public void applyToFiles() throws IOException {
+  void applyToFiles() throws IOException {
     final ArrayList<String> fileNames = Lists.newArrayList();
     final ArrayList<String> dirNames = Lists.newArrayList();
-    final Function<Path, FileVisitResult> tf = new Function<Path, FileVisitResult>()
-    {
-      @Override
-      public FileVisitResult apply(final Path input) {
-        if (Files.isDirectory(input)) {
-          dirNames.add(input.getFileName().toString());
-        }
-        else if (Files.isRegularFile(input)) {
-          fileNames.add(input.getFileName().toString());
-        }
-        return FileVisitResult.CONTINUE;
+    DirectoryHelper.applyToFiles(root.toPath(), input -> {
+      if (Files.isDirectory(input)) {
+        dirNames.add(input.getFileName().toString());
       }
-    };
-    DirectoryHelper.applyToFiles(root.toPath(), tf);
+      else if (Files.isRegularFile(input)) {
+        fileNames.add(input.getFileName().toString());
+      }
+      return FileVisitResult.CONTINUE;
+    });
 
     assertThat(fileNames, hasSize(9));
     // func never invoked on dirs
@@ -316,8 +318,8 @@ public class DirectoryHelperTest
   }
 
   @Test
-  public void testDeleteIfEmptyRecursively() throws Exception {
-    File dir = temporaryFolder.newFolder("basedir");
+  void testDeleteIfEmptyRecursively() throws Exception {
+    File dir = Files.createDirectory(temporaryFolder.resolve("basedir")).toFile();
 
     // now lets start adding some directories
     // first off a simple empty directory
@@ -335,7 +337,7 @@ public class DirectoryHelperTest
     // now a directory with a file in it
     subdir = new File(dir, "subwithcontent");
     Files.createDirectory(subdir.toPath());
-    new File(subdir, "afile.txt").createNewFile();
+    Files.createFile(new File(subdir, "afile.txt").toPath());
 
     // now a nested directory with a file in it
     subdir = new File(dir, "subnestedwithcontent");
@@ -344,7 +346,7 @@ public class DirectoryHelperTest
       subdir = new File(subdir, "subnestedwithcontent" + i);
       Path newdir = Files.createDirectory(subdir.toPath());
       if (i == 9) {
-        new File(newdir.toFile(), "afile.txt").createNewFile();
+        Files.createFile(new File(newdir.toFile(), "afile.txt").toPath());
       }
     }
 
@@ -359,14 +361,14 @@ public class DirectoryHelperTest
   }
 
   @Test
-  public void testDeleteIfEmptyRecursively_missingDirectory() throws Exception {
+  void testDeleteIfEmptyRecursively_missingDirectory() throws Exception {
     int count = DirectoryHelper.deleteIfEmptyRecursively(Paths.get("fake", "dir"), null);
     assertThat(count, is(0));
   }
 
   @Test
-  public void testDeleteIfEmptyRecursively_skipNewerDirs() throws Exception {
-    File dir = temporaryFolder.newFolder("basedir");
+  void testDeleteIfEmptyRecursively_skipNewerDirs() throws Exception {
+    File dir = Files.createDirectory(temporaryFolder.resolve("basedir")).toFile();
 
     // This directory will be the one that is slightly older than the timestamp so _should_ get deleted
     File subdir = new File(dir, "sub");

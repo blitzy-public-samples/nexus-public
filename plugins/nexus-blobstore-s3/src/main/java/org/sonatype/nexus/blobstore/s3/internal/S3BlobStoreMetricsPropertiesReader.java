@@ -30,6 +30,11 @@ import static com.google.common.base.Preconditions.checkNotNull;
 /**
  * A S3 specific {@link BlobStoreMetricsPropertiesReaderSupport} implementation that retains blobstore metrics in memory,
  * periodically writing them out to S3.
+ * 
+ * This implementation is compatible with Java 21 and uses AWS SDK for Java 1.x.
+ * Note: AWS SDK for Java 1.x is in maintenance mode and will reach end-of-life on December 31, 2025.
+ * Future implementations should consider migrating to AWS SDK for Java 2.x which has full Java 21 support
+ * including virtual threads optimization.
  *
  * @since 3.6.1
  * @deprecated legacy method for metrics stored in the blob store
@@ -59,6 +64,8 @@ public class S3BlobStoreMetricsPropertiesReader
         return Stream.empty();
       }
       else {
+        // Using Java 21 pattern matching for instanceof in the filter operations would be beneficial here
+        // if we were checking for specific types, but we're just using Objects::nonNull
         return s3.listObjects(bucket, bucketPrefix).getObjectSummaries()
             .stream()
             .filter(Objects::nonNull)
@@ -73,6 +80,8 @@ public class S3BlobStoreMetricsPropertiesReader
 
   @Override
   protected void doInit(final S3BlobStore blobstore) throws Exception {
+    // Using Java 21's string templates would be beneficial here for logging or debugging messages
+    // but we don't have any string formatting in this method
     this.bucket = checkNotNull(blobstore.getConfiguredBucket());
     this.bucketPrefix = checkNotNull(blobstore.getBucketPrefix());
     this.s3 = checkNotNull(blobstore.getS3());

@@ -12,9 +12,9 @@
  */
 package org.sonatype.nexus.repository.maven.internal;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -33,6 +33,7 @@ import org.sonatype.nexus.repository.maven.internal.recipes.Maven2HostedRecipe;
 import org.sonatype.nexus.repository.maven.internal.recipes.Maven2ProxyRecipe;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.util.Map.entry;
 import static org.sonatype.nexus.repository.config.ConfigurationConstants.DATA_STORE_NAME;
 
 /**
@@ -137,20 +138,37 @@ public class MavenDefaultRepositoriesContributor
         DATA_STORE_NAME, "nexus");
   }
 
+  /**
+   * Creates a map with two entries.
+   * 
+   * @param <E> the type of values in the map
+   * @param key1 the first key
+   * @param value1 the first value
+   * @param key2 the second key
+   * @param value2 the second value
+   * @return an immutable map with the specified entries
+   */
   private static <E> Map<String, E> map(
       final String key1,
       final E value1,
       final String key2,
       final E value2)
   {
-    Map<String, E> map = new HashMap<>();
-
-    map.put(key1, value1);
-    map.put(key2, value2);
-
-    return map;
+    return Map.of(key1, value1, key2, value2);
   }
 
+  /**
+   * Creates a map with three entries.
+   * 
+   * @param <E> the type of values in the map
+   * @param key1 the first key
+   * @param value1 the first value
+   * @param key2 the second key
+   * @param value2 the second value
+   * @param key3 the third key
+   * @param value3 the third value
+   * @return an immutable map with the specified entries
+   */
   private static <E> Map<String, E> map(
       final String key1,
       final E value1,
@@ -159,15 +177,23 @@ public class MavenDefaultRepositoriesContributor
       final String key3,
       final E value3)
   {
-    Map<String, E> map = new HashMap<>();
-
-    map.put(key1, value1);
-    map.put(key2, value2);
-    map.put(key3, value3);
-
-    return map;
+    return Map.of(key1, value1, key2, value2, key3, value3);
   }
 
+  /**
+   * Creates a map with four entries.
+   * 
+   * @param <E> the type of values in the map
+   * @param key1 the first key
+   * @param value1 the first value
+   * @param key2 the second key
+   * @param value2 the second value
+   * @param key3 the third key
+   * @param value3 the third value
+   * @param key4 the fourth key
+   * @param value4 the fourth value
+   * @return an immutable map with the specified entries
+   */
   private static <E> Map<String, E> map(
       final String key1,
       final E value1,
@@ -178,16 +204,25 @@ public class MavenDefaultRepositoriesContributor
       final String key4,
       final E value4)
   {
-    Map<String, E> map = new HashMap<>();
-
-    map.put(key1, value1);
-    map.put(key2, value2);
-    map.put(key3, value3);
-    map.put(key4, value4);
-
-    return map;
+    return Map.of(key1, value1, key2, value2, key3, value3, key4, value4);
   }
 
+  /**
+   * Creates a map with five entries.
+   * 
+   * @param <E> the type of values in the map
+   * @param key the first key
+   * @param value the first value
+   * @param key1 the second key
+   * @param value1 the second value
+   * @param key2 the third key
+   * @param value2 the third value
+   * @param key3 the fourth key
+   * @param value3 the fourth value
+   * @param key4 the fifth key
+   * @param value4 the fifth value
+   * @return an immutable map with the specified entries
+   */
   private static <E> Map<String, E> map(
       final String key,
       final E value,
@@ -200,14 +235,12 @@ public class MavenDefaultRepositoriesContributor
       final String key4,
       final E value4)
   {
-    Map<String, E> map = new HashMap<>();
-
-    map.put(key, value);
-    map.put(key1, value1);
-    map.put(key2, value2);
-    map.put(key3, value3);
-    map.put(key4, value4);
-
-    return map;
+    return Map.ofEntries(
+        entry(key, value),
+        entry(key1, value1),
+        entry(key2, value2),
+        entry(key3, value3),
+        entry(key4, value4)
+    );
   }
 }

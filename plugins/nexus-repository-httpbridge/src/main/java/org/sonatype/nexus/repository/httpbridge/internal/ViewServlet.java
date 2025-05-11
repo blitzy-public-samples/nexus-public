@@ -14,15 +14,17 @@ package org.sonatype.nexus.repository.httpbridge.internal;
 
 import java.io.IOException;
 import java.util.Enumeration;
-import javax.annotation.Nullable;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.servlet.ServletConfig;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServlet;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import java.util.concurrent.Callable;
+
+import jakarta.annotation.Nullable;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.servlet.ServletConfig;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.sonatype.nexus.common.app.BaseUrlHolder;
 import org.sonatype.nexus.repository.BadRequestException;
@@ -41,7 +43,6 @@ import org.sonatype.nexus.repository.view.ViewFacet;
 import org.sonatype.nexus.repository.view.payloads.StringPayload;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.net.HttpHeaders;
 import org.apache.commons.lang.StringEscapeUtils;
@@ -81,6 +82,11 @@ public class ViewServlet
 
   private final boolean sandboxEnabled;
 
+  /**
+   * Record for capturing request context information
+   */
+  private record RequestContext(HttpServletRequest httpRequest, HttpServletResponse httpResponse, String uri) {}
+
   @Inject
   public ViewServlet(final RepositoryManager repositoryManager,
                      final HttpResponseSenderSelector httpResponseSenderSelector,
@@ -88,7 +94,6 @@ public class ViewServlet
                      final DescriptionRenderer descriptionRenderer,
                      @Named("${nexus.repository.sandbox.enable:-true}") final boolean sandboxEnabled)
   {
-
     this.repositoryManager = checkNotNull(repositoryManager);
     this.httpResponseSenderSelector = checkNotNull(httpResponseSenderSelector);
     this.descriptionHelper = checkNotNull(descriptionHelper);
@@ -114,52 +119,85 @@ public class ViewServlet
   {
     String uri = httpRequest.getRequestURI();
     if (httpRequest.getQueryString() != null) {
-      uri = uri + "?" + httpRequest.getQueryString();
+      uri = STR."{uri}?{httpRequest.getQueryString()}";
     }
 
     if (log.isDebugEnabled()) {
-      log.debug("Servicing: {} {} ({})", httpRequest.getMethod(), uri, httpRequest.getRequestURL());
+      log.debug(STR."Servicing: {httpRequest.getMethod()} {uri} ({httpRequest.getRequestURL()})");
     }
 
-    MDC.put(getClass().getName(), uri);
+    // Create a RequestContext record to hold the request information
+    RequestContext context = new RequestContext(httpRequest, httpResponse, uri);
+
+    // Use a virtual thread to handle the request
     try {
-      doService(httpRequest, httpResponse);
-      log.debug("Service completed");
+      // Create a callable that will process the request
+      Callable<Void> task = () -> {
+        MDC.put(getClass().getName(), uri);
+        try {
+          doService(context.httpRequest(), context.httpResponse());
+          log.debug("Service completed");
+          return null;
+        }
+        catch (BadRequestException e) { // NOSONAR
+          log.warn(STR."Bad request. Reason: {e.getMessage()}");
+          send(null, HttpResponses.badRequest(e.getMessage()), context.httpResponse());
+          return null;
+        }
+        catch (Exception e) {
+          if (!(e instanceof AuthorizationException)) {
+            log.warn(STR."Failure servicing: {context.httpRequest().getMethod()} {context.uri()}", e);
+          }
+          if (e instanceof ServletException || e instanceof IOException) {
+            throw e;
+          }
+          throw new ServletException(e);
+        }
+        finally {
+          MDC.remove(getClass().getName());
+        }
+      };
+
+      // Execute the task in a virtual thread
+      Thread.startVirtualThread(task).join();
     }
-    catch (BadRequestException e) { // NOSONAR
-      log.warn("Bad request. Reason: {}", e.getMessage());
-      send(null, HttpResponses.badRequest(e.getMessage()), httpResponse);
+    catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new ServletException("Request processing interrupted", e);
     }
     catch (Exception e) {
-      if (!(e instanceof AuthorizationException)) {
-        log.warn("Failure servicing: {} {}", httpRequest.getMethod(), uri, e);
+      if (e instanceof ServletException servletException) {
+        throw servletException;
       }
-      Throwables.propagateIfPossible(e, ServletException.class, IOException.class);
-      throw new ServletException(e);
-    }
-    finally {
-      MDC.remove(getClass().getName());
+      if (e instanceof IOException ioException) {
+        throw ioException;
+      }
+      throw new ServletException("Error processing request", e);
     }
   }
 
   protected void doService(final HttpServletRequest httpRequest, final HttpServletResponse httpResponse)
       throws Exception
   {
+    // Set security headers
     if (sandboxEnabled) {
       httpResponse.setHeader(HttpHeaders.CONTENT_SECURITY_POLICY, SANDBOX);
     }
     httpResponse.setHeader(HttpHeaders.X_XSS_PROTECTION, "1; mode=block");
+    // Add recommended security headers for Java 21
+    httpResponse.setHeader(HttpHeaders.X_CONTENT_TYPE_OPTIONS, "nosniff");
+    httpResponse.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
 
     // resolve repository for request
     RepositoryPath path = RepositoryPath.parse(httpRequest.getPathInfo());
-    log.debug("Parsed path: {}", path);
+    log.debug(STR."Parsed path: {path}");
 
     Repository repo = repository(path.getRepositoryName());
     if (repo == null) {
       send(null, HttpResponses.notFound(REPOSITORY_NOT_FOUND_MESSAGE), httpResponse);
       return;
     }
-    log.debug("Repository: {}", repo);
+    log.debug(STR."Repository: {repo}");
 
     if (!repo.getConfiguration().isOnline()) {
       send(null, HttpResponses.serviceUnavailable("Repository offline"), httpResponse);
@@ -167,7 +205,7 @@ public class ViewServlet
     }
 
     ViewFacet facet = repo.facet(ViewFacet.class);
-    log.debug("Dispatching to view facet: {}", facet);
+    log.debug(STR."Dispatching to view facet: {facet}");
 
     // Dispatch the request
     Request request = buildRequest(httpRequest, path.getRemainingPath());
@@ -199,6 +237,11 @@ public class ViewServlet
     return builder.build();
   }
 
+  /**
+   * Record to hold dispatch result information
+   */
+  private record DispatchResult(Response response, Exception failure) {}
+
   @VisibleForTesting
   void dispatchAndSend(final Request request,
                        final ViewFacet facet,
@@ -206,26 +249,38 @@ public class ViewServlet
                        final HttpServletResponse httpResponse)
       throws Exception
   {
-    Response response = null;
-    Exception failure = null;
-    try {
-      response = facet.dispatch(request);
-    }
-    catch (Exception e) {
-      failure = e;
-    }
+    // Use a virtual thread for the dispatch operation which may involve I/O
+    DispatchResult result = Thread.startVirtualThread(() -> {
+      try {
+        return new DispatchResult(facet.dispatch(request), null);
+      }
+      catch (Exception e) {
+        return new DispatchResult(null, e);
+      }
+    }).join();
 
     String describeFlags = request.getParameters().get(P_DESCRIBE);
-    log.trace("Describe flags: {}", describeFlags);
+    log.trace(STR."Describe flags: {describeFlags}");
+    
     if (describeFlags != null) {
-      send(request, describe(request, response, failure, describeFlags), httpResponse);
+      send(request, describe(request, result.response(), result.failure(), describeFlags), httpResponse);
     }
     else {
-      if (failure != null) {
-        throw failure;
+      if (result.failure() != null) {
+        throw result.failure();
       }
-      log.debug("Request: {}", request);
-      sender.send(request, response, httpResponse);
+      log.debug(STR."Request: {request}");
+      
+      // Use a virtual thread for sending the response which involves I/O
+      Thread.startVirtualThread(() -> {
+        try {
+          sender.send(request, result.response(), httpResponse);
+        }
+        catch (Exception e) {
+          log.error(STR."Error sending response: {e.getMessage()}", e);
+          throw new RuntimeException(e);
+        }
+      }).join();
     }
   }
 
@@ -236,6 +291,7 @@ public class ViewServlet
         "path", StringEscapeUtils.escapeHtml(request.getPath()),
         "nexusUrl", BaseUrlHolder.get()
     ));
+    
     if (exception != null) {
       descriptionHelper.describeException(description, exception);
     }
@@ -245,19 +301,20 @@ public class ViewServlet
     }
 
     DescribeType type = DescribeType.parse(flags);
-    log.trace("Describe type: {}", type);
-    switch (type) {
-      case HTML: {
+    log.trace(STR."Describe type: {type}");
+    
+    // Use pattern matching for switch statement
+    return switch (type) {
+      case HTML -> {
         String html = descriptionRenderer.renderHtml(description);
-        return HttpResponses.ok(new StringPayload(html, ContentTypes.TEXT_HTML));
+        yield HttpResponses.ok(new StringPayload(html, ContentTypes.TEXT_HTML));
       }
-      case JSON: {
+      case JSON -> {
         String json = descriptionRenderer.renderJson(description);
-        return HttpResponses.ok(new StringPayload(json, ContentTypes.APPLICATION_JSON));
+        yield HttpResponses.ok(new StringPayload(json, ContentTypes.APPLICATION_JSON));
       }
-      default:
-        throw new RuntimeException("Invalid describe-type: " + type);
-    }
+      default -> throw new RuntimeException(STR."Invalid describe-type: {type}");
+    };
   }
 
   /**
@@ -269,7 +326,31 @@ public class ViewServlet
   void send(@Nullable final Request request, final Response response, final HttpServletResponse httpResponse)
       throws ServletException, IOException
   {
-    httpResponseSenderSelector.defaultSender().send(request, response, httpResponse);
+    try {
+      // Use a virtual thread for sending the response which involves I/O
+      Thread.startVirtualThread(() -> {
+        try {
+          httpResponseSenderSelector.defaultSender().send(request, response, httpResponse);
+        }
+        catch (Exception e) {
+          log.error(STR."Error sending response with default sender: {e.getMessage()}", e);
+          throw new RuntimeException(e);
+        }
+      }).join();
+    }
+    catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new ServletException("Response sending interrupted", e);
+    }
+    catch (Exception e) {
+      if (e.getCause() instanceof ServletException servletException) {
+        throw servletException;
+      }
+      if (e.getCause() instanceof IOException ioException) {
+        throw ioException;
+      }
+      throw new ServletException("Error sending response", e);
+    }
   }
 
   /**
@@ -277,7 +358,7 @@ public class ViewServlet
    */
   @Nullable
   private Repository repository(final String name) {
-    log.debug("Looking for repository: {}", name);
+    log.debug(STR."Looking for repository: {name}");
     return repositoryManager.get(name);
   }
 }

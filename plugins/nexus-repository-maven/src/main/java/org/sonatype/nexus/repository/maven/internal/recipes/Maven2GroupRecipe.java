@@ -16,6 +16,8 @@ import org.sonatype.nexus.repository.Recipe;
 
 /**
  * Maven 2 group repository recipe.
+ * 
+ * <p>Verified compatible with Java 21.</p>
  *
  * @since 3.0
  */

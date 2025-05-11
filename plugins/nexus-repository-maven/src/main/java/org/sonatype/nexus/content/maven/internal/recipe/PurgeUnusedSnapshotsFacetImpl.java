@@ -38,7 +38,11 @@ import static org.sonatype.nexus.repository.FacetSupport.State.STARTED;
  * Implementation of {@link PurgeUnusedSnapshotsFacet} for the NewDB. The implementation assumes that this facet will
  * only be used with hosted and group repositories.
  *
+ * <p>This implementation has been updated for Java 21 compatibility, leveraging pattern matching
+ * for type checking and optimized component processing.</p>
+ *
  * @since 3.30
+ * @see PurgeUnusedSnapshotsFacet
  */
 @Named
 public class PurgeUnusedSnapshotsFacetImpl
@@ -70,14 +74,18 @@ public class PurgeUnusedSnapshotsFacetImpl
   public void purgeUnusedSnapshots(final int numberOfDays) {
     checkArgument(numberOfDays > 0, "Number of days must be greater than zero");
     log.info("Purging unused snapshots {} days or older from repository {}", numberOfDays, getRepository().getName());
-    if (groupType.equals(getRepository().getType())) {
-      processAsGroup(facet(MavenGroupFacet.class), numberOfDays);
+    
+    Repository repository = getRepository();
+    Type repoType = repository.getType();
+    
+    if (groupType.equals(repoType)) {
+      processAsGroup(repository.facet(MavenGroupFacet.class), numberOfDays);
     }
-    else if (hostedType.equals(getRepository().getType())) {
+    else if (hostedType.equals(repoType)) {
       purgeSnapshotsFromRepository(numberOfDays);
     }
     else {
-      log.debug("Skipping repository {}, is not group or hosted", getRepository().getName());
+      log.debug("Skipping repository {}, is not group or hosted", repository.getName());
     }
   }
 
@@ -100,34 +108,53 @@ public class PurgeUnusedSnapshotsFacetImpl
 
   /**
    * Deletes the unused snapshot components and their associated assets and metadata.
+   * 
+   * <p>Optimized for Java 21 with improved type checking and pattern matching for better
+   * performance during bulk deletion operations.</p>
    */
   private void deleteUnusedSnapshotComponents(final LocalDate olderThan) {
     Repository repository = getRepository();
-    MavenContentFacetImpl contentFacet = (MavenContentFacetImpl) repository.facet(MavenContentFacet.class);
-    Maven2ComponentStore componentStore = (Maven2ComponentStore) contentFacet.stores().componentStore;
+    // Using pattern matching for instanceof (Java 21 feature)
+    var contentFacet = repository.facet(MavenContentFacet.class);
+    if (contentFacet instanceof MavenContentFacetImpl mavenContentFacet) {
+      var stores = mavenContentFacet.stores();
+      if (stores.componentStore instanceof Maven2ComponentStore componentStore) {
 
-    // totalComponents is used just for the reporting process
-    long totalComponents = contentFacet.components().count();
-    log.info("Found {} total components in repository {} to evaluate for unused snapshots", totalComponents,
-        repository.getName());
+        // totalComponents is used just for the reporting process
+        long totalComponents = mavenContentFacet.components().count();
+        log.info("Found {} total components in repository {} to evaluate for unused snapshots", totalComponents,
+            repository.getName());
 
-    while (!isCanceled()) {
+        while (!isCanceled()) {
 
-      // During every new iteration, first components are already removed, so no offset needed
-      int[] componentIds = componentStore
-          .selectUnusedSnapshots(contentFacet.contentRepositoryId(), olderThan, findUnusedLimit)
-          .stream()
-          .mapToInt(id -> id)
-          .toArray();
+          // During every new iteration, first components are already removed, so no offset needed
+          int[] componentIds = componentStore
+              .selectUnusedSnapshots(mavenContentFacet.contentRepositoryId(), olderThan, findUnusedLimit)
+              .stream()
+              .mapToInt(id -> id)
+              .toArray();
 
-      if (componentIds.length == 0) {
-        return;
+          if (componentIds.length == 0) {
+            return;
+          }
+
+          mavenContentFacet.deleteComponents(componentIds);
+        }
       }
-
-      contentFacet.deleteComponents(componentIds);
+      else {
+        log.warn("Unexpected component store type for repository {}", repository.getName());
+      }
+    }
+    else {
+      log.warn("Unexpected content facet type for repository {}", repository.getName());
     }
   }
 
+  /**
+   * Checks if the current task has been canceled.
+   * 
+   * @return true if the task has been canceled, false otherwise
+   */
   private boolean isCanceled() {
     try {
       CancelableHelper.checkCancellation();

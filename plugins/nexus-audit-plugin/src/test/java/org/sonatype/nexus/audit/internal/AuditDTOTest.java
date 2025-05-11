@@ -12,21 +12,28 @@
  */
 package org.sonatype.nexus.audit.internal;
 
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Date;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.sonatype.nexus.audit.AuditData;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.joda.time.DateTime.parse;
-import static org.joda.time.format.DateTimeFormat.forPattern;
-import static org.junit.Assert.assertTrue;
+import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class AuditDTOTest
+/**
+ * Tests for {@link AuditDTO}.
+ * 
+ * Updated for Java 21 and JUnit Jupiter.
+ */
+class AuditDTOTest
 {
   private static final long TEST_TIMESTAMP = 1549375691779L;
 
@@ -35,13 +42,13 @@ public class AuditDTOTest
   private AuditDTO underTest;
 
   @Test
-  public void testToString_noData() {
+  void testToString_noData() {
     underTest = new AuditDTO();
     assertThat(underTest.toString(), is("{}"));
   }
 
   @Test
-  public void testToString_withData() {
+  void testToString_withData() {
     // Setting Thread name is required because AuditData provides thread name for AuditDTO.
     Thread.currentThread().setName("quartz-7-thread-1");
     underTest = new AuditDTO(makeAuditData());
@@ -50,7 +57,10 @@ public class AuditDTOTest
     assertTrue(timestampMatcher.matches());
     String timestamp = timestampMatcher.group(2);
 
-    assertThat(parse(timestamp, forPattern("yyyy-MM-dd HH:mm:ss,SSSZ")).getMillis(), is(TEST_TIMESTAMP));
+    // Parse the timestamp using Java time API instead of Joda Time
+    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss,SSSZ");
+    ZonedDateTime parsedDateTime = ZonedDateTime.parse(timestamp, formatter);
+    assertThat(parsedDateTime.toInstant().toEpochMilli(), is(TEST_TIMESTAMP));
 
     assertThat(timestampMatcher.replaceAll("$1<TIMESTAMP>$3"), is(
         "{\"timestamp\":\"<TIMESTAMP>\",\"nodeId\":\"testnodeid\",\"initiator\":\"testinitiator\",\"domain\":\"testdomain\",\"type\":\"testtype\",\"context\":\"testcontext\",\"thread\":\"quartz-7-thread-1\",\"attributes\":{\"testattribute1\":\"testvalue1\",\"testattribute2\":\"testvalue2\"}}"));

@@ -29,6 +29,14 @@ import static com.google.common.base.Preconditions.checkNotNull;
  * 
  * <p>This class is compatible with Java 21 and leverages modern language features
  * such as records and sequenced collections for improved performance and code clarity.</p>
+ * 
+ * <p>Java 21 features used in this class:</p>
+ * <ul>
+ *   <li>Records - For immutable data representation with reduced boilerplate</li>
+ *   <li>Pattern Matching - For type-safe data access</li>
+ *   <li>Enhanced Switch Expressions - For more concise code</li>
+ *   <li>Sequenced Collections - For collections with well-defined encounter order</li>
+ * </ul>
  */
 public class PerformanceData
 {
@@ -118,61 +126,51 @@ public class PerformanceData
   /**
    * Results for a single load type for a particular number of client threads.
    * 
-   * <p>Implemented as a Java 21 record for immutability and concise representation of data.</p>
+   * <p>Implemented as a Java 21 record for immutability and concise representation of data.
+   * Records provide a compact syntax for declaring classes that are transparent holders for
+   * shallowly immutable data. Using records reduces boilerplate code and improves readability.</p>
    */
   public record PerformanceRunResult(
       @JsonProperty("requestsCompleted") int requestsCompleted,
       @JsonProperty("requestsIncomplete") int requestsIncomplete,
       @JsonProperty("durationSeconds") int testDurationSeconds,
-      @JsonProperty("exceptionThrown") boolean exceptionThrown)
+      @JsonProperty("exceptionThrown") boolean exceptionThrown,
+      @JsonProperty("threadType") String threadType)
   {
     /**
-     * Creates a new performance run result.
+     * Creates a new performance run result with the specified parameters.
+     *
+     * @param requestsCompleted the number of requests that completed successfully
+     * @param requestsIncomplete the number of requests that did not complete
+     * @param testDurationSeconds the duration of the test in seconds
+     * @param exceptionThrown whether an exception was thrown during the test
+     * @param threadType the type of threads used ("virtual" or "platform")
+     */
+    @JsonCreator
+    public PerformanceRunResult {
+      // Validation could be added here if needed
+    }
+    
+    /**
+     * Creates a new performance run result with default thread type (virtual).
      *
      * @param requestsCompleted the number of requests that completed successfully
      * @param requestsIncomplete the number of requests that did not complete
      * @param testDurationSeconds the duration of the test in seconds
      * @param exceptionThrown whether an exception was thrown during the test
      */
-    @JsonCreator
-    public PerformanceRunResult {
-      // Validation could be added here if needed
+    public PerformanceRunResult(int requestsCompleted, int requestsIncomplete, 
+                               int testDurationSeconds, boolean exceptionThrown) {
+      this(requestsCompleted, requestsIncomplete, testDurationSeconds, exceptionThrown, "virtual");
     }
-
+    
     /**
-     * Gets the number of requests that completed successfully.
+     * Gets the throughput in requests per second.
      *
-     * @return the number of completed requests
+     * @return the throughput in requests per second
      */
-    public int getRequestsCompleted() {
-      return requestsCompleted;
-    }
-
-    /**
-     * Gets the number of requests that did not complete.
-     *
-     * @return the number of incomplete requests
-     */
-    public int getRequestsIncomplete() {
-      return requestsIncomplete;
-    }
-
-    /**
-     * Checks if an exception was thrown during the test.
-     *
-     * @return true if an exception was thrown, false otherwise
-     */
-    public boolean isExceptionThrown() {
-      return exceptionThrown;
-    }
-
-    /**
-     * Gets the duration of the test in seconds.
-     *
-     * @return the test duration in seconds
-     */
-    public int getTestDurationSeconds() {
-      return testDurationSeconds;
+    public double getThroughput() {
+      return testDurationSeconds > 0 ? ((double) requestsCompleted) / testDurationSeconds : 0;
     }
   }
 }

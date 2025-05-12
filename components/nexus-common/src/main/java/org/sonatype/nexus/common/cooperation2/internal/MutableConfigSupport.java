@@ -112,15 +112,29 @@ public abstract class MutableConfigSupport
    */
   @Override
   protected Config copy() {
-    // We can't use super.copy() directly as it returns a plain Config instance
-    // Instead, create a new instance of the same class and copy all fields
-    Config copy = new Config();
-    copy.majorTimeoutSeconds = majorTimeoutSeconds;
-    copy.minorTimeoutSeconds = minorTimeoutSeconds;
-    copy.threadsPerKey = threadsPerKey;
-    
-    // Since this method is meant to be overridden by concrete subclasses,
-    // they will need to copy their own fields as well
-    return copy;
+    try {
+      // Create a new instance of this specific class to preserve all fields
+      MutableConfigSupport copy = getClass().getDeclaredConstructor().newInstance();
+      
+      // Copy base Config fields
+      copy.majorTimeoutSeconds = this.majorTimeoutSeconds;
+      copy.minorTimeoutSeconds = this.minorTimeoutSeconds;
+      copy.threadsPerKey = this.threadsPerKey;
+      
+      // Copy MutableConfigSupport-specific fields
+      copy.enabled = this.enabled;
+      copy.useVirtualThreads = this.useVirtualThreads;
+      copy.concurrencyLimit.set(this.concurrencyLimit.get());
+      
+      return copy;
+    }
+    catch (ReflectiveOperationException e) {
+      // Fall back to basic copy if reflection fails
+      Config copy = new Config();
+      copy.majorTimeoutSeconds = this.majorTimeoutSeconds;
+      copy.minorTimeoutSeconds = this.minorTimeoutSeconds;
+      copy.threadsPerKey = this.threadsPerKey;
+      return copy;
+    }
   }
 }

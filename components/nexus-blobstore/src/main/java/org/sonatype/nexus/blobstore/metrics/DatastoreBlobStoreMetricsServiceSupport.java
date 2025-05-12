@@ -16,8 +16,10 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import org.sonatype.nexus.blobstore.api.BlobStore;
@@ -27,14 +29,17 @@ import org.sonatype.nexus.blobstore.api.metrics.BlobStoreMetricsEntity;
 import org.sonatype.nexus.blobstore.api.metrics.BlobStoreMetricsService;
 import org.sonatype.nexus.blobstore.api.metrics.BlobStoreMetricsStore;
 import org.sonatype.nexus.blobstore.api.metrics.DatastoreBlobStoreMetricsContainer;
+import org.sonatype.nexus.common.scheduling.PeriodicJobService;
+import org.sonatype.nexus.common.scheduling.PeriodicJobService.PeriodicJob;
 import org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport;
-import org.sonatype.nexus.security.subject.FakeAlmightySubject;
-import org.sonatype.nexus.security.subject.SubjectHelper;
+import org.sonatype.nexus.common.thread.TcclBlock;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Base class for {@link BlobStoreMetricsService} implementations.
+ * 
+ * @since 3.0
  */
 public abstract class DatastoreBlobStoreMetricsServiceSupport<B extends BlobStore>
     extends StateGuardLifecycleSupport
@@ -42,93 +47,111 @@ public abstract class DatastoreBlobStoreMetricsServiceSupport<B extends BlobStor
 {
   private final int metricsFlushPeriodSeconds;
 
-  private ScheduledExecutorService scheduledExecutor;
+  private final PeriodicJobService jobService;
 
   private final DatastoreBlobStoreMetricsContainer datastoreBlobStoreMetricsContainer;
+
+  private PeriodicJob metricsWritingJob;
+  
+  // Virtual thread executor for metrics flushing
+  private ExecutorService virtualThreadExecutor;
+  
+  // Scheduler for periodic metrics flushing
+  private ScheduledExecutorService scheduler;
+  
+  // Future for the scheduled metrics flushing task
+  private ScheduledFuture<?> scheduledFlushTask;
 
   protected final BlobStoreMetricsStore blobStoreMetricsStore;
 
   protected B blobStore;
 
-  /**
-   * Constructor for DatastoreBlobStoreMetricsServiceSupport.
-   * 
-   * @param metricsFlushPeriodSeconds period in seconds between metrics flush operations
-   * @param blobStoreMetricsStore the store for blob store metrics
-   */
   protected DatastoreBlobStoreMetricsServiceSupport(
       final int metricsFlushPeriodSeconds,
+      final PeriodicJobService jobService,
       final BlobStoreMetricsStore blobStoreMetricsStore)
   {
     this.metricsFlushPeriodSeconds = metricsFlushPeriodSeconds;
+    this.jobService = checkNotNull(jobService);
     this.blobStoreMetricsStore = checkNotNull(blobStoreMetricsStore);
 
     this.datastoreBlobStoreMetricsContainer = new DatastoreBlobStoreMetricsContainer();
   }
 
-  /**
-   * Starts the metrics service by initializing metrics and scheduling periodic flush operations.
-   * Uses a single scheduler thread but delegates actual I/O work to virtual threads for efficiency.
-   */
   @Override
   protected void doStart() throws Exception {
     blobStoreMetricsStore.initializeMetrics(blobStore.getBlobStoreConfiguration().getName());
     
-    // Create a scheduler for timing the metrics flush operations
-    scheduledExecutor = Executors.newSingleThreadScheduledExecutor();
+    // Initialize virtual thread executor for I/O operations
+    virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
     
-    // Schedule the metrics flushing task at fixed intervals
-    scheduledExecutor.scheduleAtFixedRate(() -> {
+    // Initialize scheduler for periodic tasks
+    scheduler = Executors.newSingleThreadScheduledExecutor();
+    
+    // Schedule metrics flushing using virtual threads
+    scheduledFlushTask = scheduler.scheduleAtFixedRate(() -> {
       if (datastoreBlobStoreMetricsContainer.metricsNeedFlushing()) {
-        try {
-          // Use virtual thread for I/O-bound flush operation
-          // This creates a new virtual thread for each flush operation, which is lightweight and efficient
-          Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+        // Submit the flush task to the virtual thread executor
+        virtualThreadExecutor.execute(() -> {
+          // Capture the current thread context class loader
+          try (TcclBlock tccl = TcclBlock.begin(this.getClass().getClassLoader())) {
             try {
-              // Ensure thread-local context propagation for security subject
-              // This is critical for maintaining security context across virtual thread boundaries
-              FakeAlmightySubject.runWithSubject(() -> {
-                try {
-                  flush();
-                }
-                catch (Exception e) {
-                  log.error("Failed to save blobstore metrics to db", e);
-                }
-              });
-            } catch (Exception e) {
-              log.error("Failed to execute metrics flush operation", e);
+              this.flush();
             }
-          });
-        }
-        catch (Exception e) {
-          log.error("Failed to schedule metrics flush operation", e);
-        }
+            catch (Exception e) {
+              log.error("Failed to save blobstore metrics to db", e);
+            }
+          }
+        });
       }
     }, 0, metricsFlushPeriodSeconds, TimeUnit.SECONDS);
+    
+    // Keep using the jobService for backward compatibility
+    jobService.startUsing();
   }
 
-  /**
-   * Stops the metrics service by shutting down the scheduler.
-   * Ensures graceful shutdown with timeout handling.
-   */
   @Override
   public void doStop() throws Exception {
-    if (scheduledExecutor != null) {
-      // Attempt graceful shutdown first
-      scheduledExecutor.shutdown();
+    // Cancel the scheduled task
+    if (scheduledFlushTask != null && !scheduledFlushTask.isCancelled()) {
+      scheduledFlushTask.cancel(false);
+      scheduledFlushTask = null;
+    }
+    
+    // Shutdown the scheduler
+    if (scheduler != null && !scheduler.isShutdown()) {
+      scheduler.shutdown();
       try {
-        // Wait for tasks to complete with a reasonable timeout
-        if (!scheduledExecutor.awaitTermination(30, TimeUnit.SECONDS)) {
-          // Force shutdown if tasks don't complete in time
-          scheduledExecutor.shutdownNow();
+        if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+          scheduler.shutdownNow();
         }
       } catch (InterruptedException e) {
-        // If current thread is interrupted, force shutdown and preserve interrupt status
-        scheduledExecutor.shutdownNow();
         Thread.currentThread().interrupt();
+        scheduler.shutdownNow();
       }
-      scheduledExecutor = null;
+      scheduler = null;
     }
+    
+    // Shutdown the virtual thread executor
+    if (virtualThreadExecutor != null && !virtualThreadExecutor.isShutdown()) {
+      virtualThreadExecutor.shutdown();
+      try {
+        if (!virtualThreadExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+          virtualThreadExecutor.shutdownNow();
+        }
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        virtualThreadExecutor.shutdownNow();
+      }
+      virtualThreadExecutor = null;
+    }
+    
+    // For backward compatibility
+    if (metricsWritingJob != null) {
+      metricsWritingJob.cancel();
+      metricsWritingJob = null;
+    }
+    jobService.stopUsing();
   }
 
   @Override
@@ -180,19 +203,14 @@ public abstract class DatastoreBlobStoreMetricsServiceSupport<B extends BlobStor
     return datastoreBlobStoreMetricsContainer.getOperationMetricsDelta();
   }
 
-  /**
-   * Flushes accumulated metrics to the persistent store.
-   * This method is optimized to run efficiently on virtual threads as it performs I/O operations.
-   */
   @Override
   public void flush() throws IOException {
-    // Get the delta metrics for upload and download operations
+    // This method is now optimized to run in a virtual thread
     OperationMetrics uploadMetrics =
         datastoreBlobStoreMetricsContainer.getOperationMetricsDelta().get(OperationType.UPLOAD);
     OperationMetrics downloadMetrics =
         datastoreBlobStoreMetricsContainer.getOperationMetricsDelta().get(OperationType.DOWNLOAD);
 
-    // Create a metrics entity with all the accumulated values
     BlobStoreMetricsEntity blobStoreMetricsEntity = new BlobStoreMetricsEntity()
         .setBlobStoreName(blobStore.getBlobStoreConfiguration().getName())
         .setBlobCount(datastoreBlobStoreMetricsContainer.blobCountDelta.getAndSet(0L))
@@ -204,30 +222,59 @@ public abstract class DatastoreBlobStoreMetricsServiceSupport<B extends BlobStor
         .setUploadBlobSize(uploadMetrics.getBlobSize())
         .setUploadErrorRequests(uploadMetrics.getErrorRequests())
         .setUploadSuccessfulRequests(uploadMetrics.getSuccessfulRequests())
-        .setUploadTimeOnRequests(uploadMetrics.getTimeOnRequests());
+        .setDownloadTimeOnRequests(uploadMetrics.getTimeOnRequests());
 
-    // Clear the metrics after capturing them
     uploadMetrics.clear();
     downloadMetrics.clear();
 
-    // Persist the metrics to the store
-    // This I/O operation benefits from running on a virtual thread
+    // This I/O operation is now running in a virtual thread
     blobStoreMetricsStore.updateMetrics(blobStoreMetricsEntity);
   }
 
   @Override
   public void clearCountMetrics() {
-    blobStoreMetricsStore.clearCountMetrics(blobStore.getBlobStoreConfiguration().getName());
+    // Submit to virtual thread executor for I/O operations
+    if (virtualThreadExecutor != null && !virtualThreadExecutor.isShutdown()) {
+      virtualThreadExecutor.execute(() -> {
+        try (TcclBlock tccl = TcclBlock.begin(this.getClass().getClassLoader())) {
+          blobStoreMetricsStore.clearCountMetrics(blobStore.getBlobStoreConfiguration().getName());
+        }
+      });
+    } else {
+      // Fallback if executor is not available
+      blobStoreMetricsStore.clearCountMetrics(blobStore.getBlobStoreConfiguration().getName());
+    }
   }
 
   @Override
   public void clearOperationMetrics() {
     datastoreBlobStoreMetricsContainer.getOperationMetricsDelta().values().forEach(OperationMetrics::clear);
-    blobStoreMetricsStore.clearOperationMetrics(blobStore.getBlobStoreConfiguration().getName());
+    
+    // Submit to virtual thread executor for I/O operations
+    if (virtualThreadExecutor != null && !virtualThreadExecutor.isShutdown()) {
+      virtualThreadExecutor.execute(() -> {
+        try (TcclBlock tccl = TcclBlock.begin(this.getClass().getClassLoader())) {
+          blobStoreMetricsStore.clearOperationMetrics(blobStore.getBlobStoreConfiguration().getName());
+        }
+      });
+    } else {
+      // Fallback if executor is not available
+      blobStoreMetricsStore.clearOperationMetrics(blobStore.getBlobStoreConfiguration().getName());
+    }
   }
 
   @Override
   public void remove() {
-    blobStoreMetricsStore.remove(blobStore.getBlobStoreConfiguration().getName());
+    // Submit to virtual thread executor for I/O operations
+    if (virtualThreadExecutor != null && !virtualThreadExecutor.isShutdown()) {
+      virtualThreadExecutor.execute(() -> {
+        try (TcclBlock tccl = TcclBlock.begin(this.getClass().getClassLoader())) {
+          blobStoreMetricsStore.remove(blobStore.getBlobStoreConfiguration().getName());
+        }
+      });
+    } else {
+      // Fallback if executor is not available
+      blobStoreMetricsStore.remove(blobStore.getBlobStoreConfiguration().getName());
+    }
   }
 }

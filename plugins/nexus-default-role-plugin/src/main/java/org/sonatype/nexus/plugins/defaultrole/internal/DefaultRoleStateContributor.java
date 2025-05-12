@@ -13,7 +13,6 @@
 package org.sonatype.nexus.plugins.defaultrole.internal;
 
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.Map;
 
 import javax.inject.Inject;
@@ -62,15 +61,17 @@ public class DefaultRoleStateContributor
     if (realmManager.isRealmEnabled(DefaultRoleRealm.NAME) && subject != null
         && (subject.isAuthenticated() || subject.isRemembered())) {
       try {
-        Map<String, Object> defaultRole = new HashMap<>(2);
         Role matched = securitySystem.listRoles(DEFAULT_SOURCE)
             .stream()
             .filter(role -> role.getRoleId().equals(defaultRoleRealm.getRole()))
             .findFirst()
             .orElse(null);
-        defaultRole.put("id", matched.getRoleId());
-        defaultRole.put("name", matched.getName());
-        return Collections.singletonMap("defaultRole", defaultRole);
+        
+        if (matched != null) {
+          return Map.of("defaultRole", Map.of(
+              "id", matched.getRoleId(),
+              "name", matched.getName()));
+        }
       }
       catch (Exception e) {
         log.debug("Unable to fetch default role configuration", e);

@@ -17,6 +17,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -43,6 +48,12 @@ import static com.google.common.collect.Streams.stream;
 import static java.util.Arrays.asList;
 import static java.util.stream.Collectors.toList;
 
+/**
+ * Repository test system that manages repository lifecycle for tests.
+ * <p>
+ * This implementation leverages Java 21 virtual threads for concurrent repository cleanup
+ * operations, providing improved performance for I/O-bound repository operations.
+ */
 @FeatureFlag(name = "nexus.test.base")
 @Named
 @Singleton
@@ -71,6 +82,11 @@ public class RepositoryTestSystem
 
   final Map<String, FormatRepositoryTestSystem> formatRepositoryTestSystemMap;
 
+  /**
+   * Default timeout for repository cleanup operations (in seconds).
+   */
+  private static final int CLEANUP_TIMEOUT_SECONDS = 60;
+
   @Inject
   public RepositoryTestSystem(
       final RepositoryManager repositoryManager,
@@ -89,16 +105,41 @@ public class RepositoryTestSystem
 
   @Override
   protected void doAfter() {
-    stream(repositoryManager.browse()).forEach(repository -> {
-      if (!repositoriesBeforeTest.contains(repository.getName())) {
-        try {
-          repositoryManager.delete(repository.getName());
-        }
-        catch (Exception e) {
-          log.error("Attempt to auto-delete {} failed", repository.getName());
-        }
+    // Get repositories that need to be deleted (created during test)
+    List<Repository> repositoriesToDelete = stream(repositoryManager.browse())
+        .filter(repository -> !repositoriesBeforeTest.contains(repository.getName()))
+        .collect(toList());
+
+    if (repositoriesToDelete.isEmpty()) {
+      return; // No repositories to clean up
+    }
+
+    // Use virtual threads for concurrent repository deletion
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Create a CompletableFuture for each repository deletion task
+      List<CompletableFuture<Void>> deletionTasks = repositoriesToDelete.stream()
+          .map(repository -> CompletableFuture.runAsync(() -> {
+            try {
+              log.debug("Deleting repository {} using virtual thread", repository.getName());
+              repositoryManager.delete(repository.getName());
+            }
+            catch (Exception e) {
+              log.error("Attempt to auto-delete {} failed", repository.getName(), e);
+            }
+          }, executor))
+          .collect(toList());
+
+      // Wait for all deletion tasks to complete
+      try {
+        CompletableFuture.allOf(deletionTasks.toArray(new CompletableFuture[0]))
+            .orTimeout(CLEANUP_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .join();
+        log.debug("Successfully cleaned up {} test repositories", repositoriesToDelete.size());
       }
-    });
+      catch (Exception e) {
+        log.error("Repository cleanup failed", e);
+      }
+    }
   }
 
   public AptFormatRepositoryTestSystem apt() {
@@ -129,28 +170,62 @@ public class RepositoryTestSystem
     return (RFormatRepositoryTestSystem) formatRepositoryTestSystemMap.get(FORMAT_R);
   }
 
+  /**
+   * Delete the specified repositories.
+   *
+   * @param repository the repositories to delete
+   * @throws Exception if deletion fails
+   */
   public void delete(final Repository ...repository) throws Exception {
     delete(Arrays.asList(repository));
   }
 
+  /**
+   * Delete the specified repositories.
+   *
+   * @param repositories the repositories to delete
+   * @throws Exception if deletion fails
+   */
   public void delete(final Iterable<Repository> repositories) throws Exception {
     for (Repository repository : repositories) {
       repositoryManager.delete(repository.getName());
     }
   }
 
+  /**
+   * Get all repositories.
+   *
+   * @return list of all repositories
+   */
   public List<Repository> getRepositories() {
     return stream(repositoryManager.browse()).collect(toList());
   }
 
+  /**
+   * Get a repository by name.
+   *
+   * @param repositoryName the repository name
+   * @return the repository or null if not found
+   */
   public Repository getRepository(final String repositoryName) {
     return repositoryManager.get(repositoryName);
   }
 
+  /**
+   * Get repositories of the specified types.
+   *
+   * @param types the repository types to filter by (empty for all types)
+   * @return list of matching repositories
+   */
   public List<Repository> getRepositories(final Type... types) {
     return stream(repositoryManager.browse()).filter(repository -> isType(repository, types)).collect(toList());
   }
 
+  /**
+   * Get the format repository test system map.
+   *
+   * @return the format repository test system map
+   */
   protected Map<String, FormatRepositoryTestSystem> getFormatRepositoryTestSystemMap() {
     return formatRepositoryTestSystemMap;
   }

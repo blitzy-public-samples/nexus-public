@@ -15,6 +15,8 @@ package org.sonatype.nexus.testsuite;
 /**
  * Hello world!
  *
+ * This class is compatible with Java 21 and serves as a valid entry point for integration tests
+ * and static analysis as part of the Java 17 to Java 21 migration.
  */
 public class App 
 {

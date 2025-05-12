@@ -20,6 +20,8 @@ import org.sonatype.nexus.repository.rest.api.ProxyRepositoryApiRequestToConfigu
 import org.sonatype.nexus.repository.routing.RoutingRuleStore;
 
 /**
+ * Converter for APT proxy repository API requests.
+ * 
  * @since 3.20
  */
 @Named

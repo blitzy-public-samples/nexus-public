@@ -30,9 +30,9 @@ import static com.google.common.base.Preconditions.checkNotNull;
  * A modification of Shiro's {@link SubjectAwareExecutorService} that in turn returns
  * always the same, supplied {@link Subject} to bind threads with.
  * <p>
- * Supports both platform threads (via traditional thread pools) and virtual threads (via Java 21's
- * virtual thread per task executor). Virtual threads are recommended for I/O-bound operations to achieve
- * higher throughput with minimal resource overhead.
+ * This class supports both platform threads (traditional OS threads) and virtual threads (Java 21+).
+ * Platform threads are suitable for CPU-bound tasks, while virtual threads are ideal for I/O-bound
+ * operations like network calls, file operations, and database access.
  *
  * @since 2.6
  */
@@ -71,36 +71,42 @@ public class NexusExecutorService
   //
 
   /**
-   * Creates a {@link NexusExecutorService} that binds a fixed subject to tasks executed by the target executor.
+   * Creates a {@link NexusExecutorService} that binds a fixed {@link Subject} to platform threads.
+   * <p>
+   * This is suitable for CPU-bound tasks that require a specific security subject.
    *
-   * @param target the underlying executor service
-   * @param subject the subject to bind to all tasks
-   * @return a new executor service that binds the given subject to all tasks
+   * @param target the executor service to delegate to
+   * @param subject the fixed subject to associate with threads
+   * @return a new executor service that associates the given subject with platform threads
    */
   public static NexusExecutorService forFixedSubject(final ExecutorService target, final Subject subject) {
     return new NexusExecutorService(target, () -> subject);
   }
 
   /**
-   * Creates a {@link NexusExecutorService} that binds the current subject to tasks executed by the target executor.
+   * Creates a {@link NexusExecutorService} that binds the current {@link Subject} to platform threads.
+   * <p>
+   * This is suitable for CPU-bound tasks that should inherit the current security context.
    *
-   * @param target the underlying executor service
-   * @return a new executor service that binds the current subject to all tasks
+   * @param target the executor service to delegate to
+   * @return a new executor service that associates the current subject with platform threads
    */
   public static NexusExecutorService forCurrentSubject(final ExecutorService target) {
     return new NexusExecutorService(target, new CurrentSubjectSupplier());
   }
   
   /**
-   * Creates a {@link NexusExecutorService} that uses Java 21 virtual threads and binds a fixed subject to all tasks.
+   * Creates a {@link NexusExecutorService} that uses virtual threads with a fixed {@link Subject}.
    * <p>
-   * Virtual threads are lightweight threads that are well-suited for I/O-bound operations. They have minimal
-   * overhead compared to platform threads, allowing for much higher concurrency with fewer resources.
+   * Virtual threads are lightweight threads that are ideal for I/O-bound operations like network calls,
+   * file operations, and database access. They have significantly lower overhead than platform threads
+   * and allow for much higher concurrency with minimal resource usage.
    * <p>
-   * This executor is ideal for operations like remote repository access, file operations, and database queries.
+   * This method creates an executor that spawns a new virtual thread for each submitted task,
+   * eliminating the need for thread pool sizing and management.
    *
-   * @param subject the subject to bind to all tasks
-   * @return a new executor service using virtual threads that binds the given subject to all tasks
+   * @param subject the fixed subject to associate with virtual threads
+   * @return a new executor service that associates the given subject with virtual threads
    * @since 3.60
    */
   public static NexusExecutorService forVirtualThreads(final Subject subject) {
@@ -108,17 +114,19 @@ public class NexusExecutorService
   }
   
   /**
-   * Creates a {@link NexusExecutorService} that uses Java 21 virtual threads and binds the current subject to all tasks.
+   * Creates a {@link NexusExecutorService} that uses virtual threads with the current {@link Subject}.
    * <p>
-   * Virtual threads are lightweight threads that are well-suited for I/O-bound operations. They have minimal
-   * overhead compared to platform threads, allowing for much higher concurrency with fewer resources.
+   * Virtual threads are lightweight threads that are ideal for I/O-bound operations like network calls,
+   * file operations, and database access. They have significantly lower overhead than platform threads
+   * and allow for much higher concurrency with minimal resource usage.
    * <p>
-   * This executor is ideal for operations like remote repository access, file operations, and database queries.
+   * This method creates an executor that spawns a new virtual thread for each submitted task,
+   * eliminating the need for thread pool sizing and management.
    *
-   * @return a new executor service using virtual threads that binds the current subject to all tasks
+   * @return a new executor service that associates the current subject with virtual threads
    * @since 3.60
    */
-  public static NexusExecutorService forVirtualThreads() {
+  public static NexusExecutorService forCurrentSubjectVirtualThreads() {
     return new NexusExecutorService(Executors.newVirtualThreadPerTaskExecutor(), new CurrentSubjectSupplier());
   }
 }

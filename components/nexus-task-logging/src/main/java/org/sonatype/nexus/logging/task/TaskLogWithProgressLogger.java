@@ -12,7 +12,6 @@
  */
 package org.sonatype.nexus.logging.task;
 
-import java.util.HashMap;
 import java.util.Map;
 
 import org.slf4j.Logger;
@@ -20,10 +19,10 @@ import org.slf4j.MDC;
 
 /**
  * {@link TaskLogger} for logging to the task log, but also doing progress to the nexus.log.
- * 
- * <p>This implementation is compatible with Java 21 Virtual Threads and ensures proper MDC context
- * propagation across thread boundaries. When tasks are executed using Virtual Threads, special care
- * is taken to ensure that MDC data is properly maintained.</p>
+ * <p>
+ * Enhanced for Java 21 Virtual Threads to ensure proper MDC propagation across thread boundaries.
+ * This implementation ensures that the TASK_LOG_WITH_PROGRESS_MDC flag is properly maintained
+ * even when Virtual Threads are unmounted and remounted on different carrier threads.
  *
  * @since 3.6
  */
@@ -31,64 +30,49 @@ public class TaskLogWithProgressLogger
     extends TaskLogOnlyTaskLogger
     implements TaskLogger
 {
+  // Store MDC context for Virtual Thread compatibility
+  private final Map<String, String> mdcContext;
+
   /**
-   * Creates a new TaskLogWithProgressLogger.
-   * 
-   * <p>This constructor initializes the MDC context for the current thread, including
-   * special handling for Virtual Threads in Java 21+.</p>
+   * Creates a new TaskLogWithProgressLogger and sets the MDC flag.
+   * <p>
+   * Ensures proper MDC flag propagation in Virtual Thread environments by setting the flag
+   * after the parent constructor has completed its work and storing the context for later use.
    *
    * @param log the logger to use
    * @param taskLogInfo information about the task being logged
    */
   public TaskLogWithProgressLogger(final Logger log, final TaskLogInfo taskLogInfo) {
     super(log, taskLogInfo);
-    setProgressMdc();
-  }
-  
-  /**
-   * Sets the progress MDC flag, with special handling for Virtual Threads.
-   * Virtual Threads in Java 21 require special consideration for ThreadLocal variables
-   * like those used by MDC.
-   */
-  private void setProgressMdc() {
-    // For Virtual Threads, we need to ensure the MDC is properly set
-    // as ThreadLocal behavior can be different in Virtual Thread environments
+    
+    // Set the MDC flag for this task logger
+    // This ensures the flag is properly set even if the thread is unmounted/remounted
     MDC.put(TASK_LOG_WITH_PROGRESS_MDC, "true");
     
-    // Additional logging for debug purposes when running in a Virtual Thread
+    // Store MDC context for Virtual Thread compatibility
+    this.mdcContext = MDC.getCopyOfContextMap();
+    
+    // Log if we're running in a Virtual Thread for debugging purposes
     if (Thread.currentThread().isVirtual()) {
-      // This debug statement helps track MDC propagation in Virtual Thread environments
-      // It's kept at debug level to avoid cluttering logs in normal operation
-      MDC.put("virtualThread", "true");
+      log.debug("TaskLogWithProgressLogger initialized on Virtual Thread: {}", Thread.currentThread().getName());
     }
   }
   
   /**
    * Captures the current MDC context for use with Virtual Threads or thread pools.
-   * This method allows the MDC context to be properly propagated across thread boundaries,
-   * which is especially important when using Virtual Threads in Java 21+.
+   * This method allows the MDC context to be propagated to other threads or Virtual Threads.
    *
-   * @return A Map containing the current MDC context
+   * @return The current MDC context as a Map
    */
   @Override
   public Object captureContext() {
-    // Create a copy of the current MDC context to ensure it can be safely propagated
-    // across thread boundaries, especially important for Virtual Threads
-    Map<String, String> contextCopy = MDC.getCopyOfContextMap();
-    if (contextCopy == null) {
-      contextCopy = new HashMap<>();
-    }
-    
-    // Ensure our progress flag is included in the captured context
-    contextCopy.put(TASK_LOG_WITH_PROGRESS_MDC, "true");
-    
-    return contextCopy;
+    return mdcContext;
   }
   
   /**
    * Applies a previously captured MDC context to the current thread.
-   * This method is essential for maintaining proper logging context when work
-   * is distributed across multiple threads, especially Virtual Threads.
+   * This method ensures that the TASK_LOG_WITH_PROGRESS_MDC flag is properly set
+   * when switching between threads or Virtual Threads.
    *
    * @param context The context object previously returned by {@link #captureContext()}
    */
@@ -97,29 +81,17 @@ public class TaskLogWithProgressLogger
     if (context instanceof Map) {
       @SuppressWarnings("unchecked")
       Map<String, String> contextMap = (Map<String, String>) context;
-      
-      // Clear existing context first to prevent merging with any existing values
-      MDC.clear();
-      
-      // Apply the captured context to the current thread
       MDC.setContextMap(contextMap);
-      
-      // For Virtual Threads, we add an additional marker to help with debugging
-      if (Thread.currentThread().isVirtual()) {
-        MDC.put("virtualThread", "true");
-      }
     }
   }
   
   /**
    * Clears the MDC context from the current thread.
-   * This method is particularly important for Virtual Threads, which may be numerous
-   * and short-lived, to prevent memory leaks from ThreadLocal variables.
+   * This method ensures that the TASK_LOG_WITH_PROGRESS_MDC flag is properly cleared
+   * when a thread or Virtual Thread completes its work.
    */
   @Override
   public void clearContext() {
-    // Remove all MDC values to prevent memory leaks, especially important
-    // in Virtual Thread environments where threads are numerous and short-lived
-    MDC.clear();
+    MDC.remove(TASK_LOG_WITH_PROGRESS_MDC);
   }
 }

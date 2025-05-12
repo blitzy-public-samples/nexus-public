@@ -17,7 +17,7 @@ import org.sonatype.nexus.repository.maven.MavenPath;
 import org.sonatype.nexus.repository.maven.MavenPath.HashType;
 import org.sonatype.nexus.repository.maven.MavenPath.SignatureType;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
@@ -29,14 +29,17 @@ import static org.hamcrest.Matchers.nullValue;
  * UT for {@link MavenPath}
  *
  * @since 3.0
+ * @see MavenPath
+ * 
+ * Updated for Java 21 compatibility using JUnit Jupiter.
  */
-public class MavenPathTest
+class MavenPathTest
     extends TestSupport
 {
   private final Maven2MavenPathParser pathParser = new Maven2MavenPathParser();
 
   @Test
-  public void pom() {
+  void pom() {
     final String path = "/org/eclipse/jetty/jetty-io/8.1.16.v20140903/jetty-io-8.1.16.v20140903.pom";
     final MavenPath mavenPath = pathParser.parsePath(path);
     assertThat(mavenPath, is(notNullValue()));
@@ -75,7 +78,7 @@ public class MavenPathTest
   }
 
   @Test
-  public void pomSnapshot() {
+  void pomSnapshot() {
     final String path = "/org/eclipse/jetty/jetty-io/8.1.16-SNAPSHOT/jetty-io-8.1.16-20140903.180000-1.pom";
     final MavenPath mavenPath = pathParser.parsePath(path);
     assertThat(mavenPath, is(notNullValue()));
@@ -114,7 +117,7 @@ public class MavenPathTest
   }
 
   @Test
-  public void jarSnapshotHash() {
+  void jarSnapshotHash() {
     final String path = "/org/apache/maven/maven-repository-metadata/3.3.0-SNAPSHOT/maven-repository-metadata-3.3.0-20150311.160242-1.jar.sha1";
     final MavenPath mavenPath = pathParser.parsePath(path);
     assertThat(mavenPath, is(notNullValue()));
@@ -147,7 +150,7 @@ public class MavenPathTest
   }
 
   @Test
-  public void locatePom() {
+  void locatePom() {
     final String path = "/org/apache/maven/maven-repository-metadata/3.3.0-SNAPSHOT/maven-repository-metadata-3.3.0-20150311.160242-1.jar.sha1";
     final MavenPath mavenPath = pathParser.parsePath(path).locatePom();
     assertThat(mavenPath, is(notNullValue()));
@@ -167,7 +170,7 @@ public class MavenPathTest
   }
 
   @Test
-  public void mavenPathShouldProperlyStripClassifier() {
+  void mavenPathShouldProperlyStripClassifier() {
     final String path = "/some/library/0.1/library-0.1-sources.jar";
     final MavenPath mavenPath = pathParser.parsePath(path);
 
@@ -175,7 +178,7 @@ public class MavenPathTest
   }
 
   @Test
-  public void locateJar() {
+  void locateJar() {
     final String path = "/org/apache/maven/maven-repository-metadata/3.3.0-SNAPSHOT/maven-repository-metadata-3.3.0-20150311.160242-1.jar.sha1";
     final MavenPath mavenPath = pathParser.parsePath(path).locateMainArtifact("jar");
     assertThat(mavenPath, is(notNullValue()));
@@ -195,7 +198,7 @@ public class MavenPathTest
   }
 
   @Test
-  public void locateJavadoc() {
+  void locateJavadoc() {
     final String path = "/org/apache/maven/maven-repository-metadata/3.3.0-SNAPSHOT/maven-repository-metadata-3.3.0-20150311.160242-1.jar.sha1";
     final MavenPath mavenPath = pathParser.parsePath(path).locate("jar", "javadoc");
     assertThat(mavenPath, is(notNullValue()));

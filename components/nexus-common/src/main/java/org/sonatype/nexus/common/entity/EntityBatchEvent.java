@@ -22,7 +22,7 @@ import org.sonatype.nexus.common.event.HasAffinity;
  *
  * @since 3.1
  */
-public record EntityBatchEvent(List<EntityEvent> events)
+public record EntityBatchEvent(List<EntityEvent> events) 
     implements HasAffinity
 {
   /**
@@ -35,8 +35,8 @@ public record EntityBatchEvent(List<EntityEvent> events)
   }
 
   /**
-   * Creates a new EntityBatchEvent with an unmodifiable list of events.
-   *
+   * Creates a new EntityBatchEvent with the given events.
+   * 
    * @param events the list of entity events to batch
    */
   public EntityBatchEvent(final List<EntityEvent> events) {

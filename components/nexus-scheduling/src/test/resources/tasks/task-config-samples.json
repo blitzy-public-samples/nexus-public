@@ -2,401 +2,221 @@
   {
     "id": "simple-task-1",
     "name": "Simple Virtual Thread Task",
-    "typeId": "org.sonatype.nexus.scheduling.task.VirtualThreadTestTask",
-    "typeName": "Virtual Thread Test Task",
+    "typeId": "org.sonatype.nexus.scheduling.task.SimpleTask",
+    "typeName": "Simple Task",
     "enabled": true,
     "visible": true,
     "alertEmail": "admin@example.com",
-    "created": "2025-05-10T10:00:00.000Z",
-    "updated": "2025-05-10T10:00:00.000Z",
+    "created": "2025-05-12T10:00:00.000Z",
+    "updated": "2025-05-12T10:00:00.000Z",
     "message": "Basic task for virtual thread testing",
     "recoverable": true,
     "schedule": {
       "type": "once",
-      "startAt": "2025-05-10T12:00:00.000Z"
+      "startAt": "2025-05-12T12:00:00.000Z"
     },
     "properties": {
-      "threadType": "virtual",
-      "operationType": "io",
-      "duration": 5000,
-      "concurrency": 1
+      "string_property": "test value",
+      "integer_property": 42,
+      "boolean_property": true,
+      "long_property": 9223372036854775807
+    },
+    "virtualThreadConfig": {
+      "useVirtualThreads": true
     }
   },
   {
-    "id": "io-intensive-task",
-    "name": "I/O Intensive Virtual Thread Task",
-    "typeId": "org.sonatype.nexus.scheduling.task.VirtualThreadIOTask",
-    "typeName": "Virtual Thread I/O Task",
+    "id": "io-bound-task-1",
+    "name": "I/O-Bound Virtual Thread Task",
+    "typeId": "org.sonatype.nexus.repository.task.ProxyFetchTask",
+    "typeName": "Proxy Repository Fetch Task",
     "enabled": true,
     "visible": true,
-    "alertEmail": "admin@example.com",
-    "created": "2025-05-10T10:00:00.000Z",
-    "updated": "2025-05-10T10:00:00.000Z",
-    "message": "I/O-bound task ideal for virtual threads",
+    "alertEmail": "repository-admin@example.com",
+    "created": "2025-05-12T10:15:00.000Z",
+    "updated": "2025-05-12T10:15:00.000Z",
+    "message": "I/O-bound task for testing virtual thread performance with network operations",
     "recoverable": true,
     "schedule": {
       "type": "hourly",
-      "startAt": "2025-05-10T12:00:00.000Z"
+      "startAt": "2025-05-12T12:00:00.000Z",
+      "hourlySchedule": {
+        "startMinute": 15
+      }
     },
     "properties": {
-      "threadType": "virtual",
-      "operationType": "io",
-      "ioOperations": 1000,
-      "ioBlockDuration": 50,
+      "repositoryName": "maven-central",
+      "requestTimeout": 60,
       "batchSize": 100,
-      "repository": "maven-central",
-      "assetPattern": "*.jar",
-      "maxConcurrentOperations": 500
-    }
-  },
-  {
-    "id": "cpu-intensive-task",
-    "name": "CPU Intensive Virtual Thread Task",
-    "typeId": "org.sonatype.nexus.scheduling.task.VirtualThreadCPUTask",
-    "typeName": "Virtual Thread CPU Task",
-    "enabled": true,
-    "visible": true,
-    "alertEmail": "admin@example.com",
-    "created": "2025-05-10T10:00:00.000Z",
-    "updated": "2025-05-10T10:00:00.000Z",
-    "message": "CPU-bound task for testing thread pinning scenarios",
-    "recoverable": false,
-    "schedule": {
-      "type": "daily",
-      "startAt": "2025-05-10T01:00:00.000Z"
+      "retryAttempts": 3
     },
-    "properties": {
-      "threadType": "virtual",
-      "operationType": "cpu",
-      "cpuOperations": 1000,
-      "cpuIntensity": 80,
-      "useSynchronizedBlocks": true,
-      "useNativeMethods": false,
-      "maxConcurrentOperations": 50
+    "virtualThreadConfig": {
+      "useVirtualThreads": true,
+      "maxConcurrentOperations": 1000,
+      "threadPinningDetection": true
     }
   },
   {
-    "id": "mixed-workload-task",
-    "name": "Mixed Workload Virtual Thread Task",
-    "typeId": "org.sonatype.nexus.scheduling.task.VirtualThreadMixedTask",
-    "typeName": "Virtual Thread Mixed Task",
+    "id": "s3-blobstore-task-1",
+    "name": "S3 BlobStore Maintenance Task",
+    "typeId": "org.sonatype.nexus.blobstore.s3.internal.S3MaintenanceTask",
+    "typeName": "S3 BlobStore Maintenance",
     "enabled": true,
     "visible": true,
-    "alertEmail": "admin@example.com",
-    "created": "2025-05-10T10:00:00.000Z",
-    "updated": "2025-05-10T10:00:00.000Z",
-    "message": "Mixed I/O and CPU workload for realistic testing",
+    "alertEmail": "storage-admin@example.com",
+    "created": "2025-05-12T10:30:00.000Z",
+    "updated": "2025-05-12T10:30:00.000Z",
+    "message": "S3 BlobStore maintenance task for testing virtual thread I/O operations with cloud storage",
     "recoverable": true,
     "schedule": {
-      "type": "weekly",
-      "startAt": "2025-05-10T02:00:00.000Z",
-      "weekdays": ["MON", "WED", "FRI"]
+      "type": "daily",
+      "startAt": "2025-05-12T01:00:00.000Z",
+      "dailySchedule": {
+        "startTime": "01:00"
+      }
     },
     "properties": {
-      "threadType": "virtual",
-      "operationType": "mixed",
-      "ioRatio": 70,
-      "cpuRatio": 30,
-      "totalOperations": 5000,
-      "maxConcurrentOperations": 200,
-      "repository": "maven-central",
-      "assetPattern": "*.pom"
+      "blobstoreName": "s3-primary",
+      "dryRun": false,
+      "integrityCheck": true,
+      "concurrentUploads": 16,
+      "multipartSize": 5242880
+    },
+    "virtualThreadConfig": {
+      "useVirtualThreads": true,
+      "maxConcurrentOperations": 500,
+      "threadPinningDetection": true,
+      "pinnedOperationTimeout": 30000
     }
   },
   {
-    "id": "high-concurrency-task",
-    "name": "High Concurrency Virtual Thread Task",
-    "typeId": "org.sonatype.nexus.scheduling.task.VirtualThreadConcurrencyTask",
-    "typeName": "Virtual Thread Concurrency Task",
+    "id": "cpu-bound-task-1",
+    "name": "CPU-Bound Calculation Task",
+    "typeId": "org.sonatype.nexus.scheduling.task.ComputeIntensiveTask",
+    "typeName": "Compute Intensive Task",
     "enabled": true,
     "visible": true,
-    "alertEmail": "admin@example.com",
-    "created": "2025-05-10T10:00:00.000Z",
-    "updated": "2025-05-10T10:00:00.000Z",
-    "message": "Task with high concurrency to test virtual thread scalability",
+    "alertEmail": "system-admin@example.com",
+    "created": "2025-05-12T10:45:00.000Z",
+    "updated": "2025-05-12T10:45:00.000Z",
+    "message": "CPU-bound task for testing virtual thread behavior with computational workloads",
+    "recoverable": false,
+    "schedule": {
+      "type": "weekly",
+      "startAt": "2025-05-18T02:00:00.000Z",
+      "weeklySchedule": {
+        "days": ["sunday"],
+        "startTime": "02:00"
+      }
+    },
+    "properties": {
+      "iterationCount": 10000000,
+      "complexity": "high",
+      "memoryIntensive": false,
+      "generateReport": true
+    },
+    "virtualThreadConfig": {
+      "useVirtualThreads": true,
+      "threadPinningDetection": true,
+      "expectedPinning": true,
+      "pinnedOperationTimeout": 60000
+    }
+  },
+  {
+    "id": "mixed-workload-task-1",
+    "name": "Mixed Workload Task",
+    "typeId": "org.sonatype.nexus.repository.task.IndexRepositoryTask",
+    "typeName": "Repository Index Task",
+    "enabled": true,
+    "visible": true,
+    "alertEmail": "index-admin@example.com",
+    "created": "2025-05-12T11:00:00.000Z",
+    "updated": "2025-05-12T11:00:00.000Z",
+    "message": "Mixed I/O and CPU workload task for testing virtual thread behavior with varied operations",
     "recoverable": true,
     "schedule": {
       "type": "cron",
-      "cronExpression": "0 0 2 * * ?"
+      "startAt": "2025-05-12T00:00:00.000Z",
+      "cronExpression": "0 0 3 * * ?"
     },
     "properties": {
-      "threadType": "virtual",
-      "operationType": "io",
-      "concurrentThreads": 10000,
-      "operationsPerThread": 10,
-      "ioBlockDuration": 20,
-      "useThreadLocal": false,
-      "monitorMemoryUsage": true,
-      "monitorThreadPinning": true
+      "repositoryName": "maven-releases",
+      "reindexOption": "FULL",
+      "batchSize": 500,
+      "indexingDepth": "maximal",
+      "generateMetadata": true
+    },
+    "virtualThreadConfig": {
+      "useVirtualThreads": true,
+      "maxConcurrentOperations": 250,
+      "threadPinningDetection": true,
+      "pinnedOperationTimeout": 45000,
+      "adaptiveScheduling": true
     }
   },
   {
-    "id": "thread-pinning-test-task",
-    "name": "Thread Pinning Test Task",
-    "typeId": "org.sonatype.nexus.scheduling.task.ThreadPinningTestTask",
-    "typeName": "Thread Pinning Test Task",
+    "id": "boundary-test-task-1",
+    "name": "Boundary Condition Test Task",
+    "typeId": "org.sonatype.nexus.scheduling.task.BoundaryTestTask",
+    "typeName": "Boundary Test Task",
     "enabled": true,
-    "visible": true,
-    "alertEmail": "admin@example.com",
-    "created": "2025-05-10T10:00:00.000Z",
-    "updated": "2025-05-10T10:00:00.000Z",
-    "message": "Task designed to test thread pinning detection and handling",
-    "recoverable": false,
+    "visible": false,
+    "alertEmail": "test-admin@example.com",
+    "created": "2025-05-12T11:15:00.000Z",
+    "updated": "2025-05-12T11:15:00.000Z",
+    "message": "Task for testing boundary conditions with thread context variables",
+    "recoverable": true,
     "schedule": {
       "type": "manual"
     },
     "properties": {
-      "threadType": "virtual",
-      "operationType": "mixed",
-      "useSynchronizedBlocks": true,
-      "useMonitorWaits": true,
-      "useNativeMethods": true,
-      "useLongRunningOperations": true,
-      "pinningScenarios": ["SYNCHRONIZED", "MONITOR_WAIT", "NATIVE_CALL", "JDBC_TRANSACTION"],
-      "concurrentThreads": 100,
-      "detectPinning": true,
-      "logPinningEvents": true
-    }
-  },
-  {
-    "id": "jdbc-virtual-thread-task",
-    "name": "JDBC Virtual Thread Task",
-    "typeId": "org.sonatype.nexus.scheduling.task.JdbcVirtualThreadTask",
-    "typeName": "JDBC Virtual Thread Task",
-    "enabled": true,
-    "visible": true,
-    "alertEmail": "admin@example.com",
-    "created": "2025-05-10T10:00:00.000Z",
-    "updated": "2025-05-10T10:00:00.000Z",
-    "message": "Task to test JDBC operations with virtual threads",
-    "recoverable": true,
-    "schedule": {
-      "type": "advanced",
-      "cronExpression": "0 0/30 * * * ?"
+      "emptyString": "",
+      "nullProperty": null,
+      "maxIntValue": 2147483647,
+      "minIntValue": -2147483648,
+      "zeroValue": 0,
+      "booleanArray": [true, false, true],
+      "nestedObject": {
+        "level1": {
+          "level2": {
+            "level3": "deeply nested value"
+          }
+        }
+      },
+      "specialChars": "!@#$%^&*()_+{}[]|\\:;\"'<>,.?/~`"
     },
-    "properties": {
-      "threadType": "virtual",
-      "operationType": "jdbc",
-      "concurrentConnections": 500,
-      "operationsPerConnection": 20,
-      "transactionMode": "OPTIMISTIC",
-      "queryType": "READ_WRITE",
-      "batchSize": 50,
-      "useConnectionPool": true,
-      "monitorPinning": true
+    "virtualThreadConfig": {
+      "useVirtualThreads": true,
+      "threadPinningDetection": true,
+      "contextVariableTest": true,
+      "threadLocalTest": true
     }
   },
   {
-    "id": "repository-browse-task",
-    "name": "Repository Browse Virtual Thread Task",
-    "typeId": "org.sonatype.nexus.scheduling.task.RepositoryBrowseTask",
-    "typeName": "Repository Browse Task",
+    "id": "platform-thread-task-1",
+    "name": "Platform Thread Comparison Task",
+    "typeId": "org.sonatype.nexus.repository.task.ProxyFetchTask",
+    "typeName": "Proxy Repository Fetch Task",
     "enabled": true,
     "visible": true,
-    "alertEmail": "admin@example.com",
-    "created": "2025-05-10T10:00:00.000Z",
-    "updated": "2025-05-10T10:00:00.000Z",
-    "message": "Task to test repository browsing with virtual threads",
+    "alertEmail": "performance-admin@example.com",
+    "created": "2025-05-12T11:30:00.000Z",
+    "updated": "2025-05-12T11:30:00.000Z",
+    "message": "Task for comparing platform thread performance with virtual threads",
     "recoverable": true,
-    "schedule": {
-      "type": "monthly",
-      "startAt": "2025-05-15T03:00:00.000Z",
-      "days": [1, 15]
-    },
-    "properties": {
-      "threadType": "virtual",
-      "operationType": "browse",
-      "repositoryName": "maven-central",
-      "browseDepth": 5,
-      "concurrentBrowsers": 200,
-      "itemsPerPage": 100,
-      "processAssets": true,
-      "calculateSizes": true,
-      "validateChecksums": false
-    }
-  },
-  {
-    "id": "boundary-condition-task",
-    "name": "Boundary Condition Task",
-    "typeId": "org.sonatype.nexus.scheduling.task.BoundaryConditionTask",
-    "typeName": "Boundary Condition Task",
-    "enabled": true,
-    "visible": true,
-    "alertEmail": "admin@example.com",
-    "created": "2025-05-10T10:00:00.000Z",
-    "updated": "2025-05-10T10:00:00.000Z",
-    "message": "Task to test boundary conditions with virtual threads",
-    "recoverable": true,
-    "schedule": {
-      "type": "once",
-      "startAt": "2025-05-10T04:00:00.000Z"
-    },
-    "properties": {
-      "threadType": "virtual",
-      "operationType": "boundary",
-      "extremelyLargeThreadCount": 100000,
-      "extremelyLongRunningThreads": 10,
-      "extremelyLargeDataSize": 1073741824,
-      "extremelyDeepRecursion": 1000,
-      "extremelyLongPropertyValue": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
-    }
-  },
-  {
-    "id": "thread-context-task",
-    "name": "Thread Context Variables Task",
-    "typeId": "org.sonatype.nexus.scheduling.task.ThreadContextTask",
-    "typeName": "Thread Context Variables Task",
-    "enabled": true,
-    "visible": true,
-    "alertEmail": "admin@example.com",
-    "created": "2025-05-10T10:00:00.000Z",
-    "updated": "2025-05-10T10:00:00.000Z",
-    "message": "Task to test thread context variables with virtual threads",
-    "recoverable": true,
-    "schedule": {
-      "type": "once",
-      "startAt": "2025-05-10T05:00:00.000Z"
-    },
-    "properties": {
-      "threadType": "virtual",
-      "operationType": "context",
-      "useThreadLocal": true,
-      "useInheritableThreadLocal": true,
-      "useSecurityContext": true,
-      "useTransactionContext": true,
-      "useLoggingContext": true,
-      "nestingDepth": 5,
-      "concurrentThreads": 100,
-      "contextSwitchFrequency": "HIGH"
-    }
-  },
-  {
-    "id": "comparison-task",
-    "name": "Thread Model Comparison Task",
-    "typeId": "org.sonatype.nexus.scheduling.task.ThreadModelComparisonTask",
-    "typeName": "Thread Model Comparison Task",
-    "enabled": true,
-    "visible": true,
-    "alertEmail": "admin@example.com",
-    "created": "2025-05-10T10:00:00.000Z",
-    "updated": "2025-05-10T10:00:00.000Z",
-    "message": "Task to compare virtual threads vs platform threads",
-    "recoverable": true,
-    "schedule": {
-      "type": "once",
-      "startAt": "2025-05-10T06:00:00.000Z"
-    },
-    "properties": {
-      "operationType": "comparison",
-      "runWithVirtualThreads": true,
-      "runWithPlatformThreads": true,
-      "concurrencyLevels": [10, 100, 1000, 10000],
-      "ioOperationRatio": 80,
-      "cpuOperationRatio": 20,
-      "operationsPerThread": 100,
-      "warmupIterations": 5,
-      "measurementIterations": 10,
-      "generateReport": true,
-      "reportFormat": "HTML"
-    }
-  },
-  {
-    "id": "s3-blobstore-task",
-    "name": "S3 BlobStore Virtual Thread Task",
-    "typeId": "org.sonatype.nexus.blobstore.s3.internal.S3VirtualThreadTask",
-    "typeName": "S3 BlobStore Virtual Thread Task",
-    "enabled": true,
-    "visible": true,
-    "alertEmail": "admin@example.com",
-    "created": "2025-05-10T10:00:00.000Z",
-    "updated": "2025-05-10T10:00:00.000Z",
-    "message": "Task to test S3 BlobStore operations with virtual threads",
-    "recoverable": true,
-    "schedule": {
-      "type": "once",
-      "startAt": "2025-05-10T07:00:00.000Z"
-    },
-    "properties": {
-      "threadType": "virtual",
-      "operationType": "s3",
-      "blobStoreName": "s3-test",
-      "concurrentOperations": 500,
-      "operationTypes": ["READ", "WRITE", "DELETE"],
-      "operationRatios": [70, 20, 10],
-      "blobSizeRange": [1024, 10485760],
-      "useMultipartUpload": true,
-      "usePresignedUrls": true,
-      "monitorNetworkLatency": true
-    }
-  },
-  {
-    "id": "proxy-repository-task",
-    "name": "Proxy Repository Virtual Thread Task",
-    "typeId": "org.sonatype.nexus.repository.proxy.ProxyVirtualThreadTask",
-    "typeName": "Proxy Repository Virtual Thread Task",
-    "enabled": true,
-    "visible": true,
-    "alertEmail": "admin@example.com",
-    "created": "2025-05-10T10:00:00.000Z",
-    "updated": "2025-05-10T10:00:00.000Z",
-    "message": "Task to test proxy repository operations with virtual threads",
-    "recoverable": true,
-    "schedule": {
-      "type": "once",
-      "startAt": "2025-05-10T08:00:00.000Z"
-    },
-    "properties": {
-      "threadType": "virtual",
-      "operationType": "proxy",
-      "repositoryName": "maven-central",
-      "concurrentRequests": 1000,
-      "requestTypes": ["GET", "HEAD"],
-      "requestRatios": [80, 20],
-      "simulateNetworkLatency": true,
-      "latencyRange": [50, 500],
-      "useHttpClient": true,
-      "monitorConnectionPooling": true
-    }
-  },
-  {
-    "id": "minimal-task",
-    "name": "Minimal Virtual Thread Task",
-    "typeId": "org.sonatype.nexus.scheduling.task.MinimalVirtualThreadTask",
-    "typeName": "Minimal Virtual Thread Task",
-    "enabled": true,
-    "visible": true,
     "schedule": {
       "type": "manual"
     },
     "properties": {
-      "threadType": "virtual"
-    }
-  },
-  {
-    "id": "pattern-matching-task",
-    "name": "Pattern Matching Task",
-    "typeId": "org.sonatype.nexus.scheduling.task.PatternMatchingTask",
-    "typeName": "Pattern Matching Task",
-    "enabled": true,
-    "visible": true,
-    "alertEmail": "admin@example.com",
-    "created": "2025-05-10T10:00:00.000Z",
-    "updated": "2025-05-10T10:00:00.000Z",
-    "message": "Task to test pattern matching with virtual threads",
-    "recoverable": true,
-    "schedule": {
-      "type": "once",
-      "startAt": "2025-05-10T09:00:00.000Z"
+      "repositoryName": "maven-central",
+      "requestTimeout": 60,
+      "batchSize": 100,
+      "retryAttempts": 3,
+      "performanceTest": true,
+      "compareWithVirtualThreads": true
     },
-    "properties": {
-      "threadType": "virtual",
-      "operationType": "pattern",
-      "useRecordPatterns": true,
-      "useSwitchPatterns": true,
-      "useGuardedPatterns": true,
-      "patternComplexity": "HIGH",
-      "concurrentThreads": 100,
-      "operationsPerThread": 1000
+    "virtualThreadConfig": {
+      "useVirtualThreads": false
     }
   }
 ]

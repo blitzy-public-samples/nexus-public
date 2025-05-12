@@ -20,8 +20,6 @@ import javax.inject.Singleton;
 import org.sonatype.nexus.cleanup.config.CleanupPolicyConfiguration;
 import org.sonatype.nexus.repository.raw.internal.RawFormat;
 
-import com.google.common.collect.ImmutableMap;
-
 import static org.sonatype.nexus.cleanup.config.CleanupPolicyConstants.IS_PRERELEASE_KEY;
 import static org.sonatype.nexus.cleanup.config.CleanupPolicyConstants.LAST_BLOB_UPDATED_KEY;
 import static org.sonatype.nexus.cleanup.config.CleanupPolicyConstants.LAST_DOWNLOADED_KEY;
@@ -37,9 +35,11 @@ public class RawCleanupPolicyConfiguration
 {
   @Override
   public Map<String, Boolean> getConfiguration() {
-    return ImmutableMap.of(LAST_BLOB_UPDATED_KEY, true,
+    return Map.of(
+        LAST_BLOB_UPDATED_KEY, true,
         LAST_DOWNLOADED_KEY, true,
         IS_PRERELEASE_KEY, false,
-        REGEX_KEY, true);
+        REGEX_KEY, true
+    );
   }
 }

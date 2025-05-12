@@ -12,60 +12,136 @@
  */
 package org.sonatype.nexus.testsuite.testsupport.performance;
 
-import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+import javax.inject.Inject;
+import javax.inject.Named;
+import javax.inject.Singleton;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 
 /**
  * Loads and saves performance data as JSON.
- * 
- * <p>This class is compatible with Java 21 and supports serialization/deserialization
- * of record types used in the performance data model.</p>
+ * <p>
+ * This class is designed to be used with dependency injection in Java 21 environments.
+ * It provides thread-safe operations for reading and writing performance data.
+ *
+ * @since 3.60
  */
+@Named
+@Singleton
 public class PerformanceDataIO
 {
-  private PerformanceDataIO() {
-    // empty
+  private final ObjectMapper objectMapper;
+
+  /**
+   * Creates a new instance with a configured ObjectMapper.
+   */
+  @Inject
+  public PerformanceDataIO() {
+    this(createDefaultObjectMapper());
   }
 
   /**
-   * Loads performance test data from the specified file if it exists, otherwise returns an empty data set.
-   * 
-   * @param datafile the file to load data from
-   * @return the loaded performance data or a new empty instance if the file doesn't exist
-   * @throws IOException if an error occurs while reading the file
+   * Creates a new instance with the provided ObjectMapper.
+   *
+   * @param objectMapper the ObjectMapper to use for JSON serialization/deserialization
    */
-  public static PerformanceData loadTestData(final File datafile) throws IOException {
-    final ObjectMapper mapper = createObjectMapper();
-    if (datafile.exists()) {
-      return mapper.readValue(datafile, PerformanceData.class);
+  public PerformanceDataIO(final ObjectMapper objectMapper) {
+    this.objectMapper = objectMapper;
+  }
+
+  /**
+   * Creates a default ObjectMapper configured for performance data serialization.
+   *
+   * @return a configured ObjectMapper instance
+   */
+  private static ObjectMapper createDefaultObjectMapper() {
+    ObjectMapper mapper = new ObjectMapper();
+    mapper.configure(SerializationFeature.INDENT_OUTPUT, true);
+    return mapper;
+  }
+
+  /**
+   * Loads performance test data from the specified path if it exists, otherwise returns an empty data set.
+   *
+   * @param dataPath the path to the JSON data file
+   * @return the loaded performance data or a new empty instance if the file doesn't exist
+   * @throws IOException if an error occurs during file reading or JSON parsing
+   */
+  public PerformanceData loadTestData(final Path dataPath) throws IOException {
+    if (Files.exists(dataPath)) {
+      return objectMapper.readValue(Files.readAllBytes(dataPath), PerformanceData.class);
     }
     return new PerformanceData();
   }
 
   /**
-   * Overwrites the provided datafile with json output representing the suite results.
-   * 
+   * Overwrites the provided data file with JSON output representing the suite results.
+   *
    * @param results the performance data to save
-   * @param datafile the file to save data to
-   * @throws IOException if an error occurs while writing the file
+   * @param dataPath the path where the JSON data should be written
+   * @throws IOException if an error occurs during JSON serialization or file writing
    */
-  public static void saveTestData(final PerformanceData results, final File datafile) throws IOException {
-    final ObjectMapper mapper = createObjectMapper();
-    mapper.writeValue(datafile, results);
+  public void saveTestData(final PerformanceData results, final Path dataPath) throws IOException {
+    Files.createDirectories(dataPath.getParent());
+    objectMapper.writeValue(dataPath.toFile(), results);
   }
-  
+
   /**
-   * Creates a properly configured ObjectMapper for serializing/deserializing performance data.
+   * Legacy method for backward compatibility with code that uses File instead of Path.
    * 
-   * @return a configured ObjectMapper instance
+   * @param dataFile the file to load data from
+   * @return the loaded performance data or a new empty instance if the file doesn't exist
+   * @throws IOException if an error occurs during file reading or JSON parsing
+   * @deprecated Use {@link #loadTestData(Path)} instead
    */
-  private static ObjectMapper createObjectMapper() {
-    ObjectMapper mapper = new ObjectMapper();
-    // Configure for pretty printing
-    mapper.enable(SerializationFeature.INDENT_OUTPUT);
-    return mapper;
+  @Deprecated
+  public PerformanceData loadTestData(final java.io.File dataFile) throws IOException {
+    return loadTestData(dataFile.toPath());
+  }
+
+  /**
+   * Legacy method for backward compatibility with code that uses File instead of Path.
+   *
+   * @param results the performance data to save
+   * @param dataFile the file where the JSON data should be written
+   * @throws IOException if an error occurs during JSON serialization or file writing
+   * @deprecated Use {@link #saveTestData(PerformanceData, Path)} instead
+   */
+  @Deprecated
+  public void saveTestData(final PerformanceData results, final java.io.File dataFile) throws IOException {
+    saveTestData(results, dataFile.toPath());
+  }
+
+  /**
+   * Static utility method for backward compatibility with existing code.
+   * This method creates a temporary PerformanceDataIO instance for one-time use.
+   *
+   * @param dataFile the file to load data from
+   * @return the loaded performance data or a new empty instance if the file doesn't exist
+   * @throws IOException if an error occurs during file reading or JSON parsing
+   * @deprecated Use dependency injection and instance methods instead
+   */
+  @Deprecated
+  public static PerformanceData loadTestDataStatic(final java.io.File dataFile) throws IOException {
+    return new PerformanceDataIO().loadTestData(dataFile);
+  }
+
+  /**
+   * Static utility method for backward compatibility with existing code.
+   * This method creates a temporary PerformanceDataIO instance for one-time use.
+   *
+   * @param results the performance data to save
+   * @param dataFile the file where the JSON data should be written
+   * @throws IOException if an error occurs during JSON serialization or file writing
+   * @deprecated Use dependency injection and instance methods instead
+   */
+  @Deprecated
+  public static void saveTestDataStatic(final PerformanceData results, final java.io.File dataFile) throws IOException {
+    new PerformanceDataIO().saveTestData(results, dataFile);
   }
 }

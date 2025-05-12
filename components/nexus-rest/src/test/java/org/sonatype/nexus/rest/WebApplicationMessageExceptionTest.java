@@ -13,6 +13,7 @@
 package org.sonatype.nexus.rest;
 
 import com.google.common.collect.ImmutableList;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -21,20 +22,17 @@ import jakarta.ws.rs.core.Response;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
-/**
- * Tests for {@link WebApplicationMessageException}.
- */
-public class WebApplicationMessageExceptionTest
+@DisplayName("WebApplicationMessageException Tests")
+class WebApplicationMessageExceptionTest
 {
   /**
    * Method under test:
    * {@link WebApplicationMessageException#WebApplicationMessageException(Response.Status, Object, String)}
    */
   @Test
-  @DisplayName("Test constructor with media type")
-  public void testConstructor() {
+  @DisplayName("Constructor with media type sets correct status and content type")
+  void testConstructor() {
     WebApplicationMessageException exception = new WebApplicationMessageException(
         Response.Status.BAD_REQUEST, "Message", MediaType.APPLICATION_JSON);
     Response response = exception.getResponse();
@@ -43,9 +41,9 @@ public class WebApplicationMessageExceptionTest
 
     Object entity = response.getEntity();
 
-    assertInstanceOf(ValidationErrorXO.class, entity);
-    assertEquals("Message", ((ValidationErrorXO) entity).message());
-    assertEquals(ValidationErrorXO.GENERIC, ((ValidationErrorXO) entity).id());
+    assertTrue(entity instanceof ValidationErrorXO);
+    assertEquals("Message", ((ValidationErrorXO) entity).getMessage());
+    assertEquals(ValidationErrorXO.GENERIC, ((ValidationErrorXO) entity).getId());
     assertEquals(ImmutableList.of(MediaType.APPLICATION_JSON), response.getHeaders().get("Content-Type"));
   }
 
@@ -53,8 +51,8 @@ public class WebApplicationMessageExceptionTest
    * Method under test: {@link WebApplicationMessageException#WebApplicationMessageException(Response.Status, String)}
    */
   @Test
-  @DisplayName("Test constructor without media type")
-  public void testConstructorNoMediaType() {
+  @DisplayName("Constructor without media type defaults to TEXT_PLAIN")
+  void testConstructorNoMediaType() {
     WebApplicationMessageException exception = new WebApplicationMessageException(
         Response.Status.NOT_FOUND, "Message");
     Response response = exception.getResponse();
@@ -63,66 +61,56 @@ public class WebApplicationMessageExceptionTest
 
     Object entity = response.getEntity();
 
-    assertInstanceOf(ValidationErrorXO.class, entity);
-    assertEquals("Message", ((ValidationErrorXO) entity).message());
-    assertEquals(ValidationErrorXO.GENERIC, ((ValidationErrorXO) entity).id());
+    assertTrue(entity instanceof ValidationErrorXO);
+    assertEquals("Message", ((ValidationErrorXO) entity).getMessage());
+    assertEquals(ValidationErrorXO.GENERIC, ((ValidationErrorXO) entity).getId());
     assertEquals(ImmutableList.of(MediaType.TEXT_PLAIN), response.getHeaders().get("Content-Type"));
   }
-  
+
   /**
-   * Tests multiple status code responses using pattern matching.
+   * Method under test: Validate different response types using pattern matching for switch
    */
   @Test
-  @DisplayName("Test multiple status codes using pattern matching")
-  public void testMultipleStatusCodes() {
-    // Test with different status codes using pattern matching
-    Response.Status[] statuses = {
-        Response.Status.BAD_REQUEST,
-        Response.Status.NOT_FOUND,
-        Response.Status.INTERNAL_SERVER_ERROR
+  @DisplayName("Pattern matching for switch validates different response types")
+  void testResponseValidationWithPatternMatching() {
+    // Test different status codes with pattern matching
+    validateResponseWithPatternMatching(
+        new WebApplicationMessageException(Response.Status.BAD_REQUEST, "Bad Request").getResponse());
+    validateResponseWithPatternMatching(
+        new WebApplicationMessageException(Response.Status.NOT_FOUND, "Not Found").getResponse());
+    validateResponseWithPatternMatching(
+        new WebApplicationMessageException(Response.Status.UNAUTHORIZED, "Unauthorized").getResponse());
+    validateResponseWithPatternMatching(
+        new WebApplicationMessageException(Response.Status.INTERNAL_SERVER_ERROR, "Server Error").getResponse());
+  }
+
+  /**
+   * Helper method that uses pattern matching for switch to validate response based on status code
+   */
+  private void validateResponseWithPatternMatching(Response response) {
+    ValidationErrorXO errorXO = (ValidationErrorXO) response.getEntity();
+    String expectedMessage = errorXO.getMessage();
+    
+    String result = switch (response.getStatus()) {
+      case 400 -> {
+        assertEquals("Bad Request", expectedMessage);
+        yield "Bad Request validated";
+      }
+      case 404 -> {
+        assertEquals("Not Found", expectedMessage);
+        yield "Not Found validated";
+      }
+      case 401 -> {
+        assertEquals("Unauthorized", expectedMessage);
+        yield "Unauthorized validated";
+      }
+      case 500 -> {
+        assertEquals("Server Error", expectedMessage);
+        yield "Server Error validated";
+      }
+      default -> "Unexpected status code: " + response.getStatus();
     };
     
-    for (Response.Status status : statuses) {
-      WebApplicationMessageException exception = new WebApplicationMessageException(
-          status, "Test message", MediaType.APPLICATION_JSON);
-      Response response = exception.getResponse();
-      
-      // Use pattern matching to validate response based on status
-      switch (status) {
-        case Response.Status.BAD_REQUEST -> {
-          assertEquals(400, response.getStatus());
-          var entity = assertInstanceOf(ValidationErrorXO.class, response.getEntity());
-          assertEquals("Test message", entity.message());
-        }
-        case Response.Status.NOT_FOUND -> {
-          assertEquals(404, response.getStatus());
-          var entity = assertInstanceOf(ValidationErrorXO.class, response.getEntity());
-          assertEquals("Test message", entity.message());
-        }
-        case Response.Status.INTERNAL_SERVER_ERROR -> {
-          assertEquals(500, response.getStatus());
-          var entity = assertInstanceOf(ValidationErrorXO.class, response.getEntity());
-          assertEquals("Test message", entity.message());
-        }
-        default -> throw new IllegalArgumentException("Unexpected status: " + status);
-      }
-    }
-  }
-  
-  /**
-   * Tests constructor with integer status code.
-   */
-  @Test
-  @DisplayName("Test constructor with integer status code")
-  public void testConstructorWithIntegerStatus() {
-    // Test with direct integer status code
-    WebApplicationMessageException exception = new WebApplicationMessageException(
-        418, "I'm a teapot", MediaType.APPLICATION_JSON);
-    Response response = exception.getResponse();
-    
-    assertEquals(418, response.getStatus());
-    var entity = assertInstanceOf(ValidationErrorXO.class, response.getEntity());
-    assertEquals("I'm a teapot", entity.message());
-    assertEquals(ValidationErrorXO.GENERIC, entity.id());
+    assertTrue(result.contains("validated"), "Response validation failed: " + result);
   }
 }

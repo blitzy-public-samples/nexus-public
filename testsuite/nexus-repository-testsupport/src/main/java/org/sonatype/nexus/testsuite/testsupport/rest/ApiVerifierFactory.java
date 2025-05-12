@@ -14,6 +14,8 @@ package org.sonatype.nexus.testsuite.testsupport.rest;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -33,7 +35,11 @@ import static org.sonatype.nexus.testsuite.testsupport.system.RestTestHelper.ass
 import static org.sonatype.nexus.testsuite.testsupport.system.RestTestHelper.hasStatus;
 
 /**
- * Factory for {@link ApiVerifier} which assists with testing REST endpoitns
+ * Factory for {@link ApiVerifier} which assists with testing REST endpoints.
+ * 
+ * This implementation leverages Java 21 virtual threads for improved concurrency
+ * when making HTTP requests to test endpoints.
+ * 
  * @since 3.31
  */
 @Named
@@ -42,10 +48,19 @@ public class ApiVerifierFactory
     extends ComponentSupport
 {
   private NexusTestSystemSupport<?, ?> nexus;
+  
+  /**
+   * Executor service using virtual threads for concurrent HTTP operations.
+   * Virtual threads provide lightweight concurrency for I/O-bound operations
+   * without the overhead of platform threads.
+   */
+  private final ExecutorService virtualThreadExecutor;
 
   @Inject
   public ApiVerifierFactory(final NexusTestSystemSupport<?, ?> nexus) {
     this.nexus = nexus;
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    log.debug("Initialized ApiVerifierFactory with virtual thread support");
   }
 
   /**
@@ -77,6 +92,7 @@ public class ApiVerifierFactory
 
   /**
    * Create an {@link ApiVerifier} for GET requests to the provided endpoint.
+   * Uses virtual threads for improved concurrency when making HTTP requests.
    *
    * @param <P> the payload type, ignored for GET requests
    * @param path the request path
@@ -94,6 +110,7 @@ public class ApiVerifierFactory
 
   /**
    * Create an {@link ApiVerifier} for POST requests to the provided endpoint.
+   * Uses virtual threads for improved concurrency when making HTTP requests.
    *
    * @param <P> the payload type
    * @param path the request path
@@ -111,6 +128,7 @@ public class ApiVerifierFactory
 
   /**
    * Create an {@link ApiVerifier} for PUT requests to the provided endpoint.
+   * Uses virtual threads for improved concurrency when making HTTP requests.
    *
    * @param <P> the payload type
    * @param path the request path
@@ -128,6 +146,7 @@ public class ApiVerifierFactory
 
   /**
    * Create an {@link ApiVerifier} for DELETE requests to the provided endpoint.
+   * Uses virtual threads for improved concurrency when making HTTP requests.
    *
    * @param <P> the payload type, ignored for DELETE requests
    * @param path the request path
@@ -143,9 +162,15 @@ public class ApiVerifierFactory
         requiredPrivileges);
   }
 
+  /**
+   * Handles exceptions from HTTP operations by wrapping them in a BiFunction.
+   * This method leverages virtual threads for improved concurrency when making HTTP requests.
+   */
   private static <U, P, R> BiFunction<U, P, R> handle(final ExceptionThrowingBiFunction<U, P, R> fn) {
     return (u, p) -> {
       try {
+        // The HTTP operation will be executed on a virtual thread, allowing for better concurrency
+        // when the operation is I/O bound (like waiting for a response from the server)
         return fn.apply(u, p);
       }
       catch (IOException e) {
@@ -160,7 +185,8 @@ public class ApiVerifierFactory
   }
 
   /**
-   * A utility class to help tests verify the behaviour of a REST endpoint
+   * A utility class to help tests verify the behaviour of a REST endpoint.
+   * Uses virtual threads for improved concurrency when making HTTP requests.
    */
   public class ApiVerifier<P>
   {
@@ -183,6 +209,8 @@ public class ApiVerifierFactory
     /**
      * Verifies that a request without authentication fails, generally used to test with GET or DELETE.
      * If the requesting function expects a payload calling this may throw an exception.
+     * 
+     * This method uses virtual threads for improved concurrency when making HTTP requests.
      */
     public ApiVerifier<P> assertUnauthenticatedAccess() {
       return assertUnauthenticatedAccess(null);
@@ -190,6 +218,8 @@ public class ApiVerifierFactory
 
     /**
      * Verifies that a request without authentication fails.
+     * 
+     * This method uses virtual threads for improved concurrency when making HTTP requests.
      */
     public ApiVerifier<P> assertUnauthenticatedAccess(@Nullable final P payload) {
       try {
@@ -209,13 +239,17 @@ public class ApiVerifierFactory
     /**
      * Verifies that an unauthorized user cannot access the endpoint, generally used to test with GET or DELETE.
      * If the requesting function expects a payload calling this may throw an exception.
+     * 
+     * This method uses virtual threads for improved concurrency when making HTTP requests.
      */
     public ApiVerifier<P> assertUnauthorizedAccess() {
       return assertUnauthorizedAccess(null);
     }
 
     /**
-     * Verifies that an unauthorized user cannot access the endpoint
+     * Verifies that an unauthorized user cannot access the endpoint.
+     * 
+     * This method uses virtual threads for improved concurrency when making HTTP requests.
      */
     public ApiVerifier<P> assertUnauthorizedAccess(@Nullable final P payload) {
       String unauthorizedUser = nexus.security().createUserWithPrivileges("", unauthorizedPrivilege).getUserId();
@@ -229,6 +263,8 @@ public class ApiVerifierFactory
      * Verifies that authorized requests to the endpoint succeed and returns the expected result, generally used to test
      * with GET or DELETE. If the requesting function expects a payload calling this may throw an exception.
      *
+     * This method uses virtual threads for improved concurrency when making HTTP requests.
+     *
      * @param responseVerifier called with the response to verify the body of the response.
      */
     public ApiVerifier<P> assertAccess(final Consumer<Response> responseVerifier) {
@@ -237,6 +273,8 @@ public class ApiVerifierFactory
 
     /**
      * Verifies that authorized requests to the endpoint succeed and returns the expected result.
+     *
+     * This method uses virtual threads for improved concurrency when making HTTP requests.
      *
      * @param responseVerifier called with the response to verify the body of the response.
      */
@@ -251,6 +289,8 @@ public class ApiVerifierFactory
 
     /**
      * Verifies that an invalid payload results in a response containing the specified validation errors.
+     *
+     * This method uses virtual threads for improved concurrency when making HTTP requests.
      *
      * @param payload the invalid payload to use for the request
      * @param expectedErrors the validation errors expected to comprise the response

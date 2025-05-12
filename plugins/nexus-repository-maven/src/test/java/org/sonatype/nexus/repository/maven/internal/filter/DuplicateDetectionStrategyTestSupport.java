@@ -23,12 +23,29 @@ import static org.apache.maven.index.reader.Record.FILE_EXTENSION;
 import static org.apache.maven.index.reader.Record.GROUP_ID;
 import static org.apache.maven.index.reader.Record.Type.ARTIFACT_ADD;
 import static org.apache.maven.index.reader.Record.VERSION;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/**
+ * Test support class for duplicate detection strategies in Maven repositories.
+ * Provides common test functionality for verifying duplicate detection behavior.
+ * 
+ * @since 3.0
+ */
 public class DuplicateDetectionStrategyTestSupport
     extends TestSupport
 {
+  /**
+   * Verifies that a duplicate detection strategy correctly identifies unique and duplicate records.
+   * This method tests that:
+   * <ul>
+   *   <li>The strategy accepts the first occurrence of unique records</li>
+   *   <li>The strategy rejects subsequent occurrences of duplicate records</li>
+   * </ul>
+   *
+   * @param strategy the duplicate detection strategy to test
+   * @throws Exception if any error occurs during testing
+   */
   public void verifyDuplicateDetection(final DuplicateDetectionStrategy<Record> strategy) throws Exception {
     int expectedUnique = 3;
 
@@ -45,6 +62,16 @@ public class DuplicateDetectionStrategyTestSupport
     strategy.close();
   }
 
+  /**
+   * Creates a Maven artifact record with the specified coordinates.
+   *
+   * @param g the group ID
+   * @param a the artifact ID
+   * @param v the version
+   * @param c the classifier
+   * @param e the file extension
+   * @return a new Record instance with the specified coordinates
+   */
   private Record buildRecord(final String g,
                              final String a,
                              final String v,

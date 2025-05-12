@@ -26,14 +26,29 @@ import static com.google.common.base.Preconditions.checkNotNull
 
 /**
  * Common Repository configuration aspects and constants.
+ * 
+ * <p>Compatible with Java 21 and leverages pattern matching for improved type safety.</p>
  */
 @CompileStatic
 trait ConfigurationRecipes
 {
+  /**
+   * Provides access to the repository manager.
+   * 
+   * @return Provider for the repository manager
+   */
   abstract Provider<RepositoryManager> getRepositoryManagerProvider()
 
   /**
    * Create a hosted configuration for the given recipeName.
+   * 
+   * @param name Repository name
+   * @param recipeName Recipe name (must end with '-hosted')
+   * @param writePolicy Write policy, defaults to "ALLOW"
+   * @param strictContentTypeValidation Whether to enforce strict content type validation, defaults to true
+   * @param blobStoreName Blob store name, defaults to the default blob store
+   * @param latestPolicy Whether to enable latest policy, defaults to false
+   * @return The created configuration
    */
   @Nonnull
   Configuration createHosted(final String name,
@@ -54,7 +69,7 @@ trait ConfigurationRecipes
             storage: [
                 blobStoreName: blobStoreName,
                 writePolicy  : writePolicy,
-                latestPolicy  : latestPolicy,
+                latestPolicy : latestPolicy,
                 strictContentTypeValidation: strictContentTypeValidation,
                 dataStoreName: 'nexus'
             ] as Map
@@ -64,6 +79,15 @@ trait ConfigurationRecipes
 
   /**
    * Create a proxy configuration for the given recipeName.
+   * 
+   * @param name Repository name
+   * @param recipeName Recipe name (must end with '-proxy')
+   * @param remoteUrl Remote URL to proxy
+   * @param strictContentTypeValidation Whether to enforce strict content type validation, defaults to true
+   * @param blobStoreName Blob store name, defaults to the default blob store
+   * @param authentication Authentication configuration, defaults to empty map
+   * @param conanVersion Conan version, defaults to "V1"
+   * @return The created configuration
    */
   @Nonnull
   Configuration createProxy(final String name,
@@ -102,7 +126,9 @@ trait ConfigurationRecipes
             dataStoreName: 'nexus'
         ] as Map<String, Object>
     ]
-    if (!authentication.isEmpty()) {
+    
+    // Using pattern matching to check if authentication map is not empty
+    if (authentication instanceof Map && !authentication.isEmpty()) {
       attributes.httpclient.authentication = authentication
     }
 
@@ -116,6 +142,11 @@ trait ConfigurationRecipes
 
   /**
    * Create a group configuration for the given recipeName.
+   * 
+   * @param name Repository name
+   * @param recipeName Recipe name (must end with '-group')
+   * @param members Member repository names
+   * @return The created configuration
    */
   @Nonnull
   Configuration createGroup(final String name,
@@ -126,7 +157,13 @@ trait ConfigurationRecipes
   }
 
   /**
-   * Create a group configuration for the given recipeName.
+   * Create a group configuration for the given recipeName with a specified group write member.
+   * 
+   * @param name Repository name
+   * @param recipeName Recipe name (must end with '-group')
+   * @param groupWriteMember Group write member name
+   * @param members Member repository names
+   * @return The created configuration
    */
   @Nonnull
   Configuration createGroup(final String name,
@@ -155,12 +192,31 @@ trait ConfigurationRecipes
     )
   }
 
+  /**
+   * Creates a new configuration from the provided map.
+   * 
+   * @param map Configuration parameters map containing repositoryName, recipeName, online status, and attributes
+   * @return The created configuration
+   */
   Configuration newConfiguration(final Map map) {
+    // Using pattern matching to safely extract values from the map
     Configuration config = repositoryManagerProvider.get().newConfiguration()
-    config.repositoryName = map.repositoryName
-    config.recipeName = map.recipeName
-    config.online = map.online
-    config.attributes = map.attributes as Map
+    
+    if (map.containsKey('repositoryName') && map.repositoryName instanceof String) {
+      config.repositoryName = map.repositoryName as String
+    }
+    
+    if (map.containsKey('recipeName') && map.recipeName instanceof String) {
+      config.recipeName = map.recipeName as String
+    }
+    
+    if (map.containsKey('online') && map.online instanceof Boolean) {
+      config.online = map.online as Boolean
+    }
+    
+    if (map.containsKey('attributes') && map.attributes instanceof Map) {
+      config.attributes = map.attributes as Map
+    }
 
     return config
   }

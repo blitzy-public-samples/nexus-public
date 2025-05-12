@@ -12,9 +12,9 @@
  */
 package org.sonatype.nexus.plugins.defaultrole.internal;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.plugins.defaultrole.DefaultRoleRealm;
 import org.sonatype.nexus.security.SecuritySystem;
@@ -56,11 +56,11 @@ public class DefaultRoleHealthCheck
   @Override
   protected Result check() throws Exception {
     if (!realmManager.isRealmEnabled(DefaultRoleRealm.NAME)) {
-      return Result.healthy("Default Role Realm not in use.");
+      return Result.healthy(STR."Default Role Realm not in use.");
     }
 
     if (defaultRoleRealm.getRole() == null) {
-      return Result.unhealthy("Default Role Realm is enabled but not configured.");
+      return Result.unhealthy(STR."Default Role Realm is enabled but not configured.");
     }
 
     Role matched = securitySystem.listRoles(DEFAULT_SOURCE)
@@ -71,9 +71,9 @@ public class DefaultRoleHealthCheck
 
     if (matched == null) {
       return Result
-          .unhealthy("Default Role Realm configured to use role %s which doesn't exist.", defaultRoleRealm.getRole());
+          .unhealthy(STR."Default Role Realm configured to use role \{defaultRoleRealm.getRole()} which doesn't exist.");
     }
 
-    return Result.healthy("Default Role Realm configured to use role %s.", defaultRoleRealm.getRole());
+    return Result.healthy(STR."Default Role Realm configured to use role \{defaultRoleRealm.getRole()}.");
   }
 }

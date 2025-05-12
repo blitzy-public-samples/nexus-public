@@ -80,7 +80,7 @@ public class DefaultRoleCapability
   @Override
   protected void onPassivate(final DefaultRoleCapabilityConfiguration defaultRoleCapabilityConfiguration) {
     if (isShuttingDown()) {
-      log.info("Skipping DefaultRole realm disable during shutdown");
+      log.info(STR."Skipping DefaultRole realm disable during shutdown");
     }
     else {
       disableDefaultRoleRealm();
@@ -90,14 +90,20 @@ public class DefaultRoleCapability
 
   private void disableDefaultRoleRealm() {
     try {
-      log.info("Attempting to disable DefaultRole realm");
+      log.info(STR."Attempting to disable DefaultRole realm");
       realmManager.disableRealm(DefaultRoleRealm.NAME);
     }
     catch (Exception e) {
-      log.warn("Failed to disable DefaultRole realm", e);
+      log.warn(STR."Failed to disable DefaultRole realm: \{e.getMessage()}", e);
     }
   }
 
+  /**
+   * Determines if the system is currently shutting down by checking the thread name.
+   * This method works with both platform threads and virtual threads in Java 21.
+   *
+   * @return true if the current thread name indicates a shutdown is in progress
+   */
   private boolean isShuttingDown() {
     return Thread.currentThread().getName().contains("FelixStartLevel");
   }

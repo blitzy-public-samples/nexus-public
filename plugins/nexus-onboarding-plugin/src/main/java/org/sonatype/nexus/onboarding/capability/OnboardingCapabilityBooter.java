@@ -27,6 +27,11 @@ import static org.sonatype.nexus.onboarding.capability.OnboardingCapabilityConfi
 import static org.sonatype.nexus.onboarding.capability.OnboardingCapabilityConfiguration.REGISTRATION_COMPLETED;
 import static org.sonatype.nexus.onboarding.capability.OnboardingCapabilityConfiguration.REGISTRATION_STARTED;
 
+/**
+ * Boots the onboarding capability during application startup.
+ * 
+ * @since 3.0
+ */
 @Named
 @Singleton
 public class OnboardingCapabilityBooter
@@ -34,15 +39,16 @@ public class OnboardingCapabilityBooter
 {
   @Override
   protected void boot(final CapabilityRegistry registry) throws Exception {
+    // Use Java 21 string templates for configuration values
     maybeAddCapability(
         registry,
         OnboardingCapability.TYPE,
         true,
         null,
         ImmutableMap.of(
-            PRO_STARTER_INFO_PAGE_COMPLETED, String.valueOf(DEFAULT_PRO_STARTER_INFO_PAGE_COMPLETED),
-            REGISTRATION_STARTED, String.valueOf(DEFAULT_REGISTRATION_STARTED),
-            REGISTRATION_COMPLETED, String.valueOf(DEFAULT_REGISTRATION_COMPLETED)
+            PRO_STARTER_INFO_PAGE_COMPLETED, STR."""{DEFAULT_PRO_STARTER_INFO_PAGE_COMPLETED}""",
+            REGISTRATION_STARTED, STR."""{DEFAULT_REGISTRATION_STARTED}""",
+            REGISTRATION_COMPLETED, STR."""{DEFAULT_REGISTRATION_COMPLETED}"""
         )
     );
   }

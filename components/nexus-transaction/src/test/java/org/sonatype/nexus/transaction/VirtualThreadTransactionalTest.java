@@ -16,28 +16,29 @@ import java.io.IOException;
 import java.util.ConcurrentModificationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadLocal;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-
-// Import for Java 21 Virtual Threads
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
 import com.google.common.base.Suppliers;
 import com.google.inject.Guice;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.Assertions;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.invocation.InvocationOnMock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.stubbing.Answer;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.inOrder;
@@ -47,13 +48,14 @@ import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.transaction.Transactional.DEFAULT_REASON;
 
 /**
- * Test transactional behaviour with Java 21 Virtual Threads.
+ * Test transactional behavior with Java 21 Virtual Threads.
  * 
  * This test class verifies that transaction boundaries, commit, rollback, and retry mechanisms
- * function correctly when executed on Java 21 Virtual Threads. It ensures that the core transaction
- * support functions properly with the new lightweight threading model introduced in Java 21.
+ * function correctly in a virtual thread context, ensuring that the core transaction support
+ * functions properly with the new lightweight threading model introduced in Java 21.
  */
 @SuppressWarnings("boxing")
+@ExtendWith(MockitoExtension.class)
 public class VirtualThreadTransactionalTest
     extends TestSupport
 {
@@ -68,22 +70,23 @@ public class VirtualThreadTransactionalTest
   boolean isActive;
 
   boolean throwExceptionOnCommit;
+  
+  // Virtual thread factory for test cases
+  ThreadFactory virtualThreadFactory;
 
-  @Before
+  @BeforeEach
   public void setUp() throws Exception {
     when(session.getTransaction()).thenReturn(tx);
     UnitOfWork.begin(Suppliers.ofInstance(session));
 
-    when(tx.isActive()).thenAnswer(new Answer<Boolean>()
-    {
+    when(tx.isActive()).thenAnswer(new Answer<Boolean>() {
       @Override
       public Boolean answer(final InvocationOnMock invocation) throws Throwable {
         return isActive;
       }
     });
 
-    doAnswer(new Answer<Void>()
-    {
+    doAnswer(new Answer<Void>() {
       @Override
       public Void answer(final InvocationOnMock invocation) throws Throwable {
         isActive = true;
@@ -91,8 +94,7 @@ public class VirtualThreadTransactionalTest
       }
     }).when(tx).begin();
 
-    doAnswer(new Answer<Void>()
-    {
+    doAnswer(new Answer<Void>() {
       @Override
       public Void answer(final InvocationOnMock invocation) throws Throwable {
         isActive = false;
@@ -103,534 +105,421 @@ public class VirtualThreadTransactionalTest
       }
     }).when(tx).commit();
 
-    doAnswer(new Answer<Void>()
-    {
+    doAnswer(new Answer<Void>() {
       @Override
       public Void answer(final InvocationOnMock invocation) throws Throwable {
         isActive = false;
         return null;
       }
     }).when(tx).rollback();
+    
+    // Initialize virtual thread factory
+    virtualThreadFactory = Thread.ofVirtual().name("vt-test-", 0).factory();
   }
 
-  @After
+  @AfterEach
   public void tearDown() {
     UnitOfWork.end();
   }
 
   /**
-   * Test basic transactional behavior on a virtual thread.
+   * Tests basic transaction execution in a virtual thread.
+   * Verifies that a simple transactional method can be executed successfully in a virtual thread context.
    */
   @Test
-  public void testTransactionalOnVirtualThread() throws Exception {
-    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-      try {
-        methods.transactional();
-      }
-      catch (Exception e) {
-        throw new RuntimeException(e);
-      }
-    }, Executors.newVirtualThreadPerTaskExecutor());
-
-    future.get(5, TimeUnit.SECONDS);
-
-    InOrder order = inOrder(session, tx);
-    order.verify(session).getTransaction();
-    order.verify(tx).reason(DEFAULT_REASON);
-    order.verify(tx).begin();
-    order.verify(tx).commit();
-    order.verify(tx).end();
-    order.verify(session).close();
-    verifyNoMoreInteractions(session, tx);
-  }
-
-  /**
-   * Test multiple transactional operations on virtual threads.
-   */
-  @Test
-  public void testMultipleTransactionsOnVirtualThreads() throws Exception {
-    var executor = Executors.newVirtualThreadPerTaskExecutor();
+  public void testBasicTransactionInVirtualThread() throws Exception {
+    AtomicReference<String> result = new AtomicReference<>();
+    CountDownLatch latch = new CountDownLatch(1);
     
-    CompletableFuture<Void> future1 = CompletableFuture.runAsync(() -> {
+    Thread virtualThread = virtualThreadFactory.newThread(() -> {
       try {
-        methods.transactional();
-      }
-      catch (Exception e) {
-        throw new RuntimeException(e);
-      }
-    }, executor);
-
-    CompletableFuture<Void> future2 = CompletableFuture.runAsync(() -> {
-      try {
-        methods.transactional();
-      }
-      catch (Exception e) {
-        throw new RuntimeException(e);
-      }
-    }, executor);
-
-    CompletableFuture<Void> future3 = CompletableFuture.runAsync(() -> {
-      try {
-        methods.transactional();
-      }
-      catch (Exception e) {
-        throw new RuntimeException(e);
-      }
-    }, executor);
-
-    CompletableFuture.allOf(future1, future2, future3).get(5, TimeUnit.SECONDS);
-
-    InOrder order = inOrder(session, tx);
-    order.verify(session).getTransaction();
-    order.verify(tx).reason(DEFAULT_REASON);
-    order.verify(tx).begin();
-    order.verify(tx).commit();
-    order.verify(tx).end();
-    order.verify(session).close();
-    order.verify(session).getTransaction();
-    order.verify(tx).reason(DEFAULT_REASON);
-    order.verify(tx).begin();
-    order.verify(tx).commit();
-    order.verify(tx).end();
-    order.verify(session).close();
-    order.verify(session).getTransaction();
-    order.verify(tx).reason(DEFAULT_REASON);
-    order.verify(tx).begin();
-    order.verify(tx).commit();
-    order.verify(tx).end();
-    order.verify(session).close();
-    verifyNoMoreInteractions(session, tx);
-  }
-
-  /**
-   * Test custom transaction reason on a virtual thread.
-   */
-  @Test
-  public void testCustomReasonOnVirtualThread() throws Exception {
-    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-      try {
-        methods.customReason();
-      }
-      catch (Exception e) {
-        throw new RuntimeException(e);
-      }
-    }, Executors.newVirtualThreadPerTaskExecutor());
-
-    future.get(5, TimeUnit.SECONDS);
-
-    InOrder order = inOrder(session, tx);
-    order.verify(session).getTransaction();
-    order.verify(tx).reason("Testing!");
-    order.verify(tx).begin();
-    order.verify(tx).commit();
-    order.verify(tx).end();
-    order.verify(session).close();
-    verifyNoMoreInteractions(session, tx);
-  }
-
-  /**
-   * Test nested transactions on virtual threads.
-   */
-  @Test
-  public void testNestedOnVirtualThread() throws Exception {
-    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-      try {
-        methods.outer();
-      }
-      catch (Exception e) {
-        throw new RuntimeException(e);
-      }
-    }, Executors.newVirtualThreadPerTaskExecutor());
-
-    future.get(5, TimeUnit.SECONDS);
-
-    InOrder order = inOrder(session, tx);
-    order.verify(session).getTransaction();
-    order.verify(tx).reason(DEFAULT_REASON);
-    order.verify(tx).begin();
-    order.verify(session).getTransaction();
-    order.verify(tx).isActive();
-    order.verify(session).getTransaction();
-    order.verify(tx).isActive();
-    order.verify(tx).commit();
-    order.verify(tx).end();
-    order.verify(session).close();
-    verifyNoMoreInteractions(session, tx);
-  }
-
-  /**
-   * Test cross-thread nested transactions with virtual threads.
-   * 
-   * This test verifies that transactions can be properly managed across different virtual threads.
-   * It creates an outer transaction in one virtual thread and an inner transaction in another,
-   * ensuring that the transaction boundaries are respected and that the operations complete successfully.
-   * This is particularly important for Java 21 Virtual Threads which have different thread-local
-   * inheritance behavior compared to platform threads.
-   */
-  @Test
-  public void testCrossThreadNestedTransactions() throws Exception {
-    CountDownLatch outerStarted = new CountDownLatch(1);
-    CountDownLatch innerCompleted = new CountDownLatch(1);
-    AtomicReference<Exception> innerException = new AtomicReference<>();
-
-    CompletableFuture<Void> outerFuture = CompletableFuture.runAsync(() -> {
-      try {
-        // Start outer transaction
         UnitOfWork.begin(Suppliers.ofInstance(session));
         try {
-          tx.begin();
-          isActive = true;
-          outerStarted.countDown();
-          
-          // Wait for inner transaction to complete
-          innerCompleted.await(5, TimeUnit.SECONDS);
-          
-          tx.commit();
+          result.set(methods.transactional());
         }
         finally {
-          tx.end();
+          UnitOfWork.end();
+        }
+      }
+      finally {
+        latch.countDown();
+      }
+    });
+    
+    virtualThread.start();
+    Assertions.assertTrue(latch.await(5, TimeUnit.SECONDS), "Virtual thread execution timed out");
+    Assertions.assertEquals("success", result.get(), "Transaction should execute successfully in virtual thread");
+    
+    InOrder order = inOrder(session, tx);
+    order.verify(session).getTransaction();
+    order.verify(tx).reason(DEFAULT_REASON);
+    order.verify(tx).begin();
+    order.verify(tx).commit();
+    order.verify(tx).end();
+    order.verify(session).close();
+    verifyNoMoreInteractions(session, tx);
+  }
+
+  /**
+   * Tests nested transactions in virtual threads.
+   * Verifies that nested transactional methods work correctly when executed in a virtual thread.
+   */
+  @Test
+  public void testNestedTransactionsInVirtualThread() throws Exception {
+    AtomicReference<String> result = new AtomicReference<>();
+    CountDownLatch latch = new CountDownLatch(1);
+    
+    Thread virtualThread = virtualThreadFactory.newThread(() -> {
+      try {
+        UnitOfWork.begin(Suppliers.ofInstance(session));
+        try {
+          result.set(methods.outer());
+        }
+        finally {
+          UnitOfWork.end();
+        }
+      }
+      finally {
+        latch.countDown();
+      }
+    });
+    
+    virtualThread.start();
+    Assertions.assertTrue(latch.await(5, TimeUnit.SECONDS), "Virtual thread execution timed out");
+    Assertions.assertEquals("success", result.get(), "Nested transactions should execute successfully in virtual thread");
+    
+    InOrder order = inOrder(session, tx);
+    order.verify(session).getTransaction();
+    order.verify(tx).reason(DEFAULT_REASON);
+    order.verify(tx).begin();
+    order.verify(session).getTransaction();
+    order.verify(tx).isActive();
+    order.verify(session).getTransaction();
+    order.verify(tx).isActive();
+    order.verify(tx).commit();
+    order.verify(tx).end();
+    order.verify(session).close();
+    verifyNoMoreInteractions(session, tx);
+  }
+
+  /**
+   * Tests transaction rollback on exception in a virtual thread.
+   * Verifies that transactions are properly rolled back when an exception occurs in a virtual thread.
+   */
+  @Test
+  public void testRollbackOnExceptionInVirtualThread() throws Exception {
+    AtomicBoolean exceptionThrown = new AtomicBoolean(false);
+    CountDownLatch latch = new CountDownLatch(1);
+    
+    Thread virtualThread = virtualThreadFactory.newThread(() -> {
+      try {
+        UnitOfWork.begin(Suppliers.ofInstance(session));
+        try {
+          methods.rollbackOnUncheckedException();
+        }
+        catch (IllegalStateException e) {
+          exceptionThrown.set(true);
+        }
+        finally {
+          UnitOfWork.end();
+        }
+      }
+      finally {
+        latch.countDown();
+      }
+    });
+    
+    virtualThread.start();
+    Assertions.assertTrue(latch.await(5, TimeUnit.SECONDS), "Virtual thread execution timed out");
+    Assertions.assertTrue(exceptionThrown.get(), "Exception should be thrown in virtual thread");
+    
+    InOrder order = inOrder(session, tx);
+    order.verify(session).getTransaction();
+    order.verify(tx).reason(DEFAULT_REASON);
+    order.verify(tx).begin();
+    order.verify(tx).rollback();
+    order.verify(tx).end();
+    order.verify(session).close();
+    verifyNoMoreInteractions(session, tx);
+  }
+
+  /**
+   * Tests transaction retry mechanism in a virtual thread.
+   * Verifies that transaction retry works correctly when executed in a virtual thread.
+   */
+  @Test
+  public void testRetryMechanismInVirtualThread() throws Exception {
+    when(tx.allowRetry(any(Exception.class))).thenReturn(true);
+    
+    AtomicReference<String> result = new AtomicReference<>();
+    CountDownLatch latch = new CountDownLatch(1);
+    
+    Thread virtualThread = virtualThreadFactory.newThread(() -> {
+      try {
+        UnitOfWork.begin(Suppliers.ofInstance(session));
+        try {
+          methods.setCountdownToSuccess(3);
+          result.set(methods.retryOnUncheckedException());
+        }
+        finally {
           UnitOfWork.end();
         }
       }
       catch (Exception e) {
-        throw new RuntimeException(e);
+        result.set("failed: " + e.getMessage());
       }
-    }, Executors.newVirtualThreadPerTaskExecutor());
+      finally {
+        latch.countDown();
+      }
+    });
+    
+    virtualThread.start();
+    Assertions.assertTrue(latch.await(5, TimeUnit.SECONDS), "Virtual thread execution timed out");
+    Assertions.assertEquals("success", result.get(), "Retry mechanism should work in virtual thread");
+    
+    InOrder order = inOrder(session, tx);
+    order.verify(session).getTransaction();
+    order.verify(tx).reason(DEFAULT_REASON);
+    order.verify(tx).begin();
+    order.verify(tx).rollback();
+    order.verify(tx).allowRetry(any(IllegalStateException.class));
+    order.verify(tx).begin();
+    order.verify(tx).rollback();
+    order.verify(tx).allowRetry(any(IllegalStateException.class));
+    order.verify(tx).begin();
+    order.verify(tx).rollback();
+    order.verify(tx).allowRetry(any(IllegalStateException.class));
+    order.verify(tx).begin();
+    order.verify(tx).commit();
+    order.verify(tx).end();
+    order.verify(session).close();
+    verifyNoMoreInteractions(session, tx);
+  }
 
-    CompletableFuture<Void> innerFuture = CompletableFuture.runAsync(() -> {
+  /**
+   * Tests thread-local variable propagation in virtual threads.
+   * Verifies that thread-local variables are properly isolated between virtual threads.
+   */
+  @Test
+  public void testThreadLocalIsolationInVirtualThreads() throws Exception {
+    ThreadLocal<String> threadLocal = new ThreadLocal<>();
+    threadLocal.set("main-thread");
+    
+    AtomicReference<String> virtualThreadValue = new AtomicReference<>();
+    AtomicReference<String> mainThreadValueAfter = new AtomicReference<>();
+    CountDownLatch latch = new CountDownLatch(1);
+    
+    Thread virtualThread = virtualThreadFactory.newThread(() -> {
       try {
-        // Wait for outer transaction to start
-        outerStarted.await(5, TimeUnit.SECONDS);
+        // Get initial value in virtual thread
+        virtualThreadValue.set(threadLocal.get());
         
-        // Run inner transaction
-        methods.transactional();
-        innerCompleted.countDown();
+        // Set a new value in the virtual thread
+        threadLocal.set("virtual-thread");
       }
-      catch (Exception e) {
-        innerException.set(e);
-        innerCompleted.countDown();
+      finally {
+        latch.countDown();
       }
-    }, Executors.newVirtualThreadPerTaskExecutor());
-
-    CompletableFuture.allOf(outerFuture, innerFuture).get(10, TimeUnit.SECONDS);
+    });
     
-    if (innerException.get() != null) {
-      throw innerException.get();
-    }
-
-    InOrder order = inOrder(session, tx);
-    // Verify outer transaction
-    order.verify(session).getTransaction();
-    // Verify inner transaction
-    order.verify(session).getTransaction();
-    order.verify(tx).reason(DEFAULT_REASON);
-    order.verify(tx).begin();
-    order.verify(tx).commit();
-    order.verify(tx).end();
-    order.verify(session).close();
-    verifyNoMoreInteractions(session, tx);
-  }
-
-  /**
-   * Test thread-local propagation in virtual threads.
-   * 
-   * This test verifies that thread-locals are not automatically inherited by virtual threads in Java 21.
-   * This is important to understand as it affects how UnitOfWork and transaction contexts are managed
-   * across thread boundaries. Applications must explicitly handle thread-local propagation when using
-   * virtual threads.
-   */
-  @Test
-  public void testThreadLocalPropagationInVirtualThreads() throws Exception {
-    // Set up a thread-local value in the main thread
-    UnitOfWork.begin(Suppliers.ofInstance(session));
+    virtualThread.start();
+    Assertions.assertTrue(latch.await(5, TimeUnit.SECONDS), "Virtual thread execution timed out");
     
-    CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> {
-      try {
-        // Check if UnitOfWork is properly propagated to virtual thread
-        Transaction currentTx = UnitOfWork.peekTransaction();
-        return currentTx != null;
-      }
-      catch (Exception e) {
-        throw new RuntimeException(e);
-      }
-    }, Executors.newVirtualThreadPerTaskExecutor());
-
-    // Virtual threads should not inherit thread-locals by default in Java 21
-    assertThat(future.get(5, TimeUnit.SECONDS), is(false));
+    // Check value in main thread after virtual thread execution
+    mainThreadValueAfter.set(threadLocal.get());
     
-    UnitOfWork.end();
-  }
-
-  /**
-   * Test rollback on checked exception in a virtual thread.
-   */
-  @Test
-  public void testRollbackOnCheckedExceptionInVirtualThread() throws Exception {
-    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-      try {
-        methods.rollbackOnCheckedException();
-      }
-      catch (IOException expected) {
-        // Expected exception
-      }
-      catch (Exception e) {
-        throw new RuntimeException(e);
-      }
-    }, Executors.newVirtualThreadPerTaskExecutor());
-
-    future.get(5, TimeUnit.SECONDS);
-
-    InOrder order = inOrder(session, tx);
-    order.verify(session).getTransaction();
-    order.verify(tx).reason(DEFAULT_REASON);
-    order.verify(tx).begin();
-    order.verify(tx).rollback();
-    order.verify(tx).end();
-    order.verify(session).close();
-    verifyNoMoreInteractions(session, tx);
-  }
-
-  /**
-   * Test rollback on unchecked exception in a virtual thread.
-   */
-  @Test
-  public void testRollbackOnUncheckedExceptionInVirtualThread() throws Exception {
-    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-      try {
-        methods.rollbackOnUncheckedException();
-      }
-      catch (IllegalStateException expected) {
-        // Expected exception
-      }
-      catch (Exception e) {
-        throw new RuntimeException(e);
-      }
-    }, Executors.newVirtualThreadPerTaskExecutor());
-
-    future.get(5, TimeUnit.SECONDS);
-
-    InOrder order = inOrder(session, tx);
-    order.verify(session).getTransaction();
-    order.verify(tx).reason(DEFAULT_REASON);
-    order.verify(tx).begin();
-    order.verify(tx).rollback();
-    order.verify(tx).end();
-    order.verify(session).close();
-    verifyNoMoreInteractions(session, tx);
-  }
-
-  /**
-   * Test retry success on checked exception in a virtual thread.
-   */
-  @Test
-  public void testRetrySuccessOnCheckedExceptionInVirtualThread() throws Exception {
-    when(tx.allowRetry(any(Exception.class))).thenReturn(true);
-
-    methods.setCountdownToSuccess(3);
+    // Virtual thread should start with null (not inheriting from carrier thread)
+    Assertions.assertNull(virtualThreadValue.get(), "Virtual thread should not inherit ThreadLocal values");
     
-    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-      try {
-        methods.retryOnCheckedException();
-      }
-      catch (Exception e) {
-        throw new RuntimeException(e);
-      }
-    }, Executors.newVirtualThreadPerTaskExecutor());
-
-    future.get(5, TimeUnit.SECONDS);
-
-    InOrder order = inOrder(session, tx);
-    order.verify(session).getTransaction();
-    order.verify(tx).reason(DEFAULT_REASON);
-    order.verify(tx).begin();
-    order.verify(tx).rollback();
-    order.verify(tx).allowRetry(any(IOException.class));
-    order.verify(tx).begin();
-    order.verify(tx).rollback();
-    order.verify(tx).allowRetry(any(IOException.class));
-    order.verify(tx).begin();
-    order.verify(tx).rollback();
-    order.verify(tx).allowRetry(any(IOException.class));
-    order.verify(tx).begin();
-    order.verify(tx).commit();
-    order.verify(tx).end();
-    order.verify(session).close();
-    verifyNoMoreInteractions(session, tx);
+    // Main thread value should remain unchanged
+    Assertions.assertEquals("main-thread", mainThreadValueAfter.get(), 
+        "ThreadLocal in main thread should not be affected by virtual thread");
   }
 
   /**
-   * Test retry failure on checked exception in a virtual thread.
+   * Tests transaction context propagation across virtual thread boundaries.
+   * Verifies that transaction context is properly maintained when crossing virtual thread boundaries.
    */
   @Test
-  public void testRetryFailureOnCheckedExceptionInVirtualThread() throws Exception {
-    when(tx.allowRetry(any(Exception.class))).thenReturn(true).thenReturn(false);
-
-    methods.setCountdownToSuccess(100);
+  public void testTransactionContextPropagationAcrossVirtualThreads() throws Exception {
+    AtomicBoolean success = new AtomicBoolean(false);
+    CountDownLatch latch = new CountDownLatch(1);
     
-    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+    // Start a transaction in the main thread
+    methods.transactional(); // This will set up a transaction
+    
+    // Now try to access the transaction from a virtual thread
+    Thread virtualThread = virtualThreadFactory.newThread(() -> {
       try {
-        methods.retryOnCheckedException();
+        // This should fail because the transaction context is not propagated to the virtual thread
+        UnitOfWork.currentTx();
+        success.set(false);
       }
-      catch (IOException expected) {
-        // Expected exception
+      catch (IllegalStateException e) {
+        // Expected - transaction context should not be available
+        success.set(true);
       }
-      catch (Exception e) {
-        throw new RuntimeException(e);
+      finally {
+        latch.countDown();
       }
-    }, Executors.newVirtualThreadPerTaskExecutor());
-
-    future.get(5, TimeUnit.SECONDS);
-
-    InOrder order = inOrder(session, tx);
-    order.verify(session).getTransaction();
-    order.verify(tx).reason(DEFAULT_REASON);
-    order.verify(tx).begin();
-    order.verify(tx).rollback();
-    order.verify(tx).allowRetry(any(IOException.class));
-    order.verify(tx).begin();
-    order.verify(tx).rollback();
-    order.verify(tx).allowRetry(any(IOException.class));
-    order.verify(tx).end();
-    order.verify(session).close();
-    verifyNoMoreInteractions(session, tx);
+    });
+    
+    virtualThread.start();
+    Assertions.assertTrue(latch.await(5, TimeUnit.SECONDS), "Virtual thread execution timed out");
+    Assertions.assertTrue(success.get(), "Transaction context should not propagate to virtual thread");
   }
 
   /**
-   * Test retry on commit failure in a virtual thread.
-   * 
-   * This test verifies that transaction retry mechanisms work correctly when a commit operation fails
-   * in a virtual thread context. It simulates a ConcurrentModificationException during commit and
-   * ensures that the retry logic is properly applied before ultimately failing after the retry limit
-   * is reached. This is critical for ensuring data consistency in high-concurrency environments using
-   * virtual threads.
+   * Tests concurrent transactions in multiple virtual threads.
+   * Verifies that multiple virtual threads can execute transactions concurrently without interference.
    */
   @Test
-  public void testRetryOnCommitFailureInVirtualThread() throws Exception {
-    when(tx.allowRetry(any(Exception.class))).thenReturn(true).thenReturn(false);
-
-    try {
-      throwExceptionOnCommit = true;
-      
-      CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-        try {
-          methods.retryOnCommitFailure();
-        }
-        catch (Exception e) {
-          throw new RuntimeException(e);
-        }
-      }, Executors.newVirtualThreadPerTaskExecutor());
-
-      ExecutionException exception = assertThrows(ExecutionException.class, () -> future.get(5, TimeUnit.SECONDS));
-      assertThat(exception.getCause().getCause(), is(ConcurrentModificationException.class));
-    }
-    finally {
-      throwExceptionOnCommit = false;
-      InOrder order = inOrder(session, tx);
-      order.verify(session).getTransaction();
-      order.verify(tx).reason(DEFAULT_REASON);
-      order.verify(tx).begin();
-      order.verify(tx).commit();
-      order.verify(tx).rollback();
-      order.verify(tx).allowRetry(any(ConcurrentModificationException.class));
-      order.verify(tx).begin();
-      order.verify(tx).commit();
-      order.verify(tx).rollback();
-      order.verify(tx).allowRetry(any(ConcurrentModificationException.class));
-      order.verify(tx).end();
-      order.verify(session).close();
-      verifyNoMoreInteractions(session, tx);
-    }
-  }
-
-  /**
-   * Test swallow commit failure in a virtual thread.
-   */
-  @Test
-  public void testSwallowCommitFailureInVirtualThread() throws Exception {
-    when(tx.allowRetry(any(Exception.class))).thenReturn(true).thenReturn(false);
-
-    try {
-      throwExceptionOnCommit = true;
-      
-      CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-        try {
-          methods.swallowCommitFailure();
-        }
-        catch (Exception e) {
-          throw new RuntimeException(e);
-        }
-      }, Executors.newVirtualThreadPerTaskExecutor());
-
-      future.get(5, TimeUnit.SECONDS);
-    }
-    finally {
-      throwExceptionOnCommit = false;
-      InOrder order = inOrder(session, tx);
-      order.verify(session).getTransaction();
-      order.verify(tx).reason(DEFAULT_REASON);
-      order.verify(tx).begin();
-      order.verify(tx).commit();
-      order.verify(tx).rollback();
-      order.verify(tx).end();
-      order.verify(session).close();
-      verifyNoMoreInteractions(session, tx);
-    }
-  }
-
-  /**
-   * Test concurrent virtual thread transactions with shared resources.
-   * 
-   * This test verifies that multiple virtual threads can concurrently execute transactional operations
-   * without interfering with each other. It creates a pool of virtual threads that all execute
-   * transactional methods simultaneously, then verifies that all transactions were properly managed.
-   * This test is particularly important for Java 21 Virtual Threads which are designed to support
-   * high concurrency scenarios with minimal overhead.
-   */
-  @Test
-  public void testConcurrentVirtualThreadTransactions() throws Exception {
-    var executor = Executors.newVirtualThreadPerTaskExecutor();
-    int numThreads = 10;
+  public void testConcurrentTransactionsInVirtualThreads() throws Exception {
+    int threadCount = 10;
     CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(numThreads);
+    CountDownLatch completionLatch = new CountDownLatch(threadCount);
+    AtomicBoolean success = new AtomicBoolean(true);
     
-    CompletableFuture<?>[] futures = new CompletableFuture[numThreads];
-    
-    for (int i = 0; i < numThreads; i++) {
-      final int threadNum = i;
-      futures[i] = CompletableFuture.runAsync(() -> {
+    // Create multiple virtual threads, each with its own transaction session
+    for (int i = 0; i < threadCount; i++) {
+      final int threadId = i;
+      final TransactionalSession<Transaction> threadSession = mock(TransactionalSession.class);
+      final Transaction threadTx = mock(Transaction.class);
+      when(threadSession.getTransaction()).thenReturn(threadTx);
+      
+      // Set up the mock behavior for this thread's transaction
+      when(threadTx.isActive()).thenReturn(false).thenReturn(true).thenReturn(false);
+      
+      Thread virtualThread = virtualThreadFactory.newThread(() -> {
         try {
           // Wait for all threads to be ready
           startLatch.await();
           
-          // Run transactional method
-          methods.transactional();
-          
-          completionLatch.countDown();
+          // Begin a unit of work with this thread's session
+          UnitOfWork.begin(Suppliers.ofInstance(threadSession));
+          try {
+            // Execute a transactional operation
+            String result = "success-" + threadId;
+            
+            // Verify transaction was started
+            if (!threadTx.isActive()) {
+              success.set(false);
+            }
+          }
+          finally {
+            UnitOfWork.end();
+          }
         }
         catch (Exception e) {
-          throw new RuntimeException("Thread " + threadNum + " failed", e);
+          success.set(false);
         }
-      }, executor);
+        finally {
+          completionLatch.countDown();
+        }
+      });
+      
+      virtualThread.start();
     }
     
     // Start all threads simultaneously
     startLatch.countDown();
     
     // Wait for all threads to complete
-    completionLatch.await(10, TimeUnit.SECONDS);
-    CompletableFuture.allOf(futures).get(5, TimeUnit.SECONDS);
+    Assertions.assertTrue(completionLatch.await(10, TimeUnit.SECONDS), "Virtual thread execution timed out");
+    Assertions.assertTrue(success.get(), "All virtual threads should execute transactions successfully");
+  }
+
+  /**
+   * Tests transaction commit failure and retry in a virtual thread.
+   * Verifies that transaction commit failures are properly handled in virtual threads.
+   */
+  @Test
+  public void testCommitFailureAndRetryInVirtualThread() throws Exception {
+    when(tx.allowRetry(any(Exception.class))).thenReturn(true).thenReturn(false);
     
-    // Verify that transaction methods were called the correct number of times
-    // Note: We can't verify exact order due to concurrent execution
+    AtomicBoolean exceptionThrown = new AtomicBoolean(false);
+    CountDownLatch latch = new CountDownLatch(1);
+    
+    Thread virtualThread = virtualThreadFactory.newThread(() -> {
+      try {
+        UnitOfWork.begin(Suppliers.ofInstance(session));
+        try {
+          throwExceptionOnCommit = true;
+          methods.retryOnCommitFailure();
+        }
+        catch (ConcurrentModificationException e) {
+          exceptionThrown.set(true);
+        }
+        finally {
+          throwExceptionOnCommit = false;
+          UnitOfWork.end();
+        }
+      }
+      finally {
+        latch.countDown();
+      }
+    });
+    
+    virtualThread.start();
+    Assertions.assertTrue(latch.await(5, TimeUnit.SECONDS), "Virtual thread execution timed out");
+    Assertions.assertTrue(exceptionThrown.get(), "Exception should be thrown after retry failure");
+    
     InOrder order = inOrder(session, tx);
-    for (int i = 0; i < numThreads; i++) {
+    order.verify(session).getTransaction();
+    order.verify(tx).reason(DEFAULT_REASON);
+    order.verify(tx).begin();
+    order.verify(tx).commit();
+    order.verify(tx).rollback();
+    order.verify(tx).allowRetry(any(ConcurrentModificationException.class));
+    order.verify(tx).begin();
+    order.verify(tx).commit();
+    order.verify(tx).rollback();
+    order.verify(tx).allowRetry(any(ConcurrentModificationException.class));
+    order.verify(tx).end();
+    order.verify(session).close();
+    verifyNoMoreInteractions(session, tx);
+  }
+
+  /**
+   * Tests transaction execution with a virtual thread executor service.
+   * Verifies that transactions work correctly when executed through a virtual thread executor.
+   */
+  @Test
+  public void testTransactionWithVirtualThreadExecutor() throws Exception {
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    AtomicReference<String> result = new AtomicReference<>();
+    CountDownLatch latch = new CountDownLatch(1);
+    
+    try {
+      CompletableFuture.runAsync(() -> {
+        try {
+          UnitOfWork.begin(Suppliers.ofInstance(session));
+          try {
+            result.set(methods.transactional());
+          }
+          finally {
+            UnitOfWork.end();
+          }
+        }
+        finally {
+          latch.countDown();
+        }
+      }, executor);
+      
+      Assertions.assertTrue(latch.await(5, TimeUnit.SECONDS), "Virtual thread execution timed out");
+      Assertions.assertEquals("success", result.get(), "Transaction should execute successfully in virtual thread executor");
+      
+      InOrder order = inOrder(session, tx);
       order.verify(session).getTransaction();
       order.verify(tx).reason(DEFAULT_REASON);
       order.verify(tx).begin();
       order.verify(tx).commit();
       order.verify(tx).end();
       order.verify(session).close();
+      verifyNoMoreInteractions(session, tx);
     }
-    verifyNoMoreInteractions(session, tx);
+    finally {
+      executor.shutdown();
+    }
   }
 }

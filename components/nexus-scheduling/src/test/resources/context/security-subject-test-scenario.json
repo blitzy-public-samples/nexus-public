@@ -1,452 +1,332 @@
 {
-  "description": "Test scenarios for validating security subject propagation across virtual thread boundaries in the Nexus scheduling component",
+  "testName": "SecuritySubjectPropagationTest",
+  "description": "Test scenarios for validating security subject propagation across virtual thread boundaries in scheduled tasks",
   "version": "1.0",
-  "javaVersion": "21",
-  "testScenarios": [
+  
+  "subjects": [
     {
-      "id": "admin-subject-propagation",
-      "description": "Validates that admin subject with all permissions is properly propagated to virtual threads",
-      "subject": {
-        "principal": "admin",
-        "authenticated": true,
-        "roles": ["nx-admin"],
-        "permissions": ["*"],
-        "sessionId": "admin-session-${random.uuid}"
-      },
-      "taskConfiguration": {
-        "type": "script",
-        "name": "Admin Security Context Test",
-        "enabled": true,
-        "properties": {
-          "language": "groovy",
-          "source": "return security.subject.principal"
-        }
-      },
-      "validationCriteria": {
-        "expectedPrincipal": "admin",
-        "expectedAuthenticated": true,
-        "expectedRoles": ["nx-admin"],
-        "expectedPermissions": ["*"],
-        "permissionChecks": [
-          {
-            "permission": "nexus:*",
-            "expectedResult": true
-          },
-          {
-            "permission": "nexus:settings:read",
-            "expectedResult": true
-          },
-          {
-            "permission": "nexus:repository:*:*",
-            "expectedResult": true
-          }
-        ]
+      "id": "admin",
+      "description": "Administrator with all permissions",
+      "principal": "admin",
+      "authenticated": true,
+      "roles": ["nx-admin"],
+      "permissions": ["*"],
+      "attributes": {
+        "userId": "admin",
+        "userSource": "default",
+        "remoteIp": "127.0.0.1"
       }
     },
     {
-      "id": "anonymous-subject-propagation",
-      "description": "Validates that anonymous subject with limited permissions is properly propagated to virtual threads",
-      "subject": {
-        "principal": "anonymous",
-        "authenticated": false,
-        "roles": ["nx-anonymous"],
-        "permissions": ["nexus:repository:*:browse", "nexus:repository:*:read"],
-        "sessionId": "anonymous-session-${random.uuid}"
-      },
-      "taskConfiguration": {
-        "type": "script",
-        "name": "Anonymous Security Context Test",
-        "enabled": true,
-        "properties": {
-          "language": "groovy",
-          "source": "return security.subject.principal"
-        }
-      },
-      "validationCriteria": {
-        "expectedPrincipal": "anonymous",
-        "expectedAuthenticated": false,
-        "expectedRoles": ["nx-anonymous"],
-        "permissionChecks": [
-          {
-            "permission": "nexus:repository:*:browse",
-            "expectedResult": true
-          },
-          {
-            "permission": "nexus:repository:*:read",
-            "expectedResult": true
-          },
-          {
-            "permission": "nexus:settings:read",
-            "expectedResult": false
-          },
-          {
-            "permission": "nexus:repository:*:add",
-            "expectedResult": false
-          }
-        ]
-      }
-    },
-    {
-      "id": "repository-admin-subject-propagation",
-      "description": "Validates that repository admin subject with specific repository permissions is properly propagated to virtual threads",
-      "subject": {
-        "principal": "repo-admin",
-        "authenticated": true,
-        "roles": ["nx-repository-admin"],
-        "permissions": ["nexus:repository:*:*", "nexus:repository-view:*:*"],
-        "sessionId": "repo-admin-session-${random.uuid}"
-      },
-      "taskConfiguration": {
-        "type": "script",
-        "name": "Repository Admin Security Context Test",
-        "enabled": true,
-        "properties": {
-          "language": "groovy",
-          "source": "return security.subject.isPermitted('nexus:repository:*:*')"
-        }
-      },
-      "validationCriteria": {
-        "expectedPrincipal": "repo-admin",
-        "expectedAuthenticated": true,
-        "expectedRoles": ["nx-repository-admin"],
-        "permissionChecks": [
-          {
-            "permission": "nexus:repository:*:*",
-            "expectedResult": true
-          },
-          {
-            "permission": "nexus:repository-view:*:*",
-            "expectedResult": true
-          },
-          {
-            "permission": "nexus:settings:read",
-            "expectedResult": false
-          },
-          {
-            "permission": "nexus:users:create",
-            "expectedResult": false
-          }
-        ]
-      }
-    },
-    {
-      "id": "custom-role-subject-propagation",
-      "description": "Validates that subject with custom role and specific permissions is properly propagated to virtual threads",
-      "subject": {
-        "principal": "custom-user",
-        "authenticated": true,
-        "roles": ["custom-role"],
-        "permissions": ["nexus:repository:maven-central:browse", "nexus:repository:maven-central:read"],
-        "sessionId": "custom-user-session-${random.uuid}"
-      },
-      "taskConfiguration": {
-        "type": "script",
-        "name": "Custom Role Security Context Test",
-        "enabled": true,
-        "properties": {
-          "language": "groovy",
-          "source": "return security.subject.hasRole('custom-role')"
-        }
-      },
-      "validationCriteria": {
-        "expectedPrincipal": "custom-user",
-        "expectedAuthenticated": true,
-        "expectedRoles": ["custom-role"],
-        "permissionChecks": [
-          {
-            "permission": "nexus:repository:maven-central:browse",
-            "expectedResult": true
-          },
-          {
-            "permission": "nexus:repository:maven-central:read",
-            "expectedResult": true
-          },
-          {
-            "permission": "nexus:repository:maven-central:add",
-            "expectedResult": false
-          },
-          {
-            "permission": "nexus:repository:nuget-hosted:browse",
-            "expectedResult": false
-          }
-        ]
-      }
-    },
-    {
-      "id": "concurrent-subjects-isolation",
-      "description": "Validates that multiple concurrent tasks with different subjects maintain proper isolation",
-      "concurrentSubjects": [
-        {
-          "principal": "user1",
-          "authenticated": true,
-          "roles": ["role1"],
-          "permissions": ["nexus:repository:repo1:*"],
-          "sessionId": "user1-session-${random.uuid}"
-        },
-        {
-          "principal": "user2",
-          "authenticated": true,
-          "roles": ["role2"],
-          "permissions": ["nexus:repository:repo2:*"],
-          "sessionId": "user2-session-${random.uuid}"
-        },
-        {
-          "principal": "user3",
-          "authenticated": true,
-          "roles": ["role3"],
-          "permissions": ["nexus:repository:repo3:*"],
-          "sessionId": "user3-session-${random.uuid}"
-        }
+      "id": "developer",
+      "description": "Developer with limited permissions",
+      "principal": "developer",
+      "authenticated": true,
+      "roles": ["nx-developer"],
+      "permissions": [
+        "nexus:repository-admin:maven2:*:read",
+        "nexus:repository-admin:maven2:*:browse",
+        "nexus:repository-view:maven2:*:read",
+        "nexus:repository-view:maven2:*:browse"
       ],
-      "taskConfiguration": {
-        "type": "script",
-        "name": "Concurrent Security Context Test",
-        "enabled": true,
-        "properties": {
-          "language": "groovy",
-          "source": "return [principal: security.subject.principal, permissions: security.subject.isPermitted('nexus:repository:' + principal.replace('user', 'repo') + ':*')]"
-        }
-      },
-      "validationCriteria": {
-        "subjectIsolation": true,
-        "crossSubjectPermissionChecks": [
-          {
-            "subject": "user1",
-            "permission": "nexus:repository:repo2:*",
-            "expectedResult": false
-          },
-          {
-            "subject": "user2",
-            "permission": "nexus:repository:repo3:*",
-            "expectedResult": false
-          },
-          {
-            "subject": "user3",
-            "permission": "nexus:repository:repo1:*",
-            "expectedResult": false
-          }
-        ]
+      "attributes": {
+        "userId": "developer",
+        "userSource": "default",
+        "remoteIp": "127.0.0.1"
       }
     },
     {
-      "id": "nested-virtual-thread-propagation",
-      "description": "Validates that security context is properly propagated through nested virtual threads",
-      "subject": {
-        "principal": "nested-test-user",
-        "authenticated": true,
-        "roles": ["test-role"],
-        "permissions": ["nexus:test:*"],
-        "sessionId": "nested-test-session-${random.uuid}"
-      },
-      "taskConfiguration": {
-        "type": "script",
-        "name": "Nested Virtual Thread Security Context Test",
-        "enabled": true,
-        "properties": {
-          "language": "groovy",
-          "source": "def results = []; def executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor(); def future = executor.submit({ -> return [level1: security.subject.principal, permitted: security.subject.isPermitted('nexus:test:*')]}); results.add(future.get()); executor.shutdown(); return results"
-        }
-      },
-      "validationCriteria": {
-        "expectedPrincipal": "nested-test-user",
-        "expectedAuthenticated": true,
-        "nestedThreadChecks": [
-          {
-            "level": 1,
-            "principalCheck": "nested-test-user",
-            "permissionCheck": "nexus:test:*",
-            "expectedResult": true
-          }
-        ]
+      "id": "anonymous",
+      "description": "Anonymous user with minimal permissions",
+      "principal": "anonymous",
+      "authenticated": false,
+      "roles": ["nx-anonymous"],
+      "permissions": [
+        "nexus:repository-view:maven2:maven-central:read",
+        "nexus:repository-view:maven2:maven-central:browse"
+      ],
+      "attributes": {
+        "userId": "anonymous",
+        "userSource": "default",
+        "remoteIp": "127.0.0.1"
       }
     },
     {
-      "id": "deeply-nested-virtual-thread-propagation",
-      "description": "Validates that security context is properly propagated through multiple levels of nested virtual threads",
-      "subject": {
-        "principal": "deep-nested-user",
-        "authenticated": true,
-        "roles": ["deep-test-role"],
-        "permissions": ["nexus:deep:*"],
-        "sessionId": "deep-nested-session-${random.uuid}"
-      },
-      "taskConfiguration": {
-        "type": "script",
-        "name": "Deeply Nested Virtual Thread Security Context Test",
-        "enabled": true,
-        "properties": {
-          "language": "groovy",
-          "source": "def results = []; def executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor(); def future1 = executor.submit({ -> def level1 = security.subject.principal; def innerExecutor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor(); def future2 = innerExecutor.submit({ -> def level2 = security.subject.principal; def deepExecutor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor(); def future3 = deepExecutor.submit({ -> return [level3: security.subject.principal, permitted: security.subject.isPermitted('nexus:deep:*')]}); def level3Result = future3.get(); deepExecutor.shutdown(); return [level2: level2, level3Result: level3Result]}); def level2Result = future2.get(); innerExecutor.shutdown(); return [level1: level1, level2Result: level2Result]}); results.add(future1.get()); executor.shutdown(); return results"
-        }
-      },
-      "validationCriteria": {
-        "expectedPrincipal": "deep-nested-user",
-        "expectedAuthenticated": true,
-        "nestedThreadChecks": [
-          {
-            "level": 1,
-            "principalCheck": "deep-nested-user"
-          },
-          {
-            "level": 2,
-            "principalCheck": "deep-nested-user"
-          },
-          {
-            "level": 3,
-            "principalCheck": "deep-nested-user",
-            "permissionCheck": "nexus:deep:*",
-            "expectedResult": true
-          }
-        ]
+      "id": "system",
+      "description": "System user for internal operations",
+      "principal": "system",
+      "authenticated": true,
+      "roles": ["nx-admin"],
+      "permissions": ["*"],
+      "attributes": {
+        "userId": "system",
+        "userSource": "default",
+        "internal": true
       }
     },
     {
-      "id": "long-running-subject-persistence",
-      "description": "Validates that security context is maintained for long-running tasks on virtual threads",
-      "subject": {
-        "principal": "long-running-user",
-        "authenticated": true,
-        "roles": ["long-running-role"],
-        "permissions": ["nexus:longrunning:*"],
-        "sessionId": "long-running-session-${random.uuid}"
-      },
-      "taskConfiguration": {
-        "type": "script",
-        "name": "Long Running Security Context Test",
-        "enabled": true,
-        "properties": {
-          "language": "groovy",
-          "source": "def results = []; results.add([initial: security.subject.principal]); Thread.sleep(5000); results.add([after5s: security.subject.principal, permitted: security.subject.isPermitted('nexus:longrunning:*')]); return results"
-        }
-      },
-      "validationCriteria": {
-        "expectedPrincipal": "long-running-user",
-        "expectedAuthenticated": true,
-        "timeCheckPoints": [
-          {
-            "timePoint": "initial",
-            "principalCheck": "long-running-user"
-          },
-          {
-            "timePoint": "after5s",
-            "principalCheck": "long-running-user",
-            "permissionCheck": "nexus:longrunning:*",
-            "expectedResult": true
-          }
-        ]
-      }
-    },
-    {
-      "id": "system-subject-propagation",
-      "description": "Validates that system subject is properly propagated to virtual threads",
-      "subject": {
-        "principal": "system",
-        "authenticated": true,
-        "roles": ["nx-system"],
-        "permissions": ["*"],
-        "sessionId": "system-session-${random.uuid}"
-      },
-      "taskConfiguration": {
-        "type": "script",
-        "name": "System Security Context Test",
-        "enabled": true,
-        "properties": {
-          "language": "groovy",
-          "source": "return [principal: security.subject.principal, isSystem: security.subject.principal == 'system']"
-        }
-      },
-      "validationCriteria": {
-        "expectedPrincipal": "system",
-        "expectedAuthenticated": true,
-        "expectedRoles": ["nx-system"],
-        "permissionChecks": [
-          {
-            "permission": "nexus:*",
-            "expectedResult": true
-          },
-          {
-            "permission": "nexus:settings:*",
-            "expectedResult": true
-          },
-          {
-            "permission": "nexus:repository:*:*",
-            "expectedResult": true
-          },
-          {
-            "permission": "nexus:users:*",
-            "expectedResult": true
-          }
-        ]
-      }
-    },
-    {
-      "id": "thread-interruption-subject-persistence",
-      "description": "Validates that security context is maintained when virtual threads are interrupted and resumed",
-      "subject": {
-        "principal": "interrupt-test-user",
-        "authenticated": true,
-        "roles": ["interrupt-test-role"],
-        "permissions": ["nexus:interrupt:*"],
-        "sessionId": "interrupt-test-session-${random.uuid}"
-      },
-      "taskConfiguration": {
-        "type": "script",
-        "name": "Thread Interruption Security Context Test",
-        "enabled": true,
-        "properties": {
-          "language": "groovy",
-          "source": "def results = []; results.add([before: security.subject.principal]); try { Thread.sleep(10000); } catch (InterruptedException e) { results.add([interrupted: true]); } results.add([after: security.subject.principal, permitted: security.subject.isPermitted('nexus:interrupt:*')]); return results"
-        }
-      },
-      "validationCriteria": {
-        "expectedPrincipal": "interrupt-test-user",
-        "expectedAuthenticated": true,
-        "timeCheckPoints": [
-          {
-            "timePoint": "before",
-            "principalCheck": "interrupt-test-user"
-          },
-          {
-            "timePoint": "after",
-            "principalCheck": "interrupt-test-user",
-            "permissionCheck": "nexus:interrupt:*",
-            "expectedResult": true
-          }
-        ],
-        "interruptionBehavior": {
-          "interruptThread": true,
-          "interruptAfterMillis": 1000,
-          "expectContextPreservation": true
-        }
+      "id": "expired",
+      "description": "User with expired session",
+      "principal": "expired",
+      "authenticated": false,
+      "sessionExpired": true,
+      "roles": [],
+      "permissions": [],
+      "attributes": {
+        "userId": "expired",
+        "userSource": "default",
+        "remoteIp": "127.0.0.1"
       }
     }
   ],
-  "testConfiguration": {
-    "threadFactoryType": "virtual",
-    "concurrencyLevel": 50,
-    "executionTimeoutSeconds": 30,
-    "jvmArguments": [
-      "-Djdk.virtualThreadScheduler.maxPoolSize=1",
-      "-Djdk.virtualThreadScheduler.parallelism=1",
-      "-Djdk.tracePinnedThreads=full"
-    ],
-    "securityContextValidation": {
-      "validatePrincipal": true,
-      "validateAuthentication": true,
-      "validateRoles": true,
-      "validatePermissions": true,
-      "validateSessionId": true
+  
+  "testScenarios": [
+    {
+      "id": "basic-subject-propagation",
+      "description": "Verify basic subject identity propagation across virtual thread boundaries",
+      "subjectId": "admin",
+      "taskType": "io-bound",
+      "validations": [
+        {
+          "type": "identity",
+          "description": "Subject principal should be preserved",
+          "property": "principal",
+          "expectedValue": "admin"
+        },
+        {
+          "type": "authentication",
+          "description": "Authentication state should be preserved",
+          "property": "authenticated",
+          "expectedValue": true
+        },
+        {
+          "type": "attribute",
+          "description": "User attributes should be preserved",
+          "property": "userId",
+          "expectedValue": "admin"
+        }
+      ]
     },
-    "comparisonTests": {
-      "runWithPlatformThreads": true,
-      "runWithVirtualThreads": true,
-      "compareResults": true,
-      "expectedEquivalence": true
+    {
+      "id": "permission-propagation",
+      "description": "Verify permission propagation across virtual thread boundaries",
+      "subjectId": "developer",
+      "taskType": "io-bound",
+      "validations": [
+        {
+          "type": "permission",
+          "description": "Subject should have expected permissions",
+          "permission": "nexus:repository-view:maven2:*:read",
+          "expectedResult": true
+        },
+        {
+          "type": "permission",
+          "description": "Subject should not have admin permissions",
+          "permission": "nexus:*:*:*:delete",
+          "expectedResult": false
+        }
+      ]
     },
-    "shiroConfiguration": {
-      "version": "2.0.0",
-      "subjectAwareExecutorServiceClass": "org.sonatype.nexus.thread.NexusExecutorService",
-      "currentSubjectSupplierClass": "org.sonatype.nexus.security.subject.CurrentSubjectSupplier"
+    {
+      "id": "role-propagation",
+      "description": "Verify role propagation across virtual thread boundaries",
+      "subjectId": "developer",
+      "taskType": "io-bound",
+      "validations": [
+        {
+          "type": "role",
+          "description": "Subject should have expected role",
+          "role": "nx-developer",
+          "expectedResult": true
+        },
+        {
+          "type": "role",
+          "description": "Subject should not have admin role",
+          "role": "nx-admin",
+          "expectedResult": false
+        }
+      ]
+    },
+    {
+      "id": "anonymous-propagation",
+      "description": "Verify anonymous subject propagation across virtual thread boundaries",
+      "subjectId": "anonymous",
+      "taskType": "io-bound",
+      "validations": [
+        {
+          "type": "identity",
+          "description": "Anonymous principal should be preserved",
+          "property": "principal",
+          "expectedValue": "anonymous"
+        },
+        {
+          "type": "authentication",
+          "description": "Authentication state should be preserved as false",
+          "property": "authenticated",
+          "expectedValue": false
+        },
+        {
+          "type": "permission",
+          "description": "Anonymous permissions should be limited",
+          "permission": "nexus:repository-view:maven2:maven-central:read",
+          "expectedResult": true
+        }
+      ]
+    },
+    {
+      "id": "system-propagation",
+      "description": "Verify system subject propagation across virtual thread boundaries",
+      "subjectId": "system",
+      "taskType": "io-bound",
+      "validations": [
+        {
+          "type": "identity",
+          "description": "System principal should be preserved",
+          "property": "principal",
+          "expectedValue": "system"
+        },
+        {
+          "type": "attribute",
+          "description": "Internal attribute should be preserved",
+          "property": "internal",
+          "expectedValue": true
+        }
+      ]
+    },
+    {
+      "id": "expired-session-handling",
+      "description": "Verify expired session handling across virtual thread boundaries",
+      "subjectId": "expired",
+      "taskType": "io-bound",
+      "validations": [
+        {
+          "type": "authentication",
+          "description": "Authentication state should be preserved as false",
+          "property": "authenticated",
+          "expectedValue": false
+        },
+        {
+          "type": "session",
+          "description": "Session expired state should be preserved",
+          "property": "sessionExpired",
+          "expectedValue": true
+        }
+      ]
+    },
+    {
+      "id": "concurrent-subject-isolation",
+      "description": "Verify subject isolation between concurrent virtual threads",
+      "concurrentSubjects": ["admin", "developer", "anonymous"],
+      "taskType": "io-bound",
+      "validations": [
+        {
+          "type": "isolation",
+          "description": "Each thread should maintain its own subject identity",
+          "property": "principal",
+          "expectedValues": ["admin", "developer", "anonymous"]
+        },
+        {
+          "type": "isolation",
+          "description": "Permissions should not leak between threads",
+          "property": "permissions",
+          "noLeakage": true
+        }
+      ]
+    },
+    {
+      "id": "thread-pinning-security",
+      "description": "Verify security context with operations that may cause thread pinning",
+      "subjectId": "developer",
+      "taskType": "thread-pinning",
+      "validations": [
+        {
+          "type": "identity",
+          "description": "Subject identity should be preserved even with thread pinning",
+          "property": "principal",
+          "expectedValue": "developer"
+        },
+        {
+          "type": "permission",
+          "description": "Permissions should be preserved even with thread pinning",
+          "permission": "nexus:repository-view:maven2:*:read",
+          "expectedResult": true
+        }
+      ]
+    },
+    {
+      "id": "long-running-task-security",
+      "description": "Verify security context maintained for long-running tasks",
+      "subjectId": "admin",
+      "taskType": "io-bound",
+      "taskDurationMs": 5000,
+      "validations": [
+        {
+          "type": "identity",
+          "description": "Subject identity should be preserved for long-running tasks",
+          "property": "principal",
+          "expectedValue": "admin"
+        },
+        {
+          "type": "authentication",
+          "description": "Authentication state should be preserved for long-running tasks",
+          "property": "authenticated",
+          "expectedValue": true
+        }
+      ]
+    },
+    {
+      "id": "nested-virtual-threads",
+      "description": "Verify security context propagation through nested virtual threads",
+      "subjectId": "developer",
+      "taskType": "nested-virtual-threads",
+      "nestingLevels": 3,
+      "validations": [
+        {
+          "type": "identity",
+          "description": "Subject identity should be preserved through all nesting levels",
+          "property": "principal",
+          "expectedValue": "developer",
+          "atAllLevels": true
+        },
+        {
+          "type": "permission",
+          "description": "Permissions should be preserved through all nesting levels",
+          "permission": "nexus:repository-view:maven2:*:read",
+          "expectedResult": true,
+          "atAllLevels": true
+        }
+      ]
+    }
+  ],
+  
+  "taskTypes": {
+    "io-bound": {
+      "description": "I/O-bound task for testing security context propagation",
+      "className": "org.sonatype.nexus.scheduling.test.SecurityContextTestTask",
+      "parameters": {
+        "operationType": "IO_BOUND",
+        "durationMs": 1000,
+        "useVirtualThreads": true
+      }
+    },
+    "thread-pinning": {
+      "description": "Task with operations that may cause thread pinning",
+      "className": "org.sonatype.nexus.scheduling.test.ThreadPinningTestTask",
+      "parameters": {
+        "synchronizedBlockCount": 5,
+        "blockingNativeCallCount": 3,
+        "monitorWaitTimeMs": 100,
+        "useVirtualThreads": true
+      }
+    },
+    "nested-virtual-threads": {
+      "description": "Task that creates nested virtual threads",
+      "className": "org.sonatype.nexus.scheduling.test.NestedVirtualThreadTestTask",
+      "parameters": {
+        "nestingLevels": 3,
+        "operationsPerLevel": 5,
+        "useVirtualThreads": true
+      }
     }
   }
 }

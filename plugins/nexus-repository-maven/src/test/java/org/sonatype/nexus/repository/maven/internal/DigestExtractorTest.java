@@ -18,7 +18,10 @@ import java.io.InputStream;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
@@ -27,10 +30,12 @@ import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 
 /**
- * UT for {@link DigestExtractor}
+ * Unit tests for {@link DigestExtractor}
  *
  * @since 3.0
+ * @see "Java 21 Migration - Updated to JUnit Jupiter 5.10.1"
  */
+@ExtendWith(MockitoExtension.class)
 public class DigestExtractorTest
     extends TestSupport
 {
@@ -61,10 +66,11 @@ public class DigestExtractorTest
 
   private InputStream stream(String string) throws IOException
   {
-    return new ByteArrayInputStream(string.getBytes("UTF-8"));
+    return new ByteArrayInputStream(string.getBytes(java.nio.charset.StandardCharsets.UTF_8));
   }
 
   @Test
+  @DisplayName("Verify extraction of valid digest formats")
   public void acceptedDigests() throws Exception
   {
     for (int i = 0; i < validDigests.length; i++) {
@@ -79,10 +85,56 @@ public class DigestExtractorTest
   }
 
   @Test
+  @DisplayName("Verify rejection of invalid digest formats")
   public void rejectedDigests() {
     assertThat(DigestExtractor.extract("123456"), is(nullValue())); // too short
     assertThat(DigestExtractor.extract(""), is(nullValue())); // empty
     assertThat(DigestExtractor.extract("   "), is(nullValue())); // blank
     assertThat(DigestExtractor.extract("902a360Xcad98a34b59863c1e65bcf71"), is(nullValue())); // invalid, there is an non-hex X in there
+  }
+  
+  @Test
+  @DisplayName("Verify Java 21 pattern matching in switch expressions")
+  public void patternMatchingInSwitchExpressions() throws Exception {
+    // Test case with '=' separator (pattern matching case 1)
+    String equalsFormat = "MD5 (pom.xml) = 68da13206e9dcce2db9ec45a9f7acd52";
+    assertThat(DigestExtractor.extract(stream(equalsFormat)), 
+        equalTo("68da13206e9dcce2db9ec45a9f7acd52"));
+    
+    // Test case with ':' separator (pattern matching case 1)
+    String colonFormat = "ant-1.5.jar: 90 2A 36 0E CA D9 8A 34  B5 98 63 C1 E6 5B CF 71";
+    assertThat(DigestExtractor.extract(stream(colonFormat)), 
+        equalTo("902a360ecad98a34b59863c1e65bcf71"));
+    
+    // Test case with spaces and filename suffix (pattern matching case 2)
+    String spacesWithFilename = "DCAB 88FC 2A04 3C24 79A6 DE67 6A2F 8179 E9EA 2167 pom.xml";
+    assertThat(DigestExtractor.extract(stream(spacesWithFilename)), 
+        equalTo("dcab88fc2a043c2479a6de676a2f8179e9ea2167"));
+    
+    // Test default case (pattern matching case 3)
+    String plainDigest = "68da13206e9dcce2db9ec45a9f7acd52";
+    assertThat(DigestExtractor.extract(stream(plainDigest)), 
+        equalTo("68da13206e9dcce2db9ec45a9f7acd52"));
+    
+    // Test default case with filename (pattern matching case 3)
+    String digestWithFilename = "68da13206e9dcce2db9ec45a9f7acd52 pom.xml";
+    assertThat(DigestExtractor.extract(stream(digestWithFilename)), 
+        equalTo("68da13206e9dcce2db9ec45a9f7acd52"));
+  }
+  
+  @Test
+  @DisplayName("Verify readNBytes method with large input")
+  public void readNBytesWithLargeInput() throws Exception {
+    // Create a string larger than MAX_CHARS_NEEDED (128) to test readNBytes behavior
+    StringBuilder largeInput = new StringBuilder();
+    largeInput.append("MD5 (pom.xml) = 68da13206e9dcce2db9ec45a9f7acd52\n");
+    // Add a lot of extra content that should be ignored
+    for (int i = 0; i < 10; i++) {
+      largeInput.append("This is extra content that should be ignored by readNBytes method.\n");
+    }
+    
+    // The extractor should only read the first part and extract the digest correctly
+    assertThat(DigestExtractor.extract(stream(largeInput.toString())), 
+        equalTo("68da13206e9dcce2db9ec45a9f7acd52"));
   }
 }

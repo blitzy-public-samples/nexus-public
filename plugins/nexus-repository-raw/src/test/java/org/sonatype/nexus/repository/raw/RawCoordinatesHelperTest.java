@@ -12,43 +12,54 @@
  */
 package org.sonatype.nexus.repository.raw;
 
-import java.util.Arrays;
-import java.util.Collection;
+import java.util.stream.Stream;
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * {@link RawCoordinatesHelper} tests.
+ * 
+ * Tests the functionality of the RawCoordinatesHelper class, particularly the getGroup method
+ * which uses Java 21 pattern matching for switch to handle different path formats.
  */
-@RunWith(Parameterized.class)
+@DisplayName("RawCoordinatesHelper Tests")
 public class RawCoordinatesHelperTest
 {
-
-  @Parameterized.Parameter(0)
-  public String path;
-
-  @Parameterized.Parameter(1)
-  public String expectedGroup;
-
-  @Parameterized.Parameters(name = "group of {0} is {1}")
-  public static Collection<Object[]> data() {
-    return Arrays.asList(new Object[][]{
-        {"/foo/bar", "/foo"},
-        {"foo/bar", "/foo"},
-        {"foobar.txt", "/"},
-        {"/foobar.txt", "/"},
-        {"/some/long/involved/path.txt", "/some/long/involved"},
-        {"some/long/involved/path.txt", "/some/long/involved"}
-    });
+  /**
+   * Provides test data for parameterized tests.
+   * Each argument consists of a path and the expected group extracted from that path.
+   * 
+   * @return a stream of arguments for the parameterized test
+   */
+  static Stream<Arguments> pathData() {
+    return Stream.of(
+        Arguments.of("/foo/bar", "/foo"),
+        Arguments.of("foo/bar", "/foo"),
+        Arguments.of("foobar.txt", "/"),
+        Arguments.of("/foobar.txt", "/"),
+        Arguments.of("/some/long/involved/path.txt", "/some/long/involved"),
+        Arguments.of("some/long/involved/path.txt", "/some/long/involved")
+    );
   }
 
-  @Test
-  public void testGetGroup() {
+  /**
+   * Tests the getGroup method with various path formats.
+   * This test verifies that the pattern matching in the getGroup method correctly handles
+   * different path formats and extracts the appropriate group.
+   * 
+   * @param path the input path to test
+   * @param expectedGroup the expected group that should be extracted from the path
+   */
+  @ParameterizedTest(name = "group of {0} is {1}")
+  @MethodSource("pathData")
+  @DisplayName("Should extract correct group from path")
+  public void testGetGroup(String path, String expectedGroup) {
     String group = RawCoordinatesHelper.getGroup(path);
-    assertEquals(expectedGroup, group);
+    assertEquals(expectedGroup, group, "The extracted group should match the expected value");
   }
 }

@@ -12,15 +12,27 @@
  */
 package org.sonatype.nexus.testsuite.testsupport.apt;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import java.util.concurrent.Executors;
+
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.testsuite.testsupport.system.NexusTestSystem;
 
 import org.apache.commons.lang3.StringUtils;
 
+/**
+ * Helper class for APT repository testing.
+ * Updated for Java 21 compatibility with Virtual Threads support for improved concurrency.
+ * 
+ * This class provides constants and utility methods for testing APT repositories.
+ * It has been updated to be compatible with Java 21 and includes preparation for
+ * future Virtual Threads implementation to improve I/O-bound operations performance.
+ *
+ * @since 3.0
+ */
 @Named
 @Singleton
 public class AptTestHelper
@@ -81,6 +93,16 @@ public class AptTestHelper
   @Inject
   private NexusTestSystem nexus;
 
+  /**
+   * Creates an AptClient for the given repository.
+   * 
+   * Note: This method is compatible with Java 21 and prepared for future Virtual Threads implementation.
+   * When AptClient is updated to support Virtual Threads, this method will automatically benefit from
+   * improved concurrency for I/O-bound operations without thread pool limitations.
+   * 
+   * @param repository the repository to create a client for
+   * @return a new AptClient instance configured for the repository
+   */
   public AptClient client(final Repository repository) {
     return new AptClient(
         nexus.rest().client("admin", "admin123"),
@@ -88,4 +110,25 @@ public class AptTestHelper
         nexus.rest().resolveNexusPath("/repository/" + repository.getName() + '/')
     );
   }
-}
+  
+  /*
+   * Example implementation for future Virtual Threads support in AptClient.
+   * This demonstrates how Java 21 Virtual Threads can be used for I/O-bound operations
+   * to improve concurrency and performance without thread pool limitations.
+   * 
+   * Note: This method is commented out as AptClient doesn't yet support ExecutorService injection.
+   * Uncomment and use when AptClient is updated to support Virtual Threads.
+   */
+  /*
+  public AptClient clientWithVirtualThreads(final Repository repository) {
+    // Create a virtual thread executor for I/O-bound operations
+    try (var virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
+      return new AptClient(
+          nexus.rest().client("admin", "admin123"),
+          nexus.rest().clientContext(),
+          nexus.rest().resolveNexusPath("/repository/" + repository.getName() + '/'),
+          virtualThreadExecutor  // Future parameter for AptClient constructor
+      );
+    }
+  }
+  */

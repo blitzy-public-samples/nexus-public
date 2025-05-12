@@ -32,6 +32,9 @@ import static com.google.common.base.Preconditions.checkNotNull;
  * Conducts a performance test with a variable number of clients, contributing a data series to the format performance
  * chart.
  *
+ * <p>This class is compatible with Java 21 and works with the updated PerformanceData model
+ * that leverages modern Java features like records and sequenced collections.</p>
+ *
  * @since 3.0
  */
 public class EscalatingClientLoadExecutor
@@ -56,12 +59,23 @@ public class EscalatingClientLoadExecutor
 
   /**
    * Accepts an optional callable to be invoked between loads with different numbers of clients.
+   *
+   * @param testIndex the test index for recording links to artifacts
+   * @param before an optional runnable to execute before each test run
    */
   public EscalatingClientLoadExecutor(final TestIndex testIndex, @Nullable final Runnable before) {
     this.testIndex = checkNotNull(testIndex);
     this.before = before != null ? before : Runnables.doNothing();
   }
 
+  /**
+   * Executes performance tests with escalating client thread counts and records the results.
+   *
+   * @param dataSeriesName the name of the data series to record results under
+   * @param tasks the tasks to execute during the performance test
+   * @param reportDir the directory to write reports to
+   * @throws Exception if an error occurs during test execution
+   */
   public void calculateAndGraphPerformance(final String dataSeriesName,
                                            final List<Callable<?>> tasks,
                                            final File reportDir)
@@ -99,7 +113,7 @@ public class EscalatingClientLoadExecutor
         exceptionThrown = true;
       }
 
-      // Record the results
+      // Record the results using the record constructor
       testResults.addResults(clientThreads, new PerformanceRunResult(
           loadExec.getRequestsProcessed(),
           loadExec.getRequestsStarted() - loadExec.getRequestsProcessed(),

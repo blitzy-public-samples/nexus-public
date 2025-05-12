@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.repository.raw;
 
-import javax.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotNull;
 
 import org.sonatype.nexus.repository.raw.internal.RawFormat;
 import org.sonatype.nexus.repository.rest.api.model.CleanupPolicyAttributes;

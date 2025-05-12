@@ -1,202 +1,140 @@
 {
-  "version": "1.0",
-  "description": "I/O-bound task templates for testing Virtual Threads in Java 21",
   "templates": [
     {
-      "id": "database-operations",
-      "name": "Database Operations Task",
-      "description": "Simulates database operations with configurable latency profiles",
-      "typeId": "io.bound.database",
+      "id": "repository-proxy-fetch",
+      "name": "Repository Proxy Fetch Task",
+      "description": "Simulates proxy repository fetch operations with high I/O and network latency, ideal for virtual threads",
+      "type": "io-bound",
       "parameters": {
-        "operationCount": 100,
-        "operationTypes": ["SELECT", "INSERT", "UPDATE", "DELETE"],
-        "operationDistribution": [70, 10, 15, 5],
-        "averageLatencyMs": 50,
-        "latencyVariationPercent": 20,
-        "batchSize": 10,
-        "concurrentConnections": 5,
-        "useVirtualThreads": true,
-        "simulateConnectionPoolExhaustion": false,
-        "simulateDeadlocks": false,
-        "simulateSlowQueries": true
-      },
-      "jdbcSpecific": {
-        "statementTypes": ["PreparedStatement", "CallableStatement", "Statement"],
-        "resultSetFetchSize": 100,
-        "transactionIsolation": "READ_COMMITTED",
-        "simulateThreadPinning": false
-      }
-    },
-    {
-      "id": "network-operations",
-      "name": "Network Operations Task",
-      "description": "Simulates network calls to remote repositories and services",
-      "typeId": "io.bound.network",
-      "parameters": {
-        "requestCount": 50,
-        "requestTypes": ["GET", "POST", "PUT", "DELETE"],
-        "requestDistribution": [60, 20, 15, 5],
-        "averageLatencyMs": 200,
-        "latencyVariationPercent": 50,
-        "concurrentConnections": 20,
-        "useVirtualThreads": true,
-        "connectionTimeoutMs": 5000,
-        "readTimeoutMs": 10000,
-        "simulateNetworkErrors": false,
-        "errorRate": 0.05,
+        "repositoryName": "maven-central",
+        "assetCount": 100,
+        "remoteLatencyMs": 200,
+        "concurrentFetches": 50,
+        "blobSizeBytes": 1048576,
         "retryCount": 3,
-        "retryBackoffMs": 1000
-      },
-      "httpSpecific": {
-        "contentTypes": ["application/json", "application/xml", "application/octet-stream"],
-        "contentSizeDistributionKB": [5, 50, 500, 5000],
-        "contentSizeDistributionPercent": [50, 30, 15, 5],
-        "useCompression": true,
-        "useKeepAlive": true,
-        "followRedirects": true
-      }
-    },
-    {
-      "id": "filesystem-operations",
-      "name": "Filesystem Operations Task",
-      "description": "Simulates file system operations for blob storage",
-      "typeId": "io.bound.filesystem",
-      "parameters": {
-        "operationCount": 200,
-        "operationTypes": ["READ", "WRITE", "DELETE", "LIST", "STAT"],
-        "operationDistribution": [50, 30, 5, 10, 5],
-        "averageLatencyMs": 30,
-        "latencyVariationPercent": 40,
-        "concurrentOperations": 15,
-        "useVirtualThreads": true,
-        "simulateSlowDisk": false,
-        "simulateDiskErrors": false,
-        "errorRate": 0.02
-      },
-      "fileSpecific": {
-        "fileSizeDistributionKB": [10, 100, 1000, 10000, 100000],
-        "fileSizeDistributionPercent": [40, 30, 20, 8, 2],
-        "bufferSizeKB": 64,
-        "useDirectBuffers": true,
-        "useMemoryMappedFiles": false,
-        "useAsyncIO": true
+        "timeoutMs": 30000
       }
     },
     {
       "id": "s3-blobstore-operations",
       "name": "S3 BlobStore Operations Task",
-      "description": "Simulates S3 cloud storage operations",
-      "typeId": "io.bound.s3",
+      "description": "Simulates S3 blob storage operations with network latency, excellent for demonstrating virtual thread benefits",
+      "type": "io-bound",
       "parameters": {
-        "operationCount": 50,
-        "operationTypes": ["GET", "PUT", "DELETE", "LIST", "HEAD"],
-        "operationDistribution": [50, 25, 5, 15, 5],
-        "averageLatencyMs": 150,
-        "latencyVariationPercent": 60,
-        "concurrentOperations": 25,
-        "useVirtualThreads": true,
-        "simulateThrottling": false,
-        "simulateNetworkErrors": false,
-        "errorRate": 0.03,
-        "retryCount": 5,
-        "retryBackoffMs": 2000
-      },
-      "s3Specific": {
-        "objectSizeDistributionKB": [10, 100, 1000, 10000, 100000],
-        "objectSizeDistributionPercent": [30, 30, 25, 10, 5],
-        "useMultipartUpload": true,
-        "multipartThresholdMB": 5,
-        "multipartSizeMB": 5,
-        "useTransferManager": true,
-        "useServerSideEncryption": true
+        "blobStoreType": "s3",
+        "blobCount": 200,
+        "blobSizeBytes": 2097152,
+        "readWriteRatio": 4,
+        "networkLatencyMs": 100,
+        "concurrentOperations": 100,
+        "retryCount": 3,
+        "timeoutMs": 60000,
+        "s3Region": "us-east-1",
+        "operationTypes": ["GET", "PUT", "LIST", "DELETE"]
+      }
+    },
+    {
+      "id": "database-operations",
+      "name": "Database Operations Task",
+      "description": "Simulates database operations with JDBC, ideal for testing virtual thread compatibility with database drivers",
+      "type": "io-bound",
+      "parameters": {
+        "databaseType": "postgresql",
+        "queryCount": 500,
+        "queryTypes": ["SELECT", "INSERT", "UPDATE", "DELETE"],
+        "queryTypeDistribution": [70, 10, 10, 10],
+        "rowsPerQuery": 100,
+        "dbLatencyMs": 50,
+        "concurrentQueries": 100,
+        "useTransactions": true,
+        "transactionSize": 10,
+        "connectionPoolSize": 20,
+        "queryTimeout": 5000
+      }
+    },
+    {
+      "id": "file-system-operations",
+      "name": "File System Operations Task",
+      "description": "Simulates file system operations with varying I/O patterns, ideal for virtual threads",
+      "type": "io-bound",
+      "parameters": {
+        "fileCount": 1000,
+        "fileSizeBytes": 1048576,
+        "operationTypes": ["READ", "WRITE", "COPY", "DELETE"],
+        "operationTypeDistribution": [50, 20, 20, 10],
+        "concurrentOperations": 100,
+        "ioLatencyMs": 30,
+        "directoryDepth": 5,
+        "filesPerDirectory": 20,
+        "bufferSizeBytes": 8192,
+        "fsyncFrequency": 10
+      }
+    },
+    {
+      "id": "http-client-operations",
+      "name": "HTTP Client Operations Task",
+      "description": "Simulates HTTP client operations with varying network conditions, perfect for virtual threads",
+      "type": "io-bound",
+      "parameters": {
+        "requestCount": 500,
+        "requestTypes": ["GET", "POST", "PUT", "DELETE"],
+        "requestTypeDistribution": [60, 20, 15, 5],
+        "concurrentRequests": 200,
+        "networkLatencyMs": 150,
+        "responseTimeoutMs": 10000,
+        "connectionTimeoutMs": 5000,
+        "requestSizeBytes": 8192,
+        "responseSizeBytes": 32768,
+        "useKeepAlive": true,
+        "endpoints": ["api/v1/components", "api/v1/assets", "api/v1/repositories"],
+        "httpVersion": "HTTP/1.1"
       }
     },
     {
       "id": "mixed-repository-operations",
       "name": "Mixed Repository Operations Task",
-      "description": "Simulates mixed repository operations with database, network and storage I/O",
-      "typeId": "io.bound.repository",
+      "description": "Simulates a mix of repository operations with both I/O and light CPU work, demonstrating virtual thread advantages",
+      "type": "io-bound",
       "parameters": {
-        "operationCount": 100,
-        "operationTypes": ["BROWSE", "SEARCH", "DOWNLOAD", "UPLOAD", "METADATA"],
-        "operationDistribution": [30, 25, 30, 10, 5],
-        "averageLatencyMs": 120,
-        "latencyVariationPercent": 70,
-        "concurrentOperations": 30,
-        "useVirtualThreads": true,
-        "simulateErrors": false,
-        "errorRate": 0.04,
-        "retryCount": 2,
-        "retryBackoffMs": 1500
-      },
-      "repositorySpecific": {
-        "repositoryTypes": ["maven", "npm", "docker", "raw", "apt"],
-        "repositoryDistribution": [40, 25, 20, 10, 5],
-        "contentSizeDistributionKB": [50, 500, 5000, 50000],
-        "contentSizeDistributionPercent": [50, 30, 15, 5],
-        "includeProxyRepositories": true,
-        "includeGroupRepositories": true,
-        "simulateRemoteUnavailability": false,
-        "unavailabilityRate": 0.05
+        "repositoryTypes": ["maven", "npm", "docker", "raw"],
+        "operationCount": 1000,
+        "operationTypes": ["BROWSE", "SEARCH", "DOWNLOAD", "UPLOAD"],
+        "operationTypeDistribution": [30, 30, 30, 10],
+        "concurrentOperations": 150,
+        "networkLatencyMs": 80,
+        "dbLatencyMs": 40,
+        "ioLatencyMs": 20,
+        "cpuWorkPerOperationMs": 5,
+        "assetSizeBytes": 524288,
+        "metadataSize": 4096
       }
     },
     {
-      "id": "jdbc-thread-pinning-test",
-      "name": "JDBC Thread Pinning Test Task",
-      "description": "Tests JDBC operations for thread pinning issues with Virtual Threads",
-      "typeId": "io.bound.jdbc.pinning",
+      "id": "thread-pinning-detection",
+      "name": "Thread Pinning Detection Task",
+      "description": "Tests operations that may cause thread pinning with virtual threads to verify JDBC driver compatibility",
+      "type": "io-bound",
       "parameters": {
-        "operationCount": 50,
-        "operationTypes": ["SELECT", "INSERT", "UPDATE", "BATCH", "TRANSACTION"],
-        "operationDistribution": [40, 20, 20, 10, 10],
-        "averageLatencyMs": 75,
-        "latencyVariationPercent": 30,
-        "concurrentConnections": 50,
-        "useVirtualThreads": true,
-        "detectThreadPinning": true,
-        "simulateSlowQueries": true,
-        "slowQueryThresholdMs": 500,
-        "slowQueryRate": 0.1
-      },
-      "jdbcPinningSpecific": {
-        "useSynchronizedBlocks": false,
-        "useMonitorWaits": false,
-        "useNativeMethods": true,
-        "transactionDurationMs": 200,
-        "statementTypes": ["PreparedStatement", "CallableStatement", "Statement"],
-        "statementDistribution": [70, 20, 10],
-        "driverTypes": ["PostgreSQL", "H2"],
-        "driverDistribution": [80, 20]
-      }
-    },
-    {
-      "id": "long-running-io-task",
-      "name": "Long-Running I/O Task",
-      "description": "Simulates long-running I/O operations that benefit from Virtual Threads",
-      "typeId": "io.bound.longrunning",
-      "parameters": {
-        "totalDurationMinutes": 30,
-        "operationTypes": ["DATABASE", "NETWORK", "FILESYSTEM", "S3"],
-        "operationDistribution": [30, 30, 20, 20],
-        "concurrentOperations": 100,
-        "useVirtualThreads": true,
-        "operationIntervalMs": 500,
-        "simulateIntermittentErrors": true,
-        "errorRate": 0.02,
-        "retryCount": 3,
-        "retryBackoffMs": 2000,
-        "progressReportIntervalSec": 60
-      },
-      "longRunningSpecific": {
-        "useAdaptiveThrottling": true,
-        "maxConcurrencyLimit": 500,
-        "minConcurrencyLimit": 10,
-        "adaptationIntervalSec": 30,
-        "performanceMetricsEnabled": true,
-        "collectThreadDumps": true,
-        "threadDumpIntervalMin": 5,
-        "monitorSystemResources": true
+        "databaseType": "postgresql",
+        "operationCount": 1000,
+        "operationTypes": ["QUERY", "TRANSACTION", "BATCH", "PREPARED_STATEMENT"],
+        "operationTypeDistribution": [40, 30, 20, 10],
+        "concurrentOperations": 200,
+        "dbLatencyMs": 30,
+        "transactionSizeOperations": 10,
+        "batchSize": 50,
+        "connectionPoolSize": 20,
+        "monitorJvmFlag": "-Djdk.tracePinnedThreads=full",
+        "detectPinning": true,
+        "pinnedThreadThreshold": 5
       }
     }
-  ]
+  ],
+  "metadata": {
+    "description": "Task templates for testing I/O-bound operations with Java 21 Virtual Threads",
+    "version": "1.0",
+    "targetJavaVersion": "21",
+    "createdAt": "2023-10-15",
+    "updatedAt": "2023-10-15"
+  }
 }

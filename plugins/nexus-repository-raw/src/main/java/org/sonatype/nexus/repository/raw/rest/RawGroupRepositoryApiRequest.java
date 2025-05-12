@@ -12,6 +12,7 @@
  */
 package org.sonatype.nexus.repository.raw.rest;
 
+import org.sonatype.nexus.repository.raw.ContentDisposition;
 import org.sonatype.nexus.repository.raw.internal.RawFormat;
 import org.sonatype.nexus.repository.rest.api.model.GroupAttributes;
 import org.sonatype.nexus.repository.rest.api.model.GroupRepositoryApiRequest;
@@ -41,10 +42,33 @@ public class RawGroupRepositoryApiRequest
       @JsonProperty("raw") final RawAttributes raw)
   {
     super(name, RawFormat.NAME, online, storage, group);
-    this.raw = raw != null ? raw : new RawAttributes(ATTACHMENT);
+    // Using Java 21 record pattern to handle the raw attributes
+    this.raw = switch (raw) {
+      case null -> new RawAttributes(ATTACHMENT);
+      case RawAttributes(ContentDisposition contentDisposition) -> 
+          // Reuse the existing record if it's valid, or create a new one if contentDisposition is null
+          contentDisposition != null ? raw : new RawAttributes(ATTACHMENT);
+    };
   }
 
+  /**
+   * Returns the raw attributes for this repository.
+   * 
+   * @return the raw attributes containing content disposition settings
+   */
   public RawAttributes getRaw() {
     return raw;
+  }
+  
+  /**
+   * Utility method to extract content disposition directly using record pattern matching.
+   * 
+   * @return the content disposition from raw attributes, or ATTACHMENT if not available
+   */
+  public ContentDisposition getContentDisposition() {
+    return switch (raw) {
+      case RawAttributes(ContentDisposition disposition) when disposition != null -> disposition;
+      default -> ATTACHMENT;
+    };
   }
 }

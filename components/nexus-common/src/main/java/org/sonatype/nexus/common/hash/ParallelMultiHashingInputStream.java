@@ -14,112 +14,66 @@ package org.sonatype.nexus.common.hash;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 
 import com.google.common.hash.Hasher;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
- * An {@link MultiHashingInputStream} which uses Java 21 Virtual Threads to asynchronously compute hashes.
- * This implementation leverages Virtual Threads for I/O-bound operations, providing better scalability
- * and resource utilization compared to traditional thread pools.
+ * An {@link MultiHashingInputStream} which uses Java 21 Virtual Threads to asynchronously compute hashes
+ * with improved scalability and reduced resource consumption.
  *
  * @see MultiHashingInputStream
- * @since 3.0
  */
 public class ParallelMultiHashingInputStream
     extends MultiHashingInputStream
 {
-  private static final Logger log = LoggerFactory.getLogger(ParallelMultiHashingInputStream.class);
-  
-  private List<Thread> hashingThreads = Collections.emptyList();
-  private boolean closed = false;
+  private List<Future<?>> hashingFutures = Collections.emptyList();
+  private ExecutorService executor;
 
-  /**
-   * Creates a new parallel hashing input stream using Virtual Threads.
-   *
-   * @param algorithms the hash algorithms to use
-   * @param inputStream the input stream to hash
-   */
   public ParallelMultiHashingInputStream(final Iterable<HashAlgorithm> algorithms, final InputStream inputStream) {
     super(algorithms, inputStream);
-    if (log.isTraceEnabled()) {
-      log.trace("Created parallel hashing stream with Virtual Threads");
-    }
+    // Create a virtual thread per task executor for optimal I/O-bound hash computation
+    this.executor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   @Override
   protected void submitHashing(final Consumer<Hasher> runnable) {
-    if (log.isTraceEnabled()) {
-      log.trace("Submitting hash computation to Virtual Threads");
+    // Submit each hashing task to be executed by a dedicated virtual thread
+    List<Future<?>> futures = new ArrayList<>(hashers.size());
+    for (Hasher hasher : hashers.values()) {
+      futures.add(executor.submit(() -> runnable.accept(hasher)));
     }
-    
-    hashingThreads = hashers.values()
-        .stream()
-        .map(hasher -> {
-          Thread virtualThread = Thread.ofVirtual()
-              .name("hash-computation-" + hasher.hashCode())
-              .start(() -> {
-                try {
-                  runnable.accept(hasher);
-                  if (log.isTraceEnabled()) {
-                    log.trace("Virtual Thread hash computation completed for {}", hasher.hashCode());
-                  }
-                }
-                catch (Exception e) {
-                  log.error("Error in Virtual Thread hash computation", e);
-                }
-              });
-          return virtualThread;
-        })
-        .collect(Collectors.toList());
+    hashingFutures = futures;
   }
 
   @Override
   protected void waitForHashes() throws IOException {
-    if (hashingThreads.isEmpty()) {
-      return;
-    }
-    
-    if (log.isTraceEnabled()) {
-      log.trace("Waiting for {} Virtual Threads to complete hash computation", hashingThreads.size());
-    }
-    
-    for (Thread thread : hashingThreads) {
-      if (thread.isAlive()) {
+    // Wait for all hashing tasks to complete
+    for (Future<?> future : hashingFutures) {
+      if (!future.isDone() && !future.isCancelled()) {
         try {
-          thread.join();
+          future.get();
         }
         catch (InterruptedException e) {
           Thread.currentThread().interrupt();
-          throw new IOException("Interrupted while waiting for hash computation to complete", e);
+        }
+        catch (ExecutionException e) {
+          throw new IOException(e);
         }
       }
     }
-  }
-  
-  @Override
-  public void close() throws IOException {
-    if (!closed) {
-      try {
-        // Ensure all hashing threads are completed before closing
-        waitForHashes();
-        super.close();
-      }
-      finally {
-        // Decrement active operations counter
-        MultiHashingInputStreamFactory.decrementActiveOperations();
-        closed = true;
-        
-        if (log.isTraceEnabled()) {
-          log.trace("Closed parallel hashing stream, active operations: {}", 
-              MultiHashingInputStreamFactory.getActiveOperations());
-        }
-      }
+    
+    // Shutdown the executor if we're done with all hashing tasks
+    // This allows the virtual threads to be garbage collected
+    if (!executor.isShutdown()) {
+      executor.shutdown();
     }
   }
 }

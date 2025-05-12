@@ -26,18 +26,25 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.swagger.annotations.ApiModel;
 
 import static org.sonatype.nexus.repository.raw.ContentDisposition.ATTACHMENT;
 
 /**
+ * Raw proxy repository API request.
+ *
  * @since 3.24
  */
+@ApiModel("RawProxyRepositoryApiRequest")
 @JsonIgnoreProperties({"format", "type"})
 public class RawProxyRepositoryApiRequest
     extends ProxyRepositoryApiRequest
 {
   private final RawAttributes raw;
 
+  /**
+   * Constructor using Java 21 pattern matching for default values.
+   */
   @JsonCreator(mode = JsonCreator.Mode.PROPERTIES)
   @SuppressWarnings("squid:S00107") // suppress constructor parameter count
   public RawProxyRepositoryApiRequest(
@@ -46,17 +53,26 @@ public class RawProxyRepositoryApiRequest
       @JsonProperty("storage") final StorageAttributes storage,
       @JsonProperty("cleanup") final CleanupPolicyAttributes cleanup,
       @JsonProperty("proxy") final ProxyAttributes proxy,
-      @JsonProperty("negativeCache")  final NegativeCacheAttributes negativeCache,
+      @JsonProperty("negativeCache") final NegativeCacheAttributes negativeCache,
       @JsonProperty("httpClient") final HttpClientAttributes httpClient,
       @JsonProperty("routingRule") final String routingRule,
       @JsonProperty("raw") final RawAttributes raw,
-      @JsonProperty("replication") @JsonInclude(value= Include.NON_EMPTY, content=Include.NON_NULL)
+      @JsonProperty("replication") @JsonInclude(value = Include.NON_EMPTY, content = Include.NON_NULL)
       final ReplicationAttributes replication)
   {
     super(name, RawFormat.NAME, online, storage, cleanup, proxy, negativeCache, httpClient, routingRule, replication);
-    this.raw = raw != null ? raw : new RawAttributes(ATTACHMENT);
+    // Using pattern matching for null check with Java 21
+    this.raw = switch (raw) {
+      case null -> new RawAttributes(ATTACHMENT);
+      case RawAttributes attributes -> attributes;
+    };
   }
 
+  /**
+   * Returns the raw attributes for this repository.
+   *
+   * @return the raw attributes
+   */
   public RawAttributes getRaw() {
     return raw;
   }

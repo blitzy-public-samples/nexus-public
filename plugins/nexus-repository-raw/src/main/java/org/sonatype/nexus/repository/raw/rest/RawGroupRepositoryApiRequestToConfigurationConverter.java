@@ -20,6 +20,9 @@ import org.sonatype.nexus.repository.rest.GroupRepositoryApiRequestToConfigurati
 import static org.sonatype.nexus.repository.raw.rest.RawAttributes.CONTENT_DISPOSITION;
 
 /**
+ * Converter for Raw group repository API requests to repository configurations.
+ * Updated for Java 21 compatibility with modern Java practices.
+ *
  * @since 3.25
  */
 @Named

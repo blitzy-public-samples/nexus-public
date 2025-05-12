@@ -12,17 +12,15 @@
  */
 package org.sonatype.nexus.common.cooperation2.datastore;
 
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
-
 
 import javax.inject.Named;
 import javax.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
-import org.sonatype.nexus.common.cooperation2.Config;
 import org.sonatype.nexus.common.cooperation2.Cooperation2;
 import org.sonatype.nexus.common.cooperation2.Cooperation2Factory;
 import org.sonatype.nexus.common.cooperation2.datastore.internal.LocalCooperation2;
@@ -32,22 +30,10 @@ import org.sonatype.nexus.common.cooperation2.internal.MutableConfigSupport;
 /**
  * Default implementation of {@link Cooperation2Factory} optimized for Java 21 Virtual Threads.
  * 
- * This factory creates cooperation instances that leverage Virtual Threads for efficient
- * handling of I/O-bound operations, providing high concurrency with minimal resource overhead.
- * Virtual Threads are particularly well-suited for repository operations that involve network
- * or disk I/O, as they allow for thousands of concurrent operations without the overhead of
- * traditional platform threads.
- * 
- * <p>Note on ThreadLocal usage with Virtual Threads:</p>
- * <ul>
- *   <li>Virtual Threads fully support ThreadLocal variables in Java 21</li>
- *   <li>However, since virtual threads are never pooled and never reused by unrelated tasks,
- *       the traditional ThreadLocal caching pattern becomes inefficient</li>
- *   <li>With potentially millions of virtual threads, each with its own ThreadLocal,
- *       memory usage can become a concern</li>
- *   <li>Use the system property {@code jdk.traceVirtualThreadLocals} to trace ThreadLocal usage in virtual threads</li>
- * </ul>
- * 
+ * This factory creates cooperation instances that leverage Java 21's Virtual Threads for
+ * improved concurrency, especially for I/O-bound operations. Virtual Threads provide significant
+ * performance benefits by allowing thousands of concurrent operations with minimal resource overhead.
+ *
  * @since 3.41
  */
 @Named("local")
@@ -57,97 +43,97 @@ public class DefaultCooperation2Factory
     implements Cooperation2Factory
 {
   /**
-   * Creates a new builder for configuring cooperation instances.
-   * The resulting cooperation instances will use Java 21 Virtual Threads
-   * for optimal I/O performance when enabled.
-   * 
-   * @return a new builder instance with Virtual Threads enabled by default
+   * Default major timeout duration for cooperation operations.
    */
+  private static final Duration DEFAULT_MAJOR_TIMEOUT = Duration.ofMinutes(30);
+  
+  /**
+   * Default minor timeout duration for cooperation operations.
+   */
+  private static final Duration DEFAULT_MINOR_TIMEOUT = Duration.ofMinutes(10);
+  
+  /**
+   * Default number of threads per key for cooperation operations.
+   * With Virtual Threads, this can be set higher than with platform threads
+   * as Virtual Threads have much lower overhead.
+   */
+  private static final int DEFAULT_THREADS_PER_KEY = 8;
+  
   @Override
   public Builder configure() {
-    return new DefaultCooperation2Builder();
+    return new DefaultCooperation2Builder()
+        .majorTimeout(DEFAULT_MAJOR_TIMEOUT)
+        .minorTimeout(DEFAULT_MINOR_TIMEOUT)
+        .threadsPerKey(DEFAULT_THREADS_PER_KEY)
+        .useVirtualThreads(true); // Enable Virtual Threads by default for Java 21
   }
 
   /**
-   * Builder implementation that creates cooperation instances optimized for Java 21.
-   * When enabled, the created instances leverage Virtual Threads for efficient
-   * concurrent processing of I/O operations.
+   * Builder implementation for creating Cooperation2 instances optimized for Java 21.
    * 
-   * This implementation properly propagates thread context when using Virtual Threads
-   * and ensures compatibility with Java 21's concurrency model.
+   * This builder configures cooperation instances to leverage Virtual Threads for
+   * improved concurrency and performance, particularly for I/O-bound operations.
    */
   protected class DefaultCooperation2Builder
       extends MutableConfigSupport
   {
-    /**
-     * Creates a copy of this configuration that preserves Virtual Thread settings.
-     * 
-     * @return a new Config instance with all settings copied
-     */
-    @Override
-    protected Config copy() {
-      Config config = super.copy();
-      if (config instanceof MutableConfigSupport) {
-        MutableConfigSupport mutableConfig = (MutableConfigSupport) config;
-        mutableConfig.useVirtualThreads(this.useVirtualThreads());
-        // Initialize with the same concurrency limit
-        mutableConfig.threadsPerKey(this.threadsPerKey);
-      }
-      return config;
-    }
-    
     @Override
     public Cooperation2 build(final String id) {
       if (!enabled) {
         log.debug("Disabled cooperation: {}", id);
         return new DisabledCooperation2(id);
       }
-      log.debug("Creating cooperation with Virtual Threads {}: {}", 
-          useVirtualThreads() ? "enabled" : "disabled", id);
+      
+      if (log.isDebugEnabled() && useVirtualThreads) {
+        log.debug("Creating cooperation with Virtual Thread support: {}", id);
+      }
+      
       return new LocalCooperation2(id, this.copy());
     }
 
     @Override
     public Cooperation2 build(final Class<?> id, final String... keys) {
-      String scopeId = stripGuice(id, keys);
       if (!enabled) {
-        log.debug("Disabled cooperation: {}", scopeId);
-        return new DisabledCooperation2(scopeId);
+        log.debug("Disabled cooperation: {}", id);
+        return new DisabledCooperation2(stripGuice(id, keys));
       }
-      log.debug("Creating cooperation with Virtual Threads {}: {}", 
-          useVirtualThreads() ? "enabled" : "disabled", scopeId);
+      
+      String scopeId = stripGuice(id, keys);
+      
+      if (log.isDebugEnabled() && useVirtualThreads) {
+        log.debug("Creating cooperation with Virtual Thread support: {}", scopeId);
+      }
+      
       return new LocalCooperation2(scopeId, this.copy());
     }
     
     /**
-     * Configures whether to monitor ThreadLocal usage in virtual threads.
-     * When enabled, the system property {@code jdk.traceVirtualThreadLocals} will be set
-     * to trigger stack traces when virtual threads set ThreadLocal values.
+     * Creates a copy of this configuration with all fields properly copied.
      * 
-     * <p>This is useful for debugging and optimizing ThreadLocal usage with virtual threads.</p>
-     * 
-     * @param monitorThreadLocals true to enable monitoring, false to disable
-     * @return this builder for fluent API
-     * @since 3.60
+     * @return a new instance with the same configuration values
      */
-    public Builder monitorThreadLocals(final boolean monitorThreadLocals) {
-      if (monitorThreadLocals) {
-        System.setProperty("jdk.traceVirtualThreadLocals", "true");
-        log.info("Enabled monitoring of ThreadLocal usage in virtual threads");
-      } else {
-        System.clearProperty("jdk.traceVirtualThreadLocals");
+    @Override
+    protected Config copy() {
+      Config copy = super.copy();
+      // Copy the additional fields from MutableConfigSupport that aren't in the base Config class
+      if (copy instanceof MutableConfigSupport) {
+        MutableConfigSupport mutableCopy = (MutableConfigSupport) copy;
+        mutableCopy.enabled(this.enabled);
+        mutableCopy.useVirtualThreads(this.useVirtualThreads);
+        // Initialize the concurrency limit with our current value
+        mutableCopy.concurrencyLimit().set(this.concurrencyLimit().get());
       }
-      return this;
+      return copy;
     }
   }
 
   /**
    * When classes are enhanced by Guice AOP they can have random strings and we need them to be consistent.
-   * This method ensures consistent naming regardless of Guice enhancements.
+   * This method strips Guice-specific parts from class names to ensure consistent cooperation keys.
    * 
    * @param clazz the class to get the name from
-   * @param keys additional keys to append to the name
-   * @return a consistent name for the cooperation instance
+   * @param keys additional key components
+   * @return a consistent string identifier for the cooperation
    */
   protected static String stripGuice(final Class<?> clazz, final String... keys) {
     String simpleName = clazz.getSimpleName();
@@ -156,6 +142,8 @@ public class DefaultCooperation2Factory
       return stripGuice(clazz.getSuperclass(), keys);
     }
 
-    return Arrays.stream(keys).collect(Collectors.joining("-", simpleName + '-', ""));
+    // Use modern Stream API features for string joining
+    return Arrays.stream(keys)
+        .collect(Collectors.joining("-", simpleName + '-', ""));
   }
 }

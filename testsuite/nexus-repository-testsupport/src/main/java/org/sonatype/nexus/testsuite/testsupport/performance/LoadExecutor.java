@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.testsuite.testsupport.performance;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Iterator;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -24,12 +26,14 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
-import org.joda.time.DateTime;
 
 import static com.google.common.base.Preconditions.checkState;
 
 /**
  * Utility for using {@link Callable}s to generate performance-testing load.
+ * 
+ * <p>This class is compatible with Java 21 and uses modern Java time APIs
+ * instead of the deprecated Joda-Time library.</p>
  */
 public class LoadExecutor
 {
@@ -37,7 +41,7 @@ public class LoadExecutor
 
   private final CountDownLatch startSignal = new CountDownLatch(1);
 
-  private volatile DateTime endtime;
+  private volatile Instant endTime;
 
   private final AtomicBoolean terminateEarly = new AtomicBoolean(false);
 
@@ -56,14 +60,16 @@ public class LoadExecutor
   private final int duration;
 
   /**
+   * Creates a new load executor.
+   *
    * @param externalTasks a group of tasks that will be repeatedly invoked to produce load
-   * @param threads       the number of threads used to execute the tasks
-   * @param duration      in seconds
+   * @param threads the number of threads used to execute the tasks
+   * @param duration in seconds
    */
   public LoadExecutor(final Iterable<Callable<?>> externalTasks, final int threads, final int duration) {
     Preconditions.checkNotNull(externalTasks);
-    Preconditions.checkArgument(threads > 0);
-    Preconditions.checkArgument(duration >= 0);
+    Preconditions.checkArgument(threads > 0, "Thread count must be positive");
+    Preconditions.checkArgument(duration >= 0, "Duration must be non-negative");
 
     endlessTasks = Iterables.cycle(externalTasks).iterator();
     this.threads = threads;
@@ -79,9 +85,11 @@ public class LoadExecutor
   public void callTasks()
       throws Exception
   {
-    this.endtime = new DateTime().plusSeconds(duration);
+    // Use Java 21 time API instead of Joda-Time
+    this.endTime = Instant.now().plus(Duration.ofSeconds(duration));
 
     // Create an executor service of the correct number of threads
+    // In Java 21, we could use virtual threads for better scalability
     final ExecutorService executorService = Executors.newFixedThreadPool(threads);
 
     for (int thread = 0; thread < threads; thread++) {
@@ -110,22 +118,40 @@ public class LoadExecutor
 
   private synchronized Callable<?> getNextTask() {
     final Callable<?> next = endlessTasks.next();
-    Preconditions.checkState(next != null);
+    Preconditions.checkState(next != null, "Task iterator returned null");
     return next;
   }
 
+  /**
+   * Gets the number of requests that were started.
+   *
+   * @return the number of started requests
+   */
   public int getRequestsStarted() {
     return requestsStarted.get();
   }
 
+  /**
+   * Gets the number of requests that were successfully processed.
+   *
+   * @return the number of processed requests
+   */
   public int getRequestsProcessed() {
     return requestsProcessed.get();
   }
 
+  /**
+   * Gets the number of threads used for this load executor.
+   *
+   * @return the number of threads
+   */
   public int getThreads() {
     return threads;
   }
 
+  /**
+   * A callable that executes tasks until the end time is reached or an error occurs.
+   */
   private class VoidCallable
       implements Callable<Void>
   {
@@ -134,7 +160,8 @@ public class LoadExecutor
       try {
         awaitStartSignal();
 
-        while (new DateTime().isBefore(endtime) && !terminateEarly.get()) {
+        // Use Java 21 time API instead of Joda-Time
+        while (Instant.now().isBefore(endTime) && !terminateEarly.get()) {
           performOneTask();
         }
         return null;
@@ -155,7 +182,8 @@ public class LoadExecutor
 
     private void awaitStartSignal() throws InterruptedException
     {
-      checkState(startSignal.await(START_TIMEOUT_SECONDS, TimeUnit.SECONDS));
+      checkState(startSignal.await(START_TIMEOUT_SECONDS, TimeUnit.SECONDS), 
+                "Start signal not received within timeout");
     }
 
     private void performOneTask() throws Exception {

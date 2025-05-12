@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.repository.apt.api;
 
-import javax.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotNull;
 
 import org.sonatype.nexus.repository.apt.AptFormat;
 import org.sonatype.nexus.repository.rest.api.model.CleanupPolicyAttributes;
@@ -23,22 +23,43 @@ import org.sonatype.nexus.repository.rest.api.model.SimpleApiHostedRepository;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * REST API model representing an Apt repository.
  * 
+ * This class has been updated for Java 21 compatibility to work with record-based
+ * attribute classes and leverage pattern matching for improved type safety and
+ * maintainability.
+ * 
  * @since 3.20
+ * @since 3.60 Updated for Java 21 compatibility
  */
 @JsonIgnoreProperties(value = {"format", "type", "url"}, allowGetters = true)
+@Schema(description = "APT hosted repository configuration")
 public class AptHostedApiRepository
     extends SimpleApiHostedRepository
 {
   @NotNull
+  @Schema(description = "APT repository configuration attributes")
   protected final AptHostedRepositoriesAttributes apt;
 
   @NotNull
+  @Schema(description = "APT signing configuration attributes")
   protected final AptSigningRepositoriesAttributes aptSigning;
 
+  /**
+   * Creates a new APT hosted repository configuration.
+   * 
+   * @param name       Repository name
+   * @param url        Repository URL
+   * @param online     Whether the repository is online
+   * @param storage    Storage attributes
+   * @param cleanup    Cleanup policy attributes
+   * @param apt        APT repository attributes
+   * @param aptSigning APT signing attributes
+   * @param component  Component attributes
+   */
   @JsonCreator
   public AptHostedApiRepository(
       @JsonProperty("name") final String name,
@@ -55,10 +76,20 @@ public class AptHostedApiRepository
     this.aptSigning = aptSigning;
   }
 
+  /**
+   * Returns the APT repository configuration attributes.
+   * 
+   * @return the APT repository configuration attributes
+   */
   public AptHostedRepositoriesAttributes getApt() {
     return apt;
   }
 
+  /**
+   * Returns the APT signing configuration attributes.
+   * 
+   * @return the APT signing configuration attributes
+   */
   public AptSigningRepositoriesAttributes getAptSigning() {
     return aptSigning;
   }

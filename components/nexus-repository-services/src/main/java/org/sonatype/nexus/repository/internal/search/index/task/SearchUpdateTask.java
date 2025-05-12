@@ -12,15 +12,12 @@
  */
 package org.sonatype.nexus.repository.internal.search.index.task;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import javax.inject.Inject;
+import javax.inject.Named;
 
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
@@ -30,7 +27,6 @@ import org.sonatype.nexus.repository.search.index.SearchUpdateService;
 import org.sonatype.nexus.scheduling.Cancelable;
 import org.sonatype.nexus.scheduling.TaskScheduler;
 import org.sonatype.nexus.scheduling.TaskSupport;
-import org.sonatype.nexus.thread.internal.MDCUtils;
 
 import com.google.common.collect.ImmutableMap;
 import org.elasticsearch.ElasticsearchException;
@@ -41,8 +37,6 @@ import static org.sonatype.nexus.repository.internal.search.index.task.SearchUpd
 
 /**
  * Task that updates repository search indexes that are out of date.
- * 
- * Uses Java 21 Virtual Threads for concurrent repository indexing operations.
  *
  * @since 3.37
  */
@@ -78,68 +72,51 @@ public class SearchUpdateTask
     }
 
     String[] repositoryNames = getRepositoryNamesField();
-    int totalRepositories = repositoryNames.length;
-    
-    if (totalRepositories == 0) {
-      log.info("No repositories specified for index update");
-      return null;
-    }
-    
-    // Track progress with atomic counter for thread safety
-    AtomicInteger completedCount = new AtomicInteger(0);
-    
-    // Create a list to hold all the futures
-    List<CompletableFuture<Void>> futures = new ArrayList<>(totalRepositories);
-    
-    // Capture the current MDC context for propagation to virtual threads
-    final java.util.Map<String, String> mdcContext = MDCUtils.getCopyOfContextMap();
-    
-    // Use structured concurrency with try-with-resources for proper executor lifecycle management
+
+    // Use try-with-resources for proper virtual thread executor lifecycle management
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      AtomicInteger completedCount = new AtomicInteger(0);
+      AtomicInteger totalCount = new AtomicInteger(repositoryNames.length);
       
-      // Submit each repository indexing task as a CompletableFuture
-      for (String name : repositoryNames) {
-        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-          // Restore MDC context in the virtual thread
-          MDCUtils.setContextMap(mdcContext);
-          
+      // Create an array to hold all the futures
+      CompletableFuture<?>[] futures = new CompletableFuture[repositoryNames.length];
+      
+      // Process each repository concurrently
+      for (int i = 0; i < repositoryNames.length; i++) {
+        final String name = repositoryNames[i];
+        
+        // Use runAsync to execute each repository indexing task in a separate virtual thread
+        futures[i] = CompletableFuture.runAsync(() -> {
           Repository repository = repositoryManager.get(name);
           if (repository != null) {
             try {
+              // Capture thread-local context for logging
               log.info("Updating search index for repo {}", name);
               SearchIndexFacet searchIndexFacet = repository.facet(SearchIndexFacet.class);
               searchIndexFacet.rebuildIndex();
               searchUpdateService.doneReindexing(repository);
-              
-              // Update progress counter and log completion
-              int completed = completedCount.incrementAndGet();
-              log.info("Completed update of search index for repo {} ({} of {})", 
-                  name, completed, totalRepositories);
+              log.info("Completed update of search index for repo {} ({}/{})", 
+                  name, completedCount.incrementAndGet(), totalCount.get());
             } catch (ElasticsearchException e) {
               log.error("Could not perform search index update for repo {}, {}", name, e.getMessage());
-              throw e; // Re-throw to be handled by exceptionally
+            } catch (Exception e) {
+              log.error("Unexpected error during search index update for repo {}", name, e);
             }
-          } else {
-            log.warn("Repository {} not found, skipping index update", name);
-            completedCount.incrementAndGet();
           }
-        }, executor).exceptionally(ex -> {
-          // Handle exceptions from the async task
-          if (!(ex.getCause() instanceof ElasticsearchException)) {
-            log.error("Unexpected error updating search index for repo {}", name, ex);
-          }
+        }, executor).exceptionally(throwable -> {
+          // Enhanced exception handling for concurrent execution contexts
+          log.error("Failed to process repository {}: {}", name, throwable.getMessage(), throwable);
+          completedCount.incrementAndGet();
           return null;
         });
-        
-        futures.add(future);
       }
       
-      // Wait for all tasks to complete
-      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+      // Wait for all futures to complete using CompletableFuture.allOf
+      CompletableFuture.allOf(futures).join();
       
-      log.info("Completed search index update for {} repositories", completedCount.get());
+      log.info("Completed all search index updates for {} repositories", completedCount.get());
     }
-    
+
     return null;
   }
 

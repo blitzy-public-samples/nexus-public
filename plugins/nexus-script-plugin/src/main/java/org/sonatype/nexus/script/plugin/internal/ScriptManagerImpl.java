@@ -15,6 +15,8 @@ package org.sonatype.nexus.script.plugin.internal;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
+import java.util.Objects;
+import java.util.concurrent.Executors;
 
 import org.sonatype.nexus.common.app.ManagedLifecycle;
 import org.sonatype.nexus.common.event.EventManager;
@@ -29,9 +31,9 @@ import org.sonatype.nexus.script.ScriptUpdatedEvent;
 import com.google.common.collect.ImmutableList;
 import groovy.transform.CompileStatic;
 
+import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.SERVICES;
 import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.State.STARTED;
-import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Default {@link ScriptManager}.
@@ -58,9 +60,9 @@ public class ScriptManagerImpl
       final ScriptStore scriptStore,
       @Named("${nexus.scripts.allowCreation:-false}") final boolean allowCreation)
   {
-    this.eventManager = checkNotNull(eventManager);
-    this.scriptStore = checkNotNull(scriptStore);
-    this.allowCreation = checkNotNull(allowCreation);
+    this.eventManager = Objects.requireNonNull(eventManager, "eventManager");
+    this.scriptStore = Objects.requireNonNull(scriptStore, "scriptStore");
+    this.allowCreation = Objects.requireNonNull(allowCreation, "allowCreation");
   }
 
   @Override
@@ -85,7 +87,11 @@ public class ScriptManagerImpl
     script.setContent(content);
     script.setType(type);
     scriptStore.create(script);
-    eventManager.post(new ScriptCreatedEvent(script));
+    
+    // Use virtual thread for event posting to improve concurrency
+    Executors.newVirtualThreadPerTaskExecutor().execute(() -> 
+        eventManager.post(new ScriptCreatedEvent(script)));
+    
     return script;
   }
 
@@ -100,7 +106,11 @@ public class ScriptManagerImpl
     }
     script.setContent(content);
     scriptStore.update(script);
-    eventManager.post(new ScriptUpdatedEvent(script));
+    
+    // Use virtual thread for event posting to improve concurrency
+    Executors.newVirtualThreadPerTaskExecutor().execute(() -> 
+        eventManager.post(new ScriptUpdatedEvent(script)));
+    
     return script;
   }
 
@@ -110,7 +120,10 @@ public class ScriptManagerImpl
     Script script = scriptStore.get(name);
     if (script != null) {
       scriptStore.delete(script);
-      eventManager.post(new ScriptDeletedEvent(script));
+      
+      // Use virtual thread for event posting to improve concurrency
+      Executors.newVirtualThreadPerTaskExecutor().execute(() -> 
+          eventManager.post(new ScriptDeletedEvent(script)));
     }
   }
 
@@ -121,7 +134,7 @@ public class ScriptManagerImpl
 
   private void validateCreationIsAllowed() {
     if (!allowCreation) {
-      throw new ScriptingDisabledException("Creating and updating scripts is disable");
+      throw new ScriptingDisabledException(STR."Creating and updating scripts is disabled");
     }
   }
 }

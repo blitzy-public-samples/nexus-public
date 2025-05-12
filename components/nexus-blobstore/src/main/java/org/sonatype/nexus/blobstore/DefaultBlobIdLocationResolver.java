@@ -71,8 +71,10 @@ public class DefaultBlobIdLocationResolver
 
   @Override
   public String getLocation(final BlobId id) {
-    String uniqueString = id.asUniqueString();
-    return switch (uniqueString) {
+    String blobIdString = id.asUniqueString();
+    
+    // Using Java 21 Pattern Matching for switch to determine location strategy based on BlobId prefix
+    return switch (blobIdString) {
       case String s when s.startsWith(TEMPORARY_BLOB_ID_PREFIX) -> temporaryLocationStrategy.location(id);
       case String s when s.startsWith(DIRECT_PATH_BLOB_ID_PREFIX) -> directLocationStrategy.location(id);
       default -> getBlobIdLocation(id);
@@ -80,8 +82,9 @@ public class DefaultBlobIdLocationResolver
   }
 
   private String getBlobIdLocation(final BlobId blobId) {
+    // Using Java 21 Pattern Matching for switch to determine location strategy based on BlobId properties
     return switch (blobId) {
-      case BlobId id when id.getBlobCreatedRef() != null -> dateBasedLocationStrategy.location(blobId);
+      case BlobId b when b.getBlobCreatedRef() != null -> dateBasedLocationStrategy.location(blobId);
       default -> volumeChapterLocationStrategy.location(blobId);
     };
   }
@@ -95,6 +98,7 @@ public class DefaultBlobIdLocationResolver
   public BlobId fromHeaders(final Map<String, String> headers) {
     OffsetDateTime blobCreatedRef = dateBasedLayoutEnabled ? UTC.now() : null;
     
+    // Using Java 21 Pattern Matching for switch to determine BlobId creation based on headers
     return switch (headers) {
       case Map<String, String> h when h.containsKey(TEMPORARY_BLOB_HEADER) -> 
           new BlobId(TEMPORARY_BLOB_ID_PREFIX + randomUUID(), blobCreatedRef);

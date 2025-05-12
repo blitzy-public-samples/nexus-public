@@ -13,17 +13,20 @@
 package org.sonatype.nexus.repository.apt.internal;
 
 /**
- * Apt properties
+ * Apt properties - constants for APT repository format support.
+ *
+ * <p>This class is compatible with Java 21 and provides string constants used throughout
+ * the APT repository implementation for metadata handling and content identification.</p>
  *
  * @since 3.31
  */
 public final class AptProperties
 {
   private AptProperties() {
-    //Properties class
+    // Utility class with static constants only - not meant to be instantiated
   }
 
-  //Apt general properties
+  // Apt general properties
   public static final String DEB = "DEB";
 
   // Apt hosted properties for metadata rebuild
@@ -35,7 +38,7 @@ public final class AptProperties
 
   public static final String P_PACKAGE_VERSION = "package_version";
 
-  //Apt supported metadata archive file extensions
+  // Apt supported metadata archive file extensions
   public static final String GZ = ".gz";
 
   public static final String BZ2 = ".bz2";

@@ -12,9 +12,12 @@
  */
 package org.sonatype.nexus.testsuite.testsupport.system;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
 
 import org.sonatype.nexus.common.event.EventManager;
 import org.sonatype.nexus.repository.search.index.ElasticSearchIndexService;
@@ -26,6 +29,11 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.awaitility.Awaitility.await;
 
 /**
+ * Test support system for ElasticSearch functionality.
+ * 
+ * <p>Provides methods for waiting for search operations to complete and for waiting for search results.
+ * Leverages Java 21 virtual threads for improved concurrency in asynchronous indexing and event synchronization.</p>
+ *
  * @since 3.41
  */
 @Named
@@ -33,7 +41,6 @@ import static org.awaitility.Awaitility.await;
 public class ElasticSearchTestSystem
     implements SearchTestSystem
 {
-
   @Inject
   public EventManager eventManager;
 
@@ -43,20 +50,42 @@ public class ElasticSearchTestSystem
   @Inject
   public ElasticSearchQueryService elasticSearchQueryService;
 
+  /**
+   * Waits for search operations to complete by ensuring that the event manager and index service
+   * have reached a calm period. Uses virtual threads for non-blocking asynchronous operations.
+   */
   @Override
   public void waitForSearch() {
-    await().atMost(30, SECONDS).until(eventManager::isCalmPeriod);
-    indexService.flush(false); // no need for full fsync here
-    await().atMost(30, SECONDS).until(indexService::isCalmPeriod);
+    // Use CompletableFuture with virtual threads for non-blocking asynchronous operations
+    CompletableFuture.runAsync(() -> {
+      await().atMost(30, SECONDS).until(eventManager::isCalmPeriod);
+    }, Executors.newVirtualThreadPerTaskExecutor()).join();
+    
+    // Flush the index service without full fsync
+    indexService.flush(false);
+    
+    // Wait for the index service to reach a calm period using virtual threads
+    CompletableFuture.runAsync(() -> {
+      await().atMost(30, SECONDS).until(indexService::isCalmPeriod);
+    }, Executors.newVirtualThreadPerTaskExecutor()).join();
   }
 
+  /**
+   * Returns a condition factory for waiting for search results.
+   * 
+   * @return a condition factory configured with appropriate timeouts and polling intervals
+   */
   @Override
   public ConditionFactory waitForSearchResults() {
     return await().atMost(120, SECONDS).pollInterval(1, SECONDS);
   }
 
+  /**
+   * Returns the ElasticSearch query service.
+   * 
+   * @return the ElasticSearch query service
+   */
   public ElasticSearchQueryService queryService() {
     return elasticSearchQueryService;
   }
-
 }

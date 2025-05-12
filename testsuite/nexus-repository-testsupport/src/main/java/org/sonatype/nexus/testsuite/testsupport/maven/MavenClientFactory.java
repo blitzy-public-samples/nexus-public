@@ -20,13 +20,28 @@ import org.apache.http.client.protocol.HttpClientContext;
 import org.apache.http.impl.client.CloseableHttpClient;
 
 /**
- * Factory for creation of {@link Maven2Client}s
+ * Factory for creation of {@link Maven2Client} instances.
+ * <p>
+ * This factory creates Maven2 clients for interacting with Maven repositories in Nexus.
+ * It leverages Java 21 virtual threads through its parent class implementation to improve
+ * I/O performance when creating and using clients.
  *
  * @since 3.16
  */
 public class MavenClientFactory
     extends NexusClientFactory<Maven2Client>
 {
+  /**
+   * Creates a Maven2 client with the provided HTTP client, context, and repository URI.
+   * <p>
+   * This implementation is compatible with Java 21 and benefits from virtual threads
+   * when invoked through the parent class methods.
+   *
+   * @param httpClient the HTTP client to use for requests
+   * @param httpClientContext the HTTP client context with authentication settings
+   * @param repositoryBaseUri the base URI of the repository
+   * @return a new Maven2Client instance
+   */
   @Override
   public Maven2Client createClient(final CloseableHttpClient httpClient,
                                    final HttpClientContext httpClientContext,

@@ -12,14 +12,48 @@
  */
 package org.sonatype.nexus.testsuite.testsupport.system.repository.config;
 
+/**
+ * Configuration interface for group repositories in test support.
+ * <p>
+ * This interface provides methods to configure group repository members and write capabilities.
+ * Compatible with Java 21 runtime environment.
+ *
+ * @param <THIS> self-referential type for fluent API pattern
+ * @since 3.0
+ */
 public interface GroupRepositoryConfig<THIS>
     extends RepositoryConfig<THIS>
 {
+  /**
+   * Sets the members of this group repository.
+   *
+   * @param members the repository names to include as members of this group
+   * @return this instance for fluent method chaining
+   */
   THIS withMembers(final String... members);
 
+  /**
+   * Gets the current members of this group repository.
+   *
+   * @return array of repository names that are members of this group
+   */
   String[] getMembers();
 
+  /**
+   * Sets the group write member for this repository.
+   * <p>
+   * The group write member is the repository that will receive write operations
+   * directed at this group repository.
+   *
+   * @param groupWriteMember the repository name to use as the write member
+   * @return this instance for fluent method chaining
+   */
   THIS withGroupWriteMember(final String groupWriteMember);
 
+  /**
+   * Gets the current group write member for this repository.
+   *
+   * @return the name of the repository that receives write operations
+   */
   String getGroupWriteMember();
 }

@@ -25,30 +25,8 @@
   </parent>
 
   <artifactId>nexus-docker-testsupport</artifactId>
-  <name>${project.groupId}:${project.artifactId}</name>
+  <n>${project.groupId}:${project.artifactId}</n>
   <packaging>bundle</packaging>
-  
-  <!-- 
-    This module provides Docker container-based testing support for Nexus Repository.
-    It has been updated to support Java 21 runtime environment and leverage virtual threads
-    for improved test performance and concurrency.
-  -->
-
-  <properties>
-    <!-- Java 21 configuration -->
-    <maven.compiler.source>21</maven.compiler.source>
-    <maven.compiler.target>21</maven.compiler.target>
-    <maven.compiler.release>21</maven.compiler.release>
-    
-    <!-- Test dependency versions for Java 21 compatibility -->
-    <junit.jupiter.version>5.10.1</junit.jupiter.version>
-    <mockito.version>4.11.0</mockito.version>
-    <hamcrest.version>2.2</hamcrest.version>
-    <testcontainers.version>1.19.3</testcontainers.version>
-    <jacoco.version>0.8.11</jacoco.version>
-    <surefire.version>3.2.5</surefire.version>
-    <failsafe.version>3.2.5</failsafe.version>
-  </properties>
 
   <dependencies>
 
@@ -69,7 +47,6 @@
     <dependency>
       <groupId>org.testcontainers</groupId>
       <artifactId>testcontainers</artifactId>
-      <version>${testcontainers.version}</version>
     </dependency>
 
     <dependency>
@@ -95,52 +72,41 @@
       <scope>test</scope>
     </dependency>
     
-    <!-- Test dependencies with Java 21 compatibility -->
-    <dependency>
-      <groupId>org.spockframework</groupId>
-      <artifactId>spock-core</artifactId>
-      <scope>test</scope>
-    </dependency>
-    
+    <!-- JUnit Jupiter (JUnit 5) dependencies -->
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter-api</artifactId>
-      <version>${junit.jupiter.version}</version>
       <scope>test</scope>
     </dependency>
     
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter-engine</artifactId>
-      <version>${junit.jupiter.version}</version>
       <scope>test</scope>
     </dependency>
     
     <dependency>
       <groupId>org.junit.vintage</groupId>
       <artifactId>junit-vintage-engine</artifactId>
-      <version>${junit.jupiter.version}</version>
-      <scope>test</scope>
-    </dependency>
-    
-    <dependency>
-      <groupId>org.mockito</groupId>
-      <artifactId>mockito-core</artifactId>
-      <version>${mockito.version}</version>
-      <scope>test</scope>
-    </dependency>
-    
-    <dependency>
-      <groupId>org.mockito</groupId>
-      <artifactId>mockito-junit-jupiter</artifactId>
-      <version>${mockito.version}</version>
       <scope>test</scope>
     </dependency>
     
     <dependency>
       <groupId>org.hamcrest</groupId>
       <artifactId>hamcrest</artifactId>
-      <version>${hamcrest.version}</version>
+      <scope>test</scope>
+    </dependency>
+    
+    <dependency>
+      <groupId>org.spockframework</groupId>
+      <artifactId>spock-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Repository test support for test group classes -->
+    <dependency>
+      <groupId>org.sonatype.nexus.testsuite</groupId>
+      <artifactId>nexus-repository-testsupport</artifactId>
       <scope>test</scope>
     </dependency>
 
@@ -148,62 +114,6 @@
 
   <build>
     <plugins>
-      <!-- Java 21 compiler configuration -->
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-compiler-plugin</artifactId>
-        <configuration>
-          <source>${maven.compiler.source}</source>
-          <target>${maven.compiler.target}</target>
-          <release>${maven.compiler.release}</release>
-          <compilerArgs>
-            <arg>--enable-preview</arg>
-          </compilerArgs>
-        </configuration>
-      </plugin>
-      
-      <!-- Surefire plugin configuration for Java 21 and virtual threads -->
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-surefire-plugin</artifactId>
-        <version>${surefire.version}</version>
-        <configuration>
-          <argLine>--enable-preview ${test.additional.args}</argLine>
-          <systemPropertyVariables>
-            <test.virtual.threads>${virtual.threads}</test.virtual.threads>
-            <java.util.concurrent.ForkJoinPool.common.parallelism>16</java.util.concurrent.ForkJoinPool.common.parallelism>
-          </systemPropertyVariables>
-        </configuration>
-      </plugin>
-      
-      <!-- Failsafe plugin configuration for Java 21 and virtual threads -->
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-failsafe-plugin</artifactId>
-        <version>${failsafe.version}</version>
-        <configuration>
-          <argLine>--enable-preview ${test.additional.args}</argLine>
-          <systemPropertyVariables>
-            <test.virtual.threads>${virtual.threads}</test.virtual.threads>
-            <java.util.concurrent.ForkJoinPool.common.parallelism>16</java.util.concurrent.ForkJoinPool.common.parallelism>
-          </systemPropertyVariables>
-        </configuration>
-      </plugin>
-      
-      <!-- JaCoCo plugin configuration for Java 21 compatibility -->
-      <plugin>
-        <groupId>org.jacoco</groupId>
-        <artifactId>jacoco-maven-plugin</artifactId>
-        <version>${jacoco.version}</version>
-        <configuration>
-          <excludes>
-            <exclude>**/generated-sources/**</exclude>
-          </excludes>
-          <propertyName>jacocoArgLine</propertyName>
-        </configuration>
-      </plugin>
-      
-      <!-- Karaf Maven plugin configuration -->
       <plugin>
         <groupId>org.apache.karaf.tooling</groupId>
         <artifactId>karaf-maven-plugin</artifactId>
@@ -215,14 +125,10 @@
             </goals>
             <configuration>
               <includeProjectArtifact>true</includeProjectArtifact>
-              <!-- Java 21 compatibility configuration -->
-              <javaVersion>21</javaVersion>
             </configuration>
           </execution>
         </executions>
       </plugin>
-      
-      <!-- OSGi bundle plugin configuration with Java 21 compatibility -->
       <plugin>
         <groupId>org.apache.felix</groupId>
         <artifactId>maven-bundle-plugin</artifactId>
@@ -230,80 +136,48 @@
           <instructions>
             <!-- mark Pax-Exam imports as optional; not all are needed at test-time -->
             <Import-Package>org.ops4j.pax.exam.*;resolution:=optional,*</Import-Package>
-            <!-- Java 21 compatibility configuration -->
-            <Bundle-RequiredExecutionEnvironment>JavaSE-21</Bundle-RequiredExecutionEnvironment>
           </instructions>
         </configuration>
       </plugin>
+      <!-- Configure Surefire for JUnit Jupiter -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.2.5</version>
+        <configuration>
+          <argLine>-Djava.version=21 ${test.additional.args}</argLine>
+          <systemPropertyVariables>
+            <java.util.concurrent.ForkJoinPool.common.parallelism>16</java.util.concurrent.ForkJoinPool.common.parallelism>
+            <test.virtual.threads>${virtual.threads}</test.virtual.threads>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+      <!-- Configure Failsafe for integration tests -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <version>3.2.5</version>
+        <configuration>
+          <parallel>classes</parallel>
+          <threadCount>4</threadCount>
+          <forkCount>2</forkCount>
+          <reuseForks>true</reuseForks>
+          <argLine>-Djava.version=21 ${test.additional.args}</argLine>
+          <systemPropertyVariables>
+            <java.util.concurrent.ForkJoinPool.common.parallelism>16</java.util.concurrent.ForkJoinPool.common.parallelism>
+            <test.virtual.threads>${virtual.threads}</test.virtual.threads>
+          </systemPropertyVariables>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
     </plugins>
   </build>
-  
-  <!-- Profiles for Java 21-specific test execution -->
-  <profiles>
-    <!-- Profile for Java 21-specific tests -->
-    <profile>
-      <id>java21-tests</id>
-      <activation>
-        <property>
-          <name>java21-tests</name>
-          <value>true</value>
-        </property>
-      </activation>
-      <build>
-        <plugins>
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-surefire-plugin</artifactId>
-            <configuration>
-              <groups>org.sonatype.goodies.testsupport.group.Java21TestGroup</groups>
-              <argLine>--enable-preview ${test.additional.args}</argLine>
-            </configuration>
-          </plugin>
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-failsafe-plugin</artifactId>
-            <configuration>
-              <groups>org.sonatype.goodies.testsupport.group.Java21TestGroup</groups>
-              <argLine>--enable-preview ${test.additional.args}</argLine>
-            </configuration>
-          </plugin>
-        </plugins>
-      </build>
-    </profile>
-    
-    <!-- Profile for virtual thread-specific tests -->
-    <profile>
-      <id>virtual-threads</id>
-      <activation>
-        <property>
-          <name>virtual-threads</name>
-          <value>true</value>
-        </property>
-      </activation>
-      <properties>
-        <virtual.threads>true</virtual.threads>
-      </properties>
-      <build>
-        <plugins>
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-surefire-plugin</artifactId>
-            <configuration>
-              <groups>org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup</groups>
-              <argLine>--enable-preview -Djdk.tracePinnedThreads=full ${test.additional.args}</argLine>
-            </configuration>
-          </plugin>
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-failsafe-plugin</artifactId>
-            <configuration>
-              <groups>org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup</groups>
-              <argLine>--enable-preview -Djdk.tracePinnedThreads=full ${test.additional.args}</argLine>
-            </configuration>
-          </plugin>
-        </plugins>
-      </build>
-    </profile>
-  </profiles>
 
 </project>

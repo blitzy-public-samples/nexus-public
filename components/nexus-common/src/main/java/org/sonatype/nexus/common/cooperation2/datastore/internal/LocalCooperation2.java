@@ -12,79 +12,67 @@
  */
 package org.sonatype.nexus.common.cooperation2.datastore.internal;
 
-import java.util.concurrent.Callable;
-import java.util.function.Supplier;
+import java.io.Closeable;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 
 import org.sonatype.nexus.common.cooperation2.Config;
 import org.sonatype.nexus.common.cooperation2.Cooperation2Factory;
 import org.sonatype.nexus.common.cooperation2.ScopedCooperation2Support;
 
 /**
- * An implementation of {@link Cooperation2Factory} which uses local concurrency controls
- * optimized for Java 21 Virtual Threads.
+ * An implementation of {@link Cooperation2Factory} which uses local concurrency controls.
  * 
- * This implementation leverages Virtual Threads to efficiently handle I/O-bound operations
- * with minimal resource overhead. Virtual Threads are particularly well-suited for cooperative
- * execution patterns where multiple threads may be waiting on I/O operations.
+ * This implementation is optimized for Java 21 Virtual Threads, providing efficient
+ * thread management and concurrency control for I/O-bound operations. It leverages
+ * the lightweight nature of virtual threads to handle a large number of concurrent
+ * operations with minimal resource overhead.
  *
  * @since 3.41
  */
 public class LocalCooperation2
     extends ScopedCooperation2Support
+    implements Closeable
 {
   /**
-   * Creates a new instance with the given scope and configuration.
-   *
+   * Virtual thread executor for handling I/O-bound operations.
+   * Java 21 virtual threads are lightweight and can be created in much larger numbers
+   * than platform threads. They automatically yield during blocking I/O operations,
+   * allowing the carrier thread to do other work.
+   */
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+  
+  /**
+   * Creates a new instance with the specified scope and configuration.
+   * 
    * @param scope the cooperation scope identifier
    * @param config the cooperation configuration
    */
   public LocalCooperation2(final String scope, final Config config) {
     super(scope, config);
+    log.debug("Initialized LocalCooperation2 with Java 21 Virtual Thread support for scope: {}", scope);
   }
   
   /**
-   * Executes the given task using a Virtual Thread.
+   * Returns the virtual thread executor for this cooperation instance.
+   * This executor is optimized for I/O-bound operations using Java 21 virtual threads.
    * 
-   * @param <T> the return type of the task
-   * @param task the task to execute
-   * @return the result of the task
+   * @return the virtual thread executor
    */
-  public <T> T executeWithVirtualThread(final Callable<T> task) {
-    try {
-      // Create a holder for the result
-      final Supplier<T>[] resultHolder = new Supplier[1];
-      
-      // Submit the task to be executed by a virtual thread
-      submitVirtualThreadTask(() -> {
-        try {
-          T result = task.call();
-          resultHolder[0] = () -> result;
-        }
-        catch (Exception e) {
-          resultHolder[0] = () -> { throw new RuntimeException(e); };
-        }
-      });
-      
-      // Wait for the result
-      while (resultHolder[0] == null) {
-        Thread.yield();
-      }
-      
-      // Return the result
-      return resultHolder[0].get();
-    }
-    catch (RuntimeException e) {
-      if (e.getCause() != null) {
-        throw new RuntimeException(e.getCause());
-      }
-      throw e;
-    }
+  public ExecutorService getVirtualThreadExecutor() {
+    return virtualThreadExecutor;
   }
   
   /**
-   * Releases resources when this component is being disposed.
+   * Closes this resource, shutting down the virtual thread executor.
+   * This method should be called when the cooperation instance is no longer needed,
+   * typically in a try-with-resources block or explicitly in application shutdown.
    */
-  public void dispose() {
-    shutdown();
+  @Override
+  public void close() {
+    if (virtualThreadExecutor != null && !virtualThreadExecutor.isShutdown()) {
+      log.debug("Shutting down virtual thread executor for scope: {}", scope);
+      virtualThreadExecutor.shutdown();
+    }
   }
 }

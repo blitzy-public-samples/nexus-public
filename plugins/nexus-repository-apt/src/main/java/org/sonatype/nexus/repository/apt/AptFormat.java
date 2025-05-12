@@ -18,7 +18,11 @@ import javax.inject.Singleton;
 import org.sonatype.nexus.repository.Format;
 
 /**
+ * APT repository format.
+ * 
  * @since 3.17
+ * @see <a href="https://wiki.debian.org/DebianRepository/Format">Debian Repository Format</a>
+ * @see <a href="https://wiki.debian.org/RepositoryFormat">APT Repository Format</a>
  */
 @Named(AptFormat.NAME)
 @Singleton

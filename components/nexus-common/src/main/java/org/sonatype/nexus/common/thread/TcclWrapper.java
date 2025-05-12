@@ -22,11 +22,9 @@ import static com.google.common.base.Preconditions.checkNotNull;
 /**
  * Helper to create wrappers around components to ensure that the TCCL is properly configured.
  * 
- * <p>
- * This implementation is compatible with both platform threads and Java 21 Virtual Threads.
- * The Thread Context ClassLoader (TCCL) switching mechanism works transparently with both
- * thread types, ensuring consistent behavior across different thread implementations.
- * </p>
+ * <p>This implementation is compatible with both platform threads and Java 21 Virtual Threads.
+ * When used with Virtual Threads, it ensures proper thread context class loader management without
+ * causing thread pinning or memory leaks.</p>
  *
  * @since 3.0
  */
@@ -39,44 +37,44 @@ public class TcclWrapper
   /**
    * Creates a dynamic-proxy for type, delegating to target and setting the TCCL to class-loader before invocation.
    * 
-   * <p>
-   * This method is compatible with Java 21 Virtual Threads. The dynamic proxy creation and invocation
-   * logic ensures that the Thread Context ClassLoader is properly set regardless of whether the
-   * calling thread is a platform thread or a virtual thread.
-   * </p>
+   * <p>This method creates a proxy that works efficiently with both platform threads and Java 21 Virtual Threads.
+   * The implementation uses {@link TcclBlock} to ensure proper thread context class loader management
+   * and cleanup, even in the presence of exceptions.</p>
    * 
-   * <p>
-   * Note: When using with Virtual Threads, be aware that each virtual thread will have its own
-   * context class loader state, which is appropriate for the one-task-per-thread model of Virtual Threads.
-   * </p>
+   * <p>When used with Virtual Threads, this approach avoids thread pinning by ensuring that the
+   * InvocationHandler doesn't hold any thread-local state that would prevent proper unmounting
+   * of the virtual thread from its carrier thread.</p>
+   * 
+   * @param type the interface type to proxy
+   * @param target the target object implementing the interface
+   * @param classLoader the class loader to set as the thread context class loader during method invocation
+   * @return a proxy instance of the specified type
+   * @throws NullPointerException if any parameter is null
    */
   @SuppressWarnings("unchecked")
   public static <T> T create(final Class<T> type, final T target, final ClassLoader classLoader) {
-    checkNotNull(type);
-    checkNotNull(target);
-    checkNotNull(classLoader);
+    checkNotNull(type, "Type cannot be null");
+    checkNotNull(target, "Target cannot be null");
+    checkNotNull(classLoader, "ClassLoader cannot be null");
 
-    // Create an invocation handler that properly handles exceptions and preserves stack traces
-    // This implementation works with both platform threads and virtual threads
+    // Create an InvocationHandler that properly handles exceptions and works with Virtual Threads
     InvocationHandler handler = new InvocationHandler() {
       @Override
       public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-        // Use try-with-resources to ensure TCCL is properly restored even if an exception occurs
-        // TcclBlock works with both platform and virtual threads as it uses Thread.currentThread()
+        // Use try-with-resources to ensure proper TCCL management with both platform and virtual threads
         try (TcclBlock tccl = TcclBlock.begin(classLoader)) {
           try {
             return method.invoke(target, args);
-          } 
+          }
           catch (InvocationTargetException e) {
-            // Unwrap the original exception to preserve the stack trace
-            throw e.getCause();
+            // Unwrap the target exception to preserve the original stack trace
+            throw e.getTargetException();
           }
         }
       }
     };
 
-    // Create the proxy using the class loader of the interface type
-    // This approach works with both platform and virtual threads
+    // Create the proxy with the interface class loader to ensure proper class visibility
     return (T) Proxy.newProxyInstance(type.getClassLoader(), new Class[]{type}, handler);
   }
 }

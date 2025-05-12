@@ -12,8 +12,6 @@
  */
 package org.sonatype.nexus.testsuite.testsupport.performance;
 
-import java.time.Duration;
-import java.time.Instant;
 import java.util.Iterator;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -26,14 +24,17 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
+import org.joda.time.DateTime;
 
 import static com.google.common.base.Preconditions.checkState;
 
 /**
  * Utility for using {@link Callable}s to generate performance-testing load.
  * 
- * <p>This class is compatible with Java 21 and uses modern Java time APIs
- * instead of the deprecated Joda-Time library.</p>
+ * <p>This implementation leverages Java 21 Virtual Threads for improved concurrency and
+ * resource utilization during performance testing. Virtual threads are lightweight threads
+ * that are managed by the JVM rather than the operating system, allowing for much higher
+ * concurrency with minimal overhead.</p>
  */
 public class LoadExecutor
 {
@@ -41,7 +42,7 @@ public class LoadExecutor
 
   private final CountDownLatch startSignal = new CountDownLatch(1);
 
-  private volatile Instant endTime;
+  private volatile DateTime endtime;
 
   private final AtomicBoolean terminateEarly = new AtomicBoolean(false);
 
@@ -60,16 +61,14 @@ public class LoadExecutor
   private final int duration;
 
   /**
-   * Creates a new load executor.
-   *
    * @param externalTasks a group of tasks that will be repeatedly invoked to produce load
-   * @param threads the number of threads used to execute the tasks
-   * @param duration in seconds
+   * @param threads       the number of concurrent tasks to execute (each on its own virtual thread)
+   * @param duration      in seconds
    */
   public LoadExecutor(final Iterable<Callable<?>> externalTasks, final int threads, final int duration) {
     Preconditions.checkNotNull(externalTasks);
-    Preconditions.checkArgument(threads > 0, "Thread count must be positive");
-    Preconditions.checkArgument(duration >= 0, "Duration must be non-negative");
+    Preconditions.checkArgument(threads > 0);
+    Preconditions.checkArgument(duration >= 0);
 
     endlessTasks = Iterables.cycle(externalTasks).iterator();
     this.threads = threads;
@@ -77,7 +76,9 @@ public class LoadExecutor
   }
 
   /**
-   * Execute the tasks using the specified number of threads.
+   * Execute the tasks using the specified number of virtual threads.
+   * Each task runs on its own virtual thread, providing improved concurrency
+   * and resource utilization compared to platform threads.
    *
    * @throws Exception if any of the supplied tasks threw an exception
    * @throws AssertionError if any of the supplied tasks failed an assertion
@@ -85,12 +86,10 @@ public class LoadExecutor
   public void callTasks()
       throws Exception
   {
-    // Use Java 21 time API instead of Joda-Time
-    this.endTime = Instant.now().plus(Duration.ofSeconds(duration));
+    this.endtime = new DateTime().plusSeconds(duration);
 
-    // Create an executor service of the correct number of threads
-    // In Java 21, we could use virtual threads for better scalability
-    final ExecutorService executorService = Executors.newFixedThreadPool(threads);
+    // Create an executor service using virtual threads for improved concurrency
+    final ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor();
 
     for (int thread = 0; thread < threads; thread++) {
       final Callable<Void> callable = new VoidCallable();
@@ -118,39 +117,34 @@ public class LoadExecutor
 
   private synchronized Callable<?> getNextTask() {
     final Callable<?> next = endlessTasks.next();
-    Preconditions.checkState(next != null, "Task iterator returned null");
+    Preconditions.checkState(next != null);
     return next;
   }
 
   /**
-   * Gets the number of requests that were started.
-   *
-   * @return the number of started requests
+   * @return the total number of requests that have been started
    */
   public int getRequestsStarted() {
     return requestsStarted.get();
   }
 
   /**
-   * Gets the number of requests that were successfully processed.
-   *
-   * @return the number of processed requests
+   * @return the total number of requests that have been successfully processed
    */
   public int getRequestsProcessed() {
     return requestsProcessed.get();
   }
 
   /**
-   * Gets the number of threads used for this load executor.
-   *
-   * @return the number of threads
+   * @return the number of concurrent threads (virtual threads) being used
    */
   public int getThreads() {
     return threads;
   }
 
   /**
-   * A callable that executes tasks until the end time is reached or an error occurs.
+   * Internal callable implementation that executes tasks until the test duration expires
+   * or an error occurs. Runs on a virtual thread for improved performance.
    */
   private class VoidCallable
       implements Callable<Void>
@@ -160,8 +154,7 @@ public class LoadExecutor
       try {
         awaitStartSignal();
 
-        // Use Java 21 time API instead of Joda-Time
-        while (Instant.now().isBefore(endTime) && !terminateEarly.get()) {
+        while (new DateTime().isBefore(endtime) && !terminateEarly.get()) {
           performOneTask();
         }
         return null;
@@ -183,7 +176,7 @@ public class LoadExecutor
     private void awaitStartSignal() throws InterruptedException
     {
       checkState(startSignal.await(START_TIMEOUT_SECONDS, TimeUnit.SECONDS), 
-                "Start signal not received within timeout");
+          "Start signal not received within %s seconds", START_TIMEOUT_SECONDS);
     }
 
     private void performOneTask() throws Exception {

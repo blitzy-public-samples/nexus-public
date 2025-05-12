@@ -12,8 +12,9 @@
  */
 package org.sonatype.nexus.common.entity;
 
+import java.util.concurrent.atomic.AtomicReference;
+
 import javax.annotation.Nullable;
-import java.util.concurrent.locks.ReentrantLock;
 
 import org.sonatype.nexus.common.event.HasAffinity;
 import org.sonatype.nexus.common.event.HasLocality;
@@ -22,11 +23,6 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Entity event.
- * 
- * This class is not suitable for conversion to a record because:
- * 1. It's an abstract class (records can't be abstract)
- * 2. It has mutable fields (records are immutable)
- * 3. It has custom lazy-loading logic for the entity field
  *
  * @since 3.1
  */
@@ -40,11 +36,8 @@ public abstract class EntityEvent
 
   private String affinity;
 
-  // Using volatile for visibility across threads
-  private volatile Entity entity;
-  
-  // Lock for entity initialization - more efficient than synchronized block in Java 21
-  private final ReentrantLock entityLock = new ReentrantLock();
+  // Using AtomicReference for thread-safe lazy initialization without synchronization
+  private final AtomicReference<Entity> entityRef = new AtomicReference<>();
 
   public EntityEvent(final EntityMetadata metadata) {
     this.metadata = checkNotNull(metadata);
@@ -96,29 +89,21 @@ public abstract class EntityEvent
   }
 
   /**
-   * Returns the attached entity, if it exists.
-   * Uses an optimized lazy loading pattern with ReentrantLock for better performance in Java 21.
-   * 
    * @return attached entity, if it exists
    */
   @Nullable
   public <T extends Entity> T getEntity() {
-    // Fast path - check if entity is already initialized
-    Entity result = entity;
-    if (result == null) {
-      // Slow path - acquire lock and initialize if needed
-      entityLock.lock();
-      try {
-        result = entity;
-        if (result == null) {
-          // Initialize entity only once
-          entity = result = metadata.getEntity().orElse(null);
-        }
-      } finally {
-        entityLock.unlock();
+    // Use AtomicReference for thread-safe lazy initialization
+    Entity entity = entityRef.get();
+    if (entity == null) {
+      Entity newEntity = metadata.getEntity().orElse(null);
+      if (newEntity != null && entityRef.compareAndSet(null, newEntity)) {
+        entity = newEntity;
+      } else {
+        entity = entityRef.get();
       }
     }
-    return (T) result;
+    return (T) entity;
   }
 
   @Override
@@ -137,9 +122,9 @@ public abstract class EntityEvent
 
   @Override
   public String toString() {
-    return getClass().getSimpleName() + "{" +
-        "metadata=" + metadata +
-        ", remoteNodeId=" + remoteNodeId +
-        '}';
+    return getClass().getSimpleName() + "{"
+        + "metadata=" + metadata
+        + ", remoteNodeId=" + remoteNodeId
+        + '}';
   }
 }

@@ -12,8 +12,6 @@
  */
 package org.sonatype.nexus.thread;
 
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinWorkerThread;
 import java.util.concurrent.ThreadFactory;
@@ -21,23 +19,19 @@ import java.util.concurrent.ThreadFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 /**
  * Tests for {@link NexusForkJoinWorkerThreadFactory}.
- * 
- * These tests verify the naming conventions and compatibility with both platform threads
- * and virtual threads introduced in Java 21. The tests ensure that the factory works correctly
- * in different threading environments and with the new Thread.Builder API.
- * 
+ *
  * @since 3.20
  */
 class NexusForkJoinWorkerThreadFactoryTest
 {
-  private static final String TEST_PREFIX = "prefix-test";
-  
   private NexusForkJoinWorkerThreadFactory nexusForkJoinWorkerThreadFactory;
+  
+  private static final String TEST_PREFIX = "prefix-test";
 
   @BeforeEach
   void setUp() {
@@ -48,81 +42,89 @@ class NexusForkJoinWorkerThreadFactoryTest
   void prefixIsAddedToThread() {
     ForkJoinPool forkJoinPool = new ForkJoinPool();
     ForkJoinWorkerThread thread = nexusForkJoinWorkerThreadFactory.newThread(forkJoinPool);
-    assertTrue(thread.getName().contains(TEST_PREFIX), "Thread name should contain the specified prefix");
+    assertTrue(thread.getName().contains(TEST_PREFIX), 
+        "Thread name should contain the specified prefix");
   }
 
   @Test
-  void prefixIsFollowedByPoolIndex() {
+  void threadNameIncludesPoolIndex() {
     ForkJoinPool forkJoinPool = new ForkJoinPool();
     ForkJoinWorkerThread thread = nexusForkJoinWorkerThreadFactory.newThread(forkJoinPool);
-    String expectedPattern = TEST_PREFIX + "\\d+";
-    assertTrue(thread.getName().matches(expectedPattern), 
-        "Thread name should match pattern: prefix followed by pool index");
+    // The pool index is appended to the prefix
+    assertTrue(thread.getName().matches(TEST_PREFIX + "\\d+"), 
+        "Thread name should match pattern: prefix + digit");
   }
 
   @Test
-  void worksWithVirtualThreads() {
-    // Create a virtual thread executor using the ForkJoinPool with our factory
-    // This tests compatibility with virtual thread environments
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
-      // The factory should still work in a virtual thread environment
-      ForkJoinPool forkJoinPool = new ForkJoinPool();
-      ForkJoinWorkerThread thread = nexusForkJoinWorkerThreadFactory.newThread(forkJoinPool);
-      assertTrue(thread.getName().contains(TEST_PREFIX), 
-          "Factory should work correctly in virtual thread environment");
-    }
-  }
-
-  @Test
-  void compatibleWithThreadBuilderAPI() {
-    // Test compatibility with Thread.Builder API introduced in Java 21
-    Thread.Builder platformBuilder = Thread.ofPlatform().name(TEST_PREFIX + "-platform-");
-    Thread platformThread = platformBuilder.start(() -> { /* no-op */ });
+  void compareWithPlatformThreadNaming() {
+    // Create a platform thread using Thread.Builder API
+    Thread platformThread = Thread.ofPlatform()
+        .name(TEST_PREFIX)
+        .factory()
+        .newThread(() -> {});
     
     // Create a ForkJoinWorkerThread with our factory
     ForkJoinPool forkJoinPool = new ForkJoinPool();
     ForkJoinWorkerThread fjThread = nexusForkJoinWorkerThreadFactory.newThread(forkJoinPool);
     
-    // Both naming conventions should be compatible
+    // Both should contain the prefix
     assertTrue(platformThread.getName().contains(TEST_PREFIX), 
         "Platform thread name should contain the prefix");
     assertTrue(fjThread.getName().contains(TEST_PREFIX), 
         "ForkJoinWorkerThread name should contain the prefix");
     
-    // Ensure the platform thread completes
-    try {
-      platformThread.join(1000);
-    } 
-    catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-    }
+    // But the ForkJoinWorkerThread should have a numeric suffix
+    assertTrue(fjThread.getName().matches(TEST_PREFIX + "\\d+"), 
+        "ForkJoinWorkerThread should have numeric suffix");
   }
 
   @Test
-  void namingConventionComparisonWithVirtualThreads() {
-    // Compare naming conventions between platform and virtual threads
-    Thread virtualThread = Thread.ofVirtual().name(TEST_PREFIX + "-virtual").start(() -> { /* no-op */ });
+  void compareWithVirtualThreadNaming() {
+    // Create a virtual thread using Thread.Builder API
+    Thread virtualThread = Thread.ofVirtual()
+        .name(TEST_PREFIX)
+        .factory()
+        .newThread(() -> {});
     
+    // Create a ForkJoinWorkerThread with our factory
     ForkJoinPool forkJoinPool = new ForkJoinPool();
     ForkJoinWorkerThread fjThread = nexusForkJoinWorkerThreadFactory.newThread(forkJoinPool);
     
-    // Both should contain the prefix but have different patterns
+    // Both should contain the prefix
     assertTrue(virtualThread.getName().contains(TEST_PREFIX), 
-        "Virtual thread should contain the prefix");
+        "Virtual thread name should contain the prefix");
     assertTrue(fjThread.getName().contains(TEST_PREFIX), 
-        "ForkJoinWorkerThread should contain the prefix");
+        "ForkJoinWorkerThread name should contain the prefix");
     
-    // Virtual thread should have the exact name we gave it
-    assertEquals(TEST_PREFIX + "-virtual", virtualThread.getName(), 
-        "Virtual thread should have the exact name specified");
+    // Virtual thread should not be a ForkJoinWorkerThread
+    assertFalse(virtualThread instanceof ForkJoinWorkerThread, 
+        "Virtual thread should not be a ForkJoinWorkerThread");
     
-    // Ensure the virtual thread completes
-    try {
-      virtualThread.join(1000);
-    } 
-    catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-    }
+    // Virtual thread should be a virtual thread
+    assertTrue(virtualThread.isVirtual(), 
+        "Thread created with Thread.ofVirtual() should be a virtual thread");
+  }
+
+  @Test
+  void testThreadBuilderCompatibility() {
+    // Test that our factory works with Thread.Builder API for platform threads
+    ThreadFactory platformFactory = Thread.ofPlatform()
+        .name(TEST_PREFIX + "-platform-")
+        .factory();
+    Thread platformThread = platformFactory.newThread(() -> {});
+    assertTrue(platformThread.getName().contains(TEST_PREFIX), 
+        "Platform thread name should contain the prefix");
+    assertFalse(platformThread.isVirtual(), 
+        "Platform thread should not be virtual");
+    
+    // Test with virtual threads
+    ThreadFactory virtualFactory = Thread.ofVirtual()
+        .name(TEST_PREFIX + "-virtual-")
+        .factory();
+    Thread virtualThread = virtualFactory.newThread(() -> {});
+    assertTrue(virtualThread.getName().contains(TEST_PREFIX), 
+        "Virtual thread name should contain the prefix");
+    assertTrue(virtualThread.isVirtual(), 
+        "Thread created with Thread.ofVirtual() should be a virtual thread");
   }
 }

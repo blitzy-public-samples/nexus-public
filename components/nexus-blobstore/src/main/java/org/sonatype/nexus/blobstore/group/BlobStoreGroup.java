@@ -23,9 +23,11 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 import javax.annotation.Nullable;
@@ -68,6 +70,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.hash.HashCode;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.util.Collections.synchronizedList;
 import static java.util.Collections.unmodifiableList;
 import static java.util.function.Function.identity;
 import static java.util.stream.Collectors.toList;
@@ -111,8 +114,7 @@ public class BlobStoreGroup
 
   private Time blobIdCacheTimeout;
 
-  private volatile List<BlobStore> members;
-  private final ReentrantReadWriteLock membersLock = new ReentrantReadWriteLock();
+  private AtomicReference<List<BlobStore>> members = new AtomicReference<>();
 
   @VisibleForTesting
   FillPolicy fillPolicy;
@@ -121,6 +123,9 @@ public class BlobStoreGroup
 
   // cache of located blobs that have not been soft deleted
   private Cache<BlobId, String> locatedBlobs;
+  
+  // Virtual thread executor for parallel operations
+  private final ExecutorService virtualThreadExecutor;
 
   @Inject
   public BlobStoreGroup(
@@ -133,12 +138,13 @@ public class BlobStoreGroup
     this.fillPolicyProviders = checkNotNull(fillPolicyProviders);
     this.cacheHelperProvider = checkNotNull(cacheHelperProvider);
     this.blobIdCacheTimeout = checkNotNull(blobIdCacheTimeout);
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   @Override
   public void init(final BlobStoreConfiguration configuration) {
     this.blobStoreConfiguration = configuration;
-    this.members = initializeMembers();
+    initializeMembers();
     String fillPolicyName = BlobStoreGroupConfigurationHelper.fillPolicyName(configuration);
     if (fillPolicyProviders.containsKey(fillPolicyName)) {
       this.fillPolicy = fillPolicyProviders.get(fillPolicyName).get();
@@ -150,7 +156,16 @@ public class BlobStoreGroup
     }
   }
 
-  private List<BlobStore> initializeMembers() {
+  /**
+   * Initialize the members list using thread-safe lazy initialization
+   */
+  private void initializeMembers() {
+    // No initialization needed if already set
+    if (members.get() != null) {
+      return;
+    }
+    
+    // Create the member list
     List<BlobStore> memberList = new ArrayList<>();
     for (String name : BlobStoreGroupConfigurationHelper.memberNames(blobStoreConfiguration)) {
       BlobStore blobStore = blobStoreManager.get(name);
@@ -159,13 +174,15 @@ public class BlobStoreGroup
       }
       memberList.add(blobStore);
     }
-    return memberList;
+    
+    // Use thread-safe list and set it atomically
+    members.compareAndSet(null, synchronizedList(memberList));
   }
 
   @Override
   protected void doStart() throws Exception {
-    MutableConfiguration<BlobId, String> config = getCacheConfiguration();
-    locatedBlobs = cacheHelperProvider.get().maybeCreateCache(CACHE_NAME, config);
+    // Configure cache with optimized settings for Virtual Threads
+    locatedBlobs = cacheHelperProvider.get().maybeCreateCache(CACHE_NAME, getCacheConfiguration());
   }
 
   private MutableConfiguration<BlobId, String> getCacheConfiguration() {
@@ -203,18 +220,14 @@ public class BlobStoreGroup
   @Guarded(by = STARTED)
   @MonitoringBlobStoreMetrics(operationType = UPLOAD)
   public Blob create(final InputStream blobData, final Map<String, String> headers, @Nullable final BlobId blobId) {
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-      return create(headers, target -> target.create(blobData, headers, blobId));
-    }).join();
+    return create(headers, target -> target.create(blobData, headers, blobId));
   }
 
   @Override
   @Guarded(by = STARTED)
   @MonitoringBlobStoreMetrics(operationType = UPLOAD)
   public Blob create(final Path sourceFile, final Map<String, String> headers, final long size, final HashCode sha1) {
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-      return create(headers, target -> target.create(sourceFile, headers, size, sha1));
-    }).join();
+    return create(headers, target -> target.create(sourceFile, headers, size, sha1));
   }
 
   private Blob create(final Map<String, String> headers, final CreateBlobFunction createBlobFunction) {
@@ -222,9 +235,22 @@ public class BlobStoreGroup
     if (result == null) {
       throw new BlobStoreException("Unable to find a member Blob Store of '" + this + "' for create", null);
     }
-    Blob blob = createBlobFunction.create(result);
-    locatedBlobs.put(blob.getId(), result.getBlobStoreConfiguration().getName());
-    return blob;
+    
+    // Use CompletableFuture with Virtual Threads for I/O operation
+    CompletableFuture<Blob> future = CompletableFuture.supplyAsync(() -> {
+      Blob blob = createBlobFunction.create(result);
+      locatedBlobs.put(blob.getId(), result.getBlobStoreConfiguration().getName());
+      return blob;
+    }, virtualThreadExecutor);
+    
+    try {
+      return future.join();
+    } catch (Exception e) {
+      if (e.getCause() instanceof BlobStoreException) {
+        throw (BlobStoreException) e.getCause();
+      }
+      throw new BlobStoreException("Error creating blob", e);
+    }
   }
 
   @Override
@@ -251,13 +277,24 @@ public class BlobStoreGroup
   @Override
   @Guarded(by = STARTED)
   public Blob copy(final BlobId blobId, final Map<String, String> headers) {
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-      BlobStore target = locate(blobId)
-          .orElseThrow(() -> new BlobStoreException("Unable to find blob", blobId));
+    BlobStore target = locate(blobId)
+        .orElseThrow(() -> new BlobStoreException("Unable to find blob", blobId));
+    
+    // Use CompletableFuture with Virtual Threads for I/O operation
+    CompletableFuture<Blob> future = CompletableFuture.supplyAsync(() -> {
       Blob blob = target.copy(blobId, headers);
       locatedBlobs.put(blob.getId(), target.getBlobStoreConfiguration().getName());
       return blob;
-    }).join();
+    }, virtualThreadExecutor);
+    
+    try {
+      return future.join();
+    } catch (Exception e) {
+      if (e.getCause() instanceof BlobStoreException) {
+        throw (BlobStoreException) e.getCause();
+      }
+      throw new BlobStoreException("Error copying blob", e);
+    }
   }
 
   @Nullable
@@ -265,11 +302,22 @@ public class BlobStoreGroup
   @Guarded(by = STARTED)
   @MonitoringBlobStoreMetrics(operationType = DOWNLOAD)
   public Blob get(final BlobId blobId) {
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-      return locate(blobId)
-          .map((BlobStore target) -> target.get(blobId))
-          .orElse(null);
-    }).join();
+    Optional<BlobStore> blobStoreOptional = locate(blobId);
+    if (!blobStoreOptional.isPresent()) {
+      return null;
+    }
+    
+    // Use CompletableFuture with Virtual Threads for I/O operation
+    CompletableFuture<Blob> future = CompletableFuture.supplyAsync(
+        () -> blobStoreOptional.get().get(blobId),
+        virtualThreadExecutor);
+    
+    try {
+      return future.join();
+    } catch (Exception e) {
+      log.error("Error getting blob {}", blobId, e);
+      return null;
+    }
   }
 
   @Nullable
@@ -277,50 +325,61 @@ public class BlobStoreGroup
   @Guarded(by = STARTED)
   @MonitoringBlobStoreMetrics(operationType = DOWNLOAD)
   public Blob get(final BlobId blobId, final boolean includeDeleted) {
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-      if (includeDeleted) {
-        // check directly without using cache
-        return getMembers().stream()
-            .filter((BlobStore member) -> member.exists(blobId))
-            .map((BlobStore member) -> member.get(blobId, true))
-            .filter(Objects::nonNull)
-            .findAny()
-            .orElse(null);
-      }
-      else {
-        return locate(blobId)
-            .map((BlobStore target) -> target.get(blobId, false))
-            .orElse(null);
-      }
-    }).join();
+    if (includeDeleted) {
+      // check directly without using cache
+      List<BlobStore> membersList = members.get();
+      
+      // Use CompletableFuture with Virtual Threads to search in parallel
+      List<CompletableFuture<Blob>> futures = membersList.stream()
+          .map(member -> CompletableFuture.supplyAsync(
+              () -> member.exists(blobId) ? member.get(blobId, true) : null,
+              virtualThreadExecutor))
+          .collect(toList());
+      
+      // Return the first non-null result
+      return futures.stream()
+          .map(CompletableFuture::join)
+          .filter(Objects::nonNull)
+          .findAny()
+          .orElse(null);
+    }
+    else {
+      return get(blobId);
+    }
   }
 
   @Override
   @Guarded(by = STARTED)
   public boolean delete(final BlobId blobId, final String reason) {
     locatedBlobs.remove(blobId);
-    try (var scope = new java.util.concurrent.StructuredTaskScope.ShutdownOnFailure()) {
-      List<BlobStore> locations = getMembers().stream()
-          .filter((BlobStore member) -> member.exists(blobId))
+    List<BlobStore> membersList = members.get();
+    
+    // Use CompletableFuture with Virtual Threads to find locations in parallel
+    List<CompletableFuture<BlobStore>> locationFutures = membersList.stream()
+        .map(member -> CompletableFuture.supplyAsync(
+            () -> member.exists(blobId) ? member : null,
+            virtualThreadExecutor))
+        .collect(toList());
+    
+    List<BlobStore> locations = locationFutures.stream()
+        .map(CompletableFuture::join)
+        .filter(Objects::nonNull)
+        .collect(toList());
+
+    if (!locations.isEmpty()) {
+      // Use CompletableFuture with Virtual Threads to delete in parallel
+      List<CompletableFuture<Boolean>> deleteFutures = locations.stream()
+          .map(member -> CompletableFuture.supplyAsync(
+              () -> member.delete(blobId, reason),
+              virtualThreadExecutor))
           .collect(toList());
-
-      if (!locations.isEmpty()) {
-        var futures = locations.stream()
-            .map(member -> scope.fork(() -> member.delete(blobId, reason)))
-            .collect(toList());
-
-        try {
-          scope.join();
-          scope.throwIfFailed();
-          return futures.stream().allMatch(future -> future.resultNow());
-        } catch (Exception e) {
-          log.error("Error deleting blob {}", blobId, e);
-          return false;
-        }
-      }
-      else {
-        return false;
-      }
+      
+      return deleteFutures.stream()
+          .map(CompletableFuture::join)
+          .allMatch(Boolean::booleanValue);
+    }
+    else {
+      return false;
     }
   }
 
@@ -328,28 +387,34 @@ public class BlobStoreGroup
   @Guarded(by = STARTED)
   public boolean deleteHard(final BlobId blobId) {
     locatedBlobs.remove(blobId);
-    try (var scope = new java.util.concurrent.StructuredTaskScope.ShutdownOnFailure()) {
-      List<BlobStore> locations = getMembers().stream()
-          .filter((BlobStore member) -> member.exists(blobId))
+    List<BlobStore> membersList = members.get();
+    
+    // Use CompletableFuture with Virtual Threads to find locations in parallel
+    List<CompletableFuture<BlobStore>> locationFutures = membersList.stream()
+        .map(member -> CompletableFuture.supplyAsync(
+            () -> member.exists(blobId) ? member : null,
+            virtualThreadExecutor))
+        .collect(toList());
+    
+    List<BlobStore> locations = locationFutures.stream()
+        .map(CompletableFuture::join)
+        .filter(Objects::nonNull)
+        .collect(toList());
+
+    if (!locations.isEmpty()) {
+      // Use CompletableFuture with Virtual Threads to delete in parallel
+      List<CompletableFuture<Boolean>> deleteFutures = locations.stream()
+          .map(member -> CompletableFuture.supplyAsync(
+              () -> member.deleteHard(blobId),
+              virtualThreadExecutor))
           .collect(toList());
-
-      if (!locations.isEmpty()) {
-        var futures = locations.stream()
-            .map(member -> scope.fork(() -> member.deleteHard(blobId)))
-            .collect(toList());
-
-        try {
-          scope.join();
-          scope.throwIfFailed();
-          return futures.stream().allMatch(future -> future.resultNow());
-        } catch (Exception e) {
-          log.error("Error hard deleting blob {}", blobId, e);
-          return false;
-        }
-      }
-      else {
-        return false;
-      }
+      
+      return deleteFutures.stream()
+          .map(CompletableFuture::join)
+          .allMatch(Boolean::booleanValue);
+    }
+    else {
+      return false;
     }
   }
 
@@ -362,19 +427,40 @@ public class BlobStoreGroup
   @Override
   @Guarded(by = STARTED)
   public BlobStoreMetrics getMetrics() {
-    Iterable<BlobStoreMetrics> membersMetrics = getMembers()
-        .stream()
+    List<BlobStore> membersList = members.get();
+    
+    // Use CompletableFuture with Virtual Threads to get metrics in parallel
+    List<CompletableFuture<BlobStoreMetrics>> metricsFutures = membersList.stream()
         .filter(BlobStore::isStarted)
-        .map(BlobStore::getMetrics)::iterator;
+        .map(member -> CompletableFuture.supplyAsync(
+            member::getMetrics,
+            virtualThreadExecutor))
+        .collect(toList());
+    
+    List<BlobStoreMetrics> membersMetrics = metricsFutures.stream()
+        .map(CompletableFuture::join)
+        .collect(toList());
+    
     return new BlobStoreGroupMetrics(membersMetrics);
   }
 
   @Override
   public Map<OperationType, OperationMetrics> getOperationMetricsByType() {
     Map<OperationType, OperationMetrics> result = new EnumMap<>(OperationType.class);
-    Iterable<Map<OperationType, OperationMetrics>> metrics = getMembers()
-        .stream()
-        .map(BlobStore::getOperationMetricsByType)::iterator;
+    List<BlobStore> membersList = members.get();
+    
+    // Use CompletableFuture with Virtual Threads to get metrics in parallel
+    List<CompletableFuture<Map<OperationType, OperationMetrics>>> metricsFutures = membersList.stream()
+        .map(member -> CompletableFuture.supplyAsync(
+            member::getOperationMetricsByType,
+            virtualThreadExecutor))
+        .collect(toList());
+    
+    List<Map<OperationType, OperationMetrics>> metrics = metricsFutures.stream()
+        .map(CompletableFuture::join)
+        .collect(toList());
+    
+    // Aggregate metrics
     for (Map<OperationType, OperationMetrics> metric : metrics) {
       for (Entry<OperationType, OperationMetrics> metricsEntry : metric.entrySet()) {
         OperationType type = metricsEntry.getKey();
@@ -395,9 +481,20 @@ public class BlobStoreGroup
   @Override
   public Map<OperationType, OperationMetrics> getOperationMetricsDelta() {
     Map<OperationType, OperationMetrics> result = new EnumMap<>(OperationType.class);
-    Iterable<Map<OperationType, OperationMetrics>> metrics = getMembers()
-        .stream()
-        .map(BlobStore::getOperationMetricsDelta)::iterator;
+    List<BlobStore> membersList = members.get();
+    
+    // Use CompletableFuture with Virtual Threads to get metrics in parallel
+    List<CompletableFuture<Map<OperationType, OperationMetrics>>> metricsFutures = membersList.stream()
+        .map(member -> CompletableFuture.supplyAsync(
+            member::getOperationMetricsDelta,
+            virtualThreadExecutor))
+        .collect(toList());
+    
+    List<Map<OperationType, OperationMetrics>> metrics = metricsFutures.stream()
+        .map(CompletableFuture::join)
+        .collect(toList());
+    
+    // Aggregate metrics
     for (Map<OperationType, OperationMetrics> metric : metrics) {
       for (Entry<OperationType, OperationMetrics> metricsEntry : metric.entrySet()) {
         OperationType type = metricsEntry.getKey();
@@ -423,37 +520,33 @@ public class BlobStoreGroup
   @Override
   @Guarded(by = STARTED)
   public synchronized void compact(@Nullable final BlobStoreUsageChecker inUseChecker) {
-    try (var scope = new java.util.concurrent.StructuredTaskScope.ShutdownOnFailure()) {
-      getMembers().forEach(member -> scope.fork(() -> {
-        member.compact(inUseChecker);
-        return null;
-      }));
-      
-      try {
-        scope.join();
-        scope.throwIfFailed();
-      } catch (Exception e) {
-        log.error("Error during compact operation", e);
-      }
-    }
+    List<BlobStore> membersList = members.get();
+    
+    // Use CompletableFuture with Virtual Threads to compact in parallel
+    List<CompletableFuture<Void>> compactFutures = membersList.stream()
+        .map(member -> CompletableFuture.runAsync(
+            () -> member.compact(inUseChecker),
+            virtualThreadExecutor))
+        .collect(toList());
+    
+    // Wait for all compact operations to complete
+    CompletableFuture.allOf(compactFutures.toArray(new CompletableFuture[0])).join();
   }
 
   @Override
   @Guarded(by = STARTED)
   public synchronized void deleteTempFiles(@Nullable final Integer daysOlderThan) {
-    try (var scope = new java.util.concurrent.StructuredTaskScope.ShutdownOnFailure()) {
-      getMembers().forEach(member -> scope.fork(() -> {
-        member.deleteTempFiles(daysOlderThan);
-        return null;
-      }));
-      
-      try {
-        scope.join();
-        scope.throwIfFailed();
-      } catch (Exception e) {
-        log.error("Error during deleteTempFiles operation", e);
-      }
-    }
+    List<BlobStore> membersList = members.get();
+    
+    // Use CompletableFuture with Virtual Threads to delete temp files in parallel
+    List<CompletableFuture<Void>> deleteTempFutures = membersList.stream()
+        .map(member -> CompletableFuture.runAsync(
+            () -> member.deleteTempFiles(daysOlderThan),
+            virtualThreadExecutor))
+        .collect(toList());
+    
+    // Wait for all delete temp files operations to complete
+    CompletableFuture.allOf(deleteTempFutures.toArray(new CompletableFuture[0])).join();
   }
 
   @Override
@@ -463,12 +556,18 @@ public class BlobStoreGroup
       final BlobAttributes attributes,
       final boolean isDryRun)
   {
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-      return getMembers()
-          .stream()
-          .map((BlobStore member) -> member.undelete(inUseChecker, blobId, attributes, isDryRun))
-          .anyMatch((Boolean deleted) -> deleted);
-    }).join();
+    List<BlobStore> membersList = members.get();
+    
+    // Use CompletableFuture with Virtual Threads to undelete in parallel
+    List<CompletableFuture<Boolean>> undeleteFutures = membersList.stream()
+        .map(member -> CompletableFuture.supplyAsync(
+            () -> member.undelete(inUseChecker, blobId, attributes, isDryRun),
+            virtualThreadExecutor))
+        .collect(toList());
+    
+    return undeleteFutures.stream()
+        .map(CompletableFuture::join)
+        .anyMatch(Boolean::booleanValue);
   }
 
   @Override
@@ -488,7 +587,18 @@ public class BlobStoreGroup
 
   @Override
   public boolean isEmpty() {
-    return getMembers().stream().map(BlobStore::isEmpty).reduce(true, Boolean::logicalAnd);
+    List<BlobStore> membersList = members.get();
+    
+    // Use CompletableFuture with Virtual Threads to check emptiness in parallel
+    List<CompletableFuture<Boolean>> emptyFutures = membersList.stream()
+        .map(member -> CompletableFuture.supplyAsync(
+            member::isEmpty,
+            virtualThreadExecutor))
+        .collect(toList());
+    
+    return emptyFutures.stream()
+        .map(CompletableFuture::join)
+        .reduce(true, Boolean::logicalAnd);
   }
 
   /**
@@ -500,27 +610,57 @@ public class BlobStoreGroup
     if (isStarted()) {
       doStop();
     }
+    if (virtualThreadExecutor != null) {
+      virtualThreadExecutor.shutdown();
+    }
   }
 
   @Override
   public boolean exists(final BlobId blobId) {
-    return getMembers()
-        .stream()
-        .anyMatch((BlobStore member) -> member.exists(blobId));
+    List<BlobStore> membersList = members.get();
+    
+    // Use CompletableFuture with Virtual Threads to check existence in parallel
+    List<CompletableFuture<Boolean>> existsFutures = membersList.stream()
+        .map(member -> CompletableFuture.supplyAsync(
+            () -> member.exists(blobId),
+            virtualThreadExecutor))
+        .collect(toList());
+    
+    return existsFutures.stream()
+        .map(CompletableFuture::join)
+        .anyMatch(Boolean::booleanValue);
   }
 
   @Override
   public boolean bytesExists(final BlobId blobId) {
-    return getMembers()
-        .stream()
-        .anyMatch((BlobStore member) -> member.bytesExists(blobId));
+    List<BlobStore> membersList = members.get();
+    
+    // Use CompletableFuture with Virtual Threads to check bytes existence in parallel
+    List<CompletableFuture<Boolean>> bytesExistsFutures = membersList.stream()
+        .map(member -> CompletableFuture.supplyAsync(
+            () -> member.bytesExists(blobId),
+            virtualThreadExecutor))
+        .collect(toList());
+    
+    return bytesExistsFutures.stream()
+        .map(CompletableFuture::join)
+        .anyMatch(Boolean::booleanValue);
   }
 
   @Override
   public boolean isBlobEmpty(final BlobId blobId) {
-    return getMembers()
-        .stream()
-        .anyMatch((BlobStore member) -> member.isBlobEmpty(blobId));
+    List<BlobStore> membersList = members.get();
+    
+    // Use CompletableFuture with Virtual Threads to check if blob is empty in parallel
+    List<CompletableFuture<Boolean>> isBlobEmptyFutures = membersList.stream()
+        .map(member -> CompletableFuture.supplyAsync(
+            () -> member.isBlobEmpty(blobId),
+            virtualThreadExecutor))
+        .collect(toList());
+    
+    return isBlobEmptyFutures.stream()
+        .map(CompletableFuture::join)
+        .anyMatch(Boolean::booleanValue);
   }
 
   @Override
@@ -531,21 +671,34 @@ public class BlobStoreGroup
 
   @Override
   public Stream<BlobId> getBlobIdStream() {
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-      return getMembers()
-          .stream()
-          .map((BlobStore member) -> member.getBlobIdStream())
-          .flatMap(identity());
-    }).join();
+    List<BlobStore> membersList = members.get();
+    
+    // Use CompletableFuture with Virtual Threads to get blob IDs in parallel
+    List<CompletableFuture<Stream<BlobId>>> blobIdStreamFutures = membersList.stream()
+        .map(member -> CompletableFuture.supplyAsync(
+            member::getBlobIdStream,
+            virtualThreadExecutor))
+        .collect(toList());
+    
+    return blobIdStreamFutures.stream()
+        .map(CompletableFuture::join)
+        .flatMap(identity());
   }
 
   @Override
   public Stream<BlobId> getBlobIdUpdatedSinceStream(final java.time.Duration duration) {
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-      return getMembers()
-          .stream()
-          .flatMap((BlobStore member) -> member.getBlobIdUpdatedSinceStream(duration));
-    }).join();
+    List<BlobStore> membersList = members.get();
+    
+    // Use CompletableFuture with Virtual Threads to get updated blob IDs in parallel
+    List<CompletableFuture<Stream<BlobId>>> updatedBlobIdStreamFutures = membersList.stream()
+        .map(member -> CompletableFuture.supplyAsync(
+            () -> member.getBlobIdUpdatedSinceStream(duration),
+            virtualThreadExecutor))
+        .collect(toList());
+    
+    return updatedBlobIdStreamFutures.stream()
+        .map(CompletableFuture::join)
+        .flatMap(identity());
   }
 
   @Override
@@ -561,35 +714,57 @@ public class BlobStoreGroup
 
   @Override
   public Stream<BlobId> getDirectPathBlobIdStream(final String prefix) {
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-      return getMembers()
-          .stream()
-          .map((BlobStore member) -> member.getDirectPathBlobIdStream(prefix))
-          .flatMap(identity());
-    }).join();
+    List<BlobStore> membersList = members.get();
+    
+    // Use CompletableFuture with Virtual Threads to get direct path blob IDs in parallel
+    List<CompletableFuture<Stream<BlobId>>> directPathBlobIdStreamFutures = membersList.stream()
+        .map(member -> CompletableFuture.supplyAsync(
+            () -> member.getDirectPathBlobIdStream(prefix),
+            virtualThreadExecutor))
+        .collect(toList());
+    
+    return directPathBlobIdStreamFutures.stream()
+        .map(CompletableFuture::join)
+        .flatMap(identity());
   }
 
   @Nullable
   @Override
   public BlobAttributes getBlobAttributes(final BlobId blobId) {
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-      return locate(blobId)
-          .map((BlobStore target) -> target.getBlobAttributes(blobId))
-          .orElse(null);
-    }).join();
+    Optional<BlobStore> blobStoreOptional = locate(blobId);
+    if (!blobStoreOptional.isPresent()) {
+      return null;
+    }
+    
+    // Use CompletableFuture with Virtual Threads for I/O operation
+    CompletableFuture<BlobAttributes> future = CompletableFuture.supplyAsync(
+        () -> blobStoreOptional.get().getBlobAttributes(blobId),
+        virtualThreadExecutor);
+    
+    try {
+      return future.join();
+    } catch (Exception e) {
+      log.error("Error getting blob attributes {}", blobId, e);
+      return null;
+    }
   }
 
   @Override
   public void setBlobAttributes(BlobId blobId, BlobAttributes blobAttributes) {
-    Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-      locate(blobId)
-          .ifPresent((BlobStore target) -> target.setBlobAttributes(blobId, blobAttributes));
-      return null;
-    }).join();
+    locate(blobId).ifPresent(target -> {
+      // Use CompletableFuture with Virtual Threads for I/O operation
+      CompletableFuture.runAsync(
+          () -> target.setBlobAttributes(blobId, blobAttributes),
+          virtualThreadExecutor)
+          .exceptionally(e -> {
+            log.error("Error setting blob attributes {}", blobId, e);
+            return null;
+          });
+    });
   }
 
   public List<BlobStore> getMembers() {
-    return unmodifiableList(members);
+    return unmodifiableList(members.get());
   }
 
   @Override
@@ -597,32 +772,62 @@ public class BlobStoreGroup
     return new UnimplementedRawObjectAccess();
   }
 
+  /**
+   * Thread-safe implementation for locating a blob in member stores.
+   */
   @VisibleForTesting
   Optional<BlobStore> locate(final BlobId blobId) {
+    // Check the cache first
     String blobStoreName = locatedBlobs.get(blobId);
     if (blobStoreName != null) {
       log.trace("{} location was cached as {}", blobId, blobStoreName);
       return Optional.ofNullable(blobStoreManager.get(blobStoreName));
     }
 
-    BlobStore blobStore = search(blobId);
-    if (blobStore != null && blobStore.isWritable()) {
-      String memberName = blobStore.getBlobStoreConfiguration().getName();
-      log.trace("Caching {} in member {}", blobId, memberName);
-      locatedBlobs.put(blobId, memberName);
+    // Use CompletableFuture with Virtual Threads to search in parallel
+    CompletableFuture<BlobStore> searchFuture = CompletableFuture.supplyAsync(
+        () -> search(blobId),
+        virtualThreadExecutor);
+    
+    try {
+      BlobStore blobStore = searchFuture.join();
+      if (blobStore != null && blobStore.isWritable()) {
+        String memberName = blobStore.getBlobStoreConfiguration().getName();
+        log.trace("Caching {} in member {}", blobId, memberName);
+        locatedBlobs.put(blobId, memberName);
+      }
+      return Optional.ofNullable(blobStore);
+    } catch (Exception e) {
+      log.error("Error locating blob {}", blobId, e);
+      return Optional.empty();
     }
-
-    return Optional.ofNullable(blobStore);
   }
 
   private BlobStore search(BlobId blobId) {
-    log.trace("Searching for {} in {}", blobId, members);
-    return getMembers()
-        .stream()
+    List<BlobStore> membersList = members.get();
+    log.trace("Searching for {} in {}", blobId, membersList);
+    
+    // Sort members with writable ones first
+    List<BlobStore> sortedMembers = membersList.stream()
         .sorted(Comparator.comparing(BlobStore::isWritable).reversed())
-        .filter((BlobStore member) -> member.exists(blobId))
-        .findAny()
-        .orElse(null);
+        .collect(toList());
+    
+    // Use ConcurrentHashMap for thread-safe result collection
+    ConcurrentHashMap<BlobId, BlobStore> foundMap = new ConcurrentHashMap<>();
+    
+    // Use CompletableFuture with Virtual Threads to search in parallel
+    List<CompletableFuture<Void>> searchFutures = sortedMembers.stream()
+        .map(member -> CompletableFuture.runAsync(() -> {
+          if (member.exists(blobId)) {
+            foundMap.putIfAbsent(blobId, member);
+          }
+        }, virtualThreadExecutor))
+        .collect(toList());
+    
+    // Wait for all search operations to complete
+    CompletableFuture.allOf(searchFutures.toArray(new CompletableFuture[0])).join();
+    
+    return foundMap.get(blobId);
   }
 
   @Override
@@ -630,7 +835,7 @@ public class BlobStoreGroup
     String name = blobStoreConfiguration != null ? blobStoreConfiguration.getName() : null;
     return getClass().getSimpleName() + "{" +
         "name='" + name + "'," +
-        "members='" + getMembers() + '\'' +
+        "members='" + members.get() + '\'' +
         '}';
   }
 

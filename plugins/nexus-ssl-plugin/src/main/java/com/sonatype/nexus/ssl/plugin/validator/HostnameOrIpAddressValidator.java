@@ -21,14 +21,36 @@ import com.google.common.net.InternetDomainName;
 
 /**
  * Hostname or IP address validator.
+ * 
+ * This validator checks if a string is either a valid hostname or a valid IP address.
+ * Compatible with Java 21.
  *
  * @since 3.36
  */
 public class HostnameOrIpAddressValidator
     extends ConstraintValidatorSupport<HostnameOrIpAddress, String>
 {
+  /**
+   * Validates if the provided value is either a valid hostname or IP address.
+   *
+   * @param value   The string to validate, can be null or empty (which will be considered invalid).
+   * @param context The constraint validator context.
+   * @return true if the value is a valid hostname or IP address, false otherwise.
+   */
   @Override
   public boolean isValid(final String value, final ConstraintValidatorContext context) {
-    return InternetDomainName.isValid(value) || InetAddresses.isInetAddress(value);
+    if (value == null || value.isEmpty()) {
+      return false;
+    }
+    
+    // Using pattern matching to determine validation approach
+    return switch (value) {
+      // First check if it's a valid IP address (faster check)
+      case String s when InetAddresses.isInetAddress(s) -> true;
+      // Then check if it's a valid hostname
+      case String s when InternetDomainName.isValid(s) -> true;
+      // If neither, it's invalid
+      default -> false;
+    };
   }
 }

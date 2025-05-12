@@ -28,6 +28,7 @@ import org.sonatype.nexus.repository.maven.VersionPolicy;
 import org.sonatype.nexus.script.plugin.RepositoryApi;
 
 import java.util.*;
+import java.util.concurrent.Executors;
 import java.util.stream.StreamSupport;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -37,6 +38,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.Collections.emptyMap;
 
 /**
+ * Implementation of the Repository API for scripting.
+ * 
  * @since 3.0
  */
 @Named
@@ -523,7 +526,7 @@ public class RepositoryApiImpl
   {
     Configuration configuration =
         createHosted(name, "yum-hosted", blobStoreName, writePolicy, strictContentTypeValidation);
-    configuration.getAttributes().put("yum", Collections.singletonMap("repodataDepth", depth));
+    configuration.getAttributes().put("yum", Map.of("repodataDepth", depth));
     return createRepository(configuration);
   }
 
@@ -615,34 +618,59 @@ public class RepositoryApiImpl
     return docker;
   }
 
+  /**
+   * Creates a repository with the given configuration.
+   * This method runs validation checks before creating the repository.
+   * 
+   * @param configuration the repository configuration
+   * @return the created repository
+   * @throws Exception if repository creation fails
+   */
   public Repository createRepository(final Configuration configuration) throws Exception {
-    validateBlobStore(configuration);
-    validateGroupMembers(configuration);
+    // Run validations using virtual threads for better performance
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var blobStoreValidation = executor.submit(() -> validateBlobStore(configuration));
+      var groupMembersValidation = executor.submit(() -> validateGroupMembers(configuration));
+      
+      // Wait for validations to complete
+      blobStoreValidation.get();
+      groupMembersValidation.get();
+    }
+    
     return repositoryManager.create(configuration);
   }
 
   @VisibleForTesting
   void validateGroupMembers(final Configuration configuration) {
-    Collection<String> members =
-        (Collection<String>) configuration.getAttributes().getOrDefault("group", emptyMap()).get("memberNames");
-    if (members != null) {
-      List<String> existingRepos = StreamSupport.stream(repositoryManager.browse().spliterator(), false)
-          .map(Repository::getName)
-          .toList();
-      boolean valid = members.stream().allMatch(existingRepos::contains);
-      if (!valid) {
-        throw new IllegalStateException("One or more of the specified group memberNames does not actually exist");
+    Map<String, Object> groupMap = configuration.getAttributes().getOrDefault("group", emptyMap());
+    if (groupMap instanceof Map<?, ?> map) {
+      Object memberNamesObj = map.get("memberNames");
+      if (memberNamesObj instanceof Collection<?> members) {
+        List<String> existingRepos = StreamSupport.stream(repositoryManager.browse().spliterator(), false)
+            .map(Repository::getName)
+            .toList();
+        
+        boolean valid = members.stream()
+            .filter(String.class::isInstance)
+            .map(String.class::cast)
+            .allMatch(existingRepos::contains);
+            
+        if (!valid) {
+          throw new IllegalStateException("One or more of the specified group memberNames does not actually exist");
+        }
       }
     }
   }
 
   @VisibleForTesting
   void validateBlobStore(Configuration configuration) {
-    String name = (String) configuration.getAttributes().getOrDefault(STORAGE, emptyMap()).get(BLOB_STORE_NAME);
-    boolean exists = StreamSupport.stream(blobStoreManager.browse().spliterator(), false)
-        .anyMatch(blobStore -> blobStore.getBlobStoreConfiguration().getName().equals(name));
-    if (!exists) {
-      throw new IllegalArgumentException("No blobStore found with name " + name);
+    Object nameObj = configuration.getAttributes().getOrDefault(STORAGE, emptyMap()).get(BLOB_STORE_NAME);
+    if (nameObj instanceof String name) {
+      boolean exists = StreamSupport.stream(blobStoreManager.browse().spliterator(), false)
+          .anyMatch(blobStore -> blobStore.getBlobStoreConfiguration().getName().equals(name));
+      if (!exists) {
+        throw new IllegalArgumentException("No blobStore found with name " + name);
+      }
     }
   }
 }

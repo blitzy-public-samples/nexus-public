@@ -20,6 +20,9 @@ import org.sonatype.nexus.repository.raw.internal.RawFormat;
 
 /**
  * RAW places components at the same level as their assets.
+ * 
+ * This class is compatible with Java 21 and uses standard javax.inject annotations
+ * for dependency injection and OSGi service registration.
  *
  * @since 3.26
  */

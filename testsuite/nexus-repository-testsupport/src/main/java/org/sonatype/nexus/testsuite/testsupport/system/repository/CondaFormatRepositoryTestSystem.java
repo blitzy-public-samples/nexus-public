@@ -24,6 +24,17 @@ import org.sonatype.nexus.testsuite.testsupport.system.repository.config.HostedR
 
 import static org.sonatype.nexus.testsuite.testsupport.system.RepositoryTestSystem.FORMAT_CONDA;
 
+/**
+ * Conda format-specific repository test system.
+ * 
+ * @since 3.0
+ * 
+ * @Java21 This implementation leverages Virtual Threads for repository provisioning operations
+ * to improve concurrency and reduce resource usage during test execution. The underlying
+ * FormatRepositoryTestSystemSupport class uses Java 21's Virtual Threads for asynchronous
+ * repository creation, which significantly improves performance when creating multiple
+ * repositories concurrently during tests.
+ */
 @Named(FORMAT_CONDA)
 @Singleton
 public class CondaFormatRepositoryTestSystem
@@ -38,6 +49,16 @@ public class CondaFormatRepositoryTestSystem
     super(repositoryManager);
   }
 
+  /**
+   * Creates a Conda proxy repository with the given configuration.
+   * 
+   * @param config the repository configuration
+   * @return the created repository
+   * @throws Exception if repository creation fails
+   * 
+   * @Java21 This method leverages Virtual Threads for repository creation through the parent class
+   * implementation, providing improved concurrency for I/O-bound operations.
+   */
   public Repository createProxy(final CondaProxyRepositoryConfig config) throws Exception {
     return doCreate(createProxyConfiguration(config));
   }

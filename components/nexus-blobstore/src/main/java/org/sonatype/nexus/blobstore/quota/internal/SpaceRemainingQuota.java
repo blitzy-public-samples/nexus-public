@@ -12,21 +12,14 @@
  */
 package org.sonatype.nexus.blobstore.quota.internal;
 
-import java.io.IOException;
-import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 import javax.inject.Named;
 import javax.inject.Singleton;
 
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
-import org.sonatype.nexus.blobstore.api.BlobStoreException;
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuota;
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaResult;
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaSupport;
@@ -38,10 +31,11 @@ import org.slf4j.LoggerFactory;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.common.text.UnitFormatter.formatStorage;
 import static java.lang.String.format;
+import static java.lang.Thread.currentThread;
 
 /**
  * A {@link BlobStoreQuota} which checks that a blob store has at least a certain amount of space left.
- * Uses Java 21 Virtual Threads for improved I/O throughput when checking available space.
+ * This implementation uses Virtual Threads for improved I/O throughput when checking available space.
  *
  * @since 3.14
  */
@@ -55,12 +49,6 @@ public class SpaceRemainingQuota
   public static final String ID = "spaceRemainingQuota";
 
   private static final String DISPLAY_NAME = "Space Remaining";
-  
-  // Default timeout for space checking operations (in milliseconds)
-  private static final long DEFAULT_TIMEOUT_MS = 5000;
-  
-  // Virtual thread executor for I/O operations
-  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   @Override
   public void validateConfig(final BlobStoreConfiguration config) {
@@ -73,61 +61,53 @@ public class SpaceRemainingQuota
   public BlobStoreQuotaResult check(final BlobStore blobStore) {
     checkNotNull(blobStore);
     
-    String name = blobStore.getBlobStoreConfiguration().getName();
-    String threadName = Thread.currentThread().toString();
-    log.debug("Starting quota check for blob store {} on {}", name, threadName);
+    String threadName = currentThread().toString();
+    String blobStoreName = blobStore.getBlobStoreConfiguration().getName();
+    log.debug("Starting quota check on {} for blob store {}", threadName, blobStoreName);
     
     try {
-      // Submit space checking task to virtual thread executor
-      Future<BlobStoreQuotaResult> future = virtualThreadExecutor.submit(() -> {
-        Thread currentThread = Thread.currentThread();
-        log.debug("Checking available space for blob store {} on {}", name, currentThread);
-        
+      // Use a CompletableFuture with Virtual Thread to perform the I/O-bound space check operation
+      CompletableFuture<BlobStoreQuotaResult> future = CompletableFuture.supplyAsync(() -> {
         try {
-          // Check for thread interruption before proceeding
-          if (Thread.interrupted()) {
-            throw new InterruptedException("Virtual thread was interrupted before space check could begin");
-          }
-          
+          // Get metrics inside the Virtual Thread
           long availableSpace = blobStore.getMetrics().getAvailableSpace();
           boolean isUnlimited = blobStore.getMetrics().isUnlimited();
           long limit = getLimit(blobStore.getBlobStoreConfiguration());
           
           String msg = format("Blob store %s is limited to having %s available space, and has %s space remaining",
-              name,
+              blobStoreName,
               formatStorage(limit),
               formatStorage(availableSpace));
           
-          log.debug("Completed quota check for blob store {} on {}: {}", name, currentThread, msg);
-          return new BlobStoreQuotaResult(!isUnlimited && availableSpace < limit, name, msg);
+          log.debug("Quota check completed on {} - blob store: {}, available: {}, limit: {}", 
+              currentThread().toString(), blobStoreName, formatStorage(availableSpace), formatStorage(limit));
+              
+          return new BlobStoreQuotaResult(!isUnlimited && availableSpace < limit, blobStoreName, msg);
         }
-        catch (RuntimeException e) {
-          log.error("Error checking available space for blob store {} on {}: {}", 
-              name, currentThread, e.getMessage(), e);
-          throw e;
+        catch (InterruptedException e) {
+          // Handle Virtual Thread interruption
+          log.warn("Quota check interrupted on {} for blob store {}", currentThread().toString(), blobStoreName, e);
+          Thread.currentThread().interrupt(); // Restore the interrupted status
+          throw new RuntimeException("Quota check interrupted for blob store " + blobStoreName, e);
         }
-      });
+        catch (Exception e) {
+          // Optimize exception handling for Virtual Threads
+          log.error("Error during quota check on {} for blob store {}", currentThread().toString(), blobStoreName, e);
+          throw new RuntimeException("Error during quota check for blob store " + blobStoreName, e);
+        }
+      }, Thread.ofVirtual().name("quota-check-" + blobStoreName).factory());
       
-      // Wait for the result with a timeout to prevent hanging
-      return future.get(DEFAULT_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+      // Wait for the Virtual Thread to complete and get the result
+      return future.get();
     }
     catch (InterruptedException e) {
+      log.warn("Quota check interrupted on {} for blob store {}", threadName, blobStoreName, e);
       Thread.currentThread().interrupt(); // Restore the interrupted status
-      log.warn("Quota check for blob store {} was interrupted on {}", name, threadName, e);
-      throw new BlobStoreException("Quota check was interrupted", e);
+      throw new RuntimeException("Quota check interrupted for blob store " + blobStoreName, e);
     }
     catch (ExecutionException e) {
-      log.error("Error during quota check for blob store {} on {}", name, threadName, e.getCause());
-      throw new BlobStoreException("Error during quota check: " + e.getCause().getMessage(), e.getCause());
-    }
-    catch (TimeoutException e) {
-      log.warn("Quota check for blob store {} timed out after {} ms on {}", 
-          name, DEFAULT_TIMEOUT_MS, threadName, e);
-      throw new BlobStoreException("Quota check timed out after " + DEFAULT_TIMEOUT_MS + " ms", e);
-    }
-    catch (CancellationException e) {
-      log.warn("Quota check for blob store {} was cancelled on {}", name, threadName, e);
-      throw new BlobStoreException("Quota check was cancelled", e);
+      log.error("Error during quota check on {} for blob store {}", threadName, blobStoreName, e.getCause());
+      throw new RuntimeException("Error during quota check for blob store " + blobStoreName, e.getCause());
     }
   }
 

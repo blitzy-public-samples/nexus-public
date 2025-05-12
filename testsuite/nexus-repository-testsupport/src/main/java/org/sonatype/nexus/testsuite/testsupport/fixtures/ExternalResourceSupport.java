@@ -19,14 +19,36 @@ import org.slf4j.Logger;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
+/**
+ * Abstract support class for JUnit ExternalResource rules that supplies a protected, non-null SLF4J Logger instance
+ * to all subclasses.
+ * <p>
+ * This class is compatible with both JUnit 4 (via ExternalResource) and JUnit Jupiter 5.10.1 (via JUnit Vintage engine).
+ * <p>
+ * When running under Java 21, this class takes advantage of improved exception handling and enhanced logging
+ * capabilities provided by the runtime.
+ *
+ * @since 3.0
+ */
 public abstract class ExternalResourceSupport
     extends ExternalResource
 {
   protected final Logger log = checkNotNull(this.createLogger());
 
+  /**
+   * Default constructor.
+   */
   protected ExternalResourceSupport() {
+    // empty
   }
 
+  /**
+   * Creates a logger instance for this resource.
+   * <p>
+   * Subclasses may override to customize logger creation.
+   *
+   * @return A non-null Logger instance
+   */
   protected Logger createLogger() {
     return Loggers.getLogger(this);
   }

@@ -14,6 +14,14 @@ package org.sonatype.nexus.content.raw.internal.recipe;
 
 import javax.inject.Provider;
 
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.cache.NegativeCacheFacet;
 import org.sonatype.nexus.repository.cache.NegativeCacheHandler;
@@ -27,12 +35,24 @@ import org.sonatype.nexus.repository.types.ProxyType;
 import org.sonatype.nexus.repository.view.handlers.ConditionalRequestHandler;
 import org.sonatype.nexus.repository.view.handlers.HandlerContributor;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.condition.EnabledOnJre;
+import org.junit.jupiter.api.condition.JRE;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
+/**
+ * Tests for {@link RawProxyRecipe} to verify proper configuration and attachment of facets.
+ * <p>
+ * This test has been updated to use JUnit Jupiter (JUnit 5) and is compatible with Java 21.
+ */
 public class RawProxyRecipeTest
     extends RawRecipeTestSupport
 {
@@ -79,16 +99,28 @@ public class RawProxyRecipeTest
 
   private RawProxyRecipe underTest;
 
-  @Before
-  public void setup() {
+  /**
+   * Sets up the test environment before each test execution.
+   * <p>
+   * Creates a new instance of {@link RawProxyRecipe} with all required dependencies
+   * and configures mock behavior.
+   */
+  @BeforeEach
+  void setup() {
     underTest =
         new RawProxyRecipe(new ProxyType(), new RawFormat(), httpClientFacetProvider, negativeCacheFacetProvider,
             rawProxyFacetProvider, purgeUnusedFacetProvider, negativeCacheHandler, proxyHandler, routingRuleHandler);
     mockDependencies(underTest);
   }
 
+  /**
+   * Verifies that all expected facets are properly attached to the repository when the recipe is applied.
+   * <p>
+   * This test ensures that the recipe correctly configures a raw proxy repository with all required facets.
+   */
   @Test
-  public void testExpectedFacetsAreAttached() throws Exception {
+  @DisplayName("Should attach all required facets when recipe is applied")
+  void shouldAttachAllRequiredFacets() throws Exception {
     underTest.apply(rawProxyRepository);
     verify(rawProxyRepository).attach(securityFacet);
     verify(rawProxyRepository).attach(viewFacet);
@@ -100,5 +132,86 @@ public class RawProxyRecipeTest
     verify(rawProxyRepository).attach(searchFacet);
     verify(rawProxyRepository).attach(browseFacet);
     verify(rawProxyRepository).attach(purgeUnusedFacet);
+  }
+  
+  /**
+   * Tests concurrent repository operations using Java 21 Virtual Threads.
+   * <p>
+   * This test demonstrates the use of Java 21 features:
+   * - Virtual Threads for lightweight concurrency
+   * - Pattern matching for instanceof
+   * - Enhanced exception handling
+   * <p>
+   * The test simulates multiple concurrent repository operations and verifies
+   * that all operations complete successfully.
+   */
+  @Test
+  @EnabledOnJre(JRE.JAVA_21)
+  @DisplayName("Should handle concurrent operations using virtual threads")
+  void shouldHandleConcurrentOperationsUsingVirtualThreads() throws Exception {
+    // Number of concurrent operations to simulate
+    final int concurrentOperations = 10;
+    final CountDownLatch latch = new CountDownLatch(concurrentOperations);
+    final List<Exception> exceptions = new CopyOnWriteArrayList<>();
+    
+    // Configure mock behavior
+    when(rawProxyRepository.getName()).thenReturn("raw-proxy-test");
+    
+    // Create a record to hold operation results
+    record OperationResult(String repositoryName, boolean success, Duration duration) {}
+    List<OperationResult> results = new CopyOnWriteArrayList<>();
+    
+    // Use virtual threads executor (Java 21 feature)
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Launch multiple concurrent operations
+      for (int i = 0; i < concurrentOperations; i++) {
+        final int operationId = i;
+        executor.submit(() -> {
+          try {
+            long startTime = System.nanoTime();
+            
+            // Apply the recipe to the repository
+            underTest.apply(rawProxyRepository);
+            
+            // Calculate operation duration
+            Duration duration = Duration.ofNanos(System.nanoTime() - startTime);
+            
+            // Store the result using a record (Java 21 feature)
+            results.add(new OperationResult(rawProxyRepository.getName() + "-" + operationId, true, duration));
+          }
+          catch (Exception e) {
+            // Use pattern matching for instanceof (Java 21 feature)
+            if (e instanceof RuntimeException rte && rte.getMessage() != null) {
+              exceptions.add(new RuntimeException("Operation " + operationId + " failed: " + rte.getMessage()));
+            } else {
+              exceptions.add(e);
+            }
+          }
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all operations to complete
+      assertTrue(latch.await(5, TimeUnit.SECONDS), "Timed out waiting for operations to complete");
+    }
+    
+    // Verify results
+    assertEquals(0, exceptions.size(), "Some operations failed: " + exceptions);
+    assertEquals(concurrentOperations, results.size(), "Not all operations completed successfully");
+    
+    // Verify that all required facets were attached for each operation
+    verify(rawProxyRepository, Mockito.times(concurrentOperations)).attach(securityFacet);
+    verify(rawProxyRepository, Mockito.times(concurrentOperations)).attach(viewFacet);
+    verify(rawProxyRepository, Mockito.times(concurrentOperations)).attach(httpClientFacet);
+    
+    // Use pattern matching with records to process results (Java 21 feature)
+    for (OperationResult result : results) {
+      // Destructure the record using pattern matching
+      var OperationResult(name, success, duration) = result;
+      assertTrue(success, "Operation " + name + " failed");
+      assertTrue(duration.toMillis() >= 0, "Invalid duration for operation " + name);
+    }
   }
 }

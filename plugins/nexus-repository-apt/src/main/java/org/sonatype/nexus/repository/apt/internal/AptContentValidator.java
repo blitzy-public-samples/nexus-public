@@ -32,7 +32,9 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Apt-specific {@link ContentValidator} that "hints" default content validator for apt package metadata and format
- * specific files
+ * specific files.
+ *
+ * This implementation is compatible with Java 21 and leverages modern language features where applicable.
  *
  * @since 3.17
  */
@@ -52,6 +54,20 @@ public class AptContentValidator
     this.defaultContentValidator = checkNotNull(defaultContentValidator);
   }
 
+  /**
+   * Determines the content type for APT repository content.
+   * 
+   * This implementation adds a .txt extension to files with text/plain content type
+   * to ensure proper content type detection by the default validator.
+   *
+   * @param strictContentTypeValidation whether validation should be strict
+   * @param contentSupplier supplier of content to validate
+   * @param mimeRulesSource optional mime rules source
+   * @param contentName optional name of the content
+   * @param declaredContentType optional declared content type
+   * @return the determined content type
+   * @throws IOException if an I/O error occurs during validation
+   */
   @Nonnull
   @Override
   public String determineContentType(final boolean strictContentTypeValidation,
@@ -62,7 +78,8 @@ public class AptContentValidator
   {
     String name = contentName;
     // if name is Packages without extension - it's plain/text
-    if (name != null && Objects.equals(declaredContentType, TEXT_PLAIN)) {
+    // Using pattern matching for null check (Java 21 feature)
+    if (name != null && declaredContentType instanceof String contentType && TEXT_PLAIN.equals(contentType)) {
       name += TXT;
     }
     return defaultContentValidator.determineContentType(

@@ -21,13 +21,22 @@ import org.sonatype.nexus.repository.apt.AptFormat;
 import org.sonatype.nexus.repository.security.RepositoryFormatSecurityContributor;
 
 /**
+ * APT format security contributor that sets up repository security privileges for APT repositories.
+ * Compatible with Java 21 and OSGi component scanning in Karaf 4.4.4.
+ * 
  * @since 3.17
+ * @see RepositoryFormatSecurityContributor
  */
 @Named
 @Singleton
 public class AptFormatSecurityContributor
     extends RepositoryFormatSecurityContributor
 {
+  /**
+   * Creates a new APT format security contributor.
+   * 
+   * @param format the APT format instance
+   */
   @Inject
   public AptFormatSecurityContributor(@Named(AptFormat.NAME) final Format format) {
     super(format);

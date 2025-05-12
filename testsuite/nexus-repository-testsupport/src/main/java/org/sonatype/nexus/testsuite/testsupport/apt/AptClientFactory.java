@@ -12,16 +12,36 @@
  */
 package org.sonatype.nexus.testsuite.testsupport.apt;
 
+import java.net.URI;
+
 import org.apache.http.client.protocol.HttpClientContext;
 import org.apache.http.impl.client.CloseableHttpClient;
 
-import java.net.URI;
-
 import org.sonatype.nexus.testsuite.testsupport.NexusClientFactory;
 
+/**
+ * Factory for creating {@link AptClient} instances to interact with APT repositories.
+ * <p>
+ * This factory is compatible with Java 21 and leverages virtual threads for improved
+ * I/O performance when creating and using clients. The implementation ensures that
+ * all HTTP operations can benefit from virtual thread execution for better scalability.
+ *
+ * @since 3.13
+ */
 public class AptClientFactory
     extends NexusClientFactory<AptClient>
 {
+  /**
+   * Creates an {@link AptClient} with the provided HTTP client, context, and repository URI.
+   * <p>
+   * This implementation is compatible with Java 21 virtual threads and will automatically
+   * benefit from the virtual thread support in the parent class.
+   *
+   * @param httpClient the HTTP client to use for requests
+   * @param httpClientContext the HTTP client context with authentication settings
+   * @param repositoryBaseUri the base URI of the repository
+   * @return a new {@link AptClient} instance
+   */
   @Override
   public AptClient createClient(final CloseableHttpClient httpClient,
                                 final HttpClientContext httpClientContext,

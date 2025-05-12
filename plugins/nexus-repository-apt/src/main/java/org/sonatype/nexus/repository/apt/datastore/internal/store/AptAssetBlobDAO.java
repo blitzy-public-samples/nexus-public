@@ -15,10 +15,15 @@ package org.sonatype.nexus.repository.apt.datastore.internal.store;
 import org.sonatype.nexus.repository.content.store.AssetBlobDAO;
 
 /**
+ * APT format-specific extension of {@link AssetBlobDAO}.
+ * 
  * @since 3.31
+ * @see AssetBlobDAO
  */
 public interface AptAssetBlobDAO
     extends AssetBlobDAO
 {
-  // nothing to add...
+  // This is a marker interface that extends AssetBlobDAO without adding additional methods.
+  // Implementations of this interface are compatible with Java 21 and can benefit from
+  // Virtual Threads for I/O-bound operations when used with the appropriate executor service.
 }

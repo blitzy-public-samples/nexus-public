@@ -16,26 +16,33 @@ import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.security.config.CPrivilege;
 import org.sonatype.nexus.security.config.SecurityConfiguration;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import static java.util.stream.Collectors.toList;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.is;
 
+/**
+ * Tests for {@link SslSecurityContributor} to verify security configuration contributions.
+ */
 public class SslSecurityContributorTest
     extends TestSupport
 {
   private SslSecurityContributor underTest;
 
-  @Before
+  @BeforeEach
   public void setup() {
     underTest = new SslSecurityContributor();
   }
 
+  /**
+   * Verifies that the security configuration contains the expected SSL truststore privileges
+   * and no users, roles, or user role mappings.
+   */
   @Test
-  public void testGetContribution() {
+  public void getContributionReturnsExpectedPrivileges() {
     SecurityConfiguration config = underTest.getContribution();
     assertThat(config.getUsers().size(), is(0));
     assertThat(config.getUserRoleMappings().size(), is(0));

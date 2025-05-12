@@ -21,6 +21,11 @@ import org.sonatype.nexus.repository.content.Asset;
 import org.sonatype.nexus.repository.content.search.sql.SearchCustomFieldContributor;
 import org.sonatype.nexus.repository.search.sql.SearchRecord;
 
+/**
+ * Custom field contributor for APT format assets in search.
+ * 
+ * Verified compatible with Java 21.
+ */
 @Named(AptFormat.NAME)
 @Singleton
 public class AptSearchCustomFieldContributor

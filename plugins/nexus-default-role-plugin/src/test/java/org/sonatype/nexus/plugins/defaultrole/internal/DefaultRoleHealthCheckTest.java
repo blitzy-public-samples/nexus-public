@@ -19,9 +19,11 @@ import org.sonatype.nexus.security.realm.RealmManager;
 import org.sonatype.nexus.security.role.Role;
 
 import com.codahale.metrics.health.HealthCheck.Result;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.Collections.singleton;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -30,7 +32,14 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.security.user.UserManager.DEFAULT_SOURCE;
 
-public class DefaultRoleHealthCheckTest
+/**
+ * Tests for {@link DefaultRoleHealthCheck} with Java 21 compatibility.
+ * 
+ * This test class validates the health check functionality for the default role plugin,
+ * ensuring proper behavior when the realm is enabled/disabled and when roles are configured.
+ */
+@ExtendWith(MockitoExtension.class)
+class DefaultRoleHealthCheckTest
     extends TestSupport
 {
   @Mock
@@ -44,19 +53,19 @@ public class DefaultRoleHealthCheckTest
 
   private DefaultRoleHealthCheck underTest;
 
-  @Before
-  public void setup() {
+  @BeforeEach
+  void setup() {
     underTest = new DefaultRoleHealthCheck(realmManager, defaultRoleRealm, securitySystem);
   }
 
   @Test
-  public void testCheck_notConfiguredNotEnabled() throws Exception {
+  void notConfiguredNotEnabledIsHealthy() throws Exception {
     Result result = underTest.check();
     assertThat(result.isHealthy(), is(true));
   }
 
   @Test
-  public void testCheck_notConfiguredIsEnabled() throws Exception {
+  void notConfiguredIsEnabledIsUnhealthy() throws Exception {
     when(realmManager.isRealmEnabled(DefaultRoleRealm.NAME)).thenReturn(true);
 
     Result result = underTest.check();
@@ -64,7 +73,7 @@ public class DefaultRoleHealthCheckTest
   }
 
   @Test
-  public void testCheck_isConfiguredIsEnabledRoleMissing() throws Exception {
+  void configuredAndEnabledWithMissingRoleIsUnhealthy() throws Exception {
     when(realmManager.isRealmEnabled(DefaultRoleRealm.NAME)).thenReturn(true);
     when(defaultRoleRealm.getRole()).thenReturn("test-role");
 
@@ -73,7 +82,7 @@ public class DefaultRoleHealthCheckTest
   }
 
   @Test
-  public void testCheck_isConfiguredIsEnabledRoleAvailable() throws Exception {
+  void configuredAndEnabledWithAvailableRoleIsHealthy() throws Exception {
     when(realmManager.isRealmEnabled(DefaultRoleRealm.NAME)).thenReturn(true);
     when(defaultRoleRealm.getRole()).thenReturn("test-role");
 

@@ -16,26 +16,11 @@ import org.sonatype.nexus.repository.apt.internal.hosted.AssetAction;
 import org.sonatype.nexus.repository.content.fluent.FluentAsset;
 
 /**
- * Helper class which helps to connect asset and action performed under it
+ * Helper class which helps to connect asset and action performed under it.
+ * Implemented as a Java Record for immutability and concise data representation.
  *
  * @since 3.31
  */
-public class AssetChange
-{
-  private final AssetAction action;
-
-  private final FluentAsset asset;
-
-  public AssetChange(final AssetAction action, final FluentAsset asset) {
-    this.action = action;
-    this.asset = asset;
-  }
-
-  public AssetAction getAction() {
-    return action;
-  }
-
-  public FluentAsset getAsset() {
-    return asset;
-  }
+public record AssetChange(AssetAction action, FluentAsset asset) {
+  // Record automatically provides constructor, accessors, equals, hashCode, and toString
 }

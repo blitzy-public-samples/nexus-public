@@ -12,6 +12,9 @@
  */
 package org.sonatype.nexus.testsuite.testsupport.http;
 
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+
 import javax.inject.Provider;
 
 import org.sonatype.goodies.httpfixture.server.fluent.Server;
@@ -22,13 +25,15 @@ import org.sonatype.nexus.common.text.Strings2;
 import org.sonatype.nexus.common.net.PortAllocator;
 import org.sonatype.nexus.httpclient.HttpClientManager;
 
-import org.junit.rules.ExternalResource;
+import org.junit.jupiter.api.extension.AfterEachCallback;
+import org.junit.jupiter.api.extension.BeforeEachCallback;
+import org.junit.jupiter.api.extension.ExtensionContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Rule which supports easy re-use of an {@link Server} and {@link ValidatingProxyServer}.
@@ -38,11 +43,14 @@ import static org.junit.Assert.assertEquals;
  * {@link #getUpstreamServer()}. Also handles configuring NX3 to pass all http requests
  * through the proxy server, if present. Supports a global user agent suffix, configuring
  * that in NX3 as well.
+ * <p>
+ * This implementation is compatible with Java 21 and supports virtual threads for concurrent
+ * test execution and I/O-bound operations. Virtual threads provide improved scalability and
+ * resource utilization for HTTP server and proxy validation.
  */
 public class HttpValidationITRule
-    extends ExternalResource
+    implements BeforeEachCallback, AfterEachCallback
 {
-
   private static final Logger log = LoggerFactory.getLogger(HttpValidationITRule.class);
 
   private final HttpConfigurationTestHelper configTestHelper;
@@ -58,7 +66,15 @@ public class HttpValidationITRule
   private int expectedUpstreamExecutionCount = -1;
 
   private ValidatingBehaviour upstreamValidatingBehaviour;
+  
+  private boolean useVirtualThreads = true;
 
+  /**
+   * Creates a new HTTP validation rule with the specified behavior.
+   *
+   * @param upstreamValidatingBehavior The behavior to apply to the upstream server
+   * @param httpClientManagerProvider Provider for the HTTP client manager
+   */
   public HttpValidationITRule(ValidatingBehaviour upstreamValidatingBehavior,
                               Provider<HttpClientManager> httpClientManagerProvider)
   {
@@ -71,7 +87,17 @@ public class HttpValidationITRule
   }
 
   @Override
-  protected void before() throws Throwable {
+  public void beforeEach(ExtensionContext context) throws Exception {
+    // Configure thread factory based on virtual threads setting
+    if (useVirtualThreads) {
+      ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+      upstreamServer.withExecutor(Executors.newThreadPerTaskExecutor(virtualThreadFactory));
+      
+      if (proxy != null) {
+        proxy.withExecutor(Executors.newThreadPerTaskExecutor(virtualThreadFactory));
+      }
+    }
+    
     upstreamServer.start();
     if (proxy != null) {
       proxy.start();
@@ -80,7 +106,7 @@ public class HttpValidationITRule
   }
 
   @Override
-  protected void after() {
+  public void afterEach(ExtensionContext context) {
     try {
       upstreamServer.stop();
     }
@@ -96,6 +122,8 @@ public class HttpValidationITRule
 
   /**
    * Reset expected counts, making sure that any previous requests aren't interfering with the current test.
+   *
+   * @return this rule instance for method chaining
    */
   public HttpValidationITRule reset() {
     resetExecutionCounts();
@@ -109,6 +137,7 @@ public class HttpValidationITRule
    * Create a {@link ValidatingProxyServer} that will be used by the rule.
    * 
    * @param validators The validator(s) to use with the {@link ValidatingProxyServer}.
+   * @return this rule instance for method chaining
    */
   public HttpValidationITRule withValidatingProxy(HttpValidator... validators) {
     checkArgument(validators != null && validators.length > 0, "Must have at least one validator.");
@@ -119,6 +148,9 @@ public class HttpValidationITRule
 
   /**
    * Set to validate the number of times the upstream server was hit.
+   *
+   * @param count The expected number of times the upstream server was hit
+   * @return this rule instance for method chaining
    */
   public HttpValidationITRule expectUpstreamExecutionCount(int count) {
     checkArgument(count > -1, "Upstream execution count must be greater than or equal to zero.");
@@ -132,6 +164,9 @@ public class HttpValidationITRule
    * will register two hits per request (one to connect to the proxy, a second for the actual request),
    * and for SSL, the proxy will only register the initial CONNECT request since the main request
    * goes over the encrypted channel setup by the inital CONNECT request.
+   *
+   * @param count The expected number of times the proxy server was hit
+   * @return this rule instance for method chaining
    */
   public HttpValidationITRule expectProxyExecutionCount(int count) {
     checkArgument(count > -1, "Proxy execution count must be greater than or equal to zero.");
@@ -140,27 +175,50 @@ public class HttpValidationITRule
     return this;
   }
 
+  /**
+   * Set a global user agent suffix for HTTP requests.
+   *
+   * @param suffix The user agent suffix to use
+   * @return this rule instance for method chaining
+   */
   public HttpValidationITRule withGlobalUserAgentSuffix(String suffix) {
     checkArgument(!Strings2.isBlank(suffix), "User agent suffix must be a non-blank string.");
     this.suffix = suffix;
 
     return this;
   }
+  
+  /**
+   * Configure whether to use virtual threads for HTTP server and proxy operations.
+   * Virtual threads provide improved scalability for I/O-bound operations in Java 21.
+   *
+   * @param useVirtualThreads true to use virtual threads, false to use platform threads
+   * @return this rule instance for method chaining
+   */
+  public HttpValidationITRule useVirtualThreads(boolean useVirtualThreads) {
+    this.useVirtualThreads = useVirtualThreads;
+    return this;
+  }
 
   private void validateExecutionCounts() {
     if (expectedUpstreamExecutionCount > -1) {
       checkNotNull(upstreamValidatingBehaviour);
-      assertEquals("Upstream execution count invalid.", expectedUpstreamExecutionCount,
-          upstreamValidatingBehaviour.getSuccessCount());
+      assertEquals(expectedUpstreamExecutionCount, upstreamValidatingBehaviour.getSuccessCount(),
+          "Upstream execution count invalid.");
     }
     if (expectedProxyExecutionCount > -1) {
-      assertEquals("Proxy execution count invalid.", expectedProxyExecutionCount, proxy.getSuccessCount());
+      assertEquals(expectedProxyExecutionCount, proxy.getSuccessCount(),
+          "Proxy execution count invalid.");
     }
   }
 
   private void resetExecutionCounts() {
-    proxy.resetSuccessCount();
-    upstreamValidatingBehaviour.resetSuccessCount();
+    if (proxy != null) {
+      proxy.resetSuccessCount();
+    }
+    if (upstreamValidatingBehaviour != null) {
+      upstreamValidatingBehaviour.resetSuccessCount();
+    }
   }
 
   /**
@@ -185,8 +243,12 @@ public class HttpValidationITRule
     }
   }
 
+  /**
+   * Get the upstream server instance for configuration.
+   *
+   * @return the upstream server instance
+   */
   public Server getUpstreamServer() {
     return upstreamServer;
   }
-
 }

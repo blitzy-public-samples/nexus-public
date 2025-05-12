@@ -12,12 +12,11 @@
  */
 package org.sonatype.nexus.onboarding.capability;
 
-import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import javax.inject.Named;
-import javax.inject.Singleton;
+
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.goodies.i18n.I18N;
 import org.sonatype.goodies.i18n.MessageBundle;
@@ -28,8 +27,11 @@ import org.sonatype.nexus.capability.Taggable;
 import org.sonatype.nexus.common.upgrade.AvailabilityVersion;
 import org.sonatype.nexus.formfields.FormField;
 
-import static java.util.Collections.singletonList;
-
+/**
+ * Descriptor for the onboarding capability.
+ * 
+ * @since 3.0
+ */
 @AvailabilityVersion(from = "1.0")
 @Named(OnboardingCapability.TYPE_ID)
 @Singleton
@@ -56,14 +58,17 @@ public class OnboardingCapabilityDescriptor
 
   @Override
   public List<FormField> formFields() {
-    return new ArrayList<>();
+    return List.of(); // Using Java 21 factory method instead of new ArrayList<>()
   }
 
   @Override
   public Set<Tag> getTags() {
-    return new HashSet<>(singletonList(Tag.categoryTag(messages.category())));
+    return Set.of(Tag.categoryTag(messages.category())); // Using Java 21 factory method instead of new HashSet<>(singletonList())
   }
 
+  /**
+   * Message bundle for onboarding capability descriptor.
+   */
   interface Messages
       extends MessageBundle
   {

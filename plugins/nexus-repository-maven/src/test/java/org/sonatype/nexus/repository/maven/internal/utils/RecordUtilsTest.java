@@ -16,7 +16,7 @@ import org.sonatype.goodies.testsupport.TestSupport;
 
 import com.google.common.collect.ImmutableMap;
 import org.apache.maven.index.reader.Record;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import static org.apache.maven.index.reader.Record.ARTIFACT_ID;
 import static org.apache.maven.index.reader.Record.FILE_EXTENSION;
@@ -27,6 +27,9 @@ import static org.hamcrest.core.Is.is;
 import static org.hamcrest.core.IsEqual.equalTo;
 import static org.sonatype.nexus.repository.maven.internal.utils.RecordUtils.gavceForRecord;
 
+/**
+ * Tests for {@link RecordUtils} to verify proper conversion of Maven records to GAVCE format.
+ */
 public class RecordUtilsTest
     extends TestSupport
 {
@@ -40,8 +43,11 @@ public class RecordUtilsTest
 
   public static final String EXTENSION = "extension";
 
+  /**
+   * Verifies that a record with all fields populated is correctly converted to GAVCE format.
+   */
   @Test
-  public void shouldConvertRecordToGavce() throws Exception {
+  void shouldConvertRecordToGavce() {
     Record record = new Record(ARTIFACT_ADD, ImmutableMap.of(GROUP_ID, GROUP,
         ARTIFACT_ID, ARTIFACT,
         Record.VERSION, VERSION,
@@ -51,8 +57,12 @@ public class RecordUtilsTest
     assertThat(gavceForRecord(record), is(equalTo(GROUP + ARTIFACT + VERSION + CLASSIFIER + ":" + EXTENSION)));
   }
 
+  /**
+   * Verifies that a record with an empty classifier is handled correctly during GAVCE conversion,
+   * replacing the empty classifier with "n/a".
+   */
   @Test
-  public void shouldHandleBlankClassifierWhenConvertRecordToGavce() throws Exception {
+  void shouldHandleBlankClassifierWhenConvertRecordToGavce() {
     String c = "";
 
     Record record = new Record(ARTIFACT_ADD, ImmutableMap.of(GROUP_ID, GROUP,

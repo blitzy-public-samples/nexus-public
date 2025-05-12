@@ -22,12 +22,28 @@ import groovy.transform.CompileStatic
 
 /**
  * Factory for Raw {@link Repository} {@link Configuration}
+ * 
+ * @since 3.0
+ * @see Repository
+ * @see Configuration
+ * 
+ * <p>Compatible with Java 21 and leverages modern language features for improved test support.</p>
  */
 @CompileStatic
 trait RawRepoRecipes
     extends ConfigurationRecipes
 {
 
+  /**
+   * Creates a raw hosted repository with the specified configuration.
+   *
+   * @param name the repository name
+   * @param writePolicy the write policy (default: "ALLOW")
+   * @param strictContentTypeValidation whether to enforce strict content type validation (default: true)
+   * @param blobStoreName the blob store name (default: BlobStoreManager.DEFAULT_BLOBSTORE_NAME)
+   * @return the created repository
+   * @since 3.0
+   */
   @Nonnull
   Repository createRawHosted(final String name,
                              final String writePolicy = "ALLOW",
@@ -37,6 +53,14 @@ trait RawRepoRecipes
     createRepository(createHosted(name, 'raw-hosted', writePolicy, strictContentTypeValidation, blobStoreName))
   }
 
+  /**
+   * Creates a raw proxy repository with the specified configuration.
+   *
+   * @param name the repository name
+   * @param remoteUrl the remote URL to proxy
+   * @return the created repository
+   * @since 3.0
+   */
   @Nonnull
   Repository createRawProxy(final String name,
                             final String remoteUrl)
@@ -44,6 +68,14 @@ trait RawRepoRecipes
     createRepository(createProxy(name, 'raw-proxy', remoteUrl))
   }
 
+  /**
+   * Creates a raw group repository with the specified configuration.
+   *
+   * @param name the repository name
+   * @param members the member repositories to include in the group
+   * @return the created repository
+   * @since 3.0
+   */
   @Nonnull
   Repository createRawGroup(final String name,
                             final String... members)
@@ -51,6 +83,14 @@ trait RawRepoRecipes
     createRepository(createGroup(name, 'raw-group', members))
   }
 
+  /**
+   * Creates a repository with the given configuration.
+   * This method must be implemented by classes that use this trait.
+   *
+   * @param configuration the repository configuration
+   * @return the created repository
+   * @since 3.0
+   */
   abstract Repository createRepository(final Configuration configuration)
 
 }

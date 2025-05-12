@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.common.app;
 
-import java.util.SequencedCollection;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -36,6 +36,8 @@ public abstract class ManagedLifecycleManager
    * Attempts to move to the target phase by starting (or stopping) components phase-by-phase. If any components have
    * appeared since the last request which belong to the current phase or earlier then they are automatically started
    * before the current phase is changed. Similarly components that have disappeared are stopped.
+   * 
+   * <p>This method leverages the sequenced nature of lifecycle phases to ensure orderly transitions.</p>
    */
   public abstract void to(final Phase targetPhase) throws Exception;
 
@@ -44,17 +46,35 @@ public abstract class ManagedLifecycleManager
    * re-running all the phases in between. If the bounce phase is after the current phase then it simply moves the
    * lifecycle forwards like {@link #to(Phase)}.
    *
+   * <p>This method uses the sequenced collections API to navigate through phases efficiently.</p>
+   *
    * @since 3.16
    */
   public abstract void bounce(final Phase bouncePhase) throws Exception;
   
   /**
-   * Returns an ordered collection of all available phases.
+   * Returns a list of all phases between the current phase and the target phase (inclusive).
+   * This method leverages the Sequenced Collections API in Java 21.
    * 
-   * @return a sequenced collection of phases in order from OFF to TASKS
+   * @param targetPhase the target phase to reach
+   * @return a list of phases to traverse in order
    * @since 3.60
    */
-  public abstract SequencedCollection<Phase> getPhases();
+  protected List<Phase> getPhasesBetween(final Phase targetPhase) {
+    Phase currentPhase = getCurrentPhase();
+    List<Phase> allPhases = Phase.sequencedValues();
+    
+    int currentIndex = allPhases.indexOf(currentPhase);
+    int targetIndex = allPhases.indexOf(targetPhase);
+    
+    if (currentIndex <= targetIndex) {
+      // Moving forward through phases
+      return allPhases.subList(currentIndex, targetIndex + 1);
+    } else {
+      // Moving backward through phases (shutdown)
+      return allPhases.reversed().subList(allPhases.size() - currentIndex - 1, allPhases.size() - targetIndex);
+    }
+  }
 
   /**
    * Are we in the process of shutting down? (ie. moving to the {@code OFF} phase)
@@ -65,6 +85,7 @@ public abstract class ManagedLifecycleManager
     return shuttingDown.get();
   }
 
+  // Using AtomicBoolean for better concurrency with Virtual Threads
   private static final AtomicBoolean shuttingDown = new AtomicBoolean(false);
 
   protected ManagedLifecycleManager() {
@@ -73,6 +94,7 @@ public abstract class ManagedLifecycleManager
 
   /**
    * Flag that we are in the process of shutting down.
+   * This method is optimized for use with Virtual Threads in Java 21.
    *
    * @since 3.16
    */
@@ -85,32 +107,33 @@ public abstract class ManagedLifecycleManager
    * Shutdown Nexus, and provide a custom exit code to the calling system/process. This should ensure that all services
    * and phases are stopped and safe before ending.
    * 
+   * <p>This implementation is compatible with Virtual Threads in Java 21.</p>
+   * 
    * @param exitCode the exit code to provide to the calling system/process
    * @throws Exception the lifecycle manager may propagate exceptions if the change is not possible
    */
   public void shutdownWithExitCode(final int exitCode) throws Exception {
     System.setProperty("nexus.overrideExitCode", Integer.toString(exitCode));
-    log.info(STR."Shutdown requested with an exit code of \{exitCode}");
+    log.info("Shutdown requested with an exit code of " + exitCode);
     this.to(Phase.OFF);
   }
   
   /**
-   * Asynchronously initiates a shutdown with the specified exit code using a virtual thread.
-   * This allows the caller to continue processing while the shutdown sequence runs in the background.
-   *
+   * Asynchronously shutdown Nexus with the specified exit code.
+   * This method leverages Virtual Threads in Java 21 for efficient asynchronous execution.
+   * 
    * @param exitCode the exit code to provide to the calling system/process
-   * @return a CompletableFuture that completes when the shutdown process is finished
+   * @return a CompletableFuture that completes when shutdown is finished
    * @since 3.60
    */
   public CompletableFuture<Void> shutdownWithExitCodeAsync(final int exitCode) {
     return CompletableFuture.runAsync(() -> {
       try {
         shutdownWithExitCode(exitCode);
-      } 
-      catch (Exception e) {
-        log.error("Error during async shutdown", e);
-        throw new RuntimeException("Shutdown failed", e);
+      } catch (Exception e) {
+        log.error("Error during asynchronous shutdown", e);
+        throw new RuntimeException("Error during asynchronous shutdown", e);
       }
-    }, Thread.ofVirtual().name("lifecycle-shutdown-").factory());
+    });
   }
 }

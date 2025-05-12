@@ -18,19 +18,19 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.annotations.ApiModelProperty;
 
-public class RawAttributes
-{
-  @ApiModelProperty(value = "Content Disposition",
-      allowableValues = "INLINE,ATTACHMENT", example = "ATTACHMENT")
-  @NotEmpty
-  private final String contentDisposition;
+/**
+ * Data transfer object for Raw repository content disposition.
+ *
+ * @since 3.41
+ */
+public record RawAttributes(
+    @ApiModelProperty(value = "Content Disposition",
+        allowableValues = "INLINE,ATTACHMENT", example = "ATTACHMENT")
+    @NotEmpty
+    String contentDisposition) {
 
   @JsonCreator
   public RawAttributes(@JsonProperty("contentDisposition") final String contentDisposition) {
     this.contentDisposition = contentDisposition;
-  }
-
-  public String getContentDisposition() {
-    return contentDisposition;
   }
 }

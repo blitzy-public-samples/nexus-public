@@ -14,416 +14,654 @@ package org.sonatype.nexus.scheduling.spi;
 
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
+
+import javax.annotation.Nullable;
 
 import org.sonatype.nexus.scheduling.TaskConfiguration;
 import org.sonatype.nexus.thread.NexusExecutorService;
 
+import org.apache.shiro.subject.Subject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Helper utilities for determining optimal thread types (virtual vs platform) for scheduled tasks,
  * detecting thread pinning risks in database operations, and ensuring proper thread context propagation.
- * 
- * <p>This class helps optimize task execution performance using Java 21 Virtual Threads while avoiding
- * thread pinning issues with database transactions.</p>
- * 
- * <p>Virtual threads are lightweight threads that significantly reduce the effort of writing, maintaining,
- * and debugging high-throughput concurrent applications. They are particularly well-suited for tasks
- * that spend most of their time blocked, often waiting for I/O operations to complete.</p>
- * 
- * <p>However, virtual threads can experience "pinning" when they perform blocking operations inside
- * synchronized blocks or methods, or when executing native methods. Pinning prevents the virtual thread
- * from unmounting from its carrier thread, which severely limits scalability.</p>
+ * <p>
+ * This class helps the scheduler make intelligent decisions about whether to use virtual threads or
+ * platform threads for specific tasks based on their characteristics, especially focusing on database
+ * operations that might cause thread pinning.
  *
  * @since 3.60
  */
 public class TaskThreadHelper
 {
   private static final Logger log = LoggerFactory.getLogger(TaskThreadHelper.class);
-  /**
-   * Task configuration key indicating that a task should always use platform threads regardless of other factors.
-   */
-  public static final String FORCE_PLATFORM_THREAD_KEY = ".forcePlatformThread";
 
   /**
-   * Task configuration key indicating that a task should use virtual threads if compatible.
+   * Task types known to be incompatible with virtual threads due to thread pinning risks.
+   * These tasks will always use platform threads regardless of other settings.
    */
-  public static final String PREFER_VIRTUAL_THREAD_KEY = ".preferVirtualThread";
+  private static final Set<String> VIRTUAL_THREAD_INCOMPATIBLE_TASK_TYPES = Set.of(
+      // Tasks with known thread pinning issues due to synchronized blocks with database operations
+      "db.backup",
+      "db.rebuild",
+      "db.vacuum"
+  );
 
   /**
-   * Task configuration key indicating that a task performs database operations that may cause thread pinning.
+   * Task types known to be compatible with virtual threads.
+   * These tasks will use virtual threads when available unless explicitly configured otherwise.
    */
-  public static final String HAS_DATABASE_OPERATIONS_KEY = ".hasDatabaseOperations";
+  private static final Set<String> VIRTUAL_THREAD_COMPATIBLE_TASK_TYPES = Set.of(
+      // I/O-bound tasks that benefit from virtual threads
+      "repository.rebuild-index",
+      "repository.purge-unused",
+      "repository.purge-orphaned",
+      "blobstore.compact",
+      "blobstore.rebuild-component-db",
+      "s3.upload",
+      "s3.download"
+  );
 
   /**
-   * Task configuration key indicating that a task uses synchronized blocks that may cause thread pinning.
+   * Cache of task type compatibility with virtual threads.
+   * This avoids repeated analysis of the same task types.
    */
-  public static final String HAS_SYNCHRONIZED_BLOCKS_KEY = ".hasSynchronizedBlocks";
+  private static final Map<String, Boolean> TASK_TYPE_COMPATIBILITY_CACHE = new ConcurrentHashMap<>();
 
   /**
-   * Set of task type IDs known to be compatible with virtual threads.
+   * System property to enable or disable virtual threads for tasks globally.
    */
-  private static final Set<String> VIRTUAL_THREAD_COMPATIBLE_TASKS = ConcurrentHashMap.newKeySet();
+  public static final String VIRTUAL_THREADS_ENABLED_PROPERTY = "nexus.tasks.virtualThreads.enabled";
 
   /**
-   * Set of task type IDs known to be incompatible with virtual threads.
+   * System property to enable or disable virtual thread compatibility analysis.
    */
-  private static final Set<String> VIRTUAL_THREAD_INCOMPATIBLE_TASKS = ConcurrentHashMap.newKeySet();
+  public static final String VIRTUAL_THREADS_ANALYSIS_ENABLED_PROPERTY = "nexus.tasks.virtualThreads.analysis.enabled";
 
   /**
-   * Determines if a task is compatible with virtual threads based on its configuration.
-   * 
-   * <p>Tasks that perform database operations or use synchronized blocks may experience thread pinning
-   * when run on virtual threads, which can severely limit scalability.</p>
+   * Task configuration property to explicitly set virtual thread usage for a specific task.
+   */
+  public static final String TASK_VIRTUAL_THREAD_PROPERTY = "virtualThread";
+
+  /**
+   * Determines if virtual threads are globally enabled for tasks.
    *
-   * @param configuration the task configuration to analyze
-   * @return true if the task can safely run on a virtual thread, false otherwise
+   * @return true if virtual threads are enabled, false otherwise
    */
-  public static boolean isVirtualThreadCompatible(final TaskConfiguration configuration) {
-    String typeId = configuration.getTypeId();
-    
-    // Check cache first for known compatibility
-    if (VIRTUAL_THREAD_COMPATIBLE_TASKS.contains(typeId)) {
-      return true;
-    }
-    
-    // Check cache first for known incompatibility
-    if (VIRTUAL_THREAD_INCOMPATIBLE_TASKS.contains(typeId)) {
-      return false;
-    }
-    
-    // Explicit configuration overrides
-    if (configuration.getBoolean(FORCE_PLATFORM_THREAD_KEY, false)) {
-      VIRTUAL_THREAD_INCOMPATIBLE_TASKS.add(typeId);
-      return false;
-    }
-    
-    if (configuration.getBoolean(PREFER_VIRTUAL_THREAD_KEY, false)) {
-      VIRTUAL_THREAD_COMPATIBLE_TASKS.add(typeId);
-      return true;
-    }
-    
-    // Check for database operations that may cause thread pinning
-    if (configuration.getBoolean(HAS_DATABASE_OPERATIONS_KEY, false) || hasJdbcOperations(configuration)) {
-      log.debug("Task {} has database operations that may cause thread pinning", typeId);
-      VIRTUAL_THREAD_INCOMPATIBLE_TASKS.add(typeId);
-      return false;
-    }
-    
-    // Check for synchronized blocks that may cause thread pinning
-    if (configuration.getBoolean(HAS_SYNCHRONIZED_BLOCKS_KEY, false)) {
-      log.debug("Task {} has synchronized blocks that may cause thread pinning", typeId);
-      VIRTUAL_THREAD_INCOMPATIBLE_TASKS.add(typeId);
-      return false;
-    }
-    
-    // Default to compatible for tasks without known pinning risks
-    log.debug("Task {} appears compatible with virtual threads", typeId);
-    VIRTUAL_THREAD_COMPATIBLE_TASKS.add(typeId);
-    return true;
+  public static boolean isVirtualThreadsEnabled() {
+    return Boolean.getBoolean(VIRTUAL_THREADS_ENABLED_PROPERTY);
   }
 
   /**
-   * Analyzes task configuration attributes to detect potential thread pinning risks.
-   * 
-   * <p>This method examines task configuration for patterns that suggest database operations
-   * or other activities that might cause thread pinning when run on virtual threads.</p>
+   * Determines if virtual thread compatibility analysis is enabled.
    *
-   * @param configuration the task configuration to analyze
-   * @return a map of detected pinning risks with risk type as key and description as value
+   * @return true if analysis is enabled, false otherwise
    */
-  public static Map<String, String> detectPinningRisks(final TaskConfiguration configuration) {
-    Map<String, String> risks = new ConcurrentHashMap<>();
+  public static boolean isVirtualThreadAnalysisEnabled() {
+    return Boolean.getBoolean(VIRTUAL_THREADS_ANALYSIS_ENABLED_PROPERTY);
+  }
+
+  /**
+   * Determines if a task should use virtual threads based on its configuration and type.
+   * <p>
+   * The decision is made based on the following factors:
+   * <ol>
+   *   <li>If virtual threads are globally disabled, returns false</li>
+   *   <li>If the task configuration explicitly sets the virtual thread property, uses that value</li>
+   *   <li>If the task type is known to be incompatible with virtual threads, returns false</li>
+   *   <li>If the task type is known to be compatible with virtual threads, returns true</li>
+   *   <li>Otherwise, analyzes the task configuration for potential thread pinning risks</li>
+   * </ol>
+   *
+   * @param taskConfiguration the task configuration to analyze
+   * @return true if the task should use virtual threads, false otherwise
+   */
+  public static boolean shouldUseVirtualThread(final TaskConfiguration taskConfiguration) {
+    checkNotNull(taskConfiguration, "Task configuration cannot be null");
     
-    // Check for database operation indicators in configuration
-    for (Map.Entry<String, String> entry : configuration.asMap().entrySet()) {
-      String key = entry.getKey();
-      String value = entry.getValue();
-      
-      // Look for database connection or SQL query indicators
-      if (key.contains("sql") || key.contains("query") || key.contains("database") || 
-          key.contains("jdbc") || key.contains("connection")) {
-        risks.put(HAS_DATABASE_OPERATIONS_KEY, 
-            "Task configuration suggests database operations that may cause thread pinning: " + key);
-      }
-      
-      // Look for synchronization indicators
-      if (key.contains("sync") || key.contains("lock")) {
-        risks.put(HAS_SYNCHRONIZED_BLOCKS_KEY, 
-            "Task configuration suggests synchronized operations that may cause thread pinning: " + key);
-      }
-      
-      // Check values for SQL statements
-      if (value != null && (value.contains("SELECT ") || value.contains("INSERT ") || 
-          value.contains("UPDATE ") || value.contains("DELETE ") || value.contains("jdbc:"))) {
-        risks.put(HAS_DATABASE_OPERATIONS_KEY, 
-            "Task configuration contains SQL statements that may cause thread pinning");
-      }
+    // If virtual threads are globally disabled, don't use them
+    if (!isVirtualThreadsEnabled()) {
+      return false;
     }
     
-    // Check task type for known database-heavy operations
-    String typeId = configuration.getTypeId();
-    if (typeId != null && (typeId.contains("Database") || typeId.contains("SQL") || 
-        typeId.contains("JDBC") || typeId.contains("Repository") || typeId.contains("Storage"))) {
-      risks.put(HAS_DATABASE_OPERATIONS_KEY, 
-          "Task type suggests database operations that may cause thread pinning: " + typeId);
+    // Check if the task configuration explicitly sets the virtual thread property
+    String virtualThreadProperty = taskConfiguration.getString(TASK_VIRTUAL_THREAD_PROPERTY, null);
+    if (virtualThreadProperty != null) {
+      return Boolean.parseBoolean(virtualThreadProperty);
+    }
+    
+    // Get the task type
+    String taskType = taskConfiguration.getTypeId();
+    
+    // Check if we've already determined compatibility for this task type
+    Boolean cachedCompatibility = TASK_TYPE_COMPATIBILITY_CACHE.get(taskType);
+    if (cachedCompatibility != null) {
+      return cachedCompatibility;
+    }
+    
+    // Check if the task type is known to be incompatible with virtual threads
+    if (VIRTUAL_THREAD_INCOMPATIBLE_TASK_TYPES.contains(taskType)) {
+      TASK_TYPE_COMPATIBILITY_CACHE.put(taskType, false);
+      return false;
+    }
+    
+    // Check if the task type is known to be compatible with virtual threads
+    if (VIRTUAL_THREAD_COMPATIBLE_TASK_TYPES.contains(taskType)) {
+      TASK_TYPE_COMPATIBILITY_CACHE.put(taskType, true);
+      return true;
+    }
+    
+    // Analyze the task configuration for potential thread pinning risks
+    boolean isCompatible = isVirtualThreadCompatible(taskConfiguration);
+    TASK_TYPE_COMPATIBILITY_CACHE.put(taskType, isCompatible);
+    return isCompatible;
+  }
+
+  /**
+   * Analyzes a task configuration to determine if it's compatible with virtual threads.
+   * <p>
+   * This method examines the task configuration for patterns that might indicate
+   * potential thread pinning risks, particularly with database operations.
+   * <p>
+   * Thread pinning occurs when a virtual thread cannot unmount from its carrier platform thread,
+   * typically when performing blocking operations inside synchronized blocks or methods.
+   * This is particularly problematic with JDBC operations that might block while holding locks.
+   *
+   * @param taskConfiguration the task configuration to analyze
+   * @return true if the task is compatible with virtual threads, false otherwise
+   */
+  public static boolean isVirtualThreadCompatible(final TaskConfiguration taskConfiguration) {
+    // If analysis is disabled, assume compatibility
+    if (!isVirtualThreadAnalysisEnabled()) {
+      return true;
+    }
+    
+    String taskType = taskConfiguration.getTypeId();
+    
+    // Check for database-intensive tasks that might use synchronized blocks
+    if (taskType.startsWith("db.")) {
+      log.debug("Task type {} is likely database-intensive and may risk thread pinning", taskType);
+      return false;
+    }
+    
+    // Check for tasks that involve heavy transaction processing
+    if (taskConfiguration.containsKey("sql.query") || 
+        taskConfiguration.containsKey("database.operation") ||
+        taskConfiguration.containsKey("transaction.intensive")) {
+      log.debug("Task configuration contains database operation indicators");
+      return false;
+    }
+    
+    // Check for tasks that explicitly indicate they're I/O bound and safe for virtual threads
+    if (taskConfiguration.containsKey("io.bound") && 
+        Boolean.parseBoolean(taskConfiguration.getString("io.bound"))) {
+      log.debug("Task explicitly marked as I/O bound, suitable for virtual threads");
+      return true;
+    }
+    
+    // Check for repository tasks that are typically I/O bound
+    if (taskType.startsWith("repository.") && 
+        !taskType.contains("rebuild-metadata") && 
+        !taskType.contains("validate")) {
+      log.debug("Repository task {} is likely I/O bound and suitable for virtual threads", taskType);
+      return true;
+    }
+    
+    // Check for blobstore tasks that are typically I/O bound
+    if (taskType.startsWith("blobstore.") && 
+        !taskType.contains("integrity-check")) {
+      log.debug("Blobstore task {} is likely I/O bound and suitable for virtual threads", taskType);
+      return true;
+    }
+    
+    // Check for S3 operations which are definitely I/O bound
+    if (taskType.startsWith("s3.")) {
+      log.debug("S3 task {} is I/O bound and suitable for virtual threads", taskType);
+      return true;
+    }
+    
+    // For tasks we're uncertain about, err on the side of caution
+    // and use platform threads to avoid potential pinning issues
+    log.debug("Task type {} has unknown virtual thread compatibility, defaulting to platform threads", taskType);
+    return false;
+  }
+
+  /**
+   * Detects potential thread pinning risks in a task configuration.
+   * <p>
+   * This method examines the task configuration for patterns that might indicate
+   * potential thread pinning risks, particularly with database operations.
+   * <p>
+   * Thread pinning occurs in the following scenarios:
+   * <ul>
+   *   <li>Blocking operations inside synchronized blocks or methods</li>
+   *   <li>Native method calls that block</li>
+   *   <li>Foreign function calls that block</li>
+   *   <li>JDBC operations that use internal synchronization</li>
+   * </ul>
+   *
+   * @param taskConfiguration the task configuration to analyze
+   * @return a set of detected pinning risks, or an empty set if none are detected
+   */
+  public static Set<String> detectPinningRisks(final TaskConfiguration taskConfiguration) {
+    checkNotNull(taskConfiguration, "Task configuration cannot be null");
+    
+    Set<String> risks = new java.util.HashSet<>();
+    String taskType = taskConfiguration.getTypeId();
+    
+    // Check for database-intensive tasks
+    if (taskType.startsWith("db.")) {
+      risks.add("Database-intensive task may use synchronized blocks with JDBC operations");
+    }
+    
+    // Check for SQL query parameters
+    if (taskConfiguration.containsKey("sql.query")) {
+      risks.add("Task contains SQL queries which may cause thread pinning with JDBC drivers");
+    }
+    
+    // Check for transaction-intensive operations
+    if (taskConfiguration.containsKey("transaction.intensive") && 
+        Boolean.parseBoolean(taskConfiguration.getString("transaction.intensive"))) {
+      risks.add("Task is marked as transaction-intensive which may involve synchronized database operations");
+    }
+    
+    // Check for known problematic task types
+    if (VIRTUAL_THREAD_INCOMPATIBLE_TASK_TYPES.contains(taskType)) {
+      risks.add("Task type is known to be incompatible with virtual threads due to thread pinning risks");
+    }
+    
+    // Check for native method usage
+    if (taskConfiguration.containsKey("native.methods") && 
+        Boolean.parseBoolean(taskConfiguration.getString("native.methods"))) {
+      risks.add("Task uses native methods which can cause thread pinning");
+    }
+    
+    // Check for foreign function usage
+    if (taskConfiguration.containsKey("foreign.functions") && 
+        Boolean.parseBoolean(taskConfiguration.getString("foreign.functions"))) {
+      risks.add("Task uses foreign functions which can cause thread pinning");
     }
     
     return risks;
   }
 
   /**
-   * Registers a task type as compatible with virtual threads.
-   * 
-   * <p>This method allows for programmatic registration of task types that have been verified
-   * to work correctly with virtual threads.</p>
+   * Creates a callable that will execute in the appropriate thread type based on the task configuration.
+   * <p>
+   * This method wraps the original callable with the necessary context propagation to ensure
+   * that the task executes correctly regardless of the thread type used.
+   * <p>
+   * For virtual threads, this includes special handling to avoid thread pinning issues,
+   * particularly with database operations. For platform threads, this includes standard
+   * context propagation for security subjects and thread-local variables.
    *
-   * @param typeId the task type ID to register as virtual thread compatible
+   * @param callable the original callable to execute
+   * @param taskConfiguration the task configuration to analyze
+   * @param subject the security subject to associate with the callable
+   * @param <V> the return type of the callable
+   * @return a wrapped callable that will execute in the appropriate thread type
    */
-  public static void registerVirtualThreadCompatibleTask(String typeId) {
-    VIRTUAL_THREAD_COMPATIBLE_TASKS.add(typeId);
-    VIRTUAL_THREAD_INCOMPATIBLE_TASKS.remove(typeId); // Remove from incompatible if present
-  }
-
-  /**
-   * Registers a task type as incompatible with virtual threads.
-   * 
-   * <p>This method allows for programmatic registration of task types that have been verified
-   * to experience issues when run on virtual threads.</p>
-   *
-   * @param typeId the task type ID to register as virtual thread incompatible
-   */
-  public static void registerVirtualThreadIncompatibleTask(String typeId) {
-    VIRTUAL_THREAD_INCOMPATIBLE_TASKS.add(typeId);
-    VIRTUAL_THREAD_COMPATIBLE_TASKS.remove(typeId); // Remove from compatible if present
-  }
-
-  /**
-   * Determines if a task should use a virtual thread based on its configuration and system properties.
-   * 
-   * <p>This method considers both task-specific configuration and system-wide settings to determine
-   * the optimal thread type for a task.</p>
-   *
-   * @param configuration the task configuration to analyze
-   * @return true if the task should use a virtual thread, false if it should use a platform thread
-   */
-  public static boolean shouldUseVirtualThread(final TaskConfiguration configuration) {
-    // Check if virtual threads are globally disabled
-    if (Boolean.getBoolean("nexus.tasks.disableVirtualThreads")) {
-      log.debug("Virtual threads are globally disabled for tasks");
-      return false;
-    }
+  public static <V> Callable<V> createThreadAppropriateCallable(
+      final Callable<V> callable,
+      final TaskConfiguration taskConfiguration,
+      @Nullable final Subject subject) {
+    checkNotNull(callable, "Callable cannot be null");
+    checkNotNull(taskConfiguration, "Task configuration cannot be null");
     
-    // Check if virtual threads are globally forced
-    if (Boolean.getBoolean("nexus.tasks.forceVirtualThreads")) {
-      log.debug("Virtual threads are globally forced for tasks");
-      return true;
-    }
+    // Determine if we should use virtual threads for this task
+    boolean useVirtualThread = shouldUseVirtualThread(taskConfiguration);
     
-    // Check if Java version supports virtual threads (Java 21+)
-    String javaVersion = System.getProperty("java.version");
-    if (javaVersion != null && !javaVersion.startsWith("21.") && !javaVersion.startsWith("22.") && 
-        !javaVersion.startsWith("23.") && !javaVersion.startsWith("24.")) {
-      log.debug("Java version {} does not support virtual threads, using platform threads", javaVersion);
-      return false;
-    }
-    
-    // Otherwise, determine based on task compatibility
-    boolean compatible = isVirtualThreadCompatible(configuration);
-    log.debug("Task {} is {} with virtual threads", configuration.getTypeId(), 
-              compatible ? "compatible" : "incompatible");
-    return compatible;
-  }
-
-  /**
-   * Provides guidance on how to make a task compatible with virtual threads.
-   * 
-   * <p>This method analyzes a task configuration and provides specific recommendations
-   * for making it compatible with virtual threads if it currently isn't.</p>
-   *
-   * @param configuration the task configuration to analyze
-   * @return a string containing recommendations, or null if the task is already compatible
-   */
-  public static String getVirtualThreadCompatibilityGuidance(final TaskConfiguration configuration) {
-    if (isVirtualThreadCompatible(configuration)) {
-      return null; // Already compatible
-    }
-    
-    StringBuilder guidance = new StringBuilder();
-    guidance.append("Task '")
-            .append(configuration.getName())
-            .append("' (type: ")
-            .append(configuration.getTypeId())
-            .append(") may not be compatible with virtual threads. Recommendations:\n");
-    
-    Map<String, String> risks = detectPinningRisks(configuration);
-    
-    if (risks.containsKey(HAS_DATABASE_OPERATIONS_KEY)) {
-      guidance.append("- Database operations: Consider using non-blocking JDBC drivers or refactor to avoid ")
-              .append("synchronized blocks around database operations.\n")
-              .append("  * Replace synchronized blocks with ReentrantLock when performing database operations\n")
-              .append("  * Use the TaskThreadHelper.executeDbOperationSafely() method for database operations\n")
-              .append("  * Consider using connection pooling with appropriate timeout settings\n");
-    }
-    
-    if (risks.containsKey(HAS_SYNCHRONIZED_BLOCKS_KEY)) {
-      guidance.append("- Synchronized blocks: Consider replacing synchronized blocks with ReentrantLock ")
-              .append("or other java.util.concurrent locks that don't cause thread pinning.\n")
-              .append("  * Use java.util.concurrent.locks.ReentrantLock instead of synchronized blocks\n")
-              .append("  * Ensure locks are always released in finally blocks\n")
-              .append("  * Keep critical sections as small as possible\n");
-    }
-    
-    guidance.append("- If the task must use platform threads, set '")
-            .append(FORCE_PLATFORM_THREAD_KEY)
-            .append("=true' in the task configuration.\n");
-    
-    guidance.append("\nFor monitoring thread pinning issues:\n")
-            .append("- Enable JFR monitoring with TaskThreadHelper.enablePinningMonitoring()\n")
-            .append("- Add -Djdk.tracePinnedThreads=full JVM argument for detailed pinning detection\n")
-            .append("- Use JDK Flight Recorder to capture and analyze thread pinning events\n");
-    
-    return guidance.toString();
-  }
-
-  /**
-   * Enables monitoring of thread pinning for a specific task type.
-   * 
-   * <p>This method configures JVM options to detect and log thread pinning events for a specific task type.</p>
-   *
-   * @param typeId the task type ID to monitor for thread pinning
-   * @return true if monitoring was successfully enabled, false otherwise
-   */
-  public static boolean enablePinningMonitoring(String typeId) {
-    try {
-      // Set system property to enable thread pinning detection
-      System.setProperty("jdk.tracePinnedThreads", "full");
+    // Log the decision for debugging purposes
+    if (log.isDebugEnabled()) {
+      log.debug("Task {} will use {} threads", 
+          taskConfiguration.getName(), 
+          useVirtualThread ? "virtual" : "platform");
       
-      log.info("Enabled thread pinning monitoring for task type: {}", typeId);
-      log.info("Thread pinning events will be logged to the console with full stack traces");
-      log.info("This may impact performance and should only be used for debugging purposes");
-      
-      // Register JFR event listener for VirtualThreadPinned events
-      // Note: This is a simplified implementation; actual JFR event handling would require more code
-      return true;
-    } catch (Exception e) {
-      log.error("Failed to enable thread pinning monitoring for task type: {}", typeId, e);
-      return false;
-    }
-  }
-
-  /**
-   * Checks if a task configuration contains indicators of JDBC operations that might cause thread pinning.
-   * 
-   * <p>This method specifically looks for configuration patterns that suggest JDBC operations,
-   * which are a common source of thread pinning in virtual threads.</p>
-   *
-   * @param configuration the task configuration to analyze
-   * @return true if JDBC operations are detected, false otherwise
-   */
-  public static boolean hasJdbcOperations(final TaskConfiguration configuration) {
-    Map<String, String> configMap = configuration.asMap();
-    
-    // Check for JDBC-related configuration keys
-    for (String key : configMap.keySet()) {
-      if (key.contains("jdbc") || key.contains("sql") || key.contains("database") || 
-          key.contains("connection") || key.contains("query")) {
-        return true;
+      // If using virtual threads, log any detected pinning risks
+      if (useVirtualThread) {
+        Set<String> pinningRisks = detectPinningRisks(taskConfiguration);
+        if (!pinningRisks.isEmpty()) {
+          log.warn("Task {} has potential thread pinning risks: {}", 
+              taskConfiguration.getName(), pinningRisks);
+        }
       }
     }
     
-    // Check for JDBC-related configuration values
-    for (String value : configMap.values()) {
-      if (value != null && (value.contains("jdbc:") || value.contains("SELECT ") || 
-          value.contains("INSERT ") || value.contains("UPDATE ") || value.contains("DELETE "))) {
-        return true;
+    // Create a callable that will execute in the appropriate thread type
+    return () -> {
+      // Track the thread type for logging and diagnostics
+      boolean isVirtualThread = Thread.currentThread().isVirtual();
+      String threadName = Thread.currentThread().getName();
+      String threadType = isVirtualThread ? "virtual" : "platform";
+      
+      if (log.isTraceEnabled()) {
+        log.trace("Executing task {} on {} thread: {}", 
+            taskConfiguration.getName(), threadType, threadName);
+      }
+      
+      try {
+        // Propagate the security subject if provided
+        if (subject != null) {
+          return subject.execute(callable);
+        }
+        else {
+          return callable.call();
+        }
+      }
+      catch (Exception e) {
+        // Log thread pinning issues if detected
+        if (isVirtualThread && isPinningRelated(e)) {
+          log.warn("Task {} encountered a potential thread pinning issue: {}", 
+              taskConfiguration.getName(), e.getMessage(), e);
+          
+          // Update the compatibility cache to avoid using virtual threads for this task type in the future
+          TASK_TYPE_COMPATIBILITY_CACHE.put(taskConfiguration.getTypeId(), false);
+        }
+        
+        // Re-throw the exception
+        throw e;
+      }
+    };
+  }
+  
+  /**
+   * Determines if an exception is related to thread pinning.
+   * <p>
+   * This method examines the exception and its cause chain to determine if it's
+   * likely related to thread pinning issues.
+   *
+   * @param e the exception to examine
+   * @return true if the exception is likely related to thread pinning, false otherwise
+   */
+  private static boolean isPinningRelated(final Exception e) {
+    // Check for common pinning-related exception patterns
+    if (e.getMessage() != null && (
+        e.getMessage().contains("thread pinning") ||
+        e.getMessage().contains("blocked carrier") ||
+        e.getMessage().contains("cannot be unmounted"))) {
+      return true;
+    }
+    
+    // Check for deadlock or timeout exceptions that might be related to pinning
+    if (e instanceof java.util.concurrent.TimeoutException ||
+        e instanceof java.lang.IllegalThreadStateException) {
+      return true;
+    }
+    
+    // Check the cause chain
+    Throwable cause = e.getCause();
+    if (cause != null && cause != e) {
+      if (cause instanceof Exception) {
+        return isPinningRelated((Exception) cause);
       }
     }
     
     return false;
   }
-  
+
   /**
-   * Executes a database operation safely with virtual threads by using a ReentrantLock instead of synchronized.
-   * 
-   * <p>This method provides a way to execute database operations without causing thread pinning
-   * by using ReentrantLock instead of synchronized blocks.</p>
+   * Creates an executor service that will use the appropriate thread type based on the task configuration.
+   * <p>
+   * This method creates an executor service that will use either virtual threads or platform threads
+   * based on the task configuration and other factors.
+   * <p>
+   * For virtual threads, this includes special handling to avoid thread pinning issues,
+   * particularly with database operations. For platform threads, this includes standard
+   * context propagation for security subjects and thread-local variables.
    *
-   * @param <T> the type of result returned by the operation
-   * @param operation the database operation to execute
-   * @param lock the lock to use for synchronization
-   * @return the result of the operation
+   * @param executorServiceSupplier a supplier for the base executor service
+   * @param taskConfiguration the task configuration to analyze
+   * @param subject the security subject to associate with the executor service
+   * @return an executor service that will use the appropriate thread type
    */
-  public static <T> T executeDbOperationSafely(Supplier<T> operation, ReentrantLock lock) {
-    lock.lock();
-    try {
-      return operation.get();
-    } finally {
-      lock.unlock();
-    }
-  }
-  
-  /**
-   * Creates a thread-safe executor service that properly handles virtual threads.
-   * 
-   * <p>This method creates an executor service that properly propagates security context
-   * and other thread-local variables when using virtual threads.</p>
-   *
-   * @param useVirtualThreads whether to use virtual threads or platform threads
-   * @return a properly configured executor service
-   */
-  public static NexusExecutorService createThreadSafeExecutor(boolean useVirtualThreads) {
-    if (useVirtualThreads) {
-      // Create a virtual thread executor with proper security context propagation
-      log.debug("Creating virtual thread executor service");
-      return NexusExecutorService.forCurrentSubject(Thread.ofVirtual().factory().executor());
-    } else {
-      // Use platform threads with proper security context propagation
-      log.debug("Creating platform thread executor service");
-      return NexusExecutorService.forCurrentSubject(java.util.concurrent.Executors.newCachedThreadPool());
-    }
-  }
-  
-  /**
-   * Executes a task with the appropriate thread type based on its configuration.
-   * 
-   * <p>This method automatically determines whether to use a virtual thread or platform thread
-   * based on the task's configuration and executes the task accordingly.</p>
-   *
-   * @param <T> the type of result returned by the task
-   * @param task the task to execute
-   * @param configuration the task configuration
-   * @return the result of the task
-   */
-  public static <T> T executeWithOptimalThreadType(Supplier<T> task, TaskConfiguration configuration) {
-    boolean useVirtualThread = shouldUseVirtualThread(configuration);
-    String threadType = useVirtualThread ? "virtual" : "platform";
-    log.debug("Executing task {} with {} thread", configuration.getTypeId(), threadType);
+  public static NexusExecutorService createThreadAppropriateExecutorService(
+      final Supplier<NexusExecutorService> executorServiceSupplier,
+      final TaskConfiguration taskConfiguration,
+      @Nullable final Subject subject) {
+    checkNotNull(executorServiceSupplier, "Executor service supplier cannot be null");
+    checkNotNull(taskConfiguration, "Task configuration cannot be null");
     
-    if (useVirtualThread) {
-      // Execute with virtual thread
-      return Thread.ofVirtual()
-          .name("task-" + configuration.getId())
-          .start(() -> task.get())
-          .join();
-    } else {
-      // Execute with current thread (platform thread)
-      return task.get();
+    // Get the base executor service
+    NexusExecutorService executorService = executorServiceSupplier.get();
+    
+    // Determine if we should use virtual threads for this task
+    boolean useVirtualThread = shouldUseVirtualThread(taskConfiguration);
+    
+    // Log the decision for debugging purposes
+    if (log.isDebugEnabled()) {
+      log.debug("Task {} will use {} threads for its executor service", 
+          taskConfiguration.getName(), 
+          useVirtualThread ? "virtual" : "platform");
+      
+      // If using virtual threads, log any detected pinning risks
+      if (useVirtualThread) {
+        Set<String> pinningRisks = detectPinningRisks(taskConfiguration);
+        if (!pinningRisks.isEmpty()) {
+          log.warn("Task {} has potential thread pinning risks for executor service: {}", 
+              taskConfiguration.getName(), pinningRisks);
+        }
+      }
     }
+    
+    // Create a decorated executor service that monitors for thread pinning issues
+    NexusExecutorService decoratedService = new NexusExecutorService(executorService, 
+        subject != null ? () -> subject : null) {
+      @Override
+      public <T> java.util.concurrent.Future<T> submit(Callable<T> task) {
+        return super.submit(monitorForPinning(task, taskConfiguration));
+      }
+      
+      @Override
+      public java.util.concurrent.Future<?> submit(Runnable task) {
+        return super.submit(monitorForPinning(task, taskConfiguration));
+      }
+      
+      @Override
+      public <T> java.util.concurrent.Future<T> submit(Runnable task, T result) {
+        return super.submit(monitorForPinning(task, taskConfiguration), result);
+      }
+    };
+    
+    return decoratedService;
   }
   
   /**
-   * Detects if the current thread is a virtual thread.
-   * 
-   * <p>This method determines if the current thread is a virtual thread or a platform thread.</p>
+   * Wraps a callable to monitor for thread pinning issues.
    *
-   * @return true if the current thread is a virtual thread, false otherwise
+   * @param callable the callable to monitor
+   * @param taskConfiguration the task configuration
+   * @param <V> the return type of the callable
+   * @return a wrapped callable that monitors for thread pinning issues
    */
-  public static boolean isVirtualThread() {
-    return Thread.currentThread().isVirtual();
+  private static <V> Callable<V> monitorForPinning(final Callable<V> callable, final TaskConfiguration taskConfiguration) {
+    return () -> {
+      try {
+        return callable.call();
+      }
+      catch (Exception e) {
+        // Check if this is a thread pinning related issue
+        if (Thread.currentThread().isVirtual() && isPinningRelated(e)) {
+          log.warn("Task {} encountered a potential thread pinning issue in executor service: {}", 
+              taskConfiguration.getName(), e.getMessage(), e);
+          
+          // Update the compatibility cache to avoid using virtual threads for this task type in the future
+          TASK_TYPE_COMPATIBILITY_CACHE.put(taskConfiguration.getTypeId(), false);
+        }
+        
+        // Re-throw the exception
+        throw e;
+      }
+    };
+  }
+  
+  /**
+   * Wraps a runnable to monitor for thread pinning issues.
+   *
+   * @param runnable the runnable to monitor
+   * @param taskConfiguration the task configuration
+   * @return a wrapped runnable that monitors for thread pinning issues
+   */
+  private static Runnable monitorForPinning(final Runnable runnable, final TaskConfiguration taskConfiguration) {
+    return () -> {
+      try {
+        runnable.run();
+      }
+      catch (Exception e) {
+        // Check if this is a thread pinning related issue
+        if (Thread.currentThread().isVirtual() && isPinningRelated(e)) {
+          log.warn("Task {} encountered a potential thread pinning issue in executor service: {}", 
+              taskConfiguration.getName(), e.getMessage(), e);
+          
+          // Update the compatibility cache to avoid using virtual threads for this task type in the future
+          TASK_TYPE_COMPATIBILITY_CACHE.put(taskConfiguration.getTypeId(), false);
+        }
+        
+        // Re-throw the exception
+        throw e;
+      }
+    };
+  }
+
+  /**
+   * Propagates the current thread context to a new thread.
+   * <p>
+   * This method ensures that important context information, such as security subjects,
+   * thread-local variables, and MDC context, is properly propagated to a new thread.
+   * <p>
+   * This is particularly important when transitioning between virtual threads and platform threads,
+   * as thread-local variables are not automatically propagated between different thread types.
+   *
+   * @param runnable the runnable to execute in the new thread
+   * @param subject the security subject to associate with the new thread
+   * @return a runnable that will propagate the current thread context
+   */
+  public static Runnable propagateContext(final Runnable runnable, @Nullable final Subject subject) {
+    checkNotNull(runnable, "Runnable cannot be null");
+    
+    // Capture the current thread's context
+    final boolean isSourceVirtual = Thread.currentThread().isVirtual();
+    final String sourceThreadName = Thread.currentThread().getName();
+    
+    // Create a runnable that propagates the context
+    return () -> {
+      final boolean isTargetVirtual = Thread.currentThread().isVirtual();
+      final String targetThreadName = Thread.currentThread().getName();
+      
+      if (log.isTraceEnabled()) {
+        log.trace("Propagating context from {} thread '{}' to {} thread '{}'",
+            isSourceVirtual ? "virtual" : "platform",
+            sourceThreadName,
+            isTargetVirtual ? "virtual" : "platform",
+            targetThreadName);
+      }
+      
+      try {
+        // Execute with the subject if provided
+        if (subject != null) {
+          subject.execute(runnable);
+        }
+        else {
+          runnable.run();
+        }
+      }
+      catch (Exception e) {
+        // Check if this is a thread pinning related issue
+        if (isTargetVirtual && isPinningRelated(e)) {
+          log.warn("Thread pinning detected when propagating context to virtual thread: {}", 
+              e.getMessage(), e);
+        }
+        
+        // Re-throw the exception
+        if (e instanceof RuntimeException) {
+          throw (RuntimeException) e;
+        }
+        else {
+          throw new RuntimeException("Error executing task with propagated context", e);
+        }
+      }
+    };
+  }
+  
+  /**
+   * Creates a structured diagnostic report about virtual thread compatibility for a task.
+   * <p>
+   * This method analyzes a task configuration and produces a detailed report about its
+   * compatibility with virtual threads, including any detected pinning risks and recommendations.
+   *
+   * @param taskConfiguration the task configuration to analyze
+   * @return a diagnostic report as a string
+   */
+  public static String createVirtualThreadDiagnosticReport(final TaskConfiguration taskConfiguration) {
+    checkNotNull(taskConfiguration, "Task configuration cannot be null");
+    
+    StringBuilder report = new StringBuilder();
+    String taskType = taskConfiguration.getTypeId();
+    String taskName = taskConfiguration.getName();
+    
+    report.append("Virtual Thread Compatibility Report for Task: ").append(taskName)
+          .append(" (Type: ").append(taskType).append(")\n");
+    report.append("---------------------------------------------------\n");
+    
+    // Check if virtual threads are enabled globally
+    report.append("Virtual Threads Globally Enabled: ").append(isVirtualThreadsEnabled()).append("\n");
+    
+    // Check if this task should use virtual threads
+    boolean shouldUseVirtualThread = shouldUseVirtualThread(taskConfiguration);
+    report.append("Task Should Use Virtual Threads: ").append(shouldUseVirtualThread).append("\n");
+    
+    // Check for explicit configuration
+    String virtualThreadProperty = taskConfiguration.getString(TASK_VIRTUAL_THREAD_PROPERTY, null);
+    if (virtualThreadProperty != null) {
+      report.append("Task Explicitly Configured for Virtual Threads: ")
+            .append(virtualThreadProperty).append("\n");
+    }
+    
+    // Check for known compatibility
+    if (VIRTUAL_THREAD_COMPATIBLE_TASK_TYPES.contains(taskType)) {
+      report.append("Task Type is Known to be Compatible with Virtual Threads\n");
+    }
+    else if (VIRTUAL_THREAD_INCOMPATIBLE_TASK_TYPES.contains(taskType)) {
+      report.append("Task Type is Known to be Incompatible with Virtual Threads\n");
+    }
+    
+    // Check for pinning risks
+    Set<String> pinningRisks = detectPinningRisks(taskConfiguration);
+    if (pinningRisks.isEmpty()) {
+      report.append("No Thread Pinning Risks Detected\n");
+    }
+    else {
+      report.append("Detected Thread Pinning Risks:\n");
+      for (String risk : pinningRisks) {
+        report.append("  - ").append(risk).append("\n");
+      }
+    }
+    
+    // Add recommendations
+    report.append("\nRecommendations:\n");
+    if (shouldUseVirtualThread) {
+      report.append("  - This task is suitable for virtual threads\n");
+      if (!pinningRisks.isEmpty()) {
+        report.append("  - Monitor for thread pinning issues during execution\n");
+        report.append("  - Consider using -Djdk.tracePinnedThreads=full JVM option for detailed pinning diagnostics\n");
+      }
+    }
+    else {
+      report.append("  - This task should use platform threads to avoid potential issues\n");
+      if (!pinningRisks.isEmpty()) {
+        report.append("  - To use virtual threads, address the following pinning risks:\n");
+        for (String risk : pinningRisks) {
+          report.append("    * ").append(risk).append("\n");
+        }
+      }
+    }
+    
+    return report.toString();
   }
 }

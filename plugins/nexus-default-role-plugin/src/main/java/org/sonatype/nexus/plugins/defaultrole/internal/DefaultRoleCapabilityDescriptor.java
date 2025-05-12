@@ -14,8 +14,8 @@ package org.sonatype.nexus.plugins.defaultrole.internal;
 
 import java.util.List;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.goodies.i18n.I18N;
 import org.sonatype.goodies.i18n.MessageBundle;
@@ -65,7 +65,8 @@ public class DefaultRoleCapabilityDescriptor
     setExposed(true);
     setHidden(false);
 
-    this.role = new ComboboxFormField<String>(
+    // Using type inference with diamond operator for better Java 21 compatibility
+    this.role = new ComboboxFormField<>(
         P_ROLE,
         messages.roleLabel(),
         messages.roleHelp(),
@@ -89,6 +90,7 @@ public class DefaultRoleCapabilityDescriptor
 
   @Override
   protected String renderAbout() {
-    return render(TYPE_ID + "-about.vm");
+    // Using Java 21 String Template for template path construction
+    return render(STR."{TYPE_ID}-about.vm");
   }
 }

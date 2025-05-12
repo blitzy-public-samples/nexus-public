@@ -24,6 +24,8 @@ import org.sonatype.nexus.security.anonymous.AnonymousManager;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
+ * Onboarding item that checks if anonymous access has been configured.
+ * 
  * @since 3.17
  */
 @Named

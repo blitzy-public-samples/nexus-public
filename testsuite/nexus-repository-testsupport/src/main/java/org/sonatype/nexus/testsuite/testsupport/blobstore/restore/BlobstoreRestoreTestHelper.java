@@ -25,6 +25,11 @@ import org.sonatype.nexus.repository.Repository;
 /**
  * Helper class containing common functionality needed in ITs testing the restoration of component metadata from blobs.
  * Assumes a unit of work has already been started.
+ * <p>
+ * Implementations should leverage Java 21 virtual threads for I/O-bound operations to improve performance and
+ * scalability. Methods that involve file system operations, network calls, or database interactions are prime
+ * candidates for virtual thread execution.
+ * </p>
  */
 public interface BlobstoreRestoreTestHelper
 {
@@ -46,11 +51,16 @@ public interface BlobstoreRestoreTestHelper
 
   /**
    * Get the blob ids of the assets
+   * 
+   * @return List of blob IDs associated with assets
    */
   List<BlobId> getAssetBlobId();
 
   /**
    * Deletes asset blob
+   * <p>
+   * Implementation should use virtual threads for this I/O-bound operation.
+   * </p>
    *
    * @param repository the name of the repository
    * @param blobStore blobStore where blob is stored
@@ -60,6 +70,9 @@ public interface BlobstoreRestoreTestHelper
 
   /**
    * Verifies existence of asset blob
+   * <p>
+   * Implementation should use virtual threads for this I/O-bound operation.
+   * </p>
    *
    * @param repository the name of the blobstore
    * @param blobStore blobStore where blob is stored
@@ -76,6 +89,9 @@ public interface BlobstoreRestoreTestHelper
 
   /**
    * Deletes the file with specified extension
+   * <p>
+   * Implementation should use virtual threads for this I/O-bound operation.
+   * </p>
    *
    * @param blobStorageName the name of the blobstore
    * @param extension extension of the file to delete
@@ -87,6 +103,7 @@ public interface BlobstoreRestoreTestHelper
    *
    * @param type the type of the plan
    * @param action the action of the plan
+   * @return {@code true} if the reconcile plan exists
    */
   boolean assertReconcilePlanExists(String type, String action);
 
@@ -96,32 +113,52 @@ public interface BlobstoreRestoreTestHelper
    * @param type the type of the plan
    * @param action the action of the plan
    * @param blobIds list of blob ids to check
+   * @return {@code true} if the reconcile plan exists with the specified parameters
    */
   boolean assertReconcilePlanExists(String type, String action, List<BlobId> blobIds);
 
   /**
    * Asserts that the property files exist for the specified blobstore
+   * <p>
+   * Implementation should use virtual threads for this I/O-bound operation.
+   * </p>
    *
    * @param blobStorageName the name of the blobstore
+   * @return {@code true} if the property files exist
    */
   boolean assertPropertyFilesExist(String blobStorageName);
 
   /**
    * Run the reconcile task with the specified wait for task timeout
+   * <p>
+   * Implementation should use virtual threads for this I/O-bound operation.
+   * </p>
    *
    * @param blobstoreName the name of the blobstore
    * @param timeout the timeout to wait for the task to complete
    */
   void runReconcileTaskWithTimeout(final String blobstoreName, final long timeout);
 
+  /**
+   * Simulates component and asset metadata loss for testing restoration
+   */
   void simulateComponentAndAssetMetadataLoss();
 
+  /**
+   * Simulates asset metadata loss for testing restoration
+   */
   void simulateAssetMetadataLoss();
 
+  /**
+   * Simulates component metadata loss for testing restoration
+   */
   void simulateComponentMetadataLoss();
 
   /**
    * Run the restore (reconcile) task with the specified wait for task timeout and the specified dry run flag
+   * <p>
+   * Implementation should use virtual threads for this I/O-bound operation.
+   * </p>
    *
    * @param blobstoreName the name of the blobstore
    */
@@ -131,6 +168,9 @@ public interface BlobstoreRestoreTestHelper
 
   /**
    * Run the restore (reconcile) task with the default wait for task timeout and the specified dry run flag
+   * <p>
+   * Implementation should use virtual threads for this I/O-bound operation.
+   * </p>
    *
    * @param blobStoreName the name of the blobstore
    * @param isDryRun when true set dryrun on the task which does not restore assets
@@ -141,6 +181,9 @@ public interface BlobstoreRestoreTestHelper
 
   /**
    * Run the restore (reconcile) task with the specified wait for task timeout and the specified dry run flag
+   * <p>
+   * Implementation should use virtual threads for this I/O-bound operation.
+   * </p>
    *
    * @param blobstoreName the name of the blobstore
    * @param timeout the timeout to wait for the task to complete
@@ -148,24 +191,92 @@ public interface BlobstoreRestoreTestHelper
    */
   void runRestoreMetadataTaskWithTimeout(final String blobstoreName, final long timeout, final boolean dryRun);
 
+  /**
+   * Asserts that the asset matches the blob
+   *
+   * @param repository the repository to check
+   * @param names the names of the assets to check
+   */
   void assertAssetMatchesBlob(Repository repository, String... names);
 
+  /**
+   * Asserts that the asset is in the repository
+   *
+   * @param repository the repository to check
+   * @param name the name of the asset to check
+   */
   void assertAssetInRepository(Repository repository, String name);
 
+  /**
+   * Asserts that the asset is not in the repository
+   *
+   * @param repository the repository to check
+   * @param names the names of the assets to check
+   */
   void assertAssetNotInRepository(Repository repository, String... names);
 
+  /**
+   * Asserts that the component is in the repository
+   *
+   * @param repository the repository to check
+   * @param name the name of the component to check
+   */
   void assertComponentInRepository(Repository repository, String name);
 
+  /**
+   * Asserts that the component is in the repository
+   *
+   * @param repository the repository to check
+   * @param name the name of the component to check
+   * @param version the version of the component to check
+   */
   void assertComponentInRepository(Repository repository, String name, String version);
 
+  /**
+   * Asserts that the component is in the repository
+   *
+   * @param repository the repository to check
+   * @param group the group of the component to check
+   * @param name the name of the component to check
+   * @param version the version of the component to check
+   */
   void assertComponentInRepository(Repository repository, String group, String name, String version);
 
+  /**
+   * Asserts that the component is not in the repository
+   *
+   * @param repository the repository to check
+   * @param name the name of the component to check
+   */
   void assertComponentNotInRepository(Repository repository, String name);
 
+  /**
+   * Asserts that the component is not in the repository
+   *
+   * @param repository the repository to check
+   * @param name the name of the component to check
+   * @param version the version of the component to check
+   */
   void assertComponentNotInRepository(Repository repository, String name, String version);
 
+  /**
+   * Asserts that the asset is associated with the component
+   *
+   * @param repository the repository to check
+   * @param name the name of the component to check
+   * @param path the path of the asset to check
+   */
   void assertAssetAssociatedWithComponent(Repository repository, String name, String path);
 
+  /**
+   * Asserts that the asset is associated with the component
+   *
+   * @param repository the repository to check
+   * @param group the group of the component to check
+   * @param name the name of the component to check
+   * @param version the version of the component to check
+   * @param paths the paths of the assets to check
+   */
   void assertAssetAssociatedWithComponent(
       Repository repository,
       @Nullable String group,
@@ -176,16 +287,33 @@ public interface BlobstoreRestoreTestHelper
   /**
    * Rewrites all the blob names either adding a leading slash, or removing a leading slash to simulate blobs which were
    * written by the other database.
+   * <p>
+   * Implementation should use virtual threads for this I/O-bound operation.
+   * </p>
    */
   void rewriteBlobNames();
 
   /**
    * Retrieve the map of path->blobId for all assets in the provided repository.
+   * <p>
+   * Implementation should use virtual threads for this I/O-bound operation.
+   * </p>
    *
-   * @param pathFilter a predicate which returns true if the asset path should be included in the result.
+   * @param repo the repository to check
+   * @param pathFilter a predicate which returns true if the asset path should be included in the result
+   * @return a map of path to blob ID
    */
   Map<String, BlobId> getAssetToBlobIds(Repository repo, Predicate<String> pathFilter);
 
+  /**
+   * Retrieve the map of path->blobId for all assets in the provided repository.
+   * <p>
+   * Implementation should use virtual threads for this I/O-bound operation.
+   * </p>
+   *
+   * @param repo the repository to check
+   * @return a map of path to blob ID
+   */
   default Map<String, BlobId> getAssetToBlobIds(final Repository repo) {
     return getAssetToBlobIds(repo, path -> true);
   }

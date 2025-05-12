@@ -29,9 +29,6 @@ import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-/**
- * Tests for {@link CacheControllerHolder}.
- */
 public class CacheControllerHolderTest
 {
   private static final CacheType TEST = new CacheType("TEST");
@@ -89,13 +86,10 @@ public class CacheControllerHolderTest
     });
     assertThat(exception.getMessage().contains(TEST.value()), is(true));
   }
-
+  
   @Test
   public void testConcurrentAccessWithVirtualThreads() throws Exception {
-    // Create a virtual thread factory
     ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    
-    // Create an executor service using virtual threads
     ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
     
     int taskCount = 1000;
@@ -105,38 +99,22 @@ public class CacheControllerHolderTest
     try {
       // Submit multiple concurrent tasks using virtual threads
       for (int i = 0; i < taskCount; i++) {
-        final int taskId = i;
+        final int index = i;
         executor.submit(() -> {
           try {
             // Alternate between different operations to test thread safety
-            switch (taskId % 4) {
+            switch (index % 4) {
               case 0:
-                // Get content controller
-                CacheController content = underTest.getContentCacheController();
-                if (content != contentCacheController) {
-                  errorCount.incrementAndGet();
-                }
+                assertThat(underTest.getContentCacheController(), is(contentCacheController));
                 break;
               case 1:
-                // Get metadata controller
-                CacheController metadata = underTest.getMetadataCacheController();
-                if (metadata != metadataCacheController) {
-                  errorCount.incrementAndGet();
-                }
+                assertThat(underTest.getMetadataCacheController(), is(metadataCacheController));
                 break;
               case 2:
-                // Get via type
-                CacheController byType = underTest.get(CacheControllerHolder.CONTENT);
-                if (byType != contentCacheController) {
-                  errorCount.incrementAndGet();
-                }
+                assertThat(underTest.get(CacheControllerHolder.CONTENT), is(contentCacheController));
                 break;
               case 3:
-                // Require via type
-                CacheController required = underTest.require(CacheControllerHolder.METADATA);
-                if (required != metadataCacheController) {
-                  errorCount.incrementAndGet();
-                }
+                assertThat(underTest.require(CacheControllerHolder.METADATA), is(metadataCacheController));
                 break;
             }
           } catch (Exception e) {
@@ -148,13 +126,13 @@ public class CacheControllerHolderTest
       }
       
       // Wait for all tasks to complete
-      latch.await(30, TimeUnit.SECONDS);
+      boolean completed = latch.await(30, TimeUnit.SECONDS);
       
-      // Verify no errors occurred
+      // Verify results
+      assertThat("All tasks should complete within timeout", completed, is(true));
       assertThat("No errors should occur during concurrent access", errorCount.get(), is(0));
     } finally {
       executor.shutdown();
-      executor.awaitTermination(5, TimeUnit.SECONDS);
     }
   }
 }

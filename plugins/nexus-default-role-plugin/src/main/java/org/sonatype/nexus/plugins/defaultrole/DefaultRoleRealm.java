@@ -16,6 +16,8 @@ import javax.annotation.Nullable;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
+import static java.lang.StringTemplate.STR;
+
 import org.sonatype.nexus.security.anonymous.AnonymousHelper;
 
 import org.apache.shiro.authc.AuthenticationException;
@@ -30,7 +32,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Realm that adds the specified role to all authenticated users
+ * Realm that adds the specified role to all authenticated users.
+ * Updated for Java 21 compatibility with Shiro 2.0.0.
  *
  * @since 3.22
  */
@@ -57,7 +60,8 @@ public class DefaultRoleRealm
       if (!AnonymousHelper.isAnonymous(principals)) {
         SimpleAuthorizationInfo info = new SimpleAuthorizationInfo();
         info.addRole(role);
-        log.debug("Granting {} role to {}", role, principals);
+        // Using Java 21 String Templates for improved logging readability
+        log.debug(STR."Granting \{role} role to \{principals}");
         return info;
       }
     }

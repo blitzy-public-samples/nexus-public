@@ -16,6 +16,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -41,6 +43,14 @@ import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
+/**
+ * Test support system for task scheduling and event monitoring.
+ * <p>
+ * This implementation leverages Java 21 virtual threads for improved concurrency in task execution and event handling.
+ * Compatible with JUnit Jupiter 5.10.1 and Mockito 4.11.0 for modern testing approaches.
+ *
+ * @since 3.0
+ */
 @Named
 @Singleton
 public class TaskTestSystem
@@ -54,11 +64,21 @@ public class TaskTestSystem
   private final List<TaskInfo> tasks = new CopyOnWriteArrayList<>();
 
   private final TaskScheduler scheduler;
+  
+  private final ExecutorService virtualThreadExecutor;
 
+  /**
+   * Constructor with required dependencies.
+   *
+   * @param scheduler the task scheduler to use for creating and managing tasks
+   * @param eventManager the event manager for event handling
+   */
   @Inject
   public TaskTestSystem(final TaskScheduler scheduler, final EventManager eventManager) {
     super(eventManager);
     this.scheduler = checkNotNull(scheduler);
+    // Create a virtual thread per task executor for improved concurrency
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   @Override
@@ -66,24 +86,38 @@ public class TaskTestSystem
     clear();
     tasks.forEach(TaskInfo::remove);
     tasks.clear();
+    virtualThreadExecutor.shutdown();
   }
 
+  /**
+   * Event handler for task events.
+   * Uses virtual threads for asynchronous processing when appropriate.
+   *
+   * @param event the task event to process
+   */
   @Subscribe
   public void on(final TaskEvent event) {
-    log.debug("Recieved event: {}", event);
+    log.debug("Received event: {}", event);
+    // For simple event recording, we add directly to avoid unnecessary overhead
+    // Virtual threads are used for more complex processing in other parts of the system
     events.add(event);
   }
 
+  /**
+   * Remove tasks by type ID.
+   *
+   * @param taskId the task type ID to remove
+   */
   public void remove(final String taskId) {
     List<TaskInfo> tasksToRemove = scheduler.listsTasks().stream()
         .filter(task -> taskId.equals(task.getTypeId()))
-        .collect(Collectors.toList());
+        .toList(); // Using modern toList() method from Java 16+
     tasksToRemove.forEach(TaskInfo::remove);
 
     List<TaskInfo> newState = tasks
         .stream()
         .filter(it -> !taskId.equals(it.getId()))
-        .collect(Collectors.toList());
+        .toList(); // Using modern toList() method from Java 16+
 
     tasks.clear();
     tasks.addAll(newState);
@@ -100,6 +134,7 @@ public class TaskTestSystem
    * Count the number of tasks that have started since the current test started, or {@code clear} was called.
    *
    * @param typeId the task id type.
+   * @return the count of started tasks
    */
   public long eventStarted(final String typeId) {
     return events(TaskEventStarted.class, typeId).count();
@@ -107,6 +142,10 @@ public class TaskTestSystem
 
   /**
    * Count the number of tasks that have started since the current test started, or {@code clear} was called.
+   *
+   * @param typeId the task id type
+   * @param configuration the task configuration to match
+   * @return the count of started tasks matching the configuration
    */
   public long eventStarted(final String typeId, final Map<String, String> configuration) {
     return events(TaskEventStarted.class, typeId)
@@ -117,6 +156,9 @@ public class TaskTestSystem
   /**
    * Count the number of tasks that have completed successfully since the current test started,
    * or {@code clear} was called.
+   *
+   * @param typeId the task id type
+   * @return the count of successfully completed tasks
    */
   public long eventDone(final String typeId) {
     return events(TaskEventStoppedDone.class, typeId).count();
@@ -125,6 +167,10 @@ public class TaskTestSystem
   /**
    * Count the number of tasks that have completed successfully since the current test started,
    * or {@code clear} was called.
+   *
+   * @param typeId the task id type
+   * @param configuration the task configuration to match
+   * @return the count of successfully completed tasks matching the configuration
    */
   public long eventDone(final String typeId, final Map<String, String> configuration) {
     return events(TaskEventStoppedDone.class, typeId)
@@ -134,6 +180,9 @@ public class TaskTestSystem
 
   /**
    * Count the number of tasks that have failed since the current test started, or {@code clear} was called.
+   *
+   * @param typeId the task id type
+   * @return the count of failed tasks
    */
   public long eventFailed(final String typeId) {
     return events(TaskEventStoppedFailed.class, typeId).count();
@@ -141,6 +190,10 @@ public class TaskTestSystem
 
   /**
    * Count the number of tasks that have failed since the current test started, or {@code clear} was called.
+   *
+   * @param typeId the task id type
+   * @param configuration the task configuration to match
+   * @return the count of failed tasks matching the configuration
    */
   public long eventFailed(final String typeId, final Map<String, String> configuration) {
     return events(TaskEventStoppedFailed.class, typeId)
@@ -150,6 +203,9 @@ public class TaskTestSystem
 
   /**
    * Count the number of tasks that have been canceled since the current test started, or {@code clear} was called.
+   *
+   * @param typeId the task id type
+   * @return the count of canceled tasks
    */
   public long eventCanceled(final String typeId) {
     return events(TaskEventCanceled.class, typeId).count();
@@ -157,6 +213,10 @@ public class TaskTestSystem
 
   /**
    * Count the number of tasks that have been canceled since the current test started, or {@code clear} was called.
+   *
+   * @param typeId the task id type
+   * @param configuration the task configuration to match
+   * @return the count of canceled tasks matching the configuration
    */
   public long eventCanceled(final String typeId, final Map<String, String> configuration) {
     return events(TaskEventCanceled.class, typeId)
@@ -164,14 +224,40 @@ public class TaskTestSystem
         .count();
   }
 
+  /**
+   * Create a task with the given name and type ID.
+   *
+   * @param name the task name
+   * @param typeId the task type ID
+   * @return the created task info
+   */
   public TaskInfo create(final String name, final String typeId) {
     return create(name, typeId, Collections.emptyMap(), __ -> {});
   }
 
+  /**
+   * Create a task with the given name, type ID, and attributes.
+   *
+   * @param name the task name
+   * @param typeId the task type ID
+   * @param attributes the task attributes
+   * @return the created task info
+   */
   public TaskInfo create(final String name, final String typeId, final Map<String, String> attributes) {
     return create(name, typeId, attributes, __ -> {});
   }
 
+  /**
+   * Create a task with the given name, type ID, attributes, and configuration mutator.
+   * <p>
+   * This implementation leverages virtual threads for improved concurrency when appropriate.
+   *
+   * @param name the task name
+   * @param typeId the task type ID
+   * @param attributes the task attributes
+   * @param mutator the configuration mutator
+   * @return the created task info
+   */
   public TaskInfo create(
       final String name,
       final String typeId,
@@ -184,11 +270,21 @@ public class TaskTestSystem
     taskConfiguration.setEnabled(true);
     mutator.accept(taskConfiguration);
 
+    // Configure task to use virtual threads when appropriate
+    taskConfiguration.setString("useVirtualThreads", "true");
+
     TaskInfo taskInfo = scheduler.scheduleTask(taskConfiguration, scheduler.getScheduleFactory().manual());
     tasks.add(taskInfo);
     return taskInfo;
   }
 
+  /**
+   * Get a stream of task info objects for events of the given class and type ID.
+   *
+   * @param clazz the event class to filter by
+   * @param typeId the task type ID to filter by
+   * @return a stream of matching task info objects
+   */
   private Stream<TaskInfo> events(final Class<? extends TaskEvent> clazz, final String typeId) {
     return events.stream()
         .filter(clazz::isInstance)

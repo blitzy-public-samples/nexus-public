@@ -12,6 +12,10 @@
     of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
     Eclipse Foundation. All other trademarks are the property of their respective owners.
 
+    NOTE: This settings.xml file has been updated for Java 21 compatibility. It supports the execution of integration tests
+    with Java 21 features including Virtual Threads. When using this file with Java 21-based test execution, ensure that
+    your JDK installation properly supports all Java 21 features.
+
 -->
 <settings>
   <servers>
@@ -29,6 +33,7 @@
     </mirror>
   </mirrors>
   <profiles>
+    <!-- Default development profile -->
     <profile>
       <id>development</id>
       <repositories>
@@ -59,6 +64,24 @@
           </snapshots>
         </pluginRepository>
       </pluginRepositories>
+    </profile>
+    
+    <!-- Java 21 profile for integration tests -->
+    <profile>
+      <id>java21</id>
+      <activation>
+        <jdk>21</jdk>
+      </activation>
+      <properties>
+        <!-- Properties for Java 21 execution -->
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <maven.compiler.release>21</maven.compiler.release>
+        <!-- Enable preview features if needed for testing -->
+        <!-- <maven.compiler.arg>--enable-preview</maven.compiler.arg> -->
+        <!-- Enable virtual threads debugging if needed -->
+        <!-- <jdk.tracePinnedThreads>true</jdk.tracePinnedThreads> -->
+      </properties>
     </profile>
   </profiles>
   <activeProfiles>

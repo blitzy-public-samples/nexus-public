@@ -47,10 +47,6 @@ import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.St
  * An {@link ExecutorService} that tries to delay all submitted tasks until the database is writable.
  * It doesn't retry if the database goes read-only after a task has been started.
  * If the database doesn't become writable within the time limit, then the task is run anyway.
- * 
- * This executor supports both traditional platform threads and Java 21 virtual threads.
- * When configured to use virtual threads, it creates a new virtual thread for each task,
- * which provides better scalability for I/O-bound operations like database access.
  *
  * @since 3.16
  */
@@ -112,23 +108,14 @@ public class DatabaseStatusDelayedExecutor
             return callable.call();
           }
           catch (NotWritableException e) {
-            if (attempt > 0 && attempt % 10 == 0) {
-              // Log less frequently to reduce log noise
-              log.debug("Still waiting for database to become writable after {} attempts.", attempt);
-            } else if (attempt == 0) {
-              log.debug("Waiting for database to become writable.", e);
+            log.debug("Waiting for database to become writable.", e);
+            // When using virtual threads, we can afford to yield more frequently
+            // as there's minimal overhead in context switching
+            if (useVirtualThreads && attempt > 0 && attempt % 10 == 0) {
+              log.debug("Virtual thread yielding after {} attempts", attempt);
+              Thread.yield();
             }
-            
-            // When using virtual threads, we can afford to use shorter sleep intervals
-            // as each virtual thread consumes minimal resources and will yield the carrier thread
-            if (useVirtualThreads) {
-              // With virtual threads, we can use a progressive backoff strategy
-              // starting with shorter intervals and gradually increasing
-              long adjustedSleep = Math.min(sleepInterval, 500 + (attempt * 100));
-              Thread.sleep(adjustedSleep);
-            } else {
-              Thread.sleep(sleepInterval);
-            }
+            Thread.sleep(sleepInterval);
           }
         }
         log.warn("Hit retry limit waiting for a writable database.");
@@ -136,7 +123,6 @@ public class DatabaseStatusDelayedExecutor
       }
       catch (InterruptedException e) {
         log.warn("Interrupted while waiting to call task.", e);
-        Thread.currentThread().interrupt(); // Restore the interrupted status
         return null;
       }
     };
@@ -148,18 +134,12 @@ public class DatabaseStatusDelayedExecutor
     if (useVirtualThreads) {
       log.info("Initializing database status delayed executor with virtual threads");
       // Create a virtual thread per task executor
-      // This is the recommended approach for Java 21 virtual threads
-      // Each task gets its own virtual thread, eliminating thread pool sizing concerns
       ExecutorService virtualExecutor = Executors.newVirtualThreadPerTaskExecutor();
-      
       // Wrap with NexusExecutorService to ensure security context propagation
-      // This maintains the same security model as with platform threads
-      executor = NexusExecutorService.forFixedSubject(
-          virtualExecutor,
-          FakeAlmightySubject.TASK_SUBJECT);
+      executor = NexusExecutorService.forFixedSubject(virtualExecutor, FakeAlmightySubject.TASK_SUBJECT);
+      log.debug("Virtual thread executor initialized for database operations");
     } else {
-      log.info("Initializing database status delayed executor with platform threads (size: {})", 
-          delayedExecutorThreadPoolSize);
+      log.debug("Initializing database status delayed executor with platform threads");
       executor = NexusExecutorService.forFixedSubject(
           newFixedThreadPool(delayedExecutorThreadPoolSize,
               new NexusThreadFactory("status-delayed-tasks", "status-delayed-tasks")),
@@ -269,5 +249,13 @@ public class DatabaseStatusDelayedExecutor
 
   private <T> Collection<? extends Callable<T>> wrapAll(final Collection<? extends Callable<T>> tasks) {
     return tasks.stream().map(this::wrap).collect(toList());
+  }
+  
+  /**
+   * @return true if this executor is using virtual threads, false otherwise
+   * @since 3.60
+   */
+  public boolean isUsingVirtualThreads() {
+    return useVirtualThreads;
   }
 }

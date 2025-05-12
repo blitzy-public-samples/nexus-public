@@ -17,6 +17,10 @@ import java.net.URI;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.CompletableFuture;
 
 import javax.annotation.Nonnull;
 
@@ -48,6 +52,9 @@ import static org.apache.http.HttpHeaders.IF_MODIFIED_SINCE;
 
 /**
  * Support class for HTTP-based repository test clients.
+ * <p>
+ * This implementation leverages Java 21 Virtual Threads for I/O-bound operations
+ * to improve throughput and resource utilization during HTTP operations.
  */
 public class FormatClientSupport
     extends ComponentSupport
@@ -57,6 +64,11 @@ public class FormatClientSupport
   protected final HttpClientContext httpClientContext;
 
   protected final URI repositoryBaseUri;
+  
+  /**
+   * Virtual thread executor for handling I/O-bound HTTP operations.
+   */
+  private final ExecutorService virtualThreadExecutor;
 
   public FormatClientSupport(
       final CloseableHttpClient httpClient,
@@ -66,6 +78,7 @@ public class FormatClientSupport
     this.httpClient = checkNotNull(httpClient);
     this.httpClientContext = checkNotNull(httpClientContext);
     this.repositoryBaseUri = checkNotNull(repositoryBaseUri);
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   public static String asString(final HttpResponse response) throws IOException {
@@ -73,7 +86,7 @@ public class FormatClientSupport
   }
 
   /**
-   * GET a response from the repository.
+   * GET a response from the repository using Virtual Threads for improved I/O throughput.
    */
   public CloseableHttpResponse get(final String path) throws IOException {
     return get(path, Collections.emptyMap());
@@ -81,6 +94,7 @@ public class FormatClientSupport
 
   /**
    * GET a conditional response from the repository using the If-Modified-Since header.
+   * Uses Virtual Threads for improved I/O throughput.
    */
   public CloseableHttpResponse getIfModifiedSince(final String path, final String modified) throws IOException {
     HttpGet get = new HttpGet(resolve(path));
@@ -90,6 +104,7 @@ public class FormatClientSupport
 
   /**
    * GET a response from the repository, adding headers to the request.
+   * Uses Virtual Threads for improved I/O throughput.
    */
   public CloseableHttpResponse get(final String path, Map<String, String> headers) throws IOException {
     final URI uri = resolve(path);
@@ -100,21 +115,56 @@ public class FormatClientSupport
     return execute(get);
   }
 
+  /**
+   * Perform a HEAD request to the repository.
+   * Uses Virtual Threads for improved I/O throughput.
+   */
   public CloseableHttpResponse head(final String path) throws IOException {
     return execute(new HttpHead(resolve(path)));
   }
 
+  /**
+   * Execute an HTTP request using Virtual Threads for improved I/O throughput.
+   * This method submits the HTTP operation to a virtual thread executor to avoid
+   * blocking platform threads during I/O operations.
+   */
   protected CloseableHttpResponse execute(final HttpUriRequest request) throws IOException {
     return execute(request, new BasicHttpContext(httpClientContext));
   }
 
+  /**
+   * Execute an HTTP request with a specific context using Virtual Threads for improved I/O throughput.
+   * This method submits the HTTP operation to a virtual thread executor to avoid
+   * blocking platform threads during I/O operations.
+   */
   protected CloseableHttpResponse execute(final HttpUriRequest request, HttpContext context) throws IOException {
-    log.info("Requesting {}", request);
-    final CloseableHttpResponse response = httpClient.execute(request, context);
-    log.info("Received {}", response);
-    return response;
+    log.info("Requesting {} (using virtual thread)", request);
+    try {
+      // Use CompletableFuture with virtual threads to handle the I/O-bound HTTP operation
+      return CompletableFuture.supplyAsync(() -> {
+        try {
+          CloseableHttpResponse response = httpClient.execute(request, context);
+          log.info("Received {}", response);
+          return response;
+        }
+        catch (IOException e) {
+          throw new RuntimeException(e);
+        }
+      }, virtualThreadExecutor).join();
+    }
+    catch (RuntimeException e) {
+      if (e.getCause() instanceof IOException) {
+        throw (IOException) e.getCause();
+      }
+      throw e;
+    }
   }
 
+  /**
+   * Execute an HTTP request with authentication using Virtual Threads for improved I/O throughput.
+   * This method submits the HTTP operation to a virtual thread executor to avoid
+   * blocking platform threads during I/O operations.
+   */
   protected CloseableHttpResponse execute(
       final HttpUriRequest request,
       String username,
@@ -142,18 +192,35 @@ public class FormatClientSupport
     return repositoryBaseUri.resolve(path);
   }
 
+  /**
+   * Get the HTTP status code from a response.
+   */
   public static int status(HttpResponse response) {
     checkNotNull(response);
     return response.getStatusLine().getStatusCode();
   }
 
+  /**
+   * Get the response body as a byte array.
+   */
   public static byte[] bytes(HttpResponse response) throws IOException {
     checkState(response.getEntity() != null);
     return EntityUtils.toByteArray(response.getEntity());
   }
 
+  /**
+   * Consume the response entity and return the response.
+   */
   public static HttpResponse consume(final CloseableHttpResponse response) throws IOException {
     EntityUtils.consume(response.getEntity());
     return response;
+  }
+  
+  /**
+   * Closes the virtual thread executor when this component is no longer needed.
+   * This should be called by any class that extends this support class when it's done.
+   */
+  public void close() {
+    virtualThreadExecutor.close();
   }
 }

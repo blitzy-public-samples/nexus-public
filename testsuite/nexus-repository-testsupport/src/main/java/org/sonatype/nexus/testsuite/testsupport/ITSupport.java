@@ -16,6 +16,9 @@ import java.net.URL;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
@@ -31,10 +34,11 @@ import org.sonatype.nexus.testsuite.testsupport.system.NexusTestSystemSupport;
 import org.sonatype.nexus.testsuite.testsupport.system.NexusTestSystemSupport.NexusTestSystemRule;
 
 import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.rules.TestName;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.TestInfo;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.ops4j.pax.exam.Option;
 import org.ops4j.pax.exam.spi.reactors.ExamReactorStrategy;
 import org.ops4j.pax.exam.spi.reactors.PerSuite;
@@ -47,15 +51,28 @@ import static org.ops4j.pax.exam.CoreOptions.wrappedBundle;
 import static org.ops4j.pax.exam.karaf.options.KarafDistributionOption.editConfigurationFileExtend;
 import static org.ops4j.pax.exam.options.WrappedUrlProvisionOption.OverwriteMode.MERGE;
 
+/**
+ * Base class for integration tests that provides common functionality and lifecycle hooks.
+ * <p>
+ * This class has been updated for Java 21 compatibility, including support for virtual threads
+ * and JUnit Jupiter (JUnit 5) test lifecycle management.
+ * <p>
+ * Requirements:
+ * - Java 21 or higher runtime
+ * - JUnit Jupiter 5.10.1 or higher
+ * - OSGi/Karaf 4.4.4 or higher for container tests
+ *
+ * @since 3.60.0 Updated for Java 21 compatibility
+ */
 @ExamReactorStrategy(PerSuite.class)
 public abstract class ITSupport
     extends NexusPaxExamSupport
 {
-  @Rule
-  public TestName testName = new TestName();
+  // JUnit Jupiter extensions
+  private TestInfo testInfo;
 
-  @Rule
-  public NexusTestSystemRule nexusTestSystemRule = new NexusTestSystemRule(this::nexusTestSystem);
+  @RegisterExtension
+  public final NexusTestSystemRule nexusTestSystemRule = new NexusTestSystemRule(this::nexusTestSystem);
 
   @Inject
   private PoolingHttpClientConnectionManager connectionManager;
@@ -74,6 +91,15 @@ public abstract class ITSupport
   @Named("https://localhost:${application-port-ssl}${nexus-context-path}")
   private URL nexusSecureUrl;
 
+  /**
+   * Configures Nexus for testing with Java 21 compatibility.
+   * <p>
+   * This method sets up the necessary OSGi bundles and configuration for testing
+   * with Java 21 features including virtual threads.
+   *
+   * @param distribution the base distribution option
+   * @return configured options array
+   */
   public static Option[] configureNexus(final Option distribution) {
     return NexusPaxExamSupport.options(
         distribution,
@@ -81,6 +107,8 @@ public abstract class ITSupport
         editConfigurationFileExtend(SYSTEM_PROPERTIES_FILE, "nexus.security.randompassword", "false"),
         editConfigurationFileExtend(NEXUS_PROPERTIES_FILE, "nexus.scripts.allowCreation", "true"),
         editConfigurationFileExtend(NEXUS_PROPERTIES_FILE, "nexus.search.event.handler.flushOnCount", "1"),
+        // Enable virtual threads for testing
+        editConfigurationFileExtend(NEXUS_PROPERTIES_FILE, "nexus.thread.virtual.enabled", "true"),
 
         // install common test-support features
         nexusFeature("org.sonatype.nexus.testsuite", "nexus-repository-testsupport"),
@@ -89,9 +117,11 @@ public abstract class ITSupport
   }
 
   /**
-   * Make sure Nexus is responding on the standard base URL before continuing
+   * Make sure Nexus is responding on the standard base URL before continuing.
+   * <p>
+   * This method uses Awaitility to poll the Nexus URL until it responds or times out.
    */
-  @Before
+  @BeforeEach
   public void waitForNexus() {
     await().atMost(30, TimeUnit.SECONDS)
         .ignoreExceptionsMatching(exception -> !(exception instanceof InterruptedException))
@@ -101,8 +131,11 @@ public abstract class ITSupport
   /**
    * Verifies there are no unreleased HTTP connections in Nexus. This check runs automatically after each test but tests
    * may as well run this check manually at suitable points during their execution.
+   * <p>
+   * With Java 21 virtual threads, connection management becomes even more important as the number
+   * of concurrent operations can be significantly higher.
    */
-  @After
+  @AfterEach
   public void verifyNoConnectionLeak() {
     // Some proxy repos directly serve upstream content, i.e. the connection to the upstream repo is actively used while
     // streaming out the response to the client. An HTTP client considers a response done when the content length has
@@ -113,19 +146,37 @@ public abstract class ITSupport
         .untilAsserted(() -> assertThat(connectionManager.getTotalStats().getLeased(), is(0)));
   }
 
-  @After
+  /**
+   * Verifies that no dead blobs exist in the repository after test execution.
+   * <p>
+   * This method is automatically called after each test but can be disabled by overriding
+   * {@link #shouldVerifyNoDeadBlobs()}.
+   */
+  @AfterEach
   public void verifyNoDeadBlobs() {
     if (shouldVerifyNoDeadBlobs()) {
       doVerifyNoDeadBlobs();
     }
   }
 
+  /**
+   * Determines whether dead blob verification should be performed.
+   * <p>
+   * Subclasses can override this method to disable dead blob verification when needed.
+   *
+   * @return true if dead blob verification should be performed, false otherwise
+   */
   protected boolean shouldVerifyNoDeadBlobs() {
     return true;
   }
 
   /**
+   * Performs the actual verification of dead blobs.
+   * <p>
    * Left protected to allow specific subclasses to override where this behaviour is expected due to minimal test setup.
+   * <p>
+   * This implementation uses parallel stream processing which benefits from Java 21's virtual threads
+   * for improved concurrency when processing large repositories.
    */
   protected void doVerifyNoDeadBlobs() {
     Map<String, List<DeadBlobResult<?>>> badRepos = StreamSupport.stream(repositoryManager.browse().spliterator(), true)
@@ -141,19 +192,102 @@ public abstract class ITSupport
 
   /**
    * Allow specific tests to override this behaviour where "missing" blobs are valid due to the test setup.
+   *
+   * @return true if missing blob references should be ignored, false otherwise
    */
   protected boolean shouldIgnoreMissingBlobRefs() {
     return false;
   }
 
+  /**
+   * Returns the base Nexus URL for testing.
+   *
+   * @return the Nexus URL
+   */
   protected URL nexusUrl() {
     // eventually this might switch to nexusSecurUrl based on a property
     return nexusUrl;
   }
 
-  protected URL nexusSecureUrl(){
+  /**
+   * Returns the secure Nexus URL for testing.
+   *
+   * @return the secure Nexus URL
+   */
+  protected URL nexusSecureUrl() {
     return nexusSecureUrl;
   }
 
+  /**
+   * Creates a virtual thread executor service for concurrent test operations.
+   * <p>
+   * This method leverages Java 21's virtual threads for highly concurrent operations
+   * with minimal resource overhead. Virtual threads are managed by the JVM and don't
+   * require a large thread pool.
+   *
+   * @return an executor service that creates a new virtual thread for each task
+   * @since 3.60.0
+   */
+  protected ExecutorService createVirtualThreadExecutor() {
+    return Executors.newVirtualThreadPerTaskExecutor();
+  }
+
+  /**
+   * Creates a thread factory that produces virtual threads.
+   * <p>
+   * This is useful for integration tests that need to create custom thread pools
+   * with virtual threads.
+   *
+   * @return a thread factory that creates virtual threads
+   * @since 3.60.0
+   */
+  protected ThreadFactory virtualThreadFactory() {
+    return Thread.ofVirtual().factory();
+  }
+
+  /**
+   * Creates a thread factory that produces platform threads.
+   * <p>
+   * This is useful for comparison testing between virtual and platform threads.
+   *
+   * @return a thread factory that creates platform threads
+   * @since 3.60.0
+   */
+  protected ThreadFactory platformThreadFactory() {
+    return Thread.ofPlatform().factory();
+  }
+
+  /**
+   * Returns the current test name from JUnit Jupiter's TestInfo.
+   * <p>
+   * This replaces the JUnit 4 TestName rule functionality.
+   *
+   * @return the current test method name
+   * @since 3.60.0
+   */
+  protected String getTestMethodName() {
+    return testInfo != null ? testInfo.getTestMethod().map(method -> method.getName()).orElse("unknown") : "unknown";
+  }
+
+  /**
+   * Sets the TestInfo for this test instance.
+   * <p>
+   * This method is automatically called by JUnit Jupiter's dependency injection.
+   *
+   * @param testInfo the TestInfo for the current test
+   * @since 3.60.0
+   */
+  @BeforeEach
+  public void setTestInfo(TestInfo testInfo) {
+    this.testInfo = testInfo;
+  }
+
+  /**
+   * Returns the test system to use for this integration test.
+   * <p>
+   * Subclasses must implement this method to provide the appropriate test system.
+   *
+   * @return the test system support instance
+   */
   protected abstract NexusTestSystemSupport<?,?> nexusTestSystem();
 }

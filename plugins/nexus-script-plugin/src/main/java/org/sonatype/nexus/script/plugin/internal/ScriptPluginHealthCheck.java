@@ -23,6 +23,9 @@ import com.codahale.metrics.health.HealthCheck;
 /**
  * Gives an unhealthy response if scripting is enabled in the instance.
  * 
+ * This health check is particularly important in Java 21 environments where
+ * script execution could potentially bypass security controls if not properly managed.
+ * 
  * @since 3.31
  */
 @Named("Scripting")
@@ -33,16 +36,27 @@ public class ScriptPluginHealthCheck extends HealthCheck
 
   public static final String SCRIPTING_ENABLED_ERROR =
       "Enabling and running scripts is not recommended as this bypasses security checks and can cause your " +
-          "Nexus instance to be vulnerable to existing and future attacks. " +
-          "We recommend using alternate ways to automate the configuration of this instance where possible.";
+          "Nexus instance to be vulnerable to existing and future attacks, especially in Java 21 environments. " +
+          "We recommend using alternate ways to automate the configuration of this instance where possible, " +
+          "such as using the REST API with proper authentication and authorization controls.";
 
   private final ScriptManager scriptManager;
 
+  /**
+   * Creates a new health check for script plugin.
+   *
+   * @param scriptManager the script manager to check if scripting is enabled
+   */
   @Inject
   public ScriptPluginHealthCheck(final ScriptManager scriptManager) {
     this.scriptManager = scriptManager;
   }
 
+  /**
+   * Performs the health check to verify if scripting is enabled.
+   * 
+   * @return healthy result if scripting is disabled, unhealthy result if scripting is enabled
+   */
   @Override
   protected Result check() {
     return scriptManager.isEnabled() ? Result.unhealthy(SCRIPTING_ENABLED_ERROR) : Result.healthy(SCRIPTING_DISABLED_MESSAGE);

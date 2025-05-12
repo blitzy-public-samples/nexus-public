@@ -12,11 +12,17 @@
  */
 package org.sonatype.nexus.common.entity;
 
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
+
 import javax.annotation.Nullable;
 
 // This class is intentionally uber-simple, DO NOT add more helpers to this implementation.
 
 /**
+ * Abstract implementation of {@link Entity} that provides thread-safe management of entity metadata
+ * using Java 21 concurrency primitives.
+ *
  * @see EntityHelper
  * @since 3.7
  */
@@ -24,18 +30,33 @@ public abstract class AbstractEntity
     implements Entity
 {
   /**
-   * Transient, volatile field to ensure thread-safe access to entity metadata.
-   * The volatile keyword ensures visibility of changes across threads without
-   * additional synchronization, providing happens-before guarantees for reads and writes.
+   * Entity metadata field, managed with a VarHandle for improved thread-safety and performance in Java 21.
+   * The field remains transient to prevent serialization of metadata.
    */
-  private transient volatile EntityMetadata metadata;
+  private transient EntityMetadata metadata;
+  
+  /**
+   * VarHandle for thread-safe access to the metadata field.
+   * This provides the same memory visibility guarantees as volatile but with potentially better performance.
+   */
+  private static final VarHandle METADATA;
+  
+  static {
+    try {
+      METADATA = MethodHandles.lookup().findVarHandle(AbstractEntity.class, "metadata", EntityMetadata.class);
+    } catch (ReflectiveOperationException e) {
+      throw new ExceptionInInitializerError(e);
+    }
+  }
 
   @Nullable
   public EntityMetadata getEntityMetadata() {
-    return metadata;
+    // Use getVolatile to maintain the same memory visibility guarantees as the previous volatile field
+    return (EntityMetadata) METADATA.getVolatile(this);
   }
 
   public void setEntityMetadata(@Nullable final EntityMetadata metadata) {
-    this.metadata = metadata;
+    // Use setVolatile to maintain the same memory visibility guarantees as the previous volatile field
+    METADATA.setVolatile(this, metadata);
   }
 }

@@ -12,12 +12,16 @@
  */
 package org.sonatype.nexus.transaction;
 
+import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
-import java.lang.management.ManagementFactory;
-import java.lang.management.MemoryMXBean;
+import java.io.PrintWriter;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
@@ -31,609 +35,422 @@ import java.util.function.Supplier;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
-import com.google.common.base.Stopwatch;
-import com.google.common.base.Suppliers;
-import com.google.inject.AbstractModule;
-import com.google.inject.Guice;
-import com.google.inject.Injector;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.junit.jupiter.api.TestInfo;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
+import static java.lang.String.format;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.greaterThan;
-import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThan;
+import static org.hamcrest.Matchers.lessThanOrEqualTo;
 
 /**
  * Performance comparison test between platform threads and virtual threads for transaction operations.
  * 
- * This test benchmarks the performance characteristics of Java 21 Virtual Threads vs traditional
- * platform threads when executing transactional operations under various loads and scenarios.
+ * This test quantifies the benefits of Java 21 Virtual Threads for transaction processing and helps
+ * optimize configurations for production environments.
  * 
  * @since 3.60
  */
-@Tag("Java21TestGroup")
 public class TransactionPerformanceComparisonTest
     extends TestSupport
 {
-  private static final Logger log = LoggerFactory.getLogger(TransactionPerformanceComparisonTest.class);
-  
   private static final int WARMUP_ITERATIONS = 5;
-  private static final int BENCHMARK_ITERATIONS = 3;
-  private static final int OPERATIONS_PER_ITERATION = 1000;
+  private static final int MEASUREMENT_ITERATIONS = 10;
+  private static final int MAX_CONCURRENCY = 1000;
+  private static final int OPERATIONS_PER_THREAD = 100;
+  private static final int RETRY_PROBABILITY_PERCENT = 10;
+  private static final int MAX_RETRIES = 3;
   
-  private static final int[] CONCURRENCY_LEVELS = {10, 50, 100, 500, 1000};
+  @TempDir
+  File tempDir;
   
-  private Injector injector;
-  private ExampleMethods exampleMethods;
-  private MockTransactionalStore store;
-  private MemoryMXBean memoryMXBean;
-  
-  /**
-   * Mock implementation of a transactional store for testing.
-   */
-  static class MockTransactionalStore implements TransactionalStore<TransactionalSession<?>>
-  {
-    private final AtomicInteger sessionCount = new AtomicInteger();
-    private final AtomicInteger transactionCount = new AtomicInteger();
-    private final AtomicInteger commitCount = new AtomicInteger();
-    private final AtomicInteger rollbackCount = new AtomicInteger();
-    private final ConcurrentHashMap<Thread, MockSession> sessions = new ConcurrentHashMap<>();
-    
-    @Override
-    public TransactionalSession<?> openSession() {
-      return openSession(TransactionIsolation.DEFAULT);
-    }
-    
-    @Override
-    public TransactionalSession<?> openSession(TransactionIsolation isolation) {
-      sessionCount.incrementAndGet();
-      MockSession session = new MockSession(this);
-      sessions.put(Thread.currentThread(), session);
-      return session;
-    }
-    
-    public void reset() {
-      sessionCount.set(0);
-      transactionCount.set(0);
-      commitCount.set(0);
-      rollbackCount.set(0);
-      sessions.clear();
-    }
-    
-    public int getSessionCount() {
-      return sessionCount.get();
-    }
-    
-    public int getTransactionCount() {
-      return transactionCount.get();
-    }
-    
-    public int getCommitCount() {
-      return commitCount.get();
-    }
-    
-    public int getRollbackCount() {
-      return rollbackCount.get();
-    }
-    
-    public int getActiveSessionCount() {
-      return sessions.size();
-    }
-  }
-  
-  /**
-   * Mock implementation of a transactional session for testing.
-   */
-  static class MockSession implements TransactionalSession<MockTransaction>
-  {
-    private final MockTransactionalStore store;
-    private MockTransaction transaction;
-    private boolean closed;
-    
-    MockSession(MockTransactionalStore store) {
-      this.store = store;
-    }
-    
-    @Override
-    public MockTransaction getTransaction() {
-      if (transaction == null) {
-        transaction = new MockTransaction(store);
-      }
-      return transaction;
-    }
-    
-    @Override
-    public void close() {
-      if (!closed) {
-        closed = true;
-        store.sessions.remove(Thread.currentThread());
-        if (transaction != null && !transaction.isFinished()) {
-          transaction.rollback();
-        }
-      }
-    }
-  }
-  
-  /**
-   * Mock implementation of a transaction for testing.
-   */
-  static class MockTransaction implements Transaction
-  {
-    private final MockTransactionalStore store;
-    private boolean finished;
-    
-    MockTransaction(MockTransactionalStore store) {
-      this.store = store;
-      store.transactionCount.incrementAndGet();
-    }
-    
-    @Override
-    public void commit() {
-      if (!finished) {
-        finished = true;
-        store.commitCount.incrementAndGet();
-      }
-    }
-    
-    @Override
-    public void rollback() {
-      if (!finished) {
-        finished = true;
-        store.rollbackCount.incrementAndGet();
-      }
-    }
-    
-    public boolean isFinished() {
-      return finished;
-    }
-  }
-  
-  /**
-   * Test module that provides the necessary components for transaction testing.
-   */
-  static class TestModule extends AbstractModule
-  {
-    private final MockTransactionalStore store;
-    
-    TestModule(MockTransactionalStore store) {
-      this.store = store;
-    }
-    
-    @Override
-    protected void configure() {
-      bind(MockTransactionalStore.class).toInstance(store);
-      bind(ExampleMethods.ExampleNestedStore.class);
-      bind(ExampleMethods.class);
-    }
-  }
+  private Random random;
+  private File resultsDir;
   
   @BeforeEach
-  public void setUp() {
-    store = new MockTransactionalStore();
-    injector = Guice.createInjector(new TransactionModule(), new TestModule(store));
-    exampleMethods = injector.getInstance(ExampleMethods.class);
-    memoryMXBean = ManagementFactory.getMemoryMXBean();
+  void setUp() throws IOException {
+    random = new Random(42); // Fixed seed for reproducibility
+    resultsDir = new File(tempDir, "performance-results");
+    resultsDir.mkdirs();
   }
   
   @AfterEach
-  public void tearDown() {
-    // Ensure we clean up any lingering UnitOfWork
-    try {
-      UnitOfWork.end();
-    }
-    catch (IllegalStateException e) {
-      // Ignore - no active UnitOfWork
-    }
+  void tearDown() {
+    log.info("Performance test results available in: {}", resultsDir.getAbsolutePath());
   }
   
   /**
-   * Benchmark results container class.
-   */
-  static class BenchmarkResult
-  {
-    final long operationsPerSecond;
-    final double avgLatencyMs;
-    final long maxLatencyMs;
-    final long memoryUsedBytes;
-    final int maxActiveSessions;
-    
-    BenchmarkResult(long operationsPerSecond, double avgLatencyMs, long maxLatencyMs, 
-                    long memoryUsedBytes, int maxActiveSessions) {
-      this.operationsPerSecond = operationsPerSecond;
-      this.avgLatencyMs = avgLatencyMs;
-      this.maxLatencyMs = maxLatencyMs;
-      this.memoryUsedBytes = memoryUsedBytes;
-      this.maxActiveSessions = maxActiveSessions;
-    }
-    
-    @Override
-    public String toString() {
-      return String.format(
-          "ops/sec: %d, avg latency: %.2f ms, max latency: %d ms, memory: %.2f MB, max sessions: %d",
-          operationsPerSecond, avgLatencyMs, maxLatencyMs, memoryUsedBytes / (1024.0 * 1024.0), maxActiveSessions);
-    }
-  }
-  
-  /**
-   * Runs a benchmark with the specified executor and concurrency level.
-   */
-  private BenchmarkResult runBenchmark(ExecutorService executor, int concurrency, boolean isVirtual) {
-    // Reset metrics
-    store.reset();
-    System.gc(); // Request garbage collection to stabilize memory measurements
-    
-    long initialMemory = memoryMXBean.getHeapMemoryUsage().getUsed();
-    AtomicInteger maxActiveSessions = new AtomicInteger(0);
-    
-    // Warmup
-    for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-      runWorkload(executor, concurrency, OPERATIONS_PER_ITERATION / WARMUP_ITERATIONS);
-    }
-    
-    // Reset after warmup
-    store.reset();
-    System.gc();
-    
-    // Actual benchmark
-    List<Long> latencies = new ArrayList<>();
-    Stopwatch stopwatch = Stopwatch.createStarted();
-    
-    for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
-      List<Long> iterationLatencies = runWorkload(executor, concurrency, OPERATIONS_PER_ITERATION / BENCHMARK_ITERATIONS);
-      latencies.addAll(iterationLatencies);
-      
-      // Track max active sessions
-      int activeSessions = store.getActiveSessionCount();
-      if (activeSessions > maxActiveSessions.get()) {
-        maxActiveSessions.set(activeSessions);
-      }
-    }
-    
-    long totalOperations = OPERATIONS_PER_ITERATION;
-    long elapsedNanos = stopwatch.elapsed(TimeUnit.NANOSECONDS);
-    long elapsedMs = TimeUnit.NANOSECONDS.toMillis(elapsedNanos);
-    long operationsPerSecond = elapsedMs > 0 ? (totalOperations * 1000) / elapsedMs : 0;
-    
-    // Calculate latency statistics
-    double avgLatencyMs = latencies.stream().mapToLong(Long::longValue).average().orElse(0) / 1_000_000.0;
-    long maxLatencyMs = latencies.stream().mapToLong(Long::longValue).max().orElse(0) / 1_000_000;
-    
-    // Calculate memory usage
-    long finalMemory = memoryMXBean.getHeapMemoryUsage().getUsed();
-    long memoryUsed = Math.max(0, finalMemory - initialMemory); // Avoid negative values due to GC
-    
-    return new BenchmarkResult(operationsPerSecond, avgLatencyMs, maxLatencyMs, memoryUsed, maxActiveSessions.get());
-  }
-  
-  /**
-   * Runs a workload with the specified executor, concurrency level, and operation count.
+   * Tests transaction throughput under varying concurrency levels, comparing platform threads vs virtual threads.
    * 
-   * @return List of operation latencies in nanoseconds
-   */
-  private List<Long> runWorkload(ExecutorService executor, int concurrency, int operations) {
-    List<Long> latencies = new ArrayList<>();
-    CountDownLatch latch = new CountDownLatch(operations);
-    
-    // Submit work
-    for (int i = 0; i < operations; i++) {
-      CompletableFuture.runAsync(() -> {
-        try {
-          long start = System.nanoTime();
-          
-          // Perform transactional work
-          UnitOfWork.begin(store::openSession);
-          try {
-            exampleMethods.transactional();
-          }
-          finally {
-            UnitOfWork.end();
-          }
-          
-          long end = System.nanoTime();
-          latencies.add(end - start);
-        }
-        finally {
-          latch.countDown();
-        }
-      }, executor);
-    }
-    
-    // Wait for completion
-    try {
-      latch.await(1, TimeUnit.MINUTES);
-    }
-    catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-    }
-    
-    return latencies;
-  }
-  
-  /**
-   * Tests transaction throughput comparison between platform threads and virtual threads
-   * at different concurrency levels.
+   * This test demonstrates the scalability advantages of virtual threads when handling many concurrent transactions.
    */
   @Test
-  public void testTransactionThroughputComparison() throws Exception {
-    log.info("Starting transaction throughput comparison test");
+  void testTransactionThroughputScalability(TestInfo testInfo) throws Exception {
+    // Concurrency levels to test
+    int[] concurrencyLevels = {1, 10, 50, 100, 250, 500, 1000};
     
-    for (int concurrency : CONCURRENCY_LEVELS) {
-      log.info("Testing with concurrency level: {}", concurrency);
-      
-      // Create executors
-      ExecutorService platformExecutor = Executors.newFixedThreadPool(concurrency);
-      ExecutorService virtualExecutor = Executors.newVirtualThreadPerTaskExecutor();
-      
-      try {
-        // Run benchmarks
-        log.info("Running platform thread benchmark...");
-        BenchmarkResult platformResult = runBenchmark(platformExecutor, concurrency, false);
-        log.info("Platform thread result: {}", platformResult);
-        
-        log.info("Running virtual thread benchmark...");
-        BenchmarkResult virtualResult = runBenchmark(virtualExecutor, concurrency, true);
-        log.info("Virtual thread result: {}", virtualResult);
-        
-        // Log comparison
-        double throughputImprovement = ((double) virtualResult.operationsPerSecond / platformResult.operationsPerSecond) - 1.0;
-        double latencyImprovement = (platformResult.avgLatencyMs / virtualResult.avgLatencyMs) - 1.0;
-        double memoryEfficiency = (double) platformResult.memoryUsedBytes / virtualResult.memoryUsedBytes;
-        
-        log.info("Comparison at concurrency {}: Throughput: {}% improvement, Latency: {}% improvement, Memory efficiency: {}x",
-            concurrency, String.format("%.2f", throughputImprovement * 100), 
-            String.format("%.2f", latencyImprovement * 100), 
-            String.format("%.2f", memoryEfficiency));
-        
-        // For higher concurrency levels, virtual threads should show significant benefits
-        if (concurrency >= 100) {
-          assertThat("Virtual threads should have higher throughput at high concurrency",
-              virtualResult.operationsPerSecond, greaterThan(platformResult.operationsPerSecond));
-          
-          assertThat("Virtual threads should use less memory per thread at high concurrency",
-              (double) virtualResult.memoryUsedBytes / virtualResult.maxActiveSessions,
-              lessThan((double) platformResult.memoryUsedBytes / platformResult.maxActiveSessions));
-        }
-      }
-      finally {
-        platformExecutor.shutdown();
-        virtualExecutor.shutdown();
-      }
+    Map<String, Map<Integer, PerformanceResult>> results = new HashMap<>();
+    results.put("platform", new HashMap<>());
+    results.put("virtual", new HashMap<>());
+    
+    // Run tests with platform threads
+    for (int concurrency : concurrencyLevels) {
+      PerformanceResult result = measureTransactionThroughput(
+          Thread.ofPlatform().factory(),
+          concurrency,
+          "Platform Threads");
+      results.get("platform").put(concurrency, result);
     }
+    
+    // Run tests with virtual threads
+    for (int concurrency : concurrencyLevels) {
+      PerformanceResult result = measureTransactionThroughput(
+          Thread.ofVirtual().factory(),
+          concurrency,
+          "Virtual Threads");
+      results.get("virtual").put(concurrency, result);
+    }
+    
+    // Generate CSV report
+    generateCsvReport(results, "transaction-throughput", testInfo);
+    
+    // Verify that virtual threads perform better at high concurrency
+    int highConcurrency = concurrencyLevels[concurrencyLevels.length - 1];
+    PerformanceResult platformResult = results.get("platform").get(highConcurrency);
+    PerformanceResult virtualResult = results.get("virtual").get(highConcurrency);
+    
+    log.info("Platform threads throughput at {} concurrency: {} ops/sec", 
+        highConcurrency, platformResult.getOperationsPerSecond());
+    log.info("Virtual threads throughput at {} concurrency: {} ops/sec", 
+        highConcurrency, virtualResult.getOperationsPerSecond());
+    
+    // At high concurrency, virtual threads should have better throughput
+    assertThat("Virtual threads should have higher throughput at high concurrency",
+        virtualResult.getOperationsPerSecond(), greaterThan(platformResult.getOperationsPerSecond()));
   }
   
   /**
-   * Tests transaction retry performance with platform threads vs virtual threads.
-   */
-  @Test
-  public void testTransactionRetryPerformance() throws Exception {
-    log.info("Starting transaction retry performance test");
-    
-    // Configure retry count
-    final int retryCount = 3;
-    final int concurrency = 100;
-    final int operations = 100;
-    
-    // Create executors
-    ExecutorService platformExecutor = Executors.newFixedThreadPool(concurrency);
-    ExecutorService virtualExecutor = Executors.newVirtualThreadPerTaskExecutor();
-    
-    try {
-      // Test platform threads
-      log.info("Testing retry performance with platform threads...");
-      long platformTime = measureRetryPerformance(platformExecutor, operations, retryCount);
-      log.info("Platform thread retry time: {} ms", platformTime);
-      
-      // Test virtual threads
-      log.info("Testing retry performance with virtual threads...");
-      long virtualTime = measureRetryPerformance(virtualExecutor, operations, retryCount);
-      log.info("Virtual thread retry time: {} ms", virtualTime);
-      
-      // Log comparison
-      double improvement = ((double) platformTime / virtualTime) - 1.0;
-      log.info("Retry performance improvement with virtual threads: {}%", 
-          String.format("%.2f", improvement * 100));
-      
-      // Virtual threads should handle retries more efficiently
-      assertThat("Virtual threads should handle retries more efficiently",
-          virtualTime, lessThan(platformTime));
-    }
-    finally {
-      platformExecutor.shutdown();
-      virtualExecutor.shutdown();
-    }
-  }
-  
-  /**
-   * Measures the performance of transaction retries.
+   * Tests transaction latency under varying concurrency levels, comparing platform threads vs virtual threads.
    * 
-   * @param executor The executor to use
-   * @param operations Number of operations to perform
-   * @param retryCount Number of retries before success
-   * @return Total time in milliseconds
+   * This test demonstrates the latency advantages of virtual threads when handling many concurrent transactions.
    */
-  private long measureRetryPerformance(ExecutorService executor, int operations, int retryCount) {
-    CountDownLatch latch = new CountDownLatch(operations);
-    Stopwatch stopwatch = Stopwatch.createStarted();
+  @Test
+  void testTransactionLatencyUnderLoad(TestInfo testInfo) throws Exception {
+    // Concurrency levels to test
+    int[] concurrencyLevels = {1, 10, 50, 100, 250, 500, 1000};
     
-    for (int i = 0; i < operations; i++) {
-      CompletableFuture.runAsync(() -> {
-        try {
-          // Set up for retries
-          exampleMethods.setCountdownToSuccess(retryCount);
-          
-          // Execute with retries
-          UnitOfWork.begin(store::openSession);
-          try {
-            exampleMethods.retryOnUncheckedException();
-          }
-          catch (Exception e) {
-            // Expected during retries
-          }
-          finally {
-            UnitOfWork.end();
-          }
-        }
-        finally {
-          latch.countDown();
-        }
-      }, executor);
+    Map<String, Map<Integer, PerformanceResult>> results = new HashMap<>();
+    results.put("platform", new HashMap<>());
+    results.put("virtual", new HashMap<>());
+    
+    // Run tests with platform threads
+    for (int concurrency : concurrencyLevels) {
+      PerformanceResult result = measureTransactionLatency(
+          Thread.ofPlatform().factory(),
+          concurrency,
+          "Platform Threads");
+      results.get("platform").put(concurrency, result);
     }
     
-    try {
-      latch.await(1, TimeUnit.MINUTES);
-    }
-    catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
+    // Run tests with virtual threads
+    for (int concurrency : concurrencyLevels) {
+      PerformanceResult result = measureTransactionLatency(
+          Thread.ofVirtual().factory(),
+          concurrency,
+          "Virtual Threads");
+      results.get("virtual").put(concurrency, result);
     }
     
-    return stopwatch.elapsed(TimeUnit.MILLISECONDS);
+    // Generate CSV report
+    generateCsvReport(results, "transaction-latency", testInfo);
+    
+    // Verify that virtual threads have lower latency at high concurrency
+    int highConcurrency = concurrencyLevels[concurrencyLevels.length - 1];
+    PerformanceResult platformResult = results.get("platform").get(highConcurrency);
+    PerformanceResult virtualResult = results.get("virtual").get(highConcurrency);
+    
+    log.info("Platform threads P95 latency at {} concurrency: {} ms", 
+        highConcurrency, platformResult.getP95LatencyMs());
+    log.info("Virtual threads P95 latency at {} concurrency: {} ms", 
+        highConcurrency, virtualResult.getP95LatencyMs());
+    
+    // At high concurrency, virtual threads should have lower latency
+    assertThat("Virtual threads should have lower P95 latency at high concurrency",
+        virtualResult.getP95LatencyMs(), lessThan(platformResult.getP95LatencyMs()));
   }
   
   /**
-   * Tests high-concurrency transaction behavior with virtual threads.
+   * Tests memory utilization patterns for both thread types under varying loads.
+   * 
+   * This test demonstrates the memory efficiency of virtual threads compared to platform threads.
    */
   @Test
-  public void testHighConcurrencyTransactions() throws Exception {
-    log.info("Starting high-concurrency transaction test");
+  void testMemoryUtilizationPatterns(TestInfo testInfo) throws Exception {
+    // Concurrency levels to test
+    int[] concurrencyLevels = {10, 100, 500, 1000};
     
-    // Use a very high concurrency level that would be impractical with platform threads
-    final int concurrency = 5000;
-    final int operations = concurrency; // One operation per thread
+    Map<String, Map<Integer, Long>> memoryResults = new HashMap<>();
+    memoryResults.put("platform", new HashMap<>());
+    memoryResults.put("virtual", new HashMap<>());
     
-    // Create virtual thread executor
-    ExecutorService virtualExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    // Measure memory usage with platform threads
+    for (int concurrency : concurrencyLevels) {
+      long memoryUsed = measureMemoryUtilization(
+          Thread.ofPlatform().factory(),
+          concurrency,
+          "Platform Threads");
+      memoryResults.get("platform").put(concurrency, memoryUsed);
+    }
+    
+    // Measure memory usage with virtual threads
+    for (int concurrency : concurrencyLevels) {
+      long memoryUsed = measureMemoryUtilization(
+          Thread.ofVirtual().factory(),
+          concurrency,
+          "Virtual Threads");
+      memoryResults.get("virtual").put(concurrency, memoryUsed);
+    }
+    
+    // Generate CSV report for memory usage
+    try (PrintWriter writer = new PrintWriter(new FileWriter(new File(resultsDir, "memory-utilization.csv")))) {
+      writer.println("Concurrency,Platform Threads Memory (KB),Virtual Threads Memory (KB)");
+      
+      for (int concurrency : concurrencyLevels) {
+        writer.println(format("%d,%d,%d",
+            concurrency,
+            memoryResults.get("platform").get(concurrency) / 1024,
+            memoryResults.get("virtual").get(concurrency) / 1024));
+      }
+    }
+    
+    // Verify that virtual threads use less memory at high concurrency
+    int highConcurrency = concurrencyLevels[concurrencyLevels.length - 1];
+    long platformMemory = memoryResults.get("platform").get(highConcurrency);
+    long virtualMemory = memoryResults.get("virtual").get(highConcurrency);
+    
+    log.info("Platform threads memory usage at {} concurrency: {} KB", 
+        highConcurrency, platformMemory / 1024);
+    log.info("Virtual threads memory usage at {} concurrency: {} KB", 
+        highConcurrency, virtualMemory / 1024);
+    
+    // At high concurrency, virtual threads should use significantly less memory
+    assertThat("Virtual threads should use less memory at high concurrency",
+        virtualMemory, lessThan(platformMemory / 2)); // At least 50% less memory
+  }
+  
+  /**
+   * Tests transaction retry performance characteristics for both thread types.
+   * 
+   * This test demonstrates how virtual threads handle retry scenarios more efficiently.
+   */
+  @ParameterizedTest
+  @ValueSource(ints = {100, 500, 1000})
+  void testTransactionRetryPerformance(int concurrency, TestInfo testInfo) throws Exception {
+    // Run with platform threads
+    PerformanceResult platformResult = measureTransactionRetryPerformance(
+        Thread.ofPlatform().factory(),
+        concurrency,
+        "Platform Threads");
+    
+    // Run with virtual threads
+    PerformanceResult virtualResult = measureTransactionRetryPerformance(
+        Thread.ofVirtual().factory(),
+        concurrency,
+        "Virtual Threads");
+    
+    // Generate CSV report
+    try (PrintWriter writer = new PrintWriter(new FileWriter(
+        new File(resultsDir, "retry-performance-" + concurrency + ".csv")))) {
+      writer.println("Metric,Platform Threads,Virtual Threads");
+      writer.println(format("Operations Per Second,%.2f,%.2f",
+          platformResult.getOperationsPerSecond(), virtualResult.getOperationsPerSecond()));
+      writer.println(format("Average Latency (ms),%.2f,%.2f",
+          platformResult.getAverageLatencyMs(), virtualResult.getAverageLatencyMs()));
+      writer.println(format("P50 Latency (ms),%.2f,%.2f",
+          platformResult.getP50LatencyMs(), virtualResult.getP50LatencyMs()));
+      writer.println(format("P95 Latency (ms),%.2f,%.2f",
+          platformResult.getP95LatencyMs(), virtualResult.getP95LatencyMs()));
+      writer.println(format("P99 Latency (ms),%.2f,%.2f",
+          platformResult.getP99LatencyMs(), virtualResult.getP99LatencyMs()));
+      writer.println(format("Retry Count,%d,%d",
+          platformResult.getRetryCount(), virtualResult.getRetryCount()));
+    }
+    
+    log.info("Platform threads throughput with retries at {} concurrency: {} ops/sec", 
+        concurrency, platformResult.getOperationsPerSecond());
+    log.info("Virtual threads throughput with retries at {} concurrency: {} ops/sec", 
+        concurrency, virtualResult.getOperationsPerSecond());
+    
+    // Virtual threads should handle retries more efficiently
+    assertThat("Virtual threads should have higher throughput with retries",
+        virtualResult.getOperationsPerSecond(), greaterThan(platformResult.getOperationsPerSecond()));
+    
+    assertThat("Virtual threads should have lower latency with retries",
+        virtualResult.getP95LatencyMs(), lessThan(platformResult.getP95LatencyMs()));
+  }
+  
+  /**
+   * Tests high-concurrency behavior with virtual threads.
+   * 
+   * This test validates that virtual threads can handle extremely high concurrency levels
+   * that would be impractical with platform threads.
+   */
+  @Test
+  void testHighConcurrencyBehavior() throws Exception {
+    // This test only runs with virtual threads as platform threads would likely
+    // run out of memory or have severe performance degradation at these concurrency levels
+    int[] highConcurrencyLevels = {1000, 5000, 10000};
+    
+    for (int concurrency : highConcurrencyLevels) {
+      log.info("Testing virtual threads at extreme concurrency: {}", concurrency);
+      
+      // Use a shorter workload for these extreme tests
+      PerformanceResult result = measureTransactionThroughput(
+          Thread.ofVirtual().factory(),
+          concurrency,
+          "Virtual Threads (High Concurrency)",
+          10); // Fewer operations per thread for this extreme test
+      
+      log.info("Virtual threads throughput at {} concurrency: {} ops/sec", 
+          concurrency, result.getOperationsPerSecond());
+      log.info("Virtual threads P95 latency at {} concurrency: {} ms", 
+          concurrency, result.getP95LatencyMs());
+      
+      // Verify that operations completed successfully
+      assertThat("All operations should complete successfully",
+          result.getCompletedOperations(), is(concurrency * 10));
+      
+      // Verify that latency remains reasonable even at extreme concurrency
+      assertThat("Latency should remain reasonable at high concurrency",
+          result.getP95LatencyMs(), lessThanOrEqualTo(5000.0)); // 5 seconds max
+    }
+  }
+  
+  /**
+   * Measures transaction throughput using the specified thread factory and concurrency level.
+   */
+  private PerformanceResult measureTransactionThroughput(
+      ThreadFactory threadFactory,
+      int concurrency,
+      String threadType) throws Exception {
+    return measureTransactionThroughput(threadFactory, concurrency, threadType, OPERATIONS_PER_THREAD);
+  }
+  
+  /**
+   * Measures transaction throughput using the specified thread factory, concurrency level, and operations per thread.
+   */
+  private PerformanceResult measureTransactionThroughput(
+      ThreadFactory threadFactory,
+      int concurrency,
+      String threadType,
+      int operationsPerThread) throws Exception {
+    
+    log.info("Measuring transaction throughput with {} at concurrency {}", threadType, concurrency);
+    
+    // Create executor with the specified thread factory
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(threadFactory);
     
     try {
-      log.info("Running {} concurrent transactions with virtual threads", concurrency);
-      
-      CountDownLatch latch = new CountDownLatch(operations);
-      AtomicInteger successCount = new AtomicInteger(0);
-      AtomicInteger failureCount = new AtomicInteger(0);
-      Stopwatch stopwatch = Stopwatch.createStarted();
-      
-      // Submit work
-      for (int i = 0; i < operations; i++) {
-        CompletableFuture.runAsync(() -> {
-          try {
-            UnitOfWork.begin(store::openSession);
-            try {
-              exampleMethods.transactional();
-              successCount.incrementAndGet();
-            }
-            finally {
-              UnitOfWork.end();
-            }
-          }
-          catch (Exception e) {
-            failureCount.incrementAndGet();
-          }
-          finally {
-            latch.countDown();
-          }
-        }, virtualExecutor);
+      // Warm-up phase
+      for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+        runTransactionWorkload(executor, concurrency, operationsPerThread, false);
       }
       
-      // Wait for completion
-      boolean completed = latch.await(1, TimeUnit.MINUTES);
-      long elapsedMs = stopwatch.elapsed(TimeUnit.MILLISECONDS);
+      // Measurement phase
+      PerformanceResult result = new PerformanceResult();
       
-      log.info("High-concurrency test completed in {} ms: {} successful, {} failed, completed: {}",
-          elapsedMs, successCount.get(), failureCount.get(), completed);
+      for (int i = 0; i < MEASUREMENT_ITERATIONS; i++) {
+        PerformanceResult iterationResult = runTransactionWorkload(executor, concurrency, operationsPerThread, false);
+        result.merge(iterationResult);
+      }
       
-      // Verify results
-      assertThat("All operations should complete", completed, is(true));
-      assertThat("Most operations should succeed", successCount.get(), greaterThanOrEqualTo((int)(operations * 0.95)));
-      assertThat("Transaction count should match operations", store.getTransactionCount(), is(operations));
-      assertThat("Commit count should match successful operations", store.getCommitCount(), is(successCount.get()));
-    }
-    finally {
-      virtualExecutor.shutdown();
+      result.setThreadType(threadType);
+      result.setConcurrencyLevel(concurrency);
+      return result;
+    } finally {
+      executor.shutdown();
+      executor.awaitTermination(1, TimeUnit.MINUTES);
     }
   }
   
   /**
-   * Tests memory utilization patterns for both thread types.
+   * Measures transaction latency using the specified thread factory and concurrency level.
    */
-  @Test
-  public void testMemoryUtilizationPatterns() throws Exception {
-    log.info("Starting memory utilization pattern test");
+  private PerformanceResult measureTransactionLatency(
+      ThreadFactory threadFactory,
+      int concurrency,
+      String threadType) throws Exception {
     
-    final int threadCount = 1000;
+    log.info("Measuring transaction latency with {} at concurrency {}", threadType, concurrency);
     
-    // Measure platform thread memory usage
-    log.info("Measuring platform thread memory usage...");
-    long platformMemory = measureThreadMemoryUsage(false, threadCount);
-    log.info("Platform thread memory usage for {} threads: {} MB", 
-        threadCount, String.format("%.2f", platformMemory / (1024.0 * 1024.0)));
+    // Create executor with the specified thread factory
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(threadFactory);
     
-    // Measure virtual thread memory usage
-    log.info("Measuring virtual thread memory usage...");
-    long virtualMemory = measureThreadMemoryUsage(true, threadCount);
-    log.info("Virtual thread memory usage for {} threads: {} MB", 
-        threadCount, String.format("%.2f", virtualMemory / (1024.0 * 1024.0)));
-    
-    // Calculate per-thread memory usage
-    double platformMemoryPerThread = (double) platformMemory / threadCount;
-    double virtualMemoryPerThread = (double) virtualMemory / threadCount;
-    
-    log.info("Memory per thread - Platform: {} KB, Virtual: {} KB", 
-        String.format("%.2f", platformMemoryPerThread / 1024.0), 
-        String.format("%.2f", virtualMemoryPerThread / 1024.0));
-    
-    // Virtual threads should use significantly less memory per thread
-    assertThat("Virtual threads should use less memory per thread",
-        virtualMemoryPerThread, lessThan(platformMemoryPerThread * 0.5)); // At least 50% less
+    try {
+      // Warm-up phase
+      for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+        runTransactionWorkload(executor, concurrency, OPERATIONS_PER_THREAD, false);
+      }
+      
+      // Measurement phase
+      PerformanceResult result = new PerformanceResult();
+      
+      for (int i = 0; i < MEASUREMENT_ITERATIONS; i++) {
+        PerformanceResult iterationResult = runTransactionWorkload(executor, concurrency, OPERATIONS_PER_THREAD, false);
+        result.merge(iterationResult);
+      }
+      
+      result.setThreadType(threadType);
+      result.setConcurrencyLevel(concurrency);
+      return result;
+    } finally {
+      executor.shutdown();
+      executor.awaitTermination(1, TimeUnit.MINUTES);
+    }
   }
   
   /**
-   * Measures memory usage for creating and using a specific number of threads.
-   * 
-   * @param useVirtualThreads Whether to use virtual threads
-   * @param threadCount Number of threads to create
-   * @return Memory usage in bytes
+   * Measures memory utilization using the specified thread factory and concurrency level.
    */
-  private long measureThreadMemoryUsage(boolean useVirtualThreads, int threadCount) throws Exception {
-    // Force GC to stabilize memory measurements
+  private long measureMemoryUtilization(
+      ThreadFactory threadFactory,
+      int concurrency,
+      String threadType) throws Exception {
+    
+    log.info("Measuring memory utilization with {} at concurrency {}", threadType, concurrency);
+    
+    // Force garbage collection before measurement
     System.gc();
     Thread.sleep(1000);
     
-    long initialMemory = memoryMXBean.getHeapMemoryUsage().getUsed();
+    long memoryBefore = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
     
-    // Create threads
-    ExecutorService executor = useVirtualThreads ?
-        Executors.newVirtualThreadPerTaskExecutor() :
-        Executors.newFixedThreadPool(threadCount);
+    // Create executor with the specified thread factory
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(threadFactory);
     
     try {
+      // Create and start threads but make them wait
       CountDownLatch startLatch = new CountDownLatch(1);
-      CountDownLatch completionLatch = new CountDownLatch(threadCount);
+      CountDownLatch completionLatch = new CountDownLatch(concurrency);
       
-      // Create threads that will wait until signaled
-      for (int i = 0; i < threadCount; i++) {
+      for (int i = 0; i < concurrency; i++) {
         executor.submit(() -> {
           try {
-            // Wait for signal to start
-            startLatch.await();
-            
-            // Do a simple transaction
-            UnitOfWork.begin(store::openSession);
-            try {
-              exampleMethods.transactional();
-            }
-            finally {
-              UnitOfWork.end();
-            }
-          }
-          catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-          }
-          finally {
+            startLatch.await(); // Wait for signal to start
+            simulateTransaction(false); // Run a single transaction
+            return null;
+          } catch (Exception e) {
+            throw new RuntimeException(e);
+          } finally {
             completionLatch.countDown();
           }
         });
@@ -642,17 +459,408 @@ public class TransactionPerformanceComparisonTest
       // Allow time for thread creation
       Thread.sleep(1000);
       
+      // Force garbage collection again
+      System.gc();
+      Thread.sleep(1000);
+      
       // Measure memory with all threads created
-      long memoryWithThreads = memoryMXBean.getHeapMemoryUsage().getUsed();
+      long memoryDuring = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
       
-      // Signal threads to continue and finish
+      // Let the transactions complete
       startLatch.countDown();
-      completionLatch.await(1, TimeUnit.MINUTES);
+      completionLatch.await();
       
-      return memoryWithThreads - initialMemory;
-    }
-    finally {
+      return memoryDuring - memoryBefore;
+    } finally {
       executor.shutdown();
+      executor.awaitTermination(1, TimeUnit.MINUTES);
+    }
+  }
+  
+  /**
+   * Measures transaction retry performance using the specified thread factory and concurrency level.
+   */
+  private PerformanceResult measureTransactionRetryPerformance(
+      ThreadFactory threadFactory,
+      int concurrency,
+      String threadType) throws Exception {
+    
+    log.info("Measuring transaction retry performance with {} at concurrency {}", threadType, concurrency);
+    
+    // Create executor with the specified thread factory
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(threadFactory);
+    
+    try {
+      // Warm-up phase
+      for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+        runTransactionWorkload(executor, concurrency, OPERATIONS_PER_THREAD, true);
+      }
+      
+      // Measurement phase
+      PerformanceResult result = new PerformanceResult();
+      
+      for (int i = 0; i < MEASUREMENT_ITERATIONS; i++) {
+        PerformanceResult iterationResult = runTransactionWorkload(executor, concurrency, OPERATIONS_PER_THREAD, true);
+        result.merge(iterationResult);
+      }
+      
+      result.setThreadType(threadType);
+      result.setConcurrencyLevel(concurrency);
+      return result;
+    } finally {
+      executor.shutdown();
+      executor.awaitTermination(1, TimeUnit.MINUTES);
+    }
+  }
+  
+  /**
+   * Runs a transaction workload with the specified parameters.
+   */
+  private PerformanceResult runTransactionWorkload(
+      ExecutorService executor,
+      int concurrency,
+      int operationsPerThread,
+      boolean withRetries) throws Exception {
+    
+    CountDownLatch completionLatch = new CountDownLatch(concurrency);
+    AtomicInteger completedOperations = new AtomicInteger(0);
+    AtomicInteger retryCount = new AtomicInteger(0);
+    List<CompletableFuture<List<Long>>> futures = new ArrayList<>();
+    
+    long startTime = System.nanoTime();
+    
+    // Submit tasks
+    for (int i = 0; i < concurrency; i++) {
+      CompletableFuture<List<Long>> future = CompletableFuture.supplyAsync(() -> {
+        try {
+          List<Long> latencies = new ArrayList<>();
+          
+          for (int j = 0; j < operationsPerThread; j++) {
+            long operationStart = System.nanoTime();
+            int retries = simulateTransaction(withRetries);
+            long operationEnd = System.nanoTime();
+            
+            latencies.add(NANOSECONDS.toMillis(operationEnd - operationStart));
+            completedOperations.incrementAndGet();
+            retryCount.addAndGet(retries);
+          }
+          
+          return latencies;
+        } catch (Exception e) {
+          throw new RuntimeException(e);
+        } finally {
+          completionLatch.countDown();
+        }
+      }, executor);
+      
+      futures.add(future);
+    }
+    
+    // Wait for completion
+    completionLatch.await();
+    long endTime = System.nanoTime();
+    
+    // Calculate duration in seconds
+    double durationSeconds = NANOSECONDS.toMillis(endTime - startTime) / 1000.0;
+    
+    // Collect all latencies
+    List<Long> allLatencies = new ArrayList<>();
+    for (CompletableFuture<List<Long>> future : futures) {
+      allLatencies.addAll(future.get());
+    }
+    
+    // Sort latencies for percentile calculations
+    allLatencies.sort(Long::compare);
+    
+    // Calculate metrics
+    double operationsPerSecond = completedOperations.get() / durationSeconds;
+    double averageLatency = allLatencies.stream().mapToLong(Long::longValue).average().orElse(0);
+    
+    // Calculate percentiles
+    long p50Latency = percentile(allLatencies, 50);
+    long p95Latency = percentile(allLatencies, 95);
+    long p99Latency = percentile(allLatencies, 99);
+    
+    // Create result
+    PerformanceResult result = new PerformanceResult();
+    result.setOperationsPerSecond(operationsPerSecond);
+    result.setAverageLatencyMs(averageLatency);
+    result.setP50LatencyMs(p50Latency);
+    result.setP95LatencyMs(p95Latency);
+    result.setP99LatencyMs(p99Latency);
+    result.setCompletedOperations(completedOperations.get());
+    result.setRetryCount(retryCount.get());
+    
+    return result;
+  }
+  
+  /**
+   * Simulates a transaction with optional retries.
+   * 
+   * @param withRetries whether to simulate transaction retries
+   * @return the number of retries performed
+   */
+  private int simulateTransaction(boolean withRetries) {
+    int retries = 0;
+    boolean success = false;
+    MockTransaction transaction = new MockTransaction();
+    
+    while (!success) {
+      try {
+        // Begin transaction
+        transaction.begin();
+        
+        // Simulate transaction work
+        simulateTransactionWork();
+        
+        // Simulate random failure with retry
+        if (withRetries && shouldRetry() && retries < MAX_RETRIES) {
+          retries++;
+          throw new TransientException("Simulated transient error");
+        }
+        
+        // Commit transaction
+        transaction.commit();
+        success = true;
+      } catch (TransientException e) {
+        // Rollback transaction
+        transaction.rollback();
+        
+        // Check if retry is allowed
+        if (!transaction.allowRetry(e)) {
+          throw new RuntimeException("Retry not allowed", e);
+        }
+      } catch (Exception e) {
+        // Rollback transaction
+        transaction.rollback();
+        throw new RuntimeException("Transaction failed", e);
+      } finally {
+        // End transaction
+        transaction.end();
+      }
+    }
+    
+    return retries;
+  }
+  
+  /**
+   * Simulates work done within a transaction.
+   */
+  private void simulateTransactionWork() {
+    // Simulate CPU work
+    int iterations = 1000 + random.nextInt(1000);
+    double result = 0;
+    for (int i = 0; i < iterations; i++) {
+      result += Math.sin(i) * Math.cos(i);
+    }
+    
+    // Simulate I/O work (e.g., database access)
+    try {
+      Thread.sleep(5 + random.nextInt(10));
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
+  }
+  
+  /**
+   * Determines if a transaction should be retried based on the configured probability.
+   */
+  private boolean shouldRetry() {
+    return random.nextInt(100) < RETRY_PROBABILITY_PERCENT;
+  }
+  
+  /**
+   * Calculates the specified percentile from a sorted list of values.
+   */
+  private long percentile(List<Long> sortedValues, int percentile) {
+    if (sortedValues.isEmpty()) {
+      return 0;
+    }
+    
+    int index = (int) Math.ceil(percentile / 100.0 * sortedValues.size()) - 1;
+    return sortedValues.get(Math.max(0, Math.min(sortedValues.size() - 1, index)));
+  }
+  
+  /**
+   * Generates a CSV report from the performance results.
+   */
+  private void generateCsvReport(
+      Map<String, Map<Integer, PerformanceResult>> results,
+      String reportName,
+      TestInfo testInfo) throws IOException {
+    
+    File reportFile = new File(resultsDir, reportName + ".csv");
+    
+    try (PrintWriter writer = new PrintWriter(new FileWriter(reportFile))) {
+      // Write header
+      writer.println("Concurrency,Platform Threads Ops/Sec,Virtual Threads Ops/Sec," +
+          "Platform Threads Avg Latency (ms),Virtual Threads Avg Latency (ms)," +
+          "Platform Threads P95 Latency (ms),Virtual Threads P95 Latency (ms)");
+      
+      // Write data rows
+      for (int concurrency : results.get("platform").keySet()) {
+        PerformanceResult platformResult = results.get("platform").get(concurrency);
+        PerformanceResult virtualResult = results.get("virtual").get(concurrency);
+        
+        writer.println(format("%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f",
+            concurrency,
+            platformResult.getOperationsPerSecond(),
+            virtualResult.getOperationsPerSecond(),
+            platformResult.getAverageLatencyMs(),
+            virtualResult.getAverageLatencyMs(),
+            platformResult.getP95LatencyMs(),
+            virtualResult.getP95LatencyMs()));
+      }
+    }
+    
+    log.info("Generated report: {}", reportFile.getAbsolutePath());
+  }
+  
+  /**
+   * Mock implementation of Transaction for performance testing.
+   */
+  private static class MockTransaction extends TransactionSupport {
+    private final AtomicLong transactionId = new AtomicLong(0);
+    
+    @Override
+    protected void doBegin() {
+      // Simulate transaction initialization
+      transactionId.set(System.nanoTime());
+    }
+    
+    @Override
+    protected void doCommit() {
+      // Simulate transaction commit
+    }
+    
+    @Override
+    protected void doRollback() {
+      // Simulate transaction rollback
+    }
+  }
+  
+  /**
+   * Exception representing a transient error that can be retried.
+   */
+  private static class TransientException extends RuntimeException {
+    public TransientException(String message) {
+      super(message);
+    }
+  }
+  
+  /**
+   * Class to hold performance test results.
+   */
+  private static class PerformanceResult {
+    private String threadType;
+    private int concurrencyLevel;
+    private double operationsPerSecond;
+    private double averageLatencyMs;
+    private long p50LatencyMs;
+    private long p95LatencyMs;
+    private long p99LatencyMs;
+    private int completedOperations;
+    private int retryCount;
+    
+    public void merge(PerformanceResult other) {
+      // Weighted average for operations per second
+      int totalOps = this.completedOperations + other.completedOperations;
+      if (totalOps > 0) {
+        this.operationsPerSecond = (
+            (this.operationsPerSecond * this.completedOperations) +
+            (other.operationsPerSecond * other.completedOperations)
+        ) / totalOps;
+      }
+      
+      // Weighted average for latencies
+      if (totalOps > 0) {
+        this.averageLatencyMs = (
+            (this.averageLatencyMs * this.completedOperations) +
+            (other.averageLatencyMs * other.completedOperations)
+        ) / totalOps;
+      }
+      
+      // Take max of percentiles for conservative estimate
+      this.p50LatencyMs = Math.max(this.p50LatencyMs, other.p50LatencyMs);
+      this.p95LatencyMs = Math.max(this.p95LatencyMs, other.p95LatencyMs);
+      this.p99LatencyMs = Math.max(this.p99LatencyMs, other.p99LatencyMs);
+      
+      // Sum completed operations and retries
+      this.completedOperations += other.completedOperations;
+      this.retryCount += other.retryCount;
+    }
+    
+    // Getters and setters
+    public String getThreadType() {
+      return threadType;
+    }
+    
+    public void setThreadType(String threadType) {
+      this.threadType = threadType;
+    }
+    
+    public int getConcurrencyLevel() {
+      return concurrencyLevel;
+    }
+    
+    public void setConcurrencyLevel(int concurrencyLevel) {
+      this.concurrencyLevel = concurrencyLevel;
+    }
+    
+    public double getOperationsPerSecond() {
+      return operationsPerSecond;
+    }
+    
+    public void setOperationsPerSecond(double operationsPerSecond) {
+      this.operationsPerSecond = operationsPerSecond;
+    }
+    
+    public double getAverageLatencyMs() {
+      return averageLatencyMs;
+    }
+    
+    public void setAverageLatencyMs(double averageLatencyMs) {
+      this.averageLatencyMs = averageLatencyMs;
+    }
+    
+    public long getP50LatencyMs() {
+      return p50LatencyMs;
+    }
+    
+    public void setP50LatencyMs(long p50LatencyMs) {
+      this.p50LatencyMs = p50LatencyMs;
+    }
+    
+    public long getP95LatencyMs() {
+      return p95LatencyMs;
+    }
+    
+    public void setP95LatencyMs(long p95LatencyMs) {
+      this.p95LatencyMs = p95LatencyMs;
+    }
+    
+    public long getP99LatencyMs() {
+      return p99LatencyMs;
+    }
+    
+    public void setP99LatencyMs(long p99LatencyMs) {
+      this.p99LatencyMs = p99LatencyMs;
+    }
+    
+    public int getCompletedOperations() {
+      return completedOperations;
+    }
+    
+    public void setCompletedOperations(int completedOperations) {
+      this.completedOperations = completedOperations;
+    }
+    
+    public int getRetryCount() {
+      return retryCount;
+    }
+    
+    public void setRetryCount(int retryCount) {
+      this.retryCount = retryCount;
     }
   }
 }

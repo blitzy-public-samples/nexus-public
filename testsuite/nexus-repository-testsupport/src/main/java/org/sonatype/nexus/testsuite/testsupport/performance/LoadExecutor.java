@@ -35,6 +35,18 @@ import static com.google.common.base.Preconditions.checkState;
  * resource utilization during performance testing. Virtual threads are lightweight threads
  * that are managed by the JVM rather than the operating system, allowing for much higher
  * concurrency with minimal overhead.</p>
+ * 
+ * <p>Key characteristics of Java 21 virtual threads used in this implementation:</p>
+ * <ul>
+ *   <li>Lightweight - Each virtual thread requires only ~2KB of memory vs ~1MB for platform threads</li>
+ *   <li>Managed by JVM - Virtual threads are scheduled by the JVM, not the operating system</li>
+ *   <li>Automatic yielding - Virtual threads automatically yield during blocking operations</li>
+ *   <li>Carrier thread multiplexing - Many virtual threads share a small pool of OS threads</li>
+ *   <li>Compatible with existing APIs - Works with standard Java concurrency APIs</li>
+ * </ul>
+ * 
+ * <p>This class supports both virtual threads and platform threads, allowing for performance
+ * comparison between the two threading models.</p>
  */
 public class LoadExecutor
 {
@@ -59,13 +71,29 @@ public class LoadExecutor
   private final int threads;
 
   private final int duration;
+  
+  private final boolean useVirtualThreads;
 
   /**
+   * Creates a LoadExecutor that uses Java 21 virtual threads by default.
+   *
    * @param externalTasks a group of tasks that will be repeatedly invoked to produce load
-   * @param threads       the number of concurrent tasks to execute (each on its own virtual thread)
+   * @param threads       the number of concurrent tasks to execute
    * @param duration      in seconds
    */
   public LoadExecutor(final Iterable<Callable<?>> externalTasks, final int threads, final int duration) {
+    this(externalTasks, threads, duration, true);
+  }
+  
+  /**
+   * Creates a LoadExecutor with the option to use either virtual threads or platform threads.
+   *
+   * @param externalTasks a group of tasks that will be repeatedly invoked to produce load
+   * @param threads       the number of concurrent tasks to execute
+   * @param duration      in seconds
+   * @param useVirtualThreads whether to use virtual threads (true) or platform threads (false)
+   */
+  public LoadExecutor(final Iterable<Callable<?>> externalTasks, final int threads, final int duration, final boolean useVirtualThreads) {
     Preconditions.checkNotNull(externalTasks);
     Preconditions.checkArgument(threads > 0);
     Preconditions.checkArgument(duration >= 0);
@@ -73,12 +101,13 @@ public class LoadExecutor
     endlessTasks = Iterables.cycle(externalTasks).iterator();
     this.threads = threads;
     this.duration = duration;
+    this.useVirtualThreads = useVirtualThreads;
   }
 
   /**
-   * Execute the tasks using the specified number of virtual threads.
-   * Each task runs on its own virtual thread, providing improved concurrency
-   * and resource utilization compared to platform threads.
+   * Execute the tasks using the specified number of threads.
+   * When using virtual threads (default), each task runs on its own virtual thread,
+   * providing improved concurrency and resource utilization compared to platform threads.
    *
    * @throws Exception if any of the supplied tasks threw an exception
    * @throws AssertionError if any of the supplied tasks failed an assertion
@@ -88,8 +117,8 @@ public class LoadExecutor
   {
     this.endtime = new DateTime().plusSeconds(duration);
 
-    // Create an executor service using virtual threads for improved concurrency
-    final ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor();
+    // Create an executor service based on the thread type configuration
+    final ExecutorService executorService = createExecutorService(threads);
 
     for (int thread = 0; thread < threads; thread++) {
       final Callable<Void> callable = new VoidCallable();
@@ -112,6 +141,31 @@ public class LoadExecutor
     final AssertionError assertionError = taskAssertionError.get();
     if (assertionError != null) {
       throw assertionError;
+    }
+  }
+  
+  /**
+   * Creates an appropriate executor service based on the configuration.
+   * 
+   * <p>When using virtual threads, this method creates an executor service that uses
+   * Java 21 virtual threads for improved concurrency and resource utilization. Virtual threads
+   * are lightweight threads that are managed by the JVM rather than the operating system,
+   * allowing for much higher concurrency with minimal overhead.</p>
+   * 
+   * <p>When using platform threads, this method creates a traditional thread pool with
+   * the specified number of platform threads. This is useful for comparison purposes and
+   * for testing code that may not be compatible with virtual threads.</p>
+   * 
+   * @param threadCount the number of threads to use
+   * @return an ExecutorService using either virtual threads or platform threads
+   */
+  protected ExecutorService createExecutorService(int threadCount) {
+    if (useVirtualThreads) {
+      // Use Java 21 virtual threads for improved concurrency and resource utilization
+      return Executors.newVirtualThreadPerTaskExecutor();
+    } else {
+      // Use traditional platform threads for comparison purposes
+      return Executors.newFixedThreadPool(threadCount, Thread.ofPlatform().factory());
     }
   }
 
@@ -144,7 +198,8 @@ public class LoadExecutor
 
   /**
    * Internal callable implementation that executes tasks until the test duration expires
-   * or an error occurs. Runs on a virtual thread for improved performance.
+   * or an error occurs. When using virtual threads, this provides significantly improved
+   * performance and scalability compared to platform threads.
    */
   private class VoidCallable
       implements Callable<Void>

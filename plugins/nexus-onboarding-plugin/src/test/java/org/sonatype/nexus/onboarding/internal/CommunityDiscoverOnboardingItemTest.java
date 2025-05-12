@@ -20,15 +20,22 @@ import org.sonatype.nexus.common.app.ApplicationVersion;
 import org.sonatype.nexus.kv.GlobalKeyValueStore;
 import org.sonatype.nexus.kv.NexusKeyValue;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
+/**
+ * Tests for {@link CommunityDiscoverOnboardingItem} to verify the onboarding item
+ * appears correctly based on edition and EULA acceptance status.
+ */
+@ExtendWith(MockitoExtension.class)
 public class CommunityDiscoverOnboardingItemTest
     extends TestSupport
 {
@@ -41,27 +48,39 @@ public class CommunityDiscoverOnboardingItemTest
   @InjectMocks
   private CommunityDiscoverOnboardingItem underTest;
 
-  @Before
+  @BeforeEach
   public void setUp() {
     when(mockApplicationVersion.getEdition()).thenReturn("COMMUNITY");
   }
 
+  /**
+   * Verifies that the onboarding item applies when using Community Edition
+   * and the EULA has not been accepted yet.
+   */
   @Test
-  public void testAppliesWhenCommunityAndEulaNotAccepted() {
+  public void shouldApplyWhenCommunityAndEulaNotAccepted() {
     when(mockGlobalKeyValueStore.getKey("nexus.community.eula.accepted")).thenReturn(Optional.empty());
     assertTrue(underTest.applies());
   }
 
+  /**
+   * Verifies that the onboarding item does not apply when using Community Edition
+   * but the EULA has already been accepted.
+   */
   @Test
-  public void testAppliesWhenCommunityAndEulaAccepted() {
+  public void shouldNotApplyWhenCommunityAndEulaAccepted() {
     NexusKeyValue eulaStatus = new NexusKeyValue();
     eulaStatus.setValue(Map.of("accepted", true));
     when(mockGlobalKeyValueStore.getKey("nexus.community.eula.accepted")).thenReturn(Optional.of(eulaStatus));
     assertFalse(underTest.applies());
   }
 
+  /**
+   * Verifies that the onboarding item does not apply when using any edition
+   * other than Community Edition, regardless of EULA status.
+   */
   @Test
-  public void testAppliesWhenNotCommunity() {
+  public void shouldNotApplyWhenNotCommunity() {
     when(mockApplicationVersion.getEdition()).thenReturn("PRO");
     assertFalse(underTest.applies());
   }

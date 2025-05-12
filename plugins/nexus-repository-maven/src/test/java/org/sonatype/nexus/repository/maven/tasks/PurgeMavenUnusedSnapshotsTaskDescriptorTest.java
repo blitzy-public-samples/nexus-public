@@ -18,8 +18,10 @@ import org.sonatype.nexus.formfields.FormField;
 import org.sonatype.nexus.formfields.NumberTextFormField;
 import org.sonatype.nexus.scheduling.TaskDescriptor;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -27,12 +29,16 @@ import static org.sonatype.nexus.repository.RepositoryTaskSupport.REPOSITORY_NAM
 import static org.sonatype.nexus.repository.maven.tasks.PurgeMavenUnusedSnapshotsTaskDescriptor.LAST_USED_INIT_VALUE;
 import static org.sonatype.nexus.repository.maven.tasks.PurgeMavenUnusedSnapshotsTaskDescriptor.LAST_USED_MIN_VALUE;
 
-public class PurgeMavenUnusedSnapshotsTaskDescriptorTest
+/**
+ * Tests for {@link PurgeMavenUnusedSnapshotsTaskDescriptor}.
+ */
+@ExtendWith(MockitoExtension.class)
+class PurgeMavenUnusedSnapshotsTaskDescriptorTest
 {
   private TaskDescriptor purgeMavenUnusedSnapshotsTaskDescriptor;
 
-  @Before
-  public void before() {
+  @BeforeEach
+  void setUp() {
     purgeMavenUnusedSnapshotsTaskDescriptor = new PurgeMavenUnusedSnapshotsTaskDescriptor();
   }
 
@@ -40,7 +46,7 @@ public class PurgeMavenUnusedSnapshotsTaskDescriptorTest
    * Ensures the construction of the descriptor has the appropriate/default values
    */
   @Test
-  public void testDescriptorConfig() {
+  void descriptorConfigHasCorrectValues() {
     List<FormField> formFields = purgeMavenUnusedSnapshotsTaskDescriptor.getFormFields();
 
     assertThat(formFields.size(), is(2));

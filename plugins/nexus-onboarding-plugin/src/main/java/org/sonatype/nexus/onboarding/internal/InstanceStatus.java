@@ -12,9 +12,9 @@
  */
 package org.sonatype.nexus.onboarding.internal;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.onboarding.capability.OnboardingCapability;
 import org.sonatype.nexus.onboarding.capability.OnboardingCapabilityHelper;
@@ -22,6 +22,11 @@ import org.sonatype.nexus.security.anonymous.AnonymousManager;
 
 import static java.util.Objects.requireNonNull;
 
+/**
+ * Determines the status of a Nexus instance (new or upgraded).
+ * 
+ * @since 3.0
+ */
 @Named
 @Singleton
 public class InstanceStatus
@@ -39,6 +44,11 @@ public class InstanceStatus
     this.onboardingCapabilityHelper = requireNonNull(onboardingCapabilityHelper);
   }
 
+  /**
+   * Determines if this is a new instance.
+   * 
+   * @return true if this is a new instance, false otherwise
+   */
   public boolean isNew() {
     if (!anonymousManager.isConfigured()) {
       return true;
@@ -47,6 +57,11 @@ public class InstanceStatus
     return onboardingCapability.isRegistrationStarted() && !onboardingCapability.isRegistrationCompleted();
   }
 
+  /**
+   * Determines if this is an upgraded instance.
+   * 
+   * @return true if this is an upgraded instance, false otherwise
+   */
   public boolean isUpgraded() {
     OnboardingCapability onboardingCapability = onboardingCapabilityHelper.getOnboardingCapability();
     return anonymousManager.isConfigured() && !onboardingCapability.isRegistrationStarted();

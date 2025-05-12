@@ -12,38 +12,27 @@
  */
 package org.sonatype.nexus.repository.apt.rest;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.annotations.ApiModelProperty;
 import javax.validation.constraints.NotEmpty;
 
 /**
+ * Data Transfer Object for APT repository signing attributes.
+ *
  * @since 3.20
+ * @apiNote Updated for Java 21 compatibility using Record for immutable data structure.
  */
-public class AptSigningRepositoriesAttributes
-{
-  @ApiModelProperty(value = "PGP signing key pair (armored private key e.g. gpg --export-secret-key --armor)",
-      example = "")
-  @NotEmpty
-  private final String keypair;
+public record AptSigningRepositoriesAttributes(
+    @ApiModelProperty(value = "PGP signing key pair (armored private key e.g. gpg --export-secret-key --armor)",
+        example = "")
+    @NotEmpty
+    @JsonProperty("keypair")
+    String keypair,
 
-  @ApiModelProperty(value = "Passphrase to access PGP signing key", example = "")
-  private final String passphrase;
-
-  @JsonCreator
-  public AptSigningRepositoriesAttributes(
-      @JsonProperty("keypair") final String keypair,
-      @JsonProperty("passphrase") final String passphrase)
-  {
-    this.keypair = keypair;
-    this.passphrase = passphrase;
-  }
-
-  public String getKeypair() {
-    return keypair;
-  }
-
-  public String getPassphrase() {
-    return passphrase;
-  }
+    @ApiModelProperty(value = "Passphrase to access PGP signing key", example = "")
+    @JsonProperty("passphrase")
+    String passphrase
+) {
+  // Record automatically provides constructor, accessors, equals, hashCode, and toString methods
+  // This leverages Java 21's Record feature for more concise and maintainable code
 }

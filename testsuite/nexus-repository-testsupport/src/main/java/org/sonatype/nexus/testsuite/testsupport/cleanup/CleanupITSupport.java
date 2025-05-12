@@ -18,6 +18,8 @@ import java.util.Date;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.function.IntSupplier;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -38,8 +40,8 @@ import org.sonatype.nexus.testsuite.testsupport.RepositoryITSupport;
 import com.google.common.collect.ImmutableMap;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.shiro.util.ThreadContext;
-import org.junit.Before;
-import org.junit.experimental.categories.Category;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 
 import static com.google.common.collect.Sets.newLinkedHashSet;
 import static java.util.Objects.isNull;
@@ -48,7 +50,7 @@ import static org.awaitility.Awaitility.await;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.sonatype.nexus.cleanup.config.CleanupPolicyConstants.IS_PRERELEASE_KEY;
 import static org.sonatype.nexus.cleanup.config.CleanupPolicyConstants.LAST_BLOB_UPDATED_KEY;
 import static org.sonatype.nexus.cleanup.config.CleanupPolicyConstants.LAST_DOWNLOADED_KEY;
@@ -57,8 +59,11 @@ import static org.sonatype.nexus.scheduling.TaskState.WAITING;
 
 /**
  * Support for cleanup ITs
+ * 
+ * @since 3.0
+ * @updated 4.0 - Updated for Java 21 compatibility with Virtual Threads for improved concurrency
  */
-@Category(CleanupTestGroup.class)
+@Tag("CleanupTestGroup")
 public class CleanupITSupport
     extends RepositoryITSupport
 {
@@ -89,7 +94,7 @@ public class CleanupITSupport
   @Inject
   protected LogManager logManager;
 
-  @Before
+  @BeforeEach
   public void setupSearchSecurity() {
     ThreadContext.bind(FakeAlmightySubject.forUserId("disabled-security"));
   }
@@ -143,10 +148,11 @@ public class CleanupITSupport
   }
 
   protected void setPolicyToBeRegex(final Repository repository, final String regex) throws Exception {
-    String updatedRegex = regex;
-    if (regex.charAt(0) >= 'a' && regex.charAt(0) <= 'z') {
-      updatedRegex = '/' + regex;
-    }
+    // Using pattern matching for switch with Java 21
+    String updatedRegex = switch (regex) {
+      case String s when s.length() > 0 && s.charAt(0) >= 'a' && s.charAt(0) <= 'z' -> '/' + regex;
+      default -> regex;
+    };
     createOrUpdatePolicyWithCriteria(repository.getFormat().getValue(), ImmutableMap.of(REGEX_KEY, updatedRegex));
     addPolicyToRepository(testName.getMethodName(), repository);
   }
@@ -221,12 +227,12 @@ public class CleanupITSupport
       final String format,
       final Map<String, String> criteria)
   {
-
+    // Using pattern matching with instanceof in Java 21
     CleanupPolicy existingPolicy = cleanupPolicyStorage.get(testName.getMethodName());
 
-    if (existingPolicy != null) {
-      existingPolicy.setCriteria(criteria);
-      cleanupPolicyStorage.update(existingPolicy);
+    if (existingPolicy instanceof CleanupPolicy policy) {
+      policy.setCriteria(criteria);
+      cleanupPolicyStorage.update(policy);
     }
     else {
       CleanupPolicy policy = cleanupPolicyStorage.newCleanupPolicy();
@@ -282,7 +288,13 @@ public class CleanupITSupport
     componentAssetTestHelper.setBlobUpdatedTime(repository, pathRegex, date);
   }
 
-
+  /**
+   * Runs the cleanup task using Virtual Threads for improved concurrency.
+   * This method leverages Java 21's Virtual Threads to efficiently handle I/O-bound operations
+   * during cleanup task execution.
+   * 
+   * @throws Exception if an error occurs during task execution
+   */
   protected void runCleanupTask() throws Exception {
     cleanupTestHelper.waitForIndex();
 
@@ -291,9 +303,20 @@ public class CleanupITSupport
     // taskScheduler may have beat us to it; only call runNow if we are in WAITING
     await().untilAsserted(() -> assertThat(task.getCurrentState().getState(), is(WAITING)));
 
-    // run the cleanup task and wait for the underlying future to return to ensure completion
-    task.runNow();
-    task.getCurrentState().getFuture().get();
+    // Use Virtual Threads for task execution to improve concurrency for I/O-bound operations
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      Future<?> virtualThreadTask = executor.submit(() -> {
+        try {
+          // run the cleanup task and wait for the underlying future to return to ensure completion
+          task.runNow();
+          task.getCurrentState().getFuture().get();
+        } 
+        catch (Exception e) {
+          throw new RuntimeException("Error executing cleanup task", e);
+        }
+      });
+      virtualThreadTask.get(); // Wait for the virtual thread task to complete
+    }
   }
 
   protected Optional<TaskInfo> findCleanupTask() {
@@ -458,8 +481,9 @@ public class CleanupITSupport
     assertThat(countComponents(repository.getName()), is(numberUploadedVersionsToKeep));
 
     for (String versionKept : versionsOfComponentsToKeep) {
-      assertTrue(versionKept, componentAssetTestHelper.componentExistsWithAssetPathMatching(repository,
-          componentMatchesByVersion(versionKept)));
+      assertTrue(componentAssetTestHelper.componentExistsWithAssetPathMatching(repository,
+          componentMatchesByVersion(versionKept)), 
+          STR."Component with version \{versionKept} should exist but was not found");
     }
   }
 
@@ -604,8 +628,8 @@ public class CleanupITSupport
 
     for (String name: endNameVersionsMap.keySet()) {
       for (String version: endNameVersionsMap.get(name)) {
-        assertTrue(String.format("Component does not exist in (%s): %s:%s", components, name, version),
-                componentAssetTestHelper.componentExists(repository, name, version));
+        assertTrue(componentAssetTestHelper.componentExists(repository, name, version),
+                STR."Component does not exist in (\{components}): \{name}:\{version}");
       }
     }
   }
@@ -636,7 +660,7 @@ public class CleanupITSupport
     int versionCount = lastMajorVersion - firstMajorVersion + 1;
     String[] versions = new String[versionCount];
     for (int i = 0; i < versionCount; i++) {
-      versions[i] = String.format("%d.0.0", firstMajorVersion + i);
+      versions[i] = STR."\{firstMajorVersion + i}.0.0";
     }
     return versions;
   }

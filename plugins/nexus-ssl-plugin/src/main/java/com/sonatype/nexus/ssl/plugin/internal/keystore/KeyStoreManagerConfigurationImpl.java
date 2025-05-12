@@ -21,6 +21,8 @@ import org.sonatype.nexus.ssl.KeyStoreManagerConfigurationSupport;
 
 /**
  * SSL plugin specific key-store manager configuration.
+ * 
+ * Compatible with Java 21 and Guice 7.0.0.
  *
  * @since ssl 1.0
  */
@@ -45,6 +47,17 @@ public class KeyStoreManagerConfigurationImpl
   // unobfuscate(new long[]{0xD39F439CFB22319FL, 0xE48AAB6E5D073A6BL, 0xA14EE96195DA105AL}).toCharArray(); /* =>
   // "Xw5JCuS5aDZ14oZG" */
 
+  /**
+   * Constructor with dependency injection compatible with Guice 7.0.0.
+   * 
+   * @param keyStoreType The key store type (default: JKS)
+   * @param keyAlgorithm The key algorithm (default: RSA)
+   * @param keyAlgorithmSize The key algorithm size (default: 2048)
+   * @param certificateValidity The certificate validity period (default: 36500 days)
+   * @param signatureAlgorithm The signature algorithm (default: SHA1WITHRSA)
+   * @param keyManagerAlgorithm The key manager algorithm (default: DEFAULT)
+   * @param trustManagerAlgorithm The trust manager algorithm (default: DEFAULT)
+   */
   @Inject
   public KeyStoreManagerConfigurationImpl(
       @Named(CPREFIX + ".keyStoreType:-JKS}") final String keyStoreType,

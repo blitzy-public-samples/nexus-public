@@ -19,7 +19,33 @@ package org.sonatype.nexus.script.plugin.internal;
  */
 public class ScriptingDisabledException extends RuntimeException
 {
+  private static final long serialVersionUID = 1L;
+
+  /**
+   * Constructs a new exception with the specified detail message.
+   *
+   * @param message the detail message
+   */
   public ScriptingDisabledException(final String message) {
     super(message);
+  }
+
+  /**
+   * Constructs a new exception with the specified detail message and cause.
+   *
+   * @param message the detail message
+   * @param cause the cause of this exception
+   */
+  public ScriptingDisabledException(final String message, final Throwable cause) {
+    super(message, cause);
+  }
+
+  /**
+   * Constructs a new exception with the specified cause.
+   *
+   * @param cause the cause of this exception
+   */
+  public ScriptingDisabledException(final Throwable cause) {
+    super(cause);
   }
 }

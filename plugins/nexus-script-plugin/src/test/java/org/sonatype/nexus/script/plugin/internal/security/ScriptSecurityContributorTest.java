@@ -16,24 +16,38 @@ import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.security.config.CPrivilege;
 import org.sonatype.nexus.security.config.SecurityConfiguration;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import static java.util.stream.Collectors.toList;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.is;
 
+/**
+ * Tests for {@link ScriptSecurityContributor}.
+ * 
+ * <p>This test verifies that the security contributor correctly provides the expected
+ * script-related privileges with the appropriate patterns.</p>
+ * 
+ * <p>Updated for Java 21 compatibility using JUnit Jupiter 5.10.1 lifecycle annotations.</p>
+ * 
+ * @since 3.0
+ */
 public class ScriptSecurityContributorTest
     extends TestSupport
 {
   private ScriptSecurityContributor underTest;
 
-  @Before
+  @BeforeEach
   public void setup() {
     underTest = new ScriptSecurityContributor();
   }
 
+  /**
+   * Verifies that the security contributor provides the expected script-related privileges
+   * and no users, roles, or user-role mappings.
+   */
   @Test
   public void testGetContribution() {
     SecurityConfiguration config = underTest.getContribution();

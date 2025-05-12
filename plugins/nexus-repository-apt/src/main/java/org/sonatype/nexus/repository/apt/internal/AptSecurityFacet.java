@@ -12,20 +12,33 @@
  */
 package org.sonatype.nexus.repository.apt.internal;
 
-import javax.inject.Inject;
-import javax.inject.Named;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
 
 import org.sonatype.nexus.repository.security.ContentPermissionChecker;
 import org.sonatype.nexus.repository.security.SecurityFacetSupport;
 import org.sonatype.nexus.repository.security.VariableResolverAdapter;
 
+import org.osgi.service.component.annotations.Component;
+
 /**
+ * APT repository format security facet.
+ *
  * @since 3.17
+ * @see SecurityFacetSupport
  */
 @Named
+@Component(service = AptSecurityFacet.class)
 public class AptSecurityFacet
     extends SecurityFacetSupport
 {
+  /**
+   * Constructor.
+   *
+   * @param securityResource       The APT format security contributor
+   * @param variableResolverAdapter The variable resolver adapter for simple format
+   * @param contentPermissionChecker The content permission checker
+   */
   @Inject
   public AptSecurityFacet(
                           final AptFormatSecurityContributor securityResource,

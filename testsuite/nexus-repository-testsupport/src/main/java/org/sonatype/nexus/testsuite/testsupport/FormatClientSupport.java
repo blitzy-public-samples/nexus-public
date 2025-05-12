@@ -19,6 +19,8 @@ import java.net.URI;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import javax.annotation.Nonnull;
 
@@ -50,6 +52,8 @@ import static org.apache.http.HttpHeaders.IF_MODIFIED_SINCE;
 
 /**
  * Support class for HTTP-based repository test clients.
+ * 
+ * <p>Updated for Java 21 with virtual thread support for I/O-bound operations.</p>
  */
 public class FormatClientSupport
     extends ComponentSupport
@@ -60,6 +64,11 @@ public class FormatClientSupport
   protected final HttpClientContext httpClientContext;
 
   protected final URI repositoryBaseUri;
+  
+  /**
+   * Executor service using virtual threads for I/O-bound operations.
+   */
+  private final ExecutorService virtualThreadExecutor;
 
   public FormatClientSupport(final CloseableHttpClient httpClient, final HttpClientContext httpClientContext,
                              final URI repositoryBaseUri)
@@ -67,8 +76,12 @@ public class FormatClientSupport
     this.httpClient = checkNotNull(httpClient);
     this.httpClientContext = checkNotNull(httpClientContext);
     this.repositoryBaseUri = checkNotNull(repositoryBaseUri);
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
+  /**
+   * Extracts the response body as a string.
+   */
   public static String asString(final HttpResponse response) throws IOException {
     return EntityUtils.toString(response.getEntity());
   }
@@ -101,35 +114,61 @@ public class FormatClientSupport
     return execute(get);
   }
 
+  /**
+   * HEAD a response from the repository.
+   */
   public CloseableHttpResponse head(final String path) throws IOException {
     return execute(new HttpHead(resolve(path)));
   }
 
+  /**
+   * Execute an HTTP request using a virtual thread for I/O operations.
+   */
   protected CloseableHttpResponse execute(final HttpUriRequest request) throws IOException {
     return execute(request, new BasicHttpContext(httpClientContext));
   }
 
+  /**
+   * Execute an HTTP request with a specific context using a virtual thread for I/O operations.
+   */
   protected CloseableHttpResponse execute(final HttpUriRequest request, HttpContext context) throws IOException {
-    log.info("Requesting {}", request);
-    final CloseableHttpResponse response = httpClient.execute(request, context);
-    log.info("Received {}", response);
-    return response;
+    log.info(STR."Requesting \{request}");
+    
+    try {
+      // Use CompletableFuture with virtual threads to handle I/O-bound operations
+      CloseableHttpResponse response = virtualThreadExecutor.submit(() -> {
+        try {
+          return httpClient.execute(request, context);
+        } catch (IOException e) {
+          throw new UncheckedIOException(e);
+        }
+      }).join();
+      
+      log.info(STR."Received \{response}");
+      return response;
+    } catch (UncheckedIOException e) {
+      throw e.getCause();
+    }
   }
 
+  /**
+   * Execute an HTTP request with authentication using a virtual thread for I/O operations.
+   */
   protected CloseableHttpResponse execute(final HttpUriRequest request, String username, String password)
       throws IOException
   {
-    log.debug("Authorizing request for {} using credentials provided for username: {}",
-        request.getURI(), username);
-    CredentialsProvider credsProvider = new BasicCredentialsProvider();
+    log.debug(STR."Authorizing request for \{request.getURI()} using credentials provided for username: \{username}");
+    
+    // Create credentials provider and set up authentication
+    var credsProvider = new BasicCredentialsProvider();
     credsProvider.setCredentials(AuthScope.ANY, new UsernamePasswordCredentials(username, password));
 
-    HttpHost host = URIUtils.extractHost(request.getURI());
+    var host = URIUtils.extractHost(request.getURI());
 
-    AuthCache authCache = new BasicAuthCache();
+    var authCache = new BasicAuthCache();
     authCache.put(host, new BasicScheme());
 
-    HttpClientContext clientContext = new HttpClientContext(httpClientContext);
+    var clientContext = new HttpClientContext(httpClientContext);
     clientContext.setAuthCache(authCache);
     clientContext.setCredentialsProvider(credsProvider);
 
@@ -143,14 +182,21 @@ public class FormatClientSupport
 
   @Override
   public void close() throws IOException {
+    virtualThreadExecutor.close();
     httpClient.close();
   }
 
+  /**
+   * Get the status code from an HTTP response.
+   */
   public static int status(HttpResponse response) {
     checkNotNull(response);
     return response.getStatusLine().getStatusCode();
   }
 
+  /**
+   * Get the response body as a byte array.
+   */
   public static byte[] bytes(final HttpResponse response) {
     try {
       checkState(response.getEntity() != null);
@@ -161,6 +207,9 @@ public class FormatClientSupport
     }
   }
 
+  /**
+   * Consume the response entity and return the response.
+   */
   public static HttpResponse consume(final CloseableHttpResponse response) throws IOException {
     EntityUtils.consume(response.getEntity());
     return response;

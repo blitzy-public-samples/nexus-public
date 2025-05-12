@@ -19,16 +19,28 @@ package org.sonatype.nexus.repository.raw;
  */
 public class RawCoordinatesHelper
 {
+  /**
+   * Extracts the group part from a path.
+   * <p>
+   * The group is the path up to the last '/' character. If the path doesn't start with '/' or
+   * if the only '/' is at the beginning, a leading '/' is added to the result.
+   *
+   * @param path the path to extract the group from
+   * @return the group part of the path
+   */
   public static String getGroup(String path) {
-    StringBuilder group = new StringBuilder();
-    int i = path.lastIndexOf('/');
-    if (!path.startsWith("/") || i == 0) {
-      group.append("/");
-    }
-    if (i != -1) {
-      group.append(path, 0, i);
-    }
-    return group.toString();
+    int lastSlashIndex = path.lastIndexOf('/');
+    
+    // Handle special cases using pattern matching with switch
+    return switch (path) {
+      // When path doesn't have a slash or only has a slash at position 0
+      case String s when lastSlashIndex == -1 -> "/";
+      case String s when lastSlashIndex == 0 -> "/";
+      
+      // Normal case: extract the group part
+      case String s when !s.startsWith("/") -> "/" + s.substring(0, lastSlashIndex);
+      default -> path.substring(0, lastSlashIndex);
+    };
   }
 
   private RawCoordinatesHelper() {

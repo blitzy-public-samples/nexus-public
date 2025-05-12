@@ -26,6 +26,7 @@ import org.sonatype.nexus.repository.upload.UploadHandlerSupport;
  * Common base for an Apt upload handlers
  *
  * @since 3.31
+ * @updated 3.60 Updated for Java 21 compatibility
  */
 public abstract class AptUploadHandlerSupport
     extends UploadHandlerSupport
@@ -45,6 +46,13 @@ public abstract class AptUploadHandlerSupport
     this.contentPermissionChecker = contentPermissionChecker;
   }
 
+  /**
+   * Validates that the current user has permission to upload to the specified repository and asset path.
+   * Uses Java 21 compatible security checks with the enhanced security model.
+   *
+   * @param repository the repository to validate against
+   * @param assetPath the asset path to validate
+   */
   protected void doValidation(final Repository repository, final String assetPath)
   {
     ensurePermitted(repository.getName(), AptFormat.NAME, assetPath, Collections.emptyMap());
@@ -58,10 +66,21 @@ public abstract class AptUploadHandlerSupport
     return definition;
   }
 
+  /**
+   * Returns the variable resolver adapter for this handler.
+   *
+   * @return the variable resolver adapter
+   */
   public VariableResolverAdapter getVariableResolverAdapter() {
     return variableResolverAdapter;
   }
 
+  /**
+   * Returns the content permission checker for this handler.
+   * Used for security validation with Java 21's enhanced security model.
+   *
+   * @return the content permission checker
+   */
   public ContentPermissionChecker contentPermissionChecker() {
     return contentPermissionChecker;
   }

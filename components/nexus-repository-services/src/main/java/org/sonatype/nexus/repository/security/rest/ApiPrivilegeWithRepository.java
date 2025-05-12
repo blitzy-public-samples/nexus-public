@@ -23,6 +23,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 
 /**
+ * Abstract base class for API privileges that include repository-specific properties.
+ * 
  * @since 3.19
  */
 public abstract class ApiPrivilegeWithRepository
@@ -40,10 +42,26 @@ public abstract class ApiPrivilegeWithRepository
   @Schema(description = NexusSecurityApiConstants.PRIVILEGE_REPOSITORY_DESCRIPTION)
   private String repository;
 
+  /**
+   * Default constructor for Jackson deserialization.
+   * 
+   * @param privilegeType the type of privilege
+   */
   public ApiPrivilegeWithRepository(final String privilegeType) {
     super(privilegeType);
   }
 
+  /**
+   * Constructs a new instance with the specified properties.
+   * 
+   * @param type the privilege type
+   * @param name the privilege name
+   * @param description the privilege description
+   * @param readOnly whether the privilege is read-only
+   * @param format the repository format
+   * @param repository the repository name
+   * @param actions the collection of privilege actions
+   */
   public ApiPrivilegeWithRepository(final String type,
                                     final String name,
                                     final String description,
@@ -57,28 +75,59 @@ public abstract class ApiPrivilegeWithRepository
     this.repository = repository;
   }
 
+  /**
+   * Constructs a new instance from an existing Privilege.
+   * 
+   * @param privilege the privilege to copy properties from
+   */
   public ApiPrivilegeWithRepository(final Privilege privilege) {
     super(privilege);
     format = privilege.getPrivilegeProperty(FORMAT_KEY);
     repository = privilege.getPrivilegeProperty(REPOSITORY_KEY);
   }
 
+  /**
+   * Sets the repository name.
+   * 
+   * @param repository the repository name
+   */
   public void setRepository(final String repository) {
     this.repository = repository;
   }
 
+  /**
+   * Sets the repository format.
+   * 
+   * @param format the repository format
+   */
   public void setFormat(final String format) {
     this.format = format;
   }
 
+  /**
+   * Gets the repository name.
+   * 
+   * @return the repository name
+   */
   public String getRepository() {
     return repository;
   }
 
+  /**
+   * Gets the repository format.
+   * 
+   * @return the repository format
+   */
   public String getFormat() {
     return format;
   }
 
+  /**
+   * Adds repository-specific properties to the privilege.
+   * 
+   * @param privilege the privilege to add properties to
+   * @return the updated privilege
+   */
   @Override
   protected Privilege doAsPrivilege(final Privilege privilege) {
     super.doAsPrivilege(privilege);
@@ -88,6 +137,11 @@ public abstract class ApiPrivilegeWithRepository
     return privilege;
   }
 
+  /**
+   * Converts actions to a string representation using BREAD format.
+   * 
+   * @return the string representation of actions
+   */
   @Override
   protected String doAsActionString() {
     return toBreadActionString();

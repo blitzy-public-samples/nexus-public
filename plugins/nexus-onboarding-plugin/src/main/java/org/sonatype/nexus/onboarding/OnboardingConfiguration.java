@@ -17,18 +17,30 @@ import javax.inject.Named;
 import javax.inject.Singleton;
 
 /**
+ * Configuration for the onboarding feature that determines whether onboarding is enabled.
+ * 
  * @since 3.17
  */
 @Singleton
 public class OnboardingConfiguration
 {
-  private boolean enabled;
+  private final boolean enabled;
 
+  /**
+   * Creates a new instance with the specified enabled state.
+   *
+   * @param enabled whether onboarding is enabled, defaults to true if not specified
+   */
   @Inject
   public OnboardingConfiguration(@Named("${nexus.onboarding.enabled:-true}") final boolean enabled) {
     this.enabled = enabled;
   }
 
+  /**
+   * Returns whether onboarding is enabled.
+   *
+   * @return true if onboarding is enabled, false otherwise
+   */
   public boolean isEnabled() {
     return enabled;
   }

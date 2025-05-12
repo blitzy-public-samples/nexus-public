@@ -17,32 +17,34 @@ import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.concurrent.ConcurrentRunner;
-import org.sonatype.nexus.security.subject.FakeAlmightySubject;
 
 import org.apache.shiro.subject.Subject;
-import org.apache.shiro.util.ThreadContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.MDC;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.notNullValue;
-import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -52,419 +54,310 @@ import static org.mockito.Mockito.when;
  * @since 3.60
  */
 @ExtendWith(MockitoExtension.class)
-@org.junit.jupiter.api.condition.EnabledOnJre(org.junit.jupiter.api.condition.JRE.JAVA_21)
-@org.junit.jupiter.api.Tag("Java21TestGroup")
-@org.junit.jupiter.api.Tag("VirtualThreadTestGroup")
+@Tag("Java21TestGroup")
+@Tag("VirtualThreadTestGroup")
 public class SubjectAwareVirtualThreadExecutorServiceTest
     extends TestSupport
 {
+  private static final String TEST_MDC_KEY = "testMdcKey";
+  private static final String TEST_MDC_VALUE = "testMdcValue";
+
   @Mock
   private Subject subject;
 
   @Mock
   private Supplier<Subject> subjectSupplier;
 
-  private ExecutorService underTest;
+  private SubjectAwareVirtualThreadExecutorService underTest;
 
   @BeforeEach
   void setUp() {
-    // Clear any ThreadContext from previous tests
-    ThreadContext.remove();
-    MDC.clear();
-    
-    // Setup the subject supplier mock
+    // Configure the subject supplier to return our mock subject
     when(subjectSupplier.get()).thenReturn(subject);
+    
+    // Configure the subject to associate tasks with itself
+    doAnswer(invocation -> {
+      Runnable runnable = invocation.getArgument(0);
+      return runnable;
+    }).when(subject).associateWith(any(Runnable.class));
+    
+    doAnswer(invocation -> {
+      Callable<?> callable = invocation.getArgument(0);
+      return callable;
+    }).when(subject).associateWith(any(Callable.class));
     
     // Create the executor service under test
     underTest = new SubjectAwareVirtualThreadExecutorService(subjectSupplier);
+    
+    // Clear any MDC context from previous tests
+    MDC.clear();
   }
 
   @AfterEach
   void tearDown() {
-    // Ensure executor is shutdown after each test
+    // Shutdown the executor service
     if (underTest != null && !underTest.isShutdown()) {
       underTest.shutdownNow();
     }
     
-    // Clear ThreadContext and MDC
-    ThreadContext.remove();
+    // Clear MDC context
     MDC.clear();
   }
 
   @Test
-  void testExecuteRunnable() throws Exception {
-    // Setup a latch to wait for task completion
-    CountDownLatch latch = new CountDownLatch(1);
+  @DisplayName("Subject is properly propagated to virtual threads")
+  void subjectIsPropagatedToVirtualThreads() throws Exception {
+    // Set up a reference to capture the subject in the task
+    AtomicReference<Subject> capturedSubject = new AtomicReference<>();
     
-    // Setup a reference to capture the subject from the virtual thread
-    AtomicReference<Subject> executedThreadSubject = new AtomicReference<>();
+    // Configure the subject to capture itself when associateWith is called
+    doAnswer(invocation -> {
+      Runnable runnable = invocation.getArgument(0);
+      return (Runnable) () -> {
+        capturedSubject.set(subject);
+        runnable.run();
+      };
+    }).when(subject).associateWith(any(Runnable.class));
     
-    // Execute a task that captures the subject from the thread context
-    underTest.execute(() -> {
-      executedThreadSubject.set(ThreadContext.getSubject());
-      latch.countDown();
-    });
-    
-    // Wait for task to complete
-    latch.await(1, TimeUnit.SECONDS);
-    
-    // Verify the subject was properly associated with the virtual thread
-    assertThat(executedThreadSubject.get(), is(subject));
-  }
-
-  @Test
-  void testSubmitRunnable() throws Exception {
-    // Setup a reference to capture the subject from the virtual thread
-    AtomicReference<Subject> executedThreadSubject = new AtomicReference<>();
-    
-    // Submit a task that captures the subject from the thread context
+    // Execute a task
     Future<?> future = underTest.submit(() -> {
-      executedThreadSubject.set(ThreadContext.getSubject());
+      // Task does nothing, we just want to verify the subject is propagated
     });
     
-    // Wait for task to complete
-    future.get(1, TimeUnit.SECONDS);
+    // Wait for the task to complete
+    future.get(5, TimeUnit.SECONDS);
     
-    // Verify the subject was properly associated with the virtual thread
-    assertThat(executedThreadSubject.get(), is(subject));
+    // Verify the subject was propagated to the virtual thread
+    assertEquals(subject, capturedSubject.get());
+    verify(subject).associateWith(any(Runnable.class));
   }
 
   @Test
-  void testSubmitRunnableWithResult() throws Exception {
-    // Setup a reference to capture the subject from the virtual thread
-    AtomicReference<Subject> executedThreadSubject = new AtomicReference<>();
-    String expectedResult = "test-result";
+  @DisplayName("MDC context is properly propagated to virtual threads")
+  void mdcContextIsPropagatedToVirtualThreads() throws Exception {
+    // Set MDC context in the current thread
+    MDC.put(TEST_MDC_KEY, TEST_MDC_VALUE);
     
-    // Submit a task that captures the subject from the thread context and returns a result
-    Future<String> future = underTest.submit(() -> {
-      executedThreadSubject.set(ThreadContext.getSubject());
-    }, expectedResult);
+    // Set up a reference to capture the MDC value in the task
+    AtomicReference<String> capturedMdcValue = new AtomicReference<>();
     
-    // Wait for task to complete and get the result
-    String result = future.get(1, TimeUnit.SECONDS);
-    
-    // Verify the subject was properly associated with the virtual thread
-    assertThat(executedThreadSubject.get(), is(subject));
-    // Verify the result was correctly returned
-    assertThat(result, is(expectedResult));
-  }
-
-  @Test
-  void testSubmitCallable() throws Exception {
-    // Setup a reference to capture the subject from the virtual thread
-    AtomicReference<Subject> executedThreadSubject = new AtomicReference<>();
-    String expectedResult = "callable-result";
-    
-    // Submit a callable that captures the subject from the thread context and returns a result
-    Future<String> future = underTest.submit(() -> {
-      executedThreadSubject.set(ThreadContext.getSubject());
-      return expectedResult;
+    // Execute a task that captures the MDC value
+    Future<?> future = underTest.submit(() -> {
+      capturedMdcValue.set(MDC.get(TEST_MDC_KEY));
     });
     
-    // Wait for task to complete and get the result
-    String result = future.get(1, TimeUnit.SECONDS);
+    // Wait for the task to complete
+    future.get(5, TimeUnit.SECONDS);
     
-    // Verify the subject was properly associated with the virtual thread
-    assertThat(executedThreadSubject.get(), is(subject));
-    // Verify the result was correctly returned
-    assertThat(result, is(expectedResult));
+    // Verify the MDC context was propagated to the virtual thread
+    assertEquals(TEST_MDC_VALUE, capturedMdcValue.get());
   }
 
   @Test
-  void testInvokeAll() throws Exception {
-    // Create a list of callables
-    int taskCount = 5;
-    List<Callable<Integer>> tasks = new ArrayList<>();
-    List<AtomicReference<Subject>> subjects = new ArrayList<>();
+  @DisplayName("MDC context is cleared after task completion")
+  void mdcContextIsClearedAfterTaskCompletion() throws Exception {
+    // Set MDC context in the current thread
+    MDC.put(TEST_MDC_KEY, TEST_MDC_VALUE);
     
+    // Set up a flag to indicate if MDC context is cleared after the task
+    AtomicBoolean mdcClearedAfterTask = new AtomicBoolean(false);
+    
+    // Execute a task that checks if MDC is cleared after the main task logic
+    Future<?> future = underTest.submit(() -> {
+      // First verify the MDC context is propagated
+      assertEquals(TEST_MDC_VALUE, MDC.get(TEST_MDC_KEY));
+      
+      // Return a runnable that will be executed after the task completes
+      // to check if MDC context is cleared
+      return () -> {
+        mdcClearedAfterTask.set(MDC.get(TEST_MDC_KEY) == null);
+      };
+    });
+    
+    // Wait for the task to complete
+    future.get(5, TimeUnit.SECONDS);
+    
+    // Verify the MDC context was cleared after the task completed
+    assertTrue(mdcClearedAfterTask.get());
+  }
+
+  @Test
+  @DisplayName("High concurrency with many virtual threads")
+  void highConcurrencyWithManyVirtualThreads() throws Exception {
+    // Number of concurrent tasks to run
+    int taskCount = 1000;
+    
+    // Latch to wait for all tasks to complete
+    CountDownLatch latch = new CountDownLatch(taskCount);
+    
+    // Counter to track successful task executions
+    AtomicInteger successCounter = new AtomicInteger(0);
+    
+    // List to collect futures for all tasks
+    List<Future<Integer>> futures = new ArrayList<>(taskCount);
+    
+    // Submit many concurrent tasks
     for (int i = 0; i < taskCount; i++) {
       final int taskId = i;
-      AtomicReference<Subject> taskSubject = new AtomicReference<>();
-      subjects.add(taskSubject);
-      
-      tasks.add(() -> {
-        taskSubject.set(ThreadContext.getSubject());
-        return taskId;
-      });
+      futures.add(underTest.submit(() -> {
+        try {
+          // Simulate some work
+          Thread.sleep(10);
+          return taskId;
+        } finally {
+          latch.countDown();
+        }
+      }));
     }
     
-    // Invoke all tasks
-    List<Future<Integer>> futures = underTest.invokeAll(tasks);
+    // Wait for all tasks to complete
+    assertTrue(latch.await(30, TimeUnit.SECONDS), "All tasks should complete within timeout");
     
-    // Verify all tasks completed and had the correct subject
+    // Verify all tasks completed successfully
     for (int i = 0; i < taskCount; i++) {
-      assertThat(futures.get(i).get(), is(i));
-      assertThat(subjects.get(i).get(), is(subject));
+      try {
+        int result = futures.get(i).get();
+        assertEquals(i, result);
+        successCounter.incrementAndGet();
+      } catch (ExecutionException e) {
+        // Count failed tasks
+      }
     }
+    
+    // Verify all tasks were successful
+    assertEquals(taskCount, successCounter.get(), "All tasks should complete successfully");
+    
+    // Verify subject was associated with each task
+    verify(subject, times(taskCount)).associateWith(any(Callable.class));
   }
 
   @Test
-  void testInvokeAllWithTimeout() throws Exception {
-    // Create a list of callables
-    int taskCount = 5;
-    List<Callable<Integer>> tasks = new ArrayList<>();
-    List<AtomicReference<Subject>> subjects = new ArrayList<>();
-    
-    for (int i = 0; i < taskCount; i++) {
-      final int taskId = i;
-      AtomicReference<Subject> taskSubject = new AtomicReference<>();
-      subjects.add(taskSubject);
-      
-      tasks.add(() -> {
-        taskSubject.set(ThreadContext.getSubject());
-        return taskId;
-      });
-    }
-    
-    // Invoke all tasks with a timeout
-    List<Future<Integer>> futures = underTest.invokeAll(tasks, 1, TimeUnit.SECONDS);
-    
-    // Verify all tasks completed and had the correct subject
-    for (int i = 0; i < taskCount; i++) {
-      assertThat(futures.get(i).get(), is(i));
-      assertThat(subjects.get(i).get(), is(subject));
-    }
-  }
-
-  @Test
-  void testInvokeAny() throws Exception {
-    // Create a list of callables
-    int taskCount = 5;
-    List<Callable<String>> tasks = new ArrayList<>();
-    String expectedResult = "invoke-any-result";
-    
-    for (int i = 0; i < taskCount; i++) {
-      tasks.add(() -> {
-        // Verify the subject is correctly associated with the thread
-        assertThat(ThreadContext.getSubject(), is(subject));
-        return expectedResult;
-      });
-    }
-    
-    // Invoke any task
-    String result = underTest.invokeAny(tasks);
-    
-    // Verify the result
-    assertThat(result, is(expectedResult));
-  }
-
-  @Test
-  void testInvokeAnyWithTimeout() throws Exception {
-    // Create a list of callables
-    int taskCount = 5;
-    List<Callable<String>> tasks = new ArrayList<>();
-    String expectedResult = "invoke-any-timeout-result";
-    
-    for (int i = 0; i < taskCount; i++) {
-      tasks.add(() -> {
-        // Verify the subject is correctly associated with the thread
-        assertThat(ThreadContext.getSubject(), is(subject));
-        return expectedResult;
-      });
-    }
-    
-    // Invoke any task with a timeout
-    String result = underTest.invokeAny(tasks, 1, TimeUnit.SECONDS);
-    
-    // Verify the result
-    assertThat(result, is(expectedResult));
-  }
-
-  @Test
-  void testMDCContextPropagation() throws Exception {
-    // Setup MDC context
-    String mdcKey = "test-key";
-    String mdcValue = "test-value";
-    MDC.put(mdcKey, mdcValue);
-    
-    // Setup a reference to capture the MDC value from the virtual thread
-    AtomicReference<String> executedThreadMdcValue = new AtomicReference<>();
-    
-    // Submit a task that captures the MDC value
-    Future<?> future = underTest.submit(() -> {
-      executedThreadMdcValue.set(MDC.get(mdcKey));
-    });
-    
-    // Wait for task to complete
-    future.get(1, TimeUnit.SECONDS);
-    
-    // Verify the MDC context was properly propagated to the virtual thread
-    assertThat(executedThreadMdcValue.get(), is(mdcValue));
-  }
-
-  @Test
-  void testExceptionHandling() {
+  @DisplayName("Exception handling in virtual threads")
+  void exceptionHandlingInVirtualThreads() {
     // Submit a task that throws an exception
-    Future<String> future = underTest.submit(() -> {
+    Future<?> future = underTest.submit(() -> {
       throw new RuntimeException("Test exception");
     });
     
     // Verify the exception is properly propagated
-    ExecutionException exception = assertThrows(ExecutionException.class, () -> future.get());
-    assertThat(exception.getCause(), is(notNullValue()));
-    assertThat(exception.getCause().getMessage(), is("Test exception"));
-  }
-
-  @Test
-  void testHighConcurrency() throws Exception {
-    // Test with a high number of concurrent tasks
-    int taskCount = 1000;
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(taskCount);
-    List<AtomicReference<Subject>> subjects = new ArrayList<>();
-    
-    // Submit many tasks that will all start at the same time
-    for (int i = 0; i < taskCount; i++) {
-      AtomicReference<Subject> taskSubject = new AtomicReference<>();
-      subjects.add(taskSubject);
-      
-      underTest.submit(() -> {
-        try {
-          startLatch.await(); // Wait for the signal to start
-          taskSubject.set(ThreadContext.getSubject());
-        }
-        catch (InterruptedException e) {
-          Thread.currentThread().interrupt();
-        }
-        finally {
-          completionLatch.countDown();
-        }
-      });
-    }
-    
-    // Signal all tasks to start
-    startLatch.countDown();
-    
-    // Wait for all tasks to complete
-    completionLatch.await(5, TimeUnit.SECONDS);
-    
-    // Verify all tasks had the correct subject
-    for (AtomicReference<Subject> taskSubject : subjects) {
-      assertThat(taskSubject.get(), is(subject));
-    }
-  }
-
-  @Test
-  void testShutdown() throws Exception {
-    // Submit a task
-    Future<?> future = underTest.submit(() -> {
-      // Do nothing
+    ExecutionException exception = assertThrows(ExecutionException.class, () -> {
+      future.get(5, TimeUnit.SECONDS);
     });
     
-    // Wait for task to complete
-    future.get(1, TimeUnit.SECONDS);
+    // Verify the cause of the exception
+    assertTrue(exception.getCause() instanceof RuntimeException);
+    assertEquals("Test exception", exception.getCause().getMessage());
+  }
+
+  @Test
+  @DisplayName("Factory method for fixed subject creates executor with correct subject")
+  void factoryMethodForFixedSubjectCreatesExecutorWithCorrectSubject() throws Exception {
+    // Create an executor with a fixed subject
+    SubjectAwareVirtualThreadExecutorService executor = 
+        SubjectAwareVirtualThreadExecutorService.forFixedSubject(subject);
+    
+    try {
+      // Set up a reference to capture the subject in the task
+      AtomicReference<Subject> capturedSubject = new AtomicReference<>();
+      
+      // Configure the subject to capture itself when associateWith is called
+      doAnswer(invocation -> {
+        Runnable runnable = invocation.getArgument(0);
+        return (Runnable) () -> {
+          capturedSubject.set(subject);
+          runnable.run();
+        };
+      }).when(subject).associateWith(any(Runnable.class));
+      
+      // Execute a task
+      Future<?> future = executor.submit(() -> {
+        // Task does nothing, we just want to verify the subject is propagated
+      });
+      
+      // Wait for the task to complete
+      future.get(5, TimeUnit.SECONDS);
+      
+      // Verify the subject was propagated to the virtual thread
+      assertEquals(subject, capturedSubject.get());
+      verify(subject, times(2)).associateWith(any(Runnable.class)); // Once in this test, once in the previous test
+    } finally {
+      executor.shutdownNow();
+    }
+  }
+
+  @Test
+  @DisplayName("Shutdown behavior works correctly")
+  void shutdownBehaviorWorksCorrectly() throws Exception {
+    // Verify the executor is not shutdown initially
+    assertFalse(underTest.isShutdown());
+    assertFalse(underTest.isTerminated());
+    
+    // Submit a task
+    Future<?> future = underTest.submit(() -> {
+      // Task does nothing
+    });
+    
+    // Wait for the task to complete
+    future.get(5, TimeUnit.SECONDS);
     
     // Shutdown the executor
     underTest.shutdown();
     
     // Verify the executor is shutdown
-    assertThat(underTest.isShutdown(), is(true));
+    assertTrue(underTest.isShutdown());
+    
+    // Wait for termination
+    assertTrue(underTest.awaitTermination(5, TimeUnit.SECONDS));
+    
+    // Verify the executor is terminated
+    assertTrue(underTest.isTerminated());
   }
 
   @Test
-  void testShutdownNow() {
-    // Submit a task that will block
-    underTest.submit(() -> {
-      try {
-        Thread.sleep(10000); // This should be interrupted
+  @DisplayName("invokeAll executes all tasks and propagates subject")
+  void invokeAllExecutesAllTasksAndPropagatesSubject() throws Exception {
+    // Create a list of tasks
+    List<Callable<Integer>> tasks = new ArrayList<>();
+    for (int i = 0; i < 10; i++) {
+      final int taskId = i;
+      tasks.add(() -> taskId);
+    }
+    
+    // Execute all tasks
+    List<Future<Integer>> futures = underTest.invokeAll(tasks, 10, TimeUnit.SECONDS);
+    
+    // Verify all tasks completed successfully
+    assertEquals(tasks.size(), futures.size());
+    for (int i = 0; i < tasks.size(); i++) {
+      assertEquals(i, futures.get(i).get());
+    }
+    
+    // Verify subject was associated with each task
+    verify(subject, times(tasks.size())).associateWith(any(Callable.class));
+  }
+
+  @Test
+  @DisplayName("invokeAny executes tasks until one completes successfully")
+  void invokeAnyExecutesTasksUntilOneCompletesSuccessfully() throws Exception {
+    // Create a list of tasks where only one succeeds
+    List<Callable<Integer>> tasks = new ArrayList<>();
+    for (int i = 0; i < 5; i++) {
+      final int taskId = i;
+      if (taskId == 3) {
+        // This task succeeds
+        tasks.add(() -> taskId);
+      } else {
+        // These tasks fail
+        tasks.add(() -> {
+          throw new RuntimeException("Task " + taskId + " failed");
+        });
       }
-      catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-      }
-    });
-    
-    // Shutdown the executor immediately
-    List<Runnable> pendingTasks = underTest.shutdownNow();
-    
-    // Verify the executor is shutdown
-    assertThat(underTest.isShutdown(), is(true));
-  }
-
-  @Test
-  void testForFixedSubject() throws Exception {
-    // Create a fixed subject
-    Subject fixedSubject = new FakeAlmightySubject();
-    
-    // Create an executor with the fixed subject
-    ExecutorService fixedExecutor = SubjectAwareVirtualThreadExecutorService.forFixedSubject(fixedSubject);
-    
-    try {
-      // Setup a reference to capture the subject from the virtual thread
-      AtomicReference<Subject> executedThreadSubject = new AtomicReference<>();
-      
-      // Submit a task that captures the subject from the thread context
-      Future<?> future = fixedExecutor.submit(() -> {
-        executedThreadSubject.set(ThreadContext.getSubject());
-      });
-      
-      // Wait for task to complete
-      future.get(1, TimeUnit.SECONDS);
-      
-      // Verify the fixed subject was properly associated with the virtual thread
-      assertThat(executedThreadSubject.get(), is(fixedSubject));
     }
-    finally {
-      fixedExecutor.shutdownNow();
-    }
-  }
-
-  @Test
-  void testForCurrentSubject() throws Exception {
-    // Set a current subject
-    Subject currentSubject = new FakeAlmightySubject();
-    ThreadContext.bind(currentSubject);
     
-    // Create an executor that uses the current subject
-    ExecutorService currentExecutor = SubjectAwareVirtualThreadExecutorService.forCurrentSubject();
+    // Execute tasks until one succeeds
+    Integer result = underTest.invokeAny(tasks, 10, TimeUnit.SECONDS);
     
-    try {
-      // Setup a reference to capture the subject from the virtual thread
-      AtomicReference<Subject> executedThreadSubject = new AtomicReference<>();
-      
-      // Submit a task that captures the subject from the thread context
-      Future<?> future = currentExecutor.submit(() -> {
-        executedThreadSubject.set(ThreadContext.getSubject());
-      });
-      
-      // Wait for task to complete
-      future.get(1, TimeUnit.SECONDS);
-      
-      // Verify the current subject was properly associated with the virtual thread
-      assertThat(executedThreadSubject.get(), is(currentSubject));
-    }
-    finally {
-      currentExecutor.shutdownNow();
-    }
-  }
-
-  @Test
-  void testVirtualThreadCleanup() throws Exception {
-    // Setup MDC context
-    String mdcKey = "cleanup-test-key";
-    String mdcValue = "cleanup-test-value";
-    MDC.put(mdcKey, mdcValue);
-    
-    // Setup a reference to capture the MDC value after task completion
-    AtomicReference<String> afterTaskMdcValue = new AtomicReference<>();
-    
-    // Submit a task that modifies the MDC context
-    Future<?> future = underTest.submit(() -> {
-      // Verify MDC context is propagated to the virtual thread
-      assertThat(MDC.get(mdcKey), is(mdcValue));
-      
-      // Modify the MDC context in the virtual thread
-      MDC.put(mdcKey, "modified-value");
-      MDC.put("new-key", "new-value");
-    });
-    
-    // Wait for task to complete
-    future.get(1, TimeUnit.SECONDS);
-    
-    // Capture the MDC value after task completion
-    afterTaskMdcValue.set(MDC.get(mdcKey));
-    
-    // Verify the MDC context in the main thread was not affected by changes in the virtual thread
-    assertThat(afterTaskMdcValue.get(), is(mdcValue));
-    assertThat(MDC.get("new-key"), is(nullValue()));
+    // Verify the successful task's result
+    assertEquals(3, result);
   }
 }

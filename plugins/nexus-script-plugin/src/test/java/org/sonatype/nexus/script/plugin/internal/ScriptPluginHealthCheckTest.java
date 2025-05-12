@@ -16,14 +16,23 @@ import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.script.ScriptManager;
 
 import com.codahale.metrics.health.HealthCheck.Result;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.Mockito.when;
 
+/**
+ * Tests for {@link ScriptPluginHealthCheck} with Java 21 compatibility.
+ * 
+ * This test class uses JUnit Jupiter (JUnit 5) annotations and assertions,
+ * which are compatible with Java 21 and provide enhanced testing capabilities.
+ */
+@ExtendWith(MockitoExtension.class)
 public class ScriptPluginHealthCheckTest extends TestSupport
 {
   @Mock
@@ -31,7 +40,7 @@ public class ScriptPluginHealthCheckTest extends TestSupport
 
   private ScriptPluginHealthCheck underTest;
 
-  @Before
+  @BeforeEach
   public void setup() {
     underTest = new ScriptPluginHealthCheck(scriptManager);
   }

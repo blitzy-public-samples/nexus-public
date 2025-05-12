@@ -13,17 +13,29 @@
 package org.sonatype.nexus.repository.apt.internal;
 
 /**
+ * Constants for APT repository release file names.
+ *
  * @since 3.17
+ * @see <a href="https://wiki.debian.org/DebianRepository/Format">Debian Repository Format</a>
  */
-public class ReleaseName
+public final class ReleaseName
 {
   private ReleaseName() {
     throw new IllegalAccessError("Utility class");
   }
 
+  /**
+   * Standard Release file name in APT repositories.
+   */
   public static final String RELEASE = "Release";
 
+  /**
+   * GPG signature file for the Release file.
+   */
   public static final String RELEASE_GPG = "Release.gpg";
 
+  /**
+   * Combined Release file with inline GPG signature.
+   */
   public static final String INRELEASE = "InRelease";
 }

@@ -21,16 +21,25 @@ import org.sonatype.nexus.repository.view.Request;
 import org.sonatype.nexus.security.BreadActions;
 
 import org.apache.shiro.authz.AuthorizationException;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * Test for {@link MavenSecurityFacet} with Java 21 compatibility.
+ * 
+ * @since 3.60
+ */
+@ExtendWith(MockitoExtension.class)
 public class MavenSecurityFacetTest
     extends TestSupport
 {
@@ -51,7 +60,7 @@ public class MavenSecurityFacetTest
 
   MavenSecurityFacet mavenSecurityFacet;
 
-  @Before
+  @BeforeEach
   public void setupConfig() throws Exception {
     when(request.getPath()).thenReturn("/mygroupid/myartifactid/1.0/myartifactid-1.0.jar");
     when(request.getAction()).thenReturn(HttpMethods.GET);
@@ -75,19 +84,15 @@ public class MavenSecurityFacetTest
       mavenSecurityFacet.ensurePermitted(request);
     }
     catch (AuthorizationException e) {
-      fail("expected permitted operation to succeed");
+      fail("Expected permitted operation to succeed");
     }
   }
 
   @Test
   public void testEnsurePermitted_notPermitted() throws Exception {
-    try {
+    assertThrows(AuthorizationException.class, () -> {
       mavenSecurityFacet.ensurePermitted(request);
-      fail("AuthorizationException should have been thrown");
-    }
-    catch (AuthorizationException e) {
-      //expected
-    }
+    }, "AuthorizationException should have been thrown");
 
     verify(contentPermissionChecker)
         .isPermitted(eq("MavenSecurityFacetTest"), eq(Maven2Format.NAME), eq(BreadActions.READ), any());

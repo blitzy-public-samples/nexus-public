@@ -18,9 +18,21 @@ import org.sonatype.nexus.repository.Repository;
 
 import static org.sonatype.nexus.testsuite.testsupport.system.RepositoryTestSystem.FORMAT_COCOAPODS;
 
+/**
+ * Cocoapods proxy repository configuration class for test support.
+ * <p>
+ * Compatible with Java 21 runtime environment.
+ *
+ * @since 3.x
+ */
 public class CocoapodsProxyRepositoryConfig
     extends ProxyRepositoryConfigSupport<CocoapodsProxyRepositoryConfig>
 {
+  /**
+   * Creates a new Cocoapods proxy repository configuration.
+   *
+   * @param factory the repository factory function
+   */
   public CocoapodsProxyRepositoryConfig(final Function<CocoapodsProxyRepositoryConfig, Repository> factory) {
     super(factory);
   }

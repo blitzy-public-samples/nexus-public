@@ -14,38 +14,32 @@ package org.sonatype.nexus.repository.apt.rest;
 
 import javax.validation.constraints.NotNull;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.annotations.ApiModelProperty;
 import javax.validation.constraints.NotEmpty;
 
 /**
+ * Data Transfer Object for APT proxy repository attributes.
+ * 
  * @since 3.20
+ * @see java.lang.Record
+ * @see java.lang.Record#components()
  */
-public class AptProxyRepositoriesAttributes
-{
-  @ApiModelProperty(value = "Distribution to fetch", example = "bionic")
-  @NotEmpty
-  private final String distribution;
-
-  @ApiModelProperty(value = "Whether this repository is flat", example = "false")
-  @NotNull
-  private final Boolean flat;
-
-  @JsonCreator
-  public AptProxyRepositoriesAttributes(
-      @JsonProperty("distribution") final String distribution,
-      @JsonProperty("flat") final Boolean flat)
-  {
-    this.distribution = distribution;
-    this.flat = flat;
-  }
-
-  public String getDistribution() {
-    return distribution;
-  }
-
-  public Boolean getFlat() {
-    return flat;
-  }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public record AptProxyRepositoriesAttributes(
+    @ApiModelProperty(value = "Distribution to fetch", example = "bionic")
+    @JsonProperty("distribution")
+    @NotEmpty
+    String distribution,
+    
+    @ApiModelProperty(value = "Whether this repository is flat", example = "false")
+    @JsonProperty("flat")
+    @NotNull
+    Boolean flat
+) {
+  // Java 21 Record provides automatic implementations of:
+  // - Constructor
+  // - Accessor methods (distribution() and flat())
+  // - equals(), hashCode(), and toString()
 }

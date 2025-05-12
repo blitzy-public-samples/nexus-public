@@ -32,14 +32,14 @@ import org.apache.shiro.subject.Subject;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
- * An {@link ExecutorService} implementation that uses Java 21 Virtual Threads and ensures
- * proper propagation of Shiro {@link Subject} and MDC context across virtual thread boundaries.
+ * A specialized ExecutorService implementation that combines Java 21 Virtual Threads with
+ * Shiro security Subject propagation. This ensures that each virtual thread operation executes
+ * with the correct security context while benefiting from virtual thread performance and
+ * scalability benefits.
  * <p>
- * This executor creates a new virtual thread for each submitted task, which is ideal for I/O-bound
- * operations where threads might block, such as network requests, database operations, or file I/O.
- * <p>
- * Unlike traditional thread pools, virtual threads are lightweight and managed by the JVM, allowing
- * for a much higher number of concurrent operations without the overhead of platform threads.
+ * This executor service creates a new virtual thread for each submitted task, eliminating the
+ * need for thread pool sizing and management. It automatically propagates the Shiro Subject
+ * and MDC context to each virtual thread, ensuring consistent security context and logging.
  *
  * @since 3.60
  */
@@ -50,10 +50,9 @@ public class SubjectAwareVirtualThreadExecutorService
   private final Supplier<Subject> subjectSupplier;
 
   /**
-   * Creates a new executor service that uses virtual threads and associates tasks with the subject
-   * provided by the given supplier.
+   * Creates a new SubjectAwareVirtualThreadExecutorService with the specified Subject supplier.
    *
-   * @param subjectSupplier the supplier of the subject to associate with submitted tasks
+   * @param subjectSupplier the supplier of the Subject to associate with tasks
    */
   public SubjectAwareVirtualThreadExecutorService(final Supplier<Subject> subjectSupplier) {
     this.delegate = Executors.newVirtualThreadPerTaskExecutor();
@@ -61,14 +60,14 @@ public class SubjectAwareVirtualThreadExecutorService
   }
 
   /**
-   * Returns the subject to associate with submitted tasks.
+   * Returns the Subject to associate with tasks.
    */
   protected Subject getSubject() {
     return subjectSupplier.get();
   }
 
   /**
-   * Wraps the given runnable to ensure it executes with the proper subject and MDC context.
+   * Associates the given Runnable with the Subject and MDC context.
    */
   protected Runnable associateWithSubject(Runnable runnable) {
     Subject subject = getSubject();
@@ -76,55 +75,11 @@ public class SubjectAwareVirtualThreadExecutorService
   }
 
   /**
-   * Wraps the given callable to ensure it executes with the proper subject and MDC context.
+   * Associates the given Callable with the Subject and MDC context.
    */
-  protected <T> Callable<T> associateWithSubject(Callable<T> task) {
+  protected <T> Callable<T> associateWithSubject(Callable<T> callable) {
     Subject subject = getSubject();
-    return subject.associateWith(new MDCAwareCallable<>(task));
-  }
-
-  @Override
-  public void execute(Runnable command) {
-    delegate.execute(associateWithSubject(command));
-  }
-
-  @Override
-  public Future<?> submit(Runnable task) {
-    return delegate.submit(associateWithSubject(task));
-  }
-
-  @Override
-  public <T> Future<T> submit(Runnable task, T result) {
-    return delegate.submit(associateWithSubject(task), result);
-  }
-
-  @Override
-  public <T> Future<T> submit(Callable<T> task) {
-    return delegate.submit(associateWithSubject(task));
-  }
-
-  @Override
-  public <T> List<Future<T>> invokeAll(Collection<? extends Callable<T>> tasks) throws InterruptedException {
-    return delegate.invokeAll(tasks.stream().map(this::associateWithSubject).toList());
-  }
-
-  @Override
-  public <T> List<Future<T>> invokeAll(Collection<? extends Callable<T>> tasks, long timeout, TimeUnit unit)
-      throws InterruptedException
-  {
-    return delegate.invokeAll(tasks.stream().map(this::associateWithSubject).toList(), timeout, unit);
-  }
-
-  @Override
-  public <T> T invokeAny(Collection<? extends Callable<T>> tasks) throws InterruptedException, ExecutionException {
-    return delegate.invokeAny(tasks.stream().map(this::associateWithSubject).toList());
-  }
-
-  @Override
-  public <T> T invokeAny(Collection<? extends Callable<T>> tasks, long timeout, TimeUnit unit)
-      throws InterruptedException, ExecutionException, TimeoutException
-  {
-    return delegate.invokeAny(tasks.stream().map(this::associateWithSubject).toList(), timeout, unit);
+    return subject.associateWith(new MDCAwareCallable<>(callable));
   }
 
   @Override
@@ -152,24 +107,70 @@ public class SubjectAwareVirtualThreadExecutorService
     return delegate.awaitTermination(timeout, unit);
   }
 
+  @Override
+  public <T> Future<T> submit(Callable<T> task) {
+    return delegate.submit(associateWithSubject(task));
+  }
+
+  @Override
+  public <T> Future<T> submit(Runnable task, T result) {
+    return delegate.submit(associateWithSubject(task), result);
+  }
+
+  @Override
+  public Future<?> submit(Runnable task) {
+    return delegate.submit(associateWithSubject(task));
+  }
+
+  @Override
+  public <T> List<Future<T>> invokeAll(Collection<? extends Callable<T>> tasks) throws InterruptedException {
+    return delegate.invokeAll(tasks.stream().map(this::associateWithSubject).toList());
+  }
+
+  @Override
+  public <T> List<Future<T>> invokeAll(Collection<? extends Callable<T>> tasks, long timeout, TimeUnit unit)
+      throws InterruptedException
+  {
+    return delegate.invokeAll(tasks.stream().map(this::associateWithSubject).toList(), timeout, unit);
+  }
+
+  @Override
+  public <T> T invokeAny(Collection<? extends Callable<T>> tasks)
+      throws InterruptedException, ExecutionException
+  {
+    return delegate.invokeAny(tasks.stream().map(this::associateWithSubject).toList());
+  }
+
+  @Override
+  public <T> T invokeAny(Collection<? extends Callable<T>> tasks, long timeout, TimeUnit unit)
+      throws InterruptedException, ExecutionException, TimeoutException
+  {
+    return delegate.invokeAny(tasks.stream().map(this::associateWithSubject).toList(), timeout, unit);
+  }
+
+  @Override
+  public void execute(Runnable command) {
+    delegate.execute(associateWithSubject(command));
+  }
+
   //
-  // Factory access
+  // Factory methods
   //
 
   /**
-   * Creates a new executor service that uses virtual threads and associates tasks with the given fixed subject.
+   * Creates a SubjectAwareVirtualThreadExecutorService that associates tasks with the specified Subject.
    *
-   * @param subject the subject to associate with submitted tasks
-   * @return a new virtual thread executor service
+   * @param subject the Subject to associate with tasks
+   * @return a new SubjectAwareVirtualThreadExecutorService
    */
   public static SubjectAwareVirtualThreadExecutorService forFixedSubject(final Subject subject) {
     return new SubjectAwareVirtualThreadExecutorService(() -> subject);
   }
 
   /**
-   * Creates a new executor service that uses virtual threads and associates tasks with the current subject.
+   * Creates a SubjectAwareVirtualThreadExecutorService that associates tasks with the current Subject.
    *
-   * @return a new virtual thread executor service
+   * @return a new SubjectAwareVirtualThreadExecutorService
    */
   public static SubjectAwareVirtualThreadExecutorService forCurrentSubject() {
     return new SubjectAwareVirtualThreadExecutorService(new CurrentSubjectSupplier());

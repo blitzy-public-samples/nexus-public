@@ -12,14 +12,14 @@
  */
 package org.sonatype.nexus.repository.raw.rest;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.Path;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.Path;
 
 import org.sonatype.nexus.repository.rest.api.RepositoriesApiResourceBeta;
 import org.sonatype.nexus.rest.APIConstants;
 
-import io.swagger.annotations.Api;
+import io.swagger.v3.oas.annotations.Hidden;
 
 import static org.sonatype.nexus.repository.raw.rest.RawProxyRepositoriesApiResourceBeta.RESOURCE_URI;
 
@@ -27,8 +27,10 @@ import static org.sonatype.nexus.repository.raw.rest.RawProxyRepositoriesApiReso
  * @since 3.26
  * @deprecated the 'beta' prefix is being phased out, prefer starting new APIs with {@link APIConstants#V1_API_PREFIX}
  * instead. Support backward compatibility.
+ * 
+ * Updated for Java 21 compatibility with Jakarta EE namespace and Swagger v3 annotations.
  */
-@Api(hidden = true)
+@Hidden
 @Named
 @Singleton
 @Path(RESOURCE_URI)

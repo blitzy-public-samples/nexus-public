@@ -14,6 +14,8 @@ package org.sonatype.nexus.repository.apt.internal;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import org.sonatype.nexus.common.io.InputStreamSupplier;
 import org.sonatype.nexus.repository.apt.internal.debian.ControlFile;
@@ -29,7 +31,11 @@ import org.apache.commons.compress.compressors.zstandard.ZstdCompressorInputStre
 import org.apache.commons.io.input.CloseShieldInputStream;
 
 /**
+ * Parser for APT package files.
+ * 
  * @since 3.17
+ * @see <a href="https://openjdk.org/jeps/444">JEP 444: Virtual Threads</a>
+ * @see <a href="https://openjdk.org/jeps/441">JEP 441: Pattern Matching for switch</a>
  */
 public class AptPackageParser
 {
@@ -37,6 +43,13 @@ public class AptPackageParser
     throw new IllegalAccessError("Utility class");
   }
 
+  /**
+   * Parses package information from the given input stream supplier.
+   *
+   * @param supplier the input stream supplier
+   * @return the package information
+   * @throws IOException if an I/O error occurs
+   */
   public static PackageInfo parsePackageInfo(final InputStreamSupplier supplier) throws IOException {
     ControlFile controlFile = parsePackageInternal(supplier);
     if (controlFile == null) {
@@ -45,34 +58,39 @@ public class AptPackageParser
     return new PackageInfo(controlFile);
   }
 
+  /**
+   * Asynchronously parses package information using a virtual thread.
+   * This method leverages Java 21 Virtual Threads for improved I/O performance.
+   *
+   * @param supplier the input stream supplier
+   * @return a Future containing the package information
+   */
+  public static Future<PackageInfo> parsePackageInfoAsync(final InputStreamSupplier supplier) {
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> parsePackageInfo(supplier));
+  }
+
   private static ControlFile parsePackageInternal(final InputStreamSupplier supplier) throws IOException {
     try (ArArchiveInputStream is = new ArArchiveInputStream(supplier.get())) {
       ControlFile control = null;
       ArchiveEntry debEntry;
       while ((debEntry = is.getNextEntry()) != null) {
-        InputStream controlStream;
-        switch (debEntry.getName()) {
-          case "control.tar":
-            controlStream = new CloseShieldInputStream(is);
-            break;
-          case "control.tar.gz":
-            controlStream = new GzipCompressorInputStream(new CloseShieldInputStream(is));
-            break;
-          case "control.tar.xz":
-            controlStream = new XZCompressorInputStream(new CloseShieldInputStream(is));
-            break;
-          case "control.tar.zst":
-            controlStream = new ZstdCompressorInputStream(new CloseShieldInputStream(is));
-            break;
-          default:
-            continue;
-        }
+        String entryName = debEntry.getName();
+        InputStream controlStream = switch (entryName) {
+          case "control.tar" -> new CloseShieldInputStream(is);
+          case "control.tar.gz" -> new GzipCompressorInputStream(new CloseShieldInputStream(is));
+          case "control.tar.xz" -> new XZCompressorInputStream(new CloseShieldInputStream(is));
+          case "control.tar.zst" -> new ZstdCompressorInputStream(new CloseShieldInputStream(is));
+          default -> null;
+        };
 
-        try (TarArchiveInputStream controlTarStream = new TarArchiveInputStream(controlStream)) {
-          ArchiveEntry tarEntry;
-          while ((tarEntry = controlTarStream.getNextEntry()) != null) {
-            if ("control".equals(tarEntry.getName()) || "./control".equals(tarEntry.getName())) {
-              control = new ControlFileParser().parseControlFile(controlTarStream);
+        if (controlStream != null) {
+          try (TarArchiveInputStream controlTarStream = new TarArchiveInputStream(controlStream)) {
+            ArchiveEntry tarEntry;
+            while ((tarEntry = controlTarStream.getNextEntry()) != null) {
+              String tarEntryName = tarEntry.getName();
+              if ("control".equals(tarEntryName) || "./control".equals(tarEntryName)) {
+                control = new ControlFileParser().parseControlFile(controlTarStream);
+              }
             }
           }
         }

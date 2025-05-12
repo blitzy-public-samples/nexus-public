@@ -15,9 +15,11 @@ package org.sonatype.nexus.blobstore.group.internal;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
@@ -34,6 +36,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -42,7 +45,10 @@ public class WriteToFirstMemberFillPolicyTest
 {
   private final WriteToFirstMemberFillPolicy underTest = new WriteToFirstMemberFillPolicy();
 
-  static Stream<Arguments> blobStoreAvailabilityData() {
+  /**
+   * Provides test parameters for the parameterized test.
+   */
+  static Stream<Arguments> availabilityTestParameters() {
     return Stream.of(
         Arguments.of(false, false, "three"),
         Arguments.of(false, true, "three"),
@@ -52,23 +58,25 @@ public class WriteToFirstMemberFillPolicyTest
   }
 
   @ParameterizedTest
-  @MethodSource("blobStoreAvailabilityData")
+  @MethodSource("availabilityTestParameters")
   void itShouldSkipNonAvailableAndNonWritableMembers(boolean available, boolean writable, String chosenBlobStoreName) {
     BlobStoreGroup blobStoreGroup = mock(BlobStoreGroup.class);
     List<BlobStore> mockedMembers =
         Arrays.asList(mockMember("one", available, writable), mockMember("two", available, writable),
             mockMember("three", true, true));
     when(blobStoreGroup.getMembers()).thenReturn(mockedMembers);
-    
-    BlobStore selectedBlobStore = underTest.chooseBlobStore(blobStoreGroup, new HashMap<>());
-    assertNotNull(selectedBlobStore, "Selected blob store should not be null");
-    assertEquals(chosenBlobStoreName, selectedBlobStore.getBlobStoreConfiguration().getName(),
-        "Should select the correct blob store based on availability and writability");
+    assertEquals(chosenBlobStoreName, 
+        underTest.chooseBlobStore(blobStoreGroup, new HashMap<>()).getBlobStoreConfiguration().getName());
   }
 
+  /**
+   * Tests the behavior of the fill policy with virtual threads for concurrent operations.
+   * This validates that the policy correctly handles multiple concurrent requests
+   * when using Java 21's virtual threads.
+   */
   @Test
-  void testConcurrentBlobStoreSelectionWithVirtualThreads() throws Exception {
-    // Create a blob store group with multiple members
+  void testConcurrentOperationsWithVirtualThreads() throws Exception {
+    // Set up the blob store group with members
     BlobStoreGroup blobStoreGroup = mock(BlobStoreGroup.class);
     List<BlobStore> mockedMembers = Arrays.asList(
         mockMember("one", true, true),
@@ -77,40 +85,54 @@ public class WriteToFirstMemberFillPolicyTest
     );
     when(blobStoreGroup.getMembers()).thenReturn(mockedMembers);
     
-    // Use virtual threads for concurrent operations
-    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    // Create virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
     
     int taskCount = 1000;
     CountDownLatch latch = new CountDownLatch(taskCount);
     AtomicInteger errorCount = new AtomicInteger(0);
-    AtomicInteger successCount = new AtomicInteger(0);
+    Map<String, AtomicInteger> blobStoreSelectionCount = new HashMap<>();
     
     try {
       // Submit multiple concurrent tasks using virtual threads
       for (int i = 0; i < taskCount; i++) {
         executor.submit(() -> {
           try {
+            // Call the fill policy to choose a blob store
             BlobStore selectedBlobStore = underTest.chooseBlobStore(blobStoreGroup, new HashMap<>());
-            if (selectedBlobStore != null && "one".equals(selectedBlobStore.getBlobStoreConfiguration().getName())) {
-              successCount.incrementAndGet();
-            } else {
-              errorCount.incrementAndGet();
-            }
-          } catch (Exception e) {
+            String name = selectedBlobStore.getBlobStoreConfiguration().getName();
+            
+            // Track which blob store was selected
+            blobStoreSelectionCount.computeIfAbsent(name, k -> new AtomicInteger(0)).incrementAndGet();
+            
+            // Verify the selected blob store is valid
+            assertNotNull(selectedBlobStore);
+            assertTrue(selectedBlobStore.isStorageAvailable());
+            assertTrue(selectedBlobStore.isWritable());
+          } 
+          catch (Exception e) {
             errorCount.incrementAndGet();
-          } finally {
+          } 
+          finally {
             latch.countDown();
           }
         });
       }
       
       // Wait for all tasks to complete
-      latch.await(30, TimeUnit.SECONDS);
+      assertTrue(latch.await(30, TimeUnit.SECONDS), "Timed out waiting for concurrent operations to complete");
       
       // Verify results
-      assertEquals(0, errorCount.get(), "No errors should occur during concurrent blob store selection");
-      assertEquals(taskCount, successCount.get(), "All operations should successfully select the first blob store");
-    } finally {
+      assertEquals(0, errorCount.get(), "Some concurrent operations failed");
+      
+      // Verify the first blob store was always selected (as per the policy)
+      AtomicInteger firstBlobStoreCount = blobStoreSelectionCount.get("one");
+      assertNotNull(firstBlobStoreCount, "First blob store was never selected");
+      assertEquals(taskCount, firstBlobStoreCount.get(), 
+          "WriteToFirstMemberFillPolicy should always select the first available and writable member");
+    } 
+    finally {
       executor.shutdown();
     }
   }

@@ -12,17 +12,23 @@
  */
 package org.sonatype.nexus.onboarding;
 
+/**
+ * Defines priority constants for onboarding items.
+ * 
+ * @since 3.25
+ */
 public interface OnboardingItemPriority
 {
-  Integer CHANGE_ADMIN_PASSWORD_ONBOARDING = 0;
+  // Changed from Integer to primitive int for better performance in Java 21
+  int CHANGE_ADMIN_PASSWORD_ONBOARDING = 0;
 
-  Integer COMMUNITY_DISCOVER_ONBOARDING = 1;
+  int COMMUNITY_DISCOVER_ONBOARDING = 1;
 
-  Integer COMMUNITY_EULA_ONBOARDING = 2;
+  int COMMUNITY_EULA_ONBOARDING = 2;
 
-  Integer CONFIGURE_ANONYMOUS_ACCESS = 3;
+  int CONFIGURE_ANONYMOUS_ACCESS = 3;
 
-  Integer SELECT_LICENSE = 4;
+  int SELECT_LICENSE = 4;
 
-  Integer UPLOAD_LICENSE = 5;
+  int UPLOAD_LICENSE = 5;
 }

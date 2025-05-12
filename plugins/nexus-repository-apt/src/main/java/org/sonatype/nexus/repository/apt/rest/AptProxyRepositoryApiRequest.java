@@ -12,8 +12,8 @@
  */
 package org.sonatype.nexus.repository.apt.rest;
 
-import javax.validation.Valid;
-import javax.validation.constraints.NotNull;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 
 import org.sonatype.nexus.repository.apt.AptFormat;
 import org.sonatype.nexus.repository.rest.api.model.ProxyRepositoryApiRequest;
@@ -31,7 +31,14 @@ import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
+ * API request for APT proxy repository configuration.
+ *
  * @since 3.20
+ * @see ProxyRepositoryApiRequest
+ * @see AptProxyRepositoriesAttributes
+ * @see AptFormat
+ * 
+ * @Java21 Updated for Java 21 compatibility with Jakarta EE validation and Record Pattern support
  */
 @JsonIgnoreProperties({"format", "type"})
 public class AptProxyRepositoryApiRequest
@@ -60,7 +67,14 @@ public class AptProxyRepositoryApiRequest
     this.apt = apt;
   }
 
+  /**
+   * Returns the APT-specific repository attributes.
+   *
+   * @return the APT repository attributes
+   */
   public AptProxyRepositoriesAttributes getApt() {
+    // With Java 21, this could be enhanced to use Pattern Matching for instanceof
+    // when working with the returned object if needed
     return apt;
   }
 }

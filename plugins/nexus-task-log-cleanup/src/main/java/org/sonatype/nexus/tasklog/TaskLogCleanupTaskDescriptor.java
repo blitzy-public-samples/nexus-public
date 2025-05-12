@@ -12,14 +12,16 @@
  */
 package org.sonatype.nexus.tasklog;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.common.upgrade.AvailabilityVersion;
 import org.sonatype.nexus.scheduling.TaskDescriptorSupport;
 
 /**
+ * Task descriptor for the task log cleanup task.
+ *
  * @since 3.5
  */
 @AvailabilityVersion(from = "1.0")

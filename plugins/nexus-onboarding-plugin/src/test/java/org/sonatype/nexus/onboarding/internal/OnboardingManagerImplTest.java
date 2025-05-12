@@ -20,15 +20,26 @@ import org.sonatype.nexus.onboarding.OnboardingConfiguration;
 import org.sonatype.nexus.onboarding.OnboardingItem;
 
 import com.google.common.collect.ImmutableSet;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.when;
 
-public class OnboardingManagerImplTest
+/**
+ * Tests for {@link OnboardingManagerImpl}.
+ * 
+ * Validates the behavior of the OnboardingManager implementation, including:
+ * - Determining if onboarding is needed
+ * - Retrieving and prioritizing onboarding items
+ * - Handling empty onboarding item sets
+ */
+@ExtendWith(MockitoExtension.class)
+class OnboardingManagerImplTest
     extends TestSupport
 {
   @Mock
@@ -45,8 +56,8 @@ public class OnboardingManagerImplTest
 
   private OnboardingManagerImpl underTest;
 
-  @Before
-  public void setup() {
+  @BeforeEach
+  void setUp() {
     when(onboardingConfiguration.isEnabled()).thenReturn(true);
     when(onboardingItem1.applies()).thenReturn(true);
     when(onboardingItem1.getType()).thenReturn("type1");
@@ -62,13 +73,19 @@ public class OnboardingManagerImplTest
         onboardingConfiguration);
   }
 
+  /**
+   * Verifies that onboarding is needed when all items apply.
+   */
   @Test
-  public void testNeedsOnboarding() {
+  void needsOnboardingWhenAllItemsApply() {
     assertThat(underTest.needsOnboarding(), is(true));
   }
 
+  /**
+   * Verifies that onboarding is needed when at least one item applies.
+   */
   @Test
-  public void testNeedsOnboarding_notAllItems() {
+  void needsOnboardingWhenAtLeastOneItemApplies() {
     when(onboardingItem1.applies()).thenReturn(false);
     when(onboardingItem2.applies()).thenReturn(false);
     when(onboardingItem3.applies()).thenReturn(true);
@@ -76,8 +93,11 @@ public class OnboardingManagerImplTest
     assertThat(underTest.needsOnboarding(), is(true));
   }
 
+  /**
+   * Verifies that onboarding items are returned in priority order (lowest priority value first).
+   */
   @Test
-  public void testGetOnboardingItems() {
+  void getOnboardingItemsReturnsPrioritizedItems() {
     List<OnboardingItem> items = underTest.getOnboardingItems();
     assertThat(items.size(), is(3));
     assertThat(items.get(0).getType(), is("type3"));
@@ -85,8 +105,11 @@ public class OnboardingManagerImplTest
     assertThat(items.get(2).getType(), is("type1"));
   }
 
+  /**
+   * Verifies that an empty list is returned when no onboarding items are configured.
+   */
   @Test
-  public void testGetOnboardingItems_noItems() {
+  void getOnboardingItemsReturnsEmptyListWhenNoItemsConfigured() {
     underTest = new OnboardingManagerImpl(Collections.emptySet(), onboardingConfiguration);
 
     assertThat(underTest.getOnboardingItems().size(), is(0));

@@ -21,9 +21,11 @@ import org.sonatype.nexus.repository.maven.internal.Maven2Format;
 import org.sonatype.nexus.repository.types.GroupType;
 import org.sonatype.nexus.repository.types.HostedType;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -32,7 +34,11 @@ import static org.sonatype.nexus.repository.maven.VersionPolicy.MIXED;
 import static org.sonatype.nexus.repository.maven.VersionPolicy.RELEASE;
 import static org.sonatype.nexus.repository.maven.VersionPolicy.SNAPSHOT;
 
-public class PurgeMavenUnusedSnapshotsTaskTest
+/**
+ * Tests for {@link PurgeMavenUnusedSnapshotsTask} with Java 21 compatibility.
+ */
+@ExtendWith(MockitoExtension.class)
+class PurgeMavenUnusedSnapshotsTaskTest
     extends TestSupport
 {
   @Mock
@@ -53,13 +59,13 @@ public class PurgeMavenUnusedSnapshotsTaskTest
   private final PurgeMavenUnusedSnapshotsTask underTest =
       new PurgeMavenUnusedSnapshotsTask(groupType, hostedType, maven2Format);
 
-  @Before
-  public void setup() {
+  @BeforeEach
+  void setup() {
     when(repository.facet(MavenFacet.class)).thenReturn(mavenFacet);
   }
 
   @Test
-  public void appliesToMavenHostedSnapshot() {
+  void appliesToMavenHostedSnapshot() {
     when(repository.getFormat()).thenReturn(maven2Format);
     when(repository.getType()).thenReturn(hostedType);
     when(mavenFacet.getVersionPolicy()).thenReturn(SNAPSHOT);
@@ -67,7 +73,7 @@ public class PurgeMavenUnusedSnapshotsTaskTest
   }
 
   @Test
-  public void appliesToMavenGroupSnapshot() {
+  void appliesToMavenGroupSnapshot() {
     when(repository.getFormat()).thenReturn(maven2Format);
     when(repository.getType()).thenReturn(groupType);
     when(mavenFacet.getVersionPolicy()).thenReturn(SNAPSHOT);
@@ -75,7 +81,7 @@ public class PurgeMavenUnusedSnapshotsTaskTest
   }
 
   @Test
-  public void appliesToMavenHostedMixed() {
+  void appliesToMavenHostedMixed() {
     when(repository.getFormat()).thenReturn(maven2Format);
     when(repository.getType()).thenReturn(hostedType);
     when(mavenFacet.getVersionPolicy()).thenReturn(MIXED);
@@ -83,7 +89,7 @@ public class PurgeMavenUnusedSnapshotsTaskTest
   }
 
   @Test
-  public void appliesToMavenHostedNoVersionPolicy() {
+  void appliesToMavenHostedNoVersionPolicy() {
     when(repository.getFormat()).thenReturn(maven2Format);
     when(repository.getType()).thenReturn(hostedType);
     when(mavenFacet.getVersionPolicy()).thenReturn(null);
@@ -91,7 +97,7 @@ public class PurgeMavenUnusedSnapshotsTaskTest
   }
 
   @Test
-  public void doesNotApplyToDockerGroupSnapshot() {
+  void doesNotApplyToDockerGroupSnapshot() {
     when(repository.getFormat()).thenReturn(dockerFormat);
     when(repository.getType()).thenReturn(groupType);
     when(mavenFacet.getVersionPolicy()).thenReturn(SNAPSHOT);
@@ -99,10 +105,38 @@ public class PurgeMavenUnusedSnapshotsTaskTest
   }
 
   @Test
-  public void doesNotApplyToMavenHostedRelease() {
+  void doesNotApplyToMavenHostedRelease() {
     when(repository.getFormat()).thenReturn(maven2Format);
     when(repository.getType()).thenReturn(hostedType);
     when(mavenFacet.getVersionPolicy()).thenReturn(RELEASE);
     assertThat(underTest.appliesTo(repository), is(false));
+  }
+  
+  /**
+   * Test that demonstrates Java 21 pattern matching for instanceof with repository types.
+   * This test verifies the same behavior as appliesToMavenHostedSnapshot but uses pattern matching.
+   */
+  @Test
+  void appliesToMavenHostedSnapshotWithPatternMatching() {
+    // Setup repository with Maven format and hosted type
+    when(repository.getFormat()).thenReturn(maven2Format);
+    when(repository.getType()).thenReturn(hostedType);
+    when(mavenFacet.getVersionPolicy()).thenReturn(SNAPSHOT);
+    
+    // Get the repository type and use pattern matching to check if it's a hosted type
+    Type repoType = repository.getType();
+    boolean isHosted = false;
+    
+    // Using Java 21 pattern matching for instanceof
+    if (repoType instanceof HostedType hostedTypeInstance) {
+      // We can directly use the hostedTypeInstance variable here if needed
+      isHosted = true;
+    }
+    
+    // Verify that the repository type is correctly identified as hosted
+    assertThat(isHosted, is(true));
+    
+    // Verify that the task applies to this repository
+    assertThat(underTest.appliesTo(repository), is(true));
   }
 }

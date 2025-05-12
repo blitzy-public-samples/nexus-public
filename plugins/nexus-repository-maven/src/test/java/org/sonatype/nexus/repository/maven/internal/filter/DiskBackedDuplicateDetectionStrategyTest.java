@@ -12,27 +12,42 @@
  */
 package org.sonatype.nexus.repository.maven.internal.filter;
 
+import java.io.File;
+import java.nio.file.Path;
+
 import org.sonatype.nexus.common.app.ApplicationDirectories;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.mockito.Mockito.when;
 
+/**
+ * Tests for {@link DiskBackedDuplicateDetectionStrategy} using a disk-backed cache for duplicate detection.
+ * 
+ * @since 3.60
+ */
+@ExtendWith(MockitoExtension.class)
 public class DiskBackedDuplicateDetectionStrategyTest
     extends DuplicateDetectionStrategyTestSupport
 {
-  @Rule
-  public TemporaryFolder tmpDir = new TemporaryFolder();
+  @TempDir
+  Path tempDir;
 
   @Mock
   private ApplicationDirectories applicationDirectories;
 
+  /**
+   * Verifies that the disk-backed strategy correctly identifies duplicate artifacts.
+   * 
+   * @throws Exception if any error occurs during testing
+   */
   @Test
   public void shouldIdentifyDuplicates() throws Exception {
-    when(applicationDirectories.getTemporaryDirectory()).thenReturn(tmpDir.getRoot());
+    when(applicationDirectories.getTemporaryDirectory()).thenReturn(tempDir.toFile());
 
     verifyDuplicateDetection(new DiskBackedDuplicateDetectionStrategy(applicationDirectories, 1, 10));
   }

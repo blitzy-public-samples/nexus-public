@@ -13,6 +13,7 @@
 package org.sonatype.nexus.onboarding.capability;
 
 import java.util.Optional;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -22,6 +23,9 @@ import org.sonatype.nexus.capability.CapabilityRegistry;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
+/**
+ * Helper class for accessing the OnboardingCapability.
+ */
 @Named
 @Singleton
 public class OnboardingCapabilityHelper
@@ -33,10 +37,18 @@ public class OnboardingCapabilityHelper
     this.capabilityRegistry = checkNotNull(capabilityRegistry);
   }
 
+  /**
+   * Retrieves the OnboardingCapability from the registry.
+   *
+   * @return the OnboardingCapability instance
+   * @throws IllegalStateException if the capability is not found
+   */
   public OnboardingCapability getOnboardingCapability() {
     Optional<? extends CapabilityReference> optionalCapabilityReference = capabilityRegistry.getAll().stream()
-        .filter(reference -> reference.context().type().toString().equals(OnboardingCapability.TYPE_ID)).findFirst();
+        .filter(reference -> reference.context().type().toString().equals(OnboardingCapability.TYPE_ID))
+        .findFirst();
+    
     return (OnboardingCapability) optionalCapabilityReference
-        .orElseThrow(() -> new IllegalStateException("OnboardingCapability not found"));
+        .orElseThrow(() -> new IllegalStateException(STR."OnboardingCapability of type \{OnboardingCapability.TYPE_ID} not found"));
   }
 }

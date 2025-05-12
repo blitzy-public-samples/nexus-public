@@ -24,11 +24,13 @@ import org.sonatype.nexus.security.role.Role;
 import org.apache.shiro.subject.Subject;
 import org.apache.shiro.subject.support.SubjectThreadState;
 import org.apache.shiro.util.ThreadState;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.Collections.emptyMap;
 import static java.util.Collections.singleton;
@@ -38,6 +40,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.security.user.UserManager.DEFAULT_SOURCE;
 
+/**
+ * Test for DefaultRoleStateContributor using JUnit Jupiter and Java 21 features.
+ * Tests the state contribution behavior for default roles.
+ */
+@ExtendWith(MockitoExtension.class)
 public class DefaultRoleStateContributorTest
     extends TestSupport
 {
@@ -61,8 +68,8 @@ public class DefaultRoleStateContributorTest
 
   private ThreadState subjectThreadState;
 
-  @Before
-  public void setupDefaultRoleRealm() {
+  @BeforeEach
+  void setupDefaultRoleRealm() {
     defaultRole = new Role();
     defaultRole.setRoleId("id");
     defaultRole.setName("name");
@@ -70,15 +77,18 @@ public class DefaultRoleStateContributorTest
     when(defaultRoleRealm.getRole()).thenReturn(defaultRole.getRoleId());
   }
 
-  @After
-  public void clearSubject() {
+  @AfterEach
+  void clearSubject() {
     if (subjectThreadState != null) {
       subjectThreadState.clear();
     }
   }
 
+  /**
+   * Tests that unauthenticated users do not receive the default role state.
+   */
   @Test
-  public void unauthenticatedUserDoesNotGetDefaultRoleState() {
+  void unauthenticatedUserDoesNotGetDefaultRoleState() {
     when(realmManager.isRealmEnabled(DefaultRoleRealm.NAME)).thenReturn(true);
     Subject subject = mock(Subject.class);
     when(subject.isAuthenticated()).thenReturn(false);
@@ -90,8 +100,11 @@ public class DefaultRoleStateContributorTest
     assertThat(state, is(emptyMap()));
   }
 
+  /**
+   * Tests that authenticated users receive the default role state when the realm is enabled.
+   */
   @Test
-  public void authenticatedUserGetsTheDefaultRoleState() throws NoSuchAuthorizationManagerException {
+  void authenticatedUserGetsTheDefaultRoleState() throws NoSuchAuthorizationManagerException {
     when(realmManager.isRealmEnabled(DefaultRoleRealm.NAME)).thenReturn(true);
     Subject subject = mock(Subject.class);
     when(subject.isAuthenticated()).thenReturn(true);
@@ -100,14 +113,19 @@ public class DefaultRoleStateContributorTest
     when(securitySystem.listRoles(DEFAULT_SOURCE)).thenReturn(singleton(defaultRole));
 
     Map<String, Object> state = underTest.getState();
-    Map<String, Object> defaultRoleState = (Map<String, Object>) state.get("defaultRole");
-
-    assertThat(defaultRoleState.get("id"), is(defaultRole.getRoleId()));
-    assertThat(defaultRoleState.get("name"), is(defaultRole.getName()));
+    
+    // Using pattern matching for instanceof check with Java 21
+    if (state.get("defaultRole") instanceof Map<?, ?> defaultRoleState) {
+      assertThat(defaultRoleState.get("id"), is(defaultRole.getRoleId()));
+      assertThat(defaultRoleState.get("name"), is(defaultRole.getName()));
+    }
   }
 
+  /**
+   * Tests that authenticated users do not receive the default role state when the realm is disabled.
+   */
   @Test
-  public void authenticatedUserDoesNotGetTheDefaultRoleWhenDisabled() {
+  void authenticatedUserDoesNotGetTheDefaultRoleWhenDisabled() {
     when(realmManager.isRealmEnabled(DefaultRoleRealm.NAME)).thenReturn(false);
     Subject subject = mock(Subject.class);
     when(subject.isAuthenticated()).thenReturn(true);
@@ -118,6 +136,11 @@ public class DefaultRoleStateContributorTest
     assertThat(state, is(emptyMap()));
   }
 
+  /**
+   * Helper method to set the current subject in the thread state.
+   * 
+   * @param subject The subject to set as the current subject
+   */
   private void setSubject(Subject subject) {
     assert subjectThreadState == null;
 

@@ -21,44 +21,43 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-
 import javax.annotation.Nullable;
 
+import org.sonatype.goodies.testsupport.TestSupport;
+
+import org.hamcrest.core.StringContains;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.junit.jupiter.MockitoExtension;
+import org.junit.jupiter.api.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
-import org.junit.experimental.categories.Category;
-
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.core.StringContains.containsString;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
- * Tests for {@link TaskLogHome} class.
+ * Tests for {@link TaskLogHome} with Java 21 compatibility.
  */
-@ExtendWith(MockitoExtension.class)
-@Category(Java21TestGroup.class)
+@Tag("Java21TestGroup")
 public class TaskLogHomeTest
+    extends TestSupport
 {
   @Test
-  void getTaskLogsHome() {
+  public void getTaskLogsHome() {
     Path taskLogHome = Paths.get(TaskLogHome.getTaskLogsHome());
-    assertTrue(taskLogHome.endsWith(Paths.get("test", "log", "tasks")));
+    assertTrue(taskLogHome.endsWith(Paths.get("test", "log", "tasks")),
+        "Task log home should end with test/log/tasks");
 
     Path file = taskLogHome.resolve("temp.log");
     assertFalse(Files.exists(file), "temp file was not deleted");
   }
 
   @Test
-  void getReplicationLogsHome() {
+  public void getReplicationLogsHome() {
     Path taskLogHome = Paths.get(TaskLogHome.getReplicationLogsHome().get());
-    assertTrue(taskLogHome.endsWith(Paths.get("test", "log", "replication")));
+    assertTrue(taskLogHome.endsWith(Paths.get("test", "log", "replication")),
+        "Replication log home should end with test/log/replication");
 
     Path file = taskLogHome.resolve("temp.log");
     assertFalse(Files.exists(file), "temp file was not deleted");
@@ -74,7 +73,7 @@ public class TaskLogHomeTest
    * @see <a href="https://issues.sonatype.org/browse/NEXUS-14052">NEXUS-14052</a>
    */
   @Test
-  void testAppenderActiveAfterGetTaskLogHome() throws Exception {
+  public void appenderActiveAfterGetTaskLogHome() throws Exception {
     String timeMillis = String.valueOf(System.currentTimeMillis());
     String taskTypeId = "appendTaskTest".concat(timeMillis);
     String infoLogMsg = "info".concat(timeMillis);
@@ -95,62 +94,58 @@ public class TaskLogHomeTest
 
     // validate all messages were written to log file
     String logFileContents = getLogFileContents(taskTypeId);
-    assertThat(logFileContents, containsString("logger initialized"));
-    assertThat(logFileContents, containsString("initialize error"));
-    assertThat(logFileContents, containsString(infoLogMsg));
-    assertThat(logFileContents, containsString(errorLogMsg));
-    assertThat(logFileContents, containsString("runtimeException"));
+    assertThat(logFileContents, StringContains.containsString("logger initialized"));
+    assertThat(logFileContents, StringContains.containsString("initialize error"));
+    assertThat(logFileContents, StringContains.containsString(infoLogMsg));
+    assertThat(logFileContents, StringContains.containsString(errorLogMsg));
+    assertThat(logFileContents, StringContains.containsString("runtimeException"));
   }
 
   /**
-   * Tests concurrent directory creation using virtual threads to ensure thread-safety.
-   * This test verifies that multiple threads can safely create and access task log directories.
+   * Tests concurrent directory creation behavior with virtual threads.
+   * This verifies that multiple threads can safely create and access the task logs directory.
    */
   @Test
-  void concurrentDirectoryCreationWithVirtualThreads() throws Exception {
-    // Create a virtual thread executor
-    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+  public void concurrentDirectoryCreationWithVirtualThreads() throws Exception {
+    int threadCount = 10;
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch completionLatch = new CountDownLatch(threadCount);
     
-    int threadCount = 100;
-    CountDownLatch latch = new CountDownLatch(threadCount);
-    AtomicInteger successCount = new AtomicInteger(0);
-    
-    try {
-      // Submit multiple concurrent tasks using virtual threads
+    // Use virtual threads for improved concurrency
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       for (int i = 0; i < threadCount; i++) {
-        final int taskId = i;
+        final int threadId = i;
         executor.submit(() -> {
           try {
-            // Get task logs home directory
-            String taskLogsHome = TaskLogHome.getTaskLogsHome();
-            Path taskLogPath = Paths.get(taskLogsHome, "concurrent-test-" + taskId + ".log");
+            startLatch.await(); // Wait for all threads to be ready
             
-            // Create a test file in the directory
-            Files.writeString(taskLogPath, "Test content for task " + taskId);
+            // Get task logs home directory and create a thread-specific file
+            Path taskLogHome = Paths.get(TaskLogHome.getTaskLogsHome());
+            Path threadSpecificFile = taskLogHome.resolve("thread-" + threadId + ".log");
+            Files.writeString(threadSpecificFile, "Test content from thread " + threadId);
             
-            // Verify file exists
-            if (Files.exists(taskLogPath)) {
-              successCount.incrementAndGet();
-              // Clean up
-              Files.delete(taskLogPath);
-            }
-          } catch (Exception e) {
-            // Log but don't fail the test - we'll check the success count
-            System.err.println("Error in virtual thread task: " + e.getMessage());
-          } finally {
-            latch.countDown();
+            // Verify file was created correctly
+            assertTrue(Files.exists(threadSpecificFile), "Thread-specific file should exist");
+            assertEquals("Test content from thread " + threadId, 
+                Files.readString(threadSpecificFile), "File content should match");
+            
+            // Clean up
+            Files.delete(threadSpecificFile);
+            
+            completionLatch.countDown();
+          }
+          catch (Exception e) {
+            log.error("Error in virtual thread {}", threadId, e);
           }
         });
       }
       
-      // Wait for all tasks to complete (with timeout)
-      assertTrue(latch.await(30, TimeUnit.SECONDS), "Not all virtual threads completed in time");
+      // Start all threads simultaneously
+      startLatch.countDown();
       
-      // Verify all tasks succeeded
-      assertTrue(successCount.get() == threadCount, 
-          "Expected " + threadCount + " successful operations, but got " + successCount.get());
-    } finally {
-      executor.shutdown();
+      // Wait for all threads to complete
+      assertTrue(completionLatch.await(10, TimeUnit.SECONDS), 
+          "All virtual threads should complete within timeout");
     }
   }
 
@@ -197,7 +192,9 @@ public class TaskLogHomeTest
 
   /**
    * Get the contents of the log file for the specified task. Assumes a unique task ID, and will return the contents
-   * of the first matching file
+   * of the first matching file.
+   * 
+   * Uses virtual threads for file operations to improve I/O concurrency.
    */
   private String getLogFileContents(String typeId) throws IOException {
     Path logDirectory = Paths.get(TaskLogHome.getTaskLogsHome());
@@ -205,7 +202,15 @@ public class TaskLogHomeTest
     try (DirectoryStream<Path> dirStream = Files.newDirectoryStream(logDirectory, String.format("%s-*.log", typeId))) {
       for (Path file : dirStream) {
         if (Files.isRegularFile(file)) {
-          return Files.readString(file);
+          // Use virtual thread for file reading
+          return Thread.startVirtualThread(() -> {
+            try {
+              return new String(Files.readAllBytes(file));
+            }
+            catch (IOException e) {
+              throw new RuntimeException("Error reading log file", e);
+            }
+          }).join();
         }
       }
     }

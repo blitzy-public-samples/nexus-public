@@ -212,11 +212,12 @@ public class Operations<E extends Exception, B extends Operations<E, B>>
   }
 
   /**
-   * Detects if the current thread is a Virtual Thread (Java 21 feature).
+   * Checks if the current thread is a Virtual Thread.
    * 
+   * @return true if the current thread is a Virtual Thread, false otherwise
    * @since 3.60
    */
-  protected static boolean isVirtualThread() {
+  private boolean isVirtualThread() {
     return Thread.currentThread().isVirtual();
   }
 
@@ -235,26 +236,26 @@ public class Operations<E extends Exception, B extends Operations<E, B>>
       return proceedWithTransaction(point, tx);
     }
 
-    try (TransactionalSession<?> session = openSession(store, spec.isolation())) {
+    // Determine if we're running in a Virtual Thread and configure session accordingly
+    boolean virtualThread = isVirtualThread();
+    try (TransactionalSession<?> session = openSession(store, spec.isolation(), virtualThread)) {
       return proceedWithTransaction(point, session.getTransaction());
     }
   }
 
   private <T> T proceedWithTransaction(final OperationPoint<T, E> point, final Transaction tx) throws E {
-    // Use Java 21 string templates for improved diagnostic output
-    boolean isVirtual = isVirtualThread();
-    if (log.isTraceEnabled()) {
-      log.trace(STR."Invoking: \{spec} -> \{point} on \{isVirtual ? "virtual" : "platform"} thread");
+    boolean virtualThread = isVirtualThread();
+    
+    if (virtualThread) {
+      log.trace(STR."Invoking in Virtual Thread: \{spec} -> \{point}");
+    } else {
+      log.trace(STR."Invoking: \{spec} -> \{point}");
     }
 
     try {
-      // Pass the thread type information to the TransactionalWrapper for optimized execution
-      return (T) new TransactionalWrapper(spec, point, isVirtual).proceedWithTransaction(tx);
+      return (T) new TransactionalWrapper(spec, point, virtualThread).proceedWithTransaction(tx);
     }
     catch (final Throwable e) {
-      if (log.isTraceEnabled()) {
-        log.trace(STR."Exception in transaction on \{isVirtual ? "virtual" : "platform"} thread: \{e.getMessage()}");
-      }
       if (throwing != null) {
         Throwables.propagateIfPossible(e, throwing);
       }

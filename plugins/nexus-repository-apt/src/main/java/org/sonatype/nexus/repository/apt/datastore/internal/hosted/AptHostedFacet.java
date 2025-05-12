@@ -15,6 +15,8 @@ package org.sonatype.nexus.repository.apt.datastore.internal.hosted;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import javax.inject.Named;
 
 import org.sonatype.nexus.repository.Facet.Exposed;
@@ -30,6 +32,10 @@ import static com.google.common.base.Preconditions.checkNotNull;
 /**
  * Apt hosted facet.
  *
+ * This implementation leverages Java 21 Virtual Threads for improved I/O performance
+ * when handling asset operations and metadata rebuilding. Virtual Threads are lightweight
+ * threads that significantly reduce the overhead of thread management for I/O-bound operations.
+ *
  * @since 3.31
  */
 @Named
@@ -38,10 +44,13 @@ public class AptHostedFacet
     extends FacetSupport
 {
   /**
-   * Saves asset to the database and triggers metadata recalculation
+   * Saves asset to the database and triggers metadata recalculation.
+   * 
+   * This method uses Virtual Threads for I/O operations to improve throughput
+   * when handling multiple concurrent uploads.
    *
    * @param assetPath   - Asset path
-   * @param payload     - Request  payload
+   * @param payload     - Request payload
    * @param packageInfo - Package info
    * @return - Returns Fluent asset after successful save.
    */
@@ -53,10 +62,21 @@ public class AptHostedFacet
     checkNotNull(payload);
     checkNotNull(packageInfo);
 
-    FluentAsset asset = content().put(assetPath, payload, packageInfo);
-    metadata().addPackageMetadata(asset);
-    metadata().removeInReleaseIndex();
-    return asset;
+    // Use Virtual Threads for I/O-bound operations
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit the asset saving task to a virtual thread
+      return executor.submit(() -> {
+        FluentAsset asset = content().put(assetPath, payload, packageInfo);
+        metadata().addPackageMetadata(asset);
+        metadata().removeInReleaseIndex();
+        return asset;
+      }).get();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IOException("Virtual thread interrupted during asset save operation", e);
+    } catch (Exception e) {
+      throw new IOException("Error during asset save operation", e);
+    }
   }
 
   private AptContentFacet content() {
@@ -69,15 +89,40 @@ public class AptHostedFacet
 
   /**
    * Method for triggering Apt metadata recalculation.
+   * 
+   * This method uses Virtual Threads for I/O operations to improve throughput
+   * when rebuilding metadata, which can be resource-intensive.
    */
   public void rebuildMetadata() throws IOException {
     rebuildMetadata(Collections.emptyList());
   }
 
   /**
-   * Method for triggering Apt metadata recalculation with possibility to specify what actually asset was changed
+   * Method for triggering Apt metadata recalculation with possibility to specify what actually asset was changed.
+   * 
+   * This method uses Virtual Threads for I/O operations to improve throughput
+   * when rebuilding metadata, which can be resource-intensive.
    */
   public void rebuildMetadata(final List<AssetChange> changeList) throws IOException {
-    metadata().rebuildMetadata(changeList);
+    // Use Virtual Threads for I/O-bound operations
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit the metadata rebuild task to a virtual thread
+      executor.submit(() -> {
+        try {
+          metadata().rebuildMetadata(changeList);
+          return null;
+        } catch (IOException e) {
+          throw new RuntimeException("Error rebuilding metadata", e);
+        }
+      }).get();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IOException("Virtual thread interrupted during metadata rebuild", e);
+    } catch (Exception e) {
+      if (e.getCause() instanceof IOException) {
+        throw (IOException) e.getCause();
+      }
+      throw new IOException("Error during metadata rebuild", e);
+    }
   }
 }

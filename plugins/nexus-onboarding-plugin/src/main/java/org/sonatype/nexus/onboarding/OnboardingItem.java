@@ -15,6 +15,11 @@ package org.sonatype.nexus.onboarding;
 /**
  * An item that needs to be configured in the onboarding process in the UI, before other actions can be taken.
  *
+ * <p>Implementations of this interface may leverage Java 21 features such as pattern matching for type checks,
+ * record patterns for DTOs, and Virtual Threads for any asynchronous operations.</p>
+ *
+ * <p>This interface is compatible with Guice 7.0.0 and Sisu 0.10.0 for dependency injection.</p>
+ *
  * @see OnboardingManager
  * @since 3.17
  */

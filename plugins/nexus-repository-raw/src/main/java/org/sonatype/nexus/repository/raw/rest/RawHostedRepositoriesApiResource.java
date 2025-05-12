@@ -20,11 +20,11 @@ import javax.ws.rs.core.Response;
 
 import org.sonatype.nexus.repository.rest.api.AbstractHostedRepositoriesApiResource;
 
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
-import io.swagger.annotations.ApiParam;
-import io.swagger.annotations.ApiResponse;
-import io.swagger.annotations.ApiResponses;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 import static org.sonatype.nexus.rest.ApiDocConstants.API_REPOSITORY_MANAGEMENT;
 import static org.sonatype.nexus.rest.ApiDocConstants.AUTHENTICATION_REQUIRED;
@@ -36,15 +36,15 @@ import static org.sonatype.nexus.rest.ApiDocConstants.REPOSITORY_UPDATED;
 /**
  * @since 3.24
  */
-@Api(value = API_REPOSITORY_MANAGEMENT)
+@Tag(name = API_REPOSITORY_MANAGEMENT)
 public abstract class RawHostedRepositoriesApiResource
     extends AbstractHostedRepositoriesApiResource<RawHostedRepositoryApiRequest>
 {
-  @ApiOperation("Create raw hosted repository")
+  @Operation(summary = "Create raw hosted repository")
   @ApiResponses(value = {
-      @ApiResponse(code = 201, message = REPOSITORY_CREATED),
-      @ApiResponse(code = 401, message = AUTHENTICATION_REQUIRED),
-      @ApiResponse(code = 403, message = INSUFFICIENT_PERMISSIONS)
+      @ApiResponse(responseCode = "201", description = REPOSITORY_CREATED),
+      @ApiResponse(responseCode = "401", description = AUTHENTICATION_REQUIRED),
+      @ApiResponse(responseCode = "403", description = INSUFFICIENT_PERMISSIONS)
   })
   @POST
   @Override
@@ -52,19 +52,19 @@ public abstract class RawHostedRepositoriesApiResource
     return super.createRepository(request);
   }
 
-  @ApiOperation("Update raw hosted repository")
+  @Operation(summary = "Update raw hosted repository")
   @ApiResponses(value = {
-      @ApiResponse(code = 204, message = REPOSITORY_UPDATED),
-      @ApiResponse(code = 400, message = BAD_REQUEST),
-      @ApiResponse(code = 401, message = AUTHENTICATION_REQUIRED),
-      @ApiResponse(code = 403, message = INSUFFICIENT_PERMISSIONS)
+      @ApiResponse(responseCode = "204", description = REPOSITORY_UPDATED),
+      @ApiResponse(responseCode = "400", description = BAD_REQUEST),
+      @ApiResponse(responseCode = "401", description = AUTHENTICATION_REQUIRED),
+      @ApiResponse(responseCode = "403", description = INSUFFICIENT_PERMISSIONS)
   })
   @PUT
   @Path("/{repositoryName}")
   @Override
   public Response updateRepository(
       final RawHostedRepositoryApiRequest request,
-      @ApiParam(value = "Name of the repository to update") @PathParam("repositoryName") final String repositoryName)
+      @Parameter(description = "Name of the repository to update") @PathParam("repositoryName") final String repositoryName)
   {
     return super.updateRepository(request, repositoryName);
   }

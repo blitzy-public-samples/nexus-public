@@ -22,6 +22,9 @@ import org.sonatype.nexus.security.config.SecurityContributorSupport;
 
 /**
  * SSL security configuration.
+ * 
+ * Provides security privileges for SSL truststore management.
+ * Compatible with Java 21 and Apache Shiro 2.0.0.
  *
  * @since 3.0
  */
@@ -39,6 +42,7 @@ public class SslSecurityContributor
   public SecurityConfiguration getContribution() {
     MemorySecurityConfiguration config = new MemorySecurityConfiguration();
 
+    // Create and register all required SSL truststore privileges
     createCrudAndAllApplicationPrivileges(SSL_PRIV_ID_PREFIX, SSL_DOMAIN).forEach(config::addPrivilege);
 
     return config;

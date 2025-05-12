@@ -57,11 +57,8 @@ public abstract class ApiPrivilegeWithRepositoryRequest
 
   public ApiPrivilegeWithRepositoryRequest(final Privilege privilege) {
     super(privilege);
-    // Using pattern matching to extract properties from the privilege
-    if (privilege != null) {
-      format = privilege.getPrivilegeProperty(FORMAT_KEY);
-      repository = privilege.getPrivilegeProperty(REPOSITORY_KEY);
-    }
+    format = privilege.getPrivilegeProperty(FORMAT_KEY);
+    repository = privilege.getPrivilegeProperty(REPOSITORY_KEY);
   }
 
   public void setRepository(final String repository) {

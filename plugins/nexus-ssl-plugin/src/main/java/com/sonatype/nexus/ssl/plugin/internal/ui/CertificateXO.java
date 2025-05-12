@@ -14,6 +14,9 @@ package com.sonatype.nexus.ssl.plugin.internal.ui;
 
 /**
  * Certificate exchange object.
+ * <p>
+ * Implemented as a Java Record for immutability and automatic generation of
+ * toString(), equals(), and hashCode() methods.
  *
  * @since 3.0
  */
@@ -33,9 +36,14 @@ public record CertificateXO(
     boolean inTrustStore
 ) {
   /**
-   * Constructor for basic certificate information without X.509 details.
+   * Creates a minimal certificate exchange object with only id, fingerprint, and PEM data.
+   * All other fields will be initialized with default values.
+   *
+   * @param id the certificate identifier
+   * @param fingerprint the certificate fingerprint
+   * @param pem the certificate in PEM format
    */
-  public CertificateXO(String id, String fingerprint, String pem) {
-    this(id, fingerprint, pem, null, null, null, null, null, null, null, 0, 0, false);
+  public CertificateXO(final String id, final String fingerprint, final String pem) {
+    this(id, fingerprint, pem, null, null, null, null, null, null, null, 0L, 0L, false);
   }
 }

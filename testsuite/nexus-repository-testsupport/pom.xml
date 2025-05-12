@@ -22,11 +22,20 @@
     <artifactId>nexus-testsuite</artifactId>
     <version>3.77.0-08</version>
   </parent>
+  
+  <!-- 
+  This POM has been updated for Java 21 compatibility as part of the Nexus Repository
+  upgrade from Java 17 to Java 21. Key changes include:
+  - Updated Maven compiler plugin configuration to use Java 21
+  - Updated Groovy Eclipse compiler dependencies for Java 21 compatibility
+  - Updated Maven Bundle Plugin for Java 21 compatibility
+  -->
 
   <artifactId>nexus-repository-testsupport</artifactId>
   <name>${project.groupId}:${project.artifactId}</name>
   <packaging>bundle</packaging>
 
+  <!-- Dependencies updated for Java 21 compatibility -->
   <dependencies>
     <!--
     Dependencies provided by the Nexus container
@@ -216,26 +225,30 @@
     </dependency>
   </dependencies>
 
+  <!-- Build configuration updated for Java 21 compatibility -->
   <build>
     <plugins>
+      <!-- Maven Compiler Plugin configured for Java 21 compatibility -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.12.1</version>
         <dependencies>
           <dependency>
             <groupId>org.codehaus.groovy</groupId>
             <artifactId>groovy-eclipse-compiler</artifactId>
-            <version>3.7.0</version>
+            <version>3.9.0</version>
           </dependency>
           <dependency>
             <groupId>org.codehaus.groovy</groupId>
             <artifactId>groovy-eclipse-batch</artifactId>
-            <version>3.0.13-02</version>
+            <version>3.0.9-03</version>
           </dependency>
         </dependencies>
         <configuration>
-          <source>${maven.compiler.source}</source>
-          <target>${maven.compiler.target}</target>
+          <!-- Explicitly set source and target to Java 21 -->
+          <source>21</source>
+          <target>21</target>
           <compilerId>groovy-eclipse-compiler</compilerId>
         </configuration>
       </plugin>
@@ -265,9 +278,11 @@
         <groupId>org.eclipse.sisu</groupId>
         <artifactId>sisu-maven-plugin</artifactId>
       </plugin>
+      <!-- Maven Bundle Plugin configured for Java 21 compatibility -->
       <plugin>
         <groupId>org.apache.felix</groupId>
         <artifactId>maven-bundle-plugin</artifactId>
+        <version>5.1.9</version>
         <configuration>
           <instructions>
             <!-- mark Pax-Exam imports as optional; not all are needed at test-time -->
@@ -294,6 +309,8 @@
               aws-java-sdk-s3,aws-java-sdk-core
             </Embed-Dependency>
             <Embed-Transitive>true</Embed-Transitive>
+            <!-- Added for Java 21 compatibility -->
+            <_noee>true</_noee>
           </instructions>
         </configuration>
       </plugin>

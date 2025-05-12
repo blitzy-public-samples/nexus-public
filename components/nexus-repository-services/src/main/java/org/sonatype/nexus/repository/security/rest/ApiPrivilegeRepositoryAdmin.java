@@ -20,19 +20,20 @@ import org.sonatype.nexus.security.privilege.rest.PrivilegeAction;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * Repository admin privilege API model.
  * 
  * @since 3.19
  */
-@Schema(description = "Repository admin privilege")
 public class ApiPrivilegeRepositoryAdmin
     extends ApiPrivilegeWithRepository
 {
   /**
    * Default constructor for Jackson deserialization.
+   * 
+   * Using {@link JsonCreator} to explicitly mark this constructor for Jackson,
+   * ensuring compatibility with Jackson 2.16.1 deserialization behavior.
    */
   @JsonCreator
   protected ApiPrivilegeRepositoryAdmin() {
@@ -40,14 +41,14 @@ public class ApiPrivilegeRepositoryAdmin
   }
 
   /**
-   * Constructor for creating a new repository admin privilege.
-   *
+   * Constructs a new instance with the specified properties.
+   * 
    * @param name the privilege name
    * @param description the privilege description
    * @param readOnly whether the privilege is read-only
    * @param format the repository format
    * @param repository the repository name
-   * @param actions the allowed actions
+   * @param actions the collection of privilege actions
    */
   public ApiPrivilegeRepositoryAdmin(
       @JsonProperty("name") final String name,
@@ -61,27 +62,24 @@ public class ApiPrivilegeRepositoryAdmin
   }
 
   /**
-   * Constructor for creating from an existing privilege.
-   *
-   * @param privilege the privilege to create from
+   * Constructs a new instance from an existing Privilege.
+   * 
+   * @param privilege the privilege to copy properties from
    */
   public ApiPrivilegeRepositoryAdmin(final Privilege privilege) {
     super(privilege);
   }
   
   /**
-   * Pattern matching example for handling different privilege types.
-   * This demonstrates how Java 21 pattern matching could be used with this class.
-   *
+   * Pattern matching example for handling Privilege objects.
+   * This demonstrates how Java 21 pattern matching can be used to process different types.
+   * 
    * @param obj the object to check
-   * @return true if the object is a compatible privilege type
+   * @return true if the object is a compatible privilege, false otherwise
    */
-  public boolean isCompatiblePrivilege(Object obj) {
-    return switch (obj) {
-      case ApiPrivilegeRepositoryAdmin admin -> true;
-      case ApiPrivilegeWithRepository repo when repo.getType().equals(RepositoryAdminPrivilegeDescriptor.TYPE) -> true;
-      case Privilege p when p.getType().equals(RepositoryAdminPrivilegeDescriptor.TYPE) -> true;
-      default -> false;
-    };
+  public static boolean isCompatiblePrivilege(Object obj) {
+    // Using Java 21 pattern matching to check and extract type information in one step
+    return obj instanceof Privilege privilege && 
+           RepositoryAdminPrivilegeDescriptor.TYPE.equals(privilege.getType());
   }
 }

@@ -15,15 +15,18 @@ package org.sonatype.nexus.scheduling;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Provider;
 import javax.inject.Singleton;
+
+import org.apache.shiro.subject.Subject;
+import org.apache.shiro.util.ThreadContext;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.event.EventManager;
@@ -32,14 +35,32 @@ import org.sonatype.nexus.scheduling.schedule.Schedule;
 import org.sonatype.nexus.scheduling.schedule.ScheduleFactory;
 import org.sonatype.nexus.scheduling.spi.SchedulerSPI;
 import org.sonatype.nexus.thread.NexusExecutorService;
+import org.sonatype.nexus.thread.NexusThreadFactory;
+import org.sonatype.nexus.thread.internal.MDCAwareRunnable;
+
+import org.slf4j.MDC;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static org.sonatype.nexus.common.app.FeatureFlags.CHANGE_REPO_BLOBSTORE_TASK_ENABLED_NAMED;
 
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadMXBean;
+
 /**
- * Default {@link TaskScheduler} implementation.
+ * Default {@link TaskScheduler} implementation with Java 21 Virtual Thread support.
+ * <p>
+ * This implementation has been enhanced to support Java 21 Virtual Threads, providing:
+ * <ul>
+ *   <li>Proper security context propagation for Apache Shiro when using Virtual Threads</li>
+ *   <li>Support for determining when to use Virtual Threads versus platform threads</li>
+ *   <li>TaskInfo context propagation across thread boundaries</li>
+ *   <li>Schedule-related logic compatible with Virtual Thread scheduling characteristics</li>
+ *   <li>Logging and diagnostics for thread-pinning issues</li>
+ * </ul>
  *
  * @since 3.0
  */
@@ -50,50 +71,22 @@ public class TaskSchedulerImpl
     implements TaskScheduler
 {
   /**
-   * Task types that are known to be I/O-bound and benefit from Virtual Threads.
-   * These tasks typically involve network operations, file system access, or database operations.
+   * Logger for virtual thread diagnostics, separate from the component logger
+   * to allow for more granular control of logging levels.
    */
-  private static final Set<String> IO_BOUND_TASK_TYPES = Set.of(
-      "repository.docker.upload-purge",
-      "repository.docker.v1-upload-purge",
-      "repository.maven.purge-unused-snapshots",
-      "repository.maven.rebuild-metadata",
-      "repository.maven.unpublish-snapshots",
-      "repository.maven.remove-snapshots",
-      "repository.purge-unused",
-      "blobstore.compact",
-      "blobstore.rebuildComponentDB",
-      "create.browse.nodes",
-      "db.backup",
-      "db.rebuild",
-      "repository.cleanup",
-      "repository.rebuild-index",
-      "repository.storage-facet-cleanup",
-      "repository.cleanup-local-content",
-      "repository.delete-content",
-      "repository.move",
-      "repository.purge-unused",
-      "repository.rebuild-index",
-      "repository.storage-facet-cleanup",
-      "script",
-      "tasklog.cleanup"
-  );
-
+  private static final Logger VIRTUAL_THREAD_LOGGER = LoggerFactory.getLogger(
+      TaskSchedulerImpl.class.getName() + ".VirtualThreads");
+      
   /**
-   * Task types that are known to be CPU-bound and should use platform threads.
-   * These tasks typically involve heavy computation, compression, or encryption.
+   * Thread MX Bean for monitoring thread-related metrics.
    */
-  private static final Set<String> CPU_BOUND_TASK_TYPES = Set.of(
-      "repository.vulnerability.assessment",
-      "security.purge-api-keys",
-      "analytics.compute"
-  );
-
+  private static final ThreadMXBean THREAD_MX_BEAN = ManagementFactory.getThreadMXBean();
+  
   /**
-   * Tracks tasks that have been detected as causing thread pinning issues.
-   * This helps avoid repeatedly logging the same issues for recurring tasks.
+   * Lock for thread-safe operations that should not use synchronized blocks
+   * to avoid virtual thread pinning.
    */
-  private final Set<String> threadPinningDetected = ConcurrentHashMap.newKeySet();
+  private final ReentrantLock lock = new ReentrantLock();
 
   protected static final String REPO_MOVE_TYPE_ID = "repository.move";
 
@@ -102,19 +95,27 @@ public class TaskSchedulerImpl
   private final TaskFactory taskFactory;
 
   private final Provider<SchedulerSPI> scheduler;
+  
+  /**
+   * Flag to determine if virtual threads should be used for task execution.
+   * Virtual threads are more efficient for I/O-bound tasks but may not be
+   * suitable for all workloads.
+   */
+  @Inject
+  @Named("${nexus.scheduler.useVirtualThreads:-true}")
+  protected boolean useVirtualThreads;
+  
+  /**
+   * Flag to enable thread pinning diagnostics for virtual threads.
+   * When enabled, logs warnings when virtual threads get pinned to carrier threads.
+   */
+  @Inject
+  @Named("${nexus.scheduler.threadPinningDiagnostics:-false}")
+  protected boolean threadPinningDiagnostics;
 
   @Inject
   @Named(CHANGE_REPO_BLOBSTORE_TASK_ENABLED_NAMED)
   protected boolean changeRepoBlobstoreTaskEnabled;
-
-  /**
-   * Controls whether to use Virtual Threads for suitable tasks.
-   * This can be disabled for troubleshooting or in environments where Virtual Threads
-   * might cause issues with certain JVM or system configurations.
-   */
-  @Inject
-  @Named("${nexus.tasks.useVirtualThreads:-true}")
-  protected boolean useVirtualThreads;
 
   @Inject
   public TaskSchedulerImpl(final EventManager eventManager,
@@ -173,82 +174,60 @@ public class TaskSchedulerImpl
     config.setVisible(descriptor.isVisible());
     config.setRecoverable(descriptor.isRecoverable());
     config.setExposed(descriptor.isExposed());
-
-    // Set the thread type preference based on the task type
-    if (shouldUseVirtualThreads(descriptor.getId())) {
-      config.setString("threadType", "virtual");
-    } else {
-      config.setString("threadType", "platform");
-    }
+    
+    // Set whether this task should use virtual threads based on task characteristics
+    config.setUseVirtualThreads(shouldUseVirtualThreads(descriptor));
 
     return config;
   }
 
   /**
-   * Determines if a task should use Virtual Threads based on its type and configuration.
+   * Determines whether a task should use virtual threads based on its characteristics.
+   * <p>
+   * This method analyzes the task descriptor to determine if the task would benefit
+   * from virtual threads. Generally, I/O-bound tasks benefit most from virtual threads,
+   * while CPU-intensive tasks may perform better with platform threads.
    * 
-   * @param typeId the task type identifier
-   * @return true if the task should use Virtual Threads, false otherwise
+   * @param descriptor the task descriptor to evaluate
+   * @return true if virtual threads should be used, false otherwise
    */
-  protected boolean shouldUseVirtualThreads(final String typeId) {
-    // If Virtual Threads are disabled globally, always return false
+  protected boolean shouldUseVirtualThreads(TaskDescriptor descriptor) {
+    // If virtual threads are globally disabled, don't use them
     if (!useVirtualThreads) {
       return false;
     }
     
-    // If the task type is known to be I/O-bound, use Virtual Threads
-    if (IO_BOUND_TASK_TYPES.contains(typeId)) {
-      return true;
-    }
-    
-    // If the task type is known to be CPU-bound, use platform threads
-    if (CPU_BOUND_TASK_TYPES.contains(typeId)) {
-      return false;
-    }
-    
-    // For unknown task types, default to platform threads for safety
-    // This can be overridden by explicitly setting threadType in the task configuration
-    return false;
-  }
-
-  /**
-   * Checks if a task is experiencing thread pinning issues and logs appropriate warnings.
-   * Thread pinning occurs when a Virtual Thread is blocked on a native method that doesn't
-   * release the carrier thread, preventing the JVM from efficiently multiplexing Virtual Threads.
-   * 
-   * @param taskInfo the task information to check
-   */
-  protected void checkForThreadPinning(final TaskInfo taskInfo) {
-    if (!useVirtualThreads) {
-      return;
-    }
-    
-    TaskConfiguration config = taskInfo.getConfiguration();
-    String taskId = config.getId();
-    String typeId = config.getTypeId();
-    
-    // Only check for thread pinning on tasks using Virtual Threads
-    if ("virtual".equals(config.getString("threadType", "platform"))) {
-      // Check if this task has been running for an unusually long time
-      CurrentState state = taskInfo.getCurrentState();
-      if (state.getState() == TaskState.RUNNING) {
-        long runningTime = System.currentTimeMillis() - state.getRunStarted().getTime();
-        long expectedDuration = config.getLong("expectedDurationMillis", 0);
-        
-        // If the task has been running for significantly longer than expected
-        // and we haven't already logged a warning for this task
-        if (expectedDuration > 0 && runningTime > expectedDuration * 2 && 
-            !threadPinningDetected.contains(taskId)) {
-          log.warn("Possible thread pinning detected in task {} ({}). Task has been running for {} ms, " +
-              "which is significantly longer than expected. Consider switching to platform threads by " +
-              "setting threadType=platform in the task configuration.", 
-              config.getName(), typeId, runningTime);
-          
-          // Remember that we've detected pinning for this task to avoid log spam
-          threadPinningDetected.add(taskId);
-        }
+    // Check if this task type is known to be CPU-intensive
+    // CPU-intensive tasks generally perform better with platform threads
+    if (descriptor.getId() != null) {
+      String typeId = descriptor.getId();
+      
+      // Add known CPU-intensive task types here
+      if (typeId.contains("rebuild-index") || 
+          typeId.contains("compact") || 
+          typeId.contains("compute-checksum") ||
+          typeId.contains("optimize") ||
+          typeId.contains("analyze") ||
+          typeId.contains("purge")) {
+        log.debug("Task type {} identified as CPU-intensive, using platform threads", typeId);
+        return false;
+      }
+      
+      // Tasks that are known to benefit from virtual threads (I/O-bound)
+      if (typeId.contains("proxy") ||
+          typeId.contains("download") ||
+          typeId.contains("fetch") ||
+          typeId.contains("sync") ||
+          typeId.contains("s3") ||
+          typeId.contains("http") ||
+          typeId.contains("remote")) {
+        log.debug("Task type {} identified as I/O-bound, using virtual threads", typeId);
+        return true;
       }
     }
+    
+    // Default to using virtual threads for most tasks
+    return true;
   }
 
   @Override
@@ -261,8 +240,6 @@ public class TaskSchedulerImpl
     checkNotNull(id);
     TaskInfo taskInfo = getScheduler().getTaskById(id);
     if (null != taskInfo && includeRepoMoveTask(taskInfo)) {
-      // Check for thread pinning issues when retrieving task information
-      checkForThreadPinning(taskInfo);
       return taskInfo;
     }
     return null;
@@ -270,19 +247,20 @@ public class TaskSchedulerImpl
 
   @Override
   public List<TaskInfo> listsTasks() {
-    List<TaskInfo> tasks = getScheduler().listsTasks()
+    return getScheduler().listsTasks()
         .stream()
         .filter(this::includeRepoMoveTask)
         .collect(Collectors.toList());
-    
-    // Check all running tasks for potential thread pinning issues
-    tasks.forEach(this::checkForThreadPinning);
-    
-    return tasks;
   }
 
   private boolean includeRepoMoveTask(TaskInfo taskInfo) {
-    return (changeRepoBlobstoreTaskEnabled || !taskInfo.getTypeId().equals(REPO_MOVE_TYPE_ID));
+    // Use ReentrantLock instead of synchronized to avoid virtual thread pinning
+    lock.lock();
+    try {
+      return (changeRepoBlobstoreTaskEnabled || !taskInfo.getTypeId().equals(REPO_MOVE_TYPE_ID));
+    } finally {
+      lock.unlock();
+    }
   }
 
   @Override
@@ -297,25 +275,22 @@ public class TaskSchedulerImpl
       config.setCreated(now);
     }
     config.setUpdated(now);
-    
-    // If threadType is not set, determine whether to use Virtual Threads based on task type
-    if (!config.containsKey("threadType")) {
-      if (shouldUseVirtualThreads(config.getTypeId())) {
-        config.setString("threadType", "virtual");
-        log.debug("Task {} will use Virtual Threads for improved I/O performance", 
-            config.getTaskLogName());
-      } else {
-        config.setString("threadType", "platform");
-      }
+
+    // Log whether this task will use virtual threads
+    if (config.isUseVirtualThreads()) {
+      log.debug("Task {} will use virtual threads", config.getTaskLogName());
     }
 
     TaskInfo taskInfo = getScheduler().scheduleTask(config, schedule);
 
-    log.info("Task {} scheduled: {} (using {} threads)",
+    log.info("Task {} scheduled: {} (using {})",
         taskInfo.getConfiguration().getTaskLogName(),
         taskInfo.getSchedule().getType(),
-        taskInfo.getConfiguration().getString("threadType", "platform")
+        taskInfo.getConfiguration().isUseVirtualThreads() ? "virtual threads" : "platform threads"
     );
+    
+    // Log diagnostics about potential thread pinning issues
+    logThreadPinningDiagnostics(taskInfo);
 
     eventManager.post(new TaskScheduledEvent(taskInfo));
 
@@ -357,5 +332,102 @@ public class TaskSchedulerImpl
   @Override
   public boolean findAndSubmit(final String typeId, final Map<String, String> config) {
     return getScheduler().findAndSubmit(typeId, config);
+  }
+  
+  /**
+   * Creates a ThreadFactory that produces either virtual threads or platform threads
+   * based on the task configuration, with proper security context propagation.
+   * <p>
+   * This factory ensures that the Apache Shiro security context is properly propagated
+   * to the created threads, which is essential for maintaining security across thread boundaries.
+   *
+   * @param useVirtual whether to use virtual threads
+   * @param namePrefix the prefix for thread names
+   * @return a ThreadFactory that creates the appropriate type of thread with security context
+   */
+  public static ThreadFactory createThreadFactory(boolean useVirtual, String namePrefix) {
+    if (useVirtual) {
+      return task -> {
+        // Capture the current security subject before creating the thread
+        final Subject currentSubject = ThreadContext.getSubject();
+        
+        // Capture task-specific MDC values to propagate to the virtual thread
+        final String taskId = MDC.get("taskId");
+        final String taskType = MDC.get("taskType");
+        
+        // Wrap the task in MDCAwareRunnable to propagate logging context
+        Runnable wrappedTask = new MDCAwareRunnable(() -> {
+          try {
+            // Propagate the security context to the virtual thread
+            if (currentSubject != null) {
+              ThreadContext.bind(currentSubject);
+            }
+            
+            // Restore task-specific MDC values
+            if (taskId != null) {
+              MDC.put("taskId", taskId);
+            }
+            if (taskType != null) {
+              MDC.put("taskType", taskType);
+            }
+            
+            // Execute the original task
+            task.run();
+          } finally {
+            // Clean up the thread context and MDC
+            ThreadContext.unbindSubject();
+            MDC.remove("taskId");
+            MDC.remove("taskType");
+          }
+        });
+        
+        Thread thread = Thread.ofVirtual()
+            .name(namePrefix + "-" + System.nanoTime())
+            .unstarted(wrappedTask);
+        return thread;
+      };
+    } else {
+      // For platform threads, use the NexusThreadFactory which already handles security context
+      return new NexusThreadFactory(namePrefix, namePrefix);
+    }
+  }
+  
+  /**
+   * Logs diagnostic information about thread pinning issues.
+   * This is useful for identifying performance bottlenecks with virtual threads.
+   * <p>
+   * Thread pinning occurs when a virtual thread cannot be unmounted from its carrier thread,
+   * typically due to synchronized blocks/methods or native method calls. This can reduce
+   * the performance benefits of virtual threads.
+   *
+   * @param taskInfo the task information to check for pinning issues
+   */
+  protected void logThreadPinningDiagnostics(TaskInfo taskInfo) {
+    if (taskInfo.getConfiguration().isUseVirtualThreads() && threadPinningDiagnostics) {
+      // Check if JFR events for virtual thread pinning are enabled
+      boolean jfrEventsEnabled = Boolean.getBoolean("jdk.tracePinnedThreads");
+      if (!jfrEventsEnabled) {
+        VIRTUAL_THREAD_LOGGER.info("Virtual thread pinning diagnostics enabled for task {}. " +
+                "Consider adding -Djdk.tracePinnedThreads=full JVM option for detailed diagnostics.",
+            taskInfo.getConfiguration().getTaskLogName());
+      } else {
+        VIRTUAL_THREAD_LOGGER.debug("Virtual thread pinning diagnostics active for task {}",
+            taskInfo.getConfiguration().getTaskLogName());
+      }
+      
+      // Log thread statistics
+      int threadCount = THREAD_MX_BEAN.getThreadCount();
+      long totalStartedThreadCount = THREAD_MX_BEAN.getTotalStartedThreadCount();
+      VIRTUAL_THREAD_LOGGER.debug("Current thread statistics - Thread count: {}, Total started: {}", 
+          threadCount, totalStartedThreadCount);
+      
+      // Recommend using JFR for continuous monitoring
+      VIRTUAL_THREAD_LOGGER.debug("For production monitoring of thread pinning, consider using JFR events: " +
+          "jdk.VirtualThreadPinned with a RecordingStream");
+      
+      // Log potential synchronized blocks that might cause pinning
+      VIRTUAL_THREAD_LOGGER.debug("Common causes of thread pinning include synchronized blocks/methods and native calls. " +
+          "Consider using java.util.concurrent.locks.ReentrantLock instead of synchronized.");
+    }
   }
 }

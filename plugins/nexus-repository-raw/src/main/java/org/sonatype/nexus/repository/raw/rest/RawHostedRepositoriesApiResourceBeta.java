@@ -24,9 +24,11 @@ import io.swagger.annotations.Api;
 import static org.sonatype.nexus.repository.raw.rest.RawHostedRepositoriesApiResourceBeta.RESOURCE_URI;
 
 /**
+ * REST resource providing a backward-compatible beta endpoint for Raw hosted repositories.
+ * 
  * @since 3.26
  * @deprecated the 'beta' prefix is being phased out, prefer starting new APIs with {@link APIConstants#V1_API_PREFIX}
- * instead. Support backward compatibility.
+ * instead. Support backward compatibility with Java 21 and RESTEasy 6.2.7.
  */
 @Api(hidden = true)
 @Named

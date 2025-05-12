@@ -15,7 +15,11 @@ package org.sonatype.nexus.content.raw.internal.browse;
 import org.sonatype.nexus.repository.content.browse.store.BrowseNodeDAO;
 
 /**
+ * Raw repository browse node DAO interface.
+ * 
  * @since 3.26
+ * @see BrowseNodeDAO
+ * @Java21 This interface is compatible with Java 21 and virtual threads.
  */
 public interface RawBrowseNodeDAO
     extends BrowseNodeDAO

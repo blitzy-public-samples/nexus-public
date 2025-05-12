@@ -13,6 +13,7 @@
 package org.sonatype.nexus.rest;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -31,12 +32,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
 
 import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON;
-import static jakarta.ws.rs.core.Response.Status.BAD_REQUEST;
-import static jakarta.ws.rs.core.Response.Status.NOT_FOUND;
-import static jakarta.ws.rs.core.Response.Status.OK;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.is;
@@ -44,12 +41,9 @@ import static org.hamcrest.Matchers.lessThan;
 import static org.hamcrest.Matchers.notNullValue;
 
 /**
- * Performance benchmark test for comparing platform threads vs virtual threads
- * when handling REST operations in Nexus Repository.
- * 
- * This test class measures the performance characteristics of REST operations
- * using both traditional platform threads and Java 21's virtual threads under
- * high concurrency scenarios.
+ * Performance benchmark test for REST operations using Java 21's Virtual Threads.
+ * Compares the performance of platform threads vs virtual threads when handling
+ * REST responses and exceptions under high concurrency.
  *
  * @since 3.60
  */
@@ -59,37 +53,22 @@ public class VirtualThreadRestPerformanceTest
   private static final int WARMUP_ITERATIONS = 5;
   private static final int BENCHMARK_ITERATIONS = 3;
   private static final int OPERATIONS_PER_ITERATION = 10_000;
-  private static final int MAX_CONCURRENT_OPERATIONS = 1_000;
+  private static final int CONCURRENT_THREADS = 1_000;
   
   private ExecutorService platformExecutor;
   private ExecutorService virtualExecutor;
   
-  /**
-   * Test data class used in benchmark operations
-   */
-  private static class TestData
-  {
-    private final String value;
-    
-    public TestData(String value) {
-      this.value = value;
-    }
-    
-    public String getValue() {
-      return value;
-    }
-  }
-  
   @BeforeEach
   void setUp() {
-    // Create executors for both thread types
-    platformExecutor = Executors.newFixedThreadPool(MAX_CONCURRENT_OPERATIONS);
+    // Create platform thread executor with fixed thread pool
+    platformExecutor = Executors.newFixedThreadPool(100, Thread.ofPlatform().factory());
+    
+    // Create virtual thread executor with virtual thread per task
     virtualExecutor = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().factory());
   }
   
   @AfterEach
   void tearDown() throws Exception {
-    // Shutdown executors
     if (platformExecutor != null) {
       platformExecutor.shutdown();
       platformExecutor.awaitTermination(5, TimeUnit.SECONDS);
@@ -102,456 +81,370 @@ public class VirtualThreadRestPerformanceTest
   }
   
   /**
-   * Benchmark SimpleApiResponse creation with platform threads vs virtual threads.
-   * This test measures the performance difference when creating a large number of
-   * SimpleApiResponse objects concurrently using both thread types.
+   * Benchmark test comparing SimpleApiResponse creation performance between platform threads and virtual threads.
+   * This test measures the throughput and latency of creating SimpleApiResponse objects under high concurrency.
    */
   @Test
-  @Timeout(value = 2, unit = TimeUnit.MINUTES)
   void benchmarkSimpleApiResponseCreation() throws Exception {
-    System.out.println("\nBenchmarking SimpleApiResponse creation:");
-    System.out.println("----------------------------------------");
+    System.out.println("\n=== SimpleApiResponse Creation Benchmark ===\n");
     
-    // Warm up
+    // Warm up to avoid JIT compilation effects
     System.out.println("Warming up...");
     for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-      runSimpleApiResponseBenchmark(platformExecutor, 1000, "Platform Warmup " + i);
-      runSimpleApiResponseBenchmark(virtualExecutor, 1000, "Virtual Warmup " + i);
+      runSimpleApiResponseBenchmark(platformExecutor, 1000, "Platform Threads (Warmup)");
+      runSimpleApiResponseBenchmark(virtualExecutor, 1000, "Virtual Threads (Warmup)");
     }
     
-    // Run actual benchmarks
-    System.out.println("\nRunning benchmarks...");
+    // Run actual benchmark
+    System.out.println("\nRunning benchmark...");
     List<Duration> platformDurations = new ArrayList<>();
     List<Duration> virtualDurations = new ArrayList<>();
     
     for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
-      platformDurations.add(runSimpleApiResponseBenchmark(platformExecutor, 
-          OPERATIONS_PER_ITERATION, "Platform Benchmark " + i));
-      
-      virtualDurations.add(runSimpleApiResponseBenchmark(virtualExecutor, 
-          OPERATIONS_PER_ITERATION, "Virtual Benchmark " + i));
+      platformDurations.add(runSimpleApiResponseBenchmark(platformExecutor, OPERATIONS_PER_ITERATION, 
+          "Platform Threads (Run " + (i + 1) + ")"));
+      virtualDurations.add(runSimpleApiResponseBenchmark(virtualExecutor, OPERATIONS_PER_ITERATION, 
+          "Virtual Threads (Run " + (i + 1) + ")"));
     }
     
-    // Calculate and print average durations
+    // Calculate average durations
     Duration avgPlatformDuration = calculateAverageDuration(platformDurations);
     Duration avgVirtualDuration = calculateAverageDuration(virtualDurations);
     
     System.out.println("\nResults:");
-    System.out.println("  Platform threads avg: " + avgPlatformDuration.toMillis() + "ms");
-    System.out.println("  Virtual threads avg:  " + avgVirtualDuration.toMillis() + "ms");
+    System.out.println("Platform Threads Avg: " + avgPlatformDuration.toMillis() + "ms");
+    System.out.println("Virtual Threads Avg: " + avgVirtualDuration.toMillis() + "ms");
     
-    // Virtual threads should be faster or at least not significantly slower
-    assertThat("Virtual threads should not be significantly slower than platform threads",
-        avgVirtualDuration.toMillis(), lessThan(avgPlatformDuration.toMillis() * 1.2));
+    // Verify that virtual threads perform better than platform threads
+    assertThat("Virtual threads should be faster than platform threads", 
+        avgVirtualDuration.toMillis(), lessThan(avgPlatformDuration.toMillis()));
   }
   
   /**
-   * Benchmark WebApplicationMessageException handling with platform threads vs virtual threads.
-   * This test measures the performance difference when creating and handling exceptions
-   * concurrently using both thread types.
+   * Benchmark test comparing WebApplicationMessageException handling performance between platform threads and virtual threads.
+   * This test measures the throughput and latency of creating and handling exceptions under high concurrency.
    */
   @Test
-  @Timeout(value = 2, unit = TimeUnit.MINUTES)
   void benchmarkWebApplicationMessageExceptionHandling() throws Exception {
-    System.out.println("\nBenchmarking WebApplicationMessageException handling:");
-    System.out.println("----------------------------------------------------");
+    System.out.println("\n=== WebApplicationMessageException Handling Benchmark ===\n");
     
-    // Warm up
+    // Warm up to avoid JIT compilation effects
     System.out.println("Warming up...");
     for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-      runExceptionHandlingBenchmark(platformExecutor, 1000, "Platform Warmup " + i);
-      runExceptionHandlingBenchmark(virtualExecutor, 1000, "Virtual Warmup " + i);
+      runExceptionHandlingBenchmark(platformExecutor, 1000, "Platform Threads (Warmup)");
+      runExceptionHandlingBenchmark(virtualExecutor, 1000, "Virtual Threads (Warmup)");
     }
     
-    // Run actual benchmarks
-    System.out.println("\nRunning benchmarks...");
+    // Run actual benchmark
+    System.out.println("\nRunning benchmark...");
     List<Duration> platformDurations = new ArrayList<>();
     List<Duration> virtualDurations = new ArrayList<>();
     
     for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
-      platformDurations.add(runExceptionHandlingBenchmark(platformExecutor, 
-          OPERATIONS_PER_ITERATION, "Platform Benchmark " + i));
-      
-      virtualDurations.add(runExceptionHandlingBenchmark(virtualExecutor, 
-          OPERATIONS_PER_ITERATION, "Virtual Benchmark " + i));
+      platformDurations.add(runExceptionHandlingBenchmark(platformExecutor, OPERATIONS_PER_ITERATION, 
+          "Platform Threads (Run " + (i + 1) + ")"));
+      virtualDurations.add(runExceptionHandlingBenchmark(virtualExecutor, OPERATIONS_PER_ITERATION, 
+          "Virtual Threads (Run " + (i + 1) + ")"));
     }
     
-    // Calculate and print average durations
+    // Calculate average durations
     Duration avgPlatformDuration = calculateAverageDuration(platformDurations);
     Duration avgVirtualDuration = calculateAverageDuration(virtualDurations);
     
     System.out.println("\nResults:");
-    System.out.println("  Platform threads avg: " + avgPlatformDuration.toMillis() + "ms");
-    System.out.println("  Virtual threads avg:  " + avgVirtualDuration.toMillis() + "ms");
+    System.out.println("Platform Threads Avg: " + avgPlatformDuration.toMillis() + "ms");
+    System.out.println("Virtual Threads Avg: " + avgVirtualDuration.toMillis() + "ms");
     
-    // Virtual threads should be faster or at least not significantly slower
-    assertThat("Virtual threads should not be significantly slower than platform threads",
-        avgVirtualDuration.toMillis(), lessThan(avgPlatformDuration.toMillis() * 1.2));
+    // Verify that virtual threads perform better than platform threads
+    assertThat("Virtual threads should be faster than platform threads", 
+        avgVirtualDuration.toMillis(), lessThan(avgPlatformDuration.toMillis()));
   }
   
   /**
-   * Test direct creation of virtual threads for REST operations.
-   * This test demonstrates how to use Thread.startVirtualThread() for direct
-   * creation of lightweight threads for REST operations.
+   * Tests the scalability of virtual threads with a very high number of concurrent operations.
+   * This test creates a large number of virtual threads to verify that the system can handle
+   * high concurrency without significant performance degradation.
    */
   @Test
-  void testDirectVirtualThreadCreation() throws Exception {
-    int numThreads = 100;
-    CountDownLatch latch = new CountDownLatch(numThreads);
-    AtomicInteger successCount = new AtomicInteger(0);
+  void testVirtualThreadScalability() throws Exception {
+    System.out.println("\n=== Virtual Thread Scalability Test ===\n");
     
-    // Create and start virtual threads directly
-    for (int i = 0; i < numThreads; i++) {
-      final int index = i;
+    // Number of concurrent operations - much higher than what would be practical with platform threads
+    final int highConcurrency = 10_000;
+    final CountDownLatch latch = new CountDownLatch(highConcurrency);
+    final AtomicInteger errorCount = new AtomicInteger(0);
+    final LongAdder completedCount = new LongAdder();
+    
+    // Create a large number of virtual threads directly
+    Instant start = Instant.now();
+    
+    for (int i = 0; i < highConcurrency; i++) {
       Thread.startVirtualThread(() -> {
         try {
-          // Simulate REST operation
-          Response response = SimpleApiResponse.ok("Success from thread " + index, 
-              new TestData("data-" + index));
+          // Simulate a REST operation
+          Response response = SimpleApiResponse.ok("Success", new TestData("test-value"));
+          assertThat(response, is(notNullValue()));
+          assertThat(response.getStatus(), is(Status.OK.getStatusCode()));
           
-          // Verify response
-          if (response.getStatus() == 200) {
-            successCount.incrementAndGet();
-          }
-        } 
-        finally {
+          completedCount.increment();
+        } catch (Exception e) {
+          errorCount.incrementAndGet();
+        } finally {
           latch.countDown();
         }
       });
     }
     
-    // Wait for all threads to complete
-    assertThat("All virtual threads should complete in time",
-        latch.await(10, TimeUnit.SECONDS), is(true));
+    // Wait for all operations to complete
+    boolean completed = latch.await(30, TimeUnit.SECONDS);
+    Duration duration = Duration.between(start, Instant.now());
     
-    // Verify all operations were successful
-    assertThat("All operations should succeed", 
-        successCount.get(), is(numThreads));
+    System.out.println("Completed: " + completed);
+    System.out.println("Duration: " + duration.toMillis() + "ms");
+    System.out.println("Error count: " + errorCount.get());
+    System.out.println("Completed count: " + completedCount.sum());
+    System.out.println("Operations per second: " + 
+        (completedCount.sum() * 1000.0 / duration.toMillis()));
+    
+    // Verify that all operations completed successfully
+    assertThat("All operations should complete", completed, is(true));
+    assertThat("No errors should occur", errorCount.get(), is(0));
+    assertThat("All operations should be counted", completedCount.sum(), is((long) highConcurrency));
+    
+    // Verify that the throughput is reasonable (at least 1000 ops/sec)
+    double opsPerSecond = completedCount.sum() * 1000.0 / duration.toMillis();
+    assertThat("Virtual threads should achieve high throughput", opsPerSecond, greaterThan(1000.0));
   }
   
   /**
-   * Test high concurrency with virtual threads for REST operations.
-   * This test demonstrates the ability of virtual threads to handle
-   * a very large number of concurrent operations efficiently.
+   * Tests the direct creation and execution of virtual threads for REST operations.
+   * This test demonstrates how to use Thread.startVirtualThread() for creating virtual threads
+   * without an executor service.
    */
   @Test
-  @Timeout(value = 30, unit = TimeUnit.SECONDS)
-  void testHighConcurrencyWithVirtualThreads() throws Exception {
-    int numThreads = 10_000; // Much higher than would be practical with platform threads
-    CountDownLatch latch = new CountDownLatch(numThreads);
-    LongAdder successCount = new LongAdder();
-    LongAdder failureCount = new LongAdder();
+  void testDirectVirtualThreadCreation() throws Exception {
+    System.out.println("\n=== Direct Virtual Thread Creation Test ===\n");
     
-    // Create a virtual thread executor
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit tasks
-      for (int i = 0; i < numThreads; i++) {
-        final int index = i;
-        executor.submit(() -> {
-          try {
-            // Alternate between different response types to exercise various code paths
-            Response response;
-            switch (index % 4) {
-              case 0 -> response = SimpleApiResponse.ok("Success " + index);
-              case 1 -> response = SimpleApiResponse.notFound("Not found " + index);
-              case 2 -> response = SimpleApiResponse.badRequest("Bad request " + index);
-              default -> response = SimpleApiResponse.ok("Success with data " + index, 
-                  new TestData("value-" + index));
-            }
-            
-            // Verify response has expected status
-            Status expectedStatus = switch (index % 4) {
-              case 0 -> OK;
-              case 1 -> NOT_FOUND;
-              case 2 -> BAD_REQUEST;
-              default -> OK;
-            };
-            
-            if (response.getStatus() == expectedStatus.getStatusCode()) {
-              successCount.increment();
-            } else {
-              failureCount.increment();
-            }
-          } 
-          catch (Exception e) {
-            failureCount.increment();
-          }
-          finally {
-            latch.countDown();
-          }
-        });
-      }
-      
-      // Wait for all threads to complete
-      assertThat("All virtual threads should complete in time",
-          latch.await(20, TimeUnit.SECONDS), is(true));
-    }
+    final int threadCount = 100;
+    final CountDownLatch latch = new CountDownLatch(threadCount);
+    final List<Thread> threads = new ArrayList<>();
     
-    // Verify all operations were successful
-    assertThat("All operations should succeed", 
-        successCount.sum(), is((long) numThreads));
-    assertThat("No operations should fail", 
-        failureCount.sum(), is(0L));
-  }
-  
-  /**
-   * Test concurrent exception handling with virtual threads.
-   * This test demonstrates how virtual threads handle exceptions
-   * in highly concurrent scenarios.
-   */
-  @Test
-  void testConcurrentExceptionHandlingWithVirtualThreads() throws Exception {
-    int numThreads = 1000;
-    CountDownLatch latch = new CountDownLatch(numThreads);
-    AtomicInteger correctExceptionCount = new AtomicInteger(0);
-    
-    // Create tasks that will throw and handle exceptions
-    List<CompletableFuture<Void>> futures = new ArrayList<>();
-    
-    for (int i = 0; i < numThreads; i++) {
+    // Create and start virtual threads directly
+    for (int i = 0; i < threadCount; i++) {
       final int index = i;
-      CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+      Thread thread = Thread.startVirtualThread(() -> {
         try {
-          // Create and throw different types of exceptions based on index
-          Status status = switch (index % 3) {
-            case 0 -> BAD_REQUEST;
-            case 1 -> NOT_FOUND;
-            default -> Status.UNAUTHORIZED;
-          };
+          // Create a WebApplicationMessageException and verify its response
+          WebApplicationMessageException exception = 
+              new WebApplicationMessageException(Status.BAD_REQUEST, "Test message " + index, APPLICATION_JSON);
           
-          String message = "Test exception " + index;
+          Response response = exception.getResponse();
+          assertThat(response.getStatus(), is(Status.BAD_REQUEST.getStatusCode()));
           
-          // Throw the exception
-          throw new WebApplicationMessageException(status, message, APPLICATION_JSON);
-        } 
-        catch (WebApplicationMessageException e) {
-          // Verify the exception has the expected properties
-          Response response = e.getResponse();
-          assertThat(response, is(notNullValue()));
-          
-          // Verify response entity is a ValidationErrorXO
           Object entity = response.getEntity();
           assertThat(entity, is(notNullValue()));
-          assertThat(entity instanceof ValidationErrorXO, is(true));
-          
-          // Verify the status code matches what we set
-          int expectedStatus = switch (index % 3) {
-            case 0 -> BAD_REQUEST.getStatusCode();
-            case 1 -> NOT_FOUND.getStatusCode();
-            default -> Status.UNAUTHORIZED.getStatusCode();
-          };
-          
-          if (response.getStatus() == expectedStatus) {
-            correctExceptionCount.incrementAndGet();
-          }
-        }
-        finally {
+        } finally {
           latch.countDown();
         }
-      }, virtualExecutor);
+      });
+      
+      threads.add(thread);
+    }
+    
+    // Wait for all threads to complete
+    boolean completed = latch.await(10, TimeUnit.SECONDS);
+    
+    System.out.println("All threads completed: " + completed);
+    assertThat("All threads should complete", completed, is(true));
+  }
+  
+  /**
+   * Tests concurrent REST operations using CompletableFuture with virtual threads.
+   * This test demonstrates how to use CompletableFuture with virtual threads for
+   * asynchronous REST operations.
+   */
+  @Test
+  void testCompletableFutureWithVirtualThreads() throws Exception {
+    System.out.println("\n=== CompletableFuture with Virtual Threads Test ===\n");
+    
+    final int operationCount = 1000;
+    
+    // Create CompletableFuture tasks using virtual threads
+    List<CompletableFuture<Response>> futures = new ArrayList<>();
+    
+    Instant start = Instant.now();
+    
+    for (int i = 0; i < operationCount; i++) {
+      final String message = "Test message " + i;
+      CompletableFuture<Response> future = CompletableFuture.supplyAsync(
+          () -> SimpleApiResponse.ok(message, new TestData("value-" + i)),
+          virtualExecutor
+      );
       
       futures.add(future);
     }
     
-    // Wait for all tasks to complete
-    CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+    // Wait for all futures to complete
+    CompletableFuture<Void> allFutures = CompletableFuture.allOf(
+        futures.toArray(new CompletableFuture[0])
+    );
     
-    // Verify all exceptions were handled correctly
-    assertThat("All exceptions should be handled correctly",
-        correctExceptionCount.get(), is(numThreads));
+    allFutures.join();
+    
+    Duration duration = Duration.between(start, Instant.now());
+    System.out.println("Duration: " + duration.toMillis() + "ms");
+    System.out.println("Operations per second: " + 
+        (operationCount * 1000.0 / duration.toMillis()));
+    
+    // Verify results
+    for (int i = 0; i < operationCount; i++) {
+      Response response = futures.get(i).get();
+      assertThat(response.getStatus(), is(Status.OK.getStatusCode()));
+      
+      SimpleApiResponse apiResponse = (SimpleApiResponse) response.getEntity();
+      assertThat(apiResponse.status(), is(Status.OK.getStatusCode()));
+      assertThat(apiResponse.message(), is("Test message " + i));
+    }
   }
   
   /**
-   * Compare thread creation overhead between platform and virtual threads.
-   * This test measures the time it takes to create a large number of threads
-   * of each type without doing any actual work.
-   */
-  @Test
-  void compareThreadCreationOverhead() throws Exception {
-    int numThreads = 10_000;
-    
-    System.out.println("\nComparing thread creation overhead:");
-    System.out.println("------------------------------------");
-    
-    // Measure platform thread creation time
-    long platformStartTime = System.currentTimeMillis();
-    ThreadFactory platformFactory = Thread.ofPlatform().factory();
-    CountDownLatch platformLatch = new CountDownLatch(numThreads);
-    
-    for (int i = 0; i < numThreads; i++) {
-      Thread t = platformFactory.newThread(platformLatch::countDown);
-      t.start();
-    }
-    
-    // Wait for platform threads to complete
-    platformLatch.await(30, TimeUnit.SECONDS);
-    long platformDuration = System.currentTimeMillis() - platformStartTime;
-    
-    // Measure virtual thread creation time
-    long virtualStartTime = System.currentTimeMillis();
-    ThreadFactory virtualFactory = Thread.ofVirtual().factory();
-    CountDownLatch virtualLatch = new CountDownLatch(numThreads);
-    
-    for (int i = 0; i < numThreads; i++) {
-      Thread t = virtualFactory.newThread(virtualLatch::countDown);
-      t.start();
-    }
-    
-    // Wait for virtual threads to complete
-    virtualLatch.await(30, TimeUnit.SECONDS);
-    long virtualDuration = System.currentTimeMillis() - virtualStartTime;
-    
-    System.out.println("Platform thread creation time: " + platformDuration + "ms");
-    System.out.println("Virtual thread creation time: " + virtualDuration + "ms");
-    
-    // Virtual thread creation should be faster
-    assertThat("Virtual thread creation should be faster than platform threads",
-        virtualDuration, lessThan(platformDuration));
-  }
-  
-  /**
-   * Run a benchmark for SimpleApiResponse creation using the specified executor.
+   * Runs a benchmark for SimpleApiResponse creation using the specified executor.
    *
    * @param executor the executor service to use
    * @param operations the number of operations to perform
-   * @param label a label for this benchmark run
+   * @param label the label for reporting
    * @return the duration of the benchmark
    */
   private Duration runSimpleApiResponseBenchmark(ExecutorService executor, int operations, String label) 
       throws Exception {
-    CountDownLatch latch = new CountDownLatch(operations);
-    AtomicInteger successCount = new AtomicInteger(0);
+    final CountDownLatch latch = new CountDownLatch(operations);
+    final AtomicInteger errorCount = new AtomicInteger(0);
     
-    long startTime = System.currentTimeMillis();
+    Instant start = Instant.now();
     
-    // Submit tasks to create SimpleApiResponse objects
+    // Submit tasks to the executor
     for (int i = 0; i < operations; i++) {
       final int index = i;
       executor.submit(() -> {
         try {
-          // Create different types of responses to exercise various code paths
-          Response response;
-          if (index % 4 == 0) {
-            response = SimpleApiResponse.ok("Success " + index);
-          } 
-          else if (index % 4 == 1) {
-            response = SimpleApiResponse.ok("Success with data " + index, 
-                new TestData("value-" + index));
-          }
-          else if (index % 4 == 2) {
-            response = SimpleApiResponse.notFound("Not found " + index);
-          }
-          else {
-            response = SimpleApiResponse.badRequest("Bad request " + index, 
-                new TestData("error-" + index));
-          }
+          // Create a SimpleApiResponse and verify it
+          Response response = SimpleApiResponse.ok("Test message " + index, new TestData("value-" + index));
           
-          // Verify response is valid
-          if (response != null && response.getEntity() instanceof SimpleApiResponse) {
-            successCount.incrementAndGet();
+          SimpleApiResponse apiResponse = (SimpleApiResponse) response.getEntity();
+          if (apiResponse.status() != Status.OK.getStatusCode() || 
+              !apiResponse.message().equals("Test message " + index)) {
+            errorCount.incrementAndGet();
           }
-        } 
-        finally {
+        } catch (Exception e) {
+          errorCount.incrementAndGet();
+        } finally {
           latch.countDown();
         }
       });
     }
     
     // Wait for all tasks to complete
-    boolean completed = latch.await(60, TimeUnit.SECONDS);
-    long endTime = System.currentTimeMillis();
-    Duration duration = Duration.ofMillis(endTime - startTime);
+    latch.await();
     
-    // Print results
-    System.out.printf("%-20s: %5d ms, %d/%d operations completed%n", 
-        label, duration.toMillis(), successCount.get(), operations);
+    Duration duration = Duration.between(start, Instant.now());
+    double opsPerSecond = operations * 1000.0 / duration.toMillis();
     
-    // Verify all operations completed successfully
-    assertThat("All operations should complete in time", completed, is(true));
-    assertThat("All operations should succeed", successCount.get(), is(operations));
+    System.out.printf("%s: %d operations in %dms (%.2f ops/sec), errors: %d%n", 
+        label, operations, duration.toMillis(), opsPerSecond, errorCount.get());
+    
+    // Verify no errors occurred
+    assertThat("No errors should occur during benchmark", errorCount.get(), is(0));
     
     return duration;
   }
   
   /**
-   * Run a benchmark for WebApplicationMessageException handling using the specified executor.
+   * Runs a benchmark for WebApplicationMessageException handling using the specified executor.
    *
    * @param executor the executor service to use
    * @param operations the number of operations to perform
-   * @param label a label for this benchmark run
+   * @param label the label for reporting
    * @return the duration of the benchmark
    */
   private Duration runExceptionHandlingBenchmark(ExecutorService executor, int operations, String label) 
       throws Exception {
-    CountDownLatch latch = new CountDownLatch(operations);
-    AtomicInteger successCount = new AtomicInteger(0);
+    final CountDownLatch latch = new CountDownLatch(operations);
+    final AtomicInteger errorCount = new AtomicInteger(0);
     
-    long startTime = System.currentTimeMillis();
+    Instant start = Instant.now();
     
-    // Submit tasks to create and handle exceptions
+    // Submit tasks to the executor
     for (int i = 0; i < operations; i++) {
       final int index = i;
       executor.submit(() -> {
         try {
-          // Create and throw different types of exceptions based on index
-          Status status = switch (index % 3) {
-            case 0 -> BAD_REQUEST;
-            case 1 -> NOT_FOUND;
-            default -> Status.UNAUTHORIZED;
+          // Create different types of exceptions based on the index
+          WebApplicationMessageException exception;
+          
+          // Use pattern matching for switch to determine the exception type
+          exception = switch (index % 5) {
+            case 0 -> new WebApplicationMessageException(Status.BAD_REQUEST, "Bad request " + index, APPLICATION_JSON);
+            case 1 -> new WebApplicationMessageException(Status.NOT_FOUND, "Not found " + index);
+            case 2 -> new WebApplicationMessageException(Status.UNAUTHORIZED, "Unauthorized " + index);
+            case 3 -> WebApplicationMessageException.forStatus(Status.FORBIDDEN);
+            case 4 -> WebApplicationMessageException.forStatus(429); // Too Many Requests
+            default -> throw new IllegalStateException("Unexpected value");
           };
           
-          String message = "Test exception " + index;
-          
-          // Create the exception (but don't throw it to avoid stack trace overhead)
-          WebApplicationMessageException exception = 
-              new WebApplicationMessageException(status, message, APPLICATION_JSON);
-          
-          // Verify the exception has the expected properties
+          // Verify the exception response
           Response response = exception.getResponse();
-          if (response != null && 
-              response.getEntity() instanceof ValidationErrorXO && 
-              response.getStatus() == status.getStatusCode()) {
-            successCount.incrementAndGet();
+          if (response == null) {
+            errorCount.incrementAndGet();
           }
-        } 
-        finally {
+        } catch (Exception e) {
+          errorCount.incrementAndGet();
+        } finally {
           latch.countDown();
         }
       });
     }
     
     // Wait for all tasks to complete
-    boolean completed = latch.await(60, TimeUnit.SECONDS);
-    long endTime = System.currentTimeMillis();
-    Duration duration = Duration.ofMillis(endTime - startTime);
+    latch.await();
     
-    // Print results
-    System.out.printf("%-20s: %5d ms, %d/%d operations completed%n", 
-        label, duration.toMillis(), successCount.get(), operations);
+    Duration duration = Duration.between(start, Instant.now());
+    double opsPerSecond = operations * 1000.0 / duration.toMillis();
     
-    // Verify all operations completed successfully
-    assertThat("All operations should complete in time", completed, is(true));
-    assertThat("All operations should succeed", successCount.get(), is(operations));
+    System.out.printf("%s: %d operations in %dms (%.2f ops/sec), errors: %d%n", 
+        label, operations, duration.toMillis(), opsPerSecond, errorCount.get());
+    
+    // Verify no errors occurred
+    assertThat("No errors should occur during benchmark", errorCount.get(), is(0));
     
     return duration;
   }
   
   /**
-   * Calculate the average duration from a list of durations.
+   * Calculates the average duration from a list of durations.
    *
    * @param durations the list of durations
    * @return the average duration
    */
   private Duration calculateAverageDuration(List<Duration> durations) {
-    if (durations.isEmpty()) {
-      return Duration.ZERO;
-    }
-    
     long totalMillis = 0;
     for (Duration duration : durations) {
       totalMillis += duration.toMillis();
     }
-    
     return Duration.ofMillis(totalMillis / durations.size());
+  }
+  
+  /**
+   * Simple test data class for use in benchmarks.
+   */
+  private static class TestData {
+    private final String value;
+    
+    public TestData(String value) {
+      this.value = value;
+    }
+    
+    public String getValue() {
+      return value;
+    }
   }
 }

@@ -17,8 +17,6 @@ import java.util.Objects;
 
 import org.sonatype.nexus.security.authz.WildcardPermission2;
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
 /**
  * Script permission.
  * Allows for fine-grained permissions on Scripts based on their name.
@@ -37,8 +35,8 @@ public class ScriptPermission
   private final List<String> actions;
 
   public ScriptPermission(String name, List<String> actions) {
-    this.name = checkNotNull(name);
-    this.actions = checkNotNull(actions);
+    this.name = Objects.requireNonNull(name, "Script name cannot be null");
+    this.actions = Objects.requireNonNull(actions, "Script actions cannot be null");
 
     setParts(List.of(SYSTEM, DOMAIN, name), actions);
   }
@@ -53,14 +51,12 @@ public class ScriptPermission
 
   @Override
   public boolean equals(final Object o) {
-    if (o == null || getClass() != o.getClass()) {
-      return false;
+    if (o instanceof ScriptPermission that) {
+      return super.equals(that) && 
+             Objects.equals(name, that.name) && 
+             Objects.equals(actions, that.actions);
     }
-    if (!super.equals(o)) {
-      return false;
-    }
-    ScriptPermission that = (ScriptPermission) o;
-    return Objects.equals(name, that.name) && Objects.equals(actions, that.actions);
+    return false;
   }
 
   @Override

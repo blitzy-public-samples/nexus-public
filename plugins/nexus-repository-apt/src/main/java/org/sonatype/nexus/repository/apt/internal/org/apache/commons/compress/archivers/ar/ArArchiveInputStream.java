@@ -32,7 +32,9 @@ import org.apache.commons.compress.utils.IOUtils;
  * Implements the "ar" archive format as an input stream.
  *
  * @NotThreadSafe
- *
+ * 
+ * This implementation is compatible with Java 21 and can benefit from Virtual Threads
+ * when used in I/O-bound operations.
  */
 public class ArArchiveInputStream extends ArchiveInputStream {
 
@@ -105,11 +107,11 @@ public class ArArchiveInputStream extends ArchiveInputStream {
       final int read = IOUtils.readFully(input, realized);
       trackReadBytes(read);
       if (read != expected.length) {
-        throw new IOException("failed to read header. Occured at byte: " + getBytesRead());
+        throw new IOException(STR."failed to read header. Occurred at byte: \{getBytesRead()}");
       }
       for (int i = 0; i < expected.length; i++) {
         if (expected[i] != realized[i]) {
-          throw new IOException("invalid header " + ArchiveUtils.toAsciiString(realized));
+          throw new IOException(STR."invalid header \{ArchiveUtils.toAsciiString(realized)}");
         }
       }
     }
@@ -139,11 +141,11 @@ public class ArArchiveInputStream extends ArchiveInputStream {
       final int read = IOUtils.readFully(input, realized);
       trackReadBytes(read);
       if (read != expected.length) {
-        throw new IOException("failed to read entry trailer. Occured at byte: " + getBytesRead());
+        throw new IOException(STR."failed to read entry trailer. Occurred at byte: \{getBytesRead()}");
       }
       for (int i = 0; i < expected.length; i++) {
         if (expected[i] != realized[i]) {
-          throw new IOException("invalid entry trailer. not read the content? Occured at byte: " + getBytesRead());
+          throw new IOException(STR."invalid entry trailer. not read the content? Occurred at byte: \{getBytesRead()}");
         }
       }
     }
@@ -202,7 +204,7 @@ public class ArArchiveInputStream extends ArchiveInputStream {
         return ArchiveUtils.toAsciiString(namebuffer, offset, i - offset);
       }
     }
-    throw new IOException("Failed to read entry: " + offset);
+    throw new IOException(STR."Failed to read entry: \{offset}");
   }
 
   private long asLong(final byte[] byteArray, int offset, int len) {
@@ -387,8 +389,7 @@ public class ArArchiveInputStream extends ArchiveInputStream {
     final int read = IOUtils.readFully(input, namebuffer, 0, bufflen);
     trackReadBytes(read);
     if (read != bufflen){
-      throw new IOException("Failed to read complete // record: expected="
-          + bufflen + " read=" + read);
+      throw new IOException(STR."Failed to read complete // record: expected=\{bufflen} read=\{read}");
     }
     return new ArArchiveEntry(GNU_STRING_TABLE_NAME, bufflen);
   }

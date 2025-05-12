@@ -16,6 +16,8 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 
 import javax.inject.Provider;
 
@@ -28,7 +30,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
+ * JUnit rule for managing DataStore instances in tests.
+ * 
  * @since 3.20
+ * @see org.junit.rules.ExternalResource
  */
 public class DataStoreRule
     extends ExternalResource
@@ -37,25 +42,42 @@ public class DataStoreRule
 
   private final Provider<DataStoreManager> dataStoreManagerProvider;
 
-  private Set<String> managedDataStores = new HashSet<>();
+  private final Set<String> managedDataStores = new HashSet<>();
 
+  /**
+   * Constructs a new DataStoreRule with the given DataStoreManager provider.
+   *
+   * @param dataStoreManagerProvider the provider for the DataStoreManager
+   */
   public DataStoreRule(final Provider<DataStoreManager> dataStoreManagerProvider) {
     this.dataStoreManagerProvider = dataStoreManagerProvider;
   }
 
   @Override
   protected void after() {
-    managedDataStores.forEach(storeName -> {
-      try {
-        dataStoreManagerProvider.get().delete(storeName);
-        log.debug("Removed data store: {}", storeName);
-      }
-      catch (Exception e) { // NOSONAR
-        log.info("Unable to clean up data store {}", storeName, e);
-      }
-    });
+    // Use virtual threads for cleanup operations to improve performance
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      managedDataStores.forEach(storeName -> {
+        executor.submit(() -> {
+          try {
+            dataStoreManagerProvider.get().delete(storeName);
+            log.debug(STR."Removed data store: \{storeName}");
+          }
+          catch (Exception e) { // NOSONAR
+            log.info(STR."Unable to clean up data store \{storeName}", e);
+          }
+        });
+      });
+    }
   }
 
+  /**
+   * Creates a DataStore with the given configuration.
+   *
+   * @param configuration the DataStore configuration
+   * @return the created DataStore
+   * @throws RuntimeException if creation fails
+   */
   public DataStore<?> createDataStore(final DataStoreConfiguration configuration) {
     try {
       DataStore<?> dataStore = dataStoreManagerProvider.get().create(configuration);
@@ -63,14 +85,30 @@ public class DataStoreRule
       return dataStore;
     }
     catch (Exception e) {
-      throw new RuntimeException(e);
+      throw new RuntimeException(STR."Failed to create data store with configuration: \{configuration.getName()}", e);
     }
   }
 
+  /**
+   * Creates a DataStore with the given name using default settings.
+   *
+   * @param storeName the name of the DataStore
+   * @return the created DataStore
+   */
   public DataStore<?> createDataStore(final String storeName) {
     return createDataStore(storeName, null, null, "jdbc:h2:file:${karaf.data}/db/${storeName}");
   }
 
+  /**
+   * Creates a DataStore with the given name, credentials, and JDBC URL.
+   *
+   * @param storeName the name of the DataStore
+   * @param username the username for database access (may be null)
+   * @param password the password for database access (may be null)
+   * @param jdbcUrl the JDBC URL for the database
+   * @return the created DataStore
+   * @throws RuntimeException if creation fails
+   */
   public DataStore<?> createDataStore(
       final String storeName,
       final String username,
@@ -99,22 +137,25 @@ public class DataStoreRule
       return dataStore;
     }
     catch (Exception e) {
-      throw new RuntimeException(e);
+      throw new RuntimeException(STR."Failed to create data store: \{storeName}", e);
     }
   }
 
   /**
-   * Add a data store to automatically cleanup upon test failure
+   * Add a data store to automatically cleanup upon test completion.
+   *
+   * @param storeName the name of the DataStore to manage
    */
   public void manageDataStore(final String storeName) {
     managedDataStores.add(storeName);
   }
 
   /**
-   * Remove a data store from automatic cleanup
+   * Remove a data store from automatic cleanup.
+   *
+   * @param storeName the name of the DataStore to unmanage
    */
   public void unmanageAlias(final String storeName) {
     managedDataStores.remove(storeName);
   }
-
 }

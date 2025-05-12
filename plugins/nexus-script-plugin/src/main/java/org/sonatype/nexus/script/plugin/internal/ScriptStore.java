@@ -36,28 +36,39 @@ public interface ScriptStore
   Script newScript();
 
   /**
-   * @return all stored {@link Script}
+   * Returns all stored {@link Script} entities.
+   * 
+   * @return an immutable list of all stored scripts
    */
   List<Script> list();
 
   /**
-   * @return {@link Script} with matching name
+   * Retrieves a {@link Script} by name.
+   * 
+   * @param name the name of the script to retrieve
+   * @return the script with matching name, or null if not found
    */
   @Nullable
   Script get(String name);
 
   /**
-   * Persist a new {@link Script}.
+   * Persists a new {@link Script}.
+   * 
+   * @param script the script to create
    */
   void create(Script script);
 
   /**
-   * Update an existing {@link Script}.
+   * Updates an existing {@link Script}.
+   * 
+   * @param script the script to update
    */
   void update(Script script);
 
   /**
-   * Delete an existing {@link Script}.
+   * Deletes an existing {@link Script}.
+   * 
+   * @param script the script to delete
    */
   void delete(Script script);
 }

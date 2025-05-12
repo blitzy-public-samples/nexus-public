@@ -19,16 +19,22 @@ import org.sonatype.nexus.repository.maven.MavenPathParser;
 import org.sonatype.nexus.repository.view.Context;
 import org.sonatype.nexus.repository.view.Request;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
-public class MavenNx2MetaFilesMatcherTest
+/**
+ * Tests for {@link MavenNx2MetaFilesMatcher}.
+ */
+@ExtendWith(MockitoExtension.class)
+class MavenNx2MetaFilesMatcherTest
     extends TestSupport
 {
   @Mock
@@ -45,8 +51,8 @@ public class MavenNx2MetaFilesMatcherTest
 
   MavenNx2MetaFilesMatcher underTest;
 
-  @Before
-  public void setup() {
+  @BeforeEach
+  void setup() {
     when(mavenPathParser.parsePath(any())).thenReturn(mavenPath);
     when(context.getRequest()).thenReturn(request);
     when(context.getAttributes()).thenReturn(new AttributesMap());
@@ -55,7 +61,7 @@ public class MavenNx2MetaFilesMatcherTest
   }
 
   @Test
-  public void testMatches() {
+  void testMatches() {
     when(request.getPath()).thenReturn("/.meta/prefixes.txt");
     assertThat(underTest.matches(context), is(true));
     when(request.getPath()).thenReturn("/.meta/somethingelse.txt");
@@ -63,7 +69,7 @@ public class MavenNx2MetaFilesMatcherTest
   }
 
   @Test
-  public void testNonMatches() {
+  void testNonMatches() {
     when(request.getPath()).thenReturn("/real/content.txt");
     assertThat(underTest.matches(context), is(false));
   }

@@ -21,6 +21,8 @@ import org.sonatype.nexus.blobstore.api.BlobStoreMetrics;
 import static java.util.Objects.requireNonNull;
 
 /**
+ * REST API response model for blob store information.
+ *
  * @since 3.19
  */
 public class GenericBlobStoreApiResponse
@@ -38,7 +40,7 @@ public class GenericBlobStoreApiResponse
 
   private long availableSpaceInBytes;
 
-  @SuppressWarnings("unused") // Required for ITs
+  @SuppressWarnings("unused") // Required for Jackson deserialization
   public GenericBlobStoreApiResponse() {
     super();
   }

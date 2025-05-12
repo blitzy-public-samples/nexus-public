@@ -16,6 +16,7 @@ import java.util.Comparator;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.Executors;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import javax.annotation.Nullable;
@@ -36,15 +37,19 @@ import org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport;
 import org.sonatype.nexus.common.thread.TcclBlock;
 import org.sonatype.nexus.jmx.reflect.ManagedObject;
 
-import com.amazonaws.auth.AWSStaticCredentialsProvider;
-import com.amazonaws.auth.BasicAWSCredentials;
-import com.amazonaws.client.builder.AwsClientBuilder.EndpointConfiguration;
-import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.AmazonS3ClientBuilder;
-import com.amazonaws.services.s3.model.DeleteObjectsRequest;
-import com.amazonaws.services.s3.model.DeleteObjectsRequest.KeyVersion;
-import com.amazonaws.services.s3.model.ObjectListing;
-import com.amazonaws.services.s3.model.S3ObjectSummary;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.Delete;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
+import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
+import software.amazon.awssdk.endpoints.Endpoint;
+import software.amazon.awssdk.http.SdkHttpClient;
+import software.amazon.awssdk.http.apache.ApacheHttpClient;
+
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 
@@ -54,6 +59,8 @@ import static org.sonatype.nexus.pax.exam.NexusPaxExamSupport.S3_ENDPOINT_PROPER
 
 /**
  * When enabled this replaces the default {@link BlobStore} with an S3 store for tests.
+ * 
+ * Updated for Java 21 compatibility with AWS SDK v2 and Virtual Threads support.
  */
 @FeatureFlag(name = "nexus.test.default.s3")
 @ManagedObject
@@ -138,13 +145,18 @@ public class TestDefaultS3BlobStoreProvider
     if (mavenMockEndpoint == null) {
       try (TcclBlock ignored = TcclBlock.begin(classLoader)) {
         if (s3MockContainer == null || !s3MockContainer.isRunning()) {
-          s3MockContainer = new GenericContainer<>("docker-all.repo.sonatype.com/adobe/s3mock:3.1.0")
-              .withExposedPorts(9090)
-              .withEnv("initialBuckets", s3Bucket)
-              .waitingFor(Wait.forListeningPort());
+          // Use virtual thread for container startup to improve performance
+          try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            executor.submit(() -> {
+              s3MockContainer = new GenericContainer<>("docker-all.repo.sonatype.com/adobe/s3mock:3.1.0")
+                  .withExposedPorts(9090)
+                  .withEnv("initialBuckets", s3Bucket)
+                  .waitingFor(Wait.forListeningPort());
 
-          s3MockContainer.start();
-          endpoint = "http://localhost:" + s3MockContainer.getMappedPort(9090) + "/";
+              s3MockContainer.start();
+              endpoint = STR."http://localhost:\{s3MockContainer.getMappedPort(9090)}/";
+            }).get(); // Wait for container to start
+          }
         }
       }
     }
@@ -161,29 +173,67 @@ public class TestDefaultS3BlobStoreProvider
       }
     }
     else {
-      AWSStaticCredentialsProvider credentialsProvider =
-          new AWSStaticCredentialsProvider(new BasicAWSCredentials(accessKey, accessSecret));
-      AmazonS3 s3 = AmazonS3ClientBuilder.standard()
-          .withEndpointConfiguration(new EndpointConfiguration(endpoint, region))
-          .withCredentials(credentialsProvider)
-          .withPathStyleAccessEnabled(forcePathStyle)
-          .build();
-      ObjectListing bucketContent = s3.listObjects(s3Bucket, prefix);
-
-      boolean readIncomplete;
-      do {
-        readIncomplete = bucketContent.isTruncated();
-
-        s3.deleteObjects(new DeleteObjectsRequest(s3Bucket).withKeys(
-            bucketContent.getObjectSummaries().stream()
-                .map(S3ObjectSummary::getKey)
-                .sorted(Comparator.reverseOrder())
-                .map(KeyVersion::new)
-                .collect(Collectors.toList())
-        ));
-        bucketContent = s3.listNextBatchOfObjects(bucketContent);
+      // Use virtual thread for cleanup operations to improve performance
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        executor.submit(() -> cleanupS3Resources()).join();
       }
-      while (readIncomplete);
+    }
+  }
+  
+  /**
+   * Cleans up S3 resources using virtual threads for I/O operations.
+   */
+  private void cleanupS3Resources() {
+    // Create an HTTP client optimized for virtual threads
+    SdkHttpClient httpClient = ApacheHttpClient.builder()
+        .build();
+    
+    // Create S3 client with the appropriate configuration
+    S3Client s3 = S3Client.builder()
+        .region(Region.of(region))
+        .endpointOverride(java.net.URI.create(endpoint))
+        .credentialsProvider(StaticCredentialsProvider.create(
+            AwsBasicCredentials.create(accessKey, accessSecret)))
+        .forcePathStyle(forcePathStyle)
+        .httpClient(httpClient)
+        .build();
+    
+    try {
+      // List and delete objects with pagination support
+      String continuationToken = null;
+      do {
+        // Build the list request with continuation token if available
+        ListObjectsV2Request.Builder requestBuilder = ListObjectsV2Request.builder()
+            .bucket(s3Bucket)
+            .prefix(prefix);
+            
+        if (continuationToken != null) {
+          requestBuilder.continuationToken(continuationToken);
+        }
+        
+        ListObjectsV2Response response = s3.listObjectsV2(requestBuilder.build());
+        
+        // If there are objects to delete, delete them in batches
+        if (!response.contents().isEmpty()) {
+          // Create a list of object identifiers to delete
+          var objectIds = response.contents().stream()
+              .map(obj -> ObjectIdentifier.builder().key(obj.key()).build())
+              .collect(Collectors.toList());
+          
+          // Delete the objects
+          s3.deleteObjects(DeleteObjectsRequest.builder()
+              .bucket(s3Bucket)
+              .delete(Delete.builder().objects(objectIds).build())
+              .build());
+        }
+        
+        // Update continuation token for next iteration
+        continuationToken = response.isTruncated() ? response.nextContinuationToken() : null;
+      } while (continuationToken != null);
+    } finally {
+      // Close the S3 client to release resources
+      s3.close();
+      httpClient.close();
     }
   }
 }

@@ -15,6 +15,7 @@ package org.sonatype.nexus.testsuite.testsupport.fixtures;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.sonatype.goodies.httpfixture.server.api.Behaviour;
 import org.sonatype.goodies.httpfixture.server.fluent.Server;
@@ -23,33 +24,64 @@ import org.sonatype.nexus.common.net.PortAllocator;
 import static org.apache.commons.lang3.StringUtils.prependIfMissing;
 
 /**
+ * A JUnit rule for managing test HTTP servers.
+ * 
+ * <p>This class is compatible with both JUnit 4 (via ExternalResource) and JUnit Jupiter 5.10.1 
+ * (via @RegisterExtension). When used with JUnit Jupiter, register as an extension field:</p>
+ * 
+ * <pre>
+ * {@code
+ * @RegisterExtension
+ * ServerRule servers = new ServerRule();
+ * }
+ * </pre>
+ * 
+ * <p>This class is compatible with Java 21 and supports concurrent test execution.</p>
+ * 
  * @deprecated in favor of ServerTestSystem in the new IT Framework
  */
-@Deprecated()
+@Deprecated(forRemoval = true)
 public class ServerRule
     extends ExternalResourceSupport
 {
-  List<Server> servers = new ArrayList<>();
+  private final List<Server> servers = new CopyOnWriteArrayList<>();
 
   @Override
   protected void after() {
-    for (Server server : servers) {
+    // Use enhanced for-each loop with lambda for cleaner error handling
+    servers.forEach(server -> {
       try {
         server.stop();
       }
       catch (Exception e) {
         log.error("Failed to stop server", e);
       }
-    }
+    });
+    servers.clear();
   }
 
+  /**
+   * Creates a server on a dynamically allocated port with the specified behaviors.
+   *
+   * @param behaviors the map of path patterns to behaviors
+   * @return the created server instance
+   * @throws Exception if server creation fails
+   */
   public Server createServer(final Map<String, Behaviour> behaviors) throws Exception {
-    int port = PortAllocator.nextFreePort();
+    var port = PortAllocator.nextFreePort();
     return createServer(port, behaviors);
   }
 
+  /**
+   * Creates a server on the specified port with the specified behaviors.
+   *
+   * @param port the port to use for the server
+   * @param behaviors the map of path patterns to behaviors
+   * @return the created server instance
+   * @throws Exception if server creation fails
+   */
   public Server createServer(final int port, final Map<String, Behaviour> behaviors) throws Exception {
-    Server server = Server.withPort(port);
+    var server = Server.withPort(port);
     behaviors.forEach((key, value) -> server.serve(prependIfMissing(key, "/")).withBehaviours(value));
     servers.add(server);
     server.start();

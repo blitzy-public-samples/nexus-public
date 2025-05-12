@@ -19,6 +19,9 @@ import org.sonatype.nexus.repository.content.store.FormatStoreModule;
 
 /**
  * Configures the content store bindings for a Apt format.
+ * 
+ * Compatible with Java 21 runtime environment and leverages dependency injection
+ * with updated Guice framework.
  *
  * @since 3.31
  */

@@ -15,7 +15,13 @@ package org.sonatype.nexus.content.raw.internal.store;
 import org.sonatype.nexus.repository.content.store.AssetBlobDAO;
 
 /**
+ * Raw repository asset blob DAO interface.
+ * <p>
+ * This is a marker interface that extends AssetBlobDAO without adding additional methods.
+ * It's compatible with Java 21 pattern matching and can be used with record patterns when appropriate.
+ * 
  * @since 3.24
+ * @see AssetBlobDAO
  */
 public interface RawAssetBlobDAO
     extends AssetBlobDAO

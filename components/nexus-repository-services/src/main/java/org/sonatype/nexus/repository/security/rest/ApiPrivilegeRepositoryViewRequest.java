@@ -18,8 +18,11 @@ import org.sonatype.nexus.repository.security.RepositoryViewPrivilegeDescriptor;
 import org.sonatype.nexus.security.privilege.Privilege;
 import org.sonatype.nexus.security.privilege.rest.PrivilegeAction;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 /**
- * Repository view privilege request.
+ * Repository view privilege request DTO for REST API.
  *
  * @since 3.19
  */
@@ -27,9 +30,9 @@ public class ApiPrivilegeRepositoryViewRequest
     extends ApiPrivilegeWithRepositoryRequest
 {
   /**
-   * Default constructor for deserialization by Jackson.
-   * Required for Jackson 2.16.1 compatibility.
+   * Default constructor for Jackson deserialization.
    */
+  @JsonCreator
   private ApiPrivilegeRepositoryViewRequest() {
     super();
   }
@@ -37,23 +40,23 @@ public class ApiPrivilegeRepositoryViewRequest
   /**
    * Constructor for creating a new repository view privilege request.
    *
-   * @param name the privilege name
+   * @param name        the privilege name
    * @param description the privilege description
-   * @param format the repository format
-   * @param repository the repository name
-   * @param actions the collection of privilege actions
+   * @param format      the repository format
+   * @param repository  the repository name
+   * @param actions     the collection of privilege actions
    */
-  public ApiPrivilegeRepositoryViewRequest(final String name,
-                                           final String description,
-                                           final String format,
-                                           final String repository,
-                                           final Collection<PrivilegeAction> actions)
+  public ApiPrivilegeRepositoryViewRequest(@JsonProperty("name") final String name,
+                                           @JsonProperty("description") final String description,
+                                           @JsonProperty("format") final String format,
+                                           @JsonProperty("repository") final String repository,
+                                           @JsonProperty("actions") final Collection<PrivilegeAction> actions)
   {
     super(name, description, format, repository, actions);
   }
 
   /**
-   * Constructor for creating a repository view privilege request from an existing privilege.
+   * Constructor for creating a request from an existing privilege.
    *
    * @param privilege the privilege to create the request from
    */
@@ -63,12 +66,8 @@ public class ApiPrivilegeRepositoryViewRequest
 
   @Override
   protected Privilege doAsPrivilege(final Privilege privilege) {
-    // Use Java 21 pattern matching for more concise and type-safe code
-    if (privilege instanceof Privilege p) {
-      super.doAsPrivilege(p);
-      p.setType(RepositoryViewPrivilegeDescriptor.TYPE);
-      return p;
-    }
+    super.doAsPrivilege(privilege);
+    privilege.setType(RepositoryViewPrivilegeDescriptor.TYPE);
     return privilege;
   }
 }

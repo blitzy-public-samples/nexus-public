@@ -13,19 +13,25 @@
 package org.sonatype.nexus.onboarding.capability;
 
 import java.util.Map;
-import javax.annotation.Nullable;
-import javax.inject.Named;
+import jakarta.annotation.Nullable;
+import jakarta.inject.Named;
 
 import org.sonatype.nexus.capability.CapabilitySupport;
 import org.sonatype.nexus.capability.CapabilityType;
 import org.sonatype.nexus.capability.Condition;
 
+import static java.lang.StringTemplate.STR;
+
 import static org.sonatype.nexus.onboarding.capability.OnboardingCapabilityDescriptor.messages;
 
+/**
+ * Capability that manages the onboarding wizard state.
+ * 
+ * @since 3.0
+ */
 @Named(OnboardingCapability.TYPE_ID)
 public class OnboardingCapability
     extends CapabilitySupport<OnboardingCapabilityConfiguration>
-
 {
   public static final String TYPE_ID = "onboarding-wizard";
 
@@ -39,28 +45,48 @@ public class OnboardingCapability
   @Nullable
   @Override
   protected String renderDescription() {
-    return context().isActive() ? messages.enabled() : messages.disabled();
+    // Using Java 21 string template for improved readability
+    return context().isActive() ? STR."{messages.enabled()}" : STR."{messages.disabled()}";
   }
 
   @Override
   public Condition activationCondition() {
-    return conditions().logical()
-        .and(conditions().nexus().active(), conditions().capabilities().capabilityHasNoDuplicates(),
-            conditions().capabilities().passivateCapabilityDuringUpdate());
+    // Using more readable formatting for the logical condition chain
+    return conditions().logical().and(
+        conditions().nexus().active(),
+        conditions().capabilities().capabilityHasNoDuplicates(),
+        conditions().capabilities().passivateCapabilityDuringUpdate()
+    );
   }
 
+  /**
+   * @return whether registration has been started
+   */
   public boolean isRegistrationStarted() {
     return getConfig().isRegistrationStarted();
   }
 
+  /**
+   * Sets whether registration has been started.
+   *
+   * @param registrationStarted the registration started flag
+   */
   public void setRegistrationStarted(final boolean registrationStarted) {
     getConfig().setRegistrationStarted(registrationStarted);
   }
 
+  /**
+   * @return whether registration has been completed
+   */
   public boolean isRegistrationCompleted() {
     return getConfig().isRegistrationCompleted();
   }
 
+  /**
+   * Sets whether registration has been completed.
+   *
+   * @param registrationCompleted the registration completed flag
+   */
   public void setRegistrationCompleted(final boolean registrationCompleted) {
     getConfig().setRegistrationCompleted(registrationCompleted);
   }

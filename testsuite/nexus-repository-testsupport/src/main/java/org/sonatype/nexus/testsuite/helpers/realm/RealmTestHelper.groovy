@@ -12,9 +12,30 @@
  */
 package org.sonatype.nexus.testsuite.helpers.realm
 
+/**
+ * Helper interface for testing realm-related functionality.
+ * <p>
+ * Compatible with Java 21 runtime environment and testing frameworks:
+ * - JUnit Jupiter 5.10.1
+ * - Mockito 4.11.0
+ * <p>
+ * Implementations should ensure thread safety for compatibility with Virtual Threads
+ * when used in concurrent test scenarios.
+ *
+ * @since 3.0
+ */
 interface RealmTestHelper
 {
-  // This method should be removed when the number of available Realms on the
-  // Realm Configuration page are the same for both Orient and New DB.
+  /**
+   * Retrieves the list of available realms for testing.
+   * <p>
+   * This method should be removed when the number of available Realms on the
+   * Realm Configuration page are the same for both Orient and New DB.
+   * <p>
+   * Implementation note: When used in Java 21 Virtual Thread contexts, implementations
+   * should avoid thread-pinning operations and ensure thread safety.
+   *
+   * @return List of realm names available for configuration
+   */
   List<String> getAvailableRealms();
 }

@@ -14,15 +14,15 @@ package org.sonatype.nexus.onboarding.internal;
 
 import java.util.List;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.GET;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.Produces;
-import javax.ws.rs.WebApplicationException;
-import javax.ws.rs.core.Response;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.Response;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.onboarding.OnboardingItem;
@@ -35,10 +35,10 @@ import org.sonatype.nexus.validation.Validate;
 
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
-import javax.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotEmpty;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
+import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON;
 
 /**
  * @since 3.17
@@ -92,9 +92,12 @@ public class OnboardingResource
       securitySystem.changePassword("admin", password, false);
       adminPasswordFileManager.removeFile();
     }
-    catch (UserNotFoundException e) {
-      log.error("Unable to locate 'admin' user to change password", e);
-      throw new WebApplicationException(Response.Status.NOT_FOUND);
+    catch (Exception e) {
+      if (e instanceof UserNotFoundException userNotFound) {
+        log.error(STR."Unable to locate 'admin' user to change password: \{userNotFound.getMessage()}");
+        throw new WebApplicationException(Response.Status.NOT_FOUND);
+      }
+      throw e;
     }
   }
 }

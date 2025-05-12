@@ -16,8 +16,8 @@ import java.lang.annotation.Documented;
 import java.lang.annotation.Retention;
 import java.lang.annotation.Target;
 
-import javax.validation.Constraint;
-import javax.validation.Payload;
+import jakarta.validation.Constraint;
+import jakarta.validation.Payload;
 
 import static java.lang.annotation.ElementType.ANNOTATION_TYPE;
 import static java.lang.annotation.ElementType.CONSTRUCTOR;
@@ -28,6 +28,8 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
 
 /**
  * Validate hostname or IP address.
+ * 
+ * Compatible with Java 21 and Jakarta EE validation API.
  *
  * @since 3.36
  */
@@ -37,9 +39,18 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
 @Documented
 public @interface HostnameOrIpAddress
 {
+  /**
+   * @return the error message template
+   */
   String message() default "Invalid host";
 
+  /**
+   * @return the groups the constraint belongs to
+   */
   Class<?>[] groups() default {};
 
+  /**
+   * @return the payload associated to the constraint
+   */
   Class<? extends Payload>[] payload() default {};
 }

@@ -19,9 +19,23 @@ import org.sonatype.nexus.repository.content.kv.KeyValueStore;
 
 import com.google.inject.assistedinject.Assisted;
 
+/**
+ * APT key-value store implementation for the datastore.
+ * <p>
+ * This implementation is compatible with Java 21 and uses Guice 7.0.0 for dependency injection.
+ * It extends the base KeyValueStore to provide APT-specific key-value storage functionality.
+ *
+ * @since 3.38
+ */
 public class AptKeyValueStore
     extends KeyValueStore<AptKeyValueDAO>
 {
+  /**
+   * Creates a new APT key-value store instance.
+   *
+   * @param sessionSupplier   the data session supplier
+   * @param contentStoreName  the content store name
+   */
   @Inject
   public AptKeyValueStore(final DataSessionSupplier sessionSupplier, @Assisted final String contentStoreName) {
     super(sessionSupplier, contentStoreName, AptKeyValueDAO.class);

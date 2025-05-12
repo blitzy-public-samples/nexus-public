@@ -12,16 +12,22 @@
  */
 package org.sonatype.nexus.repository.apt.rest;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.Path;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.Path;
 
 import org.sonatype.nexus.repository.rest.api.RepositoriesApiResourceV1;
 
 import static org.sonatype.nexus.repository.apt.rest.AptHostedRepositoriesApiResourceV1.RESOURCE_URI;
 
 /**
+ * REST API resource providing APT hosted repository endpoints.
+ * 
  * @since 3.26
+ * @see AptHostedRepositoriesApiResource
+ * 
+ * @apiNote Compatible with Java 21 and Virtual Threads for efficient request handling.
+ *          Uses Jakarta EE 10 APIs for RESTful web services.
  */
 @Named
 @Singleton

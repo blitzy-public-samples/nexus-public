@@ -13,10 +13,12 @@
 package org.sonatype.nexus.logging.task;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.common.thread.Java21TestGroup;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.Category;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.Logger;
@@ -30,11 +32,8 @@ import static org.sonatype.nexus.logging.task.SeparateTaskLogTaskLogger.TASK_LOG
 import static org.sonatype.nexus.logging.task.TaskLogger.TASK_LOG_ONLY_MDC;
 import static org.sonatype.nexus.logging.task.TaskLoggingMarkers.NEXUS_LOG_ONLY;
 
-/**
- * Tests for {@link TaskLogOnlyTaskLogger}.
- */
 @ExtendWith(MockitoExtension.class)
-@Java21TestGroup
+@Category(Java21TestGroup.class)
 public class TaskLogOnlyTaskLoggerTest
     extends TestSupport
 {
@@ -57,7 +56,7 @@ public class TaskLogOnlyTaskLoggerTest
   }
 
   @Test
-  public void shouldWriteLogFileNameToNexusLog() {
+  public void shouldWriteLogLocationToNexusLog() {
     taskLogOnlyTaskLogger.writeLogFileNameToNexusLog();
 
     verify(log).info(eq(NEXUS_LOG_ONLY), startsWith(TASK_LOG_LOCATION_PREFIX));

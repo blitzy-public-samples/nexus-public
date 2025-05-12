@@ -12,59 +12,41 @@
  */
 
 /**
- * Threading helpers and components for Nexus Repository.
+ * Threading helpers and components for Nexus Repository Manager.
  * <p>
- * This package provides a comprehensive set of utilities for managing threads and asynchronous execution
- * in Nexus Repository, including:
+ * This package provides a comprehensive threading framework that includes:
  * <ul>
- *   <li>Thread factories with consistent naming and configuration</li>
- *   <li>ExecutorService implementations with security context propagation</li>
- *   <li>MDC-aware task wrappers for consistent logging context</li>
+ *   <li>Thread factories and executors with consistent naming, lifecycle management, and security context propagation</li>
+ *   <li>MDC-aware task wrappers to ensure logging context is maintained across thread boundaries</li>
+ *   <li>Database-aware execution services that respect system writability state</li>
  *   <li>I/O utilities for asynchronous stream operations</li>
+ *   <li>Virtual thread support for improved scalability of I/O-bound operations</li>
  * </ul>
  * <p>
- * With Java 21 support, this package now includes virtual thread capabilities that significantly improve
- * performance and scalability for I/O-bound operations. Virtual threads provide several advantages over
- * traditional platform threads:
+ * With Java 21 virtual threads integration, this package enables highly scalable concurrent processing
+ * for I/O-bound operations such as repository access, blob storage, and network communications. Virtual threads
+ * provide significant advantages over traditional platform threads:
  * <ul>
- *   <li>Dramatically reduced memory overhead (kilobytes vs. megabytes per thread)</li>
- *   <li>Ability to handle thousands of concurrent operations with minimal resources</li>
- *   <li>Automatic thread management without complex thread pool sizing</li>
- *   <li>Improved throughput for I/O-bound operations like network requests and file operations</li>
- *   <li>Simplified concurrency model with per-task threading</li>
+ *   <li>Lightweight resource usage allowing millions of concurrent threads</li>
+ *   <li>Automatic unmounting from carrier threads during blocking I/O operations</li>
+ *   <li>Simplified programming model compared to reactive approaches</li>
+ *   <li>Improved throughput for I/O-intensive workloads</li>
+ *   <li>Better resource utilization across the system</li>
  * </ul>
  * <p>
- * Performance benchmarks show that virtual threads can provide significant improvements for Nexus Repository operations:
+ * Key components for virtual thread support include:
  * <ul>
- *   <li>Up to 10x higher concurrent connection handling with the same hardware resources</li>
- *   <li>Reduced latency for proxy repository operations under high load</li>
- *   <li>Lower memory footprint when handling many simultaneous client requests</li>
- *   <li>Improved responsiveness during periods of high I/O activity</li>
+ *   <li>Thread factories that can create either platform or virtual threads based on workload characteristics</li>
+ *   <li>ExecutorService implementations optimized for virtual threads</li>
+ *   <li>I/O utilities that leverage virtual threads for non-blocking behavior while maintaining synchronous APIs</li>
  * </ul>
  * <p>
- * Usage patterns for virtual threads in Nexus Repository:
- * <ul>
- *   <li>Proxy repository remote connections use virtual threads for non-blocking I/O</li>
- *   <li>BlobStore implementations leverage virtual threads for file and S3 operations</li>
- *   <li>HTTP request handling uses virtual threads for improved scalability</li>
- *   <li>Database operations benefit from virtual threads for JDBC interactions</li>
- * </ul>
- * <p>
- * The virtual thread support is particularly beneficial for repository operations such as proxying remote
- * repositories, handling client requests, and performing blob storage operations, where most of the time
- * is spent waiting for I/O completion rather than CPU processing.
- * <p>
- * Key virtual thread components in this package include:
- * <ul>
- *   <li>VirtualThreadExecutors - Factory methods for creating virtual thread executors with Nexus-specific configurations</li>
- *   <li>VirtualThreadAwareExecutorService - ExecutorService implementation that intelligently selects between virtual and platform threads</li>
- *   <li>VirtualThreadStreamCopier - Optimized stream copying utility leveraging virtual threads for I/O operations</li>
- * </ul>
+ * For optimal performance with virtual threads, prefer using them for I/O-bound operations (network calls,
+ * file system access, database queries) rather than CPU-intensive tasks. Also avoid using synchronized blocks
+ * around I/O operations as this can cause thread pinning, which prevents virtual threads from unmounting.
  *
  * @since 3.0
- * @see java.lang.Thread#startVirtualThread
- * @see java.util.concurrent.Executors#newVirtualThreadPerTaskExecutor
- * @see VirtualThreadExecutors
- * @since 3.60.0 Virtual thread support
+ * @see java.lang.Thread#startVirtualThread(Runnable)
+ * @see java.lang.Thread#ofVirtual()
  */
 package org.sonatype.nexus.thread;

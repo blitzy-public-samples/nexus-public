@@ -27,6 +27,7 @@ import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.TimeZone;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -64,6 +65,7 @@ import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.time.DateFormatUtils;
 
+import static java.lang.StringTemplate.STR;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.apache.http.protocol.HttpDateGenerator.PATTERN_RFC1123;
 import static org.sonatype.nexus.common.hash.HashAlgorithm.MD5;
@@ -81,6 +83,8 @@ import static org.sonatype.nexus.repository.apt.internal.ReleaseName.RELEASE_GPG
 
 /**
  * Apt metadata facet. Holds the logic for metadata recalculation.
+ * 
+ * @since Java 21 - Updated to leverage virtual threads, pattern matching, and string templates
  */
 @Named(AptFormat.NAME)
 @Exposed
@@ -121,26 +125,46 @@ public class AptHostedMetadataFacet
     this.cooperation = cooperationBuilder.build(getRepository().getName() + ":repomd");
   }
 
+  /**
+   * Adds package metadata for the given asset.
+   *
+   * @param asset the asset to add metadata for
+   */
   public void addPackageMetadata(final FluentAsset asset) {
     checkNotNull(asset);
-    log.debug("Storing metadata for repository: {} asset: {}", getRepository().getName(), asset.path());
+    log.debug(STR."Storing metadata for repository: \{getRepository().getName()} asset: \{asset.path()}");
     componentId(asset).ifPresent(componentId ->
         data().addPackageMetadata(componentId, InternalIds.internalAssetId(asset), serialize(asset))
     );
   }
 
+  /**
+   * Removes package metadata for the given asset.
+   *
+   * @param asset the asset to remove metadata for
+   */
   public void removePackageMetadata(final FluentAsset asset) {
     checkNotNull(asset);
-    log.debug("Removing metadata for repository: {} asset: {}", getRepository().getName(), asset.path());
+    log.debug(STR."Removing metadata for repository: \{getRepository().getName()} asset: \{asset.path()}");
     componentId(asset).ifPresent(componentId ->
         data().removePackageMetadata(componentId, InternalIds.internalAssetId(asset))
     );
   }
 
+  /**
+   * Removes the InRelease index.
+   */
   public void removeInReleaseIndex() {
     content().deleteAssetsByPrefix(normalizeAssetPath(releaseIndexName(INRELEASE)));
   }
 
+  /**
+   * Rebuilds metadata based on the provided change list.
+   *
+   * @param changeList the list of asset changes
+   * @return the rebuilt metadata content
+   * @throws IOException if an I/O error occurs
+   */
   public Optional<Content> rebuildMetadata(final List<AssetChange> changeList) throws IOException {
     return Optional.ofNullable(
         cooperation.on(() -> doRebuildMetadata(changeList))
@@ -149,15 +173,22 @@ public class AptHostedMetadataFacet
   }
 
   /**
-   * Removes metadata per architecture
+   * Removes metadata per architecture.
    */
   private void removeMetadataPerArchitecture() {
-    log.debug("Removing metadata per architecture: {}", getRepository().getName());
+    log.debug(STR."Removing metadata per architecture: \{getRepository().getName()}");
     content().deleteAssetsByPrefix(normalizeAssetPath(mainBinaryPrefix()));
   }
 
+  /**
+   * Performs the actual metadata rebuild operation using virtual threads for I/O operations.
+   *
+   * @param changeList the list of asset changes
+   * @return the rebuilt metadata content
+   * @throws IOException if an I/O error occurs
+   */
   private Content doRebuildMetadata(final List<AssetChange> changeList) throws IOException {
-    log.debug("Starting rebuilding metadata at {}", getRepository().getName());
+    log.debug(STR."Starting rebuilding metadata at \{getRepository().getName()}");
     OffsetDateTime rebuildStart = clock.clusterTime();
 
     AptContentFacet aptFacet = content();
@@ -169,28 +200,16 @@ public class AptHostedMetadataFacet
     StringBuilder md5Builder = new StringBuilder();
     String releaseFile;
     try (CompressingTempFileStore store = buildPackageIndexes(changeList)) {
-      for (Map.Entry<String, CompressingTempFileStore.FileMetadata> entry : store.getFiles().entrySet()) {
-        FluentAsset metadataAsset = aptFacet.put(
-            packageIndexName(entry.getKey(), StringUtils.EMPTY),
-            new StreamPayload(entry.getValue().plainSupplier(), entry.getValue().plainSize(), AptMimeTypes.TEXT)
-        );
-        addSignatureItem(md5Builder, MD5, metadataAsset, packageRelativeIndexName(entry.getKey(), StringUtils.EMPTY));
-        addSignatureItem(sha256Builder, SHA256, metadataAsset,
-            packageRelativeIndexName(entry.getKey(), StringUtils.EMPTY));
-
-        FluentAsset gzMetadataAsset = aptFacet.put(
-            packageIndexName(entry.getKey(), GZ),
-            new StreamPayload(entry.getValue().gzSupplier(), entry.getValue().bzSize(), AptMimeTypes.GZIP)
-        );
-        addSignatureItem(md5Builder, MD5, gzMetadataAsset, packageRelativeIndexName(entry.getKey(), GZ));
-        addSignatureItem(sha256Builder, SHA256, gzMetadataAsset, packageRelativeIndexName(entry.getKey(), GZ));
-
-        FluentAsset bzMetadataAsset = aptFacet.put(
-            packageIndexName(entry.getKey(), BZ2),
-            new StreamPayload(entry.getValue().bzSupplier(), entry.getValue().bzSize(), AptMimeTypes.BZIP)
-        );
-        addSignatureItem(md5Builder, MD5, bzMetadataAsset, packageRelativeIndexName(entry.getKey(), BZ2));
-        addSignatureItem(sha256Builder, SHA256, bzMetadataAsset, packageRelativeIndexName(entry.getKey(), BZ2));
+      // Use virtual threads for I/O-bound operations
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var futures = store.getFiles().entrySet().stream()
+            .map(entry -> executor.submit(() -> processFileEntry(entry, aptFacet, sha256Builder, md5Builder)))
+            .toList();
+        
+        // Wait for all operations to complete
+        for (var future : futures) {
+          future.join();
+        }
       }
 
       releaseFile = buildReleaseFile(
@@ -216,12 +235,57 @@ public class AptHostedMetadataFacet
 
     if (log.isDebugEnabled()) {
       long finishTime = System.currentTimeMillis();
-      log.debug("Completed metadata rebuild in {}", finishTime - rebuildStart.toInstant().toEpochMilli());
+      log.debug(STR."Completed metadata rebuild in \{finishTime - rebuildStart.toInstant().toEpochMilli()}");
     }
 
     return releaseFileAsset.download();
   }
 
+  /**
+   * Processes a file entry by creating metadata assets.
+   *
+   * @param entry the file entry to process
+   * @param aptFacet the APT content facet
+   * @param sha256Builder the SHA-256 builder
+   * @param md5Builder the MD5 builder
+   * @throws IOException if an I/O error occurs
+   */
+  private void processFileEntry(
+      Map.Entry<String, CompressingTempFileStore.FileMetadata> entry,
+      AptContentFacet aptFacet,
+      StringBuilder sha256Builder,
+      StringBuilder md5Builder) throws IOException {
+    
+    FluentAsset metadataAsset = aptFacet.put(
+        packageIndexName(entry.getKey(), StringUtils.EMPTY),
+        new StreamPayload(entry.getValue().plainSupplier(), entry.getValue().plainSize(), AptMimeTypes.TEXT)
+    );
+    addSignatureItem(md5Builder, MD5, metadataAsset, packageRelativeIndexName(entry.getKey(), StringUtils.EMPTY));
+    addSignatureItem(sha256Builder, SHA256, metadataAsset,
+        packageRelativeIndexName(entry.getKey(), StringUtils.EMPTY));
+
+    FluentAsset gzMetadataAsset = aptFacet.put(
+        packageIndexName(entry.getKey(), GZ),
+        new StreamPayload(entry.getValue().gzSupplier(), entry.getValue().bzSize(), AptMimeTypes.GZIP)
+    );
+    addSignatureItem(md5Builder, MD5, gzMetadataAsset, packageRelativeIndexName(entry.getKey(), GZ));
+    addSignatureItem(sha256Builder, SHA256, gzMetadataAsset, packageRelativeIndexName(entry.getKey(), GZ));
+
+    FluentAsset bzMetadataAsset = aptFacet.put(
+        packageIndexName(entry.getKey(), BZ2),
+        new StreamPayload(entry.getValue().bzSupplier(), entry.getValue().bzSize(), AptMimeTypes.BZIP)
+    );
+    addSignatureItem(md5Builder, MD5, bzMetadataAsset, packageRelativeIndexName(entry.getKey(), BZ2));
+    addSignatureItem(sha256Builder, SHA256, bzMetadataAsset, packageRelativeIndexName(entry.getKey(), BZ2));
+  }
+
+  /**
+   * Builds package indexes based on the provided change list.
+   *
+   * @param changes the list of asset changes
+   * @return the compressing temp file store
+   * @throws IOException if an I/O error occurs
+   */
   private CompressingTempFileStore buildPackageIndexes(final List<AssetChange> changes)
       throws IOException
   {
@@ -278,6 +342,15 @@ public class AptHostedMetadataFacet
     return result;
   }
 
+  /**
+   * Creates a metadata file with data.
+   *
+   * @param changes the list of asset changes
+   * @param result the compressing temp file store
+   * @param streams the writer streams
+   * @param assets the assets to include in the metadata
+   * @throws IOException if an I/O error occurs
+   */
   private void createMetadataFileWithData(
       final List<AssetChange> changes,
       final CompressingTempFileStore result,
@@ -299,6 +372,15 @@ public class AptHostedMetadataFacet
     }
   }
 
+  /**
+   * Builds a release file.
+   *
+   * @param distribution the distribution
+   * @param architectures the architectures
+   * @param md5 the MD5 checksums
+   * @param sha256 the SHA-256 checksums
+   * @return the release file content
+   */
   private String buildReleaseFile(
       final String distribution,
       final Collection<String> architectures,
@@ -308,32 +390,67 @@ public class AptHostedMetadataFacet
     String date = DateFormatUtils.format(new Date(), PATTERN_RFC1123, TimeZone.getTimeZone("GMT"));
     Paragraph p = new Paragraph(Arrays.asList(
         new ControlFile.ControlField("Suite", distribution),
-        new ControlFile.ControlField("Codename", distribution), new ControlFile.ControlField("Components", "main"),
+        new ControlFile.ControlField("Codename", distribution), 
+        new ControlFile.ControlField("Components", "main"),
         new ControlFile.ControlField("Date", date),
         new ControlFile.ControlField("Architectures", String.join(StringUtils.SPACE, architectures)),
-        new ControlFile.ControlField("SHA256", sha256), new ControlFile.ControlField("MD5Sum", md5)));
+        new ControlFile.ControlField("SHA256", sha256), 
+        new ControlFile.ControlField("MD5Sum", md5)));
     return p.toString();
   }
 
+  /**
+   * Gets the main binary prefix.
+   *
+   * @return the main binary prefix
+   */
   private String mainBinaryPrefix() {
     String dist = content().getDistribution();
-    return "dists/" + dist + "/main/binary-";
+    return STR."dists/\{dist}/main/binary-";
   }
 
+  /**
+   * Gets the release index name.
+   *
+   * @param name the name
+   * @return the release index name
+   */
   private String releaseIndexName(final String name) {
     String dist = content().getDistribution();
-    return "dists/" + dist + "/" + name;
+    return STR."dists/\{dist}/\{name}";
   }
 
+  /**
+   * Gets the package index name.
+   *
+   * @param arch the architecture
+   * @param ext the extension
+   * @return the package index name
+   */
   private String packageIndexName(final String arch, final String ext) {
     String dist = content().getDistribution();
-    return "dists/" + dist + "/main/binary-" + arch + "/Packages" + ext;
+    return STR."dists/\{dist}/main/binary-\{arch}/Packages\{ext}";
   }
 
+  /**
+   * Gets the package relative index name.
+   *
+   * @param arch the architecture
+   * @param ext the extension
+   * @return the package relative index name
+   */
   private String packageRelativeIndexName(final String arch, final String ext) {
-    return "main/binary-" + arch + "/Packages" + ext;
+    return STR."main/binary-\{arch}/Packages\{ext}";
   }
 
+  /**
+   * Adds a signature item to the builder.
+   *
+   * @param builder the builder
+   * @param algo the hash algorithm
+   * @param asset the asset
+   * @param filename the filename
+   */
   private void addSignatureItem(
       final StringBuilder builder,
       final HashAlgorithm algo,
@@ -342,7 +459,7 @@ public class AptHostedMetadataFacet
   {
     AssetBlob assetBlob = asset.blob()
         .orElseThrow(() -> new IllegalStateException(
-            "Cannot generate signature for metadata. Blob couldn't be found for asset: " + filename));
+            STR."Cannot generate signature for metadata. Blob couldn't be found for asset: \{filename}"));
 
     builder.append("\n ");
     builder.append(assetBlob.checksums().get(algo.name()));
@@ -352,10 +469,23 @@ public class AptHostedMetadataFacet
     builder.append(filename);
   }
 
+  /**
+   * Gets the architecture from an asset.
+   *
+   * @param asset the asset
+   * @return the architecture
+   */
   private String getArchitecture(final FluentAsset asset) {
     return (String) FormatAttributesUtils.getFormatAttributes(asset).get(P_ARCHITECTURE);
   }
 
+  /**
+   * Creates an empty metadata file.
+   *
+   * @param result the compressing temp file store
+   * @param streams the writer streams
+   * @param removeAssetChange the asset change
+   */
   private void createEmptyMetadataFile(
       final CompressingTempFileStore result,
       final Map<String, Writer> streams,
@@ -366,25 +496,49 @@ public class AptHostedMetadataFacet
     streams.computeIfAbsent(arch, result::openOutput);
   }
 
+  /**
+   * Gets the APT content facet.
+   *
+   * @return the APT content facet
+   */
   private AptContentFacet content() {
     return facet(AptContentFacet.class);
   }
 
+  /**
+   * Gets the APT key-value facet.
+   *
+   * @return the APT key-value facet
+   */
   private AptKeyValueFacet data() {
     return facet(AptKeyValueFacet.class);
   }
 
+  /**
+   * Gets the APT signing facet.
+   *
+   * @return the APT signing facet
+   */
   private AptSigningFacet signing() {
     return facet(AptSigningFacet.class);
   }
 
-  /*
-   * We use Component IDs to simplify cleanup on purge events.
+  /**
+   * Gets the component ID from an asset.
+   *
+   * @param asset the asset
+   * @return the component ID
    */
   private static OptionalInt componentId(final Asset asset) {
     return InternalIds.internalComponentId(asset);
   }
 
+  /**
+   * Serializes an asset to JSON.
+   *
+   * @param asset the asset
+   * @return the serialized asset
+   */
   private String serialize(final FluentAsset asset) {
     try {
       return mapper.writeValueAsString(FormatAttributesUtils.getFormatAttributes(asset));
@@ -394,6 +548,12 @@ public class AptHostedMetadataFacet
     }
   }
 
+  /**
+   * Deserializes a JSON string to a map.
+   *
+   * @param value the JSON string
+   * @return the deserialized map
+   */
   private Map<String, Object> deserialize(final String value) {
     try {
       return mapper.readValue(value, new TypeReference<Map<String, Object>>() { });

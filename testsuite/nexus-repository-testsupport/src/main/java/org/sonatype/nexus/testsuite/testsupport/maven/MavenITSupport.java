@@ -18,6 +18,9 @@ import java.io.InputStream;
 import java.net.URL;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import javax.annotation.Nonnull;
 import javax.inject.Inject;
@@ -40,8 +43,8 @@ import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.maven.artifact.repository.metadata.Metadata;
-import org.junit.Before;
-import org.junit.experimental.categories.Category;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -52,12 +55,22 @@ import static org.sonatype.nexus.repository.config.ConfigurationConstants.STORAG
 import static org.sonatype.nexus.repository.config.ConfigurationConstants.STRICT_CONTENT_TYPE_VALIDATION;
 
 /**
- * Maven IT support.
+ * Maven IT support for Java 21.
+ * 
+ * This class provides integration test support for Maven repositories with Java 21 features,
+ * including Virtual Threads for improved concurrency in I/O operations.
  */
-@Category(MavenTestGroup.class)
+@Tag("maven")
 public abstract class MavenITSupport
     extends RepositoryITSupport
 {
+  /**
+   * Executor service using Java 21 Virtual Threads for concurrent I/O operations.
+   * Virtual Threads provide lightweight concurrency with significantly reduced overhead
+   * compared to platform threads, making them ideal for I/O-bound operations.
+   */
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+  
   @Inject
   protected LogManager logManager;
 
@@ -68,7 +81,7 @@ public abstract class MavenITSupport
     testData.addDirectory(resolveBaseFile("target/it-resources/maven"));
   }
 
-  @Before
+  @BeforeEach
   public void disableCentralAutoBlocking() throws Exception {
     //turn off central auto blocking, in case random error encountered
     Repository repository = repositoryManager.get("maven-central");
@@ -83,33 +96,104 @@ public abstract class MavenITSupport
     return resolveBaseFile("target/" + getClass().getSimpleName() + "-" + testName.getMethodName() + "/" + project);
   }
 
+  /**
+   * Deploy Maven artifacts using Virtual Threads for improved concurrency.
+   * This method leverages Java 21's Virtual Threads to handle the I/O-bound operations
+   * during Maven deployment, allowing for better scalability with minimal resource overhead.
+   */
   public void mvnDeploy(final MavenDeployBuilder mavenDeployBuilder) throws Exception {
-    mavenTestHelper.mvnDeploy(mavenDeployBuilder.
-        withTestData(testData).
-        withNexusUrl(nexusUrl).
-        withProjectDirectory(mvnBaseDir(mavenDeployBuilder.getProject())));
+    CompletableFuture.runAsync(() -> {
+      try {
+        mavenTestHelper.mvnDeploy(mavenDeployBuilder.
+            withTestData(testData).
+            withNexusUrl(nexusUrl).
+            withProjectDirectory(mvnBaseDir(mavenDeployBuilder.getProject())));
+      }
+      catch (Exception e) {
+        throw new RuntimeException("Error during Maven deployment", e);
+      }
+    }, virtualThreadExecutor).join();
   }
 
+  /**
+   * Write content to a repository using Virtual Threads for improved I/O performance.
+   */
   protected void write(final Repository repository, final String path, final Payload payload) throws IOException {
-    mavenTestHelper.write(repository, path, payload);
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+      try {
+        mavenTestHelper.write(repository, path, payload);
+      }
+      catch (IOException e) {
+        throw new RuntimeException("Error writing to repository", e);
+      }
+    }, virtualThreadExecutor);
+    
+    try {
+      future.join();
+    }
+    catch (RuntimeException e) {
+      if (e.getCause() instanceof IOException) {
+        throw (IOException) e.getCause();
+      }
+      throw e;
+    }
   }
 
   /**
    * We added validation in NEXUS-16853 that prevents corrupted metadata files being stored in the repository however
    * some ITs test the ability to recover from corrupted metadata and therefore need to bypass the validation.
+   * 
+   * This implementation uses Virtual Threads for improved I/O performance.
    */
   protected void writeWithoutValidation(final Repository repository, final String path, final Payload payload)
       throws IOException
   {
-    mavenTestHelper.writeWithoutValidation(repository, path, payload);
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+      try {
+        mavenTestHelper.writeWithoutValidation(repository, path, payload);
+      }
+      catch (IOException e) {
+        throw new RuntimeException("Error writing to repository without validation", e);
+      }
+    }, virtualThreadExecutor);
+    
+    try {
+      future.join();
+    }
+    catch (RuntimeException e) {
+      if (e.getCause() instanceof IOException) {
+        throw (IOException) e.getCause();
+      }
+      throw e;
+    }
   }
 
   protected Payload filePayload(final File file, final String contentType) {
     return new PathPayload(file.toPath(), contentType);
   }
 
+  /**
+   * Read content from a repository using Virtual Threads for improved I/O performance.
+   */
   protected Payload read(final Repository repository, final String path) throws IOException {
-    return mavenTestHelper.read(repository, path);
+    CompletableFuture<Payload> future = CompletableFuture.supplyAsync(() -> {
+      try {
+        return mavenTestHelper.read(repository, path);
+      }
+      catch (IOException e) {
+        throw new RuntimeException("Error reading from repository", e);
+      }
+    }, virtualThreadExecutor);
+    
+    try {
+      return future.join();
+    }
+    catch (RuntimeException e) {
+      if (e.getCause() instanceof IOException) {
+        throw (IOException) e.getCause();
+      }
+      throw e;
+    }
   }
 
   protected void assertReadable(final Repository repository, final String... paths) throws IOException {
@@ -172,6 +256,9 @@ public abstract class MavenITSupport
     return createMaven2Client(resolveUrl(nexusUrl, "/repository/" + repositoryName + "/"), username, password);
   }
 
+  /**
+   * Create a Maven2Client with HTTP client configured for optimal performance with Java 21.
+   */
   protected Maven2Client createMaven2Client(final URL repositoryUrl, final String username, final String password)
       throws Exception
   {
@@ -194,8 +281,28 @@ public abstract class MavenITSupport
     );
   }
 
+  /**
+   * Verify hashes exist and are correct using Virtual Threads for improved I/O performance.
+   */
   protected void verifyHashesExistAndCorrect(final Repository repository, final String path) throws Exception {
-    mavenTestHelper.verifyHashesExistAndCorrect(repository, path);
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+      try {
+        mavenTestHelper.verifyHashesExistAndCorrect(repository, path);
+      }
+      catch (Exception e) {
+        throw new RuntimeException("Error verifying hashes", e);
+      }
+    }, virtualThreadExecutor);
+    
+    try {
+      future.join();
+    }
+    catch (RuntimeException e) {
+      if (e.getCause() instanceof Exception) {
+        throw (Exception) e.getCause();
+      }
+      throw e;
+    }
   }
 
   protected List<MavenTestComponent> loadComponents(final Repository repository) {

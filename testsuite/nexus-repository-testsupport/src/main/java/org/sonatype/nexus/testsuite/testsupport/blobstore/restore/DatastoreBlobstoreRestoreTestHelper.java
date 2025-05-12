@@ -24,9 +24,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -62,13 +65,14 @@ import org.apache.commons.lang3.StringUtils;
 import org.hamcrest.Matcher;
 
 import static java.util.Arrays.stream;
+import static java.util.concurrent.CompletableFuture.runAsync;
 import static org.apache.commons.lang3.StringUtils.prependIfMissing;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.sonatype.nexus.blobstore.api.BlobRef.DATE_TIME_PATH_FORMATTER;
 import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_NAME_HEADER;
 import static org.sonatype.nexus.blobstore.api.BlobStore.REPO_NAME_HEADER;
@@ -78,6 +82,10 @@ import static org.sonatype.nexus.datastore.api.DataStoreManager.DEFAULT_DATASTOR
 import static org.sonatype.nexus.repository.config.ConfigurationConstants.DATA_STORE_NAME;
 import static org.sonatype.nexus.repository.config.ConfigurationConstants.STORAGE;
 
+/**
+ * Test helper for datastore blobstore restoration operations.
+ * Optimized for Java 21 with virtual threads for I/O-bound operations.
+ */
 @FeatureFlag(name = DATASTORE_ENABLED)
 @Singleton
 @Named
@@ -97,10 +105,21 @@ public class DatastoreBlobstoreRestoreTestHelper
   @Inject
   private DataSessionSupplier sessionSupplier;
 
+  /**
+   * Simulates loss of both component and asset metadata using virtual threads for improved I/O performance.
+   */
   @Override
   public void simulateComponentAndAssetMetadataLoss() {
-    simulateAssetMetadataLoss();
-    simulateComponentMetadataLoss();
+    try {
+      var future1 = runAsync(this::simulateAssetMetadataLoss);
+      var future2 = runAsync(this::simulateComponentMetadataLoss);
+      future1.get();
+      future2.get();
+    }
+    catch (InterruptedException | ExecutionException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException("Error during metadata loss simulation", e);
+    }
   }
 
   private String getContentStore(final Repository repository) {
@@ -162,24 +181,56 @@ public class DatastoreBlobstoreRestoreTestHelper
         .orElse(null);
   }
 
+  /**
+   * Simulates asset metadata loss using virtual threads for improved I/O performance.
+   */
   @Override
   public void simulateAssetMetadataLoss() {
-    manager.browse().forEach(repo -> {
-      repo.facet(ContentFacet.class)
-          .assets()
-          .browse(Integer.MAX_VALUE, null)
-          .forEach(asset -> asset.delete());
-    });
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var futures = manager.browse().stream()
+          .map(repo -> executor.submit(() -> {
+            repo.facet(ContentFacet.class)
+                .assets()
+                .browse(Integer.MAX_VALUE, null)
+                .forEach(FluentAsset::delete);
+          }))
+          .toList();
+      
+      // Wait for all tasks to complete
+      for (var future : futures) {
+        future.get();
+      }
+    }
+    catch (InterruptedException | ExecutionException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException("Error during asset metadata loss simulation", e);
+    }
   }
 
+  /**
+   * Simulates component metadata loss using virtual threads for improved I/O performance.
+   */
   @Override
   public void simulateComponentMetadataLoss() {
     simulateAssetMetadataLoss();
 
-    manager.browse().forEach(repo -> {
-      int repoId = getContentRepositoryId(repo);
-      getComponentStore(repo).deleteComponents(repoId);
-    });
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var futures = manager.browse().stream()
+          .map(repo -> executor.submit(() -> {
+            int repoId = getContentRepositoryId(repo);
+            getComponentStore(repo).deleteComponents(repoId);
+          }))
+          .toList();
+      
+      // Wait for all tasks to complete
+      for (var future : futures) {
+        future.get();
+      }
+    }
+    catch (InterruptedException | ExecutionException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException("Error during component metadata loss simulation", e);
+    }
   }
 
   private int getContentRepositoryId(final Repository repo) {
@@ -280,39 +331,53 @@ public class DatastoreBlobstoreRestoreTestHelper
     }
   }
 
+  /**
+   * Rewrites blob names using virtual threads for improved I/O performance.
+   */
   @Override
   public void rewriteBlobNames() {
-    manager.browse().forEach(repo -> {
-      if (GroupType.NAME.equals(repo.getType().getValue())) {
-        return;
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var futures = manager.browse().stream()
+          .filter(repo -> !GroupType.NAME.equals(repo.getType().getValue()))
+          .flatMap(repo -> {
+            ContentFacet content = repo.facet(ContentFacet.class);
+            return content.assets()
+                .browse(Integer.MAX_VALUE, null)
+                .stream()
+                .map(Asset::blob)
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .map(AssetBlob::blobRef)
+                .map(blobRef -> executor.submit(() -> {
+                  var blobAttr = blobstoreManager.get(blobRef.getStore()).getBlobAttributes(blobRef.getBlobId());
+                  Map<String, String> headers = blobAttr.getHeaders();
+                  String name = headers.get(BLOB_NAME_HEADER);
+                  if (name != null && name.startsWith("/")) {
+                    headers.put(BLOB_NAME_HEADER, name.substring(1));
+                    try {
+                      blobAttr.store();
+                    }
+                    catch (IOException e) {
+                      throw new UncheckedIOException("Failed to rewrite blob: " + name, e);
+                    }
+                  }
+                  else {
+                    fail("Found missing name or unexpected name: " + name + " in repository: "
+                        + headers.get(REPO_NAME_HEADER));
+                  }
+                }));
+          })
+          .toList();
+      
+      // Wait for all tasks to complete
+      for (var future : futures) {
+        future.get();
       }
-      ContentFacet content = repo.facet(ContentFacet.class);
-      content.assets()
-          .browse(Integer.MAX_VALUE, null)
-          .stream()
-          .map(Asset::blob)
-          .filter(Optional::isPresent)
-          .map(Optional::get)
-          .map(AssetBlob::blobRef)
-          .map(blobRef -> blobstoreManager.get(blobRef.getStore()).getBlobAttributes(blobRef.getBlobId()))
-          .forEach(blobAttr -> {
-            Map<String, String> headers = blobAttr.getHeaders();
-            String name = headers.get(BLOB_NAME_HEADER);
-            if (name != null && name.startsWith("/")) {
-              headers.put(BLOB_NAME_HEADER, name.substring(1));
-              try {
-                blobAttr.store();
-              }
-              catch (IOException e) {
-                throw new UncheckedIOException("Failed to rewrite blob: " + name, e);
-              }
-            }
-            else {
-              fail("Found missing name or unexpected name: " + name + " in repository: "
-                  + headers.get(REPO_NAME_HEADER));
-            }
-          });
-    });
+    }
+    catch (InterruptedException | ExecutionException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException("Error during blob name rewriting", e);
+    }
   }
 
   @Override
@@ -326,16 +391,33 @@ public class DatastoreBlobstoreRestoreTestHelper
     return true;
   }
 
+  /**
+   * Simulates file loss using virtual threads for improved I/O performance.
+   */
   @Override
   public void simulateFileLoss(String blobStorageName, String extension) {
     try {
       BlobStore blobstore = blobstoreManager.get(blobStorageName);
       String absoluteBlobDir = ((FileBlobStore) blobstore).getAbsoluteBlobDir().toString();
       List<BlobId> blobIds = getAssetBlobId();
-      blobIds.forEach(blobId -> {
-        String filePath = getFileAbsolutePathForBlobIdRef(blobId, extension, absoluteBlobDir);
-        deleteFile(filePath);
-      });
+      
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var futures = blobIds.stream()
+            .map(blobId -> executor.submit(() -> {
+              String filePath = getFileAbsolutePathForBlobIdRef(blobId, extension, absoluteBlobDir);
+              deleteFile(filePath);
+            }))
+            .toList();
+        
+        // Wait for all tasks to complete
+        for (var future : futures) {
+          future.get();
+        }
+      }
+      catch (InterruptedException | ExecutionException e) {
+        Thread.currentThread().interrupt();
+        throw new RuntimeException("Error during file loss simulation", e);
+      }
     }
     catch (IOException e) {
       throw new RuntimeException(e);
@@ -371,41 +453,85 @@ public class DatastoreBlobstoreRestoreTestHelper
     }
   }
 
+  /**
+   * Gets asset blob IDs using virtual threads for improved I/O performance.
+   */
   @Override
   public List<BlobId> getAssetBlobId() {
     List<BlobId> blobIds = new ArrayList<>();
-    manager.browse().forEach(repo -> {
-      repo.facet(ContentFacet.class)
-          .assets()
-          .browse(Integer.MAX_VALUE, null)
-          .forEach(asset -> {
-            BlobId blobId = toBlobId(asset);
-            blobIds.add(blobId);
-          });
-    });
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var futures = manager.browse().stream()
+          .map(repo -> executor.submit(() -> {
+            List<BlobId> repoBlobIds = new ArrayList<>();
+            repo.facet(ContentFacet.class)
+                .assets()
+                .browse(Integer.MAX_VALUE, null)
+                .forEach(asset -> {
+                  BlobId blobId = toBlobId(asset);
+                  if (blobId != null) {
+                    repoBlobIds.add(blobId);
+                  }
+                });
+            return repoBlobIds;
+          }))
+          .toList();
+      
+      // Collect results from all futures
+      for (var future : futures) {
+        blobIds.addAll(future.get());
+      }
+    }
+    catch (InterruptedException | ExecutionException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException("Error retrieving asset blob IDs", e);
+    }
     return blobIds;
   }
 
+  /**
+   * Truncates database tables using virtual threads for improved I/O performance.
+   */
   @Override
   public void truncateTables(final String format) {
-    try (Connection connection = sessionSupplier.openConnection(DEFAULT_DATASTORE_NAME);
-        PreparedStatement deletePlanDetails = connection.prepareStatement(
-            "DELETE FROM reconcile_plan_details WHERE id IN (SELECT rpd.id FROM reconcile_plan_details rpd)");
-        PreparedStatement deletePlans = connection.prepareStatement(
-            "DELETE FROM reconcile_plan WHERE id IN (SELECT rp.id FROM reconcile_plan rp)");
-        PreparedStatement deleteFormatAssets = connection.prepareStatement(deleteFormatAssetsSQL(format));
-        PreparedStatement deleteFormatAssetBlobs = connection.prepareStatement(deleteFormatAssetBlobsSQL(format));
-        PreparedStatement deleteFormatComponents = connection.prepareStatement(deleteFormatComponentsSQL(format))) {
-
+    try (Connection connection = sessionSupplier.openConnection(DEFAULT_DATASTORE_NAME)) {
       connection.setAutoCommit(false);
+      
+      // Using try-with-resources for each statement to ensure proper cleanup
+      try (PreparedStatement deletePlanDetails = connection.prepareStatement(
+              "DELETE FROM reconcile_plan_details WHERE id IN (SELECT rpd.id FROM reconcile_plan_details rpd)");
+           PreparedStatement deletePlans = connection.prepareStatement(
+              "DELETE FROM reconcile_plan WHERE id IN (SELECT rp.id FROM reconcile_plan rp)");
+           PreparedStatement deleteFormatAssets = connection.prepareStatement(deleteFormatAssetsSQL(format));
+           PreparedStatement deleteFormatAssetBlobs = connection.prepareStatement(deleteFormatAssetBlobsSQL(format));
+           PreparedStatement deleteFormatComponents = connection.prepareStatement(deleteFormatComponentsSQL(format))) {
 
-      deletePlanDetails.executeUpdate();
-      deletePlans.executeUpdate();
-      deleteFormatAssets.executeUpdate();
-      deleteFormatAssetBlobs.executeUpdate();
-      deleteFormatComponents.executeUpdate();
+        // Execute statements in parallel using virtual threads
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+          var future1 = executor.submit(deletePlanDetails::executeUpdate);
+          var future2 = executor.submit(deletePlans::executeUpdate);
+          var future3 = executor.submit(deleteFormatAssets::executeUpdate);
+          var future4 = executor.submit(deleteFormatAssetBlobs::executeUpdate);
+          var future5 = executor.submit(deleteFormatComponents::executeUpdate);
+          
+          // Wait for all operations to complete
+          future1.get();
+          future2.get();
+          future3.get();
+          future4.get();
+          future5.get();
+        }
+        catch (InterruptedException | ExecutionException e) {
+          connection.rollback();
+          Thread.currentThread().interrupt();
+          throw new RuntimeException("Error during table truncation", e);
+        }
 
-      connection.commit();
+        connection.commit();
+      }
+      catch (SQLException e) {
+        connection.rollback();
+        throw new RuntimeException("Error executing SQL statements: " + e.getMessage(), e);
+      }
     }
     catch (SQLException e) {
       throw new RuntimeException("Error managing the connection: " + e.getMessage(), e);
@@ -451,33 +577,25 @@ public class DatastoreBlobstoreRestoreTestHelper
   }
 
   private boolean assertReconcilePlanExistWithParameterForProvidedBlobIds(String blobId, String type, String action) {
-    try {
-      PreparedStatement ps = null;
-      try (Connection connection = sessionSupplier.openConnection(DEFAULT_DATASTORE_NAME)) {
-        String sql = "SELECT rpd.* FROM reconcile_plan_details rpd \n" +
-            "join reconcile_plan rp on rp.id = rpd.plan_id \n" +
-            "WHERE rpd.blob_id = ? \n" +
-            "order by rp.started desc limit 1;";
+    try (Connection connection = sessionSupplier.openConnection(DEFAULT_DATASTORE_NAME)) {
+      String sql = "SELECT rpd.* FROM reconcile_plan_details rpd \n" +
+          "join reconcile_plan rp on rp.id = rpd.plan_id \n" +
+          "WHERE rpd.blob_id = ? \n" +
+          "order by rp.started desc limit 1;";
 
-        ps = connection.prepareStatement(sql);
+      try (PreparedStatement ps = connection.prepareStatement(sql)) {
         ps.setString(1, blobId);
-        ResultSet rs = ps.executeQuery();
-
-        if (rs.next()) {
-          assertThat(rs.getString("type"), equalTo(type));
-          assertThat(rs.getString("action"), equalTo(action));
-          assertThat(rs.getString("state"), equalTo("EXECUTED"));
-          return true;
+        try (ResultSet rs = ps.executeQuery()) {
+          if (rs.next()) {
+            assertThat(rs.getString("type"), equalTo(type));
+            assertThat(rs.getString("action"), equalTo(action));
+            assertThat(rs.getString("state"), equalTo("EXECUTED"));
+            return true;
+          }
+          else {
+            return false;
+          }
         }
-        else {
-          return false;
-        }
-      }
-      catch (SQLException e) {
-        throw new RuntimeException(e);
-      }
-      finally {
-        ps.close();
       }
     }
     catch (SQLException ex) {
@@ -510,7 +628,7 @@ public class DatastoreBlobstoreRestoreTestHelper
   }
 
   private static void assetMatch(final FluentAsset asset, final BlobStore blobStore) {
-    assertTrue(asset.blob().isPresent());
+    assertTrue(asset.blob().isPresent(), "Asset blob should be present");
     AssetBlob assetBlob = asset.blob().orElseThrow(AssertionError::new);
 
     Blob blob = blobStore.get(assetBlob.blobRef().getBlobId());

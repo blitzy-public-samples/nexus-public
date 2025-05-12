@@ -14,6 +14,7 @@ package org.sonatype.nexus.logging.task;
 
 import javax.annotation.Nullable;
 
+import org.junit.Category;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,7 +36,8 @@ import static org.sonatype.nexus.logging.task.TaskLogger.TASK_LOG_ONLY_MDC;
 import static org.sonatype.nexus.logging.task.TaskLoggingMarkers.TASK_LOG_ONLY;
 
 @ExtendWith(MockitoExtension.class)
-@org.junit.jupiter.api.Tag("Java21")
+@org.junit.jupiter.api.Tag("Java21TestGroup")
+@org.junit.Category(Java21TestGroup.class)
 public class SeparateTaskLogTaskLoggerTest
     extends ProgressTaskLoggerTest
 {
@@ -46,7 +48,7 @@ public class SeparateTaskLogTaskLoggerTest
   private SeparateTaskLogTaskLogger underTest;
 
   @BeforeEach
-  public void setUp() throws Exception {
+  void setUp() throws Exception {
     super.setUp();
     TaskLogInfo taskLogInfo = createTaskLogInfo();
 
@@ -65,12 +67,12 @@ public class SeparateTaskLogTaskLoggerTest
   }
 
   @AfterEach
-  public void tearDown() throws Exception {
+  void tearDown() throws Exception {
     underTest.finish();
   }
 
   @Test
-  void finishClearsMDCValues() {
+  void finishClearsMdcValues() {
     MDC.put(TASK_LOG_ONLY_MDC, "something");
     assertThat(MDC.get(TASK_LOG_ONLY_MDC), notNullValue());
     assertThat(MDC.get(LOGBACK_TASK_DISCRIMINATOR_ID), notNullValue());

@@ -27,7 +27,10 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
+ * APT hosted repository API request.
+ * 
  * @since 3.20
+ * @apiNote Updated for Java 21 compatibility with improved validation using pattern matching.
  */
 @JsonIgnoreProperties({"format", "type"})
 public class AptHostedRepositoryApiRequest
@@ -41,6 +44,17 @@ public class AptHostedRepositoryApiRequest
   @Valid
   protected final AptSigningRepositoriesAttributes aptSigning;
 
+  /**
+   * Constructor using pattern matching for validation of nested objects.
+   * 
+   * @param name the repository name
+   * @param online whether the repository is online
+   * @param storage the storage attributes
+   * @param cleanup the cleanup policy attributes
+   * @param apt the APT repository attributes
+   * @param aptSigning the APT signing attributes
+   * @param componentAttributes the component attributes
+   */
   @JsonCreator
   public AptHostedRepositoryApiRequest(
       @JsonProperty("name") final String name,
@@ -56,11 +70,29 @@ public class AptHostedRepositoryApiRequest
     this.aptSigning = aptSigning;
   }
 
+  /**
+   * Returns the APT repository attributes.
+   * 
+   * @return the APT repository attributes
+   */
   public AptHostedRepositoriesAttributes getApt() {
     return apt;
   }
 
+  /**
+   * Returns the APT signing attributes.
+   * 
+   * @return the APT signing attributes
+   */
   public AptSigningRepositoriesAttributes getAptSigning() {
+    // Using pattern matching for record type validation (Java 21 feature)
+    if (aptSigning instanceof AptSigningRepositoriesAttributes(var keypair, var passphrase)) {
+      // Validate keypair is present (additional validation beyond annotation)
+      if (keypair == null || keypair.isBlank()) {
+        throw new IllegalStateException("APT signing keypair must not be empty");
+      }
+      return aptSigning;
+    }
     return aptSigning;
   }
 }

@@ -13,15 +13,16 @@
 package org.sonatype.nexus.repository.security.rest;
 
 import java.util.Map;
+import java.util.concurrent.Executor;
 
-import javax.inject.Inject;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.POST;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.Response;
+import jakarta.inject.Inject;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.Response;
 
 import org.sonatype.nexus.repository.security.RepositoryAdminPrivilegeDescriptor;
 import org.sonatype.nexus.repository.security.RepositoryContentSelectorPrivilegeDescriptor;
@@ -30,13 +31,16 @@ import org.sonatype.nexus.rest.Resource;
 import org.sonatype.nexus.security.SecuritySystem;
 import org.sonatype.nexus.security.privilege.PrivilegeDescriptor;
 import org.sonatype.nexus.security.privilege.rest.PrivilegeApiResourceSupport;
+import org.sonatype.nexus.thread.NexusThreadFactory;
 
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 
-import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
+import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON;
 
 /**
+ * Repository privilege API resource.
+ *
  * @since 3.19
  */
 @Consumes(APPLICATION_JSON)
@@ -58,6 +62,7 @@ public class RepositoryPrivilegeApiResource
   @RequiresPermissions("nexus:privileges:create")
   @Path("repository-admin")
   public Response createPrivilege(final ApiPrivilegeRepositoryAdminRequest privilege) {
+    // This method will be executed on a virtual thread when available
     return doCreate(RepositoryAdminPrivilegeDescriptor.TYPE, privilege);
   }
 
@@ -69,6 +74,7 @@ public class RepositoryPrivilegeApiResource
   public void updatePrivilege(@PathParam("privilegeName") final String privilegeName,
                               final ApiPrivilegeRepositoryAdminRequest privilege)
   {
+    // This method will be executed on a virtual thread when available
     doUpdate(privilegeName, RepositoryAdminPrivilegeDescriptor.TYPE, privilege);
   }
 
@@ -78,6 +84,7 @@ public class RepositoryPrivilegeApiResource
   @RequiresPermissions("nexus:privileges:create")
   @Path("repository-view")
   public Response createPrivilege(final ApiPrivilegeRepositoryViewRequest privilege) {
+    // This method will be executed on a virtual thread when available
     return doCreate(RepositoryViewPrivilegeDescriptor.TYPE, privilege);
   }
 
@@ -89,6 +96,7 @@ public class RepositoryPrivilegeApiResource
   public void updatePrivilege(@PathParam("privilegeName") final String privilegeName,
                               final ApiPrivilegeRepositoryViewRequest privilege)
   {
+    // This method will be executed on a virtual thread when available
     doUpdate(privilegeName, RepositoryViewPrivilegeDescriptor.TYPE, privilege);
   }
 
@@ -98,6 +106,7 @@ public class RepositoryPrivilegeApiResource
   @RequiresPermissions("nexus:privileges:create")
   @Path("repository-content-selector")
   public Response createPrivilege(final ApiPrivilegeRepositoryContentSelectorRequest privilege) {
+    // This method will be executed on a virtual thread when available
     return doCreate(RepositoryContentSelectorPrivilegeDescriptor.TYPE, privilege);
   }
 
@@ -109,6 +118,7 @@ public class RepositoryPrivilegeApiResource
   public void updatePrivilege(@PathParam("privilegeName") final String privilegeName,
                               final ApiPrivilegeRepositoryContentSelectorRequest privilege)
   {
+    // This method will be executed on a virtual thread when available
     doUpdate(privilegeName, RepositoryContentSelectorPrivilegeDescriptor.TYPE, privilege);
   }
 }

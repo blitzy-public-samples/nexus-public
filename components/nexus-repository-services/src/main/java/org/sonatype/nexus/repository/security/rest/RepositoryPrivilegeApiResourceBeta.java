@@ -34,7 +34,7 @@ import io.swagger.v3.oas.annotations.Hidden;
 @Named
 @Singleton
 @Path(RepositoryPrivilegeApiResourceBeta.RESOURCE_URI)
-@Deprecated(forRemoval = false)
+@Deprecated(since = "3.26", forRemoval = true)
 public class RepositoryPrivilegeApiResourceBeta
     extends RepositoryPrivilegeApiResource
 {

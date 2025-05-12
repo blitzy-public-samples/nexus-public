@@ -15,16 +15,18 @@ package org.sonatype.nexus.repository.search.index;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
+import org.sonatype.nexus.common.thread.VirtualThreadTestGroup;
 
 import org.elasticsearch.action.ActionRequest;
 import org.elasticsearch.action.bulk.BulkProcessor;
 import org.elasticsearch.action.delete.DeleteRequest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -56,22 +58,21 @@ class BulkProcessorUpdaterTest
   }
 
   @Test
-  @org.junit.jupiter.api.Tag("VirtualThreadTestGroup")
-  void bulkProcessorUpdaterShouldWorkWithVirtualThreads() throws Exception {
-    // Number of concurrent tasks to run
-    int taskCount = 100;
+  @Tag("VirtualThreadTestGroup")
+  void concurrentBulkProcessorUpdatesWithVirtualThreads() throws Exception {
+    // Configure virtual thread executor
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    int taskCount = 1000;
     CountDownLatch latch = new CountDownLatch(taskCount);
     AtomicInteger errorCount = new AtomicInteger(0);
-    
-    // Create a virtual thread executor
-    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     
     try {
       // Submit multiple concurrent tasks using virtual threads
       for (int i = 0; i < taskCount; i++) {
         executor.submit(() -> {
           try {
-            // Execute the bulk processor updater
             underTest.call();
           } catch (Exception e) {
             errorCount.incrementAndGet();
@@ -81,11 +82,11 @@ class BulkProcessorUpdaterTest
         });
       }
       
-      // Wait for all tasks to complete (with timeout)
+      // Wait for all tasks to complete
       boolean completed = latch.await(30, TimeUnit.SECONDS);
       
       // Verify results
-      assertThat("All tasks should complete within the timeout", completed, is(true));
+      assertThat("All tasks should complete within timeout", completed, is(true));
       assertThat("No errors should occur during execution", errorCount.get(), is(0));
       verify(bulkProcessor, times(taskCount)).add(deleteRequest);
     } finally {

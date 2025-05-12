@@ -15,10 +15,25 @@ package org.sonatype.nexus.repository.apt.datastore.internal.store;
 import org.sonatype.nexus.repository.content.store.AssetDAO;
 
 /**
+ * APT format-specific extension of {@link AssetDAO}.
+ * 
+ * <p>This interface is designed to be compatible with Java 21 and can benefit from several
+ * key Java 21 features:</p>
+ * <ul>
+ *   <li><strong>Virtual Threads</strong> - Implementations can leverage virtual threads for
+ *       improved I/O operations performance when accessing APT repository assets</li>
+ *   <li><strong>Pattern Matching</strong> - Consumers can use enhanced pattern matching with
+ *       switch expressions when processing results from this DAO</li>
+ *   <li><strong>Sequenced Collections</strong> - Results can be processed using the new
+ *       sequenced collection APIs for more intuitive handling of ordered asset data</li>
+ * </ul>
+ *
  * @since 3.31
  */
 public interface AptAssetDAO
     extends AssetDAO
 {
-  // nothing to add...
+  // This interface serves as a marker for APT-specific asset DAO implementations.
+  // It inherits all standard asset operations from AssetDAO while allowing for
+  // future APT-specific extensions if needed.
 }

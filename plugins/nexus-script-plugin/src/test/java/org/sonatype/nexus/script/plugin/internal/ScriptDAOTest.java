@@ -12,11 +12,10 @@
  */
 package org.sonatype.nexus.script.plugin.internal;
 
-import org.junit.Before;
-import org.junit.After;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.experimental.categories.Category;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.content.testsuite.groups.SQLTestGroup;
@@ -28,24 +27,29 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 import static org.sonatype.nexus.datastore.api.DataStoreManager.DEFAULT_DATASTORE_NAME;
 
-@Category(SQLTestGroup.class)
+/**
+ * Tests for {@link ScriptDAO} using JUnit Jupiter 5.10.1 and Java 21.
+ * <p>
+ * This test validates the basic CRUD operations for script storage in the database.
+ */
+@org.junit.jupiter.api.Tag("sql")
 public class ScriptDAOTest
     extends TestSupport
 {
-  @Rule
+  @RegisterExtension
   public DataSessionRule sessionRule = new DataSessionRule().access(ScriptDAO.class);
 
   private DataSession<?> session;
 
   private ScriptDAO dao;
 
-  @Before
+  @BeforeEach
   public void setUp() {
     session = sessionRule.openSession(DEFAULT_DATASTORE_NAME);
     dao = session.access(ScriptDAO.class);
   }
 
-  @After
+  @AfterEach
   public void tearDown() {
     session.close();
   }

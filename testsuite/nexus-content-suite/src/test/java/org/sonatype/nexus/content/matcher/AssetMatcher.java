@@ -17,10 +17,22 @@ import org.sonatype.nexus.repository.content.Asset;
 import org.hamcrest.FeatureMatcher;
 import org.hamcrest.Matcher;
 
+/**
+ * Provides Hamcrest matchers for {@link Asset} objects to be used in JUnit Jupiter tests.
+ * 
+ * @since 3.38
+ */
 public class AssetMatcher
 {
+  /**
+   * Creates a matcher that matches when the examined {@link Asset}'s path
+   * satisfies the specified matcher.
+   *
+   * @param matcher the matcher to apply to the asset's path
+   * @return a matcher for the asset's path
+   */
   public static FeatureMatcher<Asset, String> path(Matcher<String> matcher) {
-    return new FeatureMatcher<Asset, String>(matcher, "path", "path")
+    return new FeatureMatcher<>(matcher, "path", "path")
     {
       @Override
       protected String featureValueOf(Asset actual) {

@@ -14,6 +14,10 @@ package org.sonatype.nexus.repository.apt.datastore.internal.task;
 
 import java.io.IOException;
 import java.util.Collections;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
 import javax.inject.Named;
 
 import org.sonatype.nexus.repository.Repository;
@@ -27,11 +31,23 @@ import org.sonatype.nexus.repository.types.HostedType;
 import org.sonatype.nexus.scheduling.Cancelable;
 import org.sonatype.nexus.scheduling.CancelableHelper;
 
+/**
+ * Task to rebuild APT repository metadata.
+ * <p>
+ * This implementation leverages Java 21 Virtual Threads for improved performance
+ * when processing assets and rebuilding metadata, which are primarily I/O-bound operations.
+ * </p>
+ */
 @Named
 public class RebuildAptMetadataTask
     extends RepositoryTaskSupport
     implements Cancelable
 {
+  /**
+   * Default timeout for virtual thread executor shutdown in seconds.
+   */
+  private static final int DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 60;
+
   @Override
   protected void execute(final Repository repository) {
     log.debug("Populating metadata in repository {} started", repository.getName());
@@ -42,6 +58,13 @@ public class RebuildAptMetadataTask
     executeRebuild(repository, isFullRebuild);
   }
 
+  /**
+   * Executes the rebuild operation using Java 21 Virtual Threads for processing assets.
+   * Virtual Threads are particularly well-suited for I/O-bound operations like metadata processing.
+   *
+   * @param repository the repository to rebuild metadata for
+   * @param isFullRebuild whether to perform a full rebuild (true) or incremental rebuild (false)
+   */
   private void executeRebuild(final Repository repository, boolean isFullRebuild) {
     if (isFullRebuild) {
       // Remove all data in key-value storage
@@ -51,10 +74,36 @@ public class RebuildAptMetadataTask
     // Get all assets
     Iterable<FluentAsset> assets = content(repository).getAptPackageAssets();
 
-    // Add metadata from each asset into key-value table
-    for (FluentAsset asset : assets) {
-      CancelableHelper.checkCancellation();
-      metadata(repository).addPackageMetadata(asset);
+    // Create a virtual thread executor for processing assets
+    // Virtual threads are lightweight and efficient for I/O-bound operations
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Add metadata from each asset into key-value table using virtual threads
+      for (FluentAsset asset : assets) {
+        CancelableHelper.checkCancellation();
+        
+        // Submit each asset processing task to the virtual thread executor
+        executor.submit(() -> {
+          try {
+            metadata(repository).addPackageMetadata(asset);
+          } catch (Exception e) {
+            log.error("Error processing asset {}", asset.path(), e);
+          }
+        });
+      }
+
+      // Orderly shutdown of the executor service
+      executor.shutdown();
+      try {
+        // Wait for all tasks to complete or timeout
+        if (!executor.awaitTermination(DEFAULT_SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+          log.warn("Timeout waiting for asset processing to complete");
+          executor.shutdownNow();
+        }
+      } catch (InterruptedException e) {
+        log.warn("Asset processing interrupted", e);
+        Thread.currentThread().interrupt();
+        executor.shutdownNow();
+      }
     }
 
     // Remove Release index file

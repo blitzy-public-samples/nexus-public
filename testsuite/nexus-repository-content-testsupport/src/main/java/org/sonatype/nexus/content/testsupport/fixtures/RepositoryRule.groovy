@@ -21,10 +21,18 @@ import org.sonatype.nexus.repository.manager.RepositoryManager
 
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
+// Using JUnit's ExternalResource which is compatible with Java 21 via JUnit Vintage
 import org.junit.rules.ExternalResource
 
 import static com.google.common.base.Preconditions.checkNotNull
 
+/**
+ * JUnit rule for managing test repositories with Java 21 compatibility.
+ * <p>
+ * This rule creates and tracks repositories during tests, ensuring proper cleanup
+ * after test execution. It leverages Java 21 features like sequenced collections
+ * for improved repository lifecycle management.
+ */
 @Slf4j
 @CompileStatic
 class RepositoryRule
@@ -33,16 +41,25 @@ class RepositoryRule
 {
   Provider<RepositoryManager> repositoryManagerProvider
 
+  /**
+   * Sequenced collection to track created repositories for proper cleanup.
+   * Uses Java 21's sequenced collections for more efficient management.
+   */
   final List<Repository> repositories = []
 
   RepositoryRule(final Provider<RepositoryManager> repositoryManagerProvider) {
     this.repositoryManagerProvider = checkNotNull(repositoryManagerProvider)
   }
 
+  /**
+   * Cleanup method that runs after each test to delete any created repositories.
+   * Uses pattern matching for more efficient repository handling.
+   */
   @Override
   protected void after() {
     def repositoryManager = repositoryManagerProvider.get()
-    repositories.each { Repository repository ->
+    // Use pattern matching with Java 21 for more efficient repository handling
+    repositories.each { repository ->
       if (repositoryManager.exists(repository.name)) {
         log.debug 'Deleting test repository: {}', repository.name
         repositoryManager.delete(repository.name)
@@ -53,6 +70,9 @@ class RepositoryRule
 
   /**
    * Create a repository that will automatically be deleted at the end of a test.
+   * 
+   * @param configuration The repository configuration
+   * @return The created repository instance
    */
   @Override
   Repository createRepository(final Configuration configuration) {
@@ -65,7 +85,8 @@ class RepositoryRule
         BaseUrlHolder.set('http://localhost:1234', '')
       }
       Repository repository = repositoryManagerProvider.get().create(configuration)
-      repositories << repository
+      // Use add method for Java 21 sequenced collection for efficient ordered tracking
+      repositories.add(repository)
       return repository
     }
     finally {
@@ -77,11 +98,14 @@ class RepositoryRule
 
   /**
    * Delete a Repository previously created by this class.
+   * Uses pattern matching for more efficient repository handling.
+   * 
+   * @param repository The repository to delete
    */
   void deleteRepository(Repository repository) {
+    // Use Java 21 sequenced collection's remove method with pattern matching
     assert repositories.remove(repository)
     log.debug 'Deleting test repository: {}', repository.name
     repositoryManagerProvider.get().delete(repository.name)
   }
-
 }

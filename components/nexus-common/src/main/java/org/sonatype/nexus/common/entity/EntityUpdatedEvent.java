@@ -25,7 +25,7 @@ package org.sonatype.nexus.common.entity;
  * 
  * <p>
  * Thread safety is ensured by the parent class which uses volatile fields and
- * double-checked locking for lazy initialization of the entity field.
+ * ReentrantLock for lazy initialization of the entity field.
  * Event publication is handled through the EventManager which supports
  * asynchronous delivery using Java 21 virtual threads when appropriate.
  *

@@ -12,11 +12,21 @@
  */
 package org.sonatype.nexus.repository.maven.internal.filter;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
+/**
+ * Tests for {@link BloomFilterDuplicateDetectionStrategy}.
+ * Verifies that the Bloom filter-based strategy correctly identifies duplicate Maven artifacts.
+ *
+ * @since 3.0
+ */
 public class BloomFilterDuplicateDetectionStrategyTest
     extends DuplicateDetectionStrategyTestSupport
 {
+  /**
+   * Verifies that the Bloom filter strategy correctly identifies duplicate records
+   * by accepting first occurrences and rejecting subsequent duplicates.
+   */
   @Test
   public void shouldIdentifyDuplicates() throws Exception {
     verifyDuplicateDetection(new BloomFilterDuplicateDetectionStrategy());

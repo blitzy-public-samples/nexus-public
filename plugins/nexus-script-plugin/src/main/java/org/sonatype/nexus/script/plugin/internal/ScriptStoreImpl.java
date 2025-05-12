@@ -23,8 +23,6 @@ import org.sonatype.nexus.datastore.api.DataSessionSupplier;
 import org.sonatype.nexus.script.Script;
 import org.sonatype.nexus.transaction.Transactional;
 
-import com.google.common.collect.ImmutableList;
-
 /**
  * MyBatis {@link ScriptStore} implementation.
  *
@@ -49,7 +47,7 @@ public class ScriptStoreImpl
   @Transactional
   @Override
   public List<Script> list() {
-    return ImmutableList.copyOf(dao().browse());
+    return List.copyOf(dao().browse());
   }
 
   @Transactional

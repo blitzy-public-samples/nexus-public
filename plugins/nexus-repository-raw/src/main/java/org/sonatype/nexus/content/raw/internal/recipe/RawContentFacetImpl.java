@@ -14,6 +14,9 @@ package org.sonatype.nexus.content.raw.internal.recipe;
 
 import java.io.IOException;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 
@@ -40,6 +43,11 @@ public class RawContentFacetImpl
     extends ContentFacetSupport
     implements RawContentFacet
 {
+  /**
+   * ExecutorService using Virtual Threads for I/O-bound operations
+   */
+  private final ExecutorService ioExecutor = Executors.newVirtualThreadPerTaskExecutor();
+
   @Inject
   public RawContentFacetImpl(
       @Named(RawFormat.NAME) final FormatStoreManager formatStoreManager)
@@ -49,7 +57,15 @@ public class RawContentFacetImpl
 
   @Override
   public Optional<Content> get(final String path) throws IOException {
-    return assets().path(path).find().map(FluentAsset::download);
+    // Use Virtual Thread for I/O-bound operation
+    try {
+      return ioExecutor.submit(() -> assets().path(path).find().map(FluentAsset::download)).get();
+    } catch (Exception e) {
+      if (e.getCause() instanceof IOException) {
+        throw (IOException) e.getCause();
+      }
+      throw new IOException("Error retrieving content", e);
+    }
   }
 
   @Override
@@ -66,24 +82,51 @@ public class RawContentFacetImpl
 
   @Override
   public Content put(final String path, final Payload content) throws IOException {
-    try (TempBlob blob = blobs().ingest(content, HASHING)){
-      return assets()
-          .path(path)
-          .component(components()
-              .name(path)
-              .namespace(RawCoordinatesHelper.getGroup(path))
-              .getOrCreate())
-          .blob(blob)
-          .save()
-          .markAsCached(content)
-          .download();
+    // Use Virtual Thread for I/O-bound operation
+    try {
+      return ioExecutor.submit(() -> {
+        try (TempBlob blob = blobs().ingest(content, HASHING)) {
+          return assets()
+              .path(path)
+              .component(components()
+                  .name(path)
+                  .namespace(RawCoordinatesHelper.getGroup(path))
+                  .getOrCreate())
+              .blob(blob)
+              .save()
+              .markAsCached(content)
+              .download();
+        }
+      }).get();
+    } catch (Exception e) {
+      if (e.getCause() instanceof IOException) {
+        throw (IOException) e.getCause();
+      }
+      throw new IOException("Error storing content", e);
     }
   }
 
   @Override
   public boolean delete(final String path) throws IOException {
-    return assets().path(path).find()
-        .map(asset -> repository().facet(ContentMaintenanceFacet.class).deleteAsset(asset).contains(path))
-        .orElse(false);
+    // Use Virtual Thread for I/O-bound operation
+    try {
+      return ioExecutor.submit(() -> assets().path(path).find()
+          .map(asset -> repository().facet(ContentMaintenanceFacet.class).deleteAsset(asset).contains(path))
+          .orElse(false)).get();
+    } catch (Exception e) {
+      if (e.getCause() instanceof IOException) {
+        throw (IOException) e.getCause();
+      }
+      throw new IOException("Error deleting content", e);
+    }
+  }
+  
+  /**
+   * Stops the executor service when the facet is stopped.
+   */
+  @Override
+  protected void doStop() throws Exception {
+    ioExecutor.shutdown();
+    super.doStop();
   }
 }

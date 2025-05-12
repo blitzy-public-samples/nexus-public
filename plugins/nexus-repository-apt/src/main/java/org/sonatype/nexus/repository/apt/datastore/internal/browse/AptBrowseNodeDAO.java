@@ -15,9 +15,14 @@ package org.sonatype.nexus.repository.apt.datastore.internal.browse;
 import org.sonatype.nexus.repository.content.browse.store.BrowseNodeDAO;
 
 /**
+ * APT repository browse node DAO interface.
+ *
  * @since 3.31
+ * @since 3.60 Verified compatibility with Java 21 as part of the platform migration from Java 17.
  */
 public interface AptBrowseNodeDAO
     extends BrowseNodeDAO
 {
+  // No additional methods required beyond those provided by BrowseNodeDAO
+  // This interface serves as a repository-specific extension point for APT format
 }

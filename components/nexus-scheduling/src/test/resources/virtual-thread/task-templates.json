@@ -1,144 +1,234 @@
 {
-  "templates": [
+  "taskTemplates": [
     {
-      "id": "io-bound-repository-task",
-      "name": "I/O-bound Repository Task",
-      "description": "Simulates repository operations with high I/O and low CPU usage, ideal for virtual threads",
-      "type": "io-bound",
+      "id": "io-bound-repository-proxy",
+      "name": "I/O-Bound Repository Proxy Task",
+      "description": "Simulates proxy repository operations with network I/O",
+      "category": "io-bound",
       "parameters": {
-        "repositoryName": "maven-central",
-        "assetCount": 1000,
-        "ioOperationsPerAsset": 5,
-        "ioLatencyMs": 20,
-        "cpuWorkPerAsset": "minimal"
-      }
+        "requestCount": 100,
+        "requestDelayMs": 50,
+        "responseSize": "medium",
+        "timeoutMs": 5000,
+        "failureRate": 0.05
+      },
+      "virtualThreadBenefit": "high",
+      "expectedBehavior": "High throughput with virtual threads compared to platform threads"
     },
     {
-      "id": "io-bound-blobstore-task",
-      "name": "I/O-bound BlobStore Task",
-      "description": "Simulates blob storage operations with high I/O throughput, ideal for virtual threads",
-      "type": "io-bound",
+      "id": "io-bound-blob-store",
+      "name": "I/O-Bound BlobStore Task",
+      "description": "Simulates blob store operations with file system I/O",
+      "category": "io-bound",
       "parameters": {
-        "blobStoreType": "file",
-        "blobCount": 500,
+        "blobCount": 50,
         "blobSizeBytes": 1048576,
-        "readWriteRatio": 4,
-        "ioLatencyMs": 25,
-        "concurrentOperations": 100
-      }
+        "readWriteRatio": 0.7,
+        "metadataOperations": true,
+        "fsyncEnabled": false
+      },
+      "virtualThreadBenefit": "high",
+      "expectedBehavior": "Improved concurrency for I/O operations without thread exhaustion"
     },
     {
-      "id": "io-bound-s3-task",
-      "name": "I/O-bound S3 BlobStore Task",
-      "description": "Simulates S3 blob storage operations with network latency, excellent for virtual threads",
-      "type": "io-bound",
+      "id": "io-bound-database",
+      "name": "I/O-Bound Database Task",
+      "description": "Simulates database operations with JDBC",
+      "category": "io-bound",
       "parameters": {
-        "blobStoreType": "s3",
-        "blobCount": 300,
-        "blobSizeBytes": 2097152,
-        "readWriteRatio": 3,
-        "networkLatencyMs": 50,
-        "concurrentOperations": 200,
-        "retryCount": 3
-      }
+        "queryCount": 200,
+        "queryComplexity": "medium",
+        "batchSize": 10,
+        "includeTransactions": true,
+        "simulateNetworkLatency": true
+      },
+      "virtualThreadBenefit": "high",
+      "expectedBehavior": "Efficient handling of database connection waiting without thread pinning"
     },
     {
-      "id": "io-bound-db-task",
-      "name": "I/O-bound Database Task",
-      "description": "Simulates database operations with connection pooling, ideal for virtual threads",
-      "type": "io-bound",
+      "id": "cpu-bound-computation",
+      "name": "CPU-Bound Computation Task",
+      "description": "Simulates CPU-intensive computation workloads",
+      "category": "cpu-bound",
       "parameters": {
-        "queryType": "select",
-        "queryCount": 1000,
-        "rowsPerQuery": 50,
-        "dbLatencyMs": 15,
-        "concurrentQueries": 150,
-        "useTransactions": true
-      }
+        "iterationCount": 1000000,
+        "algorithmComplexity": "high",
+        "memoryUsageMb": 10,
+        "useMultipleThreads": false
+      },
+      "virtualThreadBenefit": "low",
+      "expectedBehavior": "Similar or slightly worse performance compared to platform threads"
     },
     {
-      "id": "cpu-bound-task",
-      "name": "CPU-bound Computation Task",
-      "description": "Simulates CPU-intensive operations, better suited for platform threads",
-      "type": "cpu-bound",
+      "id": "cpu-bound-processing",
+      "name": "CPU-Bound Processing Task",
+      "description": "Simulates data processing workloads",
+      "category": "cpu-bound",
       "parameters": {
-        "computationIterations": 10000,
-        "computationComplexity": "high",
-        "memoryUsageMb": 50,
-        "concurrentComputations": 8
-      }
+        "dataSize": "large",
+        "processingType": "transform",
+        "compressionEnabled": true,
+        "validationEnabled": true
+      },
+      "virtualThreadBenefit": "low",
+      "expectedBehavior": "May cause carrier thread saturation under high load"
     },
     {
-      "id": "cpu-bound-compression-task",
-      "name": "CPU-bound Compression Task",
-      "description": "Simulates data compression operations, better suited for platform threads",
-      "type": "cpu-bound",
+      "id": "mixed-repository-indexing",
+      "name": "Mixed Repository Indexing Task",
+      "description": "Simulates repository content indexing with mixed I/O and CPU operations",
+      "category": "mixed",
       "parameters": {
-        "dataSize": 10485760,
-        "compressionLevel": 9,
-        "compressionAlgorithm": "gzip",
-        "iterations": 50,
-        "concurrentOperations": 4
-      }
+        "repositoryType": "maven",
+        "assetCount": 5000,
+        "ioToCpuRatio": 0.6,
+        "batchSize": 100,
+        "includeContentAnalysis": true
+      },
+      "virtualThreadBenefit": "medium",
+      "expectedBehavior": "Better throughput for I/O portions, potential bottlenecks during CPU-intensive phases"
     },
     {
-      "id": "mixed-proxy-repository-task",
-      "name": "Mixed Workload Proxy Repository Task",
-      "description": "Simulates proxy repository operations with mixed I/O and CPU workloads",
-      "type": "mixed",
+      "id": "mixed-content-validation",
+      "name": "Mixed Content Validation Task",
+      "description": "Simulates content validation with security scanning",
+      "category": "mixed",
       "parameters": {
-        "repositoryName": "maven-central-proxy",
-        "assetCount": 500,
-        "remoteRequestCount": 100,
-        "remoteLatencyMs": 100,
-        "processingTimePerAssetMs": 5,
-        "cachingEnabled": true,
-        "concurrentOperations": 50,
-        "ioToCpuRatio": 7
-      }
+        "contentType": "docker",
+        "validationDepth": "deep",
+        "securityScanEnabled": true,
+        "metadataExtractionEnabled": true,
+        "ioToCpuRatio": 0.4
+      },
+      "virtualThreadBenefit": "medium",
+      "expectedBehavior": "Improved overall throughput with potential CPU bottlenecks during scanning phases"
     },
     {
-      "id": "mixed-search-task",
-      "name": "Mixed Workload Search Task",
-      "description": "Simulates repository search operations with mixed I/O and CPU workloads",
-      "type": "mixed",
+      "id": "configurable-workload",
+      "name": "Configurable Workload Task",
+      "description": "Fully configurable task for custom testing scenarios",
+      "category": "configurable",
       "parameters": {
-        "searchQueries": 200,
-        "resultsPerQuery": 25,
-        "dbLatencyMs": 30,
-        "resultProcessingTimeMs": 10,
-        "concurrentSearches": 40,
-        "ioToCpuRatio": 3
-      }
+        "ioOperationCount": 100,
+        "cpuOperationCount": 100,
+        "ioOperationDelayMs": 50,
+        "cpuOperationComplexity": "medium",
+        "interleaveOperations": true,
+        "simulateBlockingCalls": true,
+        "simulateThreadPinning": false
+      },
+      "virtualThreadBenefit": "variable",
+      "expectedBehavior": "Behavior depends on configuration parameters"
     },
     {
-      "id": "scalability-test-task",
-      "name": "Scalability Test Task",
-      "description": "Tests scalability with increasing concurrent operations, ideal for comparing thread models",
-      "type": "scalability",
-      "parameters": {
-        "startConcurrency": 10,
-        "maxConcurrency": 10000,
-        "concurrencyStep": 10,
-        "operationsPerStep": 1000,
-        "ioLatencyMs": 20,
-        "cpuWorkMs": 1,
-        "ioToCpuRatio": 10,
-        "measureMemoryUsage": true
-      }
-    },
-    {
-      "id": "thread-pinning-test-task",
+      "id": "thread-pinning-test",
       "name": "Thread Pinning Test Task",
-      "description": "Tests operations that may cause thread pinning with virtual threads",
-      "type": "thread-pinning",
+      "description": "Tests virtual thread behavior with operations that cause thread pinning",
+      "category": "diagnostic",
       "parameters": {
         "synchronizedBlockCount": 10,
-        "blockingNativeCallCount": 5,
-        "monitorWaitTimeMs": 50,
-        "concurrentOperations": 100,
-        "detectPinning": true
-      }
+        "synchronizedBlockDurationMs": 100,
+        "nativeCallCount": 5,
+        "simulateMonitorWait": true
+      },
+      "virtualThreadBenefit": "diagnostic",
+      "expectedBehavior": "Identifies operations that cause virtual thread pinning to carrier threads"
+    },
+    {
+      "id": "simple-task",
+      "name": "Simple Task",
+      "description": "Basic task for simple testing scenarios",
+      "category": "basic",
+      "parameters": {
+        "executionTimeMs": 1000,
+        "ioPercentage": 50,
+        "failRandomly": false
+      },
+      "virtualThreadBenefit": "medium",
+      "expectedBehavior": "Predictable execution with configurable I/O percentage"
+    }
+  ],
+  "metricCollectors": [
+    {
+      "id": "thread-metrics",
+      "name": "Thread Metrics Collector",
+      "description": "Collects metrics related to thread execution",
+      "metrics": [
+        "threadCount",
+        "threadCreationRate",
+        "threadTerminationRate",
+        "activeThreadCount",
+        "blockedThreadCount",
+        "pinnedThreadCount",
+        "carrierThreadUtilization"
+      ]
+    },
+    {
+      "id": "performance-metrics",
+      "name": "Performance Metrics Collector",
+      "description": "Collects performance-related metrics",
+      "metrics": [
+        "throughput",
+        "responseTime",
+        "latencyP50",
+        "latencyP95",
+        "latencyP99",
+        "errorRate",
+        "successRate"
+      ]
+    },
+    {
+      "id": "resource-metrics",
+      "name": "Resource Metrics Collector",
+      "description": "Collects resource utilization metrics",
+      "metrics": [
+        "cpuUsage",
+        "memoryUsage",
+        "gcPauseTime",
+        "gcFrequency",
+        "fileDescriptorCount",
+        "networkBandwidth"
+      ]
+    }
+  ],
+  "testScenarios": [
+    {
+      "id": "scalability-test",
+      "name": "Scalability Test",
+      "description": "Tests scalability with increasing concurrent tasks",
+      "taskTemplateIds": ["io-bound-repository-proxy", "io-bound-blob-store"],
+      "concurrencyLevels": [10, 100, 1000, 10000],
+      "metricCollectorIds": ["thread-metrics", "performance-metrics"],
+      "durationSeconds": 60
+    },
+    {
+      "id": "mixed-workload-test",
+      "name": "Mixed Workload Test",
+      "description": "Tests performance with mixed I/O and CPU workloads",
+      "taskTemplateIds": ["mixed-repository-indexing", "mixed-content-validation"],
+      "concurrencyLevels": [50, 500],
+      "metricCollectorIds": ["thread-metrics", "performance-metrics", "resource-metrics"],
+      "durationSeconds": 120
+    },
+    {
+      "id": "comparison-test",
+      "name": "Platform vs Virtual Thread Comparison",
+      "description": "Compares performance between platform and virtual threads",
+      "taskTemplateIds": ["io-bound-repository-proxy", "cpu-bound-computation", "mixed-repository-indexing"],
+      "concurrencyLevels": [100, 1000],
+      "metricCollectorIds": ["thread-metrics", "performance-metrics", "resource-metrics"],
+      "durationSeconds": 180,
+      "compareWithPlatformThreads": true
+    },
+    {
+      "id": "diagnostic-test",
+      "name": "Diagnostic Test",
+      "description": "Diagnoses potential issues with virtual thread implementation",
+      "taskTemplateIds": ["thread-pinning-test", "configurable-workload"],
+      "concurrencyLevels": [10, 100],
+      "metricCollectorIds": ["thread-metrics"],
+      "durationSeconds": 30,
+      "collectThreadDumps": true
     }
   ]
 }

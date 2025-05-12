@@ -12,7 +12,11 @@
  */
 package org.sonatype.nexus.repository.raw;
 
+import java.util.Arrays;
+
 /**
+ * Enum representing HTTP Content-Disposition header values for Raw repositories.
+ * 
  * @since 3.25
  */
 public enum ContentDisposition
@@ -26,7 +30,50 @@ public enum ContentDisposition
     this.value = value;
   }
 
+  /**
+   * Returns the string value of this content disposition.
+   *
+   * @return the string value
+   */
   public String getValue() {
     return value;
+  }
+
+  /**
+   * Returns a string representation of this content disposition.
+   * Uses Java 21 string templates for improved readability.
+   *
+   * @return a string representation
+   */
+  @Override
+  public String toString() {
+    return STR."ContentDisposition[\{value}]";
+  }
+
+  /**
+   * Converts a string value to the corresponding ContentDisposition enum.
+   * Uses Java 21 pattern matching for switch to simplify the implementation.
+   *
+   * @param value the string value to convert
+   * @return the corresponding ContentDisposition enum
+   * @throws IllegalArgumentException if the value is not a valid content disposition
+   */
+  public static ContentDisposition fromString(String value) {
+    return switch (value) {
+      case String s when s.equalsIgnoreCase(INLINE.value) -> INLINE;
+      case String s when s.equalsIgnoreCase(ATTACHMENT.value) -> ATTACHMENT;
+      default -> throw new IllegalArgumentException(STR."Invalid content disposition: \{value}");
+    };
+  }
+
+  /**
+   * Checks if a string value is a valid content disposition.
+   *
+   * @param value the string value to check
+   * @return true if the value is a valid content disposition, false otherwise
+   */
+  public static boolean isValid(String value) {
+    return Arrays.stream(values())
+        .anyMatch(disposition -> disposition.value.equalsIgnoreCase(value));
   }
 }

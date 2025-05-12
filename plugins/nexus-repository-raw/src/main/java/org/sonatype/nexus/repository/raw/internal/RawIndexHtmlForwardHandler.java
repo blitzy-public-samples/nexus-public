@@ -37,13 +37,17 @@ public class RawIndexHtmlForwardHandler
   @Override
   public Response handle(@Nonnull final Context context) throws Exception {
     Response response = forward(context, context.getRequest().getPath() + ".");
-    if (HttpStatus.NOT_FOUND == response.getStatus().getCode()) {
-      response = super.handle(context);
-      if (HttpStatus.NOT_FOUND == response.getStatus().getCode()) {
-        return HttpResponses.notFound("You can’t browse this way");
+    
+    // Using pattern matching for switch to handle different response status codes
+    return switch (response.getStatus().getCode()) {
+      case HttpStatus.NOT_FOUND -> {
+        Response superResponse = super.handle(context);
+        yield switch (superResponse.getStatus().getCode()) {
+          case HttpStatus.NOT_FOUND -> HttpResponses.notFound("You can't browse this way");
+          default -> superResponse;
+        };
       }
-    }
-
-    return response;
+      default -> response;
+    };
   }
 }

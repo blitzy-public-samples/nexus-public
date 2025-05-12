@@ -23,6 +23,8 @@ import org.sonatype.nexus.repository.replication.ReplicationIngesterHelper;
 import org.sonatype.nexus.repository.replication.ReplicationIngesterSupport;
 
 /**
+ * Raw format implementation of {@link ReplicationIngester}.
+ *
  * @since 3.31
  */
 @Named(RawFormat.NAME)
@@ -31,6 +33,12 @@ public class RawReplicationIngester
     extends ReplicationIngesterSupport
     implements ReplicationIngester
 {
+  /**
+   * Constructor.
+   *
+   * @param blobstoreManager the blob store manager
+   * @param replicationIngesterHelper the replication ingester helper
+   */
   @Inject
   public RawReplicationIngester(final BlobStoreManager blobstoreManager,
                                 final ReplicationIngesterHelper replicationIngesterHelper)

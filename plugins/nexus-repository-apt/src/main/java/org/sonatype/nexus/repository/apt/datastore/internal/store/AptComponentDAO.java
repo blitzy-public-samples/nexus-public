@@ -15,10 +15,14 @@ package org.sonatype.nexus.repository.apt.datastore.internal.store;
 import org.sonatype.nexus.repository.content.store.ComponentDAO;
 
 /**
+ * APT format-specific ComponentDAO marker interface.
+ * 
  * @since 3.31
+ * @see ComponentDAO
  */
 public interface AptComponentDAO
     extends ComponentDAO
 {
-  // nothing to add...
+  // This is a marker interface that extends ComponentDAO without adding any additional methods.
+  // Compatible with Java 21 and ready for Virtual Threads when implemented in the underlying ComponentDAO.
 }

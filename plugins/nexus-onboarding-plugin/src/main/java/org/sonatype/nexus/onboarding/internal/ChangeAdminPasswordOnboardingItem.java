@@ -12,9 +12,9 @@
  */
 package org.sonatype.nexus.onboarding.internal;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.onboarding.OnboardingItem;
@@ -29,6 +29,8 @@ import org.sonatype.nexus.security.user.UserStatus;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
+ * Onboarding item that prompts admin users to change their default password.
+ *
  * @since 3.17
  */
 @Named
@@ -58,13 +60,18 @@ public class ChangeAdminPasswordOnboardingItem
   public boolean applies() {
     try {
       User user = securitySystem.getUser("admin", UserManagerImpl.DEFAULT_SOURCE);
-      return UserStatus.changepassword.equals(user.getStatus());
+      return UserStatus.changepassword == user.getStatus();
     }
-    catch (UserNotFoundException e) {
-      log.trace("admin user not found in system, marking onboarding item as not applicable.", e);
-    }
-    catch (NoSuchUserManagerException e) {
-      log.trace("default UserManager not found in system, marking onboarding item as not applicable.", e);
+    catch (Exception e) {
+      if (e instanceof UserNotFoundException userNotFound) {
+        log.trace(STR."admin user not found in system, marking onboarding item as not applicable. \{userNotFound}");
+      }
+      else if (e instanceof NoSuchUserManagerException noUserManager) {
+        log.trace(STR."default UserManager not found in system, marking onboarding item as not applicable. \{noUserManager}");
+      }
+      else {
+        log.debug(STR."Unexpected error checking admin password status: \{e}");
+      }
     }
 
     return false;

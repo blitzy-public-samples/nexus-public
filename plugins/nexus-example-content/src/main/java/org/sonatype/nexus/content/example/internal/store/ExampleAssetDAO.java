@@ -15,7 +15,10 @@ package org.sonatype.nexus.content.example.internal.store;
 import org.sonatype.nexus.repository.content.store.AssetDAO;
 
 /**
+ * Example asset data access object interface for the example content repository format.
+ * 
  * @since 3.24
+ * @see AssetDAO
  */
 public interface ExampleAssetDAO
     extends AssetDAO

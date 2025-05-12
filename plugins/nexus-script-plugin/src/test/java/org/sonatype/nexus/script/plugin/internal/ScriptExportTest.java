@@ -14,15 +14,16 @@ package org.sonatype.nexus.script.plugin.internal;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Stream;
+import java.util.stream.Collectors;
 
 import org.sonatype.nexus.script.Script;
 import org.sonatype.nexus.supportzip.datastore.JsonExporter;
 
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.Matchers.anyOf;
@@ -32,6 +33,13 @@ import static org.mockito.Mockito.when;
 
 /**
  * Tests validity of Serialization/Deserialization {@link Script} by {@link ScriptExport}
+ *
+ * @since 3.next
+ * @see ScriptExport
+ * 
+ * Updated for Java 21 compatibility using JUnit Jupiter 5.10.1.
+ * Uses modern Stream API and collectors instead of deprecated Arrays.asList().
+ * Implements JUnit 5 lifecycle annotations for test setup and teardown.
  */
 public class ScriptExportTest
 {
@@ -39,21 +47,24 @@ public class ScriptExportTest
 
   private File jsonFile;
 
-  @Before
+  @BeforeEach
   public void setup() throws IOException {
     jsonFile = File.createTempFile("SamlUser", ".json");
   }
 
-  @After
+  @AfterEach
   public void tearDown() {
-    jsonFile.delete();
+    if (jsonFile != null && jsonFile.exists()) {
+      jsonFile.delete();
+    }
   }
 
   @Test
   public void testExportImportToJson() throws Exception {
-    List<Script> scripts = Arrays.asList(
+    List<Script> scripts = Stream.of(
         createScript("script_1"),
-        createScript("script_2"));
+        createScript("script_2"))
+        .collect(Collectors.toList());
 
     ScriptStore store = mock(ScriptStore.class);
     when(store.list()).thenReturn(scripts);
@@ -79,4 +90,3 @@ public class ScriptExportTest
     return script;
   }
 }
-

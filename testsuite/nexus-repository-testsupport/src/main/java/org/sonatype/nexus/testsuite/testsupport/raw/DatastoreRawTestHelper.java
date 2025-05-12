@@ -31,9 +31,23 @@ import org.sonatype.nexus.testsuite.helpers.ComponentAssetTestHelper;
 
 import org.apache.commons.lang.StringUtils;
 
-import static org.junit.Assert.assertTrue;
+// JUnit 5 (Jupiter) imports
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_ENABLED;
 
+/**
+ * Raw repository test helper for datastore repositories.
+ * <p>
+ * This implementation is compatible with Java 21 and supports testing with virtual threads.
+ * It extends the base RawTestHelper which provides virtual thread execution capabilities for
+ * I/O-bound operations, improving test performance and scalability.
+ * <p>
+ * This class is designed to work with the java21-tests and virtual-threads Maven profiles
+ * for comprehensive testing of Java 21 features including virtual threads.
+ *
+ * @since 3.60.0
+ */
 @FeatureFlag(name = DATASTORE_ENABLED)
 @Named
 @Singleton

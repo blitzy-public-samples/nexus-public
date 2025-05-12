@@ -12,9 +12,19 @@
  */
 package org.sonatype.nexus.testsuite.testsupport.apt;
 
+import org.junit.jupiter.api.Tag;
+
 /**
- * Marker interface to group Apt Integration Tests
+ * Marker interface to group Apt Integration Tests for JUnit Jupiter 5.10.1 and Java 21.
+ * <p>
+ * This interface enables test discovery and execution in Java 21 environments using JUnit Jupiter's
+ * test grouping capabilities. Tests implementing this interface will be grouped together for selective
+ * execution and reporting.
+ * <p>
+ * Usage: Implement this interface in your Apt test classes to ensure they are properly discovered
+ * and executed by the JUnit Jupiter test engine in Java 21 environments.
  */
+@Tag("apt")
 public interface AptTestGroup
 {
 }

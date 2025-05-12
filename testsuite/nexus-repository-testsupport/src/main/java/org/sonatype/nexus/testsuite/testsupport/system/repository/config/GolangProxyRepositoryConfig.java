@@ -18,13 +18,32 @@ import org.sonatype.nexus.repository.Repository;
 
 import static org.sonatype.nexus.testsuite.testsupport.system.RepositoryTestSystem.FORMAT_GOLANG;
 
+/**
+ * Configuration for Golang proxy repositories in tests.
+ * 
+ * <p>This class is compatible with Java 21 and supports testing with JUnit Jupiter 5.10.1 and Mockito 4.11.0.</p>
+ * 
+ * <p>When used with Java 21, this configuration can be used to test Golang proxy repositories that leverage 
+ * Virtual Threads for improved I/O operations performance, particularly for remote connections to Golang 
+ * module repositories and content transfers.</p>
+ */
 public class GolangProxyRepositoryConfig
     extends ProxyRepositoryConfigSupport<GolangProxyRepositoryConfig>
 {
+  /**
+   * Constructor for creating a new Golang proxy repository configuration.
+   *
+   * @param factory Function to create a repository from this configuration
+   */
   public GolangProxyRepositoryConfig(final Function<GolangProxyRepositoryConfig, Repository> factory) {
     super(factory);
   }
 
+  /**
+   * Gets the format for this repository configuration.
+   * 
+   * @return The format name ("golang")
+   */
   @Override
   public String getFormat() {
     return FORMAT_GOLANG;

@@ -12,6 +12,9 @@
  */
 package org.sonatype.nexus.testsuite.testsupport.cleanup;
 
+import java.time.Duration;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
@@ -22,6 +25,8 @@ import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_ENABLED;
 /**
  * Under SQL Cleanup uses the component/assets table thus rarely needs to wait on changes once REST endpoints have
  * returned.
+ * <p>
+ * Uses Java 21 virtual threads for I/O-bound operations to improve resource utilization and scalability.
  */
 @Named
 @Singleton
@@ -46,11 +51,27 @@ public class DatastoreCleanupTestHelper
 
   @Override
   public void awaitLastBlobUpdatedTimePassed(final int time) {
-    try {
-      Thread.sleep(time * 1000L);
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit the sleep operation to a virtual thread
+      executor.submit(() -> {
+        try {
+          Thread.sleep(time * 1000L);
+          return null; // Required for Callable interface
+        }
+        catch (InterruptedException e) {
+          // Preserve interrupt status
+          Thread.currentThread().interrupt();
+          throw new RuntimeException("Sleep interrupted", e);
+        }
+      }).get(); // Wait for the virtual thread to complete
     }
     catch (InterruptedException e) {
-      throw new RuntimeException(e);
+      // Preserve interrupt status
+      Thread.currentThread().interrupt();
+      throw new RuntimeException("Virtual thread execution interrupted", e);
+    }
+    catch (ExecutionException e) {
+      throw new RuntimeException("Error during virtual thread execution", e.getCause());
     }
   }
 

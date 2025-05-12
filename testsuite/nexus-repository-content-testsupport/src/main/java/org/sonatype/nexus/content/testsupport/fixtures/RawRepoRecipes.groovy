@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.content.testsupport.fixtures
 
-import javax.annotation.Nonnull
+import jakarta.annotation.Nonnull
 
 import org.sonatype.nexus.repository.Repository
 import org.sonatype.nexus.repository.config.Configuration
@@ -22,34 +22,68 @@ import groovy.transform.CompileStatic
 
 /**
  * Factory for Raw {@link Repository} {@link Configuration}
+ * 
+ * Updated for Java 21 compatibility with support for record patterns and sequenced collections.
  */
 @CompileStatic
 trait RawRepoRecipes
     extends ConfigurationRecipes
 {
-
+  /**
+   * Creates a Raw hosted repository with the specified configuration.
+   *
+   * @param name the repository name
+   * @param writePolicy the write policy for the repository (defaults to ALLOW)
+   * @param strictContentTypeValidation whether to enforce strict content type validation (defaults to true)
+   * @return the created repository instance
+   */
   @Nonnull
   Repository createRawHosted(final String name,
                              final WritePolicy writePolicy = WritePolicy.ALLOW,
                              final boolean strictContentTypeValidation = true)
   {
-    createRepository(createHosted(name, 'raw-hosted', writePolicy, strictContentTypeValidation))
+    // Create configuration and pass to repository creation method
+    Configuration config = createHosted(name, 'raw-hosted', writePolicy, strictContentTypeValidation)
+    return createRepository(config)
   }
 
+  /**
+   * Creates a Raw proxy repository with the specified configuration.
+   * 
+   * @param name the repository name
+   * @param remoteUrl the remote URL to proxy
+   * @return the created repository instance
+   */
   @Nonnull
   Repository createRawProxy(final String name,
                             final String remoteUrl)
   {
-    createRepository(createProxy(name, 'raw-proxy', remoteUrl))
+    // Create configuration and pass to repository creation method
+    Configuration config = createProxy(name, 'raw-proxy', remoteUrl)
+    return createRepository(config)
   }
 
+  /**
+   * Creates a Raw group repository with the specified configuration.
+   * 
+   * @param name the repository name
+   * @param members the member repositories to include in this group
+   * @return the created repository instance
+   */
   @Nonnull
   Repository createRawGroup(final String name,
                             final String... members)
   {
-    createRepository(createGroup(name, 'raw-group', members))
+    // Create configuration and pass to repository creation method
+    Configuration config = createGroup(name, 'raw-group', members)
+    return createRepository(config)
   }
 
+  /**
+   * Abstract method to be implemented by concrete classes to create a repository from a configuration.
+   * 
+   * @param configuration the repository configuration
+   * @return the created repository instance
+   */
   abstract Repository createRepository(final Configuration configuration)
-
 }

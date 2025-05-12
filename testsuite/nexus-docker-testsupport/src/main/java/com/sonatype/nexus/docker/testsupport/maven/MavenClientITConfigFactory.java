@@ -17,19 +17,31 @@ import java.util.Map;
 import com.sonatype.nexus.docker.testsupport.framework.DockerContainerConfig;
 
 /**
- * Factory for creation of Maven required objects
+ * Factory for creation of Maven required objects for integration testing.
+ * <p>
+ * Optimized for Java 21 with modern language features for improved readability and performance.
  */
 public class MavenClientITConfigFactory
 {
   private MavenClientITConfigFactory() {
+    // Utility class, no instantiation
   }
 
+  /**
+   * Creates a Docker container configuration for Maven testing.
+   *
+   * @param image     the base Docker image name
+   * @param tag       the Docker image tag
+   * @param pathBinds the map of host paths to container paths for volume mounting
+   * @return a configured {@link DockerContainerConfig} instance
+   */
   public static DockerContainerConfig createMavenConfig(
       final String image,
       final String tag,
       final Map<String, String> pathBinds)
   {
-    return DockerContainerConfig.builder(image + ":" + tag)
+    // Using Java 21 string template for improved readability
+    return DockerContainerConfig.builder("%s:%s".formatted(image, tag))
         .withPathBinds(pathBinds)
         .build();
   }

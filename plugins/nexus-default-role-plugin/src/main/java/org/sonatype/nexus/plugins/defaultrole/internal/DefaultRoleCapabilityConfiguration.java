@@ -13,11 +13,13 @@
 package org.sonatype.nexus.plugins.defaultrole.internal;
 
 import java.util.Map;
+import java.util.Objects;
 
 import org.sonatype.nexus.capability.CapabilityConfigurationSupport;
 
 /**
  * Simple configuration for {@link DefaultRoleCapability} containing a single roleId.
+ * Updated for Java 21 compatibility.
  *
  * @since 3.22
  */
@@ -29,28 +31,51 @@ public class DefaultRoleCapabilityConfiguration
   private String role;
 
   /**
-   * Constructs a new configuration from properties map.
-   * 
-   * @param properties the configuration properties map
+   * Creates a new configuration instance from the provided properties map.
+   * Uses pattern matching for type-safe extraction of the role property.
+   *
+   * @param properties the capability properties map containing configuration values
    */
   public DefaultRoleCapabilityConfiguration(final Map<String, String> properties) {
-    // Using Java 21 pattern matching for instanceof with Map.Entry
-    if (properties != null && properties.containsKey(P_ROLE)) {
-      role = properties.get(P_ROLE);
+    if (properties instanceof Map<String, String> map) {
+      this.role = map.get(P_ROLE);
     }
   }
 
   /**
-   * @return the configured role
+   * Returns the configured role ID.
+   *
+   * @return the role ID or null if not configured
    */
   public String getRole() {
     return role;
   }
 
   /**
-   * @param role the role to set
+   * Sets the role ID for this configuration.
+   *
+   * @param role the role ID to set
    */
   public void setRole(final String role) {
     this.role = role;
+  }
+  
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) return true;
+    if (o == null || getClass() != o.getClass()) return false;
+    
+    var that = (DefaultRoleCapabilityConfiguration) o;
+    return Objects.equals(role, that.role);
+  }
+  
+  @Override
+  public int hashCode() {
+    return Objects.hashCode(role);
+  }
+  
+  @Override
+  public String toString() {
+    return "DefaultRoleCapabilityConfiguration{role='" + role + "'}";
   }
 }

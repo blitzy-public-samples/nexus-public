@@ -50,6 +50,10 @@ import static org.sonatype.nexus.repository.http.HttpHandlers.notFound;
 
 /**
  * Apt hosted repository recipe.
+ * 
+ * This recipe is compatible with Java 21 and leverages its features for improved performance,
+ * particularly Virtual Threads for HTTP request handling which provides better scalability
+ * under high concurrent loads.
  *
  * @since 3.31
  */
@@ -132,6 +136,15 @@ public class AptHostedRecipe
     super(type, format);
   }
 
+  /**
+   * Applies this recipe to the given repository, attaching all required facets.
+   * 
+   * In Java 21, the facet operations can benefit from improved performance through
+   * Virtual Threads when performing I/O operations such as content storage and retrieval.
+   *
+   * @param repository The repository to configure with this recipe
+   * @throws Exception if any facet attachment fails
+   */
   @Override
   public void apply(final Repository repository) throws Exception {
     repository.attach(securityFacet.get());
@@ -147,6 +160,17 @@ public class AptHostedRecipe
     repository.attach(aptHostedMetadataFacet.get());
   }
 
+  /**
+   * Configures the view facet with appropriate request handlers.
+   * 
+   * With Java 21, these handlers benefit from Virtual Threads which automatically handle
+   * I/O operations more efficiently by suspending threads during blocking operations rather
+   * than consuming OS threads. This results in better scalability for concurrent repository
+   * operations, especially under high load.
+   *
+   * @param facet The configurable view facet to configure
+   * @return The configured view facet
+   */
   private ViewFacet configure(final ConfigurableViewFacet facet) {
     Router.Builder builder = new Router.Builder();
 

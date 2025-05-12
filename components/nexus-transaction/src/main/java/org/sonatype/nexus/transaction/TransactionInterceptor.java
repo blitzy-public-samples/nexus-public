@@ -14,6 +14,7 @@ package org.sonatype.nexus.transaction;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
+import java.lang.StringTemplate;
 
 import org.sonatype.goodies.common.ComponentSupport;
 
@@ -22,13 +23,13 @@ import org.aopalliance.intercept.MethodInvocation;
 
 import static org.sonatype.nexus.transaction.UnitOfWork.openSession;
 import static org.sonatype.nexus.transaction.UnitOfWork.peekTransaction;
+import static org.sonatype.nexus.transaction.UnitOfWork.isVirtualThread;
+import static org.sonatype.nexus.transaction.UnitOfWork.getThreadTypeDescription;
 
 /**
  * Opens a transaction when entering a transactional method and closes it on exit.
  * Nested transactional methods proceed as normal inside the current transaction.
- * 
- * Supports both platform threads and Java 21 virtual threads, ensuring proper
- * transaction context propagation in both environments.
+ * Supports both platform and virtual threads with proper context propagation.
  *
  * @since 3.0
  */
@@ -42,11 +43,11 @@ final class TransactionInterceptor
     if (mi.getThis() instanceof TransactionalStore<?>) {
       store = (TransactionalStore<?>) mi.getThis();
     }
-
-    // Check if we're running on a virtual thread for proper context handling
-    boolean isVirtual = Thread.currentThread().isVirtual();
-    if (isVirtual) {
-      log.debug(STR."Transaction intercepted on virtual thread \{Thread.currentThread().threadId()}");
+    
+    // Detect if we're running in a virtual thread
+    boolean virtualThread = isVirtualThread();
+    if (log.isDebugEnabled()) {
+      log.debug(STR."Transaction intercepted in \{getThreadTypeDescription()}");
     }
 
     Transaction tx = peekTransaction();
@@ -57,23 +58,24 @@ final class TransactionInterceptor
       if (tx.isActive()) {
         return mi.proceed(); // no need to wrap active transaction
       }
-      return proceedWithTransaction(mi, tx);
+      return proceedWithTransaction(mi, tx, virtualThread);
     }
 
-    try (TransactionalSession<?> session = openSession(store, findSpec(mi.getMethod()).isolation())) {
-      return proceedWithTransaction(mi, session.getTransaction());
+    try (TransactionalSession<?> session = openSession(store, findSpec(mi.getMethod()).isolation(), virtualThread)) {
+      return proceedWithTransaction(mi, session.getTransaction(), virtualThread);
     }
   }
 
-  private Object proceedWithTransaction(final MethodInvocation mi, final Transaction tx) throws Throwable {
-
+  private Object proceedWithTransaction(final MethodInvocation mi, final Transaction tx, final boolean virtualThread) throws Throwable {
     Method method = mi.getMethod();
     Transactional spec = findSpec(method);
-    boolean isVirtual = Thread.currentThread().isVirtual();
 
-    log.trace(STR."Invoking: \{spec} -> \{method} on \{isVirtual ? "virtual" : "platform"} thread");
+    if (log.isTraceEnabled()) {
+      log.trace(STR."Invoking: \{spec} -> \{method} in \{getThreadTypeDescription()}");
+    }
 
-    return new TransactionalWrapper(spec, mi).proceedWithTransaction(tx);
+    // Pass virtual thread information to the wrapper for optimized handling
+    return new TransactionalWrapper(spec, mi, virtualThread).proceedWithTransaction(tx);
   }
 
   private static final Transactional findSpec(final Method method) {
@@ -88,6 +90,6 @@ final class TransactionInterceptor
         return spec;
       }
     }
-    throw new IllegalStateException("Missing @Transactional on: " + method);
+    throw new IllegalStateException(STR."Missing @Transactional on: \{method}");
   }
 }

@@ -12,15 +12,11 @@
  */
 package org.sonatype.nexus.repository.security.internal;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.List;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import javax.inject.Inject;
@@ -223,37 +219,20 @@ public class ContentPermissionCheckerImpl
     if (isViewPermitted(repositoryName, repositoryFormat, action)) {
       return true;
     }
-    //otherwise check the content selector perms using virtual threads for concurrent evaluation
-    List<SelectorConfiguration> configs = selectorManager.browse().collect(Collectors.toList());
     
-    try {
-      // Use CompletableFuture with virtual threads for concurrent permission checks
-      List<CompletableFuture<Boolean>> futures = configs.stream()
-          .map(config -> CompletableFuture.supplyAsync(() -> 
-              isContentPermitted(repositoryName, repositoryFormat, action, config, variableSource),
-              virtualThreadExecutor))
-          .collect(Collectors.toList());
-      
-      // Wait for any future to complete with 'true' result
-      return CompletableFuture.anyOf(futures.toArray(new CompletableFuture[0]))
-          .thenApply(result -> (Boolean) result)
-          .exceptionally(ex -> {
-            log.error(STR."Error during concurrent permission check: \{ex.getMessage()}", ex);
+    //otherwise check the content selector perms using virtual threads for concurrent evaluation
+    return selectorManager.browse().stream()
+        .map(config -> virtualThreadExecutor.submit(() -> 
+            isContentPermitted(repositoryName, repositoryFormat, action, config, variableSource)))
+        .map(future -> {
+          try {
+            return future.get();
+          } catch (Exception e) {
+            log.error(STR."Error checking permission: \{e.getMessage()}", e);
             return false;
-          })
-          .join() || futures.stream().anyMatch(f -> {
-            try {
-              return f.getNow(false);
-            } catch (Exception e) {
-              return false;
-            }
-          });
-    } catch (Exception e) {
-      log.error(STR."Error setting up concurrent permission checks: \{e.getMessage()}", e);
-      // Fallback to sequential evaluation if concurrent approach fails
-      return configs.stream()
-          .anyMatch(config -> isContentPermitted(repositoryName, repositoryFormat, action, config, variableSource));
-    }
+          }
+        })
+        .anyMatch(Boolean::booleanValue);
   }
 
   @Override
@@ -266,37 +245,20 @@ public class ContentPermissionCheckerImpl
     if (isViewPermitted(repositoryName, repositoryFormat, action)) {
       return true;
     }
-    // otherwise check the content selector perms using virtual threads for concurrent evaluation
-    List<SelectorConfiguration> configs = selectorManager.browseJexl().collect(Collectors.toList());
     
-    try {
-      // Use CompletableFuture with virtual threads for concurrent permission checks
-      List<CompletableFuture<Boolean>> futures = configs.stream()
-          .map(config -> CompletableFuture.supplyAsync(() -> 
-              isContentPermitted(repositoryName, repositoryFormat, action, config, variableSource),
-              virtualThreadExecutor))
-          .collect(Collectors.toList());
-      
-      // Wait for any future to complete with 'true' result
-      return CompletableFuture.anyOf(futures.toArray(new CompletableFuture[0]))
-          .thenApply(result -> (Boolean) result)
-          .exceptionally(ex -> {
-            log.error(STR."Error during concurrent JEXL permission check: \{ex.getMessage()}", ex);
+    // otherwise check the content selector perms using virtual threads for concurrent evaluation
+    return selectorManager.browseJexl().stream()
+        .map(config -> virtualThreadExecutor.submit(() -> 
+            isContentPermitted(repositoryName, repositoryFormat, action, config, variableSource)))
+        .map(future -> {
+          try {
+            return future.get();
+          } catch (Exception e) {
+            log.error(STR."Error checking JEXL permission: \{e.getMessage()}", e);
             return false;
-          })
-          .join() || futures.stream().anyMatch(f -> {
-            try {
-              return f.getNow(false);
-            } catch (Exception e) {
-              return false;
-            }
-          });
-    } catch (Exception e) {
-      log.error(STR."Error setting up concurrent JEXL permission checks: \{e.getMessage()}", e);
-      // Fallback to sequential evaluation if concurrent approach fails
-      return configs.stream()
-          .anyMatch(config -> isContentPermitted(repositoryName, repositoryFormat, action, config, variableSource));
-    }
+          }
+        })
+        .anyMatch(Boolean::booleanValue);
   }
 
   @Override
@@ -313,37 +275,19 @@ public class ContentPermissionCheckerImpl
       return true;
     }
     
-    List<SelectorConfiguration> configs = selectorManager.browseActive(repositoryNames, 
-        Collections.singletonList(repositoryFormat)).collect(Collectors.toList());
-    
-    try {
-      // Use CompletableFuture with virtual threads for concurrent permission checks
-      List<CompletableFuture<Boolean>> futures = configs.stream()
-          .map(config -> CompletableFuture.supplyAsync(() -> 
-              isContentPermitted(repositoryNames, repositoryFormat, action, config, variableSource),
-              virtualThreadExecutor))
-          .collect(Collectors.toList());
-      
-      // Wait for any future to complete with 'true' result
-      return CompletableFuture.anyOf(futures.toArray(new CompletableFuture[0]))
-          .thenApply(result -> (Boolean) result)
-          .exceptionally(ex -> {
-            log.error(STR."Error during concurrent multi-repository permission check: \{ex.getMessage()}", ex);
+    // Use virtual threads for concurrent permission checks
+    return selectorManager.browseActive(repositoryNames, Collections.singletonList(repositoryFormat)).stream()
+        .map(config -> virtualThreadExecutor.submit(() -> 
+            isContentPermitted(repositoryNames, repositoryFormat, action, config, variableSource)))
+        .map(future -> {
+          try {
+            return future.get();
+          } catch (Exception e) {
+            log.error(STR."Error checking permission for multiple repositories: \{e.getMessage()}", e);
             return false;
-          })
-          .join() || futures.stream().anyMatch(f -> {
-            try {
-              return f.getNow(false);
-            } catch (Exception e) {
-              return false;
-            }
-          });
-    } catch (Exception e) {
-      log.error(STR."Error setting up concurrent multi-repository permission checks: \{e.getMessage()}", e);
-      // Fallback to sequential evaluation if concurrent approach fails
-      return configs.stream()
-          .anyMatch(config -> isContentPermitted(repositoryNames, repositoryFormat, action, config, variableSource));
-    }
+          }
+        })
+        .anyMatch(Boolean::booleanValue);
   }
 
   @Override
@@ -359,36 +303,18 @@ public class ContentPermissionCheckerImpl
     }
     
     // otherwise check the content selector perms using virtual threads for concurrent evaluation
-    List<SelectorConfiguration> configs = selectorManager.browseJexl().collect(Collectors.toList());
-    
-    try {
-      // Use CompletableFuture with virtual threads for concurrent permission checks
-      List<CompletableFuture<Boolean>> futures = configs.stream()
-          .map(config -> CompletableFuture.supplyAsync(() -> 
-              isContentPermittedAnyOf(repositoryName, repositoryFormat, config, variableSource, actions),
-              virtualThreadExecutor))
-          .collect(Collectors.toList());
-      
-      // Wait for any future to complete with 'true' result
-      return CompletableFuture.anyOf(futures.toArray(new CompletableFuture[0]))
-          .thenApply(result -> (Boolean) result)
-          .exceptionally(ex -> {
-            log.error(STR."Error during concurrent JEXL any-of permission check: \{ex.getMessage()}", ex);
+    return selectorManager.browseJexl().stream()
+        .map(config -> virtualThreadExecutor.submit(() -> 
+            isContentPermittedAnyOf(repositoryName, repositoryFormat, config, variableSource, actions)))
+        .map(future -> {
+          try {
+            return future.get();
+          } catch (Exception e) {
+            log.error(STR."Error checking JEXL permission for any action: \{e.getMessage()}", e);
             return false;
-          })
-          .join() || futures.stream().anyMatch(f -> {
-            try {
-              return f.getNow(false);
-            } catch (Exception e) {
-              return false;
-            }
-          });
-    } catch (Exception e) {
-      log.error(STR."Error setting up concurrent JEXL any-of permission checks: \{e.getMessage()}", e);
-      // Fallback to sequential evaluation if concurrent approach fails
-      return configs.stream()
-          .anyMatch(config -> isContentPermittedAnyOf(repositoryName, repositoryFormat, config, variableSource, actions));
-    }
+          }
+        })
+        .anyMatch(Boolean::booleanValue);
   }
 
   @Override
@@ -404,36 +330,18 @@ public class ContentPermissionCheckerImpl
     }
     
     //otherwise check the content selector perms using virtual threads for concurrent evaluation
-    List<SelectorConfiguration> configs = selectorManager.browse().collect(Collectors.toList());
-    
-    try {
-      // Use CompletableFuture with virtual threads for concurrent permission checks
-      List<CompletableFuture<Boolean>> futures = configs.stream()
-          .map(config -> CompletableFuture.supplyAsync(() -> 
-              isContentPermittedAnyOf(repositoryName, repositoryFormat, config, variableSource, actions),
-              virtualThreadExecutor))
-          .collect(Collectors.toList());
-      
-      // Wait for any future to complete with 'true' result
-      return CompletableFuture.anyOf(futures.toArray(new CompletableFuture[0]))
-          .thenApply(result -> (Boolean) result)
-          .exceptionally(ex -> {
-            log.error(STR."Error during concurrent any-of permission check: \{ex.getMessage()}", ex);
+    return selectorManager.browse().stream()
+        .map(config -> virtualThreadExecutor.submit(() -> 
+            isContentPermittedAnyOf(repositoryName, repositoryFormat, config, variableSource, actions)))
+        .map(future -> {
+          try {
+            return future.get();
+          } catch (Exception e) {
+            log.error(STR."Error checking permission for any action: \{e.getMessage()}", e);
             return false;
-          })
-          .join() || futures.stream().anyMatch(f -> {
-            try {
-              return f.getNow(false);
-            } catch (Exception e) {
-              return false;
-            }
-          });
-    } catch (Exception e) {
-      log.error(STR."Error setting up concurrent any-of permission checks: \{e.getMessage()}", e);
-      // Fallback to sequential evaluation if concurrent approach fails
-      return configs.stream()
-          .anyMatch(config -> isContentPermittedAnyOf(repositoryName, repositoryFormat, config, variableSource, actions));
-    }
+          }
+        })
+        .anyMatch(Boolean::booleanValue);
   }
 
   @Override
@@ -451,35 +359,18 @@ public class ContentPermissionCheckerImpl
       return true;
     }
     
-    List<SelectorConfiguration> configs = selectorManager.browse().collect(Collectors.toList());
-    
-    try {
-      // Use CompletableFuture with virtual threads for concurrent permission checks
-      List<CompletableFuture<Boolean>> futures = configs.stream()
-          .map(config -> CompletableFuture.supplyAsync(() -> 
-              isContentPermittedAnyOf(repositoryNames, repositoryFormat, config, variableSource, actions),
-              virtualThreadExecutor))
-          .collect(Collectors.toList());
-      
-      // Wait for any future to complete with 'true' result
-      return CompletableFuture.anyOf(futures.toArray(new CompletableFuture[0]))
-          .thenApply(result -> (Boolean) result)
-          .exceptionally(ex -> {
-            log.error(STR."Error during concurrent multi-repository any-of permission check: \{ex.getMessage()}", ex);
+    // Use virtual threads for concurrent permission checks
+    return selectorManager.browse().stream()
+        .map(config -> virtualThreadExecutor.submit(() -> 
+            isContentPermittedAnyOf(repositoryNames, repositoryFormat, config, variableSource, actions)))
+        .map(future -> {
+          try {
+            return future.get();
+          } catch (Exception e) {
+            log.error(STR."Error checking permission for multiple repositories and actions: \{e.getMessage()}", e);
             return false;
-          })
-          .join() || futures.stream().anyMatch(f -> {
-            try {
-              return f.getNow(false);
-            } catch (Exception e) {
-              return false;
-            }
-          });
-    } catch (Exception e) {
-      log.error(STR."Error setting up concurrent multi-repository any-of permission checks: \{e.getMessage()}", e);
-      // Fallback to sequential evaluation if concurrent approach fails
-      return configs.stream()
-          .anyMatch(config -> isContentPermittedAnyOf(repositoryNames, repositoryFormat, config, variableSource, actions));
-    }
+          }
+        })
+        .anyMatch(Boolean::booleanValue);
   }
 }

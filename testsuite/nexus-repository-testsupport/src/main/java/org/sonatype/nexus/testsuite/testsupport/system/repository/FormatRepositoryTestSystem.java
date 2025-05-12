@@ -14,10 +14,23 @@ package org.sonatype.nexus.testsuite.testsupport.system.repository;
 
 import java.util.function.Consumer;
 
+/**
+ * Interface for repository test system operations.
+ * <p>
+ * Compatible with Java 21 runtime environment and testing frameworks (JUnit Jupiter 5.10.1, Mockito 4.11.0).
+ * </p>
+ *
+ * @since 3.0
+ */
 public interface FormatRepositoryTestSystem
 {
   /**
-   * Install a consumer that will be called when a repository is created
+   * Install a consumer that will be called when a repository is created.
+   * <p>
+   * The consumer receives the repository name as a String parameter.
+   * </p>
+   *
+   * @param tracker the consumer to be called when a repository is created
    */
   void installTracker(Consumer<String> tracker);
 }

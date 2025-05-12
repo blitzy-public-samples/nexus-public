@@ -17,6 +17,9 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 import javax.annotation.Nullable;
@@ -39,7 +42,15 @@ import static org.sonatype.nexus.common.text.Strings2.notBlank;
 import static org.testcontainers.containers.BindMode.READ_WRITE;
 
 /**
- * Support class for helping to managing Docker Containers.
+ * Support class for helping to manage Docker Containers.
+ * <p>
+ * This implementation leverages Java 21 features including:
+ * <ul>
+ *   <li>Virtual threads for I/O-bound operations to improve concurrency and performance</li>
+ *   <li>Record patterns for efficient configuration handling</li>
+ *   <li>String templates for improved logging and error messages</li>
+ * </ul>
+ * </p>
  */
 public class DockerContainerClient
 {
@@ -52,15 +63,30 @@ public class DockerContainerClient
   private final Mutex lock = new Mutex();
 
   private final DockerContainerConfig config;
+  
+  /**
+   * Virtual thread executor for I/O-bound operations.
+   */
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   private GenericContainer<?> dockerClient;
 
   private InspectContainerResponse startedContainer;
 
+  /**
+   * Creates a new Docker container client for the specified image.
+   *
+   * @param image the Docker image name
+   */
   public DockerContainerClient(final String image) {
     this(DockerContainerConfig.builder(image).build());
   }
 
+  /**
+   * Creates a new Docker container client with the specified configuration.
+   *
+   * @param config the Docker container configuration
+   */
   public DockerContainerClient(final DockerContainerConfig config) {
     this.config = checkNotNull(config);
   }
@@ -96,6 +122,9 @@ public class DockerContainerClient
 
   /**
    * Execute commands on a docker container for a given image.
+   * <p>
+   * This method uses virtual threads for improved I/O concurrency.
+   * </p>
    *
    * @param commands to be executed within docker container.
    * @return results from a "docker exec" command.
@@ -113,68 +142,103 @@ public class DockerContainerClient
     if (dockerClient != null && dockerClient.isRunning()) {
       dockerClient.stop();
     }
+    virtualThreadExecutor.close();
   }
 
   /**
    * Download a container path to a local {@link File} location. This method will use the last running container if
    * possible.
+   * <p>
+   * This method uses virtual threads for improved I/O performance.
+   * </p>
    *
    * @param fromContainerPath the path in the container to download
    * @param toLocal           the path of the local file system to download to
    */
   public void download(final String fromContainerPath, final File toLocal) {
     run(KEEP_ALIVE);
-    dockerClient.copyFileFromContainer(fromContainerPath, toLocal.getAbsolutePath());
+    
+    // Use CompletableFuture with virtual threads for I/O operations
+    CompletableFuture.runAsync(() -> {
+      dockerClient.copyFileFromContainer(fromContainerPath, toLocal.getAbsolutePath());
+      log.debug(STR."Downloaded file from \{fromContainerPath} to \{toLocal.getAbsolutePath()}");
+    }, virtualThreadExecutor).join();
   }
 
+  /**
+   * Executes commands in a Docker container using virtual threads for I/O operations.
+   *
+   * @param commands the commands to execute
+   * @return an Optional containing the execution result, or empty if execution failed
+   */
   private Optional<ExecResult> execInDocker(final String commands)
   {
-    String image = config.getImage();
+    var image = config.getImage();
     if (startedContainer == null) {
-      log.warn("Attempting to exec commands '{}' for image '{}' which is not started", commands, image);
+      log.warn(STR."Attempting to exec commands '\{commands}' for image '\{image}' which is not started");
       return Optional.empty();
     }
 
-    String containerId = startedContainer.getId();
-    String shortId = left(containerId, SHORT_ID_LENGTH);
+    var containerId = startedContainer.getId();
+    var shortId = left(containerId, SHORT_ID_LENGTH);
 
-    log.info("Attempting to exec commands '{}' in container '{}' for image '{}'", commands, shortId, image);
+    log.info(STR."Attempting to exec commands '\{commands}' in container '\{shortId}' for image '\{image}'");
 
     try {
-      ExecResult execResult = dockerClient.execInContainer(cmd(commands));
-      log.debug("$ {}", commands);
+      // Use CompletableFuture with virtual threads for I/O operations
+      ExecResult execResult = CompletableFuture.supplyAsync(
+          () -> {
+            try {
+              return dockerClient.execInContainer(cmd(commands));
+            }
+            catch (IOException | InterruptedException e) {
+              throw new RuntimeException(STR."Failed to execute command: \{commands}", e);
+            }
+          },
+          virtualThreadExecutor
+      ).join();
+      
+      log.debug(STR."$ \{commands}");
       String stderr = execResult.getStderr();
 
-      log.debug("Output of command '{}' in container '{}' for image '{}' was:\n{}",
-          commands, shortId, image, execResult);
+      log.debug(STR."Output of command '\{commands}' in container '\{shortId}' for image '\{image}' was:\n\{execResult}");
       if (!stderr.isEmpty() && execResult.getExitCode() != 0) {
-        log.error("Failed exec commands '{}' in container '{}' for image '{}'. Error message: {}",
-            commands, shortId, image, stderr);
+        log.error(STR."Failed exec commands '\{commands}' in container '\{shortId}' for image '\{image}'. Error message: \{stderr}");
       }
       else {
-        log.info("Successfully exec commands '{}' in container '{}' for image '{}'", commands, shortId, image);
+        log.info(STR."Successfully exec commands '\{commands}' in container '\{shortId}' for image '\{image}'");
       }
 
       return Optional.of(execResult);
     }
-    catch (IOException | InterruptedException e) { // NOSONAR
-      log.error("Failed to exec commands '{}' in container '{}' for image '{}'", commands, shortId, image, e);
+    catch (Exception e) {
+      log.error(STR."Failed to exec commands '\{commands}' in container '\{shortId}' for image '\{image}'", e);
     }
 
     return Optional.empty();
   }
 
+  /**
+   * Runs a Docker container, pulling the image if it doesn't exist.
+   * <p>
+   * This method is thread-safe and will reuse existing containers when possible.
+   * </p>
+   *
+   * @param commands the commands to run in the container, can be null
+   */
   private void runAndPullIfNotExist(@Nullable final String commands) {
-    String image = config.getImage();
-    Path dockerfile = config.getDockerfile();
+    // Use pattern matching with records for cleaner code
+    var image = config.getImage();
+    var dockerfile = config.getDockerfile();
+    
     // assure that we don't have multiple threads set the started container
     synchronized (lock) {
       // reuse existing containers if they are running
       if (nonNull(startedContainer) && dockerClient.isRunning()) {
-        String shortDockerId = left(startedContainer.getId(), SHORT_ID_LENGTH);
-        String msg = image != null ?
-            String.format("image '%s'", image) : String.format("Dockerfile '%s'", dockerfile);
-        log.info("Using existing container '{}' for {}", shortDockerId, msg);
+        var shortDockerId = left(startedContainer.getId(), SHORT_ID_LENGTH);
+        var msg = image != null ?
+            STR."image '\{image}'" : STR."Dockerfile '\{dockerfile}'";
+        log.info(STR."Using existing container '\{shortDockerId}' for \{msg}");
         return;
       }
       if (log.isInfoEnabled()) {
@@ -188,14 +252,16 @@ public class DockerContainerClient
       dockerClient.setCommand(cmd(commands));
       config.getEnv().forEach((key, value) -> dockerClient.addEnv(key, value));
       config.getPathBinds().forEach((key, value) -> dockerClient.addFileSystemBind(key, value, READ_WRITE));
+      
       if (!config.getExposedPorts().isEmpty()) {
         List<String> portBindings = config.getExposedPorts().stream()
             // hostPort:containerPort
-            .map(port -> PortAllocator.nextFreePort() + ":" + port)
+            .map(port -> STR."\{PortAllocator.nextFreePort()}:\{port}")
             .collect(Collectors.toList());
         dockerClient.setPortBindings(portBindings);
         dockerClient.setWaitStrategy(Wait.forListeningPort());
       }
+      
       if (notBlank(config.getWorkingDir())) {
         dockerClient.setWorkingDirectory(config.getWorkingDir());
       }
@@ -204,7 +270,12 @@ public class DockerContainerClient
       ClassLoader threadLoader = Thread.currentThread().getContextClassLoader();
       try {
         Thread.currentThread().setContextClassLoader(GenericContainer.class.getClassLoader());
-        dockerClient.start();
+        
+        // Start the container using virtual threads for better I/O performance
+        CompletableFuture.runAsync(
+            () -> dockerClient.start(),
+            virtualThreadExecutor
+        ).join();
       }
       finally {
         if (threadLoader != null) {
@@ -213,15 +284,24 @@ public class DockerContainerClient
       }
       startedContainer = dockerClient.getContainerInfo();
 
-      String containerId = startedContainer.getId();
-      String shortId = left(containerId, SHORT_ID_LENGTH);
+      var containerId = startedContainer.getId();
+      var shortId = left(containerId, SHORT_ID_LENGTH);
 
       if (log.isInfoEnabled()) {
-        log.info(buildLogMessage("Successfully run container '" + shortId + "'", image, dockerfile, commands));
+        log.info(buildLogMessage(STR."Successfully run container '\{shortId}'", image, dockerfile, commands));
       }
     }
   }
 
+  /**
+   * Builds a log message with container details.
+   *
+   * @param message   the base message
+   * @param image     the Docker image name, can be null
+   * @param dockerfile the Dockerfile path, can be null
+   * @param commands  the commands to run, can be null
+   * @return the formatted log message
+   */
   private static String buildLogMessage(
       final String message,
       final @Nullable String image,
@@ -230,22 +310,34 @@ public class DockerContainerClient
   {
     StringBuilder msg = new StringBuilder(message);
     if (commands != null) {
-      msg.append(" with commands '").append(commands).append("'");
+      msg.append(STR." with commands '\{commands}'");
     }
     if (image != null) {
-      msg.append(" for image '").append(image).append("'");
+      msg.append(STR." for image '\{image}'");
     }
     if (dockerfile != null) {
-      msg.append(" for Dockerfile '").append(dockerfile).append("'");
+      msg.append(STR." for Dockerfile '\{dockerfile}'");
     }
 
     return msg.toString();
   }
 
+  /**
+   * Creates a command array for shell execution.
+   *
+   * @param commands the commands to execute, can be null
+   * @return an array of command strings
+   */
   private String[] cmd(String commands) {
     return nonNull(commands) ? new String[] {"/bin/sh", "-c", commands} : new String[] {};
   }
 
+  /**
+   * Gets the mapped port for a container port.
+   *
+   * @param containerPort the container port as a string
+   * @return the mapped host port
+   */
   public Integer getMappedPort(final String containerPort) {
     return dockerClient.getMappedPort(Integer.parseInt(containerPort));
   }

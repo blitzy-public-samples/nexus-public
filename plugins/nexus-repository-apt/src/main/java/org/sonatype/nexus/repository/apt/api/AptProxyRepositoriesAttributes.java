@@ -14,31 +14,38 @@ package org.sonatype.nexus.repository.apt.api;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import io.swagger.annotations.ApiModelProperty;
-import javax.validation.constraints.NotEmpty;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotEmpty;
 
 /**
  * REST API model for apt-specific proxy attributes.
+ * 
+ * This record represents the configuration for APT proxy repositories, extending the hosted repository
+ * attributes with additional proxy-specific settings.
  *
  * @since 3.20
  */
-public class AptProxyRepositoriesAttributes
-    extends AptHostedRepositoriesAttributes
-{
-  @ApiModelProperty(value = "Whether this repository is flat", example = "false")
-  @NotEmpty
-  protected final Boolean flat;
-
+public record AptProxyRepositoriesAttributes(
+    @Schema(description = "Distribution to fetch", example = "bionic")
+    @NotEmpty
+    String distribution,
+    
+    @Schema(description = "Whether this repository is flat", example = "false")
+    @NotEmpty
+    Boolean flat
+) {
+  /**
+   * Creates a new instance of APT proxy repository attributes.
+   *
+   * @param distribution the distribution to fetch
+   * @param flat whether this repository is flat
+   */
   @JsonCreator
   public AptProxyRepositoriesAttributes(
       @JsonProperty("distribution") final String distribution,
       @JsonProperty("flat") final Boolean flat)
   {
-    super(distribution);
+    this.distribution = distribution;
     this.flat = flat;
-  }
-
-  public Boolean getFlat() {
-    return flat;
   }
 }

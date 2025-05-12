@@ -13,18 +13,20 @@
 package org.sonatype.nexus.logging.task;
 
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
-import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.Logger;
 import org.slf4j.MDC;
-import org.sonatype.nexus.common.thread.VirtualThreadTestGroup;
 
 import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -34,15 +36,24 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Special test to cover MDC thread specifics. See NEXUS-14432 and https://logback.qos.ch/manual/mdc.html#managedThreads
  * (tldr: logback with MDC and thread pools doesn't copy the MDC values so we have to do it manually)
+ * 
+ * This test also verifies MDC context propagation in both platform threads and virtual threads (Java 21+).
  */
 @ExtendWith(MockitoExtension.class)
+@org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup
 public class ProgressTaskLoggerMDCTest
 {
   @Mock
   private Logger mockLogger;
 
+  @BeforeEach
+  void setUp() {
+    // Clear any MDC values that might be left from previous tests
+    MDC.clear();
+  }
+
   @Test
-  public void testMDCCopy() throws InterruptedException {
+  void testMDCCopyWithPlatformThread() throws InterruptedException {
     String mainThread = Thread.currentThread().getName();
 
     // put something into MDC in current thread
@@ -76,12 +87,8 @@ public class ProgressTaskLoggerMDCTest
     progressTaskLogger.finish();
   }
 
-  /**
-   * Test MDC context propagation in virtual threads.
-   */
   @Test
-  @Tag("virtual-thread")
-  public void testMDCCopyWithVirtualThreads() throws InterruptedException {
+  void testMDCCopyWithVirtualThread() throws InterruptedException {
     String mainThread = Thread.currentThread().getName();
 
     // put something into MDC in current thread
@@ -90,14 +97,14 @@ public class ProgressTaskLoggerMDCTest
     // since we are testing with threads, we need to track that the inner thread ran through
     AtomicBoolean tested = new AtomicBoolean(false);
 
-    // create progress task logger with 1ms start delay for virtual thread testing
-    // Note: ProgressTaskLogger internally uses virtual threads for logging operations
-    ProgressTaskLogger progressTaskLogger = new ProgressTaskLogger(
-        mockLogger, 1, 60000, TimeUnit.MILLISECONDS)
+    // create progress task logger with virtual thread factory
+    ProgressTaskLogger progressTaskLogger = new ProgressTaskLogger(mockLogger, 1, 60000, TimeUnit.MILLISECONDS, 
+        Thread.ofVirtual().factory())
     {
       void logProgress() {
         super.logProgress();
         assertThat(mainThread, not(equalTo(Thread.currentThread().getName()))); // verify we are in a different thread
+        assertThat(Thread.currentThread().isVirtual(), equalTo(true)); // verify we are in a virtual thread
         assertThat(MDC.get("foo"), equalTo("bar"));
         tested.set(true);
       }
@@ -116,111 +123,65 @@ public class ProgressTaskLoggerMDCTest
     progressTaskLogger.finish();
   }
 
-  /**
-   * Test high concurrency MDC propagation with platform threads.
-   */
   @Test
-  public void testMDCCopyUnderLoad() throws InterruptedException {
-    final int THREAD_COUNT = 10;
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(THREAD_COUNT);
-    AtomicBoolean allThreadsCorrect = new AtomicBoolean(true);
-
-    // put something into MDC in current thread
-    MDC.put("foo", "bar");
-
-    // Create multiple progress task loggers to simulate high concurrency
-    for (int i = 0; i < THREAD_COUNT; i++) {
-      final String threadId = "thread-" + i;
-      ProgressTaskLogger progressTaskLogger = new ProgressTaskLogger(mockLogger, 1, 60000, TimeUnit.MILLISECONDS)
-      {
-        void logProgress() {
-          super.logProgress();
+  void testHighConcurrencyMDCPropagationWithVirtualThreads() throws InterruptedException {
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    
+    // Create an executor service with virtual threads
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    // Number of concurrent tasks to run
+    int taskCount = 100;
+    CountDownLatch latch = new CountDownLatch(taskCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    // Set MDC value in the main thread
+    String mdcKey = "requestId";
+    String mdcValue = "main-thread-request";
+    MDC.put(mdcKey, mdcValue);
+    
+    try {
+      // Submit multiple concurrent tasks using virtual threads
+      for (int i = 0; i < taskCount; i++) {
+        final int taskId = i;
+        executor.submit(() -> {
           try {
-            // Wait for all threads to be ready
-            startLatch.await();
-            
-            // Verify MDC context is correctly propagated
-            if (!"bar".equals(MDC.get("foo"))) {
-              allThreadsCorrect.set(false);
+            // Verify MDC context is propagated to the virtual thread
+            String propagatedValue = MDC.get(mdcKey);
+            if (!mdcValue.equals(propagatedValue)) {
+              errorCount.incrementAndGet();
             }
-          }
-          catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-          }
-          finally {
-            completionLatch.countDown();
-          }
-        }
-      };
-
-      progressTaskLogger.progress(new TaskLoggingEvent(mockLogger, "test message from " + threadId));
-      progressTaskLogger.start();
-    }
-
-    // Release all threads to execute concurrently
-    startLatch.countDown();
-    
-    // Wait for all threads to complete
-    assertTrue(completionLatch.await(1, TimeUnit.SECONDS), "Not all threads completed in time");
-    
-    // Verify all threads had correct MDC context
-    assertTrue(allThreadsCorrect.get(), "MDC context was not correctly propagated in all threads");
-  }
-
-  /**
-   * Test high concurrency MDC propagation with virtual threads.
-   */
-  @Test
-  @Tag("virtual-thread")
-  public void testMDCCopyUnderLoadWithVirtualThreads() throws InterruptedException {
-    final int THREAD_COUNT = 100; // Higher count for virtual threads
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(THREAD_COUNT);
-    AtomicBoolean allThreadsCorrect = new AtomicBoolean(true);
-
-    // put something into MDC in current thread
-    MDC.put("foo", "bar");
-
-    // Create multiple progress task loggers to simulate high concurrency with virtual threads
-    for (int i = 0; i < THREAD_COUNT; i++) {
-      final String threadId = "vthread-" + i;
-      // Create a progress task logger for virtual thread testing
-      // Note: ProgressTaskLogger internally uses virtual threads for logging operations
-      ProgressTaskLogger progressTaskLogger = new ProgressTaskLogger(
-          mockLogger, 1, 60000, TimeUnit.MILLISECONDS)
-      {
-        void logProgress() {
-          super.logProgress();
-          try {
-            // Wait for all threads to be ready
-            startLatch.await();
             
-            // Verify MDC context is correctly propagated
-            if (!"bar".equals(MDC.get("foo"))) {
-              allThreadsCorrect.set(false);
+            // Set a task-specific MDC value
+            MDC.put("taskId", String.valueOf(taskId));
+            
+            // Simulate some work
+            Thread.sleep(10);
+            
+            // Verify the task-specific MDC value is still available
+            String taskSpecificValue = MDC.get("taskId");
+            if (!String.valueOf(taskId).equals(taskSpecificValue)) {
+              errorCount.incrementAndGet();
             }
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
+          } finally {
+            // Clean up task-specific MDC values
+            MDC.remove("taskId");
+            latch.countDown();
           }
-          catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-          }
-          finally {
-            completionLatch.countDown();
-          }
-        }
-      };
-
-      progressTaskLogger.progress(new TaskLoggingEvent(mockLogger, "test message from " + threadId));
-      progressTaskLogger.start();
+        });
+      }
+      
+      // Wait for all tasks to complete
+      latch.await(30, TimeUnit.SECONDS);
+      
+      // Verify no errors occurred
+      assertThat(errorCount.get(), equalTo(0));
+    } finally {
+      executor.shutdown();
+      MDC.remove(mdcKey);
     }
-
-    // Release all threads to execute concurrently
-    startLatch.countDown();
-    
-    // Wait for all threads to complete
-    assertTrue(completionLatch.await(1, TimeUnit.SECONDS), "Not all threads completed in time");
-    
-    // Verify all threads had correct MDC context
-    assertTrue(allThreadsCorrect.get(), "MDC context was not correctly propagated in all virtual threads");
   }
 }

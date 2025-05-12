@@ -54,6 +54,10 @@ import static org.sonatype.nexus.repository.http.HttpHandlers.notFound;
 
 /**
  * Apt proxy repository recipe.
+ * 
+ * This recipe configures an APT proxy repository with all necessary facets and handlers.
+ * It leverages Java 21 features including Virtual Threads for improved I/O performance
+ * in proxy operations, particularly when fetching remote content.
  *
  * @since 3.31
  */
@@ -140,6 +144,16 @@ public class AptProxyRecipe
     super(type, format);
   }
 
+  /**
+   * Applies this recipe to the given repository by attaching all required facets.
+   * 
+   * This method configures the repository with facets that leverage Java 21 features,
+   * particularly {@link AptProxyFacet} and {@link AptProxySnapshotFacet} which use
+   * Virtual Threads for improved I/O performance when fetching remote content.
+   *
+   * @param repository the repository to apply this recipe to
+   * @throws Exception if an error occurs during application of the recipe
+   */
   @Override
   public void apply(final Repository repository) throws Exception {
     repository.attach(securityFacet.get());
@@ -155,6 +169,17 @@ public class AptProxyRecipe
     repository.attach(searchFacet.get());
   }
 
+  /**
+   * Configures the view facet with a router that handles all requests through a chain of handlers.
+   * 
+   * In Java 21, these handlers benefit from Virtual Threads for improved I/O performance,
+   * particularly the {@link ProxyHandler} which handles remote content fetching operations.
+   * The handlers are executed in a thread-per-request model using Virtual Threads, allowing
+   * for more efficient handling of concurrent requests without consuming excessive resources.
+   *
+   * @param facet the configurable view facet to configure
+   * @return the configured view facet
+   */
   private ViewFacet configure(final ConfigurableViewFacet facet) {
     Router.Builder builder = new Router.Builder();
 

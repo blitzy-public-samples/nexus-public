@@ -13,6 +13,8 @@
 package org.sonatype.nexus.common.stateguard;
 
 import java.util.Arrays;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -31,9 +33,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
 /**
  * State guard provides support to transition from state to state and execute an action, as well as guard
  * execution of an action if state is acceptable.
- *
- * This implementation is optimized for Java 21, leveraging features like Virtual Threads for I/O-bound operations
- * and Pattern Matching for improved code clarity.
+ * <p>
+ * This implementation is compatible with Java 21 and supports virtual threads for I/O-bound operations.
  *
  * @since 3.0
  */
@@ -47,6 +48,12 @@ public class StateGuard
   private final String failure;
 
   private String current;
+
+  /**
+   * Virtual thread executor for I/O-bound operations.
+   * Using virtual threads improves scalability for I/O-bound operations without the overhead of platform threads.
+   */
+  private static final Executor VIRTUAL_THREAD_EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
 
   StateGuard(
       final Logger log,
@@ -128,9 +135,6 @@ public class StateGuard
 
   /**
    * Create a transition to given state.
-   * 
-   * By default, this transition requires a write lock and uses Java 21's memory model
-   * for optimal concurrency handling.
    */
   @SuppressWarnings("unchecked")
   public Transition transition(final String to) {
@@ -139,12 +143,6 @@ public class StateGuard
 
   /**
    * Create a transition to given state with custom exception-handling behaviour.
-   * 
-   * @param to The target state to transition to
-   * @param silent Whether to log errors at debug level instead of error level
-   * @param ignore Exception types to ignore, allowing transition despite exceptions
-   * @param requiresWriteLock Whether this transition requires a write lock (recommended for state changes)
-   * @return A configured transition object
    */
   public Transition transition(
       final String to,
@@ -157,11 +155,21 @@ public class StateGuard
 
   /**
    * Create a guard which allows execution in the given states.
-   * 
-   * Guards use read locks by default, optimized for concurrent access patterns in Java 21.
    */
   public Guard guard(final String... allowed) {
     return new GuardImpl(allowed);
+  }
+
+  /**
+   * Create a guard which allows execution in the given states and runs the action in a virtual thread.
+   * This is particularly useful for I/O-bound operations to improve scalability.
+   * 
+   * @param allowed The states in which the action is allowed to execute
+   * @return A guard that will execute the action in a virtual thread if the current state is allowed
+   * @since Java 21
+   */
+  public VirtualGuard virtualGuard(final String... allowed) {
+    return new VirtualGuardImpl(allowed);
   }
 
   //
@@ -170,8 +178,6 @@ public class StateGuard
 
   /**
    * Transition from current state to target state and execute an action.
-   * 
-   * This implementation is optimized for Java 21's memory model and concurrency features.
    */
   private class TransitionImpl
       implements Transition
@@ -268,12 +274,9 @@ public class StateGuard
       }
     }
 
-    /**
-     * Check if the given throwable should be ignored based on configured exception types.
-     * Uses Java 21 Pattern Matching for instanceof for cleaner code.
-     */
     private boolean ignore(final Throwable t) {
       for (final Class<? extends Exception> type : ignore) {
+        // Using pattern matching for instanceof check (Java 21 feature)
         if (t instanceof Exception exception && type.isInstance(exception)) {
           return true;
         }
@@ -288,8 +291,6 @@ public class StateGuard
 
   /**
    * Execute an action or callable if current state is allowed.
-   * 
-   * This implementation is optimized for Java 21's memory model and concurrency features.
    */
   private class GuardImpl
       implements Guard
@@ -325,14 +326,78 @@ public class StateGuard
     }
   }
 
+  /**
+   * Execute an action in a virtual thread if current state is allowed.
+   * This is particularly useful for I/O-bound operations.
+   * 
+   * @since Java 21
+   */
+  private class VirtualGuardImpl
+      implements VirtualGuard
+  {
+    private final String[] allowed;
+
+    private VirtualGuardImpl(final String[] allowed) {
+      checkNotNull(allowed);
+      checkArgument(allowed.length != 0);
+      this.allowed = allowed;
+    }
+
+    @Override
+    public String toString() {
+      return getClass().getSimpleName() + "{" +
+          "allowed=" + Arrays.toString(allowed) +
+          '}';
+    }
+
+    @Override
+    public <V> void runAsync(final Action<V> action, final VirtualActionCallback<V> callback) {
+      checkNotNull(action);
+      checkNotNull(callback);
+
+      // First check if the state is allowed before submitting to virtual thread
+      Lock lock = Locks.read(readWriteLock);
+      try {
+        _ensure(allowed);
+      }
+      catch (Exception e) {
+        callback.onFailure(e);
+        return;
+      }
+      finally {
+        lock.unlock();
+      }
+
+      // Execute the action in a virtual thread
+      VIRTUAL_THREAD_EXECUTOR.execute(() -> {
+        try {
+          // Re-check state in the virtual thread to ensure it's still valid
+          Lock virtualLock = Locks.read(readWriteLock);
+          try {
+            _ensure(allowed);
+            V result = action.run();
+            callback.onSuccess(result);
+          }
+          catch (Exception e) {
+            callback.onFailure(e);
+          }
+          finally {
+            virtualLock.unlock();
+          }
+        }
+        catch (Exception e) {
+          callback.onFailure(e);
+        }
+      });
+    }
+  }
+
   //
   // Builder
   //
 
   /**
    * {@link StateGuard} builder.
-   * 
-   * Creates a StateGuard instance optimized for Java 21 runtime environment.
    */
   public static class Builder
   {
@@ -368,11 +433,6 @@ public class StateGuard
       return this;
     }
 
-    /**
-     * Create a new StateGuard instance with the configured parameters.
-     * 
-     * The created instance is optimized for Java 21's memory model and concurrency features.
-     */
     public StateGuard create() {
       return new StateGuard(
           logger != null ? logger : defaultLogger,

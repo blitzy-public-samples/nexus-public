@@ -22,9 +22,12 @@ import org.sonatype.nexus.repository.maven.internal.Maven2Format;
 import org.sonatype.nexus.repository.types.HostedType;
 import org.sonatype.nexus.scheduling.TaskConfiguration;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -35,6 +38,11 @@ import static org.sonatype.nexus.repository.maven.tasks.RebuildMaven2MetadataTas
 import static org.sonatype.nexus.repository.maven.tasks.RebuildMaven2MetadataTaskDescriptor.GROUPID_FIELD_ID;
 import static org.sonatype.nexus.repository.maven.tasks.RebuildMaven2MetadataTaskDescriptor.REBUILD_CHECKSUMS;
 
+/**
+ * Tests for {@link RebuildMaven2MetadataTask}.
+ */
+@ExtendWith(MockitoExtension.class)
+@DisplayName("RebuildMaven2MetadataTask Tests")
 public class RebuildMaven2MetadataTaskTest
     extends TestSupport
 {
@@ -60,7 +68,7 @@ public class RebuildMaven2MetadataTaskTest
 
   private RebuildMaven2MetadataTask underTest;
 
-  @Before
+  @BeforeEach
   public void setUp() throws Exception {
     TaskConfiguration configuration = new TaskConfiguration();
     configuration.setId("Rebuild metadata test");
@@ -79,8 +87,38 @@ public class RebuildMaven2MetadataTaskTest
   }
 
   @Test
+  @DisplayName("Execute task with configured parameters")
   public void testTask() {
     underTest.execute(repository);
-    verify(rebuildFacet).rebuildMetadata(GROUP_ID_VALUE, ARTIFACT_ID_VALUE, BASE_VERSION_VALUE, false, true,false);
+    verify(rebuildFacet).rebuildMetadata(GROUP_ID_VALUE, ARTIFACT_ID_VALUE, BASE_VERSION_VALUE, false, true, false);
+  }
+  
+  @Test
+  @DisplayName("Execute task with pattern matching for configuration values")
+  public void testTaskWithPatternMatching() {
+    // Create a record to represent the configuration values
+    record MetadataConfig(String groupId, String artifactId, String baseVersion, boolean rebuildChecksums, boolean cascadeRebuild) {}
+    
+    // Use pattern matching with the record (Java 21 feature)
+    MetadataConfig config = new MetadataConfig(GROUP_ID_VALUE, ARTIFACT_ID_VALUE, BASE_VERSION_VALUE, false, true);
+    
+    // Use pattern matching in switch to determine behavior (Java 21 feature)
+    boolean shouldRebuildChecksums = switch(config) {
+      case MetadataConfig(var g, var a, var v, var rebuildChecksums, var cascadeRebuild) 
+          when rebuildChecksums -> true;
+      default -> false;
+    };
+    
+    // Execute with the same parameters as the main test
+    underTest.execute(repository);
+    
+    // Verify the same behavior
+    verify(rebuildFacet).rebuildMetadata(
+        config.groupId(), 
+        config.artifactId(), 
+        config.baseVersion(), 
+        shouldRebuildChecksums, 
+        config.cascadeRebuild(),
+        false);
   }
 }

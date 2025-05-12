@@ -15,10 +15,13 @@ package org.sonatype.nexus.repository.apt.datastore.internal.store;
 import org.sonatype.nexus.repository.content.store.ContentRepositoryDAO;
 
 /**
+ * APT format-specific ContentRepository DAO.
+ * 
  * @since 3.31
+ * @see ContentRepositoryDAO
  */
 public interface AptContentRepositoryDAO
     extends ContentRepositoryDAO
 {
-  // nothing to add...
+  // No additional methods required for APT format
 }

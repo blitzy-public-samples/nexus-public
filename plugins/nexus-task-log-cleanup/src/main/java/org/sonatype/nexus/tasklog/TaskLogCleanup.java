@@ -16,12 +16,11 @@ import java.io.File;
 import java.io.IOException;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.util.Date;
-import java.util.Iterator;
+import java.util.concurrent.Executors;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.logging.task.TaskLogHome;
@@ -30,6 +29,7 @@ import com.google.common.annotations.VisibleForTesting;
 import org.apache.commons.io.filefilter.AgeFileFilter;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 import static org.apache.commons.io.FileUtils.forceDelete;
 import static org.apache.commons.io.FileUtils.iterateFiles;
 
@@ -57,27 +57,33 @@ public class TaskLogCleanup
 
     if (taskLogsHome == null) {
       // we are forgiving if the task logs home is not defined. Just log a message with a call to action.
-      log.warn("Unable to cleanup task log files. Please check that the 'tasklogfile' appender exists in logback.xml");
+      log.warn(STR."Unable to cleanup task log files. Please check that the 'tasklogfile' appender exists in logback.xml");
       return;
     }
 
     File logFilesHome = new File(taskLogsHome);
 
-    log.info("Cleaning up log files in {} older than {} days", logFilesHome.getAbsolutePath(), numberOfDays);
+    log.info(STR."Cleaning up log files in \{logFilesHome.getAbsolutePath()} older than \{numberOfDays} days");
 
     LocalDate now = LocalDate.now().minusDays(numberOfDays);
-    Date thresholdDate = Date.from(now.atStartOfDay(ZoneId.systemDefault()).toInstant());
-    AgeFileFilter ageFileFilter = new AgeFileFilter(thresholdDate);
-    Iterator<File> filesToDelete = iterateFiles(logFilesHome, ageFileFilter, ageFileFilter);
-    filesToDelete.forEachRemaining(f -> {
-      try {
-        forceDelete(f);
-        log.info("Removed task log file {}", f.toString());
-      }
-      catch (IOException e) { // NOSONAR
-        log.error("Unable to delete task file {}. Message was {}.", f.toString(), e.getMessage());
-      }
-    });
+    var thresholdDate = now.atStartOfDay(ZoneId.systemDefault()).toInstant();
+    var ageFileFilter = new AgeFileFilter(java.util.Date.from(thresholdDate));
+    var filesToDelete = iterateFiles(logFilesHome, ageFileFilter, ageFileFilter);
+
+    // Use a virtual thread executor to process file deletions concurrently
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      filesToDelete.forEachRemaining(file -> {
+        executor.submit(() -> {
+          try {
+            forceDelete(file);
+            log.info(STR."Removed task log file \{file}");
+          }
+          catch (IOException e) { // NOSONAR
+            log.error(STR."Unable to delete task file \{file}. Message was \{e.getMessage()}.");
+          }
+        });
+      });
+    }
   }
 
   @VisibleForTesting

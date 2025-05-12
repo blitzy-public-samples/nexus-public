@@ -12,39 +12,21 @@
  */
 package org.sonatype.nexus.testsuite;
 
-import junit.framework.Test;
-import junit.framework.TestCase;
-import junit.framework.TestSuite;
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Unit test for simple App.
  */
-public class AppTest 
-    extends TestCase
+public class AppTest
 {
     /**
-     * Create the test case
-     *
-     * @param testName name of the test case
+     * Rigorous Test :-)
      */
-    public AppTest( String testName )
+    @Test
+    public void appWorksCorrectly()
     {
-        super( testName );
-    }
-
-    /**
-     * @return the suite of tests being tested
-     */
-    public static Test suite()
-    {
-        return new TestSuite( AppTest.class );
-    }
-
-    /**
-     * Rigourous Test :-)
-     */
-    public void testApp()
-    {
-        assertTrue( true );
+        assertTrue(true, "App should work correctly");
     }
 }

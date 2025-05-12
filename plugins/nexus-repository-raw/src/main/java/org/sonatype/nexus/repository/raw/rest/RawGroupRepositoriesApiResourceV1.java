@@ -12,15 +12,17 @@
  */
 package org.sonatype.nexus.repository.raw.rest;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.Path;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.Path;
 
 import org.sonatype.nexus.repository.rest.api.RepositoriesApiResourceV1;
 
 import static org.sonatype.nexus.repository.raw.rest.RawGroupRepositoriesApiResourceV1.RESOURCE_URI;
 
 /**
+ * REST API resource for Raw group repositories.
+ * 
  * @since 3.26
  */
 @Named

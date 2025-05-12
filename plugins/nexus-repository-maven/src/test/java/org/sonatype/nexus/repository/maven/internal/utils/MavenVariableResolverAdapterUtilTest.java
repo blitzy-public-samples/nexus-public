@@ -17,19 +17,25 @@ import java.util.Map;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.repository.maven.MavenPath.Coordinates;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import static org.apache.commons.lang3.StringUtils.EMPTY;
-import static org.hamcrest.collection.IsMapContaining.hasEntry;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.collection.IsMapContaining.hasEntry;
 import static org.sonatype.nexus.repository.maven.MavenPath.SignatureType.GPG;
 import static org.sonatype.nexus.repository.maven.internal.utils.MavenVariableResolverAdapterUtil.createCoordinateMap;
 
+/**
+ * Tests for {@link MavenVariableResolverAdapterUtil}.
+ */
 public class MavenVariableResolverAdapterUtilTest
     extends TestSupport
 {
+  /**
+   * Verifies that Maven coordinates are correctly copied to a map.
+   */
   @Test
-  public void shouldCopyCoordinatesToMap() {
+  void shouldCopyCoordinatesToMap() {
     Coordinates coordinates = new Coordinates(false, "org.mockito", "mockito-core",
         "3.24", 3600L, 100, "3.24", "test", ".jar", GPG);
 
@@ -42,8 +48,11 @@ public class MavenVariableResolverAdapterUtilTest
     assertThat(map, hasEntry("classifier", "test"));
   }
 
+  /**
+   * Verifies that when a classifier is not set, it is represented as an empty string in the map.
+   */
   @Test
-  public void classifierShouldBeEmptyStringWhenNotSet() {
+  void classifierShouldBeEmptyStringWhenNotSet() {
     Coordinates coordinates = new Coordinates(false, "org.mockito", "mockito-core",
         "3.24", 3600L, 100, "3.24", null, ".jar", GPG);
 

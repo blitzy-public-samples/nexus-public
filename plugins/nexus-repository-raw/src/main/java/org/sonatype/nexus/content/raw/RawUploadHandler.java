@@ -19,6 +19,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -35,6 +37,7 @@ import org.sonatype.nexus.repository.view.Content;
 import org.sonatype.nexus.repository.view.PartPayload;
 import org.sonatype.nexus.repository.view.payloads.TempBlob;
 import org.sonatype.nexus.repository.view.payloads.TempBlobPayload;
+import org.sonatype.nexus.thread.io.VirtualThreads;
 
 import com.google.common.collect.Lists;
 
@@ -62,15 +65,29 @@ public class RawUploadHandler
   {
     RawContentFacet facet = repository.facet(RawContentFacet.class);
 
-    List<Content> responseContents = Lists.newArrayList();
-    for (Entry<String,PartPayload> entry : pathToPayload.entrySet()) {
-      String path = entry.getKey();
+    // Process uploads in parallel using Virtual Threads for improved I/O throughput
+    List<CompletableFuture<Content>> futures = pathToPayload.entrySet().stream()
+        .map(entry -> CompletableFuture.supplyAsync(() -> {
+          // Using pattern matching for switch with Map.Entry (Java 21 feature)
+          if (entry instanceof Map.Entry<String, PartPayload> pathEntry) {
+            String path = pathEntry.getKey();
+            PartPayload payload = pathEntry.getValue();
+            try {
+              // Execute I/O-bound operation on a virtual thread
+              return VirtualThreads.execute(() -> facet.put(path, payload));
+            }
+            catch (IOException e) {
+              throw new RuntimeException("Failed to upload content for path: " + path, e);
+            }
+          }
+          return null;
+        }))
+        .collect(Collectors.toList());
 
-      Content content = facet.put(path, entry.getValue());
-
-      responseContents.add(content);
-    }
-    return responseContents;
+    // Wait for all uploads to complete
+    return futures.stream()
+        .map(CompletableFuture::join)
+        .collect(Collectors.toList());
   }
 
   @Override
@@ -79,12 +96,15 @@ public class RawUploadHandler
     String path = configuration.getAssetName();
     Path contentPath = configuration.getFile().toPath();
 
-    RawContentFacet contentFacet = repository.facet(RawContentFacet.class);
-    String contentType = Files.probeContentType(contentPath);
-    try (TempBlob blob = contentFacet.blobs().ingest(contentPath, contentType, RawContentFacet.HASHING,
-        configuration.isHardLinkingEnabled())) {
-      return contentFacet.put(path, new TempBlobPayload(blob, contentType));
-    }
+    // Execute I/O-bound operations on virtual threads for improved throughput
+    return VirtualThreads.execute(() -> {
+      RawContentFacet contentFacet = repository.facet(RawContentFacet.class);
+      String contentType = Files.probeContentType(contentPath);
+      try (TempBlob blob = contentFacet.blobs().ingest(contentPath, contentType, RawContentFacet.HASHING,
+          configuration.isHardLinkingEnabled())) {
+        return contentFacet.put(path, new TempBlobPayload(blob, contentType));
+      }
+    });
   }
 
   @Override

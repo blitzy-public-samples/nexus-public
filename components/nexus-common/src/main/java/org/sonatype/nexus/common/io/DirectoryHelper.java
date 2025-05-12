@@ -28,14 +28,13 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileAttribute;
 import java.util.EnumSet;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Function;
-import java.util.function.Predicate;
 
 import javax.annotation.Nullable;
 
+import com.google.common.base.Function;
+import com.google.common.base.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -117,7 +116,7 @@ public final class DirectoryHelper
 
     @Override
     public FileVisitResult preVisitDirectory(final Path dir, final BasicFileAttributes a) throws IOException {
-      if (excludeFilter != null && excludeFilter.test(dir)) {
+      if (excludeFilter != null && excludeFilter.apply(dir)) {
         return FileVisitResult.SKIP_SUBTREE;
       }
       final Path targetPath = to.resolve(from.relativize(dir));
@@ -133,7 +132,49 @@ public final class DirectoryHelper
       return FileVisitResult.CONTINUE;
     }
   }
-
+  
+  /**
+   * Executes an I/O operation using a virtual thread for improved concurrency.
+   * This is particularly useful for operations that may block on I/O.
+   *
+   * @param operation The I/O operation to execute
+   * @throws IOException If an I/O error occurs
+   * @since Java 21
+   */
+  private static void executeWithVirtualThread(IORunnable operation) throws IOException {
+    try {
+      // Use virtual thread for I/O operations to avoid blocking platform threads
+      Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+        try {
+          operation.run();
+        }
+        catch (IOException e) {
+          throw new RuntimeException(e);
+        }
+      }).get();
+    }
+    catch (Exception e) {
+      if (e.getCause() instanceof IOException) {
+        throw (IOException) e.getCause();
+      }
+      else if (e.getCause() instanceof RuntimeException) {
+        throw (RuntimeException) e.getCause();
+      }
+      throw new IOException("Error executing I/O operation", e);
+    }
+  }
+  
+  /**
+   * Functional interface for I/O operations that may throw IOException.
+   * Used with virtual thread execution.
+   *
+   * @since Java 21
+   */
+  @FunctionalInterface
+  private interface IORunnable {
+    void run() throws IOException;
+  }
+  
   // MKDIR: directory creation resilient to symlinks
 
   /**
@@ -173,7 +214,45 @@ public final class DirectoryHelper
     mkdir(dir);
     return dir;
   }
-
+  
+  /**
+   * Creates a directory asynchronously using a virtual thread.
+   * This is useful for directory creation operations that may block on I/O.
+   *
+   * @param dir The directory to create
+   * @throws IOException If directory creation fails
+   * @since Java 21
+   */
+  public static void mkdirAsync(final Path dir) throws IOException {
+    executeWithVirtualThread(() -> mkdir(dir));
+  }
+  
+  /**
+   * Creates a directory asynchronously using a virtual thread.
+   *
+   * @param dir The directory to create
+   * @throws IOException If directory creation fails
+   * @since Java 21
+   */
+  public static void mkdirAsync(final File dir) throws IOException {
+    executeWithVirtualThread(() -> mkdir(dir));
+  }
+  
+  /**
+   * Given a parent directory, create the child directory asynchronously using a virtual thread.
+   *
+   * @param parent The parent directory
+   * @param child The child directory name
+   * @return The created directory
+   * @throws IOException If directory creation fails
+   * @since Java 21
+   */
+  public static File mkdirAsync(final File parent, final String child) throws IOException {
+    File dir = new File(parent, child);
+    mkdirAsync(dir);
+    return dir;
+  }
+  
   // CLEAN: remove files recursively of a directory but keeping the directory structure intact
 
   /**
@@ -193,23 +272,17 @@ public final class DirectoryHelper
           }
         });
   }
-
+  
   /**
-   * Asynchronously cleans an existing directory using Virtual Threads for improved concurrency.
-   * 
+   * Cleans an existing directory asynchronously using a virtual thread.
+   * This is useful for directory cleaning operations that may block on I/O.
+   *
    * @param dir The directory to clean
-   * @return A CompletableFuture that completes when the operation is done
-   * @since 3.60
+   * @throws IOException If cleaning fails
+   * @since Java 21
    */
-  public static CompletableFuture<Void> cleanAsync(final Path dir) {
-    return CompletableFuture.runAsync(() -> {
-      try {
-        clean(dir);
-      }
-      catch (IOException e) {
-        throw new RuntimeException("Failed to clean directory: " + dir, e);
-      }
-    }, Executors.newVirtualThreadPerTaskExecutor());
+  public static void cleanAsync(final Path dir) throws IOException {
+    executeWithVirtualThread(() -> clean(dir));
   }
 
   /**
@@ -226,25 +299,27 @@ public final class DirectoryHelper
       return false;
     }
   }
-
+  
   /**
-   * Asynchronously invokes {@link #clean(Path)} if the path exists and is a directory.
-   * 
-   * @param dir The directory to clean if it exists
-   * @return A CompletableFuture that completes with true if the directory was cleaned, false otherwise
-   * @since 3.60
+   * Invokes {@link #cleanAsync(Path)} if passed in path exists and is a directory.
+   * Returns true if cleaning was performed, false otherwise.
+   *
+   * @param dir The directory to clean
+   * @return true if cleaning was performed, false otherwise
+   * @throws IOException If cleaning fails
+   * @since Java 21
    */
-  public static CompletableFuture<Boolean> cleanIfExistsAsync(final Path dir) {
-    return CompletableFuture.supplyAsync(() -> {
-      try {
-        return cleanIfExists(dir);
-      }
-      catch (IOException e) {
-        throw new RuntimeException("Failed to clean directory if exists: " + dir, e);
-      }
-    }, Executors.newVirtualThreadPerTaskExecutor());
+  public static boolean cleanIfExistsAsync(final Path dir) throws IOException {
+    checkNotNull(dir);
+    if (Files.exists(dir)) {
+      cleanAsync(dir);
+      return true;
+    }
+    else {
+      return false;
+    }
   }
-
+  
   // EMPTY: removes directory subtree with directory itself left intact
 
   /**
@@ -275,25 +350,54 @@ public final class DirectoryHelper
           }
         });
   }
-
+  
   /**
-   * Asynchronously empties an existing directory using Virtual Threads for improved concurrency.
-   * 
+   * Empties an existing directory asynchronously using a virtual thread.
+   * This is useful for directory emptying operations that may block on I/O.
+   *
    * @param dir The directory to empty
-   * @return A CompletableFuture that completes when the operation is done
-   * @since 3.60
+   * @throws IOException If emptying fails
+   * @since Java 21
    */
-  public static CompletableFuture<Void> emptyAsync(final Path dir) {
-    return CompletableFuture.runAsync(() -> {
-      try {
-        empty(dir);
-      }
-      catch (IOException e) {
-        throw new RuntimeException("Failed to empty directory: " + dir, e);
-      }
-    }, Executors.newVirtualThreadPerTaskExecutor());
+  public static void emptyAsync(final Path dir) throws IOException {
+    executeWithVirtualThread(() -> empty(dir));
   }
 
+  /**
+   * Invokes {@link #empty(Path)} if passed in path exists and is a directory. Also, in that case {@code true} is
+   * returned, and in any other case (path does not exists) {@code false} is returned.
+   */
+  public static boolean emptyIfExists(final Path dir) throws IOException {
+    checkNotNull(dir);
+    if (Files.exists(dir)) {
+      empty(dir);
+      return true;
+    }
+    else {
+      return false;
+    }
+  }
+  
+  /**
+   * Invokes {@link #emptyAsync(Path)} if passed in path exists and is a directory.
+   * Returns true if emptying was performed, false otherwise.
+   *
+   * @param dir The directory to empty
+   * @return true if emptying was performed, false otherwise
+   * @throws IOException If emptying fails
+   * @since Java 21
+   */
+  public static boolean emptyIfExistsAsync(final Path dir) throws IOException {
+    checkNotNull(dir);
+    if (Files.exists(dir)) {
+      emptyAsync(dir);
+      return true;
+    }
+    else {
+      return false;
+    }
+  }
+  
   /**
    * Will walk a directory structure and prune any empty directories found that have modified timestamps that fall
    * before the provided timestamp value. If null, all empty directories will be pruned
@@ -341,59 +445,40 @@ public final class DirectoryHelper
 
     return deleteCount.intValue();
   }
-
+  
   /**
-   * Asynchronously walks a directory structure and prunes empty directories using Virtual Threads.
-   * 
+   * Will walk a directory structure and prune any empty directories found that have modified timestamps that fall
+   * before the provided timestamp value. If null, all empty directories will be pruned.
+   * This operation is performed asynchronously using a virtual thread.
+   *
    * @param dir The directory to process
-   * @param timestamp Timestamp to compare against, or null to prune all empty directories
-   * @return A CompletableFuture that completes with the count of deleted directories
-   * @since 3.60
+   * @param timestamp The timestamp to compare against, or null for all directories
+   * @return The number of directories deleted
+   * @throws IOException If an I/O error occurs
+   * @since Java 21
    */
-  public static CompletableFuture<Integer> deleteIfEmptyRecursivelyAsync(final Path dir, final Long timestamp) {
-    return CompletableFuture.supplyAsync(() -> {
-      try {
-        return deleteIfEmptyRecursively(dir, timestamp);
-      }
-      catch (IOException e) {
-        throw new RuntimeException("Failed to delete empty directories: " + dir, e);
-      }
-    }, Executors.newVirtualThreadPerTaskExecutor());
-  }
-
-  /**
-   * Invokes {@link #empty(Path)} if passed in path exists and is a directory. Also, in that case {@code true} is
-   * returned, and in any other case (path does not exists) {@code false} is returned.
-   */
-  public static boolean emptyIfExists(final Path dir) throws IOException {
-    checkNotNull(dir);
-    if (Files.exists(dir)) {
-      empty(dir);
-      return true;
+  public static int deleteIfEmptyRecursivelyAsync(final Path dir, final Long timestamp) throws IOException {
+    try {
+      return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+        try {
+          return deleteIfEmptyRecursively(dir, timestamp);
+        }
+        catch (IOException e) {
+          throw new RuntimeException(e);
+        }
+      }).get();
     }
-    else {
-      return false;
+    catch (Exception e) {
+      if (e.getCause() instanceof IOException ioe) {
+        throw ioe;
+      }
+      else if (e.getCause() instanceof RuntimeException re) {
+        throw re;
+      }
+      throw new IOException("Error executing I/O operation", e);
     }
   }
-
-  /**
-   * Asynchronously invokes {@link #empty(Path)} if the path exists and is a directory.
-   * 
-   * @param dir The directory to empty if it exists
-   * @return A CompletableFuture that completes with true if the directory was emptied, false otherwise
-   * @since 3.60
-   */
-  public static CompletableFuture<Boolean> emptyIfExistsAsync(final Path dir) {
-    return CompletableFuture.supplyAsync(() -> {
-      try {
-        return emptyIfExists(dir);
-      }
-      catch (IOException e) {
-        throw new RuntimeException("Failed to empty directory if exists: " + dir, e);
-      }
-    }, Executors.newVirtualThreadPerTaskExecutor());
-  }
-
+  
   // DELETE: removes directory subtree with directory itself recursively
 
   /**
@@ -403,16 +488,17 @@ public final class DirectoryHelper
   public static void delete(final Path dir) throws IOException {
     delete(dir, null);
   }
-
+  
   /**
-   * Asynchronously deletes a file or directory recursively using Virtual Threads.
-   * 
-   * @param dir The file or directory to delete
-   * @return A CompletableFuture that completes when the operation is done
-   * @since 3.60
+   * Deletes a file or directory recursively using a virtual thread.
+   * This is useful for directory deletion operations that may block on I/O.
+   *
+   * @param dir The directory to delete
+   * @throws IOException If deletion fails
+   * @since Java 21
    */
-  public static CompletableFuture<Void> deleteAsync(final Path dir) {
-    return deleteAsync(dir, null);
+  public static void deleteAsync(final Path dir) throws IOException {
+    executeWithVirtualThread(() -> delete(dir));
   }
 
   /**
@@ -428,7 +514,7 @@ public final class DirectoryHelper
           {
             @Override
             public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
-              if (excludeFilter != null && excludeFilter.test(dir)) {
+              if (excludeFilter != null && excludeFilter.apply(dir)) {
                 return FileVisitResult.SKIP_SUBTREE;
               }
               return FileVisitResult.CONTINUE;
@@ -469,24 +555,19 @@ public final class DirectoryHelper
       Files.delete(dir);
     }
   }
-
+  
   /**
-   * Asynchronously deletes a file or directory recursively using Virtual Threads.
-   * 
-   * @param dir The file or directory to delete
-   * @param excludeFilter Optional filter to exclude directories from deletion
-   * @return A CompletableFuture that completes when the operation is done
-   * @since 3.60
+   * Deletes a file or directory recursively using a virtual thread.
+   * This is useful for directory deletion operations that may block on I/O.
+   * The passed in filter can leave out a directory and it's complete subtree from operation.
+   *
+   * @param dir The directory to delete
+   * @param excludeFilter The filter to exclude directories from deletion
+   * @throws IOException If deletion fails
+   * @since Java 21
    */
-  public static CompletableFuture<Void> deleteAsync(final Path dir, @Nullable final Predicate<Path> excludeFilter) {
-    return CompletableFuture.runAsync(() -> {
-      try {
-        delete(dir, excludeFilter);
-      }
-      catch (IOException e) {
-        throw new RuntimeException("Failed to delete: " + dir, e);
-      }
-    }, Executors.newVirtualThreadPerTaskExecutor());
+  public static void deleteAsync(final Path dir, @Nullable final Predicate<Path> excludeFilter) throws IOException {
+    executeWithVirtualThread(() -> delete(dir, excludeFilter));
   }
 
   /**
@@ -496,15 +577,17 @@ public final class DirectoryHelper
   public static boolean deleteIfExists(final Path dir) throws IOException {
     return deleteIfExists(dir, null);
   }
-
+  
   /**
-   * Asynchronously invokes {@link #delete(Path)} if the path exists.
-   * 
-   * @param dir The file or directory to delete if it exists
-   * @return A CompletableFuture that completes with true if the path was deleted, false otherwise
-   * @since 3.60
+   * Invokes {@link #deleteAsync(Path)} if passed in path exists.
+   * Returns true if deletion was performed, false otherwise.
+   *
+   * @param dir The directory to delete
+   * @return true if deletion was performed, false otherwise
+   * @throws IOException If deletion fails
+   * @since Java 21
    */
-  public static CompletableFuture<Boolean> deleteIfExistsAsync(final Path dir) {
+  public static boolean deleteIfExistsAsync(final Path dir) throws IOException {
     return deleteIfExistsAsync(dir, null);
   }
 
@@ -526,28 +609,32 @@ public final class DirectoryHelper
       return false;
     }
   }
-
+  
   /**
-   * Asynchronously invokes {@link #delete(Path)} if the path exists.
-   * 
-   * @param dir The file or directory to delete if it exists
-   * @param excludeFilter Optional filter to exclude directories from deletion
-   * @return A CompletableFuture that completes with true if the path was deleted, false otherwise
-   * @since 3.60
+   * Invokes {@link #deleteAsync(Path, Predicate)} if passed in path exists.
+   * Returns true if deletion was performed, false otherwise.
+   * The passed in filter can leave out a directory and it's complete subtree from operation.
+   *
+   * @param dir The directory to delete
+   * @param excludeFilter The filter to exclude directories from deletion
+   * @return true if deletion was performed, false otherwise
+   * @throws IOException If deletion fails
+   * @since Java 21
    */
-  public static CompletableFuture<Boolean> deleteIfExistsAsync(
+  public static boolean deleteIfExistsAsync(
       final Path dir,
-      @Nullable final Predicate<Path> excludeFilter) {
-    return CompletableFuture.supplyAsync(() -> {
-      try {
-        return deleteIfExists(dir, excludeFilter);
-      }
-      catch (IOException e) {
-        throw new RuntimeException("Failed to delete if exists: " + dir, e);
-      }
-    }, Executors.newVirtualThreadPerTaskExecutor());
+      @Nullable final Predicate<Path> excludeFilter) throws IOException
+  {
+    checkNotNull(dir);
+    if (Files.exists(dir)) {
+      deleteAsync(dir, excludeFilter);
+      return true;
+    }
+    else {
+      return false;
+    }
   }
-
+  
   // COPY: recursive copy of whole directory tree
 
   /**
@@ -558,17 +645,18 @@ public final class DirectoryHelper
   public static void copy(final Path from, final Path to) throws IOException {
     copy(from, to, null);
   }
-
+  
   /**
-   * Asynchronously copies a path using Virtual Threads for improved concurrency.
-   * 
+   * Copies path "from" to path "to" asynchronously using a virtual thread.
+   * This is useful for copy operations that may block on I/O.
+   *
    * @param from The source path
    * @param to The destination path
-   * @return A CompletableFuture that completes when the operation is done
-   * @since 3.60
+   * @throws IOException If copy fails
+   * @since Java 21
    */
-  public static CompletableFuture<Void> copyAsync(final Path from, final Path to) {
-    return copyAsync(from, to, null);
+  public static void copyAsync(final Path from, final Path to) throws IOException {
+    copyAsync(from, to, null);
   }
 
   /**
@@ -598,28 +686,24 @@ public final class DirectoryHelper
       Files.copy(from, to, StandardCopyOption.REPLACE_EXISTING);
     }
   }
-
+  
   /**
-   * Asynchronously copies a path using Virtual Threads for improved concurrency.
-   * 
+   * Copies path "from" to path "to" asynchronously using a virtual thread.
+   * This is useful for copy operations that may block on I/O.
+   * The passed in filter can leave out a directory and it's complete subtree from operation.
+   *
    * @param from The source path
    * @param to The destination path
-   * @param excludeFilter Optional filter to exclude directories from copying
-   * @return A CompletableFuture that completes when the operation is done
-   * @since 3.60
+   * @param excludeFilter The filter to exclude directories from copying
+   * @throws IOException If copy fails
+   * @since Java 21
    */
-  public static CompletableFuture<Void> copyAsync(
+  public static void copyAsync(
       final Path from,
       final Path to,
-      @Nullable final Predicate<Path> excludeFilter) {
-    return CompletableFuture.runAsync(() -> {
-      try {
-        copy(from, to, excludeFilter);
-      }
-      catch (IOException e) {
-        throw new RuntimeException("Failed to copy: " + from + " to " + to, e);
-      }
-    }, Executors.newVirtualThreadPerTaskExecutor());
+      @Nullable final Predicate<Path> excludeFilter) throws IOException
+  {
+    executeWithVirtualThread(() -> copy(from, to, excludeFilter));
   }
 
   /**
@@ -629,16 +713,18 @@ public final class DirectoryHelper
   public static boolean copyIfExists(final Path from, final Path to) throws IOException {
     return copyIfExists(from, to, null);
   }
-
+  
   /**
-   * Asynchronously invokes {@link #copy(Path, Path)} if the "from" path exists.
-   * 
+   * Invokes {@link #copyAsync(Path, Path)} if passed in "from" path exists and returns {@code true}. If
+   * "from" path does not exists, {@code false} is returned.
+   *
    * @param from The source path
    * @param to The destination path
-   * @return A CompletableFuture that completes with true if the path was copied, false otherwise
-   * @since 3.60
+   * @return true if copy was performed, false otherwise
+   * @throws IOException If copy fails
+   * @since Java 21
    */
-  public static CompletableFuture<Boolean> copyIfExistsAsync(final Path from, final Path to) {
+  public static boolean copyIfExistsAsync(final Path from, final Path to) throws IOException {
     return copyIfExistsAsync(from, to, null);
   }
 
@@ -661,30 +747,34 @@ public final class DirectoryHelper
       return false;
     }
   }
-
+  
   /**
-   * Asynchronously invokes {@link #copy(Path, Path)} if the "from" path exists.
-   * 
+   * Invokes {@link #copyAsync(Path, Path, Predicate)} if passed in "from" path exists and returns {@code true}. If
+   * "from" path does not exists, {@code false} is returned.
+   * The passed in filter can leave out a directory and it's complete subtree from operation.
+   *
    * @param from The source path
    * @param to The destination path
-   * @param excludeFilter Optional filter to exclude directories from copying
-   * @return A CompletableFuture that completes with true if the path was copied, false otherwise
-   * @since 3.60
+   * @param excludeFilter The filter to exclude directories from copying
+   * @return true if copy was performed, false otherwise
+   * @throws IOException If copy fails
+   * @since Java 21
    */
-  public static CompletableFuture<Boolean> copyIfExistsAsync(
+  public static boolean copyIfExistsAsync(
       final Path from,
       final Path to,
-      @Nullable final Predicate<Path> excludeFilter) {
-    return CompletableFuture.supplyAsync(() -> {
-      try {
-        return copyIfExists(from, to, excludeFilter);
-      }
-      catch (IOException e) {
-        throw new RuntimeException("Failed to copy if exists: " + from + " to " + to, e);
-      }
-    }, Executors.newVirtualThreadPerTaskExecutor());
+      @Nullable final Predicate<Path> excludeFilter) throws IOException
+  {
+    checkNotNull(from);
+    if (Files.exists(from)) {
+      copyAsync(from, to, excludeFilter);
+      return true;
+    }
+    else {
+      return false;
+    }
   }
-
+  
   // MOVE: recursive copy of whole directory tree and then deleting it
 
   /**
@@ -742,24 +832,18 @@ public final class DirectoryHelper
       crossFileStoreMove(from, to);
     }
   }
-
+  
   /**
-   * Asynchronously moves a path using Virtual Threads for improved concurrency.
-   * 
+   * Performs a move operation asynchronously using a virtual thread.
+   * This is useful for move operations that may block on I/O.
+   *
    * @param from The source path
    * @param to The destination path
-   * @return A CompletableFuture that completes when the operation is done
-   * @since 3.60
+   * @throws IOException If move fails
+   * @since Java 21
    */
-  public static CompletableFuture<Void> moveAsync(final Path from, final Path to) {
-    return CompletableFuture.runAsync(() -> {
-      try {
-        move(from, to);
-      }
-      catch (IOException e) {
-        throw new RuntimeException("Failed to move: " + from + " to " + to, e);
-      }
-    }, Executors.newVirtualThreadPerTaskExecutor());
+  public static void moveAsync(final Path from, final Path to) throws IOException {
+    executeWithVirtualThread(() -> move(from, to));
   }
 
   /**
@@ -776,24 +860,26 @@ public final class DirectoryHelper
       return false;
     }
   }
-
+  
   /**
-   * Asynchronously invokes {@link #move(Path, Path)} if the "from" path exists.
-   * 
+   * Invokes {@link #moveAsync(Path, Path)} if passed in "from" path exists and returns {@code true}. If
+   * "from" path does not exists, {@code false} is returned.
+   *
    * @param from The source path
    * @param to The destination path
-   * @return A CompletableFuture that completes with true if the path was moved, false otherwise
-   * @since 3.60
+   * @return true if move was performed, false otherwise
+   * @throws IOException If move fails
+   * @since Java 21
    */
-  public static CompletableFuture<Boolean> moveIfExistsAsync(final Path from, final Path to) {
-    return CompletableFuture.supplyAsync(() -> {
-      try {
-        return moveIfExists(from, to);
-      }
-      catch (IOException e) {
-        throw new RuntimeException("Failed to move if exists: " + from + " to " + to, e);
-      }
-    }, Executors.newVirtualThreadPerTaskExecutor());
+  public static boolean moveIfExistsAsync(final Path from, final Path to) throws IOException {
+    checkNotNull(from);
+    if (Files.exists(from)) {
+      moveAsync(from, to);
+      return true;
+    }
+    else {
+      return false;
+    }
   }
 
   /**
@@ -809,28 +895,23 @@ public final class DirectoryHelper
     copy(from, to, excludeFilter);
     delete(from, excludeFilter);
   }
-
+  
   /**
-   * Asynchronously performs a pseudo move operation (copy+delete) using Virtual Threads.
-   * 
+   * Performs a pseudo move operation (copy+delete) asynchronously using a virtual thread.
+   * This is useful for move operations that may block on I/O.
+   *
    * @param from The source path
    * @param to The destination path
-   * @param excludeFilter Optional filter to exclude directories from the operation
-   * @return A CompletableFuture that completes when the operation is done
-   * @since 3.60
+   * @param excludeFilter The filter to exclude directories from moving
+   * @throws IOException If move fails
+   * @since Java 21
    */
-  public static CompletableFuture<Void> copyDeleteMoveAsync(
+  public static void copyDeleteMoveAsync(
       final Path from,
       final Path to,
-      @Nullable final Predicate<Path> excludeFilter) {
-    return CompletableFuture.runAsync(() -> {
-      try {
-        copyDeleteMove(from, to, excludeFilter);
-      }
-      catch (IOException e) {
-        throw new RuntimeException("Failed to copy-delete-move: " + from + " to " + to, e);
-      }
-    }, Executors.newVirtualThreadPerTaskExecutor());
+      @Nullable final Predicate<Path> excludeFilter) throws IOException
+  {
+    executeWithVirtualThread(() -> copyDeleteMove(from, to, excludeFilter));
   }
 
   /**
@@ -851,30 +932,33 @@ public final class DirectoryHelper
       return false;
     }
   }
-
+  
   /**
-   * Asynchronously invokes {@link #copyDeleteMove(Path, Path, Predicate)} if the "from" path exists.
-   * 
+   * Invokes {@link #copyDeleteMoveAsync(Path, Path, Predicate)} if passed in "from" path exists and returns {@code true}. If
+   * "from" path does not exists, {@code false} is returned.
+   *
    * @param from The source path
    * @param to The destination path
-   * @param excludeFilter Optional filter to exclude directories from the operation
-   * @return A CompletableFuture that completes with true if the operation was performed, false otherwise
-   * @since 3.60
+   * @param excludeFilter The filter to exclude directories from moving
+   * @return true if move was performed, false otherwise
+   * @throws IOException If move fails
+   * @since Java 21
    */
-  public static CompletableFuture<Boolean> copyDeleteMoveIfExistsAsync(
+  public static boolean copyDeleteMoveIfExistsAsync(
       final Path from,
       final Path to,
-      @Nullable final Predicate<Path> excludeFilter) {
-    return CompletableFuture.supplyAsync(() -> {
-      try {
-        return copyDeleteMoveIfExists(from, to, excludeFilter);
-      }
-      catch (IOException e) {
-        throw new RuntimeException("Failed to copy-delete-move if exists: " + from + " to " + to, e);
-      }
-    }, Executors.newVirtualThreadPerTaskExecutor());
+      @Nullable final Predicate<Path> excludeFilter) throws IOException
+  {
+    checkNotNull(from);
+    if (Files.exists(from)) {
+      copyDeleteMoveAsync(from, to, excludeFilter);
+      return true;
+    }
+    else {
+      return false;
+    }
   }
-
+  
   // APPLY: applies a function to dir tree, the function should not have any IO "side effect"
 
   /**
@@ -885,24 +969,18 @@ public final class DirectoryHelper
     validateDirectory(from);
     Files.walkFileTree(from, DEFAULT_FILE_VISIT_OPTIONS, Integer.MAX_VALUE, new FunctionVisitor(func));
   }
-
+  
   /**
-   * Asynchronously traverses a directory tree and applies a function using Virtual Threads.
-   * 
+   * Traverses the subtree starting with "from" and applies passed in {@link Function} onto files and directories
+   * asynchronously using a virtual thread.
+   *
    * @param from The directory to traverse
-   * @param func The function to apply to each path
-   * @return A CompletableFuture that completes when the operation is done
-   * @since 3.60
+   * @param func The function to apply
+   * @throws IOException If traversal fails
+   * @since Java 21
    */
-  public static CompletableFuture<Void> applyAsync(final Path from, final Function<Path, FileVisitResult> func) {
-    return CompletableFuture.runAsync(() -> {
-      try {
-        apply(from, func);
-      }
-      catch (IOException e) {
-        throw new RuntimeException("Failed to apply function to directory tree: " + from, e);
-      }
-    }, Executors.newVirtualThreadPerTaskExecutor());
+  public static void applyAsync(final Path from, final Function<Path, FileVisitResult> func) throws IOException {
+    executeWithVirtualThread(() -> apply(from, func));
   }
 
   /**
@@ -913,26 +991,20 @@ public final class DirectoryHelper
     validateDirectory(from);
     Files.walkFileTree(from, DEFAULT_FILE_VISIT_OPTIONS, Integer.MAX_VALUE, new FunctionFileVisitor(func));
   }
-
+  
   /**
-   * Asynchronously traverses a directory tree and applies a function to files only using Virtual Threads.
-   * 
+   * Traverses the subtree starting with "from" and applies passed in {@link Function} onto files only
+   * asynchronously using a virtual thread.
+   *
    * @param from The directory to traverse
-   * @param func The function to apply to each file
-   * @return A CompletableFuture that completes when the operation is done
-   * @since 3.60
+   * @param func The function to apply
+   * @throws IOException If traversal fails
+   * @since Java 21
    */
-  public static CompletableFuture<Void> applyToFilesAsync(final Path from, final Function<Path, FileVisitResult> func) {
-    return CompletableFuture.runAsync(() -> {
-      try {
-        applyToFiles(from, func);
-      }
-      catch (IOException e) {
-        throw new RuntimeException("Failed to apply function to files in directory tree: " + from, e);
-      }
-    }, Executors.newVirtualThreadPerTaskExecutor());
+  public static void applyToFilesAsync(final Path from, final Function<Path, FileVisitResult> func) throws IOException {
+    executeWithVirtualThread(() -> applyToFiles(from, func));
   }
-
+  
   // Validation
 
   /**
@@ -961,4 +1033,3 @@ public final class DirectoryHelper
   private static boolean isParentOf(Path possibleParent, Path possibleChild) {
     return possibleChild.startsWith(possibleParent);
   }
-}

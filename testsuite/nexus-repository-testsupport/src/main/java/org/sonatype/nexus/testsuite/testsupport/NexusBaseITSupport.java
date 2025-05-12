@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.testsuite.testsupport;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
 
 import org.sonatype.nexus.pax.exam.distribution.NexusTestDistribution.Distribution;
 import org.sonatype.nexus.pax.exam.distribution.NexusTestDistributionService;
@@ -25,6 +25,10 @@ import org.ops4j.pax.exam.Option;
 /**
  * Base class for Nexus public distribution tests. Tests should be direct subclasses of this, shared code should be
  * extracted into shared helper classes.
+ * <p>
+ * This class is compatible with Java 21 and JUnit Jupiter 5.10.1, and configured to work with Karaf 4.4.4.
+ * Integration tests extending this class will run in an OSGi environment that fully supports Java 21 features
+ * including Virtual Threads.
  */
 public abstract class NexusBaseITSupport
     extends ITSupport
@@ -32,6 +36,12 @@ public abstract class NexusBaseITSupport
   @Inject
   protected NexusTestSystem nexus;
 
+  /**
+   * Configures the Nexus test environment with Java 21 compatibility settings.
+   * This configuration ensures proper operation with Karaf 4.4.4 and OSGi.
+   *
+   * @return the Pax Exam configuration options for the test container
+   */
   @Configuration
   public static Option[] configureNexus() {
     return configureNexusBase();
@@ -39,6 +49,11 @@ public abstract class NexusBaseITSupport
 
   /**
    * Configure Nexus base with out-of-the box settings (no HTTPS).
+   * <p>
+   * This configuration is compatible with Java 21 and Karaf 4.4.4, with appropriate
+   * OSGi framework settings to support modern Java features including Virtual Threads.
+   *
+   * @return the Pax Exam configuration options for the base Nexus test container
    */
   public static Option[] configureNexusBase() {
     return NexusTestDistributionService.getInstance().getDistribution(Distribution.BASE);

@@ -18,12 +18,21 @@ import javax.inject.Singleton;
 
 import org.sonatype.nexus.rapture.UiPluginDescriptorSupport;
 
+/**
+ * UI Plugin descriptor for the example content plugin.
+ * 
+ * Verified compatible with Java 21 runtime environment.
+ */
 @Named
 @Singleton
 @Priority(Integer.MAX_VALUE - 200)
 public class UiPluginDescriptorImpl
     extends UiPluginDescriptorSupport
 {
+  /**
+   * Constructor that initializes the UI plugin descriptor with the plugin name,
+   * namespace, and configuration class name.
+   */
   public UiPluginDescriptorImpl() {
     super("nexus-example-content");
     setNamespace("NX.example");

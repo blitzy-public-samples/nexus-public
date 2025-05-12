@@ -17,15 +17,21 @@ import org.sonatype.nexus.onboarding.OnboardingItemPriority;
 import org.sonatype.nexus.onboarding.capability.OnboardingCapability;
 import org.sonatype.nexus.onboarding.capability.OnboardingCapabilityHelper;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.when;
 
-public class UploadLicensePageOnboardingItemTest
+/**
+ * Tests for {@link UploadLicensePageOnboardingItem}.
+ */
+@ExtendWith(MockitoExtension.class)
+class UploadLicensePageOnboardingItemTest
     extends TestSupport
 {
   @Mock
@@ -39,51 +45,69 @@ public class UploadLicensePageOnboardingItemTest
 
   private UploadLicensePageOnboardingItem underTest;
 
-  @Before
-  public void setup() {
+  @BeforeEach
+  void setUp() {
     when(onboardingCapabilityHelper.getOnboardingCapability()).thenReturn(onboardingCapability);
     underTest = new UploadLicensePageOnboardingItem(instanceStatus, onboardingCapabilityHelper);
   }
 
+  /**
+   * Verifies that applies() returns false when instance is new and registration is completed.
+   */
   @Test
-  public void testAppliesForNewInstanceAndRegistrationCompleted() {
+  void appliesReturnsFalseForNewInstanceAndRegistrationCompleted() {
     when(instanceStatus.isNew()).thenReturn(true);
     when(onboardingCapability.isRegistrationCompleted()).thenReturn(true);
 
     assertThat(underTest.applies(), is(false));
   }
 
+  /**
+   * Verifies that applies() returns true when instance is new and registration is not completed.
+   */
   @Test
-  public void testAppliesForNewInstanceAndRegistrationNotCompleted() {
+  void appliesReturnsTrueForNewInstanceAndRegistrationNotCompleted() {
     when(instanceStatus.isNew()).thenReturn(true);
     when(onboardingCapability.isRegistrationCompleted()).thenReturn(false);
 
     assertThat(underTest.applies(), is(true));
   }
 
+  /**
+   * Verifies that applies() returns false when instance is not new and registration is completed.
+   */
   @Test
-  public void testAppliesForNotNewInstanceAndRegistrationCompleted() {
+  void appliesReturnsFalseForNotNewInstanceAndRegistrationCompleted() {
     when(instanceStatus.isNew()).thenReturn(false);
     when(onboardingCapability.isRegistrationCompleted()).thenReturn(true);
 
     assertThat(underTest.applies(), is(false));
   }
 
+  /**
+   * Verifies that applies() returns false when instance is not new and registration is not completed.
+   */
   @Test
-  public void testAppliesForNotNewInstanceAndRegistrationNotCompleted() {
+  void appliesReturnsFalseForNotNewInstanceAndRegistrationNotCompleted() {
     when(instanceStatus.isNew()).thenReturn(false);
     when(onboardingCapability.isRegistrationCompleted()).thenReturn(false);
 
     assertThat(underTest.applies(), is(false));
   }
 
+  /**
+   * Verifies the onboarding item type is correctly returned.
+   */
   @Test
-  public void testGetType() {
+  void getTypeReturnsCorrectType() {
     assertThat(underTest.getType(), is("UploadLicensePage"));
   }
 
+  /**
+   * Verifies the onboarding item priority is correctly returned.
+   */
   @Test
-  public void testGetPriority() {
+  void getPriorityReturnsCorrectPriority() {
     assertThat(underTest.getPriority(), is(OnboardingItemPriority.UPLOAD_LICENSE));
   }
 }

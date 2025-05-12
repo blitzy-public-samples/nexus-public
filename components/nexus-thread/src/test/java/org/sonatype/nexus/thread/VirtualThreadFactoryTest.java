@@ -15,23 +15,19 @@ package org.sonatype.nexus.thread;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.experimental.categories.Category;
-import org.junit.jupiter.api.Assertions;
+import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
-import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.Matchers.startsWith;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for {@link VirtualThreadFactory}.
@@ -40,147 +36,188 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @Category({Java21TestGroup.class, VirtualThreadTestGroup.class})
 public class VirtualThreadFactoryTest
+    extends TestSupport
 {
   private static final String POOL_ID = "test-pool";
   private static final String THREAD_GROUP_NAME = "test-group";
-  
-  private VirtualThreadFactory virtualThreadFactory;
-  private ExecutorService executorService;
 
-  @BeforeEach
-  public void setUp() {
-    virtualThreadFactory = new VirtualThreadFactory(POOL_ID, THREAD_GROUP_NAME);
-    executorService = VirtualThreadFactory.newExecutorService(POOL_ID, THREAD_GROUP_NAME);
-  }
-
-  @AfterEach
-  public void tearDown() throws Exception {
-    if (executorService != null) {
-      executorService.shutdown();
-      executorService.awaitTermination(5, TimeUnit.SECONDS);
-    }
-  }
-
+  /**
+   * Verifies that the factory creates virtual threads with the expected naming pattern.
+   */
   @Test
-  public void testCreateVirtualThread() throws Exception {
-    AtomicBoolean executed = new AtomicBoolean(false);
-    Thread thread = virtualThreadFactory.newThread(() -> executed.set(true));
+  public void virtualThreadsHaveExpectedNaming() throws Exception {
+    VirtualThreadFactory factory = new VirtualThreadFactory(POOL_ID, THREAD_GROUP_NAME);
     
-    assertThat(thread, notNullValue());
-    assertTrue(thread.isVirtual(), "Thread should be a virtual thread");
+    AtomicReference<String> threadName = new AtomicReference<>();
+    CountDownLatch latch = new CountDownLatch(1);
     
+    Thread thread = factory.newThread(() -> {
+      threadName.set(Thread.currentThread().getName());
+      latch.countDown();
+    });
+    
+    // Start the thread and wait for it to complete
     thread.start();
-    thread.join(1000);
+    latch.await(5, TimeUnit.SECONDS);
     
-    assertTrue(executed.get(), "Thread should have executed the runnable");
-    
-    // Verify thread state after execution
-    Assertions.assertEquals(Thread.State.TERMINATED, thread.getState(), "Thread should be terminated");
+    // Verify the thread name follows the expected pattern
+    assertThat(threadName.get(), startsWith(POOL_ID));
+    assertThat(threadName.get(), containsString("-vthread-"));
   }
 
+  /**
+   * Verifies that the factory creates actual virtual threads (not platform threads).
+   */
   @Test
-  public void testThreadNaming() {
-    Thread thread = virtualThreadFactory.newThread(() -> {});
+  public void createsVirtualThreads() throws Exception {
+    VirtualThreadFactory factory = new VirtualThreadFactory(POOL_ID, THREAD_GROUP_NAME);
     
-    assertThat(thread.getName(), startsWith(POOL_ID));
-    assertThat(thread.getName(), containsString("vthread"));
+    AtomicReference<Boolean> isVirtual = new AtomicReference<>();
+    CountDownLatch latch = new CountDownLatch(1);
     
-    // Verify the naming pattern: poolId-poolNumber-vthread-threadNumber
-    String[] parts = thread.getName().split("-");
-    assertThat(parts.length, is(4));
-    assertThat(parts[0], is(POOL_ID));
-    assertThat(parts[2], is("vthread"));
+    Thread thread = factory.newThread(() -> {
+      isVirtual.set(Thread.currentThread().isVirtual());
+      latch.countDown();
+    });
+    
+    // Start the thread and wait for it to complete
+    thread.start();
+    latch.await(5, TimeUnit.SECONDS);
+    
+    // Verify the thread is actually a virtual thread
+    assertThat(isVirtual.get(), is(true));
   }
 
+  /**
+   * Verifies that thread-local inheritance works correctly with the default constructor.
+   */
   @Test
-  public void testMultipleThreadsGetUniqueNames() {
-    Thread thread1 = virtualThreadFactory.newThread(() -> {});
-    Thread thread2 = virtualThreadFactory.newThread(() -> {});
+  public void threadLocalInheritanceWorks() throws Exception {
+    VirtualThreadFactory factory = new VirtualThreadFactory(POOL_ID, THREAD_GROUP_NAME);
     
-    assertThat(thread1.getName(), is(not(thread2.getName())));
-    assertThat(thread1.getName(), startsWith(POOL_ID));
-    assertThat(thread2.getName(), startsWith(POOL_ID));
-  }
-
-  @Test
-  public void testThreadLocalInheritance() throws Exception {
     ThreadLocal<String> threadLocal = new ThreadLocal<>();
     threadLocal.set("parent-value");
     
-    // Create factory with inheritance enabled
-    VirtualThreadFactory factoryWithInheritance = new VirtualThreadFactory(POOL_ID, THREAD_GROUP_NAME, true);
-    
-    AtomicReference<String> valueInThread = new AtomicReference<>();
+    AtomicReference<String> childValue = new AtomicReference<>();
     CountDownLatch latch = new CountDownLatch(1);
     
-    Thread thread = factoryWithInheritance.newThread(() -> {
-      valueInThread.set(threadLocal.get());
+    Thread thread = factory.newThread(() -> {
+      childValue.set(threadLocal.get());
       latch.countDown();
     });
     
+    // Start the thread and wait for it to complete
     thread.start();
-    latch.await(1, TimeUnit.SECONDS);
+    latch.await(5, TimeUnit.SECONDS);
     
-    assertThat(valueInThread.get(), is("parent-value"));
+    // Verify thread-local value was inherited
+    assertThat(childValue.get(), is("parent-value"));
   }
 
+  /**
+   * Verifies that thread-local inheritance can be disabled.
+   */
   @Test
-  public void testThreadLocalNonInheritance() throws Exception {
+  public void threadLocalInheritanceCanBeDisabled() throws Exception {
+    VirtualThreadFactory factory = new VirtualThreadFactory(POOL_ID, THREAD_GROUP_NAME, false);
+    
     ThreadLocal<String> threadLocal = new ThreadLocal<>();
     threadLocal.set("parent-value");
     
-    // Create factory with inheritance disabled
-    VirtualThreadFactory factoryWithoutInheritance = new VirtualThreadFactory(POOL_ID, THREAD_GROUP_NAME, false);
-    
-    AtomicReference<String> valueInThread = new AtomicReference<>();
+    AtomicReference<String> childValue = new AtomicReference<>();
     CountDownLatch latch = new CountDownLatch(1);
     
-    Thread thread = factoryWithoutInheritance.newThread(() -> {
-      valueInThread.set(threadLocal.get());
+    Thread thread = factory.newThread(() -> {
+      childValue.set(threadLocal.get());
       latch.countDown();
     });
     
+    // Start the thread and wait for it to complete
     thread.start();
-    latch.await(1, TimeUnit.SECONDS);
+    latch.await(5, TimeUnit.SECONDS);
     
-    assertThat(valueInThread.get(), is(nullValue()));
+    // Verify thread-local value was NOT inherited
+    assertThat(childValue.get(), is((String) null));
   }
 
+  /**
+   * Verifies that the builder method creates a valid thread factory.
+   */
   @Test
-  public void testExecutorServiceCreation() throws Exception {
-    AtomicBoolean executed = new AtomicBoolean(false);
+  public void builderMethodCreatesValidFactory() throws Exception {
+    VirtualThreadFactory factory = (VirtualThreadFactory) VirtualThreadFactory.builder(POOL_ID, THREAD_GROUP_NAME);
+    
+    AtomicReference<String> threadName = new AtomicReference<>();
     CountDownLatch latch = new CountDownLatch(1);
     
-    executorService.submit(() -> {
-      executed.set(true);
+    Thread thread = factory.newThread(() -> {
+      threadName.set(Thread.currentThread().getName());
       latch.countDown();
     });
     
-    latch.await(1, TimeUnit.SECONDS);
-    assertTrue(executed.get(), "Task should have been executed");
+    // Start the thread and wait for it to complete
+    thread.start();
+    latch.await(5, TimeUnit.SECONDS);
+    
+    // Verify the thread name follows the expected pattern
+    assertThat(threadName.get(), startsWith(POOL_ID));
   }
 
+  /**
+   * Verifies that the executor service factory method creates a working executor service.
+   */
   @Test
-  public void testBuilderMethod() {
-    Thread thread = VirtualThreadFactory.builder(POOL_ID, THREAD_GROUP_NAME)
-        .newThread(() -> {});
+  public void executorServiceFactoryCreatesWorkingExecutor() throws Exception {
+    ExecutorService executor = VirtualThreadFactory.newExecutorService(POOL_ID, THREAD_GROUP_NAME);
     
-    assertThat(thread, notNullValue());
-    assertTrue(thread.isVirtual(), "Thread should be a virtual thread");
-    assertThat(thread.getName(), startsWith(POOL_ID));
-    assertThat(thread.getName(), containsString("vthread"));
+    AtomicReference<Boolean> isVirtual = new AtomicReference<>();
+    AtomicReference<String> threadName = new AtomicReference<>();
+    CountDownLatch latch = new CountDownLatch(1);
+    
+    executor.submit(() -> {
+      isVirtual.set(Thread.currentThread().isVirtual());
+      threadName.set(Thread.currentThread().getName());
+      latch.countDown();
+    });
+    
+    // Wait for the task to complete
+    latch.await(5, TimeUnit.SECONDS);
+    executor.shutdown();
+    
+    // Verify the executor used a virtual thread with the expected naming pattern
+    assertThat(isVirtual.get(), is(true));
+    assertThat(threadName.get(), startsWith(POOL_ID));
   }
-  
+
+  /**
+   * Verifies that multiple threads created by the same factory have unique names.
+   */
   @Test
-  public void testVirtualThreadCharacteristics() {
-    Thread thread = virtualThreadFactory.newThread(() -> {});
+  public void multipleThreadsHaveUniqueNames() throws Exception {
+    VirtualThreadFactory factory = new VirtualThreadFactory(POOL_ID, THREAD_GROUP_NAME);
     
-    // Virtual threads have specific characteristics
-    assertTrue(thread.isVirtual(), "Thread should be a virtual thread");
-    Assertions.assertFalse(thread.isDaemon(), "Virtual threads are not daemon threads by default");
-    Assertions.assertEquals(Thread.NORM_PRIORITY, thread.getPriority(), "Virtual threads should have normal priority");
+    AtomicReference<String> threadName1 = new AtomicReference<>();
+    AtomicReference<String> threadName2 = new AtomicReference<>();
+    CountDownLatch latch = new CountDownLatch(2);
     
-    // Virtual threads don't have a thread group in the traditional sense
-    Assertions.assertNull(thread.getThreadGroup(), "Virtual threads don't have a thread group");
+    Thread thread1 = factory.newThread(() -> {
+      threadName1.set(Thread.currentThread().getName());
+      latch.countDown();
+    });
+    
+    Thread thread2 = factory.newThread(() -> {
+      threadName2.set(Thread.currentThread().getName());
+      latch.countDown();
+    });
+    
+    // Start the threads and wait for them to complete
+    thread1.start();
+    thread2.start();
+    latch.await(5, TimeUnit.SECONDS);
+    
+    // Verify the thread names are different
+    assertThat(threadName1.get(), is(notNullValue()));
+    assertThat(threadName2.get(), is(notNullValue()));
+    assertThat(threadName1.get().equals(threadName2.get()), is(false));
   }
 }

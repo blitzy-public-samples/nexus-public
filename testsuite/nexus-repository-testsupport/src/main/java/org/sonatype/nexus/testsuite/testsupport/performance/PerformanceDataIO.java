@@ -16,9 +16,13 @@ import java.io.File;
 import java.io.IOException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 
 /**
  * Loads and saves performance data as JSON.
+ * 
+ * <p>This class is compatible with Java 21 and supports serialization/deserialization
+ * of record types used in the performance data model.</p>
  */
 public class PerformanceDataIO
 {
@@ -28,9 +32,13 @@ public class PerformanceDataIO
 
   /**
    * Loads performance test data from the specified file if it exists, otherwise returns an empty data set.
+   * 
+   * @param datafile the file to load data from
+   * @return the loaded performance data or a new empty instance if the file doesn't exist
+   * @throws IOException if an error occurs while reading the file
    */
   public static PerformanceData loadTestData(final File datafile) throws IOException {
-    final ObjectMapper mapper = new ObjectMapper();
+    final ObjectMapper mapper = createObjectMapper();
     if (datafile.exists()) {
       return mapper.readValue(datafile, PerformanceData.class);
     }
@@ -39,9 +47,25 @@ public class PerformanceDataIO
 
   /**
    * Overwrites the provided datafile with json output representing the suite results.
+   * 
+   * @param results the performance data to save
+   * @param datafile the file to save data to
+   * @throws IOException if an error occurs while writing the file
    */
   public static void saveTestData(final PerformanceData results, final File datafile) throws IOException {
-    final ObjectMapper mapper = new ObjectMapper();
+    final ObjectMapper mapper = createObjectMapper();
     mapper.writeValue(datafile, results);
+  }
+  
+  /**
+   * Creates a properly configured ObjectMapper for serializing/deserializing performance data.
+   * 
+   * @return a configured ObjectMapper instance
+   */
+  private static ObjectMapper createObjectMapper() {
+    ObjectMapper mapper = new ObjectMapper();
+    // Configure for pretty printing
+    mapper.enable(SerializationFeature.INDENT_OUTPUT);
+    return mapper;
   }
 }

@@ -40,18 +40,18 @@ import org.sonatype.nexus.scheduling.TaskInterruptedException;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.Appender;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runners.model.MultipleFailureException;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.Mockito;
+import org.opentest4j.MultipleFailureException;
 import org.slf4j.LoggerFactory;
 
 import static java.lang.Thread.sleep;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -65,6 +65,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.slf4j.Logger.ROOT_LOGGER_NAME;
 
+/**
+ * Tests for {@link MavenMetadataRebuilder}.
+ * 
+ * Migrated to JUnit Jupiter (JUnit 5) as part of Java 21 upgrade.
+ */
 public class MavenMetadataRebuilderTest
     extends TestSupport
 {
@@ -86,7 +91,7 @@ public class MavenMetadataRebuilderTest
   @Mock
   private FluentComponents components;
 
-  @Before
+  @BeforeEach
   public void setup() {
     when(repository.facet(MavenContentFacet.class)).thenReturn(mavenContentFacet);
     when(repository.getFormat()).thenReturn(new Maven2Format());
@@ -100,12 +105,15 @@ public class MavenMetadataRebuilderTest
     logger.addAppender(mockAppender);
   }
 
-  @After
+  @AfterEach
   public void teardown() {
     Logger logger = (Logger) LoggerFactory.getLogger(ROOT_LOGGER_NAME);
     logger.detachAppender(mockAppender);
   }
 
+  /**
+   * Tests that the rebuild operation is cancelable.
+   */
   @Test
   public void rebuildIsCancelable() throws Exception {
     Component component = mock(Component.class);
@@ -142,6 +150,9 @@ public class MavenMetadataRebuilderTest
     }
   }
 
+  /**
+   * Tests that the rebuild operation is cancelable when cascade is disabled.
+   */
   @Test
   public void rebuildIsCancelable_CascadeDisabled() throws Exception {
     Component component = mock(Component.class);
@@ -178,6 +189,9 @@ public class MavenMetadataRebuilderTest
     }
   }
 
+  /**
+   * Tests the Group-Artifact (GA) rebuild flow.
+   */
   @Test
   public void rebuild_GA_Flow() throws Exception {
     int bufferSize = 20;
@@ -219,6 +233,9 @@ public class MavenMetadataRebuilderTest
     assertThat(failures.size(), is(0));
   }
 
+  /**
+   * Tests the Group-Artifact (GA) rebuild flow for non-SNAPSHOT versions.
+   */
   @Test
   public void rebuild_GA_Flow_not_SNAPSHOT() throws Exception {
     int bufferSize = 20;
@@ -255,10 +272,16 @@ public class MavenMetadataRebuilderTest
     assertThat(failures.size(), is(0));
   }
 
-  private Continuation infiniteContinuation(final Object returnItem) {
-    Continuation continuation = mock(Continuation.class);
-    Iterator iterator = mock(Iterator.class);
-    Spliterator spliterator = mock(Spliterator.class);
+  /**
+   * Creates a mock {@link Continuation} that returns the given item infinitely.
+   *
+   * @param returnItem The item to return from the continuation
+   * @return A mock continuation that returns the given item infinitely
+   */
+  private <T> Continuation<T> infiniteContinuation(final T returnItem) {
+    Continuation<T> continuation = mock(Continuation.class);
+    Iterator<T> iterator = mock(Iterator.class);
+    Spliterator<T> spliterator = mock(Spliterator.class);
 
     when(continuation.spliterator()).thenReturn(spliterator);
     when(continuation.iterator()).thenReturn(iterator);
@@ -268,10 +291,17 @@ public class MavenMetadataRebuilderTest
     return continuation;
   }
 
+  /**
+   * A simple implementation of {@link Continuation} backed by an {@link ArrayList}.
+   *
+   * @param <E> The type of elements in the list
+   */
   private static class ContinuationArrayList<E>
       extends ArrayList<E>
       implements Continuation<E>
   {
+    private static final long serialVersionUID = 1L;
+    
     @Override
     public String nextContinuationToken() {
       return null;

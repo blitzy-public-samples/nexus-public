@@ -12,14 +12,17 @@
  */
 package org.sonatype.nexus.onboarding.capability;
 
+import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 import org.sonatype.nexus.capability.CapabilityConfigurationSupport;
 
-import com.google.common.collect.Maps;
-
-import static com.google.common.base.Preconditions.checkNotNull;
-
+/**
+ * Configuration for the Onboarding capability.
+ *
+ * @since 3.0
+ */
 public class OnboardingCapabilityConfiguration
     extends CapabilityConfigurationSupport
 {
@@ -41,34 +44,62 @@ public class OnboardingCapabilityConfiguration
 
   private boolean registrationCompleted;
 
+  /**
+   * Creates a new configuration instance from the provided properties map.
+   *
+   * @param properties the configuration properties (must not be null)
+   */
   public OnboardingCapabilityConfiguration(final Map<String, String> properties) {
-    checkNotNull(properties);
+    Objects.requireNonNull(properties, "Properties map cannot be null");
     this.proStarterInfoPageCompleted =
         parseBoolean(properties.get(PRO_STARTER_INFO_PAGE_COMPLETED), DEFAULT_PRO_STARTER_INFO_PAGE_COMPLETED);
     this.registrationStarted = parseBoolean(properties.get(REGISTRATION_STARTED), DEFAULT_REGISTRATION_STARTED);
     this.registrationCompleted = parseBoolean(properties.get(REGISTRATION_COMPLETED), DEFAULT_REGISTRATION_COMPLETED);
   }
 
+  /**
+   * @return whether registration has been started
+   */
   public boolean isRegistrationStarted() {
     return registrationStarted;
   }
 
+  /**
+   * Sets whether registration has been started.
+   *
+   * @param registrationStarted the registration started flag
+   * @return this configuration instance for method chaining
+   */
   public OnboardingCapabilityConfiguration setRegistrationStarted(final boolean registrationStarted) {
     this.registrationStarted = registrationStarted;
     return this;
   }
 
+  /**
+   * @return whether registration has been completed
+   */
   public boolean isRegistrationCompleted() {
     return registrationCompleted;
   }
 
+  /**
+   * Sets whether registration has been completed.
+   *
+   * @param registrationCompleted the registration completed flag
+   * @return this configuration instance for method chaining
+   */
   public OnboardingCapabilityConfiguration setRegistrationCompleted(final boolean registrationCompleted) {
     this.registrationCompleted = registrationCompleted;
     return this;
   }
 
+  /**
+   * Converts this configuration to a properties map.
+   *
+   * @return a new map containing the configuration properties
+   */
   public Map<String, String> asMap() {
-    final Map<String, String> properties = Maps.newHashMap();
+    final Map<String, String> properties = new HashMap<>();
     properties.put(PRO_STARTER_INFO_PAGE_COMPLETED, String.valueOf(proStarterInfoPageCompleted));
     properties.put(REGISTRATION_STARTED, String.valueOf(registrationStarted));
     properties.put(REGISTRATION_COMPLETED, String.valueOf(registrationCompleted));
@@ -77,8 +108,10 @@ public class OnboardingCapabilityConfiguration
 
   @Override
   public String toString() {
-    return getClass().getSimpleName() + "{" + "proStarterInfoPageCompleted=" + proStarterInfoPageCompleted + "; " +
-        "registrationStarted=" + registrationStarted + "; " + "registrationCompleted=" + registrationCompleted + "; " +
-        "}";
+    return STR."{getClass().getSimpleName()}{
+        proStarterInfoPageCompleted={proStarterInfoPageCompleted};
+        registrationStarted={registrationStarted};
+        registrationCompleted={registrationCompleted};
+      }";
   }
 }

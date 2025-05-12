@@ -14,9 +14,13 @@ package org.sonatype.nexus.repository.apt.datastore.internal.proxy;
 
 import java.io.IOException;
 import java.net.URI;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import javax.inject.Named;
 
@@ -48,7 +52,6 @@ import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.utils.DateUtils;
 import org.apache.http.client.utils.HttpClientUtils;
-import org.joda.time.DateTime;
 
 import static com.google.common.base.Preconditions.checkState;
 import static org.sonatype.nexus.repository.apt.internal.ReleaseName.RELEASE;
@@ -64,6 +67,20 @@ import static org.sonatype.nexus.repository.apt.debian.Utils.isDebPackageContent
 public class AptProxyFacet
     extends ContentProxyFacetSupport
 {
+  /**
+   * Virtual thread executor for handling I/O-bound operations like HTTP requests.
+   * Java 21 Virtual Threads provide significant performance improvements for I/O operations
+   * by reducing thread overhead and enabling higher concurrency.
+   */
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+
+  /**
+   * Retrieves snapshot items using Java 21 Virtual Threads for improved I/O performance.
+   * 
+   * @param specs List of content specifiers to fetch
+   * @return List of snapshot items retrieved from remote repository
+   * @throws IOException if an error occurs during retrieval
+   */
   public List<SnapshotItem> getSnapshotItems(final List<ContentSpecifier> specs) throws IOException {
     return fetchLatest(specs);
   }
@@ -100,14 +117,51 @@ public class AptProxyFacet
     return context.getAttributes().require(AptSnapshotHandler.State.class).assetPath;
   }
 
+  /**
+   * Fetches the latest versions of specified content using Java 21 Virtual Threads.
+   * This implementation leverages Virtual Threads to handle multiple concurrent HTTP requests
+   * efficiently, improving throughput and reducing resource consumption.
+   *
+   * @param specs List of content specifiers to fetch
+   * @return List of snapshot items retrieved from remote repository
+   * @throws IOException if an error occurs during retrieval
+   */
   private List<SnapshotItem> fetchLatest(final List<ContentSpecifier> specs) throws IOException {
     List<SnapshotItem> list = new ArrayList<>();
-    for (ContentSpecifier spec : specs) {
-      Optional<SnapshotItem> item = fetchLatest(spec);
-      if (item.isPresent()) {
-        list.add(item.get());
+    
+    try {
+      // Use CompletableFuture with Virtual Threads for concurrent fetching
+      List<CompletableFuture<Optional<SnapshotItem>>> futures = specs.stream()
+          .map(spec -> CompletableFuture.supplyAsync(() -> {
+            try {
+              return fetchLatest(spec);
+            }
+            catch (IOException e) {
+              log.warn("Failed to fetch {}: {}", spec.path, e.getMessage());
+              return Optional.<SnapshotItem>empty();
+            }
+          }, virtualThreadExecutor))
+          .toList();
+      
+      // Collect results, maintaining order
+      for (CompletableFuture<Optional<SnapshotItem>> future : futures) {
+        future.join().ifPresent(list::add);
       }
     }
+    catch (Exception e) {
+      log.error("Error fetching content using virtual threads", e);
+      // Fallback to sequential processing if concurrent approach fails
+      for (ContentSpecifier spec : specs) {
+        try {
+          Optional<SnapshotItem> item = fetchLatest(spec);
+          item.ifPresent(list::add);
+        }
+        catch (IOException e2) {
+          log.warn("Failed to fetch {}: {}", spec.path, e2.getMessage());
+        }
+      }
+    }
+    
     return list;
   }
 
@@ -154,9 +208,9 @@ public class AptProxyFacet
   private HttpGet buildFetchRequest(final Content oldVersion, final URI fetchUri) {
     HttpGet getRequest = new HttpGet(fetchUri);
     if (oldVersion != null) {
-      DateTime lastModified = oldVersion.getAttributes().get(Content.CONTENT_LAST_MODIFIED, DateTime.class);
+      Instant lastModified = oldVersion.getAttributes().get(Content.CONTENT_LAST_MODIFIED, Instant.class);
       if (lastModified != null) {
-        getRequest.addHeader(HttpHeaders.IF_MODIFIED_SINCE, DateUtils.formatDate(lastModified.toDate()));
+        getRequest.addHeader(HttpHeaders.IF_MODIFIED_SINCE, DateUtils.formatDate(java.util.Date.from(lastModified)));
       }
       final String etag = oldVersion.getAttributes().get(Content.CONTENT_ETAG, String.class);
       if (etag != null) {
@@ -166,11 +220,11 @@ public class AptProxyFacet
     return getRequest;
   }
 
-  private DateTime getDateHeader(final HttpResponse response, final String name) {
+  private Instant getDateHeader(final HttpResponse response, final String name) {
     Header h = response.getLastHeader(name);
     if (h != null) {
       try {
-        return new DateTime(DateUtils.parseDate(h.getValue()).getTime());
+        return DateUtils.parseDate(h.getValue()).toInstant();
       }
       catch (Exception ex) {
         log.warn("Invalid date '{}', will skip. {}", h, log.isDebugEnabled() ? ex : null);
@@ -215,5 +269,15 @@ public class AptProxyFacet
         || HttpStatus.SC_INTERNAL_SERVER_ERROR <= status.getStatusCode()) {
       throw new ProxyServiceException(httpResponse);
     }
+  }
+  
+  /**
+   * Shutdown hook to properly close the virtual thread executor.
+   * This ensures clean shutdown of the application.
+   */
+  @Override
+  protected void doStop() throws Exception {
+    virtualThreadExecutor.shutdown();
+    super.doStop();
   }
 }

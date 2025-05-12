@@ -14,14 +14,44 @@ package org.sonatype.nexus.testsuite.testsupport.system.repository.config;
 
 import org.sonatype.nexus.repository.config.WritePolicy;
 
+/**
+ * Interface for hosted repository configuration in test support.
+ * 
+ * @param <THIS> Self-referential type for fluent API pattern
+ * 
+ * @since 3.0
+ * @java21.compatible This interface is compatible with Java 21 and supports testing with Virtual Threads
+ */
 public interface HostedRepositoryConfig<THIS>
     extends RepositoryConfig<THIS>
 {
+  /**
+   * Sets the write policy for this repository.
+   *
+   * @param writePolicy the write policy to set
+   * @return this instance for fluent method chaining
+   */
   THIS withWritePolicy(final WritePolicy writePolicy);
 
+  /**
+   * Gets the current write policy for this repository.
+   *
+   * @return the current write policy
+   */
   WritePolicy getWritePolicy();
 
+  /**
+   * Sets whether replication is enabled for this repository.
+   *
+   * @param replicationEnabled true to enable replication, false to disable
+   * @return this instance for fluent method chaining
+   */
   THIS withReplicationEnabled(final Boolean replicationEnabled);
 
+  /**
+   * Checks if replication is enabled for this repository.
+   *
+   * @return true if replication is enabled, false otherwise
+   */
   Boolean isReplicationEnabled();
 }

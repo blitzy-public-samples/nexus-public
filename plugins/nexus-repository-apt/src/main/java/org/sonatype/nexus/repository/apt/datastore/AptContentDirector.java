@@ -12,8 +12,8 @@
  */
 package org.sonatype.nexus.repository.apt.datastore;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.apt.AptFormat;
@@ -23,6 +23,8 @@ import org.sonatype.nexus.repository.content.fluent.FluentComponent;
 /**
  * Allow staging functionality for Apt,
  * @see <a href="https://links.sonatype.com//products/nxrm3/docs/staging">Staging</a> for more details.
+ * 
+ * This class is compatible with Java 21 and leverages the updated Jakarta EE 10 annotations.
  *
  * @since 3.31
  */

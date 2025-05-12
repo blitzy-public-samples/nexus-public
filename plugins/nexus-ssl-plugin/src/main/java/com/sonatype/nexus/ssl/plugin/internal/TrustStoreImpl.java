@@ -46,9 +46,7 @@ import org.sonatype.nexus.ssl.KeyStoreManager;
 import org.sonatype.nexus.ssl.KeystoreException;
 import org.sonatype.nexus.ssl.TrustStore;
 
-import com.google.common.base.Throwables;
 import com.google.common.eventbus.Subscribe;
-import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.Arrays.stream;
@@ -66,7 +64,11 @@ public class TrustStoreImpl
     extends ComponentSupport
     implements EventAware, TrustStore
 {
+  // Using explicit SecureRandom with null value for compatibility with Java 21 security providers
   public static final SecureRandom DEFAULT_RANDOM = null;
+
+  // Default TLS protocol version for Java 21 compatibility
+  private static final String TLS_PROTOCOL = "TLSv1.3";
 
   private final FreezeService freezeService;
 
@@ -107,10 +109,7 @@ public class TrustStoreImpl
     eventManager.post(new CertificateCreatedEvent(alias, certificate));
     eventManager.post(new CertificateDistributedEvent(EventType.CREATED));
 
-    log.info("Certificate added successfully in trust-store with Fingerprint: {}, Name: {} and SHA1 Identifier: {} ",
-        alias,
-        getCertificateName(certificate),
-        getCertificateSha1(certificate));
+    log.info(STR."Certificate added successfully in trust-store with Fingerprint: \{alias}, Name: \{getCertificateName(certificate)} and SHA1 Identifier: \{getCertificateSha1(certificate)}");
 
     return certificate;
   }
@@ -146,11 +145,7 @@ public class TrustStoreImpl
     eventManager.post(new CertificateDeletedEvent(alias, certificate));
     eventManager.post(new CertificateDistributedEvent(EventType.DELETED));
 
-    log.info(
-        "Certificate removed successfully from trust-store with Fingerprint : {}, Name : {} and SHA1 Identifier : {}",
-        alias,
-        getCertificateName(certificate),
-        getCertificateSha1(certificate));
+    log.info(STR."Certificate removed successfully from trust-store with Fingerprint: \{alias}, Name: \{getCertificateName(certificate)} and SHA1 Identifier: \{getCertificateSha1(certificate)}");
   }
 
   @Override
@@ -161,13 +156,12 @@ public class TrustStoreImpl
         // the trusted key store may have asychronously changed when NXRM is clustered, reload the managed store used
         // for fallback so the context doesn't use stale key store
         this.managedTrustManager = getManagedTrustManager(keyStoreManager);
-        _sslcontext = SSLContext.getInstance(SSLConnectionSocketFactory.TLS);
+        _sslcontext = SSLContext.getInstance(TLS_PROTOCOL);
         _sslcontext.init(keyManagers, trustManagers, DEFAULT_RANDOM);
         this.sslcontext = _sslcontext;
       }
       catch (Exception e) {
         log.debug("Could not create SSL context", e);
-        Throwables.throwIfUnchecked(e);
         throw new RuntimeException(e);
       }
     }
@@ -200,8 +194,8 @@ public class TrustStoreImpl
     if (systemTrustManagers != null) {
       return stream(systemTrustManagers)
           .map(tm -> {
-            if (tm instanceof X509TrustManager) {
-              return new FallbackOnManagedX509TrustManager((X509TrustManager) tm);
+            if (tm instanceof X509TrustManager x509TrustManager) {
+              return new FallbackOnManagedX509TrustManager(x509TrustManager);
             }
             else {
               return tm;
@@ -218,8 +212,8 @@ public class TrustStoreImpl
     final TrustManager[] managedTrustManagers = keyStoreManager.getTrustManagers();
     if (managedTrustManagers != null) {
       for (TrustManager tm : managedTrustManagers) {
-        if (tm instanceof X509TrustManager) {
-          return (X509TrustManager) tm;
+        if (tm instanceof X509TrustManager x509TrustManager) {
+          return x509TrustManager;
         }
       }
     }
@@ -321,9 +315,8 @@ public class TrustStoreImpl
   }
 
   private String getCertificateName(final Certificate certificate) {
-    if (certificate instanceof X509Certificate) {
-      X509Certificate cert = (X509Certificate) certificate;
-      return cert.getSubjectDN().getName();
+    if (certificate instanceof X509Certificate x509Certificate) {
+      return x509Certificate.getSubjectDN().getName();
     }
     else {
       log.warn("Unknown certificate found, hence can't get the name.");
@@ -336,7 +329,7 @@ public class TrustStoreImpl
       return calculateSha1(certificate);
     }
     catch (CertificateEncodingException e) {
-      log.error("Error occurred while calculating certificate SHA1", e);
+      log.error(STR."Error occurred while calculating certificate SHA1: \{e.getMessage()}", e);
       return "Unknown";
     }
   }

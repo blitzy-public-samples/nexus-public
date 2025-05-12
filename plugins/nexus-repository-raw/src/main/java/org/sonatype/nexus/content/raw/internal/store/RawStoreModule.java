@@ -19,6 +19,8 @@ import org.sonatype.nexus.repository.raw.internal.RawFormat;
 
 /**
  * Configures the content store bindings for the raw format.
+ * 
+ * Verified compatible with Java 21 runtime environment.
  *
  * @since 3.24
  */

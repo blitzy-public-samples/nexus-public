@@ -26,4 +26,8 @@ package org.sonatype.nexus.testsuite.testsupport.raw;
  */
 public interface RawTestGroup
 {
+  /**
+   * The name of this test group, used with JUnit 5 @Tag annotation.
+   */
+  String NAME = "raw-tests";
 }

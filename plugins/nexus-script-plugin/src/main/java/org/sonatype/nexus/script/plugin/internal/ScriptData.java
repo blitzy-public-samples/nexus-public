@@ -65,29 +65,47 @@ public class ScriptData
     this.type = type;
   }
 
+  /**
+   * Returns a string representation of this ScriptData.
+   * 
+   * @return A string containing the name, content, and type of this script
+   */
   @Override
   public String toString() {
-    return "ScriptData{" +
-        "name='" + name + '\'' +
-        ", content='" + content + '\'' +
-        ", type='" + type + '\'' +
-        '}';
+    return STR."""
+        ScriptData{
+          name='\{name}'
+          content='\{content}'
+          type='\{type}'
+        }""".stripIndent();
   }
 
+  /**
+   * Compares this ScriptData with another object for equality.
+   * Two ScriptData objects are equal if they have the same name, content, and type.
+   *
+   * @param o The object to compare with
+   * @return true if the objects are equal, false otherwise
+   */
   @Override
   public boolean equals(Object o) {
-    if (this == o)
+    if (this == o) {
       return true;
-    if (o == null || getClass() != o.getClass())
-      return false;
-    ScriptData that = (ScriptData) o;
-    return Objects.equals(name, that.name) &&
-        Objects.equals(content, that.content) &&
-        Objects.equals(type, that.type);
+    }
+    if (o instanceof ScriptData that) {
+      return Objects.equals(name, that.name) &&
+          Objects.equals(content, that.content) &&
+          Objects.equals(type, that.type);
+    }
+    return false;
   }
 
+  /**
+   * Returns a hash code for this ScriptData.
+   *
+   * @return A hash code value based on the name, content, and type
+   */
   @Override
   public int hashCode() {
     return Objects.hash(name, content, type);
   }
-}

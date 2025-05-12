@@ -28,6 +28,16 @@ import org.apache.commons.lang3.StringUtils;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
+/**
+ * Facet for managing APT package metadata in key-value storage.
+ * <p>
+ * This implementation is compatible with Java 21 and leverages the underlying
+ * infrastructure for I/O operations which may utilize Virtual Threads when configured.
+ * The facet delegates I/O operations to the KeyValueFacetSupport which can benefit from
+ * Virtual Threads for improved concurrency and performance.
+ *
+ * @since 3.8
+ */
 @Named(AptFormat.NAME)
 @Exposed
 public class AptKeyValueFacet
@@ -76,7 +86,11 @@ public class AptKeyValueFacet
   }
 
   /**
-   * Brows AptDeb metadata backed by key-value object
+   * Browse AptDeb metadata backed by key-value object
+   * <p>
+   * This method uses the Continuations API to efficiently stream results with pagination.
+   * The underlying implementation may leverage Java 21 Virtual Threads for I/O operations
+   * when configured, providing improved concurrency for database access.
    *
    * @return a stream of value objects representing AptDeb metadata as String
    */
@@ -86,9 +100,13 @@ public class AptKeyValueFacet
         .map(KeyValue::getValue);
   }
 
-  /*
+  /**
    * Creates a key for componentId. This should only be used for storing AptDeb JSON.
    * Other use cases should avoid overlapping this key structure.
+   *
+   * @param componentId the component ID
+   * @param assetId the asset ID
+   * @return the formatted key string
    */
   private String aptKey(final int componentId, final int assetId) {
     return "apt-" + componentId + '-' + assetId;

@@ -12,22 +12,27 @@
  */
 package org.sonatype.nexus.onboarding.internal;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import static org.mockito.Mockito.when;
-
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.sonatype.goodies.testsupport.TestSupport;
+import org.mockito.junit.jupiter.MockitoExtension;
+
 import org.sonatype.nexus.onboarding.OnboardingItemPriority;
 import org.sonatype.nexus.onboarding.capability.OnboardingCapability;
 import org.sonatype.nexus.onboarding.capability.OnboardingCapabilityHelper;
 
-public class SelectLicenseOnboardingItemTest
-    extends TestSupport {
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.when;
 
+/**
+ * Tests for {@link SelectLicenseOnboardingItem}.
+ */
+@ExtendWith(MockitoExtension.class)
+public class SelectLicenseOnboardingItemTest
+{
   @Mock
   private InstanceStatus instanceStatus;
 
@@ -39,31 +44,35 @@ public class SelectLicenseOnboardingItemTest
 
   private SelectLicenseOnboardingItem underTest;
 
-  @Before
-  public void setup() {
+  @BeforeEach
+  public void setUp() {
     when(onboardingCapabilityHelper.getOnboardingCapability()).thenReturn(onboardingCapability);
     underTest = new SelectLicenseOnboardingItem(instanceStatus, onboardingCapabilityHelper);
   }
 
   @Test
-  public void testGetPriority() {
+  public void shouldReturnCorrectPriority() {
     assertEquals(OnboardingItemPriority.CONFIGURE_ANONYMOUS_ACCESS + 1, underTest.getPriority());
   }
 
   @Test
-  public void testApplies() {
+  public void shouldDetermineWhenOnboardingItemApplies() {
+    // Case 1: New instance but registration completed
     when(instanceStatus.isNew()).thenReturn(true);
     when(onboardingCapability.isRegistrationCompleted()).thenReturn(true);
     assertFalse(underTest.applies());
 
+    // Case 2: New instance and registration not completed
     when(instanceStatus.isNew()).thenReturn(true);
     when(onboardingCapability.isRegistrationCompleted()).thenReturn(false);
     assertTrue(underTest.applies());
 
+    // Case 3: Not a new instance but registration completed
     when(instanceStatus.isNew()).thenReturn(false);
     when(onboardingCapability.isRegistrationCompleted()).thenReturn(true);
     assertFalse(underTest.applies());
 
+    // Case 4: Not a new instance and registration not completed
     when(instanceStatus.isNew()).thenReturn(false);
     when(onboardingCapability.isRegistrationCompleted()).thenReturn(false);
     assertFalse(underTest.applies());

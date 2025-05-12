@@ -45,9 +45,9 @@ public class VariableResolverAdapterManagerImpl
   private final Map<String, VariableResolverAdapter> adaptersByFormat;
 
   /**
-   * Constructor for the adapter manager.
-   *
-   * @param adaptersByFormat Map of format-specific adapters, injected by Guice
+   * Constructor that initializes the adapter manager with format-specific adapters.
+   * 
+   * @param adaptersByFormat Map of format names to their corresponding adapters
    */
   @Inject
   public VariableResolverAdapterManagerImpl(final Map<String, VariableResolverAdapter> adaptersByFormat) {
@@ -56,11 +56,14 @@ public class VariableResolverAdapterManagerImpl
   }
 
   /**
-   * {@inheritDoc}
+   * Gets the variable resolver adapter for the specified format.
+   * If no adapter is found for the format, returns the default adapter.
+   *
+   * @param format the repository format
+   * @return the appropriate variable resolver adapter
    */
   @Override
-  @SuppressWarnings("unchecked")
-  public <V extends VariableResolverAdapter> V get(String format) {
-    return (V) adaptersByFormat.getOrDefault(format, defaultAdapter);
+  public VariableResolverAdapter get(String format) {
+    return adaptersByFormat.getOrDefault(format, defaultAdapter);
   }
 }

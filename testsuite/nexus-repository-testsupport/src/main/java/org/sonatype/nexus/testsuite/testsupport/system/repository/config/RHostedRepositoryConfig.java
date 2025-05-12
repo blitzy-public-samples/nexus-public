@@ -18,13 +18,39 @@ import org.sonatype.nexus.repository.Repository;
 
 import static org.sonatype.nexus.testsuite.testsupport.system.RepositoryTestSystem.FORMAT_R;
 
+/**
+ * Configuration for R format hosted repositories in test environments.
+ * <p>
+ * This class provides a fluent API for configuring R format hosted repositories
+ * for testing purposes. It is compatible with Java 21 and supports testing with
+ * JUnit Jupiter 5.10.1 and Mockito 4.11.0.
+ * <p>
+ * When used with {@code RFormatRepositoryTestSystem}, repository operations can
+ * leverage Java 21 virtual threads for improved performance, particularly for
+ * I/O-bound operations.
+ *
+ * @since 3.60
+ */
 public class RHostedRepositoryConfig
     extends HostedRepositoryConfigSupport<RHostedRepositoryConfig>
 {
+  /**
+   * Constructs a new R hosted repository configuration with the specified factory function.
+   * <p>
+   * The factory function is used to create a Repository instance from this configuration.
+   * When running on Java 21, the factory may leverage virtual threads for I/O operations.
+   *
+   * @param factory The function that creates a Repository instance from this configuration
+   */
   public RHostedRepositoryConfig(final Function<RHostedRepositoryConfig, Repository> factory) {
     super(factory);
   }
 
+  /**
+   * Gets the format of this repository configuration.
+   *
+   * @return The R format identifier
+   */
   @Override
   public String getFormat() {
     return FORMAT_R;

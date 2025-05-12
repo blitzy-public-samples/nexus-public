@@ -29,10 +29,7 @@ public record DetachedEntityVersion(String value)
   private static final long serialVersionUID = 1L;
 
   /**
-   * Creates a new DetachedEntityVersion with the specified value.
-   *
-   * @param value the entity version value (must not be null)
-   * @throws NullPointerException if value is null
+   * Compact constructor to validate the value is not null.
    */
   public DetachedEntityVersion {
     checkNotNull(value);

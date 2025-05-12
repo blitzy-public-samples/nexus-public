@@ -22,45 +22,53 @@ import org.sonatype.nexus.repository.apt.internal.debian.ControlFile;
 import org.sonatype.nexus.repository.apt.internal.debian.Release;
 
 /**
+ * Filtered implementation of {@link SnapshotComponentSelector} that selects components
+ * based on configuration settings.
+ *
  * @since 3.17
+ * @Java21 Updated to use Java 21 pattern matching for Optional
  */
 public class FilteredSnapshotComponentSelector
     implements SnapshotComponentSelector
 {
-
   private final ControlFile settings;
 
+  /**
+   * Constructor with required settings.
+   *
+   * @param settings the control file containing configuration settings
+   */
   public FilteredSnapshotComponentSelector(final ControlFile settings) {
     this.settings = settings;
   }
 
   @Override
   public List<String> getArchitectures(final Release release) {
-    Optional<Set<String>> settingsArchitectures = settings.getField("Architectures")
+    // Using Java 21 pattern matching for Optional
+    return switch (settings.getField("Architectures")
         .map(s -> s.listValue())
-        .map(l -> new HashSet<>(l));
-    if (settingsArchitectures.isPresent()) {
-      Set<String> releaseArchitectures = new HashSet<>(release.getArchitectures());
-      releaseArchitectures.retainAll(settingsArchitectures.get());
-      return new ArrayList<>(releaseArchitectures);
-    }
-    else {
-      return release.getArchitectures();
-    }
+        .map(l -> new HashSet<>(l))) {
+      case Optional<Set<String>> settingsArchitectures when settingsArchitectures.isPresent() -> {
+        Set<String> releaseArchitectures = new HashSet<>(release.getArchitectures());
+        releaseArchitectures.retainAll(settingsArchitectures.get());
+        yield new ArrayList<>(releaseArchitectures);
+      }
+      default -> release.getArchitectures();
+    };
   }
 
   @Override
   public List<String> getComponents(final Release release) {
-    Optional<Set<String>> settingsComponents = settings.getField("Components").map(s -> s.listValue())
-        .map(l -> new HashSet<>(l));
-    if (settingsComponents.isPresent()) {
-      Set<String> releaseComponents = new HashSet<>(release.getComponents());
-      releaseComponents.retainAll(settingsComponents.get());
-      return new ArrayList<>(releaseComponents);
-    }
-    else {
-      return release.getComponents();
-    }
+    // Using Java 21 pattern matching for Optional
+    return switch (settings.getField("Components")
+        .map(s -> s.listValue())
+        .map(l -> new HashSet<>(l))) {
+      case Optional<Set<String>> settingsComponents when settingsComponents.isPresent() -> {
+        Set<String> releaseComponents = new HashSet<>(release.getComponents());
+        releaseComponents.retainAll(settingsComponents.get());
+        yield new ArrayList<>(releaseComponents);
+      }
+      default -> release.getComponents();
+    };
   }
-
 }

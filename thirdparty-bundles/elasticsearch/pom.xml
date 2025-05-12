@@ -28,6 +28,8 @@
 
   <properties>
     <clm.skip>false</clm.skip>
+    <!-- Explicitly specify Java 21 compatibility for this module -->
+    <maven.compiler.release>21</maven.compiler.release>
   </properties>
 
   <dependencies>
@@ -77,10 +79,12 @@
     <plugins>
       <!--
       Generate OSGi manifest based on expected content
+      Updated for Java 21 compatibility
       -->
       <plugin>
         <groupId>org.apache.felix</groupId>
         <artifactId>maven-bundle-plugin</artifactId>
+        <version>5.1.9</version> <!-- Updated for Java 21 compatibility -->
         <executions>
           <execution>
             <id>bundle-manifest</id>
@@ -111,6 +115,8 @@
             <Import-Package>
               *;resolution:=optional
             </Import-Package>
+            <!-- Ensure Java 21 compatibility -->
+            <Require-Capability>osgi.ee;filter:="(&amp;(osgi.ee=JavaSE)(version=21))"</Require-Capability>
           </instructions>
         </configuration>
       </plugin>
@@ -121,6 +127,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-jar-plugin</artifactId>
+        <version>3.3.0</version> <!-- Updated for Java 21 compatibility -->
         <configuration>
           <archive>
             <manifestFile>${project.build.outputDirectory}/META-INF/MANIFEST.MF</manifestFile>
@@ -138,6 +145,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-source-plugin</artifactId>
+        <version>3.3.0</version> <!-- Updated for Java 21 compatibility -->
         <configuration>
           <attach>false</attach>
         </configuration>
@@ -149,6 +157,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-shade-plugin</artifactId>
+        <version>3.5.1</version> <!-- Updated for Java 21 compatibility -->
         <executions>
           <execution>
             <phase>package</phase>
@@ -196,6 +205,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-dependency-plugin</artifactId>
+        <version>3.6.1</version> <!-- Updated for Java 21 compatibility -->
         <executions>
           <execution>
             <id>get-javadocs-for-staging-compliance</id>
@@ -227,6 +237,7 @@
           <plugin>
             <groupId>org.codehaus.mojo</groupId>
             <artifactId>build-helper-maven-plugin</artifactId>
+            <version>3.5.0</version> <!-- Updated for Java 21 compatibility -->
             <executions>
               <execution>
                 <phase>package</phase>

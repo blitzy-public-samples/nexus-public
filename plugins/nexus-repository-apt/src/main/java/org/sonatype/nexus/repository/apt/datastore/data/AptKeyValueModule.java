@@ -12,12 +12,20 @@
  */
 package org.sonatype.nexus.repository.apt.datastore.data;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.repository.apt.AptFormat;
 import org.sonatype.nexus.repository.content.kv.FormatKeyValueModule;
 
+/**
+ * APT format key-value module for storing format-specific key-value pairs.
+ * <p>
+ * This module is compatible with Java 21 and uses Jakarta EE annotations for dependency injection
+ * with Guice 7.0.0 and Sisu 0.10.0 in an OSGi/Karaf 4.4.4 environment.
+ *
+ * @since 3.41
+ */
 @Named(AptFormat.NAME)
 @Singleton
 public class AptKeyValueModule

@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.onboarding.internal;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
 import java.util.Map;
 import java.util.Optional;
 import org.sonatype.nexus.onboarding.OnboardingItem;
@@ -22,12 +22,16 @@ import org.sonatype.nexus.kv.NexusKeyValue;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
+/**
+ * Abstract base class for community edition onboarding items.
+ * Updated for Java 21 compatibility with pattern matching for instanceof.
+ */
 public abstract class CommunityOnboardingItem
     implements OnboardingItem
 {
-  private final String COMMUNITY = "COMMUNITY";
+  private static final String COMMUNITY = "COMMUNITY";
 
-  private final String EULA_KEY = "nexus.community.eula.accepted";
+  private static final String EULA_KEY = "nexus.community.eula.accepted";
 
   protected final ApplicationVersion applicationVersion;
 
@@ -51,7 +55,12 @@ public abstract class CommunityOnboardingItem
     if (eulaStatusOptional.isPresent()) {
       NexusKeyValue eulaStatus = eulaStatusOptional.get();
       Map<String, Object> eulaObject = eulaStatus.value();
-      accepted = (Boolean) eulaObject.get("accepted");
+      
+      // Using Java 21 pattern matching for instanceof to safely get the Boolean value
+      Object acceptedValue = eulaObject.get("accepted");
+      if (acceptedValue instanceof Boolean boolValue) {
+        accepted = boolValue;
+      }
     }
 
     return isCommunity && !accepted;

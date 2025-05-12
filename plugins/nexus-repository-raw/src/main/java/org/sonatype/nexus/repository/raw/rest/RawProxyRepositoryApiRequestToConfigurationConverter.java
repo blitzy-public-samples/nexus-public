@@ -22,12 +22,20 @@ import org.sonatype.nexus.repository.routing.RoutingRuleStore;
 import static org.sonatype.nexus.repository.raw.rest.RawAttributes.CONTENT_DISPOSITION;
 
 /**
+ * Converter for Raw proxy repository API requests to repository configurations.
+ * Updated for Java 21 compatibility.
+ *
  * @since 3.25
  */
 @Named
 public class RawProxyRepositoryApiRequestToConfigurationConverter
     extends ProxyRepositoryApiRequestToConfigurationConverter<RawProxyRepositoryApiRequest>
 {
+  /**
+   * Constructor with dependency injection for the routing rule store.
+   *
+   * @param routingRuleStore the store for routing rules
+   */
   @Inject
   public RawProxyRepositoryApiRequestToConfigurationConverter(final RoutingRuleStore routingRuleStore) {
     super(routingRuleStore);

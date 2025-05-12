@@ -12,16 +12,23 @@
  */
 package org.sonatype.nexus.repository.apt.rest;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.Path;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.Path;
 
 import org.sonatype.nexus.repository.rest.api.RepositoriesApiResourceV1;
 
 import static org.sonatype.nexus.repository.apt.rest.AptProxyRepositoriesApiResourceV1.RESOURCE_URI;
 
 /**
+ * APT proxy repository API resource.
+ * 
  * @since 3.26
+ * @see AptProxyRepositoriesApiResource
+ * @see RepositoriesApiResourceV1
+ * 
+ * @apiNote This class has been updated for Java 21 compatibility with Jakarta REST 3.1.
+ *          REST endpoint registration is now compatible with Virtual Threads for improved scalability.
  */
 @Named
 @Singleton

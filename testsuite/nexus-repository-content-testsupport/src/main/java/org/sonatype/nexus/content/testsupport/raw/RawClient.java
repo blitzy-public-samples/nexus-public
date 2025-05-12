@@ -15,6 +15,9 @@ package org.sonatype.nexus.content.testsupport.raw;
 import java.io.File;
 import java.io.IOException;
 import java.net.URI;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import org.sonatype.nexus.content.testsupport.FormatClientSupport;
 import org.sonatype.nexus.repository.http.HttpMethods;
@@ -34,10 +37,21 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * A simple test client for Raw repositories.
+ * <p>
+ * This implementation leverages Java 21 Virtual Threads for concurrent I/O operations,
+ * providing improved performance for HTTP operations like PUT, GET, DELETE, and MKCOL.
+ * Virtual Threads are lightweight threads that are particularly efficient for I/O-bound
+ * operations, allowing for high concurrency with minimal resource overhead.
  */
 public class RawClient
     extends FormatClientSupport
 {
+  /**
+   * Executor service using Java 21 Virtual Threads for concurrent operations.
+   * Virtual Threads are particularly efficient for I/O-bound operations like HTTP requests.
+   */
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+
   public RawClient(
       final CloseableHttpClient httpClient,
       final HttpClientContext httpClientContext,
@@ -46,6 +60,15 @@ public class RawClient
     super(httpClient, httpClientContext, repositoryBaseUri);
   }
 
+  /**
+   * Puts a file to the specified path using Virtual Threads for improved I/O performance.
+   *
+   * @param path the path to put the file to
+   * @param contentType the content type of the file
+   * @param file the file to put
+   * @return the HTTP status code
+   * @throws Exception if an error occurs
+   */
   public int put(final String path, final ContentType contentType, final File file) throws Exception {
     checkNotNull(path);
     checkNotNull(file);
@@ -53,28 +76,126 @@ public class RawClient
     HttpPut put = new HttpPut(repositoryBaseUri.resolve(path));
     put.setEntity(EntityBuilder.create().setContentType(contentType).setFile(file).build());
 
-    return status(execute(put));
+    // Execute the request using a Virtual Thread
+    CompletableFuture<Integer> future = CompletableFuture.supplyAsync(
+        () -> {
+          try {
+            return status(execute(put));
+          }
+          catch (IOException e) {
+            throw new RuntimeException("Error executing PUT request", e);
+          }
+        },
+        virtualThreadExecutor
+    );
+
+    return future.join();
   }
 
+  /**
+   * Puts an entity to the specified path using Virtual Threads for improved I/O performance.
+   *
+   * @param path the path to put the entity to
+   * @param entity the HTTP entity to put
+   * @return the HTTP response
+   * @throws IOException if an I/O error occurs
+   */
   public CloseableHttpResponse put(final String path, final HttpEntity entity) throws IOException {
     final URI uri = resolve(path);
     final HttpPut put = new HttpPut(uri);
     put.setEntity(entity);
+    
+    // Execute the request directly - for cases where the caller needs the full response
     return execute(put);
   }
 
+  /**
+   * Gets the bytes from the specified path using Virtual Threads for improved I/O performance.
+   *
+   * @param path the path to get the bytes from
+   * @return the bytes from the specified path
+   * @throws Exception if an error occurs
+   */
   public byte[] getBytes(final String path) throws Exception {
-    return bytes(get(path));
+    // Execute the request using a Virtual Thread
+    CompletableFuture<byte[]> future = CompletableFuture.supplyAsync(
+        () -> {
+          try {
+            return bytes(get(path));
+          }
+          catch (Exception e) {
+            throw new RuntimeException("Error executing GET request", e);
+          }
+        },
+        virtualThreadExecutor
+    );
+
+    return future.join();
   }
 
+  /**
+   * Deletes the specified path using Virtual Threads for improved I/O performance.
+   *
+   * @param path the path to delete
+   * @return the HTTP response
+   * @throws Exception if an error occurs
+   */
   public CloseableHttpResponse delete(final String path) throws Exception {
-    return execute(new HttpDelete(resolve(path)));
+    // Execute the request using a Virtual Thread
+    CompletableFuture<CloseableHttpResponse> future = CompletableFuture.supplyAsync(
+        () -> {
+          try {
+            return execute(new HttpDelete(resolve(path)));
+          }
+          catch (IOException e) {
+            throw new RuntimeException("Error executing DELETE request", e);
+          }
+        },
+        virtualThreadExecutor
+    );
+
+    return future.join();
   }
 
+  /**
+   * Creates a collection at the specified path using Virtual Threads for improved I/O performance.
+   *
+   * @param path the path to create the collection at
+   * @return the HTTP response
+   * @throws Exception if an error occurs
+   */
   public CloseableHttpResponse mkcol(final String path) throws Exception {
     HttpUriRequest mkcolRequest = RequestBuilder.create(HttpMethods.MKCOL)
         .setUri(resolve(path))
         .build();
-    return execute(mkcolRequest);
+    
+    // Execute the request using a Virtual Thread
+    CompletableFuture<CloseableHttpResponse> future = CompletableFuture.supplyAsync(
+        () -> {
+          try {
+            return execute(mkcolRequest);
+          }
+          catch (IOException e) {
+            throw new RuntimeException("Error executing MKCOL request", e);
+          }
+        },
+        virtualThreadExecutor
+    );
+
+    return future.join();
+  }
+  
+  /**
+   * Closes this client and releases any system resources associated with it.
+   * This includes shutting down the Virtual Thread executor service.
+   */
+  @Override
+  public void close() throws IOException {
+    try {
+      virtualThreadExecutor.close();
+    }
+    finally {
+      super.close();
+    }
   }
 }

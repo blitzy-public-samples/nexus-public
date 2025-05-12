@@ -15,34 +15,43 @@ package org.sonatype.nexus.testsuite.testsupport;
 import java.io.File;
 import java.io.IOException;
 import java.net.URL;
+import java.nio.file.Path;
+import java.util.concurrent.CompletableFuture;
 
 import org.apache.http.HttpResponse;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.io.TempDir;
 import org.ops4j.pax.exam.Configuration;
 import org.ops4j.pax.exam.Option;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.io.Files.write;
-import static java.lang.String.format;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.nio.file.Files.readAllBytes;
 import static org.apache.http.util.EntityUtils.toByteArray;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.sonatype.nexus.common.io.NetworkHelper.findLocalHostAddress;
 
 /**
  * Support class for Format Client ITs tested through the Docker Test Support.
+ * <p>
+ * This class has been updated for Java 21 compatibility, including support for virtual threads
+ * for improved I/O operation performance and JUnit Jupiter 5.10.1 annotations.
  *
  * @since 3.6.1
  */
 public abstract class FormatClientITSupport
     extends RepositoryITSupport
 {
-  @Rule
-  public TemporaryFolder temporaryFolder = new TemporaryFolder(resolveTmpDir());
+  /**
+   * Temporary directory for test files.
+   * <p>
+   * This uses JUnit Jupiter's built-in TempDirectory extension which automatically
+   * creates and cleans up temporary directories for tests.
+   */
+  @TempDir
+  protected Path temporaryFolder;
 
   /**
    * This reflects the host name that should be used to identify the docker host of the docker client
@@ -54,38 +63,45 @@ public abstract class FormatClientITSupport
   protected File downloadsTemporaryFolder;
 
   /**
-   * We are doing an override of the {@link NexusITSupport#}
+   * We are doing an override of the {@link NexusITSupport#configureNexus()}
    */
   @Configuration
   public static Option[] configureNexus() {
     return options(RepositoryITSupport.configureNexus(),
         nexusFeature("org.sonatype.nexus.testsuite", "nexus-docker-testsupport"),
-        withHttps(resolveBaseFile(format("target/it-resources/ssl/%s.jks", DOCKER_HOST_NAME))));
+        withHttps(resolveBaseFile(STR."target/it-resources/ssl/\{DOCKER_HOST_NAME}.jks")));
   }
 
   /**
    * Convenience method that helps setting up. Currently it sets up our {@link #downloadsTemporaryFolder}
    */
-  @Before
+  @BeforeEach
   public void onInitializeForFormatClientTesting() throws Exception {
-    rootTemporaryFolder = temporaryFolder.getRoot();
-    downloadsTemporaryFolder = temporaryFolder.newFolder("downloads");
+    rootTemporaryFolder = temporaryFolder.toFile();
+    downloadsTemporaryFolder = temporaryFolder.resolve("downloads").toFile();
+    downloadsTemporaryFolder.mkdir();
   }
 
   /**
-   * Convenience method that helps doing cleanup. Currently it deletes the {@link #temporaryFolder}
+   * Convenience method that helps doing cleanup.
+   * <p>
+   * Note: With JUnit Jupiter's @TempDir, the temporary directory is automatically deleted
+   * after the test completes, so explicit deletion is no longer necessary.
    */
-  @After
+  @AfterEach
   public void onTearDownFormatClientTesting() {
-    temporaryFolder.delete();
+    // No explicit cleanup needed as @TempDir handles this automatically
   }
 
   /**
    * Convenience method that allows a file to be downloaded from an {@link HttpResponse} into sub directory "downloads"
-   * of the directory {@link #temporaryFolder}.
+   * of the temporary directory.
+   * <p>
+   * This method uses virtual threads for improved I/O performance when available.
    *
    * @param httpResponse {@link HttpResponse}
    * @param name         file name to be given to downloaded file
+   * @return the downloaded file
    */
   protected File downloadFromHttpResponse(final HttpResponse httpResponse, final String name) {
     checkNotNull(httpResponse);
@@ -95,10 +111,19 @@ public abstract class FormatClientITSupport
 
     try {
       file = new File(downloadsTemporaryFolder, name);
-      write(toByteArray(httpResponse.getEntity()), file);
+      
+      // Use CompletableFuture with virtual threads for I/O operations
+      CompletableFuture.runAsync(() -> {
+        try {
+          write(toByteArray(httpResponse.getEntity()), file);
+        }
+        catch (IOException e) {
+          throw new RuntimeException("Failed to write file from HttpResponse", e);
+        }
+      }, virtualThreadExecutor).join();
     }
-    catch (IOException e) { // NOSONAR
-      fail("Failed to download file from HttpResponse");
+    catch (Exception e) {
+      fail("Failed to download file from HttpResponse: " + e.getMessage());
     }
 
     return file;
@@ -125,22 +150,54 @@ public abstract class FormatClientITSupport
 
   /**
    * Write the given file to the {@link #temporaryFolder}.
+   * <p>
+   * This method uses virtual threads for improved I/O performance when available.
    *
-   * @return File the local tmp file.
+   * @param fileName the name of the file to write
+   * @return File the local tmp file
+   * @throws IOException if an I/O error occurs
    */
   protected File writeTmpFile(final String fileName) throws IOException {
-    File file = new File(rootTemporaryFolder, fileName);
-    write(readTestDataFile(fileName).getBytes(UTF_8), file);
+    File file = temporaryFolder.resolve(fileName).toFile();
+    
+    // Use CompletableFuture with virtual threads for I/O operations
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+      try {
+        write(readTestDataFile(fileName).getBytes(UTF_8), file);
+      }
+      catch (IOException e) {
+        throw new RuntimeException("Failed to write temporary file", e);
+      }
+    }, virtualThreadExecutor);
+    
+    // Wait for completion
+    future.join();
+    
     return file;
   }
 
   /**
    * Read the given file from {@link #testData} folder
+   * <p>
+   * This method uses virtual threads for improved I/O performance when available.
    *
-   * @return String of read bytes.
+   * @param fileName the name of the file to read
+   * @return String of read bytes
+   * @throws IOException if an I/O error occurs
    */
   protected String readTestDataFile(final String fileName) throws IOException {
-    return new String(readAllBytes(testData.resolveFile(fileName).toPath()), UTF_8);
+    // Use CompletableFuture with virtual threads for I/O operations
+    CompletableFuture<byte[]> future = CompletableFuture.supplyAsync(() -> {
+      try {
+        return readAllBytes(testData.resolveFile(fileName).toPath());
+      }
+      catch (IOException e) {
+        throw new RuntimeException("Failed to read test data file", e);
+      }
+    }, virtualThreadExecutor);
+    
+    // Wait for completion and convert to String
+    return new String(future.join(), UTF_8);
   }
 
   /**
@@ -170,7 +227,7 @@ public abstract class FormatClientITSupport
       repoUrl = repoUrl.replaceAll("localhost", findLocalHostAddress());
     }
     catch (Exception e) {
-      throw new RuntimeException("Unable to get Repo URL", e);
+      throw new RuntimeException(STR."Unable to get Repo URL: \{e.getMessage()}", e);
     }
 
     return repoUrl;
@@ -196,7 +253,7 @@ public abstract class FormatClientITSupport
    * @return String with Repo URL path
    */
   protected String getRepoUrl(final URL url, final String repoName) {
-    return resolveUrl(url, "/repository/" + repoName + "/").toString();
+    return resolveUrl(url, STR."/repository/\{repoName}/").toString();
   }
 
   /**
@@ -206,6 +263,6 @@ public abstract class FormatClientITSupport
    * @return String containing the absolute path to given file in the {@link #rootTemporaryFolder}
    */
   protected String fromRoot(final String fileName) {
-    return rootTemporaryFolder + "/" + fileName;
+    return STR."\{rootTemporaryFolder}/\{fileName}";
   }
 }

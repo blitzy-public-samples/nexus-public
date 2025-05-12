@@ -23,7 +23,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
  *
  * @since 3.0
  */
-public record DetachedEntityId(String value)
+public record DetachedEntityId(@Nonnull String value)
     implements EntityId, Serializable
 {
   private static final long serialVersionUID = 1L;
@@ -38,12 +38,6 @@ public record DetachedEntityId(String value)
   }
 
   @Override
-  @Nonnull
-  public String getValue() {
-    return value();
-  }
-
-  @Override
   public boolean equals(final Object o) {
     if (this == o) {
       return true;
@@ -54,6 +48,11 @@ public record DetachedEntityId(String value)
 
     EntityId that = (EntityId) o;
     return getValue().equals(that.getValue());
+  }
+
+  @Override
+  public int hashCode() {
+    return getValue().hashCode();
   }
 
   @Override

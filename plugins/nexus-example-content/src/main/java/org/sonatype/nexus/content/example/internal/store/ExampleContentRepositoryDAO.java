@@ -15,6 +15,8 @@ package org.sonatype.nexus.content.example.internal.store;
 import org.sonatype.nexus.repository.content.store.ContentRepositoryDAO;
 
 /**
+ * Example content repository DAO interface.
+ *
  * @since 3.24
  */
 public interface ExampleContentRepositoryDAO

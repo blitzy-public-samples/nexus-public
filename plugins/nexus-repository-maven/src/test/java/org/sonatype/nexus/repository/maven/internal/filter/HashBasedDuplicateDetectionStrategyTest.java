@@ -12,13 +12,16 @@
  */
 package org.sonatype.nexus.repository.maven.internal.filter;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
+/**
+ * Tests for {@link HashBasedDuplicateDetectionStrategy} using Java 21 and JUnit Jupiter.
+ */
 public class HashBasedDuplicateDetectionStrategyTest
     extends DuplicateDetectionStrategyTestSupport
 {
   @Test
-  public void shouldIdentifyDuplicates() throws Exception {
+  void shouldIdentifyDuplicates() throws Exception {
     verifyDuplicateDetection(new HashBasedDuplicateDetectionStrategy());
   }
 }

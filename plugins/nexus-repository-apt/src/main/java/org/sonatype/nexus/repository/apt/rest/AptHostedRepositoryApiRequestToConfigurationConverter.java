@@ -18,7 +18,10 @@ import org.sonatype.nexus.repository.config.Configuration;
 import org.sonatype.nexus.repository.rest.api.HostedRepositoryApiRequestToConfigurationConverter;
 
 /**
+ * Converter for APT hosted repository API requests to repository configurations.
+ * 
  * @since 3.20
+ * @apiNote Updated for Java 21 compatibility with enhanced code patterns and documentation.
  */
 @Named
 public class AptHostedRepositoryApiRequestToConfigurationConverter
@@ -26,10 +29,18 @@ public class AptHostedRepositoryApiRequestToConfigurationConverter
 {
   @Override
   public Configuration convert(final AptHostedRepositoryApiRequest request) {
+    // First apply the standard hosted repository configuration
     Configuration configuration = super.convert(request);
+    
+    // Then add APT-specific attributes
     configuration.attributes("apt").set("distribution", request.getApt().getDistribution());
-    configuration.attributes("aptSigning").set("keypair", request.getAptSigning().getKeypair());
-    configuration.attributes("aptSigning").set("passphrase", request.getAptSigning().getPassphrase());
+    
+    // Add APT signing attributes
+    var aptSigning = request.getAptSigning();
+    configuration.attributes("aptSigning")
+        .set("keypair", aptSigning.keypair())
+        .set("passphrase", aptSigning.passphrase());
+    
     return configuration;
   }
 }

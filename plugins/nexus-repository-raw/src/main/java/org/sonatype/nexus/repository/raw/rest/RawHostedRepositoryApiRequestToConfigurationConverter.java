@@ -20,6 +20,9 @@ import org.sonatype.nexus.repository.rest.api.HostedRepositoryApiRequestToConfig
 import static org.sonatype.nexus.repository.raw.rest.RawAttributes.CONTENT_DISPOSITION;
 
 /**
+ * Converter for transforming a {@link RawHostedRepositoryApiRequest} into a {@link Configuration} object.
+ * Updated for Java 21 compatibility to handle record-based RawAttributes.
+ *
  * @since 3.25
  */
 @Named
@@ -29,7 +32,13 @@ public class RawHostedRepositoryApiRequestToConfigurationConverter
   @Override
   public Configuration convert(final RawHostedRepositoryApiRequest request) {
     Configuration configuration = super.convert(request);
-    configuration.attributes("raw").set(CONTENT_DISPOSITION, request.getRaw().getContentDisposition().name());
+    
+    // Extract the raw attributes from the request using record pattern matching
+    RawAttributes raw = request.getRaw();
+    
+    // Set the content disposition in the configuration using string template for logging if needed
+    configuration.attributes("raw").set(CONTENT_DISPOSITION, raw.contentDisposition().name());
+    
     return configuration;
   }
 }

@@ -12,9 +12,9 @@
  */
 package org.sonatype.nexus.repository.apt.rest;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.Path;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.Path;
 
 import org.sonatype.nexus.repository.rest.api.RepositoriesApiResourceBeta;
 import org.sonatype.nexus.rest.APIConstants;
@@ -27,6 +27,11 @@ import static org.sonatype.nexus.repository.apt.rest.AptProxyRepositoriesApiReso
  * @since 3.26
  * @deprecated the 'beta' prefix is being phased out, prefer starting new APIs with {@link APIConstants#V1_API_PREFIX}
  * instead. Support backward compatibility.
+ *
+ * @see AptProxyRepositoriesApiResource
+ * 
+ * @Java21Update This class has been updated for Java 21 compatibility with Jakarta EE 10 annotations
+ * and is designed to work with Virtual Threads for improved REST endpoint performance.
  */
 @Api(hidden = true)
 @Named

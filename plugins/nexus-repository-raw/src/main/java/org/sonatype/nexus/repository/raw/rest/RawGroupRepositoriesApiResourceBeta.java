@@ -12,9 +12,9 @@
  */
 package org.sonatype.nexus.repository.raw.rest;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.Path;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.Path;
 
 import org.sonatype.nexus.repository.rest.api.RepositoriesApiResourceBeta;
 import org.sonatype.nexus.rest.APIConstants;
@@ -36,5 +36,10 @@ import static org.sonatype.nexus.repository.raw.rest.RawGroupRepositoriesApiReso
 public class RawGroupRepositoriesApiResourceBeta
     extends RawGroupRepositoriesApiResource
 {
+  /**
+   * @deprecated the 'beta' prefix is being phased out,
+   * prefer starting new APIs with {@link APIConstants#V1_API_PREFIX} instead.
+   */
+  @Deprecated
   static final String RESOURCE_URI = RepositoriesApiResourceBeta.RESOURCE_URI + "/raw/group";
 }

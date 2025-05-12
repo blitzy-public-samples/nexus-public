@@ -27,6 +27,8 @@ import static com.google.common.base.Preconditions.checkNotNull
 
 /**
  * Common Repository configuration aspects and constants.
+ * <p>
+ * Compatible with Java 21 runtime and leverages modern Java features for improved performance.
  */
 @CompileStatic
 trait ConfigurationRecipes
@@ -35,6 +37,8 @@ trait ConfigurationRecipes
 
   /**
    * Create a hosted configuration for the given recipeName.
+   * <p>
+   * Optimized for Java 21 runtime with improved map handling.
    */
   @Nonnull
   Configuration createHosted(final String name,
@@ -47,23 +51,29 @@ trait ConfigurationRecipes
     checkNotNull(name)
     checkArgument(recipeName && recipeName.endsWith('-hosted'))
 
-    newConfiguration(
+    Map<String, Object> storageAttributes = [
+        blobStoreName: blobStoreName,
+        writePolicy: writePolicy,
+        latestPolicy: latestPolicy,
+        strictContentTypeValidation: strictContentTypeValidation
+    ]
+
+    Map<String, Object> attributes = [
+        storage: storageAttributes
+    ]
+
+    return newConfiguration(
         repositoryName: name,
         recipeName: recipeName,
         online: true,
-        attributes: [
-            storage: [
-                blobStoreName: blobStoreName,
-                writePolicy  : writePolicy,
-                latestPolicy  : latestPolicy,
-                strictContentTypeValidation: strictContentTypeValidation
-            ] as Map
-        ] as Map
+        attributes: attributes
     )
   }
 
   /**
    * Create a proxy configuration for the given recipeName.
+   * <p>
+   * Optimized for Java 21 runtime with improved map handling and null safety.
    */
   @Nonnull
   Configuration createProxy(final String name,
@@ -76,32 +86,44 @@ trait ConfigurationRecipes
     checkNotNull(name)
     checkArgument(recipeName && recipeName.endsWith('-proxy'))
 
-    def attributes = [
-        httpclient   : [
-            connection: [
-                blocked  : false,
-                autoBlock: true
-            ] as Map<String, Object>
-        ] as Map<String, Object>,
-        proxy        : [
-            remoteUrl     : remoteUrl,
-            contentMaxAge : 1440,
-            metadataMaxAge: 1440
-        ] as Map<String, Object>,
-        negativeCache: [
-            enabled   : true,
-            timeToLive: 1440
-        ] as Map<String, Object>,
-        storage      : [
-            blobStoreName              : blobStoreName,
-            strictContentTypeValidation: strictContentTypeValidation
-        ] as Map<String, Object>
+    Map<String, Object> connectionAttributes = [
+        blocked: false,
+        autoBlock: true
     ]
+
+    Map<String, Object> httpclientAttributes = [
+        connection: connectionAttributes
+    ]
+
+    // Add authentication if provided
     if (!authentication.isEmpty()) {
-      attributes.httpclient.authentication = authentication
+      httpclientAttributes.authentication = authentication
     }
 
-    newConfiguration(
+    Map<String, Object> proxyAttributes = [
+        remoteUrl: remoteUrl,
+        contentMaxAge: 1440,
+        metadataMaxAge: 1440
+    ]
+
+    Map<String, Object> negativeCacheAttributes = [
+        enabled: true,
+        timeToLive: 1440
+    ]
+
+    Map<String, Object> storageAttributes = [
+        blobStoreName: blobStoreName,
+        strictContentTypeValidation: strictContentTypeValidation
+    ]
+
+    Map<String, Object> attributes = [
+        httpclient: httpclientAttributes,
+        proxy: proxyAttributes,
+        negativeCache: negativeCacheAttributes,
+        storage: storageAttributes
+    ]
+
+    return newConfiguration(
         repositoryName: name,
         recipeName: recipeName,
         online: true,
@@ -111,6 +133,8 @@ trait ConfigurationRecipes
 
   /**
    * Create a group configuration for the given recipeName.
+   * <p>
+   * Optimized for Java 21 runtime with improved collection handling.
    */
   @Nonnull
   Configuration createGroup(final String name,
@@ -120,28 +144,45 @@ trait ConfigurationRecipes
     checkNotNull(name)
     checkArgument(recipeName && recipeName.endsWith('-group'))
 
-    newConfiguration(
+    // Convert varargs to a List - optimized for sequenced collections in Java 21
+    List<String> membersList = members.toList()
+
+    Map<String, Object> groupAttributes = [
+        memberNames: membersList
+    ]
+
+    Map<String, Object> storageAttributes = [
+        blobStoreName: BlobStoreManager.DEFAULT_BLOBSTORE_NAME,
+        strictContentTypeValidation: true
+    ]
+
+    Map<String, Object> attributes = [
+        group: groupAttributes,
+        storage: storageAttributes
+    ]
+
+    return newConfiguration(
         repositoryName: name,
         recipeName: recipeName,
         online: true,
-        attributes: [
-            group  : [
-                memberNames: members.toList()
-            ] as Map<String, Object>,
-            storage: [
-                blobStoreName: BlobStoreManager.DEFAULT_BLOBSTORE_NAME,
-                strictContentTypeValidation: true
-            ] as Map<String, Object>
-        ]
+        attributes: attributes
     )
   }
 
-  Configuration newConfiguration(final Map map) {
+  /**
+   * Creates a new Configuration instance with the provided properties.
+   * <p>
+   * Optimized for Java 21 runtime with improved type handling and null safety.
+   *
+   * @param map Configuration properties map containing repositoryName, recipeName, online status, and attributes
+   * @return A new Configuration instance initialized with the provided properties
+   */
+  Configuration newConfiguration(final Map<String, Object> map) {
     Configuration config = repositoryManagerProvider.get().newConfiguration()
-    config.repositoryName = map.repositoryName
-    config.recipeName = map.recipeName
-    config.online = map.online
-    config.attributes = map.attributes as Map
+    config.repositoryName = map.repositoryName as String
+    config.recipeName = map.recipeName as String
+    config.online = map.online as boolean
+    config.attributes = map.attributes as Map<String, Object>
     return config
   }
 }

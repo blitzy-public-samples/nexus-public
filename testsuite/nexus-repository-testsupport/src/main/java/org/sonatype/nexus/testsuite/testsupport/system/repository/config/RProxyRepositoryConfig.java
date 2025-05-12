@@ -18,9 +18,26 @@ import org.sonatype.nexus.repository.Repository;
 
 import static org.sonatype.nexus.testsuite.testsupport.system.RepositoryTestSystem.FORMAT_R;
 
+/**
+ * R format proxy repository configuration.
+ * <p>
+ * This class is compatible with Java 21 and can be used with virtual threads
+ * for improved performance in I/O-bound operations. It provides configuration
+ * for R format proxy repositories in test environments.
+ * <p>
+ * When used with {@link org.sonatype.nexus.testsuite.testsupport.system.repository.RFormatRepositoryTestSystem},
+ * this configuration can leverage Java 21 virtual threads for concurrent repository operations.
+ *
+ * @since 3.60
+ */
 public class RProxyRepositoryConfig
     extends ProxyRepositoryConfigSupport<RProxyRepositoryConfig>
 {
+  /**
+   * Creates a new R format proxy repository configuration.
+   *
+   * @param factory the factory function used to create the repository
+   */
   public RProxyRepositoryConfig(final Function<RProxyRepositoryConfig, Repository> factory) {
     super(factory);
   }

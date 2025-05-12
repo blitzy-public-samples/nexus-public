@@ -20,48 +20,62 @@ import javax.annotation.Nullable;
 
 import com.google.common.collect.ImmutableMap;
 
+// Using static imports for cleaner code
+import static java.util.Collections.unmodifiableMap;
+
 import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
 
 /**
  * An immutable {@link NestedAttributesMap}.
- * <p>
- * This implementation leverages Java 21 features including Pattern Matching for switch
- * and the Sequenced Collections API for improved code readability and performance.
  *
  * @since 3.0
  */
 public class ImmutableNestedAttributesMap
     extends NestedAttributesMap
 {
+  /**
+   * Constructs an immutable nested attributes map.
+   *
+   * @param parent The parent map, or null if this is a root map
+   * @param key The key for this map
+   * @param backing The backing map containing the attributes
+   */
   public ImmutableNestedAttributesMap(
       @Nullable final NestedAttributesMap parent,
       final String key,
       final Map<String, Object> backing)
   {
-    super(parent, key, Collections.unmodifiableMap(backing));
+    // Use unmodifiableMap to ensure immutability of the backing map
+    // In Java 21, if backing is a SequencedMap, this will preserve the encounter order
+    super(parent, key, unmodifiableMap(backing));
   }
 
   /**
    * Returns nested children attributes for given name.
-   * <p>
-   * This implementation uses Java 21 Pattern Matching for switch to handle different
-   * cases more elegantly and with improved type safety.
+   * 
+   * This implementation leverages Java 21 Pattern Matching for switch to provide
+   * a more expressive and concise way to handle different types of child objects.
    */
   @Override
+  @SuppressWarnings("unchecked")
   public NestedAttributesMap child(final String name) {
     checkNotNull(name);
 
     Object child = backing.get(name);
-    // Use pattern matching for switch to handle different cases more elegantly
+    
+    // Using Pattern Matching for switch to handle child type checking
+    // This provides a more expressive way to handle different cases
+    // and is more maintainable than the previous if-else approach
     return switch (child) {
+      // When child is null, return an empty immutable map
       case null -> new ImmutableNestedAttributesMap(this, name, ImmutableMap.of());
-      case Map<?, ?> map -> {
-        // Safe cast as we know it's a Map
-        @SuppressWarnings("unchecked")
-        Map<String, Object> childMap = (Map<String, Object>) map;
-        yield new ImmutableNestedAttributesMap(this, name, childMap);
-      }
+      
+      // When child is a Map, cast it and create a new immutable map
+      // The pattern variable 'm' is automatically typed as Map<?, ?>
+      case Map<?, ?> m -> new ImmutableNestedAttributesMap(this, name, (Map<String, Object>) m);
+      
+      // For any other type, throw an exception
       default -> throw new IllegalStateException("child '" + name + "' not a Map");
     };
   }
+}

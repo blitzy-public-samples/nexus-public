@@ -238,37 +238,36 @@ public class PerformanceChart
     StringBuilder java21Info = new StringBuilder();
     
     // Java version information
-    java21Info.append("Java Version: ")
-              .append(System.getProperty("java.version"))
-              .append("\n");
+    java21Info.append("<h3>Java 21 Runtime Information</h3>\n");
+    java21Info.append("<table border='1' cellpadding='5'>\n");
     
-    java21Info.append("Java VM: ")
+    java21Info.append("<tr><td>Java Version</td><td>")
+              .append(System.getProperty("java.version"))
+              .append("</td></tr>\n");
+    
+    java21Info.append("<tr><td>Java VM</td><td>")
               .append(System.getProperty("java.vm.name"))
               .append(" ")
               .append(System.getProperty("java.vm.version"))
-              .append("\n");
+              .append("</td></tr>\n");
     
-    java21Info.append("Java VM Vendor: ")
+    java21Info.append("<tr><td>Java VM Vendor</td><td>")
               .append(System.getProperty("java.vm.vendor"))
-              .append("\n");
-    
-    // JVM flags
-    java21Info.append("\nJVM Flags:\n")
-              .append(ManagementFactory.getRuntimeMXBean().getInputArguments())
-              .append("\n");
+              .append("</td></tr>\n");
     
     // Thread information
     ThreadMXBean threadMXBean = ManagementFactory.getThreadMXBean();
-    java21Info.append("\nThread Information:\n")
-              .append("Thread Count: ")
+    java21Info.append("<tr><td>Platform Thread Count</td><td>")
               .append(threadMXBean.getThreadCount())
-              .append("\n")
-              .append("Peak Thread Count: ")
+              .append("</td></tr>\n");
+    
+    java21Info.append("<tr><td>Peak Thread Count</td><td>")
               .append(threadMXBean.getPeakThreadCount())
-              .append("\n")
-              .append("Total Started Thread Count: ")
+              .append("</td></tr>\n");
+    
+    java21Info.append("<tr><td>Total Started Thread Count</td><td>")
               .append(threadMXBean.getTotalStartedThreadCount())
-              .append("\n");
+              .append("</td></tr>\n");
     
     // Virtual thread support detection
     boolean virtualThreadsSupported = false;
@@ -281,9 +280,29 @@ public class PerformanceChart
       // Virtual threads not supported
     }
     
-    java21Info.append("\nVirtual Threads Support: ")
+    java21Info.append("<tr><td>Virtual Threads Support</td><td>")
               .append(virtualThreadsSupported ? "Yes" : "No")
-              .append("\n");
+              .append("</td></tr>\n");
+    
+    // JVM flags
+    java21Info.append("<tr><td>JVM Flags</td><td><pre>")
+              .append(ManagementFactory.getRuntimeMXBean().getInputArguments().toString()
+                  .replace("[", "")
+                  .replace("]", "")
+                  .replace(", ", "\n"))
+              .append("</pre></td></tr>\n");
+    
+    java21Info.append("</table>\n");
+    
+    // Add Java 21 feature information
+    java21Info.append("<h3>Java 21 Key Features Used</h3>\n");
+    java21Info.append("<ul>\n");
+    java21Info.append("<li><strong>Virtual Threads</strong> - Lightweight threads that enable high throughput for I/O-bound applications</li>\n");
+    java21Info.append("<li><strong>Record Patterns</strong> - Destructuring of record values for more concise and readable code</li>\n");
+    java21Info.append("<li><strong>Pattern Matching for switch</strong> - Type-based pattern matching in switch expressions</li>\n");
+    java21Info.append("<li><strong>Sequenced Collections</strong> - New interfaces for collections with well-defined encounter order</li>\n");
+    java21Info.append("<li><strong>String Templates</strong> - More readable string interpolation (preview feature)</li>\n");
+    java21Info.append("</ul>\n");
     
     return java21Info.toString();
   }
@@ -297,85 +316,132 @@ public class PerformanceChart
     // Check if we have any virtual thread data
     boolean hasVirtualThreadData = false;
     for (String testName : results.getTests().keySet()) {
-      if (testName.startsWith("Virtual-")) {
-        hasVirtualThreadData = true;
-        break;
+      PerformanceTestSeries series = results.getTests().get(testName);
+      for (PerformanceRunResult result : series.getResultsByThreadCount().values()) {
+        if ("virtual".equals(result.threadType())) {
+          hasVirtualThreadData = true;
+          break;
+        }
       }
+      if (hasVirtualThreadData) break;
     }
     
     if (!hasVirtualThreadData) {
-      metrics.append("No virtual thread performance data available.");
+      metrics.append("<p>No virtual thread performance data available.</p>");
       return metrics.toString();
     }
     
     // Calculate metrics for virtual vs platform threads
-    Map<Integer, Double> threadCountToSpeedup = new HashMap<>();
-    Map<Integer, Double> threadCountToMemoryEfficiency = new HashMap<>();
+    Map<Integer, Map<String, Double>> threadCountToMetrics = new HashMap<>();
     
-    // For each thread count, compare virtual vs platform performance
-    for (int threadCount : results.getThreadCounts()) {
-      double platformThroughput = 0.0;
-      double virtualThroughput = 0.0;
+    // For each test series, collect virtual thread metrics
+    for (String testName : results.getTests().keySet()) {
+      PerformanceTestSeries series = results.getTests().get(testName);
       
-      // Find matching test pairs (Virtual-X and Platform-X)
-      for (String testName : results.getTests().keySet()) {
-        if (testName.startsWith("Virtual-")) {
-          String baseName = testName.substring("Virtual-".length());
-          String platformTestName = "Platform-" + baseName;
-          
-          PerformanceTestSeries virtualSeries = results.findTestResult(testName);
-          PerformanceTestSeries platformSeries = results.getTests().get(platformTestName);
-          
-          if (platformSeries != null) {
-            PerformanceRunResult virtualResult = virtualSeries.getResultsByThreadCount().get(threadCount);
-            PerformanceRunResult platformResult = platformSeries.getResultsByThreadCount().get(threadCount);
-            
-            if (virtualResult != null && platformResult != null) {
-              double virtualRps = ((double) virtualResult.getRequestsCompleted()) / virtualResult.getTestDurationSeconds();
-              double platformRps = ((double) platformResult.getRequestsCompleted()) / platformResult.getTestDurationSeconds();
-              
-              virtualThroughput += virtualRps;
-              platformThroughput += platformRps;
-            }
-          }
-        }
-      }
-      
-      // Calculate speedup ratio (virtual / platform)
-      if (platformThroughput > 0) {
-        double speedup = virtualThroughput / platformThroughput;
-        threadCountToSpeedup.put(threadCount, speedup);
+      // For each thread count, analyze performance
+      for (Map.Entry<Integer, PerformanceRunResult> entry : series.getResultsByThreadCount().entrySet()) {
+        int threadCount = entry.getKey();
+        PerformanceRunResult result = entry.getValue();
         
-        // Estimate memory efficiency (assuming platform threads use ~1MB each and virtual threads use ~2KB each)
-        double platformMemory = threadCount * 1024 * 1024; // 1MB per thread
-        double virtualMemory = threadCount * 2 * 1024;     // 2KB per thread
-        double memoryEfficiency = platformMemory / virtualMemory;
-        threadCountToMemoryEfficiency.put(threadCount, memoryEfficiency);
+        // Skip if not using virtual threads
+        if (!"virtual".equals(result.threadType())) {
+          continue;
+        }
+        
+        // Initialize metrics for this thread count if needed
+        Map<String, Double> metrics_for_count = threadCountToMetrics.computeIfAbsent(threadCount, k -> new HashMap<>());
+        
+        // Calculate throughput (requests per second)
+        double throughput = result.getThroughput();
+        
+        // Update metrics
+        metrics_for_count.compute("throughput", (k, v) -> (v == null) ? throughput : v + throughput);
+        metrics_for_count.compute("test_count", (k, v) -> (v == null) ? 1.0 : v + 1.0);
+        
+        // Calculate efficiency metrics
+        // Theoretical max throughput per thread (based on observed throughput at thread count 1)
+        PerformanceRunResult singleThreadResult = series.getResult(1);
+        if (singleThreadResult != null) {
+          double singleThreadThroughput = singleThreadResult.getThroughput();
+          double theoreticalMax = singleThreadThroughput * threadCount;
+          double scalingEfficiency = throughput / theoreticalMax;
+          metrics_for_count.compute("scaling_efficiency", (k, v) -> (v == null) ? scalingEfficiency : v + scalingEfficiency);
+        }
       }
     }
     
     // Generate the metrics report
-    metrics.append("<h3>Virtual Thread Performance Metrics</h3>\n");
+    metrics.append("<h3>Java 21 Virtual Thread Performance Metrics</h3>\n");
     metrics.append("<table border='1' cellpadding='5'>\n");
-    metrics.append("<tr><th>Thread Count</th><th>Throughput Speedup</th><th>Memory Efficiency</th></tr>\n");
+    metrics.append("<tr><th>Thread Count</th><th>Avg Throughput (req/sec)</th><th>Scaling Efficiency</th><th>Memory Efficiency</th></tr>\n");
     
-    DecimalFormat format = new DecimalFormat("#.##x");
-    for (int threadCount : new TreeSet<>(threadCountToSpeedup.keySet())) {
-      double speedup = threadCountToSpeedup.get(threadCount);
-      double memoryEfficiency = threadCountToMemoryEfficiency.getOrDefault(threadCount, 0.0);
+    DecimalFormat format = new DecimalFormat("#,##0.00");
+    DecimalFormat percentFormat = new DecimalFormat("#0.00%");
+    
+    for (int threadCount : new TreeSet<>(threadCountToMetrics.keySet())) {
+      Map<String, Double> metricsMap = threadCountToMetrics.get(threadCount);
+      double testCount = metricsMap.getOrDefault("test_count", 1.0);
+      double avgThroughput = metricsMap.getOrDefault("throughput", 0.0) / testCount;
+      double scalingEfficiency = metricsMap.getOrDefault("scaling_efficiency", 0.0) / testCount;
+      
+      // Estimate memory efficiency (platform threads ~1MB each, virtual threads ~2KB each)
+      double platformMemory = threadCount * 1024 * 1024; // 1MB per thread
+      double virtualMemory = threadCount * 2 * 1024;     // 2KB per thread
+      double memoryEfficiency = platformMemory / virtualMemory;
       
       metrics.append("<tr>");
       metrics.append("<td>").append(threadCount).append("</td>");
-      metrics.append("<td>").append(format.format(speedup)).append("</td>");
-      metrics.append("<td>").append(format.format(memoryEfficiency)).append("</td>");
+      metrics.append("<td>").append(format.format(avgThroughput)).append("</td>");
+      metrics.append("<td>").append(percentFormat.format(scalingEfficiency)).append("</td>");
+      metrics.append("<td>").append(format.format(memoryEfficiency)).append("x</td>");
       metrics.append("</tr>\n");
     }
     
     metrics.append("</table>\n");
     
     // Add interpretation
-    metrics.append("<p><strong>Throughput Speedup</strong>: How many times faster virtual threads process requests compared to platform threads.</p>\n");
-    metrics.append("<p><strong>Memory Efficiency</strong>: Estimated memory usage efficiency of virtual threads compared to platform threads.</p>\n");
+    metrics.append("<h4>Virtual Thread Performance Analysis</h4>\n");
+    metrics.append("<p><strong>Avg Throughput</strong>: Average number of requests processed per second at each thread count.</p>\n");
+    metrics.append("<p><strong>Scaling Efficiency</strong>: How efficiently throughput scales with increased thread count. 100% means perfect linear scaling.</p>\n");
+    metrics.append("<p><strong>Memory Efficiency</strong>: Estimated memory usage efficiency of virtual threads compared to platform threads (higher is better).</p>\n");
+    
+    // Add Java 21 virtual thread specific insights
+    metrics.append("<h4>Java 21 Virtual Thread Insights</h4>\n");
+    metrics.append("<ul>\n");
+    metrics.append("<li>Virtual threads are managed by the JVM rather than the OS, allowing for much higher concurrency.</li>\n");
+    metrics.append("<li>Each virtual thread requires only ~2KB of memory compared to ~1MB for platform threads.</li>\n");
+    metrics.append("<li>Virtual threads automatically yield during blocking operations, improving CPU utilization.</li>\n");
+    metrics.append("<li>Thread pinning can occur when using non-yielding native methods or synchronized blocks on heavily contended locks.</li>\n");
+    metrics.append("</ul>\n");
+    
+    // Add thread pinning detection
+    metrics.append("<h4>Thread Pinning Detection</h4>\n");
+    metrics.append("<p>Thread pinning occurs when virtual threads cannot yield during blocking operations, negating their benefits.</p>\n");
+    
+    // Check for signs of thread pinning (poor scaling efficiency at higher thread counts)
+    boolean possiblePinning = false;
+    int pinningThreshold = 100; // Thread count where pinning might become evident
+    
+    for (int threadCount : new TreeSet<>(threadCountToMetrics.keySet())) {
+      if (threadCount >= pinningThreshold) {
+        Map<String, Double> metricsMap = threadCountToMetrics.get(threadCount);
+        double scalingEfficiency = metricsMap.getOrDefault("scaling_efficiency", 0.0) / 
+                                  metricsMap.getOrDefault("test_count", 1.0);
+        
+        if (scalingEfficiency < 0.5) { // Less than 50% scaling efficiency
+          possiblePinning = true;
+          break;
+        }
+      }
+    }
+    
+    if (possiblePinning) {
+      metrics.append("<p><strong>Warning:</strong> Possible thread pinning detected at higher thread counts. ");
+      metrics.append("Consider reviewing code for synchronized blocks on heavily contended locks, ");
+      metrics.append("non-yielding native methods, or CPU-bound operations.</p>\n");
+    } else {
+      metrics.append("<p><strong>No thread pinning detected.</strong> Virtual threads appear to be yielding properly during blocking operations.</p>\n");
+    }
     
     return metrics.toString();
   }

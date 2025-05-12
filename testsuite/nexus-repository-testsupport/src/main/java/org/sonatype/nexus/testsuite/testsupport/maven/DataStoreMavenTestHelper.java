@@ -15,6 +15,8 @@ package org.sonatype.nexus.testsuite.testsupport.maven;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -23,6 +25,9 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -59,7 +64,7 @@ import static org.apache.commons.lang3.StringUtils.prependIfMissing;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.sonatype.nexus.common.entity.Continuations.iterableOf;
 import static org.sonatype.nexus.common.entity.Continuations.streamOf;
 import static org.sonatype.nexus.common.hash.HashAlgorithm.MD5;
@@ -67,12 +72,25 @@ import static org.sonatype.nexus.common.hash.HashAlgorithm.SHA1;
 import static org.sonatype.nexus.repository.maven.MavenMetadataRebuildFacet.METADATA_FORCE_REBUILD;
 import static org.sonatype.nexus.repository.maven.MavenMetadataRebuildFacet.METADATA_REBUILD;
 
+/**
+ * Maven test helper implementation for DataStore repositories.
+ * <p>
+ * Updated for Java 21 compatibility with Virtual Thread support for I/O operations.
+ *
+ * @since 3.38
+ */
 @Named
 @Singleton
 public class DataStoreMavenTestHelper
     extends MavenTestHelper
 {
   private static final String ASSET_PATH_PREFIX = "/";
+  
+  /**
+   * Executor service using virtual threads for I/O-bound operations.
+   * This improves test performance when dealing with multiple concurrent operations.
+   */
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   @Override
   public void write(final Repository repository, final String path, final Payload payload) throws IOException
@@ -134,7 +152,7 @@ public class DataStoreMavenTestHelper
       String expectedHashContent = expectedHashCodes.get(hashType.getHashAlgorithm().name());
       Optional<Content> maybeStoredHashContent = mavenContentFacet.get(mavenPath.hash(hashType));
       // Maven deployer does not create these hashes by default yet but we are storing the calculated values in the asset attributes
-      if(!maybeStoredHashContent.isPresent() && (hashType  == HashType.SHA256 ||  hashType  == HashType.SHA512) ) {
+      if (maybeStoredHashContent.isEmpty() && (hashType == HashType.SHA256 || hashType == HashType.SHA512)) {
         continue;
       }
       assertTrue(maybeStoredHashContent.isPresent());
@@ -205,15 +223,32 @@ public class DataStoreMavenTestHelper
 
   private void deleteAll(final MavenContentFacet mavenContentFacet, final Collection<FluentAsset> assets) {
     MavenPathParser mavenPathParser = mavenContentFacet.getMavenPathParser();
-    assets.stream().map(FluentAsset::path).map(mavenPathParser::parsePath).forEach(
-        path -> {
-          try {
-            mavenContentFacet.delete(path);
-          }
-          catch (IOException e) {
-            e.printStackTrace();
-          }
-        });
+    
+    // Use virtual threads for parallel deletion of assets to improve performance
+    try {
+      var futures = assets.stream()
+          .map(FluentAsset::path)
+          .map(mavenPathParser::parsePath)
+          .map(path -> virtualThreadExecutor.submit(() -> {
+            try {
+              mavenContentFacet.delete(path);
+            }
+            catch (IOException e) {
+              // Log and continue with other deletions
+              e.printStackTrace();
+            }
+            return null;
+          }))
+          .toList();
+      
+      // Wait for all deletions to complete
+      for (var future : futures) {
+        future.get(); // Ensure all deletions are complete before returning
+      }
+    }
+    catch (Exception e) {
+      e.printStackTrace();
+    }
   }
 
   @Nonnull
@@ -292,12 +327,12 @@ public class DataStoreMavenTestHelper
   public void markMetadataForRebuild(final Repository repository, final String path) {
     Optional<FluentAsset> maybeAsset =
         repository.facet(MavenContentFacet.class).assets().path(prependIfMissing(path, ASSET_PATH_PREFIX)).find();
-    assertTrue("Could not set forceRebuild flag, because requested path does not exist", maybeAsset.isPresent());
+    assertTrue(maybeAsset.isPresent(), "Could not set forceRebuild flag, because requested path does not exist");
     FluentAsset asset = maybeAsset.get();
     asset.withAttribute(METADATA_REBUILD, Collections.singletonMap(METADATA_FORCE_REBUILD, true));
   }
 
   private boolean isNotFlaggedForRebuild(final FluentAsset asset) {
-    return asset.attributes("metadataRebuild").isEmpty();
+    return asset.attributes(METADATA_REBUILD).isEmpty();
   }
 }

@@ -14,60 +14,86 @@ package org.sonatype.nexus.scheduling.internal;
 
 import java.time.Duration;
 import java.util.Map;
-import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
+import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
+import org.sonatype.nexus.common.app.ManagedLifecycle;
 import org.sonatype.nexus.common.scheduling.PeriodicJobService;
 import org.sonatype.nexus.common.stateguard.Guarded;
 import org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport;
+import org.sonatype.nexus.security.subject.FakeAlmightySubject;
+import org.sonatype.nexus.thread.NexusExecutorService;
 import org.sonatype.nexus.thread.NexusThreadFactory;
+import org.sonatype.nexus.thread.internal.MDCUtils;
 
 import org.slf4j.MDC;
 
 import static com.google.common.base.Preconditions.checkState;
+import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.SERVICES;
 import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.State.STARTED;
 
 /**
  * Default implementation of {@link PeriodicJobService}, based on a ScheduledExecutorService.
- * Enhanced with Java 21 Virtual Threads support for task execution.
+ * <p>
+ * This implementation supports both platform threads and virtual threads (Java 21+).
+ * It can be configured to use virtual threads for task execution, which is beneficial
+ * for I/O-bound operations, while using platform threads for scheduling.
  *
  * @since 3.0
  */
 @Named
 @Singleton
+@ManagedLifecycle(phase = SERVICES)
 public class PeriodicJobServiceImpl
     extends StateGuardLifecycleSupport
     implements PeriodicJobService
 {
   /**
-   * Property to control whether to use virtual threads for task execution.
+   * Configuration property to enable/disable virtual threads for task execution.
    */
-  private static final String USE_VIRTUAL_THREADS_PROPERTY = "nexus.scheduler.useVirtualThreads";
+  private static final String USE_VIRTUAL_THREADS_PROPERTY = "nexus.scheduling.useVirtualThreads";
   
   /**
-   * Default setting for virtual threads usage.
+   * Default value for using virtual threads (enabled by default).
    */
   private static final boolean DEFAULT_USE_VIRTUAL_THREADS = true;
-
-  private ScheduledExecutorService schedulerExecutor;
   
-  private Executor taskExecutor;
-
-  private int activeClients;
+  /**
+   * Configuration property for the number of platform threads in the scheduler pool.
+   */
+  private static final String SCHEDULER_POOL_SIZE_PROPERTY = "nexus.scheduling.poolSize";
+  
+  /**
+   * Default number of platform threads in the scheduler pool.
+   */
+  private static final int DEFAULT_SCHEDULER_POOL_SIZE = 2;
   
   private final boolean useVirtualThreads;
+  
+  private final int schedulerPoolSize;
+  
+  private ScheduledExecutorService executor;
+  
+  private NexusExecutorService taskExecutor;
 
-  public PeriodicJobServiceImpl() {
-    this.useVirtualThreads = Boolean.parseBoolean(
-        System.getProperty(USE_VIRTUAL_THREADS_PROPERTY, String.valueOf(DEFAULT_USE_VIRTUAL_THREADS)));
-    log.info("PeriodicJobService configured to use {} threads for task execution", 
-        useVirtualThreads ? "virtual" : "platform");
+  private int activeClients;
+
+  @Inject
+  public PeriodicJobServiceImpl(
+      @Named("${" + USE_VIRTUAL_THREADS_PROPERTY + ":-" + DEFAULT_USE_VIRTUAL_THREADS + "}") boolean useVirtualThreads,
+      @Named("${" + SCHEDULER_POOL_SIZE_PROPERTY + ":-" + DEFAULT_SCHEDULER_POOL_SIZE + "}") int schedulerPoolSize)
+  {
+    this.useVirtualThreads = useVirtualThreads;
+    this.schedulerPoolSize = schedulerPoolSize;
+    log.info("Periodic Job Service configured with useVirtualThreads={}, schedulerPoolSize={}", 
+        useVirtualThreads, schedulerPoolSize);
   }
 
   @Override
@@ -99,45 +125,56 @@ public class PeriodicJobServiceImpl
 
   @Override
   protected void doStart() throws Exception {
-    // Create a platform thread pool for scheduling tasks
-    schedulerExecutor = Executors.newScheduledThreadPool(1, new NexusThreadFactory("periodic", "scheduling"));
+    // Create a platform thread pool for scheduling with consistent thread naming
+    ThreadFactory threadFactory = new NexusThreadFactory("periodic", "scheduling");
+    executor = Executors.newScheduledThreadPool(schedulerPoolSize, threadFactory);
     
-    // Create an executor for task execution - either virtual or platform threads based on configuration
+    // Create the appropriate executor for task execution based on configuration
     if (useVirtualThreads) {
-      taskExecutor = Executors.newVirtualThreadPerTaskExecutor();
-      log.debug("Using virtual threads for task execution");
+      // Use virtual threads for task execution (better for I/O-bound operations)
+      taskExecutor = NexusExecutorService.forVirtualThreads(FakeAlmightySubject.TASK_SUBJECT);
+      log.info("Using virtual threads for periodic job execution");
     } else {
-      taskExecutor = Executors.newCachedThreadPool(new NexusThreadFactory("periodic", "task"));
-      log.debug("Using platform threads for task execution");
+      // Use platform threads for task execution (better for CPU-bound operations)
+      taskExecutor = NexusExecutorService.forFixedSubject(
+          Executors.newCachedThreadPool(new NexusThreadFactory("periodic-task", "execution")),
+          FakeAlmightySubject.TASK_SUBJECT);
+      log.info("Using platform threads for periodic job execution");
     }
   }
 
   @Override
   protected void doStop() throws Exception {
-    schedulerExecutor.shutdown();
-    if (!schedulerExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
-      log.warn("Failed to terminate scheduler thread pool in allotted time");
-    }
-    schedulerExecutor = null;
-    
-    // If taskExecutor is a platform thread pool, shut it down
-    if (!useVirtualThreads && taskExecutor instanceof java.util.concurrent.ExecutorService) {
-      java.util.concurrent.ExecutorService executorService = (java.util.concurrent.ExecutorService) taskExecutor;
-      executorService.shutdown();
-      if (!executorService.awaitTermination(10, TimeUnit.SECONDS)) {
-        log.warn("Failed to terminate task thread pool in allotted time");
+    // Shutdown the task executor first
+    if (taskExecutor != null) {
+      taskExecutor.shutdown();
+      if (!taskExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
+        log.warn("Failed to terminate task executor in allotted time");
       }
+      taskExecutor = null;
     }
-    taskExecutor = null;
+    
+    // Then shutdown the scheduler executor
+    if (executor != null) {
+      executor.shutdown();
+      if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
+        log.warn("Failed to terminate scheduler thread pool in allotted time");
+      }
+      executor = null;
+    }
   }
 
   @Override
   public void runOnce(final Runnable runnable, final int delaySeconds) {
     startUsing();
-    schedulerExecutor.schedule(() -> {
+    executor.schedule(() -> {
       try {
-        // Execute the task on the task executor
-        taskExecutor.execute(wrap(runnable));
+        // Execute the task using the task executor to leverage virtual threads if configured
+        taskExecutor.submit(wrap(runnable)).get();
+        return null;
+      }
+      catch (Exception e) {
+        log.error("Error executing one-time job", e);
         return null;
       }
       finally {
@@ -149,8 +186,8 @@ public class PeriodicJobServiceImpl
   @Override
   @Guarded(by = STARTED)
   public PeriodicJob schedule(final Runnable runnable, final int repeatPeriodSeconds) {
-    ScheduledFuture<?> scheduledFuture = schedulerExecutor.scheduleAtFixedRate(
-        () -> taskExecutor.execute(wrap(runnable)),
+    ScheduledFuture<?> scheduledFuture = executor.scheduleAtFixedRate(
+        () -> taskExecutor.submit(wrap(runnable)),
         repeatPeriodSeconds,
         repeatPeriodSeconds,
         TimeUnit.SECONDS);
@@ -161,8 +198,8 @@ public class PeriodicJobServiceImpl
   @Override
   @Guarded(by = STARTED)
   public PeriodicJob schedule(final Runnable runnable, final Duration delay, final Duration repeatPeriod) {
-    ScheduledFuture<?> scheduledFuture = schedulerExecutor.scheduleAtFixedRate(
-        () -> taskExecutor.execute(wrap(runnable)),
+    ScheduledFuture<?> scheduledFuture = executor.scheduleAtFixedRate(
+        () -> taskExecutor.submit(wrap(runnable)),
         delay.toMillis(),
         repeatPeriod.toMillis(),
         TimeUnit.MILLISECONDS);
@@ -171,23 +208,27 @@ public class PeriodicJobServiceImpl
   }
 
   /**
-   * Wraps a runnable to catch exceptions and propagate MDC context.
-   * This ensures that logging context is preserved when tasks are executed on virtual threads.
+   * Wraps a runnable to ensure exception handling and MDC context propagation.
+   * <p>
+   * This method captures the current MDC context and ensures it's properly restored
+   * when the task executes, even across thread boundaries (important for virtual threads).
+   *
+   * @param inner the runnable to wrap
+   * @return a wrapped runnable with exception handling and MDC context propagation
    */
   private Runnable wrap(final Runnable inner) {
     // Capture the current MDC context
-    final Map<String, String> mdcContext = MDC.getCopyOfContextMap();
+    final Map<String, String> mdcContext = MDCUtils.getCopyOfContextMap();
     
     return () -> {
-      // Set up MDC context for this thread
-      Map<String, String> previousMdc = MDC.getCopyOfContextMap();
-      if (mdcContext != null) {
-        MDC.setContextMap(mdcContext);
-      } else {
-        MDC.clear();
-      }
+      // Store the original MDC context that might exist in the executing thread
+      Map<String, String> originalContext = MDCUtils.getCopyOfContextMap();
       
       try {
+        // Set our captured MDC context
+        MDCUtils.setContextMap(mdcContext);
+        
+        // Execute the inner runnable
         inner.run();
       }
       catch (Exception e) {
@@ -195,12 +236,8 @@ public class PeriodicJobServiceImpl
         log.error("Periodic job threw exception", e);
       }
       finally {
-        // Restore the previous MDC context or clear it
-        if (previousMdc != null) {
-          MDC.setContextMap(previousMdc);
-        } else {
-          MDC.clear();
-        }
+        // Restore the original context
+        MDCUtils.setContextMap(originalContext);
       }
     };
   }

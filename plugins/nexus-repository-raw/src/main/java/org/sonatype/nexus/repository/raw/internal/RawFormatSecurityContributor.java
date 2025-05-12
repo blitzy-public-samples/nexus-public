@@ -29,6 +29,11 @@ import org.sonatype.nexus.repository.security.RepositoryFormatSecurityContributo
 public class RawFormatSecurityContributor
     extends RepositoryFormatSecurityContributor
 {
+  /**
+   * Constructor that registers security privileges for the RAW repository format.
+   *
+   * @param format the RAW repository format
+   */
   @Inject
   public RawFormatSecurityContributor(@Named(RawFormat.NAME) final Format format) {
     super(format);

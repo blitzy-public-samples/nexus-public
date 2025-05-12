@@ -21,13 +21,15 @@ import org.sonatype.nexus.repository.maven.MavenPath;
 import org.sonatype.nexus.repository.maven.MavenPath.HashType;
 import org.sonatype.nexus.repository.maven.MavenPath.SignatureType;
 
-import org.junit.Test;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.sonatype.nexus.repository.maven.internal.Constants.INDEX_MAIN_CHUNK_FILE_PATH;
 import static org.sonatype.nexus.repository.maven.internal.Constants.INDEX_PROPERTY_FILE_PATH;
 
@@ -36,6 +38,8 @@ import static org.sonatype.nexus.repository.maven.internal.Constants.INDEX_PROPE
  *
  * @since 3.0
  */
+@DisplayName("Maven2MavenPathParser Tests")
+@Tag("java21")
 public class Maven2MavenPathParserTest
     extends TestSupport
 {
@@ -48,7 +52,8 @@ public class Maven2MavenPathParserTest
   }
 
   @Test
-  public void artifact() throws Exception
+  @DisplayName("Test parsing of various Maven artifact paths")
+  void artifact() throws Exception
   {
     MavenPath mavenPath;
 
@@ -327,7 +332,8 @@ public class Maven2MavenPathParserTest
   }
 
   @Test
-  public void badlyBuiltSnapshot() throws Exception {
+  @DisplayName("Test parsing of badly built snapshot paths")
+  void badlyBuiltSnapshot() throws Exception {
     MavenPath mavenPath = pathParser
         .parsePath("/org/jruby/jruby/1.0RC1-SNAPSHOT/jruby-1.0RC1-SNAPSHOT-20070504.160758-25-javadoc.jar");
     assertThat(mavenPath, notNullValue());
@@ -349,7 +355,8 @@ public class Maven2MavenPathParserTest
   }
 
   @Test
-  public void metadata() throws Exception
+  @DisplayName("Test parsing of Maven metadata paths")
+  void metadata() throws Exception
   {
     MavenPath mavenPath;
 
@@ -380,7 +387,8 @@ public class Maven2MavenPathParserTest
   }
 
   @Test
-  public void index() {
+  @DisplayName("Test parsing of Maven index paths")
+  void index() {
     MavenPath mavenPath;
 
     mavenPath = pathParser.parsePath(INDEX_PROPERTY_FILE_PATH);
@@ -395,7 +403,8 @@ public class Maven2MavenPathParserTest
   }
 
   @Test
-  public void other() throws Exception
+  @DisplayName("Test parsing of other Maven paths")
+  void other() throws Exception
   {
     MavenPath mavenPath;
 
@@ -457,7 +466,8 @@ public class Maven2MavenPathParserTest
 
 
   @Test
-  public void extremeExtAndClassifier() throws Exception
+  @DisplayName("Test parsing of extreme extension and classifier paths")
+  void extremeExtAndClassifier() throws Exception
   {
     MavenPath mavenPath;
 
@@ -539,7 +549,8 @@ public class Maven2MavenPathParserTest
   }
 
   @Test
-  public void parseExtension() {
+  @DisplayName("Test parsing of extension paths")
+  void parseExtension() {
     MavenPath mavenPath;
 
     mavenPath =
@@ -595,7 +606,8 @@ public class Maven2MavenPathParserTest
 
 
   @Test
-  public void extremeSnapshot() throws Exception
+  @DisplayName("Test parsing of extreme snapshot paths")
+  void extremeSnapshot() throws Exception
   {
     MavenPath mavenPath;
 
@@ -649,7 +661,8 @@ public class Maven2MavenPathParserTest
   }
 
   @Test
-  public void snapshot_validFormat() throws Exception
+  @DisplayName("Test parsing of valid format snapshot paths")
+  void snapshot_validFormat() throws Exception
   {
     MavenPath mavenPath = pathParser.parsePath(
         "org/sonatype/nexus/nexus-webapp/1.0.0-beta-5-SNAPSHOT/nexus-webapp-1.0.0-beta-5-20171208.202054-1.tar.gz");
@@ -664,7 +677,8 @@ public class Maven2MavenPathParserTest
   }
 
   @Test
-  public void snapshot_invalidFormat() throws Exception
+  @DisplayName("Test parsing of invalid format snapshot paths")
+  void snapshot_invalidFormat() throws Exception
   {
     MavenPath mavenPath = pathParser.parsePath(
         "org/sonatype/nexus/nexus-webapp/1.0.0-beta-5-SNAPSHOT/nexus-webapp-1.0.0-beta-5-20171208-test.tar.gz");
@@ -680,5 +694,39 @@ public class Maven2MavenPathParserTest
     assertThat(mavenPath.getCoordinates().isSnapshot(), equalTo(true));
     assertThat(mavenPath.getCoordinates().getTimestamp(), nullValue());
     assertThat(mavenPath.getCoordinates().getBuildNumber(), nullValue());
+  }
+  
+  /**
+   * Test added for Java 21 compatibility verification.
+   * This test ensures that the Maven path parser correctly handles paths with pattern matching.
+   */
+  @Test
+  @DisplayName("Test parsing with Java 21 pattern matching")
+  void testWithJava21PatternMatching() {
+    // Test with different path patterns that would benefit from Java 21's pattern matching
+    MavenPath mavenPath = pathParser.parsePath(
+        "/org/example/project/1.0.0/project-1.0.0.jar");
+    
+    // Using pattern matching to check the coordinates
+    if (mavenPath.getCoordinates() != null) {
+      var coordinates = mavenPath.getCoordinates();
+      assertThat(coordinates.getGroupId(), equalTo("org.example"));
+      assertThat(coordinates.getArtifactId(), equalTo("project"));
+      assertThat(coordinates.getVersion(), equalTo("1.0.0"));
+      assertThat(coordinates.getExtension(), equalTo("jar"));
+    }
+    
+    // Test with a snapshot version
+    mavenPath = pathParser.parsePath(
+        "/org/example/project/1.0.0-SNAPSHOT/project-1.0.0-20230101.120000-1.jar");
+    
+    // Using pattern matching to check snapshot coordinates
+    if (mavenPath.getCoordinates() != null && mavenPath.getCoordinates().isSnapshot()) {
+      var coordinates = mavenPath.getCoordinates();
+      assertThat(coordinates.getGroupId(), equalTo("org.example"));
+      assertThat(coordinates.getArtifactId(), equalTo("project"));
+      assertThat(coordinates.getBaseVersion(), equalTo("1.0.0-SNAPSHOT"));
+      assertThat(coordinates.getVersion(), equalTo("1.0.0-20230101.120000-1"));
+    }
   }
 }

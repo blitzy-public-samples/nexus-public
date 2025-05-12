@@ -15,6 +15,8 @@ package org.sonatype.nexus.testsuite.testsupport.fixtures;
 import java.security.cert.CertificateException;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 
 import javax.inject.Provider;
 
@@ -22,38 +24,116 @@ import org.sonatype.nexus.ssl.CertificateUtil;
 import org.sonatype.nexus.ssl.KeystoreException;
 import org.sonatype.nexus.ssl.TrustStore;
 
+import org.junit.jupiter.api.extension.AfterEachCallback;
+import org.junit.jupiter.api.extension.ExtensionContext;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.rules.ExternalResource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
+ * JUnit rule for managing trust certificates during tests.
+ * <p>
+ * This class supports both JUnit 4 (via ExternalResource) and JUnit 5 (via AfterEachCallback).
+ * <p>
+ * For JUnit 4 usage:
+ * <pre>
+ * {@code
+ * @Rule
+ * public TrustStoreRule trustStoreRule = new TrustStoreRule(trustStoreProvider);
+ * }
+ * </pre>
+ * <p>
+ * For JUnit 5 usage:
+ * <pre>
+ * {@code
+ * @RegisterExtension
+ * public TrustStoreRule trustStoreRule = new TrustStoreRule(trustStoreProvider);
+ * }
+ * </pre>
+ * <p>
+ * Or use the dedicated {@link TrustStoreExtension} class for JUnit 5.
+ *
  * @since 3.19
+ * @see TrustStoreExtension for a dedicated JUnit 5 extension
  */
 public class TrustStoreRule
     extends ExternalResource
+    implements AfterEachCallback
 {
   private static final Logger log = LoggerFactory.getLogger(TrustStoreRule.class);
 
   private final Provider<TrustStore> trustStoreProvider;
 
-  private Set<String> managedAliases = new HashSet<>();
+  private final Set<String> managedAliases = new HashSet<>();
 
+  /**
+   * Creates a new TrustStoreRule with the given trust store provider.
+   *
+   * @param trustStoreProvider the provider for the trust store to manage
+   */
   public TrustStoreRule(final Provider<TrustStore> trustStoreProvider) {
     this.trustStoreProvider = trustStoreProvider;
   }
 
   @Override
   protected void after() {
-    managedAliases.forEach(fingerprint -> {
-      try {
-        trustStoreProvider.get().removeTrustCertificate(fingerprint);
-      }
-      catch (Exception e) { // NOSONAR
-        log.info("Unable to clean up alias {}", fingerprint, e);
-      }
-    });
+    cleanupManagedAliases();
   }
 
+  @Override
+  public void afterEach(final ExtensionContext context) {
+    cleanupManagedAliases();
+  }
+
+  /**
+   * Cleans up all managed certificate aliases using virtual threads for I/O operations when running on Java 21+.
+   */
+  private void cleanupManagedAliases() {
+    if (managedAliases.isEmpty()) {
+      return;
+    }
+
+    try {
+      // Use virtual threads for I/O operations when available (Java 21+)
+      ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+      try {
+        managedAliases.forEach(fingerprint -> {
+          executor.submit(() -> {
+            try {
+              trustStoreProvider.get().removeTrustCertificate(fingerprint);
+            }
+            catch (Exception e) { // NOSONAR
+              log.info("Unable to clean up alias {}", fingerprint, e);
+            }
+            return null;
+          });
+        });
+      }
+      finally {
+        executor.close();
+      }
+    }
+    catch (Exception e) {
+      // Fall back to sequential cleanup if virtual threads are not available
+      managedAliases.forEach(fingerprint -> {
+        try {
+          trustStoreProvider.get().removeTrustCertificate(fingerprint);
+        }
+        catch (Exception ex) { // NOSONAR
+          log.info("Unable to clean up alias {}", fingerprint, ex);
+        }
+      });
+    }
+    
+    managedAliases.clear();
+  }
+
+  /**
+   * Add a certificate to the trust store.
+   * 
+   * @param pem The PEM-formatted certificate to add
+   */
   public void addCertificate(final String pem) {
     try {
       String fingerprint = CertificateUtil.calculateFingerprint(CertificateUtil.decodePEMFormattedCertificate(pem));
@@ -66,14 +146,18 @@ public class TrustStoreRule
   }
 
   /**
-   * Add a certificate alias to automatically cleanup upon test failure
+   * Add a certificate alias to automatically cleanup upon test completion.
+   * 
+   * @param fingerprint The certificate fingerprint to manage
    */
   public void manageAlias(final String fingerprint) {
     managedAliases.add(fingerprint);
   }
 
   /**
-   * Add a certificate alias to automatically cleanup upon test failure
+   * Remove a certificate alias from automatic cleanup.
+   * 
+   * @param fingerprint The certificate fingerprint to unmanage
    */
   public void unmanageAlias(final String fingerprint) {
     managedAliases.remove(fingerprint);

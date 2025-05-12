@@ -14,8 +14,8 @@ package org.sonatype.nexus.scheduling.internal.upgrade.datastore;
 
 import java.time.Duration;
 import java.util.Optional;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -42,9 +42,9 @@ import org.sonatype.nexus.scheduling.events.TaskEventStopped;
 import org.sonatype.nexus.scheduling.events.TaskEventStoppedCanceled;
 import org.sonatype.nexus.scheduling.events.TaskEventStoppedDone;
 import org.sonatype.nexus.scheduling.events.TaskEventStoppedFailed;
+import org.sonatype.nexus.thread.internal.MDCUtils;
 
 import com.google.common.eventbus.Subscribe;
-import org.slf4j.MDC;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.TASKS;
@@ -56,6 +56,8 @@ import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.St
  *
  * When a task fails, or is canceled the queue will stop until a Nexus node restarts at which point it will resume the
  * executing the queue. Uses events to identify when a task changes state.
+ * 
+ * This implementation leverages Java 21 Virtual Threads for improved concurrency and performance.
  */
 @Named
 @Singleton
@@ -76,8 +78,10 @@ public class QueuingUpgradeTaskScheduler
 
   private final UpgradeTaskStore upgradeTaskStore;
   
-  // Virtual thread factory for asynchronous operations
-  private final ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("upgrade-task-", 0).factory();
+  /**
+   * Virtual thread executor for handling asynchronous event processing
+   */
+  private final Executor virtualThreadExecutor;
 
   @Inject
   public QueuingUpgradeTaskScheduler(
@@ -95,8 +99,9 @@ public class QueuingUpgradeTaskScheduler
     this.delayOnStart = checkNotNull(delayOnStart);
     this.cooperation = checkNotNull(cooperationFactory)
         .configure()
-        .virtualThreadAware(true) // Configure Cooperation2 to be virtual thread aware
         .build("reschedule-upgrade-task");
+    // Create a virtual thread executor for handling asynchronous events
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   @Override
@@ -122,25 +127,24 @@ public class QueuingUpgradeTaskScheduler
   /**
    * Listens for local upgrade events, this is used to start the queue after upgrades so tasks aren't invoked during
    * a rolling upgrade.
+   * 
+   * Uses virtual threads for improved concurrency.
    */
   @Subscribe
   public void on(final UpgradeCompletedEvent event) {
     if (this.isStarted() && !EventHelper.isReplicating()) {
       // Capture MDC context for propagation to virtual thread
-      final var mdcContext = MDC.getCopyOfContextMap();
+      var mdcContext = MDCUtils.getCopyOfContextMap();
       
-      // Execute event handler in a virtual thread
-      Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+      virtualThreadExecutor.execute(() -> {
         try {
-          // Restore MDC context in the virtual thread
-          if (mdcContext != null) {
-            MDC.setContextMap(mdcContext);
-          }
-          
+          // Set MDC context in the virtual thread
+          MDCUtils.setContextMap(mdcContext);
           log.debug(STR."Starting queue due to event \{event}");
           maybeStartQueue();
         } finally {
-          MDC.clear();
+          // Clear MDC context to prevent memory leaks
+          MDCUtils.setContextMap(null);
         }
       });
     }
@@ -149,42 +153,41 @@ public class QueuingUpgradeTaskScheduler
   /**
    * Listens for local upgrade events, this is used to start the queue after upgrades so tasks aren't invoked during
    * a rolling upgrade.
+   * 
+   * Uses virtual threads for improved concurrency.
    */
   @Subscribe
   public void on(final UpgradeFailedEvent event) {
     if (this.isStarted() && !EventHelper.isReplicating()) {
       // Capture MDC context for propagation to virtual thread
-      final var mdcContext = MDC.getCopyOfContextMap();
+      var mdcContext = MDCUtils.getCopyOfContextMap();
       
-      // Execute event handler in a virtual thread
-      Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+      virtualThreadExecutor.execute(() -> {
         try {
-          // Restore MDC context in the virtual thread
-          if (mdcContext != null) {
-            MDC.setContextMap(mdcContext);
-          }
-          
+          // Set MDC context in the virtual thread
+          MDCUtils.setContextMap(mdcContext);
           log.debug(STR."Starting queue due to event \{event}");
           maybeStartQueue();
         } finally {
-          MDC.clear();
+          // Clear MDC context to prevent memory leaks
+          MDCUtils.setContextMap(null);
         }
       });
     }
   }
 
+  /**
+   * Handles task stopped events using virtual threads for improved concurrency.
+   */
   @Subscribe
   public void on(final TaskEventStopped event) {
     // Capture MDC context for propagation to virtual thread
-    final var mdcContext = MDC.getCopyOfContextMap();
+    var mdcContext = MDCUtils.getCopyOfContextMap();
     
-    // Execute event handler in a virtual thread
-    Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+    virtualThreadExecutor.execute(() -> {
       try {
-        // Restore MDC context in the virtual thread
-        if (mdcContext != null) {
-          MDC.setContextMap(mdcContext);
-        }
+        // Set MDC context in the virtual thread
+        MDCUtils.setContextMap(mdcContext);
         
         log.debug(STR."on event: \{event}");
 
@@ -202,28 +205,26 @@ public class QueuingUpgradeTaskScheduler
           maybeStartQueue();
         }
       } finally {
-        MDC.clear();
+        // Clear MDC context to prevent memory leaks
+        MDCUtils.setContextMap(null);
       }
     });
   }
 
+  /**
+   * Attempts to start the queue of upgrade tasks using virtual threads for improved I/O performance.
+   * The Cooperation2 lock handling has been updated to be compatible with virtual threads.
+   */
   @Guarded(by = STARTED)
   protected void maybeStartQueue() {
     try {
-      // Use virtual threads for I/O operations in the cooperation block
-      var executor = Executors.newVirtualThreadPerTaskExecutor();
-      
-      cooperation.on(() -> {
-        // Capture MDC context for propagation to virtual thread
-        final var mdcContext = MDC.getCopyOfContextMap();
-        
-        return executor.submit(() -> {
-          try {
-            // Restore MDC context in the virtual thread
-            if (mdcContext != null) {
-              MDC.setContextMap(mdcContext);
-            }
-            
+      // Use virtual thread for I/O operations
+      virtualThreadExecutor.execute(() -> {
+        var mdcContext = MDCUtils.getCopyOfContextMap();
+        try {
+          MDCUtils.setContextMap(mdcContext);
+          
+          cooperation.on(() -> {
             Optional<UpgradeTaskData> next = upgradeTaskStore.next();
             if (!next.isPresent()) {
               return null;
@@ -232,16 +233,18 @@ public class QueuingUpgradeTaskScheduler
               scheduleTask(next.get());
             }
             return null;
-          } finally {
-            MDC.clear();
-          }
-        }).get(); // Wait for the virtual thread to complete
-      })
-          .checkFunction(Optional::empty)
-          .cooperate("queue");
+          })
+              .checkFunction(Optional::empty)
+              .cooperate("queue");
+        } catch (Exception e) {
+          log.error(STR."An error occurred while starting the upgrade task queue: \{e.getMessage()}", e);
+        } finally {
+          MDCUtils.setContextMap(null);
+        }
+      });
     }
     catch (Exception e) {
-      log.error(STR."An error occurred while starting the upgrade task queue.", e);
+      log.error(STR."Failed to submit virtual thread task: \{e.getMessage()}", e);
     }
   }
 

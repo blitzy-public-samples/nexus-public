@@ -12,44 +12,26 @@
  */
 package org.sonatype.nexus.testsuite.testsupport.maven;
 
-import org.joda.time.DateTime;
+import java.time.Instant;
 
 /**
+ * Maven test component data model.
+ * 
  * @since 3.30
+ * @see java.time.Instant
  */
-public class MavenTestComponent
-{
-  private String name;
-
-  private String baseVersion;
-
-  private String version;
-
-  private DateTime lastUpdated;
-
-  public MavenTestComponent(final String name,
-                            final String baseVersion,
-                            final String version,
-                            final DateTime lastUpdated) {
-    this.name = name;
-    this.baseVersion = baseVersion;
-    this.version = version;
-    this.lastUpdated = lastUpdated;
-  }
-
-  public String baseVersion() {
-    return baseVersion;
-  }
-
-  public String version() {
-    return version;
-  }
-
-  public DateTime lastUpdated() {
-    return lastUpdated;
-  }
-
-  public String name() {
-    return name;
+public record MavenTestComponent(
+    String name,
+    String baseVersion,
+    String version,
+    Instant lastUpdated
+) {
+  /**
+   * Validates and creates a new MavenTestComponent instance.
+   * 
+   * Leverages Java 21 record pattern for immutable data representation.
+   */
+  public MavenTestComponent {
+    // Compact constructor for validation if needed in the future
   }
 }

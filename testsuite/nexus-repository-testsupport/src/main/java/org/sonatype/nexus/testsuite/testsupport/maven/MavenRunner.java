@@ -13,6 +13,10 @@
 package org.sonatype.nexus.testsuite.testsupport.maven;
 
 import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.Supplier;
 
 import org.sonatype.goodies.common.ComponentSupport;
@@ -21,15 +25,32 @@ import org.apache.maven.it.VerificationException;
 import org.apache.maven.it.Verifier;
 
 /**
- * Exercise maven goals against a project.
+ * Exercise maven goals against a project using Java 21 virtual threads for concurrent build/test operations.
+ * 
+ * @since 3.60
  */
 public class MavenRunner
   extends ComponentSupport
 {
+  /**
+   * Runs Maven goals against the specified deployment.
+   *
+   * @param deployment the Maven deployment to run against
+   * @param goals the Maven goals to execute
+   * @throws VerificationException if Maven execution fails
+   */
   public void run(final MavenDeployment deployment, final String... goals) throws VerificationException {
     doRun(deployment, goals);
   }
 
+  /**
+   * Runs Maven goals against the specified deployment with retry capability.
+   *
+   * @param shouldRetry supplier that determines if execution should be retried on failure
+   * @param deployment the Maven deployment to run against
+   * @param goals the Maven goals to execute
+   * @throws VerificationException if Maven execution fails and retry conditions are not met
+   */
   public void run(final Supplier<Boolean> shouldRetry, final MavenDeployment deployment, final String... goals) throws VerificationException {
     do {
       try {
@@ -44,6 +65,39 @@ public class MavenRunner
     while (shouldRetry.get());
   }
 
+  /**
+   * Runs Maven goals concurrently against multiple deployments using Java 21 virtual threads.
+   *
+   * @param deployments list of Maven deployments to run against
+   * @param goals the Maven goals to execute on each deployment
+   * @throws VerificationException if any Maven execution fails
+   */
+  public void runConcurrently(final List<MavenDeployment> deployments, final String... goals) throws VerificationException {
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      CompletableFuture<?>[] futures = deployments.stream()
+          .map(deployment -> CompletableFuture.runAsync(() -> {
+            try {
+              doRun(deployment, goals);
+            }
+            catch (VerificationException e) {
+              throw new RuntimeException("Maven execution failed for " + deployment, e);
+            }
+          }, executor))
+          .toArray(CompletableFuture[]::new);
+      
+      CompletableFuture.allOf(futures).join();
+    }
+    catch (RuntimeException e) {
+      if (e.getCause() instanceof VerificationException) {
+        throw (VerificationException) e.getCause();
+      }
+      throw e;
+    }
+  }
+
+  /**
+   * Internal method to execute Maven goals.
+   */
   private void doRun(final MavenDeployment deployment, final String... goals) throws VerificationException {
     log.debug("Deploying: {}", deployment);
     Verifier verifier = new Verifier(deployment.getProjectDir().getAbsolutePath());

@@ -13,7 +13,18 @@
 package org.sonatype.nexus.testsuite.testsupport.maven;
 
 /**
- * Marker interface to group Maven Integration Tests
+ * Marker interface to group Maven Integration Tests.
+ * 
+ * <p>
+ * Compatible with Java 21 runtime environment and testing frameworks:
+ * <ul>
+ *   <li>JUnit Jupiter 5.10.1</li>
+ *   <li>Mockito 4.11.0</li>
+ * </ul>
+ * 
+ * <p>
+ * Tests using this marker can be executed in both platform thread and virtual thread modes
+ * when the appropriate Maven profile is activated.
  */
 public interface MavenTestGroup
 {

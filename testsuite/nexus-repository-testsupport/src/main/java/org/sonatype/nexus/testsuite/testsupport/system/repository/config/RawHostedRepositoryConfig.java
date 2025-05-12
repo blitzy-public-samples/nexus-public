@@ -18,9 +18,22 @@ import org.sonatype.nexus.repository.Repository;
 
 import static org.sonatype.nexus.testsuite.testsupport.system.RepositoryTestSystem.FORMAT_RAW;
 
+/**
+ * Configuration class for Raw hosted repositories in the test support framework.
+ * <p>
+ * This class is compatible with Java 21 and provides a fluent API for configuring
+ * Raw hosted repositories during integration tests.
+ *
+ * @since 3.60.0
+ */
 public class RawHostedRepositoryConfig
     extends HostedRepositoryConfigSupport<RawHostedRepositoryConfig>
 {
+  /**
+   * Creates a new Raw hosted repository configuration with the specified factory.
+   *
+   * @param factory Function that creates a Repository from this configuration
+   */
   public RawHostedRepositoryConfig(final Function<RawHostedRepositoryConfig, Repository> factory) {
     super(factory);
   }

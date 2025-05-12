@@ -18,19 +18,28 @@ import java.time.ZonedDateTime;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.nio.file.Files.createTempDirectory;
 import static org.apache.commons.io.FileUtils.deleteQuietly;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
+/**
+ * Test for TaskLogCleanup functionality.
+ * 
+ * Updated for Java 21 compatibility using JUnit Jupiter (JUnit 5) and modern testing practices.
+ * This test verifies the task log cleanup functionality with proper isolation and Java 21 features.
+ */
+@ExtendWith(MockitoExtension.class)
 public class TaskLogCleanupTest
     extends TestSupport
 {
@@ -46,17 +55,17 @@ public class TaskLogCleanupTest
 
   private File twoDaysOldFile;
 
-  @BeforeClass
+  @BeforeAll
   public static void init() throws IOException {
     tempTaskFolder = createTempDirectory("tmp-task-folder").toFile();
   }
 
-  @AfterClass
+  @AfterAll
   public static void end() {
     tempTaskFolder.deleteOnExit();
   }
 
-  @Before
+  @BeforeEach
   public void setup() throws IOException {
     taskLogCleanup = spy(new TaskLogCleanup(DAYS_AGO));
 
@@ -65,13 +74,17 @@ public class TaskLogCleanupTest
     twoDaysOldFile = createFile("twoDaysOld", 2);
   }
 
-  @After
+  @AfterEach
   public void tearDown() throws IOException {
     deleteQuietly(todayFile);
     deleteQuietly(yesterdayFile);
     deleteQuietly(twoDaysOldFile);
   }
 
+  /**
+   * Test cleanup behavior when task log home is not set.
+   * No files should be deleted in this case.
+   */
   @Test
   public void cleanup_NoTaskLogHome() throws Exception {
     when(taskLogCleanup.getTaskLogHome()).thenReturn(null);
@@ -79,11 +92,15 @@ public class TaskLogCleanupTest
     taskLogCleanup.cleanup();
 
     // nothing is deleted
-    assertTrue(todayFile.exists());
-    assertTrue(yesterdayFile.exists());
-    assertTrue(twoDaysOldFile.exists());
+    assertThat(todayFile.exists(), is(true));
+    assertThat(yesterdayFile.exists(), is(true));
+    assertThat(twoDaysOldFile.exists(), is(true));
   }
 
+  /**
+   * Test normal cleanup behavior.
+   * Files older than the configured threshold should be deleted.
+   */
   @Test
   public void cleanup() throws Exception {
     when(taskLogCleanup.getTaskLogHome()).thenReturn(tempTaskFolder.getAbsolutePath());
@@ -91,11 +108,19 @@ public class TaskLogCleanupTest
     taskLogCleanup.cleanup();
 
     // only two day old file is deleted
-    assertTrue(todayFile.exists());
-    assertTrue(yesterdayFile.exists());
-    assertFalse(twoDaysOldFile.exists());
+    assertThat(todayFile.exists(), is(true));
+    assertThat(yesterdayFile.exists(), is(true));
+    assertThat(twoDaysOldFile.exists(), is(false));
   }
 
+  /**
+   * Helper method to create a test file with a specific age.
+   * Uses Java time APIs to set the last modified time accurately.
+   *
+   * @param name The name of the file to create
+   * @param ageInDays The age of the file in days
+   * @return The created file
+   */
   private File createFile(final String name, final int ageInDays) throws IOException {
     File file = new File(tempTaskFolder, name);
     file.createNewFile();

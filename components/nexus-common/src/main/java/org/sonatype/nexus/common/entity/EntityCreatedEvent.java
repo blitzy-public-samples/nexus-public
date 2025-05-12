@@ -15,19 +15,12 @@ package org.sonatype.nexus.common.entity;
 /**
  * Entity created event.
  * 
- * <p>
- * Note: This class is not suitable for conversion to a Java 21 record because:
- * <ul>
- *   <li>It extends a non-record class (EntityEvent) which has mutable fields</li>
- *   <li>Records cannot extend other classes, only interfaces</li>
- *   <li>The parent class already handles thread safety for event publication</li>
- * </ul>
+ * This class is not suitable for conversion to a record because it extends EntityEvent,
+ * which contains mutable state and custom thread-safety mechanisms. Records cannot extend
+ * non-record classes and are designed for immutable data carriers.
  * 
- * <p>
- * Thread safety is ensured by the parent class which uses volatile fields and
- * double-checked locking for lazy initialization of the entity field.
- * Event publication is handled through the EventManager which supports
- * asynchronous delivery using Java 21 virtual threads when appropriate.
+ * Thread-safety is inherited from the parent class which uses volatile fields and ReentrantLock
+ * for concurrent access patterns optimized for Java 21.
  *
  * @since 3.1
  */
@@ -35,9 +28,9 @@ public class EntityCreatedEvent
     extends EntityEvent
 {
   /**
-   * Constructs a new entity created event.
+   * Creates a new entity created event.
    *
-   * @param metadata the entity metadata for the created entity
+   * @param metadata the metadata of the created entity (non-null)
    */
   public EntityCreatedEvent(final EntityMetadata metadata) {
     super(metadata);

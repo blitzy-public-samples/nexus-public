@@ -16,6 +16,7 @@ import org.sonatype.nexus.repository.raw.ContentDisposition;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 
 /**
@@ -23,24 +24,20 @@ import io.swagger.annotations.ApiModelProperty;
  *
  * @since 3.25
  */
-public class RawAttributes
-{
-
+@ApiModel("Raw repository configuration attributes")
+public record RawAttributes(
+    @ApiModelProperty(value = "Content Disposition",
+        allowableValues = "INLINE,ATTACHMENT", example = "ATTACHMENT")
+    @JsonProperty(CONTENT_DISPOSITION)
+    ContentDisposition contentDisposition
+) {
   public static final String CONTENT_DISPOSITION = "contentDisposition";
 
-  @ApiModelProperty(value = "Content Disposition",
-      allowableValues = "INLINE,ATTACHMENT", example = "ATTACHMENT")
-  private final ContentDisposition contentDisposition;
-
+  /**
+   * Constructor with JSON creator annotation for proper deserialization
+   */
   @JsonCreator
-  public RawAttributes(
-      @JsonProperty(CONTENT_DISPOSITION) final ContentDisposition contentDisposition
-  )
-  {
-    this.contentDisposition = contentDisposition;
-  }
-
-  public ContentDisposition getContentDisposition() {
-    return contentDisposition;
+  public RawAttributes {
+    // Record compact constructor for validation if needed
   }
 }

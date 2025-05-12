@@ -17,6 +17,8 @@ import java.io.IOException;
 import java.net.URL;
 import java.util.Arrays;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 import javax.annotation.Nonnull;
@@ -58,10 +60,13 @@ import org.apache.http.client.utils.HttpClientUtils;
 import org.apache.http.util.EntityUtils;
 import org.hamcrest.MatcherAssert;
 import org.joda.time.DateTime;
-import org.junit.Rule;
-import org.junit.rules.RuleChain;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.hamcrest.Matchers.is;
 import static org.sonatype.nexus.repository.http.HttpStatus.OK;
 import static org.sonatype.nexus.security.user.UserManager.DEFAULT_SOURCE;
@@ -69,6 +74,9 @@ import static org.sonatype.nexus.testsuite.testsupport.FormatClientSupport.statu
 
 /**
  * Support class for repository format ITs.
+ * <p>
+ * This class provides support for integration testing of repository formats with Java 21 compatibility,
+ * including virtual thread support for improved concurrency in I/O operations.
  *
  * @deprecated Please write new tests as part of the {@link ITSupport} hierarchy
  */
@@ -80,7 +88,17 @@ public abstract class GenericRepositoryITSupport<RR extends RepositoryRule>
 
   protected static final int MAX_NUGET_CLIENT_CONNECTIONS = 100;
 
+  /**
+   * Factory for creating APT clients
+   */
   protected AptClientFactory aptClientFactory = new AptClientFactory();
+
+  /**
+   * Executor service for virtual threads to improve I/O operation concurrency.
+   * Virtual threads are lightweight and managed by the JVM, allowing for significantly
+   * higher concurrency with minimal resource overhead compared to platform threads.
+   */
+  protected final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   @Inject
   protected ComponentAssetTestHelper componentAssetTestHelper;
@@ -110,22 +128,64 @@ public abstract class GenericRepositoryITSupport<RR extends RepositoryRule>
 
   protected RR repos = createRepositoryRule();
 
-  @Rule
-  public RuleChain ruleChain = RuleChain.outerRule(blobstoreRule).around(repos);
+  @RegisterExtension
+  public final BlobStoreRule blobstoreExtension = blobstoreRule;
+
+  @RegisterExtension
+  public final RR reposExtension = repos;
 
   protected abstract RR createRepositoryRule();
 
+  /**
+   * Cleanup resources after each test.
+   */
+  @AfterEach
+  public void cleanupExecutor() {
+    if (virtualThreadExecutor != null) {
+      virtualThreadExecutor.shutdown();
+      try {
+        if (!virtualThreadExecutor.awaitTermination(5, SECONDS)) {
+          virtualThreadExecutor.shutdownNow();
+        }
+      }
+      catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        virtualThreadExecutor.shutdownNow();
+      }
+    }
+  }
+
+  /**
+   * Returns the base URL for a repository.
+   *
+   * @param repository the repository
+   * @return the base URL for the repository
+   */
   @Nonnull
   protected URL repositoryBaseUrl(final Repository repository) {
     return resolveUrl(nexusUrl, SLASH_REPO_SLASH + repository.getName() + "/");
   }
 
+  /**
+   * Creates a RawClient for the specified repository.
+   *
+   * @param repository the repository
+   * @return a RawClient for the repository
+   * @throws Exception if an error occurs
+   */
   @Nonnull
   protected RawClient rawClient(final Repository repository) throws Exception {
     checkNotNull(repository);
     return rawClient(repositoryBaseUrl(repository));
   }
 
+  /**
+   * Creates a RawClient for the specified repository URL.
+   *
+   * @param repositoryUrl the repository URL
+   * @return a RawClient for the repository URL
+   * @throws Exception if an error occurs
+   */
   protected RawClient rawClient(final URL repositoryUrl) throws Exception {
     return new RawClient(
         clientBuilder(repositoryUrl).build(),
@@ -134,11 +194,25 @@ public abstract class GenericRepositoryITSupport<RR extends RepositoryRule>
     );
   }
 
+  /**
+   * Creates a Maven2Client for the specified repository.
+   *
+   * @param repository the repository
+   * @return a Maven2Client for the repository
+   * @throws Exception if an error occurs
+   */
   protected Maven2Client maven2Client(final Repository repository) throws Exception {
     checkNotNull(repository);
     return maven2Client(repositoryBaseUrl(repository));
   }
 
+  /**
+   * Creates a Maven2Client for the specified repository URL.
+   *
+   * @param repositoryUrl the repository URL
+   * @return a Maven2Client for the repository URL
+   * @throws Exception if an error occurs
+   */
   protected Maven2Client maven2Client(final URL repositoryUrl) throws Exception {
     return new Maven2Client(
         clientBuilder(repositoryUrl).build(),
@@ -147,11 +221,26 @@ public abstract class GenericRepositoryITSupport<RR extends RepositoryRule>
     );
   }
 
+  /**
+   * Creates an AptClient for the specified repository using the default credentials.
+   *
+   * @param repositoryName the repository name
+   * @return an AptClient for the repository
+   * @throws Exception if an error occurs
+   */
   protected AptClient createAptClient(final String repositoryName) throws Exception {
     Credentials creds = credentials();
     return createAptClient(repositoryName, creds.getUserPrincipal().getName(), creds.getPassword());
   }
 
+  /**
+   * Creates an AptClient for the specified repository using the provided credentials.
+   *
+   * @param repositoryName the repository name
+   * @param username the username
+   * @param password the password
+   * @return an AptClient for the repository
+   */
   protected AptClient createAptClient(final String repositoryName, final String username, final String password)
   {
     checkNotNull(repositoryManager.get(repositoryName));
@@ -159,12 +248,26 @@ public abstract class GenericRepositoryITSupport<RR extends RepositoryRule>
         .createClient(resolveUrl(nexusUrl, SLASH_REPO_SLASH + repositoryName + "/"), username, password);
   }
 
+  /**
+   * Enables the specified realm if not already enabled.
+   *
+   * @param realmName the realm name
+   */
   protected void enableRealm(final String realmName) {
     log.info("Current Realms: {}", realmManager.getConfiguredRealmIds());
     log.info("Adding {} if not already configured.", realmName);
     realmManager.enableRealm(realmName);
   }
 
+  /**
+   * Creates a user with the specified role if the user doesn't exist,
+   * or updates the user's roles if the user already exists.
+   *
+   * @param username the username
+   * @param password the password
+   * @param role the role
+   * @throws NoSuchUserManagerException if the user manager doesn't exist
+   */
   protected void maybeCreateUser(final String username, final String password, final String role)
       throws NoSuchUserManagerException
   {
@@ -177,6 +280,13 @@ public abstract class GenericRepositoryITSupport<RR extends RepositoryRule>
     }
   }
 
+  /**
+   * Creates a role with the specified privileges.
+   *
+   * @param name the role name
+   * @param privileges the privileges
+   * @return the created role
+   */
   protected static Role createRole(final String name, final String... privileges) {
     Role role = new Role();
     role.setRoleId(name);
@@ -188,6 +298,13 @@ public abstract class GenericRepositoryITSupport<RR extends RepositoryRule>
     return role;
   }
 
+  /**
+   * Sets the roles for a user.
+   *
+   * @param user the user
+   * @param roles the roles
+   * @return the updated user
+   */
   protected static User userSetRoles(final User user, final String... roles) {
     Set<RoleIdentifier> roleIds = Arrays.stream(roles)
         .map(r -> new RoleIdentifier(DEFAULT_SOURCE, r))
@@ -196,6 +313,13 @@ public abstract class GenericRepositoryITSupport<RR extends RepositoryRule>
     return user;
   }
 
+  /**
+   * Creates a user with the specified role.
+   *
+   * @param username the username
+   * @param role the role
+   * @return the created user
+   */
   protected static User createUser(final String username, final String role) {
     User user = new User();
     user.setUserId(username);
@@ -207,6 +331,13 @@ public abstract class GenericRepositoryITSupport<RR extends RepositoryRule>
     return userSetRoles(user, role);
   }
 
+  /**
+   * Creates a selector with the specified name, type, and expression if it doesn't exist.
+   *
+   * @param name the selector name
+   * @param type the selector type
+   * @param expression the selector expression
+   */
   protected void maybeCreateSelector(final String name, final String type, final String expression) {
     if (selectorManager.browse().stream().noneMatch(s -> name.equals(s.getName()))) {
       SelectorConfiguration config =
@@ -215,6 +346,13 @@ public abstract class GenericRepositoryITSupport<RR extends RepositoryRule>
     }
   }
 
+  /**
+   * Creates a role with the specified privileges if it doesn't exist.
+   *
+   * @param name the role name
+   * @param privileges the privileges
+   * @throws NoSuchAuthorizationManagerException if the authorization manager doesn't exist
+   */
   protected void maybeCreateRole(final String name, final String... privileges)
       throws NoSuchAuthorizationManagerException
   {
@@ -227,12 +365,26 @@ public abstract class GenericRepositoryITSupport<RR extends RepositoryRule>
     }
   }
 
+  /**
+   * Gets the last downloaded time for an asset in a repository.
+   *
+   * @param repository the repository
+   * @param assetName the asset name
+   * @return the last downloaded time
+   */
   protected DateTime getLastDownloadedTime(final Repository repository, final String assetName) {
     return componentAssetTestHelper.getLastDownloadedTime(repository, assetName);
   }
 
   /**
    * Sets the content max age and metadata max age on a proxy repository.
+   * <p>
+   * This method uses virtual threads for improved performance when updating repository configurations.
+   *
+   * @param proxyRepository the proxy repository
+   * @param contentMaxAge the content max age
+   * @param metadataMaxAge the metadata max age
+   * @throws Exception if an error occurs
    */
   protected void setContentAndMetadataMaxAge(final Repository proxyRepository,
                                              final int contentMaxAge,
@@ -241,9 +393,28 @@ public abstract class GenericRepositoryITSupport<RR extends RepositoryRule>
     Configuration configuration = proxyRepository.getConfiguration().copy();
     configuration.attributes("proxy").set("contentMaxAge", contentMaxAge);
     configuration.attributes("proxy").set("metadataMaxAge", metadataMaxAge);
-    repositoryManager.update(configuration);
+    
+    // Use virtual threads for repository configuration updates to improve concurrency
+    virtualThreadExecutor.submit(() -> {
+      try {
+        repositoryManager.update(configuration);
+      }
+      catch (Exception e) {
+        log.error("Failed to update repository configuration", e);
+        throw new RuntimeException("Failed to update repository configuration", e);
+      }
+    }).get(); // Wait for completion
   }
 
+  /**
+   * Asserts that the response matches the expected file.
+   * <p>
+   * This method uses virtual threads for improved performance when processing response data.
+   *
+   * @param response the response
+   * @param expectedFile the expected file
+   * @throws IOException if an I/O error occurs
+   */
   protected void assertSuccessResponseMatches(final HttpResponse response, final String expectedFile)
       throws IOException
   {

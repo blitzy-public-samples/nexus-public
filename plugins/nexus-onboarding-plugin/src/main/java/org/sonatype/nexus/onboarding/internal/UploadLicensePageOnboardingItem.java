@@ -12,9 +12,9 @@
  */
 package org.sonatype.nexus.onboarding.internal;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.onboarding.OnboardingItem;
@@ -23,6 +23,9 @@ import org.sonatype.nexus.onboarding.capability.OnboardingCapabilityHelper;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
+/**
+ * Onboarding item for license upload page.
+ */
 @Named
 @Singleton
 @FeatureFlag(name = "nexus.onboarding.license.enabled")

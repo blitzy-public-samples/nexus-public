@@ -38,12 +38,29 @@ public class ContentDispositionHandler
   @Override
   public Response handle(@Nonnull final Context context) throws Exception {
     Response response = context.proceed();
+    
+    // Get the request action
     String action = context.getRequest().getAction();
-    if (GET.equals(action)) {
-      String contentDisposition = context.getRepository().getConfiguration().attributes("raw")
-          .get(CONTENT_DISPOSITION_CONFIG_KEY, String.class, ContentDisposition.INLINE.name());
-      response.getHeaders().replace("Content-Disposition", ContentDisposition.valueOf(contentDisposition).getValue());
+    
+    // Use Java 21 pattern matching for switch to check if action is GET
+    // This leverages the enhanced switch expression with arrow syntax and null handling
+    switch (action) {
+      case null -> {
+        // Handle null action (shouldn't normally happen, but Java 21 switch can handle null cases)
+      }
+      case GET -> {
+        // Retrieve content disposition configuration from repository attributes
+        String contentDisposition = context.getRepository().getConfiguration().attributes("raw")
+            .get(CONTENT_DISPOSITION_CONFIG_KEY, String.class, ContentDisposition.INLINE.name());
+        
+        // Replace Content-Disposition header with configured value
+        response.getHeaders().replace("Content-Disposition", 
+            ContentDisposition.valueOf(contentDisposition).getValue());
+      }
+      // No action needed for other HTTP methods
+      default -> {}
     }
+    
     return response;
   }
 }

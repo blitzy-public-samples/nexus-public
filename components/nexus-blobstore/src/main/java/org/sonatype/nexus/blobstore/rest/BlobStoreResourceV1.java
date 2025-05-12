@@ -12,26 +12,19 @@
  */
 package org.sonatype.nexus.blobstore.rest;
 
-import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.CompletableFuture;
-
-import jakarta.annotation.PreDestroy;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import jakarta.inject.Singleton;
 import jakarta.ws.rs.Path;
-import jakarta.ws.rs.WebApplicationException;
-import jakarta.ws.rs.core.Response;
 
 import org.sonatype.nexus.blobstore.ConnectionChecker;
 import org.sonatype.nexus.blobstore.api.BlobStoreManager;
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaService;
 import org.sonatype.nexus.repository.blobstore.BlobStoreConfigurationStore;
 
+import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.blobstore.rest.BlobStoreResourceV1.RESOURCE_URI;
 import static org.sonatype.nexus.rest.APIConstants.V1_API_PREFIX;
 
@@ -47,11 +40,14 @@ public class BlobStoreResourceV1
     extends BlobStoreResource
 {
   static final String RESOURCE_URI = V1_API_PREFIX + "/blobstores";
-  
-  private final ExecutorService virtualThreadExecutor;
 
   /**
    * Constructor with dependency injection compatible with Guice 7.0.0
+   *
+   * @param blobStoreManager     Manager for blob stores
+   * @param store                Configuration store for blob stores
+   * @param quotaService         Service for blob store quotas
+   * @param connectionCheckers   Map of connection checkers for different blob store types
    */
   @Inject
   public BlobStoreResourceV1(
@@ -60,82 +56,9 @@ public class BlobStoreResourceV1
       final BlobStoreQuotaService quotaService,
       final Map<String, ConnectionChecker> connectionCheckers)
   {
-    super(blobStoreManager, store, quotaService, connectionCheckers);
-    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
-  }
-  
-  /**
-   * Override to implement Virtual Threads for I/O-bound operations
-   */
-  @Override
-  public List<GenericBlobStoreApiResponse> listBlobStores() {
-    try {
-      return CompletableFuture.supplyAsync(super::listBlobStores, virtualThreadExecutor).join();
-    } catch (Exception e) {
-      log.error("Error listing blob stores using virtual threads", e);
-      throw e;
-    }
-  }
-  
-  /**
-   * Override to implement Virtual Threads for I/O-bound operations
-   */
-  @Override
-  public void deleteBlobStore(final String name) throws Exception {
-    try {
-      CompletableFuture.runAsync(() -> {
-        try {
-          super.deleteBlobStore(name);
-        } catch (Exception e) {
-          throw new RuntimeException(e);
-        }
-      }, virtualThreadExecutor).join();
-    } catch (RuntimeException e) {
-      if (e.getCause() instanceof Exception) {
-        throw (Exception) e.getCause();
-      }
-      throw e;
-    }
-  }
-  
-  /**
-   * Override to implement Virtual Threads for I/O-bound operations
-   */
-  @Override
-  public BlobStoreQuotaResultXO quotaStatus(final String name) {
-    try {
-      return CompletableFuture.supplyAsync(() -> super.quotaStatus(name), virtualThreadExecutor).join();
-    } catch (Exception e) {
-      log.error("Error checking quota status using virtual threads", e);
-      throw e;
-    }
-  }
-  
-  /**
-   * Override to implement Virtual Threads for I/O-bound operations
-   */
-  @Override
-  public void verifyConnection(final BlobStoreConnectionXO blobStoreConnectionXO) {
-    try {
-      CompletableFuture.runAsync(() -> super.verifyConnection(blobStoreConnectionXO), virtualThreadExecutor).join();
-    } catch (Exception e) {
-      log.error("Error verifying connection using virtual threads", e);
-      if (e.getCause() instanceof WebApplicationException) {
-        throw (WebApplicationException) e.getCause();
-      }
-      throw new WebApplicationException(Response.status(Response.Status.BAD_REQUEST)
-          .entity("Connection verification failed: " + e.getMessage()).build());
-    }
-  }
-  
-  /**
-   * Cleanup resources when the component is destroyed
-   */
-  @PreDestroy
-  public void shutdown() {
-    if (virtualThreadExecutor != null && !virtualThreadExecutor.isShutdown()) {
-      log.debug("Shutting down virtual thread executor");
-      virtualThreadExecutor.shutdown();
-    }
+    super(checkNotNull(blobStoreManager), 
+          checkNotNull(store), 
+          checkNotNull(quotaService), 
+          checkNotNull(connectionCheckers));
   }
 }

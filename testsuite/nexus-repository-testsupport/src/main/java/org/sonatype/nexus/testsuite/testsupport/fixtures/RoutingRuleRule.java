@@ -22,14 +22,38 @@ import org.sonatype.nexus.repository.routing.RoutingMode;
 import org.sonatype.nexus.repository.routing.RoutingRule;
 import org.sonatype.nexus.repository.routing.RoutingRuleStore;
 
-import org.junit.rules.ExternalResource;
+import org.junit.jupiter.api.extension.AfterEachCallback;
+import org.junit.jupiter.api.extension.BeforeEachCallback;
+import org.junit.jupiter.api.extension.ExtensionContext;
 
+/**
+ * JUnit Jupiter extension for managing {@link RoutingRule} instances in tests.
+ * 
+ * <p>This class is compatible with Java 21 and JUnit Jupiter 5.10.1.</p>
+ * 
+ * <p>Usage example:</p>
+ * <pre>
+ * {@code
+ * @ExtendWith(RoutingRuleRule.class)
+ * class MyTest {
+ *   @Inject
+ *   private Provider<RoutingRuleStore> ruleStoreProvider;
+ *   
+ *   @BeforeEach
+ *   void setUp(RoutingRuleRule routingRuleRule) {
+ *     // Create routing rules for test
+ *     routingRuleRule.create("my-rule", ".*");
+ *   }
+ * }
+ * }
+ * </pre>
+ */
 public class RoutingRuleRule
-    extends ExternalResource
+    implements BeforeEachCallback, AfterEachCallback
 {
-  private Provider<RoutingRuleStore> ruleStoreProvider;
+  private final Provider<RoutingRuleStore> ruleStoreProvider;
 
-  List<RoutingRule> rules = new ArrayList<>();
+  private final List<RoutingRule> rules = new ArrayList<>();
 
   public RoutingRuleRule(final Provider<RoutingRuleStore> ruleStoreProvider) {
     this.ruleStoreProvider = ruleStoreProvider;
@@ -37,9 +61,13 @@ public class RoutingRuleRule
 
   /**
    * Create a RoutingRule with mode block and a dummy description
+   *
+   * @param name the name of the routing rule
+   * @param pattern the pattern to match
+   * @return the created routing rule
    */
   public RoutingRule create(final String name, final String pattern) {
-    final RoutingRuleStore routingRuleStore = ruleStoreProvider.get();
+    var routingRuleStore = ruleStoreProvider.get();
     return create(routingRuleStore.newRoutingRule()
         .name(name)
         .description("some description")
@@ -48,16 +76,29 @@ public class RoutingRuleRule
     );
   }
 
+  /**
+   * Create a RoutingRule from the provided rule template
+   *
+   * @param routingRule the routing rule template to create
+   * @return the created routing rule
+   */
   public RoutingRule create(final RoutingRule routingRule) {
-    RoutingRule result = ruleStoreProvider.get().create(routingRule);
+    var result = ruleStoreProvider.get().create(routingRule);
     rules.add(result);
     return result;
   }
 
   @Override
-  protected void after() {
+  public void beforeEach(final ExtensionContext context) {
+    // No setup needed before each test
+  }
+
+  @Override
+  public void afterEach(final ExtensionContext context) {
+    // Clean up all created rules after each test
     for (RoutingRule rule : rules) {
       ruleStoreProvider.get().delete(rule);
     }
+    rules.clear();
   }
 }

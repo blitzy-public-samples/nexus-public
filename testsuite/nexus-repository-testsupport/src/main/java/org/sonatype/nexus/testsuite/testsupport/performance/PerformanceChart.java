@@ -38,6 +38,9 @@ import static com.google.common.base.Preconditions.checkState;
 /**
  * Utilities for writing performance results to an HTML chart.
  *
+ * <p>This class is compatible with Java 21 and works with the updated PerformanceData model
+ * that leverages modern Java features like records and sequenced collections.</p>
+ *
  * @since 3.0
  */
 public class PerformanceChart
@@ -48,6 +51,13 @@ public class PerformanceChart
     // empty
   }
 
+  /**
+   * Writes a performance report to the specified output file.
+   *
+   * @param results the performance data to include in the report
+   * @param outputFile the file to write the report to
+   * @throws IOException if an error occurs while writing the file
+   */
   public static void writePerformanceReport(final PerformanceData results, final File outputFile)
       throws IOException
   {
@@ -62,14 +72,23 @@ public class PerformanceChart
     Files.asCharSink(outputFile, StandardCharsets.UTF_8).write(reportHtml);
   }
 
+  /**
+   * Loads the HTML report template from the classpath.
+   *
+   * @return the report template as a string
+   * @throws IOException if the template cannot be loaded
+   */
   private static String loadReportTemplate() throws IOException {
     final URL reportTemplateResource = PerformanceChart.class.getResource("performanceReport.html");
-    checkState(reportTemplateResource != null);
+    checkState(reportTemplateResource != null, "Performance report template not found");
     return Resources.toString(reportTemplateResource, StandardCharsets.UTF_8);
   }
 
   /**
    * Builds a Javascript array to be inserted into the Google Charts API definition.
+   *
+   * @param results the performance data to include in the chart
+   * @return a string containing the JavaScript data array
    */
   private static String buildChartData(final PerformanceData results) {
     final DecimalFormat format = new DecimalFormat("#.00");
@@ -81,24 +100,29 @@ public class PerformanceChart
     // Create the header row
     s.append("['# of Client Threads'");
     for (String testName : testNames) {
-      s.append(",'").append(testName).append("'");
+      s.append(",'")
+       .append(testName)
+       .append("'");
     }
     s.append("]");
 
     for (int threadCount : results.getThreadCounts()) {
-      s.append(",[").append(threadCount);
+      s.append(",[")
+       .append(threadCount);
 
       for (String testName : testNames) {
         final PerformanceTestSeries series = results.findTestResult(testName);
 
         final PerformanceRunResult test = series.getResultsByThreadCount().get(threadCount);
-        final int requestsCompleted = test.getRequestsCompleted();
-
-        final int duration = test.getTestDurationSeconds();
-
-        final double requestPerSecond = ((double) requestsCompleted) / duration;
-
-        s.append(",").append(format.format(requestPerSecond));
+        if (test != null) {
+          final int requestsCompleted = test.getRequestsCompleted();
+          final int duration = test.getTestDurationSeconds();
+          final double requestPerSecond = ((double) requestsCompleted) / duration;
+          s.append(",").append(format.format(requestPerSecond));
+        }
+        else {
+          s.append(",0"); // No data for this test at this thread count
+        }
       }
 
       s.append("]");
@@ -106,8 +130,12 @@ public class PerformanceChart
     return s.toString();
   }
 
+  /**
+   * Builds a string containing system information for the report.
+   *
+   * @return a string containing system information
+   */
   private static String buildSystemInfo() {
-
     StringBuilder systemSummary = new StringBuilder();
 
     final SystemInfo systemInfo = new SystemInfo();
@@ -115,13 +143,18 @@ public class PerformanceChart
 
     final CentralProcessor processor = hardware.getProcessor();
 
-    systemSummary.append("Processor: ").append(processor.getProcessorIdentifier()).append("\n");
+    systemSummary.append("Processor: ")
+                 .append(processor.getProcessorIdentifier())
+                 .append("\n");
 
     final GlobalMemory memory = hardware.getMemory();
     systemSummary.append(String.format("Memory: %,d Mb%n", memory.getTotal() / (1024 * 1024)));
 
     final OperatingSystem os = systemInfo.getOperatingSystem();
-    systemSummary.append(String.format("OS: %s %s %s%n", os.getManufacturer(), os.getFamily(), os.getVersionInfo()));
+    systemSummary.append(String.format("OS: %s %s %s%n", 
+                                      os.getManufacturer(), 
+                                      os.getFamily(), 
+                                      os.getVersionInfo()));
 
     return systemSummary.toString();
   }

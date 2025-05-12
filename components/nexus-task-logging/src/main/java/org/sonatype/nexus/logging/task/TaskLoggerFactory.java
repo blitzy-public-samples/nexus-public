@@ -23,48 +23,49 @@ import static org.sonatype.nexus.logging.task.TaskLogType.BOTH;
  */
 public class TaskLoggerFactory
 {
-  /**
-   * Private constructor to prevent instantiation of this utility class.
-   */
   private TaskLoggerFactory() {
     throw new IllegalAccessError("Utility class");
   }
 
   /**
-   * Creates a {@link TaskLogger} instance based on the task object's {@link TaskLogging} annotation.
-   * Uses Java 21 pattern matching for switch expressions to determine the appropriate implementation.
+   * Creates a TaskLogger instance based on the TaskLogging annotation of the task object.
+   * Uses pattern matching to determine the appropriate TaskLogger implementation.
    *
-   * @param taskObject the task object that may have a {@link TaskLogging} annotation
+   * @param taskObject the task object that will be logged
    * @param log the logger to use
-   * @param taskLogInfo information about the task
-   * @return a {@link TaskLogger} implementation appropriate for the task
+   * @param taskLogInfo information about the task being logged
+   * @return a TaskLogger instance appropriate for the task
    */
   public static TaskLogger create(final Object taskObject, final Logger log, final TaskLogInfo taskLogInfo) {
-    // Get the TaskLogging annotation from the task object's class, or use the default if not present
+    // Get the TaskLogging annotation from the task object's class
     TaskLogging taskLogging = taskObject.getClass().getAnnotation(TaskLogging.class);
 
+    // If no annotation is present, use the default
     if (taskLogging == null) {
       taskLogging = TaskLoggingDefault.class.getAnnotation(TaskLogging.class);
     }
 
-    // Use pattern matching with switch expression to determine the appropriate TaskLogger implementation
-    // This leverages Java 21's pattern matching for switch to provide more concise and type-safe code
+    // Use pattern matching with switch to determine the appropriate TaskLogger implementation
     return switch (taskLogging.value()) {
-      // Pattern matching for each TaskLogType value, returning the appropriate TaskLogger implementation
-      // The arrow syntax (->) eliminates the need for break statements and makes the code more concise
-      case NEXUS_LOG_ONLY -> new ProgressTaskLogger(log);
-      case TASK_LOG_ONLY -> new TaskLogOnlyTaskLogger(log, taskLogInfo);
-      case REPLICATION_LOGGING -> new ReplicationTaskLogger(log, taskLogInfo);
-      case TASK_LOG_ONLY_WITH_PROGRESS -> new TaskLogWithProgressLogger(log, taskLogInfo);
-      // Combining cases with comma syntax for more concise code
-      case BOTH, default -> new SeparateTaskLogTaskLogger(log, taskLogInfo);
+      // Pattern match each case to the appropriate TaskLogger implementation
+      case TaskLogType t when t == TaskLogType.NEXUS_LOG_ONLY -> 
+          new ProgressTaskLogger(log);
+          
+      case TaskLogType t when t == TaskLogType.TASK_LOG_ONLY -> 
+          new TaskLogOnlyTaskLogger(log, taskLogInfo);
+          
+      case TaskLogType t when t == TaskLogType.REPLICATION_LOGGING -> 
+          new ReplicationTaskLogger(log, taskLogInfo);
+          
+      case TaskLogType t when t == TaskLogType.TASK_LOG_ONLY_WITH_PROGRESS -> 
+          new TaskLogWithProgressLogger(log, taskLogInfo);
+          
+      // Default case handles BOTH and any future enum values
+      default -> 
+          new SeparateTaskLogTaskLogger(log, taskLogInfo);
     };
   }
 
-  /**
-   * Default implementation of TaskLogging annotation.
-   * Used when a task object doesn't have its own TaskLogging annotation.
-   */
   @TaskLogging(BOTH)
   private static final class TaskLoggingDefault
   {

@@ -18,9 +18,22 @@ import org.sonatype.nexus.repository.Repository;
 
 import static org.sonatype.nexus.testsuite.testsupport.system.RepositoryTestSystem.FORMAT_RAW;
 
+/**
+ * Configuration class for Raw format group repositories in test environments.
+ * <p>
+ * This class is compatible with Java 21 and supports the test infrastructure
+ * for creating and configuring Raw group repositories.
+ *
+ * @since 3.60
+ */
 public class RawGroupRepositoryConfig
     extends GroupRepositoryConfigSupport<RawGroupRepositoryConfig>
 {
+  /**
+   * Creates a new Raw group repository configuration.
+   *
+   * @param factory the function that creates a repository from this configuration
+   */
   public RawGroupRepositoryConfig(final Function<RawGroupRepositoryConfig, Repository> factory) {
     super(factory);
   }

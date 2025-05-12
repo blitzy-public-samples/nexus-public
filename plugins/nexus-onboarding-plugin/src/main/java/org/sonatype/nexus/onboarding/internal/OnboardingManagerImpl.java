@@ -16,7 +16,6 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -30,6 +29,8 @@ import org.sonatype.nexus.onboarding.OnboardingManager;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
+ * Implementation of the OnboardingManager interface that manages onboarding items.
+ *
  * @since 3.17
  */
 @Named
@@ -58,8 +59,10 @@ public class OnboardingManagerImpl
   @Override
   public List<OnboardingItem> getOnboardingItems() {
     if (onboardingConfiguration.isEnabled()) {
-      return onboardingItems.stream().filter(OnboardingItem::applies)
-          .sorted(Comparator.comparingInt(OnboardingItem::getPriority)).collect(Collectors.toList());
+      return onboardingItems.stream()
+          .filter(OnboardingItem::applies)
+          .sorted(Comparator.comparingInt(OnboardingItem::getPriority))
+          .toList(); // Using Java 21's Stream.toList() instead of Collectors.toList()
     }
     return Collections.emptyList();
   }

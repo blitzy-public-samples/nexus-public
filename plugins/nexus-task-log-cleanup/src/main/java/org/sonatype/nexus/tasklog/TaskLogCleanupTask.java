@@ -12,8 +12,8 @@
  */
 package org.sonatype.nexus.tasklog;
 
-import javax.inject.Inject;
-import javax.inject.Named;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
 
 import org.sonatype.nexus.logging.task.TaskLogging;
 import org.sonatype.nexus.scheduling.Cancelable;
@@ -35,17 +35,36 @@ public class TaskLogCleanupTask
 {
   private final TaskLogCleanup taskLogCleanup;
 
+  /**
+   * Constructor with dependency injection for the task log cleanup service.
+   * 
+   * @param taskLogCleanup The service that performs the actual log cleanup operations
+   */
   @Inject
   public TaskLogCleanupTask(final TaskLogCleanup taskLogCleanup) {
     this.taskLogCleanup = checkNotNull(taskLogCleanup);
   }
 
+  /**
+   * Executes the log cleanup task.
+   * <p>
+   * This implementation leverages the TaskSupport class's built-in support for Virtual Threads
+   * when running on Java 21, providing improved resource utilization for I/O operations.
+   *
+   * @return null as this task doesn't produce a result
+   * @throws Exception if any error occurs during cleanup
+   */
   @Override
   protected Void execute() throws Exception {
     taskLogCleanup.cleanup();
     return null;
   }
 
+  /**
+   * Returns a human-readable message describing this task.
+   *
+   * @return the task description message
+   */
   @Override
   public String getMessage() {
     return "Remove old task log files";

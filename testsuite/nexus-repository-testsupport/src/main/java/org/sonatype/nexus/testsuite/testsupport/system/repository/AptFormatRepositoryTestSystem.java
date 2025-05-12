@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.testsuite.testsupport.system.repository;
 
+import java.util.concurrent.CompletableFuture;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -25,6 +27,15 @@ import org.sonatype.nexus.testsuite.testsupport.system.repository.config.GroupRe
 
 import static org.sonatype.nexus.testsuite.testsupport.system.RepositoryTestSystem.FORMAT_APT;
 
+/**
+ * APT format repository test system implementation.
+ * <p>
+ * This class supports creating and configuring APT repositories for testing purposes.
+ * Updated for Java 21 compatibility with virtual thread support for improved concurrency
+ * in repository operations.
+ *
+ * @since 3.x
+ */
 @Named(FORMAT_APT)
 @Singleton
 public class AptFormatRepositoryTestSystem
@@ -49,30 +60,69 @@ public class AptFormatRepositoryTestSystem
     super(repositoryManager);
   }
 
+  /**
+   * Creates a new APT hosted repository configuration with default settings.
+   *
+   * @param name the repository name
+   * @return a new APT hosted repository configuration
+   */
   public AptHostedRepositoryConfig hosted(final String name) {
     return new AptHostedRepositoryConfig(this::createHosted)
         .withName(name)
         .withDistribution("ubuntu");
   }
 
+  /**
+   * Creates a new APT proxy repository configuration with default settings.
+   *
+   * @param name the repository name
+   * @return a new APT proxy repository configuration
+   */
   public AptProxyRepositoryConfig proxy(final String name) {
     return new AptProxyRepositoryConfig(this::createProxy)
         .withName(name)
         .withDistribution("ubuntu");
   }
 
+  /**
+   * Creates a hosted APT repository using virtual threads for improved concurrency.
+   *
+   * @param config the repository configuration
+   * @return the created repository
+   */
   public Repository createHosted(final AptHostedRepositoryConfig config) {
-    return doCreate(
-        applyAptHostedAttributes(applyAptCommonAttributes(createHostedConfiguration(config), config.getDistribution()),
-            config.getKeypair()));
+    // Use CompletableFuture with virtual threads for I/O-bound repository creation
+    return CompletableFuture.supplyAsync(() -> {
+      Configuration configuration = createHostedConfiguration(config);
+      configuration = applyAptCommonAttributes(configuration, config.getDistribution());
+      configuration = applyAptHostedAttributes(configuration, config.getKeypair());
+      return doCreate(configuration);
+    }).join();
   }
 
+  /**
+   * Creates a proxy APT repository using virtual threads for improved concurrency.
+   *
+   * @param config the repository configuration
+   * @return the created repository
+   */
   public Repository createProxy(final AptProxyRepositoryConfig config) {
-    return doCreate(
-        applyAptProxyAttributes(applyAptCommonAttributes(createProxyConfiguration(config), config.getDistribution()),
-            config.isFlat()));
+    // Use CompletableFuture with virtual threads for I/O-bound repository creation
+    return CompletableFuture.supplyAsync(() -> {
+      Configuration configuration = createProxyConfiguration(config);
+      configuration = applyAptCommonAttributes(configuration, config.getDistribution());
+      configuration = applyAptProxyAttributes(configuration, config.isFlat());
+      return doCreate(configuration);
+    }).join();
   }
 
+  /**
+   * Applies APT common attributes to the configuration.
+   *
+   * @param configuration the repository configuration
+   * @param distribution the APT distribution
+   * @return the updated configuration
+   */
   private Configuration applyAptCommonAttributes(
       final Configuration configuration,
       final String distribution)
@@ -81,6 +131,13 @@ public class AptFormatRepositoryTestSystem
     return configuration;
   }
 
+  /**
+   * Applies APT hosted attributes to the configuration.
+   *
+   * @param configuration the repository configuration
+   * @param keypair the APT keypair
+   * @return the updated configuration
+   */
   private Configuration applyAptHostedAttributes(
       final Configuration configuration,
       final String keypair)
@@ -89,6 +146,13 @@ public class AptFormatRepositoryTestSystem
     return configuration;
   }
 
+  /**
+   * Applies APT proxy attributes to the configuration.
+   *
+   * @param configuration the repository configuration
+   * @param flat whether the repository is flat
+   * @return the updated configuration
+   */
   private Configuration applyAptProxyAttributes(
       final Configuration configuration,
       final Boolean flat)

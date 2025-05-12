@@ -39,19 +39,16 @@ public abstract class TransactionSupport
 
   private String reason = DEFAULT_REASON;
   
-  /**
-   * Stores the thread ID of the thread that began this transaction.
-   * Used to verify thread identity for proper isolation in Virtual Thread environments.
-   */
+  // Store the thread ID when the transaction begins to verify thread identity
   private long ownerThreadId = -1;
 
   @Override
   public final void begin() {
-    checkState(!active, "Transaction has already begun");
-    // Store the current thread ID for thread identity verification
-    ownerThreadId = Thread.currentThread().threadId();
+    checkState(!active, STR."Transaction has already begun (reason: \{reason})");
     doBegin();
     active = true;
+    // Store the current thread ID for isolation verification
+    ownerThreadId = Thread.currentThread().threadId();
   }
 
   protected void doBegin() {
@@ -64,7 +61,7 @@ public abstract class TransactionSupport
     active = false;
     doCommit();
     retries = 0;
-    // Clear thread ID after transaction is complete
+    // Reset thread ID after commit
     ownerThreadId = -1;
   }
 
@@ -75,7 +72,7 @@ public abstract class TransactionSupport
     verifyThreadIdentity();
     active = false;
     doRollback();
-    // Clear thread ID after transaction is complete
+    // Reset thread ID after rollback
     ownerThreadId = -1;
   }
 
@@ -88,7 +85,6 @@ public abstract class TransactionSupport
 
   @Override
   public boolean allowRetry(final Exception cause) {
-    verifyThreadIdentity();
     if (RetryController.INSTANCE.allowRetry(retries, cause)) {
       retries++;
       return true;
@@ -109,18 +105,29 @@ public abstract class TransactionSupport
     return reason;
   }
   
+  @Override
+  public boolean isVirtualThread() {
+    return Thread.currentThread().isVirtual();
+  }
+  
   /**
-   * Verifies that the current thread is the same thread that began this transaction.
-   * This is critical for maintaining proper isolation in Virtual Thread environments
-   * where threads may be migrated between carriers.
+   * Verifies that the current thread is the same one that began the transaction.
+   * This is particularly important for Virtual Threads which may migrate between carrier threads.
    * 
-   * @throws IllegalStateException if called from a different thread than the one that began the transaction
+   * @throws IllegalStateException if the current thread is not the owner of this transaction
    */
-  protected void verifyThreadIdentity() {
-    if (ownerThreadId != -1 && Thread.currentThread().threadId() != ownerThreadId) {
-      // Using Java 21 string template for better diagnostic message
-      String errorMessage = STR."Transaction thread identity violation: started on thread ID \{ownerThreadId} but accessed on thread ID \{Thread.currentThread().threadId()}";
-      throw new IllegalStateException(errorMessage);
+  private void verifyThreadIdentity() {
+    if (active && ownerThreadId != -1) {
+      long currentThreadId = Thread.currentThread().threadId();
+      checkState(currentThreadId == ownerThreadId, 
+          STR."Transaction thread identity mismatch: transaction started on thread ID \{ownerThreadId} " +
+          STR."but current thread ID is \{currentThreadId} (reason: \{reason})");
     }
+  }
+  
+  @Override
+  public void end() {
+    // Reset thread ID when transaction ends
+    ownerThreadId = -1;
   }
 }

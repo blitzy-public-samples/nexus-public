@@ -12,15 +12,44 @@
  */
 package com.sonatype.nexus.docker.testsupport.saml.idp;
 
+import java.util.Map;
+
 import com.sonatype.nexus.docker.testsupport.framework.DockerContainerConfig;
 
-import com.google.common.collect.ImmutableMap;
-
+/**
+ * Factory for creating SAML Identity Provider configurations for integration tests.
+ * 
+ * <p>This class is compatible with Java 21 and leverages record patterns for efficient data handling.</p>
+ *
+ * @since 3.60
+ */
 public class SamlIdpITConfigFactory
 {
+  /**
+   * Record representing Keycloak configuration parameters.
+   * 
+   * @param image Docker image name
+   * @param tag Docker image tag
+   * @param userName Keycloak admin username
+   * @param password Keycloak admin password
+   * @param portMappingPort Port to expose from the container
+   */
+  public record KeycloakConfig(String image, String tag, String userName, String password, String portMappingPort) {}
+  
   private SamlIdpITConfigFactory() {
+    // Prevent instantiation
   }
 
+  /**
+   * Creates a Docker container configuration for Keycloak.
+   *
+   * @param image Docker image name
+   * @param tag Docker image tag
+   * @param userName Keycloak admin username
+   * @param password Keycloak admin password
+   * @param portMappingPort Port to expose from the container
+   * @return A configured {@link DockerContainerConfig} instance
+   */
   public static DockerContainerConfig createKeycloakConfig(
       final String image,
       final String tag,
@@ -28,8 +57,25 @@ public class SamlIdpITConfigFactory
       final String password,
       final String portMappingPort)
   {
+    // Create a record instance with the parameters
+    KeycloakConfig config = new KeycloakConfig(image, tag, userName, password, portMappingPort);
+    
+    // Use pattern matching with the record for cleaner code
+    return createKeycloakConfigFromRecord(config);
+  }
+  
+  /**
+   * Creates a Docker container configuration for Keycloak using a configuration record.
+   *
+   * @param config The Keycloak configuration record
+   * @return A configured {@link DockerContainerConfig} instance
+   */
+  public static DockerContainerConfig createKeycloakConfigFromRecord(final KeycloakConfig config) {
+    // Use pattern matching to destructure the record
+    var KeycloakConfig(image, tag, userName, password, portMappingPort) = config;
+    
     return DockerContainerConfig.builder(image + ":" + tag)
-        .withEnv(ImmutableMap.of("KEYCLOAK_USER", userName, "KEYCLOAK_PASSWORD", password))
+        .withEnv(Map.of("KEYCLOAK_USER", userName, "KEYCLOAK_PASSWORD", password))
         .withExposedPort(portMappingPort)
         .build();
   }

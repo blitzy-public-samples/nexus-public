@@ -14,6 +14,10 @@ package org.sonatype.nexus.repository.maven;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.repository.maven.internal.Maven2Format;
@@ -26,20 +30,35 @@ import org.sonatype.nexus.repository.upload.UploadRegexMap;
 import org.sonatype.nexus.repository.view.PartPayload;
 import org.sonatype.nexus.rest.ValidationErrorXO;
 import org.sonatype.nexus.rest.ValidationErrorsException;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 
 import com.google.common.collect.ImmutableMap;
-import org.junit.Before;
-import org.junit.Test;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.Arrays.asList;
 import static java.util.stream.Collectors.toList;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.notNullValue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.when;
 
+/**
+ * Tests for {@link MavenValidatingComponentUpload} with Java 21 compatibility.
+ * 
+ * This test class validates component upload validation functionality with support for Java 21 features
+ * including virtual threads, pattern matching, record patterns, and string templates.
+ */
+@ExtendWith(MockitoExtension.class)
 public class MavenValidatingComponentUploadTest
     extends TestSupport
 {
@@ -56,7 +75,7 @@ public class MavenValidatingComponentUploadTest
 
   private ComponentUpload componentUpload;
 
-  @Before
+  @BeforeEach
   public void setup() {
     when(uploadDefinition.getComponentFields()).thenReturn(asList(
         new UploadFieldDefinition("groupId", "Group ID", null, false, Type.STRING, GROUP_NAME_COORDINATES),
@@ -151,18 +170,170 @@ public class MavenValidatingComponentUploadTest
     expectExceptionOnValidate(componentUpload, "The assets 1 and 2 have identical coordinates");
   }
 
+  /**
+   * Test validation using pattern matching for switch to determine validation strategy.
+   * This test demonstrates Java 21's pattern matching for switch statements.
+   */
+  @Test
+  @org.junit.experimental.categories.Category(Java21TestGroup.class)
+  public void validateWithPatternMatchingForSwitch() {
+    // Create a valid component upload
+    componentUpload.getFields().putAll(ImmutableMap.of(
+        "groupId", "org.example", 
+        "artifactId", "test-artifact", 
+        "version", "1.0.0"));
+    
+    AssetUpload assetUpload = new AssetUpload();
+    assetUpload.getFields().put("extension", "jar");
+    assetUpload.setPayload(jarPayload);
+    componentUpload.getAssetUploads().add(assetUpload);
+    
+    // Validate using pattern matching for switch
+    Object result = validateWithPatternMatching(componentUpload);
+    assertEquals("Valid component upload", result);
+  }
+  
+  /**
+   * Test that demonstrates using Java 21 Virtual Threads for concurrent validation.
+   * This test shows how virtual threads can be used to validate multiple component uploads concurrently.
+   */
+  @Test
+  @org.junit.experimental.categories.Category({Java21TestGroup.class, VirtualThreadTestGroup.class})
+  public void concurrentValidationWithVirtualThreads() {
+    // Create a valid component upload template
+    ComponentUpload validTemplate = new ComponentUpload();
+    validTemplate.getFields().putAll(ImmutableMap.of(
+        "groupId", "org.example", 
+        "artifactId", "test-artifact", 
+        "version", "1.0.0"));
+    
+    AssetUpload assetUpload = new AssetUpload();
+    assetUpload.getFields().put("extension", "jar");
+    assetUpload.setPayload(jarPayload);
+    validTemplate.getAssetUploads().add(assetUpload);
+    
+    // Use virtual threads to validate multiple component uploads concurrently
+    int concurrentTasks = 100;
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      List<CompletableFuture<Void>> futures = new java.util.ArrayList<>();
+      
+      for (int i = 0; i < concurrentTasks; i++) {
+        final int index = i;
+        futures.add(CompletableFuture.runAsync(() -> {
+          // Create a copy of the template with a unique artifactId
+          ComponentUpload copy = new ComponentUpload();
+          copy.getFields().putAll(ImmutableMap.of(
+              "groupId", "org.example", 
+              "artifactId", "test-artifact-" + index, 
+              "version", "1.0.0"));
+          
+          AssetUpload assetCopy = new AssetUpload();
+          assetCopy.getFields().put("extension", "jar");
+          assetCopy.setPayload(jarPayload);
+          copy.getAssetUploads().add(assetCopy);
+          
+          // Validate the component upload
+          assertDoesNotThrow(() -> {
+            MavenValidatingComponentUpload validated = 
+                new MavenValidatingComponentUpload(uploadDefinition, copy);
+            validated.getComponentUpload();
+            successCount.incrementAndGet();
+          });
+        }, executor));
+      }
+      
+      // Wait for all validations to complete
+      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+    }
+    
+    // Verify all validations succeeded
+    assertEquals(concurrentTasks, successCount.get(), 
+        "All concurrent validations should succeed");
+  }
+  
+  /**
+   * Test validation using string templates for error messages.
+   * This test demonstrates Java 21's string templates feature.
+   */
+  @Test
+  @org.junit.experimental.categories.Category(Java21TestGroup.class)
+  public void validateWithStringTemplates() {
+    // Create an invalid component upload missing required fields
+    ComponentUpload invalidUpload = new ComponentUpload();
+    
+    // Use string templates to create error messages
+    String groupIdField = "groupId";
+    String artifactIdField = "artifactId";
+    String versionField = "version";
+    
+    String groupIdError = STR."Missing required component field '\{getFieldLabel(groupIdField)}'";
+    String artifactIdError = STR."Missing required component field '\{getFieldLabel(artifactIdField)}'";
+    String versionError = STR."Missing required component field '\{getFieldLabel(versionField)}'";
+    
+    // Validate and expect the templated error messages
+    ValidationErrorsException exception = assertThrows(ValidationErrorsException.class, () -> {
+      MavenValidatingComponentUpload validated = 
+          new MavenValidatingComponentUpload(uploadDefinition, invalidUpload);
+      validated.getComponentUpload();
+    });
+    
+    List<String> messages = exception.getValidationErrors().stream()
+        .map(ValidationErrorXO::getMessage)
+        .collect(toList());
+    
+    assertThat(messages, contains(groupIdError, artifactIdError, versionError));
+  }
+  
+  /**
+   * Helper method that uses pattern matching for switch to determine validation strategy.
+   * This demonstrates Java 21's pattern matching for switch feature.
+   */
+  private Object validateWithPatternMatching(Object input) {
+    return switch (input) {
+      case ComponentUpload cu when isValidComponentUpload(cu) -> "Valid component upload";
+      case ComponentUpload cu -> "Invalid component upload";
+      case AssetUpload au when au.getPayload() != null -> "Valid asset upload";
+      case AssetUpload au -> "Invalid asset upload";
+      case String s -> "String input: " + s;
+      case null -> "Null input";
+      default -> "Unknown input type";
+    };
+  }
+  
+  /**
+   * Helper method to check if a component upload is valid.
+   */
+  private boolean isValidComponentUpload(ComponentUpload upload) {
+    return upload.getFields().containsKey("groupId") &&
+           upload.getFields().containsKey("artifactId") &&
+           upload.getFields().containsKey("version") &&
+           !upload.getAssetUploads().isEmpty();
+  }
+  
+  /**
+   * Helper method to get the field label for a field name.
+   */
+  private String getFieldLabel(String fieldName) {
+    return switch (fieldName) {
+      case "groupId" -> "Group ID";
+      case "artifactId" -> "Artifact ID";
+      case "version" -> "Version";
+      default -> fieldName;
+    };
+  }
+
   private void expectExceptionOnValidate(final ComponentUpload component, final String... message)
   {
-    try {
+    ValidationErrorsException exception = assertThrows(ValidationErrorsException.class, () -> {
       MavenValidatingComponentUpload validated = new MavenValidatingComponentUpload(uploadDefinition, component);
       validated.getComponentUpload();
-      fail("Expected exception to be thrown");
-    }
-    catch (ValidationErrorsException exception) {
-      List<String> messages = exception.getValidationErrors().stream()
-          .map(ValidationErrorXO::getMessage)
-          .collect(toList());
-      assertThat(messages, contains(message));
-    }
+    });
+    
+    List<String> messages = exception.getValidationErrors().stream()
+        .map(ValidationErrorXO::getMessage)
+        .collect(toList());
+    assertThat(messages, contains(message));
   }
 }

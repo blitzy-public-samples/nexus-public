@@ -15,6 +15,8 @@ package org.sonatype.nexus.blobstore.restore.apt.internal;
 import java.io.IOException;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import javax.annotation.Nonnull;
 import javax.inject.Inject;
@@ -38,7 +40,10 @@ import org.sonatype.nexus.repository.view.payloads.DetachedBlobPayload;
 import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_ENABLED;
 
 /**
+ * Strategy for restoring APT repository blobs.
+ * 
  * @since 3.31
+ * @see <a href="https://openjdk.org/jeps/444">JEP 444: Virtual Threads</a>
  */
 @FeatureFlag(name = DATASTORE_ENABLED)
 @Named(AptFormat.NAME)
@@ -47,6 +52,9 @@ public class AptRestoreBlobStrategy
     extends BaseRestoreBlobStrategy<DataStoreRestoreBlobData>
 {
   private final RepositoryManager repositoryManager;
+  
+  // Virtual thread executor for I/O-bound operations
+  private final ExecutorService virtualThreadExecutor;
 
   @Inject
   public AptRestoreBlobStrategy(
@@ -55,6 +63,7 @@ public class AptRestoreBlobStrategy
   {
     super(dryRunPrefix);
     this.repositoryManager = repositoryManager;
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   @Override
@@ -63,9 +72,10 @@ public class AptRestoreBlobStrategy
   {
     Repository repository = data.getRepository();
 
-    Optional<AptContentFacet> facet = repository.optionalFacet(AptContentFacet.class);
-    if (!facet.isPresent()) {
-      log.warn("Skipping as {} not found on repository: {}", facet.getClass().getSimpleName(), repository.getName());
+    // Using Java 21 pattern matching for instanceof to simplify the code
+    if (repository.optionalFacet(AptContentFacet.class) instanceof Optional<AptContentFacet> optFacet 
+        && optFacet.isEmpty()) {
+      log.warn("Skipping as {} not found on repository: {}", AptContentFacet.class.getSimpleName(), repository.getName());
       return false;
     }
     return true;
@@ -77,9 +87,24 @@ public class AptRestoreBlobStrategy
   {
     String assetPath = getAssetPath(data);
     Payload payload = new DetachedBlobPayload(assetBlob);
-    data.getRepository()
-        .facet(AptContentFacet.class)
-        .put(assetPath, payload);
+    
+    try {
+      // Using virtual threads for I/O-bound operations to improve throughput
+      virtualThreadExecutor.submit(() -> {
+        try {
+          data.getRepository()
+              .facet(AptContentFacet.class)
+              .put(assetPath, payload);
+        } 
+        catch (IOException e) {
+          log.error("Failed to restore blob {} to path {}", assetBlob.getId(), assetPath, e);
+        }
+        return null;
+      }).get(); // Wait for completion
+    } 
+    catch (Exception e) {
+      throw new IOException("Error restoring blob " + assetBlob.getId(), e);
+    }
   }
 
   @Override

@@ -35,22 +35,29 @@ import org.sonatype.nexus.repository.view.PartPayload;
 import org.sonatype.nexus.rest.ValidationErrorsException;
 import org.sonatype.nexus.security.BreadActions;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.Collections.emptySet;
 import static java.util.Collections.singleton;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.repository.upload.UploadFieldDefinition.Type.STRING;
 
+/**
+ * Test support class for Raw repository upload handlers.
+ * Migrated to JUnit Jupiter and Java 21 compatibility.
+ */
+@ExtendWith(MockitoExtension.class)
 public abstract class RawUploadHandlerTestSupport
     extends TestSupport
 {
@@ -80,7 +87,7 @@ public abstract class RawUploadHandlerTestSupport
                                                        VariableResolverAdapter variableResolverAdapter,
                                                        Set<UploadDefinitionExtension> uploadDefinitionExtensions);
 
-  @Before
+  @BeforeEach
   public void baseSetup() {
     when(contentPermissionChecker.isPermitted(eq(REPO_NAME), eq(RawFormat.NAME), eq(BreadActions.EDIT), any()))
         .thenReturn(true);
@@ -91,7 +98,7 @@ public abstract class RawUploadHandlerTestSupport
   }
 
   @Test
-  public void testGetDefinition() {
+  void testGetDefinition() {
     UploadDefinition def = underTest.getDefinition();
 
     assertThat(def.isMultipleUpload(), is(true));
@@ -101,7 +108,7 @@ public abstract class RawUploadHandlerTestSupport
   }
 
   @Test
-  public void testGetDefinitionWithExtensionContributions() {
+  void testGetDefinitionWithExtensionContributions() {
     //Rebuilding the uploadhandler to provide a set of definition extensions
     underTest = newRawUploadHandler(contentPermissionChecker, new SimpleVariableResolverAdapter(), getDefinitionExtensions());
     UploadDefinition def = underTest.getDefinition();
@@ -114,7 +121,7 @@ public abstract class RawUploadHandlerTestSupport
   }
 
   @Test
-  public void testGetDefinition_regex() {
+  void testGetDefinition_regex() {
     UploadRegexMap regexMap = underTest.getDefinition().getRegexMap();
     assertNotNull(regexMap);
     assertNotNull(regexMap.getRegex());
@@ -122,7 +129,7 @@ public abstract class RawUploadHandlerTestSupport
   }
 
   @Test
-  public void testHandle_unauthorized() throws IOException {
+  void testHandle_unauthorized() {
     when(contentPermissionChecker.isPermitted(eq(REPO_NAME), eq(RawFormat.NAME), eq(BreadActions.EDIT), any()))
         .thenReturn(false);
     ComponentUpload component = new ComponentUpload();
@@ -139,19 +146,17 @@ public abstract class RawUploadHandlerTestSupport
     asset.setPayload(sourcesPayload);
     component.getAssetUploads().add(asset);
 
-    try {
+    ValidationErrorsException exception = assertThrows(ValidationErrorsException.class, () -> {
       underTest.handle(repository, component);
-      fail("Expected validation exception");
-    }
-    catch (ValidationErrorsException e) {
-      assertThat(e.getValidationErrors().size(), is(1));
-      assertThat(e.getValidationErrors().get(0).getMessage(),
-          is("Not authorized for requested path '" + path("org/apache/maven/foo.jar") + "'"));
-    }
+    });
+    
+    assertThat(exception.getValidationErrors().size(), is(1));
+    assertThat(exception.getValidationErrors().get(0).getMessage(),
+        is("Not authorized for requested path '" + path("org/apache/maven/foo.jar") + "'"));
   }
 
   @Test
-  public void testHandle_dotDirectory() throws IOException {
+  void testHandle_dotDirectory() {
     ComponentUpload component = new ComponentUpload();
     component.getFields().put("directory", ".");
 
@@ -160,19 +165,17 @@ public abstract class RawUploadHandlerTestSupport
     asset.setPayload(jarPayload);
     component.getAssetUploads().add(asset);
 
-    try {
+    ValidationErrorsException exception = assertThrows(ValidationErrorsException.class, () -> {
       underTest.handle(repository, component);
-      fail("Expected validation exception");
-    }
-    catch (ValidationErrorsException e) {
-      assertThat(e.getValidationErrors().size(), is(1));
-      assertThat(e.getValidationErrors().get(0).getMessage(),
-          is("Path is not allowed to have '.' or '..' segments: '" + path("./foo.jar") + "'"));
-    }
+    });
+    
+    assertThat(exception.getValidationErrors().size(), is(1));
+    assertThat(exception.getValidationErrors().get(0).getMessage(),
+        is("Path is not allowed to have '.' or '..' segments: '" + path("./foo.jar") + "'"));
   }
 
   @Test
-  public void testHandle_doubleDotDirectory() throws IOException {
+  void testHandle_doubleDotDirectory() {
     ComponentUpload component = new ComponentUpload();
     component.getFields().put("directory", "..");
 
@@ -181,19 +184,17 @@ public abstract class RawUploadHandlerTestSupport
     asset.setPayload(jarPayload);
     component.getAssetUploads().add(asset);
 
-    try {
+    ValidationErrorsException exception = assertThrows(ValidationErrorsException.class, () -> {
       underTest.handle(repository, component);
-      fail("Expected validation exception");
-    }
-    catch (ValidationErrorsException e) {
-      assertThat(e.getValidationErrors().size(), is(1));
-      assertThat(e.getValidationErrors().get(0).getMessage(),
-          is("Path is not allowed to have '.' or '..' segments: '" + path("../foo.jar") + "'"));
-    }
+    });
+    
+    assertThat(exception.getValidationErrors().size(), is(1));
+    assertThat(exception.getValidationErrors().get(0).getMessage(),
+        is("Path is not allowed to have '.' or '..' segments: '" + path("../foo.jar") + "'"));
   }
 
   @Test
-  public void testHandle_convertDoubleDotDirectory() throws IOException {
+  void testHandle_convertDoubleDotDirectory() {
     ComponentUpload component = new ComponentUpload();
     component.getFields().put("directory", "foo/..");
 
@@ -202,19 +203,17 @@ public abstract class RawUploadHandlerTestSupport
     asset.setPayload(jarPayload);
     component.getAssetUploads().add(asset);
 
-    try {
+    ValidationErrorsException exception = assertThrows(ValidationErrorsException.class, () -> {
       underTest.handle(repository, component);
-      fail("Expected validation exception");
-    }
-    catch (ValidationErrorsException e) {
-      assertThat(e.getValidationErrors().size(), is(1));
-      assertThat(e.getValidationErrors().get(0).getMessage(),
-          is("Path is not allowed to have '.' or '..' segments: '" + path("foo/../foo.jar") + "'"));
-    }
+    });
+    
+    assertThat(exception.getValidationErrors().size(), is(1));
+    assertThat(exception.getValidationErrors().get(0).getMessage(),
+        is("Path is not allowed to have '.' or '..' segments: '" + path("foo/../foo.jar") + "'"));
   }
 
   @Test
-  public void testHandle_dotFilename() throws IOException {
+  void testHandle_dotFilename() {
     ComponentUpload component = new ComponentUpload();
     component.getFields().put("directory", "foo");
 
@@ -223,19 +222,17 @@ public abstract class RawUploadHandlerTestSupport
     asset.setPayload(jarPayload);
     component.getAssetUploads().add(asset);
 
-    try {
+    ValidationErrorsException exception = assertThrows(ValidationErrorsException.class, () -> {
       underTest.handle(repository, component);
-      fail("Expected validation exception");
-    }
-    catch (ValidationErrorsException e) {
-      assertThat(e.getValidationErrors().size(), is(1));
-      assertThat(e.getValidationErrors().get(0).getMessage(),
-          is("Path is not allowed to have '.' or '..' segments: '" + path("foo/.") + "'"));
-    }
+    });
+    
+    assertThat(exception.getValidationErrors().size(), is(1));
+    assertThat(exception.getValidationErrors().get(0).getMessage(),
+        is("Path is not allowed to have '.' or '..' segments: '" + path("foo/.") + "'"));
   }
 
   @Test
-  public void testHandle_doubleDotFilename() throws IOException {
+  void testHandle_doubleDotFilename() {
     ComponentUpload component = new ComponentUpload();
     component.getFields().put("directory", "foo");
 
@@ -244,19 +241,17 @@ public abstract class RawUploadHandlerTestSupport
     asset.setPayload(jarPayload);
     component.getAssetUploads().add(asset);
 
-    try {
+    ValidationErrorsException exception = assertThrows(ValidationErrorsException.class, () -> {
       underTest.handle(repository, component);
-      fail("Expected validation exception");
-    }
-    catch (ValidationErrorsException e) {
-      assertThat(e.getValidationErrors().size(), is(1));
-      assertThat(e.getValidationErrors().get(0).getMessage(),
-          is("Path is not allowed to have '.' or '..' segments: '" + path("foo/..") + "'"));
-    }
+    });
+    
+    assertThat(exception.getValidationErrors().size(), is(1));
+    assertThat(exception.getValidationErrors().get(0).getMessage(),
+        is("Path is not allowed to have '.' or '..' segments: '" + path("foo/..") + "'"));
   }
 
   @Test
-  public void testHandle_covertDoubleDotFilename() throws IOException {
+  void testHandle_covertDoubleDotFilename() {
     ComponentUpload component = new ComponentUpload();
     component.getFields().put("directory", "foo");
 
@@ -265,19 +260,17 @@ public abstract class RawUploadHandlerTestSupport
     asset.setPayload(jarPayload);
     component.getAssetUploads().add(asset);
 
-    try {
+    ValidationErrorsException exception = assertThrows(ValidationErrorsException.class, () -> {
       underTest.handle(repository, component);
-      fail("Expected validation exception");
-    }
-    catch (ValidationErrorsException e) {
-      assertThat(e.getValidationErrors().size(), is(1));
-      assertThat(e.getValidationErrors().get(0).getMessage(),
-          is("Path is not allowed to have '.' or '..' segments: '" + path("foo/foo/../../foo.jar") + "'"));
-    }
+    });
+    
+    assertThat(exception.getValidationErrors().size(), is(1));
+    assertThat(exception.getValidationErrors().get(0).getMessage(),
+        is("Path is not allowed to have '.' or '..' segments: '" + path("foo/foo/../../foo.jar") + "'"));
   }
 
   @Test
-  public void testHandle_normalizePath() throws IOException {
+  void testHandle_normalizePath() throws IOException {
     testNormalizePath("/", "goo.jar", path("goo.jar"));
     testNormalizePath("/foo", "goo.jar", path("foo/goo.jar"));
     testNormalizePath("/foo", "/goo.jar", path("foo/goo.jar"));
@@ -316,6 +309,9 @@ public abstract class RawUploadHandlerTestSupport
     return singleton(new TestUploadDefinitionExtension());
   }
 
+  /**
+   * Test implementation of {@link UploadDefinitionExtension} for testing purposes.
+   */
   protected static class TestUploadDefinitionExtension implements UploadDefinitionExtension {
 
     @Override

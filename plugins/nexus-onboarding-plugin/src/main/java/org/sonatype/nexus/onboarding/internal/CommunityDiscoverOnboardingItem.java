@@ -12,13 +12,21 @@
  */
 package org.sonatype.nexus.onboarding.internal;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 import org.sonatype.nexus.common.app.ApplicationVersion;
 import org.sonatype.nexus.kv.GlobalKeyValueStore;
 import org.sonatype.nexus.onboarding.OnboardingItemPriority;
 
+/**
+ * Community discover onboarding item implementation.
+ * <p>
+ * This class is compatible with Java 21 and uses Jakarta EE 10 injection annotations.
+ * It integrates with Guice 7.0.0 and Sisu 0.10.0 for dependency injection.
+ *
+ * @since 3.17
+ */
 @Named
 @Singleton
 public class CommunityDiscoverOnboardingItem

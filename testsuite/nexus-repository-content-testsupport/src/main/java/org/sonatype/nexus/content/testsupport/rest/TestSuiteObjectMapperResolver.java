@@ -14,12 +14,12 @@ package org.sonatype.nexus.content.testsupport.rest;
 
 import java.util.Set;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.ext.ContextResolver;
-import javax.ws.rs.ext.Provider;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.ext.ContextResolver;
+import jakarta.ws.rs.ext.Provider;
 
 import org.sonatype.nexus.repository.rest.api.ComponentXO;
 import org.sonatype.nexus.repository.rest.api.ComponentXODeserializer;
@@ -29,10 +29,13 @@ import org.sonatype.nexus.repository.rest.api.ComponentXOFactory;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.module.SimpleModule;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 
 /**
  * Jackson {@link ContextResolver} to customize the {@link ObjectMapper} for the rest clients such as
  * SearchClient within the testsuite.
+ *
+ * <p>Updated for Java 21 compatibility with Jakarta EE APIs and Jackson 2.16.1.</p>
  *
  * @since 3.8
  */
@@ -49,13 +52,13 @@ public class TestSuiteObjectMapperResolver
       final ComponentXOFactory componentXOFactory,
       final Set<ComponentXODeserializerExtension> componentXODeserializerExtensions)
   {
-    this.objectMapper = new ObjectMapper();
+    // Use JsonMapper.builder() for Java 21 compatibility
+    this.objectMapper = JsonMapper.builder()
+        .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+        .build();
 
-    // the json will have extra fields that the ComponentXO doesn't have, we don't want to fail on these
-    objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-
+    // Register the deserializer for the ComponentXO class
     this.objectMapper.registerModule(new SimpleModule()
-        // add the deserializer for the ComponentXO class
         .addDeserializer(ComponentXO.class, new ComponentXODeserializer(componentXOFactory, objectMapper,
             componentXODeserializerExtensions)));
   }

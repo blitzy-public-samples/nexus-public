@@ -19,6 +19,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.importtask.ImportFileConfiguration;
@@ -36,13 +38,20 @@ import org.sonatype.nexus.repository.upload.UploadRegexMap;
 import org.sonatype.nexus.repository.upload.UploadResponse;
 import org.sonatype.nexus.repository.view.Content;
 import org.sonatype.nexus.repository.view.PartPayload;
+import org.sonatype.nexus.thread.NexusExecutorService;
 
 import static java.util.Collections.emptyMap;
 import static java.util.Collections.singletonList;
 import static org.apache.commons.lang3.StringUtils.prependIfMissing;
 
 /**
- * Common base for raw upload handlers
+ * Common base for raw upload handlers.
+ * <p>
+ * This class provides support for handling raw content uploads, including permission checking,
+ * path normalization, and virtual thread execution for I/O-bound operations.
+ * <p>
+ * As of version 3.60, this class leverages Java 21 virtual threads for improved performance
+ * and scalability when handling file uploads and downloads.
  *
  * @since 3.24
  */
@@ -64,6 +73,13 @@ public abstract class RawUploadHandlerSupport
   protected final boolean datastoreEnabled;
 
   protected UploadDefinition definition;
+  
+  /**
+   * Virtual thread executor for I/O-bound operations
+   * @since 3.60
+   */
+  private static final ExecutorService VIRTUAL_THREAD_EXECUTOR = 
+      Executors.newVirtualThreadPerTaskExecutor();
 
   public RawUploadHandlerSupport(
       final ContentPermissionChecker contentPermissionChecker,
@@ -98,6 +114,19 @@ public abstract class RawUploadHandlerSupport
     return new UploadResponse(responseContents, new ArrayList<>(pathToPayload.keySet()));
   }
 
+  /**
+   * Gets response contents for the uploaded files.
+   * <p>
+   * Implementations should use {@link #getVirtualThreadExecutor()} for I/O-bound operations
+   * to improve throughput and resource utilization. This allows handling more concurrent uploads
+   * without consuming excessive platform thread resources.
+   * 
+   * @param repository the repository
+   * @param pathToPayload the path to payload mapping
+   * @return the list of content
+   * @throws IOException if an I/O error occurs
+   * @since 3.24
+   */
   protected abstract List<Content> getResponseContents(final Repository repository,
                                                        final Map<String, PartPayload> pathToPayload)
       throws IOException;
@@ -121,6 +150,18 @@ public abstract class RawUploadHandlerSupport
     return doPut(configuration);
   }
 
+  /**
+   * Puts content into the repository.
+   * <p>
+   * Implementations should use {@link #getVirtualThreadExecutor()} for I/O-bound operations
+   * to improve throughput and resource utilization. This allows handling more concurrent uploads
+   * without consuming excessive platform thread resources.
+   * 
+   * @param configuration the import file configuration
+   * @return the content
+   * @throws IOException if an I/O error occurs
+   * @since 3.24
+   */
   protected abstract Content doPut(final ImportFileConfiguration configuration) throws IOException;
 
   protected String normalizePath(final String path) {
@@ -161,5 +202,22 @@ public abstract class RawUploadHandlerSupport
   @Override
   public boolean supportsExportImport() {
     return true;
+  }
+  
+  /**
+   * Returns the virtual thread executor for I/O-bound operations.
+   * <p>
+   * This executor uses Java 21 virtual threads which are lightweight threads that are well-suited
+   * for I/O-bound operations. Virtual threads consume significantly less memory than platform threads
+   * and allow for much higher concurrency without exhausting system resources.
+   * <p>
+   * Use this executor for operations like file uploads, downloads, and other I/O operations
+   * to improve throughput and scalability.
+   * 
+   * @return the virtual thread executor
+   * @since 3.60
+   */
+  protected ExecutorService getVirtualThreadExecutor() {
+    return VIRTUAL_THREAD_EXECUTOR;
   }
 }

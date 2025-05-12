@@ -14,6 +14,7 @@ package org.sonatype.nexus.blobstore.restore.raw.internal;
 
 import java.io.IOException;
 import java.util.Properties;
+import java.util.concurrent.Executors;
 
 import javax.annotation.Nonnull;
 import javax.inject.Inject;
@@ -35,6 +36,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_ENABLED;
 
 /**
+ * Strategy for restoring raw repository content from a blob store backup.
+ * 
  * @since 3.29
  */
 @Named("raw")
@@ -59,11 +62,11 @@ public class RawRestoreBlobStrategy
   {
     Repository repository = data.getRepository();
 
-    if (repository.optionalFacet(RawContentFacet.class).isPresent()) {
+    if (repository instanceof Repository repo && repo.optionalFacet(RawContentFacet.class).isPresent()) {
       return true;
     }
     else {
-      log.warn("Skipping as Raw Facet not found on repository: {}", repository.getName());
+      log.warn(STR."Skipping as Raw Facet not found on repository: \{repository.getName()}");
       return false;
     }
   }
@@ -71,8 +74,17 @@ public class RawRestoreBlobStrategy
   @Override
   protected void createAssetFromBlob(final Blob assetBlob, final DataStoreRestoreBlobData data) throws IOException
   {
-    RawContentFacet rawContentFacet = data.getRepository().facet(RawContentFacet.class);
-    rawContentFacet.put(data.getBlobName(), new DetachedBlobPayload(assetBlob));
+    // Use virtual threads for I/O-bound blob restoration operations
+    var executor = Executors.newVirtualThreadPerTaskExecutor();
+    executor.submit(() -> {
+      try {
+        RawContentFacet rawContentFacet = data.getRepository().facet(RawContentFacet.class);
+        rawContentFacet.put(data.getBlobName(), new DetachedBlobPayload(assetBlob));
+      } catch (Exception e) {
+        log.error(STR."Error restoring blob \{assetBlob.getId()} for \{data.getBlobName()}", e);
+      }
+    }).join(); // Wait for completion before returning
+    executor.close();
   }
 
   @Override

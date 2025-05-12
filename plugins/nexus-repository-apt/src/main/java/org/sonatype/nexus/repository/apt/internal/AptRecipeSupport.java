@@ -18,7 +18,10 @@ import org.sonatype.nexus.repository.Type;
 import org.sonatype.nexus.repository.config.Configuration;
 
 /**
- * Support for Apt recipes
+ * Support for Apt recipes.
+ * <p>
+ * This class provides base functionality for Apt repository recipes and is compatible with Java 21 runtime.
+ * It registers sensitive configuration fields and serves as the foundation for specific Apt repository types.
  *
  * @since 3.17
  */
@@ -29,6 +32,12 @@ public abstract class AptRecipeSupport
     Configuration.addSensitiveFieldName("aptSigning");
   }
 
+  /**
+   * Constructs a new AptRecipeSupport instance.
+   *
+   * @param type   the repository type
+   * @param format the repository format
+   */
   protected AptRecipeSupport(
       final Type type,
       final Format format)

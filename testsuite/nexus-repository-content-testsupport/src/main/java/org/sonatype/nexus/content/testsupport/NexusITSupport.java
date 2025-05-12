@@ -19,6 +19,9 @@ import java.net.URL;
 import java.security.KeyStore;
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -68,14 +71,13 @@ import org.apache.http.impl.client.HttpClients;
 import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.apache.http.ssl.SSLContexts;
 import org.jboss.resteasy.client.jaxrs.BasicAuthentication;
-import org.jboss.resteasy.client.jaxrs.ResteasyClientBuilder;
-import org.jboss.resteasy.client.jaxrs.internal.LocalResteasyProviderFactory;
+import org.jboss.resteasy.client.jaxrs.internal.ResteasyClientBuilderImpl;
 import org.jboss.resteasy.plugins.providers.RegisterBuiltin;
 import org.jboss.resteasy.spi.ResteasyProviderFactory;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.rules.TestName;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.TestInfo;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.ops4j.pax.exam.Configuration;
 import org.ops4j.pax.exam.Option;
 
@@ -84,6 +86,8 @@ import static org.hamcrest.Matchers.is;
 
 /**
  * Support for Nexus integration tests.
+ * <p>
+ * Updated for Java 21 compatibility with support for Virtual Threads and modern JUnit Jupiter APIs.
  */
 public abstract class NexusITSupport
     extends NexusPaxExamSupport
@@ -91,9 +95,6 @@ public abstract class NexusITSupport
   protected static final String DEFAULT_SESSION_COOKIE_NAME = "NXSESSIONID";
 
   protected static final String REST_SERVICE_PATH = "service/rest";
-
-  @Rule
-  public TestName testName = new TestName();
 
   @Inject
   private PoolingHttpClientConnectionManager connectionManager;
@@ -122,7 +123,7 @@ public abstract class NexusITSupport
   /**
    * Make sure Nexus is responding on the standard base URL before continuing
    */
-  @Before
+  @BeforeEach
   public void waitForNexus() throws Exception {
     waitFor(responseFrom(nexusUrl));
   }
@@ -131,7 +132,7 @@ public abstract class NexusITSupport
    * Verifies there are no unreleased HTTP connections in Nexus. This check runs automatically after each test but tests
    * may as well run this check manually at suitable points during their execution.
    */
-  @After
+  @AfterEach
   public void verifyNoConnectionLeak() throws Exception {
     // Some proxy repos directly serve upstream content, i.e. the connection to the upstream repo is actively used while
     // streaming out the response to the client. An HTTP client considers a response done when the content length has
@@ -151,6 +152,39 @@ public abstract class NexusITSupport
    */
   protected boolean shouldIgnoreMissingBlobRefs() {
     return false;
+  }
+
+  /**
+   * Creates a thread factory that produces virtual threads.
+   * Virtual threads are lightweight threads that are managed by the JVM rather than the OS.
+   * 
+   * @return A ThreadFactory that creates virtual threads
+   * @since Java 21
+   */
+  protected ThreadFactory virtualThreadFactory() {
+    return Thread.ofVirtual().name("nexus-virtual-", 0).factory();
+  }
+
+  /**
+   * Creates a thread factory that produces platform threads.
+   * Platform threads are traditional threads that are managed by the OS.
+   * 
+   * @return A ThreadFactory that creates platform threads
+   * @since Java 21
+   */
+  protected ThreadFactory platformThreadFactory() {
+    return Thread.ofPlatform().name("nexus-platform-", 0).factory();
+  }
+
+  /**
+   * Creates an ExecutorService that creates a new virtual thread for each task.
+   * This is ideal for I/O-bound operations like HTTP requests.
+   * 
+   * @return An ExecutorService using virtual threads
+   * @since Java 21
+   */
+  protected ExecutorService virtualThreadExecutor() {
+    return Executors.newVirtualThreadPerTaskExecutor();
   }
 
   /**
@@ -337,18 +371,17 @@ public abstract class NexusITSupport
    */
   private Customizer getObjectMapperCustomizer(final TestSuiteObjectMapperResolver testSuiteObjectMapperResolver) {
     return builder -> {
-      ResteasyProviderFactory providerFactory = new LocalResteasyProviderFactory(
-          ResteasyProviderFactory.newInstance());
+      ResteasyProviderFactory providerFactory = ResteasyProviderFactory.newInstance();
       providerFactory.registerProviderInstance(testSuiteObjectMapperResolver, null, 1000, false);
 
-      ResteasyClientBuilder resteasyClientBuilder = (ResteasyClientBuilder) builder;
+      ResteasyClientBuilderImpl resteasyClientBuilder = (ResteasyClientBuilderImpl) builder;
       resteasyClientBuilder.providerFactory(providerFactory);
       RegisterBuiltin.register(providerFactory);
     };
   }
 
   /**
-   * Preform a get request
+   * Perform a get request
    *
    * @param baseUrl (nexusUrl in most tests)
    * @param path    to the resource
@@ -359,7 +392,7 @@ public abstract class NexusITSupport
   }
 
   /**
-   * Preform a get request
+   * Perform a get request
    *
    * @param baseUrl               (nexusUrl in most tests)
    * @param path                  to the resource
@@ -388,6 +421,58 @@ public abstract class NexusITSupport
         }
         return responseBuilder.build();
       }
+    }
+  }
+  
+  /**
+   * Perform a get request using virtual threads for improved concurrency.
+   * This method leverages Java 21's virtual threads to handle many concurrent HTTP requests efficiently.
+   *
+   * @param baseUrl (nexusUrl in most tests)
+   * @param path    to the resource
+   * @return the response object
+   * @since Java 21
+   */
+  protected Response getWithVirtualThread(final URL baseUrl, final String path) throws Exception {
+    return getWithVirtualThread(baseUrl, path, null, true);
+  }
+
+  /**
+   * Perform a get request using virtual threads for improved concurrency.
+   * This method leverages Java 21's virtual threads to handle many concurrent HTTP requests efficiently.
+   *
+   * @param baseUrl               (nexusUrl in most tests)
+   * @param path                  to the resource
+   * @param headers               {@link Header}s
+   * @param useDefaultCredentials use {@link NexusITSupport#clientBuilder(URL, boolean)} for using credentials
+   * @return the response object
+   * @since Java 21
+   */
+  protected Response getWithVirtualThread(final URL baseUrl,
+                                          final String path,
+                                          final Header[] headers,
+                                          final boolean useDefaultCredentials) throws Exception
+  {
+    HttpGet request = new HttpGet();
+    request.setURI(UriBuilder.fromUri(baseUrl.toURI()).path(path).build());
+    request.setHeaders(headers);
+
+    // Use a virtual thread to execute the HTTP request
+    try (var executor = virtualThreadExecutor()) {
+      return executor.submit(() -> {
+        try (CloseableHttpClient client = clientBuilder(nexusUrl, useDefaultCredentials).build()) {
+          try (CloseableHttpResponse response = client.execute(request)) {
+            ResponseBuilder responseBuilder = Response.status(response.getStatusLine().getStatusCode());
+            Arrays.stream(response.getAllHeaders()).forEach(h -> responseBuilder.header(h.getName(), h.getValue()));
+
+            HttpEntity entity = response.getEntity();
+            if (entity != null) {
+              responseBuilder.entity(new ByteArrayInputStream(IOUtils.toByteArray(entity.getContent())));
+            }
+            return responseBuilder.build();
+          }
+        }
+      }).get();
     }
   }
 }

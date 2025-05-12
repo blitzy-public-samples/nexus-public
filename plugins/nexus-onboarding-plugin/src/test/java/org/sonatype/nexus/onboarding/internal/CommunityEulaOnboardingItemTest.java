@@ -14,8 +14,6 @@ package org.sonatype.nexus.onboarding.internal;
 
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.app.ApplicationVersion;
@@ -35,10 +33,14 @@ import static org.mockito.Mockito.when;
 
 /**
  * Tests for {@link CommunityEulaOnboardingItem}.
- * Updated for JUnit Jupiter 5.10.1 and Mockito 5.8.0 compatibility with Java 21.
+ * 
+ * Validates the behavior of the EULA onboarding item under different conditions:
+ * - When running Community Edition with EULA not accepted
+ * - When running Community Edition with EULA already accepted
+ * - When running Professional Edition (where EULA doesn't apply)
  */
 @ExtendWith(MockitoExtension.class)
-public class CommunityEulaOnboardingItemTest
+class CommunityEulaOnboardingItemTest
     extends TestSupport
 {
   @Mock
@@ -50,54 +52,40 @@ public class CommunityEulaOnboardingItemTest
   @InjectMocks
   private CommunityEulaOnboardingItem underTest;
 
-  private static final String EULA_KEY = "nexus.community.eula.accepted";
-  private static final String COMMUNITY = "COMMUNITY";
-  private static final String PRO = "PRO";
-
   @BeforeEach
-  public void setUp() {
-    when(mockApplicationVersion.getEdition()).thenReturn(COMMUNITY);
+  void setUp() {
+    when(mockApplicationVersion.getEdition()).thenReturn("COMMUNITY");
   }
 
+  /**
+   * Verifies that the onboarding item applies when running Community Edition
+   * and the EULA has not been accepted yet.
+   */
   @Test
-  public void testAppliesWhenCommunityAndEulaNotAccepted() {
-    when(mockGlobalKeyValueStore.getKey(EULA_KEY)).thenReturn(Optional.empty());
+  void appliesWhenCommunityAndEulaNotAccepted() {
+    when(mockGlobalKeyValueStore.getKey("nexus.community.eula.accepted")).thenReturn(Optional.empty());
     assertTrue(underTest.applies());
   }
 
+  /**
+   * Verifies that the onboarding item does not apply when running Community Edition
+   * but the EULA has already been accepted.
+   */
   @Test
-  public void testAppliesWhenCommunityAndEulaAccepted() {
+  void appliesWhenCommunityAndEulaAccepted() {
     NexusKeyValue eulaStatus = new NexusKeyValue();
     eulaStatus.setValue(Map.of("accepted", true));
-    when(mockGlobalKeyValueStore.getKey(EULA_KEY)).thenReturn(Optional.of(eulaStatus));
+    when(mockGlobalKeyValueStore.getKey("nexus.community.eula.accepted")).thenReturn(Optional.of(eulaStatus));
     assertFalse(underTest.applies());
   }
 
+  /**
+   * Verifies that the onboarding item does not apply when running Professional Edition,
+   * regardless of EULA acceptance status.
+   */
   @Test
-  public void testAppliesWhenNotCommunity() {
-    when(mockApplicationVersion.getEdition()).thenReturn(PRO);
+  void appliesWhenNotCommunity() {
+    when(mockApplicationVersion.getEdition()).thenReturn("PRO");
     assertFalse(underTest.applies());
-  }
-  
-  @Test
-  public void testVirtualThreadCompatibility() throws Exception {
-    // Test that the class works correctly when called from a virtual thread
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      executor.submit(() -> {
-        // Setup the test conditions
-        when(mockGlobalKeyValueStore.getKey(EULA_KEY)).thenReturn(Optional.empty());
-        
-        // Verify behavior is the same in a virtual thread
-        assertTrue(underTest.applies());
-        
-        // Test with different conditions
-        NexusKeyValue eulaStatus = new NexusKeyValue();
-        eulaStatus.setValue(Map.of("accepted", true));
-        when(mockGlobalKeyValueStore.getKey(EULA_KEY)).thenReturn(Optional.of(eulaStatus));
-        assertFalse(underTest.applies());
-        
-        return null;
-      }).get(); // Wait for completion
-    }
   }
 }

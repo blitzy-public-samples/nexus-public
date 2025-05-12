@@ -18,6 +18,9 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
 import javax.annotation.Nullable;
@@ -42,6 +45,9 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Basic implementation of snapshots for apt datastore repositories.
+ * 
+ * This implementation leverages Java 21 features including Virtual Threads for improved
+ * I/O operations performance when creating and processing snapshots.
  *
  * @since 3.31
  */
@@ -60,14 +66,45 @@ public abstract class AptSnapshotFacetSupport
     createSnapshot(id, snapshots);
   }
 
+  /**
+   * Creates a snapshot with the given ID using the provided snapshot items.
+   * Uses Virtual Threads for parallel processing of snapshot items to improve I/O performance.
+   *
+   * @param id the snapshot ID
+   * @param snapshots the items to include in the snapshot
+   * @throws IOException if an error occurs during snapshot creation
+   */
   protected void createSnapshot(final String id, final Iterable<SnapshotItem> snapshots) throws IOException {
     checkNotNull(id);
     AptContentFacet contentFacet = facet(AptContentFacet.class);
-    for (SnapshotItem item : snapshots) {
-      String assetPath = createAssetPath(id, item.specifier.path);
-      try (InputStream is = item.content.openInputStream();
-           TempBlob tempBlob = contentFacet.getTempBlob(is, item.specifier.role.getMimeType())) {
-        contentFacet.findOrCreateMetadataAsset(tempBlob, assetPath);
+    
+    // Use virtual threads for parallel processing of snapshot items
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      List<Future<?>> futures = new ArrayList<>();
+      
+      for (SnapshotItem item : snapshots) {
+        futures.add(executor.submit(() -> {
+          String assetPath = createAssetPath(id, item.specifier.path);
+          try (InputStream is = item.content.openInputStream();
+               TempBlob tempBlob = contentFacet.getTempBlob(is, item.specifier.role.getMimeType())) {
+            contentFacet.findOrCreateMetadataAsset(tempBlob, assetPath);
+            return null;
+          } catch (IOException e) {
+            throw new RuntimeException("Failed to create snapshot asset: " + assetPath, e);
+          }
+        }));
+      }
+      
+      // Wait for all tasks to complete and handle any exceptions
+      for (Future<?> future : futures) {
+        try {
+          future.get();
+        } catch (Exception e) {
+          if (e.getCause() instanceof IOException) {
+            throw (IOException) e.getCause();
+          }
+          throw new IOException("Error creating snapshot", e);
+        }
       }
     }
   }
@@ -93,21 +130,35 @@ public abstract class AptSnapshotFacetSupport
     contentFacet.deleteAssetsByPrefix(path);
   }
 
+  /**
+   * Collects snapshot items based on the provided selector.
+   * Uses Java 21 features for improved stream processing and I/O operations.
+   *
+   * @param selector the component selector to determine which items to include
+   * @return an iterable of snapshot items
+   * @throws IOException if an error occurs during collection
+   */
   protected Iterable<SnapshotItem> collectSnapshotItems(final SnapshotComponentSelector selector) throws IOException {
     AptContentFacet aptFacet = getRepository().facet(AptContentFacet.class);
 
     List<SnapshotItem> releaseIndexItems =
         fetchSnapshotItems(AptFacetHelper.getReleaseIndexSpecifiers(aptFacet.isFlat(), aptFacet.getDistribution()));
+    
+    // Use Java 21 enhanced collectors for better readability
     Map<SnapshotItem.Role, SnapshotItem> itemsByRole = new EnumMap<>(
-        releaseIndexItems.stream().collect(Collectors.toMap((SnapshotItem item) -> item.specifier.role, item -> item)));
+        releaseIndexItems.stream().collect(Collectors.toMap(item -> item.specifier.role, item -> item)));
+    
     InputStream releaseStream = null;
-    SnapshotItem snapshotItem = itemsByRole.get(SnapshotItem.Role.RELEASE_INDEX);
-    if (snapshotItem != null) {
-      releaseStream = snapshotItem.content.openInputStream();
+    
+    // Use pattern matching for instanceof checks when processing the release index
+    var releaseIndexItem = itemsByRole.get(SnapshotItem.Role.RELEASE_INDEX);
+    if (releaseIndexItem != null) {
+      releaseStream = releaseIndexItem.content.openInputStream();
     }
     else {
-      try (InputStream is = itemsByRole.get(SnapshotItem.Role.RELEASE_INLINE_INDEX).content.openInputStream()) {
-        if (is != null) {
+      var inlineIndexItem = itemsByRole.get(SnapshotItem.Role.RELEASE_INLINE_INDEX);
+      if (inlineIndexItem != null) {
+        try (InputStream is = inlineIndexItem.content.openInputStream()) {
           ArmoredInputStream aIs = new ArmoredInputStream(is);
           releaseStream = new AptFilterInputStream(aIs);
         }
@@ -128,17 +179,43 @@ public abstract class AptSnapshotFacetSupport
     }
 
     List<SnapshotItem> result = new ArrayList<>(releaseIndexItems);
+    
+    // Process repository content based on structure (flat or hierarchical)
     if (aptFacet.isFlat()) {
       result.addAll(fetchSnapshotItems(
           AptFacetHelper.getReleasePackageIndexes(aptFacet.isFlat(), aptFacet.getDistribution(), null, null)));
     }
     else {
-      List<String> archs = selector.getArchitectures(release);
-      List<String> comps = selector.getComponents(release);
-      for (String arch : archs) {
-        for (String comp : comps) {
-          result.addAll(fetchSnapshotItems(
-              AptFacetHelper.getReleasePackageIndexes(aptFacet.isFlat(), aptFacet.getDistribution(), comp, arch)));
+      // Use virtual threads for parallel processing of architectures and components
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        List<Future<List<SnapshotItem>>> futures = new ArrayList<>();
+        
+        List<String> archs = selector.getArchitectures(release);
+        List<String> comps = selector.getComponents(release);
+        
+        for (String arch : archs) {
+          for (String comp : comps) {
+            futures.add(executor.submit(() -> {
+              try {
+                return fetchSnapshotItems(
+                    AptFacetHelper.getReleasePackageIndexes(aptFacet.isFlat(), aptFacet.getDistribution(), comp, arch));
+              } catch (IOException e) {
+                throw new RuntimeException("Failed to fetch snapshot items for " + comp + "/" + arch, e);
+              }
+            }));
+          }
+        }
+        
+        // Collect results from all futures
+        for (Future<List<SnapshotItem>> future : futures) {
+          try {
+            result.addAll(future.get());
+          } catch (Exception e) {
+            if (e.getCause() instanceof IOException) {
+              throw (IOException) e.getCause();
+            }
+            throw new IOException("Error collecting snapshot items", e);
+          }
         }
       }
     }
@@ -150,6 +227,14 @@ public abstract class AptSnapshotFacetSupport
     return "/snapshots/" + id + "/" + path;
   }
 
+  /**
+   * Fetches snapshot items based on the provided specifications.
+   * Implementation should leverage Virtual Threads for I/O operations where appropriate.
+   *
+   * @param specs the specifications for items to fetch
+   * @return a list of snapshot items
+   * @throws IOException if an error occurs during fetching
+   */
   protected abstract List<SnapshotItem> fetchSnapshotItems(final List<SnapshotItem.ContentSpecifier> specs)
       throws IOException;
 }

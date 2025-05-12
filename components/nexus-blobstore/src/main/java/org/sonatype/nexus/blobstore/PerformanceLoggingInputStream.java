@@ -15,7 +15,8 @@ package org.sonatype.nexus.blobstore;
 import java.io.FilterInputStream;
 import java.io.InputStream;
 import java.io.IOException;
-import java.util.concurrent.atomic.LongAdder;
+import java.time.Duration;
+import java.time.Instant;
 
 import com.google.common.io.CountingInputStream;
 
@@ -23,7 +24,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * A utility to log how fast the input stream was read.
- * Optimized for Java 21 Virtual Threads to ensure accurate timing and thread safety.
+ * Updated for Java 21 to properly handle Virtual Threads and use improved timing mechanisms.
  *
  * @since 3.21
  */
@@ -34,12 +35,14 @@ public class PerformanceLoggingInputStream
 
   private final CountingInputStream countingInputStream;
 
-  /**
-   * Using LongAdder instead of a simple long for better performance with Virtual Threads
-   * when multiple operations might update the counter concurrently.
-   */
-  private final LongAdder totalNanosElapsed = new LongAdder();
+  private long totalNanosElapsed;
 
+  /**
+   * Creates a new PerformanceLoggingInputStream that wraps the given source stream.
+   *
+   * @param source the input stream to wrap
+   * @param performanceLogger the logger to use for performance metrics
+   */
   public PerformanceLoggingInputStream(final InputStream source, final PerformanceLogger performanceLogger) {
     this(new CountingInputStream(source), performanceLogger);
   }
@@ -56,30 +59,31 @@ public class PerformanceLoggingInputStream
   @Override
   public void close() throws IOException {
     in.close();
-    performanceLogger.logRead(countingInputStream.getCount(), totalNanosElapsed.sum());
+    performanceLogger.logRead(countingInputStream.getCount(), totalNanosElapsed);
   }
 
   @Override
   public int read() throws IOException {
-    long start = System.nanoTime();
+    // Using Instant for better accuracy with Virtual Threads
+    Instant start = Instant.now();
     int val = in.read();
-    totalNanosElapsed.add(System.nanoTime() - start);
+    totalNanosElapsed += Duration.between(start, Instant.now()).toNanos();
     return val;
   }
 
   @Override
   public int read(byte[] b) throws IOException {
-    long start = System.nanoTime();
+    Instant start = Instant.now();
     int bytesRead = in.read(b);
-    totalNanosElapsed.add(System.nanoTime() - start);
+    totalNanosElapsed += Duration.between(start, Instant.now()).toNanos();
     return bytesRead;
   }
 
   @Override
   public int read(byte[] b, int off, int len) throws IOException {
-    long start = System.nanoTime();
+    Instant start = Instant.now();
     int bytesRead = in.read(b, off, len);
-    totalNanosElapsed.add(System.nanoTime() - start);
+    totalNanosElapsed += Duration.between(start, Instant.now()).toNanos();
     return bytesRead;
   }
 }

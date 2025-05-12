@@ -13,14 +13,11 @@
 package org.sonatype.nexus.common.app;
 
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
+
 import javax.annotation.Nullable;
 
 /**
  * Base-URL manager.
- * <p>
- * Manages the base URL configuration for the application. Implementations should be thread-safe.
- * </p>
  *
  * @since 3.0
  */
@@ -29,14 +26,14 @@ public interface BaseUrlManager
   /**
    * Sets the base URL.
    *
-   * @param url the base URL to set
+   * @param url The base URL to set
    */
   void setUrl(String url);
 
   /**
-   * Gets the configured base URL.
+   * Gets the currently configured base URL.
    *
-   * @return the configured base URL
+   * @return The current base URL
    */
   String getUrl();
 
@@ -48,46 +45,33 @@ public interface BaseUrlManager
   boolean isForce();
 
   /**
-   * Sets whether the base URL is forced.
+   * Sets whether the base URL should be forced.
    *
    * @param force true to force the base URL, false otherwise
    */
   void setForce(boolean force);
 
   /**
-   * Detects base-URL from current environment.
+   * Detect base-URL from current environment.
    *
-   * @return the detected base URL, or null if detection fails
+   * @return The detected base URL, or null if unable to detect
    */
   @Nullable
   String detectUrl();
-  
-  /**
-   * Detects base-URL from current environment, returning as an Optional.
-   *
-   * @return an Optional containing the detected base URL, or empty if detection fails
-   * @since 3.60
-   */
-  default Optional<String> detectUrlOptional() {
-    return Optional.ofNullable(detectUrl());
-  }
 
   /**
-   * Detects base-URL and registers with {@link BaseUrlHolder} if non-null.
+   * Detect base-URL and register with {@link BaseUrlHolder} if non-null.
    */
   void detectAndHoldUrl();
   
   /**
-   * Asynchronously detects the base URL using a virtual thread if available.
-   * <p>
-   * This method is useful for non-blocking URL detection in I/O-bound scenarios.
-   * </p>
+   * Detect base-URL from current environment, returning an Optional.
+   * This is a modern alternative to {@link #detectUrl()} using Java's Optional type.
    *
-   * @return a CompletableFuture that will complete with the detected URL or null if detection fails
+   * @return Optional containing the detected base URL, or empty if unable to detect
    * @since 3.60
    */
-  default CompletableFuture<String> detectUrlAsync() {
-    return CompletableFuture.supplyAsync(this::detectUrl, 
-        Thread.ofVirtual().name("base-url-detector-").factory());
+  default Optional<String> detectUrlOptional() {
+    return Optional.ofNullable(detectUrl());
   }
 }

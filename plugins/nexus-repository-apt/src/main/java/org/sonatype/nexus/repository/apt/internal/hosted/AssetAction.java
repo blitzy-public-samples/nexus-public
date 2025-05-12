@@ -13,12 +13,22 @@
 package org.sonatype.nexus.repository.apt.internal.hosted;
 
 /**
- * Type of the action applied to Apt asset
+ * Type of the action applied to Apt asset.
+ * 
+ * This enum is compatible with Java 21 and follows modern enum implementation practices.
+ * Enum constants are implicitly public, static, and final, making them thread-safe and immutable.
  *
  * @since 3.31
  */
 public enum AssetAction
 {
+  /**
+   * Indicates that an asset has been added to the repository
+   */
   ADDED,
+  
+  /**
+   * Indicates that an asset has been removed from the repository
+   */
   REMOVED
 }

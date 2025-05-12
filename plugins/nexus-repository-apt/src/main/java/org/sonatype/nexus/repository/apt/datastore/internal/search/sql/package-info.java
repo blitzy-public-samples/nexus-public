@@ -10,6 +10,15 @@
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  */
+/**
+ * APT repository SQL-based search implementation.
+ * 
+ * <p>This package is compatible with Java 21 and leverages the updated FeatureFlag annotation
+ * for conditional feature enablement.</p>
+ *
+ * @since 3.38
+ * @updated 21.0 - Updated for Java 21 compatibility
+ */
 @FeatureFlag(name = DATASTORE_TABLE_SEARCH)
 
 package org.sonatype.nexus.repository.apt.datastore.internal.search.sql;

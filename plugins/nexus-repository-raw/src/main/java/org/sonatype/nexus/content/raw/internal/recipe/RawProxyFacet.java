@@ -14,22 +14,39 @@ package org.sonatype.nexus.content.raw.internal.recipe;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.URI;
 import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+
 import javax.inject.Named;
 
 import org.sonatype.nexus.common.template.EscapeHelper;
 import org.sonatype.nexus.content.raw.RawContentFacet;
+import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.content.facet.ContentProxyFacetSupport;
+import org.sonatype.nexus.repository.httpclient.HttpClientFacet;
 import org.sonatype.nexus.repository.view.Content;
 import org.sonatype.nexus.repository.view.Context;
+import org.sonatype.nexus.repository.view.Payload;
 import org.sonatype.nexus.repository.view.matchers.token.TokenMatcher;
+import org.sonatype.nexus.repository.view.matchers.token.TokenMatcher.State;
+
+import org.apache.http.HttpEntity;
+import org.apache.http.HttpResponse;
+import org.apache.http.HttpStatus;
+import org.apache.http.StatusLine;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.utils.HttpClientUtils;
 
 import com.google.common.collect.ImmutableSet;
 
+import static com.google.common.base.Preconditions.checkState;
+
 /**
- * Raw proxy facet optimized for Java 21 with Virtual Threads support.
+ * Raw proxy facet.
  *
  * @since 3.24
  */
@@ -38,21 +55,40 @@ public class RawProxyFacet
     extends ContentProxyFacetSupport
 {
   private static final ImmutableSet<String> CHARS_TO_ENCODE = ImmutableSet.of("^", "#", "?", "\u202F", "[", "]");
-
-  public RawProxyFacet() {
-    // Configure the executor service to use Virtual Threads for I/O operations
-    // This significantly improves throughput for concurrent proxy operations
-    setExecutorService(Executors.newVirtualThreadPerTaskExecutor());
-  }
+  
+  // Virtual thread executor for I/O-bound operations
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   @Override
   protected Content getCachedContent(final Context context) throws IOException {
-    return content().get(assetPath(context)).orElse(null);
+    // Use virtual threads for I/O-bound operations
+    try {
+      Future<Content> contentFuture = virtualThreadExecutor.submit(() -> content().get(assetPath(context)).orElse(null));
+      return contentFuture.get();
+    } 
+    catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IOException(STR."Interrupted while getting cached content: \{e.getMessage()}", e);
+    }
+    catch (Exception e) {
+      throw new IOException(STR."Error getting cached content: \{e.getMessage()}", e);
+    }
   }
 
   @Override
   protected Content store(final Context context, final Content payload) throws IOException {
-    return content().put(assetPath(context), payload);
+    // Use virtual threads for I/O-bound operations
+    try {
+      Future<Content> contentFuture = virtualThreadExecutor.submit(() -> content().put(assetPath(context), payload));
+      return contentFuture.get();
+    } 
+    catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IOException(STR."Interrupted while storing content: \{e.getMessage()}", e);
+    }
+    catch (Exception e) {
+      throw new IOException(STR."Error storing content: \{e.getMessage()}", e);
+    }
   }
 
   @Override
@@ -63,12 +99,46 @@ public class RawProxyFacet
   @Override
   protected String encodeUrl(final String url) throws UnsupportedEncodingException {
     String encodedUrl = url;
-    // Using pattern matching for more concise code with Java 21
     for (String ch : CHARS_TO_ENCODE) {
-      // Using StandardCharsets.UTF_8 instead of the string "UTF-8" for better type safety
-      encodedUrl = encodedUrl.replace(ch, URLEncoder.encode(ch, StandardCharsets.UTF_8));
+      encodedUrl = encodedUrl.replace(ch, URLEncoder.encode(ch, "UTF-8"));
     }
     return encodedUrl;
+  }
+  
+  @Override
+  protected Payload getPayload(final Repository proxy, final URI uri) throws IOException {
+    // Override to use virtual threads for remote HTTP operations
+    try {
+      return virtualThreadExecutor.submit(() -> fetchPayloadWithVirtualThread(proxy, uri)).get();
+    }
+    catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IOException(STR."Interrupted while fetching payload from \{uri}: \{e.getMessage()}", e);
+    }
+    catch (Exception e) {
+      throw new IOException(STR."Error fetching payload from \{uri}: \{e.getMessage()}", e);
+    }
+  }
+  
+  private Payload fetchPayloadWithVirtualThread(final Repository proxy, final URI uri) throws IOException {
+    final HttpClient client = proxy.facet(HttpClientFacet.class).getHttpClient();
+
+    HttpGet request = new HttpGet(uri);
+    log.debug(STR."Fetching: \{request}");
+
+    HttpResponse response = client.execute(request);
+    StatusLine status = response.getStatusLine();
+    log.debug(STR."Response: \{response}, status: \{status}");
+
+    if (status.getStatusCode() == HttpStatus.SC_OK) {
+      HttpEntity entity = response.getEntity();
+      checkState(entity != null, "No http entity received from remote registry");
+
+      return new org.sonatype.nexus.repository.view.payloads.HttpEntityPayload(response, entity);
+    }
+    log.warn(STR."Status code \{status.getStatusCode()} contacting \{uri}");
+    HttpClientUtils.closeQuietly(response);
+    return null;
   }
 
   private RawContentFacet content() {
@@ -79,19 +149,15 @@ public class RawProxyFacet
    * Determines what 'asset' this request relates to.
    */
   private String assetPath(final Context context) {
-    // Using pattern matching for more concise code with Java 21
-    if (context.getAttributes() instanceof var attributes && attributes != null) {
-      if (attributes.get(TokenMatcher.State.class) instanceof TokenMatcher.State tokenMatcherState) {
-        return tokenMatcherState.getTokens().get(RawRecipeSupport.PATH_NAME);
-      }
+    // Using pattern matching with instanceof for TokenMatcher.State
+    var tokenMatcherState = context.getAttributes().require(TokenMatcher.State.class);
+    if (tokenMatcherState instanceof State state) {
+      return state.getTokens().get(RawRecipeSupport.PATH_NAME);
     }
-    // Fallback to traditional approach if pattern matching fails
-    final TokenMatcher.State tokenMatcherState = context.getAttributes().require(TokenMatcher.State.class);
     return tokenMatcherState.getTokens().get(RawRecipeSupport.PATH_NAME);
   }
 
   private String removeSlashPrefix(final String url) {
-    // Using pattern matching for more concise code with Java 21
     return url != null && url.startsWith("/") ? url.substring(1) : url;
   }
 }

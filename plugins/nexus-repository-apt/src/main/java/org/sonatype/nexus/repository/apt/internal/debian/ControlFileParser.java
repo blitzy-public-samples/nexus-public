@@ -16,6 +16,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -24,10 +25,11 @@ import java.util.regex.Pattern;
 import org.sonatype.nexus.repository.apt.internal.debian.ControlFile.ControlField;
 import org.sonatype.nexus.repository.apt.internal.debian.ControlFile.Paragraph;
 
-import com.google.common.base.Charsets;
-
 /**
+ * Parser for Debian control files.
+ * 
  * @since 3.17
+ * @see <a href="https://www.debian.org/doc/debian-policy/ch-controlfields.html">Debian Policy Manual - Control files</a>
  */
 public class ControlFileParser
 {
@@ -45,41 +47,73 @@ public class ControlFileParser
 
   private String fieldName;
 
+  /**
+   * Parses a Debian control file from the given input stream.
+   * 
+   * @param stream the input stream containing the control file content
+   * @return the parsed control file
+   * @throws IOException if an I/O error occurs during parsing
+   */
   public ControlFile parseControlFile(final InputStream stream) throws IOException {
+    // Clear state before parsing
     paragraphs.clear();
     fields.clear();
     valueBuilder.setLength(0);
     sigBuilder.setLength(0);
     inField = false;
 
-    BufferedReader reader = new BufferedReader(new InputStreamReader(stream, Charsets.UTF_8));
-    String line;
-    while ((line = reader.readLine()) != null) {
-      if (line.trim().length() == 0) {
-        finishField();
-        finishParagraph();
-        continue;
-      }
-
-      int first = line.codePointAt(0);
-      if (first != '#') {
-        if (Character.isWhitespace(first)) {
-          valueBuilder.append('\n');
-          valueBuilder.append(line);
-        }
-        else {
-          finishField();
-          beginField(line);
-        }
+    // Using StandardCharsets.UTF_8 instead of Guava's Charsets.UTF_8 for Java 21 compatibility
+    try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+      String line;
+      while ((line = reader.readLine()) != null) {
+        processLine(line);
       }
     }
 
+    // Finish any pending field and paragraph
     finishField();
     finishParagraph();
 
     return new ControlFile(paragraphs);
   }
 
+  /**
+   * Processes a single line from the control file.
+   * 
+   * @param line the line to process
+   * @throws IOException if an error occurs during processing
+   */
+  private void processLine(final String line) throws IOException {
+    // Empty line indicates end of paragraph
+    if (line.trim().isEmpty()) {
+      finishField();
+      finishParagraph();
+      return;
+    }
+
+    // Using Java 21 pattern matching for switch to handle line processing
+    switch (line) {
+      // Skip comment lines starting with #
+      case String s when s.startsWith("#") -> { /* Skip comment lines */ }
+      
+      // Handle continuation lines (starting with whitespace)
+      case String s when Character.isWhitespace(s.codePointAt(0)) -> {
+        valueBuilder.append('\n');
+        valueBuilder.append(s);
+      }
+      
+      // Handle new field lines
+      default -> {
+        finishField();
+        beginField(line);
+      }
+    }
+  }
+
+  /**
+   * Finishes the current paragraph by adding it to the list of paragraphs.
+   * Does nothing if there are no fields in the current paragraph.
+   */
   private void finishParagraph() {
     if (fields.isEmpty()) {
       return;
@@ -88,6 +122,10 @@ public class ControlFileParser
     fields.clear();
   }
 
+  /**
+   * Finishes the current field by adding it to the list of fields.
+   * Does nothing if not currently in a field.
+   */
   private void finishField() {
     if (!inField) {
       return;
@@ -97,6 +135,12 @@ public class ControlFileParser
     inField = false;
   }
 
+  /**
+   * Begins a new field by parsing the field name and initial value.
+   * 
+   * @param line the line containing the field
+   * @throws IOException if the line is not a valid field
+   */
   private void beginField(final String line) throws IOException {
     Matcher m = FIELD_PATTERN.matcher(line);
     if (!m.matches()) {

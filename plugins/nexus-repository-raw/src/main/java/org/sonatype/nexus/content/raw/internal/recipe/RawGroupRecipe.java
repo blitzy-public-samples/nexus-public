@@ -12,6 +12,12 @@
  */
 package org.sonatype.nexus.content.raw.internal.recipe;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.List;
+import java.util.ArrayList;
+
 import javax.annotation.Nonnull;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -32,10 +38,14 @@ import org.sonatype.nexus.repository.view.Route;
 import org.sonatype.nexus.repository.view.Router;
 import org.sonatype.nexus.repository.view.ViewFacet;
 
+import static java.lang.StringTemplate.STR;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Raw group repository recipe.
+ * 
+ * Updated for Java 21 to leverage Virtual Threads for concurrent operations
+ * and modern language features for improved code quality.
  *
  * @since 3.24
  */
@@ -63,35 +73,58 @@ public class RawGroupRecipe
     this.groupHandler = checkNotNull(groupHandler);
   }
 
+  /**
+   * Apply the repository configuration using Java 21 Virtual Threads for concurrent operations.
+   * This improves performance for I/O-bound operations when attaching facets.
+   */
   @Override
   public void apply(@Nonnull final Repository repository) throws Exception {
-    repository.attach(securityFacet.get());
-    repository.attach(configure(viewFacet.get()));
-    repository.attach(groupFacet.get());
-    repository.attach(contentFacet.get());
-    repository.attach(browseFacet.get());
+    // Use Java 21 Virtual Threads for concurrent facet attachment
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      List<Future<?>> futures = new ArrayList<>();
+      
+      // Submit facet attachment tasks to be executed concurrently
+      futures.add(executor.submit(() -> repository.attach(securityFacet.get())));
+      futures.add(executor.submit(() -> repository.attach(configure(viewFacet.get()))));
+      futures.add(executor.submit(() -> repository.attach(groupFacet.get())));
+      futures.add(executor.submit(() -> repository.attach(contentFacet.get())));
+      futures.add(executor.submit(() -> repository.attach(browseFacet.get())));
+      
+      // Wait for all facet attachments to complete
+      for (Future<?> future : futures) {
+        future.get(); // This will throw an exception if any of the tasks failed
+      }
+    }
   }
 
   /**
-   * Configure {@link ViewFacet}.
+   * Configure {@link ViewFacet} using Java 21 pattern matching for improved code readability.
    */
   private ViewFacet configure(final ConfigurableViewFacet viewFacet) {
-    Router.Builder builder = new Router.Builder();
+    // Using pattern matching to ensure viewFacet is of the correct type
+    if (viewFacet instanceof ConfigurableViewFacet facet) {
+      Router.Builder builder = new Router.Builder();
 
-    builder.route(new Route.Builder()
-        .matcher(PATH_MATCHER)
-        .handler(timingHandler)
-        .handler(contentDispositionHandler)
-        .handler(securityHandler)
-        .handler(exceptionHandler)
-        .handler(handlerContributor)
-        .handler(groupHandler)
-        .create());
+      builder.route(new Route.Builder()
+          .matcher(PATH_MATCHER)
+          .handler(timingHandler)
+          .handler(contentDispositionHandler)
+          .handler(securityHandler)
+          .handler(exceptionHandler)
+          .handler(handlerContributor)
+          .handler(groupHandler)
+          .create());
 
-    builder.defaultHandlers(HttpHandlers.badRequest());
+      builder.defaultHandlers(HttpHandlers.badRequest());
 
-    viewFacet.configure(builder.create());
-
-    return viewFacet;
+      // Using Java 21 string templates for logging (if needed)
+      log.debug(STR."Configuring view facet for repository type: \{facet.getClass().getSimpleName()}");
+      
+      facet.configure(builder.create());
+      return facet;
+    } else {
+      // Using Java 21 string templates for error messages
+      throw new IllegalArgumentException(STR."Expected ConfigurableViewFacet but got: \{viewFacet.getClass().getName()}");
+    }
   }
 }

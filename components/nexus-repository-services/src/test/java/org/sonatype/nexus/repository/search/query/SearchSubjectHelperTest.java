@@ -33,7 +33,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.mock;
 
 @ExtendWith(MockitoExtension.class)
 class SearchSubjectHelperTest
@@ -50,7 +50,7 @@ class SearchSubjectHelperTest
   }
 
   @Test
-  void subjectRegistrationShouldAddAndRemoveSubjectFromMap() {
+  void registrationShouldAddAndRemoveSubject() {
     assertThat(helper.subjects.size(), is(0));
     try (SubjectRegistration registration = helper.register(subject)) {
       assertThat(helper.subjects.size(), is(1));
@@ -60,69 +60,80 @@ class SearchSubjectHelperTest
   }
 
   @Test
-  void getSubjectShouldThrowExceptionWhenSubjectIdNotFound() {
+  void getSubjectShouldThrowExceptionWhenSubjectNotFound() {
     assertThrows(NullPointerException.class, () -> helper.getSubject(""));
   }
-  
+
   @Test
-  void concurrentSubjectRegistrationWithVirtualThreadsShouldWorkCorrectly() throws Exception {
-    // Number of concurrent operations to perform
-    int concurrentOperations = 1000;
+  void concurrentSubjectHandlingWithVirtualThreads() throws Exception {
+    // Number of virtual threads to create
+    int threadCount = 1000;
+    
+    // Use CountDownLatch to wait for all threads to complete
+    CountDownLatch latch = new CountDownLatch(threadCount);
+    
+    // Track any errors that occur during execution
+    AtomicInteger errorCount = new AtomicInteger(0);
     
     // Create a virtual thread executor
     ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     
-    // Synchronization aids
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(concurrentOperations);
-    AtomicInteger errorCount = new AtomicInteger(0);
+    // Store registrations to verify later
+    List<String> registrationIds = new ArrayList<>(threadCount);
     
-    // Create mock subjects for each thread
-    List<Subject> mockSubjects = new ArrayList<>();
-    for (int i = 0; i < concurrentOperations; i++) {
-      Subject mockSubject = mock(Subject.class);
-      when(mockSubject.toString()).thenReturn("MockSubject-" + i);
-      mockSubjects.add(mockSubject);
-    }
-    
-    // Submit tasks to register and retrieve subjects concurrently
-    for (int i = 0; i < concurrentOperations; i++) {
-      final int index = i;
-      executor.submit(() -> {
-        try {
-          // Wait for all threads to be ready
-          startLatch.await();
-          
-          // Register the subject
-          try (SubjectRegistration registration = helper.register(mockSubjects.get(index))) {
-            // Verify the subject was registered correctly
-            Subject retrievedSubject = helper.getSubject(registration.getId());
-            if (retrievedSubject != mockSubjects.get(index)) {
-              errorCount.incrementAndGet();
+    try {
+      // Submit tasks to register subjects concurrently
+      for (int i = 0; i < threadCount; i++) {
+        executor.submit(() -> {
+          try {
+            // Create a mock subject for each thread
+            Subject threadSubject = mock(Subject.class);
+            
+            // Register the subject and store the ID
+            try (SubjectRegistration registration = helper.register(threadSubject)) {
+              String id = registration.getId();
+              
+              // Verify we can retrieve the subject
+              Subject retrieved = helper.getSubject(id);
+              
+              // Verify it's the same subject we registered
+              if (retrieved != threadSubject) {
+                errorCount.incrementAndGet();
+              }
+              
+              // Add the ID to our list for verification
+              synchronized (registrationIds) {
+                registrationIds.add(id);
+              }
             }
+          } 
+          catch (Exception e) {
+            log.error("Error in virtual thread test", e);
+            errorCount.incrementAndGet();
+          } 
+          finally {
+            latch.countDown();
           }
-        } 
-        catch (Exception e) {
-          errorCount.incrementAndGet();
-        }
-        finally {
-          completionLatch.countDown();
-        }
-      });
+        });
+      }
+      
+      // Wait for all threads to complete (with timeout)
+      boolean completed = latch.await(30, TimeUnit.SECONDS);
+      
+      // Verify all threads completed
+      assertThat("All virtual threads should complete in time", completed, is(true));
+      
+      // Verify no errors occurred
+      assertThat("No errors should occur during concurrent execution", errorCount.get(), is(0));
+      
+      // Verify we collected the expected number of registration IDs
+      assertThat("Should have collected all registration IDs", registrationIds.size(), is(threadCount));
+      
+      // Verify all subjects were properly unregistered (map should be empty)
+      assertThat("All subjects should be unregistered", helper.subjects.size(), is(0));
+    } 
+    finally {
+      executor.shutdown();
     }
-    
-    // Start all threads simultaneously
-    startLatch.countDown();
-    
-    // Wait for all operations to complete (with timeout)
-    boolean completed = completionLatch.await(30, TimeUnit.SECONDS);
-    
-    // Shutdown the executor
-    executor.shutdown();
-    
-    // Verify results
-    assertThat("All operations should complete within the timeout", completed, is(true));
-    assertThat("No errors should occur during concurrent operations", errorCount.get(), is(0));
-    assertThat("All subjects should be unregistered", helper.subjects.size(), is(0));
   }
 }

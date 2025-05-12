@@ -275,6 +275,24 @@ public final class UnitOfWork
       @Nullable final TransactionalStore<?> localStore,
       final TransactionIsolation isolation)
   {
+    return openSession(localStore, isolation, false);
+  }
+  
+  /**
+   * Opens a new session; from the local store if it exists or from the surrounding unit-of-work.
+   * Enhanced with virtual thread context awareness.
+   * 
+   * @param localStore the store to use, or null to use the store from the current unit-of-work
+   * @param isolation the transaction isolation level to use
+   * @param virtualThread whether the session is being opened from a virtual thread
+   * @return a new session configured appropriately for the thread type
+   * @since 3.60
+   */
+  static TransactionalSession<?> openSession(
+      @Nullable final TransactionalStore<?> localStore,
+      final TransactionIsolation isolation,
+      final boolean virtualThread)
+  {
     UnitOfWork currentWork = CURRENT_WORK.get();
     // introduce a short-lived unit-of-work when we need to track a locally sourced session
     if (localStore != null && (currentWork == null || currentWork.scope == UNIT_OF_WORK)) {
@@ -288,7 +306,7 @@ public final class UnitOfWork
     else {
       checkState(currentWork != null, "Unit of work has not been set");
     }
-    return currentWork.doOpenSession(localStore, isolation);
+    return currentWork.doOpenSession(localStore, isolation, virtualThread);
   }
   
   // -------------------------------------------------------------------------
@@ -322,11 +340,41 @@ public final class UnitOfWork
       @Nullable final TransactionalStore<?> localStore,
       final TransactionIsolation isolation)
   {
+    return doOpenSession(localStore, isolation, false);
+  }
+  
+  /**
+   * Opens a new session if one doesn't already exist, with virtual thread awareness.
+   *
+   * Returns this work as a wrapper session so {@link #doCloseSession()} is called when the client closes the session.
+   * Enhanced with virtual thread context awareness.
+   * 
+   * @param localStore the store to use, or null to use the store from the current unit-of-work
+   * @param isolation the transaction isolation level to use
+   * @param virtualThread whether the session is being opened from a virtual thread
+   * @return a new session configured appropriately for the thread type
+   * @since 3.60
+   */
+  private TransactionalSession<?> doOpenSession(
+      @Nullable final TransactionalStore<?> localStore,
+      final TransactionIsolation isolation,
+      final boolean virtualThread)
+  {
     if (session == null) {
       if (log.isDebugEnabled()) {
         log.debug(STR."Opening new session in \{getThreadTypeDescription()}");
       }
-      session = checkNotNull(localStore != null ? localStore.openSession(isolation) : store.openSession(isolation));
+      
+      // Use virtual thread optimized session if available
+      TransactionalStore<?> activeStore = localStore != null ? localStore : store;
+      if (virtualThread) {
+        session = checkNotNull(activeStore.openSession(isolation, true));
+        if (log.isDebugEnabled()) {
+          log.debug("Using virtual thread optimized session");
+        }
+      } else {
+        session = checkNotNull(activeStore.openSession(isolation));
+      }
     }
     return this; // implicitly wraps the new session so we can intercept close
   }

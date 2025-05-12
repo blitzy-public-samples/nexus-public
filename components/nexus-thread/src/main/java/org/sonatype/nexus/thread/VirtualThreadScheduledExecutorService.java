@@ -16,6 +16,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
@@ -33,12 +34,10 @@ import org.apache.shiro.subject.Subject;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
- * A ScheduledExecutorService implementation that launches scheduled tasks as virtual threads,
- * enabling high-concurrency scheduled operations while maintaining security context and MDC propagation.
- * <p>
- * This implementation supports all standard scheduling operations with the performance benefits of virtual threads.
- * It leverages Java 21's virtual threads to significantly improve throughput for I/O-bound scheduled tasks
- * while maintaining the same security context and logging context as the original thread.
+ * A {@link ScheduledExecutorService} implementation that launches scheduled tasks as virtual threads.
+ * This implementation delegates scheduling operations to a provided {@link ScheduledExecutorService}
+ * but executes the actual tasks using virtual threads, enabling high-concurrency scheduled operations
+ * while maintaining security context and MDC propagation.
  *
  * @since 3.60
  */
@@ -47,91 +46,43 @@ public class VirtualThreadScheduledExecutorService
 {
   private final ScheduledExecutorService delegate;
   private final Supplier<Subject> subjectSupplier;
+  private final ExecutorService virtualThreadExecutor;
 
   /**
-   * Creates a new VirtualThreadScheduledExecutorService with the given delegate and subject supplier.
+   * Creates a new instance with the given delegate and subject supplier.
    *
-   * @param delegate the underlying ScheduledExecutorService that will schedule tasks
-   * @param subjectSupplier the supplier of Subject to bind to virtual threads
+   * @param delegate the {@link ScheduledExecutorService} to delegate scheduling operations to
+   * @param subjectSupplier the supplier of {@link Subject} to bind to virtual threads
    */
   public VirtualThreadScheduledExecutorService(final ScheduledExecutorService delegate, 
                                               final Supplier<Subject> subjectSupplier) {
     this.delegate = checkNotNull(delegate);
     this.subjectSupplier = checkNotNull(subjectSupplier);
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   /**
-   * Returns the Subject to be associated with virtual threads.
+   * Wraps the given {@link Runnable} to execute in a virtual thread with the current subject.
    */
-  protected Subject getSubject() {
-    return subjectSupplier.get();
-  }
-
-  /**
-   * Wraps a Runnable to be executed as a virtual thread with proper Subject binding and MDC propagation.
-   */
-  protected Runnable wrapRunnable(Runnable task) {
-    Subject subject = getSubject();
-    Runnable mdcAwareTask = new MDCAwareRunnable(task);
-    Runnable boundTask = subject.associateWith(mdcAwareTask);
-    
+  private Runnable wrapRunnable(final Runnable runnable) {
     return () -> {
-      // Launch the task in a new virtual thread and wait for it to complete
-      try {
-        Thread virtualThread = Thread.startVirtualThread(boundTask);
-        virtualThread.join();
-      }
-      catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        throw new RuntimeException("Interrupted while waiting for virtual thread to complete", e);
-      }
+      Subject subject = subjectSupplier.get();
+      Runnable mdcAwareRunnable = new MDCAwareRunnable(runnable);
+      Runnable subjectBoundRunnable = subject.associateWith(mdcAwareRunnable);
+      virtualThreadExecutor.execute(subjectBoundRunnable);
     };
   }
 
   /**
-   * Wraps a Callable to be executed as a virtual thread with proper Subject binding and MDC propagation.
+   * Wraps the given {@link Callable} to execute in a virtual thread with the current subject.
    */
-  protected <V> Callable<V> wrapCallable(Callable<V> task) {
-    Subject subject = getSubject();
-    Callable<V> mdcAwareTask = new MDCAwareCallable<>(task);
-    Callable<V> boundTask = subject.associateWith(mdcAwareTask);
-    
+  private <V> Callable<V> wrapCallable(final Callable<V> callable) {
     return () -> {
-      // Create a holder for the result and any exception
-      final Object[] resultHolder = new Object[1];
-      final Exception[] exceptionHolder = new Exception[1];
-      
-      // Launch the task in a new virtual thread and wait for it to complete
-      try {
-        Thread virtualThread = Thread.startVirtualThread(() -> {
-          try {
-            resultHolder[0] = boundTask.call();
-          }
-          catch (Exception e) {
-            exceptionHolder[0] = e;
-          }
-        });
-        virtualThread.join();
-      }
-      catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        throw new RuntimeException("Interrupted while waiting for virtual thread to complete", e);
-      }
-      
-      // If there was an exception, rethrow it
-      if (exceptionHolder[0] != null) {
-        if (exceptionHolder[0] instanceof RuntimeException) {
-          throw (RuntimeException) exceptionHolder[0];
-        }
-        else if (exceptionHolder[0] instanceof Exception) {
-          throw new RuntimeException(exceptionHolder[0]);
-        }
-      }
-      
-      // Return the result
-      @SuppressWarnings("unchecked")
-      V result = (V) resultHolder[0];
-      return result;
+      Subject subject = subjectSupplier.get();
+      Callable<V> mdcAwareCallable = new MDCAwareCallable<>(callable);
+      Callable<V> subjectBoundCallable = subject.associateWith(mdcAwareCallable);
+      Future<V> future = virtualThreadExecutor.submit(subjectBoundCallable);
+      return future.get();
     };
   }
 
@@ -155,72 +106,115 @@ public class VirtualThreadScheduledExecutorService
     return delegate.scheduleWithFixedDelay(wrapRunnable(command), initialDelay, delay, unit);
   }
 
-  @Override
-  public void shutdown() {
-    delegate.shutdown();
-  }
+  // ExecutorService methods delegated to the virtualThreadExecutor
 
   @Override
-  public List<Runnable> shutdownNow() {
-    return delegate.shutdownNow();
-  }
-
-  @Override
-  public boolean isShutdown() {
-    return delegate.isShutdown();
-  }
-
-  @Override
-  public boolean isTerminated() {
-    return delegate.isTerminated();
-  }
-
-  @Override
-  public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
-    return delegate.awaitTermination(timeout, unit);
+  public void execute(Runnable command) {
+    Subject subject = subjectSupplier.get();
+    Runnable mdcAwareRunnable = new MDCAwareRunnable(command);
+    Runnable subjectBoundRunnable = subject.associateWith(mdcAwareRunnable);
+    virtualThreadExecutor.execute(subjectBoundRunnable);
   }
 
   @Override
   public <T> Future<T> submit(Callable<T> task) {
-    return delegate.submit(wrapCallable(task));
+    Subject subject = subjectSupplier.get();
+    Callable<T> mdcAwareCallable = new MDCAwareCallable<>(task);
+    Callable<T> subjectBoundCallable = subject.associateWith(mdcAwareCallable);
+    return virtualThreadExecutor.submit(subjectBoundCallable);
   }
 
   @Override
   public <T> Future<T> submit(Runnable task, T result) {
-    return delegate.submit(wrapRunnable(task), result);
+    Subject subject = subjectSupplier.get();
+    Runnable mdcAwareRunnable = new MDCAwareRunnable(task);
+    Runnable subjectBoundRunnable = subject.associateWith(mdcAwareRunnable);
+    return virtualThreadExecutor.submit(subjectBoundRunnable, result);
   }
 
   @Override
   public Future<?> submit(Runnable task) {
-    return delegate.submit(wrapRunnable(task));
+    Subject subject = subjectSupplier.get();
+    Runnable mdcAwareRunnable = new MDCAwareRunnable(task);
+    Runnable subjectBoundRunnable = subject.associateWith(mdcAwareRunnable);
+    return virtualThreadExecutor.submit(subjectBoundRunnable);
   }
 
   @Override
   public <T> List<Future<T>> invokeAll(Collection<? extends Callable<T>> tasks) throws InterruptedException {
-    return delegate.invokeAll(tasks.stream().map(this::wrapCallable).toList());
+    Collection<Callable<T>> wrappedTasks = tasks.stream()
+        .map(this::wrapWithSubjectAndMdc)
+        .toList();
+    return virtualThreadExecutor.invokeAll(wrappedTasks);
   }
 
   @Override
   public <T> List<Future<T>> invokeAll(Collection<? extends Callable<T>> tasks, long timeout, TimeUnit unit)
       throws InterruptedException {
-    return delegate.invokeAll(tasks.stream().map(this::wrapCallable).toList(), timeout, unit);
+    Collection<Callable<T>> wrappedTasks = tasks.stream()
+        .map(this::wrapWithSubjectAndMdc)
+        .toList();
+    return virtualThreadExecutor.invokeAll(wrappedTasks, timeout, unit);
   }
 
   @Override
   public <T> T invokeAny(Collection<? extends Callable<T>> tasks)
       throws InterruptedException, ExecutionException {
-    return delegate.invokeAny(tasks.stream().map(this::wrapCallable).toList());
+    Collection<Callable<T>> wrappedTasks = tasks.stream()
+        .map(this::wrapWithSubjectAndMdc)
+        .toList();
+    return virtualThreadExecutor.invokeAny(wrappedTasks);
   }
 
   @Override
   public <T> T invokeAny(Collection<? extends Callable<T>> tasks, long timeout, TimeUnit unit)
       throws InterruptedException, ExecutionException, TimeoutException {
-    return delegate.invokeAny(tasks.stream().map(this::wrapCallable).toList(), timeout, unit);
+    Collection<Callable<T>> wrappedTasks = tasks.stream()
+        .map(this::wrapWithSubjectAndMdc)
+        .toList();
+    return virtualThreadExecutor.invokeAny(wrappedTasks, timeout, unit);
+  }
+
+  private <T> Callable<T> wrapWithSubjectAndMdc(Callable<T> task) {
+    Subject subject = subjectSupplier.get();
+    Callable<T> mdcAwareCallable = new MDCAwareCallable<>(task);
+    return subject.associateWith(mdcAwareCallable);
+  }
+
+  // Shutdown methods delegated to both executors
+
+  @Override
+  public void shutdown() {
+    delegate.shutdown();
+    virtualThreadExecutor.shutdown();
   }
 
   @Override
-  public void execute(Runnable command) {
-    delegate.execute(wrapRunnable(command));
+  public List<Runnable> shutdownNow() {
+    delegate.shutdownNow();
+    return virtualThreadExecutor.shutdownNow();
+  }
+
+  @Override
+  public boolean isShutdown() {
+    return delegate.isShutdown() && virtualThreadExecutor.isShutdown();
+  }
+
+  @Override
+  public boolean isTerminated() {
+    return delegate.isTerminated() && virtualThreadExecutor.isTerminated();
+  }
+
+  @Override
+  public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
+    long startNanos = System.nanoTime();
+    boolean delegateTerminated = delegate.awaitTermination(timeout, unit);
+    long elapsedNanos = System.nanoTime() - startNanos;
+    long remainingNanos = unit.toNanos(timeout) - elapsedNanos;
+    if (remainingNanos <= 0) {
+      return delegateTerminated && virtualThreadExecutor.isTerminated();
+    }
+    return delegateTerminated && virtualThreadExecutor.awaitTermination(remainingNanos, TimeUnit.NANOSECONDS);
   }
 
   //
@@ -228,11 +222,11 @@ public class VirtualThreadScheduledExecutorService
   //
 
   /**
-   * Creates a VirtualThreadScheduledExecutorService that associates a fixed Subject with all virtual threads.
+   * Creates a new {@link VirtualThreadScheduledExecutorService} that binds the fixed subject to all tasks.
    *
-   * @param delegate the underlying ScheduledExecutorService
-   * @param subject the Subject to associate with all virtual threads
-   * @return a new VirtualThreadScheduledExecutorService
+   * @param delegate the {@link ScheduledExecutorService} to delegate scheduling operations to
+   * @param subject the fixed {@link Subject} to bind to all tasks
+   * @return a new {@link VirtualThreadScheduledExecutorService}
    */
   public static VirtualThreadScheduledExecutorService forFixedSubject(
       final ScheduledExecutorService delegate,
@@ -242,31 +236,11 @@ public class VirtualThreadScheduledExecutorService
   }
 
   /**
-   * Creates a VirtualThreadScheduledExecutorService that associates the current Subject with all virtual threads.
+   * Creates a new {@link VirtualThreadScheduledExecutorService} that binds the current subject to all tasks.
    *
-   * @param delegate the underlying ScheduledExecutorService
-   * @return a new VirtualThreadScheduledExecutorService
+   * @param delegate the {@link ScheduledExecutorService} to delegate scheduling operations to
+   * @return a new {@link VirtualThreadScheduledExecutorService}
    */
   public static VirtualThreadScheduledExecutorService forCurrentSubject(final ScheduledExecutorService delegate) {
     return new VirtualThreadScheduledExecutorService(delegate, new CurrentSubjectSupplier());
   }
-  
-  /**
-   * Creates a new VirtualThreadScheduledExecutorService with a default scheduled thread pool and the current subject.
-   * 
-   * @param corePoolSize the number of threads to keep in the pool for scheduling tasks
-   * @return a new VirtualThreadScheduledExecutorService
-   */
-  public static VirtualThreadScheduledExecutorService withScheduledPool(int corePoolSize) {
-    return forCurrentSubject(Executors.newScheduledThreadPool(corePoolSize));
-  }
-  
-  /**
-   * Creates a new VirtualThreadScheduledExecutorService with a single-threaded scheduler and the current subject.
-   * 
-   * @return a new VirtualThreadScheduledExecutorService
-   */
-  public static VirtualThreadScheduledExecutorService withSingleThreadScheduler() {
-    return forCurrentSubject(Executors.newSingleThreadScheduledExecutor());
-  }
-}

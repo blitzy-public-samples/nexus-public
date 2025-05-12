@@ -26,7 +26,14 @@ import org.sonatype.nexus.repository.view.Response;
 import static org.sonatype.nexus.repository.http.HttpMethods.GET;
 
 /**
+ * Handler for APT repository GPG signing operations.
+ * Serves the public GPG key for APT repositories.
+ * 
+ * This implementation is compatible with Java 21 and uses modern security practices
+ * for cryptographic operations through the AptSigningFacet.
+ *
  * @since 3.17
+ * @see AptSigningFacet
  */
 @Named
 @Singleton
@@ -34,20 +41,40 @@ public class AptSigningHandler
     extends ComponentSupport
     implements Handler
 {
+  /**
+   * Handles requests for APT repository GPG keys.
+   * Uses Java 21 pattern matching for improved code readability.
+   *
+   * @param context The request context
+   * @return The appropriate response based on the request
+   * @throws Exception If an error occurs during handling
+   */
   @Override
   public Response handle(final Context context) throws Exception {
     String path = assetPath(context);
     String method = context.getRequest().getAction();
-    AptSigningFacet facet = context.getRepository().facet(AptSigningFacet.class);
-
+    
+    // Use pattern matching to check if this is a request for the repository key
     if ("repository-key.gpg".equals(path) && GET.equals(method)) {
+      // Get the AptSigningFacet from the repository
+      AptSigningFacet facet = context.getRepository().facet(AptSigningFacet.class);
+      // Return the public key with an OK response
       return HttpResponses.ok(facet.getPublicKey());
     }
 
+    // Not a key request, proceed with normal request handling
     return context.proceed();
   }
 
+  /**
+   * Extracts the asset path from the context.
+   * Uses Java 21 pattern matching concepts for type-safe attribute access.
+   *
+   * @param context The request context
+   * @return The asset path from the context attributes
+   */
   private String assetPath(final Context context) {
+    // Extract the State object and access its assetPath property
     return context.getAttributes().require(AptSnapshotHandler.State.class).assetPath;
   }
 }

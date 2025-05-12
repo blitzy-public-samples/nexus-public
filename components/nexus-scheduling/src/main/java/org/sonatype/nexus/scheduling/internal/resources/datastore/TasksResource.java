@@ -42,7 +42,7 @@ import org.sonatype.nexus.scheduling.TaskState;
 import org.sonatype.nexus.scheduling.api.TaskXO;
 import org.sonatype.nexus.scheduling.internal.resources.doc.TasksApiResourceDoc;
 import org.sonatype.nexus.thread.SubjectAwareVirtualThreadExecutorService;
-import org.sonatype.nexus.thread.io.ThreadPinningDetector;
+import org.sonatype.nexus.thread.ThreadPinningDetector;
 
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
@@ -57,8 +57,11 @@ import static javax.ws.rs.core.Response.Status.INTERNAL_SERVER_ERROR;
 import static org.sonatype.nexus.rest.APIConstants.V1_API_PREFIX;
 
 /**
- * REST resource for task management operations.
- * 
+ * REST resource for managing tasks with Java 21 Virtual Thread support.
+ * <p>
+ * This implementation leverages Java 21 Virtual Threads to improve scalability and performance
+ * of task operations, particularly for I/O-bound operations like starting and stopping tasks.
+ *
  * @since 3.6
  */
 @Named
@@ -75,14 +78,16 @@ public class TasksResource
   private static final String TRIGGER_SOURCE = "REST API";
 
   private final TaskScheduler taskScheduler;
+  
   private final ThreadPinningDetector threadPinningDetector;
-  private final ExecutorService executorService;
+  
+  private final ExecutorService virtualThreadExecutor;
 
   /**
    * Constructor with required dependencies.
    *
-   * @param taskScheduler the task scheduler service
-   * @param threadPinningDetector utility to detect and prevent virtual thread pinning
+   * @param taskScheduler The task scheduler service
+   * @param threadPinningDetector Detector for virtual thread pinning issues
    */
   @Inject
   public TasksResource(
@@ -91,7 +96,7 @@ public class TasksResource
   {
     this.taskScheduler = checkNotNull(taskScheduler);
     this.threadPinningDetector = checkNotNull(threadPinningDetector);
-    this.executorService = SubjectAwareVirtualThreadExecutorService.forCurrentSubject();
+    this.virtualThreadExecutor = SubjectAwareVirtualThreadExecutorService.forCurrentSubject();
   }
 
   @Override
@@ -99,16 +104,16 @@ public class TasksResource
   @RequiresAuthentication
   @RequiresPermissions("nexus:tasks:read")
   public Page<TaskXO> getTasks(@QueryParam("type") final String type) {
-    // Use the thread pinning detector to ensure this operation doesn't pin virtual threads
-    return threadPinningDetector.detectPinningWithResult(() -> {
-      List<TaskXO> taskXOs = taskScheduler.listsTasks().stream()
-          .filter(taskInfo -> taskInfo.getConfiguration().isVisible())
-          .filter(taskInfo -> typeParameterMatches(type, taskInfo))
-          .map(taskInfo -> TaskXO.fromTaskInfo(taskInfo, taskScheduler.toExternalTaskState(taskInfo)))
-          .collect(toList());
+    // Check for potential thread pinning in this operation
+    threadPinningDetector.warnIfPinning("getTasks");
+    
+    List<TaskXO> taskXOs = taskScheduler.listsTasks().stream()
+        .filter(taskInfo -> taskInfo.getConfiguration().isVisible())
+        .filter(taskInfo -> typeParameterMatches(type, taskInfo))
+        .map(taskInfo -> TaskXO.fromTaskInfo(taskInfo, taskScheduler.toExternalTaskState(taskInfo)))
+        .collect(toList());
 
-      return new Page<>(taskXOs, null);
-    });
+    return new Page<>(taskXOs, null);
   }
 
   @Override
@@ -117,11 +122,11 @@ public class TasksResource
   @RequiresAuthentication
   @RequiresPermissions("nexus:tasks:read")
   public TaskXO getTaskById(@PathParam("id") final String id) {
-    // Use the thread pinning detector to ensure this operation doesn't pin virtual threads
-    return threadPinningDetector.detectPinningWithResult(() -> {
-      TaskInfo task = getTaskInfo(id);
-      return TaskXO.fromTaskInfo(task, taskScheduler.toExternalTaskState(task));
-    });
+    // Check for potential thread pinning in this operation
+    threadPinningDetector.warnIfPinning("getTaskById");
+    
+    TaskInfo task = getTaskInfo(id);
+    return TaskXO.fromTaskInfo(task, taskScheduler.toExternalTaskState(task));
   }
 
   @Override
@@ -130,38 +135,36 @@ public class TasksResource
   @RequiresAuthentication
   @RequiresPermissions("nexus:tasks:start")
   public void run(@PathParam("id") final String id, @Suspended final AsyncResponse asyncResponse) {
-    // Execute task operations asynchronously using virtual threads
+    // Execute task start operation asynchronously using virtual threads
     CompletableFuture.runAsync(() -> {
       try {
-        // Use the thread pinning detector to ensure this operation doesn't pin virtual threads
-        threadPinningDetector.detectPinning(() -> {
-          TaskInfo taskInfo = getTaskInfo(id);
-
-          if (!taskInfo.getConfiguration().isEnabled()) {
-            throw new NotAllowedException(format("Task %s is disabled", id));
-          }
-
-          taskInfo.runNow(TRIGGER_SOURCE);
-        });
+        // Check for potential thread pinning in this operation
+        threadPinningDetector.warnIfPinning("run");
         
-        // Complete the async response successfully
-        asyncResponse.resume((Object) null);
+        TaskInfo taskInfo = getTaskInfo(id);
+
+        if (!taskInfo.getConfiguration().isEnabled()) {
+          throw new NotAllowedException(format("Task %s is disabled", id));
+        }
+
+        taskInfo.runNow(TRIGGER_SOURCE);
+        asyncResponse.resume("OK");
       }
       catch (NotFoundException | NotAllowedException e) {
-        // Resume with specific exceptions for proper HTTP status codes
         asyncResponse.resume(e);
       }
       catch (Exception e) {
         log.error("Error running task with id {}", id, e);
-        // Check for virtual thread interruption
-        if (e instanceof InterruptedException || Thread.currentThread().isInterrupted()) {
-          log.warn("Task operation interrupted for task {}", id);
-          asyncResponse.resume(new WebApplicationException(format("Task operation interrupted for task %s", id), INTERNAL_SERVER_ERROR));
-        } else {
-          asyncResponse.resume(new WebApplicationException(format("Error running task %s", id), INTERNAL_SERVER_ERROR));
-        }
+        asyncResponse.resume(new WebApplicationException(
+            format("Error running task %s", id), INTERNAL_SERVER_ERROR));
       }
-    }, executorService);
+    }, virtualThreadExecutor).exceptionally(ex -> {
+      // Handle virtual thread interruptions and other errors
+      log.error("Virtual thread execution error for task run {}", id, ex);
+      asyncResponse.resume(new WebApplicationException(
+          format("Error processing task %s", id), INTERNAL_SERVER_ERROR));
+      return null;
+    });
   }
 
   @Override
@@ -170,50 +173,49 @@ public class TasksResource
   @RequiresAuthentication
   @RequiresPermissions("nexus:tasks:stop")
   public void stop(@PathParam("id") final String id, @Suspended final AsyncResponse asyncResponse) {
-    // Execute task operations asynchronously using virtual threads
+    // Execute task stop operation asynchronously using virtual threads
     CompletableFuture.runAsync(() -> {
       try {
-        // Use the thread pinning detector to ensure this operation doesn't pin virtual threads
-        threadPinningDetector.detectPinning(() -> {
-          TaskInfo taskInfo = getTaskInfo(id);
-          TaskState currentState = taskScheduler.toExternalTaskState(taskInfo).getState();
-
-          boolean running = Optional.ofNullable(currentState).map(TaskState::isRunning).orElse(false);
-          if (running) {
-            boolean cancelled = taskScheduler.cancel(id, false);
-            log.debug("Cancel {} for task {}", cancelled, id);
-          }
-          else {
-            throw new WebApplicationException(format("Task %s is not running", id), CONFLICT);
-          }
-        });
+        // Check for potential thread pinning in this operation
+        threadPinningDetector.warnIfPinning("stop");
         
-        // Complete the async response successfully
-        asyncResponse.resume((Object) null);
+        TaskInfo taskInfo = getTaskInfo(id);
+        TaskState currentState = taskScheduler.toExternalTaskState(taskInfo).getState();
+
+        boolean running = Optional.ofNullable(currentState).map(TaskState::isRunning).orElse(false);
+        if (running) {
+          boolean cancelled = taskScheduler.cancel(id, false);
+          log.debug("Cancel {} for task {}", cancelled, id);
+          asyncResponse.resume("OK");
+        }
+        else {
+          asyncResponse.resume(new WebApplicationException(
+              format("Task %s is not running", id), CONFLICT));
+        }
       }
       catch (WebApplicationException webApplicationException) {
-        // Resume with specific exceptions for proper HTTP status codes
         asyncResponse.resume(webApplicationException);
       }
       catch (Exception e) {
         log.error("Error stopping task with id {}", id, e);
-        // Check for virtual thread interruption
-        if (e instanceof InterruptedException || Thread.currentThread().isInterrupted()) {
-          log.warn("Task operation interrupted for task {}", id);
-          asyncResponse.resume(new WebApplicationException(format("Task operation interrupted for task %s", id), INTERNAL_SERVER_ERROR));
-        } else {
-          asyncResponse.resume(new WebApplicationException(format("Error stopping task %s", id), INTERNAL_SERVER_ERROR));
-        }
+        asyncResponse.resume(new WebApplicationException(
+            format("Error stopping task %s", id), INTERNAL_SERVER_ERROR));
       }
-    }, executorService);
+    }, virtualThreadExecutor).exceptionally(ex -> {
+      // Handle virtual thread interruptions and other errors
+      log.error("Virtual thread execution error for task stop {}", id, ex);
+      asyncResponse.resume(new WebApplicationException(
+          format("Error processing task stop %s", id), INTERNAL_SERVER_ERROR));
+      return null;
+    });
   }
 
   /**
-   * Retrieves task information by ID, ensuring the task is visible.
+   * Gets task information by ID, throwing NotFoundException if not found or not visible.
    *
-   * @param id the task ID to retrieve
-   * @return the task information
-   * @throws NotFoundException if the task cannot be found or is not visible
+   * @param id The task ID
+   * @return The TaskInfo for the specified ID
+   * @throws NotFoundException if the task is not found or not visible
    */
   private TaskInfo getTaskInfo(final String id) {
     return ofNullable(taskScheduler.getTaskById(id))
@@ -222,11 +224,11 @@ public class TasksResource
   }
 
   /**
-   * Checks if the task matches the specified type filter.
+   * Checks if the type parameter matches the task's type ID.
    *
-   * @param type the type filter (can be null or empty for no filtering)
-   * @param taskInfo the task to check
-   * @return true if the task matches the type filter
+   * @param type The type parameter from the request
+   * @param taskInfo The task info to check against
+   * @return true if the type parameter matches or is null/empty, false otherwise
    */
   private static boolean typeParameterMatches(final String type, final TaskInfo taskInfo) {
     return type == null || type.isEmpty() || type.equals(taskInfo.getTypeId());

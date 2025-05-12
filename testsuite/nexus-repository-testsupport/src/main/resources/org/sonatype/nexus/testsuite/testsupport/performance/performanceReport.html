@@ -22,13 +22,114 @@
             "modules":[{
               "name":"visualization",
               "version":"1",
-              "packages":["corechart"]
+              "packages":["corechart", "table"]
             }]
           }'></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      color: #333;
+    }
+    h1, h2, h3 {
+      color: #1a5276;
+    }
+    .chart-container {
+      margin-bottom: 30px;
+    }
+    .metrics-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+    .metric-card {
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      padding: 15px;
+      min-width: 250px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .metric-title {
+      font-weight: bold;
+      margin-bottom: 10px;
+      color: #2874a6;
+    }
+    .metric-value {
+      font-size: 24px;
+      font-weight: bold;
+    }
+    .metric-unit {
+      font-size: 14px;
+      color: #777;
+    }
+    pre {
+      background-color: #f8f9fa;
+      padding: 15px;
+      border-radius: 5px;
+      overflow-x: auto;
+    }
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid #ddd;
+      margin-bottom: 20px;
+    }
+    .tab {
+      padding: 10px 20px;
+      cursor: pointer;
+      background-color: #f1f1f1;
+      border: 1px solid #ddd;
+      border-bottom: none;
+      margin-right: 5px;
+      border-radius: 5px 5px 0 0;
+    }
+    .tab.active {
+      background-color: white;
+      border-bottom: 1px solid white;
+      margin-bottom: -1px;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+    .comparison-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+    }
+    .comparison-table th, .comparison-table td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+    }
+    .comparison-table th {
+      background-color: #f2f2f2;
+    }
+    .comparison-table tr:nth-child(even) {
+      background-color: #f9f9f9;
+    }
+    .better {
+      color: green;
+      font-weight: bold;
+    }
+    .worse {
+      color: red;
+    }
+  </style>
   <script type="text/javascript">
-    google.setOnLoadCallback(drawChart);
+    google.setOnLoadCallback(initCharts);
 
-    function drawChart() {
+    function initCharts() {
+      drawThroughputChart();
+      drawLatencyChart();
+      drawThreadComparisonChart();
+      drawGCMetricsChart();
+      drawVirtualThreadMetricsTable();
+    }
+
+    function drawThroughputChart() {
       var data = google.visualization.arrayToDataTable([
         /*ROW-DATA*/
       ]);
@@ -40,24 +141,261 @@
         },
         vAxis: {
           title: 'Requests/Second'
-        }
+        },
+        curveType: 'function',
+        legend: { position: 'bottom' }
       };
 
-      var chart = new google.visualization.LineChart(document.getElementById('curve_chart'));
-
+      var chart = new google.visualization.LineChart(document.getElementById('throughput_chart'));
       chart.draw(data, options);
+    }
+
+    function drawLatencyChart() {
+      var data = google.visualization.arrayToDataTable([
+        /*LATENCY-DATA*/
+      ]);
+
+      var options = {
+        title: 'Response Time Percentiles',
+        hAxis: {
+          title: '# of Client Threads',
+        },
+        vAxis: {
+          title: 'Response Time (ms)'
+        },
+        curveType: 'function',
+        legend: { position: 'bottom' }
+      };
+
+      var chart = new google.visualization.LineChart(document.getElementById('latency_chart'));
+      chart.draw(data, options);
+    }
+
+    function drawThreadComparisonChart() {
+      var data = google.visualization.arrayToDataTable([
+        /*THREAD-COMPARISON-DATA*/
+      ]);
+
+      var options = {
+        title: 'Platform Threads vs Virtual Threads Performance',
+        hAxis: {
+          title: '# of Concurrent Connections',
+        },
+        vAxis: {
+          title: 'Requests/Second'
+        },
+        curveType: 'function',
+        legend: { position: 'bottom' }
+      };
+
+      var chart = new google.visualization.LineChart(document.getElementById('thread_comparison_chart'));
+      chart.draw(data, options);
+    }
+
+    function drawGCMetricsChart() {
+      var data = google.visualization.arrayToDataTable([
+        /*GC-METRICS-DATA*/
+      ]);
+
+      var options = {
+        title: 'ZGC Garbage Collection Metrics',
+        hAxis: {
+          title: 'Time',
+        },
+        vAxis: {
+          title: 'Duration (ms)'
+        },
+        curveType: 'function',
+        legend: { position: 'bottom' }
+      };
+
+      var chart = new google.visualization.LineChart(document.getElementById('gc_metrics_chart'));
+      chart.draw(data, options);
+    }
+
+    function drawVirtualThreadMetricsTable() {
+      var data = google.visualization.arrayToDataTable([
+        /*VIRTUAL-THREAD-METRICS*/
+      ]);
+
+      var table = new google.visualization.Table(document.getElementById('virtual_thread_metrics_table'));
+      table.draw(data, {showRowNumber: true, width: '100%', height: '300px'});
+    }
+
+    // Tab functionality
+    function openTab(evt, tabName) {
+      var i, tabcontent, tablinks;
+      tabcontent = document.getElementsByClassName("tab-content");
+      for (i = 0; i < tabcontent.length; i++) {
+        tabcontent[i].className = tabcontent[i].className.replace(" active", "");
+      }
+      tablinks = document.getElementsByClassName("tab");
+      for (i = 0; i < tablinks.length; i++) {
+        tablinks[i].className = tablinks[i].className.replace(" active", "");
+      }
+      document.getElementById(tabName).className += " active";
+      evt.currentTarget.className += " active";
     }
   </script>
 </head>
 <body>
-<h1>Format Performance Report</h1>
-<div id="curve_chart" style="width: 1100px; height: 800px"></div>
+<h1>Nexus Repository Performance Report</h1>
+<p>This report presents performance metrics for Nexus Repository running on Java 21, including throughput, latency, and resource utilization measurements.</p>
 
-<h3>Example Production Loads</h3>
-<i>RSO: 16.25 rps<br/>
-  OSSRH: 64.5 rps</i>
+<div class="tabs">
+  <button class="tab active" onclick="openTab(event, 'throughput-tab')">Throughput</button>
+  <button class="tab" onclick="openTab(event, 'latency-tab')">Latency</button>
+  <button class="tab" onclick="openTab(event, 'thread-comparison-tab')">Thread Comparison</button>
+  <button class="tab" onclick="openTab(event, 'jvm-metrics-tab')">JVM Metrics</button>
+  <button class="tab" onclick="openTab(event, 'system-info-tab')">System Info</button>
+</div>
 
-<h2>System Information</h2>
-<pre><!-- SYSTEM-INFO --></pre>
+<div id="throughput-tab" class="tab-content active">
+  <h2>Format Performance</h2>
+  <div id="throughput_chart" class="chart-container" style="width: 1100px; height: 500px"></div>
+  
+  <div class="metrics-container">
+    <div class="metric-card">
+      <div class="metric-title">Peak Throughput</div>
+      <div class="metric-value"><!-- PEAK-THROUGHPUT --></div>
+      <div class="metric-unit">requests/second</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-title">Sustained Throughput</div>
+      <div class="metric-value"><!-- SUSTAINED-THROUGHPUT --></div>
+      <div class="metric-unit">requests/second</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-title">Max Concurrent Clients</div>
+      <div class="metric-value"><!-- MAX-CLIENTS --></div>
+      <div class="metric-unit">clients</div>
+    </div>
+  </div>
+
+  <h3>Example Production Loads</h3>
+  <i>RSO: 16.25 rps<br/>
+    OSSRH: 64.5 rps</i>
+</div>
+
+<div id="latency-tab" class="tab-content">
+  <h2>Response Time Analysis</h2>
+  <div id="latency_chart" class="chart-container" style="width: 1100px; height: 500px"></div>
+  
+  <div class="metrics-container">
+    <div class="metric-card">
+      <div class="metric-title">P50 Response Time</div>
+      <div class="metric-value"><!-- P50-RESPONSE-TIME --></div>
+      <div class="metric-unit">milliseconds</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-title">P95 Response Time</div>
+      <div class="metric-value"><!-- P95-RESPONSE-TIME --></div>
+      <div class="metric-unit">milliseconds</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-title">P99 Response Time</div>
+      <div class="metric-value"><!-- P99-RESPONSE-TIME --></div>
+      <div class="metric-unit">milliseconds</div>
+    </div>
+  </div>
+</div>
+
+<div id="thread-comparison-tab" class="tab-content">
+  <h2>Platform Threads vs Virtual Threads Comparison</h2>
+  <p>This section compares the performance characteristics of traditional platform threads versus Java 21 virtual threads.</p>
+  
+  <div id="thread_comparison_chart" class="chart-container" style="width: 1100px; height: 500px"></div>
+  
+  <h3>Thread Model Comparison</h3>
+  <table class="comparison-table">
+    <tr>
+      <th>Metric</th>
+      <th>Platform Threads</th>
+      <th>Virtual Threads</th>
+      <th>Improvement</th>
+    </tr>
+    <tr>
+      <td>Max Concurrent Connections</td>
+      <td><!-- PLATFORM-MAX-CONNECTIONS --></td>
+      <td><!-- VIRTUAL-MAX-CONNECTIONS --></td>
+      <td class="better"><!-- CONNECTION-IMPROVEMENT -->x</td>
+    </tr>
+    <tr>
+      <td>P95 Response Time (1k connections)</td>
+      <td><!-- PLATFORM-P95 --> ms</td>
+      <td><!-- VIRTUAL-P95 --> ms</td>
+      <td class="better"><!-- P95-IMPROVEMENT -->%</td>
+    </tr>
+    <tr>
+      <td>Memory Utilization (1k connections)</td>
+      <td><!-- PLATFORM-MEMORY --> MB</td>
+      <td><!-- VIRTUAL-MEMORY --> MB</td>
+      <td class="better"><!-- MEMORY-IMPROVEMENT -->%</td>
+    </tr>
+    <tr>
+      <td>Thread Scaling Efficiency</td>
+      <td><!-- PLATFORM-SCALING-EFFICIENCY -->%</td>
+      <td><!-- VIRTUAL-SCALING-EFFICIENCY -->%</td>
+      <td class="better"><!-- EFFICIENCY-IMPROVEMENT -->%</td>
+    </tr>
+  </table>
+  
+  <h3>Virtual Thread Metrics</h3>
+  <div id="virtual_thread_metrics_table" style="width: 1100px; height: 300px"></div>
+</div>
+
+<div id="jvm-metrics-tab" class="tab-content">
+  <h2>JVM Performance Metrics</h2>
+  <p>This section presents Java 21 runtime metrics, including ZGC garbage collection performance and JFR data.</p>
+  
+  <h3>ZGC Garbage Collection Metrics</h3>
+  <div id="gc_metrics_chart" class="chart-container" style="width: 1100px; height: 400px"></div>
+  
+  <div class="metrics-container">
+    <div class="metric-card">
+      <div class="metric-title">Average GC Pause Time</div>
+      <div class="metric-value"><!-- AVG-GC-PAUSE --></div>
+      <div class="metric-unit">milliseconds</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-title">Max GC Pause Time</div>
+      <div class="metric-value"><!-- MAX-GC-PAUSE --></div>
+      <div class="metric-unit">milliseconds</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-title">GC Cycles</div>
+      <div class="metric-value"><!-- GC-CYCLES --></div>
+      <div class="metric-unit">cycles</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-title">Memory Reclaimed</div>
+      <div class="metric-value"><!-- MEMORY-RECLAIMED --></div>
+      <div class="metric-unit">MB</div>
+    </div>
+  </div>
+  
+  <h3>Java Flight Recorder Insights</h3>
+  <p>Key performance insights extracted from JFR recordings during the test:</p>
+  <pre><!-- JFR-INSIGHTS --></pre>
+  
+  <h3>Thread Pinning Events</h3>
+  <p>Thread pinning events detected during virtual thread execution:</p>
+  <pre><!-- THREAD-PINNING-EVENTS --></pre>
+</div>
+
+<div id="system-info-tab" class="tab-content">
+  <h2>System Information</h2>
+  <pre><!-- SYSTEM-INFO --></pre>
+  
+  <h3>Java 21 Runtime Configuration</h3>
+  <pre><!-- JAVA21-CONFIG --></pre>
+  
+  <h3>Test Execution Environment</h3>
+  <pre><!-- TEST-ENVIRONMENT --></pre>
+</div>
+
+<footer>
+  <p><small>Generated by Nexus Repository Test Harness. Java 21 Performance Test Suite.</small></p>
+</footer>
 </body>
 </html>

@@ -15,6 +15,7 @@ package org.sonatype.nexus.testsuite.testsupport.performance;
 import java.io.File;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.concurrent.Executors;
 
 import javax.annotation.Nullable;
 
@@ -32,8 +33,21 @@ import static com.google.common.base.Preconditions.checkNotNull;
  * Conducts a performance test with a variable number of clients, contributing a data series to the format performance
  * chart.
  *
- * <p>This class is compatible with Java 21 and works with the updated PerformanceData model
- * that leverages modern Java features like records and sequenced collections.</p>
+ * <p>This implementation leverages Java 21 Virtual Threads for improved concurrency and
+ * resource utilization during performance testing. Virtual threads are lightweight threads
+ * that are managed by the JVM rather than the operating system, allowing for much higher
+ * concurrency with minimal overhead.</p>
+ *
+ * <p>Key benefits of using virtual threads for performance testing:</p>
+ * <ul>
+ *   <li>Higher concurrency - Can simulate thousands of concurrent clients with minimal resources</li>
+ *   <li>Improved resource utilization - Virtual threads automatically yield during blocking operations</li>
+ *   <li>More realistic testing - Can test with thread counts that better represent production loads</li>
+ *   <li>Simplified code - No need for complex asynchronous programming models</li>
+ * </ul>
+ *
+ * <p>This class also provides comparison capabilities between platform threads and virtual threads
+ * to help quantify the performance benefits of Java 21 virtual threads.</p>
  *
  * @since 3.0
  */
@@ -43,15 +57,26 @@ public class EscalatingClientLoadExecutor
   /**
    * The numbers of threads used to conduct the performance tests.
    *
-   * TODO: Consider a format-specific cap, if certain formats (e.g. docker?) are simply unable to handle the client
-   * loads at which we need to measure more performant formats.
+   * <p>With Java 21 virtual threads, we can efficiently handle higher concurrency levels
+   * than with platform threads. Virtual threads have much lower overhead, allowing tests
+   * with higher thread counts to better simulate real-world load scenarios.</p>
+   * 
+   * <p>The expanded thread counts (100, 250, 500) are practical with virtual threads
+   * but would be resource-intensive with platform threads. This allows testing scalability
+   * at levels that would be impractical with traditional threading models.</p>
    */
-  private static final int[] THREAD_COUNTS = new int[]{1, 10, 25, 50};
+  private static final int[] THREAD_COUNTS = new int[]{1, 10, 25, 50, 100, 250, 500};
 
   /**
    * How long should the run be for each data point?
    */
   public static final int DURATION_SECONDS = 60;
+
+  /**
+   * Flag to enable virtual thread analytics in performance reports.
+   * When enabled, additional tests will be run using platform threads for comparison.
+   */
+  private static final boolean ENABLE_VIRTUAL_THREAD_ANALYTICS = true;
 
   private final TestIndex testIndex;
 
@@ -59,9 +84,6 @@ public class EscalatingClientLoadExecutor
 
   /**
    * Accepts an optional callable to be invoked between loads with different numbers of clients.
-   *
-   * @param testIndex the test index for recording links to artifacts
-   * @param before an optional runnable to execute before each test run
    */
   public EscalatingClientLoadExecutor(final TestIndex testIndex, @Nullable final Runnable before) {
     this.testIndex = checkNotNull(testIndex);
@@ -69,11 +91,14 @@ public class EscalatingClientLoadExecutor
   }
 
   /**
-   * Executes performance tests with escalating client thread counts and records the results.
+   * Executes performance tests with an escalating number of virtual threads and generates performance reports.
+   * 
+   * <p>This method leverages Java 21 virtual threads to efficiently handle concurrent requests,
+   * providing better scalability and resource utilization compared to platform threads.</p>
    *
-   * @param dataSeriesName the name of the data series to record results under
+   * @param dataSeriesName the name of the data series for reporting
    * @param tasks the tasks to execute during the performance test
-   * @param reportDir the directory to write reports to
+   * @param reportDir the directory where performance reports will be saved
    * @throws Exception if an error occurs during test execution
    */
   public void calculateAndGraphPerformance(final String dataSeriesName,
@@ -92,41 +117,123 @@ public class EscalatingClientLoadExecutor
 
     PerformanceTestSeries testResults = results.findTestResult(dataSeriesName);
 
-    // Now carry out the tests, with an escalating number of threads
+    // Now carry out the tests, with an escalating number of virtual threads
     for (int clientThreads : THREAD_COUNTS) {
 
       // Do whatever preparatory step the test requires
       before.run();
 
-      final LoadExecutor loadExec = new LoadExecutor(tasks, clientThreads, DURATION_SECONDS);
+      // Create a LoadExecutor that uses virtual threads for improved concurrency
+      final LoadExecutor loadExec = new LoadExecutor(tasks, clientThreads, DURATION_SECONDS, true);
 
       boolean exceptionThrown = false;
       try {
+        // Execute tasks using virtual threads
         loadExec.callTasks();
       }
       catch (Exception e) {
-        log.warn("Performance run for {} with {} threads aborted with exception", dataSeriesName, clientThreads, e);
+        log.warn("Performance run for {} with {} virtual threads aborted with exception", 
+                dataSeriesName, clientThreads, e);
         exceptionThrown = true;
       }
       catch (AssertionError e) {
-        log.warn("Performance run for {} with {} threads failed assertion", dataSeriesName, clientThreads, e);
+        log.warn("Performance run for {} with {} virtual threads failed assertion", 
+                dataSeriesName, clientThreads, e);
         exceptionThrown = true;
       }
 
-      // Record the results using the record constructor
+      // Record the results with virtual thread type
       testResults.addResults(clientThreads, new PerformanceRunResult(
           loadExec.getRequestsProcessed(),
           loadExec.getRequestsStarted() - loadExec.getRequestsProcessed(),
           DURATION_SECONDS,
-          exceptionThrown));
+          exceptionThrown,
+          "virtual"));
 
       PerformanceDataIO.saveTestData(results, dataFile);
       testIndex.recordLink("performance-data", dataFile);
     }
 
+    // Generate standard performance report
     final File htmlReport = new File(reportDir, "performance-report.html");
     PerformanceChart.writePerformanceReport(results, htmlReport);
-
     testIndex.recordLink("performance-report", htmlReport);
+    
+    // If enabled, run a comparison test with platform threads vs virtual threads
+    if (ENABLE_VIRTUAL_THREAD_ANALYTICS) {
+      generateVirtualThreadComparisonReport(dataSeriesName, tasks, reportDir, results);
+    }
+  }
+  
+  /**
+   * Generates a comparison report between platform threads and virtual threads.
+   * This helps visualize the performance benefits of Java 21 virtual threads.
+   *
+   * <p>This method runs the same performance tests using platform threads instead of virtual threads,
+   * allowing for direct comparison of performance characteristics. The comparison report includes
+   * metrics such as throughput, scaling efficiency, and resource utilization.</p>
+   *
+   * <p>Note: Platform thread tests are limited to lower thread counts (1, 10, 25, 50) to avoid
+   * excessive resource consumption, while virtual thread tests can use much higher thread counts.</p>
+   *
+   * @param dataSeriesName the name of the data series for reporting
+   * @param tasks the tasks to execute during the performance test
+   * @param reportDir the directory where performance reports will be saved
+   * @param virtualThreadResults the results from virtual thread tests
+   * @throws Exception if an error occurs during test execution
+   */
+  private void generateVirtualThreadComparisonReport(final String dataSeriesName,
+                                                    final List<Callable<?>> tasks,
+                                                    final File reportDir,
+                                                    final PerformanceData virtualThreadResults)
+      throws Exception
+  {
+    log.info("Generating platform vs virtual thread comparison for {}", dataSeriesName);
+    
+    // Create a separate data file for platform thread results
+    final File platformDataFile = new File(reportDir, "platform-thread-data.json");
+    final PerformanceData platformResults = PerformanceDataIO.loadTestData(platformDataFile);
+    
+    // Use a subset of thread counts for platform thread testing to avoid excessive resource usage
+    int[] platformThreadCounts = new int[]{1, 10, 25, 50};
+    
+    PerformanceTestSeries platformTestResults = platformResults.findTestResult(dataSeriesName);
+    
+    // Run tests with platform threads for comparison
+    for (int clientThreads : platformThreadCounts) {
+      // Do whatever preparatory step the test requires
+      before.run();
+      
+      // Create a LoadExecutor that uses platform threads instead of virtual threads
+      // We need to use platform threads for comparison with virtual threads
+      final LoadExecutor loadExec = new LoadExecutor(tasks, clientThreads, DURATION_SECONDS, false);
+      
+      boolean exceptionThrown = false;
+      try {
+        loadExec.callTasks();
+      }
+      catch (Exception | AssertionError e) {
+        log.warn("Platform thread performance run for {} with {} threads failed", 
+                dataSeriesName, clientThreads, e);
+        exceptionThrown = true;
+      }
+      
+      // Record the results with platform thread type
+      platformTestResults.addResults(clientThreads, new PerformanceRunResult(
+          loadExec.getRequestsProcessed(),
+          loadExec.getRequestsStarted() - loadExec.getRequestsProcessed(),
+          DURATION_SECONDS,
+          exceptionThrown,
+          "platform"));
+      
+      PerformanceDataIO.saveTestData(platformResults, platformDataFile);
+    }
+    
+    // Generate comparison report
+    final File comparisonReport = new File(reportDir, "thread-comparison-report.html");
+    PerformanceChart.writeThreadComparisonReport(platformResults, virtualThreadResults, comparisonReport);
+    testIndex.recordLink("thread-comparison-report", comparisonReport);
+    
+    log.info("Thread comparison report generated at {}", comparisonReport);
   }
 }

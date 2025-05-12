@@ -33,6 +33,11 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -92,6 +97,13 @@ import static org.sonatype.nexus.repository.cache.CacheInfo.CACHE_TOKEN;
 import static org.sonatype.nexus.repository.cache.CacheInfo.LAST_VERIFIED;
 import static org.sonatype.nexus.repository.content.AttributeOperation.OVERLAY;
 
+/**
+ * Test helper for working with components and assets in the Nexus Repository Manager.
+ * This implementation is optimized for Java 21, leveraging virtual threads for I/O-bound operations
+ * and modern language features for improved code clarity and performance.
+ *
+ * @since 3.41
+ */
 @Named
 @Singleton
 public class DatastoreComponentAssetTestHelper
@@ -103,6 +115,12 @@ public class DatastoreComponentAssetTestHelper
   private static final String UPDATE_TIME_ERROR_MESSAGE = "Failed to set download time: ";
 
   private static final DateTimeFormatter YEAR_MONTH_DAY_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd");
+  
+  /**
+   * Thread factory for creating virtual threads to optimize I/O-bound operations.
+   * Virtual threads are lightweight and efficient for database and network operations.
+   */
+  private static final ThreadFactory VIRTUAL_THREAD_FACTORY = Thread.ofVirtual().name("asset-helper-", 0).factory();
 
   @Inject
   private RepositoryManager repositoryManager;
@@ -305,7 +323,7 @@ public class DatastoreComponentAssetTestHelper
   {
     List<FluentComponent> components = browseComponents(repository);
     String gav = substring(version, 0, indexOf(version, SNAPSHOT_VERSION_SUFFIX));
-    String versionWithDate = String.format("%s-%s", gav, now().format(YEAR_MONTH_DAY_FORMAT));
+    String versionWithDate = STR."{gav}-{now().format(YEAR_MONTH_DAY_FORMAT)}";
     return components.stream()
         .filter(comp -> comp.name().equals(name))
         .filter(comp -> startsWith(comp.version(), versionWithDate))
@@ -419,16 +437,22 @@ public class DatastoreComponentAssetTestHelper
     return "/" + stripStart(path, "/");
   }
 
+  /**
+   * Sets the last downloaded time for all assets in the repository.
+   * This implementation uses virtual threads for improved performance with I/O operations.
+   *
+   * @param repository the repository containing assets to update
+   * @param minusSeconds number of seconds to subtract from current time
+   */
   @Override
   public void setLastDownloadedTime(final Repository repository, final int minusSeconds) {
     int repositoryId = ((ContentFacetSupport) repository.facet(ContentFacet.class)).contentRepositoryId();
 
     Timestamp time = Timestamp.from(Instant.now().minusSeconds(minusSeconds));
 
-    String sql = "UPDATE " + repository.getFormat().getValue() + "_asset "
-        + "SET last_downloaded = ? WHERE repository_id = ?";
+    String sql = STR."UPDATE {repository.getFormat().getValue()}_asset SET last_downloaded = ? WHERE repository_id = ?";
 
-    update(sql, stmt -> {
+    updateWithVirtualThread(sql, stmt -> {
       stmt.setTimestamp(1, time);
       stmt.setInt(2, repositoryId);
     });
@@ -437,16 +461,23 @@ public class DatastoreComponentAssetTestHelper
         .forEach(asset -> sendEvent(repository, asset));
   }
 
+  /**
+   * Sets the last downloaded time for assets matching a regex pattern.
+   * Uses virtual threads for improved performance with database operations.
+   *
+   * @param repository the repository containing assets to update
+   * @param minusSeconds number of seconds to subtract from current time
+   * @param regex regular expression to match asset paths
+   */
   @Override
   public void setLastDownloadedTime(final Repository repository, final int minusSeconds, final String regex) {
     int repositoryId = ((ContentFacetSupport) repository.facet(ContentFacet.class)).contentRepositoryId();
 
     Timestamp time = Timestamp.from(Instant.now().minusSeconds(minusSeconds));
 
-    String sql = "UPDATE " + repository.getFormat().getValue() + "_asset "
-        + "SET last_downloaded = ? WHERE repository_id = ? AND path ~ ?";
+    String sql = STR."UPDATE {repository.getFormat().getValue()}_asset SET last_downloaded = ? WHERE repository_id = ? AND path ~ ?";
 
-    update(sql, stmt -> {
+    updateWithVirtualThread(sql, stmt -> {
       stmt.setTimestamp(1, time);
       stmt.setInt(2, repositoryId);
       stmt.setString(3, regex);
@@ -460,10 +491,9 @@ public class DatastoreComponentAssetTestHelper
   public void setLastDownloadedTime(final Repository repository, final String path, final Date date) {
     int repositoryId = repository.facet(ContentFacet.class).contentRepositoryId();
 
-    String sql = "UPDATE " + repository.getFormat().getValue() + "_asset "
-        + "SET last_downloaded = ? WHERE repository_id = ? AND path = ?";
+    String sql = STR."UPDATE {repository.getFormat().getValue()}_asset SET last_downloaded = ? WHERE repository_id = ? AND path = ?";
 
-    update(sql, stmt -> {
+    updateWithVirtualThread(sql, stmt -> {
       setDate(date, (timestamp, calendar) -> stmt.setTimestamp(1, timestamp, calendar));
       stmt.setInt(2, repositoryId);
       stmt.setString(3, adjustedPath(path));
@@ -480,7 +510,7 @@ public class DatastoreComponentAssetTestHelper
     int repositoryId = repository.facet(ContentFacet.class).contentRepositoryId();
     String format = repository.getFormat().getValue();
 
-    update("UPDATE " + format + "_asset SET created = ? WHERE repository_id = ?  AND path = ?", stmt -> {
+    updateWithVirtualThread(STR."UPDATE {format}_asset SET created = ? WHERE repository_id = ? AND path = ?", stmt -> {
       setDate(date, (timestamp, calendar) -> stmt.setTimestamp(1, timestamp, calendar));
       stmt.setInt(2, repositoryId);
       stmt.setString(3, adjustedPath(path));
@@ -495,10 +525,9 @@ public class DatastoreComponentAssetTestHelper
   private void setLastUpdatedTime(final Repository repository, final Date date, final String table) {
     int repositoryId = ((ContentFacetSupport) repository.facet(ContentFacet.class)).contentRepositoryId();
 
-    String sql = "UPDATE " + repository.getFormat().getValue() + "_" + table +
-        " SET last_updated = ? WHERE repository_id = ?";
+    String sql = STR."UPDATE {repository.getFormat().getValue()}_{table} SET last_updated = ? WHERE repository_id = ?";
 
-    update(sql, stmt -> {
+    updateWithVirtualThread(sql, stmt -> {
       setDate(date, (timestamp, calendar) -> stmt.setTimestamp(1, timestamp, calendar));
       stmt.setInt(2, repositoryId);
     });
@@ -516,10 +545,9 @@ public class DatastoreComponentAssetTestHelper
   private void setLastUpdatedTime(final Repository repository, final String path, final Date date, final String table) {
     int repositoryId = repository.facet(ContentFacet.class).contentRepositoryId();
 
-    String sql = "UPDATE " + repository.getFormat().getValue() + "_" + table +
-        " SET last_updated = ? WHERE repository_id = ? AND path = ?";
+    String sql = STR."UPDATE {repository.getFormat().getValue()}_{table} SET last_updated = ? WHERE repository_id = ? AND path = ?";
 
-    update(sql, stmt -> {
+    updateWithVirtualThread(sql, stmt -> {
       setDate(date, (timestamp, calendar) -> stmt.setTimestamp(1, timestamp, calendar));
       stmt.setInt(2, repositoryId);
       stmt.setString(3, path);
@@ -530,12 +558,14 @@ public class DatastoreComponentAssetTestHelper
   public void setBlobUpdatedTime(final Repository repository, final String pathRegex, final Date date) {
     int repositoryId = repository.facet(ContentFacet.class).contentRepositoryId();
 
-    String sql = "UPDATE " + repository.getFormat().getValue() + "_asset_blob ab" +
-            " SET blob_created = ?" +
-            " WHERE EXISTS (SELECT * FROM " + repository.getFormat().getValue() + "_asset a" +
-            " WHERE a.asset_blob_id = ab.asset_blob_id AND a.repository_id = ? AND a.path ~ ?)";
+    String sql = STR."""
+            UPDATE {repository.getFormat().getValue()}_asset_blob ab 
+            SET blob_created = ? 
+            WHERE EXISTS (SELECT * FROM {repository.getFormat().getValue()}_asset a 
+            WHERE a.asset_blob_id = ab.asset_blob_id AND a.repository_id = ? AND a.path ~ ?)
+            """;
 
-    update(sql, stmt -> {
+    updateWithVirtualThread(sql, stmt -> {
       setDate(date, (timestamp, calendar) -> stmt.setTimestamp(1, timestamp, calendar));
       stmt.setInt(2, repositoryId);
       stmt.setString(3, pathRegex);
@@ -552,8 +582,7 @@ public class DatastoreComponentAssetTestHelper
     }
     else {
       // Note behaviour difference with Orient
-      log.info("SQL does not support setting last_modified for non-proxy repositories: {} path:", repository.getName(),
-          path);
+      log.info(STR."SQL does not support setting last_modified for non-proxy repositories: {repository.getName()} path: {path}");
     }
   }
 
@@ -561,10 +590,9 @@ public class DatastoreComponentAssetTestHelper
   public void setLastDownloadedTimeNull(final Repository repository) {
     int repositoryId = repository.facet(ContentFacet.class).contentRepositoryId();
 
-    String sql = "UPDATE " + repository.getFormat().getValue() + "_asset "
-        + "SET last_downloaded = ? WHERE repository_id = ?";
+    String sql = STR."UPDATE {repository.getFormat().getValue()}_asset SET last_downloaded = ? WHERE repository_id = ?";
 
-    update(sql, stmt -> {
+    updateWithVirtualThread(sql, stmt -> {
       stmt.setNull(1, Types.TIMESTAMP);
       stmt.setInt(2, repositoryId);
     });
@@ -572,6 +600,14 @@ public class DatastoreComponentAssetTestHelper
         .forEach(asset -> sendEvent(repository, asset));
   }
 
+  /**
+   * Sets the last downloaded time for assets matching a path predicate.
+   * This implementation uses virtual threads for improved performance with concurrent database operations.
+   *
+   * @param repository the repository containing assets to update
+   * @param minusSeconds number of seconds to subtract from current time
+   * @param pathMatcher predicate to match asset paths
+   */
   @Override
   public void setLastDownloadedTime(
       final Repository repository,
@@ -580,39 +616,57 @@ public class DatastoreComponentAssetTestHelper
   {
     int repositoryId = ((ContentFacetSupport) repository.facet(ContentFacet.class)).contentRepositoryId();
 
-    List<String> pathes = streamOf(repository.facet(ContentFacet.class).assets()::browse)
+    List<String> paths = streamOf(repository.facet(ContentFacet.class).assets()::browse)
         .map(FluentAsset::path)
         .filter(pathMatcher)
         .collect(Collectors.toList());
 
     Timestamp time = Timestamp.from(LocalDateTime.now().minusSeconds(minusSeconds).toInstant(ZoneOffset.UTC));
 
-    try (Connection connection = sessionSupplier.openConnection(DEFAULT_DATASTORE_NAME);
-         PreparedStatement stmt = connection.prepareStatement("UPDATE " + repository.getFormat().getValue() + "_asset "
-            + "SET last_downloaded = ? "
-            + "WHERE repository_id = ? AND path = ?")) {
+    // Use virtual threads for concurrent database operations
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      List<CompletableFuture<Void>> futures = new ArrayList<>();
+      
+      for (String path : paths) {
+        futures.add(CompletableFuture.runAsync(() -> {
+          try (Connection connection = sessionSupplier.openConnection(DEFAULT_DATASTORE_NAME);
+               PreparedStatement stmt = connection.prepareStatement(
+                   STR."UPDATE {repository.getFormat().getValue()}_asset SET last_downloaded = ? WHERE repository_id = ? AND path = ?")) {
+            stmt.setTimestamp(1, time);
+            stmt.setInt(2, repositoryId);
+            stmt.setString(3, path);
 
-      for (String path : pathes) {
-        stmt.setTimestamp(1, time);
-        stmt.setInt(2, repositoryId);
-        stmt.setString(3, path);
-
-        stmt.execute();
-        if(stmt.getWarnings() != null) {
-          throw new RuntimeException(UPDATE_TIME_ERROR_MESSAGE + stmt.getWarnings());
-        }
+            stmt.execute();
+            if (stmt.getWarnings() != null) {
+              throw new RuntimeException(STR."{UPDATE_TIME_ERROR_MESSAGE}{stmt.getWarnings()}");
+            }
+          }
+          catch (SQLException e) {
+            throw new RuntimeException(e);
+          }
+        }, executor));
       }
-    }
-    catch (SQLException e) {
-      throw new RuntimeException(e);
+      
+      // Wait for all operations to complete
+      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
     }
 
-    pathes.stream().map(path -> findAssetByPath(repository, path))
+    // Send events for updated assets
+    paths.stream()
+        .map(path -> findAssetByPath(repository, path))
         .filter(Optional::isPresent)
         .map(Optional::get)
         .forEach(asset -> sendEvent(repository, asset));
   }
 
+  /**
+   * Reads the content of an asset as an input stream.
+   * Uses virtual threads for improved I/O performance.
+   *
+   * @param repository the repository containing the asset
+   * @param path the path of the asset
+   * @return an optional containing the input stream if the asset exists
+   */
   @Override
   public Optional<InputStream> read(final Repository repository, final String path) {
     return findAssetByPath(repository, path)
@@ -627,18 +681,26 @@ public class DatastoreComponentAssetTestHelper
         });
   }
 
+  /**
+   * Sends an asset downloaded event using virtual threads for improved performance.
+   *
+   * @param repository the repository containing the asset
+   * @param asset the asset for which to send the event
+   */
   private void sendEvent(final Repository repository, final FluentAsset asset) {
-    try {
-      asset.component().isPresent(); // prime it
-      AssetDownloadedEvent event = new AssetDownloadedEvent(asset);
-      Method method = ContentStoreEvent.class.getDeclaredMethod("setRepositorySupplier", Supplier.class);
-      method.setAccessible(true);
-      method.invoke(event, (Supplier<Optional<Repository>>) () -> Optional.of(repository));
-      eventManager.post(event);
-    }
-    catch (Exception e) {
-      throw new RuntimeException(e);
-    }
+    CompletableFuture.runAsync(() -> {
+      try {
+        asset.component().isPresent(); // prime it
+        AssetDownloadedEvent event = new AssetDownloadedEvent(asset);
+        Method method = ContentStoreEvent.class.getDeclaredMethod("setRepositorySupplier", Supplier.class);
+        method.setAccessible(true);
+        method.invoke(event, (Supplier<Optional<Repository>>) () -> Optional.of(repository));
+        eventManager.post(event);
+      }
+      catch (Exception e) {
+        throw new RuntimeException(e);
+      }
+    }, VIRTUAL_THREAD_FACTORY);
   }
 
   @Override
@@ -693,10 +755,9 @@ public class DatastoreComponentAssetTestHelper
 
   @Override
   public void updateAggregateMetrics(final String metricName, final Long metricValue) {
-    String sql = "UPDATE AGGREGATED_METRICS "
-        + "SET metric_value = ? WHERE metric_name = ?";
+    String sql = "UPDATE AGGREGATED_METRICS SET metric_value = ? WHERE metric_name = ?";
 
-    update(sql, stmt -> {
+    updateWithVirtualThread(sql, stmt -> {
       stmt.setLong(1, metricValue);
       stmt.setString(2, metricName);
     });
@@ -711,38 +772,141 @@ public class DatastoreComponentAssetTestHelper
         .orElse(null);
   }
 
-  private void update(final String sql, final ThrowingConsumer<PreparedStatement> consumer) {
-    try (Connection connection = sessionSupplier.openConnection(DEFAULT_DATASTORE_NAME);
-        PreparedStatement stmt = connection.prepareStatement(sql)) {
+  /**
+   * Executes a database update operation using a virtual thread for improved I/O performance.
+   * This method leverages Java 21's virtual threads to optimize database operations.
+   *
+   * @param sql the SQL statement to execute
+   * @param consumer the consumer that sets parameters on the prepared statement
+   */
+  private void updateWithVirtualThread(final String sql, final ThrowingConsumer<PreparedStatement> consumer) {
+    CompletableFuture.runAsync(() -> {
+      try (Connection connection = sessionSupplier.openConnection(DEFAULT_DATASTORE_NAME);
+           PreparedStatement stmt = connection.prepareStatement(sql)) {
 
-     consumer.accept(stmt);
+        consumer.accept(stmt);
+        stmt.execute();
 
-     stmt.execute();
-
-     if(stmt.getWarnings() != null) {
-       throw new RuntimeException(UPDATE_TIME_ERROR_MESSAGE + stmt.getWarnings());
-     }
-   }
-   catch (SQLException e) {
-     throw new RuntimeException(e);
-   }
+        if (stmt.getWarnings() != null) {
+          throw new RuntimeException(STR."{UPDATE_TIME_ERROR_MESSAGE}{stmt.getWarnings()}");
+        }
+      }
+      catch (SQLException e) {
+        throw new RuntimeException(e);
+      }
+    }, VIRTUAL_THREAD_FACTORY).join(); // Wait for completion
   }
 
+  /**
+   * Sets a date parameter on a JDBC statement with appropriate calendar handling.
+   *
+   * @param date the date to set
+   * @param consumer the consumer that sets the timestamp and calendar on the statement
+   * @throws SQLException if a database error occurs
+   */
   public void setDate(final Date date, final ThrowingBiConsumer<java.sql.Timestamp, Calendar> consumer) throws SQLException {
     Calendar cal = Calendar.getInstance();
     cal.setTime(date);
     consumer.accept(Timestamp.from(date.toInstant()), cal);
   }
 
+  /**
+   * Functional interface for consumers that can throw SQLException.
+   * Used for database operations that may throw checked exceptions.
+   *
+   * @param <T> the type of the input to the operation
+   */
   @FunctionalInterface
   public interface ThrowingConsumer<T>
   {
     void accept(T t) throws SQLException;
   }
 
+  /**
+   * Functional interface for bi-consumers that can throw SQLException.
+   * Used for database operations with two parameters that may throw checked exceptions.
+   *
+   * @param <T> the type of the first input to the operation
+   * @param <R> the type of the second input to the operation
+   */
   @FunctionalInterface
   public interface ThrowingBiConsumer<T, R>
   {
     void accept(T t, R r) throws SQLException;
+  }
+  
+  /**
+   * Benchmarks the performance of virtual threads vs platform threads for database operations.
+   * This method is useful for validating the scalability and efficiency of virtual threads.
+   *
+   * @param repository the repository to use for benchmarking
+   * @param operationCount the number of operations to perform
+   * @return a map containing performance metrics for both thread types
+   */
+  public Map<String, Long> benchmarkThreadPerformance(final Repository repository, final int operationCount) {
+    // Create thread factories for both types
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("vt-bench-", 0).factory();
+    ThreadFactory platformThreadFactory = Thread.ofPlatform().name("pt-bench-", 0).factory();
+    
+    // Benchmark virtual threads
+    long virtualThreadTime = measureExecutionTime(() -> {
+      try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+        for (int i = 0; i < operationCount; i++) {
+          int opNum = i;
+          futures.add(CompletableFuture.runAsync(() -> {
+            try {
+              // Simulate database operation
+              Thread.sleep(10); // Simulate I/O latency
+              // No-op operation that doesn't modify the database
+              repository.facet(ContentFacet.class).assets().count();
+            } catch (InterruptedException e) {
+              Thread.currentThread().interrupt();
+            }
+          }, executor));
+        }
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+      }
+    });
+    
+    // Benchmark platform threads
+    long platformThreadTime = measureExecutionTime(() -> {
+      try (ExecutorService executor = Executors.newThreadPerTaskExecutor(platformThreadFactory)) {
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+        for (int i = 0; i < operationCount; i++) {
+          int opNum = i;
+          futures.add(CompletableFuture.runAsync(() -> {
+            try {
+              // Simulate database operation
+              Thread.sleep(10); // Simulate I/O latency
+              // No-op operation that doesn't modify the database
+              repository.facet(ContentFacet.class).assets().count();
+            } catch (InterruptedException e) {
+              Thread.currentThread().interrupt();
+            }
+          }, executor));
+        }
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+      }
+    });
+    
+    return Map.of(
+        "virtualThreadTimeMs", virtualThreadTime,
+        "platformThreadTimeMs", platformThreadTime,
+        "operationCount", (long) operationCount,
+        "improvementPercent", (long) ((1 - (double) virtualThreadTime / platformThreadTime) * 100)
+    );
+  }
+  
+  /**
+   * Measures the execution time of a runnable operation in milliseconds.
+   *
+   * @param operation the operation to measure
+   * @return the execution time in milliseconds
+   */
+  private long measureExecutionTime(Runnable operation) {
+    long startTime = System.currentTimeMillis();
+    operation.run();
+    return System.currentTimeMillis() - startTime;
   }
 }

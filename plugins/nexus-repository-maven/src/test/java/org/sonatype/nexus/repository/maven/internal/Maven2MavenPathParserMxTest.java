@@ -13,6 +13,7 @@
 package org.sonatype.nexus.repository.maven.internal;
 
 import java.util.List;
+import java.util.stream.Stream;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.repository.maven.MavenPath;
@@ -21,11 +22,9 @@ import org.sonatype.nexus.repository.maven.MavenPath.SignatureType;
 import org.sonatype.nexus.repository.maven.MavenPathParser;
 
 import com.google.common.collect.Lists;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.junit.runners.Parameterized.Parameter;
-import org.junit.runners.Parameterized.Parameters;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.notNullValue;
@@ -36,7 +35,6 @@ import static org.hamcrest.MatcherAssert.assertThat;
  *
  * @since 3.0
  */
-@RunWith(Parameterized.class)
 public class Maven2MavenPathParserMxTest
     extends TestSupport
 {
@@ -62,66 +60,68 @@ public class Maven2MavenPathParserMxTest
       "nk.os.sha1", "nk.os.md5", "nk.os.asc", "nk.os.asc.md5"
   };
 
-  @Parameters
-  public static List<String[]> parameters() {
-    final List<String[]> result = Lists.newArrayList();
+  private final MavenPathParser subject = new Maven2MavenPathParser();
+
+  /**
+   * Generates test parameters for all combinations of GAV elements.
+   * 
+   * @return Stream of Arguments containing test parameters
+   */
+  static Stream<Arguments> parametersProvider() {
+    final List<Arguments> result = Lists.newArrayList();
     for (String g : GROUP_IDS) {
       for (String a : ARTIFACT_IDS) {
         for (String[] v : VERSIONS) {
           for (String c : CLASSIFIERS) {
             for (String e : EXTENSIONS) {
-              final String[] params = new String[6];
-              params[0] = g;
-              params[1] = a;
-              params[2] = v[0];
-              params[3] = v[1];
-              params[4] = c;
-              params[5] = e;
-              result.add(params);
+              result.add(Arguments.of(g, a, v[0], v[1], c, e));
             }
           }
         }
       }
     }
-    return result;
+    return result.stream();
   }
 
-  private final MavenPathParser subject = new Maven2MavenPathParser();
-
-  @Parameter(0)
-  public String pGroupId;
-
-  @Parameter(1)
-  public String pArtifactId;
-
-  @Parameter(2)
-  public String pBaseVersion;
-
-  @Parameter(3)
-  public String pVersion;
-
-  @Parameter(4)
-  public String pClassifier;
-
-  @Parameter(5)
-  public String pExtension;
-
-  private String path() {
-    if (pClassifier != null) {
-      return "/" + pGroupId.replace('.', '/') + "/" + pArtifactId + "/" + pBaseVersion + "/" + pArtifactId + "-" +
-          pVersion + "-" + pClassifier + "." + pExtension;
+  /**
+   * Constructs a Maven path string based on the provided parameters.
+   * 
+   * @param groupId The group ID
+   * @param artifactId The artifact ID
+   * @param baseVersion The base version
+   * @param version The version
+   * @param classifier The classifier (may be null)
+   * @param extension The file extension
+   * @return The constructed Maven path
+   */
+  private String path(String groupId, String artifactId, String baseVersion, String version, String classifier, String extension) {
+    if (classifier != null) {
+      return "/" + groupId.replace('.', '/') + "/" + artifactId + "/" + baseVersion + "/" + artifactId + "-" +
+          version + "-" + classifier + "." + extension;
     }
     else {
-      return "/" + pGroupId.replace('.', '/') + "/" + pArtifactId + "/" + pBaseVersion + "/" + pArtifactId + "-" +
-          pVersion + "." + pExtension;
+      return "/" + groupId.replace('.', '/') + "/" + artifactId + "/" + baseVersion + "/" + artifactId + "-" +
+          version + "." + extension;
     }
   }
 
-  @Test
-  public void affirmativeMxTest() {
-    final String path = path();
+  /**
+   * Tests the Maven path parser with various combinations of GAV elements.
+   * Updated to use JUnit Jupiter for Java 21 compatibility.
+   * 
+   * @param groupId The group ID to test
+   * @param artifactId The artifact ID to test
+   * @param baseVersion The base version to test
+   * @param version The version to test
+   * @param classifier The classifier to test (may be null)
+   * @param extension The file extension to test
+   */
+  @ParameterizedTest(name = "{index}: {0}:{1}:{2}:{3}:{4}:{5}")
+  @MethodSource("parametersProvider")
+  public void affirmativeMxTest(String groupId, String artifactId, String baseVersion, String version, String classifier, String extension) {
+    final String path = path(groupId, artifactId, baseVersion, version, classifier, extension);
 
-    final boolean snapshot = pBaseVersion.endsWith("SNAPSHOT");
+    final boolean snapshot = baseVersion.endsWith("SNAPSHOT");
     final HashType hashType = path.endsWith(".sha1") ? HashType.SHA1 : (path.endsWith(".md5") ? HashType.MD5 : null);
     final SignatureType signatureType = path.contains(".asc") ? SignatureType.GPG : null;
 
@@ -131,12 +131,12 @@ public class Maven2MavenPathParserMxTest
     assertThat(mavenPath.getHashType(), equalTo(hashType));
     assertThat(mavenPath.getCoordinates(), notNullValue());
     assertThat(mavenPath.getCoordinates().isSnapshot(), equalTo(snapshot));
-    assertThat(mavenPath.getCoordinates().getGroupId(), equalTo(pGroupId));
-    assertThat(mavenPath.getCoordinates().getArtifactId(), equalTo(pArtifactId));
-    assertThat(mavenPath.getCoordinates().getVersion(), equalTo(pVersion));
-    assertThat(mavenPath.getCoordinates().getBaseVersion(), equalTo(pBaseVersion));
-    assertThat(mavenPath.getCoordinates().getClassifier(), equalTo(pClassifier));
-    assertThat(mavenPath.getCoordinates().getExtension(), equalTo(pExtension));
+    assertThat(mavenPath.getCoordinates().getGroupId(), equalTo(groupId));
+    assertThat(mavenPath.getCoordinates().getArtifactId(), equalTo(artifactId));
+    assertThat(mavenPath.getCoordinates().getVersion(), equalTo(version));
+    assertThat(mavenPath.getCoordinates().getBaseVersion(), equalTo(baseVersion));
+    assertThat(mavenPath.getCoordinates().getClassifier(), equalTo(classifier));
+    assertThat(mavenPath.getCoordinates().getExtension(), equalTo(extension));
     assertThat(mavenPath.getCoordinates().getSignatureType(), equalTo(signatureType));
   }
 }

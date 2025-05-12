@@ -28,15 +28,27 @@ import com.google.common.hash.Hasher;
 /**
  * An {@link MultiHashingInputStream} which uses Java 21 Virtual Threads to asynchronously compute hashes
  * with improved scalability and reduced resource consumption.
+ * <p>
+ * Virtual Threads are lightweight threads that are managed by the JVM rather than the OS, making them
+ * ideal for I/O-bound operations like hashing. This implementation creates a dedicated Virtual Thread
+ * for each hash algorithm, allowing them to run concurrently with minimal resource overhead.
  *
  * @see MultiHashingInputStream
+ * @since 3.60
  */
 public class ParallelMultiHashingInputStream
     extends MultiHashingInputStream
 {
   private List<Future<?>> hashingFutures = Collections.emptyList();
   private ExecutorService executor;
+  private boolean completed = false;
 
+  /**
+   * Creates a new parallel hashing input stream using Virtual Threads.
+   *
+   * @param algorithms the hash algorithms to use
+   * @param inputStream the input stream to hash
+   */
   public ParallelMultiHashingInputStream(final Iterable<HashAlgorithm> algorithms, final InputStream inputStream) {
     super(algorithms, inputStream);
     // Create a virtual thread per task executor for optimal I/O-bound hash computation
@@ -63,9 +75,10 @@ public class ParallelMultiHashingInputStream
         }
         catch (InterruptedException e) {
           Thread.currentThread().interrupt();
+          throw new IOException("Hashing interrupted", e);
         }
         catch (ExecutionException e) {
-          throw new IOException(e);
+          throw new IOException("Error during parallel hashing", e);
         }
       }
     }
@@ -74,6 +87,29 @@ public class ParallelMultiHashingInputStream
     // This allows the virtual threads to be garbage collected
     if (!executor.isShutdown()) {
       executor.shutdown();
+      // Decrement the active operations counter when we're done
+      if (!completed) {
+        MultiHashingInputStreamFactory.decrementActiveOperations();
+        completed = true;
+      }
+    }
+  }
+  
+  @Override
+  public void close() throws IOException {
+    try {
+      super.close();
+    } finally {
+      // Ensure we decrement the counter even if an exception occurs during close
+      if (!completed) {
+        MultiHashingInputStreamFactory.decrementActiveOperations();
+        completed = true;
+      }
+      
+      // Ensure the executor is shutdown
+      if (!executor.isShutdown()) {
+        executor.shutdown();
+      }
     }
   }
 }

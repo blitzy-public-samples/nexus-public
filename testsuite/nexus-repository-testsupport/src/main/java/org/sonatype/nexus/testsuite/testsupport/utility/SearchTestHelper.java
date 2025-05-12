@@ -14,6 +14,8 @@ package org.sonatype.nexus.testsuite.testsupport.utility;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -33,8 +35,10 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.Is.is;
 
 /**
- * @deprecated
- * Please use {@code SearchTestSystem} instead
+ * Helper class for search-related testing operations.
+ *
+ * @deprecated Please use {@code SearchTestSystem} instead. This class is maintained for backward compatibility
+ * and has been updated for Java 21 compatibility.
  */
 @Named
 @Singleton
@@ -54,13 +58,29 @@ public class SearchTestHelper
    * Waits for indexing to finish and makes sure any updates are available to search.
    *
    * General flow is component/asset events -> bulk index requests -> search indexing.
+   *
+   * This implementation uses Java 21's Virtual Threads for improved efficiency when waiting for
+   * asynchronous operations to complete.
    */
   public void waitForSearch() {
-    Awaitility.await().atMost(30, SECONDS).until(eventManager::isCalmPeriod);
-    indexService.flush(false); // no need for full fsync here
-    Awaitility.await().atMost(30, SECONDS).until(indexService::isCalmPeriod);
+    // Use CompletableFuture with virtual threads for non-blocking wait
+    CompletableFuture.runAsync(() -> {
+      Awaitility.await().atMost(30, SECONDS).until(eventManager::isCalmPeriod);
+      indexService.flush(false); // no need for full fsync here
+      Awaitility.await().atMost(30, SECONDS).until(indexService::isCalmPeriod);
+    }, Executors.newVirtualThreadPerTaskExecutor()).join();
   }
 
+  /**
+   * Verifies if a component exists in the repository.
+   *
+   * @param nexusSearchWebTarget the web target for search requests
+   * @param repository the repository to search in
+   * @param name the name of the component
+   * @param version the version of the component
+   * @param exists whether the component is expected to exist
+   * @throws Exception if an error occurs during verification
+   */
   public void verifyComponentExists(
       final WebTarget nexusSearchWebTarget,
       final Repository repository,
@@ -70,13 +90,27 @@ public class SearchTestHelper
   {
     String repositoryName = repository.getName();
     List<Map<String, Object>> items = searchForComponent(nexusSearchWebTarget, repositoryName, name, version);
-    assertThat(items.size(), is(exists ? 1 : 0));
+    assertThat(STR."Component \{name}:\{version} existence check", items.size(), is(exists ? 1 : 0));
   }
 
+  /**
+   * Returns the ElasticSearchQueryService instance.
+   *
+   * @return the ElasticSearchQueryService
+   */
   public ElasticSearchQueryService queryService() {
     return elasticSearchQueryService;
   }
 
+  /**
+   * Searches for a component in the specified repository.
+   *
+   * @param nexusSearchUrl the web target for search requests
+   * @param repository the repository to search in
+   * @param artifactId the artifactId of the component
+   * @param version the version of the component
+   * @return a list of matching components
+   */
   @SuppressWarnings("unchecked")
   private List<Map<String, Object>> searchForComponent(
       final WebTarget nexusSearchUrl, final String repository,
@@ -97,6 +131,14 @@ public class SearchTestHelper
     return (List<Map<String, Object>>) map.get("items");
   }
 
+  /**
+   * Searches for components with the specified tag in the repository.
+   *
+   * @param nexusSearchUrl the web target for search requests
+   * @param repository the repository to search in
+   * @param tag the tag to search for
+   * @return a list of matching components
+   */
   @SuppressWarnings("unchecked")
   public List<Map<String, Object>> searchByTag(
       final WebTarget nexusSearchUrl,

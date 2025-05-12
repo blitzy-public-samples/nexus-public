@@ -16,27 +16,36 @@ import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import static java.util.Objects.requireNonNull;
 
 /**
+ * Parses and compares Debian version strings according to Debian's versioning policy.
+ * 
  * More info about debian version could be found by ref:
  *
  * @see <a href="https://www.debian.org/doc/debian-policy/ch-controlfields.html#id6">https://www.debian.org/doc/</a>
  * @since 3.17
+ * @updated Optimized for Java 21 with pattern matching and modern language features
  */
 public class DebianVersion
     implements Comparable<DebianVersion>
 {
   private static final Pattern VERSION_PART = Pattern.compile("(\\D*)(\\d*)");
 
-  private int epoch = 0;
+  private final int epoch;
 
-  private String debianRevision = "";
+  private final String debianRevision;
 
-  private String upstreamVersion;
+  private final String upstreamVersion;
 
+  /**
+   * Constructs a new DebianVersion by parsing the provided version string.
+   *
+   * @param version the Debian version string to parse
+   * @throws NullPointerException if version is null
+   */
   public DebianVersion(final String version) {
-    checkNotNull(version);
+    requireNonNull(version, "Version cannot be null");
     int colonIndex = version.indexOf(':');
     int hyphenIndex = version.lastIndexOf('-');
 
@@ -45,63 +54,67 @@ public class DebianVersion
     this.upstreamVersion = parseUpstreamVersion(version, colonIndex, hyphenIndex);
   }
 
+  /**
+   * Returns the epoch component of the version.
+   *
+   * @return the epoch value (0 if not specified)
+   */
   public int getEpoch() {
     return epoch;
   }
 
+  /**
+   * Returns the Debian revision component of the version.
+   *
+   * @return the Debian revision string (empty if not specified)
+   */
   public String getDebianRevision() {
     return debianRevision;
   }
 
+  /**
+   * Returns the upstream version component.
+   *
+   * @return the upstream version string
+   */
   public String getUpstreamVersion() {
     return upstreamVersion;
   }
 
   @Override
   public String toString() {
-    StringBuilder sb = new StringBuilder();
-    if (epoch > 0) {
-      sb.append(epoch);
-      sb.append(":");
-    }
-    sb.append(upstreamVersion);
-    if (debianRevision.length() > 0) {
-      sb.append("-");
-      sb.append(debianRevision);
-    }
-    return sb.toString();
+    return STR."{epoch > 0 ? STR."{epoch}:" : ""}{upstreamVersion}{debianRevision.isEmpty() ? "" : STR."-{debianRevision}"}";
   }
 
   @Override
   public int compareTo(final DebianVersion o) {
-    if (this.epoch < o.epoch) {
-      return -1;
+    // Compare epoch first
+    int epochComparison = Integer.compare(this.epoch, o.epoch);
+    if (epochComparison != 0) {
+      return epochComparison;
     }
-    else if (this.epoch > o.epoch) {
-      return 1;
+    
+    // If epochs are equal, compare upstream versions
+    int upstreamComparison = compareDebianVersion(this.upstreamVersion, o.upstreamVersion);
+    if (upstreamComparison != 0) {
+      return upstreamComparison;
     }
-    else {
-      int uv = compareDebianVersion(this.upstreamVersion, o.upstreamVersion);
-      if (uv != 0) {
-        return uv;
-      }
-
-      return compareDebianVersion(this.debianRevision, o.debianRevision);
-    }
+    
+    // If upstream versions are equal, compare Debian revisions
+    return compareDebianVersion(this.debianRevision, o.debianRevision);
   }
 
   @Override
-  public boolean equals(final Object o) {
-    if (this == o) {
+  public boolean equals(final Object obj) {
+    if (this == obj) {
       return true;
     }
-    if (o == null || getClass() != o.getClass()) {
-      return false;
+    if (obj instanceof DebianVersion other) {
+      return epoch == other.epoch &&
+          Objects.equals(debianRevision, other.debianRevision) &&
+          Objects.equals(upstreamVersion, other.upstreamVersion);
     }
-    DebianVersion version = (DebianVersion) o;
-    return epoch == version.epoch &&
-        Objects.equals(debianRevision, version.debianRevision) &&
-        Objects.equals(upstreamVersion, version.upstreamVersion);
+    return false;
   }
 
   @Override
@@ -123,97 +136,118 @@ public class DebianVersion
     return hyphenIndex > 0 ? version.substring(hyphenIndex + 1) : "";
   }
 
+  /**
+   * Compares two Debian version strings according to Debian's version comparison algorithm.
+   * 
+   * @param a first version string to compare
+   * @param b second version string to compare
+   * @return negative if a < b, positive if a > b, zero if equal
+   */
   private static int compareDebianVersion(final String a, final String b) {
     Matcher ma = VERSION_PART.matcher(a);
     Matcher mb = VERSION_PART.matcher(b);
 
-    String na = "";
-    String nna = "";
-    String nb = "";
-    String nnb = "";
+    String nonNumericA = "";
+    String numericA = "";
+    String nonNumericB = "";
+    String numericB = "";
+    
     do {
+      // Extract the next parts from each version string
       if (ma.find()) {
-        nna = ma.group(1);
-        na = ma.group(2);
+        nonNumericA = ma.group(1);
+        numericA = ma.group(2);
       }
       else {
-        nna = "";
-        na = "";
+        nonNumericA = "";
+        numericA = "";
       }
+      
       if (mb.find()) {
-        nnb = mb.group(1);
-        nb = mb.group(2);
+        nonNumericB = mb.group(1);
+        numericB = mb.group(2);
       }
       else {
-        nnb = "";
-        nb = "";
+        nonNumericB = "";
+        numericB = "";
       }
 
-      int nn = compareNonNumeric(nna, nnb);
-      if (nn != 0) {
-        return nn;
+      // Compare the non-numeric parts first
+      int nonNumericComparison = compareNonNumeric(nonNumericA, nonNumericB);
+      if (nonNumericComparison != 0) {
+        return nonNumericComparison;
       }
 
-      int n = compareNumeric(na, nb);
-      if (n != 0) {
-        return n;
+      // Then compare the numeric parts
+      int numericComparison = compareNumeric(numericA, numericB);
+      if (numericComparison != 0) {
+        return numericComparison;
       }
     }
-    while (na.length() > 0 || nna.length() > 0 || nb.length() > 0 || nnb.length() > 0);
+    while (numericA.length() > 0 || nonNumericA.length() > 0 || 
+           numericB.length() > 0 || nonNumericB.length() > 0);
 
     return 0;
   }
 
+  /**
+   * Compares the non-numeric parts of version strings character by character.
+   * 
+   * @param a first non-numeric string
+   * @param b second non-numeric string
+   * @return comparison result (-1, 0, or 1)
+   */
   private static int compareNonNumeric(final String a, final String b) {
     int len = Math.max(a.length(), b.length());
     for (int i = 0; i < len; i++) {
-      int ac;
-      int bc;
-      if (i >= a.length()) {
-        ac = -1;
-      }
-      else {
-        ac = a.codePointAt(i);
-      }
-      if (i >= b.length()) {
-        bc = -1;
-      }
-      else {
-        bc = b.codePointAt(i);
-      }
+      int charA = i >= a.length() ? -1 : a.codePointAt(i);
+      int charB = i >= b.length() ? -1 : b.codePointAt(i);
 
-      if (priorityClass(ac) < priorityClass(bc)) {
-        return -1;
+      // Compare priority classes first
+      int priorityA = priorityClass(charA);
+      int priorityB = priorityClass(charB);
+      
+      if (priorityA != priorityB) {
+        return Integer.compare(priorityA, priorityB);
       }
-      else if (priorityClass(ac) > priorityClass(bc)) {
-        return 1;
-      }
-      else if (ac < bc) {
-        return -1;
-      }
-      else if (ac > bc) {
-        return -1;
+      
+      // If priority classes are equal, compare the actual characters
+      if (charA != charB) {
+        return Integer.compare(charA, charB);
       }
     }
 
     return 0;
   }
 
+  /**
+   * Compares the numeric parts of version strings as long integers.
+   * 
+   * @param a first numeric string
+   * @param b second numeric string
+   * @return comparison result (-1, 0, or 1)
+   */
   private static int compareNumeric(final String a, final String b) {
-    if (a.isEmpty() && !b.isEmpty()) {
-      return -1;
-    }
-    else if (b.isEmpty() && !a.isEmpty()) {
-      return 1;
-    }
-    else if (a.isEmpty() && b.isEmpty()) {
-      return 0;
-    }
-
-    return Long.compare(Long.parseLong(a), Long.parseLong(b));
+    // Handle empty strings specially
+    return switch(a.isEmpty() + "-" + b.isEmpty()) {
+      case "true-true" -> 0;  // Both empty
+      case "true-false" -> -1; // First empty, second not
+      case "false-true" -> 1;  // First not empty, second empty
+      default -> Long.compare(Long.parseLong(a), Long.parseLong(b)); // Compare as numbers
+    };
   }
 
+  /**
+   * Determines the priority class of a character for Debian version comparison.
+   * 
+   * @param c the character to classify
+   * @return priority class value (-2, -1, 0, or 1)
+   */
   private static int priorityClass(final int c) {
-    return c == '~' ? -2 : c == -1 ? -1 : Character.isLetter(c) ? 0 : 1;
+    return switch(c) {
+      case '~' -> -2;      // Tilde sorts before everything
+      case -1 -> -1;       // End of string sorts before most characters
+      default -> Character.isLetter(c) ? 0 : 1; // Letters before other characters
+    };
   }
 }

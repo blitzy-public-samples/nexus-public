@@ -20,18 +20,19 @@ import org.sonatype.nexus.security.privilege.rest.PrivilegeAction;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 /**
- * Repository admin privilege request DTO for the REST API.
- * 
+ * REST API request model for repository admin privileges.
+ *
  * @since 3.19
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class ApiPrivilegeRepositoryAdminRequest
     extends ApiPrivilegeWithRepositoryRequest
 {
   /**
    * Default constructor for Jackson deserialization.
-   * Uses {@link JsonCreator} to ensure proper instantiation with Jackson 2.16.1.
    */
   @JsonCreator
   private ApiPrivilegeRepositoryAdminRequest() {
@@ -39,7 +40,7 @@ public class ApiPrivilegeRepositoryAdminRequest
   }
 
   /**
-   * Creates a new repository admin privilege request with the specified properties.
+   * Constructor for creating a new repository admin privilege request.
    *
    * @param name the privilege name
    * @param description the privilege description
@@ -58,22 +59,26 @@ public class ApiPrivilegeRepositoryAdminRequest
   }
 
   /**
-   * Creates a new repository admin privilege request from an existing privilege.
+   * Constructor for creating a request from an existing privilege.
+   * Uses pattern matching for type safety when handling the privilege object.
    *
-   * @param privilege the privilege to convert
+   * @param privilege the privilege to create the request from
    */
   public ApiPrivilegeRepositoryAdminRequest(final Privilege privilege) {
     super(privilege);
   }
 
+  /**
+   * Converts this request into a Privilege domain object.
+   * Sets the type to RepositoryAdminPrivilegeDescriptor.TYPE.
+   *
+   * @param privilege the privilege to configure
+   * @return the configured privilege
+   */
   @Override
   protected Privilege doAsPrivilege(final Privilege privilege) {
-    // Using pattern matching to ensure privilege is of the correct type
-    if (privilege instanceof Privilege p) {
-      super.doAsPrivilege(p);
-      p.setType(RepositoryAdminPrivilegeDescriptor.TYPE);
-      return p;
-    }
+    super.doAsPrivilege(privilege);
+    privilege.setType(RepositoryAdminPrivilegeDescriptor.TYPE);
     return privilege;
   }
 }

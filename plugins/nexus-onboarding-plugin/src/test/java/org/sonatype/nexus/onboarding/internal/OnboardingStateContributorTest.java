@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.onboarding.internal;
 
-import java.util.List;
+import java.util.Arrays;
 import java.util.Map;
 
 import org.sonatype.goodies.testsupport.TestSupport;
@@ -27,12 +27,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.Mockito.when;
 
 /**
- * Tests for {@link OnboardingStateContributor}.
+ * Tests for {@link OnboardingStateContributor} functionality.
  */
 @ExtendWith(MockitoExtension.class)
 public class OnboardingStateContributorTest
@@ -55,10 +56,13 @@ public class OnboardingStateContributorTest
 
   private OnboardingStateContributor underTest;
 
+  /**
+   * Sets up the test environment with mocked dependencies.
+   */
   @BeforeEach
   public void setup() {
     when(onboardingConfiguration.isEnabled()).thenReturn(true);
-    when(onboardingManager.getOnboardingItems()).thenReturn(List.of(onboardingItem1, onboardingItem2));
+    when(onboardingManager.getOnboardingItems()).thenReturn(Arrays.asList(onboardingItem1, onboardingItem2));
     when(onboardingManager.needsOnboarding()).thenReturn(true);
     when(adminPasswordFileManager.exists()).thenReturn(true);
     when(adminPasswordFileManager.getPath()).thenReturn("path/to/file");
@@ -66,55 +70,58 @@ public class OnboardingStateContributorTest
     underTest = new OnboardingStateContributor(onboardingConfiguration, onboardingManager, adminPasswordFileManager);
   }
 
+  /**
+   * Verifies that the state map contains the expected onboarding and admin password file information
+   * when both onboarding is required and admin password file exists.
+   */
   @Test
-  public void testGetState() {
+  public void shouldReturnCompleteStateWhenOnboardingRequiredAndPasswordFileExists() {
     Map<String, Object> state = underTest.getState();
-    assertEquals(2, state.size());
-    assertEquals(true, state.get("onboarding.required"));
-    assertEquals("path/to/file", state.get("admin.password.file"));
+    assertThat(state.size(), is(2));
+    assertThat(state.get("onboarding.required"), is(true));
+    assertThat(state.get("admin.password.file"), is("path/to/file"));
   }
 
+  /**
+   * Verifies that null is returned when onboarding is not required and admin password file doesn't exist.
+   */
   @Test
-  public void testGetState_noItems() {
+  public void shouldReturnNullWhenNoOnboardingItemsAndNoPasswordFile() {
     when(onboardingManager.needsOnboarding()).thenReturn(false);
     when(adminPasswordFileManager.exists()).thenReturn(false);
 
-    assertNull(underTest.getState());
+    assertThat(underTest.getState(), nullValue());
   }
 
+  /**
+   * Verifies that the onboarding state is cached and subsequent changes to the onboarding manager
+   * don't affect the returned state.
+   */
   @Test
-  public void testGetState_cacheOnboardingState() {
+  public void shouldCacheOnboardingStateAfterFirstCall() {
     Map<String, Object> state = underTest.getState();
-    assertEquals(true, state.get("onboarding.required"));
+    assertThat(state.get("onboarding.required"), is(true));
 
     when(onboardingManager.needsOnboarding()).thenReturn(false);
 
     state = underTest.getState();
-    assertNull(state.get("onboarding.required"));
+    assertThat(state.get("onboarding.required"), nullValue());
 
     // Set to true to validate that cache kicks in and still doesn't add data to the map
     when(onboardingManager.needsOnboarding()).thenReturn(true);
 
     state = underTest.getState();
-    assertNull(state.get("onboarding.required"));
+    assertThat(state.get("onboarding.required"), nullValue());
   }
 
+  /**
+   * Verifies that the admin password file path is not included in the state when the file doesn't exist.
+   */
   @Test
-  public void testGetState_noAdminPasswordFile() {
+  public void shouldNotIncludePasswordFilePathWhenFileDoesNotExist() {
     when(adminPasswordFileManager.exists()).thenReturn(false);
 
     Map<String, Object> state = underTest.getState();
-    assertNull(state.get("admin.password.file"));
-  }
-  
-  @Test
-  public void testGetState_onlyAdminPasswordFile() {
-    when(onboardingManager.needsOnboarding()).thenReturn(false);
-    when(adminPasswordFileManager.exists()).thenReturn(true);
-    
-    Map<String, Object> state = underTest.getState();
-    assertEquals(1, state.size());
-    assertEquals("path/to/file", state.get("admin.password.file"));
-    assertNull(state.get("onboarding.required"));
+    assertThat(state.get("admin.password.file"), nullValue());
   }
 }

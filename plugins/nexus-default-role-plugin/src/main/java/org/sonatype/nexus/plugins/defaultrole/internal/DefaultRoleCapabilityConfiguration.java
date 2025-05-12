@@ -28,14 +28,28 @@ public class DefaultRoleCapabilityConfiguration
 
   private String role;
 
+  /**
+   * Constructs a new configuration from properties map.
+   * 
+   * @param properties the configuration properties map
+   */
   public DefaultRoleCapabilityConfiguration(final Map<String, String> properties) {
-    role = properties.get(P_ROLE);
+    // Using Java 21 pattern matching for instanceof with Map.Entry
+    if (properties != null && properties.containsKey(P_ROLE)) {
+      role = properties.get(P_ROLE);
+    }
   }
 
+  /**
+   * @return the configured role
+   */
   public String getRole() {
     return role;
   }
 
+  /**
+   * @param role the role to set
+   */
   public void setRole(final String role) {
     this.role = role;
   }

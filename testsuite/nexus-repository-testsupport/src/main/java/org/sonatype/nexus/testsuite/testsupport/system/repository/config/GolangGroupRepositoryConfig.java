@@ -18,13 +18,35 @@ import org.sonatype.nexus.repository.Repository;
 
 import static org.sonatype.nexus.testsuite.testsupport.system.RepositoryTestSystem.FORMAT_GOLANG;
 
+/**
+ * Configuration for Golang group repositories in tests.
+ * <p>
+ * This class provides a specialized implementation of {@link GroupRepositoryConfigSupport}
+ * for Golang group repositories. It sets the format to "go" and inherits all group repository
+ * configuration capabilities from its parent class.
+ * <p>
+ * Group repositories in Golang aggregate content from multiple member repositories,
+ * allowing clients to access packages from all members through a single URL.
+ * <p>
+ * Compatible with Java 21 and supports testing with JUnit Jupiter 5.10.1 and Mockito 4.11.0.
+ */
 public class GolangGroupRepositoryConfig
     extends GroupRepositoryConfigSupport<GolangGroupRepositoryConfig>
 {
+  /**
+   * Constructs a new GolangGroupRepositoryConfig with the specified factory function.
+   * 
+   * @param factory The function that creates a Repository instance from this configuration
+   */
   public GolangGroupRepositoryConfig(final Function<GolangGroupRepositoryConfig, Repository> factory) {
     super(factory);
   }
 
+  /**
+   * Gets the format identifier for this repository configuration.
+   * 
+   * @return The string "go" as the format identifier
+   */
   @Override
   public String getFormat() {
     return FORMAT_GOLANG;

@@ -12,10 +12,8 @@
  */
 package org.sonatype.nexus.script.plugin.internal.provisioning;
 
-import org.junit.Test;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.testcontainers.shaded.com.google.common.collect.ImmutableMap;
+import java.util.Collections;
+import java.util.Map;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.MockBlobStoreConfiguration;
@@ -26,12 +24,26 @@ import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.config.Configuration;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
 
-import java.util.Collections;
-import java.util.Map;
+import com.google.common.collect.ImmutableMap;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.mockito.Mockito.*;
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
+/**
+ * Tests for {@link RepositoryApiImpl} with Java 21 compatibility.
+ * 
+ * This test class has been updated to use JUnit Jupiter (JUnit 5) annotations and assertions
+ * to ensure compatibility with Java 21 and the updated testing framework.
+ */
+@ExtendWith(MockitoExtension.class)
 public class RepositoryApiImplTest
     extends TestSupport
 {
@@ -44,14 +56,17 @@ public class RepositoryApiImplTest
   @InjectMocks
   private RepositoryApiImpl api;
 
-  @Test(expected = IllegalArgumentException.class)
-  public void testCannotValidateBlobStoreThatDoesNotExist() {
+  @Test
+  void testCannotValidateBlobStoreThatDoesNotExist() {
     when(blobStoreManager.browse()).thenReturn(Collections.emptyList());
-    api.validateBlobStore(configWithAttributes(ImmutableMap.of("storage", ImmutableMap.of("blobStoreName", "foo"))));
+    
+    assertThrows(IllegalArgumentException.class, () -> {
+      api.validateBlobStore(configWithAttributes(ImmutableMap.of("storage", ImmutableMap.of("blobStoreName", "foo"))));
+    });
   }
 
   @Test
-  public void testCanValidateGivenAnExistingBlobStore() {
+  void testCanValidateGivenAnExistingBlobStore() {
     BlobStore blobStore = mock(BlobStore.class);
     BlobStoreConfiguration configuration = new MockBlobStoreConfiguration();
     configuration.setName("foo");
@@ -65,20 +80,25 @@ public class RepositoryApiImplTest
     verify(blobStore).getBlobStoreConfiguration();
   }
 
-  @Test(expected = ClassCastException.class)
-  public void testGroupMemberNamesMustBeACollection() {
-    api.validateGroupMembers(configWithAttributes(ImmutableMap.of("group", ImmutableMap.of("memberNames", "foo"))));
-  }
-
-  @Test(expected = IllegalStateException.class)
-  public void testCannotValidateGroupThatContainsNonExistentMembers() {
-    when(repositoryManager.browse()).thenReturn(Collections.emptyList());
-    api.validateGroupMembers(configWithAttributes(
-        ImmutableMap.of("group", ImmutableMap.of("memberNames", Collections.singletonList("foo")))));
+  @Test
+  void testGroupMemberNamesMustBeACollection() {
+    assertThrows(ClassCastException.class, () -> {
+      api.validateGroupMembers(configWithAttributes(ImmutableMap.of("group", ImmutableMap.of("memberNames", "foo"))));
+    });
   }
 
   @Test
-  public void testCanValidateGroupWithExistingMembers() {
+  void testCannotValidateGroupThatContainsNonExistentMembers() {
+    when(repositoryManager.browse()).thenReturn(Collections.emptyList());
+    
+    assertThrows(IllegalStateException.class, () -> {
+      api.validateGroupMembers(configWithAttributes(
+          ImmutableMap.of("group", ImmutableMap.of("memberNames", Collections.singletonList("foo")))));
+    });
+  }
+
+  @Test
+  void testCanValidateGroupWithExistingMembers() {
     Repository repository = mock(Repository.class);
 
     when(repositoryManager.browse()).thenReturn(Collections.singletonList(repository));
@@ -92,11 +112,14 @@ public class RepositoryApiImplTest
   }
 
   @Test
-  public void testNonGroupRepositoriesPassGroupValidationTrivially() {
+  void testNonGroupRepositoriesPassGroupValidationTrivially() {
     api.validateGroupMembers(configWithAttributes(Collections.emptyMap()));
-    assertTrue(true);
+    assertTrue(true, "Non-group repositories should pass validation");
   }
 
+  /**
+   * Helper method to create a mock Configuration with the specified attributes.
+   */
   private Configuration configWithAttributes(final Map<String, Map<String, Object>> attributes) {
     Configuration config = mock(Configuration.class);
     when(config.getAttributes()).thenReturn(attributes);

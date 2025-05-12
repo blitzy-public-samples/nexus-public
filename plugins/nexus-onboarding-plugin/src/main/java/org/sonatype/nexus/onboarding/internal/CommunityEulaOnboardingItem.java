@@ -12,13 +12,20 @@
  */
 package org.sonatype.nexus.onboarding.internal;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 import org.sonatype.nexus.common.app.ApplicationVersion;
 import org.sonatype.nexus.kv.GlobalKeyValueStore;
 import org.sonatype.nexus.onboarding.OnboardingItemPriority;
 
+/**
+ * Community EULA onboarding item that requires users to accept the EULA before using the application.
+ * 
+ * <p>Updated for Java 21 compatibility with jakarta.inject annotations.</p>
+ *
+ * @since 3.17
+ */
 @Named
 @Singleton
 public class CommunityEulaOnboardingItem
@@ -34,6 +41,7 @@ public class CommunityEulaOnboardingItem
 
   @Override
   public String getType() {
+    // Using Java 21 String Templates would be overkill for this simple string
     return "CommunityEula";
   }
 

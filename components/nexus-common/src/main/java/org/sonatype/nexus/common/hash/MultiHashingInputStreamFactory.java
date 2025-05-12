@@ -14,18 +14,20 @@ package org.sonatype.nexus.common.hash;
 
 import java.io.InputStream;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.Executors;
 
 import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Factory for creating hashing input streams. When parallel is enabled (default on), provides
- * {@link ParallelMultiHashingInputStream} which uses Java 21 Virtual Threads for I/O-bound operations.
- * When disabled, provides a standard {@link MultiHashingInputStream}.
- * 
- * @since 3.0
+ * Factory for creating hashing input streams.
+ * <p>
+ * When parallel is enabled (default on), provides {@link ParallelMultiHashingInputStream} which uses
+ * Java 21 Virtual Threads for I/O-bound operations. When disabled, provides a standard {@link MultiHashingInputStream}.
+ * <p>
+ * Virtual Threads are lightweight threads that dramatically reduce the effort of writing, maintaining, and observing
+ * high-throughput concurrent applications, making them ideal for I/O-bound operations like hashing.
  */
 public final class MultiHashingInputStreamFactory
 {
@@ -33,7 +35,7 @@ public final class MultiHashingInputStreamFactory
 
   private static final String ENABLED_ENV_VAR = "NEXUS_HASHING_PARALLELISM";
 
-  private static final String ENABLED_SYS_PROP = "nexus.hashing.parallelism";
+  private static final String ENABLED_SYS_PROP = "nexus.hashing.parallism";
 
   private static final String THRESHOLD_ENV_VAR = "NEXUS_HASHING_THRESHOLD";
 
@@ -44,24 +46,22 @@ public final class MultiHashingInputStreamFactory
   private static final String MAX_CONCURRENT_SYS_PROP = "nexus.hashing.max.concurrent";
 
   /*
-   * Maximum number of concurrent virtual threads for hashing operations.
-   * Default is -1 (unlimited). Set to a positive value to limit concurrent operations.
+   * Maximum number of concurrent hashing operations to allow
+   * Default is -1 (unlimited) since Virtual Threads are designed to handle many concurrent operations
    */
-  private static int maxConcurrentOperations;
+  private static int maxConcurrent;
 
   /*
-   * Threshold for file size in bytes. Files smaller than this threshold will use
-   * non-parallel hashing to avoid the overhead of creating virtual threads.
-   * Default is -1 (no threshold). Set to a positive value to enable size-based optimization.
+   * See belowThreshold()
    */
   private static int threshold;
 
-  /*
-   * Counter for active parallel hashing operations
-   */
-  private static final AtomicInteger activeOperations = new AtomicInteger(0);
-
   private static boolean enabled;
+
+  /*
+   * Tracks the current number of active parallel hashing operations
+   */
+  private static volatile int activeHashingOperations = 0;
 
   static {
     enabled = Boolean.valueOf(Optional.ofNullable(System.getenv(ENABLED_ENV_VAR))
@@ -70,13 +70,12 @@ public final class MultiHashingInputStreamFactory
     threshold = Integer.valueOf(Optional.ofNullable(System.getenv(THRESHOLD_ENV_VAR))
         .orElseGet(() -> System.getProperty(THRESHOLD_SYS_PROP, "-1")));
 
-    maxConcurrentOperations = Integer.valueOf(Optional.ofNullable(System.getenv(MAX_CONCURRENT_ENV_VAR))
+    maxConcurrent = Integer.valueOf(Optional.ofNullable(System.getenv(MAX_CONCURRENT_ENV_VAR))
         .orElseGet(() -> System.getProperty(MAX_CONCURRENT_SYS_PROP, "-1")));
 
-    if (!enabled || threshold != -1 || maxConcurrentOperations != -1) {
+    if (!enabled || threshold != -1 || maxConcurrent != -1) {
       // log only for non-default settings
-      log.info("Configured with enabled={} threshold={} maxConcurrentOperations={}", 
-          enabled, threshold, maxConcurrentOperations);
+      log.info("Configured with enabled={} threshold={} maxConcurrent={}", enabled, threshold, maxConcurrent);
     }
   }
 
@@ -84,21 +83,18 @@ public final class MultiHashingInputStreamFactory
     // private
   }
 
-  /**
-   * Enables parallel hashing using Virtual Threads.
-   * Exists for use by Groovy scripting if necessary.
+  /*
+   * Exists for use by Groovy scripting if necessary
    */
   @VisibleForTesting
   public static void enableParallel() {
-    log.info("Enabling parallel input stream hashing with Virtual Threads. Threshold: {}, Max concurrent: {}", 
-        threshold, maxConcurrentOperations);
+    log.info("Enabling parallel input stream hashing. Threshold {} maxConcurrent {}", threshold, maxConcurrent);
 
     enabled = true;
   }
 
-  /**
-   * Disables parallel hashing.
-   * Exists for use by Groovy scripting if necessary.
+  /*
+   * Exists for use by Groovy scripting if necessary
    */
   @VisibleForTesting
   public static void disableParallel() {
@@ -107,71 +103,51 @@ public final class MultiHashingInputStreamFactory
     enabled = false;
   }
 
-  /**
-   * Sets the threshold for file size in bytes.
-   * Files smaller than this threshold will use non-parallel hashing.
-   * Exists for use by Groovy scripting if necessary.
-   *
-   * @param threshold the size threshold in bytes, or -1 to disable threshold checking
+  /*
+   * Exists for use by Groovy scripting if necessary
    */
   @VisibleForTesting
   public static void setThreshold(final int threshold) {
-    log.info("Setting threshold to {} bytes. Parallel input stream hashing enabled={}", threshold, enabled);
+    log.info("Setting threshold to {}. Parallel input stream hashing enabled={}", threshold, enabled);
 
     MultiHashingInputStreamFactory.threshold = threshold;
   }
 
-  /**
-   * Sets the maximum number of concurrent parallel hashing operations.
-   * Exists for use by Groovy scripting if necessary.
-   *
-   * @param maxConcurrent the maximum number of concurrent operations, or -1 for unlimited
+  /*
+   * Exists for use by Groovy scripting if necessary
    */
   @VisibleForTesting
-  public static void setMaxConcurrentOperations(final int maxConcurrent) {
-    log.info("Setting max concurrent operations to {}. Parallel input stream hashing enabled={}", 
-        maxConcurrent, enabled);
+  public static void setMaxConcurrent(final int maxConcurrent) {
+    log.info("Setting maxConcurrent to {}. Parallel input stream hashing enabled={}", maxConcurrent, enabled);
 
-    MultiHashingInputStreamFactory.maxConcurrentOperations = maxConcurrent;
+    MultiHashingInputStreamFactory.maxConcurrent = maxConcurrent;
   }
 
   /**
-   * Gets the current number of active parallel hashing operations.
-   * Useful for monitoring and diagnostics.
-   *
-   * @return the count of active operations
+   * Increments the count of active hashing operations.
    */
-  public static int getActiveOperations() {
-    return activeOperations.get();
+  static synchronized void incrementActiveOperations() {
+    activeHashingOperations++;
   }
 
   /**
-   * Increments the active operations counter.
-   * Called internally when a new parallel hashing operation starts.
-   *
-   * @return the new count of active operations
+   * Decrements the count of active hashing operations.
    */
-  static int incrementActiveOperations() {
-    return activeOperations.incrementAndGet();
+  static synchronized void decrementActiveOperations() {
+    if (activeHashingOperations > 0) {
+      activeHashingOperations--;
+    }
   }
 
   /**
-   * Decrements the active operations counter.
-   * Called internally when a parallel hashing operation completes.
-   *
-   * @return the new count of active operations
-   */
-  static int decrementActiveOperations() {
-    return activeOperations.decrementAndGet();
-  }
-
-  /**
-   * Creates a hashing input stream for the given algorithms and input stream.
-   * Uses parallel hashing with Virtual Threads if enabled and below threshold limits.
+   * Creates a new {@link MultiHashingInputStream} for the given algorithms and input stream.
+   * <p>
+   * If parallel hashing is enabled and system conditions allow, a {@link ParallelMultiHashingInputStream}
+   * using Virtual Threads will be returned. Otherwise, a standard {@link MultiHashingInputStream} will be returned.
    *
    * @param algorithms the hash algorithms to use
    * @param inputStream the input stream to hash
-   * @return a MultiHashingInputStream instance
+   * @return a new hashing input stream
    */
   public static MultiHashingInputStream input(final Iterable<HashAlgorithm> algorithms, final InputStream inputStream) {
     if (enabled && belowThreshold()) {
@@ -182,26 +158,48 @@ public final class MultiHashingInputStreamFactory
   }
 
   /**
-   * Determines if the current state allows for parallel hashing.
-   * Checks against configured thresholds and limits.
+   * Determines if we should use parallel hashing based on current system conditions.
+   * <p>
+   * With Virtual Threads, we can handle many more concurrent operations than with platform threads,
+   * so the threshold logic is primarily focused on preventing excessive resource usage in extreme cases.
    *
    * @return true if parallel hashing should be used, false otherwise
    */
   private static boolean belowThreshold() {
-    // Check max concurrent operations limit if set
-    if (maxConcurrentOperations > 0) {
-      int currentOperations = activeOperations.get();
-      if (currentOperations >= maxConcurrentOperations) {
-        if (log.isTraceEnabled()) {
-          log.trace("Max concurrent operations ({}) reached: {}", maxConcurrentOperations, currentOperations);
-        }
-        return false;
+    // Check if we're below the maximum concurrent operations threshold (if set)
+    if (maxConcurrent > 0 && activeHashingOperations >= maxConcurrent) {
+      if (log.isTraceEnabled()) {
+        log.trace("Max concurrent operations reached: {} >= {}", activeHashingOperations, maxConcurrent);
       }
+      return false;
     }
 
-    // No size threshold check here as we don't have access to the stream size
-    // Size-based optimization would need to be implemented at the caller level
+    // Check if we're below the system load threshold (if set)
+    if (threshold > 0) {
+      // For Java 21 Virtual Threads, we use system load average instead of ForkJoinPool queue size
+      // as Virtual Threads are designed to handle many more concurrent operations efficiently
+      double systemLoadAverage = getSystemLoadAverage();
+      int availableProcessors = Runtime.getRuntime().availableProcessors();
+      double normalizedLoad = systemLoadAverage / availableProcessors;
+      boolean belowMax = normalizedLoad < threshold;
 
+      if (log.isTraceEnabled()) {
+        log.trace("Threshold {}. System load {}. Available processors {}. Normalized load {}. Below max {}", 
+            threshold, systemLoadAverage, availableProcessors, normalizedLoad, belowMax);
+      }
+
+      return belowMax;
+    }
+
+    // If no thresholds are set or they're negative, always use parallel hashing
     return true;
+  }
+
+  /**
+   * Gets the system load average, or 0.0 if not available.
+   */
+  private static double getSystemLoadAverage() {
+    double systemLoadAverage = java.lang.management.ManagementFactory.getOperatingSystemMXBean().getSystemLoadAverage();
+    return systemLoadAverage >= 0 ? systemLoadAverage : 0.0;
   }
 }

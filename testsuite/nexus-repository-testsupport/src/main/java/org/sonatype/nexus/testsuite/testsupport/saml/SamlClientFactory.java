@@ -19,10 +19,29 @@ import org.sonatype.nexus.testsuite.testsupport.NexusClientFactory;
 import org.apache.http.client.protocol.HttpClientContext;
 import org.apache.http.impl.client.CloseableHttpClient;
 
+/**
+ * Factory for creating SAML clients for test scenarios.
+ * <p>
+ * This factory leverages Java 21 Virtual Threads for improved concurrency in test scenarios,
+ * enabling more efficient testing of SAML authentication flows with reduced resource utilization.
+ * 
+ * @since 3.13
+ */
 public class SamlClientFactory
     extends NexusClientFactory<SamlClient>
 {
-
+  /**
+   * Creates a new {@link SamlClient} instance with the provided HTTP client, context, and repository URI.
+   * <p>
+   * When invoked through the parent class's {@code createClient(URL, String, String)} method,
+   * this operation will be executed using a Virtual Thread for improved I/O performance.
+   *
+   * @param httpClient the HTTP client to use for SAML-related requests
+   * @param httpClientContext the HTTP client context with authentication settings
+   * @param repositoryBaseUri the base URI of the repository
+   * @return a new {@link SamlClient} instance configured for SAML authentication testing
+   */
+  @Override
   public SamlClient createClient(final CloseableHttpClient httpClient,
                                 final HttpClientContext httpClientContext,
                                 final URI repositoryBaseUri)

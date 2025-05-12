@@ -18,16 +18,39 @@ import org.sonatype.nexus.common.entity.EntityVersion;
 
 /**
  * Event sent out when {@link KeyStore} data changes.
+ * <p>
+ * This interface is designed to work with Java 21 record patterns for efficient event processing.
+ * Events are processed asynchronously using virtual threads in the EventManager.
  *
  * @since 3.1
  */
 public interface KeyStoreDataEvent
 {
+  /**
+   * Determines if this event originated from the local node.
+   *
+   * @return true if the event is local, false if it came from a remote node
+   */
   boolean isLocal();
 
+  /**
+   * Gets the ID of the remote node that originated this event, if applicable.
+   *
+   * @return the remote node ID, or null if this is a local event
+   */
   String getRemoteNodeId();
 
+  /**
+   * Gets the version information for the entity associated with this event.
+   *
+   * @return the entity version
+   */
   EntityVersion getVersion();
 
+  /**
+   * Gets the name of the KeyStore that was changed.
+   *
+   * @return the KeyStore name
+   */
   String getKeyStoreName();
 }

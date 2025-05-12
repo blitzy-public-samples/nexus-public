@@ -18,14 +18,19 @@ import org.sonatype.nexus.security.realm.RealmManager;
 
 import static org.mockito.Mockito.*;
 
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-@RunWith(MockitoJUnitRunner.class)
-public class DefaultRoleCapabilityTest
+/**
+ * Unit tests for {@link DefaultRoleCapability} with Java 21 compatibility.
+ * 
+ * @since 3.60
+ */
+@ExtendWith(MockitoExtension.class)
+class DefaultRoleCapabilityTest
     extends TestSupport
 {
   private DefaultRoleCapability underTest;
@@ -39,27 +44,33 @@ public class DefaultRoleCapabilityTest
   @Mock
   private DefaultRoleCapabilityConfiguration configuration;
 
-  @Before
-  public void setup() {
+  @BeforeEach
+  void setup() {
     underTest = new DefaultRoleCapability(realmManager, defaultRoleRealm);
   }
 
   @Test
-  public void testOnPassivate_duringNormalOperation() {
+  void testOnPassivate_duringNormalOperation() {
+    // Set the current thread name to simulate normal operation
     Thread.currentThread().setName("NormalOperationThread");
 
+    // Execute the method under test
     underTest.onPassivate(configuration);
 
+    // Verify expected interactions
     verify(defaultRoleRealm).setRole(null);
     verify(realmManager).disableRealm(DefaultRoleRealm.NAME);
   }
 
   @Test
-  public void testOnPassivate_duringShutdown() {
+  void testOnPassivate_duringShutdown() {
+    // Set the current thread name to simulate Felix shutdown
     Thread.currentThread().setName("FelixStartLevel");
 
+    // Execute the method under test
     underTest.onPassivate(configuration);
 
+    // Verify no interactions with mocks during shutdown
     verifyNoInteractions(defaultRoleRealm);
     verifyNoInteractions(realmManager);
   }

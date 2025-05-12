@@ -82,7 +82,7 @@ public class RepositoryOnlineConditionTest
    * Condition should become unsatisfied and notification sent when repository is out of service.
    */
   @Test
-  void unsatisfiedWhenRepositoryIsOutOfService() {
+  public void unsatisfiedWhenRepositoryIsOutOfService() {
     assertThat(underTest.isSatisfied(), is(true));
 
     when(configuration.isOnline()).thenReturn(false);
@@ -96,7 +96,7 @@ public class RepositoryOnlineConditionTest
    * Condition should become satisfied and notification sent when repository is back on service.
    */
   @Test
-  void satisfiedWhenRepositoryIsBackToService() {
+  public void satisfiedWhenRepositoryIsBackToService() {
     assertThat(underTest.isSatisfied(), is(true));
 
     when(configuration.isOnline()).thenReturn(false);
@@ -113,7 +113,7 @@ public class RepositoryOnlineConditionTest
    * Condition should become unsatisfied when repository is removed.
    */
   @Test
-  void unsatisfiedWhenRepositoryIsRemoved() {
+  public void unsatisfiedWhenRepositoryIsRemoved() {
     assertThat(underTest.isSatisfied(), is(true));
 
     underTest.handle(new RepositoryDeletedEvent(repository));
@@ -126,7 +126,7 @@ public class RepositoryOnlineConditionTest
    * Event bus handler is removed when releasing.
    */
   @Test
-  void releaseRemovesItselfAsHandler() {
+  public void releaseRemovesItselfAsHandler() {
     underTest.release();
 
     verify(eventManager).unregister(underTest);

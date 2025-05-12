@@ -21,16 +21,32 @@ import groovy.transform.CompileStatic
 
 /**
  * Factory for Cocoapods {@link Repository} {@link Configuration}
+ * 
+ * <p>Java 21 compatible implementation supporting virtual threads and modern language features.</p>
  */
 @CompileStatic
 trait CocoapodsRepoRecipes
     extends ConfigurationRecipes
 {
 
+  /**
+   * Creates a Cocoapods proxy repository with the given name and remote URL.
+   *
+   * @param name the name of the repository to create
+   * @param remoteUrl the URL of the remote repository to proxy
+   * @return the created {@link Repository} instance
+   */
   @Nonnull
   Repository createCocoapodsProxy(final String name, final String remoteUrl) {
     createRepository(createProxy(name, 'cocoapods-proxy', remoteUrl))
   }
 
+  /**
+   * Creates a repository from the given configuration.
+   * This method must be implemented by classes that use this trait.
+   *
+   * @param configuration the repository configuration
+   * @return the created {@link Repository} instance
+   */
   abstract Repository createRepository(final Configuration configuration)
 }

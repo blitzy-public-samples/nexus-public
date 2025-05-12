@@ -20,6 +20,14 @@ import org.sonatype.nexus.repository.maven.VersionPolicy;
 
 import static org.sonatype.nexus.testsuite.testsupport.system.RepositoryTestSystem.FORMAT_MAVEN;
 
+/**
+ * Configuration class for Maven group repositories in test support.
+ * <p>
+ * This class is compatible with Java 21 and supports the test infrastructure
+ * for repository configuration in the Maven format.
+ * 
+ * @since 3.60
+ */
 public class MavenGroupRepositoryConfig
     extends GroupRepositoryConfigSupport<MavenGroupRepositoryConfig>
 {
@@ -27,10 +35,18 @@ public class MavenGroupRepositoryConfig
 
   private LayoutPolicy layoutPolicy = LayoutPolicy.STRICT;
 
+  /**
+   * Default constructor.
+   */
   public MavenGroupRepositoryConfig() {
     this(null);
   }
 
+  /**
+   * Constructor with repository factory.
+   *
+   * @param repositoryFactory Function to create a repository from this configuration
+   */
   public MavenGroupRepositoryConfig(final Function<MavenGroupRepositoryConfig, Repository> repositoryFactory) {
     super(repositoryFactory);
   }
@@ -40,20 +56,42 @@ public class MavenGroupRepositoryConfig
     return FORMAT_MAVEN;
   }
 
+  /**
+   * Sets the version policy for this Maven group repository.
+   *
+   * @param versionPolicy the version policy to set
+   * @return this configuration instance for method chaining
+   */
   public MavenGroupRepositoryConfig withVersionPolicy(final VersionPolicy versionPolicy) {
     this.versionPolicy = versionPolicy;
     return this;
   }
 
+  /**
+   * Gets the version policy for this Maven group repository.
+   *
+   * @return the configured version policy
+   */
   public VersionPolicy getVersionPolicy() {
     return versionPolicy;
   }
 
+  /**
+   * Sets the layout policy for this Maven group repository.
+   *
+   * @param layoutPolicy the layout policy to set
+   * @return this configuration instance for method chaining
+   */
   public MavenGroupRepositoryConfig withLayoutPolicy(final LayoutPolicy layoutPolicy) {
     this.layoutPolicy = layoutPolicy;
     return this;
   }
 
+  /**
+   * Gets the layout policy for this Maven group repository.
+   *
+   * @return the configured layout policy
+   */
   public LayoutPolicy getLayoutPolicy() {
     return layoutPolicy;
   }

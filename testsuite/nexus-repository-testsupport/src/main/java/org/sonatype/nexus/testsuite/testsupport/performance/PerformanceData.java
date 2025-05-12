@@ -12,9 +12,10 @@
  */
 package org.sonatype.nexus.testsuite.testsupport.performance;
 
-import java.util.HashMap;
 import java.util.Map;
+import java.util.SortedMap;
 import java.util.SortedSet;
+import java.util.TreeMap;
 import java.util.TreeSet;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
@@ -25,27 +26,38 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Results from an entire suite of performance tests.
+ * 
+ * <p>This class is compatible with Java 21 and leverages modern language features
+ * such as records and sequenced collections for improved performance and code clarity.</p>
  */
 public class PerformanceData
 {
   @JsonProperty
-  private Map<String, PerformanceTestSeries> tests = new HashMap<>();
+  private final Map<String, PerformanceTestSeries> tests = new TreeMap<>();
 
+  /**
+   * Finds or creates a test result for the given test name.
+   *
+   * @param testName the name of the test
+   * @return the existing or newly created test series
+   */
   public PerformanceTestSeries findTestResult(String testName) {
-    PerformanceTestSeries result = tests.get(testName);
-    if (result == null) {
-      result = new PerformanceTestSeries(testName);
-      tests.put(testName, result);
-    }
-    return result;
+    return tests.computeIfAbsent(testName, PerformanceTestSeries::new);
   }
 
+  /**
+   * Gets all test series mapped by test name.
+   *
+   * @return a map of test series by test name
+   */
   public Map<String, PerformanceTestSeries> getTests() {
     return tests;
   }
 
   /**
    * Get the superset of all thread counts for which tests were done.
+   * 
+   * @return a sorted set of all thread counts used across all tests
    */
   @JsonIgnore
   public SortedSet<Integer> getThreadCounts() {
@@ -64,65 +76,101 @@ public class PerformanceData
     @JsonProperty
     private final String testName;
 
-    // Results for varying numbers of threads
+    // Results for varying numbers of threads, using SortedMap for ordered iteration
     @JsonProperty
-    private final Map<Integer, PerformanceRunResult> resultsByThreadCount = new HashMap<>();
+    private final SortedMap<Integer, PerformanceRunResult> resultsByThreadCount = new TreeMap<>();
 
     @JsonCreator
     public PerformanceTestSeries(@JsonProperty("testName") final String testName) {
       this.testName = checkNotNull(testName);
     }
 
+    /**
+     * Adds test results for a specific thread count.
+     *
+     * @param threads the number of threads used in the test
+     * @param results the results of the test run
+     */
     public void addResults(final int threads, final PerformanceRunResult results) {
       resultsByThreadCount.put(threads, results);
     }
 
+    /**
+     * Gets the test result for a specific thread count.
+     *
+     * @param threadCount the thread count to get results for
+     * @return the test results, or null if no results exist for that thread count
+     */
     public PerformanceRunResult getResult(final int threadCount) {
       return resultsByThreadCount.get(threadCount);
     }
 
-    public Map<Integer, PerformanceRunResult> getResultsByThreadCount() {
+    /**
+     * Gets all test results mapped by thread count.
+     *
+     * @return a sorted map of results by thread count
+     */
+    public SortedMap<Integer, PerformanceRunResult> getResultsByThreadCount() {
       return resultsByThreadCount;
     }
   }
 
   /**
    * Results for a single load type for a particular number of client threads.
+   * 
+   * <p>Implemented as a Java 21 record for immutability and concise representation of data.</p>
    */
-  public static class PerformanceRunResult
+  public record PerformanceRunResult(
+      @JsonProperty("requestsCompleted") int requestsCompleted,
+      @JsonProperty("requestsIncomplete") int requestsIncomplete,
+      @JsonProperty("durationSeconds") int testDurationSeconds,
+      @JsonProperty("exceptionThrown") boolean exceptionThrown)
   {
-    private final int requestsCompleted;
-
-    private final int requestsIncomplete;
-
-    private final int testDurationSeconds;
-
-    private final boolean exceptionThrown;
-
+    /**
+     * Creates a new performance run result.
+     *
+     * @param requestsCompleted the number of requests that completed successfully
+     * @param requestsIncomplete the number of requests that did not complete
+     * @param testDurationSeconds the duration of the test in seconds
+     * @param exceptionThrown whether an exception was thrown during the test
+     */
     @JsonCreator
-    public PerformanceRunResult(@JsonProperty("requestsCompleted") final int requestsCompleted,
-                                @JsonProperty("requestsIncomplete") final int requestsIncomplete,
-                                @JsonProperty("durationSeconds") final int testDurationSeconds,
-                                @JsonProperty("exceptionThrown") final boolean exceptionThrown)
-    {
-      this.requestsCompleted = requestsCompleted;
-      this.requestsIncomplete = requestsIncomplete;
-      this.testDurationSeconds = testDurationSeconds;
-      this.exceptionThrown = exceptionThrown;
+    public PerformanceRunResult {
+      // Validation could be added here if needed
     }
 
+    /**
+     * Gets the number of requests that completed successfully.
+     *
+     * @return the number of completed requests
+     */
     public int getRequestsCompleted() {
       return requestsCompleted;
     }
 
+    /**
+     * Gets the number of requests that did not complete.
+     *
+     * @return the number of incomplete requests
+     */
     public int getRequestsIncomplete() {
       return requestsIncomplete;
     }
 
+    /**
+     * Checks if an exception was thrown during the test.
+     *
+     * @return true if an exception was thrown, false otherwise
+     */
     public boolean isExceptionThrown() {
       return exceptionThrown;
     }
 
+    /**
+     * Gets the duration of the test in seconds.
+     *
+     * @return the test duration in seconds
+     */
     public int getTestDurationSeconds() {
       return testDurationSeconds;
     }

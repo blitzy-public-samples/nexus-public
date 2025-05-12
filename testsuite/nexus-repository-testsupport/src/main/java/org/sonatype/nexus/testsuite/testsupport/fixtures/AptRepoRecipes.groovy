@@ -21,11 +21,23 @@ import groovy.transform.CompileStatic
 
 /**
  * Factory for Apt {@link Repository} {@link Configuration}
+ *
+ * @since 3.17
+ * @java21.compatibility This trait is compatible with Java 21 and leverages modern language features
  */
 @CompileStatic
 trait AptRepoRecipes
     extends ConfigurationRecipes
 {
+  /**
+   * Creates an Apt hosted repository with the specified configuration.
+   *
+   * @param name the name of the repository
+   * @param distribution the distribution value for the repository
+   * @param keypair the keypair to use for signing
+   * @param writePolicy the write policy for the repository (defaults to "ALLOW")
+   * @return the created repository
+   */
   @Nonnull
   Repository createAptHosted(final String name,
                              final String distribution,
@@ -34,16 +46,34 @@ trait AptRepoRecipes
   {
     def configuration = createHosted(name, 'apt-hosted', writePolicy)
     configuration.attributes.apt = [
-        'distribution': distribution] as Map
-    configuration.attributes.aptSigning = ['keypair': keypair] as Map
+        'distribution': distribution
+    ]
+    configuration.attributes.aptSigning = ['keypair': keypair]
     createRepository(configuration)
   }
 
+  /**
+   * Creates an Apt proxy repository with the specified configuration.
+   *
+   * @param name the name of the repository
+   * @param remoteUrl the URL of the remote repository to proxy
+   * @param distribution the distribution value for the repository
+   * @param flat whether the repository has a flat structure (defaults to false)
+   * @return the created repository
+   */
   @Nonnull
   Repository createAptProxy(final String name, final String remoteUrl, final String distribution, Boolean flat = false) {
     def configuration = createProxy(name, 'apt-proxy', remoteUrl)
-    configuration.attributes.apt = ['distribution': distribution, 'flat': flat] as Map
+    configuration.attributes.apt = ['distribution': distribution, 'flat': flat]
     createRepository(configuration)
   }
+  
+  /**
+   * Creates a repository with the given configuration.
+   * This method must be implemented by classes that use this trait.
+   *
+   * @param configuration the repository configuration
+   * @return the created repository
+   */
   abstract Repository createRepository(final Configuration configuration)
 }

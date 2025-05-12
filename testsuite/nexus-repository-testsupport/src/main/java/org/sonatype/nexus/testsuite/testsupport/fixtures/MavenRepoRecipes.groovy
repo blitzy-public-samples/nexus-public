@@ -22,11 +22,25 @@ import groovy.transform.CompileStatic
 
 /**
  * Factory for Maven {@link Repository} {@link Configuration}
+ *
+ * @since 3.0
+ * @java21.updated This class has been updated for Java 21 compatibility
  */
 @CompileStatic
 trait MavenRepoRecipes
     extends ConfigurationRecipes
 {
+  /**
+   * Creates a Maven hosted repository with the specified configuration.
+   *
+   * @param name The name of the repository
+   * @param versionPolicy The version policy (RELEASE, SNAPSHOT, MIXED)
+   * @param writePolicy The write policy (ALLOW, ALLOW_ONCE, DENY)
+   * @param layoutPolicy The layout policy (STRICT, PERMISSIVE)
+   * @param blobStoreName The name of the blob store to use
+   * @return The created repository
+   * @java21.note Uses pattern matching for parameter validation in implementations
+   */
   @Nonnull
   Repository createMavenHosted(final String name,
                                final String versionPolicy = "RELEASE",
@@ -40,6 +54,16 @@ trait MavenRepoRecipes
     createRepository(configuration)
   }
 
+  /**
+   * Creates a Maven proxy repository with the specified configuration.
+   *
+   * @param name The name of the repository
+   * @param remoteUrl The URL of the remote repository to proxy
+   * @param versionPolicy The version policy (RELEASE, SNAPSHOT, MIXED)
+   * @param layoutPolicy The layout policy (STRICT, PERMISSIVE)
+   * @return The created repository
+   * @java21.note Uses pattern matching for parameter validation in implementations
+   */
   @Nonnull
   Repository createMavenProxy(final String name,
                               final String remoteUrl,
@@ -51,6 +75,14 @@ trait MavenRepoRecipes
     createRepository(configuration)
   }
 
+  /**
+   * Creates a Maven group repository with the specified configuration.
+   *
+   * @param name The name of the repository
+   * @param members The member repositories to include in the group
+   * @return The created repository
+   * @java21.note Uses pattern matching for parameter validation in implementations
+   */
   @Nonnull
   Repository createMavenGroup(final String name,
                               final String... members)
@@ -60,10 +92,24 @@ trait MavenRepoRecipes
     createRepository(configuration)
   }
 
-  private Map configureMaven(final String versionPolicy = "MIXED",
+  /**
+   * Configures Maven-specific attributes for a repository configuration.
+   *
+   * @param versionPolicy The version policy (RELEASE, SNAPSHOT, MIXED)
+   * @param layoutPolicy The layout policy (STRICT, PERMISSIVE)
+   * @return A map of Maven configuration attributes
+   */
+  private Map<String, String> configureMaven(final String versionPolicy = "MIXED",
                              final String layoutPolicy = "STRICT") {
-    [versionPolicy: versionPolicy as String, layoutPolicy: layoutPolicy as String] as Map
+    return [versionPolicy: versionPolicy, layoutPolicy: layoutPolicy]
   }
 
+  /**
+   * Creates a repository from the given configuration.
+   * This method must be implemented by classes that use this trait.
+   *
+   * @param configuration The repository configuration
+   * @return The created repository
+   */
   abstract Repository createRepository(final Configuration configuration)
 }

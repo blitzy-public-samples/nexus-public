@@ -12,75 +12,30 @@
  */
 package com.sonatype.nexus.ssl.plugin.internal.ui;
 
-import groovy.transform.ToString;
-
 /**
  * Certificate exchange object.
  *
  * @since 3.0
  */
-@ToString(includePackage = false, includeNames = true)
-public class CertificateXO
-{
-  private final String id;
-
-  private final String fingerprint;
-
-  private final String pem;
-
-  private String serialNumber;
-
-  private String subjectCommonName;
-
-  private String subjectOrganization;
-
-  private String subjectOrganizationalUnit;
-
-  private String issuerCommonName;
-
-  private String issuerOrganization;
-
-  private String issuerOrganizationalUnit;
-
-  private long issuedOn;
-
-  private long expiresOn;
-
-  private boolean inTrustStore;
-
-  public CertificateXO(
-      final String id,
-      final String fingerprint,
-      final String pem,
-      final String serialNumber,
-      final String subjectCommonName,
-      final String subjectOrganization,
-      final String subjectOrganizationalUnit,
-      final String issuerCommonName,
-      final String issuerOrganization,
-      final String issuerOrganizationalUnit,
-      final long issuedOn,
-      final long expiresOn,
-      final boolean inTrustStore)
-  {
-    this.id = id;
-    this.fingerprint = fingerprint;
-    this.pem = pem;
-    this.serialNumber = serialNumber;
-    this.subjectCommonName = subjectCommonName;
-    this.subjectOrganization = subjectOrganization;
-    this.subjectOrganizationalUnit = subjectOrganizationalUnit;
-    this.issuerCommonName = issuerCommonName;
-    this.issuerOrganization = issuerOrganization;
-    this.issuerOrganizationalUnit = issuerOrganizationalUnit;
-    this.issuedOn = issuedOn;
-    this.expiresOn = expiresOn;
-    this.inTrustStore = inTrustStore;
-  }
-
-  public CertificateXO(final String id, final String fingerprint, final String pem) {
-    this.id = id;
-    this.fingerprint = fingerprint;
-    this.pem = pem;
+public record CertificateXO(
+    String id,
+    String fingerprint,
+    String pem,
+    String serialNumber,
+    String subjectCommonName,
+    String subjectOrganization,
+    String subjectOrganizationalUnit,
+    String issuerCommonName,
+    String issuerOrganization,
+    String issuerOrganizationalUnit,
+    long issuedOn,
+    long expiresOn,
+    boolean inTrustStore
+) {
+  /**
+   * Constructor for basic certificate information without X.509 details.
+   */
+  public CertificateXO(String id, String fingerprint, String pem) {
+    this(id, fingerprint, pem, null, null, null, null, null, null, null, 0, 0, false);
   }
 }

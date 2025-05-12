@@ -14,8 +14,10 @@ package org.sonatype.nexus.content.example.internal.recipe;
 
 import java.io.IOException;
 import java.util.Optional;
-import javax.inject.Inject;
-import javax.inject.Named;
+
+import java.lang.Thread;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
 
 import org.sonatype.nexus.common.hash.HashAlgorithm;
 import org.sonatype.nexus.content.example.ExampleContentFacet;
@@ -32,6 +34,7 @@ import static org.sonatype.nexus.common.hash.HashAlgorithm.SHA256;
 
 /**
  * Provides persistent content for an 'example' format.
+ * Leverages Java 21 Virtual Threads for improved I/O performance.
  *
  * @since 3.24
  */
@@ -51,18 +54,35 @@ public class ExampleContentFacetImpl
 
   @Override
   public Optional<Content> get(final String path) {
-    return assets().path(path).find().map(FluentAsset::download);
+    // Use Virtual Thread for I/O-bound operation
+    return Thread.startVirtualThread(() -> {
+      return assets().path(path).find().map(FluentAsset::download);
+    }).join();
   }
 
   @Override
   public Content put(final String path, final Payload content) throws IOException {
-    try (TempBlob blob = blobs().ingest(content, HASHING)) {
-      return assets().path(path).blob(blob).save().markAsCached(content).download();
-    }
+    // Use Virtual Thread for I/O-bound operation
+    return Thread.startVirtualThread(() -> {
+      try (TempBlob blob = blobs().ingest(content, HASHING)) {
+        return assets().path(path).blob(blob).save().markAsCached(content).download();
+      }
+      catch (IOException e) {
+        throw new RuntimeException("Failed to store content at path: " + path, e);
+      }
+    }).join();
   }
 
   @Override
   public boolean delete(final String path) throws IOException {
-    return assets().path(path).find().map(FluentAsset::delete).orElse(false);
+    // Use Virtual Thread for I/O-bound operation
+    return Thread.startVirtualThread(() -> {
+      try {
+        return assets().path(path).find().map(FluentAsset::delete).orElse(false);
+      }
+      catch (IOException e) {
+        throw new RuntimeException("Failed to delete content at path: " + path, e);
+      }
+    }).join();
   }
 }

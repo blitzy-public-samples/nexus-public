@@ -18,29 +18,48 @@ import javax.inject.Provider;
 
 import org.sonatype.nexus.repository.capability.GlobalRepositorySettings;
 
-import org.junit.rules.ExternalResource;
+import org.junit.jupiter.api.extension.AfterEachCallback;
+import org.junit.jupiter.api.extension.BeforeEachCallback;
+import org.junit.jupiter.api.extension.ExtensionContext;
 
+/**
+ * JUnit Jupiter extension for managing the lastDownloadedInterval setting in GlobalRepositorySettings.
+ * This extension saves the current value before tests run and restores it after tests complete.
+ * 
+ * @since 3.41
+ */
 public class LastDownloadedIntervalRule
-    extends ExternalResource
+    implements BeforeEachCallback, AfterEachCallback
 {
   private final Provider<GlobalRepositorySettings> repositorySettings;
 
   private Duration lastDownloadedInterval;
 
+  /**
+   * Constructor.
+   * 
+   * @param repositorySettings provider for repository settings
+   */
   public LastDownloadedIntervalRule(final Provider<GlobalRepositorySettings> repositorySettings) {
     this.repositorySettings = repositorySettings;
   }
 
   @Override
-  protected void before() {
+  public void beforeEach(final ExtensionContext context) {
     lastDownloadedInterval = repositorySettings.get().getLastDownloadedInterval();
   }
 
   @Override
-  protected void after() {
+  public void afterEach(final ExtensionContext context) {
     repositorySettings.get().setLastDownloadedInterval(lastDownloadedInterval);
   }
 
+  /**
+   * Sets the lastDownloadedInterval to the specified duration during test execution.
+   * The original value will be restored after the test completes.
+   * 
+   * @param duration the duration to set
+   */
   public void setLastDownloadedInterval(final Duration duration) {
     repositorySettings.get().setLastDownloadedInterval(duration);
   }

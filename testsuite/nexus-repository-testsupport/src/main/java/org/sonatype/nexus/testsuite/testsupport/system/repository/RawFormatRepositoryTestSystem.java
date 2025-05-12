@@ -12,9 +12,9 @@
  */
 package org.sonatype.nexus.testsuite.testsupport.system.repository;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.repository.manager.RepositoryManager;
 import org.sonatype.nexus.testsuite.testsupport.system.repository.config.RawGroupRepositoryConfig;
@@ -23,6 +23,18 @@ import org.sonatype.nexus.testsuite.testsupport.system.repository.config.RawProx
 
 import static org.sonatype.nexus.testsuite.testsupport.system.RepositoryTestSystem.FORMAT_RAW;
 
+/**
+ * Raw format repository test system implementation.
+ * <p>
+ * This class provides support for creating and managing Raw format repositories in tests.
+ * It leverages Java 21 virtual threads for improved concurrency in repository operations,
+ * allowing for more efficient testing of high-concurrency scenarios.
+ * <p>
+ * The implementation supports both synchronous and asynchronous repository creation methods
+ * inherited from {@link SimpleFormatRepositoryTestSystemSupport}.
+ *
+ * @since 3.60
+ */
 @Named(FORMAT_RAW)
 @Singleton
 public class RawFormatRepositoryTestSystem
@@ -32,6 +44,15 @@ public class RawFormatRepositoryTestSystem
                     RawGroupRepositoryConfig>
     implements FormatRepositoryTestSystem
 {
+  /**
+   * Creates a new instance with the specified repository manager.
+   * <p>
+   * This constructor configures the test system with the appropriate Raw format
+   * repository configuration classes and enables virtual thread support for
+   * asynchronous repository operations.
+   *
+   * @param repositoryManager the repository manager
+   */
   @Inject
   public RawFormatRepositoryTestSystem(final RepositoryManager repositoryManager) {
     super(repositoryManager, RawHostedRepositoryConfig.class, RawProxyRepositoryConfig.class,

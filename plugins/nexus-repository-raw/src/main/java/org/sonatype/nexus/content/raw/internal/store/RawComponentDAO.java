@@ -15,6 +15,11 @@ package org.sonatype.nexus.content.raw.internal.store;
 import org.sonatype.nexus.repository.content.store.ComponentDAO;
 
 /**
+ * Raw component DAO interface.
+ * <p>
+ * Marker interface that extends {@link ComponentDAO} for Raw repository format.
+ * Compatible with Java 21 and OSGi/Karaf 4.4.4 runtime environment.
+ *
  * @since 3.24
  */
 public interface RawComponentDAO

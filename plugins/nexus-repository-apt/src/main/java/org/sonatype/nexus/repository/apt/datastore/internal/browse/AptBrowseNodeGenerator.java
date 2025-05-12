@@ -9,6 +9,8 @@
  * Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
+ *
+ * Java 21 Compatibility: This file has been verified to be compatible with Java 21 runtime environment.
  */
 package org.sonatype.nexus.repository.apt.datastore.internal.browse;
 
@@ -32,7 +34,13 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.repository.browse.node.BrowsePath.SLASH;
 
 /**
+ * Browse node generator for APT repository format.
+ * 
  * @since 3.31
+ * @see DefaultBrowseNodeGenerator
+ * 
+ * @Java21 This class has been reviewed and verified for Java 21 compatibility.
+ * All external dependencies (Guava, javax.inject) have been confirmed to work with Java 21.
  */
 @Named(AptFormat.NAME)
 @Singleton

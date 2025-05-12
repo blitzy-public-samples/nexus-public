@@ -24,6 +24,19 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
+ * Raw Hosted Repository API model.
+ * <p>
+ * This class is compatible with Java 21 and can be used with Record Patterns
+ * when processing instances of this class in consumer code.
+ * <p>
+ * Example using Record Patterns with instanceof (Java 21+):
+ * <pre>
+ * if (repo instanceof RawHostedApiRepository(var name, var url, var online, var storage, var cleanup, var component, var raw)) {
+ *     // Access components directly without getter methods
+ *     processRawAttributes(raw);
+ * }
+ * </pre>
+ *
  * @since 3.41
  */
 public class RawHostedApiRepository
@@ -32,6 +45,17 @@ public class RawHostedApiRepository
   @NotNull
   private final RawAttributes raw;
 
+  /**
+   * Creates a new RawHostedApiRepository instance.
+   *
+   * @param name     the repository name
+   * @param url      the repository URL
+   * @param online   whether the repository is online
+   * @param storage  the storage attributes
+   * @param cleanup  the cleanup policy attributes
+   * @param component the component attributes
+   * @param raw      the raw-specific attributes
+   */
   @JsonCreator
   public RawHostedApiRepository(
       @JsonProperty("name") final String name,
@@ -46,6 +70,11 @@ public class RawHostedApiRepository
     this.raw = raw;
   }
 
+  /**
+   * Returns the raw-specific attributes.
+   *
+   * @return the raw attributes
+   */
   public RawAttributes getRaw() {
     return raw;
   }

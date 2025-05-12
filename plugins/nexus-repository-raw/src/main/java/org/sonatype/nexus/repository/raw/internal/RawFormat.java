@@ -19,6 +19,8 @@ import org.sonatype.nexus.repository.Format;
 
 /**
  * RAW repository format.
+ * 
+ * Java 21 compatible implementation for OSGi/Karaf 4.4.4 environment.
  *
  * @since 3.0
  */

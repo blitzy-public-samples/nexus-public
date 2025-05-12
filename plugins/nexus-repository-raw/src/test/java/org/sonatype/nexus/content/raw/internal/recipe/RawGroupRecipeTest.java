@@ -20,12 +20,20 @@ import org.sonatype.nexus.repository.group.GroupHandler;
 import org.sonatype.nexus.repository.raw.internal.RawFormat;
 import org.sonatype.nexus.repository.types.GroupType;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 
 import static org.mockito.Mockito.verify;
 
+/**
+ * Test for {@link RawGroupRecipe} that verifies the expected facets are attached to the repository.
+ * <p>
+ * This test is compatible with JUnit Jupiter (JUnit 5) and Mockito running on Java 21.
+ * It uses MockitoExtension for JUnit Jupiter integration via the parent class.
+ */
+@Tag("Java21")
 public class RawGroupRecipeTest
     extends RawRecipeTestSupport
 {
@@ -42,7 +50,7 @@ public class RawGroupRecipeTest
 
   private RawGroupRecipe underTest;
 
-  @Before
+  @BeforeEach
   public void setup() {
     underTest = new RawGroupRecipe(new GroupType(), new RawFormat(), groupFacetProvider, groupHandler);
     mockDependencies(underTest);

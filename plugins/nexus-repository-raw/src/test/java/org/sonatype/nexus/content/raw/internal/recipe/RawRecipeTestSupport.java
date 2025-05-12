@@ -14,7 +14,6 @@ package org.sonatype.nexus.content.raw.internal.recipe;
 
 import javax.inject.Provider;
 
-import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.content.raw.RawContentFacet;
 import org.sonatype.nexus.repository.content.browse.BrowseFacet;
 import org.sonatype.nexus.repository.content.maintenance.SingleAssetMaintenanceFacet;
@@ -32,10 +31,18 @@ import org.sonatype.nexus.repository.view.handlers.HandlerContributor;
 import org.sonatype.nexus.repository.view.handlers.LastDownloadedHandler;
 import org.sonatype.nexus.repository.view.handlers.TimingHandler;
 
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
+/**
+ * Test support class for Raw repository recipes, providing mock dependencies for testing.
+ * <p>
+ * This class is compatible with JUnit Jupiter (JUnit 5) and Mockito 5.x running on Java 21.
+ * It uses MockitoExtension for JUnit Jupiter integration instead of extending a base test class.
+ */
+@ExtendWith(MockitoExtension.class)
 public abstract class RawRecipeTestSupport
-    extends TestSupport
 {
   @Mock
   private ExceptionHandler exceptionHandler;
@@ -100,6 +107,16 @@ public abstract class RawRecipeTestSupport
 
   private final Provider<BrowseFacet> browseFacetProvider = () -> browseFacet;
 
+  /**
+   * Sets up mock dependencies for the recipe under test.
+   * <p>
+   * This method injects all required dependencies into the recipe instance,
+   * allowing tests to focus on the specific behavior being tested without
+   * needing to manually configure each dependency.
+   *
+   * @param underTest the recipe instance being tested
+   * @param <T> the type of recipe support being tested
+   */
   protected <T extends RawRecipeSupport> void mockDependencies(final T underTest) {
     underTest.setDependencies(securityFacetProvider, viewFacetProvider, contentFacetProvider, maintenanceFacetProvider,
         searchFacetProvider, browseFacetProvider, exceptionHandler, timingHandler, indexHtmlForwardHandler,

@@ -13,7 +13,16 @@
 package org.sonatype.nexus.testsuite.testsupport.raw;
 
 /**
- * Marker interface to group Raw Integration Tests
+ * Marker interface to group Raw Integration Tests.
+ * <p>
+ * Tests implementing this marker interface are executed as part of the Raw format test suite.
+ * When running on Java 21, these tests validate compatibility with Java 21 features including
+ * Virtual Threads for I/O operations, pattern matching, and other language enhancements.
+ * <p>
+ * For Virtual Thread specific testing of Raw repositories, consider also implementing the
+ * {@code VirtualThreadTestGroup} marker interface.
+ *
+ * @since 3.0
  */
 public interface RawTestGroup
 {

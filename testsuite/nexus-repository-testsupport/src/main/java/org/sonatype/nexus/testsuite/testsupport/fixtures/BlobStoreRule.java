@@ -19,6 +19,9 @@ import java.nio.file.NoSuchFileException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.Function;
 
 import javax.inject.Inject;
@@ -38,7 +41,9 @@ import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import org.sonatype.nexus.common.io.DirectoryHelper;
 
 import com.google.common.collect.Streams;
-import org.junit.rules.ExternalResource;
+import org.junit.jupiter.api.extension.AfterEachCallback;
+import org.junit.jupiter.api.extension.BeforeEachCallback;
+import org.junit.jupiter.api.extension.ExtensionContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,12 +54,15 @@ import static org.sonatype.nexus.blobstore.file.FileBlobStore.PATH_KEY;
 import static org.sonatype.nexus.pax.exam.NexusPaxExamSupport.S3_ENDPOINT_PROPERTY;
 
 /**
+ * A JUnit Jupiter extension for managing BlobStore instances in tests.
+ * This class leverages Java 21 Virtual Threads for efficient I/O operations when cleaning blob content.
+ * 
  * @since 3.20
  */
 @Named
 @Singleton
 public class BlobStoreRule
-    extends ExternalResource
+    implements BeforeEachCallback, AfterEachCallback
 {
   private static final Logger log = LoggerFactory.getLogger(BlobStoreRule.class);
 
@@ -181,14 +189,19 @@ public class BlobStoreRule
           blobStoreManagerProvider.get().forceDelete(name);
         }
         catch (Exception e) {
-          log.error("Failed to remove blobstore {}");
+          log.error("Failed to remove blobstore {}", name, e);
         }
       }
     });
   }
 
   @Override
-  public void after() {
+  public void beforeEach(ExtensionContext context) {
+    // No setup needed before each test
+  }
+
+  @Override
+  public void afterEach(ExtensionContext context) {
     blobStoreGroupNames.forEach(blobStoreGroupName -> {
       try {
         blobStoreManagerProvider.get().delete(blobStoreGroupName);
@@ -238,21 +251,35 @@ public class BlobStoreRule
   private void cleanBlobstoreContent(final BlobStore blobstore) {
     try {
       log.info("Deleting all Blobids from blobstore {}", blobstore.getBlobStoreConfiguration().getName());
-      blobstore.getBlobIdStream().filter(Objects::nonNull).forEach(blobId -> {
-        try {
-          blobstore.deleteHard(blobId);
-        }
-        catch (UncheckedIOException e) {
-          if (e.getCause() instanceof FileNotFoundException || e.getCause() instanceof NoSuchFileException) {
-            log.trace("Attempt to delete file that doesn't exist, just ignore and move on.", e);
-          }
-          else {
-            throw e;
-          }
-        }
-      });
+      
+      // Create a virtual thread executor for I/O-bound operations
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        // Process blobs in parallel using virtual threads
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+        
+        blobstore.getBlobIdStream().filter(Objects::nonNull).forEach(blobId -> {
+          CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+            try {
+              blobstore.deleteHard(blobId);
+            }
+            catch (UncheckedIOException e) {
+              if (e.getCause() instanceof FileNotFoundException || e.getCause() instanceof NoSuchFileException) {
+                log.trace("Attempt to delete file that doesn't exist, just ignore and move on.", e);
+              }
+              else {
+                throw e;
+              }
+            }
+          }, executor);
+          
+          futures.add(future);
+        });
+        
+        // Wait for all deletions to complete
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+      }
 
-      //just in case, dump anything else
+      // Just in case, dump anything else
       if (blobstore instanceof FileBlobStore) {
         FileBlobStore fileBlobStore = (FileBlobStore) blobstore;
         DirectoryHelper.emptyIfExists(fileBlobStore.getContentDir());

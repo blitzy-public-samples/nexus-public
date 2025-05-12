@@ -30,19 +30,24 @@ import org.sonatype.nexus.repository.httpbridge.LegacyViewContributor;
 public class RawLegacyViewContributor
     implements LegacyViewContributor
 {
+  /**
+   * Raw legacy view configuration record that implements LegacyViewConfiguration.
+   * Using Java 21 record pattern for cleaner, more maintainable code.
+   */
+  private record RawLegacyViewConfig() implements LegacyViewConfiguration {
+    @Override
+    public String getFormat() {
+      return RawFormat.NAME;
+    }
+
+    @Override
+    public Pattern getRequestPattern() {
+      return Pattern.compile("/content/sites/.*");
+    }
+  }
+
   @Override
   public LegacyViewConfiguration contribute() {
-    return new LegacyViewConfiguration()
-    {
-      @Override
-      public String getFormat() {
-        return RawFormat.NAME;
-      }
-
-      @Override
-      public Pattern getRequestPattern() {
-        return Pattern.compile("/content/sites/.*");
-      }
-    };
+    return new RawLegacyViewConfig();
   }
 }

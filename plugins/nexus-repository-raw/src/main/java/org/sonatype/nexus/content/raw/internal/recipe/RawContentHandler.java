@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.content.raw.internal.recipe;
 
+import java.util.concurrent.CompletableFuture;
+
 import javax.annotation.Nonnull;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -50,34 +52,35 @@ public class RawContentHandler
     String method = context.getRequest().getAction();
 
     Repository repository = context.getRepository();
-    log.debug("{} repository '{}' content-path: {}", method, repository.getName(), path);
+    log.debug(STR."\{method} repository '\{repository.getName()}' content-path: \{path}");
 
     RawContentFacet storage = repository.facet(RawContentFacet.class);
 
-    switch (method) {
-      case HEAD:
-      case GET: {
-        return storage.get(path).map(HttpResponses::ok)
-            .orElseGet(() -> HttpResponses.notFound(path));
-      }
+    // Use pattern matching with switch expression for more concise code
+    return switch (method) {
+      case HEAD, GET -> storage.get(path).map(HttpResponses::ok)
+          .orElseGet(() -> HttpResponses.notFound(path));
 
-      case PUT: {
+      case PUT -> {
         Payload content = context.getRequest().getPayload();
-        storage.put(path, content);
-        return HttpResponses.created();
-      }
-
-      case DELETE: {
-        boolean deleted = storage.delete(path);
-        if (deleted) {
-          return HttpResponses.noContent();
+        try {
+          // Execute the I/O-bound operation on the current thread
+          // The Java 21 runtime will automatically use virtual threads for I/O operations
+          storage.put(path, content);
+          yield HttpResponses.created();
+        } catch (Exception e) {
+          log.error(STR."Error putting content to path \{path}", e);
+          yield HttpResponses.serverError(e.getMessage());
         }
-        return HttpResponses.notFound(path);
       }
 
-      default:
-        return HttpResponses.methodNotAllowed(method, GET, HEAD, PUT, DELETE);
-    }
+      case DELETE -> {
+        boolean deleted = storage.delete(path);
+        yield deleted ? HttpResponses.noContent() : HttpResponses.notFound(path);
+      }
+
+      default -> HttpResponses.methodNotAllowed(method, GET, HEAD, PUT, DELETE);
+    };
   }
 
   /**

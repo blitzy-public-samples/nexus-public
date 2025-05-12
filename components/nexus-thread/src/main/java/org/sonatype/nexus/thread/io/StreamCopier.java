@@ -166,9 +166,62 @@ public class StreamCopier<T>
    *
    * @return An ExecutorService configured based on system properties
    */
+  /**
+   * System property to control whether virtual threads should be used for stream operations.
+   */
+  private static final String USE_VIRTUAL_THREADS_PROPERTY = "nexus.streamcopier.useVirtualThreads";
+  
+  /**
+   * Default setting for virtual threads usage (disabled by default, but can be enabled via system property).
+   */
+  private static final boolean USE_VIRTUAL_THREADS_DEFAULT = false;
+  
+  /**
+   * Current setting for virtual threads usage.
+   */
+  private static volatile boolean useVirtualThreads = getBoolean(USE_VIRTUAL_THREADS_PROPERTY, USE_VIRTUAL_THREADS_DEFAULT);
+  
+  /**
+   * Configures whether StreamCopier should use virtual threads for I/O operations.
+   * <p>
+   * This method allows dynamic configuration of virtual thread usage without requiring
+   * system property changes. When enabled, all StreamCopier instances will use virtual threads
+   * for their executor service, providing significantly improved throughput for I/O-bound operations.
+   *
+   * @param enabled true to enable virtual threads, false to use traditional thread pool
+   * @since 3.60
+   */
+  public static void configureVirtualThreads(final boolean enabled) {
+    boolean oldValue = useVirtualThreads;
+    useVirtualThreads = enabled;
+    
+    // Only recreate the service if the setting actually changed
+    if (oldValue != enabled) {
+      synchronized (StreamCopier.class) {
+        // Double-check inside synchronized block
+        if (oldValue != useVirtualThreads) {
+          // Replace the common service with a new one using the updated configuration
+          ExecutorService oldService = COMMON_SERVICE;
+          COMMON_SERVICE = makeExecutorService();
+          
+          // Shutdown the old service gracefully
+          if (oldService != null) {
+            oldService.shutdown();
+          }
+        }
+      }
+    }
+  }
+  
+  /**
+   * Creates an ExecutorService for StreamCopier operations. When virtual threads are enabled,
+   * it creates a virtual thread executor using {@link Executors#newVirtualThreadPerTaskExecutor()}.
+   * Otherwise, it creates a traditional thread pool with configurable size.
+   *
+   * @return An ExecutorService configured based on current settings
+   */
   private static ExecutorService makeExecutorService() {
     final String name = StreamCopier.class.getSimpleName().toLowerCase();
-    final boolean useVirtualThreads = getBoolean(join(".", "nexus", name, "useVirtualThreads"), false);
 
     if (useVirtualThreads) {
       // Create a virtual thread executor with the FakeAlmightySubject for security context

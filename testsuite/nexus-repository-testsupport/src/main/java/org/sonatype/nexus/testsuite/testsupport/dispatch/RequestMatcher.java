@@ -12,12 +12,24 @@
  */
 package org.sonatype.nexus.testsuite.testsupport.dispatch;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 
 /**
- * Matches incoming servlet requests
+ * Matches incoming servlet requests.
+ * <p>
+ * This interface is compatible with Java 21 and can be used with Virtual Threads
+ * for improved performance in I/O-bound request handling implementations.
+ * </p>
  */
+@FunctionalInterface
 public interface RequestMatcher
 {
+  /**
+   * Determines if this matcher matches the given request.
+   *
+   * @param request the HTTP request to match against
+   * @return true if the request matches, false otherwise
+   * @throws Exception if an error occurs during matching
+   */
   boolean matches(HttpServletRequest request) throws Exception;
 }

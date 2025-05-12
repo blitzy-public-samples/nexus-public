@@ -24,6 +24,10 @@ import org.sonatype.nexus.repository.apt.internal.snapshot.SnapshotItem.ContentS
 
 /**
  * Implementation of snapshots for apt proxy repository.
+ * 
+ * This implementation leverages Java 21 features through its parent class,
+ * including Virtual Threads for improved I/O operations when fetching and
+ * processing snapshot items from remote repositories.
  *
  * @since 3.31
  */
@@ -32,6 +36,18 @@ import org.sonatype.nexus.repository.apt.internal.snapshot.SnapshotItem.ContentS
 public class AptProxySnapshotFacet
     extends AptSnapshotFacetSupport
 {
+  /**
+   * Fetches snapshot items from the remote repository using the proxy facet.
+   * 
+   * This implementation delegates to {@link AptProxyFacet#getSnapshotItems},
+   * which handles the remote retrieval of snapshot content. The parent class
+   * {@link AptSnapshotFacetSupport} uses Virtual Threads for parallel processing
+   * of these items to improve I/O performance.
+   *
+   * @param specs the specifications for items to fetch
+   * @return a list of snapshot items retrieved from the remote repository
+   * @throws IOException if an error occurs during fetching
+   */
   @Override
   protected List<SnapshotItem> fetchSnapshotItems(final List<ContentSpecifier> specs) throws IOException {
     AptProxyFacet proxyFacet = getRepository().facet(AptProxyFacet.class);

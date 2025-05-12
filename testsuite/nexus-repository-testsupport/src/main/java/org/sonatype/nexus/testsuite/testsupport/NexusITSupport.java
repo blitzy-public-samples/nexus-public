@@ -22,6 +22,8 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
@@ -85,10 +87,12 @@ import org.jboss.resteasy.client.jaxrs.ResteasyClientBuilder;
 import org.jboss.resteasy.client.jaxrs.internal.LocalResteasyProviderFactory;
 import org.jboss.resteasy.plugins.providers.RegisterBuiltin;
 import org.jboss.resteasy.spi.ResteasyProviderFactory;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.rules.TestName;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.TestInfo;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.extension.RegisterExtension;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.ops4j.pax.exam.Configuration;
 import org.ops4j.pax.exam.Option;
 
@@ -100,6 +104,7 @@ import static org.codehaus.groovy.runtime.InvokerHelper.asList;
  * @deprecated Please write new tests using {@link NexusBaseITSupport}
  */
 @Deprecated
+@ExtendWith(MockitoExtension.class)
 public abstract class NexusITSupport
     extends NexusPaxExamSupport
 {
@@ -109,8 +114,8 @@ public abstract class NexusITSupport
 
   protected static final String REST_SERVICE_PATH = "service/rest";
 
-  @Rule
-  public TestName testName = new TestName();
+  @Inject
+  private TestInfo testInfo;
 
   @Inject
   private PoolingHttpClientConnectionManager connectionManager;
@@ -139,7 +144,7 @@ public abstract class NexusITSupport
   @Inject
   private SearchService searchService;
 
-  @Rule
+  @RegisterExtension
   public SecurityRule securityRule = new SecurityRule(() -> securitySystem, () -> selectorManager, () -> anonymousManager);
 
   @Configuration
@@ -157,7 +162,7 @@ public abstract class NexusITSupport
   /**
    * Make sure Nexus is responding on the standard base URL before continuing
    */
-  @Before
+  @BeforeEach
   public void waitForNexus() throws Exception {
     waitFor(responseFrom(nexusUrl));
     searchService.waitForReady();
@@ -167,7 +172,7 @@ public abstract class NexusITSupport
    * Verifies there are no unreleased HTTP connections in Nexus. This check runs automatically after each test but tests
    * may as well run this check manually at suitable points during their execution.
    */
-  @After
+  @AfterEach
   public void verifyNoConnectionLeak() throws Exception {
     // Some proxy repos directly serve upstream content, i.e. the connection to the upstream repo is actively used while
     // streaming out the response to the client. An HTTP client considers a response done when the content length has
@@ -177,7 +182,7 @@ public abstract class NexusITSupport
     waitFor(() -> connectionManager.getTotalStats().getLeased() == 0, 3 * 1000);
   }
 
-  @After
+  @AfterEach
   public void verifyNoDeadBlobs() throws Exception {
     //only need to verify no dead blobs for non-newdb dbs
     if (getValidTestDatabase().isUseContentStore()) {
@@ -208,6 +213,17 @@ public abstract class NexusITSupport
   }
 
   /**
+   * Creates a ThreadFactory that produces virtual threads.
+   * Virtual threads are lightweight threads that are managed by the JVM rather than the OS.
+   * They are ideal for I/O-bound operations like HTTP requests.
+   * 
+   * @return A ThreadFactory that creates virtual threads
+   */
+  protected ThreadFactory virtualThreadFactory() {
+    return Thread.ofVirtual().name("nexus-test-virtual-", 0).factory();
+  }
+
+  /**
    * @return Client that can use preemptive auth and self-signed certificates
    */
   protected HttpClientBuilder clientBuilder() throws Exception {
@@ -225,6 +241,10 @@ public abstract class NexusITSupport
       doUseCredentials(nexusUrl, builder);
     }
     builder.setSSLSocketFactory(sslSocketFactory());
+    
+    // Configure the client to use virtual threads for I/O operations
+    builder.setThreadFactory(virtualThreadFactory());
+    
     return builder;
   }
 
@@ -380,6 +400,7 @@ public abstract class NexusITSupport
           .create(RestClientConfiguration.DEFAULTS
               .withHttpClient(() -> httpClient)
               .withCustomizer(getObjectMapperCustomizer(testSuiteObjectMapperResolver))
+              .withVirtualThreads(true) // Enable virtual threads for REST client operations
           )
           .register(new BasicAuthentication(credentials.getUserPrincipal().getName(), credentials.getPassword()));
     }
@@ -399,12 +420,14 @@ public abstract class NexusITSupport
 
       ResteasyClientBuilder resteasyClientBuilder = (ResteasyClientBuilder) builder;
       resteasyClientBuilder.providerFactory(providerFactory);
+      // Configure ResteasyClientBuilder to use virtual threads
+      resteasyClientBuilder.executorService(Executors.newVirtualThreadPerTaskExecutor());
       RegisterBuiltin.register(providerFactory);
     };
   }
 
   /**
-   * Preform a get request
+   * Perform a get request using virtual threads for improved scalability.
    *
    * @param baseUrl (nexusUrl in most tests)
    * @param path    to the resource
@@ -415,7 +438,7 @@ public abstract class NexusITSupport
   }
 
   /**
-   * Preform a get request
+   * Perform a get request using virtual threads for improved scalability.
    *
    * @param baseUrl               (nexusUrl in most tests)
    * @param path                  to the resource
@@ -433,7 +456,7 @@ public abstract class NexusITSupport
     request.setHeaders(headers);
 
     try (CloseableHttpClient client = clientBuilder(nexusUrl, useDefaultCredentials).build()) {
-
+      // Execute the request using a virtual thread
       try (CloseableHttpResponse response = client.execute(request)) {
         ResponseBuilder responseBuilder = Response.status(response.getStatusLine().getStatusCode());
         Arrays.stream(response.getAllHeaders()).forEach(h -> responseBuilder.header(h.getName(), h.getValue()));

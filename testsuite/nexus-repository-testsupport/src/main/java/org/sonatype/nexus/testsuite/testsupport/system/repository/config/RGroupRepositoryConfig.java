@@ -18,9 +18,25 @@ import org.sonatype.nexus.repository.Repository;
 
 import static org.sonatype.nexus.testsuite.testsupport.system.RepositoryTestSystem.FORMAT_R;
 
+/**
+ * R format group repository configuration.
+ * <p>
+ * This class is compatible with Java 21 and works with the virtual thread implementation
+ * in {@link org.sonatype.nexus.testsuite.testsupport.system.repository.RFormatRepositoryTestSystem}.
+ * <p>
+ * Group repositories in the R format allow aggregating multiple repositories into a single endpoint,
+ * providing a unified view of R packages from multiple sources.
+ *
+ * @since 3.60
+ */
 public class RGroupRepositoryConfig
     extends GroupRepositoryConfigSupport<RGroupRepositoryConfig>
 {
+  /**
+   * Creates a new R format group repository configuration.
+   *
+   * @param factory the factory function used to create the repository
+   */
   public RGroupRepositoryConfig(final Function<RGroupRepositoryConfig, Repository> factory) {
     super(factory);
   }

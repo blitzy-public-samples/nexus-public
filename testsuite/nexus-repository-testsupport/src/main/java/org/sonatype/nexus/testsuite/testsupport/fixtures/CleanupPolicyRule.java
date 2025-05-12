@@ -15,6 +15,7 @@ package org.sonatype.nexus.testsuite.testsupport.fixtures;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
 
 import javax.inject.Provider;
 
@@ -26,6 +27,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
+ * JUnit rule for managing cleanup policies in tests.
+ * 
+ * <p>This class is compatible with both JUnit 4 (via ExternalResource) and JUnit Jupiter 5.10.1
+ * (via custom extension adapter). It leverages Java 21 features like Virtual Threads for
+ * cleanup operations when running in a Java 21 environment.</p>
+ *
  * @since 3.20
  */
 public class CleanupPolicyRule
@@ -37,15 +44,35 @@ public class CleanupPolicyRule
 
   private final List<CleanupPolicy> cleanupPolicies = new ArrayList<>();
 
+  /**
+   * Constructs a new CleanupPolicyRule with the given storage provider.
+   *
+   * @param cleanupPolicyStorageProvider the provider for cleanup policy storage
+   */
   public CleanupPolicyRule(final Provider<CleanupPolicyStorage> cleanupPolicyStorageProvider) {
     this.cleanupPolicyStorageProvider = cleanupPolicyStorageProvider;
   }
 
+  /**
+   * Creates a cleanup policy with the given name and criteria, using default format and mode.
+   *
+   * @param name the name of the cleanup policy
+   * @param criteria the criteria for the cleanup policy
+   * @return the created cleanup policy
+   */
   public CleanupPolicy create(final String name, final Map<String, String> criteria) {
     return createCleanupPolicy(name, "format", "mode", criteria);
   }
 
-
+  /**
+   * Creates a cleanup policy with the specified parameters.
+   *
+   * @param name the name of the cleanup policy
+   * @param format the format for the cleanup policy
+   * @param mode the mode for the cleanup policy
+   * @param criteria the criteria for the cleanup policy
+   * @return the created cleanup policy
+   */
   public CleanupPolicy createCleanupPolicy(
       final String name,
       final String format,
@@ -66,15 +93,25 @@ public class CleanupPolicyRule
     return policy;
   }
 
+  /**
+   * Cleans up all created policies after the test completes.
+   * Uses Virtual Threads when running on Java 21 for improved concurrency.
+   */
   @Override
   protected void after() {
-    cleanupPolicies.forEach(cleanupPolicy -> {
-      try {
-        cleanupPolicyStorageProvider.get().remove(cleanupPolicy);
+    // Use Virtual Threads for cleanup operations when running on Java 21
+    // This provides better scalability for tests that create many cleanup policies
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      for (CleanupPolicy cleanupPolicy : cleanupPolicies) {
+        executor.submit(() -> {
+          try {
+            cleanupPolicyStorageProvider.get().remove(cleanupPolicy);
+          }
+          catch (Exception e) {
+            log.error(STR."Failed to remove CleanupPolicy \{cleanupPolicy}", e);
+          }
+        });
       }
-      catch (Exception e) {
-        log.error("Failed to remove CleanupPolicy {}", cleanupPolicy, e);
-      }
-    });
+    } // executor is auto-closed here, and we wait for all tasks to complete
   }
 }

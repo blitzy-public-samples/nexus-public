@@ -23,6 +23,8 @@ import org.eclipse.sisu.Priority;
 
 /**
  * Rapture {@link UiPluginDescriptor} for {@code nexus-onboarding-plugin}.
+ * 
+ * Compatible with Java 21 and updated dependencies including Sisu 0.10.0.
  *
  * @since 3.17
  */

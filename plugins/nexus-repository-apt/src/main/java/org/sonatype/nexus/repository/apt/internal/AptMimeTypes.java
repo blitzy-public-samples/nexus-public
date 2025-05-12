@@ -13,25 +13,55 @@
 package org.sonatype.nexus.repository.apt.internal;
 
 /**
+ * Constants class for APT repository MIME types.
+ * 
+ * <p>This class is thread-safe and compatible with Java 21 runtime environment.</p>
+ *
  * @since 3.17
  */
-public class AptMimeTypes
+public final class AptMimeTypes
 {
+  /**
+   * Private constructor to prevent instantiation of this utility class.
+   * 
+   * @throws IllegalStateException if called
+   */
   private AptMimeTypes() {
-    throw new IllegalAccessError("Utility class");
+    throw new IllegalStateException("AptMimeTypes is a utility class and cannot be instantiated");
   }
 
+  /**
+   * MIME type for plain text content.
+   */
   public static final String TEXT = "text/plain";
 
+  /**
+   * MIME type for gzip compressed content.
+   */
   public static final String GZIP = "application/gzip";
 
+  /**
+   * MIME type for bzip2 compressed content.
+   */
   public static final String BZIP = "application/bzip2";
 
+  /**
+   * MIME type for XZ compressed content.
+   */
   public static final String XZ = "application/x-xz";
 
+  /**
+   * MIME type for PGP signatures.
+   */
   public static final String SIGNATURE = "application/pgp-signature";
 
+  /**
+   * MIME type for PGP public keys.
+   */
   public static final String PUBLICKEY = "application/pgp";
 
+  /**
+   * MIME type for Debian binary packages.
+   */
   public static final String PACKAGE = "application/vnd.debian.binary-package";
 }

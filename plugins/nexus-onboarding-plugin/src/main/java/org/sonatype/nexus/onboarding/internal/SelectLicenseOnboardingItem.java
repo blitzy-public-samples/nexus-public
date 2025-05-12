@@ -12,16 +12,24 @@
  */
 package org.sonatype.nexus.onboarding.internal;
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import java.util.Objects;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.onboarding.OnboardingItem;
 import org.sonatype.nexus.onboarding.OnboardingItemPriority;
 import org.sonatype.nexus.onboarding.capability.OnboardingCapabilityHelper;
 
+/**
+ * Onboarding item for license selection.
+ * 
+ * <p>Updated for Java 21 compatibility with Jakarta EE 9+ injection annotations
+ * and modern Java practices.</p>
+ *
+ * @since 3.25
+ */
 @Named
 @Singleton
 @FeatureFlag(name = "nexus.onboarding.license.enabled")
@@ -36,8 +44,8 @@ public class SelectLicenseOnboardingItem
       final InstanceStatus instanceStatus,
       final OnboardingCapabilityHelper onboardingCapabilityHelper
   ) {
-    this.instanceStatus = checkNotNull(instanceStatus);
-    this.onboardingCapabilityHelper = checkNotNull(onboardingCapabilityHelper);
+    this.instanceStatus = Objects.requireNonNull(instanceStatus);
+    this.onboardingCapabilityHelper = Objects.requireNonNull(onboardingCapabilityHelper);
   }
 
   @Override

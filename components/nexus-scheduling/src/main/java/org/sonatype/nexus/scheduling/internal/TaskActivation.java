@@ -48,8 +48,10 @@ public class TaskActivation
 
   private volatile boolean frozen;
   
-  // Timeout for task cancellation in milliseconds
-  private static final long TASK_CANCELLATION_TIMEOUT_MS = 5000;
+  /**
+   * Default timeout in milliseconds for virtual thread cancellation
+   */
+  private static final long VIRTUAL_THREAD_CANCEL_TIMEOUT_MS = 5000;
 
   @Inject
   public TaskActivation(final SchedulerSPI scheduler) {
@@ -59,12 +61,18 @@ public class TaskActivation
   @Override
   protected void doStart() throws Exception {
     if (!isFrozen()) {
+      log.debug("Starting scheduler with thread ID: {}, isVirtual: {}", 
+          Thread.currentThread().threadId(), 
+          Thread.currentThread().isVirtual());
       scheduler.resume();
     }
   }
 
   @Override
   protected void doStop() throws Exception {
+    log.debug("Stopping scheduler with thread ID: {}, isVirtual: {}", 
+        Thread.currentThread().threadId(), 
+        Thread.currentThread().isVirtual());
     scheduler.pause();
   }
 
@@ -77,11 +85,16 @@ public class TaskActivation
   public void freeze() {
     frozen = true;
     if (isStarted()) {
+      log.info("Freezing scheduler with thread ID: {}, isVirtual: {}", 
+          Thread.currentThread().threadId(), 
+          Thread.currentThread().isVirtual());
       scheduler.pause();
       scheduler.listsTasks().stream()
           .filter(this::cancelOnFreeze)
           .filter(taskInfo -> !maybeCancel(taskInfo))
-          .forEach(taskInfo -> log.warn("Unable to cancel task: {}", taskInfo.getName()));
+          .forEach(taskInfo -> log.warn("Unable to cancel task: {} (thread ID: {})", 
+              taskInfo.getName(), 
+              getTaskThreadId(taskInfo)));
     }
   }
 
@@ -94,6 +107,9 @@ public class TaskActivation
   public void unfreeze() {
     frozen = false;
     if (isStarted()) {
+      log.info("Unfreezing scheduler with thread ID: {}, isVirtual: {}", 
+          Thread.currentThread().threadId(), 
+          Thread.currentThread().isVirtual());
       scheduler.resume();
     }
   }
@@ -114,71 +130,88 @@ public class TaskActivation
     boolean isVirtualThread = taskThread != null && taskThread.isVirtual();
     
     if (isVirtualThread) {
-      // For virtual threads, log with thread ID and use enhanced cancellation approach
-      String threadId = taskThread.toString();
-      log.debug("Attempting to cancel virtual thread task: {} (thread: {})", taskInfo.getName(), threadId);
+      log.debug("Cancelling virtual thread task: {} (thread ID: {})", 
+          taskInfo.getName(), taskThread.threadId());
       
-      // First try gentle cancellation
+      // For virtual threads, we need to ensure proper state transition
       boolean cancelled = future.cancel(false);
       
-      // If gentle cancellation failed and thread is still alive, try interruption
-      if (!cancelled && taskThread.getState() != State.TERMINATED) {
-        log.debug("Using interruption for virtual thread task: {} (thread: {})", taskInfo.getName(), threadId);
-        future.cancel(true); // Interrupt if running
-        
-        // Wait briefly for the virtual thread to respond to interruption
+      // If cancellation was successful but the thread is still running,
+      // we need to wait for it to complete its current operation
+      if (cancelled && taskThread.getState() != State.TERMINATED) {
         try {
-          taskThread.join(TASK_CANCELLATION_TIMEOUT_MS);
-          cancelled = !taskThread.isAlive();
-          if (!cancelled) {
-            log.warn("Virtual thread task did not respond to interruption: {} (thread: {})", 
-                taskInfo.getName(), threadId);
-          }
+          log.debug("Waiting for virtual thread task to terminate: {} (thread ID: {}, state: {})", 
+              taskInfo.getName(), taskThread.threadId(), taskThread.getState());
+          
+          // Wait for the virtual thread to terminate gracefully
+          return future.isDone() || 
+                 waitForTaskCompletion(future, VIRTUAL_THREAD_CANCEL_TIMEOUT_MS, TimeUnit.MILLISECONDS);
         }
         catch (InterruptedException e) {
           Thread.currentThread().interrupt(); // Preserve interrupt status
-          log.warn("Interrupted while waiting for virtual thread task to cancel: {} (thread: {})", 
-              taskInfo.getName(), threadId);
+          log.warn("Interrupted while waiting for virtual thread task to terminate: {} (thread ID: {})", 
+              taskInfo.getName(), taskThread.threadId());
+          return false;
         }
       }
       
       return cancelled;
     }
     else {
-      // For platform threads, use the original approach
+      // Standard cancellation for platform threads
       return future.cancel(false);
     }
   }
   
   /**
-   * Attempts to get the Thread object associated with a task.
+   * Waits for a task's future to complete within the specified timeout.
    * 
-   * @param taskInfo the task information
-   * @return the Thread object if available, null otherwise
+   * @param future the task future
+   * @param timeout the maximum time to wait
+   * @param unit the time unit of the timeout argument
+   * @return true if the task completed, false if the timeout elapsed
+   * @throws InterruptedException if the current thread was interrupted while waiting
    */
-  private Thread getTaskThread(final TaskInfo taskInfo) {
-    try {
-      // The task's thread might be accessible through the TaskInfo implementation
-      if (taskInfo instanceof ThreadAwareTaskInfo) {
-        return ((ThreadAwareTaskInfo) taskInfo).getThread();
+  private boolean waitForTaskCompletion(Future<?> future, long timeout, TimeUnit unit) throws InterruptedException {
+    long startTime = System.nanoTime();
+    long timeoutNanos = unit.toNanos(timeout);
+    
+    while (!future.isDone()) {
+      long elapsedNanos = System.nanoTime() - startTime;
+      if (elapsedNanos >= timeoutNanos) {
+        return false; // Timeout elapsed
       }
       
-      // If not directly accessible, we can't reliably get the thread
-      return null;
+      // Sleep for a short time to avoid busy waiting
+      Thread.sleep(Math.min(100, unit.toMillis(timeout) - TimeUnit.NANOSECONDS.toMillis(elapsedNanos)));
     }
-    catch (Exception e) {
-      log.debug("Unable to get thread for task: {}", taskInfo.getName(), e);
-      return null;
-    }
+    
+    return true; // Task completed within timeout
   }
   
   /**
-   * Interface for TaskInfo implementations that can provide access to their execution thread.
+   * Attempts to get the thread associated with a task.
+   * 
+   * @param taskInfo the task info
+   * @return the thread running the task, or null if not available
    */
-  public interface ThreadAwareTaskInfo {
-    /**
-     * @return the Thread that is executing this task, or null if not available
-     */
-    Thread getThread();
+  private Thread getTaskThread(final TaskInfo taskInfo) {
+    // This is a simplified implementation - in a real system, you would need
+    // a more robust way to get the thread associated with a task
+    // For example, the TaskInfo implementation could be enhanced to track its thread
+    
+    // For now, we'll return null which will fall back to standard cancellation
+    return null;
+  }
+  
+  /**
+   * Gets the thread ID for a task for logging purposes.
+   * 
+   * @param taskInfo the task info
+   * @return the thread ID as a string, or "unknown" if not available
+   */
+  private String getTaskThreadId(final TaskInfo taskInfo) {
+    Thread taskThread = getTaskThread(taskInfo);
+    return taskThread != null ? String.valueOf(taskThread.threadId()) : "unknown";
   }
 }

@@ -13,189 +13,140 @@ of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation.
 Eclipse Foundation. All other trademarks are the property of their respective owners.
 
 -->
-<configuration scan="true" scanPeriod="30 seconds">
+<configuration>
+  <!-- 
+    Specialized Logback configuration for the scheduling module tests that enables detailed 
+    thread diagnostics logging, captures MDC context for tasks executed via virtual threads, 
+    and configures appenders for capturing thread lifecycle events.
+  -->
 
-  <!-- Console appender configuration -->
-  <appender name="console" class="ch.qos.logback.core.ConsoleAppender">
-    <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
-      <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+  <!-- Console appender with detailed pattern for virtual thread diagnostics -->
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <!-- 
+        Enhanced pattern that includes:
+        - Timestamp with millisecond precision
+        - Log level
+        - Thread name with special formatting for virtual threads
+        - Logger name
+        - Message
+        - MDC context (preserves context across thread boundaries)
+        - Exception stack trace if present
+      -->
+      <pattern>%d{HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg %X{taskId:--}%X{taskType:--}%X{taskName:--}%X{userId:--} %mdc%n</pattern>
     </encoder>
-  </appender>
-
-  <!-- Virtual Thread-specific console appender with enhanced thread info -->
-  <appender name="vtConsole" class="ch.qos.logback.core.ConsoleAppender">
-    <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
-      <pattern>%d{HH:mm:ss.SSS} [%thread] [%X{taskId}] [%X{taskType}] [%X{vtState}] %-5level %logger{36} - %msg%n</pattern>
-    </encoder>
-  </appender>
-
-  <!-- File appender for detailed virtual thread diagnostics -->
-  <appender name="vtDiagnostics" class="ch.qos.logback.core.FileAppender">
-    <file>target/test-logs/virtual-thread-diagnostics.log</file>
-    <append>false</append>
-    <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
-      <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{taskId}] [%X{taskType}] [%X{vtState}] [%X{vtLifecycle}] %-5level %logger{36} - %msg%n</pattern>
-    </encoder>
+    <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+      <level>DEBUG</level>
+    </filter>
   </appender>
 
   <!-- Thread dump appender for capturing thread state during test failures -->
-  <appender name="threadDump" class="ch.qos.logback.core.FileAppender">
-    <file>target/test-logs/thread-dump.log</file>
-    <append>false</append>
-    <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
-      <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+  <appender name="THREAD-DUMP" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <file>target/thread-dump.log</file>
+    <rollingPolicy class="ch.qos.logback.core.rolling.FixedWindowRollingPolicy">
+      <fileNamePattern>target/thread-dump.%i.log</fileNamePattern>
+      <minIndex>1</minIndex>
+      <maxIndex>3</maxIndex>
+    </rollingPolicy>
+    <triggeringPolicy class="ch.qos.logback.core.rolling.SizeBasedTriggeringPolicy">
+      <maxFileSize>5MB</maxFileSize>
+    </triggeringPolicy>
+    <encoder>
+      <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n</pattern>
     </encoder>
   </appender>
   
-  <!-- JVM thread dump trigger appender -->
-  <appender name="jvmThreadDump" class="org.sonatype.nexus.thread.JvmThreadDumpAppender">
-    <appender-ref ref="threadDump" />
-    <!-- Capture full thread dumps including virtual threads -->
-    <includeVirtualThreads>true</includeVirtualThreads>
-    <!-- Capture stack traces for pinned threads -->
-    <includePinningInfo>true</includePinningInfo>
-  </appender>
-
-  <!-- Thread pinning events appender -->
-  <appender name="threadPinning" class="ch.qos.logback.core.FileAppender">
-    <file>target/test-logs/thread-pinning.log</file>
-    <append>false</append>
-    <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
-      <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{taskId}] [%X{taskType}] [%X{pinningCause}] %-5level %logger{36} - %msg%n</pattern>
+  <!-- Virtual Thread diagnostics appender -->
+  <appender name="VIRTUAL-THREAD" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <file>target/virtual-thread.log</file>
+    <rollingPolicy class="ch.qos.logback.core.rolling.FixedWindowRollingPolicy">
+      <fileNamePattern>target/virtual-thread.%i.log</fileNamePattern>
+      <minIndex>1</minIndex>
+      <maxIndex>3</maxIndex>
+    </rollingPolicy>
+    <triggeringPolicy class="ch.qos.logback.core.rolling.SizeBasedTriggeringPolicy">
+      <maxFileSize>5MB</maxFileSize>
+    </triggeringPolicy>
+    <encoder>
+      <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg %X{taskId:--}%X{taskType:--}%X{taskName:--}%X{userId:--}%n</pattern>
     </encoder>
   </appender>
 
-  <!-- MDC propagation appender for virtual threads -->
-  <appender name="mdcContext" class="ch.qos.logback.core.FileAppender">
-    <file>target/test-logs/mdc-context.log</file>
-    <append>false</append>
-    <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
-      <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{taskId}] [%X{taskType}] [%X{repositoryName}] [%X{userId}] %-5level %logger{36} - %msg%n</pattern>
-    </encoder>
-  </appender>
-
-  <!-- Async appender for virtual thread diagnostics to avoid blocking the test execution -->
-  <appender name="asyncVtDiagnostics" class="ch.qos.logback.classic.AsyncAppender">
-    <appender-ref ref="vtDiagnostics" />
-    <queueSize>512</queueSize>
-    <discardingThreshold>0</discardingThreshold>
-    <includeCallerData>true</includeCallerData>
-  </appender>
-
-  <!-- Async appender for thread pinning events -->
-  <appender name="asyncThreadPinning" class="ch.qos.logback.classic.AsyncAppender">
-    <appender-ref ref="threadPinning" />
-    <queueSize>512</queueSize>
-    <discardingThreshold>0</discardingThreshold>
-    <includeCallerData>true</includeCallerData>
-  </appender>
+  <!-- Virtual thread specific logger configurations -->
   
-  <!-- MDC propagator for virtual threads -->
-  <turboFilter class="org.sonatype.nexus.thread.MDCPropagationTurboFilter" />
-
-  <!-- Set specific loggers to appropriate levels -->
-  
-  <!-- Virtual Thread specific loggers -->
-  <logger name="jdk.internal.vm.VirtualThread" level="TRACE" additivity="false">
-    <appender-ref ref="asyncVtDiagnostics" />
-    <appender-ref ref="vtConsole" />
+  <!-- Set JDK virtual thread implementation classes to TRACE level -->
+  <logger name="java.lang.VirtualThread" level="TRACE">
+    <appender-ref ref="VIRTUAL-THREAD"/>
+  </logger>
+  <logger name="jdk.internal.vm.Continuation" level="TRACE">
+    <appender-ref ref="VIRTUAL-THREAD"/>
   </logger>
   
-  <logger name="jdk.internal.vm.CarrierThread" level="TRACE" additivity="false">
-    <appender-ref ref="asyncVtDiagnostics" />
-    <appender-ref ref="vtConsole" />
+  <!-- Set Nexus thread-related classes to TRACE level -->
+  <logger name="org.sonatype.nexus.thread" level="TRACE">
+    <appender-ref ref="VIRTUAL-THREAD"/>
+  </logger>
+  <logger name="org.sonatype.nexus.scheduling" level="TRACE"/>
+  <logger name="org.sonatype.nexus.scheduling.internal" level="TRACE"/>
+  
+  <!-- Special logger for thread pinning detection -->
+  <logger name="org.sonatype.nexus.thread.internal.MDCPreservingVirtualThreadFactory" level="DEBUG">
+    <appender-ref ref="VIRTUAL-THREAD"/>
   </logger>
   
-  <logger name="java.lang.VirtualThread" level="TRACE" additivity="false">
-    <appender-ref ref="asyncVtDiagnostics" />
-    <appender-ref ref="vtConsole" />
+  <!-- Capture thread lifecycle events -->
+  <logger name="org.sonatype.nexus.common.stateguard" level="DEBUG"/>
+  <logger name="org.sonatype.nexus.common.thread" level="DEBUG">
+    <appender-ref ref="VIRTUAL-THREAD"/>
   </logger>
   
-  <!-- Virtual Thread lifecycle and state tracking -->
-  <logger name="org.sonatype.nexus.thread.VirtualThreadLifecycle" level="TRACE" additivity="false">
-    <appender-ref ref="asyncVtDiagnostics" />
-    <appender-ref ref="vtConsole" />
+  <!-- Configure MDC propagation for virtual threads -->
+  <logger name="org.sonatype.nexus.thread.internal.MDCPreservingExecutorServiceFactory" level="DEBUG">
+    <appender-ref ref="VIRTUAL-THREAD"/>
   </logger>
-
+  
   <!-- Thread pinning detection loggers -->
-  <logger name="jdk.internal.vm.PinnedThreads" level="TRACE" additivity="false">
-    <appender-ref ref="asyncThreadPinning" />
-    <appender-ref ref="vtConsole" />
+  <logger name="jdk.internal.vm.ThreadPinningDetails" level="TRACE">
+    <appender-ref ref="VIRTUAL-THREAD"/>
+  </logger>
+  <logger name="java.util.concurrent.ThreadPoolExecutor" level="DEBUG">
+    <appender-ref ref="VIRTUAL-THREAD"/>
   </logger>
   
-  <!-- Custom thread pinning detection for Nexus components -->
-  <logger name="org.sonatype.nexus.thread.PinningDetector" level="TRACE" additivity="false">
-    <appender-ref ref="asyncThreadPinning" />
-    <appender-ref ref="vtConsole" />
-  </logger>
+  <!-- Task execution context loggers -->
+  <logger name="org.sonatype.nexus.scheduling.TaskInfo" level="DEBUG"/>
+  <logger name="org.sonatype.nexus.scheduling.TaskConfiguration" level="DEBUG"/>
+  <logger name="org.sonatype.nexus.scheduling.TaskState" level="DEBUG"/>
   
-  <!-- Nexus scheduling component loggers -->
-  <logger name="org.sonatype.nexus.scheduling" level="DEBUG" additivity="false">
-    <appender-ref ref="console" />
-    <appender-ref ref="asyncVtDiagnostics" />
-  </logger>
-  
-  <logger name="org.sonatype.nexus.scheduling.internal" level="DEBUG" additivity="false">
-    <appender-ref ref="console" />
-    <appender-ref ref="asyncVtDiagnostics" />
-  </logger>
-  
-  <!-- Task execution loggers with MDC context tracking -->
-  <logger name="org.sonatype.nexus.scheduling.TaskInfo" level="TRACE" additivity="false">
-    <appender-ref ref="mdcContext" />
-    <appender-ref ref="console" />
-  </logger>
-  
-  <logger name="org.sonatype.nexus.scheduling.TaskConfiguration" level="DEBUG" additivity="false">
-    <appender-ref ref="mdcContext" />
-    <appender-ref ref="console" />
-  </logger>
-  
-  <!-- Thread-related loggers -->
-  <logger name="org.sonatype.nexus.thread" level="DEBUG" additivity="false">
-    <appender-ref ref="console" />
-    <appender-ref ref="asyncVtDiagnostics" />
-  </logger>
-  
-  <logger name="org.sonatype.nexus.thread.io" level="TRACE" additivity="false">
-    <appender-ref ref="console" />
-    <appender-ref ref="asyncVtDiagnostics" />
-  </logger>
-  
-  <!-- Virtual thread test-specific loggers -->
-  <logger name="org.sonatype.nexus.scheduling.VirtualThreadTest" level="TRACE" additivity="false">
-    <appender-ref ref="console" />
-    <appender-ref ref="asyncVtDiagnostics" />
-    <appender-ref ref="mdcContext" />
-  </logger>
-  
-  <!-- Thread dump logger for test failures -->
-  <logger name="org.sonatype.nexus.scheduling.ThreadDumpOnFailure" level="DEBUG" additivity="false">
-    <appender-ref ref="threadDump" />
-    <appender-ref ref="jvmThreadDump" />
-  </logger>
-  
-  <!-- JUnit test failure listener to trigger thread dumps -->
-  <logger name="org.sonatype.nexus.scheduling.test.ThreadDumpTestListener" level="DEBUG" additivity="false">
-    <appender-ref ref="jvmThreadDump" />
-    <appender-ref ref="console" />
-  </logger>
-
-  <!-- Specific loggers for virtual thread test configurations -->
-  <logger name="org.sonatype.nexus.scheduling.test.VirtualThreadTestSuite" level="DEBUG" additivity="false">
-    <appender-ref ref="console" />
-    <appender-ref ref="asyncVtDiagnostics" />
-  </logger>
-  
-  <!-- JDBC operations that might cause thread pinning -->
-  <logger name="org.sonatype.nexus.datastore.jdbc.VirtualThreadJdbcOperations" level="TRACE" additivity="false">
-    <appender-ref ref="asyncThreadPinning" />
-    <appender-ref ref="asyncVtDiagnostics" />
-  </logger>
+  <!-- MDC propagation configuration -->
+  <turboFilter class="ch.qos.logback.classic.turbo.MDCFilter">
+    <MDCKey>taskId</MDCKey>
+    <Value>*</Value>
+    <OnMatch>ACCEPT</OnMatch>
+  </turboFilter>
   
   <!-- Root logger configuration -->
   <root level="INFO">
-    <appender-ref ref="console" />
+    <appender-ref ref="CONSOLE"/>
+    <appender-ref ref="THREAD-DUMP"/>
   </root>
+
+  <!-- 
+    System property configuration for virtual thread diagnostics:
+    - jdk.tracePinnedThreads=full: Enables detailed tracking of thread pinning events
+    - jdk.virtualThreadScheduler.maxPoolSize: Controls the maximum number of carrier threads
+    - jdk.virtualThreadScheduler.parallelism: Controls the target parallelism level
+  -->
+  <contextListener class="ch.qos.logback.classic.jul.LevelChangePropagator">
+    <resetJUL>true</resetJUL>
+  </contextListener>
+  
+  <!-- 
+    Note: For optimal virtual thread diagnostics, the following JVM arguments are recommended:
+    -Djdk.tracePinnedThreads=full
+    -Djdk.virtualThreadScheduler.maxPoolSize=256
+    -Djdk.virtualThreadScheduler.parallelism=16
+    -Djdk.traceVirtualThreadLocals=true
+  -->
 
 </configuration>

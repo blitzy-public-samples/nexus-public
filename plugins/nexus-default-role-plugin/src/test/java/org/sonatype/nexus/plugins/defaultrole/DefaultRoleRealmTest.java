@@ -18,8 +18,9 @@ import org.sonatype.nexus.security.anonymous.AnonymousPrincipalCollection;
 import org.apache.shiro.authz.AuthorizationInfo;
 import org.apache.shiro.subject.PrincipalCollection;
 import org.apache.shiro.subject.SimplePrincipalCollection;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
 import static java.util.Collections.singleton;
 import static org.hamcrest.CoreMatchers.is;
@@ -27,18 +28,23 @@ import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 
+/**
+ * Tests for {@link DefaultRoleRealm} using JUnit Jupiter and Java 21 features.
+ */
+@DisplayName("DefaultRoleRealm authorization tests")
 public class DefaultRoleRealmTest
     extends TestSupport
 {
   private DefaultRoleRealm underTest;
 
-  @Before
-  public void setup() {
+  @BeforeEach
+  void setup() {
     underTest = new DefaultRoleRealm();
   }
 
   @Test
-  public void testDoGetAuthorizationInfo_notConfigured() {
+  @DisplayName("When role is not configured, authorization info should be null")
+  void doGetAuthorizationInfoWhenNotConfigured() {
     underTest.setRole(null);
 
     AuthorizationInfo authorizationInfo = underTest.doGetAuthorizationInfo(principals("test"));
@@ -46,7 +52,8 @@ public class DefaultRoleRealmTest
   }
 
   @Test
-  public void testDoGetAuthorizationInfo_authenticatedUser() {
+  @DisplayName("Authenticated user should receive the default role")
+  void doGetAuthorizationInfoForAuthenticatedUser() {
     underTest.setRole("default-role");
 
     AuthorizationInfo authorizationInfo = underTest.doGetAuthorizationInfo(principals("test"));
@@ -55,17 +62,24 @@ public class DefaultRoleRealmTest
   }
 
   @Test
-  public void testDoGetAuthorizationInfo_anonymousUser() {
+  @DisplayName("Anonymous user should not receive the default role")
+  void doGetAuthorizationInfoForAnonymousUser() {
     underTest.setRole("default-role");
 
     AuthorizationInfo authorizationInfo = underTest.doGetAuthorizationInfo(principals("anonymous"));
     assertThat(authorizationInfo, nullValue());
   }
 
+  /**
+   * Creates a principal collection for the given user ID.
+   * Uses pattern matching to determine the type of principal collection to create.
+   *
+   * @param userId the user ID
+   * @return a principal collection for the user
+   */
   private static PrincipalCollection principals(final String userId) {
-    if ("anonymous".equals(userId)) {
-      return new AnonymousPrincipalCollection(userId, "realm");
-    }
-    return new SimplePrincipalCollection(userId, "realm");
+    return switch (userId) {
+      case "anonymous" -> new AnonymousPrincipalCollection(userId, "realm");
+      default -> new SimplePrincipalCollection(userId, "realm");
+    };
   }
-}

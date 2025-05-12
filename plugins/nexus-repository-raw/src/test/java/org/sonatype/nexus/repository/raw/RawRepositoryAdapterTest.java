@@ -30,10 +30,12 @@ import org.sonatype.nexus.repository.types.GroupType;
 import org.sonatype.nexus.repository.types.HostedType;
 import org.sonatype.nexus.repository.types.ProxyType;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.Mockito;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static com.google.common.collect.Maps.newHashMap;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -45,6 +47,14 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+/**
+ * Test for {@link RawRepositoryAdapter} that validates the adapter's functionality
+ * for different repository types (group, hosted, proxy).
+ * 
+ * <p>This test has been updated to use JUnit Jupiter (JUnit 5) and MockitoExtension
+ * for Java 21 compatibility.</p>
+ */
+@ExtendWith(MockitoExtension.class)
 public class RawRepositoryAdapterTest
     extends TestSupport
 {
@@ -53,12 +63,17 @@ public class RawRepositoryAdapterTest
   @Mock
   private RoutingRuleStore routingRuleStore;
 
-  @Before
+  @BeforeEach
   public void setup() {
     adapter = new RawRepositoryAdapter(routingRuleStore);
     BaseUrlHolder.set("http://nexus-url", "");
   }
 
+  /**
+   * Tests the adaptation of a group repository.
+   * 
+   * <p>This test verifies that a group repository is correctly adapted to a {@link SimpleApiGroupRepository}.</p>
+   */
   @Test
   public void testAdapt_groupRepository() throws Exception {
     // No maven specific props so simple smoke test
@@ -71,6 +86,11 @@ public class RawRepositoryAdapterTest
     assertRepository(groupRepository, "group", true);
   }
 
+  /**
+   * Tests the adaptation of a hosted repository.
+   * 
+   * <p>This test verifies that a hosted repository is correctly adapted to a {@link RawHostedApiRepository}.</p>
+   */
   @Test
   public void testAdapt_hostedRepository() throws Exception {
     Repository repository = createRepository(new HostedType(), ContentDisposition.INLINE);
@@ -83,6 +103,13 @@ public class RawRepositoryAdapterTest
     assertThat(hostedRepository.getStorage(), notNullValue());
   }
 
+  /**
+   * Tests the adaptation of a proxy repository.
+   * 
+   * <p>This test verifies that a proxy repository is correctly adapted to a {@link RawProxyApiRepository}.</p>
+   * <p>Proxy repositories are particularly important for remote content retrieval and would benefit 
+   * from Java 21's Virtual Threads for I/O operations in production code.</p>
+   */
   @Test
   public void testAdapt_proxyRepository() throws Exception {
     Repository repository = createRepository(new ProxyType(), ContentDisposition.INLINE);
@@ -98,6 +125,15 @@ public class RawRepositoryAdapterTest
     assertThat(proxyRepository.getStorage(), notNullValue());
   }
 
+  /**
+   * Helper method to assert common repository properties.
+   * 
+   * <p>This method verifies that the repository has the expected format, name, online status, type, and URL.</p>
+   * 
+   * @param repository the repository to check
+   * @param type the expected repository type
+   * @param online the expected online status
+   */
   private static void assertRepository(
       final AbstractApiRepository repository, final String type, final Boolean online)
   {
@@ -108,6 +144,14 @@ public class RawRepositoryAdapterTest
     assertThat(repository.getUrl(), is(BaseUrlHolder.get() + "/repository/my-repo"));
   }
 
+  /**
+   * Creates a mock configuration for testing.
+   * 
+   * <p>This method creates a mock {@link Configuration} with the specified repository name.</p>
+   * 
+   * @param repositoryName the name of the repository
+   * @return a mock configuration
+   */
   private static Configuration config(final String repositoryName) {
     Configuration configuration = mock(Configuration.class);
     when(configuration.isOnline()).thenReturn(true);
@@ -116,12 +160,32 @@ public class RawRepositoryAdapterTest
     return configuration;
   }
 
+  /**
+   * Creates a repository with the specified type for testing.
+   * 
+   * <p>This method creates a {@link Repository} with the specified type and initializes it with a default configuration.</p>
+   * 
+   * @param type the repository type
+   * @return the created repository
+   * @throws Exception if an error occurs during repository creation
+   */
   private static Repository createRepository(final Type type) throws Exception {
     Repository repository = new RepositoryImpl(Mockito.mock(EventManager.class), type, new RawFormat());
     repository.init(config("my-repo"));
     return repository;
   }
 
+  /**
+   * Creates a repository with the specified type and content disposition for testing.
+   * 
+   * <p>This method creates a {@link Repository} with the specified type and content disposition,
+   * and initializes it with a configuration that includes the content disposition setting.</p>
+   * 
+   * @param type the repository type
+   * @param contentDisposition the content disposition setting
+   * @return the created repository
+   * @throws Exception if an error occurs during repository creation
+   */
   private static Repository createRepository(
       final Type type, final ContentDisposition contentDisposition) throws Exception
   {

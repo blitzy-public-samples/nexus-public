@@ -14,6 +14,15 @@ package org.sonatype.nexus.repository.apt.datastore.data;
 
 import org.sonatype.nexus.repository.content.kv.KeyValueDAO;
 
+/**
+ * APT-specific extension of {@link KeyValueDAO} for storing and retrieving key-value pairs
+ * in APT repositories.
+ * <p>
+ * This interface is designed to be compatible with Java 21 and leverages the underlying
+ * key-value storage mechanisms provided by the Nexus repository framework.
+ *
+ * @since 3.77.0
+ */
 public interface AptKeyValueDAO
     extends KeyValueDAO
 {

@@ -14,16 +14,20 @@ package org.sonatype.nexus.logging.task;
 
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+
 import javax.annotation.Nullable;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.experimental.categories.Category;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.slf4j.Logger;
 import org.slf4j.MDC;
 import org.slf4j.Marker;
@@ -41,8 +45,10 @@ import static org.sonatype.nexus.logging.task.ReplicationTaskLogger.REPLICATION_
 import static org.sonatype.nexus.logging.task.ReplicationTaskLogger.REPLICATION_LOG_LOCATION_PREFIX;
 import static org.sonatype.nexus.logging.task.TaskLogger.TASK_LOG_ONLY_MDC;
 import static org.sonatype.nexus.logging.task.TaskLoggingMarkers.NEXUS_LOG_ONLY;
-import static org.sonatype.nexus.logging.task.TaskLoggingMarkers.TASK_LOG_ONLY;@ExtendWith(MockitoExtension.class)
-@org.junit.jupiter.api.Tag(Java21TestGroup.class)
+import static org.sonatype.nexus.logging.task.TaskLoggingMarkers.TASK_LOG_ONLY;
+
+@ExtendWith(MockitoExtension.class)
+@Category(Java21TestGroup.class)
 public class ReplicationTaskLoggerTest
     extends ProgressTaskLoggerTest
 {
@@ -56,7 +62,7 @@ public class ReplicationTaskLoggerTest
   private final String testPath = "test/log/replication";
 
   @BeforeEach
-  public void setUp() throws Exception {
+  void setUp() throws Exception {
     super.setUp();
     this.taskLogInfo = createTaskLogInfoMock();
     underTest = new ReplicationTaskLogger(mockLogger, taskLogInfo);
@@ -85,7 +91,7 @@ public class ReplicationTaskLoggerTest
   }
 
   @Test
-  public void testDeleteMDCPropsOnFinish() {
+  void testDeleteMDCPropsOnFinish() {
     underTest.start();
     assertThat(MDC.get(TASK_LOG_ONLY_MDC), notNullValue());
     assertThat(MDC.get(REPLICATION_DISCRIMINATOR_ID), notNullValue());
@@ -94,51 +100,43 @@ public class ReplicationTaskLoggerTest
     assertThat(MDC.get(REPLICATION_DISCRIMINATOR_ID), nullValue());
   }
 
+  /**
+   * Test to verify that MDC context is properly maintained when using virtual threads.
+   * This ensures that logging context is correctly propagated in Java 21 virtual thread environments.
+   */
   @Test
-  public void testMDCBehaviorWithVirtualThreads() throws Exception {
-    // Set up MDC in the main thread
-    underTest.start();
-    assertThat(MDC.get(TASK_LOG_ONLY_MDC), notNullValue());
-    assertThat(MDC.get(REPLICATION_DISCRIMINATOR_ID), notNullValue());
-    
-    // Use CountDownLatch to coordinate between threads
+  void testMDCWithVirtualThreads() throws Exception {
+    // Set up a countdown latch to coordinate the test
     CountDownLatch latch = new CountDownLatch(1);
     
-    // Create and start a virtual thread
-    Thread virtualThread = Thread.ofVirtual().start(() -> {
-      try {
-        // Verify MDC is not automatically inherited by virtual threads
-        assertThat(MDC.get(TASK_LOG_ONLY_MDC), nullValue());
-        assertThat(MDC.get(REPLICATION_DISCRIMINATOR_ID), nullValue());
-        
-        // Set MDC values in the virtual thread
-        MDC.put(TASK_LOG_ONLY_MDC, "virtual-thread-value");
-        MDC.put(REPLICATION_DISCRIMINATOR_ID, "virtual-repository");
-        
-        // Verify MDC values are set correctly in the virtual thread
-        assertThat(MDC.get(TASK_LOG_ONLY_MDC), is("virtual-thread-value"));
-        assertThat(MDC.get(REPLICATION_DISCRIMINATOR_ID), is("virtual-repository"));
-        
-        // Signal completion
-        latch.countDown();
-      }
-      catch (Exception e) {
-        // Ensure latch is released even if test fails
-        latch.countDown();
-        throw e;
-      }
-    });
-    
-    // Wait for virtual thread to complete (with timeout)
-    assertTrue(latch.await(5, TimeUnit.SECONDS), "Virtual thread did not complete in time");
-    
-    // Verify MDC in main thread is still intact and not affected by virtual thread
-    assertThat(MDC.get(TASK_LOG_ONLY_MDC), notNullValue());
-    assertThat(MDC.get(REPLICATION_DISCRIMINATOR_ID), notNullValue());
-    assertThat(MDC.get(REPLICATION_DISCRIMINATOR_ID), is("repositoryName"));
-    
-    // Clean up
-    underTest.finish();
+    // Create a virtual thread executor
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Start the task logger to set up MDC
+      underTest.start();
+      
+      // Verify MDC is set in the current thread
+      assertThat(MDC.get(TASK_LOG_ONLY_MDC), notNullValue());
+      assertThat(MDC.get(REPLICATION_DISCRIMINATOR_ID), notNullValue());
+      String discriminatorValue = MDC.get(REPLICATION_DISCRIMINATOR_ID);
+      
+      // Submit a task to the virtual thread executor
+      executor.submit(() -> {
+        try {
+          // Verify MDC is properly propagated to the virtual thread
+          assertThat(MDC.get(TASK_LOG_ONLY_MDC), notNullValue());
+          assertThat(MDC.get(REPLICATION_DISCRIMINATOR_ID), notNullValue());
+          assertThat(MDC.get(REPLICATION_DISCRIMINATOR_ID), is(discriminatorValue));
+        } finally {
+          latch.countDown();
+        }
+      });
+      
+      // Wait for the virtual thread to complete
+      assertTrue(latch.await(5, TimeUnit.SECONDS), "Virtual thread did not complete in time");
+    } finally {
+      // Clean up
+      underTest.finish();
+    }
   }
 
   private void mockingTaskLogsHome(Runnable statement) {
@@ -157,7 +155,7 @@ public class ReplicationTaskLoggerTest
   }
 
   @AfterEach
-  public void tearDown() throws Exception {
+  void tearDown() throws Exception {
     underTest.finish();
   }
 

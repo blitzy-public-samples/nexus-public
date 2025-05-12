@@ -12,8 +12,11 @@
  */
 package org.sonatype.nexus.repository.apt.datastore.internal.hosted;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import javax.inject.Named;
 
 import org.sonatype.nexus.repository.Facet;
@@ -21,9 +24,15 @@ import org.sonatype.nexus.repository.apt.datastore.AptContentFacet;
 import org.sonatype.nexus.repository.apt.datastore.internal.snapshot.AptSnapshotFacetSupport;
 import org.sonatype.nexus.repository.apt.internal.snapshot.SnapshotItem;
 import org.sonatype.nexus.repository.apt.internal.snapshot.SnapshotItem.ContentSpecifier;
+import org.sonatype.nexus.repository.view.Content;
 
 /**
  * Implementation of snapshots for apt hosted repository.
+ * 
+ * This implementation leverages Java 21 features including Virtual Threads for improved
+ * I/O operations performance when fetching snapshot items. The parallel processing of
+ * content retrieval operations enhances throughput, especially for repositories with
+ * many snapshot items.
  *
  * @since 3.31
  */
@@ -36,9 +45,41 @@ public class AptHostedSnapshotFacet
   protected List<SnapshotItem> fetchSnapshotItems(final List<ContentSpecifier> specs) {
     AptContentFacet apt = getRepository().facet(AptContentFacet.class);
     List<SnapshotItem> list = new ArrayList<>();
-    for (ContentSpecifier spec : specs) {
-      apt.get(spec.path).map(value -> new SnapshotItem(spec, value)).ifPresent(list::add);
+    
+    // For small lists, process sequentially to avoid overhead of thread creation
+    if (specs.size() <= 3) {
+      for (ContentSpecifier spec : specs) {
+        apt.get(spec.path).map(value -> new SnapshotItem(spec, value)).ifPresent(list::add);
+      }
+      return list;
     }
+    
+    // For larger lists, use Virtual Threads for parallel processing to improve I/O throughput
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      List<Future<SnapshotItem>> futures = new ArrayList<>();
+      
+      // Submit each content retrieval task to the virtual thread executor
+      for (ContentSpecifier spec : specs) {
+        futures.add(executor.submit(() -> {
+          return apt.get(spec.path)
+              .map(value -> new SnapshotItem(spec, value))
+              .orElse(null);
+        }));
+      }
+      
+      // Collect results from all futures
+      for (Future<SnapshotItem> future : futures) {
+        try {
+          SnapshotItem item = future.get();
+          if (item != null) {
+            list.add(item);
+          }
+        } catch (Exception e) {
+          log.warn("Error fetching snapshot item", e);
+        }
+      }
+    }
+    
     return list;
   }
 }

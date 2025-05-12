@@ -14,6 +14,7 @@ package org.sonatype.nexus.repository.apt.datastore.internal.hosted;
 
 import java.io.IOException;
 import java.util.Optional;
+import java.util.concurrent.Executors;
 
 import javax.annotation.Nonnull;
 import javax.inject.Named;
@@ -45,9 +46,10 @@ import static org.sonatype.nexus.repository.http.HttpMethods.HEAD;
 import static org.sonatype.nexus.repository.http.HttpMethods.POST;
 
 /**
- * Apt handlers
+ * Apt handlers for hosted repositories
  *
  * @since 3.31
+ * @see <a href="https://docs.oracle.com/en/java/javase/21/core/virtual-threads.html">Java 21 Virtual Threads</a>
  */
 @Named
 @Singleton
@@ -62,15 +64,11 @@ public class AptHostedHandler
     String method = context.getRequest().getAction();
     AptContentFacet contentFacet = context.getRepository().facet(AptContentFacet.class);
 
-    switch (method) {
-      case GET:
-      case HEAD:
-        return doGet(context, path, contentFacet);
-      case POST:
-        return doPost(context, path, contentFacet);
-      default:
-        return HttpResponses.methodNotAllowed(method, GET, HEAD, POST);
-    }
+    return switch (method) {
+      case GET, HEAD -> doGet(context, path, contentFacet);
+      case POST -> doPost(context, path, contentFacet);
+      default -> HttpResponses.methodNotAllowed(method, GET, HEAD, POST);
+    };
   }
 
   private Response doGet(
@@ -78,48 +76,64 @@ public class AptHostedHandler
       final String path,
       final AptContentFacet contentFacet) throws IOException
   {
-    if (isMetadataRebuildRequired(path, contentFacet)) {
-      context.getRepository().facet(AptHostedFacet.class).rebuildMetadata();
-    }
-    Optional<Content> content = contentFacet.get(path);
-    return content.isPresent() ? HttpResponses.ok(content.get()) : HttpResponses.notFound(path);
+    // Use virtual thread for I/O operations
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+      try {
+        if (isMetadataRebuildRequired(path, contentFacet)) {
+          context.getRepository().facet(AptHostedFacet.class).rebuildMetadata();
+        }
+        Optional<Content> content = contentFacet.get(path);
+        return content.isPresent() ? HttpResponses.ok(content.get()) : HttpResponses.notFound(path);
+      } catch (IOException e) {
+        log.error(STR."Error processing GET request for path \{path}", e);
+        throw new RuntimeException(e);
+      }
+    }).join();
   }
 
   private Response doPost(final Context context,
                           final String path,
                           final AptContentFacet contentFacet) throws IOException
   {
-    final AptHostedFacet hostedFacet = context.getRepository().facet(AptHostedFacet.class);
-    if ("rebuild-indexes".equals(path)) {
-      hostedFacet.rebuildMetadata();
-      return HttpResponses.ok();
-    }
-    else if (StringUtils.isBlank(path)) {
-      final Payload payload = context.getRequest().getPayload();
-      try (TempBlob tempBlob = contentFacet.getTempBlob(payload)) {
-        ControlFile controlFile = AptPackageParser
-            .parsePackageInfo(tempBlob)
-            .getControlFile();
-        String assetPath = AptFacetHelper.buildAssetPath(controlFile);
-        long payloadSize = payload.getSize();
-        String contentType = payload.getContentType();
+    // Use virtual thread for I/O operations
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+      try {
+        final AptHostedFacet hostedFacet = context.getRepository().facet(AptHostedFacet.class);
+        if ("rebuild-indexes".equals(path)) {
+          hostedFacet.rebuildMetadata();
+          return HttpResponses.ok();
+        }
+        else if (StringUtils.isBlank(path)) {
+          final Payload payload = context.getRequest().getPayload();
+          try (TempBlob tempBlob = contentFacet.getTempBlob(payload)) {
+            ControlFile controlFile = AptPackageParser
+                .parsePackageInfo(tempBlob)
+                .getControlFile();
+            String assetPath = AptFacetHelper.buildAssetPath(controlFile);
+            long payloadSize = payload.getSize();
+            String contentType = payload.getContentType();
 
-        hostedFacet.
-            put(assetPath, new StreamPayload(tempBlob, payloadSize, contentType),
-                new PackageInfo(controlFile));
+            hostedFacet.
+                put(assetPath, new StreamPayload(tempBlob, payloadSize, contentType),
+                    new PackageInfo(controlFile));
+          }
+          return HttpResponses.created();
+        }
+        else {
+          return HttpResponses.methodNotAllowed(POST, GET, HEAD);
+        }
+      } catch (IOException e) {
+        log.error(STR."Error processing POST request for path \{path}", e);
+        throw new RuntimeException(e);
       }
-      return HttpResponses.created();
-    }
-    else {
-      return HttpResponses.methodNotAllowed(POST, GET, HEAD);
-    }
+    }).join();
   }
 
   private boolean isMetadataRebuildRequired(final String path, final AptContentFacet contentFacet)
   {
     if (StringUtils.startsWith(path, "dists")
         && StringUtils.endsWithAny(path, INRELEASE, RELEASE, RELEASE_GPG, "/Packages")) {
-      String inReleasePath = "dists/" + contentFacet.getDistribution() + "/" + INRELEASE;
+      String inReleasePath = STR."dists/\{contentFacet.getDistribution()}/\{INRELEASE}";
       return !contentFacet.get(inReleasePath).isPresent();
     }
     return false;

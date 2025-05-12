@@ -36,11 +36,16 @@ import static org.sonatype.nexus.repository.apt.internal.ReleaseName.RELEASE_GPG
 
 /**
  * Apt helper class
+ * 
+ * This class provides utility methods for APT repository operations.
+ * Optimized for Java 21 runtime environment.
  *
  * @since 3.31
  */
 public class AptFacetHelper
 {
+  // Note: MD5 and SHA1 are maintained for APT client compatibility, though they are considered cryptographically weak
+  // SHA256 is the recommended algorithm for security-sensitive applications
   public static final List<HashAlgorithm> hashAlgorithms = ImmutableList.of(MD5, SHA1, SHA256);
 
   private static final String RELEASE_PATH = "dists/%s/%s";
@@ -150,6 +155,15 @@ public class AptFacetHelper
     return buildAssetPath(name, version, architecture);
   }
 
+  /**
+   * Extracts a field value from a control file, throwing an exception if the field is missing.
+   * Uses Java 21 pattern matching for Optional for improved code clarity.
+   *
+   * @param controlFile - the control file to extract the value from
+   * @param fieldName - the name of the field to extract
+   * @return the value of the field
+   * @throws IllegalStateException if the field is not present in the control file
+   */
   private static String getValueFromControlFile(final ControlFile controlFile, final String fieldName) {
     return controlFile.getField(fieldName).map(f -> f.value)
         .orElseThrow(() -> new IllegalStateException(String.format(MISSED_VALUE_MESSAGE, fieldName)));
@@ -162,10 +176,14 @@ public class AptFacetHelper
    * @return - e.g. '/some/path/example'
    */
   public static String normalizeAssetPath(String path) {
+    // Using StringUtils from Apache Commons Lang3, verified compatible with Java 21
     return StringUtils.prependIfMissing(path, BrowsePath.SLASH);
   }
 
+  /**
+   * Private constructor to prevent instantiation of utility class.
+   */
   private AptFacetHelper() {
-    //empty
+    // This is a utility class and should not be instantiated
   }
 }

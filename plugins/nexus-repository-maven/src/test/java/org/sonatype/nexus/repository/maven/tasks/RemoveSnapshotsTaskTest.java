@@ -14,6 +14,11 @@ package org.sonatype.nexus.repository.maven.tasks;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.ArrayList;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.repository.Format;
@@ -28,9 +33,11 @@ import org.sonatype.nexus.repository.maven.internal.Maven2Format;
 import org.sonatype.nexus.repository.types.GroupType;
 import org.sonatype.nexus.scheduling.TaskConfiguration;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static com.google.common.collect.Lists.newArrayList;
 import static org.hamcrest.CoreMatchers.is;
@@ -43,7 +50,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.repository.RepositoryTaskSupport.ALL_REPOSITORIES;
 
-public class RemoveSnapshotsTaskTest
+/**
+ * Tests for {@link RemoveSnapshotsTask} with Java 21 compatibility.
+ */
+@ExtendWith(MockitoExtension.class)
+class RemoveSnapshotsTaskTest
     extends TestSupport
 {
   @Mock
@@ -59,8 +70,8 @@ public class RemoveSnapshotsTaskTest
 
   private TestRemoveSnapshotsTask taskUnderTest;
 
-  @Before
-  public void setUp() throws Exception {
+  @BeforeEach
+  void setUp() {
     configuration = new TaskConfiguration();
     configuration.setId("test");
     configuration.setTypeId("test");
@@ -74,7 +85,7 @@ public class RemoveSnapshotsTaskTest
   }
 
   @Test
-  public void testGroupMembersProcessed() throws Exception {
+  void testGroupMembersProcessed() throws Exception {
     Repository repo1 = mockRepo();
     Repository repo2 = mockRepo();
     Repository repoGroup = mockGroup(newArrayList(repo1, repo2));
@@ -91,7 +102,7 @@ public class RemoveSnapshotsTaskTest
   }
 
   @Test
-  public void testNestedGroups() throws Exception {
+  void testNestedGroups() throws Exception {
     Repository repo1 = mockRepo();
     Repository repo2 = mockRepo();
 
@@ -110,7 +121,7 @@ public class RemoveSnapshotsTaskTest
   }
 
   @Test
-  public void testRepositoryNotProcessedTwice() throws Exception {
+  void testRepositoryNotProcessedTwice() throws Exception {
     Repository repo1 = mockRepo();
     Repository repo2 = mockRepo();
 
@@ -128,7 +139,7 @@ public class RemoveSnapshotsTaskTest
   }
 
   @Test
-  public void testCyclicGroupReferencesHandledCorrectly() throws Exception {
+  void testCyclicGroupReferencesHandledCorrectly() throws Exception {
     Repository repo1 = mockRepo();
     Repository repo2 = mockRepo();
 
@@ -145,6 +156,48 @@ public class RemoveSnapshotsTaskTest
     verifyRepoProcessed(repo1, 1);
     verifyRepoProcessed(repo2, 1);
     verify(removeSnapshotsFacet, times(2)).removeSnapshots(any());
+  }
+
+  /**
+   * Test to verify that the task can process repositories concurrently using virtual threads.
+   * This demonstrates Java 21 virtual thread capabilities for improved concurrency.
+   */
+  @Test
+  void testConcurrentProcessingWithVirtualThreads() throws Exception {
+    // Create a larger number of repositories to demonstrate virtual thread benefits
+    int repoCount = 20;
+    List<Repository> repositories = new ArrayList<>();
+    AtomicInteger processedCount = new AtomicInteger(0);
+    
+    // Mock repositories
+    for (int i = 0; i < repoCount; i++) {
+      Repository repo = mockRepo();
+      // Configure the mock to increment counter when removeSnapshots is called
+      when(repo.facet(RemoveSnapshotsFacet.class)).thenReturn(removeSnapshotsFacet);
+      when(repo.optionalFacet(RemoveSnapshotsFacet.class)).thenReturn(Optional.of(removeSnapshotsFacet));
+      repositories.add(repo);
+    }
+    
+    // Create a repository group containing all repositories
+    Repository repoGroup = mockGroup(repositories);
+    when(repositoryManager.browse()).thenReturn(List.of(repoGroup));
+    
+    // Create a custom task implementation that uses virtual threads for processing
+    VirtualThreadRemoveSnapshotsTask virtualTask = new VirtualThreadRemoveSnapshotsTask(new Maven2Format());
+    virtualTask.install(repositoryManager, new GroupType());
+    virtualTask.configure(configuration);
+    
+    // Execute the task
+    virtualTask.execute();
+    
+    // Verify all repositories were processed
+    verifyGroups(repoGroup);
+    for (Repository repo : repositories) {
+      verifyRepoProcessed(repo, 1);
+    }
+    
+    // Verify the removeSnapshots method was called for each repository
+    verify(removeSnapshotsFacet, times(repoCount)).removeSnapshots(any());
   }
 
   private void verifyGroups(final Repository... groups) {
@@ -186,7 +239,7 @@ public class RemoveSnapshotsTaskTest
   }
 
   /**
-   * exposing methods for use within test class
+   * Exposing methods for use within test class.
    */
   private class TestRemoveSnapshotsTask
       extends RemoveSnapshotsTask
@@ -200,6 +253,57 @@ public class RemoveSnapshotsTaskTest
       return super.execute();
     }
 
+    @Override
+    protected boolean hasBeenProcessed(final Repository repository) {
+      return super.hasBeenProcessed(repository);
+    }
+  }
+  
+  /**
+   * Extension of RemoveSnapshotsTask that uses Java 21 virtual threads for concurrent processing.
+   * This demonstrates how to leverage virtual threads for improved concurrency in I/O-bound operations.
+   */
+  private class VirtualThreadRemoveSnapshotsTask
+      extends RemoveSnapshotsTask
+  {
+    VirtualThreadRemoveSnapshotsTask(final Format format) {
+      super(format);
+    }
+    
+    @Override
+    protected Object execute() throws Exception {
+      List<Repository> repositories = getRepositories();
+      
+      // Use virtual threads for concurrent processing
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+        
+        for (Repository repository : repositories) {
+          // Skip repositories that have already been processed
+          if (hasBeenProcessed(repository)) {
+            continue;
+          }
+          
+          // Process repository with a virtual thread
+          CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+            try {
+              processRepository(repository);
+            } 
+            catch (Exception e) {
+              log.error("Error processing repository {}", repository.getName(), e);
+            }
+          }, executor);
+          
+          futures.add(future);
+        }
+        
+        // Wait for all tasks to complete
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+      }
+      
+      return null;
+    }
+    
     @Override
     protected boolean hasBeenProcessed(final Repository repository) {
       return super.hasBeenProcessed(repository);

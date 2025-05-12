@@ -12,6 +12,9 @@
  */
 package org.sonatype.nexus.scheduling.internal.resources.doc;
 
+import javax.ws.rs.container.AsyncResponse;
+import javax.ws.rs.container.Suspended;
+
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
@@ -44,7 +47,9 @@ public interface TasksApiResourceDoc
       @ApiResponse(code = 404, message = "Task not found"),
       @ApiResponse(code = 405, message = "Task is disabled")
   })
-  void run(@ApiParam(value = "Id of the task to run") final String id);
+  void run(
+      @ApiParam(value = "Id of the task to run") final String id,
+      @Suspended final AsyncResponse asyncResponse);
 
   @ApiOperation("Stop task")
   @ApiResponses(value = {
@@ -52,5 +57,7 @@ public interface TasksApiResourceDoc
       @ApiResponse(code = 409, message = "Unable to stop task"),
       @ApiResponse(code = 404, message = "Task not found")
   })
-  void stop(@ApiParam(value = "Id of the task to stop") final String id);
+  void stop(
+      @ApiParam(value = "Id of the task to stop") final String id,
+      @Suspended final AsyncResponse asyncResponse);
 }

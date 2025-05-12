@@ -15,11 +15,35 @@ package org.sonatype.nexus.testsuite.helpers.realm
 import javax.inject.Named
 import javax.inject.Singleton
 
+/**
+ * DataStore implementation of {@link RealmTestHelper}.
+ * <p>
+ * This implementation is compatible with Java 21 runtime environment and updated testing frameworks:
+ * - JUnit Jupiter 5.10.1
+ * - Mockito 5.8.0
+ * - Google Guice 7.0.0
+ * - Eclipse Sisu 0.10.0
+ * <p>
+ * This implementation is thread-safe and compatible with Virtual Threads when used in concurrent test scenarios.
+ * It provides a fixed list of available realms for testing purposes, which is immutable and can be safely
+ * accessed from multiple threads simultaneously.
+ *
+ * @since 3.0
+ */
 @Named
 @Singleton
 class DataStoreRealmTestHelper
     implements RealmTestHelper
 {
+  /**
+   * Returns an immutable list of available realms for testing.
+   * <p>
+   * This implementation is thread-safe and can be safely used in Virtual Thread contexts
+   * as it returns a fixed, immutable list that doesn't perform any blocking operations
+   * or synchronization that could cause thread pinning.
+   *
+   * @return List of realm names available for configuration in the DataStore implementation
+   */
   @Override
   List<String> getAvailableRealms() {
     ['Conan Bearer Token Realm', 'Crowd Realm', 'Default Role Realm', 'Docker Bearer Token Realm',

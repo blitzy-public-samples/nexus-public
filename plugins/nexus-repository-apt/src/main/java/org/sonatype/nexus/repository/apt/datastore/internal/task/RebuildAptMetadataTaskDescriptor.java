@@ -24,6 +24,16 @@ import org.sonatype.nexus.scheduling.TaskDescriptorSupport;
 
 import static org.sonatype.nexus.formfields.FormField.OPTIONAL;
 
+/**
+ * Task descriptor for rebuilding APT metadata.
+ * <p>
+ * This class is compatible with Java 21 and uses the updated Quartz Scheduler 2.3.2
+ * for task scheduling operations. It integrates with the Nexus Repository Manager's
+ * task framework to provide APT metadata rebuilding functionality.
+ * </p>
+ *
+ * @since 3.0
+ */
 @AvailabilityVersion(from = "1.0")
 @Named
 @Singleton
@@ -36,6 +46,13 @@ public class RebuildAptMetadataTaskDescriptor
 
   public static final String APT_METADATA_FULL_REBUILD = "rebuildAptMetadataFullRebuild";
 
+  /**
+   * Constructor that configures the task descriptor with appropriate form fields.
+   * <p>
+   * This implementation is compatible with Java 21 and the updated dependency injection
+   * framework (Guice 7.0.0).
+   * </p>
+   */
   public RebuildAptMetadataTaskDescriptor()
   {
     super(TYPE_ID,

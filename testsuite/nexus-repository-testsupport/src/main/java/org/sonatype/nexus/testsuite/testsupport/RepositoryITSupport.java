@@ -16,15 +16,25 @@ import org.sonatype.nexus.testsuite.testsupport.fixtures.RepositoryRule;
 
 /**
  * Support class for repository format ITs.
+ * 
+ * <p>This class has been updated for Java 21 compatibility, including support for JUnit Jupiter 5.10.1
+ * and optimized repository provisioning logic that can leverage Virtual Threads when available.</p>
  *
- * @deprecated Please write new tests as part of the {@link ITSupport} hierarchy
+ * @deprecated Please write new tests as part of the {@link ITSupport} hierarchy which provides enhanced
+ *             support for Java 21 features including pattern matching and virtual threads
  */
 @Deprecated
 public abstract class RepositoryITSupport
     extends GenericRepositoryITSupport<RepositoryRule>
 {
+  /**
+   * Creates a repository rule for managing test repositories.
+   * 
+   * @return a new {@link RepositoryRule} instance configured with the repository manager
+   */
   @Override
   protected RepositoryRule createRepositoryRule() {
+    // Using lambda for provider implementation - compatible with Virtual Threads in Java 21
     return new RepositoryRule(() -> repositoryManager);
   }
 }

@@ -32,10 +32,10 @@ import org.apache.maven.artifact.repository.metadata.Plugin;
 import org.apache.maven.artifact.repository.metadata.Snapshot;
 import org.apache.maven.artifact.repository.metadata.SnapshotVersion;
 import org.apache.maven.artifact.repository.metadata.Versioning;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.notNullValue;
@@ -47,16 +47,14 @@ import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 
 /**
- * UT for {@link RepositoryMetadataMerger}
+ * Unit tests for {@link RepositoryMetadataMerger}
  *
  * @since 3.0
  */
+@ExtendWith(MockitoExtension.class)
 public class RepositoryMetadataMergerTest
     extends TestSupport
 {
-  @Rule
-  public ExpectedException exception = ExpectedException.none();
-
   @Mock
   OutputStream outputStream;
 
@@ -71,6 +69,12 @@ public class RepositoryMetadataMergerTest
 
   private final RepositoryMetadataMerger merger = new RepositoryMetadataMerger();
 
+  /**
+   * Creates a Plugin object with the given name.
+   *
+   * @param name the name to use for the plugin
+   * @return a configured Plugin object
+   */
   private Plugin plugin(String name) {
     final Plugin p = new Plugin();
     p.setPrefix(name);
@@ -79,6 +83,12 @@ public class RepositoryMetadataMergerTest
     return p;
   }
 
+  /**
+   * Creates a group-level Metadata object with the specified plugins.
+   *
+   * @param pluginNames names of plugins to include in the metadata
+   * @return a configured group-level Metadata object
+   */
   private Metadata g(final String... pluginNames)
   {
     final Metadata m = new Metadata();
@@ -88,6 +98,17 @@ public class RepositoryMetadataMergerTest
     return m;
   }
 
+  /**
+   * Creates an artifact-level Metadata object with the specified attributes.
+   *
+   * @param groupId the group ID
+   * @param artifactId the artifact ID
+   * @param lastUpdated the last updated timestamp
+   * @param latest the latest version
+   * @param release the release version
+   * @param versions the list of available versions
+   * @return a configured artifact-level Metadata object
+   */
   private Metadata a(final String groupId,
                      final String artifactId,
                      final String lastUpdated,
@@ -113,6 +134,16 @@ public class RepositoryMetadataMergerTest
     return m;
   }
 
+  /**
+   * Creates a version-level Metadata object with the specified attributes.
+   *
+   * @param groupId the group ID
+   * @param artifactId the artifact ID
+   * @param versionPrefix the version prefix
+   * @param timestamp the timestamp
+   * @param buildNumber the build number
+   * @return a configured version-level Metadata object
+   */
   private Metadata v(final String groupId,
                      final String artifactId,
                      final String versionPrefix,
@@ -152,8 +183,11 @@ public class RepositoryMetadataMergerTest
     return m;
   }
 
+  /**
+   * Tests that metadata with null, empty, and space-only classifiers are considered equal.
+   */
   @Test
-  public void metadataWithNullAndEmptyAreEqual() throws Exception {
+  void metadataWithNullAndEmptyAreEqual() {
     final Metadata nullClassifier = v("org.foo", "some-project", "v-", "20150324121700", 1);
     final Metadata emptyClassifier = v("org.foo", "some-project", "v-", "20150324121700", 1);
     final Metadata spaceClassifier = v("org.foo", "some-project", "v-", "20150324121700", 1);
@@ -167,8 +201,11 @@ public class RepositoryMetadataMergerTest
     assertThat(merger.metadataEquals(spaceClassifier, nullClassifier), is(true));
   }
 
+  /**
+   * Tests merging of group-level metadata.
+   */
   @Test
-  public void groupLevelMd() throws Exception {
+  void groupLevelMd() {
     final Metadata m1 = g("foo");
     final Metadata m2 = g("foo", "bar");
     final Metadata m3 = g("baz");
@@ -179,18 +216,16 @@ public class RepositoryMetadataMergerTest
     assertThat(m, notNullValue());
     assertThat(m.getModelVersion(), equalTo("1.1.0"));
     assertThat(m.getPlugins(), hasSize(3));
-    final List<String> prefixes = Lists.newArrayList(Iterables.transform(m.getPlugins(), new Function<Plugin, String>()
-    {
-      @Override
-      public String apply(final Plugin input) {
-        return input.getArtifactId();
-      }
-    }));
+    final List<String> prefixes = Lists.newArrayList(Iterables.transform(m.getPlugins(), 
+        (Plugin input) -> input.getArtifactId()));
     assertThat(prefixes, containsInAnyOrder("foo-maven-plugin", "bar-maven-plugin", "baz-maven-plugin"));
   }
 
+  /**
+   * Tests merging of artifact-level metadata.
+   */
   @Test
-  public void artifactLevelMd() throws Exception {
+  void artifactLevelMd() {
     final Metadata m1 = a("org.foo", "some-project", "20150324121500", "1.0.1", "1.0.1", "1.0.0", "1.0.1");
     final Metadata m2 = a("org.foo", "some-project", "20150324121700", "1.0.2", "1.0.2", "1.0.2");
     final Metadata m3 = a("org.foo", "some-project", "20150324121600", "1.1.0-SNAPSHOT", null, "1.1.0-SNAPSHOT");
@@ -209,8 +244,11 @@ public class RepositoryMetadataMergerTest
     assertThat(m.getVersioning().getVersions(), contains("1.0.0", "1.0.1", "1.0.2", "1.1.0-SNAPSHOT"));
   }
 
+  /**
+   * Tests merging of version-level metadata.
+   */
   @Test
-  public void versionLevelMd() throws Exception {
+  void versionLevelMd() {
     final Metadata m1 = v("org.foo", "some-project", "1.0.0", "20150324.121500", 3);
     final Metadata m2 = v("org.foo", "some-project", "1.0.0", "20150323.121500", 2);
     final Metadata m3 = v("org.foo", "some-project", "1.0.0", "20150322.121500", 1);
@@ -228,8 +266,11 @@ public class RepositoryMetadataMergerTest
     assertThat(m.getVersioning().getSnapshot().getBuildNumber(), equalTo(3));
   }
 
+  /**
+   * Tests merging of mixed-level metadata.
+   */
   @Test
-  public void mixedLevelMd() throws Exception {
+  void mixedLevelMd() {
     final Metadata m1 = a("org.foo", "some-project", "20150324121500", "1.0.1", "1.0.1", "1.0.0", "1.0.1");
     final Metadata m2 = g("foo", "bar");
     final Metadata m3 = v("org.foo", "some-project", "1.1.0", "20150322.121500", 3);
@@ -250,24 +291,20 @@ public class RepositoryMetadataMergerTest
     assertThat(m.getVersioning().getLatest(), equalTo("1.0.1"));
     assertThat(m.getVersioning().getVersions(), contains("1.0.0", "1.0.1"));
     assertThat(m.getPlugins(), hasSize(2));
-    final List<String> prefixes = Lists.newArrayList(Iterables.transform(m.getPlugins(), new Function<Plugin, String>()
-    {
-      @Override
-      public String apply(final Plugin input) {
-        return input.getArtifactId();
-      }
-    }));
+    final List<String> prefixes = Lists.newArrayList(Iterables.transform(m.getPlugins(), 
+        (Plugin input) -> input.getArtifactId()));
     assertThat(prefixes, containsInAnyOrder("foo-maven-plugin", "bar-maven-plugin"));
   }
 
   /**
-   * NEXUS-13085
-   * Some maven-metadata.xml files are contrary to the present spec 
+   * Tests handling of version in artifact-level metadata.
+   * <p>
+   * NEXUS-13085: Some maven-metadata.xml files are contrary to the present spec 
    * (http://maven.apache.org/ref/3.3.9/maven-repository-metadata/repository-metadata.html) and contain a 'version' 
    * element for non-SNAPSHOT artifacts, allowing for lax validation.
    */
   @Test
-  public void allowVersionInArtifactLevelMetadata() {
+  void allowVersionInArtifactLevelMetadata() {
     Metadata m1 = a("org.foo", "some-project", "20150324121500", "1.0.0","1.0.0", "1.0.0");
     m1.setVersion("1.0.0");
     Metadata m2 = a("org.foo", "some-project", "20150324121501", "1.0.1","1.0.1", "1.0.1");
@@ -282,8 +319,11 @@ public class RepositoryMetadataMergerTest
     assertThat(m.getVersioning().getVersions(), contains("1.0.0", "1.0.1"));
   }
 
+  /**
+   * Tests handling of null snapshot timestamps.
+   */
   @Test
-  public void handleNullSnapshotTimestamps() {
+  void handleNullSnapshotTimestamps() {
     Metadata m1 = v("org.foo", "some-project", "1.0.0", "20150322.121500", 1);
     m1.getVersioning().getSnapshot().setTimestamp(null);
     Metadata m2 = v("org.foo", "some-project", "1.0.0", "20150323.121500", 2);

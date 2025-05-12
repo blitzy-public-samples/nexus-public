@@ -15,10 +15,19 @@ package org.sonatype.nexus.content.raw.internal.store;
 import org.sonatype.nexus.repository.content.store.ContentRepositoryDAO;
 
 /**
+ * Raw content repository DAO marker interface.
+ * <p>
+ * This interface serves as a marker for Raw repository content DAO implementations,
+ * enabling specific identification and handling of Raw repository content operations.
+ * <p>
+ * With Java 21, implementations can leverage features such as record patterns and
+ * pattern matching for more efficient data handling when processing repository content.
+ * Virtual threads can also be used for I/O-bound operations to improve scalability.
+ *
  * @since 3.24
  */
 public interface RawContentRepositoryDAO
     extends ContentRepositoryDAO
 {
-  // nothing to add...
+  // This is a marker interface - no additional methods required
 }

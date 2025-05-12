@@ -15,6 +15,8 @@ package com.sonatype.nexus.ssl.plugin.internal.ui;
 import java.io.IOException;
 import java.net.UnknownHostException;
 import java.security.cert.Certificate;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 
 import javax.annotation.Nullable;
 import javax.inject.Inject;
@@ -46,6 +48,8 @@ import static org.sonatype.nexus.ssl.CertificateUtil.decodePEMFormattedCertifica
 
 /**
  * SSL Certificate {@link DirectComponent}.
+ * 
+ * Updated for Java 21 compatibility with string templates and virtual threads.
  */
 @Named
 @Singleton
@@ -56,11 +60,15 @@ public class CertificateComponent
   private final TrustStore trustStore;
 
   private final CertificateRetriever certificateRetriever;
+  
+  // Using virtual threads executor for I/O operations
+  private final ExecutorService executor;
 
   @Inject
   public CertificateComponent(final TrustStore trustStore, final CertificateRetriever certificateRetriever) {
     this.trustStore = checkNotNull(trustStore);
     this.certificateRetriever = checkNotNull(certificateRetriever);
+    this.executor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   /**
@@ -89,13 +97,13 @@ public class CertificateComponent
     catch (Exception e) {
       String errorMessage = e.getMessage();
       if (e instanceof UnknownHostException) {
-        errorMessage = "Unknown host " + host;
+        errorMessage = STR."Unknown host \{host}";
       }
       throw new IOException(errorMessage);
     }
     if (chain == null || chain.length == 0) {
       int actualPort = port == null ? 443 : port;
-      throw new IOException(String.format("Could not retrieve an SSL certificate from '%s:%s'", host, actualPort));
+      throw new IOException(STR."Could not retrieve an SSL certificate from '\{host}:\{actualPort}'");
     }
     return asCertificateXO(chain[0], isInTrustStore(chain[0]));
   }

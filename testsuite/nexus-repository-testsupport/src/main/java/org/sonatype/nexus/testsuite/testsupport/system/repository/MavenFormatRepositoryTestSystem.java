@@ -12,6 +12,10 @@
  */
 package org.sonatype.nexus.testsuite.testsupport.system.repository;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -28,6 +32,14 @@ import org.sonatype.nexus.testsuite.testsupport.system.repository.config.MavenPr
 
 import static org.sonatype.nexus.testsuite.testsupport.system.RepositoryTestSystem.FORMAT_MAVEN;
 
+/**
+ * Maven format repository test system implementation.
+ * <p>
+ * This implementation leverages Java 21 virtual threads for I/O-bound operations
+ * to improve performance and scalability for repository provisioning and configuration.
+ * 
+ * @since 3.0
+ */
 @Named(FORMAT_MAVEN)
 @Singleton
 public class MavenFormatRepositoryTestSystem
@@ -42,42 +54,120 @@ public class MavenFormatRepositoryTestSystem
   public static final String ATTRIBUTES_KEY_VERSION_POLICY = "versionPolicy";
 
   public static final String ATTRIBUTES_KEY_LAYOUT_POLICY = "layoutPolicy";
+  
+  private final ExecutorService virtualThreadExecutor;
 
   @Inject
   public MavenFormatRepositoryTestSystem(final RepositoryManager repositoryManager) {
     super(repositoryManager);
+    // Create a virtual thread per task executor for I/O-bound operations
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
+  /**
+   * Creates a new Maven hosted repository configuration.
+   *
+   * @param name the repository name
+   * @return the repository configuration
+   */
   public MavenHostedRepositoryConfig hosted(final String name) {
     return new MavenHostedRepositoryConfig(this::createHosted).withName(name);
   }
 
+  /**
+   * Creates a Maven hosted repository using virtual threads for I/O-bound operations.
+   *
+   * @param config the repository configuration
+   * @return the created repository
+   */
   public Repository createHosted(final MavenHostedRepositoryConfig config) {
-    return doCreate(
-        applyMavenAttributes(createHostedConfiguration(config), config.getVersionPolicy(), config.getLayoutPolicy()));
+    // Use CompletableFuture with virtual threads for I/O-bound operations
+    try {
+      return CompletableFuture.supplyAsync(
+          () -> doCreate(applyMavenAttributes(
+              createHostedConfiguration(config), 
+              config.getVersionPolicy(), 
+              config.getLayoutPolicy())),
+          virtualThreadExecutor)
+          .join();
+    } catch (Exception e) {
+      throw new RuntimeException("Failed to create Maven hosted repository", e);
+    }
   }
 
+  /**
+   * Creates a new Maven proxy repository configuration.
+   *
+   * @param name the repository name
+   * @return the repository configuration
+   */
   public MavenProxyRepositoryConfig proxy(final String name) {
     return new MavenProxyRepositoryConfig(this::createProxy)
          .withName(name);
   }
 
+  /**
+   * Creates a Maven proxy repository using virtual threads for I/O-bound operations.
+   *
+   * @param config the repository configuration
+   * @return the created repository
+   */
   public Repository createProxy(final MavenProxyRepositoryConfig config) {
-    Configuration cfg =
-        applyMavenAttributes(createProxyConfiguration(config), config.getVersionPolicy(), config.getLayoutPolicy());
-    return doCreate(cfg);
+    // Use CompletableFuture with virtual threads for I/O-bound operations
+    try {
+      Configuration cfg = applyMavenAttributes(
+          createProxyConfiguration(config), 
+          config.getVersionPolicy(), 
+          config.getLayoutPolicy());
+      return CompletableFuture.supplyAsync(
+          () -> doCreate(cfg),
+          virtualThreadExecutor)
+          .join();
+    } catch (Exception e) {
+      throw new RuntimeException("Failed to create Maven proxy repository", e);
+    }
   }
 
+  /**
+   * Creates a new Maven group repository configuration.
+   *
+   * @param name the repository name
+   * @return the repository configuration
+   */
   public MavenGroupRepositoryConfig group(final String name) {
     return new MavenGroupRepositoryConfig(this::createGroup)
         .withName(name);
   }
 
+  /**
+   * Creates a Maven group repository using virtual threads for I/O-bound operations.
+   *
+   * @param config the repository configuration
+   * @return the created repository
+   */
   public Repository createGroup(final MavenGroupRepositoryConfig config) {
-    return doCreate(
-        applyMavenAttributes(createGroupConfiguration(config), config.getVersionPolicy(), config.getLayoutPolicy()));
+    // Use CompletableFuture with virtual threads for I/O-bound operations
+    try {
+      return CompletableFuture.supplyAsync(
+          () -> doCreate(applyMavenAttributes(
+              createGroupConfiguration(config), 
+              config.getVersionPolicy(), 
+              config.getLayoutPolicy())),
+          virtualThreadExecutor)
+          .join();
+    } catch (Exception e) {
+      throw new RuntimeException("Failed to create Maven group repository", e);
+    }
   }
 
+  /**
+   * Applies Maven-specific attributes to the repository configuration.
+   *
+   * @param configuration the repository configuration
+   * @param versionPolicy the version policy
+   * @param layoutPolicy the layout policy
+   * @return the updated configuration
+   */
   private Configuration applyMavenAttributes(
       final Configuration configuration,
       final VersionPolicy versionPolicy,

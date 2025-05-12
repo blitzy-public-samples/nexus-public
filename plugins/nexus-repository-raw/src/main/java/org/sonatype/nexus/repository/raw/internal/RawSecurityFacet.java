@@ -23,11 +23,19 @@ import org.sonatype.nexus.repository.security.VariableResolverAdapter;
  * RAW security facet.
  *
  * @since 3.0
+ * @see SecurityFacetSupport
  */
 @Named
 public class RawSecurityFacet
     extends SecurityFacetSupport
 {
+  /**
+   * Constructor with dependency injection.
+   * 
+   * @param securityContributor the RAW format security contributor
+   * @param variableResolverAdapter the variable resolver adapter
+   * @param contentPermissionChecker the content permission checker
+   */
   @Inject
   public RawSecurityFacet(final RawFormatSecurityContributor securityContributor,
                           @Named("simple") final VariableResolverAdapter variableResolverAdapter,

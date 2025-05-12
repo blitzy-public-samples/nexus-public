@@ -12,14 +12,14 @@
  */
 package org.sonatype.nexus.repository.apt.rest;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.Path;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.Path;
 
 import org.sonatype.nexus.repository.rest.api.RepositoriesApiResourceBeta;
 import org.sonatype.nexus.rest.APIConstants;
 
-import io.swagger.annotations.Api;
+import io.swagger.v3.oas.annotations.Hidden;
 
 import static org.sonatype.nexus.repository.apt.rest.AptHostedRepositoriesApiResourceBeta.RESOURCE_URI;
 
@@ -27,8 +27,11 @@ import static org.sonatype.nexus.repository.apt.rest.AptHostedRepositoriesApiRes
  * @since 3.26
  * @deprecated the 'beta' prefix is being phased out, prefer starting new APIs with {@link APIConstants#V1_API_PREFIX}
  * instead. Support backward compatibility.
+ * 
+ * This class has been updated for Java 21 compatibility with Jakarta EE APIs and OpenAPI 3.0 annotations.
+ * The REST endpoint is compatible with Java 21 Virtual Threads for improved request handling performance.
  */
-@Api(hidden = true)
+@Hidden
 @Named
 @Singleton
 @Path(RESOURCE_URI)

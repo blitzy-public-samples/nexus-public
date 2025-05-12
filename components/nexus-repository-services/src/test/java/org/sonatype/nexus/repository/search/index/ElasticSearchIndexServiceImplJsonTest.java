@@ -12,10 +12,7 @@
  */
 package org.sonatype.nexus.repository.search.index;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.hasKey;
-import static org.hamcrest.Matchers.not;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -23,6 +20,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 public class ElasticSearchIndexServiceImplJsonTest {
+
+  private final ObjectMapper mapper = new ObjectMapper();
 
   @Test
   public void testRemoveAttributes() throws JsonProcessingException {
@@ -90,23 +89,39 @@ public class ElasticSearchIndexServiceImplJsonTest {
         + "  },\n"
         + "  \"tags\": []\n"
         + "}";
-    ObjectMapper mapper = new ObjectMapper();
-    JsonNode expectedNode = mapper.readTree(expected);
+    
+    // Parse JSON for more detailed assertions
     JsonNode actualNode = mapper.readTree(newJson);
+    JsonNode expectedNode = mapper.readTree(expected);
     
-    // Assert overall JSON equality
-    assertThat(actualNode, equalTo(expectedNode));
+    // Main assertion comparing the entire JSON structure
+    assertThat(actualNode).isEqualTo(expectedNode);
     
-    // Additional assertions for JSON structure validation
-    assertThat(actualNode.get("format").asText(), equalTo("conan"));
-    assertThat(actualNode.get("assets").isArray(), equalTo(true));
-    assertThat(actualNode.get("assets").get(0).get("attributes").get("conan"), hasKey("packageId"));
-    assertThat(actualNode.get("assets").get(0).get("attributes").get("conan"), hasKey("packageRevision"));
-    assertThat(actualNode.get("assets").get(0).get("attributes").get("conan"), not(hasKey("revision")));
-    assertThat(actualNode.get("assets").get(0).get("attributes").get("conan"), not(hasKey("baseVersion")));
-    assertThat(actualNode.get("assets").get(0).get("attributes").get("conan"), not(hasKey("channel")));
+    // Additional assertions for specific elements in the JSON structure
+    assertThat(actualNode.get("format").asText()).isEqualTo("conan");
+    assertThat(actualNode.get("assets").isArray()).isTrue();
+    assertThat(actualNode.get("assets").size()).isEqualTo(1);
+    
+    // Verify asset attributes
+    JsonNode assetNode = actualNode.get("assets").get(0);
+    assertThat(assetNode.get("content_type").asText()).isEqualTo("text/plain");
+    assertThat(assetNode.get("name").asText()).isEqualTo("/info.txt");
+    assertThat(assetNode.get("id").asText()).isEqualTo("daa66d2e");
+    
+    // Verify conan attributes
+    JsonNode attributesNode = assetNode.get("attributes");
+    assertThat(attributesNode.has("conan")).isTrue();
+    assertThat(attributesNode.has("cona.n")).isFalse(); // Should be removed
+    assertThat(attributesNode.has("content")).isFalse(); // Should be removed
+    
+    // Verify specific conan attributes
+    JsonNode conanNode = attributesNode.get("conan");
+    assertThat(conanNode.has("packageId")).isTrue();
+    assertThat(conanNode.has("packageRevision")).isTrue();
+    assertThat(conanNode.has("channel")).isFalse(); // Should be removed
+    assertThat(conanNode.has("revision")).isFalse(); // Should be removed
+    assertThat(conanNode.has("baseVersion")).isFalse(); // Should be removed
   }
-
 
   @Test
   public void testRemoveAttributesNoAssetAttributes() throws JsonProcessingException {
@@ -122,18 +137,26 @@ public class ElasticSearchIndexServiceImplJsonTest {
         + "}";
 
     String newJson = ElasticSearchIndexServiceImpl.filterConanAssetAttributes(json);
-    ObjectMapper mapper = new ObjectMapper();
-    JsonNode originalNode = mapper.readTree(json);
-    JsonNode filteredNode = mapper.readTree(newJson);
     
-    // Assert overall JSON equality
-    assertThat(filteredNode, equalTo(originalNode));
+    // Parse JSON for assertions
+    JsonNode actualNode = mapper.readTree(newJson);
+    JsonNode expectedNode = mapper.readTree(json);
     
-    // Additional assertions for JSON structure validation
-    assertThat(filteredNode.get("format").asText(), equalTo("conan"));
-    assertThat(filteredNode.has("assets"), equalTo(false));
-    assertThat(filteredNode.get("attributes").get("conan").has("channel"), equalTo(true));
-    assertThat(filteredNode.get("attributes").get("conan").get("channel").asText(), equalTo("_"));
+    // Main assertion comparing the entire JSON structure
+    assertThat(actualNode).isEqualTo(expectedNode);
+    
+    // Additional assertions for specific elements
+    assertThat(actualNode.get("format").asText()).isEqualTo("conan");
+    assertThat(actualNode.has("assets")).isFalse();
+    
+    // Verify attributes structure is preserved
+    JsonNode attributesNode = actualNode.get("attributes");
+    assertThat(attributesNode.has("conan")).isTrue();
+    
+    // Verify conan attributes
+    JsonNode conanNode = attributesNode.get("conan");
+    assertThat(conanNode.get("channel").asText()).isEqualTo("_");
+    assertThat(conanNode.get("baseVersion").asText()).isEqualTo("1.5.2");
   }
 
   @Test
@@ -176,18 +199,35 @@ public class ElasticSearchIndexServiceImplJsonTest {
         + "}";
 
     String newJson = ElasticSearchIndexServiceImpl.filterConanAssetAttributes(json);
-    ObjectMapper mapper = new ObjectMapper();
-    JsonNode originalNode = mapper.readTree(json);
-    JsonNode filteredNode = mapper.readTree(newJson);
     
-    // Assert overall JSON equality
-    assertThat(filteredNode, equalTo(originalNode));
+    // Parse JSON for assertions
+    JsonNode actualNode = mapper.readTree(newJson);
+    JsonNode expectedNode = mapper.readTree(json);
     
-    // Additional assertions for JSON structure validation
-    assertThat(filteredNode.get("format").asText(), equalTo("maven"));
-    assertThat(filteredNode.get("assets").isArray(), equalTo(true));
-    assertThat(filteredNode.get("assets").get(0).get("attributes").has("conan"), equalTo(true));
-    assertThat(filteredNode.get("assets").get(0).get("attributes").get("conan").has("revision"), equalTo(true));
-    assertThat(filteredNode.get("assets").get(0).get("attributes").get("conan").has("baseVersion"), equalTo(true));
+    // Main assertion comparing the entire JSON structure
+    assertThat(actualNode).isEqualTo(expectedNode);
+    
+    // Additional assertions for specific elements
+    assertThat(actualNode.get("format").asText()).isEqualTo("maven");
+    assertThat(actualNode.get("assets").isArray()).isTrue();
+    assertThat(actualNode.get("assets").size()).isEqualTo(1);
+    
+    // Verify that for non-conan format, attributes are not modified
+    JsonNode assetNode = actualNode.get("assets").get(0);
+    JsonNode attributesNode = assetNode.get("attributes");
+    
+    // All original attributes should still be present
+    assertThat(attributesNode.has("cona.n")).isTrue();
+    assertThat(attributesNode.has("conan")).isTrue();
+    assertThat(attributesNode.has("checksum")).isTrue();
+    assertThat(attributesNode.has("content")).isTrue();
+    
+    // Verify conan attributes are unchanged
+    JsonNode conanNode = attributesNode.get("conan");
+    assertThat(conanNode.has("channel")).isTrue();
+    assertThat(conanNode.has("revision")).isTrue();
+    assertThat(conanNode.has("packageId")).isTrue();
+    assertThat(conanNode.has("baseVersion")).isTrue();
+    assertThat(conanNode.has("packageRevision")).isTrue();
   }
 }

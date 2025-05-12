@@ -14,6 +14,7 @@ package org.sonatype.nexus.common.text;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
+// Updated to JUnit Jupiter (JUnit 5) for Java 21 compatibility
 import org.junit.jupiter.api.Test;
 
 import static java.lang.Math.pow;
@@ -22,16 +23,13 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 
 /**
- * Tests for {@link UnitFormatter} with Java 21 compatibility.
+ * Tests for {@link UnitFormatter}.
  * 
- * @since 3.24
+ * Updated for Java 21 compatibility using JUnit Jupiter 5.10.1 and Hamcrest 2.2.
  */
 public class UnitFormatterTest
     extends TestSupport
 {
-  /**
-   * Tests the formatStorage method with various storage units.
-   */
   @Test
   public void testFormatStorage_units() {
     assertThat(UnitFormatter.formatStorage(round(pow(10, 18))), is("1.00 EB"));
@@ -51,9 +49,6 @@ public class UnitFormatterTest
     assertThat(UnitFormatter.formatStorage(-1 * round(pow(10, 0))), is("-1.00 B"));
   }
 
-  /**
-   * Tests the formatStorage method with rounding behavior.
-   */
   @Test
   public void testFormatStorage_rounding() {
     assertThat(UnitFormatter.formatStorage(round(3.7 * pow(10, 18))), is("3.70 EB"));

@@ -12,14 +12,15 @@
  */
 package org.sonatype.nexus.repository.maven.internal.filter;
 
+import java.nio.file.Path;
+
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.app.ApplicationDirectories;
 
 import org.apache.maven.index.reader.Record;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 
 import static org.hamcrest.core.Is.is;
@@ -27,26 +28,33 @@ import static org.hamcrest.core.IsInstanceOf.instanceOf;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.Mockito.when;
 
-public class DuplicateDetectionStrategyProviderTest
+/**
+ * Tests for {@link DuplicateDetectionStrategyProvider} with Java 21 and JUnit Jupiter.
+ * 
+ * Verifies that the provider correctly instantiates the appropriate strategy implementation
+ * based on the configured strategy name, with case-insensitive matching and proper fallback
+ * behavior for unknown strategy types.
+ */
+class DuplicateDetectionStrategyProviderTest
     extends TestSupport
 {
   private static final int MAX_HEAP_GB = 1;
 
   private static final int MAX_DISK_SIZE_GB = 10;
 
-  @Rule
-  public TemporaryFolder tmpDir = new TemporaryFolder();
+  @TempDir
+  Path tempDir;
 
   @Mock
   private ApplicationDirectories applicationDirectories;
 
-  @Before
-  public void setup() {
-    when(applicationDirectories.getTemporaryDirectory()).thenReturn(tmpDir.getRoot());
+  @BeforeEach
+  void setup() {
+    when(applicationDirectories.getTemporaryDirectory()).thenReturn(tempDir.toFile());
   }
 
   @Test
-  public void shouldReturnBloomStrategy() throws Exception {
+  void shouldReturnBloomStrategy() {
     DuplicateDetectionStrategy<Record> strategy = new DuplicateDetectionStrategyProvider(applicationDirectories,
         "BLOOM", MAX_HEAP_GB, MAX_DISK_SIZE_GB).get();
 
@@ -59,7 +67,7 @@ public class DuplicateDetectionStrategyProviderTest
   }
 
   @Test
-  public void shouldReturnDiskStrategy() throws Exception {
+  void shouldReturnDiskStrategy() {
     DuplicateDetectionStrategy<Record> strategy = new DuplicateDetectionStrategyProvider(applicationDirectories, "DISK",
         MAX_HEAP_GB, MAX_DISK_SIZE_GB)
         .get();
@@ -74,7 +82,7 @@ public class DuplicateDetectionStrategyProviderTest
   }
 
   @Test
-  public void shouldReturnInMemoryStrategy() throws Exception {
+  void shouldReturnInMemoryStrategy() {
     DuplicateDetectionStrategy<Record> strategy = new DuplicateDetectionStrategyProvider(applicationDirectories, "HASH",
         MAX_HEAP_GB, MAX_DISK_SIZE_GB)
         .get();
@@ -89,7 +97,7 @@ public class DuplicateDetectionStrategyProviderTest
   }
 
   @Test
-  public void shouldFallBackToBloomForUnknownStrategy() throws Exception {
+  void shouldFallBackToBloomForUnknownStrategy() {
     DuplicateDetectionStrategy<Record> strategy = new DuplicateDetectionStrategyProvider(applicationDirectories,
         "unknown", MAX_HEAP_GB, MAX_DISK_SIZE_GB)
         .get();

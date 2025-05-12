@@ -35,7 +35,10 @@ import static org.sonatype.nexus.repository.http.HttpMethods.MKCOL;
 import static org.sonatype.nexus.repository.http.HttpMethods.PUT;
 
 /**
+ * Handler for APT repository snapshots.
+ * 
  * @since 3.17
+ * @see AptSnapshotFacet
  */
 @Named
 @Singleton
@@ -45,15 +48,12 @@ public class AptSnapshotHandler
 {
   private static final Pattern SNAPSHOT_PATH_PATTERN = Pattern.compile("/snapshots/([^/]+)/?(.*)");
 
-  public static final class State
-  {
-    public final String assetPath;
-
-    public State(final String assetPath) {
-      super();
-      this.assetPath = assetPath;
-    }
-  }
+  /**
+   * State record for tracking asset paths.
+   * 
+   * @since 3.17
+   */
+  public static record State(String assetPath) {}
 
   @Override
   public Response handle(final Context context) throws Exception {
@@ -80,16 +80,13 @@ public class AptSnapshotHandler
     Repository repository = context.getRepository();
     AptSnapshotFacet snapshotFacet = repository.facet(AptSnapshotFacet.class);
 
-    switch (method) {
-      case MKCOL:
-        return doMkcol(id, snapshotFacet);
-      case PUT:
-        return doPut(context, id, snapshotFacet);
-      case DELETE:
-        return doDelete(id, snapshotFacet);
-      default:
-        return HttpResponses.methodNotAllowed(method, DELETE, MKCOL, PUT);
-    }
+    // Using Java 21 Pattern Matching for switch
+    return switch (method) {
+      case MKCOL -> doMkcol(id, snapshotFacet);
+      case PUT -> doPut(context, id, snapshotFacet);
+      case DELETE -> doDelete(id, snapshotFacet);
+      default -> HttpResponses.methodNotAllowed(method, DELETE, MKCOL, PUT);
+    };
   }
 
   private Response doMkcol(final String id, final AptSnapshotFacet snapshotFacet) throws IOException {

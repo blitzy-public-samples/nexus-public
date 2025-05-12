@@ -27,6 +27,7 @@ import org.sonatype.nexus.repository.types.ProxyType;
 
 /**
  * Adapter to expose Apt specific properties for the repositories REST API.
+ * Implements Java 21 pattern matching for improved type safety and readability.
  *
  * @since 3.20
  */
@@ -45,36 +46,48 @@ public class AptApiRepositoryAdapter
     String name = repository.getName();
     String url = repository.getUrl();
 
-    switch (repository.getType().toString()) {
-      case HostedType.NAME:
-        return new AptHostedApiRepository(
-            name,
-            url,
-            online,
-            getHostedStorageAttributes(repository),
-            getCleanupPolicyAttributes(repository),
-            createAptHostedRepositoriesAttributes(repository),
-            createAptSigningRepositoriesAttributes(repository),
-            getComponentAttributes(repository));
-      case ProxyType.NAME:
-        return new AptProxyApiRepository(name, url, online,
-            getHostedStorageAttributes(repository),
-            getCleanupPolicyAttributes(repository),
-            createAptProxyRepositoriesAttributes(repository),
-            getProxyAttributes(repository),
-            getNegativeCacheAttributes(repository),
-            getHttpClientAttributes(repository),
-            getRoutingRuleName(repository),
-            getReplicationAttributes(repository));
-    }
-    return null;
+    // Using Java 21 pattern matching for switch with type patterns
+    return switch (repository.getType()) {
+      case HostedType type -> new AptHostedApiRepository(
+          name,
+          url,
+          online,
+          getHostedStorageAttributes(repository),
+          getCleanupPolicyAttributes(repository),
+          createAptHostedRepositoriesAttributes(repository),
+          createAptSigningRepositoriesAttributes(repository),
+          getComponentAttributes(repository));
+      case ProxyType type -> new AptProxyApiRepository(name, url, online,
+          getHostedStorageAttributes(repository),
+          getCleanupPolicyAttributes(repository),
+          createAptProxyRepositoriesAttributes(repository),
+          getProxyAttributes(repository),
+          getNegativeCacheAttributes(repository),
+          getHttpClientAttributes(repository),
+          getRoutingRuleName(repository),
+          getReplicationAttributes(repository));
+      default -> null;
+    };
   }
 
+  /**
+   * Creates APT hosted repositories attributes from the repository configuration.
+   *
+   * @param repository the repository to extract attributes from
+   * @return the APT hosted repositories attributes
+   */
   private AptHostedRepositoriesAttributes createAptHostedRepositoriesAttributes(final Repository repository) {
     String distribution = repository.getConfiguration().attributes(AptFormat.NAME).get("distribution", String.class);
     return new AptHostedRepositoriesAttributes(distribution);
   }
 
+  /**
+   * Creates APT signing repositories attributes from the repository configuration.
+   * Returns null if no passphrase is configured.
+   *
+   * @param repository the repository to extract attributes from
+   * @return the APT signing repositories attributes or null
+   */
   private AptSigningRepositoriesAttributes createAptSigningRepositoriesAttributes(final Repository repository) {
     NestedAttributesMap aptAttributes = repository.getConfiguration().attributes("aptSigning");
     String keypair = aptAttributes.get("keypair", String.class);
@@ -85,6 +98,12 @@ public class AptApiRepositoryAdapter
     return null;
   }
 
+  /**
+   * Creates APT proxy repositories attributes from the repository configuration.
+   *
+   * @param repository the repository to extract attributes from
+   * @return the APT proxy repositories attributes
+   */
   private AptProxyRepositoriesAttributes createAptProxyRepositoriesAttributes(final Repository repository) {
     NestedAttributesMap aptAttributes = repository.getConfiguration().attributes(AptFormat.NAME);
     String distribution = aptAttributes.get("distribution", String.class);

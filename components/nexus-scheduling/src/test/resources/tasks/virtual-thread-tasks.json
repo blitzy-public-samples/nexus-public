@@ -1,283 +1,197 @@
 {
-  "taskDefinitions": [
+  "tasks": [
     {
       "id": "io-bound-task",
-      "name": "I/O Bound Virtual Thread Task",
-      "description": "Task that performs I/O operations to test virtual thread unmounting behavior",
-      "type": "io-bound",
+      "name": "I/O-Bound Virtual Thread Test Task",
+      "description": "Tests virtual thread performance with I/O-bound operations",
+      "type": "simple",
       "properties": {
-        "operationType": "file-read",
-        "operationCount": 100,
+        "operationType": "io",
+        "operationCount": 1000,
         "delayMs": 50,
-        "batchSize": 10
-      },
-      "expectedBehavior": {
-        "shouldUnmount": true,
-        "expectedThreadType": "virtual",
-        "expectedPerformanceImprovement": "high"
+        "useVirtualThreads": true,
+        "threadPoolSize": 100,
+        "collectMetrics": true
       }
     },
     {
-      "id": "network-io-task",
-      "name": "Network I/O Virtual Thread Task",
-      "description": "Task that simulates network operations to test virtual thread benefits for remote calls",
-      "type": "io-bound",
+      "id": "io-bound-platform-task",
+      "name": "I/O-Bound Platform Thread Test Task",
+      "description": "Tests platform thread performance with I/O-bound operations for comparison",
+      "type": "simple",
       "properties": {
-        "operationType": "http-request",
-        "operationCount": 50,
-        "delayMs": 100,
-        "simulateLatencyMs": 200,
-        "concurrentRequests": 20
-      },
-      "expectedBehavior": {
-        "shouldUnmount": true,
-        "expectedThreadType": "virtual",
-        "expectedPerformanceImprovement": "high"
-      }
-    },
-    {
-      "id": "db-io-task",
-      "name": "Database I/O Virtual Thread Task",
-      "description": "Task that simulates database operations to test JDBC compatibility with virtual threads",
-      "type": "io-bound",
-      "properties": {
-        "operationType": "jdbc-query",
-        "operationCount": 75,
-        "queryComplexity": "medium",
-        "simulateLatencyMs": 150,
-        "batchSize": 5
-      },
-      "expectedBehavior": {
-        "shouldUnmount": true,
-        "expectedThreadType": "virtual",
-        "expectedPerformanceImprovement": "medium",
-        "potentialPinningRisk": "low"
+        "operationType": "io",
+        "operationCount": 1000,
+        "delayMs": 50,
+        "useVirtualThreads": false,
+        "threadPoolSize": 100,
+        "collectMetrics": true
       }
     },
     {
       "id": "cpu-bound-task",
-      "name": "CPU Bound Task",
-      "description": "Task that performs CPU-intensive operations to test virtual thread behavior with computation",
-      "type": "cpu-bound",
+      "name": "CPU-Bound Virtual Thread Test Task",
+      "description": "Tests virtual thread performance with CPU-bound operations",
+      "type": "simple",
       "properties": {
-        "operationType": "matrix-multiplication",
-        "matrixSize": 500,
-        "iterations": 10,
-        "parallelism": 4
-      },
-      "expectedBehavior": {
-        "shouldUnmount": false,
-        "expectedThreadType": "virtual",
-        "expectedPerformanceImprovement": "low",
-        "potentialPinningRisk": "high"
+        "operationType": "cpu",
+        "operationCount": 100,
+        "iterationsPerOperation": 10000,
+        "useVirtualThreads": true,
+        "threadPoolSize": 16,
+        "collectMetrics": true
+      }
+    },
+    {
+      "id": "cpu-bound-platform-task",
+      "name": "CPU-Bound Platform Thread Test Task",
+      "description": "Tests platform thread performance with CPU-bound operations for comparison",
+      "type": "simple",
+      "properties": {
+        "operationType": "cpu",
+        "operationCount": 100,
+        "iterationsPerOperation": 10000,
+        "useVirtualThreads": false,
+        "threadPoolSize": 16,
+        "collectMetrics": true
       }
     },
     {
       "id": "mixed-workload-task",
-      "name": "Mixed Workload Task",
-      "description": "Task that combines I/O and CPU operations to test virtual thread behavior with mixed workloads",
-      "type": "mixed",
+      "name": "Mixed Workload Virtual Thread Test Task",
+      "description": "Tests virtual thread performance with mixed CPU and I/O operations",
+      "type": "simple",
       "properties": {
-        "ioOperations": 50,
-        "cpuOperations": 20,
-        "ioToComputeRatio": 0.7,
-        "simulateLatencyMs": 100
-      },
-      "expectedBehavior": {
-        "shouldUnmount": true,
-        "expectedThreadType": "virtual",
-        "expectedPerformanceImprovement": "medium",
-        "potentialPinningRisk": "medium"
+        "operationType": "mixed",
+        "operationCount": 500,
+        "ioRatio": 0.7,
+        "delayMs": 30,
+        "iterationsPerOperation": 5000,
+        "useVirtualThreads": true,
+        "threadPoolSize": 50,
+        "collectMetrics": true
       }
     },
     {
-      "id": "thread-pinning-test",
-      "name": "Thread Pinning Detection Test",
-      "description": "Task that tests detection of thread pinning scenarios with synchronized blocks and native methods",
-      "type": "pinning-test",
+      "id": "mixed-workload-platform-task",
+      "name": "Mixed Workload Platform Thread Test Task",
+      "description": "Tests platform thread performance with mixed CPU and I/O operations for comparison",
+      "type": "simple",
       "properties": {
-        "useSynchronizedBlocks": true,
-        "useNativeMethods": true,
-        "synchronizedBlockCount": 20,
-        "nativeMethodCallCount": 10,
-        "interleaveWithIo": true
-      },
-      "expectedBehavior": {
-        "shouldUnmount": false,
-        "expectedThreadType": "virtual",
-        "expectedPerformanceImprovement": "none",
-        "potentialPinningRisk": "high",
-        "shouldDetectPinning": true
+        "operationType": "mixed",
+        "operationCount": 500,
+        "ioRatio": 0.7,
+        "delayMs": 30,
+        "iterationsPerOperation": 5000,
+        "useVirtualThreads": false,
+        "threadPoolSize": 50,
+        "collectMetrics": true
       }
     },
     {
-      "id": "high-concurrency-test",
-      "name": "High Concurrency Virtual Thread Test",
-      "description": "Task that tests behavior with a very high number of concurrent virtual threads",
-      "type": "concurrency-test",
+      "id": "thread-pinning-test-task",
+      "name": "Thread Pinning Test Task",
+      "description": "Tests virtual thread pinning behavior with synchronized blocks",
+      "type": "simple",
       "properties": {
-        "threadCount": 10000,
+        "operationType": "pinning",
+        "operationCount": 200,
+        "synchronizedBlockCount": 50,
+        "nativeCallCount": 20,
+        "useVirtualThreads": true,
+        "threadPoolSize": 30,
+        "detectPinning": true,
+        "collectMetrics": true,
+        "captureStackTraces": true
+      }
+    },
+    {
+      "id": "scalability-test-task",
+      "name": "Scalability Test Task",
+      "description": "Tests virtual thread scalability with increasing concurrent operations",
+      "type": "simple",
+      "properties": {
+        "operationType": "scalability",
+        "startConcurrency": 100,
+        "maxConcurrency": 10000,
+        "concurrencyStep": 1000,
         "operationsPerThread": 5,
-        "operationType": "mixed",
-        "ioToComputeRatio": 0.8
-      },
-      "expectedBehavior": {
-        "shouldUnmount": true,
-        "expectedThreadType": "virtual",
-        "expectedPerformanceImprovement": "high",
-        "memoryEfficiencyImprovement": "high"
+        "delayMs": 20,
+        "useVirtualThreads": true,
+        "collectMetrics": true
       }
     },
     {
-      "id": "s3-blobstore-task",
-      "name": "S3 BlobStore Virtual Thread Test",
-      "description": "Task that tests S3 BlobStore operations with virtual threads",
-      "type": "io-bound",
+      "id": "database-operations-virtual-task",
+      "name": "Database Operations Virtual Thread Test Task",
+      "description": "Tests virtual thread performance with database operations",
+      "type": "simple",
       "properties": {
-        "operationType": "s3-operations",
-        "operationCount": 50,
-        "operationMix": {
-          "read": 70,
-          "write": 20,
-          "delete": 10
-        },
-        "blobSizeKb": 1024,
-        "concurrentOperations": 25
-      },
-      "expectedBehavior": {
-        "shouldUnmount": true,
-        "expectedThreadType": "virtual",
-        "expectedPerformanceImprovement": "high",
-        "potentialPinningRisk": "low"
+        "operationType": "database",
+        "operationCount": 500,
+        "queryType": "mixed",
+        "useVirtualThreads": true,
+        "threadPoolSize": 100,
+        "collectMetrics": true,
+        "detectPinning": true
       }
     },
     {
-      "id": "thread-comparison-task",
-      "name": "Thread Model Comparison Test",
-      "description": "Task that runs identical workloads with both virtual threads and platform threads for direct comparison",
-      "type": "comparison-test",
+      "id": "database-operations-platform-task",
+      "name": "Database Operations Platform Thread Test Task",
+      "description": "Tests platform thread performance with database operations for comparison",
+      "type": "simple",
       "properties": {
-        "operationType": "mixed",
-        "operationCount": 1000,
-        "ioToComputeRatio": 0.8,
-        "concurrentThreads": {
-          "virtual": 1000,
-          "platform": 200
-        },
-        "warmupIterations": 5,
-        "measurementIterations": 10
-      },
-      "expectedBehavior": {
-        "virtualThreadMetrics": {
-          "throughput": "higher",
-          "latencyP95": "lower",
-          "memoryUsage": "lower",
-          "cpuUtilization": "similar"
-        },
-        "generateComparisonReport": true
+        "operationType": "database",
+        "operationCount": 500,
+        "queryType": "mixed",
+        "useVirtualThreads": false,
+        "threadPoolSize": 100,
+        "collectMetrics": true
       }
     },
     {
-      "id": "repository-proxy-task",
-      "name": "Repository Proxy Virtual Thread Test",
-      "description": "Task that tests repository proxy operations with virtual threads",
-      "type": "io-bound",
+      "id": "network-operations-virtual-task",
+      "name": "Network Operations Virtual Thread Test Task",
+      "description": "Tests virtual thread performance with network operations (HTTP/S3)",
+      "type": "simple",
       "properties": {
-        "operationType": "proxy-fetch",
-        "repositoryFormat": "maven",
-        "artifactCount": 50,
-        "artifactSizeKbRange": [10, 5120],
-        "concurrentFetches": 20
-      },
-      "expectedBehavior": {
-        "shouldUnmount": true,
-        "expectedThreadType": "virtual",
-        "expectedPerformanceImprovement": "high",
-        "potentialPinningRisk": "low"
+        "operationType": "network",
+        "operationCount": 500,
+        "requestType": "mixed",
+        "useVirtualThreads": true,
+        "threadPoolSize": 200,
+        "collectMetrics": true,
+        "detectPinning": true
       }
-    }
-  ],
-  "threadPoolConfigurations": [
+    },
     {
-      "id": "default-virtual-thread-pool",
-      "description": "Default configuration for virtual thread executor",
-      "type": "virtual",
+      "id": "network-operations-platform-task",
+      "name": "Network Operations Platform Thread Test Task",
+      "description": "Tests platform thread performance with network operations for comparison",
+      "type": "simple",
       "properties": {
-        "factory": "Thread.ofVirtual().factory()",
-        "namePrefix": "nexus-vt-"
+        "operationType": "network",
+        "operationCount": 500,
+        "requestType": "mixed",
+        "useVirtualThreads": false,
+        "threadPoolSize": 200,
+        "collectMetrics": true
       }
     },
     {
-      "id": "custom-virtual-thread-pool",
-      "description": "Custom configuration for virtual thread executor with specific parameters",
-      "type": "virtual",
+      "id": "memory-usage-comparison-task",
+      "name": "Memory Usage Comparison Task",
+      "description": "Compares memory usage between virtual threads and platform threads",
+      "type": "simple",
       "properties": {
-        "factory": "Thread.ofVirtual().name(\"custom-vt-\", 0).factory()",
-        "schedulerParallelism": 16,
-        "schedulerMaxPoolSize": 256
+        "operationType": "memory",
+        "threadCounts": [100, 1000, 10000],
+        "runVirtualThreads": true,
+        "runPlatformThreads": true,
+        "collectMetrics": true,
+        "heapDumpEnabled": false
       }
-    },
-    {
-      "id": "platform-thread-pool",
-      "description": "Platform thread pool for comparison testing",
-      "type": "platform",
-      "properties": {
-        "corePoolSize": 10,
-        "maxPoolSize": 50,
-        "keepAliveTimeSeconds": 60,
-        "queueCapacity": 100,
-        "namePrefix": "nexus-pt-"
-      }
-    }
-  ],
-  "jvmConfigurations": [
-    {
-      "id": "default-virtual-thread-jvm-config",
-      "description": "Default JVM configuration for virtual thread testing",
-      "jvmArgs": [
-        "-Djdk.virtualThreadScheduler.parallelism=16",
-        "-Djdk.virtualThreadScheduler.maxPoolSize=256",
-        "-Djdk.tracePinnedThreads=full"
-      ]
-    },
-    {
-      "id": "zgc-virtual-thread-jvm-config",
-      "description": "ZGC configuration for virtual thread testing",
-      "jvmArgs": [
-        "-XX:+UseZGC",
-        "-XX:+ZGenerational",
-        "-Djdk.virtualThreadScheduler.parallelism=16",
-        "-Djdk.virtualThreadScheduler.maxPoolSize=256",
-        "-Djdk.tracePinnedThreads=full"
-      ]
-    },
-    {
-      "id": "debug-virtual-thread-jvm-config",
-      "description": "Debug configuration for virtual thread testing",
-      "jvmArgs": [
-        "-Djdk.virtualThreadScheduler.parallelism=4",
-        "-Djdk.virtualThreadScheduler.maxPoolSize=64",
-        "-Djdk.tracePinnedThreads=full",
-        "-Djdk.virtualThreadScheduler.showStacks=true",
-        "-Djdk.virtualThread.debugExceptions=true"
-      ]
-    }
-  ],
-  "diagnosticTools": [
-    {
-      "id": "thread-dump-json",
-      "description": "Generate thread dump in JSON format",
-      "command": "jcmd <pid> Thread.dump_to_file -format=json <file>"
-    },
-    {
-      "id": "thread-dump-text",
-      "description": "Generate thread dump in text format",
-      "command": "jcmd <pid> Thread.dump_to_file -format=text <file>"
-    },
-    {
-      "id": "jfr-recording",
-      "description": "Start JFR recording for virtual thread analysis",
-      "command": "jcmd <pid> JFR.start name=VirtualThreads settings=profile duration=60s filename=virtual-threads.jfr"
     }
   ]
 }

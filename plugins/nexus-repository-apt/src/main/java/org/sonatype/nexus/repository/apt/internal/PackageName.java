@@ -13,19 +13,39 @@
 package org.sonatype.nexus.repository.apt.internal;
 
 /**
+ * Constants for APT package file names.
+ * 
  * @since 3.17
+ * @since 3.60 Updated for Java 21 compatibility using sealed interface pattern
  */
-public class PackageName
-{
-  private PackageName() {
-    throw new IllegalAccessError("Utility class");
+public sealed interface PackageName permits PackageName.Impl {
+  /**
+   * Uncompressed packages file name.
+   */
+  String PACKAGES = "Packages";
+
+  /**
+   * GZip compressed packages file name.
+   */
+  String PACKAGES_GZ = "Packages.gz";
+
+  /**
+   * BZip2 compressed packages file name.
+   */
+  String PACKAGES_BZ2 = "Packages.bz2";
+
+  /**
+   * XZ compressed packages file name.
+   */
+  String PACKAGES_XZ = "Packages.xz";
+  
+  /**
+   * Private implementation class to seal the interface.
+   * This prevents other classes from implementing this interface.
+   */
+  final class Impl implements PackageName {
+    private Impl() {
+      // Prevent instantiation
+    }
   }
-
-  public static final String PACKAGES = "Packages";
-
-  public static final String PACKAGES_GZ = "Packages.gz";
-
-  public static final String PACKAGES_BZ2 = "Packages.bz2";
-
-  public static final String PACKAGES_XZ = "Packages.xz";
 }

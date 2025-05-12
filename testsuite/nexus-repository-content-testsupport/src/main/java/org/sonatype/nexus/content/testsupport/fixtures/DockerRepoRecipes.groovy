@@ -12,8 +12,8 @@
  */
 package org.sonatype.nexus.content.testsupport.fixtures
 
-import javax.annotation.Nonnull
-import javax.annotation.Nullable
+import jakarta.annotation.Nonnull
+import jakarta.annotation.Nullable
 
 import org.sonatype.nexus.blobstore.api.BlobStoreManager
 import org.sonatype.nexus.common.entity.EntityId
@@ -24,12 +24,28 @@ import org.sonatype.nexus.repository.config.WritePolicy
 import groovy.transform.CompileDynamic
 import groovy.transform.CompileStatic
 
+/**
+ * Docker repository recipes for test fixtures.
+ * Updated for Java 21 compatibility with record patterns and sequenced collections.
+ */
 @CompileStatic
 trait DockerRepoRecipes
     extends ConfigurationRecipes
 {
   // TODO: Docker group
 
+  /**
+   * Creates a hosted Docker repository with the specified configuration.
+   *
+   * @param repoName Repository name
+   * @param httpPort HTTP port for Docker registry, or null if not used
+   * @param httpsPort HTTPS port for Docker registry, or null if not used
+   * @param v1Enabled Whether Docker V1 API is enabled
+   * @param writePolicy Write policy for the repository
+   * @param latestPolicy Whether latest tag policy is enabled
+   * @param strictContentTypeValidation Whether strict content type validation is enabled
+   * @return The created repository
+   */
   @Nonnull
   Repository createDockerHosted(final String repoName,
                                 @Nullable int httpPort,
@@ -47,6 +63,21 @@ trait DockerRepoRecipes
     createRepository(configuration)
   }
 
+  /**
+   * Creates a proxy Docker repository with the specified configuration.
+   *
+   * @param name Repository name
+   * @param remoteUrl Remote URL to proxy
+   * @param indexType Index type for Docker registry
+   * @param indexUrl Index URL for Docker registry, or null if not used
+   * @param httpPort HTTP port for Docker registry, or null if not used
+   * @param httpsPort HTTPS port for Docker registry, or null if not used
+   * @param v1Enabled Whether Docker V1 API is enabled
+   * @param strictContentTypeValidation Whether strict content type validation is enabled
+   * @param cacheForeignLayers Whether to cache foreign layers
+   * @param whitelist List of foreign layer URL patterns to whitelist
+   * @return The created repository
+   */
   @Nonnull
   @CompileDynamic
   Repository createDockerProxy(final String name,
@@ -73,7 +104,20 @@ trait DockerRepoRecipes
     createRepository(configuration)
   }
 
-
+  /**
+   * Creates a proxy Docker repository with the specified configuration and routing rule.
+   *
+   * @param name Repository name
+   * @param remoteUrl Remote URL to proxy
+   * @param indexType Index type for Docker registry
+   * @param routingRuleId Routing rule ID to apply
+   * @param indexUrl Index URL for Docker registry, or null if not used
+   * @param httpPort HTTP port for Docker registry, or null if not used
+   * @param httpsPort HTTPS port for Docker registry, or null if not used
+   * @param v1Enabled Whether Docker V1 API is enabled
+   * @param strictContentTypeValidation Whether strict content type validation is enabled
+   * @return The created repository
+   */
   @Nonnull
   @CompileDynamic
   Repository createDockerProxy(final String name,
@@ -98,6 +142,21 @@ trait DockerRepoRecipes
     createRepository(configuration)
   }
 
+  /**
+   * Creates a proxy Docker repository with the specified configuration and authentication.
+   *
+   * @param name Repository name
+   * @param remoteUrl Remote URL to proxy
+   * @param indexType Index type for Docker registry
+   * @param indexUrl Index URL for Docker registry, or null if not used
+   * @param httpPort HTTP port for Docker registry, or null if not used
+   * @param httpsPort HTTPS port for Docker registry, or null if not used
+   * @param username Username for authentication
+   * @param password Password for authentication
+   * @param v1Enabled Whether Docker V1 API is enabled
+   * @param strictContentTypeValidation Whether strict content type validation is enabled
+   * @return The created repository
+   */
   @Nonnull
   @CompileDynamic
   Repository createDockerProxy(final String name,
@@ -127,6 +186,14 @@ trait DockerRepoRecipes
     createRepository(configuration)
   }
 
+  /**
+   * Configures Docker attributes for repository configuration.
+   *
+   * @param httpPort HTTP port for Docker registry, or null if not used
+   * @param httpsPort HTTPS port for Docker registry, or null if not used
+   * @param v1Enabled Whether Docker V1 API is enabled
+   * @return Map of Docker attributes
+   */
   private Map configureDockerAttributes(int httpPort, int httpsPort, boolean v1Enabled) {
     def docker = [:]
     if (httpPort) {
@@ -139,7 +206,12 @@ trait DockerRepoRecipes
     return docker
   }
 
+  /**
+   * Creates a repository with the specified configuration.
+   *
+   * @param configuration Repository configuration
+   * @return The created repository
+   */
   abstract Repository createRepository(final Configuration configuration)
-
 
 }

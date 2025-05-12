@@ -13,6 +13,7 @@
 package org.sonatype.nexus.repository.apt.datastore.internal.hosted;
 
 import java.util.Set;
+import java.util.concurrent.Executors;
 import javax.inject.Named;
 
 import org.sonatype.nexus.repository.apt.datastore.internal.hosted.metadata.AptHostedMetadataFacet;
@@ -22,7 +23,7 @@ import org.sonatype.nexus.repository.content.fluent.FluentAsset;
 import org.sonatype.nexus.repository.content.maintenance.LastAssetMaintenanceFacet;
 
 /**
- * Apt maintenance facet
+ * Apt maintenance facet that leverages Java 21 Virtual Threads for I/O-bound metadata operations.
  *
  * @since 3.31
  */
@@ -34,15 +35,35 @@ public class AptLastAssetMaintenanceFacet
   public Set<String> deleteAsset(final Asset asset) {
     final Set<String> deleteAssetPaths = super.deleteAsset(asset);
     final FluentAsset fluentAsset = contentFacet().assets().with(asset);
-    metadata().removePackageMetadata(fluentAsset);
-    metadata().removeInReleaseIndex();
+    
+    // Use Virtual Threads for I/O-bound metadata operations
+    Executors.newVirtualThreadPerTaskExecutor().execute(() -> {
+      try {
+        metadata().removePackageMetadata(fluentAsset);
+        metadata().removeInReleaseIndex();
+      }
+      catch (Exception e) {
+        log.error("Error removing APT metadata for asset {}", asset.path(), e);
+      }
+    });
+    
     return deleteAssetPaths;
   }
 
   @Override
   public Set<String> deleteComponent(final Component component) {
     Set<String> deleteAssetPaths = super.deleteComponent(component);
-    metadata().removeInReleaseIndex();
+    
+    // Use Virtual Threads for I/O-bound metadata operations
+    Executors.newVirtualThreadPerTaskExecutor().execute(() -> {
+      try {
+        metadata().removeInReleaseIndex();
+      }
+      catch (Exception e) {
+        log.error("Error removing APT InRelease index for component {}", component.name(), e);
+      }
+    });
+    
     return deleteAssetPaths;
   }
 

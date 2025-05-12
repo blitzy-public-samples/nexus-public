@@ -21,18 +21,53 @@ import static org.sonatype.nexus.repository.apt.internal.AptMimeTypes.TEXT;
 import static org.sonatype.nexus.repository.apt.internal.AptMimeTypes.XZ;
 
 /**
+ * Represents an item in an APT repository snapshot, pairing a content specifier with its content.
+ * 
+ * <p>This class is immutable and thread-safe, leveraging Java 21 records for its data structures.</p>
+ *
  * @since 3.17
  */
-public class SnapshotItem
+public record SnapshotItem(ContentSpecifier specifier, Content content)
 {
-  public static enum Role
+  /**
+   * Defines the role of a snapshot item, which determines its MIME type and purpose in the APT repository.
+   * Each role is associated with a specific MIME type from {@link org.sonatype.nexus.repository.apt.internal.AptMimeTypes}.
+   */
+  public enum Role
   {
+    /**
+     * The main Release index file (Release).
+     */
     RELEASE_INDEX(TEXT),
+    
+    /**
+     * An inline Release index file.
+     */
     RELEASE_INLINE_INDEX(TEXT),
+    
+    /**
+     * Raw package index file (Packages).
+     */
     PACKAGE_INDEX_RAW(TEXT),
+    
+    /**
+     * Release signature file (Release.gpg).
+     */
     RELEASE_SIG(SIGNATURE),
+    
+    /**
+     * Gzip-compressed package index file (Packages.gz).
+     */
     PACKAGE_INDEX_GZ(GZIP),
+    
+    /**
+     * Bzip2-compressed package index file (Packages.bz2).
+     */
     PACKAGE_INDEX_BZ2(BZIP),
+    
+    /**
+     * XZ-compressed package index file (Packages.xz).
+     */
     PACKAGE_INDEX_XZ(XZ);
 
     private final String mimeType;
@@ -41,31 +76,37 @@ public class SnapshotItem
       this.mimeType = mimeType;
     }
 
+    /**
+     * Returns the MIME type associated with this role.
+     *
+     * @return the MIME type string
+     */
     public String getMimeType() {
       return mimeType;
     }
   }
 
-  public static class ContentSpecifier
-  {
-    public final String path;
-
-    public final Role role;
-
-    public ContentSpecifier(final String path, final Role role) {
-      super();
-      this.path = path;
-      this.role = role;
+  /**
+   * Specifies the path and role of a snapshot item.
+   * 
+   * @param path the repository path of the item
+   * @param role the role of the item, which determines its MIME type
+   */
+  public record ContentSpecifier(String path, Role role) {}
+  
+  /**
+   * Creates a new SnapshotItem with the given specifier and content.
+   * 
+   * @param specifier the content specifier defining the path and role
+   * @param content the actual content of the item
+   */
+  public SnapshotItem {
+    // Validate parameters
+    if (specifier == null) {
+      throw new NullPointerException("specifier cannot be null");
     }
-  }
-
-  public final ContentSpecifier specifier;
-
-  public final Content content;
-
-  public SnapshotItem(final ContentSpecifier specifier, final Content content) {
-    super();
-    this.specifier = specifier;
-    this.content = content;
+    if (content == null) {
+      throw new NullPointerException("content cannot be null");
+    }
   }
 }

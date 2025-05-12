@@ -17,14 +17,20 @@ import org.sonatype.nexus.onboarding.capability.OnboardingCapability;
 import org.sonatype.nexus.onboarding.capability.OnboardingCapabilityHelper;
 import org.sonatype.nexus.security.anonymous.AnonymousManager;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.when;
 
+/**
+ * Tests for {@link InstanceStatus} that verify the instance status determination logic.
+ */
+@ExtendWith(MockitoExtension.class)
 public class InstanceStatusTest
     extends TestSupport
 {
@@ -39,22 +45,29 @@ public class InstanceStatusTest
   @Mock
   private OnboardingCapability onboardingCapability;
 
-  @Before
+  @BeforeEach
   public void setup() {
     underTest = new InstanceStatus(anonymousManager, onboardingCapabilityHelper);
     when(onboardingCapabilityHelper.getOnboardingCapability()).thenReturn(onboardingCapability);
   }
 
+  /**
+   * Verifies that the instance is considered new when anonymous access is not configured.
+   */
   @Test
-  public void test_instanceIsNew_whenAnonymousNotConfigured() {
+  public void shouldReturnInstanceIsNewWhenAnonymousNotConfigured() {
     when(anonymousManager.isConfigured()).thenReturn(false);
 
     assertThat(underTest.isNew(), is(true));
     assertThat(underTest.isUpgraded(), is(false));
   }
 
+  /**
+   * Verifies that the instance is considered upgraded when anonymous access is configured
+   * but registration has not been started.
+   */
   @Test
-  public void test_instanceIsUpgraded_whenAnonymousConfiguredButRegistrationNotStarted() {
+  public void shouldReturnInstanceIsUpgradedWhenAnonymousConfiguredButRegistrationNotStarted() {
     when(anonymousManager.isConfigured()).thenReturn(true);
     when(onboardingCapability.isRegistrationStarted()).thenReturn(false);
 
@@ -62,8 +75,12 @@ public class InstanceStatusTest
     assertThat(underTest.isUpgraded(), is(true));
   }
 
+  /**
+   * Verifies that the instance is considered new when anonymous access is configured,
+   * registration has been started, but not yet completed.
+   */
   @Test
-  public void test_instanceIsNew_whenAnonymousConfiguredAndRegistrationStartedButNotCompleted() {
+  public void shouldReturnInstanceIsNewWhenAnonymousConfiguredAndRegistrationStartedButNotCompleted() {
     when(anonymousManager.isConfigured()).thenReturn(true);
     when(onboardingCapability.isRegistrationStarted()).thenReturn(true);
     when(onboardingCapability.isRegistrationCompleted()).thenReturn(false);

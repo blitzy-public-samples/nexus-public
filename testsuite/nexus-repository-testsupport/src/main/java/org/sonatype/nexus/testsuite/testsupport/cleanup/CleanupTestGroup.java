@@ -13,7 +13,20 @@
 package org.sonatype.nexus.testsuite.testsupport.cleanup;
 
 /**
- * Marker interface to group Cleanup Integration Tests
+ * Marker interface to group Cleanup Integration Tests.
+ * <p>
+ * Compatible with Java 21 runtime environment. Tests in this group validate cleanup functionality
+ * across repository formats and can be combined with other test categories such as Java21TestGroup
+ * or VirtualThreadTestGroup when testing cleanup operations with Java 21 features.
+ * <p>
+ * Example usage with Java 21 Virtual Threads:
+ * <pre>
+ * &#64;Category({CleanupTestGroup.class, VirtualThreadTestGroup.class})
+ * &#64;Test
+ * public void testCleanupWithVirtualThreads() {
+ *   // Test implementation using virtual threads for cleanup operations
+ * }
+ * </pre>
  */
 public interface CleanupTestGroup
 {

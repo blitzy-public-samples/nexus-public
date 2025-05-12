@@ -12,23 +12,23 @@
  */
 package com.sonatype.nexus.ssl.plugin.internal.rest;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.Path;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.Path;
 
 import org.sonatype.nexus.rest.APIConstants;
 import org.sonatype.nexus.security.internal.rest.SecurityApiResourceBeta;
 import org.sonatype.nexus.ssl.TrustStore;
 import org.sonatype.nexus.ssl.CertificateRetriever;
 
-import io.swagger.annotations.Api;
+import io.swagger.v3.oas.annotations.Hidden;
 
 /**
  * @since 3.26
  * @deprecated beta prefix is being phased out, prefer starting new APIs with {@link APIConstants#V1_API_PREFIX} instead
  */
-@Api(hidden = true)
+@Hidden
 @Named
 @Singleton
 @Path(CertificateApiResourceBeta.RESOURCE_URI)

@@ -15,10 +15,21 @@ package org.sonatype.nexus.content.raw.internal.store;
 import org.sonatype.nexus.repository.content.store.AssetDAO;
 
 /**
+ * Raw format-specific {@link AssetDAO}.
+ * 
+ * This is a marker interface that extends the base {@link AssetDAO} without adding additional methods.
+ * It's sealed to restrict which classes can implement it, following Java 21 best practices.
+ *
  * @since 3.24
  */
-public interface RawAssetDAO
+public sealed interface RawAssetDAO
     extends AssetDAO
+    permits org.sonatype.nexus.content.raw.internal.store.RawAssetDAO.FromDb
 {
-  // nothing to add...
+  /**
+   * Marker interface for MyBatis implementation.
+   */
+  non-sealed interface FromDb extends RawAssetDAO {
+    // no additional methods
+  }
 }

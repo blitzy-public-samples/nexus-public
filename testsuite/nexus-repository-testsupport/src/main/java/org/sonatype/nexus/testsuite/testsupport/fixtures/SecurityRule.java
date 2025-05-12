@@ -21,6 +21,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
@@ -47,17 +48,30 @@ import org.sonatype.nexus.selector.SelectorManager;
 
 import com.google.common.collect.ImmutableMap;
 import org.apache.shiro.authz.Permission;
-import org.junit.rules.ExternalResource;
+import org.junit.jupiter.api.extension.AfterEachCallback;
+import org.junit.jupiter.api.extension.BeforeEachCallback;
+import org.junit.jupiter.api.extension.ExtensionContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.security.user.UserManager.DEFAULT_SOURCE;
 
+/**
+ * Security rule for test fixtures that provides utilities for creating and managing security-related entities.
+ * <p>
+ * This class implements JUnit Jupiter's extension model for test lifecycle management.
+ * It provides methods to create and manage users, roles, privileges, and selectors for testing purposes.
+ * </p>
+ * <p>
+ * Compatible with Java 21 and JUnit Jupiter 5.10.1.
+ * </p>
+ *
+ * @since 3.60
+ */
 @Named
 @Singleton
-public class SecurityRule
-    extends ExternalResource
+public class SecurityRule implements BeforeEachCallback, AfterEachCallback
 {
   private static final Logger log = LoggerFactory.getLogger(SecurityRule.class);
 
@@ -79,6 +93,12 @@ public class SecurityRule
 
   final Set<String> selectors = new HashSet<>();
 
+  /**
+   * Constructor for SecurityRule with minimal dependencies.
+   *
+   * @param securitySystemProvider Provider for SecuritySystem
+   * @param selectorManagerProvider Provider for SelectorManager
+   */
   public SecurityRule(
       final Provider<SecuritySystem> securitySystemProvider,
       final Provider<SelectorManager> selectorManagerProvider)
@@ -86,6 +106,13 @@ public class SecurityRule
     this(securitySystemProvider, selectorManagerProvider, () -> null);
   }
 
+  /**
+   * Constructor for SecurityRule with anonymous configuration support.
+   *
+   * @param securitySystemProvider Provider for SecuritySystem
+   * @param selectorManagerProvider Provider for SelectorManager
+   * @param anonymousConfigurationProvider Provider for AnonymousManager
+   */
   public SecurityRule(
       final Provider<SecuritySystem> securitySystemProvider,
       final Provider<SelectorManager> selectorManagerProvider,
@@ -96,6 +123,14 @@ public class SecurityRule
     this.anonymousConfigurationProvider = checkNotNull(anonymousConfigurationProvider);
   }
 
+  /**
+   * Constructor for SecurityRule with all dependencies.
+   *
+   * @param securitySystem SecuritySystem instance
+   * @param selectorManager SelectorManager instance
+   * @param anonymousConfiguration AnonymousManager instance
+   * @param realmManager RealmManager instance
+   */
   @Inject
   public SecurityRule(
       final SecuritySystem securitySystem,
@@ -110,46 +145,78 @@ public class SecurityRule
   }
 
   @Override
-  public void after() {
-    users.forEach(user -> {
-      try {
-        securitySystemProvider.get().deleteUser(user, DEFAULT_SOURCE);
-      }
-      catch (Exception e) { //NOSONAR
-        log.debug("Failed to cleanup user: {}", user, e);
-      }
-    });
-    roles.forEach(roleId -> {
-      try {
-        securitySystemProvider.get().getAuthorizationManager(DEFAULT_SOURCE).deleteRole(roleId);
-      }
-      catch (Exception e) { //NOSONAR
-        log.debug("Failed to cleanup role: {}", roleId, e);
-      }
-    });
-    privileges.forEach(privilege -> {
-      try {
-        securitySystemProvider.get().getAuthorizationManager(DEFAULT_SOURCE).deletePrivilege(privilege.getId());
-      }
-      catch (Exception e) { //NOSONAR
-        log.debug("Failed to cleanup privilege: {}", privilege.getId(), e);
-      }
-    });
-    selectors.stream()
-        .map(selectorManagerProvider.get()::findByName)
-        .filter(Optional::isPresent)
-        .map(Optional::get)
-        .forEach(selectorManagerProvider.get()::delete);
+  public void beforeEach(final ExtensionContext context) {
+    // No setup needed before each test
+  }
 
+  @Override
+  public void afterEach(final ExtensionContext context) {
+    // Use virtual threads for cleanup operations to improve performance
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Clean up users
+      users.forEach(user -> {
+        executor.submit(() -> {
+          try {
+            securitySystemProvider.get().deleteUser(user, DEFAULT_SOURCE);
+          }
+          catch (Exception e) { //NOSONAR
+            log.debug("Failed to cleanup user: {}", user, e);
+          }
+        });
+      });
+
+      // Clean up roles
+      roles.forEach(roleId -> {
+        executor.submit(() -> {
+          try {
+            securitySystemProvider.get().getAuthorizationManager(DEFAULT_SOURCE).deleteRole(roleId);
+          }
+          catch (Exception e) { //NOSONAR
+            log.debug("Failed to cleanup role: {}", roleId, e);
+          }
+        });
+      });
+
+      // Clean up privileges
+      privileges.forEach(privilege -> {
+        executor.submit(() -> {
+          try {
+            securitySystemProvider.get().getAuthorizationManager(DEFAULT_SOURCE).deletePrivilege(privilege.getId());
+          }
+          catch (Exception e) { //NOSONAR
+            log.debug("Failed to cleanup privilege: {}", privilege.getId(), e);
+          }
+        });
+      });
+
+      // Clean up selectors
+      selectors.stream()
+          .map(selectorManagerProvider.get()::findByName)
+          .filter(Optional::isPresent)
+          .map(Optional::get)
+          .forEach(selector -> {
+            executor.submit(() -> selectorManagerProvider.get().delete(selector));
+          });
+    }
+
+    // Restore original anonymous configuration if it was changed
     if (originalAnonymousConfiguration != null) {
       anonymousConfigurationProvider.get().setConfiguration(originalAnonymousConfiguration);
     }
   }
 
+  /**
+   * Retrieves a privilege by name.
+   *
+   * @param privilegeName the name of the privilege to retrieve
+   * @return the privilege or null if not found
+   */
   public Privilege getPrivilege(final String privilegeName) {
     try {
       return securitySystemProvider.get().getAuthorizationManager(DEFAULT_SOURCE).listPrivileges().stream()
-          .filter(privilege -> privilege.getName().equals(privilegeName)).findFirst().orElse(null);
+          .filter(privilege -> privilege.getName().equals(privilegeName))
+          .findFirst()
+          .orElse(null);
     }
     catch (NoSuchAuthorizationManagerException e) {
       log.debug("Failed to get privilege {}", privilegeName, e);
@@ -157,10 +224,18 @@ public class SecurityRule
     return null;
   }
 
+  /**
+   * Retrieves a role by ID.
+   *
+   * @param roleId the ID of the role to retrieve
+   * @return the role or null if not found
+   */
   public Role getRole(final String roleId) {
     try {
       return securitySystemProvider.get().getAuthorizationManager(DEFAULT_SOURCE).listRoles().stream()
-          .filter(role -> role.getRoleId().equals(roleId)).findFirst().orElse(null);
+          .filter(role -> role.getRoleId().equals(roleId))
+          .findFirst()
+          .orElse(null);
     }
     catch (NoSuchAuthorizationManagerException e) {
       log.debug("Failed to get role {}", roleId, e);
@@ -168,6 +243,15 @@ public class SecurityRule
     return null;
   }
 
+  /**
+   * Adds roles to a user.
+   *
+   * @param userId the ID of the user
+   * @param roleIds the IDs of the roles to add
+   * @return the updated user
+   * @throws UserNotFoundException if the user is not found
+   * @throws NoSuchUserManagerException if the user manager is not found
+   */
   public User addRole(final String userId, final String... roleIds)
       throws UserNotFoundException, NoSuchUserManagerException
   {
@@ -176,7 +260,8 @@ public class SecurityRule
       throw new UserNotFoundException(userId);
     }
     Set<RoleIdentifier> roles = Arrays.stream(roleIds)
-        .map(it -> getRole(it))
+        .map(this::getRole)
+        .filter(Objects::nonNull)
         .map(it -> new RoleIdentifier(it.getSource(), it.getRoleId()))
         .collect(Collectors.toSet());
     user.setRoles(roles);
@@ -184,6 +269,12 @@ public class SecurityRule
     return user;
   }
 
+  /**
+   * Retrieves a user by ID.
+   *
+   * @param userId the ID of the user to retrieve
+   * @return the user or null if not found
+   */
   public User getUser(final String userId) {
     try {
       return securitySystemProvider.get().getUser(userId, DEFAULT_SOURCE);
@@ -194,14 +285,38 @@ public class SecurityRule
     return null;
   }
 
+  /**
+   * Creates a content selector privilege with default actions.
+   *
+   * @param name the name of the privilege
+   * @param selector the selector expression
+   * @return the created privilege
+   */
   public Privilege createContentSelectorPrivilege(final String name, final String selector) {
     return createContentSelectorPrivilege(name, selector, "*", "*");
   }
 
+  /**
+   * Creates a content selector privilege with default actions for a specific repository.
+   *
+   * @param name the name of the privilege
+   * @param selector the selector expression
+   * @param repository the repository name
+   * @return the created privilege
+   */
   public Privilege createContentSelectorPrivilege(final String name, final String selector, final String repository) {
     return createContentSelectorPrivilege(name, selector, repository, "*");
   }
 
+  /**
+   * Creates a content selector privilege with specific actions for a specific repository.
+   *
+   * @param name the name of the privilege
+   * @param selector the selector expression
+   * @param repository the repository name
+   * @param actions the actions to allow
+   * @return the created privilege
+   */
   public Privilege createContentSelectorPrivilege(
       final String name,
       final String selector,
@@ -223,7 +338,13 @@ public class SecurityRule
   }
 
   /**
-   * Note that the properties should be in multiples of 2 (key/value pairs)
+   * Creates a privilege with the specified type, name, and properties.
+   * Note that the properties should be in multiples of 2 (key/value pairs).
+   *
+   * @param type the type of privilege
+   * @param name the name of the privilege
+   * @param properties the properties as key/value pairs
+   * @return the created privilege
    */
   public Privilege createPrivilege(final String type, final String name, final String... properties) {
     Map<String, String> propMap = new HashMap<>();
@@ -244,38 +365,82 @@ public class SecurityRule
     return null;
   }
 
+  /**
+   * Creates a role with the specified privileges.
+   *
+   * @param name the name of the role
+   * @param privilegeNames the names of the privileges to include
+   * @return the created role
+   */
   public Role createRole(final String name, final String... privilegeNames) {
     return createRole(name, new String[0], privilegeNames);
   }
 
+  /**
+   * Creates a role with the specified contained roles and privileges.
+   *
+   * @param name the name of the role
+   * @param roleIds the IDs of the roles to include
+   * @param privilegeNames the names of the privileges to include
+   * @return the created role
+   */
   public Role createRole(final String name, final String[] roleIds, final String[] privilegeNames) {
     List<Privilege> privileges =
-        Arrays.stream(privilegeNames).map(this::getPrivilege).filter(Objects::nonNull).collect(Collectors.toList());
+        Arrays.stream(privilegeNames)
+            .map(this::getPrivilege)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toList());
 
     if (privileges.size() != privilegeNames.length) {
-      String privilegeNamesStr = Arrays.asList(privilegeNames).stream().collect(Collectors.joining(", "));
+      String privilegeNamesStr = Arrays.stream(privilegeNames).collect(Collectors.joining(", "));
       throw new IllegalStateException(
-          String.format("Missing privileges names: %s privileges: %s", privilegeNamesStr, privileges));
+          STR."Missing privileges names: \{privilegeNamesStr} privileges: \{privileges}");
     }
 
-    List<Role> roles = Arrays.stream(roleIds).map(this::getRole).filter(Objects::nonNull).collect(Collectors.toList());
+    List<Role> roles = Arrays.stream(roleIds)
+        .map(this::getRole)
+        .filter(Objects::nonNull)
+        .collect(Collectors.toList());
 
     if (roles.size() != roleIds.length) {
-      throw new IllegalStateException("Missing privileges names: ${roleIds} privileges: ${roles}");
+      String roleIdsStr = Arrays.stream(roleIds).collect(Collectors.joining(", "));
+      throw new IllegalStateException(STR."Missing role IDs: \{roleIdsStr} roles: \{roles}");
     }
 
     return createRole(name, roles, privileges);
   }
 
+  /**
+   * Creates a role with the specified privileges.
+   *
+   * @param name the name of the role
+   * @param privileges the privileges to include
+   * @return the created role
+   */
   public Role createRole(final String name, final Privilege... privileges) {
     return createRole(name, new Role[0], privileges);
   }
 
+  /**
+   * Creates a role with the specified contained roles and privileges.
+   *
+   * @param name the name of the role
+   * @param roles the roles to include
+   * @param privileges the privileges to include
+   * @return the created role
+   */
   public Role createRole(final String name, final List<Role> roles, final List<Privilege> privileges) {
-    return createRole(name, roles.toArray(new Role[roles.size()]),
-        privileges.toArray(new Privilege[privileges.size()]));
+    return createRole(name, roles.toArray(new Role[0]), privileges.toArray(new Privilege[0]));
   }
 
+  /**
+   * Creates a role with the specified contained roles and privileges.
+   *
+   * @param name the name of the role
+   * @param containedRoles the roles to include
+   * @param privileges the privileges to include
+   * @return the created role
+   */
   public Role createRole(final String name, final Role[] containedRoles, final Privilege[] privileges) {
     Role role =
         new Role(name, name, name, DEFAULT_SOURCE, false, Arrays.stream(containedRoles).map(Role::getRoleId).collect(
@@ -292,15 +457,31 @@ public class SecurityRule
     return null;
   }
 
+  /**
+   * Finds a privilege by permission.
+   *
+   * @param permission the permission to find
+   * @return the privilege or null if not found
+   */
   public Privilege findPrivilege(final Permission permission) {
     return securitySystemProvider.get().listPrivileges().stream()
-        .filter(privilege -> privilege.getPermission().equals(permission)).findFirst().orElse(null);
+        .filter(privilege -> privilege.getPermission().equals(permission))
+        .findFirst()
+        .orElse(null);
   }
 
+  /**
+   * Finds a role by ID.
+   *
+   * @param roleId the ID of the role to find
+   * @return the role or null if not found
+   */
   public Role findRole(final String roleId) {
     try {
       return securitySystemProvider.get().getAuthorizationManager(DEFAULT_SOURCE).listRoles().stream()
-          .filter(role -> role.getRoleId().equals(roleId)).findFirst().orElse(null);
+          .filter(role -> role.getRoleId().equals(roleId))
+          .findFirst()
+          .orElse(null);
     }
     catch (NoSuchAuthorizationManagerException e) {
       log.debug("Unable to find role {}", roleId, e);
@@ -309,19 +490,27 @@ public class SecurityRule
   }
 
   /**
-   * Create a user with the specified privileges, the username, the password, and the role will be the same.
+   * Creates a user with the specified privileges.
+   * The username, password, and role will be the same.
    *
-   * @param prefix a prefix for the generated user & roles.
+   * @param prefix a prefix for the generated user & roles
    * @param privileges the required privileges
-   *
    * @return the created user
    */
   public User createUserWithPrivileges(final String prefix, final String... privileges) {
-    String roleName = prefix + "-" + UUID.randomUUID().toString();
+    String roleName = prefix + "-" + UUID.randomUUID();
     Role role = createRole(roleName, privileges);
     return createUser(roleName, roleName, role.getRoleId());
   }
 
+  /**
+   * Creates a user with the specified name, password, and roles.
+   *
+   * @param name the name of the user
+   * @param password the password for the user
+   * @param roles the roles to assign to the user
+   * @return the created user
+   */
   public User createUser(final String name, final String password, final String... roles) {
     User user = new User();
     user.setUserId(name);
@@ -344,10 +533,26 @@ public class SecurityRule
     return null;
   }
 
+  /**
+   * Creates a selector with the specified name and expression.
+   *
+   * @param name the name of the selector
+   * @param expression the selector expression
+   * @return the created selector configuration
+   */
   public SelectorConfiguration createSelector(final String name, final String expression) {
     return createSelector(name, name, CselSelector.TYPE, expression);
   }
 
+  /**
+   * Creates a selector with the specified name, description, type, and expression.
+   *
+   * @param name the name of the selector
+   * @param description the description of the selector
+   * @param type the type of selector
+   * @param expression the selector expression
+   * @return the created selector configuration
+   */
   public SelectorConfiguration createSelector(
       final String name,
       final String description,
@@ -362,6 +567,9 @@ public class SecurityRule
     return selectorConfiguration;
   }
 
+  /**
+   * Deletes all selectors.
+   */
   public void deleteAllSelectors() {
     SelectorManager selectorManager = selectorManagerProvider.get();
     log.debug("Deleting all content selectors.");
@@ -377,14 +585,17 @@ public class SecurityRule
   }
 
   /**
-   * Sets whether anonymous access should be enabled. Note that the original unset state of Anonymous Access can't be
-   * restore as setting the state persists it.
+   * Sets whether anonymous access should be enabled.
+   * Note that the original unset state of Anonymous Access can't be
+   * restored as setting the state persists it.
+   *
+   * @param anonymousEnabled whether anonymous access should be enabled
    */
   public void setAnonymousEnabled(final boolean anonymousEnabled) {
     AnonymousManager anonymousManager = anonymousConfigurationProvider.get();
     if (originalAnonymousConfiguration == null) {
       AnonymousConfiguration current = anonymousManager.getConfiguration();
-      // The original one can't be modified, technically we can't quite get back the orign
+      // The original one can't be modified, technically we can't quite get back the origin
       originalAnonymousConfiguration = anonymousManager.newConfiguration();
       originalAnonymousConfiguration.setEnabled(current.isEnabled());
       originalAnonymousConfiguration.setRealmName(current.getRealmName());
@@ -399,22 +610,47 @@ public class SecurityRule
     anonymousManager.setConfiguration(configuration);
   }
 
+  /**
+   * Adds a role to be managed by this rule.
+   *
+   * @param roleId the ID of the role to manage
+   */
   public void manageRole(final String roleId) {
     roles.add(roleId);
   }
 
+  /**
+   * Adds a user to be managed by this rule.
+   *
+   * @param userId the ID of the user to manage
+   */
   public void manageUser(final String userId) {
     users.add(userId);
   }
 
+  /**
+   * Removes a user from being managed by this rule.
+   *
+   * @param userId the ID of the user to stop managing
+   */
   public void unmanageUser(final String userId) {
     users.remove(userId);
   }
 
+  /**
+   * Removes a role from being managed by this rule.
+   *
+   * @param roleId the ID of the role to stop managing
+   */
   public void unmanageRole(final String roleId) {
     roles.remove(roleId);
   }
 
+  /**
+   * Enables a role realm.
+   *
+   * @param roleRealmName the name of the role realm to enable
+   */
   public void enableRoleRealm(final String roleRealmName) {
     realmManagerProvider.get().enableRealm(roleRealmName);
   }

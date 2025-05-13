@@ -14,8 +14,9 @@ package org.sonatype.nexus.audit.internal;
 
 import java.util.Map;
 import java.util.concurrent.Executors;
-import javax.inject.Named;
-import javax.inject.Singleton;
+
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.audit.AuditData;
 import org.sonatype.nexus.audit.AuditDataRecordedEvent;
@@ -23,11 +24,13 @@ import org.sonatype.nexus.audit.internal.GlobalAuditWebhook.AuditWebhookPayload.
 import org.sonatype.nexus.webhooks.GlobalWebhook;
 import org.sonatype.nexus.webhooks.WebhookPayload;
 
-import com.google.common.eventbus.AllowConcurrentEvents;
 import com.google.common.eventbus.Subscribe;
 
 /**
- * Global audit {@link Webhook}.
+ * Global audit {@link GlobalWebhook} implementation.
+ * <p>
+ * This webhook dispatches audit events to configured subscribers using Java 21 Virtual Threads
+ * for improved concurrency and resource utilization.
  *
  * @since 3.1
  */
@@ -44,44 +47,51 @@ public class GlobalAuditWebhook
   }
 
   /**
-   * Handles audit events and dispatches them to webhook subscribers.
-   * 
-   * Uses Java 21 pattern matching for instanceof to simplify event data extraction.
-   * The actual webhook dispatch is performed asynchronously using Virtual Threads
-   * for improved scalability and reduced resource consumption.
+   * Event handler for audit data recorded events.
+   * <p>
+   * Uses Java 21 Virtual Threads for non-blocking, concurrent webhook dispatch,
+   * allowing for thousands of concurrent webhook deliveries with minimal resource overhead.
+   * This is particularly beneficial for high-volume audit environments where many
+   * webhook subscribers may exist.
    *
-   * @param event the audit event to process
+   * @param event the audit data recorded event
    */
   @Subscribe
-  @AllowConcurrentEvents
   public void on(final AuditDataRecordedEvent event) {
-    // Use Java 21 pattern matching for instanceof to extract audit data
-    if (event instanceof AuditDataRecordedEvent auditEvent) {
-      AuditData auditData = auditEvent.getData();
-      AuditWebhookPayload payload = new AuditWebhookPayload();
-      payload.setInitiator(auditData.getInitiator());
-      payload.setNodeId(auditData.getNodeId());
+    // Create the payload from the event data
+    AuditData auditData = event.getData();
+    AuditWebhookPayload payload = new AuditWebhookPayload();
+    payload.setInitiator(auditData.getInitiator());
+    payload.setNodeId(auditData.getNodeId());
 
-      Audit audit = new Audit(auditData.getDomain(), auditData.getType(),
-          auditData.getContext(), auditData.getAttributes());
-      payload.setAudit(audit);
-
-      // Use Java 21 Virtual Threads for each webhook subscriber to improve scalability
-      // for I/O-bound webhook HTTP requests without consuming platform thread resources
-      var executor = Executors.newVirtualThreadPerTaskExecutor();
-      try {
-        getSubscriptions().forEach(s -> {
-          executor.submit(() -> queue(s, payload));
-        });
-      } finally {
-        executor.close();
+    // Use pattern matching to safely extract and process audit data
+    Audit audit = switch (auditData) {
+      case AuditData data when data != null -> {
+        yield new Audit(data.getDomain(), data.getType(),
+            data.getContext(), data.getAttributes());
       }
-    }
+      case null -> throw new IllegalArgumentException("Audit data cannot be null");
+    };
+    
+    payload.setAudit(audit);
+
+    // Dispatch to all subscribers using Virtual Threads for non-blocking I/O operations
+    getSubscriptions().forEach(subscription -> {
+      // Use Virtual Threads for each webhook dispatch to improve concurrency
+      Executors.newVirtualThreadPerTaskExecutor().execute(() -> {
+        queue(subscription, payload);
+      });
+    });
   }
 
+  /**
+   * Webhook payload for audit events.
+   */
   public static class AuditWebhookPayload
       extends WebhookPayload
   {
+    private Audit audit;
+
     public Audit getAudit() {
       return audit;
     }
@@ -90,8 +100,9 @@ public class GlobalAuditWebhook
       this.audit = audit;
     }
 
-    private Audit audit;
-
+    /**
+     * Audit data structure for webhook payloads.
+     */
     public static class Audit
     {
       private String domain;

@@ -19,29 +19,33 @@ import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.repository.Repository;
 
 /**
- * Strategy interface for restoring blobs to a repository.
+ * Strategy interface for restoring blobs in a BlobStore.
  * 
- * <p>Implementations of this interface should consider using Java 21 features such as Virtual Threads
- * for I/O-bound operations to improve performance and concurrency during blob restoration.</p>
+ * <p>Implementations should leverage Java 21 features where appropriate:</p>
+ * <ul>
+ *   <li>Use Virtual Threads for I/O-bound operations via {@code Executors.newVirtualThreadPerTaskExecutor()}</li>
+ *   <li>Use String Templates for structured logging with {@code STR."..."} syntax</li>
+ *   <li>Consider Pattern Matching for type checks and data extraction</li>
+ *   <li>Use Sequenced Collections for ordered metadata management</li>
+ * </ul>
  *
  * @since 3.4
  */
 public interface RestoreBlobStrategy
 {
   /**
-   * @deprecated since 3.6, scheduled for removal in a future release.
-   *             Use {@link #restore(Properties, Blob, BlobStore, boolean)} instead.
+   * @deprecated since 3.6
    */
-  @Deprecated(since = "3.6", forRemoval = true)
+  @Deprecated
   default void restore(Properties properties, Blob blob, BlobStore blobStore) {
     restore(properties, blob, blobStore, false);
   }
 
   /**
-   * Restores a blob to the specified blob store.
+   * Restores a blob to the blob store.
    * 
    * <p>Implementations should consider using Virtual Threads for I/O-bound operations
-   * to improve performance and concurrency during blob restoration.</p>
+   * to improve throughput and reduce resource consumption.</p>
    *
    * @since 3.6
    *
@@ -55,9 +59,9 @@ public interface RestoreBlobStrategy
   /**
    * Runs after all blobs have been restored to the database.
    * 
-   * <p>This method is called once per repository after all individual blob restore operations
-   * have completed. Implementations may use this method to perform any necessary cleanup or
-   * finalization steps.</p>
+   * <p>This method is called once per repository after all individual blob restore
+   * operations have completed. It can be used for post-processing tasks such as
+   * updating indices or performing integrity checks.</p>
    * 
    * @since 3.15
    * @param updateAssets whether updating assets is expected or not

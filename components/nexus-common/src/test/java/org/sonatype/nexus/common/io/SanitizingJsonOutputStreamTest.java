@@ -21,10 +21,6 @@ import java.util.List;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.junit.jupiter.MockitoExtension;
-
-import com.google.common.io.ByteStreams;
 import com.google.common.io.Resources;
 import org.junit.jupiter.api.Test;
 
@@ -35,7 +31,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  *
  * @since 3.0
  */
-@ExtendWith(MockitoExtension.class)
 public class SanitizingJsonOutputStreamTest
     extends TestSupport
 {
@@ -54,7 +49,7 @@ public class SanitizingJsonOutputStreamTest
     ByteArrayInputStream is = new ByteArrayInputStream(input.getBytes(StandardCharsets.UTF_8));
     ByteArrayOutputStream os = new ByteArrayOutputStream();
     try (SanitizingJsonOutputStream stream = new SanitizingJsonOutputStream(os, FIELDS, REPLACEMENT)) {
-      ByteStreams.copy(is, stream);
+      is.transferTo(stream);
     }
 
     assertEquals(output, os.toString(StandardCharsets.UTF_8.name()));

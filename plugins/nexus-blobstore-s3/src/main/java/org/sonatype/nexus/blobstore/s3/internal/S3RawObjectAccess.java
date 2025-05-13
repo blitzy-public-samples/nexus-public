@@ -18,8 +18,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ExecutorService;
+import java.lang.StringTemplate;
 import java.util.stream.Stream;
 
 import javax.annotation.Nullable;
@@ -27,21 +26,33 @@ import javax.annotation.Nullable;
 import org.sonatype.nexus.blobstore.PerformanceLogger;
 import org.sonatype.nexus.blobstore.api.RawObjectAccess;
 
-import com.amazonaws.AmazonServiceException;
-import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.model.DeleteObjectsRequest;
-import com.amazonaws.services.s3.model.DeleteObjectsRequest.KeyVersion;
-import com.amazonaws.services.s3.model.ListObjectsRequest;
-import com.amazonaws.services.s3.model.ObjectListing;
-import com.amazonaws.services.s3.model.S3Object;
+// AWS SDK for Java 2.x imports
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.Delete;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
+import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
+import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.model.S3Object;
 
 import static java.util.Objects.requireNonNull;
+
 import static java.util.stream.Collectors.toList;
 
 /**
  * Implementation of {@link RawObjectAccess} for the {@link S3BlobStore}.
- * This implementation leverages Java 21 features including Virtual Threads for improved
- * I/O operation performance, pattern matching, and string templates.
+ * <p>
+ * This implementation has been updated for Java 21 compatibility, designed to run efficiently
+ * in Virtual Threads for I/O-bound operations to improve performance and scalability. The implementation
+ * uses AWS SDK for Java 2.x and modern Java language features including pattern matching and string templates.
+ * </p>
+ * <p>
+ * When running in a Virtual Thread, this implementation automatically benefits from the improved
+ * concurrency model without blocking platform threads during I/O operations. This is particularly
+ * beneficial for S3 operations which are primarily I/O-bound.
+ * </p>
  *
  * @since 3.31
  */
@@ -55,18 +66,18 @@ public class S3RawObjectAccess
 
   private final String bucketPrefix;
 
-  private final AmazonS3 s3;
+  private final S3Client s3;
 
   private final PerformanceLogger performanceLogger;
 
-  private S3Uploader uploader;
+  private final S3Uploader uploader;
   
-  private final ExecutorService virtualThreadExecutor;
+
 
   public S3RawObjectAccess(
       final String bucket,
       final String bucketPrefix,
-      final AmazonS3 s3,
+      final S3Client s3,
       final PerformanceLogger performanceLogger,
       final S3Uploader uploader)
   {
@@ -75,45 +86,49 @@ public class S3RawObjectAccess
     this.s3 = requireNonNull(s3);
     this.performanceLogger = requireNonNull(performanceLogger);
     this.uploader = requireNonNull(uploader);
-    // Create a virtual thread per task executor for I/O operations
-    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   /**
-   * List raw objects at this path in the blobstore. This implementation returns a maximum of 10,000 results.
-   * Uses virtual threads for improved I/O performance.
+   * List raw objects at this path in the blobstore.
+   * <p>
+   * This implementation returns a maximum of 10,000 results and is designed to run
+   * efficiently in a Virtual Thread for improved I/O concurrency.
+   * </p>
    */
   @Override
   public Stream<String> listRawObjects(@Nullable final Path path) {
-    final String prefix = STR."{bucketPrefix}{normalizeS3Path(path, true)}";
+    final String prefix = bucketPrefix + normalizeS3Path(path, true);
 
-    // Submit the listing operation to virtual thread executor
-    try {
-      return virtualThreadExecutor.submit(() -> {
-        ObjectListing listing = s3.listObjects(
-            new ListObjectsRequest().withBucketName(bucket)
-                .withPrefix(prefix)
-                .withDelimiter("/")
-                .withMaxKeys(LIST_RAW_OBJECTS_MAX_KEYS));
+    ListObjectsV2Request listRequest = ListObjectsV2Request.builder()
+        .bucket(bucket)
+        .prefix(prefix)
+        .delimiter("/")
+        .maxKeys(LIST_RAW_OBJECTS_MAX_KEYS)
+        .build();
 
-        List<String> rawObjects = new ArrayList<>(listingToFilenames(listing));
+    ListObjectsV2Response listing = s3.listObjectsV2(listRequest);
 
-        while (listing.isTruncated()) {
-          listing = s3.listNextBatchOfObjects(listing);
-          rawObjects.addAll(listingToFilenames(listing));
-        }
+    List<String> rawObjects = new ArrayList<>(listingToFilenames(listing));
 
-        return rawObjects.stream().sorted();
-      }).get();
+    while (listing.isTruncated()) {
+      listRequest = ListObjectsV2Request.builder()
+          .bucket(bucket)
+          .prefix(prefix)
+          .delimiter("/")
+          .maxKeys(LIST_RAW_OBJECTS_MAX_KEYS)
+          .continuationToken(listing.nextContinuationToken())
+          .build();
+      
+      listing = s3.listObjectsV2(listRequest);
+      rawObjects.addAll(listingToFilenames(listing));
     }
-    catch (Exception e) {
-      throw new RuntimeException(STR."Failed to list raw objects at path: {path}", e);
-    }
+
+    return rawObjects.stream().sorted();
   }
 
-  private List<String> listingToFilenames(final ObjectListing listing) {
-    return listing.getObjectSummaries().stream().map(s -> {
-      String key = s.getKey();
+  private List<String> listingToFilenames(final ListObjectsV2Response listing) {
+    return listing.contents().stream().map(s3Object -> {
+      String key = s3Object.key();
       return key.substring(key.lastIndexOf('/') + 1);
     }).collect(toList());
   }
@@ -122,131 +137,146 @@ public class S3RawObjectAccess
   @Nullable
   public InputStream getRawObject(final Path path) {
     try {
-      // Use virtual thread for I/O operation
-      return virtualThreadExecutor.submit(() -> {
-        try {
-          S3Object object = s3.getObject(bucket, STR."{bucketPrefix}{normalizeS3Path(path)}");
-          return performanceLogger.maybeWrapForPerformanceLogging(object.getObjectContent());
-        }
-        catch (AmazonServiceException e) {
-          if (e.getStatusCode() == 404) {
-            return null;
-          }
-          throw e;
-        }
-      }).get();
-    }
-    catch (Exception e) {
-      // Use pattern matching to handle different exception types
-      switch (e) {
-        case AmazonServiceException ase when ase.getStatusCode() == 404 -> {
+      String key = bucketPrefix + normalizeS3Path(path);
+      GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+          .bucket(bucket)
+          .key(key)
+          .build();
+      
+      // Log thread information for debugging if needed
+      if (performanceLogger.isVirtualThread()) {
+        String threadInfo = performanceLogger.getThreadInfo();
+        // Using Java 21 String Templates for improved readability
+        System.out.println(STR."Getting S3 object from \{bucket}/\{key} using \{threadInfo}");
+      }
+          
+      // The S3Client's getObject method already runs in the current thread,
+      // so we can leverage virtual threads by having the caller run this method in a virtual thread
+      try {
+        InputStream objectContent = s3.getObject(getObjectRequest);
+        return performanceLogger.maybeWrapForPerformanceLogging(objectContent);
+      } catch (S3Exception e) {
+        if (e.statusCode() == 404) {
           return null;
         }
-        case AmazonServiceException ase -> {
-          throw ase;
-        }
-        default -> {
-          throw new RuntimeException(STR."Failed to get raw object at path: {path}", e);
-        }
+        throw e;
       }
+    } catch (Exception e) {
+      if (e instanceof S3Exception s3Exception && s3Exception.statusCode() == 404) {
+        return null;
+      }
+      throw new RuntimeException("Error getting raw object", e);
     }
   }
 
   @Override
   public void putRawObject(final Path path, final InputStream input) {
     try (InputStream in = input) {
-      // Use virtual thread for I/O operation
-      virtualThreadExecutor.submit(() -> {
-        try {
-          uploader.upload(s3, bucket, STR."{bucketPrefix}{normalizeS3Path(path)}", in);
-          return null;
-        }
-        catch (Exception e) {
-          throw new RuntimeException(STR."Failed to put raw object at path: {path}", e);
-        }
-      }).get();
-    }
-    catch (IOException e) {
+      // The S3Uploader is responsible for the actual upload and should be configured
+      // to leverage virtual threads when appropriate
+      String key = bucketPrefix + normalizeS3Path(path);
+      long startTime = System.nanoTime();
+      
+      uploader.upload(s3, bucket, key, in);
+      
+      // Log performance metrics if debug is enabled
+      if (performanceLogger.isVirtualThread()) {
+        long endTime = System.nanoTime();
+        performanceLogger.logRead(0, endTime - startTime); // Use 0 bytes since we don't know the size here
+      }
+    } catch (IOException e) {
       throw new UncheckedIOException(e);
-    }
-    catch (Exception e) {
-      throw new RuntimeException(STR."Failed to put raw object at path: {path}", e);
     }
   }
 
   @Override
   public boolean hasRawObject(final Path path) {
     try {
-      // Use virtual thread for I/O operation
-      return virtualThreadExecutor.submit(() -> {
-        try {
-          return s3.doesObjectExist(bucket, STR."{bucketPrefix}{normalizeS3Path(path)}");
+      // The S3Client's headObject method already runs in the current thread,
+      // so we can leverage virtual threads by having the caller run this method in a virtual thread
+      try {
+        s3.headObject(request -> request
+            .bucket(bucket)
+            .key(bucketPrefix + normalizeS3Path(path))
+            .build());
+        return true;
+      } catch (S3Exception e) {
+        if (e.statusCode() == 404) {
+          return false;
         }
-        catch (AmazonServiceException e) {
-          if (e.getStatusCode() == 404) {
-            return false;
-          }
-          throw e;
-        }
-      }).get();
-    }
-    catch (Exception e) {
-      // Use pattern matching to handle different exception types
-      return switch (e) {
-        case AmazonServiceException ase when ase.getStatusCode() == 404 -> false;
-        case AmazonServiceException ase -> { throw ase; }
-        default -> { throw new RuntimeException(STR."Failed to check if raw object exists at path: {path}", e); }
-      };
+        throw e;
+      }
+    } catch (Exception e) {
+      if (e instanceof S3Exception s3Exception && s3Exception.statusCode() == 404) {
+        return false;
+      }
+      throw new RuntimeException("Error checking if raw object exists", e);
     }
   }
 
   @Override
   public void deleteRawObject(final Path path) {
-    try {
-      // Use virtual thread for I/O operation
-      virtualThreadExecutor.submit(() -> {
-        s3.deleteObject(bucket, STR."{bucketPrefix}{normalizeS3Path(path)}");
-        return null;
-      }).get();
-    }
-    catch (Exception e) {
-      throw new RuntimeException(STR."Failed to delete raw object at path: {path}", e);
+    // The S3Client's deleteObject method already runs in the current thread,
+    // so we can leverage virtual threads by having the caller run this method in a virtual thread
+    long startTime = System.nanoTime();
+    
+    s3.deleteObject(request -> request
+        .bucket(bucket)
+        .key(bucketPrefix + normalizeS3Path(path))
+        .build());
+    
+    // Log performance metrics if debug is enabled and running in a virtual thread
+    if (performanceLogger.isVirtualThread()) {
+      long endTime = System.nanoTime();
+      performanceLogger.logDelete(endTime - startTime);
     }
   }
 
   @Override
   public void deleteRawObjectsInPath(final Path path) {
-    try {
-      // Use virtual thread for I/O operation
-      virtualThreadExecutor.submit(() -> {
-        final String prefix = STR."{bucketPrefix}{normalizeS3Path(path, true)}";
-        ObjectListing listing = s3.listObjects(
-            new ListObjectsRequest().withBucketName(bucket)
-                .withPrefix(prefix)
-                .withDelimiter("/")
-                .withMaxKeys(LIST_RAW_OBJECTS_MAX_KEYS));
-        deleteObjectsInListing(listing);
+    final String prefix = bucketPrefix + normalizeS3Path(path, true);
+    
+    ListObjectsV2Request listRequest = ListObjectsV2Request.builder()
+        .bucket(bucket)
+        .prefix(prefix)
+        .delimiter("/")
+        .maxKeys(LIST_RAW_OBJECTS_MAX_KEYS)
+        .build();
+        
+    ListObjectsV2Response listing = s3.listObjectsV2(listRequest);
+    deleteObjectsInListing(listing);
 
-        while (listing.isTruncated()) {
-          listing = s3.listNextBatchOfObjects(listing);
-          deleteObjectsInListing(listing);
-        }
-        return null;
-      }).get();
-    }
-    catch (Exception e) {
-      throw new RuntimeException(STR."Failed to delete raw objects in path: {path}", e);
+    while (listing.isTruncated()) {
+      listRequest = ListObjectsV2Request.builder()
+          .bucket(bucket)
+          .prefix(prefix)
+          .delimiter("/")
+          .maxKeys(LIST_RAW_OBJECTS_MAX_KEYS)
+          .continuationToken(listing.nextContinuationToken())
+          .build();
+          
+      listing = s3.listObjectsV2(listRequest);
+      deleteObjectsInListing(listing);
     }
   }
 
-  private void deleteObjectsInListing(final ObjectListing listing) {
-    List<KeyVersion> keys = listing.getObjectSummaries().stream()
-        .map(s -> new KeyVersion(s.getKey()))
+  private void deleteObjectsInListing(final ListObjectsV2Response listing) {
+    if (listing.contents().isEmpty()) {
+      return;
+    }
+    
+    List<ObjectIdentifier> keys = listing.contents().stream()
+        .map(s3Object -> ObjectIdentifier.builder().key(s3Object.key()).build())
         .collect(toList());
     
-    if (!keys.isEmpty()) {
-      s3.deleteObjects(new DeleteObjectsRequest(bucket).withKeys(keys));
-    }
+    // The S3Client's deleteObjects method already runs in the current thread,
+    // so we can leverage virtual threads by having the caller run this method in a virtual thread
+    DeleteObjectsRequest deleteRequest = DeleteObjectsRequest.builder()
+        .bucket(bucket)
+        .delete(Delete.builder().objects(keys).build())
+        .build();
+        
+    s3.deleteObjects(deleteRequest);
   }
 
   private String normalizeS3Path(final Path path) {
@@ -260,7 +290,7 @@ public class S3RawObjectAccess
 
     String normalized = path.toString().replace("\\", "/");
     if (requireTrailingSlash && !normalized.endsWith("/")) {
-      return STR."{normalized}/";
+      return normalized + "/";
     }
     return normalized;
   }

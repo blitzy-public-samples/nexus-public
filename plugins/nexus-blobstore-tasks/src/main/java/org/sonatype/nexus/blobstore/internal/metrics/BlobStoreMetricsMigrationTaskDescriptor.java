@@ -23,25 +23,14 @@ import org.sonatype.nexus.scheduling.TaskDescriptorSupport;
 import static org.sonatype.nexus.blobstore.common.BlobStoreTaskSupport.BLOBSTORE_NAME_FIELD_ID;
 import static org.sonatype.nexus.formfields.FormField.MANDATORY;
 
-/**
- * Task descriptor for the BlobStore metrics migration task.
- * 
- * @since 2.0
- */
 @AvailabilityVersion(from = "2.0")
 @Named
 @Singleton
 public class BlobStoreMetricsMigrationTaskDescriptor
     extends TaskDescriptorSupport
 {
-  // Using Java 21 string template for configuration flag
   private static final String EXPOSED_FLAG = "${nexus.blobstore.metrics.migration.task.expose:-false}";
 
-  /**
-   * Constructor for the task descriptor.
-   * 
-   * @param exposed Flag indicating whether the task should be exposed in the UI
-   */
   @Inject
   public BlobStoreMetricsMigrationTaskDescriptor(@Named(EXPOSED_FLAG) final boolean exposed) {
     super(BlobStoreMetricsMigrationTask.TYPE_ID,

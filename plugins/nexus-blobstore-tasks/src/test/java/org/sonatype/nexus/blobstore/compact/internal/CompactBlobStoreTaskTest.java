@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.nexus.blobstore.api.BlobStoreManager;
 import org.sonatype.nexus.blobstore.api.BlobStoreUsageChecker;
 import org.sonatype.nexus.repository.move.ChangeRepositoryBlobStoreConfiguration;
@@ -26,7 +27,6 @@ import org.sonatype.nexus.scheduling.TaskConfiguration;
 import org.sonatype.nexus.scheduling.TaskUtils;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -46,15 +46,13 @@ import static org.sonatype.nexus.blobstore.compact.internal.CompactBlobStoreTask
 import static org.sonatype.nexus.blobstore.restore.BaseRestoreMetadataTaskDescriptor.BLOB_STORE_NAME_FIELD_ID;
 
 /**
- * Unit tests for {@link CompactBlobStoreTask} that verify conflict detection logic.
+ * Tests for {@link CompactBlobStoreTask} with Java 21 compatibility.
  * 
- * This test ensures that the task correctly identifies and reports conflicts with other running tasks
- * or unfinished repository blob-store move operations before attempting to compact a blob store.
- *
- * @since 3.41
+ * This test validates the blob store compaction task's conflict detection logic
+ * to ensure proper operation in the Java 21 runtime environment.
  */
 @ExtendWith(MockitoExtension.class)
-@Tag("java21")
+@org.junit.Category(Java21TestGroup.class)
 public class CompactBlobStoreTaskTest
     extends TestSupport
 {
@@ -90,11 +88,11 @@ public class CompactBlobStoreTaskTest
   }
 
   /**
-   * Tests that the task throws an appropriate exception when a conflicting task is already running.
-   * This prevents multiple compaction tasks from running on the same blob store simultaneously.
+   * Verifies that the task properly detects and throws an exception when a conflicting task is running.
+   * This ensures proper task scheduling and execution in the Java 21 environment.
    */
   @Test
-  public void checkForConflictsThrowsExceptionIfConflictingTaskIsRunning() {
+  public void conflictingTaskRunningThrowsException() {
     underTest.configure(configuration);
 
     doThrow(new IllegalStateException("conflicting task"))
@@ -108,11 +106,11 @@ public class CompactBlobStoreTaskTest
   }
 
   /**
-   * Tests that the task throws an exception when there are unfinished repository move tasks
-   * that involve the target blob store. This prevents compaction during blob store migration.
+   * Verifies that the task properly detects and throws an exception when an unfinished move task exists.
+   * This ensures data integrity during blob store operations in the Java 21 environment.
    */
   @Test
-  public void checkForConflictsThrowsExceptionIfMoveTaskIsUnfinished() {
+  public void unfinishedMoveTaskThrowsException() {
     ChangeRepositoryBlobStoreConfiguration record = getRecord("test", BLOBSTORE_NAME, "target-blobstore");
 
     underTest.configure(configuration);
@@ -130,6 +128,14 @@ public class CompactBlobStoreTaskTest
     verify(changeBlobstoreStore, times(1)).findByBlobStoreName(eq(BLOBSTORE_NAME));
   }
 
+  /**
+   * Creates a test record for a blob store configuration change.
+   * 
+   * @param name The name of the configuration
+   * @param sourceBlobStoreName The source blob store name
+   * @param targetBlobStoreName The target blob store name
+   * @return A configured ChangeRepositoryBlobStoreConfiguration instance
+   */
   private ChangeRepositoryBlobStoreConfiguration getRecord(final String name , final String sourceBlobStoreName , final String targetBlobStoreName) {
     return new ChangeRepositoryBlobStoreConfiguration()
     {

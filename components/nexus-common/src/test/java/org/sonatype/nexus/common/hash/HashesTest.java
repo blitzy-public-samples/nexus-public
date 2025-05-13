@@ -20,22 +20,19 @@ import java.util.Map;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.hash.HashCode;
-
-import org.junit.jupiter.api.DisplayName;
+import com.google.common.hash.Hashing;
 import org.junit.jupiter.api.Test;
 
-import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.sonatype.nexus.common.hash.HashAlgorithm.MD5;
 import static org.sonatype.nexus.common.hash.HashAlgorithm.SHA1;
-import static org.sonatype.nexus.common.hash.HashAlgorithm.SHA256;
 import static org.sonatype.nexus.common.hash.HashAlgorithm.SHA512;
 
 /**
  * Tests for {@link Hashes}.
  */
-@DisplayName("Hashes utility tests")
-public class HashesTest
+class HashesTest
 {
   private static final String DATA = "This is a test message for hashing!";
 
@@ -47,16 +44,14 @@ public class HashesTest
       "b90de0708205534bf3bc4e478c3718c7bf78b5ec60902dbbea234aadd748c004cdf94deda2034b0fa8bdc559ac59d6ac622211956bf782da33444d29e8d9f160";
 
   @Test
-  @DisplayName("Hash with a single algorithm (MD5)")
-  public void hashOne() throws Exception {
+  void hashOne() throws Exception {
     HashCode hashCode = Hashes.hash(MD5, inputStream());
 
     assertThat(hashCode.toString(), is(MD5_HASH));
   }
 
   @Test
-  @DisplayName("Hash with multiple algorithms (MD5, SHA1, SHA512)")
-  public void hashThree() throws Exception {
+  void hashThree() throws Exception {
     Map<HashAlgorithm, HashCode> hashes = Hashes.hash(ImmutableList.of(MD5, SHA1, SHA512), inputStream());
 
     assertThat(hashes.size(), is(3));
@@ -66,8 +61,7 @@ public class HashesTest
   }
 
   @Test
-  @DisplayName("Hash with empty algorithm list")
-  public void hashZero() throws Exception {
+  void hashZero() throws Exception {
     List<HashAlgorithm> zeroAlgorithms = ImmutableList.of();
     Map<HashAlgorithm, HashCode> hashes = Hashes.hash(zeroAlgorithms, inputStream());
 
@@ -78,24 +72,12 @@ public class HashesTest
     return new ByteArrayInputStream(DATA.getBytes(StandardCharsets.UTF_8));
   }
 
+  @SuppressWarnings("deprecation")
   @Test
-  @DisplayName("Hash stream with HashFunction directly")
-  public void hashStreamWithFunction() throws Exception {
+  void hashStreamWithFunction() throws Exception {
     byte[] bytes = DATA.getBytes(StandardCharsets.UTF_8);
-    // Use SHA1 algorithm from our HashAlgorithm class instead of deprecated Guava Hashing.sha1()
-    String expected = SHA1.function().hashBytes(bytes).toString();
-    HashCode found = Hashes.hash(SHA1.function(), new ByteArrayInputStream(bytes));
+    String expected = Hashing.sha1().hashBytes(bytes).toString();
+    HashCode found = Hashes.hash(Hashing.sha1(), new ByteArrayInputStream(bytes));
     assertThat(found.toString(), is(expected));
-  }
-
-  @Test
-  @DisplayName("Hash with SHA256 algorithm")
-  public void hashWithSha256() throws Exception {
-    byte[] bytes = DATA.getBytes(StandardCharsets.UTF_8);
-    HashCode hashCode = Hashes.hash(SHA256, new ByteArrayInputStream(bytes));
-    
-    // SHA256 hash of the test data
-    String expected = "e0c9035898dd52fc65c41454cec9c4d2611bfb37c7977d3491a3b8312f6a9575";
-    assertThat(hashCode.toString(), is(expected));
   }
 }

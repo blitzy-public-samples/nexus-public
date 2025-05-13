@@ -22,9 +22,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
@@ -51,6 +51,7 @@ import org.sonatype.nexus.repository.types.GroupType;
 import org.sonatype.nexus.scheduling.Cancelable;
 import org.sonatype.nexus.scheduling.TaskSupport;
 import org.sonatype.nexus.scheduling.TaskUtils;
+import org.sonatype.nexus.thread.NexusExecutorService;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableMap;
@@ -132,7 +133,7 @@ public class RestoreMetadataTask
 
   @Override
   public String getMessage() {
-    return "Uses blobs in a blobstore to restore assets to a repository";
+    return STR."Uses blobs in a blobstore to restore assets to a repository";
   }
 
   @VisibleForTesting
@@ -151,11 +152,10 @@ public class RestoreMetadataTask
         .orElseGet(Collections::emptyList);
 
     if (!existingMoves.isEmpty()) {
-      log.info(TASK_LOG_ONLY, "found {} unfinished move tasks using blobstore '{}', unable to run task '{}'",
-          existingMoves.size(), blobStoreName, getName());
+      log.info(TASK_LOG_ONLY, STR."found \{existingMoves.size()} unfinished move tasks using blobstore '\{blobStoreName}', unable to run task '\{getName()}'";
 
       throw new IllegalStateException(
-          STR."found unfinished move task using blobstore '\{blobStoreName}', task can't be executed");
+          format("found unfinished move task using blobstore '%s', task can't be executed", blobStoreName));
     }
   }
 
@@ -203,43 +203,65 @@ public class RestoreMetadataTask
 
     formatAssetBlobRefMigrated.clear();
     try (ProgressLogIntervalHelper progressLogger = new ProgressLogIntervalHelper(log, 60)) {
-      for (BlobId blobId : getBlobIdStream(blobStore, sinceDays)) {
-        try {
-          if (isCanceled()) {
-            log.info(STR."Restore metadata task for \{blobStore.getBlobStoreConfiguration().getName()} was canceled");
-            break;
-          }
+      // Create a virtual thread executor for concurrent processing
+      ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+      
+      try {
+        // Process blobs in parallel using virtual threads
+        List<CompletableFuture<Void>> futures = StreamSupport.stream(getBlobIdStream(blobStore, sinceDays).spliterator(), false)
+            .map(blobId -> CompletableFuture.runAsync(() -> {
+              try {
+                if (isCanceled()) {
+                  return;
+                }
 
-          Optional<Context> optionalContext = buildContext(blobStore, blobId);
-          if (optionalContext.isPresent()) {
-            Context context = optionalContext.get();
+                Optional<Context> optionalContext = buildContext(blobStore, blobId);
+                if (optionalContext.isPresent()) {
+                  Context context = optionalContext.get();
 
-            if (isAssetBlobRefNotMigrated(context.repository)) {
-              continue;
-            }
+                  if (isAssetBlobRefNotMigrated(context.repository)) {
+                    return;
+                  }
 
-            if (restore && context.restoreBlobStrategy != null && !context.blobAttributes.isDeleted()) {
-              context.restoreBlobStrategy.restore(context.properties, context.blob, context.blobStore, dryRun);
-            }
-            if (undelete &&
-                blobStore.undelete(blobStoreUsageChecker, context.blobId, context.blobAttributes, dryRun)) {
-              undeleted++;
-            }
+                  if (restore && context.restoreBlobStrategy != null && !context.blobAttributes.isDeleted()) {
+                    context.restoreBlobStrategy.restore(context.properties, context.blob, context.blobStore, dryRun);
+                  }
+                  if (undelete &&
+                      blobStore.undelete(blobStoreUsageChecker, context.blobId, context.blobAttributes, dryRun)) {
+                    synchronized (RestoreMetadataTask.this) {
+                      undeleted++;
+                    }
+                  }
 
-            if (updateAssets) {
-              touchedRepositories.add(context.repository);
-            }
-          }
+                  if (updateAssets) {
+                    synchronized (touchedRepositories) {
+                      touchedRepositories.add(context.repository);
+                    }
+                  }
+                }
 
-          processed++;
+                synchronized (RestoreMetadataTask.this) {
+                  processed++;
+                  if (processed % 100 == 0) {
+                    progressLogger
+                        .info(STR."\{logPrefix}Elapsed time: \{progressLogger.getElapsed()}, processed: \{processed}, un-deleted: \{undeleted}");
+                  }
+                }
+              }
+              catch (Exception e) {
+                log.error(STR."Error restoring blob \{blobId}", e);
+              }
+            }, executor))
+            .collect(Collectors.toList());
 
-          progressLogger
-              .info(STR."\{logPrefix}Elapsed time: \{progressLogger.getElapsed()}, processed: \{processed}, un-deleted: \{undeleted}");
-        }
-        catch (Exception e) {
-          log.error(STR."Error restoring blob \{blobId}", e);
-        }
+        // Wait for all tasks to complete
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+      } finally {
+        executor.shutdown();
       }
+
+      // Final progress log
+      progressLogger.info(STR."\{logPrefix}Elapsed time: \{progressLogger.getElapsed()}, processed: \{processed}, un-deleted: \{undeleted}");
 
       updateAssets(touchedRepositories, updateAssets);
     }
@@ -266,13 +288,22 @@ public class RestoreMetadataTask
   }
 
   private void updateAssets(final Set<Repository> repositories, final boolean updateAssets) {
-    for (Repository repository : repositories) {
-      if (isCanceled()) {
-        break;
-      }
-
-      ofNullable(restoreBlobStrategies.get(repository.getFormat().getValue()))
-          .ifPresent(strategy -> strategy.after(updateAssets, repository));
+    // Use virtual threads for concurrent repository updates
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    try {
+      List<CompletableFuture<Void>> futures = repositories.stream()
+          .filter(repository -> !isCanceled())
+          .map(repository -> CompletableFuture.runAsync(() -> {
+            ofNullable(restoreBlobStrategies.get(repository.getFormat().getValue()))
+                .ifPresent(strategy -> strategy.after(updateAssets, repository));
+          }, executor))
+          .collect(Collectors.toList());
+      
+      // Wait for all repository updates to complete
+      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+    } finally {
+      executor.shutdown();
     }
   }
 
@@ -299,28 +330,26 @@ public class RestoreMetadataTask
     List<Repository> syncList = Collections.synchronizedList(StreamSupport.stream(repositories.spliterator(), false)
         .collect(Collectors.toList()));
 
-    // Use Virtual Threads for concurrent integrity checks
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      AtomicBoolean canceled = new AtomicBoolean(false);
-      
-      syncList.stream()
+    // Use virtual threads for concurrent integrity checks
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    try {
+      List<CompletableFuture<Void>> futures = syncList.stream()
           .filter(Objects::nonNull)
           .filter(repository -> !(repository.getType() instanceof GroupType))
           .filter(Repository::isStarted)
-          .forEach(repository -> {
-            executor.submit(() -> {
-              if (!canceled.get() && !isCanceled()) {
-                try {
-                  integrityCheckStrategies
-                      .getOrDefault(repository.getFormat().getValue(), defaultIntegrityCheckStrategy)
-                      .check(repository, blobStore, () -> canceled.get() || isCanceled(), sinceDays,
-                          a -> this.integrityCheckFailedHandler(repository, a, dryRun));
-                } catch (Exception e) {
-                  log.error(STR."Error checking integrity for repository \{repository.getName()}", e);
-                }
-              }
-            });
-          });
+          .map(repository -> CompletableFuture.runAsync(() -> 
+              integrityCheckStrategies
+                  .getOrDefault(repository.getFormat().getValue(), defaultIntegrityCheckStrategy)
+                  .check(repository, blobStore, this::isCanceled, sinceDays,
+                      a -> this.integrityCheckFailedHandler(repository, a, dryRun))
+          , executor))
+          .collect(Collectors.toList());
+      
+      // Wait for all integrity checks to complete
+      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+    } finally {
+      executor.shutdown();
     }
   }
 
@@ -335,12 +364,13 @@ public class RestoreMetadataTask
   private Optional<Context> buildContext(final BlobStore blobStore, final BlobId blobId)
   {
     return Optional.of(new Context(blobStore, blobId))
-        .flatMap(c -> Optional.ofNullable(c.blobStore.get(c.blobId, true)).map(c::blob))
-        .flatMap(c -> Optional.ofNullable(c.blobStore.getBlobAttributes(c.blobId)).map(c::blobAttributes))
-        .flatMap(c -> Optional.ofNullable(c.blobAttributes.getProperties()).map(c::properties))
-        .flatMap(c -> Optional.ofNullable(c.properties.getProperty(HEADER_PREFIX + REPO_NAME_HEADER)).map(c::repositoryName))
-        .flatMap(c -> Optional.ofNullable(repositoryManager.get(c.repositoryName)).map(c::repository))
-        .map(c -> c.restoreBlobStrategy(restoreBlobStrategies.get(c.repository.getFormat().getValue())));
+        .map(c -> c.blob(c.blobStore.get(c.blobId, true)))
+        .map(c -> c.blobAttributes(c.blobStore.getBlobAttributes(c.blobId)))
+        .map(c -> c.properties(c.blobAttributes.getProperties()))
+        .map(c -> c.repositoryName(c.properties.getProperty(HEADER_PREFIX + REPO_NAME_HEADER)))
+        .map(c -> c.repository(repositoryManager.get(c.repositoryName)))
+        .map(c -> c.restoreBlobStrategy(restoreBlobStrategies.get(
+            c.repository != null ? c.repository.getFormat().getValue() : null)));
   }
 
   private static class Context
@@ -367,28 +397,53 @@ public class RestoreMetadataTask
     }
 
     Context blob(final Blob blob) {
-      this.blob = blob;
-      return this;
+      if (blob == null) {
+        return null;
+      }
+      else {
+        this.blob = blob;
+        return this;
+      }
     }
 
     Context blobAttributes(final BlobAttributes blobAttributes) {
-      this.blobAttributes = blobAttributes;
-      return this;
+      if (blobAttributes == null) {
+        return null;
+      }
+      else {
+        this.blobAttributes = blobAttributes;
+        return this;
+      }
     }
 
     Context properties(final Properties properties) {
-      this.properties = properties;
-      return this;
+      if (properties == null) {
+        return null;
+      }
+      else {
+        this.properties = properties;
+        return this;
+      }
     }
 
     Context repositoryName(final String repositoryName) {
-      this.repositoryName = repositoryName;
-      return this;
+      if (repositoryName == null) {
+        return null;
+      }
+      else {
+        this.repositoryName = repositoryName;
+        return this;
+      }
     }
 
     Context repository(final Repository repository) {
-      this.repository = repository;
-      return this;
+      if (repository == null) {
+        return null;
+      }
+      else {
+        this.repository = repository;
+        return this;
+      }
     }
 
     Context restoreBlobStrategy(final RestoreBlobStrategy restoreBlobStrategy) {

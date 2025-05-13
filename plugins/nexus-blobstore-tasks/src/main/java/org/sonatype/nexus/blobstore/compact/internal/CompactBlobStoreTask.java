@@ -12,11 +12,14 @@
  */
 package org.sonatype.nexus.blobstore.compact.internal;
 
+import java.lang.annotation.Nullable;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 
@@ -33,13 +36,12 @@ import com.google.common.annotations.VisibleForTesting;
 
 import static java.lang.String.format;
 import static java.lang.StringTemplate.STR;
-import static java.util.List.of;
-import static java.util.Objects.checkNotNull;
+import static java.util.Arrays.asList;
 import static org.sonatype.nexus.blobstore.compact.internal.CompactBlobStoreTaskDescriptor.BLOB_STORE_NAME_FIELD_ID;
 import static org.sonatype.nexus.logging.task.TaskLoggingMarkers.TASK_LOG_ONLY;
 
 /**
- * Task to compact a given blob store.
+ * Task to compact a given blob store using Java 21 Virtual Threads for improved I/O performance.
  *
  * @since 3.0
  */
@@ -60,22 +62,23 @@ public class CompactBlobStoreTask
   @Inject
   public CompactBlobStoreTask(
       final BlobStoreManager blobStoreManager,
-      final ChangeRepositoryBlobStoreStore changeBlobstoreStore,
+      @Nullable final ChangeRepositoryBlobStoreStore changeBlobstoreStore,
       final BlobStoreUsageChecker blobStoreUsageChecker,
       final TaskUtils taskUtils)
   {
-    this.blobStoreManager = checkNotNull(blobStoreManager);
+    this.blobStoreManager = requireNonNull(blobStoreManager);
     this.changeBlobstoreStore = Optional.ofNullable(changeBlobstoreStore);
-    this.blobStoreUsageChecker = checkNotNull(blobStoreUsageChecker);
-    this.taskUtils = checkNotNull(taskUtils);
+    this.blobStoreUsageChecker = requireNonNull(blobStoreUsageChecker);
+    this.taskUtils = requireNonNull(taskUtils);
   }
 
   @VisibleForTesting
   void checkForConflicts() {
-    String blobStoreName = checkNotNull(getBlobStoreField());
+    String blobStoreName = requireNonNull(getBlobStoreField());
 
-    taskUtils.checkForConflictingTasks(getId(), getName(), of("repository.move"), 
-        Map.of("moveInitialBlobstore", of(blobStoreName), "moveTargetBlobstore", of(blobStoreName)));
+    taskUtils.checkForConflictingTasks(getId(), getName(), asList("repository.move"), Map.of(
+        "moveInitialBlobstore", asList(blobStoreName), 
+        "moveTargetBlobstore", asList(blobStoreName)));
 
     checkForUnfinishedMoveTask(blobStoreName);
   }
@@ -86,7 +89,7 @@ public class CompactBlobStoreTask
         .orElseGet(Collections::emptyList);
 
     if (!existingMoves.isEmpty()) {
-      log.info(TASK_LOG_ONLY, STR."found \{existingMoves.size()} unfinished move tasks using blobstore '\{blobStoreName}', unable to run task '\{getName()}'";
+      log.info(TASK_LOG_ONLY, STR."found \{existingMoves.size()} unfinished move tasks using blobstore '\{blobStoreName}', unable to run task '\{getName()}'");
 
       throw new IllegalStateException(
           STR."found unfinished move task(s) using blobstore '\{blobStoreName}', task can't be executed");
@@ -98,10 +101,21 @@ public class CompactBlobStoreTask
     checkForConflicts();
 
     String blobStoreName = getBlobStoreField();
-    if (blobStoreManager.get(blobStoreName) instanceof BlobStore blobStore) {
-      // Use virtual threads for I/O-bound compaction operation
-      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-        executor.submit(() -> blobStore.compact(blobStoreUsageChecker)).get();
+    BlobStore blobStore = blobStoreManager.get(blobStoreName);
+    
+    if (blobStore != null) {
+      // Create a virtual thread executor for I/O-bound compaction operations
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        executor.submit(() -> {
+          try {
+            log.info(STR."Starting compaction of blob store: \{blobStoreName} using virtual threads");
+            blobStore.compact(blobStoreUsageChecker);
+            log.info(STR."Completed compaction of blob store: \{blobStoreName}");
+          } catch (Exception e) {
+            log.error(STR."Error during compaction of blob store: \{blobStoreName}", e);
+            throw e;
+          }
+        }).get(); // Wait for completion
       }
     }
     else {
@@ -117,5 +131,12 @@ public class CompactBlobStoreTask
 
   private String getBlobStoreField() {
     return getConfiguration().getString(BLOB_STORE_NAME_FIELD_ID);
+  }
+  
+  private static <T> T requireNonNull(T obj) {
+    if (obj == null) {
+      throw new NullPointerException();
+    }
+    return obj;
   }
 }

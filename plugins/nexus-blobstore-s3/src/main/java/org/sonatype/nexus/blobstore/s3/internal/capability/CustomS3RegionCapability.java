@@ -20,34 +20,22 @@ import javax.inject.Named;
 import org.sonatype.nexus.capability.CapabilitySupport;
 
 /**
- * Capability implementation for custom S3 regions.
- * <p>
- * This capability allows administrators to define custom AWS S3 regions that can be used
- * with S3 blobstores. The implementation is compatible with Java 21 and OSGi/Karaf 4.3.9.
- *
- * @since 3.38
- * @see CustomS3RegionCapabilityConfiguration
+ * Capability for custom S3 regions.
+ * 
+ * @since 3.0
  * @see CustomS3RegionCapabilityDescriptor
+ * @see CustomS3RegionCapabilityConfiguration
  */
 @Named(CustomS3RegionCapabilityDescriptor.TYPE_ID)
 public class CustomS3RegionCapability
     extends CapabilitySupport<CustomS3RegionCapabilityConfiguration>
 {
-  /**
-   * Creates a new configuration instance from the provided properties.
-   * <p>
-   * This method is called by the capability framework when the capability is created or updated.
-   *
-   * @param properties the capability properties from the UI or API
-   * @return a new configuration instance
-   * @throws IllegalArgumentException if properties are invalid
-   */
   @Override
   protected CustomS3RegionCapabilityConfiguration createConfig(final Map<String, String> properties) {
-    // Using Java 21 pattern matching to validate properties
-    if (properties != null && !properties.isEmpty()) {
-      return new CustomS3RegionCapabilityConfiguration(properties);
+    // Using pattern matching to ensure properties is not null before creating configuration
+    if (properties instanceof Map<String, String> map) {
+      return new CustomS3RegionCapabilityConfiguration(map);
     }
-    throw new IllegalArgumentException(STR."Invalid properties: \{properties}");
+    throw new IllegalArgumentException("Properties map cannot be null");
   }
 }

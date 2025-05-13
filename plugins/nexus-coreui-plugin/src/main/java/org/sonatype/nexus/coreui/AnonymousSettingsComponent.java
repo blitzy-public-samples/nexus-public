@@ -13,7 +13,8 @@
 package org.sonatype.nexus.coreui;
 
 import java.util.concurrent.Executors;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -37,8 +38,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
 /**
  * Anonymous Security Settings {@link DirectComponent}.
  * 
- * Updated for Java 21 to use Virtual Threads for I/O operations and leverage record patterns
- * for improved validation and data handling.
+ * Updated for Java 21 compatibility with Virtual Threads for improved concurrency
+ * and pattern matching for type-safe data handling.
  */
 @Named
 @Singleton
@@ -47,37 +48,38 @@ public class AnonymousSettingsComponent
     extends DirectComponentSupport
 {
   private final AnonymousManager anonymousManager;
-  
-  // Virtual thread executor for I/O-bound operations
-  private final ExecutorService virtualThreadExecutor;
 
   @Inject
   public AnonymousSettingsComponent(final AnonymousManager anonymousManager) {
     this.anonymousManager = checkNotNull(anonymousManager);
-    // Create a virtual thread executor using Java 21's Executors.newVirtualThreadPerTaskExecutor()
-    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   /**
    * Retrieves anonymous security settings.
    *
-   * @return anonymous security settings as an immutable record
+   * @return anonymous security settings
    */
   @DirectMethod
   @Timed
   @ExceptionMetered
   @RequiresPermissions("nexus:settings:read")
   public AnonymousSettingsXO read() {
+    // Get configuration from the manager
     AnonymousConfiguration config = anonymousManager.getConfiguration();
+    
     // Create a new record instance with the configuration values
-    return new AnonymousSettingsXO(config.isEnabled(), config.getUserId(), config.getRealmName());
+    // Using Java 21 record pattern for immutable data transfer
+    return new AnonymousSettingsXO(
+        config.isEnabled(),
+        config.getUserId(),
+        config.getRealmName()
+    );
   }
 
   /**
-   * Updates anonymous security settings using Virtual Threads for improved performance.
-   * Uses pattern matching for validation and record deconstruction for cleaner code.
+   * Updates anonymous security settings.
    *
-   * @param anonymousXO the anonymous settings to update (validated by Bean Validation)
+   * @param anonymousXO the settings to update
    * @return updated anonymous security settings
    */
   @DirectMethod
@@ -86,25 +88,32 @@ public class AnonymousSettingsComponent
   @RequiresAuthentication
   @RequiresPermissions("nexus:settings:update")
   public AnonymousSettingsXO update(@NotNull @Valid final AnonymousSettingsXO anonymousXO) {
-    try {
-      // Use pattern matching to deconstruct the record
-      if (anonymousXO instanceof AnonymousSettingsXO(Boolean enabled, String userId, String realmName)) {
-        // Submit the update task to the virtual thread executor for better I/O performance
-        return virtualThreadExecutor.submit(() -> {
-          AnonymousConfiguration configuration = anonymousManager.newConfiguration();
-          configuration.setEnabled(enabled);
-          configuration.setRealmName(realmName);
-          configuration.setUserId(userId);
-          anonymousManager.setConfiguration(configuration);
-          return read();
-        }).get(); // Wait for the result
-      } else {
-        // This should never happen with a valid record, but added for completeness
-        throw new IllegalArgumentException("Invalid anonymous settings format");
+    // Using Java 21 pattern matching for improved type safety and readability
+    // This deconstructs the record into its components in a type-safe manner
+    if (anonymousXO instanceof AnonymousSettingsXO(Boolean enabled, String userId, String realmName)) {
+      // Create and configure a new configuration instance
+      AnonymousConfiguration configuration = anonymousManager.newConfiguration();
+      configuration.setEnabled(enabled);
+      configuration.setRealmName(realmName);
+      configuration.setUserId(userId);
+      
+      // Use a virtual thread for this I/O-bound operation
+      // Virtual threads are lightweight and perfect for I/O operations
+      // We create a new virtual thread for each task rather than maintaining an executor
+      try {
+        Future<?> future = Executors.newVirtualThreadPerTaskExecutor()
+            .submit(() -> anonymousManager.setConfiguration(configuration));
+        
+        // Wait for the operation to complete
+        future.get();
       }
-    } catch (Exception e) {
-      log.error("Failed to update anonymous settings", e);
-      throw new RuntimeException("Failed to update anonymous settings", e);
+      catch (Exception e) {
+        log.error("Failed to update anonymous configuration: {}", e.getMessage(), e);
+        throw new RuntimeException("Failed to update anonymous configuration", e);
+      }
     }
+    
+    // Return the updated configuration
+    return read();
   }
 }

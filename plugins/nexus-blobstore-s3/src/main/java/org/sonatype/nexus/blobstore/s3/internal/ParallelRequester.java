@@ -33,12 +33,14 @@ import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
 import com.amazonaws.services.s3.model.PartETag;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static java.lang.StringTemplate.STR;
 
 /**
  * Common class to execute parallel requests to S3 for a MultipartUpload operation.
  * Uses Java 21 Virtual Threads for improved throughput and resource efficiency.
  *
  * @since 3.19
+ * @requires Java 21
  */
 public abstract class ParallelRequester
     extends StateGuardLifecycleSupport

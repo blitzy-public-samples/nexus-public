@@ -28,14 +28,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Tests for {@link AuditCapabilityBooter} with JUnit Jupiter and Mockito 4.11.0+.
- * 
- * <p>This test verifies that the AuditCapability is correctly registered during system boot.</p>
- *
- * <p>Updated for Java 21 compatibility as part of the migration from JUnit 4 to JUnit Jupiter.</p>
+ * Tests for {@link AuditCapabilityBooter} using JUnit Jupiter (JUnit 5) with Mockito 4.11.0+.
+ * <p>
+ * This test class has been migrated from JUnit 4 to JUnit Jupiter as part of the Java 21 upgrade.
  */
 @ExtendWith(MockitoExtension.class)
-public class AuditCapabilityBooterTest
+class AuditCapabilityBooterTest
     extends TestSupport
 {
   private AuditCapabilityBooter underTest;
@@ -44,24 +42,15 @@ public class AuditCapabilityBooterTest
   private CapabilityRegistry capabilityRegistry;
 
   @BeforeEach
-  public void setup() {
+  void setup() {
     underTest = new AuditCapabilityBooter();
   }
 
-  /**
-   * Verifies that the AuditCapability is added to the registry during boot when it doesn't already exist.
-   * 
-   * <p>This test ensures that the capability is registered with the correct type and enabled state.</p>
-   */
   @Test
-  public void shouldAddAuditCapabilityWhenNotPresent() throws Exception {
-    // Given the capability doesn't exist in the registry
+  void bootIsEnabled() throws Exception {
     when(capabilityRegistry.get(any(CapabilityReferenceFilter.class))).thenReturn(null);
-    
-    // When the booter is executed
     underTest.boot(capabilityRegistry);
 
-    // Then the capability should be added with the correct parameters
     verify(capabilityRegistry).addNonExposed(eq(AuditCapability.TYPE), eq(true), any(), any());
   }
 }

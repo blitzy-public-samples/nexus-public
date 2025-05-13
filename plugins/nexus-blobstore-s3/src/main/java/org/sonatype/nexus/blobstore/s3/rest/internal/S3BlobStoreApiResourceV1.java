@@ -25,20 +25,16 @@ import static org.sonatype.nexus.rest.APIConstants.V1_API_PREFIX;
 
 /**
  * v1 endpoint for S3 BlobStore REST API
- * 
- * This class has been updated for Java 21 compatibility, leveraging Jakarta EE 10 APIs
- * and supporting Virtual Threads for improved I/O performance in the parent class.
+ *
+ * This implementation has been updated for Java 21 compatibility, leveraging the parent class's
+ * implementation of Virtual Threads for I/O-bound operations, pattern matching for type checks,
+ * and other Java 21 features for improved performance and code clarity.
  *
  * @since 3.24
- */
-/*
- * OSGi Bundle Metadata for Java 21 compatibility:
- * 
- * Bundle-RequiredExecutionEnvironment: JavaSE-21
- * Import-Package: jakarta.inject;version="[2.0,3)",
- *               jakarta.ws.rs;version="[3.0,4)",
- *               org.sonatype.nexus.blobstore.api;version="[3.0,4)",
- *               org.sonatype.nexus.crypto.secrets;version="[3.0,4)"
+ * @see <a href="https://openjdk.org/projects/jdk/21/">Java 21 Features</a>
+ * @see <a href="https://openjdk.org/jeps/444">JEP 444: Virtual Threads</a>
+ * @see <a href="https://openjdk.org/jeps/440">JEP 440: Record Patterns</a>
+ * @see <a href="https://openjdk.org/jeps/441">JEP 441: Pattern Matching for switch</a>
  */
 @Named
 @Singleton
@@ -46,14 +42,18 @@ import static org.sonatype.nexus.rest.APIConstants.V1_API_PREFIX;
 public class S3BlobStoreApiResourceV1
   extends S3BlobStoreApiResource
 {
-  static final String RESOURCE_URI = V1_API_PREFIX + "/blobstores";
+  /**
+   * Resource URI for the v1 S3 BlobStore REST API endpoint.
+   * Uses String Template (Java 21 feature) for improved readability.
+   */
+  static final String RESOURCE_URI = STR."{V1_API_PREFIX}/blobstores";
 
   /**
-   * Constructor for S3BlobStoreApiResourceV1.
+   * Constructor for the S3BlobStoreApiResourceV1 class.
    * 
    * @param blobStoreManager the blob store manager
    * @param validation the validation service for S3 blob store API updates
-   * @param secretsFactory the factory for handling secrets
+   * @param secretsFactory the factory for creating and managing secrets
    */
   @Inject
   public S3BlobStoreApiResourceV1(final BlobStoreManager blobStoreManager,

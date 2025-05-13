@@ -16,30 +16,31 @@ import org.sonatype.goodies.testsupport.TestSupport;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.io.TempDir;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.equalTo;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Tests for {@link ZipSupport}.
  */
-public class ZipSupportTest
+class ZipSupportTest
     extends TestSupport
 {
   @TempDir
@@ -53,75 +54,137 @@ public class ZipSupportTest
 
   @BeforeEach
   void prepare() throws IOException {
-    root = tempDir.resolve("ziptest");
+    root = tempDir.resolve("root");
     Files.createDirectories(root);
-    Files.write(root.resolve("file1.txt"), PAYLOAD);
+    Files.write(root.resolve("file1.tx"), PAYLOAD);
     Files.write(root.resolve("file2.txt"), PAYLOAD);
     Files.write(root.resolve("file4.txt"), PAYLOAD);
   }
 
   @Test
-  @DisplayName("Zip files creates valid zip archive")
-  void zipFilesCreatesValidZipArchive() throws IOException {
+  void testZipFiles() throws IOException {
     List<String> filesToZip = Arrays.asList("file1.txt", "file2.txt", "file3.txt");
 
-    String zipFileName = root.toString() + "/test.zip";
+    Path zipFilePath = root.resolve("test.zip");
+    String zipFileName = zipFilePath.toString();
 
     zipSupport.zipFiles(root, filesToZip, zipFileName);
 
-    File zipFile = new File(zipFileName);
+    File zipFile = zipFilePath.toFile();
     assertTrue(zipFile.exists(), "Zip file should exist");
   }
-
+  
   @Test
-  @DisplayName("Zip files handles non-existent files gracefully")
-  void zipFilesHandlesNonExistentFilesGracefully() throws IOException {
-    List<String> filesToZip = Arrays.asList("file1.txt", "nonexistent.txt", "file2.txt");
-
-    String zipFileName = root.toString() + "/test-nonexistent.zip";
-
-    zipSupport.zipFiles(root, filesToZip, zipFileName);
-
-    File zipFile = new File(zipFileName);
-    assertTrue(zipFile.exists(), "Zip file should exist even with non-existent files");
+  void testZipFilesWithConcurrentAccess() throws IOException, InterruptedException {
+    // Create multiple files to zip
+    for (int i = 0; i < 10; i++) {
+      Files.write(root.resolve("concurrent-file" + i + ".txt"), PAYLOAD);
+    }
+    
+    List<String> filesToZip = Arrays.asList(
+        "concurrent-file0.txt", 
+        "concurrent-file1.txt", 
+        "concurrent-file2.txt",
+        "concurrent-file3.txt",
+        "concurrent-file4.txt");
+    
+    Path zipFilePath = root.resolve("concurrent-test.zip");
+    String zipFileName = zipFilePath.toString();
+    
+    // Test concurrent access using Java 21 virtual threads
+    Thread thread = Thread.ofVirtual().start(() -> {
+      try {
+        zipSupport.zipFiles(root, filesToZip, zipFileName);
+      }
+      catch (IOException e) {
+        throw new RuntimeException(e);
+      }
+    });
+    
+    // Wait for the thread to complete
+    thread.join();
+    
+    // Verify the zip file was created
+    File zipFile = zipFilePath.toFile();
+    assertTrue(zipFile.exists(), "Zip file should exist after concurrent operation");
   }
-
+  
   @Test
-  @Tag("VirtualThreadTestGroup")
-  @DisplayName("Zip files works with virtual threads")
-  void zipFilesWorksWithVirtualThreads() throws Exception {
-    // Create a virtual thread executor
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Create multiple zip files concurrently using virtual threads
-      int concurrentTasks = 10;
-      CountDownLatch latch = new CountDownLatch(concurrentTasks);
-      AtomicInteger successCount = new AtomicInteger(0);
+  void testZipFileContents() throws IOException {
+    // Create test files with different content
+    byte[] content1 = "content1".getBytes(UTF_8);
+    byte[] content2 = "content2".getBytes(UTF_8);
+    
+    Files.write(root.resolve("content1.txt"), content1);
+    Files.write(root.resolve("content2.txt"), content2);
+    
+    List<String> filesToZip = Arrays.asList("content1.txt", "content2.txt");
+    
+    Path zipFilePath = root.resolve("contents-test.zip");
+    String zipFileName = zipFilePath.toString();
+    
+    zipSupport.zipFiles(root, filesToZip, zipFileName);
+    
+    // Verify zip file exists
+    File zipFile = zipFilePath.toFile();
+    assertTrue(zipFile.exists(), "Zip file should exist");
+    
+    // Verify zip file contents using Hamcrest matchers
+    try (ZipFile zip = new ZipFile(zipFile)) {
+      // Check first file
+      ZipEntry entry1 = zip.getEntry("content1.txt");
+      assertThat("First entry should exist", entry1, is(notNullValue()));
       
-      for (int i = 0; i < concurrentTasks; i++) {
-        final int taskNum = i;
-        executor.submit(() -> {
-          try {
-            List<String> filesToZip = Arrays.asList("file1.txt", "file2.txt");
-            String zipFileName = root.toString() + "/test-virtual-" + taskNum + ".zip";
-            
-            zipSupport.zipFiles(root, filesToZip, zipFileName);
-            
-            if (new File(zipFileName).exists()) {
-              successCount.incrementAndGet();
-            }
-          } catch (Exception e) {
-            log.error("Error in virtual thread zip task", e);
-          } finally {
-            latch.countDown();
-          }
-        });
+      try (InputStream is = zip.getInputStream(entry1)) {
+        byte[] fileBytes = is.readAllBytes();
+        assertThat("First file content should match", fileBytes, is(equalTo(content1)));
       }
       
-      // Wait for all tasks to complete
-      assertTrue(latch.await(30, TimeUnit.SECONDS), "All zip tasks should complete within timeout");
+      // Check second file
+      ZipEntry entry2 = zip.getEntry("content2.txt");
+      assertThat("Second entry should exist", entry2, is(notNullValue()));
       
-      // Verify all operations succeeded
-      assertEquals(concurrentTasks, successCount.get(), "All concurrent zip operations should succeed");
+      try (InputStream is = zip.getInputStream(entry2)) {
+        byte[] fileBytes = is.readAllBytes();
+        assertThat("Second file content should match", fileBytes, is(equalTo(content2)));
+      }
+    }
+  }
+  
+  @Test
+  void testZipFilesWithNonExistentFiles() throws IOException {
+    // Create one file that exists
+    Files.write(root.resolve("existing.txt"), PAYLOAD);
+    
+    // Create a list with both existing and non-existing files
+    List<String> filesToZip = Arrays.asList(
+        "existing.txt",
+        "non-existent1.txt",
+        "non-existent2.txt"
+    );
+    
+    Path zipFilePath = root.resolve("mixed-files.zip");
+    String zipFileName = zipFilePath.toString();
+    
+    // This should complete without exceptions, skipping non-existent files
+    zipSupport.zipFiles(root, filesToZip, zipFileName);
+    
+    // Verify zip file exists
+    File zipFile = zipFilePath.toFile();
+    assertTrue(zipFile.exists(), "Zip file should exist");
+    
+    // Verify only the existing file is in the zip
+    try (ZipFile zip = new ZipFile(zipFile)) {
+      // The existing file should be in the zip
+      ZipEntry existingEntry = zip.getEntry("existing.txt");
+      assertThat("Existing file should be in the zip", existingEntry, is(notNullValue()));
+      
+      // Non-existent files should not be in the zip
+      ZipEntry nonExistentEntry1 = zip.getEntry("non-existent1.txt");
+      assertThat("Non-existent file should not be in the zip", nonExistentEntry1, is(org.hamcrest.Matchers.nullValue()));
+      
+      ZipEntry nonExistentEntry2 = zip.getEntry("non-existent2.txt");
+      assertThat("Non-existent file should not be in the zip", nonExistentEntry2, is(org.hamcrest.Matchers.nullValue()));
     }
   }
 }

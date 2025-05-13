@@ -10,7 +10,7 @@
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  *
- * This class is compatible with Java 21 and OSGi/Karaf 4.4.4.
+ * This file has been updated for Java 21 compatibility.
  */
 package org.sonatype.nexus.blobstore.s3.internal.capability;
 
@@ -19,6 +19,9 @@ import java.util.Map;
 import java.util.Set;
 import javax.inject.Named;
 import javax.inject.Singleton;
+
+// Import for Java 21 string templates
+import static java.lang.StringTemplate.STR;
 
 import org.sonatype.goodies.i18n.I18N;
 import org.sonatype.goodies.i18n.MessageBundle;
@@ -36,15 +39,11 @@ import static org.sonatype.nexus.capability.Tag.categoryTag;
 import static org.sonatype.nexus.capability.Tag.tags;
 
 /**
- * Descriptor for the Custom S3 Region capability.
- * <p>
- * This class defines the UI form fields and metadata for the Custom S3 Region capability,
- * which allows administrators to specify custom AWS S3 regions for blobstore storage.
- * <p>
- * This implementation is compatible with Java 21 and uses modern language features
- * such as pattern matching for instanceof and proper generic type parameters.
- *
- * @since 3.38
+ * Capability descriptor for custom S3 regions.
+ * 
+ * @since 3.0
+ * @see CustomS3RegionCapability
+ * @see CustomS3RegionCapabilityConfiguration
  */
 @Named(CustomS3RegionCapabilityDescriptor.TYPE_ID)
 @Singleton
@@ -74,12 +73,8 @@ public class CustomS3RegionCapabilityDescriptor
 
   private final List<FormField<?>> formFields;
 
-  /**
-   * Constructor that initializes the form fields for this capability.
-   */
   public CustomS3RegionCapabilityDescriptor()
   {
-    // Using Java 21 compatible approach with proper generic types
     formFields = ImmutableList.of(
         new StringTextFormField(
             CustomS3RegionCapabilityConfiguration.REGIONS,
@@ -104,23 +99,17 @@ public class CustomS3RegionCapabilityDescriptor
 
   @Override
   protected CustomS3RegionCapabilityConfiguration createConfig(final Map<String, String> properties) {
-    // Using Java 21 pattern matching to validate properties
-    if (properties != null && !properties.isEmpty()) {
-      return new CustomS3RegionCapabilityConfiguration(properties);
+    // Using pattern matching to ensure properties is not null before creating configuration
+    if (properties instanceof Map<String, String> map) {
+      return new CustomS3RegionCapabilityConfiguration(map);
     }
-    throw new IllegalArgumentException("Properties cannot be null or empty");
+    throw new IllegalArgumentException("Properties map cannot be null");
   }
 
   @Override
   protected String renderAbout() throws Exception {
-    try {
-      return render(TYPE_ID + "-about.vm");
-    } catch (Exception e) {
-      // Using Java 21 pattern matching for exception handling
-      if (e instanceof RuntimeException re) {
-        throw re;
-      }
-      throw new RuntimeException("Failed to render about template for " + TYPE_ID, e);
-    }
+    // Using Java 21 string template for improved readability
+    String templateName = STR."{TYPE_ID}-about.vm";
+    return render(templateName);
   }
 }

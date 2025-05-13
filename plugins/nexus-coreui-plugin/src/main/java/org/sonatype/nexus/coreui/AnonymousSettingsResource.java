@@ -12,16 +12,20 @@
  */
 package org.sonatype.nexus.coreui;
 
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotNull;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.PUT;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.Produces;
+import java.util.concurrent.Executors;
+
+import javax.inject.Inject;
+import javax.inject.Named;
+import javax.inject.Singleton;
+import javax.validation.Valid;
+import javax.validation.constraints.NotNull;
+import javax.ws.rs.Consumes;
+import javax.ws.rs.GET;
+import javax.ws.rs.PUT;
+import javax.ws.rs.Path;
+import javax.ws.rs.Produces;
+import javax.ws.rs.container.AsyncResponse;
+import javax.ws.rs.container.Suspended;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.rest.Resource;
@@ -31,12 +35,12 @@ import org.sonatype.nexus.security.anonymous.AnonymousManager;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 
-import static java.util.Objects.requireNonNull;
-import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON;
+import static com.google.common.base.Preconditions.checkNotNull;
+import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
 
 /**
  * REST resource for managing anonymous access settings.
- *
+ * 
  * @since 3.19
  */
 @Named
@@ -51,46 +55,81 @@ public class AnonymousSettingsResource
   static final String RESOURCE_PATH = "internal/ui/anonymous-settings";
 
   private final AnonymousManager anonymousManager;
+  
+  /**
+   * Virtual thread executor for handling I/O operations asynchronously.
+   * Java 21 Virtual Threads provide lightweight concurrency with minimal overhead,
+   * allowing for efficient handling of many concurrent requests.
+   */
+  private final var virtualExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   @Inject
   public AnonymousSettingsResource(final AnonymousManager anonymousManager) {
-    this.anonymousManager = requireNonNull(anonymousManager, "anonymousManager cannot be null");
+    this.anonymousManager = checkNotNull(anonymousManager);
   }
 
   /**
-   * Retrieves the current anonymous access settings.
-   *
-   * @return the current anonymous settings as an {@link AnonymousSettingsXO} record
+   * Retrieves the current anonymous access configuration.
+   * 
+   * @return The anonymous settings data transfer object
    */
   @GET
   @RequiresPermissions("nexus:settings:read")
-  public AnonymousSettingsXO read() {
-    AnonymousConfiguration config = anonymousManager.getConfiguration();
-    log.debug(STR."Reading anonymous configuration: enabled=\{config.isEnabled()}, userId=\{config.getUserId()}, realm=\{config.getRealmName()}");
-    
-    // Create a new record instance with the current configuration values
-    return new AnonymousSettingsXO(
-        config.isEnabled(),
-        config.getUserId(),
-        config.getRealmName()
-    );
+  public void read(@Suspended final AsyncResponse response) {
+    // Use virtual threads for I/O operations to improve scalability
+    virtualExecutor.submit(() -> {
+      try {
+        AnonymousConfiguration config = anonymousManager.getConfiguration();
+        log.debug(STR."Retrieved anonymous configuration: enabled=\{config.isEnabled()}, userId=\{config.getUserId()}, realm=\{config.getRealmName()}");
+        
+        // Create AnonymousSettingsXO record with values from configuration
+        var result = new AnonymousSettingsXO(
+            config.isEnabled(),
+            config.getUserId(),
+            config.getRealmName()
+        );
+        
+        response.resume(result);
+      } catch (Exception e) {
+        log.error(STR."Error retrieving anonymous settings: \{e.getMessage()}", e);
+        response.resume(e);
+      }
+    });
   }
 
   /**
-   * Updates the anonymous access settings.
-   *
-   * @param anonymousXO the new anonymous settings to apply
+   * Updates the anonymous access configuration.
+   * 
+   * @param anonymousXO The anonymous settings to apply
    */
   @PUT
   @RequiresAuthentication
   @RequiresPermissions("nexus:settings:update")
-  public void update(@NotNull @Valid final AnonymousSettingsXO anonymousXO) {
-    log.debug(STR."Updating anonymous configuration: enabled=\{anonymousXO.enabled()}, userId=\{anonymousXO.userId()}, realm=\{anonymousXO.realmName()}");
-    
-    AnonymousConfiguration configuration = anonymousManager.newConfiguration();
-    configuration.setEnabled(anonymousXO.enabled());
-    configuration.setRealmName(anonymousXO.realmName());
-    configuration.setUserId(anonymousXO.userId());
-    anonymousManager.setConfiguration(configuration);
+  public void update(@NotNull @Valid final AnonymousSettingsXO anonymousXO, @Suspended final AsyncResponse response) {
+    // Use virtual threads for I/O operations to improve scalability
+    virtualExecutor.submit(() -> {
+      try {
+        // Use record pattern matching to extract fields from the record
+        if (anonymousXO instanceof AnonymousSettingsXO(var enabled, var userId, var realmName)) {
+          log.debug(STR."Updating anonymous configuration: enabled=\{enabled}, userId=\{userId}, realm=\{realmName}");
+          
+          AnonymousConfiguration configuration = anonymousManager.newConfiguration();
+          configuration.setEnabled(enabled);
+          configuration.setRealmName(realmName);
+          configuration.setUserId(userId);
+          
+          anonymousManager.setConfiguration(configuration);
+          log.info(STR."Anonymous access settings updated: enabled=\{enabled}");
+          
+          response.resume("OK");
+        } else {
+          // This should never happen with record pattern matching, but included for completeness
+          throw new IllegalArgumentException("Invalid anonymous settings format");
+        }
+      } catch (Exception e) {
+        log.error(STR."Error updating anonymous settings: \{e.getMessage()}", e);
+        response.resume(e);
+      }
+    });
   }
 }

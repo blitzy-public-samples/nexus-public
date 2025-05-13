@@ -12,16 +12,18 @@
  */
 
 /**
- * S3 BlobStore implementation for the datastore-based architecture.
+ * S3 BlobStore metrics service implementation for datastore-backed Nexus repositories.
  * <p>
- * This package contains components that are only active when the datastore feature is enabled.
+ * This package provides datastore-specific implementations for S3 BlobStore metrics.
+ * When the DATASTORE_ENABLED feature flag is active, components in this package are
+ * discovered and wired into the application.
  * <p>
- * Java 21 compatibility notes:
- * - This package leverages Virtual Threads for I/O-bound S3 operations when enabled
- * - Uses Java 21's enhanced concurrency model for improved S3 upload/download performance
- * - Compatible with Java 21's module system and annotation processing
+ * With Java 21, this package benefits from:
+ * - Virtual Threads for improved I/O performance with S3 operations
+ * - Enhanced security features for AWS credential handling
+ * - Improved concurrency for metrics collection and persistence
  *
- * @since 3.31
+ * @since 3.20
  * @updated 21.0 - Updated for Java 21 compatibility
  */
 @FeatureFlag(name = DATASTORE_ENABLED)

@@ -19,7 +19,7 @@ package org.sonatype.nexus.blobstore.s3.internal.ui;
  * and toString() methods, making this class more concise and less error-prone.
  * 
  * This implementation maintains backward compatibility with existing code by providing
- * a no-args constructor and fluent 'withX' methods that return new instances with updated values.
+ * fluent 'withX' methods that return new instances with updated values.
  *
  * @since 3.12
  */
@@ -64,5 +64,35 @@ public record S3SignerTypeXO(int order, String id, String name)
    */
   public S3SignerTypeXO withName(final String name) {
     return new S3SignerTypeXO(this.order, this.id, name);
+  }
+  
+  /**
+   * JavaBean-style getter for the order field.
+   * Provided for backward compatibility with code that expects JavaBean-style getters.
+   *
+   * @return the order value
+   */
+  public int getOrder() {
+    return order();
+  }
+  
+  /**
+   * JavaBean-style getter for the id field.
+   * Provided for backward compatibility with code that expects JavaBean-style getters.
+   *
+   * @return the id value
+   */
+  public String getId() {
+    return id();
+  }
+  
+  /**
+   * JavaBean-style getter for the name field.
+   * Provided for backward compatibility with code that expects JavaBean-style getters.
+   *
+   * @return the name value
+   */
+  public String getName() {
+    return name();
   }
 }

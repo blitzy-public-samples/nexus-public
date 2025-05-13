@@ -24,7 +24,7 @@ import static org.sonatype.nexus.formfields.FormField.MANDATORY;
 import static org.sonatype.nexus.formfields.FormField.OPTIONAL;
 
 /**
- * Base task descriptor for restore metadata tasks that provides common form fields and configuration.
+ * Base task descriptor for restore metadata tasks that provides common configuration fields.
  * 
  * @since 3.29
  */
@@ -47,6 +47,11 @@ public abstract class BaseRestoreMetadataTaskDescriptor
 
   private static final Messages messages = I18N.create(Messages.class);
 
+  /**
+   * Constructor for the base restore metadata task descriptor.
+   *
+   * @param exposed whether this task should be exposed in the UI
+   */
   public BaseRestoreMetadataTaskDescriptor(final boolean exposed) {
     super(TYPE_ID,
         RestoreMetadataTask.class,
@@ -77,6 +82,9 @@ public abstract class BaseRestoreMetadataTaskDescriptor
     );
   }
 
+  /**
+   * Message bundle interface for internationalization of UI labels and help text.
+   */
   private interface Messages
       extends MessageBundle
   {
@@ -116,8 +124,8 @@ public abstract class BaseRestoreMetadataTaskDescriptor
     @DefaultMessage("Only blobs created since X days ago")
     String sinceDaysLabel();
 
-    @DefaultMessage("Attempt to reconcile blobs only created within specified last number of days (inclusive). " +
-        "Leave empty to reconcile all blobs (this may take a very long time to finish)")
+    @DefaultMessage(STR."Attempt to reconcile blobs only created within specified last number of days (inclusive). "
+        + "Leave empty to reconcile all blobs (this may take a very long time to finish)")
     String sinceDaysHelpText();
   }
 }

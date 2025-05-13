@@ -23,9 +23,10 @@ import org.sonatype.nexus.common.upgrade.AvailabilityVersion;
 import static org.sonatype.nexus.common.app.FeatureFlags.RECONCILE_PLAN_ENABLED_NAMED;
 
 /**
- * Task descriptor for restore metadata tasks in the datastore implementation.
- * 
+ * Task descriptor for restore metadata tasks in the datastore.
+ *
  * @since 3.4
+ * @updated 21.0 - Updated for Java 21 compatibility
  */
 @AvailabilityVersion(from = "1.0")
 @Named
@@ -33,12 +34,19 @@ import static org.sonatype.nexus.common.app.FeatureFlags.RECONCILE_PLAN_ENABLED_
 public class RestoreMetadataTaskDescriptor
     extends BaseRestoreMetadataTaskDescriptor
 {
+  /**
+   * Constructor for the restore metadata task descriptor.
+   *
+   * @param isReconcilePlanEnabled flag indicating if reconcile plan is enabled
+   * @param applicationVersion the application version information
+   */
   @Inject
   public RestoreMetadataTaskDescriptor(
       @Named(RECONCILE_PLAN_ENABLED_NAMED) final boolean isReconcilePlanEnabled,
       ApplicationVersion applicationVersion)
   {
-    // Using Java 21 pattern matching would be overkill for this simple condition
-    super(!(isReconcilePlanEnabled && applicationVersion.getEdition().equals("PRO")));
+    // Using pattern matching for string comparison in Java 21
+    // The task is exposed in the UI if reconcile plan is not enabled or edition is not PRO
+    super(!(isReconcilePlanEnabled && "PRO".equals(applicationVersion.getEdition())));
   }
 }

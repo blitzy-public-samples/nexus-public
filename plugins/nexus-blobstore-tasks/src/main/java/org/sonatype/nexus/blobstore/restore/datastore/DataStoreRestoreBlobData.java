@@ -20,19 +20,20 @@ import org.sonatype.nexus.blobstore.restore.RestoreBlobData;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
 
 /**
- * Simple structure for relevant data for a blob during metadata restoration
+ * Simple structure for relevant data for a blob during metadata restoration.
+ * Java 21 compatible implementation.
  *
  * @since 3.38
  */
 public class DataStoreRestoreBlobData extends RestoreBlobData
 {
   /**
-   * Constructs a new DataStoreRestoreBlobData instance.
+   * Constructor for DataStoreRestoreBlobData
    *
-   * @param blob the blob to restore
-   * @param blobProperties the properties of the blob
-   * @param blobStore the blob store containing the blob
-   * @param repositoryManager the repository manager
+   * @param blob The blob to restore
+   * @param blobProperties Properties associated with the blob
+   * @param blobStore The blob store containing the blob
+   * @param repositoryManager Repository manager for accessing repositories
    */
   public DataStoreRestoreBlobData(
       final Blob blob,
@@ -44,16 +45,16 @@ public class DataStoreRestoreBlobData extends RestoreBlobData
   }
 
   /**
-   * Gets the blob name, ensuring it always has a leading slash.
+   * Gets the blob name, ensuring it starts with a forward slash.
    * 
-   * @return the blob name with a leading slash
+   * @return The blob name with a leading forward slash
    */
   @Override
   public String getBlobName() {
     String blobName = super.getBlobName();
-    // Using Java 21 pattern matching for string operations
-    if (blobName instanceof String s && !s.startsWith("/")) {
-      return "/" + s;
+    // Use String.startsWith for path prefix check
+    if (!blobName.startsWith("/")) {
+      return "/" + blobName;
     }
     return blobName;
   }

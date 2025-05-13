@@ -39,6 +39,9 @@ import static org.sonatype.nexus.common.hash.HashAlgorithm.SHA1;
 import static org.sonatype.nexus.common.hash.HashAlgorithm.SHA256;
 import static org.sonatype.nexus.common.hash.HashAlgorithm.SHA512;
 
+/**
+ * Tests for {@link MultiHashingOutputStream}.
+ */
 @ExtendWith(MockitoExtension.class)
 public class MultiHashingOutputStreamTest
     extends TestSupport
@@ -102,7 +105,7 @@ public class MultiHashingOutputStreamTest
 
   @Test
   public void writeIntegerToHashes() throws Exception {
-    InputStream inputStream = new ByteArrayInputStream("test".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    InputStream inputStream = new ByteArrayInputStream("test".getBytes());
     int b;
     while ((b = inputStream.read()) != -1) {
       underTest.write(b);
@@ -132,9 +135,7 @@ public class MultiHashingOutputStreamTest
   public void exceptionOnMultipleHashesCalls() throws Exception {
     underTest.write(new byte[50], 10, 30);
 
-    underTest.hashes(); // First call is fine
-    
-    // Second call should throw exception
+    underTest.hashes();
     assertThrows(IllegalStateException.class, () -> {
       underTest.hashes();
     });

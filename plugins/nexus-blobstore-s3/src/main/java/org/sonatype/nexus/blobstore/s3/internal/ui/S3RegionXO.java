@@ -14,13 +14,12 @@ package org.sonatype.nexus.blobstore.s3.internal.ui;
 
 /**
  * S3 Region exchange object implemented as an immutable Java 21 record.
- * 
+ *
  * Records provide automatic implementations of accessors, equals(), hashCode(),
  * and toString() methods, making this class more concise and less error-prone.
  * 
  * This implementation maintains backward compatibility with existing code by providing
- * a no-args constructor, fluent 'withX' methods that return new instances with updated values,
- * and JavaBean-style getters that delegate to the record accessors.
+ * fluent 'withX' methods that return new instances with updated values.
  *
  * @since 3.12
  */

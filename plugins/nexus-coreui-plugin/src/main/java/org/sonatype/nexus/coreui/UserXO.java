@@ -26,261 +26,540 @@ import org.sonatype.nexus.validation.group.Update;
 
 /**
  * User exchange object.
+ * Refactored as a Java record for Java 21 compatibility, leveraging Record Patterns
+ * for more concise and type-safe data handling.
  *
  * @since 3.0
  */
-public class UserXO
-{
+public record UserXO(
+    @NotBlank
+    @UniqueUserId(groups = Create.class)
+    String userId,
+    
+    @NotBlank(groups = Update.class)
+    String version,
+    
+    // Null on create
+    String realm,
+    
+    @NotBlank
+    String firstName,
+    
+    @NotBlank
+    String lastName,
+    
+    @NotBlank
+    @Email
+    String email,
+    
+    @NotNull
+    UserStatus status,
+    
+    @NotBlank(groups = Create.class)
+    String password,
+    
+    @NotEmpty
+    @RolesExist(groups = {Create.class, Update.class})
+    Set<String> roles,
+    
+    Boolean external,
+    
+    // FIXME: Sort out what this is used for
+    Set<String> externalRoles
+) {
   /**
-   * Record pattern for UserXO data.
-   * Used for pattern matching in Java 21.
-   *
-   * @since 3.60
-   */
-  public record UserData(
-      String userId,
-      String version,
-      String realm,
-      String firstName,
-      String lastName,
-      String email,
-      UserStatus status,
-      String password,
-      Set<String> roles,
-      Boolean external,
-      Set<String> externalRoles
-  ) {
-    /**
-     * Factory method to create a UserXO from this record.
-     *
-     * @return A new UserXO instance with data from this record
-     */
-    public UserXO toUserXO() {
-      return new UserXO(this);
-    }
-  }
-
-  @NotBlank
-  @UniqueUserId(groups = Create.class)
-  private String userId;
-
-  @NotBlank(groups = Update.class)
-  private String version;
-
-  // Null on create
-  private String realm;
-
-  @NotBlank
-  private String firstName;
-
-  @NotBlank
-  private String lastName;
-
-  @NotBlank
-  @Email
-  private String email;
-
-  @NotNull
-  private UserStatus status;
-
-  @NotBlank(groups = Create.class)
-  private String password;
-
-  @NotEmpty
-  @RolesExist(groups = {Create.class, Update.class})
-  private Set<String> roles;
-
-  private Boolean external;
-
-  // FIXME: Sort out what this is used for
-  private Set<String> externalRoles;
-
-  /**
-   * Default constructor.
+   * Default constructor required for JSON deserialization.
+   * This enables frameworks to create an instance and then populate its fields.
    */
   public UserXO() {
-    // Empty constructor for serialization frameworks
+    this(null, null, null, null, null, null, null, null, null, null, null);
   }
-
+  
   /**
-   * Constructor using UserData record for pattern matching.
-   *
-   * @param data The user data record
-   * @since 3.60
-   */
-  public UserXO(UserData data) {
-    this.userId = data.userId();
-    this.version = data.version();
-    this.realm = data.realm();
-    this.firstName = data.firstName();
-    this.lastName = data.lastName();
-    this.email = data.email();
-    this.status = data.status();
-    this.password = data.password();
-    this.roles = data.roles();
-    this.external = data.external();
-    this.externalRoles = data.externalRoles();
-  }
-
-  /**
-   * Creates a UserData record from this object for pattern matching.
-   * This enables pattern matching with Java 21 Record Patterns.
-   *
-   * <p>Example usage with pattern matching:</p>
-   * <pre>
-   * UserXO user = getUser();
-   * var userData = user.toUserData();
+   * Creates a new instance with the specified values.
+   * This factory method allows for backward compatibility with code that uses setters.
    * 
-   * // Pattern matching with records in Java 21
-   * if (userData instanceof UserXO.UserData(var id, _, _, var first, var last, _, _, _, _, _, _)) {
-   *     System.out.println("User: " + first + " " + last + " (" + id + ")");
-   * }
-   * </pre>
-   *
-   * @return A UserData record containing this object's data
-   * @since 3.60
-   */
-  public UserData toUserData() {
-    return new UserData(
-        userId,
-        version,
-        realm,
-        firstName,
-        lastName,
-        email,
-        status,
-        password,
-        roles,
-        external,
-        externalRoles
-    );
-  }
-
-  /**
-   * Static factory method to create a UserXO from a UserData record.
-   * This is useful for pattern matching in Java 21.
-   *
-   * @param data The user data record
+   * @param userId User identifier
+   * @param version Version information
+   * @param realm Security realm
+   * @param firstName User's first name
+   * @param lastName User's last name
+   * @param email User's email address
+   * @param status User status
+   * @param password User password
+   * @param roles User roles
+   * @param external Whether the user is external
+   * @param externalRoles External roles
    * @return A new UserXO instance
-   * @since 3.60
    */
-  public static UserXO from(UserData data) {
-    return new UserXO(data);
+  public static UserXO of(String userId, String version, String realm, String firstName, String lastName,
+                          String email, UserStatus status, String password, Set<String> roles,
+                          Boolean external, Set<String> externalRoles) {
+    return new UserXO(userId, version, realm, firstName, lastName, email, status, password, roles, external, externalRoles);
   }
-
+  
+  /**
+   * Creates a new builder for UserXO.
+   * This provides a fluent API for creating UserXO instances.
+   *
+   * @return A new builder instance
+   */
+  public static Builder builder() {
+    return new Builder();
+  }
+  
+  /**
+   * Builder class for UserXO.
+   * Provides a fluent API for creating UserXO instances.
+   */
+  public static class Builder {
+    private String userId;
+    private String version;
+    private String realm;
+    private String firstName;
+    private String lastName;
+    private String email;
+    private UserStatus status;
+    private String password;
+    private Set<String> roles;
+    private Boolean external;
+    private Set<String> externalRoles;
+    
+    /**
+     * Sets the userId.
+     *
+     * @param userId The userId to set
+     * @return This builder instance
+     */
+    public Builder userId(String userId) {
+      this.userId = userId;
+      return this;
+    }
+    
+    /**
+     * Sets the version.
+     *
+     * @param version The version to set
+     * @return This builder instance
+     */
+    public Builder version(String version) {
+      this.version = version;
+      return this;
+    }
+    
+    /**
+     * Sets the realm.
+     *
+     * @param realm The realm to set
+     * @return This builder instance
+     */
+    public Builder realm(String realm) {
+      this.realm = realm;
+      return this;
+    }
+    
+    /**
+     * Sets the firstName.
+     *
+     * @param firstName The firstName to set
+     * @return This builder instance
+     */
+    public Builder firstName(String firstName) {
+      this.firstName = firstName;
+      return this;
+    }
+    
+    /**
+     * Sets the lastName.
+     *
+     * @param lastName The lastName to set
+     * @return This builder instance
+     */
+    public Builder lastName(String lastName) {
+      this.lastName = lastName;
+      return this;
+    }
+    
+    /**
+     * Sets the email.
+     *
+     * @param email The email to set
+     * @return This builder instance
+     */
+    public Builder email(String email) {
+      this.email = email;
+      return this;
+    }
+    
+    /**
+     * Sets the status.
+     *
+     * @param status The status to set
+     * @return This builder instance
+     */
+    public Builder status(UserStatus status) {
+      this.status = status;
+      return this;
+    }
+    
+    /**
+     * Sets the password.
+     *
+     * @param password The password to set
+     * @return This builder instance
+     */
+    public Builder password(String password) {
+      this.password = password;
+      return this;
+    }
+    
+    /**
+     * Sets the roles.
+     *
+     * @param roles The roles to set
+     * @return This builder instance
+     */
+    public Builder roles(Set<String> roles) {
+      this.roles = roles;
+      return this;
+    }
+    
+    /**
+     * Sets the external flag.
+     *
+     * @param external The external flag to set
+     * @return This builder instance
+     */
+    public Builder external(Boolean external) {
+      this.external = external;
+      return this;
+    }
+    
+    /**
+     * Sets the externalRoles.
+     *
+     * @param externalRoles The externalRoles to set
+     * @return This builder instance
+     */
+    public Builder externalRoles(Set<String> externalRoles) {
+      this.externalRoles = externalRoles;
+      return this;
+    }
+    
+    /**
+     * Builds a new UserXO instance with the configured values.
+     *
+     * @return A new UserXO instance
+     */
+    public UserXO build() {
+      return new UserXO(userId, version, realm, firstName, lastName, email, status, password, roles, external, externalRoles);
+    }
+  }
+  
+  /**
+   * Creates a copy of this record with the specified userId.
+   */
+  public UserXO withUserId(String userId) {
+    return new UserXO(userId, this.version, this.realm, this.firstName, this.lastName, 
+        this.email, this.status, this.password, this.roles, this.external, this.externalRoles);
+  }
+  
+  /**
+   * Creates a copy of this record with the specified version.
+   */
+  public UserXO withVersion(String version) {
+    return new UserXO(this.userId, version, this.realm, this.firstName, this.lastName, 
+        this.email, this.status, this.password, this.roles, this.external, this.externalRoles);
+  }
+  
+  /**
+   * Creates a copy of this record with the specified realm.
+   */
+  public UserXO withRealm(String realm) {
+    return new UserXO(this.userId, this.version, realm, this.firstName, this.lastName, 
+        this.email, this.status, this.password, this.roles, this.external, this.externalRoles);
+  }
+  
+  /**
+   * Creates a copy of this record with the specified firstName.
+   */
+  public UserXO withFirstName(String firstName) {
+    return new UserXO(this.userId, this.version, this.realm, firstName, this.lastName, 
+        this.email, this.status, this.password, this.roles, this.external, this.externalRoles);
+  }
+  
+  /**
+   * Creates a copy of this record with the specified lastName.
+   */
+  public UserXO withLastName(String lastName) {
+    return new UserXO(this.userId, this.version, this.realm, this.firstName, lastName, 
+        this.email, this.status, this.password, this.roles, this.external, this.externalRoles);
+  }
+  
+  /**
+   * Creates a copy of this record with the specified email.
+   */
+  public UserXO withEmail(String email) {
+    return new UserXO(this.userId, this.version, this.realm, this.firstName, this.lastName, 
+        email, this.status, this.password, this.roles, this.external, this.externalRoles);
+  }
+  
+  /**
+   * Creates a copy of this record with the specified status.
+   */
+  public UserXO withStatus(UserStatus status) {
+    return new UserXO(this.userId, this.version, this.realm, this.firstName, this.lastName, 
+        this.email, status, this.password, this.roles, this.external, this.externalRoles);
+  }
+  
+  /**
+   * Creates a copy of this record with the specified password.
+   */
+  public UserXO withPassword(String password) {
+    return new UserXO(this.userId, this.version, this.realm, this.firstName, this.lastName, 
+        this.email, this.status, password, this.roles, this.external, this.externalRoles);
+  }
+  
+  /**
+   * Creates a copy of this record with the specified roles.
+   */
+  public UserXO withRoles(Set<String> roles) {
+    return new UserXO(this.userId, this.version, this.realm, this.firstName, this.lastName, 
+        this.email, this.status, this.password, roles, this.external, this.externalRoles);
+  }
+  
+  /**
+   * Creates a copy of this record with the specified external flag.
+   */
+  public UserXO withExternal(Boolean external) {
+    return new UserXO(this.userId, this.version, this.realm, this.firstName, this.lastName, 
+        this.email, this.status, this.password, this.roles, external, this.externalRoles);
+  }
+  
+  /**
+   * Creates a copy of this record with the specified externalRoles.
+   */
+  public UserXO withExternalRoles(Set<String> externalRoles) {
+    return new UserXO(this.userId, this.version, this.realm, this.firstName, this.lastName, 
+        this.email, this.status, this.password, this.roles, this.external, externalRoles);
+  }
+  
+  /**
+   * Example of how to use Record Patterns with this class.
+   * This method demonstrates pattern matching with records in Java 21.
+   *
+   * @param obj The object to check
+   * @return A formatted string with user information if the object is a UserXO, or "Not a user" otherwise
+   */
+  public static String formatUserIfPresent(Object obj) {
+    return switch (obj) {
+      case UserXO(String userId, _, _, String firstName, String lastName, String email, UserStatus status, _, _, _, _) 
+          when status == UserStatus.active ->
+        STR."Active user: \{firstName} \{lastName} (\{userId}) - \{email}";
+      
+      case UserXO(String userId, _, _, String firstName, String lastName, _, UserStatus status, _, _, _, _) ->
+        STR."User \{userId} (\{firstName} \{lastName}) has status: \{status}";
+      
+      default -> "Not a user";
+    };
+  }
+  
+  /**
+   * Example of how to filter users by status using Record Patterns.
+   * This method demonstrates using Record Patterns with collections in Java 21.
+   *
+   * @param users The collection of users to filter
+   * @param status The status to filter by
+   * @return A list of user IDs with the specified status
+   */
+  public static java.util.List<String> filterUsersByStatus(java.util.Collection<UserXO> users, UserStatus status) {
+    return users.stream()
+        .filter(user -> switch (user) {
+          case UserXO(_, _, _, _, _, _, var userStatus, _, _, _, _) when userStatus == status -> true;
+          default -> false;
+        })
+        .map(UserXO::userId)
+        .toList();
+  }
+  
+  // Legacy getter methods for backward compatibility
+  
+  /**
+   * @deprecated Use {@link #userId()} instead. Maintained for backward compatibility.
+   */
+  @Deprecated
   public String getUserId() {
     return userId;
   }
-
-  public void setUserId(String userId) {
-    this.userId = userId;
-  }
-
+  
+  /**
+   * @deprecated Use {@link #version()} instead. Maintained for backward compatibility.
+   */
+  @Deprecated
   public String getVersion() {
     return version;
   }
-
-  public void setVersion(String version) {
-    this.version = version;
-  }
-
+  
+  /**
+   * @deprecated Use {@link #realm()} instead. Maintained for backward compatibility.
+   */
+  @Deprecated
   public String getRealm() {
     return realm;
   }
-
-  public void setRealm(String realm) {
-    this.realm = realm;
-  }
-
+  
+  /**
+   * @deprecated Use {@link #firstName()} instead. Maintained for backward compatibility.
+   */
+  @Deprecated
   public String getFirstName() {
     return firstName;
   }
-
-  public void setFirstName(String firstName) {
-    this.firstName = firstName;
-  }
-
+  
+  /**
+   * @deprecated Use {@link #lastName()} instead. Maintained for backward compatibility.
+   */
+  @Deprecated
   public String getLastName() {
     return lastName;
   }
-
-  public void setLastName(String lastName) {
-    this.lastName = lastName;
-  }
-
+  
+  /**
+   * @deprecated Use {@link #email()} instead. Maintained for backward compatibility.
+   */
+  @Deprecated
   public String getEmail() {
     return email;
   }
-
-  public void setEmail(String email) {
-    this.email = email;
-  }
-
+  
+  /**
+   * @deprecated Use {@link #status()} instead. Maintained for backward compatibility.
+   */
+  @Deprecated
   public UserStatus getStatus() {
     return status;
   }
-
-  public void setStatus(UserStatus status) {
-    this.status = status;
-  }
-
+  
+  /**
+   * @deprecated Use {@link #password()} instead. Maintained for backward compatibility.
+   */
+  @Deprecated
   public String getPassword() {
     return password;
   }
-
-  public void setPassword(String password) {
-    this.password = password;
-  }
-
+  
+  /**
+   * @deprecated Use {@link #roles()} instead. Maintained for backward compatibility.
+   */
+  @Deprecated
   public Set<String> getRoles() {
     return roles;
   }
-
-  public void setRoles(Set<String> roles) {
-    this.roles = roles;
-  }
-
+  
+  /**
+   * @deprecated Use {@link #external()} instead. Maintained for backward compatibility.
+   */
+  @Deprecated
   public Boolean isExternal() {
     return external;
   }
-
-  public void setExternal(Boolean external) {
-    this.external = external;
-  }
-
+  
+  /**
+   * @deprecated Use {@link #externalRoles()} instead. Maintained for backward compatibility.
+   */
+  @Deprecated
   public Set<String> getExternalRoles() {
     return externalRoles;
   }
-
-  public void setExternalRoles(Set<String> externalRoles) {
-    this.externalRoles = externalRoles;
-  }
-
+  
+  // Legacy setter methods for backward compatibility
+  
   /**
-   * Checks if this user has the specified role.
-   *
-   * @param roleId The role ID to check
-   * @return true if the user has the role, false otherwise
-   * @since 3.60
+   * @deprecated Use {@link #withUserId(String)} instead. Maintained for backward compatibility.
+   * @throws UnsupportedOperationException Records are immutable, use the appropriate with* method instead
    */
-  public boolean hasRole(String roleId) {
-    return roles != null && roles.contains(roleId);
+  @Deprecated
+  public void setUserId(String userId) {
+    throw new UnsupportedOperationException(STR."UserXO is now immutable. Use withUserId() instead.");
   }
-
-  @Override
-  public String toString() {
-    return "UserXO{" +
-        "userId='" + userId + '\'' +
-        ", version='" + version + '\'' +
-        ", realm='" + realm + '\'' +
-        ", firstName='" + firstName + '\'' +
-        ", lastName='" + lastName + '\'' +
-        ", email='" + email + '\'' +
-        ", status=" + status +
-        ", password='" + password + '\'' +
-        ", roles=" + roles +
-        ", external=" + external +
-        ", externalRoles=" + externalRoles +
-        '}';
+  
+  /**
+   * @deprecated Use {@link #withVersion(String)} instead. Maintained for backward compatibility.
+   */
+  @Deprecated
+  public void setVersion(String version) {
+    throw new UnsupportedOperationException(STR."UserXO is now immutable. Use withVersion() instead.");
+  }
+  
+  /**
+   * @deprecated Use {@link #withRealm(String)} instead. Maintained for backward compatibility.
+   */
+  @Deprecated
+  public void setRealm(String realm) {
+    throw new UnsupportedOperationException(STR."UserXO is now immutable. Use withRealm() instead.");
+  }
+  
+  /**
+   * @deprecated Use {@link #withFirstName(String)} instead. Maintained for backward compatibility.
+   */
+  @Deprecated
+  public void setFirstName(String firstName) {
+    throw new UnsupportedOperationException(STR."UserXO is now immutable. Use withFirstName() instead.");
+  }
+  
+  /**
+   * @deprecated Use {@link #withLastName(String)} instead. Maintained for backward compatibility.
+   */
+  @Deprecated
+  public void setLastName(String lastName) {
+    throw new UnsupportedOperationException(STR."UserXO is now immutable. Use withLastName() instead.");
+  }
+  
+  /**
+   * @deprecated Use {@link #withEmail(String)} instead. Maintained for backward compatibility.
+   */
+  @Deprecated
+  public void setEmail(String email) {
+    throw new UnsupportedOperationException(STR."UserXO is now immutable. Use withEmail() instead.");
+  }
+  
+  /**
+   * @deprecated Use {@link #withStatus(UserStatus)} instead. Maintained for backward compatibility.
+   */
+  @Deprecated
+  public void setStatus(UserStatus status) {
+    throw new UnsupportedOperationException(STR."UserXO is now immutable. Use withStatus() instead.");
+  }
+  
+  /**
+   * @deprecated Use {@link #withPassword(String)} instead. Maintained for backward compatibility.
+   */
+  @Deprecated
+  public void setPassword(String password) {
+    throw new UnsupportedOperationException(STR."UserXO is now immutable. Use withPassword() instead.");
+  }
+  
+  /**
+   * @deprecated Use {@link #withRoles(Set)} instead. Maintained for backward compatibility.
+   */
+  @Deprecated
+  public void setRoles(Set<String> roles) {
+    throw new UnsupportedOperationException(STR."UserXO is now immutable. Use withRoles() instead.");
+  }
+  
+  /**
+   * @deprecated Use {@link #withExternal(Boolean)} instead. Maintained for backward compatibility.
+   */
+  @Deprecated
+  public void setExternal(Boolean external) {
+    throw new UnsupportedOperationException(STR."UserXO is now immutable. Use withExternal() instead.");
+  }
+  
+  /**
+   * @deprecated Use {@link #withExternalRoles(Set)} instead. Maintained for backward compatibility.
+   */
+  @Deprecated
+  public void setExternalRoles(Set<String> externalRoles) {
+    throw new UnsupportedOperationException(STR."UserXO is now immutable. Use withExternalRoles() instead.");
   }
 }

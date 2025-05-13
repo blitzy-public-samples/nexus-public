@@ -12,13 +12,17 @@
  */
 package org.sonatype.nexus.common.sequence;
 
-import org.hamcrest.Matchers;
-import org.junit.jupiter.api.Test;
-
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.lessThanOrEqualTo;
+
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests {@link RandomExponentialSequence}
+ * 
+ * @since 3.0
  */
 public class RandomExponentialSequenceTest
 {
@@ -30,11 +34,11 @@ public class RandomExponentialSequenceTest
         .maxDeviation(0.0f)
         .build();
 
-    assertThat(seq.next(), Matchers.is(1L));
-    assertThat(seq.next(), Matchers.is(2L));
-    assertThat(seq.next(), Matchers.is(4L));
-    assertThat(seq.next(), Matchers.is(8L));
-    assertThat(seq.next(), Matchers.is(16L));
+    assertThat(seq.next(), is(1L));
+    assertThat(seq.next(), is(2L));
+    assertThat(seq.next(), is(4L));
+    assertThat(seq.next(), is(8L));
+    assertThat(seq.next(), is(16L));
   }
 
   @Test
@@ -46,10 +50,10 @@ public class RandomExponentialSequenceTest
           .maxDeviation(2.0f)
           .build();
 
-      assertThat(seq.next(), Matchers.is(10L));
+      assertThat(seq.next(), is(10L));
       long n = seq.next();
-      assertThat(n, Matchers.greaterThanOrEqualTo(10L));
-      assertThat(n, Matchers.lessThanOrEqualTo(40L));
+      assertThat(n, greaterThanOrEqualTo(10L));
+      assertThat(n, lessThanOrEqualTo(40L));
     }
   }
 }

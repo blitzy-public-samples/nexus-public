@@ -27,22 +27,14 @@ import static org.sonatype.nexus.rest.APIConstants.BETA_API_PREFIX;
 
 /**
  * Beta endpoint for S3 BlobStore REST API
- * 
- * This class has been updated for Java 21 compatibility, leveraging Jakarta EE 10 APIs
- * and supporting Virtual Threads for improved I/O performance in the parent class.
+ *
+ * This implementation has been updated for Java 21 compatibility, leveraging the parent class's
+ * implementation of Virtual Threads for I/O-bound operations, pattern matching for type checks,
+ * and other Java 21 features for improved performance and code clarity.
  *
  * @since 3.24
  * @deprecated moving to {@link S3BlobStoreApiResourceV1}
- * @see <a href="https://openjdk.org/projects/jdk/21/">Java 21 compatibility</a>
- */
-/*
- * OSGi Bundle Metadata for Java 21 compatibility:
- * 
- * Bundle-RequiredExecutionEnvironment: JavaSE-21
- * Import-Package: jakarta.inject;version="[2.0,3)",
- *               jakarta.ws.rs;version="[3.0,4)",
- *               org.sonatype.nexus.blobstore.api;version="[3.0,4)",
- *               org.sonatype.nexus.crypto.secrets;version="[3.0,4)"
+ * @see <a href="https://openjdk.org/projects/jdk/21/">Java 21 Features</a>
  */
 @Api(hidden = true)
 @Named
@@ -52,14 +44,18 @@ import static org.sonatype.nexus.rest.APIConstants.BETA_API_PREFIX;
 public class S3BlobStoreApiResourceBeta
   extends S3BlobStoreApiResource
 {
+  /**
+   * Resource URI for the beta S3 BlobStore REST API endpoint.
+   * Uses String concatenation for backward compatibility.
+   */
   static final String RESOURCE_URI = BETA_API_PREFIX + "/blobstores/s3";
 
   /**
-   * Constructor for S3BlobStoreApiResourceBeta.
+   * Constructor for the S3BlobStoreApiResourceBeta class.
    * 
    * @param blobStoreManager the blob store manager
    * @param validation the validation service for S3 blob store API updates
-   * @param secretsFactory the factory for handling secrets
+   * @param secretsFactory the factory for creating and managing secrets
    */
   @Inject
   public S3BlobStoreApiResourceBeta(final BlobStoreManager blobStoreManager,

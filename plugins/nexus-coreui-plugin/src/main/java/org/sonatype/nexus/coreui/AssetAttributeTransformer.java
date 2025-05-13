@@ -12,79 +12,68 @@
  */
 package org.sonatype.nexus.coreui;
 
-import java.util.Map;
-import java.util.function.Predicate;
+import java.util.SequencedMap;
 
 /**
  * Functional interface for transforming or replacing one or more attributes of an {@link AssetXO}.
- *
- * @since 3.0
- * @since 3.x Updated to leverage Java 21 functional interface capabilities
+ * <p>
+ * Since {@link AssetXO} is implemented as an immutable record in Java 21, transformers
+ * must return a new instance rather than modifying the existing one.
  */
 @FunctionalInterface
 public interface AssetAttributeTransformer
 {
   /**
-   * Transforms the given {@link AssetXO} by modifying or replacing its attributes.
+   * Transforms the given {@link AssetXO} by creating a new instance with modified attributes.
+   * <p>
+   * Implementation note: Since {@link AssetXO} is immutable, implementations should create
+   * a new instance with the desired changes rather than attempting to modify the original.
    *
    * @param assetXO the asset to be transformed
+   * @return a new {@link AssetXO} instance with the transformed attributes
    */
-  void transform(AssetXO assetXO);
+  AssetXO transform(AssetXO assetXO);
   
   /**
-   * Creates a conditional transformer that only applies if the predicate matches.
+   * Convenience method to create a transformer that only modifies the attributes map.
+   * <p>
+   * This factory method simplifies creating transformers that only need to modify the
+   * attributes map without changing other fields of the {@link AssetXO}.
    *
-   * @param predicate the condition to check before transformation
-   * @return a new transformer that only applies when the condition is met
+   * @param attributesTransformer a function that transforms the attributes map
+   * @return an {@link AssetAttributeTransformer} that applies the given transformation to the attributes map
    */
-  default AssetAttributeTransformer onlyIf(Predicate<AssetXO> predicate) {
-    return assetXO -> {
-      if (predicate.test(assetXO)) {
-        transform(assetXO);
-      }
-    };
+  static AssetAttributeTransformer ofAttributesOnly(java.util.function.Function<SequencedMap<String, Object>, SequencedMap<String, Object>> attributesTransformer) {
+    return assetXO -> new AssetXO(
+        assetXO.id(),
+        assetXO.name(),
+        assetXO.format(),
+        assetXO.contentType(),
+        assetXO.size(),
+        assetXO.repositoryName(),
+        assetXO.containingRepositoryName(),
+        assetXO.blobCreated(),
+        assetXO.blobUpdated(),
+        assetXO.lastDownloaded(),
+        assetXO.blobRef(),
+        assetXO.componentId(),
+        assetXO.createdBy(),
+        assetXO.createdByIp(),
+        attributesTransformer.apply(assetXO.attributes())
+    );
   }
   
   /**
-   * Creates a transformer that only applies to assets of a specific format.
+   * Returns a composed transformer that first applies this transformer and then
+   * applies the {@code after} transformer.
    *
-   * @param format the format to match
-   * @return a new transformer that only applies to the specified format
-   */
-  default AssetAttributeTransformer forFormat(String format) {
-    return onlyIf(assetXO -> format.equals(assetXO.format()));
-  }
-  
-  /**
-   * Creates a transformer that only applies if a specific attribute exists.
-   *
-   * @param format the format namespace in attributes
-   * @param attributeName the attribute name to check for existence
-   * @return a new transformer that only applies when the attribute exists
-   */
-  default AssetAttributeTransformer whenAttributeExists(String format, String attributeName) {
-    return onlyIf(assetXO -> {
-      Map<String, Object> attributes = assetXO.attributes();
-      if (attributes.containsKey(format)) {
-        @SuppressWarnings("unchecked")
-        Map<String, Object> formatAttributes = (Map<String, Object>) attributes.get(format);
-        return formatAttributes.containsKey(attributeName);
-      }
-      return false;
-    });
-  }
-  
-  /**
-   * Combines this transformer with another, applying this transformer first,
-   * then the other.
-   *
-   * @param after the transformer to apply after this one
-   * @return a combined transformer
+   * @param after the transformer to apply after this transformer is applied
+   * @return a composed transformer that first applies this transformer and then
+   *         applies the {@code after} transformer
+   * @throws NullPointerException if after is null
    */
   default AssetAttributeTransformer andThen(AssetAttributeTransformer after) {
-    return assetXO -> {
-      transform(assetXO);
-      after.transform(assetXO);
-    };
+    java.util.Objects.requireNonNull(after);
+    return assetXO -> after.transform(transform(assetXO));
   }
 }

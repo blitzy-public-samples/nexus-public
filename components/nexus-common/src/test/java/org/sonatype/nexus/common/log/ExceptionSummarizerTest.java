@@ -16,6 +16,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import java.util.function.BiPredicate;
 
+import org.sonatype.goodies.testsupport.TestSupport;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
@@ -30,11 +32,17 @@ import static org.sonatype.nexus.common.log.ExceptionSummarizer.warn;
 
 /**
  * Tests for {@link ExceptionSummarizer}.
- * <p>
- * Updated for Java 21 and JUnit Jupiter 5.10.1.
+ * 
+ * <p>Updated for Java 21 compatibility using JUnit Jupiter 5.10.1 and Mockito 4.11.0.</p>
+ * 
+ * <p>This test verifies the exception summarization logic that prevents log flooding by
+ * aggregating repeated exceptions and providing periodic summaries instead of full stack traces.</p>
+ * 
+ * @since 3.6
  */
 @ExtendWith(MockitoExtension.class)
-public class ExceptionSummarizerTest
+class ExceptionSummarizerTest
+    extends TestSupport
 {
   @Mock
   private Logger log;
@@ -50,7 +58,7 @@ public class ExceptionSummarizerTest
   private TestExceptionSummarizer underTest;
 
   @Test
-  void summarizeExceptionsByType() {
+  void summarizeExceptionsByType() throws Exception {
     underTest = new TestExceptionSummarizer(sameType(), warn(log));
 
     underTest.log("oops", firstCause); // <-- full stack
@@ -91,7 +99,7 @@ public class ExceptionSummarizerTest
   }
 
   @Test
-  void summarizeExceptionsByText() {
+  void summarizeExceptionsByText() throws Exception {
     underTest = new TestExceptionSummarizer(sameText(), warn(log));
 
     underTest.log("oops", firstCause); // <-- full stack
@@ -137,7 +145,9 @@ public class ExceptionSummarizerTest
 
   /**
    * Stubbed {@link ExceptionSummarizer} that lets tests move time forward without sleeping.
-   * Compatible with Java 21 and JUnit Jupiter 5.10.1.
+   * 
+   * <p>This test helper allows precise control over the time-based logic in ExceptionSummarizer
+   * without requiring actual thread sleeps, making tests faster and more deterministic.</p>
    */
   private static class TestExceptionSummarizer
       extends ExceptionSummarizer

@@ -21,30 +21,23 @@ import static org.hamcrest.Matchers.is;
 
 /**
  * Tests for {@link Plural}
- * 
- * Migrated to JUnit Jupiter (JUnit 5) and Java 21 compatibility.
  *
  * @since 3.0
+ * @see Plural
  */
-public class PluralTest
+class PluralTest
     extends TestSupport
 {
-  /**
-   * Tests simple plural form with default 's' suffix.
-   */
   @Test
-  public void testSimplePlural() {
+  void testSimplePlural() {
     assertThat(Plural.of(-1, "dog"), is("-1 dogs"));
     assertThat(Plural.of(0, "dog"), is("0 dogs"));
     assertThat(Plural.of(1, "dog"), is("1 dog"));
     assertThat(Plural.of(2, "dog"), is("2 dogs"));
   }
 
-  /**
-   * Tests complex plural form with custom irregular plural suffix.
-   */
   @Test
-  public void testComplexPlural() {
+  void testComplexPlural() {
     assertThat(Plural.of(-1, "candy", "candies"), is("-1 candies"));
     assertThat(Plural.of(0, "candy", "candies"), is("0 candies"));
     assertThat(Plural.of(1, "candy", "candies"), is("1 candy"));

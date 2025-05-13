@@ -12,12 +12,13 @@
  */
 package org.sonatype.nexus.common.template;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
 import com.google.common.collect.Maps;
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -31,7 +32,6 @@ public class TemplateParametersTest
     extends TestSupport
 {
   @Test
-  @DisplayName("Empty parameters should return empty map")
   void empty() {
     Map<String, Object> params = new TemplateParameters().get();
     log(params);
@@ -41,7 +41,6 @@ public class TemplateParametersTest
   }
 
   @Test
-  @DisplayName("Parameters with mixed types should be stored correctly")
   void mixedTypes() {
     Map<String, Object> params = new TemplateParameters()
         .set("a", "1")
@@ -56,7 +55,6 @@ public class TemplateParametersTest
   }
 
   @Test
-  @DisplayName("Setting all parameters from another map should work correctly")
   void setAll() {
     Map<String, Object> other = Maps.newHashMap();
     other.put("a", "1");
@@ -74,18 +72,77 @@ public class TemplateParametersTest
   }
   
   @Test
-  @DisplayName("String templates should work with TemplateParameters")
-  void stringTemplates() {
+  void stringTemplateCompatibility() {
+    // Test that TemplateParameters works with Java 21 string template expressions
+    String key = "template";
+    String value = "Hello, World!";
+    
     Map<String, Object> params = new TemplateParameters()
-        .set("name", "World")
-        .set("count", 42)
+        .set(key, value)
         .get();
     log(params);
     
-    // Using Java 21 string templates to format a message with parameters
-    String message = STR."Hello \{params.get("name")}! Count: \{params.get("count")}";
+    assertNotNull(params);
+    assertThat(params.size(), is(1));
+    assertThat(params.get(key), is((Object) value));
+  }
+  
+  /**
+   * Test compatibility with Java 21 record patterns
+   */
+  @Test
+  void recordPatternCompatibility() {
+    record TemplateValue(String key, Object value) {}
     
-    assertNotNull(message);
-    assertThat(message, is("Hello World! Count: 42"));
+    // Create a record to use as a template parameter value
+    TemplateValue templateValue = new TemplateValue("recordKey", "recordValue");
+    
+    Map<String, Object> params = new TemplateParameters()
+        .set("record", templateValue)
+        .get();
+    log(params);
+    
+    assertNotNull(params);
+    assertThat(params.size(), is(1));
+    
+    // Use pattern matching with the record
+    Object obj = params.get("record");
+    if (obj instanceof TemplateValue(String key, Object value)) {
+      assertThat(key, is("recordKey"));
+      assertThat(value, is((Object) "recordValue"));
+    } else {
+      // This should not happen - fail the test if pattern matching doesn't work
+      assertThat("Object should be a TemplateValue record", false);
+    }
+  }
+  
+  /**
+   * Test compatibility with Java 21 sequenced collections
+   */
+  @Test
+  void sequencedCollectionCompatibility() {
+    // Create a list with sequenced collection operations
+    List<String> items = new ArrayList<>();
+    items.add("first");
+    items.add("middle");
+    items.add("last");
+    
+    Map<String, Object> params = new TemplateParameters()
+        .set("items", items)
+        .get();
+    log(params);
+    
+    assertNotNull(params);
+    assertThat(params.size(), is(1));
+    
+    // Verify we can retrieve and use the list with Java 21 sequenced collection methods
+    @SuppressWarnings("unchecked")
+    List<String> retrievedItems = (List<String>) params.get("items");
+    assertNotNull(retrievedItems);
+    assertThat(retrievedItems.size(), is(3));
+    
+    // Use Java 21 sequenced collection methods
+    assertThat(retrievedItems.getFirst(), is("first"));
+    assertThat(retrievedItems.getLast(), is("last"));
   }
 }

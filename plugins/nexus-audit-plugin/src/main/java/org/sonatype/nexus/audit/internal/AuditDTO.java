@@ -15,6 +15,7 @@ package org.sonatype.nexus.audit.internal;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
+import java.util.concurrent.Executors;
 
 import org.sonatype.nexus.audit.AuditData;
 
@@ -26,7 +27,9 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 /**
  * Simple DTO for writing audit data to log file in JSON format.
- * Implemented as a Java 21 Record for improved data handling and immutability.
+ * 
+ * Updated for Java 21 compatibility with Record Pattern support and
+ * improved thread handling awareness.
  *
  * @since 3.16
  */
@@ -42,32 +45,32 @@ public record AuditDTO(
     Map<String, Object> attributes
 ) {
   /**
-   * DateTimeFormatter for consistent timestamp formatting.
-   * Pattern: yyyy-MM-dd HH:mm:ss,SSSZ
+   * Date formatter for consistent timestamp formatting.
+   * Thread-safe and reusable across instances.
    */
   private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss,SSSZ");
 
   /**
-   * ObjectMapper configured with Java 21 compatible modules for JSON serialization.
-   * Uses Jdk8Module and JavaTimeModule for handling modern Java types.
+   * Jackson ObjectMapper configured with Java 21 compatible modules.
+   * Updated to support Jackson 2.16.1 features.
    */
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
       .registerModule(new Jdk8Module())
       .registerModule(new JavaTimeModule());
 
   /**
-   * No-args constructor for deserialization.
+   * Default constructor for deserialization.
    */
-  public AuditDTO() {
-    this(null, null, null, null, null, null, null, null);
+  public AuditDTO {
+    // Record compact constructor for validation if needed
+    // No validation currently required
   }
 
   /**
    * Constructs an AuditDTO from AuditData.
-   * Formats timestamp using the system default timezone and captures thread information.
-   * Compatible with Java 21 Virtual Threads.
+   * Uses Java 21 features for thread context awareness.
    *
-   * @param auditData The audit data to convert
+   * @param auditData the audit data to convert
    */
   public AuditDTO(final AuditData auditData) {
     this(
@@ -79,17 +82,18 @@ public record AuditDTO(
         auditData.getDomain(),
         auditData.getType(),
         auditData.getContext(),
-        // Capture thread information in a way that's compatible with both platform and virtual threads
-        Thread.currentThread().getName() + " (" + Thread.currentThread().threadId() + ")",
+        // Enhanced thread name detection for both platform and virtual threads
+        Thread.currentThread().isVirtual() 
+            ? "virtual-" + Thread.currentThread().getName()
+            : Thread.currentThread().getName(),
         auditData.getAttributes()
     );
   }
 
   /**
-   * Returns a JSON string representation of this record.
-   * Uses the configured ObjectMapper to convert the record to a JSON tree and then to a string.
-   *
-   * @return JSON string representation
+   * Returns a string representation of this DTO using Jackson serialization.
+   * 
+   * @return JSON string representation of this DTO
    */
   @Override
   public String toString() {

@@ -19,12 +19,9 @@ import org.sonatype.nexus.capability.CapabilityBooterSupport;
 import org.sonatype.nexus.capability.CapabilityRegistry;
 
 /**
- * Audit {@link CapabilityBooterSupport}.
- *
- * <p>Automatically registers the Audit capability during system startup.</p>
- *
- * <p>Updated for Java 21 compatibility with improved exception handling and
- * OSGi/Karaf 4.3.9 integration.</p>
+ * Audit {@link CapabilityBooterSupport} for automatic registration of the audit capability.
+ * 
+ * <p>This component is compatible with Java 21 and OSGi/Karaf 4.3.9 runtime environment.</p>
  *
  * @since 3.1
  */
@@ -34,12 +31,13 @@ public class AuditCapabilityBooter
     extends CapabilityBooterSupport
 {
   /**
-   * Bootstraps the Audit capability by adding it to the registry if it doesn't already exist.
+   * Bootstraps the audit capability by registering it with the capability registry.
    * 
-   * <p>This method is called automatically when the CapabilityRegistry is ready.</p>
+   * <p>This method is called during system startup to ensure the audit capability
+   * is available and enabled by default.</p>
    *
-   * @param registry The capability registry to register with
-   * @throws Exception If an error occurs during capability registration
+   * @param registry the capability registry to register with
+   * @throws Exception if an error occurs during capability registration
    */
   @Override
   protected void boot(final CapabilityRegistry registry) throws Exception {

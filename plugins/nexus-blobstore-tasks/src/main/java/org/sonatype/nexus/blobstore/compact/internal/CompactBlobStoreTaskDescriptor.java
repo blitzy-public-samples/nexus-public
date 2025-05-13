@@ -24,7 +24,6 @@ import static org.sonatype.nexus.formfields.FormField.MANDATORY;
 
 /**
  * Task descriptor for {@link CompactBlobStoreTask}.
- * Provides the UI form configuration for the compact blob store task.
  *
  * @since 3.0
  */
@@ -38,15 +37,6 @@ public class CompactBlobStoreTaskDescriptor
 
   public static final String BLOB_STORE_NAME_FIELD_ID = "blobstoreName";
 
-  /**
-   * Constructor for the CompactBlobStoreTaskDescriptor.
-   * 
-   * Initializes the task descriptor with the required form fields for blob store selection.
-   * Compatible with Java 21 module system and OSGi environment.
-   * 
-   * The form field uses type-safe generics and is configured with the appropriate
-   * store API and ID mapping for blob store selection in the UI.
-   */
   @Inject
   public CompactBlobStoreTaskDescriptor() {
     super(TYPE_ID,

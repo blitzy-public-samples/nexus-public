@@ -12,13 +12,11 @@
  */
 package org.sonatype.nexus.blobstore.internal.metrics;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 /**
  * Migration step to move metrics from properties files in the blob store to the DB
- * 
- * @since 3.38
  */
 @Named
 @Singleton

@@ -33,33 +33,28 @@ import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
 import com.amazonaws.services.s3.model.PartETag;
 
 import static com.google.common.base.Preconditions.checkArgument;
-import static java.lang.StringTemplate.STR;
+import static java.lang.String.format;
 
 /**
  * Common class to execute parallel requests to S3 for a MultipartUpload operation.
- * Uses Java 21 Virtual Threads for improved throughput and resource efficiency.
+ * Uses Java 21 Virtual Threads for improved throughput and resource utilization.
  *
  * @since 3.19
- * @requires Java 21
  */
 public abstract class ParallelRequester
     extends StateGuardLifecycleSupport
 {
   protected final int chunkSize;
 
-  /**
-   * Determines the number of parallel tasks to submit, even though we're using virtual threads
-   * which don't require traditional thread pool sizing.
-   */
   private final int parallelism;
 
   private final ExecutorService executorService;
 
   /**
    * @param chunkSize       - the number of bytes to be processed in one parallel request
-   * @param numberOfThreads - a non-negative integer, either 0 to indicate that number of parallel tasks should be dynamically
-   *                        selected based on the env, or a positive int to set a fixed number of parallel tasks
-   * @param threadGroupName - a human readable name (retained for API compatibility but no longer used for thread naming)
+   * @param numberOfThreads - a non-negative integer, either 0 to indicate that number of threads should be dynamically
+   *                        selected based on the env, or a positive int to set a fixed number of threads
+   * @param threadGroupName - a human readable name for the threads
    */
   public ParallelRequester(final int chunkSize, final int numberOfThreads, final String threadGroupName)
   {
@@ -68,7 +63,7 @@ public abstract class ParallelRequester
     this.chunkSize = chunkSize;
     this.parallelism = (numberOfThreads > 0) ? numberOfThreads : Runtime.getRuntime().availableProcessors();
 
-    // Using Java 21 Virtual Threads for improved throughput and resource efficiency
+    // Use Virtual Threads for improved throughput and resource utilization
     this.executorService = Executors.newVirtualThreadPerTaskExecutor();
   }
 
@@ -84,6 +79,15 @@ public abstract class ParallelRequester
     R apply(T v) throws IOException;
   }
 
+  /**
+   * Executes parallel requests to S3 for a MultipartUpload operation.
+   * Uses Virtual Threads to efficiently handle I/O-bound operations without blocking platform threads.
+   *
+   * @param s3 the AmazonS3 client
+   * @param bucket the S3 bucket name
+   * @param key the S3 object key
+   * @param operations supplier of operations to execute in parallel
+   */
   protected void parallelRequests(final AmazonS3 s3,
                                   final String bucket,
                                   final String key,
@@ -116,7 +120,7 @@ public abstract class ParallelRequester
     catch (CancellationException | ExecutionException ex) {
       s3.abortMultipartUpload(new AbortMultipartUploadRequest(bucket, key, uploadId));
       throw new BlobStoreException(
-          STR."Error executing parallel requests for bucket:\{bucket} key:\{key} with uploadId:\{uploadId}", ex,
+          format("Error executing parallel requests for bucket:%s key:%s with uploadId:%s", bucket, key, uploadId), ex,
           null);
     }
   }

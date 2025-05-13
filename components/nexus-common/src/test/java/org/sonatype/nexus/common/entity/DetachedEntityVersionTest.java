@@ -16,23 +16,23 @@ import org.sonatype.goodies.testsupport.TestSupport;
 
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
 
 /**
  * Tests for {@link DetachedEntityVersion}
  */
-public class DetachedEntityVersionTest
+class DetachedEntityVersionTest
     extends TestSupport
 {
   @Test
-  public void testDetachedEquality() {
+  void testDetachedEquality() {
     DetachedEntityVersion a = new DetachedEntityVersion("a");
-    assertTrue(a.equals(a), "An entity should be equal to itself");
-    assertEquals(a, a, "An entity should be equal to itself");
-    assertEquals(a, new DetachedEntityVersion("a"), "Entities with the same value should be equal");
+    assertThat(a, is(a));
+    assertThat(a, is(new DetachedEntityVersion("a")));
 
     DetachedEntityVersion b = new DetachedEntityVersion("b");
-    assertFalse(a.equals(b), "Entities with different values should not be equal");
-    assertNotEquals(a, b, "Entities with different values should not be equal");
+    assertThat(a, not(b));
   }
 }

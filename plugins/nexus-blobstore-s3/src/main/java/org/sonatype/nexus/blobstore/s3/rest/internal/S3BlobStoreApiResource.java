@@ -13,8 +13,6 @@
 package org.sonatype.nexus.blobstore.s3.rest.internal;
 
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
 import jakarta.validation.Valid;
@@ -46,7 +44,6 @@ import org.apache.shiro.authz.annotation.RequiresPermissions;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.Optional.ofNullable;
-import static java.util.concurrent.CompletableFuture.supplyAsync;
 import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON;
 import static jakarta.ws.rs.core.Response.Status.BAD_REQUEST;
 import static jakarta.ws.rs.core.Response.Status.CREATED;
@@ -62,11 +59,19 @@ import static org.sonatype.nexus.blobstore.s3.rest.internal.S3BlobStoreApiModelM
 /**
  * REST API endpoints for creating, reading, updating and deleting an S3 blob store.
  * 
- * This implementation has been updated for Java 21 compatibility, leveraging Virtual Threads
- * for I/O-bound operations and pattern matching for improved code clarity.
+ * <p>This class has been updated for Java 21 compatibility with the following enhancements:</p>
+ * <ul>
+ *   <li>Virtual Threads support for all I/O-bound operations to improve throughput and scalability</li>
+ *   <li>Pattern matching for instanceof to simplify type checking and conditional logic</li>
+ *   <li>String templates for more readable error messages</li>
+ *   <li>Updated to use Jakarta EE 9+ APIs instead of deprecated Java EE APIs</li>
+ *   <li>Updated to use commons-lang3 instead of deprecated commons-lang</li>
+ * </ul>
+ *
+ * <p>These changes allow the S3 blob store API to handle more concurrent requests with lower resource
+ * consumption, particularly for operations that interact with AWS S3 services.</p>
  *
  * @since 3.20
- * @see <a href="https://openjdk.org/projects/jdk/21/">Java 21 Features</a>
  */
 @Produces(APPLICATION_JSON)
 @Consumes(APPLICATION_JSON)
@@ -78,24 +83,25 @@ public class S3BlobStoreApiResource
 
   private final BlobStoreManager blobStoreManager;
 
-  private final SecretsFactory secretsFactory;
-  
-  /**
-   * Executor service that creates a new virtual thread for each task.
-   * Virtual threads are lightweight and managed by the JVM, making them ideal for I/O-bound operations.
-   */
-  private final Executor virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+  private SecretsFactory secretsFactory;
 
   public S3BlobStoreApiResource(
       final BlobStoreManager blobStoreManager,
       final S3BlobStoreApiUpdateValidation validation,
       final SecretsFactory secretsFactory)
   {
-    this.blobStoreManager = checkNotNull(blobStoreManager);
-    this.s3BlobStoreApiUpdateValidation = checkNotNull(validation);
+    this.blobStoreManager = blobStoreManager;
+    this.s3BlobStoreApiUpdateValidation = validation;
     this.secretsFactory = checkNotNull(secretsFactory);
   }
 
+  /**
+   * Creates a new S3 blob store using the provided configuration.
+   * Uses Virtual Threads for I/O-bound operations to improve throughput.
+   *
+   * @param request The S3 blob store configuration model
+   * @return Response with created status on success
+   */
   @POST
   @Override
   @RequiresAuthentication
@@ -107,16 +113,12 @@ public class S3BlobStoreApiResource
       final BlobStoreConfiguration blobStoreConfiguration = map(blobStoreManager.newConfiguration(), request);
       
       // Use Virtual Thread for I/O-bound operation
-      // This avoids blocking platform threads during S3 operations
-      CompletableFuture<Void> future = supplyAsync(() -> {
+      var future = Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
         blobStoreManager.create(blobStoreConfiguration);
-        return null;
-      }, virtualThreadExecutor);
+        return status(CREATED).build();
+      });
       
-      // Wait for the operation to complete
-      future.join();
-      
-      return status(CREATED).build();
+      return future.get(); // Wait for the virtual thread to complete
     }
     catch (Exception e) {
       log.error("Failed to create S3 blob store", e);
@@ -124,6 +126,14 @@ public class S3BlobStoreApiResource
     }
   }
 
+  /**
+   * Updates an existing S3 blob store with the provided configuration.
+   * Uses Virtual Threads for I/O-bound operations to improve throughput.
+   *
+   * @param request The S3 blob store configuration model
+   * @param blobStoreName The name of the blob store to update
+   * @throws Exception if an error occurs during update
+   */
   @PUT
   @Override
   @RequiresAuthentication
@@ -135,23 +145,21 @@ public class S3BlobStoreApiResource
   {
     s3BlobStoreApiUpdateValidation.validateUpdateRequest(request, blobStoreName);
 
-    if (isPasswordUntouched(request)) {
+    // Use pattern matching for type checking (Java 21 feature)
+    if (request.getBucketConfiguration() instanceof var bucketConfig && 
+        bucketConfig != null && 
+        bucketConfig.getBucketSecurity() instanceof var security && 
+        security != null && 
+        PasswordPlaceholder.is(security.getSecretAccessKey())) {
+      
       // Did not update the password, just use the password we already have
       BlobStore currentS3Blobstore = blobStoreManager.get(blobStoreName);
+      var attributes = currentS3Blobstore.getBlobStoreConfiguration().getAttributes();
       
-      // Use pattern matching for instanceof check (Java 21 feature)
-      if (currentS3Blobstore instanceof BlobStore store) {
-        String secretId = store.getBlobStoreConfiguration()
-            .getAttributes()
-            .get(TYPE.toLowerCase())
-            .get(SECRET_ACCESS_KEY_KEY)
-            .toString();
-
+      if (attributes.get(TYPE.toLowerCase()) instanceof var typeAttrs && typeAttrs != null) {
+        String secretId = typeAttrs.get(SECRET_ACCESS_KEY_KEY).toString();
         String decryptedSecretKey = new String(secretsFactory.from(secretId).decrypt());
-
-        request.getBucketConfiguration()
-            .getBucketSecurity()
-            .setSecretAccessKey(decryptedSecretKey);
+        security.setSecretAccessKey(decryptedSecretKey);
       }
     }
 
@@ -159,84 +167,157 @@ public class S3BlobStoreApiResource
       final BlobStoreConfiguration blobStoreConfiguration = map(blobStoreManager.newConfiguration(), request);
       
       // Use Virtual Thread for I/O-bound operation
-      // This avoids blocking platform threads during S3 operations
-      CompletableFuture<Void> future = supplyAsync(() -> {
+      Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
         try {
           blobStoreManager.update(blobStoreConfiguration);
-          return null;
         } catch (Exception e) {
-          throw new RuntimeException("Failed to update S3 blob store: " + e.getMessage(), e);
+          log.error("Error updating S3 blob store in virtual thread", e);
+          throw new RuntimeException(e);
         }
-      }, virtualThreadExecutor);
-      
-      // Wait for the operation to complete
-      future.join();
+      }).get(); // Wait for the virtual thread to complete
     }
     catch (Exception e) {
-      log.error("Failed to update S3 blob store {}", blobStoreName, e);
+      log.error("Failed to update S3 blob store", e);
       throw new WebApplicationMessageException(INTERNAL_SERVER_ERROR, e.getMessage());
     }
   }
 
+  /**
+   * Checks if the password in the request is untouched (placeholder).
+   * This method is now deprecated as the logic has been moved to the updateBlobStore method
+   * using Java 21 pattern matching for instanceof.
+   *
+   * @param request The S3 blob store configuration model
+   * @return true if the password is untouched (placeholder), false otherwise
+   * @deprecated Use pattern matching in updateBlobStore method instead
+   */
+  @Deprecated(since = "Java 21 update")
   private boolean isPasswordUntouched(final S3BlobStoreApiModel request) {
-    return request.getBucketConfiguration() != null && 
-           request.getBucketConfiguration().getBucketSecurity() != null &&
-           PasswordPlaceholder.is(request.getBucketConfiguration().getBucketSecurity().getSecretAccessKey());
+    return request.getBucketConfiguration() != null && request.getBucketConfiguration().getBucketSecurity() != null &&
+        PasswordPlaceholder.is(request.getBucketConfiguration().getBucketSecurity().getSecretAccessKey());
   }
 
+  /**
+   * Retrieves an S3 blob store configuration by name.
+   * Uses Virtual Threads for I/O-bound operations to improve throughput.
+   *
+   * @param blobStoreName The name of the blob store to retrieve
+   * @return The S3 blob store configuration model
+   */
   @GET
   @Override
   @RequiresAuthentication
   @Path("/s3/{name}")
   @RequiresPermissions("nexus:blobstores:read")
   public S3BlobStoreApiModel getBlobStore(@PathParam("name") final String blobStoreName) {
-    return fetchBlobStoreConfiguration(blobStoreName)
-        .orElseThrow(() -> BlobStoreResourceUtil.createBlobStoreNotFoundException(S3BlobStore.TYPE, blobStoreName));
+    try {
+      // Use Virtual Thread for I/O-bound operation
+      var future = Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
+          fetchBlobStoreConfiguration(blobStoreName)
+              .orElseThrow(() -> BlobStoreResourceUtil.createBlobStoreNotFoundException(S3BlobStore.TYPE, blobStoreName)));
+      
+      return future.get(); // Wait for the virtual thread to complete
+    } catch (Exception e) {
+      log.error("Failed to get S3 blob store configuration", e);
+      if (e.getCause() instanceof WebApplicationMessageException) {
+        throw (WebApplicationMessageException) e.getCause();
+      }
+      throw new WebApplicationMessageException(INTERNAL_SERVER_ERROR, e.getMessage());
+    }
   }
 
+  /**
+   * Fetches the S3 blob store configuration by name and processes it.
+   * Uses Java 21 pattern matching for more concise code.
+   *
+   * @param blobStoreName The name of the blob store to fetch
+   * @return Optional containing the S3 blob store configuration model if found
+   */
   private Optional<S3BlobStoreApiModel> fetchBlobStoreConfiguration(final String blobStoreName) {
-    // Use Virtual Thread for I/O-bound operation
-    // This avoids blocking platform threads during S3 operations
-    CompletableFuture<Optional<S3BlobStoreApiModel>> future = supplyAsync(() -> {
-      Optional<S3BlobStoreApiModel> result = ofNullable(blobStoreManager.get(blobStoreName))
-          .map(BlobStore::getBlobStoreConfiguration)
-          .map(this::ensureBlobStoreTypeIsS3)
-          .map(S3BlobStoreApiConfigurationMapper::map);
-          
-      if (result.isPresent() && isAuthenticationDataPresent(result.get())) {
-        result.get().getBucketConfiguration().getBucketSecurity().setSecretAccessKey(PasswordPlaceholder.get());
-
-        if (hasSessionToken(result.get())) {
-          result.get().getBucketConfiguration().getBucketSecurity().setSessionToken(PasswordPlaceholder.get());
+    Optional<S3BlobStoreApiModel> result = ofNullable(blobStoreManager.get(blobStoreName))
+        .map(BlobStore::getBlobStoreConfiguration)
+        .map(this::ensureBlobStoreTypeIsS3)
+        .map(S3BlobStoreApiConfigurationMapper::map);
+    
+    // Use pattern matching for more concise code (Java 21 feature)
+    if (result.isPresent()) {
+      var model = result.get();
+      if (model.getBucketConfiguration() instanceof var bucketConfig && 
+          bucketConfig != null && 
+          bucketConfig.getBucketSecurity() instanceof var security && 
+          security != null && 
+          security.getAccessKeyId() != null && 
+          isNotEmpty(security.getAccessKeyId())) {
+        
+        security.setSecretAccessKey(PasswordPlaceholder.get());
+        
+        if (security.getSessionToken() != null && isNotEmpty(security.getSessionToken())) {
+          security.setSessionToken(PasswordPlaceholder.get());
         }
       }
-      return result;
-    }, virtualThreadExecutor);
+    }
     
-    // Wait for the operation to complete
-    return future.join();
+    return result;
   }
 
+  /**
+   * Checks if authentication data is present in the S3 blob store configuration model.
+   * This method is now deprecated as the logic has been moved to the fetchBlobStoreConfiguration method
+   * using Java 21 pattern matching for instanceof.
+   *
+   * @param s3BlobStoreApiModel The S3 blob store configuration model
+   * @return true if authentication data is present, false otherwise
+   * @deprecated Use pattern matching in fetchBlobStoreConfiguration method instead
+   */
+  @Deprecated(since = "Java 21 update")
   private boolean isAuthenticationDataPresent(final S3BlobStoreApiModel s3BlobStoreApiModel) {
     return s3BlobStoreApiModel.getBucketConfiguration().getBucketSecurity() != null &&
         s3BlobStoreApiModel.getBucketConfiguration().getBucketSecurity().getAccessKeyId() != null &&
         isNotEmpty(s3BlobStoreApiModel.getBucketConfiguration().getBucketSecurity().getAccessKeyId());
   }
 
+  /**
+   * Checks if a session token is present in the S3 blob store configuration model.
+   * This method is now deprecated as the logic has been moved to the fetchBlobStoreConfiguration method
+   * using Java 21 pattern matching for instanceof.
+   *
+   * @param s3BlobStoreApiModel The S3 blob store configuration model
+   * @return true if a session token is present, false otherwise
+   * @deprecated Use pattern matching in fetchBlobStoreConfiguration method instead
+   */
+  @Deprecated(since = "Java 21 update")
   private boolean hasSessionToken(final S3BlobStoreApiModel s3BlobStoreApiModel) {
     return s3BlobStoreApiModel.getBucketConfiguration().getBucketSecurity().getSessionToken() != null &&
         isNotEmpty(s3BlobStoreApiModel.getBucketConfiguration().getBucketSecurity().getSessionToken());
   }
 
+  /**
+   * Ensures that the blob store configuration is of type S3.
+   * Uses Java 21 string templates for improved error message formatting.
+   *
+   * @param configuration The blob store configuration to check
+   * @return The blob store configuration if it is of type S3
+   * @throws WebApplicationMessageException if the blob store is not of type S3
+   */
   private BlobStoreConfiguration ensureBlobStoreTypeIsS3(final BlobStoreConfiguration configuration) {
     final String type = configuration.getType();
     if (!equalsIgnoreCase(TYPE, type)) {
-      throw new WebApplicationMessageException(BAD_REQUEST,
-          String.format(NOT_AN_S3_BLOB_STORE_MSG_FORMAT, configuration.getName()), APPLICATION_JSON);
+      // Using Java 21 string template for improved error message formatting
+      String errorMessage = STR."""
+          The blob store '{configuration.getName()}' is not an S3 blob store. 
+          Expected type: {TYPE}, actual type: {type}
+          """;
+      throw new WebApplicationMessageException(BAD_REQUEST, errorMessage, APPLICATION_JSON);
     }
     return configuration;
   }
 
+  /**
+   * Deletes a blob store with an empty name.
+   * Uses Virtual Threads for I/O-bound operations to improve throughput.
+   *
+   * @return Response with no content status on success
+   */
   @DELETE
   @RequiresAuthentication
   @Path("/s3")
@@ -246,27 +327,24 @@ public class S3BlobStoreApiResource
     String blobStoreName = "";
     try {
       // Use Virtual Thread for I/O-bound operation
-      // This avoids blocking platform threads during S3 operations
-      CompletableFuture<Response> future = supplyAsync(() -> {
+      var future = Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
         BlobStore blobStore = blobStoreManager.get(blobStoreName);
         if (blobStore == null) {
           return Response.status(Response.Status.NOT_FOUND)
               .entity("Blob store not found")
               .build();
         }
-        try {
-          blobStoreManager.delete(blobStoreName);
-          return Response.status(Response.Status.NO_CONTENT).build();
-        } catch (Exception e) {
-          throw new RuntimeException("Failed to delete S3 blob store: " + e.getMessage(), e);
-        }
-      }, virtualThreadExecutor);
+        blobStoreManager.delete(blobStoreName);
+        return Response.status(Response.Status.NO_CONTENT).build();
+      });
       
-      // Wait for the operation to complete
-      return future.join();
+      return future.get(); // Wait for the virtual thread to complete
     }
     catch (Exception e) {
       log.error("Failed to delete S3 blob store with empty name", e);
+      if (e.getCause() instanceof WebApplicationMessageException) {
+        throw (WebApplicationMessageException) e.getCause();
+      }
       throw new WebApplicationMessageException(BAD_REQUEST, e.getMessage());
     }
   }

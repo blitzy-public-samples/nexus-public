@@ -1,106 +1,151 @@
 {
-  "a": 10,
-  "b": [
-    {
-      "m": "foo",
-      "n": 3.1416,
-      "o": {
-        "x": true,
-        "y": false,
-        "z": null
-      },
-      "A": "*",
-      "B": "*",
-      "C": "*",
-      "D": "*",
-      "E": "*",
-      "F": {},
-      "G": [],
-      "H": {"I": "foo"},
-      "J": ["foo"],
-      "K": {"L": "*"},
-      "M": "*"
-    }
-  ],
-  "c": "foo",
-  "A": "*",
-  "B": "*",
-  "C": "*",
-  "D": "*",
-  "E": "*",
-  "F": {},
-  "G": [],
-  "H": {"I": "foo"},
-  "J": ["foo"],
-  "K": {"L": "*"},
-  "M": "*",
-  "metadata": {
-    "purpose": "Test fixture for SanitizingJsonOutputStream with Java 21 compatibility",
+  "_metadata": {
+    "description": "Test fixture for Java 21 compatibility testing",
     "version": "2.0",
-    "compatibleWith": "Java 21",
+    "features": ["VirtualThreads", "RecordPatterns", "StringTemplates"],
     "lastUpdated": "2023-09-19"
   },
-  "java21Features": {
-    "virtualThreads": {
-      "threadType": "virtual",
-      "concurrencyModel": "lightweight",
-      "maxConcurrentOperations": 10000,
-      "ioOperations": [
-        {"name": "fileRead", "path": "/tmp/test.txt", "A": "*", "M": "*"},
-        {"name": "httpRequest", "url": "https://example.com/api", "A": "*", "M": "*"},
-        {"name": "databaseQuery", "sql": "SELECT * FROM components", "A": "*", "M": "*"}
-      ],
-      "scheduledTasks": {
-        "taskName": "blobstore-compact",
-        "A": "*",
-        "B": "*",
-        "threadPoolSize": 50
+  "a":10,
+  "b":[{"m":"foo","n":3.1416,"o":{"x":true,"y":false,"z":null},"A":"*","B":"*","C":"*","D":"*","E":"*","F":{},"G":[],"H":{"I":"foo"},"J":["foo"],"K":{"L":"*"},"M":"*"}],
+  "c":"foo",
+  "A":"*",
+  "B":"*",
+  "C":"*",
+  "D":"*",
+  "E":"*",
+  "F":{},
+  "G":[],
+  "H":{"I":"foo"},
+  "J":["foo"],"K":{"L":"*"},
+  "M":"*",
+  
+  "recordPatterns": [
+    {
+      "firstName": "John",
+      "lastName": "Doe",
+      "age": 30,
+      "address": {
+        "street": "123 Main St",
+        "city": "Anytown",
+        "zipCode": "12345"
       }
     },
-    "recordPatterns": {
-      "componentRecord": {
-        "group": "org.sonatype",
-        "name": "nexus-common",
-        "version": "3.42.0",
-        "A": "*",
-        "B": "*"
-      },
-      "nestedRecords": {
-        "outer": {
-          "middle": {
-            "inner": {
-              "value": 42,
-              "A": "*",
-              "name": "deepNested"
-            }
-          }
+    {
+      "firstName": "Jane",
+      "lastName": "Smith",
+      "age": 25,
+      "address": {
+        "street": "456 Oak Ave",
+        "city": "Somewhere",
+        "zipCode": "67890"
+      }
+    }
+  ],
+  
+  "nestedRecords": {
+    "user": {
+      "id": 1001,
+      "username": "jdoe",
+      "profile": {
+        "fullName": "John Doe",
+        "email": "jdoe@example.com",
+        "preferences": {
+          "theme": "dark",
+          "notifications": true,
+          "language": "en-US"
         }
       },
-      "recordArray": [
-        {"id": 1, "name": "first", "A": "*"},
-        {"id": 2, "name": "second", "A": "*"},
-        {"id": 3, "name": "third", "A": "*"}
-      ]
-    },
-    "stringTemplates": {
-      "simple": "Hello, {name}!",
-      "complex": "User {username} performed {action} on {resource} at {timestamp}",
-      "A": "*",
-      "B": "*",
-      "formatted": "Value: {value}, Formatted: {formattedValue}",
-      "multiline": "Line 1\nLine 2\nLine {lineNumber}",
-      "withExpressions": "The result of {2 + 2} should be 4"
-    },
-    "sequencedCollections": {
-      "orderedList": ["first", "second", "third", "fourth", "fifth"],
-      "A": "*",
-      "B": "*",
-      "orderedMap": [
-        {"key": "a", "value": 1},
-        {"key": "b", "value": 2},
-        {"key": "c", "value": 3}
-      ],
-      "reversedSequence": ["last", "penultimate", "antepenultimate", "first"]
+      "roles": ["user", "admin", "developer"]
+    }
+  },
+  
+  "stringTemplates": {
+    "messages": [
+      {
+        "template": "Hello, {name}! Welcome to {application}.",
+        "variables": {
+          "name": "User",
+          "application": "Nexus Repository"
+        }
+      },
+      {
+        "template": "Your {itemType} has been {action} successfully.",
+        "variables": {
+          "itemType": "repository",
+          "action": "created"
+        }
+      },
+      {
+        "template": "Error {code}: {message}",
+        "variables": {
+          "code": "404",
+          "message": "Resource not found"
+        }
+      }
+    ],
+    "complexTemplate": {
+      "template": "User {user.name} ({user.id}) performed {action.name} on {resource.type} at {timestamp}",
+      "variables": {
+        "user": {
+          "name": "admin",
+          "id": "system"
+        },
+        "action": {
+          "name": "update",
+          "id": "UPD"
+        },
+        "resource": {
+          "type": "repository",
+          "id": "maven-central"
+        },
+        "timestamp": "2023-09-19T14:30:00Z"
+      }
+    }
+  },
+  
+  "virtualThreads": {
+    "operations": [
+      {
+        "id": "op-1",
+        "name": "Download Artifact",
+        "io_bound": true,
+        "expected_duration_ms": 250,
+        "dependencies": []
+      },
+      {
+        "id": "op-2",
+        "name": "Validate Checksum",
+        "io_bound": false,
+        "expected_duration_ms": 50,
+        "dependencies": ["op-1"]
+      },
+      {
+        "id": "op-3",
+        "name": "Store in BlobStore",
+        "io_bound": true,
+        "expected_duration_ms": 150,
+        "dependencies": ["op-2"]
+      },
+      {
+        "id": "op-4",
+        "name": "Update Database",
+        "io_bound": true,
+        "expected_duration_ms": 100,
+        "dependencies": ["op-3"]
+      },
+      {
+        "id": "op-5",
+        "name": "Send Notification",
+        "io_bound": true,
+        "expected_duration_ms": 75,
+        "dependencies": ["op-4"]
+      }
+    ],
+    "concurrencySettings": {
+      "maxVirtualThreads": 10000,
+      "pinned": false,
+      "delayedExecutor": true,
+      "structuredTaskScope": true
     }
   }
 }

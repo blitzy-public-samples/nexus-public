@@ -13,11 +13,16 @@
 package org.sonatype.nexus.common.io;
 
 import java.time.Duration;
+import java.util.concurrent.Executors;
 
 import org.sonatype.goodies.common.Time;
 
 /**
  * Supplies {@link Cooperation} points. Not intended for use with SQL/Datastore.
+ * <p>
+ * With Java 21, this factory supports configuration of Virtual Threads for high-throughput
+ * I/O operations. Virtual Threads provide significant performance benefits for I/O-bound
+ * operations by allowing thousands of concurrent operations with minimal resource overhead.
  *
  * @since 3.14
  */
@@ -30,6 +35,10 @@ public interface CooperationFactory
 
   /**
    * Fluent builder for configuring {@link Cooperation} points.
+   * <p>
+   * With Java 21, this builder supports configuration of Virtual Threads for high-throughput
+   * I/O operations. Virtual Threads provide significant performance benefits for I/O-bound
+   * operations by allowing thousands of concurrent operations with minimal resource overhead.
    */
   interface Builder
   {
@@ -65,6 +74,62 @@ public interface CooperationFactory
      * @param threadsPerKey limits the threads waiting under each key
      */
     Builder threadsPerKey(int threadsPerKey);
+    
+    /**
+     * Enables or disables the use of Virtual Threads for I/O operations.
+     * <p>
+     * When enabled, I/O operations will be executed using Java 21 Virtual Threads,
+     * which provide significant performance benefits for I/O-bound operations by
+     * allowing thousands of concurrent operations with minimal resource overhead.
+     * <p>
+     * This setting has no effect when running on Java versions prior to Java 21.
+     *
+     * @param enabled true to enable Virtual Threads, false to use platform threads
+     * @return this builder for method chaining
+     * @since 3.60
+     */
+    default Builder virtualThreads(boolean enabled) {
+      // Default implementation for backward compatibility
+      return this;
+    }
+    
+    /**
+     * Configures the maximum number of carrier threads to use for Virtual Threads.
+     * <p>
+     * Virtual Threads are scheduled on a pool of carrier threads. This setting controls
+     * the maximum size of that pool. By default, the pool size is set to the number of
+     * available processors.
+     * <p>
+     * This setting has no effect when running on Java versions prior to Java 21 or when
+     * Virtual Threads are disabled.
+     *
+     * @param maxCarrierThreads the maximum number of carrier threads to use
+     * @return this builder for method chaining
+     * @since 3.60
+     */
+    default Builder maxCarrierThreads(int maxCarrierThreads) {
+      // Default implementation for backward compatibility
+      return this;
+    }
+    
+    /**
+     * Configures the pinning behavior for Virtual Threads.
+     * <p>
+     * When a Virtual Thread executes a synchronized block or method, it becomes "pinned"
+     * to its carrier thread, which can reduce concurrency. This setting controls whether
+     * to allow pinning (default) or to throw an exception when pinning would occur.
+     * <p>
+     * This setting has no effect when running on Java versions prior to Java 21 or when
+     * Virtual Threads are disabled.
+     *
+     * @param allowPinning true to allow pinning, false to throw an exception when pinning would occur
+     * @return this builder for method chaining
+     * @since 3.60
+     */
+    default Builder allowThreadPinning(boolean allowPinning) {
+      // Default implementation for backward compatibility
+      return this;
+    }
 
     /**
      * Builds a new {@link Cooperation} point with this configuration.

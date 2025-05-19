@@ -16,7 +16,52 @@ import java.time.OffsetDateTime;
 import java.util.Optional;
 
 /**
+ * Record representing asset data for efficient pattern matching in Java 21.
+ * @since 3.41
+ */
+record AssetData(String path, String kind, Optional<Component> component, Optional<AssetBlob> blob, 
+                 Optional<OffsetDateTime> lastDownloaded, String blobStoreName, long blobSize) {
+  /**
+   * Creates asset data with the given values.
+   */
+  public AssetData {
+    // Ensure non-null values for pattern matching
+    path = path != null ? path : "";
+    kind = kind != null ? kind : "";
+    component = component != null ? component : Optional.empty();
+    blob = blob != null ? blob : Optional.empty();
+    lastDownloaded = lastDownloaded != null ? lastDownloaded : Optional.empty();
+    blobStoreName = blobStoreName != null ? blobStoreName : "";
+  }
+}
+
+/**
  * Each asset represents a unique path to binary content in a repository.
+ * <p>
+ * In Java 21, implementations of this interface can leverage Record Patterns
+ * for more concise data handling, especially when working with asset properties
+ * and relationships.
+ * </p>
+ * 
+ * <p>Example of using Record Patterns with an Asset implementation:</p>
+ * <pre>
+ * // Pattern matching in if statement
+ * if (asset instanceof Asset asset && asset.data() instanceof AssetData(var path, var kind, var component, var blob, var lastDownloaded, var blobStoreName, var blobSize)) {
+ *     // Direct access to components without accessor methods
+ *     if (path.startsWith("/maven") && component.isPresent()) {
+ *         // Process maven component assets
+ *     }
+ * }
+ * 
+ * // Pattern matching in switch expression
+ * String result = switch (asset.data()) {
+ *     case AssetData(var p, "maven-metadata", var c, var b, var d, var s, var z) ->
+ *         "Maven metadata at " + p;
+ *     case AssetData(var p, "maven-artifact", Optional.of(var c), var b, var d, var s, var z) ->
+ *         "Maven artifact for " + c.name() + " at " + p;
+ *     default -> "Other asset";
+ * };
+ * </pre>
  *
  * @since 3.20
  * @see Component
@@ -38,12 +83,20 @@ public interface Asset
 
   /**
    * Assets may be grouped together under a logical coordinate, represented by a {@link Component}.
+   * <p>
+   * In Java 21, this Optional can be efficiently handled with pattern matching
+   * in combination with the {@link #data()} method.
+   * </p>
    */
   Optional<Component> component();
 
   /**
    * Current blob attached to this asset; proxy repositories may have assets whose blobs have not been fetched yet.
    * If checking for existence please use {@code hasBlob()} which is less expensive.
+   * <p>
+   * In Java 21, this Optional can be efficiently handled with pattern matching
+   * in combination with the {@link #data()} method.
+   * </p>
    */
   Optional<AssetBlob> blob();
 
@@ -54,16 +107,59 @@ public interface Asset
 
   /**
    * If/when this asset was last downloaded.
+   * <p>
+   * In Java 21, this Optional can be efficiently handled with pattern matching
+   * in combination with the {@link #data()} method.
+   * </p>
    */
   Optional<OffsetDateTime> lastDownloaded();
 
   /**
-   * returns the blob store name if blob_store_name is in the query
+   * Returns the blob store name if blob_store_name is in the query.
    */
   String blobStoreName();
 
   /**
-   * The size of the asset(blob)
+   * The size of the asset(blob).
    */
-  public long assetBlobSize();
+  long assetBlobSize();
+  
+  /**
+   * Returns the asset data for pattern matching.
+   * <p>
+   * This method enables efficient pattern matching with Java 21 Record Patterns.
+   * </p>
+   * 
+   * @return the asset data record
+   * @since 3.41
+   */
+  default AssetData data() {
+    return new AssetData(path(), kind(), component(), blob(), lastDownloaded(), blobStoreName(), assetBlobSize());
+  }
+  
+  /**
+   * Checks if this asset has the same path as another asset.
+   * Leverages pattern matching for efficient comparison in Java 21.
+   * 
+   * @param other the asset to compare with
+   * @return true if paths match
+   * @since 3.41
+   */
+  default boolean hasSamePath(Asset other) {
+    if (other instanceof Asset asset && asset.data() instanceof AssetData(var p, var k, var c, var b, var d, var s, var z)) {
+      return path().equals(p);
+    }
+    return false;
+  }
+  
+  /**
+   * Checks if this asset belongs to the given component using pattern matching.
+   * 
+   * @param component the component to check against
+   * @return true if the asset belongs to the component
+   * @since 3.41
+   */
+  default boolean belongsTo(Component component) {
+    return component().isPresent() && component().get().equals(component);
+  }
 }

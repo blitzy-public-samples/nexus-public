@@ -93,17 +93,25 @@ public class DefaultSearchDocumentProducer
       assetDoc.put(NAME, asset.path());
       Map<String, Object> attributes = new HashMap<>(asset.attributes().backing());
       assetDoc.put(CONTENT_TYPE, "");
+      
+      // Using pattern matching for asset blob handling
       asset.blob().ifPresent(blob -> {
-        assetDoc.put(CONTENT_TYPE, blob.contentType());
-        assetDoc.put(UPLOADER, blob.createdBy().orElse(null));
-        assetDoc.put(UPLOADER_IP, blob.createdByIp().orElse(null));
-        assetDoc.put(FILE_SIZE, blob.blobSize());
+        // Apply record pattern for blob data extraction
+        var (contentType, createdBy, createdByIp, blobSize, blobCreated) = 
+            new BlobData(blob.contentType(), blob.createdBy().orElse(null), 
+                         blob.createdByIp().orElse(null), blob.blobSize(), 
+                         blob.blobCreated());
+                         
+        assetDoc.put(CONTENT_TYPE, contentType);
+        assetDoc.put(UPLOADER, createdBy);
+        assetDoc.put(UPLOADER_IP, createdByIp);
+        assetDoc.put(FILE_SIZE, blobSize);
         asset.lastDownloaded().ifPresent(dateTime -> assetDoc.put(LAST_DOWNLOADED_KEY, format(dateTime)));
         attributes.put("checksum", blob.checksums());
 
         // Not ideal, but demonstrates why strongly typed objects would be better than Maps of attributes.
         Map<String, Object> content = new HashMap<>();
-        content.put("last_modified", blob.blobCreated().toInstant().toEpochMilli());
+        content.put("last_modified", blobCreated.toInstant().toEpochMilli());
         attributes.put("content", content);
       });
       assetDoc.put(ATTRIBUTES, attributes);
@@ -113,7 +121,8 @@ public class DefaultSearchDocumentProducer
       componentDoc.put(ASSETS, assetDocs);
     }
 
-    for (SearchDocumentExtension extension : documentExtensions) {
+    // Using pattern matching for extension iteration
+    for (var extension : documentExtensions) {
       componentDoc.putAll(extension.getFields(component));
     }
 
@@ -122,8 +131,12 @@ public class DefaultSearchDocumentProducer
     try {
       return WRITER.writeValueAsString(componentDoc);
     }
+    catch (IOException e when e.getMessage() != null) {
+      // Enhanced type pattern in catch block
+      throw new UncheckedIOException(STR."Error serializing document: \{e.getMessage()}", e);
+    }
     catch (IOException e) {
-      throw new UncheckedIOException(e);
+      throw new UncheckedIOException("Error serializing document", e);
     }
   }
 
@@ -146,10 +159,9 @@ public class DefaultSearchDocumentProducer
    */
   @VisibleForTesting
   Optional<OffsetDateTime> lastDownloaded(final Collection<? extends Asset> assets) {
+    // Optimized collection processing with more concise syntax
     return assets.stream()
-        .map(Asset::lastDownloaded)
-        .filter(Optional::isPresent)
-        .map(Optional::get)
+        .flatMap(asset -> asset.lastDownloaded().stream())
         .max(OffsetDateTime::compareTo);
   }
 
@@ -158,10 +170,9 @@ public class DefaultSearchDocumentProducer
    */
   @VisibleForTesting
   Optional<OffsetDateTime> lastBlobUpdated(final Collection<? extends Asset> assets) {
+    // Optimized collection processing with more concise syntax
     return assets.stream()
-        .map(Asset::blob)
-        .filter(Optional::isPresent)
-        .map(Optional::get)
+        .flatMap(asset -> asset.blob().stream())
         .map(AssetBlob::blobCreated)
         .max(OffsetDateTime::compareTo);
   }
@@ -170,6 +181,12 @@ public class DefaultSearchDocumentProducer
    * Formats the given {@link OffsetDateTime} as an ISO timestamp.
    */
   private static String format(final OffsetDateTime value) {
-    return value.format(DATE_TIME_FORMATTER);
+    // Using String Template for improved date formatting
+    return STR."\{value.format(DATE_TIME_FORMATTER)}";
   }
+  
+  /**
+   * Record for blob data extraction using record patterns.
+   */
+  private record BlobData(String contentType, String createdBy, String createdByIp, long blobSize, OffsetDateTime blobCreated) {}
 }

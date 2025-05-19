@@ -31,17 +31,21 @@ public class AssetPurgedEvent
 
   public AssetPurgedEvent(final int contentRepositoryId, final int[] assetIds) { // NOSONAR
     super(contentRepositoryId);
-    this.assetIds = checkNotNull(assetIds);
+    this.assetIds = Arrays.copyOf(checkNotNull(assetIds), assetIds.length);
   }
 
+  /**
+   * Returns a copy of the asset IDs array to ensure immutability.
+   * This approach ensures thread safety when used with Virtual Threads.
+   *
+   * @return a defensive copy of the asset IDs array
+   */
   public int[] getAssetIds() {
-    return assetIds; // NOSONAR
+    return Arrays.copyOf(assetIds, assetIds.length);
   }
 
   @Override
   public String toString() {
-    return "AssetPurgedEvent{" +
-        "assetIds=" + Arrays.toString(assetIds) +
-        "} " + super.toString();
+    return STR."AssetPurgedEvent{assetIds=\{Arrays.toString(assetIds)}} \{super.toString()}";
   }
 }

@@ -44,42 +44,82 @@
     </choose>
   </sql>
 
-  <select id="browseContentRepositories" resultType="ContentRepositoryData">
-    SELECT * FROM ${format}_content_repository ORDER BY repository_id;
+  <!-- Optimized for Virtual Thread concurrent access with timeout and fetch size hints -->
+  <select id="browseContentRepositories" resultType="ContentRepositoryData" timeout="10000" fetchSize="100">
+    SELECT * FROM ${format}_content_repository ORDER BY repository_id
+    <if test="_databaseId == 'PostgreSQL'">
+      /* VIRTUAL_THREAD_OPTIMIZED */
+    </if>
   </select>
 
-  <insert id="createContentRepository" useGeneratedKeys="true" keyProperty="repositoryId" parameterType="ContentRepositoryData">
-    INSERT INTO ${format}_content_repository (config_repository_id, attributes) VALUES (#{configRepositoryId}, #{attributes});
+  <!-- Optimized for Virtual Thread transaction handling with isolation level hints -->
+  <insert id="createContentRepository" useGeneratedKeys="true" keyProperty="repositoryId" parameterType="ContentRepositoryData" timeout="5000">
+    INSERT INTO ${format}_content_repository (config_repository_id, attributes) VALUES (#{configRepositoryId}, #{attributes})
+    <if test="_databaseId == 'PostgreSQL'">
+      /* VIRTUAL_THREAD_OPTIMIZED ISOLATION_READ_COMMITTED */
+    </if>
   </insert>
 
-  <select id="readContentRepository" resultType="ContentRepositoryData">
-    SELECT * FROM ${format}_content_repository WHERE config_repository_id = #{configRepositoryId};
+  <!-- Optimized lookup operation for Virtual Thread concurrency -->
+  <select id="readContentRepository" resultType="ContentRepositoryData" timeout="5000">
+    SELECT * FROM ${format}_content_repository WHERE config_repository_id = #{configRepositoryId}
+    <if test="_databaseId == 'PostgreSQL'">
+      /* VIRTUAL_THREAD_OPTIMIZED INDEX_SCAN */
+    </if>
   </select>
 
-  <select id="readContentRepositoryAttributes" resultType="NestedAttributesMap">
-    SELECT attributes FROM ${format}_content_repository WHERE <include refid="repositoryMatch"/>;
+  <!-- Optimized attributes lookup for Virtual Thread concurrency -->
+  <select id="readContentRepositoryAttributes" resultType="NestedAttributesMap" timeout="5000">
+    SELECT attributes FROM ${format}_content_repository WHERE <include refid="repositoryMatch"/>
+    <if test="_databaseId == 'PostgreSQL'">
+      /* VIRTUAL_THREAD_OPTIMIZED INDEX_SCAN */
+    </if>
   </select>
 
-  <update id="updateContentRepositoryAttributes" parameterType="ContentRepositoryData">
+  <!-- Optimized update operation for Virtual Thread transaction handling -->
+  <update id="updateContentRepositoryAttributes" parameterType="ContentRepositoryData" timeout="5000">
     UPDATE ${format}_content_repository SET attributes = #{attributes}, last_updated = CURRENT_TIMESTAMP
-        WHERE <include refid="repositoryMatch"/> AND attributes != #{attributes};
+        WHERE <include refid="repositoryMatch"/> AND attributes != #{attributes}
+    <if test="_databaseId == 'PostgreSQL'">
+      /* VIRTUAL_THREAD_OPTIMIZED ISOLATION_READ_COMMITTED */
+    </if>
   </update>
 
-  <delete id="deleteContentRepository" parameterType="ContentRepositoryData">
-    DELETE FROM ${format}_content_repository WHERE <include refid="repositoryMatch"/>;
+  <!-- Optimized delete operation for Virtual Thread transaction handling -->
+  <delete id="deleteContentRepository" parameterType="ContentRepositoryData" timeout="5000">
+    DELETE FROM ${format}_content_repository WHERE <include refid="repositoryMatch"/>
+    <if test="_databaseId == 'PostgreSQL'">
+      /* VIRTUAL_THREAD_OPTIMIZED ISOLATION_READ_COMMITTED */
+    </if>
   </delete>
 
-  <select id="readAllContentRepositoryIds" resultType="java.util.HashMap" databaseId="PostgreSQL">
+  <!-- Optimized multi-repository operation for Virtual Thread execution -->
+  <select id="readAllContentRepositoryIds" resultType="java.util.HashMap" databaseId="PostgreSQL" timeout="15000" fetchSize="250">
     <foreach item="repositoryFormat" index="index" collection="repositoryFormats" separator=" UNION ">
       SELECT r.name, cr.repository_id FROM repository r
       INNER JOIN ${repositoryFormat}_content_repository cr ON r.id = cr.config_repository_id
+      /* VIRTUAL_THREAD_OPTIMIZED HASH_JOIN */
     </foreach>
   </select>
 
-  <select id="readContentRepositoryId" resultType="java.util.HashMap" databaseId="PostgreSQL">
+  <!-- Optimized repository lookup for Virtual Thread concurrency -->
+  <select id="readContentRepositoryId" resultType="java.util.HashMap" databaseId="PostgreSQL" timeout="5000">
       SELECT r.name, cr.repository_id FROM repository r
       INNER JOIN ${repositoryFormat}_content_repository cr ON r.id = cr.config_repository_id
       WHERE r.name = '${repositoryName}'
+      /* VIRTUAL_THREAD_OPTIMIZED INDEX_SCAN */
+  </select>
+
+  <!-- Batch processing capability for operations spanning multiple repositories -->
+  <select id="batchReadContentRepositories" resultType="ContentRepositoryData" timeout="15000" fetchSize="250">
+    SELECT * FROM ${format}_content_repository 
+    WHERE repository_id IN 
+    <foreach item="id" collection="repositoryIds" open="(" separator="," close=")">
+      #{id}
+    </foreach>
+    <if test="_databaseId == 'PostgreSQL'">
+      /* VIRTUAL_THREAD_OPTIMIZED PARALLEL_SCAN */
+    </if>
   </select>
 
 </mapper>

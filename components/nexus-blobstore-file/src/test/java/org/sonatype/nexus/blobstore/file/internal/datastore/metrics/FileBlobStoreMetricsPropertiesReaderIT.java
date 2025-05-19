@@ -23,23 +23,26 @@ import org.sonatype.nexus.common.node.NodeAccess;
 import org.sonatype.nexus.common.property.PropertiesFile;
 import org.sonatype.nexus.content.testsuite.groups.SQLTestGroup;
 
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.experimental.categories.Category;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.awaitility.Awaitility.await;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 /**
  * {@link FileBlobStoreMetricsPropertiesReader} integration tests.
  */
-@SuppressWarnings("deprecation")
-@Category(SQLTestGroup.class)
+@ExtendWith(MockitoExtension.class)
+@Tag("SQLTestGroup")
 public class FileBlobStoreMetricsPropertiesReaderIT
     extends TestSupport
 {
@@ -58,13 +61,13 @@ public class FileBlobStoreMetricsPropertiesReaderIT
   @Mock
   FileOperations fileOperations;
 
-  @Before
+  @BeforeEach
   public void setUp() {
-    when(nodeAccess.getId()).thenReturn(UUID.randomUUID().toString());
+    lenient().when(nodeAccess.getId()).thenReturn(UUID.randomUUID().toString());
     blobStoreDirectory = util.createTempDir().toPath();
   }
 
-  @After
+  @AfterEach
   public void tearDown() throws Exception {
     if (underTest != null && underTest.isStarted()) {
       underTest.stop();
@@ -74,7 +77,7 @@ public class FileBlobStoreMetricsPropertiesReaderIT
   @SuppressWarnings("java:S2699") // sonar doesn't detect assertions in awaitility
                                   // https://jira.sonarsource.com/browse/SONARJAVA-3334
   @Test
-  public void metricsLoadsExistingPropertyFile() throws Exception {
+  public void shouldLoadMetricsFromExistingPropertyFile() throws Exception {
     PropertiesFile props = new PropertiesFile(
         blobStoreDirectory.resolve(nodeAccess.getId() + "-" + FileBlobStoreMetricsPropertiesReader.METRICS_FILENAME)
             .toFile());
@@ -91,12 +94,12 @@ public class FileBlobStoreMetricsPropertiesReaderIT
   }
 
   @Test
-  public void listBackingFiles() throws Exception {
+  public void shouldListBackingFiles() throws Exception {
     underTest = new FileBlobStoreMetricsPropertiesReader();
     Stream<PropertiesFile> backingFiles = underTest.backingFiles();
     assertThat("backing files is empty", backingFiles.count(), is(0L));
 
-    when(blobStore.getAbsoluteBlobDir()).thenReturn(blobStoreDirectory);
+    lenient().when(blobStore.getAbsoluteBlobDir()).thenReturn(blobStoreDirectory);
     underTest.init(blobStore);
 
     PropertiesFile props = new PropertiesFile(
@@ -115,7 +118,7 @@ public class FileBlobStoreMetricsPropertiesReaderIT
   private void init(final Path path) throws Exception {
     underTest = new FileBlobStoreMetricsPropertiesReader();
 
-    when(blobStore.getAbsoluteBlobDir()).thenReturn(path);
+    lenient().when(blobStore.getAbsoluteBlobDir()).thenReturn(path);
     underTest.init(blobStore);
   }
 }

@@ -17,32 +17,34 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.testcommon.Java21TestGroup;
+import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.hash.HashCode;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.experimental.categories.Category;
 import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.sonatype.nexus.common.hash.HashAlgorithm.MD5;
 import static org.sonatype.nexus.common.hash.HashAlgorithm.SHA1;
 import static org.sonatype.nexus.common.hash.HashAlgorithm.SHA256;
 import static org.sonatype.nexus.common.hash.HashAlgorithm.SHA512;
 
-/**
- * Tests for {@link MultiHashingOutputStream}.
- */
-@ExtendWith(MockitoExtension.class)
+@Category(Java21TestGroup.class)
 public class MultiHashingOutputStreamTest
     extends TestSupport
 {
@@ -53,46 +55,43 @@ public class MultiHashingOutputStreamTest
 
   MultiHashingOutputStream underTest;
 
-  @BeforeEach
+  @Before
   public void setup() throws Exception {
     hashes = ImmutableList.of(SHA256, SHA1, SHA512, MD5);
     underTest = new MultiHashingOutputStream(hashes, outputStream);
   }
 
-  @Test
-  public void throwNpeWhenPassedNullHashes() {
-    assertThrows(NullPointerException.class, () -> {
-      underTest = new MultiHashingOutputStream(null, outputStream);
-    });
+  @Test(expected = NullPointerException.class)
+  public void shouldThrowNpeWhenPassedNullHashes() throws Exception {
+    underTest = new MultiHashingOutputStream(null, outputStream);
+  }
+
+  @Test(expected = NullPointerException.class)
+  public void shouldThrowNpeWhenPassedNullOutputStream() throws Exception {
+    underTest = new MultiHashingOutputStream(hashes, null);
   }
 
   @Test
-  public void throwNpeWhenPassedNullOutputStream() {
-    assertThrows(NullPointerException.class, () -> {
-      underTest = new MultiHashingOutputStream(hashes, null);
-    });
-  }
-
-  @Test
-  public void writeIntegerToOutputStream() throws Exception {
+  public void shouldWriteIntegerToOutputStream() throws Exception {
     underTest.write(1);
     verify(outputStream).write(1);
+    verifyNoMoreInteractions(outputStream);
   }
 
   @Test
-  public void writeArrayToOutputStream() throws Exception {
+  public void shouldWriteArrayToOutputStream() throws Exception {
     underTest.write(new byte[50]);
     verify(outputStream, times(50)).write(0);
   }
 
   @Test
-  public void writeOffsetToOutputStream() throws Exception {
+  public void shouldWriteOffsetToOutputStream() throws Exception {
     underTest.write(new byte[50], 10, 30);
     verify(outputStream, times(30)).write(0);
   }
 
   @Test
-  public void writeArrayToHashes() throws Exception {
+  public void shouldWriteArrayToHashes() throws Exception {
     underTest.write(new byte[100]);
 
     Map<HashAlgorithm, HashCode> hashes = underTest.hashes();
@@ -104,7 +103,7 @@ public class MultiHashingOutputStreamTest
   }
 
   @Test
-  public void writeIntegerToHashes() throws Exception {
+  public void shouldWriteIntegerToHashes() throws Exception {
     InputStream inputStream = new ByteArrayInputStream("test".getBytes());
     int b;
     while ((b = inputStream.read()) != -1) {
@@ -120,7 +119,7 @@ public class MultiHashingOutputStreamTest
   }
 
   @Test
-  public void writeArrayWithOffsetToHashes() throws Exception {
+  public void shouldWriteArrayWithOffsetToHashes() throws Exception {
     underTest.write(new byte[50], 10, 30);
 
     Map<HashAlgorithm, HashCode> hashes = underTest.hashes();
@@ -131,13 +130,43 @@ public class MultiHashingOutputStreamTest
     assertThat(sha256.toString(), is(equalTo("0679246d6c4216de0daa08e5523fb2674db2b6599c3b72ff946b488a15290b62")));
   }
 
-  @Test
-  public void exceptionOnMultipleHashesCalls() throws Exception {
+  @Test(expected = IllegalStateException.class)
+  public void shouldThrowExceptionOnMultipleHashesCalls() throws Exception {
     underTest.write(new byte[50], 10, 30);
 
     underTest.hashes();
-    assertThrows(IllegalStateException.class, () -> {
-      underTest.hashes();
-    });
+    underTest.hashes();
+  }
+  
+  @Test
+  @Category(VirtualThreadTestGroup.class)
+  public void shouldWorkCorrectlyWithVirtualThreads() throws Exception {
+    // Create a virtual thread executor
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit a task to write data in a virtual thread
+      Future<?> future = executor.submit(() -> {
+        try {
+          // Write some data
+          underTest.write(new byte[100]);
+          
+          // Verify the hashes
+          Map<HashAlgorithm, HashCode> hashes = underTest.hashes();
+          
+          HashCode sha1 = hashes.get(SHA1);
+          HashCode sha256 = hashes.get(SHA256);
+          assertThat(sha1.toString(), is(equalTo("ed4a77d1b56a118938788fc53037759b6c501e3d")));
+          assertThat(sha256.toString(), is(equalTo("cd00e292c5970d3c5e2f0ffa5171e555bc46bfc4faddfb4a418b6840b86e79a3")));
+        }
+        catch (Exception e) {
+          throw new RuntimeException("Error in virtual thread test", e);
+        }
+      });
+      
+      // Wait for the virtual thread to complete
+      future.get();
+      
+      // Verify the output stream was written to correctly
+      verify(outputStream, times(100)).write(0);
+    }
   }
 }

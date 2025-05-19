@@ -1,0 +1,348 @@
+{
+  "description": "Test scenarios for detecting thread pinning in proxy connections with Java 21 Virtual Threads",
+  "version": "1.0",
+  "scenarios": [
+    {
+      "id": "basic-proxy-connection",
+      "name": "Basic Proxy Connection",
+      "description": "Tests a simple HTTP request through a proxy without authentication",
+      "configuration": {
+        "proxyHost": "localhost",
+        "proxyPort": 8888,
+        "targetUrl": "http://example.com",
+        "method": "GET",
+        "timeout": 5000,
+        "useVirtualThreads": true
+      },
+      "operations": [
+        "establish-connection",
+        "send-request",
+        "read-response",
+        "close-connection"
+      ],
+      "potentialPinningPoints": [
+        "When closing the connection due to synchronized blocks in AbstractInterruptibleChannel.close()"
+      ],
+      "expectedBehavior": "Connection should be established, request sent, and response received without thread pinning"
+    },
+    {
+      "id": "basic-auth-proxy",
+      "name": "Basic Authentication Proxy",
+      "description": "Tests HTTP request through a proxy requiring basic authentication",
+      "configuration": {
+        "proxyHost": "localhost",
+        "proxyPort": 8888,
+        "targetUrl": "http://example.com",
+        "method": "GET",
+        "timeout": 5000,
+        "useVirtualThreads": true,
+        "authentication": {
+          "type": "basic",
+          "username": "user",
+          "password": "password"
+        }
+      },
+      "operations": [
+        "establish-connection",
+        "authenticate",
+        "send-request",
+        "read-response",
+        "close-connection"
+      ],
+      "potentialPinningPoints": [
+        "During authentication when handling credentials",
+        "When processing 407 Proxy Authentication Required response",
+        "When closing the connection"
+      ],
+      "expectedBehavior": "Authentication should succeed and request should complete without thread pinning"
+    },
+    {
+      "id": "digest-auth-proxy",
+      "name": "Digest Authentication Proxy",
+      "description": "Tests HTTP request through a proxy requiring digest authentication",
+      "configuration": {
+        "proxyHost": "localhost",
+        "proxyPort": 8888,
+        "targetUrl": "http://example.com",
+        "method": "GET",
+        "timeout": 5000,
+        "useVirtualThreads": true,
+        "authentication": {
+          "type": "digest",
+          "username": "user",
+          "password": "password",
+          "realm": "test-realm"
+        }
+      },
+      "operations": [
+        "establish-connection",
+        "receive-auth-challenge",
+        "compute-digest",
+        "authenticate",
+        "send-request",
+        "read-response",
+        "close-connection"
+      ],
+      "potentialPinningPoints": [
+        "During digest computation which may use synchronized methods",
+        "When handling multiple round-trips for authentication",
+        "When closing the connection"
+      ],
+      "expectedBehavior": "Digest authentication should complete and request should succeed without thread pinning"
+    },
+    {
+      "id": "ssl-proxy-connection",
+      "name": "SSL/TLS Proxy Connection",
+      "description": "Tests HTTPS request through a proxy with SSL/TLS handshake",
+      "configuration": {
+        "proxyHost": "localhost",
+        "proxyPort": 8888,
+        "targetUrl": "https://example.com",
+        "method": "GET",
+        "timeout": 5000,
+        "useVirtualThreads": true,
+        "ssl": {
+          "verifyHostname": true,
+          "trustAll": false
+        }
+      },
+      "operations": [
+        "establish-connection",
+        "connect-tunnel",
+        "ssl-handshake",
+        "send-request",
+        "read-response",
+        "close-connection"
+      ],
+      "potentialPinningPoints": [
+        "During SSL/TLS handshake which uses native methods",
+        "When establishing the CONNECT tunnel",
+        "During certificate validation",
+        "When closing the SSL connection"
+      ],
+      "expectedBehavior": "SSL handshake should complete and secure request should succeed with minimal thread pinning"
+    },
+    {
+      "id": "connection-pooling",
+      "name": "Connection Pooling with Proxy",
+      "description": "Tests connection pooling behavior with proxy connections",
+      "configuration": {
+        "proxyHost": "localhost",
+        "proxyPort": 8888,
+        "targetUrl": "http://example.com",
+        "method": "GET",
+        "timeout": 5000,
+        "useVirtualThreads": true,
+        "connectionPool": {
+          "maxConnections": 10,
+          "keepAliveTime": 30000
+        }
+      },
+      "operations": [
+        "establish-connection",
+        "send-request",
+        "read-response",
+        "return-to-pool",
+        "reuse-connection",
+        "close-pool"
+      ],
+      "potentialPinningPoints": [
+        "When acquiring connection from pool (may use synchronized methods)",
+        "When returning connection to pool",
+        "When managing connection lifecycle in pool",
+        "When closing the connection pool"
+      ],
+      "expectedBehavior": "Connection should be reused from pool without thread pinning"
+    },
+    {
+      "id": "timeout-retry",
+      "name": "Timeout and Retry with Proxy",
+      "description": "Tests timeout handling and retry logic with proxy connections",
+      "configuration": {
+        "proxyHost": "localhost",
+        "proxyPort": 8888,
+        "targetUrl": "http://example.com",
+        "method": "GET",
+        "connectTimeout": 1000,
+        "readTimeout": 2000,
+        "useVirtualThreads": true,
+        "retry": {
+          "maxRetries": 3,
+          "retryDelay": 1000
+        }
+      },
+      "operations": [
+        "establish-connection",
+        "timeout-connection",
+        "retry-connection",
+        "send-request",
+        "read-response",
+        "close-connection"
+      ],
+      "potentialPinningPoints": [
+        "During timeout handling which may use synchronized timers",
+        "When interrupting timed-out connections",
+        "During retry logic which may use locks",
+        "When closing failed connections"
+      ],
+      "expectedBehavior": "Timeout should be detected and retry should succeed without thread pinning"
+    },
+    {
+      "id": "large-payload",
+      "name": "Large Payload Through Proxy",
+      "description": "Tests handling of large request and response payloads through proxy",
+      "configuration": {
+        "proxyHost": "localhost",
+        "proxyPort": 8888,
+        "targetUrl": "http://example.com/large",
+        "method": "POST",
+        "timeout": 10000,
+        "useVirtualThreads": true,
+        "payload": {
+          "size": "10MB",
+          "type": "application/octet-stream"
+        }
+      },
+      "operations": [
+        "establish-connection",
+        "send-large-request",
+        "read-large-response",
+        "close-connection"
+      ],
+      "potentialPinningPoints": [
+        "During large data transfer which may use synchronized buffers",
+        "When handling flow control",
+        "During buffer management",
+        "When closing the connection after large transfer"
+      ],
+      "expectedBehavior": "Large payload should be transferred without thread pinning"
+    },
+    {
+      "id": "multiple-concurrent-requests",
+      "name": "Multiple Concurrent Requests Through Proxy",
+      "description": "Tests multiple concurrent requests through the same proxy",
+      "configuration": {
+        "proxyHost": "localhost",
+        "proxyPort": 8888,
+        "targetUrls": [
+          "http://example.com/1",
+          "http://example.com/2",
+          "http://example.com/3",
+          "http://example.com/4",
+          "http://example.com/5"
+        ],
+        "method": "GET",
+        "timeout": 5000,
+        "useVirtualThreads": true,
+        "concurrentRequests": 5
+      },
+      "operations": [
+        "establish-multiple-connections",
+        "send-concurrent-requests",
+        "read-all-responses",
+        "close-all-connections"
+      ],
+      "potentialPinningPoints": [
+        "When managing multiple connections through same proxy",
+        "During connection establishment contention",
+        "When handling proxy routing for multiple requests",
+        "When closing multiple connections"
+      ],
+      "expectedBehavior": "All concurrent requests should complete without thread pinning"
+    },
+    {
+      "id": "proxy-with-redirect",
+      "name": "Proxy with HTTP Redirect",
+      "description": "Tests handling of HTTP redirects through proxy",
+      "configuration": {
+        "proxyHost": "localhost",
+        "proxyPort": 8888,
+        "targetUrl": "http://example.com/redirect",
+        "method": "GET",
+        "timeout": 5000,
+        "useVirtualThreads": true,
+        "followRedirects": true,
+        "maxRedirects": 5
+      },
+      "operations": [
+        "establish-connection",
+        "send-request",
+        "receive-redirect",
+        "follow-redirect",
+        "read-final-response",
+        "close-connection"
+      ],
+      "potentialPinningPoints": [
+        "When processing redirect responses",
+        "During redirect handling logic which may use locks",
+        "When establishing new connections for redirects",
+        "When closing connections after redirects"
+      ],
+      "expectedBehavior": "Redirects should be followed without thread pinning"
+    },
+    {
+      "id": "socks-proxy",
+      "name": "SOCKS Proxy Connection",
+      "description": "Tests HTTP request through a SOCKS proxy",
+      "configuration": {
+        "proxyType": "SOCKS",
+        "proxyHost": "localhost",
+        "proxyPort": 1080,
+        "targetUrl": "http://example.com",
+        "method": "GET",
+        "timeout": 5000,
+        "useVirtualThreads": true,
+        "socksVersion": 5,
+        "authentication": {
+          "type": "password",
+          "username": "user",
+          "password": "password"
+        }
+      },
+      "operations": [
+        "establish-socks-connection",
+        "socks-handshake",
+        "socks-authenticate",
+        "send-request",
+        "read-response",
+        "close-connection"
+      ],
+      "potentialPinningPoints": [
+        "During SOCKS protocol handshake which may use native methods",
+        "When authenticating with the SOCKS proxy",
+        "During address resolution in SOCKS implementation",
+        "When closing SOCKS connections"
+      ],
+      "expectedBehavior": "SOCKS proxy connection should complete without thread pinning"
+    },
+    {
+      "id": "proxy-connection-interruption",
+      "name": "Proxy Connection Interruption",
+      "description": "Tests behavior when proxy connection is interrupted",
+      "configuration": {
+        "proxyHost": "localhost",
+        "proxyPort": 8888,
+        "targetUrl": "http://example.com",
+        "method": "GET",
+        "timeout": 5000,
+        "useVirtualThreads": true,
+        "simulateInterruption": true,
+        "interruptionPoint": "during-transfer"
+      },
+      "operations": [
+        "establish-connection",
+        "send-partial-request",
+        "interrupt-connection",
+        "handle-interruption",
+        "close-connection"
+      ],
+      "potentialPinningPoints": [
+        "When handling thread interruption",
+        "During exception handling which may use synchronized blocks",
+        "When cleaning up interrupted connections",
+        "During error recovery logic"
+      ],
+      "expectedBehavior": "Connection interruption should be handled gracefully without thread pinning"
+    }
+  ]
+}

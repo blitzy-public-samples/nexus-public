@@ -15,12 +15,16 @@ package org.sonatype.nexus.repository.content.webhooks;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.Optional;
+import java.util.concurrent.Executors;
+import java.util.logging.Level;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
 import org.sonatype.nexus.audit.InitiatorProvider;
 import org.sonatype.nexus.common.entity.EntityId;
+import org.sonatype.nexus.common.log.LogManager;
+import org.sonatype.nexus.common.log.Logger;
 import org.sonatype.nexus.common.node.NodeAccess;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.content.Asset;
@@ -33,12 +37,19 @@ import org.sonatype.nexus.repository.content.store.InternalIds;
 import org.sonatype.nexus.repository.rest.api.RepositoryItemIDXO;
 import org.sonatype.nexus.repository.webhooks.RepositoryWebhook;
 import org.sonatype.nexus.webhooks.WebhookPayload;
+import org.sonatype.nexus.webhooks.WebhookRequest;
 
 import com.google.common.eventbus.AllowConcurrentEvents;
 import com.google.common.eventbus.Subscribe;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
+/**
+ * Repository asset webhook.
+ * 
+ * Processes asset events and delivers webhook notifications using Java 21 Virtual Threads
+ * for improved concurrency and reduced thread overhead.
+ */
 @Named
 @Singleton
 public class RepositoryAssetWebhook
@@ -49,11 +60,18 @@ public class RepositoryAssetWebhook
   private final NodeAccess nodeAccess;
 
   private final InitiatorProvider initiatorProvider;
+  
+  private final Logger log;
 
   @Inject
-  public RepositoryAssetWebhook(final NodeAccess nodeAccess, final InitiatorProvider initiatorProvider) {
+  public RepositoryAssetWebhook(
+      final NodeAccess nodeAccess, 
+      final InitiatorProvider initiatorProvider,
+      final LogManager logManager) 
+  {
     this.nodeAccess = checkNotNull(nodeAccess);
     this.initiatorProvider = checkNotNull(initiatorProvider);
+    this.log = checkNotNull(logManager).getLogger(getClass());
   }
 
   @Override
@@ -102,12 +120,29 @@ public class RepositoryAssetWebhook
 
   /**
    * Maybe queue {@link WebhookRequest} for event matching subscriptions.
+   * Uses pattern matching for switch to determine logging message based on event action.
    */
   private void maybeQueue(final RepositoryAssetWebhookPayload payload) {
+    // Log the event using String Templates for improved readability and efficiency
+    switch (payload.getAction()) {
+      case CREATED -> log.debug(STR."Processing \{payload.getAction()} event for repository \{payload.getRepositoryName()}");
+      case UPDATED -> log.debug(STR."Processing \{payload.getAction()} event for repository \{payload.getRepositoryName()}");
+      case DELETED -> log.debug(STR."Processing \{payload.getAction()} event for repository \{payload.getRepositoryName()}");
+      case PURGED -> log.debug(STR."Processing \{payload.getAction()} event for repository \{payload.getRepositoryName()} with \{payload.getAssets() != null ? payload.getAssets().length : 0} assets");
+    }
+    
     subscriptions.forEach(subscription -> {
       RepositoryWebhook.Configuration configuration = (RepositoryWebhook.Configuration) subscription.getConfiguration();
       if (configuration.getRepository().equals(payload.getRepositoryName())) {
-        queue(subscription, payload);
+        // Use Virtual Thread for webhook delivery to improve concurrency and reduce thread overhead
+        Thread.startVirtualThread(() -> {
+          try {
+            log.debug(STR."Delivering \{payload.getAction()} webhook for repository \{payload.getRepositoryName()}");
+            queue(subscription, payload);
+          } catch (Exception e) {
+            log.error(STR."Failed to deliver webhook for \{payload.getAction()} event in repository \{payload.getRepositoryName()}: \{e.getMessage()}");
+          }
+        });
       }
     });
   }

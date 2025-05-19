@@ -12,12 +12,15 @@
  */
 package org.sonatype.nexus.repository.content.event.component;
 
-import java.util.Arrays;
+import java.util.List;
 
 import org.sonatype.nexus.repository.content.Component;
 import org.sonatype.nexus.repository.content.store.ContentStoreEvent;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.util.Collections.unmodifiableList;
+import static java.util.stream.IntStream.of;
+import static java.util.stream.Collectors.toList;
 
 /**
  * Event sent just before a large number of {@link Component}s are purged along with their assets.
@@ -27,21 +30,26 @@ import static com.google.common.base.Preconditions.checkNotNull;
 public class ComponentPrePurgeEvent
     extends ContentStoreEvent
 {
-  private final int[] componentIds;
+  private final List<Integer> componentIds;
 
   public ComponentPrePurgeEvent(final int contentRepositoryId, final int[] componentIds) { // NOSONAR
     super(contentRepositoryId);
-    this.componentIds = checkNotNull(componentIds);
+    checkNotNull(componentIds);
+    // Convert int[] to an unmodifiable List<Integer> for thread safety and immutability
+    this.componentIds = unmodifiableList(of(componentIds).boxed().collect(toList()));
   }
 
-  public int[] getComponentIds() {
-    return componentIds; // NOSONAR
+  /**
+   * Returns an unmodifiable list of component IDs.
+   * 
+   * @return unmodifiable list of component IDs
+   */
+  public List<Integer> getComponentIds() {
+    return componentIds;
   }
 
   @Override
   public String toString() {
-    return "ComponentPrePurgeEvent{" +
-        "componentIds=" + Arrays.toString(componentIds) +
-        "} " + super.toString();
+    return STR."ComponentPrePurgeEvent{componentIds=\{componentIds}} \{super.toString()}";
   }
 }

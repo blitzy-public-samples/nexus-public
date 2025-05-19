@@ -33,10 +33,9 @@ import org.sonatype.nexus.repository.content.store.BlobRefTypeHandler;
 import org.sonatype.nexus.repository.content.store.FormatStoreManager;
 import org.sonatype.nexus.scheduling.Cancelable;
 import org.sonatype.nexus.scheduling.TaskSupport;
-import org.sonatype.nexus.thread.NexusThreadFactory;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.util.concurrent.Executors.newFixedThreadPool;
+import static java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor;
 import static org.sonatype.nexus.common.property.SystemPropertiesHelper.getBoolean;
 import static org.sonatype.nexus.common.property.SystemPropertiesHelper.getInteger;
 import static org.sonatype.nexus.common.property.SystemPropertiesHelper.getString;
@@ -94,10 +93,7 @@ public class AssetBlobCleanupTask
         && batchDeleteIgnoreFormats.contains(format)) {
       batchDeleteEnabled = false;
     } else {
-      batchDeleteExecutorService = newFixedThreadPool(
-          BATCH_DELETE_POOL_SIZE,
-          new NexusThreadFactory("blobstore", "async-ops")
-      );
+      batchDeleteExecutorService = newVirtualThreadPerTaskExecutor();
     }
   }
 
@@ -109,7 +105,7 @@ public class AssetBlobCleanupTask
 
     FormatStoreManager formatStoreManager = formatStoreManagers.get(format);
     if (formatStoreManager != null) {
-      log.debug("Checking for unused {} blobs from {}", format, contentStore);
+      log.debug(STR."Checking for unused \{format} blobs from \{contentStore}");
       AssetBlobStore<?> assetBlobStore = formatStoreManager.assetBlobStore(contentStore);
       int deleteCount;
       if (batchDeleteEnabled) {
@@ -125,11 +121,11 @@ public class AssetBlobCleanupTask
         deleteCount = deleteUnusedAssetBlobs(assetBlobStore, format, contentStore);
       }
       if (deleteCount > 0) {
-        log.info("Deleted {} unused {} blobs from {}", deleteCount, format, contentStore);
+        log.info(STR."Deleted \{deleteCount} unused \{format} blobs from \{contentStore}");
       }
     }
     else {
-      log.warn("Unknown format {}", format);
+      log.warn(STR."Unknown format \{format}");
     }
 
     return null;
@@ -152,7 +148,7 @@ public class AssetBlobCleanupTask
     Continuation<AssetBlob> unusedAssetBlobs =
         assetBlobStore.browseUnusedAssetBlobs(BATCH_SIZE, BLOB_CREATED_DELAY_MINUTE, null);
     while (!isCanceled() && !unusedAssetBlobs.isEmpty()) {
-      log.debug("Found {} unused {} blobs in {}", unusedAssetBlobs.size(), format, contentStore);
+      log.debug(STR."Found \{unusedAssetBlobs.size()} unused \{format} blobs in \{contentStore}");
       for (AssetBlob assetBlob : unusedAssetBlobs) {
         if (isCanceled()) {
           break;
@@ -163,12 +159,12 @@ public class AssetBlobCleanupTask
           }
           else {
             // this doesn't necessarily indicate a problem, could be this particular blob is no longer unused
-            log.debug("Could not delete {} blob {} from {}", format, assetBlob.blobRef(), contentStore);
+            log.debug(STR."Could not delete \{format} blob \{assetBlob.blobRef()} from \{contentStore}");
           }
         }
         catch (RuntimeException e) {
           // this doesn't necessarily indicate a problem, could be this particular blob is no longer unused
-          log.debug("Could not delete {} blob {} from {}", format, assetBlob.blobRef(), contentStore, e);
+          log.debug(STR."Could not delete \{format} blob \{assetBlob.blobRef()} from \{contentStore}", e);
         }
       }
       unusedAssetBlobs = assetBlobStore.browseUnusedAssetBlobs(
@@ -195,7 +191,7 @@ public class AssetBlobCleanupTask
       if (isCanceled()) {
         break;
       }
-      log.debug("Found {} unused {} blobs in {}", unusedAssetBlobs.size(), format, contentStore);
+      log.debug(STR."Found \{unusedAssetBlobs.size()} unused \{format} blobs in \{contentStore}");
       List<BlobRef> blobRefAll = extractBlobRefsFromAssetBlobs(unusedAssetBlobs);
       deleteAssetBlobsExecutorService(blobRefAll);
 
@@ -222,12 +218,12 @@ public class AssetBlobCleanupTask
     BlobStore blobStore = blobStoreManager.get(blobRef.getStore());
     if (blobStore == null) {
       // postpone delete if the store is temporarily AWOL
-      log.warn("Could not find blob store for {}", blobRef);
+      log.warn(STR."Could not find blob store for \{blobRef}");
     }
     else {
       assetBlobDeleted = assetBlobStore.deleteAssetBlob(blobRef);
       if (assetBlobDeleted && !deleteBlobContent(blobStore, blobRef)) {
-        log.warn("Could not delete blob content under {}", blobRef);
+        log.warn(STR."Could not delete blob content under \{blobRef}");
         // still report asset blob as deleted...
       }
     }
@@ -242,15 +238,18 @@ public class AssetBlobCleanupTask
     CountDownLatch latch = new CountDownLatch(blobRefs.size());
     for (BlobRef blobRef : blobRefs) {
       batchDeleteExecutorService.submit(() -> {
-        latch.countDown();
-        BlobStore blobStore = blobStoreManager.get(blobRef.getStore());
-        if (blobStore == null) {
-          // postpone delete if the store is temporarily AWOL
-          log.warn("Could not find blob store for {}", blobRef);
-        }
-        else if (!deleteBlobContent(blobStore, blobRef)) {
-          // still report asset blob as deleted...
-          log.warn("Could not delete blob content under {}", blobRef);
+        try {
+          BlobStore blobStore = blobStoreManager.get(blobRef.getStore());
+          if (blobStore == null) {
+            // postpone delete if the store is temporarily AWOL
+            log.warn(STR."Could not find blob store for \{blobRef}");
+          }
+          else if (!deleteBlobContent(blobStore, blobRef)) {
+            // still report asset blob as deleted...
+            log.warn(STR."Could not delete blob content under \{blobRef}");
+          }
+        } finally {
+          latch.countDown();
         }
       });
     }
@@ -258,7 +257,8 @@ public class AssetBlobCleanupTask
       latch.await();
     }
     catch (InterruptedException ex) {
-      log.debug("CountDownLatch interrupted", ex);
+      log.debug(STR."CountDownLatch interrupted: \{ex.getMessage()}");
+      Thread.currentThread().interrupt(); // Preserve interrupt status
     }
   }
 
@@ -268,12 +268,10 @@ public class AssetBlobCleanupTask
    * @return {@code true} if the asset blob was deleted; otherwise {@code false}
    */
   private boolean deleteBlobContent(BlobStore blobStore, final BlobRef blobRef) {
-    if (HARD_DELETE) {
-      return blobStore.deleteHard(blobRef.getBlobId());
-    }
-    else {
-      return blobStore.delete(blobRef.getBlobId(), "Removing unused asset blob");
-    }
+    return switch (HARD_DELETE) {
+      case true -> blobStore.deleteHard(blobRef.getBlobId());
+      case false -> blobStore.delete(blobRef.getBlobId(), "Removing unused asset blob");
+    };
   }
 
   private List<BlobRef> extractBlobRefsFromAssetBlobs(final Continuation<AssetBlob> assetBlobs) {

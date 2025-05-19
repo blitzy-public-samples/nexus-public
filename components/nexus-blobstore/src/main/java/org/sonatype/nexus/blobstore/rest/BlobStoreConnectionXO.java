@@ -19,20 +19,32 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
  * Data transfer object for blob store connection information.
- * 
- * @since 3.0
+ * <p>
+ * Implemented as a Java 21 record for improved memory efficiency and data handling.
+ * Compatible with Jackson 2.16.1 for JSON serialization/deserialization.
+ * </p>
  */
 public record BlobStoreConnectionXO(
     @JsonProperty("name") String name,
     @JsonProperty("type") String type,
-    @JsonProperty("attributes") Map<String, Map<String, Object>> attributes
-) {
+    @JsonProperty("attributes") Map<String, Map<String, Object>> attributes)
+{
   /**
-   * Constructor with validation.
+   * Constructor with explicit JsonCreator annotation to ensure proper deserialization with Jackson 2.16.1.
+   *
+   * @param name The name of the blob store connection
+   * @param type The type of the blob store connection
+   * @param attributes The attributes of the blob store connection
    */
   @JsonCreator
   public BlobStoreConnectionXO {
-    // Records automatically validate that parameters are not null
-    // Additional validation could be added here if needed
+    // Validate inputs if needed
+    if (name == null) {
+      throw new IllegalArgumentException("name cannot be null");
+    }
+    if (type == null) {
+      throw new IllegalArgumentException("type cannot be null");
+    }
+    // attributes can be null
   }
 }

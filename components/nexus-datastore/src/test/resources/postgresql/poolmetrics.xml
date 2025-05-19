@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Sonatype Nexus (TM) Open Source Version
+  Copyright (c) 2008-present Sonatype, Inc.
+  All rights reserved. Includes the third-party code listed at http://links.sonatype.com/products/nexus/oss/attributions.
+
+  This program and the accompanying materials are made available under the terms of the Eclipse Public License Version 1.0,
+  which accompanies this distribution and is available at http://www.eclipse.org/legal/epl-v10.html.
+
+  Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
+  of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
+  Eclipse Foundation. All other trademarks are the property of their respective owners.
+-->
+
+<!-- 
+  HikariCP connection pool metrics configuration for PostgreSQL with Virtual Thread support.
+  This configuration enables detailed monitoring of connection pool behavior with Virtual Threads,
+  tracking metrics such as connection acquisition times, usage patterns, wait times, and thread pinning events.
+-->
+<hikaricp-metrics>
+  <!-- Core connection pool metrics -->
+  <metric-group name="pool-core">
+    <metric name="totalConnections" description="Total number of connections in the pool" type="gauge" />
+    <metric name="activeConnections" description="Number of connections that are currently in use" type="gauge" />
+    <metric name="idleConnections" description="Number of connections that are currently idle" type="gauge" />
+    <metric name="threadsAwaitingConnection" description="Number of threads waiting for a connection" type="gauge" />
+    <metric name="maxConnections" description="Maximum number of connections allowed in the pool" type="gauge" />
+  </metric-group>
+  
+  <!-- Virtual Thread specific metrics -->
+  <metric-group name="virtual-thread">
+    <metric name="threadPinningEvents" description="Number of times a virtual thread was pinned to a platform thread during database operations" type="counter" />
+    <metric name="pinningDuration" description="Duration of thread pinning events" type="histogram" />
+    <metric name="virtualThreadCount" description="Number of virtual threads currently using connections" type="gauge" />
+    <metric name="platformThreadCount" description="Number of platform threads currently using connections" type="gauge" />
+    <metric name="threadTypeRatio" description="Ratio of virtual to platform threads using connections" type="gauge" />
+  </metric-group>
+  
+  <!-- Connection acquisition metrics -->
+  <metric-group name="connection-acquisition">
+    <metric name="connectionAcquisitionTime" description="Time taken to acquire a connection from the pool" type="timer" />
+    <metric name="connectionAcquisitionTimeouts" description="Number of timeouts when attempting to acquire a connection" type="counter" />
+    <metric name="connectionCreationTime" description="Time taken to create a new connection" type="timer" />
+    <metric name="connectionBorrowRate" description="Rate at which connections are borrowed from the pool" type="meter" />
+    <metric name="connectionReturnRate" description="Rate at which connections are returned to the pool" type="meter" />
+  </metric-group>
+  
+  <!-- Connection usage metrics -->
+  <metric-group name="connection-usage">
+    <metric name="connectionUsageTime" description="Time a connection is used before being returned to the pool" type="timer" />
+    <metric name="connectionIdleTime" description="Time a connection remains idle in the pool" type="timer" />
+    <metric name="connectionLifetime" description="Total lifetime of a connection" type="timer" />
+    <metric name="statementExecutionTime" description="Time taken to execute SQL statements" type="timer" />
+    <metric name="transactionTime" description="Time taken to complete a transaction" type="timer" />
+  </metric-group>
+  
+  <!-- Transaction boundary metrics for Virtual Threads -->
+  <metric-group name="transaction-boundaries">
+    <metric name="transactionBoundaryTransitions" description="Number of transaction boundary transitions in Virtual Thread context" type="counter" />
+    <metric name="transactionCommitTime" description="Time taken to commit a transaction in Virtual Thread context" type="timer" />
+    <metric name="transactionRollbackTime" description="Time taken to rollback a transaction in Virtual Thread context" type="timer" />
+    <metric name="transactionBoundaryPinningEvents" description="Number of thread pinning events during transaction boundaries" type="counter" />
+  </metric-group>
+  
+  <!-- Connection health metrics -->
+  <metric-group name="connection-health">
+    <metric name="connectionFailures" description="Number of connection failures" type="counter" />
+    <metric name="connectionLeakDetections" description="Number of connection leaks detected" type="counter" />
+    <metric name="connectionValidationFailures" description="Number of connection validation failures" type="counter" />
+    <metric name="deadlockDetections" description="Number of deadlocks detected" type="counter" />
+    <metric name="connectionResetCount" description="Number of times connections had to be reset" type="counter" />
+  </metric-group>
+  
+  <!-- PostgreSQL specific metrics -->
+  <metric-group name="postgresql-specific">
+    <metric name="preparedStatementCacheHitRatio" description="Hit ratio of the prepared statement cache" type="gauge" />
+    <metric name="preparedStatementCacheSize" description="Current size of the prepared statement cache" type="gauge" />
+    <metric name="serverRoundtripTime" description="Time taken for a round trip to the PostgreSQL server" type="timer" />
+    <metric name="pgStatementExecutionTime" description="Time taken to execute PostgreSQL statements" type="timer" />
+    <metric name="pgConnectionSetupTime" description="Time taken to set up a PostgreSQL connection" type="timer" />
+  </metric-group>
+  
+  <!-- Virtual Thread debugging metrics -->
+  <metric-group name="virtual-thread-debug">
+    <metric name="mountedOperations" description="Number of operations that caused a virtual thread to mount to a carrier thread" type="counter" />
+    <metric name="unmountedOperations" description="Number of operations that allowed a virtual thread to unmount from a carrier thread" type="counter" />
+    <metric name="continuationCount" description="Number of continuations (yield points) in virtual threads" type="counter" />
+    <metric name="yieldCount" description="Number of times virtual threads yielded execution" type="counter" />
+    <metric name="parkCount" description="Number of times virtual threads parked" type="counter" />
+  </metric-group>
+  
+  <!-- Configuration settings -->
+  <settings>
+    <!-- PostgreSQL JDBC driver version must be 42.6.0+ for Java 21 compatibility -->
+    <jdbc-driver-version-min>42.6.0</jdbc-driver-version-min>
+    <metrics-enabled>true</metrics-enabled>
+    <jmx-export-enabled>true</jmx-export-enabled>
+    <metrics-registry-name>hikaricp-postgresql-metrics</metrics-registry-name>
+    <health-check-registry-name>hikaricp-postgresql-health</health-check-registry-name>
+    <metrics-tracking-interval-ms>5000</metrics-tracking-interval-ms>
+    <leak-detection-threshold-ms>30000</leak-detection-threshold-ms>
+    <virtual-thread-monitoring-enabled>true</virtual-thread-monitoring-enabled>
+  </settings>
+  
+  <!-- Health checks -->
+  <health-checks>
+    <health-check name="connection-pool-size" description="Verifies that the connection pool size is within acceptable limits" />
+    <health-check name="connection-liveness" description="Verifies that connections in the pool are alive and usable" />
+    <health-check name="thread-pinning-rate" description="Monitors the rate of thread pinning events to detect potential issues" />
+    <health-check name="connection-acquisition-time" description="Monitors connection acquisition time to detect performance issues" />
+    <health-check name="virtual-thread-compatibility" description="Verifies that the PostgreSQL driver is compatible with Virtual Threads" />
+  </health-checks>
+</hikaricp-metrics>

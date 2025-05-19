@@ -13,10 +13,15 @@
 package org.sonatype.nexus.repository.content.store;
 
 import java.util.Optional;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.StructuredTaskScope;
+import java.util.concurrent.StructuredTaskScope.ShutdownOnFailure;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 
+import org.slf4j.MDC;
 import org.sonatype.nexus.common.property.SystemPropertiesHelper;
 import org.sonatype.nexus.datastore.TransactionalStoreSupport;
 import org.sonatype.nexus.datastore.api.ContentDataAccess;
@@ -73,15 +78,43 @@ public abstract class ContentStoreSupport<T extends ContentDataAccess>
   }
 
   /**
-   * Commits any batched changes so far.
+   * Commits any batched changes so far using Virtual Threads for improved concurrency.
    *
    * Also checks to see if the current (potentially long-running) operation has been cancelled.
    */
   protected void commitChangesSoFar() {
-    Transaction tx = UnitOfWork.currentTx();
-    tx.commit();
-    tx.begin();
-    checkCancellation();
+    try (var scope = new ShutdownOnFailure()) {
+      // Capture the current MDC context to propagate to the virtual thread
+      var mdcContext = MDC.getCopyOfContextMap();
+      
+      // Fork a virtual thread to handle the transaction commit
+      scope.fork(() -> {
+        // Restore MDC context in the virtual thread
+        if (mdcContext != null) {
+          MDC.setContextMap(mdcContext);
+        }
+        
+        try {
+          Transaction tx = UnitOfWork.currentTx();
+          tx.commit();
+          tx.begin();
+          return null;
+        } finally {
+          MDC.clear();
+        }
+      });
+      
+      // Wait for the virtual thread to complete
+      scope.join();
+      // Check for any exceptions
+      scope.throwIfFailed(e -> new RuntimeException("Failed to commit changes", e));
+      
+      // Check if the operation has been cancelled
+      checkCancellation();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException("Interrupted while committing changes", e);
+    }
   }
 
   protected int deleteBatchSize() {
@@ -97,24 +130,87 @@ public abstract class ContentStoreSupport<T extends ContentDataAccess>
     return find.get().orElseGet(create);
   }
 
+  /**
+   * Helper to find content in this store before creating or updating it with the given suppliers,
+   * with post-transaction processing using Virtual Threads for improved concurrency.
+   */
   public <D> D save(
       final Supplier<Optional<D>> find,
       final Supplier<D> create,
       final UnaryOperator<D> update,
       final Consumer<D> postTransaction)
   {
-    D result = transactionalSave(find, create, update);
-    postTransaction.accept(result);
-    return result;
+    try (var scope = new ShutdownOnFailure()) {
+      // Capture the current MDC context to propagate to the virtual thread
+      var mdcContext = MDC.getCopyOfContextMap();
+      
+      // First perform the transactional save operation
+      D result = transactionalSave(find, create, update);
+      
+      // Fork a virtual thread to handle the post-transaction processing
+      scope.fork(() -> {
+        // Restore MDC context in the virtual thread
+        if (mdcContext != null) {
+          MDC.setContextMap(mdcContext);
+        }
+        
+        try {
+          postTransaction.accept(result);
+          return null;
+        } finally {
+          MDC.clear();
+        }
+      });
+      
+      // Wait for the virtual thread to complete
+      scope.join();
+      // Check for any exceptions
+      scope.throwIfFailed(e -> new RuntimeException("Failed during post-transaction processing", e));
+      
+      return result;
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException("Interrupted during save operation", e);
+    }
   }
 
   /**
    * Helper to find content in this store before creating or updating it with the given suppliers.
+   * Uses structured concurrency to manage transaction boundaries across Virtual Thread handoffs.
    *
    * @since 3.30
    */
   @Transactional(retryOn = DuplicateKeyException.class)
-  protected  <D> D transactionalSave(final Supplier<Optional<D>> find, final Supplier<D> create, final UnaryOperator<D> update) {
-    return find.get().map(update).orElseGet(create);
+  protected <D> D transactionalSave(final Supplier<Optional<D>> find, final Supplier<D> create, final UnaryOperator<D> update) {
+    try (var scope = new StructuredTaskScope<D>()) {
+      // Capture the current MDC context to propagate to the virtual thread
+      var mdcContext = MDC.getCopyOfContextMap();
+      
+      // Fork a virtual thread to handle the find-and-update operation
+      var findAndUpdateTask = scope.fork(() -> {
+        // Restore MDC context in the virtual thread
+        if (mdcContext != null) {
+          MDC.setContextMap(mdcContext);
+        }
+        
+        try {
+          Optional<D> found = find.get();
+          return found.map(update).orElseGet(create);
+        } finally {
+          MDC.clear();
+        }
+      });
+      
+      // Wait for the virtual thread to complete
+      scope.join();
+      
+      // Return the result
+      return findAndUpdateTask.get();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException("Interrupted during transactional save", e);
+    } catch (ExecutionException e) {
+      throw new RuntimeException("Error during transactional save", e.getCause());
+    }
   }
 }

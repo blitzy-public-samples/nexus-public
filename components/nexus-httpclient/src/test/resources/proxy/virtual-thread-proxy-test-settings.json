@@ -1,0 +1,83 @@
+{
+  "connection": {
+    "useVirtualThreads": true,
+    "maxConnections": 10000,
+    "maxConnectionsPerRoute": 5000,
+    "connectionTimeout": 5000,
+    "socketTimeout": 30000,
+    "connectionRequestTimeout": 10000,
+    "validateAfterInactivity": 1000,
+    "evictIdleConnections": true,
+    "idleTimeoutSeconds": 60,
+    "keepAliveStrategy": "SYSTEM_DEFAULT",
+    "bufferSize": 8192,
+    "tcpNoDelay": true,
+    "reuseAddress": true
+  },
+  "proxy": {
+    "host": "localhost",
+    "port": 8888,
+    "authentication": {
+      "username": "proxyuser",
+      "password": "proxypass",
+      "ntlmDomain": "",
+      "ntlmWorkstation": ""
+    },
+    "nonProxyHosts": [
+      "localhost",
+      "127.0.0.1"
+    ],
+    "connectionsPerRoute": 2500
+  },
+  "virtualThread": {
+    "preventPinning": true,
+    "monitorPinningEvents": true,
+    "maxConcurrentRequests": 10000,
+    "useNonBlockingIO": true,
+    "avoidSynchronizedBlocks": true,
+    "unmountOnBlocking": true,
+    "diagnosticsEnabled": true,
+    "executorType": "newVirtualThreadPerTaskExecutor"
+  },
+  "testing": {
+    "requestsPerSecond": 5000,
+    "totalRequests": 100000,
+    "warmupRequests": 1000,
+    "targetEndpoints": [
+      "http://example.com/api/test1",
+      "http://example.com/api/test2",
+      "http://example.com/api/test3"
+    ],
+    "requestSizeBytes": 1024,
+    "responseSizeBytes": 4096,
+    "measureLatency": true,
+    "measureThroughput": true,
+    "compareWithPlatformThreads": true,
+    "recordPinningEvents": true,
+    "generateThreadDump": false,
+    "logLevel": "INFO",
+    "metrics": {
+      "recordHistogram": true,
+      "percentiles": [50, 90, 95, 99, 99.9],
+      "recordThroughputEvery": 1000
+    }
+  },
+  "jvmSettings": {
+    "virtualThreadScheduler": "ForkJoinPool.commonPool()",
+    "carrierThreadCount": 0,
+    "pinningDetectionEnabled": true,
+    "continuationEnabled": true,
+    "jvmArgs": [
+      "-Djdk.tracePinnedThreads=full",
+      "-Djdk.virtualThreadScheduler.parallelism=0",
+      "-Djdk.virtualThreadScheduler.maxPoolSize=0"
+    ]
+  },
+  "httpClient": {
+    "implementation": "java.net.http.HttpClient",
+    "version": "Java 21",
+    "followRedirects": "NORMAL",
+    "preferNio": true,
+    "priority": 0
+  }
+}

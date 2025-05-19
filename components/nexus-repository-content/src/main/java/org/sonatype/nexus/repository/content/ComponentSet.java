@@ -15,6 +15,22 @@ package org.sonatype.nexus.repository.content;
 /**
  * Each component represents a unique logical coordinate in a repository.
  * Part of the coordinate is the namespace and name, which together form the component 'Set'
+ * 
+ * <p>This interface can be used with Java 21 Record Patterns for efficient component matching and destructuring:</p>
+ * <pre>
+ * // Using record patterns to match and extract namespace and name in one step
+ * if (component instanceof ComponentSet(var namespace, var name)) {
+ *   // Use namespace and name directly without accessor methods
+ * }
+ * 
+ * // In switch expressions with pattern matching
+ * return switch (component) {
+ *   case ComponentSet(String ns, String n) when ns.startsWith("org.example") -> handleExampleComponent(n);
+ *   case ComponentSet(String ns, String n) -> handleOtherComponent(ns, n);
+ *   default -> handleUnknownComponent();
+ * };
+ * </pre>
+ * 
  * @see Component
  */
 public interface ComponentSet
@@ -29,8 +45,14 @@ public interface ComponentSet
    */
   String name();
 
+  /**
+   * Returns a string representation of this component set suitable for external display.
+   * Uses Java 21 String Templates for improved readability.
+   * 
+   * @return a string containing the namespace and name
+   */
   default String toStringExternal() {
-    return "namespace=" + namespace() +
-        ", name=" + name();
+    // STR processor is automatically imported in Java 21
+    return STR."namespace=\{namespace()}, name=\{name()}";
   }
 }

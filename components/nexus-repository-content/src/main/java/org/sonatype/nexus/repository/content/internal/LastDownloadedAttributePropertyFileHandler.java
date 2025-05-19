@@ -14,6 +14,8 @@ package org.sonatype.nexus.repository.content.internal;
 
 import java.time.OffsetDateTime;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -36,6 +38,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Update the asset last downloaded time in corresponding blob's '.properties' file.
+ * Uses Java 21 Virtual Threads for I/O operations to improve performance and scalability.
  */
 @Named
 @Singleton
@@ -54,27 +57,51 @@ public class LastDownloadedAttributePropertyFileHandler
   public void writeLastDownloadedAttribute(final FluentAsset asset) {
     FluentAsset reloadedAsset = reloadAsset(asset);
     if (reloadedAsset != null && reloadedAsset.lastDownloaded().isPresent()) {
-      updateLastDownloadedPropertyIfNeeded(reloadedAsset);
+      // Use Virtual Thread to execute I/O operations asynchronously
+      Thread.startVirtualThread(() -> {
+        try {
+          updateLastDownloadedPropertyIfNeeded(reloadedAsset);
+        }
+        catch (Exception e) {
+          log.error(STR."Error updating last downloaded attribute for asset \{reloadedAsset}: \{e.getMessage()}", e);
+        }
+      });
     }
   }
 
   @Nullable
   @Override
   public OffsetDateTime readLastDownloadedAttribute(final String blobstore, final Blob blob) {
-    BlobStore blobStore = blobStoreManager.get(blobstore);
-    if (blobStore == null) {
-      log.warn("Blob store not loaded {}", blobStore);
-      return null;
-    }
+    try {
+      // Use CompletableFuture with Virtual Thread to retrieve blob attributes
+      CompletableFuture<OffsetDateTime> future = CompletableFuture.supplyAsync(() -> {
+        BlobStore blobStore = blobStoreManager.get(blobstore);
+        if (blobStore == null) {
+          log.warn(STR."Blob store not loaded: \{blobstore}");
+          return null;
+        }
 
-    BlobAttributes blobAttributes = blobStore.getBlobAttributes(blob.getId());
-    if (blobAttributes == null) {
-      log.warn("Blob attributes not loaded for {}", blob.getId());
+        BlobAttributes blobAttributes = blobStore.getBlobAttributes(blob.getId());
+        if (blobAttributes == null) {
+          log.warn(STR."Blob attributes not loaded for blob ID: \{blob.getId()}");
+          return null;
+        }
+        return Optional.ofNullable(blobAttributes.getMetrics())
+            .map(BlobMetrics::getLastDownloaded)
+            .orElse(null);
+      }, Thread.ofVirtual().factory());
+
+      return future.get();
+    }
+    catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      log.warn(STR."Thread interrupted while reading last downloaded attribute for blob \{blob.getId()} in store \{blobstore}");
       return null;
     }
-    return Optional.ofNullable(blobAttributes.getMetrics())
-        .map(BlobMetrics::getLastDownloaded)
-        .orElse(null);
+    catch (ExecutionException e) {
+      log.error(STR."Error reading last downloaded attribute for blob \{blob.getId()} in store \{blobstore}: \{e.getCause().getMessage()}", e.getCause());
+      return null;
+    }
   }
 
   private FluentAsset reloadAsset(final FluentAsset asset) {
@@ -86,7 +113,7 @@ public class LastDownloadedAttributePropertyFileHandler
           .orElse(null);
     }
     catch (MissingFacetException e) {
-      log.warn("There is no content facet for asset {} in repository {}", asset, asset.repository());
+      log.warn(STR."There is no content facet for asset \{asset} in repository \{asset.repository()}");
       return null;
     }
   }
@@ -95,20 +122,26 @@ public class LastDownloadedAttributePropertyFileHandler
     fluentAsset.blob().ifPresent(assetBlob -> {
       BlobStore blobStore = getBlobStoreForAsset(assetBlob);
       if (blobStore == null) {
-        log.warn("Could not find blobstore for {}", assetBlob);
+        log.warn(STR."Could not find blobstore for asset blob: \{assetBlob}");
         return;
       }
 
       BlobId blobId = assetBlob.blobRef().getBlobId();
       BlobAttributes blobAttributes = blobStore.getBlobAttributes(blobId);
       if (blobAttributes == null) {
-        log.warn("Could not get blob attributes for {}", blobId);
+        log.warn(STR."Could not get blob attributes for blob ID: \{blobId}");
         return;
       }
 
       fluentAsset.lastDownloaded().ifPresent(lastDownloaded -> {
-        blobAttributes.getMetrics().setLastDownloaded(lastDownloaded);
-        blobStore.setBlobAttributes(blobId, blobAttributes);
+        try {
+          blobAttributes.getMetrics().setLastDownloaded(lastDownloaded);
+          blobStore.setBlobAttributes(blobId, blobAttributes);
+          log.debug(STR."Successfully updated last downloaded attribute to \{lastDownloaded} for blob \{blobId}");
+        }
+        catch (Exception e) {
+          log.error(STR."Failed to update last downloaded attribute for blob \{blobId}: \{e.getMessage()}", e);
+        }
       });
     });
   }

@@ -18,6 +18,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Optional;
 import java.util.StringJoiner;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.ExecutionException;
 import javax.inject.Inject;
 import javax.inject.Named;
 
@@ -30,7 +34,12 @@ import org.sonatype.nexus.scheduling.UpgradeTaskScheduler;
 import org.sonatype.nexus.upgrade.datastore.DatabaseMigrationStep;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 
+/**
+ * Migration step to rebuild browse nodes for Conan repositories.
+ * Uses Java 21 Virtual Threads for improved I/O performance during database operations.
+ */
 @Named
 public class BrowseNodeMigrationStep_2_3
     extends ComponentSupport
@@ -42,9 +51,12 @@ public class BrowseNodeMigrationStep_2_3
 
   private static final String CONTENT_REPOSITORY_TABLE = "conan_content_repository";
 
-  private static final String SELECT_REPOSITORY_NAMES = "SELECT R.name " +
-      "FROM repository R, " + CONTENT_REPOSITORY_TABLE + " C " +
-      "WHERE R.id = C.config_repository_id";
+  private static final String SELECT_REPOSITORY_NAMES = STR."""
+      SELECT R.name 
+      FROM repository R, 
+      """+CONTENT_REPOSITORY_TABLE+""" C 
+      WHERE R.id = C.config_repository_id
+      """;
 
   @Inject
   public BrowseNodeMigrationStep_2_3(
@@ -67,39 +79,72 @@ public class BrowseNodeMigrationStep_2_3
       return;
     }
 
-    String repositoryNames = getRepositoryNames(connection);
+    // Use a Virtual Thread to perform the database operation
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      Future<String> repositoryNamesFuture = executor.submit(() -> getRepositoryNames(connection));
+      
+      String repositoryNames = repositoryNamesFuture.get();
 
-    if (!repositoryNames.isEmpty()) {
-      scheduleRebuildBrowseNodesTask(repositoryNames);
-    }
-    else {
-      log.debug("No Conan repositories found to rebuild browse nodes");
+      if (!repositoryNames.isEmpty()) {
+        scheduleRebuildBrowseNodesTask(repositoryNames);
+      }
+      else {
+        log.debug("No Conan repositories found to rebuild browse nodes");
+      }
+    } catch (ExecutionException e) {
+      Throwable cause = e.getCause();
+      if (cause instanceof SQLException) {
+        log.error("SQL error during repository name retrieval", cause);
+        throw (SQLException) cause;
+      } else if (cause instanceof RuntimeException) {
+        log.error("Runtime error during repository name retrieval", cause);
+        throw (RuntimeException) cause;
+      } else {
+        log.error("Unexpected error during repository name retrieval", e);
+        throw new RuntimeException("Failed to get repository names", e);
+      }
     }
   }
 
+  /**
+   * Retrieves repository names from the database using a prepared statement.
+   * Optimized for Virtual Thread execution with proper resource management.
+   */
   protected String getRepositoryNames(final Connection connection)
-      throws IllegalStateException
+      throws SQLException
   {
     StringJoiner repositoryNames = new StringJoiner(",");
+    
     try (PreparedStatement statement = connection.prepareStatement(SELECT_REPOSITORY_NAMES)) {
       try (ResultSet resultSet = statement.executeQuery()) {
         while (resultSet.next()) {
           repositoryNames.add(resultSet.getString(1));
         }
+      } catch (SQLException e) {
+        log.error(STR."Error executing query: \{SELECT_REPOSITORY_NAMES}", e);
+        throw e;
       }
+    } catch (SQLException e) {
+      log.error(STR."Error preparing statement: \{SELECT_REPOSITORY_NAMES}", e);
+      throw new SQLException("Failed to get repository names", e);
     }
-    catch (SQLException e) {
-      throw new IllegalStateException("Failed to get repository names", e);
-    }
+    
     return repositoryNames.toString();
   }
 
+  /**
+   * Schedules a task to rebuild browse nodes for the specified repositories.
+   * Configured to work correctly with Virtual Threads.
+   */
   private void scheduleRebuildBrowseNodesTask(final String repositories) {
     TaskConfiguration configuration =
         taskScheduler.createTaskConfigurationInstance(RebuildBrowseNodesTaskDescriptor.TYPE_ID);
-    configuration.setName("Rebuild browse nodes for Conan repositories");
+    configuration.setName(STR."Rebuild browse nodes for Conan repositories: \{repositories}");
     configuration.setString(RepositoryTaskSupport.REPOSITORY_NAME_FIELD_ID, repositories);
+    
+    // Schedule the task with the upgrade task scheduler
     upgradeTaskScheduler.schedule(configuration);
-    log.info("Scheduled post-startup task to rebuild browse nodes for Conan repositories: {}", repositories);
+    
+    log.info(STR."Scheduled post-startup task to rebuild browse nodes for Conan repositories: \{repositories}");
   }
 }

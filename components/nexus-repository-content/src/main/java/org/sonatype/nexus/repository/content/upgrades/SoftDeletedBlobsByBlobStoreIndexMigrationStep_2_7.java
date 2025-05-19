@@ -16,6 +16,7 @@ import java.sql.Connection;
 import java.sql.Statement;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.Executors;
 import javax.inject.Named;
 
 import org.sonatype.goodies.common.ComponentSupport;
@@ -29,7 +30,7 @@ public class SoftDeletedBlobsByBlobStoreIndexMigrationStep_2_7
     extends ComponentSupport
     implements DatabaseMigrationStep
 {
-  private final String ADD_INDEX_STATEMENT =
+  private final String ADD_INDEX_STATEMENT = STR.
       "CREATE INDEX IF NOT EXISTS idx_soft_deleted_blobs_by_source_blob_store_name_record_id"
           + " ON soft_deleted_blobs (source_blob_store_name, record_id);";
 
@@ -48,11 +49,23 @@ public class SoftDeletedBlobsByBlobStoreIndexMigrationStep_2_7
     long startTime = System.currentTimeMillis();
     log.info("Creating index idx_soft_deleted_blobs_by_source_blob_store_name_record_id");
 
-    try(Statement statement = connection.createStatement()) {
-      statement.execute(ADD_INDEX_STATEMENT);
+    // Use Virtual Threads for improved I/O performance
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var future = executor.submit(() -> {
+        // Execute in a Virtual Thread while maintaining transaction context
+        try (Statement statement = connection.createStatement()) {
+          statement.execute(ADD_INDEX_STATEMENT);
+          return true;
+        } catch (Exception e) {
+          log.error(STR."Error creating index: \{e.getMessage()}", e);
+          throw e;
+        }
+      });
+      
+      // Wait for the Virtual Thread to complete
+      future.get();
     }
 
-    log.info("Index idx_soft_deleted_blobs_by_source_blob_store_name_record_id created successfully in {} seconds.",
-        (System.currentTimeMillis() - startTime) * 0.001d);
+    log.info(STR."Index idx_soft_deleted_blobs_by_source_blob_store_name_record_id created successfully in \{(System.currentTimeMillis() - startTime) * 0.001d} seconds.");
   }
 }

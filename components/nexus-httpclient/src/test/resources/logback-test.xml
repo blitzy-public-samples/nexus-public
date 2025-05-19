@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Logback configuration for HTTP client tests with enhanced Virtual Thread diagnostics for Java 21
+  
+  This configuration includes special settings to help diagnose Virtual Thread behavior
+  and thread pinning issues during test execution.
+-->
+<configuration>
+
+  <!-- Define a conversion rule for thread ID to support Virtual Thread debugging -->
+  <conversionRule conversionWord="threadId" 
+                 converterClass="org.sonatype.nexus.common.log.ThreadIdConverter"/>
+
+  <!-- Enable JVM status logging to console for Virtual Thread diagnostics -->
+  <statusListener class="ch.qos.logback.core.status.OnConsoleStatusListener" />
+
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <target>System.out</target>
+    <encoder>
+      <!-- Enhanced pattern with thread ID for Virtual Thread debugging -->
+      <pattern>%date %level [%thread:%threadId%X{DC}] %logger - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- File appender for detailed Virtual Thread diagnostics -->
+  <appender name="VIRTUALTHREAD" class="ch.qos.logback.core.FileAppender">
+    <file>target/virtualthread-test.log</file>
+    <append>true</append>
+    <encoder>
+      <pattern>%date %level [%thread:%threadId%X{DC}] %logger - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- HTTP client specific loggers -->
+  <logger name="org.sonatype.nexus.httpclient" level="DEBUG">
+    <appender-ref ref="VIRTUALTHREAD" />
+  </logger>
+  <logger name="org.apache.http" level="DEBUG"/>
+  <logger name="org.apache.http.wire" level="INFO"/>
+  
+  <!-- Virtual Thread diagnostics loggers -->
+  <logger name="jdk.internal.vm.VirtualThread" level="DEBUG">
+    <appender-ref ref="VIRTUALTHREAD" />
+  </logger>
+  <logger name="java.lang.VirtualThread" level="DEBUG">
+    <appender-ref ref="VIRTUALTHREAD" />
+  </logger>
+  <logger name="org.sonatype.nexus.virtualthread" level="DEBUG">
+    <appender-ref ref="VIRTUALTHREAD" />
+  </logger>
+  <logger name="org.sonatype.nexus.thread.io" level="DEBUG">
+    <appender-ref ref="VIRTUALTHREAD" />
+  </logger>
+  
+  <!-- Thread pinning detection logs -->
+  <logger name="jdk.internal.vm.Continuation" level="DEBUG">
+    <appender-ref ref="VIRTUALTHREAD" />
+  </logger>
+  <logger name="java.util.concurrent.locks" level="DEBUG">
+    <appender-ref ref="VIRTUALTHREAD" />
+  </logger>
+  
+  <!-- Root logger configuration -->
+  <root level="${test.log.level:-INFO}">
+    <appender-ref ref="CONSOLE"/>
+  </root>
+
+</configuration>

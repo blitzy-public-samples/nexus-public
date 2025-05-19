@@ -16,35 +16,40 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.app.ApplicationDirectories;
 import org.sonatype.nexus.datastore.api.DataStoreConfiguration;
+import org.sonatype.nexus.virtualthread.Java21TestGroup;
 
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.Matchers.arrayContaining;
 import static org.hamcrest.Matchers.arrayWithSize;
-import static org.junit.Assert.assertFalse;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 /**
  * @since 3.21
  */
+@ExtendWith(MockitoExtension.class)
+@org.junit.experimental.categories.Category(Java21TestGroup.class)
 public class DataStoreRestorerLocalImplTest
     extends TestSupport
 {
-  @Rule
-  public TemporaryFolder temporaryFolder = new TemporaryFolder();
+  @TempDir
+  Path tempDir;
 
   @Mock
   private ApplicationDirectories directories;
@@ -56,9 +61,9 @@ public class DataStoreRestorerLocalImplTest
 
   private File workDirectory;
 
-  @Before
+  @BeforeEach
   public void setup() throws IOException {
-    workDirectory = temporaryFolder.newFolder();
+    workDirectory = tempDir.toFile();
     when(directories.getWorkDirectory(any())).thenAnswer(i -> new File(workDirectory, (String) i.getArguments()[0]));
     when(dataStoreConfiguration.getName()).thenReturn("foo");
 
@@ -114,4 +119,3 @@ public class DataStoreRestorerLocalImplTest
       out.closeEntry();
     }
   }
-}

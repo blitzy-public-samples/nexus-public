@@ -13,11 +13,10 @@
 package org.sonatype.nexus.repository.content.error;
 
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static java.lang.String.format;
+import static java.lang.StringTemplate.STR;
 
 public class MissingAssetException
     extends RuntimeException
@@ -52,12 +51,10 @@ public class MissingAssetException
   }
 
   private String buildMessage() {
-    String message = format("missing asset with path '%s'", assetPath);
+    String message = STR."missing asset with path '\{assetPath}'";
 
     if (isWritableMember && UNSUPPORTED_FORMATS.contains(format)) {
-      message = format("%s, %s", message, format(
-          "staging moves are not supported for hosted repositories that are configured as the writable member for a %s group repository.",
-          format));
+      message = STR."\{message}, staging moves are not supported for hosted repositories that are configured as the writable member for a \{format} group repository.";
     }
     return message;
   }
@@ -80,11 +77,10 @@ public class MissingAssetException
   }
 
   public Map<String, String> getData() {
-    Map<String, String> data = new HashMap<>();
-    data.put("path", assetPath);
-    data.put("component", componentName);
-    data.put("repository", repositoryName);
-
-    return data;
+    return Map.of(
+        "path", assetPath,
+        "component", componentName,
+        "repository", repositoryName
+    );
   }
 }

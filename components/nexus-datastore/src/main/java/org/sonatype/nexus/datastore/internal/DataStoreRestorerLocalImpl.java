@@ -16,11 +16,17 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.zip.ZipFile;
+import java.util.zip.ZipEntry;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.app.ApplicationDirectories;
@@ -84,34 +90,61 @@ public class DataStoreRestorerLocalImpl
       return false;
     }
 
-    for (File backup : files) {
-      log.info("Checking for backup of '{}' in '{}'", dataStoreFileName, backup.getAbsolutePath());
-
-      if (restore(dbPath, backup, dataStoreFileName)) {
-        return true;
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      List<Future<Boolean>> futures = new ArrayList<>();
+      
+      for (File backup : files) {
+        log.info("Checking for backup of '{}' in '{}'", dataStoreFileName, backup.getAbsolutePath());
+        
+        futures.add(executor.submit(() -> restore(dbPath, backup, dataStoreFileName)));
+      }
+      
+      // Check if any of the restore operations succeeded
+      for (Future<Boolean> future : futures) {
+        try {
+          if (future.get()) {
+            return true;
+          }
+        } catch (Exception e) {
+          log.error("Error during restore operation", e);
+        }
       }
     }
-
+    
     return false;
   }
 
   private boolean restore(final Path dbDirectory, final File backupArchive, final String dataStoreFileName) {
     try (ZipFile zip = new ZipFile(backupArchive)) {
-      return zip.stream().filter(entry -> entry.getName().equals(dataStoreFileName)).findFirst().map(entry -> {
-        try {
-          Files.copy(zip.getInputStream(entry), dbDirectory.resolve(entry.getName()));
-          log.info("Restored {}", entry.getName());
-          return true;
-        }
-        catch (IOException e) {
-          throw new RuntimeException(
-              "Failed to extract " + entry.getName() + " from archive: " + backupArchive.getAbsolutePath(), e);
-        }
-      }).orElse(false);
-    }
-    catch (IOException e) {
+      return zip.stream()
+          .filter(entry -> entry.getName().equals(dataStoreFileName))
+          .findFirst()
+          .map(entry -> {
+            try {
+              Thread.startVirtualThread(() -> {
+                try {
+                  extractFile(zip, entry, dbDirectory);
+                } catch (IOException e) {
+                  throw new RuntimeException(
+                      "Failed to extract " + entry.getName() + " from archive: " + backupArchive.getAbsolutePath(), e);
+                }
+              }).join(); // Wait for the virtual thread to complete
+              
+              log.info("Restored {}", entry.getName());
+              return true;
+            } catch (Exception e) {
+              throw new RuntimeException(
+                  "Failed to extract " + entry.getName() + " from archive: " + backupArchive.getAbsolutePath(), e);
+            }
+          })
+          .orElse(false);
+    } catch (IOException e) {
       throw new RuntimeException("Failed to open archive: " + backupArchive.getAbsolutePath(), e);
     }
+  }
+  
+  private void extractFile(ZipFile zip, ZipEntry entry, Path destination) throws IOException {
+    Files.copy(zip.getInputStream(entry), destination.resolve(entry.getName()));
   }
 
   private File getDbDirectory() {

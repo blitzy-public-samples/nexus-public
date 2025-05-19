@@ -18,6 +18,10 @@ import java.sql.Statement;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -35,13 +39,15 @@ import org.sonatype.nexus.scheduling.UpgradeTaskScheduler;
 import org.sonatype.nexus.upgrade.datastore.DatabaseMigrationUtility;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.lang.String.format;
 import static java.util.stream.Collectors.toSet;
 import static org.sonatype.nexus.datastore.api.DataStoreManager.DEFAULT_DATASTORE_NAME;
 
 /**
  * Check if the {format}_component table has the normalized_version column. If not schedule the
  * NormalizeComponentVersionTask to run after startup is complete.
+ * 
+ * Updated for Java 21 to leverage Virtual Threads for improved performance in database operations
+ * and component normalization.
  */
 @Named
 @Singleton
@@ -49,17 +55,16 @@ public class ComponentNormalizationIntegrityChecker
     extends ComponentSupport
     implements DatabaseIntegrityChecker
 {
-  private final String TABLE_NAME = "%s_component";
+  // Using String Templates (JEP 430) for SQL statements and table/column names
+  private static final String TABLE_NAME = STR."%s_component";
+  private static final String COLUMN_NAME = "normalized_version";
+  private static final String INDEX_NAME = STR."idx_%s_normalized_version";
+  
+  private static final String ADD_COLUMN_STATEMENT =
+      STR."ALTER TABLE %TABLE_NAME% ADD COLUMN IF NOT EXISTS %COLUMN_NAME% VARCHAR;";
 
-  private final String COLUMN_NAME = "normalized_version";
-
-  private final String INDEX_NAME = "idx_%s_normalized_version";
-
-  private final String ADD_COLUMN_STATEMENT =
-      format("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s VARCHAR;", TABLE_NAME, COLUMN_NAME);
-
-  private final String ADD_INDEX_STATEMENT =
-      "CREATE INDEX IF NOT EXISTS %s ON %s (" + COLUMN_NAME + ")";
+  private static final String ADD_INDEX_STATEMENT =
+      STR."CREATE INDEX IF NOT EXISTS %s ON %s (%COLUMN_NAME%)";
 
   private final List<Format> formats;
 
@@ -92,24 +97,55 @@ public class ComponentNormalizationIntegrityChecker
 
   @Override
   public void checkAndRepair(Connection connection) throws SQLException {
-    log.info("validating normalized_version columns");
-    alterFormats(connection);
+    log.info("Validating normalized_version columns using Virtual Threads");
+    
+    // Use Virtual Threads for database operations
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Execute database alterations using Virtual Threads
+      CompletableFuture.runAsync(() -> {
+        try {
+          alterFormats(connection);
+        } 
+        catch (SQLException e) {
+          log.error(STR."Error altering formats: %{e.getMessage()}", e);
+          throw new RuntimeException(e);
+        }
+      }, executor).join();
+      
+      // Use Virtual Threads to parallelize the streaming of unnormalized components
+      Set<Format> formatsNeedingNormalization = formats.stream()
+          .map(format -> CompletableFuture.supplyAsync(() -> {
+            boolean needsNormalization = !managersByFormat.get(format.getValue())
+                .componentStore(DEFAULT_DATASTORE_NAME)
+                .browseUnnormalized(1, null)
+                .isEmpty();
+            return needsNormalization ? format : null;
+          }, executor))
+          .map(CompletableFuture::join)
+          .filter(format -> format != null)
+          .collect(toSet());
+      
+      boolean needsNormalization = !formatsNeedingNormalization.isEmpty();
 
-    Set<Format> formatsNeedingNormalization = formats.stream().filter(format ->
-        !managersByFormat.get(format.getValue())
-            .componentStore(DEFAULT_DATASTORE_NAME)
-            .browseUnnormalized(1, null)
-            .isEmpty()).collect(toSet());
-    boolean needsNormalization = !formatsNeedingNormalization.isEmpty();
-
-    if (needsNormalization) {
-      log.info("Formats detected needing normalization {}", formatsNeedingNormalization);
-      formatsNeedingNormalization.forEach(this::markFormatAsNeedingNormalization);
-      scheduleTask();
+      if (needsNormalization) {
+        log.info(STR."Formats detected needing normalization: %{formatsNeedingNormalization}");
+        
+        // Use Virtual Threads to mark formats in parallel
+        CompletableFuture.allOf(
+            formatsNeedingNormalization.stream()
+                .map(format -> CompletableFuture.runAsync(
+                    () -> markFormatAsNeedingNormalization(format), executor))
+                .toArray(CompletableFuture[]::new)
+        ).join();
+        
+        // Schedule the normalization task using Virtual Threads
+        CompletableFuture.runAsync(this::scheduleTask, executor).join();
+      }
     }
   }
 
   private void markFormatAsNeedingNormalization(final Format format) {
+    log.debug(STR."Marking format %{format.getValue()} as needing normalization");
     NexusKeyValue kv = new NexusKeyValue();
     kv.setKey(getFormatKey(format));
     kv.setType(ValueType.BOOLEAN);
@@ -119,6 +155,8 @@ public class ComponentNormalizationIntegrityChecker
   }
 
   private void scheduleTask() {
+    log.debug("Scheduling NormalizeComponentVersionTask to run after startup");
+    // The task itself will use Virtual Threads for its execution
     startupScheduler.schedule(taskScheduler.createTaskConfigurationInstance(
         NormalizeComponentVersionTaskDescriptor.TYPE_ID));
   }
@@ -135,25 +173,26 @@ public class ComponentNormalizationIntegrityChecker
       throws SQLException
   {
     String formatName = format.getValue();
-    String tableName = format(TABLE_NAME, formatName).toUpperCase();
+    String tableName = STR."%{formatName}_component".toUpperCase();
 
     if (!databaseMigrationUtility.tableExists(connection, tableName)) {
-      log.debug("{} component table not found", formatName);
-      throw new SQLException("Unable to repair " + tableName + " because it wasn't yet created");
+      log.debug(STR."Table %{tableName} not found for format %{formatName}");
+      throw new SQLException(STR."Unable to repair %{tableName} because it wasn't yet created");
     }
 
     if (!databaseMigrationUtility.columnExists(connection, tableName, COLUMN_NAME)) {
-      log.info("adding missing column '{}' to {} format", COLUMN_NAME, formatName);
-      alterStatement.execute(format(ADD_COLUMN_STATEMENT, formatName));
+      log.info(STR."Adding missing column '%{COLUMN_NAME}' to %{formatName} format");
+      alterStatement.execute(STR."ALTER TABLE %{formatName}_component ADD COLUMN IF NOT EXISTS %{COLUMN_NAME} VARCHAR;");
 
-      if (!databaseMigrationUtility.indexExists(connection, format(INDEX_NAME, formatName))) {
-        log.info("adding missing index '{}' to {} format", format(INDEX_NAME, formatName), formatName);
-        alterStatement.execute(format(ADD_INDEX_STATEMENT, format(INDEX_NAME, formatName), tableName));
+      String indexName = STR."idx_%{formatName}_normalized_version";
+      if (!databaseMigrationUtility.indexExists(connection, indexName)) {
+        log.info(STR."Adding missing index '%{indexName}' to %{formatName} format");
+        alterStatement.execute(STR."CREATE INDEX IF NOT EXISTS %{indexName} ON %{tableName} (%{COLUMN_NAME});");
       }
     }
   }
 
   private String getFormatKey(final Format format) {
-    return format(NormalizeComponentVersionTask.KEY_FORMAT, format.getValue());
+    return STR."%{NormalizeComponentVersionTask.KEY_FORMAT}%{format.getValue()}";
   }
 }

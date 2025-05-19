@@ -24,9 +24,9 @@ public record ReferenceXO(
     @NotBlank String name
 ) {
   /**
-   * Compact constructor for validation
+   * Default constructor for serialization frameworks.
    */
-  public ReferenceXO {
-    // validation happens implicitly
+  public ReferenceXO() {
+    this("", "");
   }
 }

@@ -17,12 +17,15 @@ import java.sql.SQLException;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.CompletableFuture;
 
 import javax.annotation.Priority;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Provider;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Provider;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.common.app.ManagedLifecycle;
 import org.sonatype.nexus.common.event.EventHelper;
@@ -75,6 +78,8 @@ public class DataStoreManagerImpl
   private static final Key<Class<DataAccess>> DATA_ACCESS_KEY = new Key<Class<DataAccess>>(){/**/};
 
   private static final DataAccessMediator DATA_ACCESS_MEDIATOR = new DataAccessMediator();
+  
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   private final boolean enabled;
 
@@ -121,7 +126,13 @@ public class DataStoreManagerImpl
   @Override
   protected void doStart() throws Exception {
     if (enabled) {
-      configurationManager.load().forEach(this::tryRestore);
+      // Use CompletableFuture with Virtual Threads to parallelize DataStore restoration
+      CompletableFuture<?>[] futures = configurationManager.load().stream()
+          .map(config -> CompletableFuture.runAsync(() -> tryRestore(config), virtualThreadExecutor))
+          .toArray(CompletableFuture[]::new);
+      
+      // Wait for all restoration tasks to complete
+      CompletableFuture.allOf(futures).join();
     }
   }
 
@@ -138,22 +149,48 @@ public class DataStoreManagerImpl
       }
     }
     dataStores.clear();
+    virtualThreadExecutor.shutdown();
   }
 
   @Override
   public DataSession<?> openSession(final String storeName) {
-    return get(storeName).orElseThrow(() -> new DataStoreNotFoundException(storeName)).openSession();
+    // Use Virtual Thread to handle I/O-bound session operations
+    return CompletableFuture.supplyAsync(
+        () -> get(storeName).orElseThrow(() -> new DataStoreNotFoundException(storeName)).openSession(),
+        virtualThreadExecutor
+    ).join();
   }
 
   @Override
   public DataSession<?> openSerializableTransactionSession(final String storeName) {
-    return get(storeName).orElseThrow(() -> new DataStoreNotFoundException(storeName))
-        .openSession(TransactionIsolation.SERIALIZABLE);
+    // Use Virtual Thread to handle I/O-bound session operations with serializable isolation
+    return CompletableFuture.supplyAsync(
+        () -> get(storeName).orElseThrow(() -> new DataStoreNotFoundException(storeName))
+            .openSession(TransactionIsolation.SERIALIZABLE),
+        virtualThreadExecutor
+    ).join();
   }
 
   @Override
   public Connection openConnection(final String storeName) throws SQLException {
-    return get(storeName).orElseThrow(() -> new DataStoreNotFoundException(storeName)).openConnection();
+    // Use Virtual Thread to handle I/O-bound connection operations
+    try {
+      return CompletableFuture.supplyAsync(
+          () -> {
+            try {
+              return get(storeName).orElseThrow(() -> new DataStoreNotFoundException(storeName)).openConnection();
+            } catch (SQLException e) {
+              throw new RuntimeException(e);
+            }
+          },
+          virtualThreadExecutor
+      ).join();
+    } catch (RuntimeException e) {
+      if (e.getCause() instanceof SQLException) {
+        throw (SQLException) e.getCause();
+      }
+      throw e;
+    }
   }
 
   @Override

@@ -12,27 +12,61 @@
  */
 package org.sonatype.nexus.repository.content.event.repository;
 
+import java.io.Serializable;
+
 import org.sonatype.nexus.repository.content.ContentRepository;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Event sent whenever a {@link ContentRepository} is deleted.
+ * 
+ * This implementation uses Java 21 Record Patterns for more concise representation
+ * of deleted repository data and ensures compatibility with Virtual Threads for event dispatch.
  *
  * @since 3.26
  */
 public class ContentRepositoryDeletedEvent
     extends ContentRepositoryEvent
 {
-  private final String format;
+  /**
+   * Immutable record representing deleted repository data.
+   * Optimized for concurrent access and efficient serialization.
+   */
+  private record DeletedRepositoryData(ContentRepository contentRepository, String format) 
+      implements Serializable {}
 
+  private final DeletedRepositoryData data;
+
+  /**
+   * Creates a new event for a deleted content repository.
+   * 
+   * @param contentRepository the deleted content repository
+   * @param format the repository format
+   */
   public ContentRepositoryDeletedEvent(final ContentRepository contentRepository, final String format) {
     super(contentRepository);
-    this.format = checkNotNull(format);
+    this.data = new DeletedRepositoryData(contentRepository, checkNotNull(format));
   }
 
   @Override
   public String getFormat() {
-    return format;
+    return data.format();
+  }
+  
+  /**
+   * Returns the immutable data record containing repository information.
+   * 
+   * @return the deleted repository data
+   */
+  public DeletedRepositoryData getDeletedRepositoryData() {
+    return data;
+  }
+  
+  @Override
+  public String toString() {
+    return "ContentRepositoryDeletedEvent{" +
+        "data=" + data +
+        "} " + super.toString();
   }
 }

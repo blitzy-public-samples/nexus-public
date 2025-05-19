@@ -17,9 +17,15 @@ import java.util.function.BiConsumer;
 import java.util.function.BiPredicate;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.virtualthread.Java21TestGroup;
 
+// JUnit Jupiter imports for JUnit 5
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+// JUnit 4 compatibility imports
+import org.junit.Test;
+import org.junit.experimental.categories.Category;
+// Mockito imports
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -33,15 +39,13 @@ import static org.sonatype.nexus.common.log.ExceptionSummarizer.warn;
 /**
  * Tests for {@link ExceptionSummarizer}.
  * 
- * <p>Updated for Java 21 compatibility using JUnit Jupiter 5.10.1 and Mockito 4.11.0.</p>
- * 
- * <p>This test verifies the exception summarization logic that prevents log flooding by
- * aggregating repeated exceptions and providing periodic summaries instead of full stack traces.</p>
- * 
- * @since 3.6
+ * These tests validate the exception summarization functionality which is critical for log management
+ * in Java 21 environments where improved exception handling and virtual threads can generate
+ * different exception patterns.
  */
 @ExtendWith(MockitoExtension.class)
-class ExceptionSummarizerTest
+@Category(Java21TestGroup.class)
+public class ExceptionSummarizerTest
     extends TestSupport
 {
   @Mock
@@ -57,8 +61,13 @@ class ExceptionSummarizerTest
 
   private TestExceptionSummarizer underTest;
 
+  /**
+   * Tests exception summarization by type, which is particularly important in Java 21
+   * where virtual threads may generate more exceptions during high concurrency operations.
+   * This ensures log files remain manageable even with increased thread counts.
+   */
   @Test
-  void summarizeExceptionsByType() throws Exception {
+  public void summarizeExceptionsByTypeShouldGroupSimilarExceptions() throws Exception {
     underTest = new TestExceptionSummarizer(sameType(), warn(log));
 
     underTest.log("oops", firstCause); // <-- full stack
@@ -98,8 +107,13 @@ class ExceptionSummarizerTest
     inOrder.verifyNoMoreInteractions();
   }
 
+  /**
+   * Tests exception summarization by message text, which helps manage logs when
+   * Java 21 virtual threads produce exceptions with identical messages but from different
+   * thread contexts. This is especially relevant for I/O operations that may use virtual threads.
+   */
   @Test
-  void summarizeExceptionsByText() throws Exception {
+  public void summarizeExceptionsByTextShouldGroupExceptionsWithSameMessage() throws Exception {
     underTest = new TestExceptionSummarizer(sameText(), warn(log));
 
     underTest.log("oops", firstCause); // <-- full stack
@@ -145,9 +159,7 @@ class ExceptionSummarizerTest
 
   /**
    * Stubbed {@link ExceptionSummarizer} that lets tests move time forward without sleeping.
-   * 
-   * <p>This test helper allows precise control over the time-based logic in ExceptionSummarizer
-   * without requiring actual thread sleeps, making tests faster and more deterministic.</p>
+   * This approach is compatible with Java 21's improved time handling and virtual thread scheduling.
    */
   private static class TestExceptionSummarizer
       extends ExceptionSummarizer

@@ -15,6 +15,9 @@ package org.sonatype.nexus.repository.content.fluent.internal;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
+import java.util.SequencedSet;
+import java.util.SequencedCollection;
+import java.util.LinkedHashSet;
 
 import javax.annotation.Nullable;
 
@@ -24,7 +27,6 @@ import org.sonatype.nexus.repository.content.fluent.constraints.FluentQueryConst
 import org.sonatype.nexus.repository.types.GroupType;
 
 import static java.util.Collections.singleton;
-import static java.util.stream.Collectors.toSet;
 
 /**
  * Utility methods used by both {@link FluentAssetsImpl} and {@link FluentComponentsImpl}
@@ -36,10 +38,25 @@ final class RepositoryContentUtil
   private RepositoryContentUtil() {
   }
 
+  /**
+   * Checks if the given repository is a group repository using pattern matching.
+   * 
+   * @param repository the repository to check
+   * @return true if the repository is a group repository, false otherwise
+   */
   static boolean isGroupRepository(final Repository repository) {
-    return GroupType.NAME.equals(repository.getType().getValue());
+    // Using Java 21 pattern matching for instanceof to check repository type
+    return repository.getType() instanceof GroupType;
   }
 
+  /**
+   * Get repository IDs based on constraints or fallback to the content facet's repository ID.
+   * 
+   * @param constraints the query constraints or null if none
+   * @param contentFacet the content facet
+   * @param repository the repository
+   * @return a set of repository IDs
+   */
   static Set<Integer> getRepositoryIds(
       @Nullable final List<FluentQueryConstraint> constraints,
       final ContentFacet contentFacet,
@@ -50,12 +67,22 @@ final class RepositoryContentUtil
       return singleton(contentFacet.contentRepositoryId());
     }
 
-    Set<Integer> repositoryIds = constraints.stream()
-        .map(constraint -> constraint.getRepositoryIds(repository))
-        .flatMap(Collection::stream)
-        .collect(toSet());
-
-    constraints.forEach(constraint -> repositoryIds.addAll(constraint.getRepositoryIds(repository)));
+    // Use SequencedSet to maintain order of repository IDs
+    // Java 21 Sequenced Collections API provides better handling of ordered collections
+    SequencedSet<Integer> repositoryIds = new LinkedHashSet<>();
+    
+    // Process each constraint and collect repository IDs
+    for (var constraint : constraints) {
+      // Use pattern matching to handle different types of collections
+      Collection<Integer> ids = constraint.getRepositoryIds(repository);
+      if (ids instanceof SequencedCollection<Integer> seqIds) {
+        // Add elements in their encounter order if it's a sequenced collection
+        seqIds.forEach(repositoryIds::add);
+      } else {
+        // Otherwise just add all elements
+        repositoryIds.addAll(ids);
+      }
+    }
 
     // if we get to this point and no repository has been selected based on constraints, fallback to the repository
     // of the contentFacet supplied

@@ -17,9 +17,9 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.Iterator;
 import java.util.List;
-import java.util.PriorityQueue;
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -117,30 +117,38 @@ public class DeleteFolderServiceImpl
       int maxNodes,
       boolean canDeleteComponent)
   {
-    Queue<String> pathQueue = new PriorityQueue<>();
+    // Using a ConcurrentLinkedQueue instead of PriorityQueue for thread-safety with virtual threads
+    ConcurrentLinkedQueue<String> pathQueue = new ConcurrentLinkedQueue<>();
     pathQueue.add(treePath);
 
-    while (checkCancellation() && !pathQueue.isEmpty()) {
-      String nodePath = pathQueue.poll();
-
-      List<String> pathSegments = Splitter.on('/').omitEmptyStrings().splitToList(nodePath);
-
-      Iterable<BrowseNode> nodes = browseNodeQueryService.getByPath(repository, pathSegments, maxNodes);
-      Iterator<BrowseNode> nodeIterator = nodes.iterator();
-
-      while (checkCancellation() && nodeIterator.hasNext()) {
-        BrowseNode node = nodeIterator.next();
-
-        if (!node.isLeaf()) {
-          pathQueue.offer(nodePath + "/" + node.getName());
-        }
-        else {
-          checkDeleteComponent(timestamp, contentFacet, contentMaintenance, canDeleteComponent, node);
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      while (checkCancellation() && !pathQueue.isEmpty()) {
+        String nodePath = pathQueue.poll();
+        if (nodePath == null) {
+          continue;
         }
 
-        checkDeleteAsset(repository, timestamp, contentFacet, contentMaintenance, node);
+        List<String> pathSegments = Splitter.on('/').omitEmptyStrings().splitToList(nodePath);
+
+        Iterable<BrowseNode> nodes = browseNodeQueryService.getByPath(repository, pathSegments, maxNodes);
+        Iterator<BrowseNode> nodeIterator = nodes.iterator();
+
+        while (checkCancellation() && nodeIterator.hasNext()) {
+          BrowseNode node = nodeIterator.next();
+
+          if (!node.isLeaf()) {
+            pathQueue.offer(nodePath + "/" + node.getName());
+          }
+          else {
+            // Submit leaf node processing to virtual thread executor
+            executor.submit(() -> {
+              checkDeleteComponent(timestamp, contentFacet, contentMaintenance, canDeleteComponent, node);
+              checkDeleteAsset(repository, timestamp, contentFacet, contentMaintenance, node);
+            });
+          }
+        }
       }
-    }
+    } // executor is automatically closed here with try-with-resources
   }
 
   public void deleteFoldersAndBrowseNode(
@@ -159,14 +167,16 @@ public class DeleteFolderServiceImpl
     Instant start = Instant.now();
     BrowseFacet browseFacet = repository.facet(BrowseFacet.class);
 
-    ConcurrentLinkedDeque<String> pathStack = new ConcurrentLinkedDeque<>();
-    pathStack.push(treePath);
+    // Using a ConcurrentLinkedQueue instead of ConcurrentLinkedDeque for better performance with virtual threads
+    ConcurrentLinkedQueue<String> pathQueue = new ConcurrentLinkedQueue<>();
+    pathQueue.add(treePath);
 
-    while (checkCancellation() && !pathStack.isEmpty()) {
-      processNodesAndLeaves(repository, timestamp, contentFacet, contentMaintenance, maxNodes, canDeleteComponent,
-          pathStack,
-          browseFacet);
-    }
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      while (checkCancellation() && !pathQueue.isEmpty()) {
+        processNodesAndLeaves(repository, timestamp, contentFacet, contentMaintenance, maxNodes, canDeleteComponent,
+            pathQueue, browseFacet, executor);
+      }
+    } // executor is automatically closed here with try-with-resources
 
     Instant end = Instant.now();
     Duration duration = Duration.between(start, end);
@@ -182,10 +192,15 @@ public class DeleteFolderServiceImpl
       final ContentMaintenanceFacet contentMaintenance,
       final int maxNodes,
       final boolean canDeleteComponent,
-      final ConcurrentLinkedDeque<String> pathStack,
-      final BrowseFacet browseFacet)
+      final ConcurrentLinkedQueue<String> pathQueue,
+      final BrowseFacet browseFacet,
+      final ExecutorService executor)
   {
-    String nodePath = pathStack.poll();
+    String nodePath = pathQueue.poll();
+    if (nodePath == null) {
+      return;
+    }
+    
     if (log.isTraceEnabled()) {
       log.trace("Processing node: '{}'", nodePath);
     }
@@ -199,24 +214,30 @@ public class DeleteFolderServiceImpl
       // I'm going to transform the treePath to a request path
       String requestPath = transformTreePathToRequestPath(nodePath);
 
-      browseFacet.getByRequestPath(requestPath).ifPresent(
-          node -> browseFacet.deleteByNodeId(((BrowseNodeData) node).getNodeId())
-      );
+      browseFacet.getByRequestPath(requestPath).ifPresent(node -> {
+        // Using pattern matching for instanceof check
+        if (node instanceof BrowseNodeData nodeData) {
+          browseFacet.deleteByNodeId(nodeData.getNodeId());
+        }
+      });
     }
     else {
       // This folder has children. I'm going to push the parent to the stack
       // So I can delete the children first and then delete the parent
-      pathStack.push(nodePath);
+      pathQueue.add(nodePath);
 
       for (BrowseNode node : nodes) {
         checkCancellation();
 
         if (!node.isLeaf()) {
-          pathStack.push(nodePath + "/" + node.getName());
+          pathQueue.add(nodePath + "/" + node.getName());
         }
         else {
-          processLeafDeletion(browseFacet, timestamp, contentFacet, contentMaintenance,
-              canDeleteComponent, repository, node);
+          // Submit leaf processing to virtual thread executor for parallel processing
+          executor.submit(() -> {
+            processLeafDeletion(browseFacet, timestamp, contentFacet, contentMaintenance,
+                canDeleteComponent, repository, node);
+          });
         }
       }
     }
@@ -316,12 +337,13 @@ public class DeleteFolderServiceImpl
       Repository repository,
       BrowseNode node)
   {
-    BrowseNodeData nodeData = (BrowseNodeData) node;
-    if (log.isTraceEnabled()) {
-      log.trace("Processing leaf: '{}'", nodeData.getPath());
+    // Using pattern matching for instanceof check
+    if (node instanceof BrowseNodeData nodeData) {
+      if (log.isTraceEnabled()) {
+        log.trace("Processing leaf: '{}'", nodeData.getPath());
+      }
+      browseFacet.deleteByNodeId(nodeData.getNodeId());
+      checkDeleteComponent(timestamp, contentFacet, contentMaintenance, canDeleteComponent, node);
+      checkDeleteAsset(repository, timestamp, contentFacet, contentMaintenance, node);
     }
-    browseFacet.deleteByNodeId(nodeData.getNodeId());
-    checkDeleteComponent(timestamp, contentFacet, contentMaintenance, canDeleteComponent, node);
-    checkDeleteAsset(repository, timestamp, contentFacet, contentMaintenance, node);
   }
-}

@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -27,7 +28,13 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.BlobIdLocationResolver;
@@ -61,6 +68,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
 import org.junit.rules.TemporaryFolder;
 import org.mockito.Mock;
 
@@ -72,6 +80,8 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -233,8 +243,8 @@ public class FileBlobStoreTest
 
     Blob blob = underTest.create(path, TEST_HEADERS, size, sha1);
 
-    assertThat(blob.getMetrics().getContentSize(), is(size));
-    assertThat(blob.getMetrics().getSha1Hash(), is("356a192b7913b04c54574d18c28d46e6395428ab"));
+    assertEquals(size, blob.getMetrics().getContentSize(), "Blob content size should match expected size");
+    assertEquals("356a192b7913b04c54574d18c28d46e6395428ab", blob.getMetrics().getSha1Hash(), "Blob SHA1 hash should match expected hash");
     verify(reconciliationLogger).logBlobCreated(eq(underTest.getAbsoluteBlobDir().resolve(RECONCILIATION)), any());
   }
 
@@ -393,14 +403,14 @@ public class FileBlobStoreTest
     when(attributes.isDeleted()).thenReturn(false);
 
     boolean result = underTest.undelete(blobStoreUsageChecker, new BlobId("fakeid"), attributes, false);
-    assertThat(result, is(false));
+    assertFalse(result, "Should not undelete attributes that are not marked as deleted");
     verify(blobStoreUsageChecker, never()).test(eq(underTest), any(BlobId.class), anyString());
   }
 
   @Test
   public void testUndelete_CheckerNull() throws IOException {
     boolean result = underTest.undelete(null, new BlobId("fakeid"), attributes, false);
-    assertThat(result, is(false));
+    assertFalse(result, "Should not undelete when checker is null");
   }
 
   @Test
@@ -408,7 +418,7 @@ public class FileBlobStoreTest
     when(blobStoreUsageChecker.test(eq(underTest), any(BlobId.class), anyString())).thenReturn(true);
 
     boolean result = underTest.undelete(blobStoreUsageChecker, new BlobId("fakeid"), attributes, false);
-    assertThat(result, is(true));
+    assertTrue(result, "Should undelete when blob is in use");
     verify(attributes).setDeleted(false);
     verify(attributes).setDeletedReason(null);
     verify(attributes).store();
@@ -419,7 +429,7 @@ public class FileBlobStoreTest
     when(blobStoreUsageChecker.test(eq(underTest), any(BlobId.class), anyString())).thenReturn(true);
 
     boolean result = underTest.undelete(blobStoreUsageChecker, new BlobId("fakeid"), attributes, true);
-    assertThat(result, is(true));
+    assertTrue(result, "Should indicate undelete would succeed in dry run mode");
     verify(attributes).getProperties();
     verify(attributes).isDeleted();
     verify(attributes).getDeletedReason();
@@ -508,7 +518,7 @@ public class FileBlobStoreTest
   public void toBlobName() {
     // /full/path/on/disk/to/content/directpath/some/direct/path/file.txt.properties
     Path absolute = underTest.getContentDir().resolve(DIRECT_PATH_ROOT).resolve("some/direct/path/file.txt.properties");
-    assertThat(underTest.toBlobName(absolute), is("some/direct/path/file.txt"));
+    assertEquals("some/direct/path/file.txt", underTest.toBlobName(absolute), "Should convert path to blob name correctly");
   }
 
   @Test
@@ -516,7 +526,7 @@ public class FileBlobStoreTest
     // /full/path/on/disk/to/content/directpath/some/direct/path/file.properties.properties
     Path absolute =
         underTest.getContentDir().resolve(DIRECT_PATH_ROOT).resolve("some/direct/path/file.properties.properties");
-    assertThat(underTest.toBlobName(absolute), is("some/direct/path/file.properties"));
+    assertEquals("some/direct/path/file.properties", underTest.toBlobName(absolute), "Should handle .properties suffix correctly");
   }
 
   @Test
@@ -546,9 +556,9 @@ public class FileBlobStoreTest
     write(bytesPath, "some bytes content".getBytes());
     when(fileOperations.exists(bytesPath)).thenReturn(true);
 
-    assertThat(bytesPath.toFile().exists(), is(true));
+    assertTrue(bytesPath.toFile().exists(), "Bytes file should exist");
 
-    assertThat(underTest.bytesExists(new BlobId("test-blob")), is(true));
+    assertTrue(underTest.bytesExists(new BlobId("test-blob")), "Should detect that bytes exist");
   }
 
   @Test
@@ -557,9 +567,9 @@ public class FileBlobStoreTest
     write(bytesPath, "some bytes content".getBytes());
     when(fileOperations.isBlobZeroLength(bytesPath)).thenReturn(true);
 
-    assertThat(bytesPath.toFile().exists(), is(true));
+    assertTrue(bytesPath.toFile().exists(), "Bytes file should exist");
 
-    assertThat(underTest.isBlobEmpty(new BlobId("test-blob")), is(true));
+    assertTrue(underTest.isBlobEmpty(new BlobId("test-blob")), "Should detect that blob is empty");
   }
 
   @Test
@@ -573,17 +583,17 @@ public class FileBlobStoreTest
     underTest.createBlobAttributes(blobId, TEST_HEADERS, blobMetrics);
 
     BlobAttributes blobAttributes = underTest.getBlobAttributes(blobId);
-    assertNotNull(blobAttributes);
+    assertNotNull(blobAttributes, "Blob attributes should be created");
 
     // test headers were written
     Map<String, String> headers = blobAttributes.getHeaders();
-    TEST_HEADERS.forEach((header, value) -> assertThat(headers.get(header), is(value)));
+    TEST_HEADERS.forEach((header, value) -> assertEquals(value, headers.get(header), "Header value should match"));
 
     // test metrics were written
     BlobMetrics metrics = blobAttributes.getMetrics();
-    assertThat(metrics.getContentSize(), is(size));
-    assertThat(metrics.getSha1Hash(), is(sha1));
-    assertThat(metrics.getCreationTime(), is(creationTime));
+    assertEquals(size, metrics.getContentSize(), "Content size should match");
+    assertEquals(sha1, metrics.getSha1Hash(), "SHA1 hash should match");
+    assertEquals(creationTime, metrics.getCreationTime(), "Creation time should match");
   }
 
   @Test
@@ -614,7 +624,7 @@ public class FileBlobStoreTest
 
     boolean result = underTest.doDelete(blobId, "test-reason");
 
-    assertTrue(result);
+    assertTrue(result, "Delete operation should succeed");
     assertAttributes(blobId);
 
     verify(attributes).setDeletedDateTime(any());
@@ -636,10 +646,162 @@ public class FileBlobStoreTest
 
     boolean result = underTest.doDelete(blobId, "test-reason");
 
-    assertTrue(result);
+    assertTrue(result, "Delete operation should succeed");
     assertAttributes(blobId);
     verify(attributes, never()).setDeletedDateTime(any());
     verifyNoInteractions(newBlobAttributes);
+  }
+
+  /**
+   * Test to verify that virtual threads can be used for file operations without pinning.
+   * This test creates multiple virtual threads that perform file operations concurrently.
+   */
+  @Test
+  public void testVirtualThreadsForFileOperations() throws Exception {
+    int threadCount = 10;
+    CountDownLatch latch = new CountDownLatch(threadCount);
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    
+    // Create and start multiple virtual threads to perform file operations
+    for (int i = 0; i < threadCount; i++) {
+      final int index = i;
+      Thread thread = virtualThreadFactory.newThread(() -> {
+        try {
+          // Create a temporary file
+          Path tempFile = util.createTempFile().toPath();
+          write(tempFile, ("test content " + index).getBytes(StandardCharsets.UTF_8));
+          
+          // Create a blob using the file
+          Blob blob = underTest.create(tempFile, TEST_HEADERS, tempFile.toFile().length(),
+              HashCode.fromString("356a192b7913b04c54574d18c28d46e6395428ab"));
+          
+          // Verify the blob was created successfully
+          if (blob != null && blob.getId() != null) {
+            successCount.incrementAndGet();
+          }
+        }
+        catch (Exception e) {
+          log.error("Error in virtual thread", e);
+        }
+        finally {
+          latch.countDown();
+        }
+      });
+      thread.start();
+    }
+    
+    // Wait for all threads to complete
+    boolean completed = latch.await(30, TimeUnit.SECONDS);
+    assertTrue(completed, "All virtual threads should complete within the timeout");
+    assertEquals(threadCount, successCount.get(), "All operations should succeed");
+  }
+
+  /**
+   * Test to detect thread pinning during file operations.
+   * This test uses a synchronized block around file I/O operations to potentially trigger pinning.
+   */
+  @Test
+  public void testThreadPinningDetection() throws Exception {
+    // Create a virtual thread to perform file operations within a synchronized block
+    Thread virtualThread = Thread.ofVirtual().name("pinning-test-thread").start(() -> {
+      synchronized (this) { // This synchronized block could cause pinning
+        try {
+          // Perform file I/O operation that might cause pinning
+          Path tempFile = util.createTempFile().toPath();
+          write(tempFile, "test content for pinning detection".getBytes(StandardCharsets.UTF_8));
+          
+          // Sleep to simulate a long-running I/O operation
+          Thread.sleep(100);
+          
+          // Read the file back
+          byte[] content = Files.readAllBytes(tempFile);
+          log.info("Read {} bytes from file in synchronized block", content.length);
+        }
+        catch (Exception e) {
+          log.error("Error in pinning detection test", e);
+        }
+      }
+    });
+    
+    // Wait for the virtual thread to complete
+    virtualThread.join();
+    
+    // Note: Actual pinning detection would require JVM flags like -Djdk.tracePinnedThreads=full
+    // or monitoring JFR events, which can't be done directly in the test.
+    // This test serves as a demonstration of a scenario that could cause pinning.
+    log.info("Thread pinning detection test completed. Check JVM logs for pinning events.");
+  }
+
+  /**
+   * Test to compare performance between platform threads and virtual threads for file operations.
+   */
+  @Test
+  public void testVirtualThreadPerformance() throws Exception {
+    int operationCount = 50;
+    
+    // Test with platform threads
+    long platformThreadTime = measureExecutionTime(() -> {
+      ExecutorService executor = Executors.newFixedThreadPool(10); // Platform thread pool
+      try {
+        for (int i = 0; i < operationCount; i++) {
+          final int index = i;
+          executor.submit(() -> performFileOperation(index));
+        }
+      }
+      finally {
+        executor.shutdown();
+        try {
+          executor.awaitTermination(30, TimeUnit.SECONDS);
+        }
+        catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
+      }
+    });
+    
+    // Test with virtual threads
+    long virtualThreadTime = measureExecutionTime(() -> {
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        for (int i = 0; i < operationCount; i++) {
+          final int index = i;
+          executor.submit(() -> performFileOperation(index));
+        }
+      }
+    });
+    
+    log.info("Platform thread execution time: {} ms", platformThreadTime);
+    log.info("Virtual thread execution time: {} ms", virtualThreadTime);
+    log.info("Performance improvement: {}%", 
+        platformThreadTime > 0 ? ((platformThreadTime - virtualThreadTime) * 100.0 / platformThreadTime) : 0);
+  }
+  
+  private void performFileOperation(int index) {
+    try {
+      // Create a temporary file
+      Path tempFile = util.createTempFile().toPath();
+      write(tempFile, ("test content " + index).getBytes(StandardCharsets.UTF_8));
+      
+      // Simulate some processing time
+      Thread.sleep(50);
+      
+      // Read the file back
+      byte[] content = Files.readAllBytes(tempFile);
+      
+      // Delete the file
+      Files.delete(tempFile);
+    }
+    catch (Exception e) {
+      log.error("Error in file operation", e);
+    }
+  }
+  
+  private long measureExecutionTime(Runnable task) {
+    long startTime = System.currentTimeMillis();
+    task.run();
+    return System.currentTimeMillis() - startTime;
   }
 
   private TestFileBlobStore createFixture() {

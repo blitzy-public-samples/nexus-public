@@ -14,6 +14,18 @@
 /**
  * Application bootstrap.
  *
+ * <p>Responsible for system initialization, environment preparation, JVM configuration and validation,
+ * logging setup, and container startup and lifecycle management.</p>
+ *
+ * <p>This module has been updated to support Java 21 with the following enhancements:</p>
+ * <ul>
+ *   <li>JVM detection and validation for Java 21 compatibility</li>
+ *   <li>Updated configuration for Java 21 runtime options</li>
+ *   <li>Support for Java 21 features including Virtual Threads, Pattern Matching, and String Templates</li>
+ *   <li>Optimized startup sequence leveraging Java 21 performance improvements</li>
+ * </ul>
+ *
  * @since 3.0
+ * @since 3.60.0 Java 21 compatibility
  */
 package org.sonatype.nexus.bootstrap;

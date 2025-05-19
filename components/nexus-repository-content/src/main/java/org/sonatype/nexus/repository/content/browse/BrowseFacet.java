@@ -25,6 +25,9 @@ import org.sonatype.nexus.repository.browse.node.BrowseNode;
 
 /**
  * Browse {@link Facet} that maintains the browse tree.
+ * 
+ * Implementations may leverage Java 21 Virtual Threads for improved performance
+ * in I/O-bound operations, particularly during tree rebuilding operations.
  *
  * @since 3.26
  */
@@ -61,8 +64,13 @@ public interface BrowseFacet
 
   /**
    * Rebuilds the browse node tree for this repository.
+   * 
+   * This operation may be executed using Virtual Threads in Java 21 implementations
+   * to improve performance for large repositories with many assets.
+   * 
+   * @param progressUpdater optional consumer that receives progress updates during rebuilding
    */
-  void rebuildBrowseNodes(Consumer<String> progressUpdater);
+  void rebuildBrowseNodes(@Nullable Consumer<String> progressUpdater);
 
   /**
    * Deletes a browse node by its asset internal id and path.

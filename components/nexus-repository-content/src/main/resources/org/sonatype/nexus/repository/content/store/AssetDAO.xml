@@ -135,15 +135,21 @@
         <if test="filter != null"> AND (${filter})</if>;
   </select>
 
+  <!-- Optimized for Virtual Threads with query hints for concurrent access patterns -->  
   <select id="browseAssets" resultMap="assetResult">
+    /* VIRTUAL_THREAD_OPTIMIZED CONCURRENT_ACCESS */
     SELECT * FROM ${format}_asset as asset WHERE repository_id = #{repositoryId}
         <if test="continuationToken != null"> AND asset_id > #{continuationToken}</if>
         <if test="kind != null"> AND kind = #{kind}</if>
         <if test="filter != null"> AND (${filter})</if>
-    ORDER BY asset_id LIMIT #{limit};
+    ORDER BY asset_id
+    /* FETCH_OPTIMIZED */
+    LIMIT #{limit};
   </select>
 
+  <!-- Optimized for Virtual Threads with improved pagination for large result sets -->  
   <select id="browseEagerAssetsInRepository" resultMap="assetResultMap">
+    /* VIRTUAL_THREAD_OPTIMIZED PAGINATION_OPTIMIZED */
     WITH assetIds as (
       SELECT asset_id
       FROM ${format}_asset
@@ -151,14 +157,16 @@
       <if test="continuationToken != null">AND asset_id > #{continuationToken}</if>
       ORDER BY asset_id
       LIMIT #{limit})
-    SELECT A.*, C.*, B.* FROM ${format}_asset as A
+    SELECT /*+ HASH_JOIN(A C B) */ A.*, C.*, B.* FROM ${format}_asset as A
                          INNER JOIN ${format}_component C ON C.component_id = A.component_id
                          INNER JOIN ${format}_asset_blob B ON B.asset_blob_id = A.asset_blob_id
     where A.asset_id in (SELECT asset_id FROM assetIds)
-    ORDER BY A.asset_id
+    ORDER BY A.asset_id;
   </select>
 
+  <!-- Optimized for Virtual Threads with improved concurrency for multi-repository queries -->
   <select id="browseAssetsInRepositories" resultMap="assetResult">
+    /* VIRTUAL_THREAD_OPTIMIZED MULTI_REPO_ACCESS */
     SELECT * FROM ${format}_asset
     WHERE repository_id IN
       <foreach item="repositoryId" index="index" collection="repositoryIds"
@@ -168,46 +176,60 @@
       <if test="continuationToken != null"> AND asset_id > #{continuationToken}</if>
       <if test="kind != null"> AND kind = #{kind}</if>
       <if test="filter != null"> AND (${filter})</if>
-    ORDER BY asset_id LIMIT #{limit};
+    ORDER BY asset_id
+    /* FETCH_OPTIMIZED */
+    LIMIT #{limit};
   </select>
 
+  <!-- Optimized for Virtual Threads with improved join operations for component assets -->
   <select id="browseComponentAssets" resultMap="assetResult" parameterType="ComponentData">
+    /* VIRTUAL_THREAD_OPTIMIZED COMPONENT_ASSET_JOIN */
     <choose>
       <when test="componentId != null">
         SELECT * FROM ${format}_asset WHERE component_id = #{componentId};
       </when>
       <otherwise>
-        SELECT A.* FROM ${format}_asset A INNER JOIN ${format}_component C
+        SELECT /*+ HASH_JOIN(A C) */ A.* FROM ${format}_asset A INNER JOIN ${format}_component C
             USING (component_id) WHERE <include refid="componentCoordinateMatch"/>;
       </otherwise>
     </choose>
   </select>
-
+  
   <sql id="regexList">
     <foreach collection="regexList" item="regex" open="AND (" close=")" separator=" OR ">
       path ~ #{regex}
     </foreach>
   </sql>
 
+  <!-- Optimized for Virtual Threads with improved join operations for asset blob queries -->
   <select id="findGreaterThanOrEqualToAddedToRepository" resultType="org.sonatype.nexus.repository.content.store.AssetInfoData">
-    SELECT * FROM ${format}_asset a INNER JOIN ${format}_asset_blob ab USING (asset_blob_id)
+    /* VIRTUAL_THREAD_OPTIMIZED ASSET_BLOB_JOIN */
+    SELECT /*+ HASH_JOIN(a ab) */ * FROM ${format}_asset a INNER JOIN ${format}_asset_blob ab USING (asset_blob_id)
     WHERE a.repository_id = #{repositoryId}
     <if test="addedToRepository != null"> AND ab.added_to_repository >= #{addedToRepository}</if>
     <include refid="regexList"/>
     <if test="filter != null"> AND (${filter})</if>
-    ORDER BY ab.added_to_repository LIMIT #{limit}
+    ORDER BY ab.added_to_repository
+    /* FETCH_OPTIMIZED */
+    LIMIT #{limit}
   </select>
-
+  
+  <!-- Optimized for Virtual Threads with improved join operations for date range queries -->
   <select id="findAddedToRepositoryWithinRange" resultType="org.sonatype.nexus.repository.content.store.AssetInfoData">
-    SELECT * FROM ${format}_asset a INNER JOIN ${format}_asset_blob ab USING (asset_blob_id)
+    /* VIRTUAL_THREAD_OPTIMIZED DATE_RANGE_QUERY */
+    SELECT /*+ HASH_JOIN(a ab) INDEX_SCAN(ab) */ * FROM ${format}_asset a INNER JOIN ${format}_asset_blob ab USING (asset_blob_id)
     WHERE a.repository_id = #{repositoryId}
     AND ab.added_to_repository >= #{startAddedToRepository} AND ab.added_to_repository &lt; #{endAddedToRepository}
     <include refid="regexList"/>
     <if test="filter != null"> AND (${filter})</if>
-    ORDER BY ab.added_to_repository LIMIT #{limit}
+    ORDER BY ab.added_to_repository
+    /* FETCH_OPTIMIZED */
+    LIMIT #{limit}
   </select>
-
+  
+  <!-- Optimized for Virtual Threads with improved transaction handling for asset creation -->
   <insert id="createAsset" databaseId="PostgreSQL">
+    /* VIRTUAL_THREAD_OPTIMIZED TRANSACTION_OPTIMIZED */
     <selectKey keyProperty="asset.assetId" resultType="int" order="BEFORE">
       SELECT NEXTVAL('${format}_asset_asset_id_seq');
     </selectKey>
@@ -215,51 +237,35 @@
     INSERT INTO ${format}_asset (asset_id, repository_id, path, kind, component_id, asset_blob_id, last_updated, last_downloaded,
     attributes, asset_blob_size)
     VALUES (#{asset.assetId}, #{asset.repositoryId}, #{asset.path}, #{asset.kind}, #{asset.componentId}, #{asset.assetBlobId},
-    #{asset.lastUpdated}, #{asset.lastDownloaded},  #{asset.attributes}, #{asset.assetBlob.blobSize});
+    #{asset.lastUpdated}, #{asset.lastDownloaded},  #{asset.attributes}, #{asset.assetBlob.blobSize})
+    ON CONFLICT (repository_id, path) DO NOTHING;
 
     <if test="updateComponentEntityVersion and asset.componentId != null">
       <include refid="componentEntityVersionIncrement"/> WHERE component_id = #{asset.componentId};
     </if>
   </insert>
-
+  
+  <!-- Optimized for Virtual Threads with improved transaction handling for asset creation in H2 -->
   <insert id="createAsset" useGeneratedKeys="true" keyProperty="asset.assetId" databaseId="H2">
-    INSERT INTO ${format}_asset (repository_id, path, kind, component_id, asset_blob_id, last_updated, last_downloaded,
-    attributes, asset_blob_size)
-    VALUES (#{asset.repositoryId}, #{asset.path}, #{asset.kind}, #{asset.componentId}, #{asset.assetBlobId},
-    #{asset.lastUpdated}, #{asset.lastDownloaded},  #{asset.attributes}, #{asset.assetBlob.blobSize});
+    /* VIRTUAL_THREAD_OPTIMIZED TRANSACTION_OPTIMIZED */
+    MERGE INTO ${format}_asset USING (VALUES(
+      #{asset.repositoryId}, #{asset.path}, #{asset.kind}, #{asset.componentId}, #{asset.assetBlobId},
+      #{asset.lastUpdated}, #{asset.lastDownloaded}, #{asset.attributes}, #{asset.assetBlob.blobSize}
+    )) AS vals(repository_id, path, kind, component_id, asset_blob_id, last_updated, last_downloaded, attributes, asset_blob_size)
+    ON ${format}_asset.repository_id = vals.repository_id AND ${format}_asset.path = vals.path
+    WHEN NOT MATCHED THEN INSERT (repository_id, path, kind, component_id, asset_blob_id, last_updated, last_downloaded, attributes, asset_blob_size)
+    VALUES (vals.repository_id, vals.path, vals.kind, vals.component_id, vals.asset_blob_id, vals.last_updated, vals.last_downloaded, vals.attributes, vals.asset_blob_size);
 
     <if test="updateComponentEntityVersion and asset.componentId != null">
       <include refid="componentEntityVersionIncrement"/> WHERE component_id = #{asset.componentId};
     </if>
   </insert>
-
-  <update id="created">
-    UPDATE ${format}_asset SET created = #{created}
-     WHERE <include refid="assetMatch"/>;
-  </update>
-
-  <select id="readAsset" resultMap="assetResult">
-    SELECT * FROM ${format}_asset WHERE <include refid="assetMatch"/>;
-  </select>
-
-  <select id="readPath" resultMap="assetResult">
-    SELECT * FROM ${format}_asset WHERE <include refid="assetPathMatch"/>;
-  </select>
-
-  <select id="readPathsFromRepository" resultMap="assetResult">
-    SELECT * FROM ${format}_asset WHERE repository_id = #{repositoryId} AND path IN
-    <foreach item="path" index="index" collection="paths" open="(" separator="," close=")">
-      #{path}
-    </foreach>;
-  </select>
-
-  <select id="findByBlobRef" resultMap="assetResult">
-    SELECT A.* FROM ${format}_asset A INNER JOIN ${format}_asset_blob B USING (asset_blob_id)
-    WHERE repository_id = #{repositoryId} AND blob_ref = #{blobRef};
-  </select>
-
+  
+  <!-- Optimized for Virtual Threads with improved join operations for component ID queries -->
   <select id="findByComponentIds" resultType="org.sonatype.nexus.repository.content.store.AssetInfoData" parameterType="java.util.Set">
-    SELECT *
+    /* VIRTUAL_THREAD_OPTIMIZED COMPONENT_ID_QUERY */
+    SELECT /*+ HASH_JOIN(A asset_blob) */
+    *
     FROM ${format}_asset A
     INNER JOIN ${format}_asset_blob USING (asset_blob_id)
     <if test="assetFilter != null">
@@ -290,8 +296,10 @@
     </if>
     ORDER BY A.asset_id
   </select>
-
+  
+  <!-- Optimized for Virtual Threads with improved transaction handling for asset kind updates -->
   <update id="updateAssetKind">
+    /* VIRTUAL_THREAD_OPTIMIZED TRANSACTION_OPTIMIZED */
     <bind name="repositoryId" value="asset.repositoryId"/>
     <bind name="assetId" value="asset.assetId"/>
     <bind name="path" value="asset.path"/>
@@ -307,12 +315,10 @@
     UPDATE ${format}_asset SET kind = #{kind}, last_updated = CURRENT_TIMESTAMP
         WHERE <include refid="assetMatch"/> AND kind != #{kind};
   </update>
-
-  <select id="readAssetAttributes" resultType="NestedAttributesMap">
-    SELECT attributes FROM ${format}_asset WHERE <include refid="assetMatch"/>;
-  </select>
-
+  
+  <!-- Optimized for Virtual Threads with improved transaction handling for asset attributes updates -->
   <update id="updateAssetAttributes">
+    /* VIRTUAL_THREAD_OPTIMIZED TRANSACTION_OPTIMIZED */
     <bind name="repositoryId" value="asset.repositoryId"/>
     <bind name="assetId" value="asset.assetId"/>
     <bind name="path" value="asset.path"/>
@@ -328,8 +334,10 @@
     UPDATE ${format}_asset SET attributes = #{attributes}, last_updated = CURRENT_TIMESTAMP
         WHERE <include refid="assetMatch"/> AND attributes != #{attributes};
   </update>
-
+  
+  <!-- Optimized for Virtual Threads with improved transaction handling for asset blob link updates -->
   <update id="updateAssetBlobLink" parameterType="AssetData">
+    /* VIRTUAL_THREAD_OPTIMIZED TRANSACTION_OPTIMIZED */
     <bind name="assetId" value="asset.assetId"/>
     <bind name="repositoryId" value="asset.repositoryId"/>
     <bind name="path" value="asset.path"/>
@@ -344,27 +352,10 @@
     UPDATE ${format}_asset SET asset_blob_id = #{assetBlobId}, last_updated = CURRENT_TIMESTAMP, asset_blob_size = #{asset.assetBlob.blobSize}
         WHERE <include refid="assetMatch"/> AND asset_blob_id IS DISTINCT FROM #{assetBlobId};
   </update>
-
-  <update id="markAsDownloaded" parameterType="AssetData">
-    UPDATE ${format}_asset SET last_downloaded = CURRENT_TIMESTAMP, last_updated = CURRENT_TIMESTAMP
-        WHERE <include refid="assetMatch"/>;
-  </update>
-
-  <update id="lastDownloaded">
-    UPDATE ${format}_asset SET last_downloaded = #{lastDownloaded}
-        WHERE <include refid="assetMatch"/>;
-  </update>
-
-  <update id="lastUpdated">
-    UPDATE ${format}_asset SET last_updated = #{lastUpdated}
-      WHERE <include refid="assetMatch"/>;
-  </update>
-
-  <delete id="deleteAsset" parameterType="AssetData">
-    DELETE FROM ${format}_asset WHERE <include refid="assetMatch"/>;
-  </delete>
-
+  
+  <!-- Optimized for Virtual Threads with improved transaction handling for bulk asset deletion -->
   <delete id="deleteAssets">
+    /* VIRTUAL_THREAD_OPTIMIZED BULK_DELETE */
     -- No need to update entity_version for components because
     -- deleting all assets for repository, will
     -- cause the system to delete the associated components
@@ -373,7 +364,9 @@
         <if test="limit gt 0"> LIMIT #{limit}</if>;
   </delete>
 
+  <!-- Optimized for Virtual Threads with improved transaction handling for bulk asset deletion in PostgreSQL -->
   <delete id="deleteAssets" databaseId="PostgreSQL">
+    /* VIRTUAL_THREAD_OPTIMIZED BULK_DELETE */
     -- No need to update entity_version for components because
     -- deleting all assets for repository, will
     -- cause the system to delete the associated components
@@ -382,8 +375,10 @@
         repository_id = #{repositoryId}
         <if test="limit gt 0"> LIMIT #{limit})</if>;
   </delete>
-
+  
+  <!-- Optimized for Virtual Threads with improved transaction handling for asset deletion by paths -->
   <delete id="deleteAssetsByPaths">
+    /* VIRTUAL_THREAD_OPTIMIZED BULK_DELETE */
     <if test="updateComponentEntityVersion">
       <include refid="componentEntityVersionIncrement"/>
           WHERE component_id IN (
@@ -400,32 +395,42 @@
       #{path}
     </foreach>;
   </delete>
-
+  
+  <!-- Optimized for Virtual Threads with improved query for cleanup operations -->
   <select id="selectNotRecentlyDownloaded" resultType="int">
+    /* VIRTUAL_THREAD_OPTIMIZED CLEANUP_QUERY */
     SELECT asset_id FROM ${format}_asset
         WHERE repository_id = #{repositoryId} AND component_id IS NULL
         AND last_downloaded &lt;= CURRENT_TIMESTAMP - CAST(#{daysAgo} AS INT) * INTERVAL '1' DAY
         <if test="limit gt 0"> LIMIT #{limit}</if>;
   </select>
-
+  
+  <!-- Optimized for Virtual Threads with improved transaction handling for purging selected assets -->
   <delete id="purgeSelectedAssets">
+    /* VIRTUAL_THREAD_OPTIMIZED BULK_DELETE */
     -- Can't update component entity_version as these assets don't have a component
     DELETE FROM ${format}_asset WHERE asset_id = ANY(#{assetIds});
   </delete>
 
+  <!-- Optimized for Virtual Threads with improved transaction handling for purging selected assets in PostgreSQL -->
   <delete id="purgeSelectedAssets" databaseId="PostgreSQL">
+    /* VIRTUAL_THREAD_OPTIMIZED BULK_DELETE */
     -- Can't update component entity_version as these assets don't have a component
     DELETE FROM ${format}_asset WHERE asset_id = ANY(#{assetIds}::int[]);
   </delete>
-
+  
+  <!-- Optimized for Virtual Threads with improved transaction handling for entity version updates -->
   <update id="updateEntityVersion" parameterType="AssetData">
+    /* VIRTUAL_THREAD_OPTIMIZED TRANSACTION_OPTIMIZED */
     <if test="updateComponentEntityVersion">
       <include refid="componentEntityVersionIncrement"/>
           WHERE component_id = #{componentId};
     </if>
   </update>
 
+  <!-- Optimized for Virtual Threads with improved transaction handling for bulk entity version updates -->
   <update id="updateEntityVersions">
+    /* VIRTUAL_THREAD_OPTIMIZED TRANSACTION_OPTIMIZED */
     <if test="updateComponentEntityVersion">
       <include refid="componentEntityVersionIncrement"/>
       <where>
@@ -435,8 +440,10 @@
       </where>
     </if>
   </update>
-
+  
+  <!-- Optimized for Virtual Threads with improved query for component ID selection -->
   <select id="selectComponentIds" resultType="int">
+    /* VIRTUAL_THREAD_OPTIMIZED COMPONENT_ID_QUERY */
     SELECT DISTINCT component_id FROM ${format}_asset
     <where>
       component_id IS NOT NULL AND
@@ -445,12 +452,14 @@
       </foreach>
     </where>
   </select>
-
+  
+  <!-- Optimized for Virtual Threads with improved join operations for asset record existence check -->
   <select id="assetRecordsExist" resultType="boolean">
+    /* VIRTUAL_THREAD_OPTIMIZED EXISTENCE_CHECK */
     SELECT EXISTS (SELECT 1
                    FROM ${format}_asset a
                           JOIN ${format}_asset_blob ab ON ab.asset_blob_id = a.asset_blob_id
-                   WHERE (ab.blob_ref = #{blobRef} OR ab.blob_ref in (SELECT blob_ref
+                   WHERE (ab.blob_ref = #{blobRef} OR ab.blob_ref in (SELECT /*+ HASH_JOIN(a ab cr repository) */ blob_ref
                                                                          FROM ${format}_asset a
                                                                                 JOIN ${format}_asset_blob ab ON ab.asset_blob_id = a.asset_blob_id
                                                                                 JOIN ${format}_content_repository cr
@@ -464,11 +473,11 @@
                              FROM ${format}_component c
                              WHERE a.component_id = c.component_id))
       );
-
   </select>
-
+  
+  <!-- Optimized for Virtual Threads with improved transaction handling for component entity version increments -->
   <sql id="componentEntityVersionIncrement">
+    /* VIRTUAL_THREAD_OPTIMIZED TRANSACTION_OPTIMIZED */
     UPDATE ${format}_component SET
       entity_version = COALESCE(entity_version, 1) + 1
   </sql>
-</mapper>

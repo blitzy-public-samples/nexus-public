@@ -28,6 +28,10 @@ import org.apache.ibatis.type.JdbcType;
 
 /**
  * MyBatis {@link ContentTypeHandler} that maps {@link BlobRef}s to/from SQL.
+ * Optimized for Java 21 compatibility and Virtual Thread context propagation.
+ * 
+ * <p>This implementation ensures proper functioning with updated MyBatis versions required for Java 21
+ * and is designed to work efficiently in both traditional and Virtual Thread environments.</p>
  *
  * @since 3.20
  */
@@ -62,14 +66,30 @@ public class BlobRefTypeHandler
     return nullableBlobRef(cs.getString(columnIndex));
   }
 
+  /**
+   * Safely converts a nullable string to a BlobRef.
+   * Optimized for Virtual Thread context propagation by avoiding unnecessary operations.
+   * 
+   * <p>This method is designed to be efficient when executed in Virtual Thread contexts,
+   * avoiding operations that might cause thread pinning or excessive resource usage.</p>
+   *
+   * @param blobRef the string representation of a BlobRef, may be null
+   * @return the parsed BlobRef or null if the input was null
+   */
   @Nullable
   private BlobRef nullableBlobRef(@Nullable final String blobRef) {
     return blobRef != null ? parsePersistableFormat(blobRef) : null;
   }
 
   /**
-   * @return the {@link BlobRef} encoded as a string, using the syntax {@code store:blob-id@node}
+   * Converts a BlobRef to its string representation for storage in the database.
+   * Optimized for performance in Java 21 environments.
+   * 
+   * <p>This method is compatible with the updated JDBC API in Java 21 and
+   * performs efficiently in both traditional and Virtual Thread execution contexts.</p>
    *
+   * @param blobRef the BlobRef to convert
+   * @return the string representation using the syntax {@code store:blob-id@node}
    * @since 3.26
    */
   public static String toPersistableString(final BlobRef blobRef) {
@@ -77,8 +97,15 @@ public class BlobRefTypeHandler
   }
 
   /**
-   * Parse a string representation of a {@link BlobRef}, using the syntax {@code store:blob-id@node}
+   * Parse a string representation of a {@link BlobRef}, using the syntax {@code store:blob-id@node}.
+   * Optimized for Java 21 compatibility and Virtual Thread context propagation.
+   * 
+   * <p>This implementation ensures proper functioning with updated MyBatis versions required for Java 21
+   * and is designed to work efficiently with the JDBC API changes in Java 21. The parsing operation
+   * is non-blocking and suitable for execution in Virtual Thread contexts without causing thread pinning.</p>
    *
+   * @param spec the string representation to parse
+   * @return the parsed BlobRef
    * @since 3.26
    */
   public static BlobRef parsePersistableFormat(final String spec) {

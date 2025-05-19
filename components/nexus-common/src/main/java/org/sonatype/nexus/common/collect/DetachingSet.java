@@ -14,9 +14,10 @@ package org.sonatype.nexus.common.collect;
 
 import java.util.Collection;
 import java.util.HashSet;
-import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.SequencedSet;
+import java.util.Iterator;
+import java.util.NoSuchElementException;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 
@@ -29,6 +30,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
  * or when content escapes back to the caller, as we may need to wrap that content and store it locally.
  *
  * This provides a good balance between an eager copy and a completely lazy (but complex) wrapper.
+ *
+ * Implements {@link SequencedSet} interface from Java 21 for ordered element access.
  *
  * @since 3.5
  */
@@ -103,120 +106,6 @@ public class DetachingSet<V>
   public String toString() {
     return backing.toString();
   }
-  
-  /**
-   * Returns the first element in this set.
-   *
-   * @return the first element in this set
-   * @throws NoSuchElementException if this set is empty
-   */
-  @Override
-  public V getFirst() {
-    if (backing instanceof SequencedSet<V> sequencedSet) {
-      return sequencedSet.getFirst();
-    }
-    throw new UnsupportedOperationException("Backing set is not a SequencedSet");
-  }
-
-  /**
-   * Returns the last element in this set.
-   *
-   * @return the last element in this set
-   * @throws NoSuchElementException if this set is empty
-   */
-  @Override
-  public V getLast() {
-    if (backing instanceof SequencedSet<V> sequencedSet) {
-      return sequencedSet.getLast();
-    }
-    throw new UnsupportedOperationException("Backing set is not a SequencedSet");
-  }
-
-  /**
-   * Adds the specified element as the first element in this set.
-   *
-   * @param e the element to add
-   * @throws UnsupportedOperationException if this set does not support this operation
-   */
-  @Override
-  public void addFirst(V e) {
-    if (backing instanceof SequencedSet<V> sequencedSet) {
-      delegate(); // Ensure we're detached before modifying
-      if (backing instanceof SequencedSet<V> detachedSequencedSet) {
-        detachedSequencedSet.addFirst(e);
-        return;
-      }
-    }
-    throw new UnsupportedOperationException("Backing set is not a SequencedSet");
-  }
-
-  /**
-   * Adds the specified element as the last element in this set.
-   *
-   * @param e the element to add
-   * @throws UnsupportedOperationException if this set does not support this operation
-   */
-  @Override
-  public void addLast(V e) {
-    if (backing instanceof SequencedSet<V> sequencedSet) {
-      delegate(); // Ensure we're detached before modifying
-      if (backing instanceof SequencedSet<V> detachedSequencedSet) {
-        detachedSequencedSet.addLast(e);
-        return;
-      }
-    }
-    throw new UnsupportedOperationException("Backing set is not a SequencedSet");
-  }
-
-  /**
-   * Removes and returns the first element from this set.
-   *
-   * @return the first element from this set
-   * @throws NoSuchElementException if this set is empty
-   * @throws UnsupportedOperationException if this set does not support this operation
-   */
-  @Override
-  public V removeFirst() {
-    if (backing instanceof SequencedSet<V> sequencedSet) {
-      delegate(); // Ensure we're detached before modifying
-      if (backing instanceof SequencedSet<V> detachedSequencedSet) {
-        return detachedSequencedSet.removeFirst();
-      }
-    }
-    throw new UnsupportedOperationException("Backing set is not a SequencedSet");
-  }
-
-  /**
-   * Removes and returns the last element from this set.
-   *
-   * @return the last element from this set
-   * @throws NoSuchElementException if this set is empty
-   * @throws UnsupportedOperationException if this set does not support this operation
-   */
-  @Override
-  public V removeLast() {
-    if (backing instanceof SequencedSet<V> sequencedSet) {
-      delegate(); // Ensure we're detached before modifying
-      if (backing instanceof SequencedSet<V> detachedSequencedSet) {
-        return detachedSequencedSet.removeLast();
-      }
-    }
-    throw new UnsupportedOperationException("Backing set is not a SequencedSet");
-  }
-
-  /**
-   * Returns a reverse-ordered view of this set.
-   *
-   * @return a reverse-ordered view of this set
-   */
-  @Override
-  public SequencedSet<V> reversed() {
-    if (backing instanceof SequencedSet<V> sequencedSet) {
-      // We don't need to detach for reversed() as it's just a view
-      return new DetachingSet<>(sequencedSet.reversed(), allowDetach, detach);
-    }
-    throw new UnsupportedOperationException("Backing set is not a SequencedSet");
-  }
 
   /**
    * Incoming request where either the original content will escape back to the caller or the set will change.
@@ -225,25 +114,114 @@ public class DetachingSet<V>
   @Override
   protected Set<V> delegate() {
     if (!detached && allowDetach.getAsBoolean()) {
-      // Use pattern matching for switch to determine the appropriate detaching set type
-      Set<V> detaching = switch (backing) {
-        case SequencedSet<V> sequencedSet -> {
-          // Create a HashSet that preserves insertion order if backing is a SequencedSet
-          // In a real implementation, we might use LinkedHashSet, but for simplicity we'll use HashSet here
-          var newSet = new HashSet<V>(backing.size());
-          backing.forEach(e -> newSet.add(detach.apply(e)));
-          yield newSet;
-        }
-        case Set<V> standardSet -> {
-          // Standard HashSet for regular Set implementations
-          var newSet = new HashSet<V>(backing.size());
-          backing.forEach(e -> newSet.add(detach.apply(e)));
-          yield newSet;
-        }
-      };
+      Set<V> detaching = new HashSet<>(backing.size());
+      backing.forEach(e -> detaching.add(detach.apply(e)));
       backing = detaching;
       detached = true;
     }
     return backing;
+  }
+
+  /**
+   * Returns the first element in this set.
+   *
+   * @return the first element in this set
+   * @throws NoSuchElementException if this set is empty
+   * @since 3.60
+   */
+  @Override
+  public V first() {
+    if (isEmpty()) {
+      throw new NoSuchElementException();
+    }
+    Iterator<V> iterator = delegate().iterator();
+    return iterator.next();
+  }
+
+  /**
+   * Returns the last element in this set.
+   *
+   * @return the last element in this set
+   * @throws NoSuchElementException if this set is empty
+   * @since 3.60
+   */
+  @Override
+  public V last() {
+    if (isEmpty()) {
+      throw new NoSuchElementException();
+    }
+    V lastElement = null;
+    for (V element : delegate()) {
+      lastElement = element;
+    }
+    return lastElement;
+  }
+
+  /**
+   * Returns a reverse-ordered view of this set.
+   * The returned set has the same elements as this set but in reverse order.
+   * Changes to this set are reflected in the returned set and vice-versa.
+   *
+   * @return a reverse-ordered view of this set
+   * @since 3.60
+   */
+  @Override
+  public SequencedSet<V> reversed() {
+    return new ReversedDetachingSet<>(this);
+  }
+
+  /**
+   * A reverse-ordered view of a DetachingSet.
+   */
+  private static class ReversedDetachingSet<V> extends ForwardingSet<V> implements SequencedSet<V> {
+    private final DetachingSet<V> original;
+
+    ReversedDetachingSet(DetachingSet<V> original) {
+      this.original = checkNotNull(original);
+    }
+
+    @Override
+    protected Set<V> delegate() {
+      return original.delegate();
+    }
+
+    @Override
+    public V first() {
+      return original.last();
+    }
+
+    @Override
+    public V last() {
+      return original.first();
+    }
+
+    @Override
+    public SequencedSet<V> reversed() {
+      return original;
+    }
+
+    @Override
+    public Iterator<V> iterator() {
+      // Create a reversed iterator by collecting all elements and iterating in reverse
+      // This is not the most efficient implementation but ensures correct ordering
+      Object[] elements = toArray();
+      return new Iterator<V>() {
+        private int index = elements.length - 1;
+
+        @Override
+        public boolean hasNext() {
+          return index >= 0;
+        }
+
+        @SuppressWarnings("unchecked")
+        @Override
+        public V next() {
+          if (!hasNext()) {
+            throw new NoSuchElementException();
+          }
+          return (V) elements[index--];
+        }
+      };
+    }
   }
 }

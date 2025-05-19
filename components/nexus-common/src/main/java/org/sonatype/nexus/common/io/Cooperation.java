@@ -26,6 +26,25 @@ import javax.annotation.Nullable;
  * If the original thread takes too long then one of the waiting threads may be woken up to repeat the request.
  * Further threads may be woken up if that thread takes too long, with each wakeup staggered by the same timeout.
  *
+ * <h2>Virtual Thread Support</h2>
+ * <p>
+ * This interface is fully compatible with Java 21 Virtual Threads. When used with Virtual Threads, cooperation
+ * provides significant benefits for I/O-bound operations by allowing thousands of concurrent operations with minimal
+ * resource consumption. The implementation automatically detects Virtual Threads and optimizes cooperation behavior
+ * accordingly.
+ * </p>
+ * 
+ * <p>Best practices for using Cooperation with Virtual Threads:</p>
+ * <ul>
+ *   <li>Use Virtual Threads for I/O-bound operations that may block, such as remote repository access, database
+ *       operations, or file system access</li>
+ *   <li>Avoid using Virtual Threads for CPU-intensive operations as they don't benefit from the same advantages</li>
+ *   <li>Be aware that Virtual Threads can be "pinned" to carrier threads in certain situations (like synchronized blocks),
+ *       which reduces their efficiency</li>
+ *   <li>When using Cooperation with Virtual Threads, the implementation will optimize thread management to prevent
+ *       unnecessary blocking of carrier threads</li>
+ * </ul>
+ *
  * @since 3.14
  */
 public interface Cooperation
@@ -49,6 +68,10 @@ public interface Cooperation
 
   /**
    * Requests cooperation before proceeding with the given I/O request.
+   * <p>
+   * When used with Virtual Threads, this method optimizes cooperation to prevent unnecessary blocking
+   * of carrier threads, allowing for higher concurrency with minimal resource overhead.
+   * </p>
    *
    * @param requestKey used to match I/O requests for cooperation purposes
    * @param request function that performs some I/O and returns the result
@@ -62,6 +85,10 @@ public interface Cooperation
    * Requests to join with any cached cooperation results when failing over.
    * If no cached results are found the underlying cooperation may choose to
    * wait and try again, for example to account for lag in distributed setups.
+   * <p>
+   * When used with Virtual Threads, this method ensures efficient yielding of the carrier thread
+   * during wait periods, allowing other Virtual Threads to make progress while waiting for results.
+   * </p>
    *
    * @param request function that tries to retrieve cached cooperation results
    * @return {@code null} if no cached results were found
@@ -72,7 +99,27 @@ public interface Cooperation
   <T> T join(IOCheck<T> request) throws IOException;
 
   /**
-   * @return number of threads cooperating per request-key.
+   * Returns the number of threads cooperating per request-key.
+   * <p>
+   * This method properly accounts for both platform threads and Virtual Threads. When Virtual Threads
+   * are used, the count represents the actual number of concurrent operations rather than the number of
+   * carrier threads, which may be significantly smaller.
+   * </p>
+   *
+   * @return number of threads (both platform and virtual) cooperating per request-key.
    */
   Map<String, Integer> getThreadCountPerKey();
+  
+  /**
+   * Determines if the current thread is a Virtual Thread.
+   * <p>
+   * This utility method helps implementations optimize their behavior based on the thread type.
+   * </p>
+   *
+   * @return {@code true} if the current thread is a Virtual Thread, {@code false} otherwise
+   * @since 3.60
+   */
+  default boolean isVirtualThread() {
+    return Thread.currentThread().isVirtual();
+  }
 }

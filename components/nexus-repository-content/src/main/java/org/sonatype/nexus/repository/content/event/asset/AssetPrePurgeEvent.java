@@ -29,19 +29,32 @@ public class AssetPrePurgeEvent
 {
   private final int[] assetIds;
 
-  public AssetPrePurgeEvent(final int contentRepositoryId, final int[] assetIds) { // NOSONAR
+  /**
+   * Creates a new event for assets about to be purged.
+   *
+   * @param contentRepositoryId the repository ID
+   * @param assetIds the IDs of assets to be purged
+   * @throws NullPointerException if assetIds is null
+   */
+  public AssetPrePurgeEvent(final int contentRepositoryId, final int[] assetIds) {
     super(contentRepositoryId);
-    this.assetIds = checkNotNull(assetIds);
+    this.assetIds = checkNotNull(assetIds).clone(); // Defensive copy for thread safety
   }
 
+  /**
+   * Gets the IDs of assets to be purged.
+   *
+   * @return a defensive copy of the asset IDs array
+   */
   public int[] getAssetIds() {
-    return assetIds; // NOSONAR
+    return assetIds.clone(); // Return defensive copy for thread safety
   }
 
   @Override
   public String toString() {
-    return "AssetPrePurgeEvent{" +
-        "assetIds=" + Arrays.toString(assetIds) +
-        "} " + super.toString();
+    return STR."""
+        AssetPrePurgeEvent{
+        assetIds=\{Arrays.toString(assetIds)}
+        } \{super.toString()}"""; // Using Java 21 String Templates for improved diagnostics
   }
 }

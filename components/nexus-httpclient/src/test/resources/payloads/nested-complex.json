@@ -1,0 +1,965 @@
+{
+  "repository": {
+    "id": "central-proxy",
+    "name": "Maven Central Proxy",
+    "type": "proxy",
+    "format": "maven2",
+    "status": {
+      "online": true,
+      "health": "GREEN",
+      "checks": [
+        {
+          "name": "connectivity",
+          "status": "PASSED",
+          "timestamp": 1621459200000,
+          "details": {
+            "responseTime": 120,
+            "statusCode": 200,
+            "message": "Connection successful"
+          }
+        },
+        {
+          "name": "storage",
+          "status": "PASSED",
+          "timestamp": 1621459200000,
+          "details": {
+            "availableSpace": 10737418240,
+            "totalSpace": 107374182400
+          }
+        }
+      ]
+    },
+    "configuration": {
+      "storage": {
+        "blobStoreName": "default",
+        "strictContentTypeValidation": true,
+        "writePolicy": "ALLOW"
+      },
+      "proxy": {
+        "remoteUrl": "https://repo1.maven.org/maven2/",
+        "contentMaxAge": 1440,
+        "metadataMaxAge": 1440
+      },
+      "negativeCache": {
+        "enabled": true,
+        "timeToLive": 1440
+      },
+      "httpClient": {
+        "blocked": false,
+        "autoBlock": true,
+        "connection": {
+          "retries": 3,
+          "timeout": 60,
+          "enableCircularRedirects": false,
+          "enableCookies": false,
+          "useTrustStore": false
+        },
+        "authentication": {
+          "type": "username",
+          "username": "admin",
+          "password": "admin123",
+          "ntlmHost": "",
+          "ntlmDomain": ""
+        }
+      },
+      "routingRules": {
+        "groupName": "maven-public",
+        "routes": [
+          {
+            "pattern": "^/com/sonatype/.*$",
+            "routeType": "BLOCK"
+          },
+          {
+            "pattern": "^/org/sonatype/.*$",
+            "routeType": "ALLOW"
+          }
+        ]
+      },
+      "replication": {
+        "enabled": false,
+        "targets": []
+      }
+    },
+    "stats": {
+      "downloads": 12345,
+      "uploads": 0,
+      "cacheHits": 8765,
+      "cacheMisses": 3580,
+      "timeouts": 12,
+      "errors": 5,
+      "averageResponseTime": 145.7,
+      "bytesDownloaded": 1073741824,
+      "bytesUploaded": 0,
+      "history": [
+        {
+          "day": "2023-05-20",
+          "downloads": 1234,
+          "uploads": 0,
+          "cacheHits": 876,
+          "cacheMisses": 358
+        },
+        {
+          "day": "2023-05-19",
+          "downloads": 1111,
+          "uploads": 0,
+          "cacheHits": 789,
+          "cacheMisses": 322
+        },
+        {
+          "day": "2023-05-18",
+          "downloads": 987,
+          "uploads": 0,
+          "cacheHits": 654,
+          "cacheMisses": 333
+        }
+      ]
+    }
+  },
+  "security": {
+    "users": [
+      {
+        "id": "admin",
+        "firstName": "Administrator",
+        "lastName": "User",
+        "email": "admin@example.com",
+        "status": "active",
+        "roles": ["nx-admin"],
+        "preferences": {
+          "theme": "dark",
+          "notifications": {
+            "email": true,
+            "ui": true
+          },
+          "timezone": "UTC",
+          "language": "en-US"
+        },
+        "attributes": {
+          "lastLogin": 1621459200000,
+          "loginCount": 157,
+          "failedLoginCount": 0,
+          "passwordChanged": 1615680000000
+        }
+      },
+      {
+        "id": "developer",
+        "firstName": "Developer",
+        "lastName": "User",
+        "email": "developer@example.com",
+        "status": "active",
+        "roles": ["nx-developer"],
+        "preferences": {
+          "theme": "light",
+          "notifications": {
+            "email": false,
+            "ui": true
+          },
+          "timezone": "America/New_York",
+          "language": "en-US"
+        },
+        "attributes": {
+          "lastLogin": 1621372800000,
+          "loginCount": 42,
+          "failedLoginCount": 1,
+          "passwordChanged": 1615680000000
+        }
+      }
+    ],
+    "roles": [
+      {
+        "id": "nx-admin",
+        "name": "Administrator",
+        "description": "Administrator role with all permissions",
+        "privileges": ["*"],
+        "roles": [],
+        "source": "default"
+      },
+      {
+        "id": "nx-developer",
+        "name": "Developer",
+        "description": "Developer role with limited permissions",
+        "privileges": [
+          "nx-repository-view-*-*-browse",
+          "nx-repository-view-*-*-read",
+          "nx-search-read"
+        ],
+        "roles": [],
+        "source": "default"
+      }
+    ],
+    "privileges": [
+      {
+        "id": "nx-repository-view-*-*-browse",
+        "name": "Browse repositories",
+        "description": "Browse repositories",
+        "type": "repository-view",
+        "properties": {
+          "format": "*",
+          "repository": "*",
+          "actions": ["browse"]
+        }
+      },
+      {
+        "id": "nx-repository-view-*-*-read",
+        "name": "Read repositories",
+        "description": "Read repositories",
+        "type": "repository-view",
+        "properties": {
+          "format": "*",
+          "repository": "*",
+          "actions": ["read"]
+        }
+      },
+      {
+        "id": "nx-search-read",
+        "name": "Search",
+        "description": "Search repositories",
+        "type": "application",
+        "properties": {
+          "domain": "search",
+          "actions": ["read"]
+        }
+      }
+    ]
+  },
+  "blobStores": [
+    {
+      "name": "default",
+      "type": "file",
+      "attributes": {
+        "file": {
+          "path": "${karaf.data}/blobs/default",
+          "metadata": {
+            "contentType": "application/octet-stream",
+            "sha1": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+            "size": 0
+          }
+        },
+        "blobCount": 12345,
+        "totalSize": 1073741824,
+        "availableSpace": 10737418240,
+        "unlimited": false,
+        "metrics": {
+          "downloadCount": 9876,
+          "uploadCount": 5432,
+          "downloadBytes": 987654321,
+          "uploadBytes": 123456789,
+          "timeouts": 5,
+          "errors": 2
+        },
+        "status": {
+          "health": "GREEN",
+          "issues": []
+        }
+      }
+    },
+    {
+      "name": "s3",
+      "type": "s3",
+      "attributes": {
+        "s3": {
+          "region": "us-west-2",
+          "bucket": "nexus-blobs",
+          "prefix": "content",
+          "expiration": 3,
+          "encryption": {
+            "enabled": true,
+            "type": "s3ManagedEncryption"
+          },
+          "authentication": {
+            "type": "accessKey",
+            "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+            "secretAccessKey": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+          },
+          "advancedSettings": {
+            "endpointUrl": "https://s3.us-west-2.amazonaws.com",
+            "signerType": "AWSS3V4SignerType",
+            "forcePathStyle": false,
+            "maxConnections": 50,
+            "connectionTimeout": 50000,
+            "socketTimeout": 50000,
+            "maxErrorRetry": 3,
+            "connectionTtl": -1
+          }
+        },
+        "blobCount": 54321,
+        "totalSize": 10737418240,
+        "unlimited": true,
+        "metrics": {
+          "downloadCount": 8765,
+          "uploadCount": 4321,
+          "downloadBytes": 876543210,
+          "uploadBytes": 234567890,
+          "timeouts": 12,
+          "errors": 7
+        },
+        "status": {
+          "health": "GREEN",
+          "issues": []
+        }
+      }
+    }
+  ],
+  "content": {
+    "assets": [
+      {
+        "id": "asset1",
+        "path": "org/example/project/1.0.0/project-1.0.0.jar",
+        "format": "maven2",
+        "contentType": "application/java-archive",
+        "size": 1048576,
+        "checksums": {
+          "sha1": "f0e4c2f76e5bb591fc1db53030c45e047a3bf629",
+          "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+          "md5": "1bc29b36f623ba82aaf6724fd3b16718"
+        },
+        "attributes": {
+          "maven2": {
+            "groupId": "org.example",
+            "artifactId": "project",
+            "version": "1.0.0",
+            "extension": "jar",
+            "classifier": ""
+          },
+          "content": {
+            "last_modified": 1621459200000,
+            "etag": "\"1bc29b36f623ba82aaf6724fd3b16718\"",
+            "content_disposition": "attachment; filename=\"project-1.0.0.jar\""
+          },
+          "provenance": {
+            "hashes": {
+              "sha1": "f0e4c2f76e5bb591fc1db53030c45e047a3bf629",
+              "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+              "md5": "1bc29b36f623ba82aaf6724fd3b16718"
+            },
+            "contentGenerator": {
+              "source": "maven-central",
+              "name": "maven2",
+              "version": "1.0.0"
+            },
+            "createdBy": "system",
+            "createdAt": 1621459200000,
+            "lastModifiedBy": "system",
+            "lastModifiedAt": 1621459200000
+          }
+        },
+        "blobRef": "default:f0e4c2f76e5bb591fc1db53030c45e047a3bf629",
+        "componentId": "component1",
+        "repositoryName": "central-proxy"
+      },
+      {
+        "id": "asset2",
+        "path": "org/example/project/1.0.0/project-1.0.0.pom",
+        "format": "maven2",
+        "contentType": "application/xml",
+        "size": 2048,
+        "checksums": {
+          "sha1": "a8fdc205a9f2eacaf4f136e0884b15093f6a54b1",
+          "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
+          "md5": "98f6bcd4621d373cade4e832627b4f6"
+        },
+        "attributes": {
+          "maven2": {
+            "groupId": "org.example",
+            "artifactId": "project",
+            "version": "1.0.0",
+            "extension": "pom",
+            "classifier": ""
+          },
+          "content": {
+            "last_modified": 1621459200000,
+            "etag": "\"98f6bcd4621d373cade4e832627b4f6\"",
+            "content_disposition": "attachment; filename=\"project-1.0.0.pom\""
+          },
+          "provenance": {
+            "hashes": {
+              "sha1": "a8fdc205a9f2eacaf4f136e0884b15093f6a54b1",
+              "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
+              "md5": "98f6bcd4621d373cade4e832627b4f6"
+            },
+            "contentGenerator": {
+              "source": "maven-central",
+              "name": "maven2",
+              "version": "1.0.0"
+            },
+            "createdBy": "system",
+            "createdAt": 1621459200000,
+            "lastModifiedBy": "system",
+            "lastModifiedAt": 1621459200000
+          }
+        },
+        "blobRef": "default:a8fdc205a9f2eacaf4f136e0884b15093f6a54b1",
+        "componentId": "component1",
+        "repositoryName": "central-proxy"
+      }
+    ],
+    "components": [
+      {
+        "id": "component1",
+        "group": "org.example",
+        "name": "project",
+        "version": "1.0.0",
+        "format": "maven2",
+        "assets": ["asset1", "asset2"],
+        "attributes": {
+          "maven2": {
+            "groupId": "org.example",
+            "artifactId": "project",
+            "version": "1.0.0",
+            "packaging": "jar",
+            "extension": "jar"
+          },
+          "provenance": {
+            "contentGenerator": {
+              "source": "maven-central",
+              "name": "maven2",
+              "version": "1.0.0"
+            },
+            "createdBy": "system",
+            "createdAt": 1621459200000,
+            "lastModifiedBy": "system",
+            "lastModifiedAt": 1621459200000
+          }
+        },
+        "repositoryName": "central-proxy"
+      }
+    ]
+  },
+  "system": {
+    "status": {
+      "state": "STARTED",
+      "started": 1621459200000,
+      "uptime": 86400000,
+      "version": "3.38.0-01",
+      "edition": "PRO",
+      "buildNumber": "01",
+      "buildTimestamp": 1621372800000,
+      "properties": {
+        "java": {
+          "version": "21.0.1",
+          "vendor": "Oracle Corporation",
+          "vm": "Java HotSpot(TM) 64-Bit Server VM",
+          "vmVersion": "21.0.1+12-LTS-29",
+          "runtimeName": "Java(TM) SE Runtime Environment",
+          "runtimeVersion": "21.0.1+12-LTS-29",
+          "isVirtualThread": true,
+          "availableProcessors": 8,
+          "maxMemory": 4294967296
+        },
+        "os": {
+          "name": "Linux",
+          "version": "5.15.0-1031-aws",
+          "arch": "amd64",
+          "availableProcessors": 8
+        },
+        "basedir": "/opt/sonatype/nexus",
+        "workingDir": "/opt/sonatype/nexus",
+        "tempDir": "/opt/sonatype/nexus/tmp",
+        "configDir": "/opt/sonatype/nexus/etc"
+      },
+      "initializationErrors": [],
+      "healthChecks": [
+        {
+          "name": "Datastore - PostgreSQL",
+          "message": "Connection established",
+          "error": false,
+          "timestamp": 1621459200000,
+          "duration": 15
+        },
+        {
+          "name": "BlobStore - default",
+          "message": "Blob store is writable",
+          "error": false,
+          "timestamp": 1621459200000,
+          "duration": 5
+        },
+        {
+          "name": "BlobStore - s3",
+          "message": "Blob store is writable",
+          "error": false,
+          "timestamp": 1621459200000,
+          "duration": 120
+        },
+        {
+          "name": "Repository - central-proxy",
+          "message": "Repository is available",
+          "error": false,
+          "timestamp": 1621459200000,
+          "duration": 10
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "id": "node1",
+        "hostname": "nexus-node-1",
+        "ipAddress": "10.0.0.1",
+        "priority": 100,
+        "status": "ACTIVE",
+        "startedAt": 1621459200000,
+        "lastCheckedAt": 1621459200000,
+        "capabilities": ["repository", "blobstore", "search", "admin"],
+        "metrics": {
+          "cpu": {
+            "usage": 0.25,
+            "systemLoad": 0.35,
+            "processLoad": 0.15
+          },
+          "memory": {
+            "total": 4294967296,
+            "used": 2147483648,
+            "free": 2147483648,
+            "heapCommitted": 3221225472,
+            "heapUsed": 1610612736,
+            "nonHeapCommitted": 268435456,
+            "nonHeapUsed": 201326592
+          },
+          "threads": {
+            "count": 125,
+            "peakCount": 150,
+            "daemonCount": 115,
+            "virtualThreadCount": 75
+          },
+          "gc": {
+            "collectionCount": 125,
+            "collectionTime": 1500
+          },
+          "network": {
+            "bytesReceived": 1073741824,
+            "bytesSent": 2147483648,
+            "connections": 50
+          }
+        }
+      },
+      {
+        "id": "node2",
+        "hostname": "nexus-node-2",
+        "ipAddress": "10.0.0.2",
+        "priority": 90,
+        "status": "ACTIVE",
+        "startedAt": 1621459200000,
+        "lastCheckedAt": 1621459200000,
+        "capabilities": ["repository", "blobstore", "search"],
+        "metrics": {
+          "cpu": {
+            "usage": 0.15,
+            "systemLoad": 0.25,
+            "processLoad": 0.10
+          },
+          "memory": {
+            "total": 4294967296,
+            "used": 1610612736,
+            "free": 2684354560,
+            "heapCommitted": 3221225472,
+            "heapUsed": 1073741824,
+            "nonHeapCommitted": 268435456,
+            "nonHeapUsed": 167772160
+          },
+          "threads": {
+            "count": 100,
+            "peakCount": 125,
+            "daemonCount": 90,
+            "virtualThreadCount": 60
+          },
+          "gc": {
+            "collectionCount": 100,
+            "collectionTime": 1200
+          },
+          "network": {
+            "bytesReceived": 536870912,
+            "bytesSent": 1073741824,
+            "connections": 35
+          }
+        }
+      }
+    ],
+    "tasks": [
+      {
+        "id": "task1",
+        "name": "Compact Blob Store",
+        "type": "blobstore.compact",
+        "status": "WAITING",
+        "schedule": {
+          "type": "cron",
+          "cronExpression": "0 0 2 * * ?",
+          "startAt": null,
+          "frequency": null
+        },
+        "lastRun": {
+          "startedAt": 1621372800000,
+          "endedAt": 1621376400000,
+          "status": "OK",
+          "message": "Task completed successfully"
+        },
+        "nextRun": 1621459200000,
+        "properties": {
+          "blobStoreName": "default"
+        },
+        "alertEmail": "admin@example.com",
+        "enabled": true
+      },
+      {
+        "id": "task2",
+        "name": "Rebuild Maven Metadata",
+        "type": "repository.maven.rebuild-metadata",
+        "status": "RUNNING",
+        "schedule": {
+          "type": "manual",
+          "cronExpression": null,
+          "startAt": null,
+          "frequency": null
+        },
+        "lastRun": null,
+        "nextRun": null,
+        "properties": {
+          "repositoryName": "central-proxy",
+          "rebuildChecksums": true,
+          "rebuildMetadata": true,
+          "groupId": "org.example",
+          "artifactId": "project",
+          "baseVersion": "1.0.0"
+        },
+        "alertEmail": "admin@example.com",
+        "enabled": true,
+        "progress": {
+          "total": 100,
+          "current": 75,
+          "percentage": 75,
+          "startTime": 1621459200000,
+          "estimatedEndTime": 1621462800000,
+          "messages": [
+            {
+              "level": "INFO",
+              "message": "Processing org.example:project:1.0.0",
+              "timestamp": 1621459200000
+            },
+            {
+              "level": "INFO",
+              "message": "Rebuilding metadata for org.example:project",
+              "timestamp": 1621459260000
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "virtualThreads": {
+    "enabled": true,
+    "configuration": {
+      "maxPoolSize": 1000,
+      "corePoolSize": 100,
+      "keepAliveTime": 60,
+      "queueCapacity": 10000,
+      "allowCoreThreadTimeout": true,
+      "prestartAllCoreThreads": false
+    },
+    "metrics": {
+      "activeCount": 75,
+      "completedTaskCount": 12500,
+      "corePoolSize": 100,
+      "largestPoolSize": 250,
+      "maximumPoolSize": 1000,
+      "poolSize": 150,
+      "queueSize": 25,
+      "taskCount": 12575,
+      "throughput": 208.33,
+      "averageTaskTime": 15.5,
+      "p95TaskTime": 45.2,
+      "p99TaskTime": 75.8,
+      "maxTaskTime": 120.5
+    },
+    "tasks": [
+      {
+        "id": "vt-1",
+        "name": "HTTP-Client-Request",
+        "startTime": 1621459200000,
+        "status": "RUNNING",
+        "duration": 150,
+        "threadName": "VirtualThread-1",
+        "stackTrace": [
+          "org.sonatype.nexus.httpclient.HttpClient.execute(HttpClient.java:123)",
+          "org.sonatype.nexus.repository.proxy.ProxyFacetSupport.fetch(ProxyFacetSupport.java:456)",
+          "org.sonatype.nexus.repository.proxy.ProxyFacetSupport.get(ProxyFacetSupport.java:345)"
+        ],
+        "context": {
+          "url": "https://repo1.maven.org/maven2/org/example/project/1.0.0/project-1.0.0.jar",
+          "method": "GET",
+          "repository": "central-proxy",
+          "format": "maven2",
+          "userId": "anonymous"
+        }
+      },
+      {
+        "id": "vt-2",
+        "name": "S3-BlobStore-Upload",
+        "startTime": 1621459200000,
+        "status": "RUNNING",
+        "duration": 250,
+        "threadName": "VirtualThread-2",
+        "stackTrace": [
+          "org.sonatype.nexus.blobstore.s3.internal.S3BlobStore.create(S3BlobStore.java:234)",
+          "org.sonatype.nexus.repository.storage.StorageFacetImpl.createBlob(StorageFacetImpl.java:567)",
+          "org.sonatype.nexus.repository.storage.StorageFacetImpl.createAsset(StorageFacetImpl.java:432)"
+        ],
+        "context": {
+          "blobStore": "s3",
+          "blobId": "f0e4c2f76e5bb591fc1db53030c45e047a3bf629",
+          "repository": "central-proxy",
+          "format": "maven2",
+          "userId": "admin"
+        }
+      }
+    ],
+    "patterns": [
+      {
+        "name": "HTTP Client Request Pattern",
+        "regex": "^/org/sonatype/nexus/httpclient/.*$",
+        "count": 1250,
+        "averageTime": 125.5,
+        "p95Time": 350.2,
+        "p99Time": 500.8,
+        "maxTime": 750.5
+      },
+      {
+        "name": "S3 BlobStore Pattern",
+        "regex": "^/org/sonatype/nexus/blobstore/s3/.*$",
+        "count": 750,
+        "averageTime": 250.5,
+        "p95Time": 550.2,
+        "p99Time": 750.8,
+        "maxTime": 1250.5
+      },
+      {
+        "name": "Repository View Pattern",
+        "regex": "^/org/sonatype/nexus/repository/view/.*$",
+        "count": 2500,
+        "averageTime": 75.5,
+        "p95Time": 150.2,
+        "p99Time": 250.8,
+        "maxTime": 500.5
+      }
+    ]
+  },
+  "patternMatching": {
+    "enabled": true,
+    "configurations": [
+      {
+        "name": "Maven Format Handler",
+        "className": "org.sonatype.nexus.repository.maven.internal.MavenFormatHandler",
+        "patterns": [
+          {
+            "type": "POM",
+            "regex": ".*\\.pom$",
+            "priority": 100,
+            "handler": "processPom",
+            "metrics": {
+              "count": 1500,
+              "averageTime": 25.5,
+              "p95Time": 75.2,
+              "p99Time": 125.8,
+              "maxTime": 250.5
+            }
+          },
+          {
+            "type": "JAR",
+            "regex": ".*\\.jar$",
+            "priority": 90,
+            "handler": "processJar",
+            "metrics": {
+              "count": 2500,
+              "averageTime": 35.5,
+              "p95Time": 85.2,
+              "p99Time": 135.8,
+              "maxTime": 275.5
+            }
+          },
+          {
+            "type": "METADATA",
+            "regex": ".*maven-metadata\\.xml$",
+            "priority": 80,
+            "handler": "processMetadata",
+            "metrics": {
+              "count": 750,
+              "averageTime": 15.5,
+              "p95Time": 45.2,
+              "p99Time": 75.8,
+              "maxTime": 150.5
+            }
+          }
+        ]
+      },
+      {
+        "name": "Raw Format Handler",
+        "className": "org.sonatype.nexus.repository.raw.internal.RawFormatHandler",
+        "patterns": [
+          {
+            "type": "TEXT",
+            "regex": ".*\\.(txt|md|log)$",
+            "priority": 100,
+            "handler": "processText",
+            "metrics": {
+              "count": 500,
+              "averageTime": 10.5,
+              "p95Time": 25.2,
+              "p99Time": 45.8,
+              "maxTime": 75.5
+            }
+          },
+          {
+            "type": "BINARY",
+            "regex": ".*\\.(bin|dat|exe)$",
+            "priority": 90,
+            "handler": "processBinary",
+            "metrics": {
+              "count": 250,
+              "averageTime": 20.5,
+              "p95Time": 55.2,
+              "p99Time": 85.8,
+              "maxTime": 150.5
+            }
+          },
+          {
+            "type": "IMAGE",
+            "regex": ".*\\.(jpg|png|gif)$",
+            "priority": 80,
+            "handler": "processImage",
+            "metrics": {
+              "count": 350,
+              "averageTime": 30.5,
+              "p95Time": 75.2,
+              "p99Time": 125.8,
+              "maxTime": 200.5
+            }
+          }
+        ]
+      }
+    ],
+    "metrics": {
+      "totalPatterns": 6,
+      "totalMatches": 5850,
+      "averageMatchTime": 25.5,
+      "p95MatchTime": 75.2,
+      "p99MatchTime": 125.8,
+      "maxMatchTime": 275.5,
+      "cacheHitRate": 0.85,
+      "cacheMissRate": 0.15
+    }
+  },
+  "stringTemplates": {
+    "enabled": true,
+    "templates": [
+      {
+        "name": "LogTemplate",
+        "template": "Repository {repositoryName} processed {assetCount} assets with {errorCount} errors",
+        "usageCount": 1250,
+        "averageRenderTime": 0.05,
+        "p95RenderTime": 0.15,
+        "p99RenderTime": 0.25,
+        "maxRenderTime": 0.5
+      },
+      {
+        "name": "EmailTemplate",
+        "template": "Dear {userName}, your repository {repositoryName} has {assetCount} assets and is using {storageSize} of storage",
+        "usageCount": 500,
+        "averageRenderTime": 0.08,
+        "p95RenderTime": 0.18,
+        "p99RenderTime": 0.28,
+        "maxRenderTime": 0.6
+      },
+      {
+        "name": "ReportTemplate",
+        "template": "System report for {hostname} at {timestamp}: CPU: {cpuUsage}%, Memory: {memoryUsage}%, Disk: {diskUsage}%",
+        "usageCount": 750,
+        "averageRenderTime": 0.07,
+        "p95RenderTime": 0.17,
+        "p99RenderTime": 0.27,
+        "maxRenderTime": 0.55
+      }
+    ],
+    "metrics": {
+      "totalTemplates": 3,
+      "totalRenders": 2500,
+      "averageRenderTime": 0.06,
+      "p95RenderTime": 0.17,
+      "p99RenderTime": 0.27,
+      "maxRenderTime": 0.6,
+      "cacheHitRate": 0.95,
+      "cacheMissRate": 0.05
+    }
+  },
+  "recordPatterns": {
+    "enabled": true,
+    "records": [
+      {
+        "name": "AssetRecord",
+        "className": "org.sonatype.nexus.repository.content.AssetRecord",
+        "fields": ["id", "path", "format", "contentType", "size"],
+        "usageCount": 5000,
+        "averageAccessTime": 0.02,
+        "p95AccessTime": 0.05,
+        "p99AccessTime": 0.08,
+        "maxAccessTime": 0.15
+      },
+      {
+        "name": "ComponentRecord",
+        "className": "org.sonatype.nexus.repository.content.ComponentRecord",
+        "fields": ["id", "group", "name", "version", "format"],
+        "usageCount": 3500,
+        "averageAccessTime": 0.03,
+        "p95AccessTime": 0.06,
+        "p99AccessTime": 0.09,
+        "maxAccessTime": 0.18
+      },
+      {
+        "name": "BlobRecord",
+        "className": "org.sonatype.nexus.blobstore.api.BlobRecord",
+        "fields": ["id", "size", "contentType", "creationTime", "checksums"],
+        "usageCount": 4000,
+        "averageAccessTime": 0.025,
+        "p95AccessTime": 0.055,
+        "p99AccessTime": 0.085,
+        "maxAccessTime": 0.16
+      }
+    ],
+    "patterns": [
+      {
+        "name": "AssetPattern",
+        "record": "AssetRecord",
+        "pattern": "AssetRecord(String id, String path, String format, String contentType, long size)",
+        "usageCount": 2500,
+        "averageMatchTime": 0.015,
+        "p95MatchTime": 0.035,
+        "p99MatchTime": 0.055,
+        "maxMatchTime": 0.1
+      },
+      {
+        "name": "ComponentPattern",
+        "record": "ComponentRecord",
+        "pattern": "ComponentRecord(String id, String group, String name, String version, String format)",
+        "usageCount": 1750,
+        "averageMatchTime": 0.018,
+        "p95MatchTime": 0.038,
+        "p99MatchTime": 0.058,
+        "maxMatchTime": 0.12
+      },
+      {
+        "name": "BlobPattern",
+        "record": "BlobRecord",
+        "pattern": "BlobRecord(String id, long size, String contentType, long creationTime, Map<String, String> checksums)",
+        "usageCount": 2000,
+        "averageMatchTime": 0.02,
+        "p95MatchTime": 0.04,
+        "p99MatchTime": 0.06,
+        "maxMatchTime": 0.13
+      }
+    ],
+    "metrics": {
+      "totalRecords": 3,
+      "totalPatterns": 3,
+      "totalMatches": 6250,
+      "averageMatchTime": 0.018,
+      "p95MatchTime": 0.038,
+      "p99MatchTime": 0.058,
+      "maxMatchTime": 0.13
+    }
+  }
+}

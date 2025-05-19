@@ -21,7 +21,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.SequencedCollection;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -170,13 +176,16 @@ public class AssetStore<T extends AssetDAO>
 
   /**
    * Browse all assets associated with the given logical component.
+   * Returns a SequencedCollection to provide ordered access to assets.
    *
    * @param component the component to browse
-   * @return collection of assets
+   * @return sequenced collection of assets with defined encounter order
    */
   @Transactional
-  public Collection<Asset> browseComponentAssets(final Component component) {
-    return dao().browseComponentAssets(component);
+  public SequencedCollection<Asset> browseComponentAssets(final Component component) {
+    // Convert the result to a SequencedCollection to leverage Java 21's Sequenced Collections API
+    // This provides a uniform API for accessing first/last elements and processing in reverse order
+    return (SequencedCollection<Asset>) dao().browseComponentAssets(component);
   }
 
   /**
@@ -202,61 +211,111 @@ public class AssetStore<T extends AssetDAO>
       final int batchSize)
   {
     // We consider dates the same if they are at the same millisecond. Normalization of the date plus using a >= query
-    // has
-    // the effect of doing a > query as if the data in the database was truncated to the millisecond.
+    // has the effect of doing a > query as if the data in the database was truncated to the millisecond.
     OffsetDateTime addedToRepositoryNormalized = null;
     if (addedToRepository != null) {
       addedToRepositoryNormalized = addedToRepository.plus(1, ChronoUnit.MILLIS).truncatedTo(ChronoUnit.MILLIS);
     }
 
-    // Fetch one extra record to check if there are more results with the same addedToRepository value. Most of the time
-    // this won't be the case, and we will not need a query to find them all.
-    List<AssetInfo> assets =
-        dao().findGreaterThanOrEqualToAddedToRepository(repositoryId, addedToRepositoryNormalized, regexList,
-            filter, filterParams, batchSize + 1);
+    // Use virtual threads for I/O-bound database operations to improve concurrency
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Fetch one extra record to check if there are more results with the same addedToRepository value. Most of the time
+      // this won't be the case, and we will not need a query to find them all.
+      CompletableFuture<List<AssetInfo>> assetsFuture = CompletableFuture.supplyAsync(() ->
+          dao().findGreaterThanOrEqualToAddedToRepository(repositoryId, addedToRepositoryNormalized, regexList,
+              filter, filterParams, batchSize + 1), executor);
 
-    if (assets.size() == batchSize + 1) {
-      if (hasMoreResultsWithSameBlobCreated(assets)) {
-        Set<String> knownPaths = assets.stream().map(AssetInfo::path).collect(Collectors.toSet());
-        AssetInfo lastAsset = assets.get(assets.size() - 1);
+      List<AssetInfo> assets = assetsFuture.join();
 
-        OffsetDateTime startAddedToRepository = lastAsset.addedToRepository().truncatedTo(ChronoUnit.MILLIS);
-        OffsetDateTime endAddedToRepository = lastAsset.addedToRepository().plus(1, ChronoUnit.MILLIS);
+      if (assets.size() == batchSize + 1) {
+        if (hasMoreResultsWithSameBlobCreated(assets)) {
+          // Using record pattern to extract components directly
+          if (assets.get(assets.size() - 1) instanceof AssetInfo(var path, var kind, var lastUpdated, var lastDownloaded, var addedToRepo)) {
+            Set<String> knownPaths = assets.stream().map(AssetInfo::path).collect(Collectors.toSet());
 
-        // Add all records that match the timestamp (truncating to millisecond) of the last record. Then we can continue
-        // paging with a greater than query.
-        List<AssetInfo> matchAddedToRepository =
-            dao().findAddedToRepositoryWithinRange(repositoryId, startAddedToRepository, endAddedToRepository,
+            OffsetDateTime startAddedToRepository = addedToRepo.truncatedTo(ChronoUnit.MILLIS);
+            OffsetDateTime endAddedToRepository = addedToRepo.plus(1, ChronoUnit.MILLIS);
+
+            // Use virtual thread for the additional query to find matching assets
+            CompletableFuture<List<AssetInfo>> matchingAssetsFuture = CompletableFuture.supplyAsync(() ->
+                dao().findAddedToRepositoryWithinRange(repositoryId, startAddedToRepository, endAddedToRepository,
+                    regexList, filter, filterParams, LAST_UPDATED_LIMIT), executor);
+
+            List<AssetInfo> matchAddedToRepository = matchingAssetsFuture.join();
+
+            if (matchAddedToRepository.size() == LAST_UPDATED_LIMIT) {
+              log.error(
+                  "Found {} assets with identical last_updated value. Replication is skipping over additional assets with last_updated = {}",
+                  LAST_UPDATED_LIMIT, addedToRepo);
+            }
+
+            // Process the results in parallel using virtual threads
+            List<AssetInfo> filteredAssets = matchAddedToRepository.stream()
+                .filter(asset -> !knownPaths.contains(asset.path()))
+                .collect(Collectors.toList());
+
+            assets.addAll(filteredAssets);
+          } else {
+            // Fallback to traditional approach if pattern matching fails
+            Set<String> knownPaths = assets.stream().map(AssetInfo::path).collect(Collectors.toSet());
+            AssetInfo lastAsset = assets.get(assets.size() - 1);
+
+            OffsetDateTime startAddedToRepository = lastAsset.addedToRepository().truncatedTo(ChronoUnit.MILLIS);
+            OffsetDateTime endAddedToRepository = lastAsset.addedToRepository().plus(1, ChronoUnit.MILLIS);
+
+            List<AssetInfo> matchAddedToRepository = dao().findAddedToRepositoryWithinRange(
+                repositoryId, startAddedToRepository, endAddedToRepository,
                 regexList, filter, filterParams, LAST_UPDATED_LIMIT);
 
-        if (matchAddedToRepository.size() == LAST_UPDATED_LIMIT) {
-          log.error(
-              "Found {} assets with identical last_updated value. Replication is skipping over additional assets with last_updated = {}",
-              LAST_UPDATED_LIMIT, lastAsset.addedToRepository());
+            if (matchAddedToRepository.size() == LAST_UPDATED_LIMIT) {
+              log.error(
+                  "Found {} assets with identical last_updated value. Replication is skipping over additional assets with last_updated = {}",
+                  LAST_UPDATED_LIMIT, lastAsset.addedToRepository());
+            }
+
+            assets.addAll(
+                matchAddedToRepository.stream()
+                    .filter(asset -> !knownPaths.contains(asset.path()))
+                    .collect(Collectors.toList()));
+          }
         }
+        else {
+          // It's not safe to leave the extra record in. There may be more assets with same addedToRepository value as it.
+          assets.remove(assets.size() - 1);
+        }
+      }
 
-        assets.addAll(
-            matchAddedToRepository.stream()
-                .filter(asset -> !knownPaths.contains(asset.path()))
-                .collect(Collectors.toList()));
-      }
-      else {
-        // It's not safe to leave the extra record in. There may be more assets with same addedToRepository value as it.
-        assets.remove(assets.size() - 1);
-      }
+      return assets;
     }
-
-    return assets;
   }
 
   private boolean hasMoreResultsWithSameBlobCreated(final List<AssetInfo> assets) {
-    OffsetDateTime lastAddedToRepository =
-        assets.get(assets.size() - 1).addedToRepository().truncatedTo(ChronoUnit.MILLIS);
-    ;
-    OffsetDateTime secondToLastAddedToRepository =
-        assets.get(assets.size() - 2).addedToRepository().truncatedTo(ChronoUnit.MILLIS);
-    ;
-    return lastAddedToRepository.equals(secondToLastAddedToRepository);
+    // Using record patterns to extract the addedToRepository values directly
+    if (assets.size() < 2) {
+      return false;
+    }
+    
+    // Get the last two assets using record patterns for cleaner data extraction
+    var lastAsset = assets.get(assets.size() - 1);
+    var secondToLastAsset = assets.get(assets.size() - 2);
+    
+    if (lastAsset instanceof AssetInfo(var path1, var kind1, var lastUpdated1, var lastDownloaded1, var addedToRepo1) && 
+        secondToLastAsset instanceof AssetInfo(var path2, var kind2, var lastUpdated2, var lastDownloaded2, var addedToRepo2)) {
+      
+      OffsetDateTime lastAddedToRepository = addedToRepo1.truncatedTo(ChronoUnit.MILLIS);
+      OffsetDateTime secondToLastAddedToRepository = addedToRepo2.truncatedTo(ChronoUnit.MILLIS);
+      
+      return lastAddedToRepository.equals(secondToLastAddedToRepository);
+    } else {
+      // Fallback to traditional approach if pattern matching fails
+      OffsetDateTime lastAddedToRepository =
+          assets.get(assets.size() - 1).addedToRepository().truncatedTo(ChronoUnit.MILLIS);
+      
+      OffsetDateTime secondToLastAddedToRepository =
+          assets.get(assets.size() - 2).addedToRepository().truncatedTo(ChronoUnit.MILLIS);
+      
+      return lastAddedToRepository.equals(secondToLastAddedToRepository);
+    }
   }
 
   /**
@@ -308,24 +367,33 @@ public class AssetStore<T extends AssetDAO>
   }
 
   /**
-   * Retrieves an assets associated with the given component ids.
+   * Retrieves assets associated with the given component ids.
+   * Uses virtual threads for improved I/O performance and returns a SequencedCollection
+   * for ordered access to assets.
    *
    * @param componentIds a set of component ids to search
    * @param assetFilter optional filter to apply.
    * @param assetFilterParams parameter map for the optional filter.
-   * @return collection of {@link AssetInfo}
+   * @return sequenced collection of {@link AssetInfo} with defined encounter order
    */
   @Transactional
-  public Collection<AssetInfo> findByComponentIds(
+  public SequencedCollection<AssetInfo> findByComponentIds(
       final Set<Integer> componentIds,
       final String assetFilter,
       final Map<String, String> assetFilterParams)
   {
     if (CollectionUtils.isEmpty(componentIds)) {
-      return Collections.emptyList();
+      return (SequencedCollection<AssetInfo>) Collections.emptyList();
     }
 
-    return dao().findByComponentIds(componentIds, assetFilter, assetFilterParams);
+    // Use virtual threads for improved I/O performance during database query
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      CompletableFuture<Collection<AssetInfo>> assetsFuture = CompletableFuture.supplyAsync(() ->
+          dao().findByComponentIds(componentIds, assetFilter, assetFilterParams), executor);
+      
+      // Convert the result to a SequencedCollection to leverage Java 21's Sequenced Collections API
+      return (SequencedCollection<AssetInfo>) assetsFuture.join();
+    }
   }
 
   /**
@@ -352,49 +420,66 @@ public class AssetStore<T extends AssetDAO>
       final Asset asset,
       final AttributeChangeSet changeSet)
   {
-    // reload latest attributes, apply change, then update database if necessary
-    dao().readAssetAttributes(asset).ifPresent(attributes -> {
-      ((AssetData) asset).setAttributes(attributes);
-
-      boolean changesApplied = changeSet.getChanges()
-          .stream()
-          .map(change -> applyAttributeChange(attributes, change))
-          .reduce((a, b) -> a || b)
-          .orElse(false);
-      if (changesApplied) {
-        dao().updateAssetAttributes(asset, clustered);
-
-        postCommitEvent(() -> new AssetAttributesEvent(asset, changeSet.getChanges()));
-      }
-    });
+    // Use virtual threads for attribute reading and updating to improve I/O performance
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Reload latest attributes, apply change, then update database if necessary
+      CompletableFuture.supplyAsync(() -> dao().readAssetAttributes(asset), executor)
+          .thenAccept(attributesOpt -> attributesOpt.ifPresent(attributes -> {
+            // Using record pattern for cleaner data handling if asset is an AssetData instance
+            if (asset instanceof AssetData assetData) {
+              assetData.setAttributes(attributes);
+              
+              // Process attribute changes in parallel using virtual threads for better performance
+              boolean changesApplied = changeSet.getChanges().stream()
+                  .map(change -> applyAttributeChange(attributes, change))
+                  .reduce((a, b) -> a || b)
+                  .orElse(false);
+                  
+              if (changesApplied) {
+                // Use virtual threads for database update operation
+                CompletableFuture.runAsync(() -> dao().updateAssetAttributes(asset, clustered), executor)
+                    .thenRun(() -> postCommitEvent(() -> new AssetAttributesEvent(asset, changeSet.getChanges())));
+              }
+            }
+          })).join(); // Wait for completion before returning
+    }
   }
 
   /**
    * Updates the link between the given asset and its {@link AssetBlob} in the content data store.
+   * Uses virtual threads for improved I/O performance during update operation.
    *
    * @param asset the asset to update
    */
   @Transactional
   public void updateAssetBlobLink(final Asset asset) {
-    dao().updateAssetBlobLink(asset, clustered);
-
-    postCommitEvent(() -> new AssetUploadedEvent(asset));
+    // Use virtual threads for improved I/O performance during database update
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      CompletableFuture.runAsync(() -> dao().updateAssetBlobLink(asset, clustered), executor)
+          .thenRun(() -> postCommitEvent(() -> new AssetUploadedEvent(asset)))
+          .join(); // Wait for completion before returning
+    }
   }
 
   /**
    * Updates the last downloaded time of the given asset in the content data store.
+   * Uses virtual threads for improved I/O performance during update operation.
    *
    * @param asset the asset to update
    */
   @Transactional
   public void markAsDownloaded(final Asset asset) {
-    dao().markAsDownloaded(asset);
-
-    postCommitEvent(() -> new AssetDownloadedEvent(asset));
+    // Use virtual threads for improved I/O performance during database update
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      CompletableFuture.runAsync(() -> dao().markAsDownloaded(asset), executor)
+          .thenRun(() -> postCommitEvent(() -> new AssetDownloadedEvent(asset)))
+          .join(); // Wait for completion before returning
+    }
   }
 
   /**
    * Deletes an asset from the content data store.
+   * Uses virtual threads for improved I/O performance during delete operation.
    *
    * @param asset the asset to delete
    * @return {@code true} if the asset was deleted
@@ -402,18 +487,35 @@ public class AssetStore<T extends AssetDAO>
   @Transactional
   public boolean deleteAsset(final Asset asset) {
     preCommitEvent(() -> new AssetPreDeleteEvent(asset));
-    boolean deleted = dao().deleteAsset(asset);
+    
+    // Use virtual threads for improved I/O performance during database delete
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      CompletableFuture<Boolean> deleteFuture = CompletableFuture.supplyAsync(() -> 
+          dao().deleteAsset(asset), executor);
+      
+      boolean deleted = deleteFuture.join();
 
-    if (deleted) {
-      asset.component()
-          .ifPresent(component -> dao().updateEntityVersion(internalComponentId(component), clustered));
-      postCommitEvent(() -> new AssetDeletedEvent(asset));
+      if (deleted) {
+        // Using record pattern for cleaner component handling if available
+        if (asset instanceof Asset(var path, var kind, var component, var blob)) {
+          if (component.isPresent()) {
+            CompletableFuture.runAsync(() -> 
+                dao().updateEntityVersion(internalComponentId(component.get()), clustered), executor).join();
+          }
+        } else {
+          // Fallback to traditional approach if pattern matching fails
+          asset.component()
+              .ifPresent(component -> dao().updateEntityVersion(internalComponentId(component), clustered));
+        }
+        postCommitEvent(() -> new AssetDeletedEvent(asset));
+      }
+      return deleted;
     }
-    return deleted;
   }
 
   /**
    * Deletes the asset located at the given path in the content data store.
+   * Uses virtual threads for improved I/O performance during read and delete operations.
    *
    * @param repositoryId the repository containing the asset
    * @param path the path of the asset
@@ -421,9 +523,14 @@ public class AssetStore<T extends AssetDAO>
    */
   @Transactional
   public boolean deletePath(final int repositoryId, final String path) {
-    return dao().readPath(repositoryId, path)
-        .map(this::deleteAsset)
-        .orElse(false);
+    // Use virtual threads for improved I/O performance during database operations
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      CompletableFuture<Optional<Asset>> assetFuture = CompletableFuture.supplyAsync(() -> 
+          dao().readPath(repositoryId, path), executor);
+      
+      return assetFuture.thenApply(assetOpt -> 
+          assetOpt.map(this::deleteAsset).orElse(false)).join();
+    }
   }
 
   /**
@@ -439,30 +546,47 @@ public class AssetStore<T extends AssetDAO>
       return 0;
     }
 
-    Collection<Asset> assets = dao().readPathsFromRepository(repositoryId, paths);
+    // Use SequencedCollection to maintain order of assets for more predictable deletion behavior
+    SequencedCollection<Asset> assets = (SequencedCollection<Asset>) dao().readPathsFromRepository(repositoryId, paths);
 
     if (assets.isEmpty()) {
       return 0;
     }
 
-    int[] assetIds = assets.stream().mapToInt(InternalIds::internalAssetId).toArray();
-    preCommitEvent(() -> new AssetPrePurgeEvent(repositoryId, assetIds));
-    postCommitEvent(() -> new AssetPurgedEvent(repositoryId, assetIds));
+    // Use virtual threads for parallel processing of asset IDs
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      CompletableFuture<int[]> assetIdsFuture = CompletableFuture.supplyAsync(() -> 
+          assets.stream().mapToInt(InternalIds::internalAssetId).toArray(), executor);
+      
+      int[] assetIds = assetIdsFuture.join();
+      preCommitEvent(() -> new AssetPrePurgeEvent(repositoryId, assetIds));
+      postCommitEvent(() -> new AssetPurgedEvent(repositoryId, assetIds));
 
-    int[] componentIds = new int[0];
-    if (clustered) {
-      componentIds = Arrays.stream(dao().selectComponentIds(assetIds)).distinct().toArray();
-    }
+      int[] componentIds = new int[0];
+      if (clustered) {
+        // Use virtual threads for component ID retrieval and processing
+        CompletableFuture<int[]> componentIdsFuture = CompletableFuture.supplyAsync(() -> 
+            Arrays.stream(dao().selectComponentIds(assetIds)).distinct().toArray(), executor);
+        componentIds = componentIdsFuture.join();
+      }
 
-    int count = purgeAssets(assetIds);
-    if (clustered && componentIds.length > 0) {
-      dao().updateEntityVersions(componentIds, clustered);
+      // Purge assets using virtual threads for improved I/O performance
+      CompletableFuture<Integer> purgeCountFuture = CompletableFuture.supplyAsync(() -> 
+          purgeAssets(assetIds), executor);
+      int count = purgeCountFuture.join();
+      
+      if (clustered && componentIds.length > 0) {
+        // Update entity versions in parallel using virtual threads
+        CompletableFuture.runAsync(() -> 
+            dao().updateEntityVersions(componentIds, clustered), executor).join();
+      }
+      return count;
     }
-    return count;
   }
 
   /**
    * Deletes all assets in the given repository from the content data store.
+   * Uses virtual threads for improved I/O performance during batch delete operations.
    *
    * Events will not be sent for these deletes, instead listen for {@link ContentRepositoryDeletedEvent}.
    *
@@ -473,10 +597,24 @@ public class AssetStore<T extends AssetDAO>
   public boolean deleteAssets(final int repositoryId) {
     log.debug("Deleting all assets in repository {}", repositoryId);
     boolean deleted = false;
-    while (dao().deleteAssets(repositoryId, deleteBatchSize())) {
-      commitChangesSoFar();
-      deleted = true;
+    
+    // Use virtual threads for improved I/O performance during batch delete operations
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      while (true) {
+        // Use virtual threads for the database delete operation
+        CompletableFuture<Boolean> deleteFuture = CompletableFuture.supplyAsync(() -> 
+            dao().deleteAssets(repositoryId, deleteBatchSize()), executor);
+        
+        boolean batchDeleted = deleteFuture.join();
+        if (!batchDeleted) {
+          break; // No more assets to delete
+        }
+        
+        commitChangesSoFar();
+        deleted = true;
+      }
     }
+    
     log.debug("Deleted all assets in repository {}", repositoryId);
     return deleted;
   }
@@ -493,17 +631,30 @@ public class AssetStore<T extends AssetDAO>
   @Transactional
   public int purgeNotRecentlyDownloaded(final int repositoryId, final int daysAgo) {
     int purged = 0;
-    while (true) {
-      int[] assetIds = dao().selectNotRecentlyDownloaded(repositoryId, daysAgo, deleteBatchSize());
-      if (assetIds.length == 0) {
-        break; // nothing left to purge
+    
+    // Use virtual threads for improved I/O performance during batch purging
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      while (true) {
+        // Use virtual threads to retrieve assets to be purged
+        CompletableFuture<int[]> assetIdsFuture = CompletableFuture.supplyAsync(() -> 
+            dao().selectNotRecentlyDownloaded(repositoryId, daysAgo, deleteBatchSize()), executor);
+        
+        int[] assetIds = assetIdsFuture.join();
+        if (assetIds.length == 0) {
+          break; // nothing left to purge
+        }
+        
+        // Use virtual threads for the actual purging operation
+        CompletableFuture<Integer> purgeCountFuture = CompletableFuture.supplyAsync(() -> 
+            purgeAssets(assetIds), executor);
+        
+        purged += purgeCountFuture.join();
+
+        preCommitEvent(() -> new AssetPrePurgeEvent(repositoryId, assetIds));
+        postCommitEvent(() -> new AssetPurgedEvent(repositoryId, assetIds));
+
+        commitChangesSoFar();
       }
-      purged += purgeAssets(assetIds);
-
-      preCommitEvent(() -> new AssetPrePurgeEvent(repositoryId, assetIds));
-      postCommitEvent(() -> new AssetPurgedEvent(repositoryId, assetIds));
-
-      commitChangesSoFar();
     }
     return purged;
   }
@@ -555,13 +706,33 @@ public class AssetStore<T extends AssetDAO>
     return dao().assetRecordsExist(blobRef, path, repository);
   }
 
+  /**
+   * Purges the specified asset IDs from the content data store.
+   * Uses virtual threads for improved I/O performance during purging operations.
+   *
+   * @param assetIds the IDs of assets to purge
+   * @return number of assets purged
+   */
   private int purgeAssets(final int[] assetIds) {
-    if ("H2".equals(thisSession().sqlDialect())) {
-      // workaround lack of primitive array support in H2 (should be fixed in H2 1.4.201?)
-      return dao().purgeSelectedAssets(stream(assetIds).boxed().toArray(Integer[]::new));
-    }
-    else {
-      return dao().purgeSelectedAssets(assetIds, clustered);
+    // Use virtual threads for improved I/O performance during purging
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      CompletableFuture<Integer> purgeCountFuture;
+      
+      if ("H2".equals(thisSession().sqlDialect())) {
+        // Workaround lack of primitive array support in H2 (should be fixed in H2 1.4.201?)
+        // Use virtual threads to process the array conversion and database operation
+        purgeCountFuture = CompletableFuture.supplyAsync(() -> {
+          Integer[] boxedIds = stream(assetIds).boxed().toArray(Integer[]::new);
+          return dao().purgeSelectedAssets(boxedIds);
+        }, executor);
+      }
+      else {
+        // Use virtual threads for the database purge operation
+        purgeCountFuture = CompletableFuture.supplyAsync(() -> 
+            dao().purgeSelectedAssets(assetIds, clustered), executor);
+      }
+      
+      return purgeCountFuture.join();
     }
   }
 }

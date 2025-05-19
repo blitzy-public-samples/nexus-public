@@ -12,14 +12,13 @@
  */
 package org.sonatype.nexus.common.entity;
 
-import java.util.concurrent.atomic.AtomicReference;
-
 import javax.annotation.Nullable;
 
 import org.sonatype.nexus.common.event.HasAffinity;
 import org.sonatype.nexus.common.event.HasLocality;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 
 /**
  * Entity event.
@@ -36,8 +35,7 @@ public abstract class EntityEvent
 
   private String affinity;
 
-  // Using AtomicReference for thread-safe lazy initialization without synchronization
-  private final AtomicReference<Entity> entityRef = new AtomicReference<>();
+  private volatile Entity entity;
 
   public EntityEvent(final EntityMetadata metadata) {
     this.metadata = checkNotNull(metadata);
@@ -85,7 +83,12 @@ public abstract class EntityEvent
    */
   @Nullable
   public <T extends Entity> Class<T> getEntityType() {
-    return metadata.<T>getEntityType().orElse(null);
+    // Using pattern matching for safer metadata handling
+    var entityTypeOpt = metadata.<T>getEntityType();
+    return switch (entityTypeOpt) {
+      case var opt when opt.isPresent() -> opt.get();
+      default -> null;
+    };
   }
 
   /**
@@ -93,17 +96,16 @@ public abstract class EntityEvent
    */
   @Nullable
   public <T extends Entity> T getEntity() {
-    // Use AtomicReference for thread-safe lazy initialization
-    Entity entity = entityRef.get();
+    // can be expensive depending on the entity, so use lazy evaluation
     if (entity == null) {
-      Entity newEntity = metadata.getEntity().orElse(null);
-      if (newEntity != null && entityRef.compareAndSet(null, newEntity)) {
-        entity = newEntity;
-      } else {
-        entity = entityRef.get();
+      synchronized (this) {
+        if (entity == null) {
+          entity = metadata.getEntity().orElse(null);
+        }
       }
     }
-    return (T) entity;
+    // Using pattern matching for stronger type safety instead of direct casting
+    return entity instanceof T t ? t : null;
   }
 
   @Override
@@ -122,9 +124,7 @@ public abstract class EntityEvent
 
   @Override
   public String toString() {
-    return getClass().getSimpleName() + "{"
-        + "metadata=" + metadata
-        + ", remoteNodeId=" + remoteNodeId
-        + '}';
+    // Using String Templates for modern string formatting
+    return STR."{getClass().getSimpleName()}{metadata={metadata}, remoteNodeId={remoteNodeId}}";
   }
 }

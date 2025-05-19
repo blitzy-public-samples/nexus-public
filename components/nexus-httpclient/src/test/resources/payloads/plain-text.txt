@@ -1,0 +1,88 @@
+# Plain Text Test File for Virtual Thread HTTP Client Testing
+# This file tests character encoding and content type handling
+
+== SECTION 1: ASCII Content ==
+
+This is a standard ASCII text section that simulates log file content.
+It contains multiple lines with various formatting patterns.
+
+[INFO] 2025-05-19T10:15:30.123Z - Virtual Thread test started
+[INFO] 2025-05-19T10:15:30.456Z - Processing HTTP request
+[WARN] 2025-05-19T10:15:31.789Z - Connection pool reaching capacity
+[ERROR] 2025-05-19T10:15:32.012Z - Timeout occurred while processing request
+[INFO] 2025-05-19T10:15:33.345Z - Retrying connection (1/3)
+
+== SECTION 2: Metadata Simulation ==
+
+Content-Type: text/plain; charset=UTF-8
+Content-Length: 2048
+Connection: keep-alive
+Server: Nexus Repository Manager
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+X-XSS-Protection: 1; mode=block
+
+== SECTION 3: Non-ASCII Characters ==
+
+# Latin characters with diacritics
+ÁáÀàÂâÄäÃãÅåÆæÇçÉéÈèÊêËëÍíÌìÎîÏïÑñÓóÒòÔôÖöÕõØøŒœÚúÙùÛûÜüÝýŸÿ
+
+# Cyrillic characters
+АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ
+
+# Greek characters
+ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ
+
+# Japanese characters (Hiragana)
+あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほ
+
+== SECTION 4: Special Patterns ==
+
+# URL patterns
+https://repository.sonatype.org/content/repositories/central/
+https://maven.apache.org/guides/index.html
+http://localhost:8081/repository/maven-public/
+
+# File paths
+/opt/sonatype/nexus/system/com/sonatype/nexus/nexus-core/3.41.0/nexus-core-3.41.0.jar
+C:\Program Files\Sonatype\Nexus Repository\nexus.exe
+/var/log/nexus/nexus.log
+
+# JSON snippet
+{
+  "repository": {
+    "id": "maven-central",
+    "name": "Maven Central",
+    "type": "proxy",
+    "url": "https://repo1.maven.org/maven2/",
+    "online": true
+  }
+}
+
+== SECTION 5: Performance Testing ==
+
+# Repeated content to test processing performance with Virtual Threads
+1234567890123456789012345678901234567890123456789012345678901234567890123456789
+1234567890123456789012345678901234567890123456789012345678901234567890123456789
+1234567890123456789012345678901234567890123456789012345678901234567890123456789
+1234567890123456789012345678901234567890123456789012345678901234567890123456789
+1234567890123456789012345678901234567890123456789012345678901234567890123456789
+1234567890123456789012345678901234567890123456789012345678901234567890123456789
+1234567890123456789012345678901234567890123456789012345678901234567890123456789
+1234567890123456789012345678901234567890123456789012345678901234567890123456789
+1234567890123456789012345678901234567890123456789012345678901234567890123456789
+1234567890123456789012345678901234567890123456789012345678901234567890123456789
+
+== SECTION 6: Boundary Testing ==
+
+# Empty lines
+
+
+
+# Very long line (1000 characters)
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+# Line with control characters
+This line contains a bell character: u0007 and a backspace: u0008
+
+== END OF TEST FILE ==

@@ -16,14 +16,23 @@ import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 
 /**
- * For a {@link BlobStore}, checks it usage against its quotas
+ * For a {@link BlobStore}, checks it usage against its quotas.
+ * <p>
+ * This service is designed to be thread-safe for concurrent invocation from multiple threads,
+ * including Java 21 Virtual Threads. Implementations should ensure thread safety for all methods
+ * and avoid operations that could cause Virtual Thread pinning (such as synchronized blocks/methods
+ * or native method calls that perform blocking operations).
  *
  * @since 3.14
  */
 public interface BlobStoreQuotaService
 {
   /**
-   * If the config has a quota, ensure that the configuration has all the needed values
+   * If the config has a quota, ensure that the configuration has all the needed values.
+   * <p>
+   * This method should be implemented in a thread-safe manner to support concurrent invocation
+   * from multiple threads, including Java 21 Virtual Threads. The implementation should avoid
+   * operations that could cause Virtual Thread pinning.
    * 
    * @param config - the configuration to be validated
    * @since 3.15
@@ -31,6 +40,13 @@ public interface BlobStoreQuotaService
   void validateSoftQuotaConfig(BlobStoreConfiguration config);
 
   /**
+   * Checks if a blob store has exceeded its quota.
+   * <p>
+   * This method is frequently called and must be implemented in a thread-safe manner to support
+   * concurrent invocation from multiple threads, including Java 21 Virtual Threads. The implementation
+   * should be optimized for I/O operations using Virtual Threads and avoid operations that could
+   * cause thread pinning (such as synchronized blocks or native method calls that perform blocking operations).
+   *
    * @param blobStore - a blob store whose quota needs to be evaluated
    * @return null if the blob store doesn't have a quota otherwise return a {@link BlobStoreQuotaResult}
    */

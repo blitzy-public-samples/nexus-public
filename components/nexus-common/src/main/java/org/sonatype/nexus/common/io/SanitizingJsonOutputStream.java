@@ -58,7 +58,7 @@ public class SanitizingJsonOutputStream
     generator = new SanitizingJsonGenerator(jsonFactory.createGenerator(out), fields, replacement);
     PipedInputStream pipedInput = new PipedInputStream(this);
 
-    pipe = new Thread(() -> {
+    pipe = Thread.startVirtualThread(() -> {
       try (JsonParser parser = jsonFactory.createParser(pipedInput)) {
         parser.nextToken();
         generator.copyCurrentStructure(parser);
@@ -67,8 +67,6 @@ public class SanitizingJsonOutputStream
         ioException = e;
       }
     });
-
-    pipe.start();
   }
 
   @Override

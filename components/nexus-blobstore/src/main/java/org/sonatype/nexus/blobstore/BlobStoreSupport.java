@@ -22,13 +22,11 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import javax.annotation.Nullable;
-import javax.annotation.PreDestroy;
 import javax.inject.Inject;
 import javax.inject.Named;
 
@@ -39,6 +37,7 @@ import org.sonatype.nexus.blobstore.api.BlobSession;
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.api.BlobStoreUsageChecker;
+import org.sonatype.nexus.blobstore.metrics.VirtualThreadMetrics;
 import org.sonatype.nexus.common.log.DryRunPrefix;
 import org.sonatype.nexus.common.stateguard.Guarded;
 import org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport;
@@ -76,18 +75,14 @@ public abstract class BlobStoreSupport<T extends AttributesLocation>
   protected final PerformanceLogger performanceLogger = new PerformanceLogger();
 
   private MetricRegistry metricRegistry;
+  
+  private VirtualThreadMetrics virtualThreadMetrics;
 
   protected final BlobIdLocationResolver blobIdLocationResolver;
 
   protected final DryRunPrefix dryRunPrefix;
 
   protected BlobStoreConfiguration blobStoreConfiguration;
-  
-  /**
-   * Virtual thread executor for I/O-bound operations.
-   * Uses Java 21's virtual threads for high-throughput concurrent operations.
-   */
-  private ExecutorService virtualThreadExecutor;
 
   private static final Pattern UUID_PATTERN = Pattern.compile(
       ".*vol-\\d{2}[/\\\\]chap-\\d{2}[/\\\\]\\b([0-9a-f]{8}\\b-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-\\b[0-9a-f]{12}\\b).(properties|bytes)$",
@@ -118,38 +113,17 @@ public abstract class BlobStoreSupport<T extends AttributesLocation>
   public void setMetricRegistry(final MetricRegistry metricRegistry) {
     this.metricRegistry = metricRegistry;
   }
+  
+  @Inject
+  public void setVirtualThreadMetrics(final VirtualThreadMetrics virtualThreadMetrics) {
+    this.virtualThreadMetrics = virtualThreadMetrics;
+  }
 
   @Inject
   public void setDateBasedLayoutEnabled(
       @Named(DATE_BASED_BLOBSTORE_LAYOUT_ENABLED_NAMED) final boolean dateBasedLayoutEnabled)
   {
     this.dateBasedLayoutEnabled = dateBasedLayoutEnabled;
-  }
-  
-  @Override
-  protected void doStart() throws Exception {
-    super.doStart();
-    // Initialize virtual thread executor for I/O-bound operations
-    virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
-  }
-  
-  @Override
-  protected void doStop() throws Exception {
-    // Shutdown the virtual thread executor
-    if (virtualThreadExecutor != null) {
-      virtualThreadExecutor.shutdown();
-      try {
-        if (!virtualThreadExecutor.awaitTermination(30, TimeUnit.SECONDS)) {
-          log.warn("Virtual thread executor did not terminate in time for blob store: {}", 
-              blobStoreConfiguration != null ? blobStoreConfiguration.getName() : "unknown");
-        }
-      } 
-      catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        log.warn("Interrupted while waiting for virtual thread executor to terminate", e);
-      }
-    }
-    super.doStop();
   }
 
   protected BlobId getBlobId(final Map<String, String> headers, @Nullable final BlobId blobId) {
@@ -185,16 +159,7 @@ public abstract class BlobStoreSupport<T extends AttributesLocation>
     long start = System.nanoTime();
     Blob blob = null;
     try {
-      // Use virtual threads for I/O-bound create operation
-      Future<Blob> future = virtualThreadExecutor.submit(() -> doCreate(blobData, headers, blobId));
-      blob = future.get(); // Wait for the operation to complete
-    }
-    catch (Exception e) {
-      log.error("Error creating blob with virtual thread", e);
-      if (e instanceof RuntimeException) {
-        throw (RuntimeException) e;
-      }
-      throw new RuntimeException("Error creating blob", e);
+      blob = doCreate(blobData, headers, blobId);
     }
     finally {
       long elapsed = System.nanoTime() - start;
@@ -215,16 +180,7 @@ public abstract class BlobStoreSupport<T extends AttributesLocation>
 
     long start = System.nanoTime();
     try {
-      // Use virtual threads for I/O-bound delete operation
-      Future<Boolean> future = virtualThreadExecutor.submit(() -> doDelete(blobId, reason));
-      return future.get(); // Wait for the operation to complete
-    }
-    catch (Exception e) {
-      log.error("Error deleting blob with virtual thread", e);
-      if (e instanceof RuntimeException) {
-        throw (RuntimeException) e;
-      }
-      throw new RuntimeException("Error deleting blob", e);
+      return doDelete(blobId, reason);
     }
     finally {
       long elapsed = System.nanoTime() - start;
@@ -311,16 +267,7 @@ public abstract class BlobStoreSupport<T extends AttributesLocation>
 
     long start = System.nanoTime();
     try {
-      // Use virtual threads for I/O-bound deleteHard operation
-      Future<Boolean> future = virtualThreadExecutor.submit(() -> doDeleteHard(blobId));
-      return future.get(); // Wait for the operation to complete
-    }
-    catch (Exception e) {
-      log.error("Error hard deleting blob with virtual thread", e);
-      if (e instanceof RuntimeException) {
-        throw (RuntimeException) e;
-      }
-      throw new RuntimeException("Error hard deleting blob", e);
+      return doDeleteHard(blobId);
     }
     finally {
       updateTimer("deleteHard", System.nanoTime() - start);
@@ -334,16 +281,9 @@ public abstract class BlobStoreSupport<T extends AttributesLocation>
   public synchronized void compact(@Nullable final BlobStoreUsageChecker inUseChecker) {
     long start = System.nanoTime();
     try {
-      // Use virtual threads for I/O-bound compact operation
-      Future<?> future = virtualThreadExecutor.submit(() -> doCompact(inUseChecker));
-      future.get(); // Wait for the operation to complete
-    }
-    catch (Exception e) {
-      log.error("Error compacting blob store with virtual thread", e);
-      if (e instanceof RuntimeException) {
-        throw (RuntimeException) e;
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        doCompact(inUseChecker, executor);
       }
-      throw new RuntimeException("Error compacting blob store", e);
     }
     finally {
       updateTimer("compact", System.nanoTime() - start);
@@ -351,7 +291,14 @@ public abstract class BlobStoreSupport<T extends AttributesLocation>
   }
 
   protected void doCompact(@Nullable final BlobStoreUsageChecker inUseChecker) {
-    // no-op
+    // Legacy method for backward compatibility
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      doCompact(inUseChecker, executor);
+    }
+  }
+  
+  protected void doCompact(@Nullable final BlobStoreUsageChecker inUseChecker, final ExecutorService executor) {
+    // no-op by default, implementations should override this method
   }
 
   @Override
@@ -359,16 +306,9 @@ public abstract class BlobStoreSupport<T extends AttributesLocation>
   public synchronized void deleteTempFiles(final Integer daysOlderThan) {
     long start = System.nanoTime();
     try {
-      // Use virtual threads for I/O-bound deleteTempFiles operation
-      Future<?> future = virtualThreadExecutor.submit(() -> doDeleteTempFiles(daysOlderThan));
-      future.get(); // Wait for the operation to complete
-    }
-    catch (Exception e) {
-      log.error("Error deleting temp files with virtual thread", e);
-      if (e instanceof RuntimeException) {
-        throw (RuntimeException) e;
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        doDeleteTempFiles(daysOlderThan, executor);
       }
-      throw new RuntimeException("Error deleting temp files", e);
     }
     finally {
       updateTimer("delete temp files", System.nanoTime() - start);
@@ -376,7 +316,14 @@ public abstract class BlobStoreSupport<T extends AttributesLocation>
   }
 
   protected void doDeleteTempFiles(final Integer daysOlderThan) {
-    // no-op
+    // Legacy method for backward compatibility
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      doDeleteTempFiles(daysOlderThan, executor);
+    }
+  }
+  
+  protected void doDeleteTempFiles(final Integer daysOlderThan, final ExecutorService executor) {
+    // no-op by default, implementations should override this method
   }
 
   @Override
@@ -429,6 +376,10 @@ public abstract class BlobStoreSupport<T extends AttributesLocation>
       Timer timer = timers.computeIfAbsent(name,
           key -> metricRegistry.timer(getClass().getName().replaceAll("\\$.*", "") + '.' + name + ".timer"));
       timer.update(value, TimeUnit.NANOSECONDS);
+    }
+    
+    if (virtualThreadMetrics != null) {
+      virtualThreadMetrics.recordOperation(name, value);
     }
   }
 

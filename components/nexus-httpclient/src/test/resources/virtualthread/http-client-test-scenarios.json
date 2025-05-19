@@ -1,0 +1,326 @@
+{
+  "version": "1.0",
+  "description": "Test scenarios for validating HTTP client functionality with Java 21 Virtual Threads",
+  "scenarios": [
+    {
+      "id": "concurrent-connections",
+      "name": "Massively Concurrent HTTP Client Connections",
+      "description": "Tests the HTTP client's ability to handle a large number of concurrent connections using Virtual Threads",
+      "category": "concurrency",
+      "configurations": [
+        {
+          "name": "low-concurrency",
+          "concurrentConnections": 100,
+          "requestsPerConnection": 10,
+          "requestIntervalMs": 50,
+          "timeoutMs": 5000
+        },
+        {
+          "name": "medium-concurrency",
+          "concurrentConnections": 1000,
+          "requestsPerConnection": 5,
+          "requestIntervalMs": 20,
+          "timeoutMs": 10000
+        },
+        {
+          "name": "high-concurrency",
+          "concurrentConnections": 10000,
+          "requestsPerConnection": 2,
+          "requestIntervalMs": 10,
+          "timeoutMs": 30000
+        }
+      ],
+      "expectedResults": {
+        "successRate": 100,
+        "maxMemoryIncreaseMb": 300,
+        "maxP95ResponseTimeMs": 350,
+        "maxP99ResponseTimeMs": 600,
+        "noThreadPinning": true
+      }
+    },
+    {
+      "id": "io-bound-operations",
+      "name": "I/O-Bound HTTP Operations",
+      "description": "Tests HTTP client performance for I/O-bound operations using Virtual Threads",
+      "category": "performance",
+      "operations": [
+        {
+          "name": "large-download",
+          "method": "GET",
+          "responseSize": "100MB",
+          "concurrentRequests": 50,
+          "expectedThroughputMbps": 500
+        },
+        {
+          "name": "large-upload",
+          "method": "POST",
+          "requestSize": "50MB",
+          "concurrentRequests": 20,
+          "expectedThroughputMbps": 200
+        },
+        {
+          "name": "mixed-io-operations",
+          "method": "MIXED",
+          "operations": ["GET", "POST", "PUT", "DELETE"],
+          "concurrentRequests": 100,
+          "requestsPerSecond": 1000
+        }
+      ],
+      "expectedResults": {
+        "successRate": 100,
+        "platformThreadComparison": {
+          "throughputImprovement": 30,
+          "latencyReduction": 40,
+          "memoryUsageReduction": 70
+        }
+      }
+    },
+    {
+      "id": "error-handling",
+      "name": "Error Handling with Virtual Threads",
+      "description": "Tests HTTP client error handling and resilience with Virtual Threads",
+      "category": "resilience",
+      "errorScenarios": [
+        {
+          "name": "connection-timeout",
+          "errorType": "CONNECTION_TIMEOUT",
+          "concurrentRequests": 500,
+          "timeoutMs": 100
+        },
+        {
+          "name": "socket-timeout",
+          "errorType": "SOCKET_TIMEOUT",
+          "concurrentRequests": 500,
+          "timeoutMs": 500
+        },
+        {
+          "name": "connection-reset",
+          "errorType": "CONNECTION_RESET",
+          "concurrentRequests": 500,
+          "resetProbability": 0.5
+        },
+        {
+          "name": "http-errors",
+          "errorType": "HTTP_ERROR",
+          "concurrentRequests": 500,
+          "statusCodes": [400, 401, 403, 404, 500, 502, 503, 504]
+        }
+      ],
+      "expectedResults": {
+        "gracefulErrorHandling": true,
+        "noThreadLeaks": true,
+        "properExceptionPropagation": true,
+        "resourceCleanup": true
+      }
+    },
+    {
+      "id": "connection-pooling",
+      "name": "Connection Pool Behavior with Virtual Threads",
+      "description": "Tests HTTP client connection pooling behavior with Virtual Threads",
+      "category": "resource-management",
+      "poolConfigurations": [
+        {
+          "name": "default-pool",
+          "maxConnections": 20,
+          "maxConnectionsPerRoute": 2,
+          "keepAliveMs": 30000,
+          "validateAfterInactivityMs": 10000
+        },
+        {
+          "name": "large-pool",
+          "maxConnections": 200,
+          "maxConnectionsPerRoute": 20,
+          "keepAliveMs": 60000,
+          "validateAfterInactivityMs": 30000
+        },
+        {
+          "name": "unlimited-pool",
+          "maxConnections": -1,
+          "maxConnectionsPerRoute": -1,
+          "keepAliveMs": 120000,
+          "validateAfterInactivityMs": 60000
+        }
+      ],
+      "testPatterns": [
+        {
+          "name": "burst-requests",
+          "concurrentRequests": 1000,
+          "burstDurationMs": 5000,
+          "pauseBetweenBurstsMs": 10000,
+          "numberOfBursts": 5
+        },
+        {
+          "name": "steady-load",
+          "concurrentRequests": 500,
+          "durationMs": 60000,
+          "requestsPerSecond": 100
+        },
+        {
+          "name": "connection-reuse",
+          "initialConnections": 50,
+          "subsequentRequests": 1000,
+          "delayBetweenRequestsMs": 100
+        }
+      ],
+      "expectedResults": {
+        "connectionReuseRate": 95,
+        "noConnectionLeaks": true,
+        "properConnectionValidation": true,
+        "efficientResourceUtilization": true
+      }
+    },
+    {
+      "id": "thread-pinning-detection",
+      "name": "Virtual Thread Pinning Detection",
+      "description": "Tests for detecting and measuring thread pinning during HTTP client operations",
+      "category": "diagnostics",
+      "pinningScenarios": [
+        {
+          "name": "synchronous-io",
+          "operation": "FILE_IO",
+          "concurrentRequests": 100,
+          "expectedPinningEvents": 0
+        },
+        {
+          "name": "synchronized-blocks",
+          "operation": "SYNCHRONIZED_METHOD",
+          "concurrentRequests": 100,
+          "expectedPinningEvents": "variable",
+          "maxAcceptablePinningDurationMs": 10
+        },
+        {
+          "name": "native-calls",
+          "operation": "JNI_CALL",
+          "concurrentRequests": 100,
+          "expectedPinningEvents": "variable",
+          "maxAcceptablePinningDurationMs": 5
+        }
+      ],
+      "jvmFlags": [
+        "-Djdk.tracePinnedThreads=full"
+      ],
+      "expectedResults": {
+        "minimalPinning": true,
+        "shortPinningDurations": true,
+        "properDiagnosticOutput": true
+      }
+    },
+    {
+      "id": "proxy-connections",
+      "name": "Proxy Connection Handling with Virtual Threads",
+      "description": "Tests HTTP client proxy connection handling with Virtual Threads",
+      "category": "connectivity",
+      "proxyConfigurations": [
+        {
+          "name": "http-proxy",
+          "type": "HTTP",
+          "authentication": false,
+          "concurrentConnections": 500
+        },
+        {
+          "name": "https-proxy",
+          "type": "HTTPS",
+          "authentication": false,
+          "concurrentConnections": 500
+        },
+        {
+          "name": "authenticated-proxy",
+          "type": "HTTP",
+          "authentication": true,
+          "authType": "BASIC",
+          "concurrentConnections": 200
+        },
+        {
+          "name": "ntlm-proxy",
+          "type": "HTTP",
+          "authentication": true,
+          "authType": "NTLM",
+          "concurrentConnections": 100
+        }
+      ],
+      "expectedResults": {
+        "successRate": 100,
+        "correctProxyRouting": true,
+        "properAuthenticationHandling": true,
+        "noThreadPinning": true
+      }
+    },
+    {
+      "id": "ssl-connections",
+      "name": "SSL/TLS Connection Handling with Virtual Threads",
+      "description": "Tests HTTP client SSL/TLS connection handling with Virtual Threads",
+      "category": "security",
+      "sslConfigurations": [
+        {
+          "name": "tls-1.2",
+          "protocol": "TLSv1.2",
+          "cipherSuites": ["TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"],
+          "concurrentConnections": 500
+        },
+        {
+          "name": "tls-1.3",
+          "protocol": "TLSv1.3",
+          "cipherSuites": ["TLS_AES_128_GCM_SHA256"],
+          "concurrentConnections": 500
+        },
+        {
+          "name": "client-auth",
+          "protocol": "TLSv1.3",
+          "clientAuth": true,
+          "concurrentConnections": 200
+        },
+        {
+          "name": "session-reuse",
+          "protocol": "TLSv1.3",
+          "sessionReuse": true,
+          "concurrentConnections": 1000,
+          "connectionsPerSession": 10
+        }
+      ],
+      "expectedResults": {
+        "successRate": 100,
+        "properHandshakeCompletion": true,
+        "sessionReuseEfficiency": true,
+        "noThreadPinning": true
+      }
+    },
+    {
+      "id": "content-compression",
+      "name": "Content Compression Handling with Virtual Threads",
+      "description": "Tests HTTP client content compression handling with Virtual Threads",
+      "category": "performance",
+      "compressionConfigurations": [
+        {
+          "name": "gzip-enabled",
+          "compressionType": "gzip",
+          "responseSize": "10MB",
+          "concurrentRequests": 200
+        },
+        {
+          "name": "deflate-enabled",
+          "compressionType": "deflate",
+          "responseSize": "10MB",
+          "concurrentRequests": 200
+        },
+        {
+          "name": "brotli-enabled",
+          "compressionType": "br",
+          "responseSize": "10MB",
+          "concurrentRequests": 200
+        },
+        {
+          "name": "compression-disabled",
+          "compressionType": "none",
+          "responseSize": "10MB",
+          "concurrentRequests": 200
+        }
+      ],
+      "expectedResults": {
+        "successRate": 100,
+        "properContentDecompression": true,
+        "bandwidthSavings": true,
+        "noThreadPinning": true
+      }
+    }
+  ]
+}

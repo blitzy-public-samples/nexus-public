@@ -27,6 +27,13 @@
   <name>${project.groupId}:${project.artifactId}</name>
   <packaging>bundle</packaging>
 
+  <!-- Java 21 configuration -->
+  <properties>
+    <maven.compiler.release>21</maven.compiler.release>
+    <maven.compiler.source>21</maven.compiler.source>
+    <maven.compiler.target>21</maven.compiler.target>
+  </properties>
+
   <dependencies>
     <dependency>
       <groupId>org.sonatype.nexus</groupId>
@@ -39,5 +46,29 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
+
+  <build>
+    <plugins>
+      <!-- Configure OSGi bundle plugin for Java 21 compatibility -->
+      <plugin>
+        <groupId>org.apache.felix</groupId>
+        <artifactId>maven-bundle-plugin</artifactId>
+        <version>5.1.9</version>
+        <extensions>true</extensions>
+        <configuration>
+          <instructions>
+            <!-- Ensure Java 21 compatibility -->
+            <Bundle-RequiredExecutionEnvironment>JavaSE-21</Bundle-RequiredExecutionEnvironment>
+            <!-- Include all content in the output directory -->
+            <Include-Resource>
+              /=${project.build.outputDirectory},{maven-resources}
+            </Include-Resource>
+            <!-- Clear default to avoid spurious !* warnings -->
+            <Private-Package/>
+          </instructions>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 
 </project>

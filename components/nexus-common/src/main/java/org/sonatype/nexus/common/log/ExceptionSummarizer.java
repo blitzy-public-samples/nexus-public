@@ -18,6 +18,8 @@ import java.util.function.BiPredicate;
 
 import javax.annotation.Nullable;
 
+import java.lang.StringTemplate;
+
 import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 
@@ -39,6 +41,13 @@ public class ExceptionSummarizer
   private static final long ONE_SECOND = TimeUnit.SECONDS.toMillis(1L);
 
   private static final long FIVE_SECONDS = 5 * ONE_SECOND;
+
+  /**
+   * Cached template processor for efficient summary message generation.
+   * This avoids recreating the template processor for each summary message.
+   */
+  private static final StringTemplate.Processor<String> SUMMARY_TEMPLATE_PROCESSOR = 
+      template -> STR."{template.fragments().get(0)}: {template.values().get(0)} - occurred {template.values().get(1)} times in last {template.values().get(2)} seconds";
 
   private final BiPredicate<Exception, Exception> matcher;
 
@@ -119,7 +128,9 @@ public class ExceptionSummarizer
     else if (now - lastSummaryMillis >= FIVE_SECONDS) {
 
       // repeating exception, log summary without stack at most every 5 seconds
-      String summary = STR."{message}: {cause} - occurred {count} times in last {(now - lastSummaryMillis) / ONE_SECOND} seconds";
+      // Using Java 21 String Templates for more readable and efficient summary message formatting
+      String summary = SUMMARY_TEMPLATE_PROCESSOR.process(
+          StringTemplate.RAW."{message}: {cause} - occurred {count} times in last {(now - lastSummaryMillis) / ONE_SECOND}");
       logger.accept(summary, null);
 
       lastSummaryMillis = now;

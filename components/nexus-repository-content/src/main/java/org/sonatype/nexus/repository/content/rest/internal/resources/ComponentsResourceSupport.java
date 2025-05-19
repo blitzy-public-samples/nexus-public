@@ -16,6 +16,9 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.Predicate;
 
 import org.sonatype.goodies.common.ComponentSupport;
@@ -29,6 +32,8 @@ import org.sonatype.nexus.repository.selector.ContentAuthHelper;
 import org.sonatype.nexus.repository.types.GroupType;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
+import static java.util.concurrent.CompletableFuture.supplyAsync;
 import static java.util.stream.Collectors.toList;
 import static org.sonatype.nexus.repository.content.rest.internal.resources.AssetsResourceSupport.toInternalToken;
 import static org.sonatype.nexus.repository.content.rest.internal.resources.AssetsResourceSupport.trim;
@@ -52,6 +57,11 @@ abstract class ComponentsResourceSupport
   private final ContentAuthHelper contentAuthHelper;
 
   private final RepositoryManagerRESTAdapter repositoryManagerRESTAdapter;
+  
+  /**
+   * Virtual thread executor for concurrent component and asset operations
+   */
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   ComponentsResourceSupport(
       final ContentAuthHelper contentAuthHelper,
@@ -63,31 +73,59 @@ abstract class ComponentsResourceSupport
 
   List<FluentComponent> browse(final Repository browsedRepository, final String continuationToken)
   {
+    log.debug(STR."Browsing components in repository \{browsedRepository.getName()\} with token \{continuationToken\}");
+    
     List<FluentComponent> permittedComponents = new ArrayList<>();
     String internalToken = toInternalToken(continuationToken);
     Continuation<FluentComponent> componentContinuation = getComponents(browsedRepository, internalToken);
 
+    // Process components concurrently using Virtual Threads
     while (permittedComponents.size() < PAGE_SIZE_LIMIT && !componentContinuation.isEmpty()) {
-      permittedComponents.addAll(removeComponentsNotPermitted(browsedRepository, componentContinuation));
-      componentContinuation = getComponents(browsedRepository, componentContinuation.nextContinuationToken());
+      // Create a final reference for use in lambda
+      Continuation<FluentComponent> currentContinuation = componentContinuation;
+      
+      // Process component permissions asynchronously using virtual threads
+      CompletableFuture<List<FluentComponent>> permittedComponentsFuture = supplyAsync(
+          () -> removeComponentsNotPermitted(browsedRepository, currentContinuation),
+          virtualThreadExecutor);
+      
+      // Get the next continuation asynchronously while processing current components
+      CompletableFuture<Continuation<FluentComponent>> nextContinuationFuture = supplyAsync(
+          () -> getComponents(browsedRepository, currentContinuation.nextContinuationToken()),
+          virtualThreadExecutor);
+      
+      // Add permitted components to the result list
+      permittedComponents.addAll(permittedComponentsFuture.join());
+      
+      // Get the next continuation
+      componentContinuation = nextContinuationFuture.join();
     }
-    return trim(permittedComponents, PAGE_SIZE_LIMIT);
+    
+    List<FluentComponent> result = trim(permittedComponents, PAGE_SIZE_LIMIT);
+    log.debug(STR."Found \{result.size()\} permitted components in repository \{browsedRepository.getName()\}");
+    return result;
   }
 
   private Continuation<FluentComponent> getComponents(Repository repository, final String continuationToken) {
-    if(GroupType.NAME.equals(repository.getType().getValue())) {
-      return repository.facet(ContentFacet.class).components().withOnlyGroupMemberContent()
+    // Use pattern matching to simplify repository type handling
+    return switch (repository.getType().getValue()) {
+      case GroupType.NAME -> repository.facet(ContentFacet.class).components().withOnlyGroupMemberContent()
           .browse(PAGE_SIZE_LIMIT, continuationToken);
-    }
-    return repository.facet(ContentFacet.class).components().browse(PAGE_SIZE_LIMIT, continuationToken);
+      default -> repository.facet(ContentFacet.class).components().browse(PAGE_SIZE_LIMIT, continuationToken);
+    };
   }
 
   private List<FluentComponent> removeComponentsNotPermitted(
       final Repository repository,
       final Continuation<FluentComponent> assets)
   {
+    String format = repository.getFormat().getValue();
+    String repositoryName = repository.getName();
+    
+    log.trace(STR."Filtering components for permissions in repository \{repositoryName\} with format \{format\}");
+    
     return assets.stream()
-        .filter(componentPermitted(repository.getFormat().getValue(), repository.getName()))
+        .filter(componentPermitted(format, repositoryName))
         .collect(toList());
   }
 
@@ -97,10 +135,14 @@ abstract class ComponentsResourceSupport
 
   Predicate<FluentAsset> assetPermitted(Repository repository) {
     String repositoryName = repository.getName();
+    String format = repository.getFormat().getValue();
+    
+    // Optimize set creation and conversion to array
     Set<String> repoNames = new HashSet<>(repositoryManagerRESTAdapter.findContainingGroups(repositoryName));
     repoNames.add(repositoryName);
-    return asset ->
-        contentAuthHelper.checkPathPermissions(asset.path(), repository.getFormat().getValue(),
-            repoNames.toArray(new String[0]));
+    String[] repoNamesArray = repoNames.toArray(String[]::new);
+    
+    // Create an optimized lambda that captures the necessary variables
+    return asset -> contentAuthHelper.checkPathPermissions(asset.path(), format, repoNamesArray);
   }
 }

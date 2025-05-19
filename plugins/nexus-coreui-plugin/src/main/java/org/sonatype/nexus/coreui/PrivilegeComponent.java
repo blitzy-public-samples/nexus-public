@@ -12,29 +12,14 @@
  */
 package org.sonatype.nexus.coreui;
 
-import java.lang.reflect.Field;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ExecutorService;
-import java.util.stream.Collectors;
-
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.validation.Valid;
-import javax.validation.constraints.NotEmpty;
-import javax.validation.constraints.NotNull;
-import javax.validation.groups.Default;
-
 import com.codahale.metrics.annotation.ExceptionMetered;
 import com.codahale.metrics.annotation.Timed;
 import com.google.common.collect.Maps;
 import com.softwarementors.extjs.djn.config.annotations.DirectAction;
 import com.softwarementors.extjs.djn.config.annotations.DirectMethod;
-
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
+
 import org.sonatype.nexus.extdirect.DirectComponent;
 import org.sonatype.nexus.extdirect.DirectComponentSupport;
 import org.sonatype.nexus.extdirect.model.PagedResponse;
@@ -49,6 +34,18 @@ import org.sonatype.nexus.security.privilege.ReadonlyPrivilegeException;
 import org.sonatype.nexus.validation.Validate;
 import org.sonatype.nexus.validation.group.Create;
 import org.sonatype.nexus.validation.group.Update;
+
+import javax.inject.Inject;
+import javax.inject.Named;
+import javax.inject.Singleton;
+import javax.validation.Valid;
+import javax.validation.constraints.NotEmpty;
+import javax.validation.constraints.NotNull;
+import javax.validation.groups.Default;
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -66,9 +63,6 @@ public class PrivilegeComponent
   private final SecuritySystem securitySystem;
 
   private final List<PrivilegeDescriptor> privilegeDescriptors;
-  
-  // Virtual thread executor for I/O-bound operations
-  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   @Inject
   public PrivilegeComponent(
@@ -89,11 +83,10 @@ public class PrivilegeComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:privileges:read")
   public PagedResponse<PrivilegeXO> read(final StoreLoadParameters parameters) {
-    // Using virtual threads for I/O-bound operations
     List<PrivilegeXO> privileges = securitySystem.listPrivileges()
         .stream()
         .map(this::convert)
-        .collect(Collectors.toList());
+        .collect(Collectors.toList()); // NOSONAR
     return extractPage(parameters, privileges);
   }
 
@@ -105,11 +98,10 @@ public class PrivilegeComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:privileges:read")
   public List<ReferenceXO> readReferences() {
-    // Using virtual threads for I/O-bound operations
     return securitySystem.listPrivileges()
         .stream()
         .map(privilege -> new ReferenceXO(privilege.getId(), privilege.getName()))
-        .collect(Collectors.toList());
+        .collect(Collectors.toList()); // NOSONAR
   }
 
   /**
@@ -118,31 +110,24 @@ public class PrivilegeComponent
    */
   @RequiresPermissions("nexus:privileges:read")
   public PagedResponse<PrivilegeXO> extractPage(final StoreLoadParameters parameters, final List<PrivilegeXO> xos) {
-    log.trace(STR."requesting page with parameters: \{parameters} and size of: \{xos.size()}");
+    log.trace("requesting page with parameters: {} and size of: ${}", parameters, xos.size());
 
     checkArgument(parameters.getStart() == null || parameters.getStart() == 0 || parameters.getStart() < xos.size(),
         "Requested to skip more results than available");
 
     List<PrivilegeXO> result = new ArrayList<>(xos);
-    
-    // Apply filtering using pattern matching
     if (parameters.getFilter() != null && !parameters.getFilter().isEmpty()) {
       String filter = parameters.getFilter().get(0).getValue();
       result = xos.stream()
-          .filter(xo -> xo.getName().contains(filter) || 
-                       xo.getDescription().contains(filter) ||
-                       xo.getPermission().contains(filter) || 
-                       xo.getType().contains(filter))
+          .filter(xo -> xo.getName().contains(filter) || xo.getDescription().contains(filter) ||
+              xo.getPermission().contains(filter) || xo.getType().contains(filter))
           .collect(Collectors.toList());
     }
 
-    // Apply sorting using pattern matching
     if (parameters.getSort() != null && !parameters.getSort().isEmpty()) {
       // assume one sort, not multiple props
-      var sortInfo = parameters.getSort().get(0);
-      boolean ascending = "ASC".equals(sortInfo.getDirection());
-      String sortProperty = sortInfo.getProperty();
-      
+      boolean ascending = "ASC".equals(parameters.getSort().get(0).getDirection());
+      String sortProperty = parameters.getSort().get(0).getProperty();
       result.sort((a, b) -> {
         int comparison = getFieldValue(a, sortProperty).compareTo(getFieldValue(b, sortProperty));
         return ascending ? comparison : -comparison;
@@ -168,14 +153,12 @@ public class PrivilegeComponent
   @RequiresPermissions("nexus:privileges:read")
   public List<PrivilegeTypeXO> readTypes() {
     return privilegeDescriptors.stream()
-        .map(descriptor -> {
-          PrivilegeTypeXO xo = new PrivilegeTypeXO();
-          xo.setId(descriptor.getType());
-          xo.setName(descriptor.getName());
-          xo.setFormFields(convertFormFields(descriptor));
-          return xo;
-        })
-        .collect(Collectors.toList());
+        .map(descriptor -> new PrivilegeTypeXO(
+            descriptor.getType(),
+            descriptor.getName(),
+            convertFormFields(descriptor)
+        ))
+        .collect(Collectors.toList()); // NOSONAR
   }
 
   /**
@@ -217,7 +200,7 @@ public class PrivilegeComponent
       return convert(authorizationManager.updatePrivilege(convert(privilege)));
     }
     catch (ReadonlyPrivilegeException e) {
-      throw new IllegalAccessException(STR."Privilege [\{privilege.getId()}] is readonly and cannot be updated");
+      throw new IllegalAccessException("Privilege [" + privilege.getId() + "] is readonly and cannot be updated");
     }
   }
 
@@ -238,7 +221,7 @@ public class PrivilegeComponent
       authorizationManager.deletePrivilege(id);
     }
     catch (ReadonlyPrivilegeException e) {
-      throw new IllegalAccessException(STR."Privilege [\{id}] is readonly and cannot be deleted");
+      throw new IllegalAccessException("Privilege [" + id + "] is readonly and cannot be deleted");
     }
   }
 
@@ -271,31 +254,14 @@ public class PrivilegeComponent
     return privilege;
   }
 
-  /**
-   * Get field value using reflection with pattern matching for error handling.
-   */
   private Comparable getFieldValue(Object obj, String fieldName) {
     try {
       Field field = obj.getClass().getDeclaredField(fieldName);
       field.setAccessible(true);
       return (Comparable<?>) field.get(obj);
     }
-    catch (Exception e) {
-      // Using pattern matching to handle different exception types
-      return switch (e) {
-        case NoSuchFieldException nfe -> {
-          log.debug(STR."Field not found: \{fieldName} in \{obj.getClass().getName()}");
-          yield null;
-        }
-        case IllegalAccessException iae -> {
-          log.debug(STR."Cannot access field: \{fieldName} in \{obj.getClass().getName()}");
-          yield null;
-        }
-        default -> {
-          log.debug(STR."Unexpected error accessing field: \{fieldName} in \{obj.getClass().getName()}: \{e.getMessage()}");
-          yield null;
-        }
-      };
+    catch (NoSuchFieldException | IllegalAccessException e) {
+      return null;
     }
   }
 
@@ -304,9 +270,9 @@ public class PrivilegeComponent
       return null;
     }
 
-    return descriptor.getFormFields()
+    return (List<FormFieldXO>) descriptor.getFormFields()
         .stream()
         .map(f -> FormFieldXO.create((FormField) f))
-        .collect(Collectors.toList());
+        .collect(Collectors.toList()); // NOSONAR
   }
 }

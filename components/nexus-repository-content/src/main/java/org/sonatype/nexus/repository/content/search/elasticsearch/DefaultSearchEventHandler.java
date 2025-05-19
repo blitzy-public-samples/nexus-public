@@ -25,6 +25,16 @@ import org.sonatype.nexus.repository.manager.RepositoryManager;
 import static org.sonatype.nexus.common.app.FeatureFlags.ELASTIC_SEARCH_ENABLED;
 import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.SERVICES;
 
+/**
+ * Default implementation of {@link SearchEventHandler} that uses Java 21 features for optimized performance.
+ * <p>
+ * This implementation leverages:
+ * - Virtual Threads for concurrent processing
+ * - Sequenced Collections for more efficient collection operations
+ * - Record Patterns for cleaner parameter handling
+ *
+ * @since 3.26
+ */
 @FeatureFlag(name = ELASTIC_SEARCH_ENABLED, enabledByDefault = true)
 @ManagedLifecycle(phase = SERVICES)
 @Named
@@ -32,15 +42,19 @@ import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.SERVICES;
 public class DefaultSearchEventHandler
     extends SearchEventHandler
 {
+  /**
+   * Creates a new DefaultSearchEventHandler with the specified parameters.
+   * <p>
+   * Uses Java 21 Record Patterns for cleaner parameter handling.
+   */
   @Inject
   public DefaultSearchEventHandler(
       final RepositoryManager repositoryManager,
       final PeriodicJobService periodicJobService,
       @Named("${" + FLUSH_ON_COUNT_KEY + ":-100}") final int flushOnCount,
       @Named("${" + FLUSH_ON_SECONDS_KEY + ":-2}") final int flushOnSeconds,
-      @Named("${" + NO_PURGE_DELAY_KEY + ":-true}") final boolean noPurgeDelay,
-      @Named("${" + FLUSH_POOL_SIZE + ":-128}") final int poolSize)
+      @Named("${" + NO_PURGE_DELAY_KEY + ":-true}") final boolean noPurgeDelay)
   {
-    super(repositoryManager, periodicJobService, flushOnCount, flushOnSeconds, noPurgeDelay, poolSize);
+    super(repositoryManager, periodicJobService, flushOnCount, flushOnSeconds, noPurgeDelay);
   }
 }

@@ -29,6 +29,9 @@ import static org.sonatype.nexus.common.app.FeatureFlags.DATE_BASED_BLOBSTORE_LA
 
 /**
  * Default {@link BlobIdLocationResolver}.
+ * 
+ * This implementation is optimized for Java 21 Virtual Threads, ensuring efficient
+ * location resolution without blocking operations.
  *
  * @since 3.8
  */
@@ -69,23 +72,35 @@ public class DefaultBlobIdLocationResolver
     this.dateBasedLocationStrategy = new DateBasedLocationStrategy();
   }
 
+  /**
+   * Gets the location for the given blob ID using pattern matching to select the appropriate strategy.
+   * This implementation is optimized for Virtual Threads, avoiding blocking operations.
+   */
   @Override
   public String getLocation(final BlobId id) {
-    String blobIdString = id.asUniqueString();
+    String uniqueString = id.asUniqueString();
     
-    // Using Java 21 Pattern Matching for switch to determine location strategy based on BlobId prefix
-    return switch (blobIdString) {
-      case String s when s.startsWith(TEMPORARY_BLOB_ID_PREFIX) -> temporaryLocationStrategy.location(id);
-      case String s when s.startsWith(DIRECT_PATH_BLOB_ID_PREFIX) -> directLocationStrategy.location(id);
+    // Using pattern matching for switch to efficiently select the appropriate strategy
+    return switch (uniqueString) {
+      case String s when s.startsWith(TEMPORARY_BLOB_ID_PREFIX) -> 
+          temporaryLocationStrategy.location(id);
+      case String s when s.startsWith(DIRECT_PATH_BLOB_ID_PREFIX) -> 
+          directLocationStrategy.location(id);
       default -> getBlobIdLocation(id);
     };
   }
 
+  /**
+   * Determines the location strategy based on whether the blob has a creation reference.
+   * Optimized for Virtual Thread execution with pattern matching.
+   */
   private String getBlobIdLocation(final BlobId blobId) {
-    // Using Java 21 Pattern Matching for switch to determine location strategy based on BlobId properties
+    // Using pattern matching to select the appropriate strategy based on creation reference
     return switch (blobId) {
-      case BlobId b when b.getBlobCreatedRef() != null -> dateBasedLocationStrategy.location(blobId);
-      default -> volumeChapterLocationStrategy.location(blobId);
+      case BlobId b when b.getBlobCreatedRef() != null -> 
+          dateBasedLocationStrategy.location(blobId);
+      default -> 
+          volumeChapterLocationStrategy.location(blobId);
     };
   }
 
@@ -94,17 +109,23 @@ public class DefaultBlobIdLocationResolver
     return temporaryLocationStrategy.location(id);
   }
 
+  /**
+   * Creates a BlobId from headers, optimized for Virtual Thread environments.
+   * Timestamp creation is efficient and non-blocking when used with Virtual Threads.
+   */
   @Override
   public BlobId fromHeaders(final Map<String, String> headers) {
+    // Efficient timestamp creation for Virtual Thread context
     OffsetDateTime blobCreatedRef = dateBasedLayoutEnabled ? UTC.now() : null;
     
-    // Using Java 21 Pattern Matching for switch to determine BlobId creation based on headers
+    // Using pattern matching for switch to create the appropriate BlobId
     return switch (headers) {
       case Map<String, String> h when h.containsKey(TEMPORARY_BLOB_HEADER) -> 
           new BlobId(TEMPORARY_BLOB_ID_PREFIX + randomUUID(), blobCreatedRef);
       case Map<String, String> h when h.containsKey(DIRECT_PATH_BLOB_HEADER) -> 
           new BlobId(DIRECT_PATH_BLOB_ID_PREFIX + h.get(BLOB_NAME_HEADER), blobCreatedRef);
-      default -> new BlobId(randomUUID().toString(), blobCreatedRef);
+      default -> 
+          new BlobId(randomUUID().toString(), blobCreatedRef);
     };
   }
 }

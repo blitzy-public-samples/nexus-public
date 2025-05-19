@@ -18,11 +18,13 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import org.sonatype.nexus.common.cooperation2.Config;
 import org.sonatype.nexus.common.cooperation2.CooperationException;
@@ -32,6 +34,7 @@ import org.sonatype.nexus.common.cooperation2.IOCall;
 import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Throwables.propagateIfPossible;
@@ -39,10 +42,6 @@ import static java.lang.Boolean.TRUE;
 
 /**
  * {@link CompletableFuture} that has various features added to help with cooperation.
- * <p>
- * This implementation is compatible with Java 21 Virtual Threads and optimized for high-throughput
- * concurrent operations. It properly handles ThreadLocal context propagation in both platform and
- * virtual thread environments.
  *
  * @since 3.14
  */
@@ -52,11 +51,17 @@ public class CooperatingFuture<T>
   protected static final Logger log = LoggerFactory.getLogger(CooperatingFuture.class);
 
   /**
-   * ThreadLocal to track nested calls. This is compatible with Virtual Threads in Java 21,
-   * but care should be taken as each virtual thread will have its own instance.
-   * The memory impact is minimal as we only store a Boolean value.
+   * ThreadLocal to track if a call is in progress.
+   * Note: With Virtual Threads, we need to be careful with ThreadLocal usage as there could be
+   * millions of virtual threads, each with its own ThreadLocal value.
    */
   private static final ThreadLocal<Boolean> callInProgress = new ThreadLocal<>();
+
+  /**
+   * ThreadLocal to store context information that needs to be propagated to Virtual Threads.
+   * This is used to ensure proper context propagation in a Virtual Thread environment.
+   */
+  private static final ThreadLocal<ThreadContext> threadContext = new ThreadLocal<>();
 
   private final AtomicLong staggerTimeMillis = new AtomicLong(System.currentTimeMillis());
 
@@ -79,10 +84,56 @@ public class CooperatingFuture<T>
   }
 
   /**
+   * Executes the given I/O request asynchronously using a Virtual Thread and updates this future with any result or error.
+   * This method is optimized for I/O-bound operations that can benefit from Virtual Threads.
+   *
+   * @param supplier The supplier that provides the result
+   * @return CompletableFuture that will be completed with the result or exception
+   * @since 3.60
+   */
+  public CompletableFuture<T> executeAsync(final Supplier<T> supplier) {
+    // Capture the current thread context for propagation to the virtual thread
+    ThreadContext context = captureThreadContext();
+    
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      executor.submit(() -> {
+        boolean nested = isNestedCall();
+        try {
+          // Apply the captured context to the virtual thread
+          if (context != null) {
+            applyThreadContext(context);
+          }
+          
+          if (!nested) {
+            callInProgress.set(TRUE);
+          }
+          
+          log.debug("Requesting asynchronously {}", this);
+          T value = supplier.get();
+          log.debug("Completing asynchronously {}", this);
+          complete(value);
+        }
+        catch (Exception | Error e) { // NOSONAR report all errors to cooperating threads
+          log.debug("Completing {} asynchronously with exception", this, e);
+          completeExceptionally(e);
+        }
+        finally {
+          if (!nested) {
+            callInProgress.remove();
+          }
+          // Clean up the thread context
+          if (context != null) {
+            clearThreadContext();
+          }
+        }
+      });
+    }
+    
+    return this;
+  }
+
+  /**
    * Cooperates on the given I/O request by waiting for the lead thread to complete.
-   * <p>
-   * This method is optimized for Java 21 Virtual Threads and will efficiently handle
-   * I/O operations without blocking platform threads unnecessarily.
    */
   public T cooperate(final Function<Boolean, T> request) throws IOException {
     increaseCooperation();
@@ -128,9 +179,6 @@ public class CooperatingFuture<T>
 
   /**
    * Fluent method that performs I/O and stores the result in this future, before passing it back.
-   * <p>
-   * When running on Java 21, this method benefits from Virtual Threads for I/O operations,
-   * allowing for high concurrency without excessive resource consumption.
    */
   protected T performCall(final Function<Boolean, T> request, final boolean failover) throws IOException {
     boolean nested = isNestedCall();
@@ -151,16 +199,13 @@ public class CooperatingFuture<T>
     }
     finally {
       if (!nested) {
-        callInProgress.remove(); // Properly clean up ThreadLocal to avoid memory leaks in Virtual Threads
+        callInProgress.remove();
       }
     }
   }
 
   /**
    * Cooperatively waits for the lead thread; may failover and repeat the request if allowed.
-   * <p>
-   * This method is optimized for Java 21 Virtual Threads, which efficiently handle blocking
-   * operations by unmounting from their carrier thread, allowing other virtual threads to run.
    */
   protected T waitForCall(
       final Function<Boolean, T> request,
@@ -225,32 +270,78 @@ public class CooperatingFuture<T>
 
   /**
    * @return staggered timeout that makes sure waiting threads don't all wake-up at the same time
+   * Optimized for Virtual Thread wake-ups to prevent thundering herd problems with many concurrent threads.
    */
   @VisibleForTesting
   Duration staggerTimeout(final Duration gap) {
     long currentTimeMillis = System.currentTimeMillis();
 
-    // atomically progress the staggered time
-    long prevTimeMillis, nextTimeMillis;
-    do {
-      prevTimeMillis = staggerTimeMillis.get();
-      nextTimeMillis = Math.max(prevTimeMillis + gap.toMillis(), currentTimeMillis);
+    // Use a more efficient algorithm for Virtual Threads to reduce contention
+    // on the atomic variable when many Virtual Threads are waiting
+    long prevTimeMillis = staggerTimeMillis.get();
+    long nextTimeMillis = Math.max(prevTimeMillis + gap.toMillis(), currentTimeMillis);
+    
+    // Try once with compareAndSet, but don't retry in a loop to avoid contention
+    // If it fails, use a slightly randomized timeout instead to spread out wake-ups
+    if (!staggerTimeMillis.compareAndSet(prevTimeMillis, nextTimeMillis)) {
+      // Add a small random component to spread out wake-ups when many threads are waiting
+      long randomOffset = (long) (Math.random() * Math.min(1000, gap.toMillis() / 10));
+      nextTimeMillis = Math.max(staggerTimeMillis.get() + randomOffset, currentTimeMillis);
     }
-    while (!staggerTimeMillis.compareAndSet(prevTimeMillis, nextTimeMillis));
 
     return Duration.ofMillis(nextTimeMillis - currentTimeMillis);
   }
-
+  
   /**
-   * Creates a new executor service that creates a new virtual thread for each task.
-   * This is useful for executing multiple I/O operations concurrently with minimal overhead.
-   * <p>
-   * Note: This method should be used for I/O-bound operations, not CPU-bound tasks.
+   * Captures the current thread context for propagation to Virtual Threads.
+   * This ensures that context information like MDC values are properly transferred.
    *
-   * @return An executor service that uses virtual threads
-   * @since 3.60
+   * @return The captured thread context or null if there's nothing to capture
    */
-  public static java.util.concurrent.ExecutorService newVirtualThreadExecutor() {
-    return Executors.newVirtualThreadPerTaskExecutor();
+  private ThreadContext captureThreadContext() {
+    // Only capture context if MDC has values to avoid unnecessary object creation
+    if (MDC.getCopyOfContextMap() != null && !MDC.getCopyOfContextMap().isEmpty()) {
+      return new ThreadContext(MDC.getCopyOfContextMap());
+    }
+    return null;
+  }
+  
+  /**
+   * Applies the captured thread context to the current thread.
+   *
+   * @param context The thread context to apply
+   */
+  private void applyThreadContext(final ThreadContext context) {
+    // Store the current context so we can restore it later
+    threadContext.set(new ThreadContext(MDC.getCopyOfContextMap()));
+    
+    // Apply the captured context
+    if (context.mdcContext != null) {
+      MDC.setContextMap(context.mdcContext);
+    }
+  }
+  
+  /**
+   * Clears the thread context and restores the original context if available.
+   */
+  private void clearThreadContext() {
+    ThreadContext originalContext = threadContext.get();
+    if (originalContext != null && originalContext.mdcContext != null) {
+      MDC.setContextMap(originalContext.mdcContext);
+    } else {
+      MDC.clear();
+    }
+    threadContext.remove();
+  }
+  
+  /**
+   * Simple container for thread context information that needs to be propagated to Virtual Threads.
+   */
+  private static class ThreadContext {
+    final java.util.Map<String, String> mdcContext;
+    
+    ThreadContext(java.util.Map<String, String> mdcContext) {
+      this.mdcContext = mdcContext;
+    }
   }
 }

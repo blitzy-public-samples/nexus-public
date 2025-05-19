@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.repository.content.event.component;
 
+import java.io.Serializable;
+
 import org.sonatype.nexus.repository.content.Component;
 
 /**
@@ -21,8 +23,27 @@ import org.sonatype.nexus.repository.content.Component;
  */
 public class ComponentUpdatedEvent
     extends ComponentEvent
+    implements Serializable
 {
-  protected ComponentUpdatedEvent(final Component component) {
+  private static final long serialVersionUID = 1L;
+
+  /**
+   * Creates a new ComponentUpdatedEvent.
+   *
+   * @param component the updated component
+   */
+  public ComponentUpdatedEvent(final Component component) {
     super(component);
+  }
+
+  /**
+   * Factory method to create a new ComponentUpdatedEvent optimized for Virtual Thread execution.
+   * This method ensures the event is properly initialized for propagation across thread boundaries.
+   *
+   * @param component the updated component
+   * @return a new ComponentUpdatedEvent instance
+   */
+  public static ComponentUpdatedEvent of(final Component component) {
+    return new ComponentUpdatedEvent(component);
   }
 }

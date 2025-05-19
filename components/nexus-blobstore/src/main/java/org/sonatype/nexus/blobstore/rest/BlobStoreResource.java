@@ -14,20 +14,18 @@ package org.sonatype.nexus.blobstore.rest;
 
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-
-import javax.validation.Valid;
-import javax.validation.constraints.NotNull;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.GET;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.WebApplicationException;
-import javax.ws.rs.core.Response;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.Response;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.goodies.i18n.I18N;
@@ -46,14 +44,19 @@ import org.sonatype.nexus.validation.Validate;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 
-import static java.lang.StringTemplate.STR;
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 import static java.util.stream.Collectors.toList;
-import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
-import static javax.ws.rs.core.Response.Status.BAD_REQUEST;
-import static javax.ws.rs.core.Response.Status.NOT_FOUND;
+import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON;
+import static jakarta.ws.rs.core.Response.Status.BAD_REQUEST;
+import static jakarta.ws.rs.core.Response.Status.NOT_FOUND;
 
 /**
+ * REST resource for blob store management operations.
+ * 
+ * This implementation leverages Java 21 features including Virtual Threads for I/O-bound operations,
+ * String Templates for improved logging, and Pattern Matching for type checks.
+ *
  * @since 3.14
  */
 @Produces(APPLICATION_JSON)
@@ -96,13 +99,16 @@ public class BlobStoreResource
   @RequiresPermissions("nexus:blobstores:read")
   @GET
   public List<GenericBlobStoreApiResponse> listBlobStores() {
-    Map<String, BlobStore> blobstoresByName = blobStoreManager.getByName();
-    return store.list()
-        .stream()
-        .map(
-            configuration -> new GenericBlobStoreApiResponse(configuration,
-                blobstoresByName.get(configuration.getName())))
-        .collect(toList());
+    // This method is I/O-bound when retrieving blob store configurations and metrics
+    // Using Virtual Threads for improved concurrency without blocking platform threads
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+      Map<String, BlobStore> blobstoresByName = blobStoreManager.getByName();
+      return store.list()
+          .stream()
+          .map(configuration -> new GenericBlobStoreApiResponse(
+              configuration, blobstoresByName.get(configuration.getName())))
+          .collect(toList());
+    }).join();
   }
 
   @Override
@@ -111,22 +117,24 @@ public class BlobStoreResource
   @DELETE
   @Path("/{name}")
   public void deleteBlobStore(@PathParam("name") final String name) throws Exception {
-    if (!blobStoreManager.exists(name)) {
-      BlobStoreResourceUtil.throwCreateBlobStoreNotFoundException("", name);
-    }
-    
-    // Use Virtual Threads for I/O-bound blob store deletion operation
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      executor.submit(() -> {
-        try {
-          blobStoreManager.delete(name);
+    // This method is I/O-bound when deleting blob store data
+    // Using Virtual Threads for improved concurrency without blocking platform threads
+    Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+      if (!blobStoreManager.exists(name)) {
+        BlobStoreResourceUtil.throwCreateBlobStoreNotFoundException("", name);
+      }
+      try {
+        blobStoreManager.delete(name);
+        return null; // Needed for CompletableFuture<Void>
+      }
+      catch (BlobStoreException e) {
+        // Using pattern matching for exception handling
+        if (e instanceof BlobStoreException bse) {
+          BlobStoreResourceUtil.throwBlobStoreBadRequestException(bse.getMessage());
         }
-        catch (BlobStoreException e) {
-          BlobStoreResourceUtil.throwBlobStoreBadRequestException(e.getMessage());
-        }
-        return null;
-      }).get();
-    }
+        throw e;
+      }
+    }).join();
   }
 
   @Override
@@ -135,21 +143,26 @@ public class BlobStoreResource
   @GET
   @Path("/{name}/quota-status")
   public BlobStoreQuotaResultXO quotaStatus(@PathParam("name") final String name) {
-    BlobStore blobStore = blobStoreManager.get(name);
+    // This method is I/O-bound when checking quota metrics
+    // Using Virtual Threads for improved concurrency without blocking platform threads
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+      BlobStore blobStore = blobStoreManager.get(name);
 
-    if (blobStore == null) {
-      throw new WebApplicationException(STR."No blob store found for id '\{name}'", NOT_FOUND);
-    }
+      if (blobStore == null) {
+        // Using String Templates instead of String.format for improved readability and performance
+        throw new WebApplicationException(
+            STR."No blob store found for id '{name}' ", 
+            NOT_FOUND);
+      }
 
-    // Use Virtual Threads for I/O-bound quota retrieval operation
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      BlobStoreQuotaResult result = executor.submit(() -> quotaService.checkQuota(blobStore)).get();
-      return result != null ? BlobStoreQuotaResultXO.asQuotaXO(result) : BlobStoreQuotaResultXO.asNoQuotaXO(name);
-    }
-    catch (Exception e) {
-      log.error(STR."Error retrieving quota status for blob store '\{name}'", e);
-      throw new WebApplicationException(STR."Failed to retrieve quota status for '\{name}': \{e.getMessage()}", BAD_REQUEST);
-    }
+      BlobStoreQuotaResult result = quotaService.checkQuota(blobStore);
+
+      // Using pattern matching for improved type checking and readability
+      return switch(result) {
+        case null -> BlobStoreQuotaResultXO.asNoQuotaXO(name);
+        case BlobStoreQuotaResult quotaResult -> BlobStoreQuotaResultXO.asQuotaXO(quotaResult);
+      };
+    }).join();
   }
 
   @Override
@@ -159,29 +172,33 @@ public class BlobStoreResource
   @RequiresPermissions("nexus:blobstores:read")
   @Validate
   public void verifyConnection(final @NotNull @Valid BlobStoreConnectionXO blobStoreConnectionXO) {
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      executor.submit(() -> {
-        try {
-          ConnectionChecker conChecker = checkNotNull(connectionCheckers.get(blobStoreConnectionXO.getType()));
-          conChecker.verifyConnection(blobStoreConnectionXO.getName(), blobStoreConnectionXO.getAttributes());
-          return null;
+    // This method is I/O-bound when testing remote connections
+    // Using Virtual Threads for improved concurrency without blocking platform threads
+    Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+      try {
+        // Get the appropriate connection checker for this blob store type
+        ConnectionChecker conChecker = connectionCheckers.get(blobStoreConnectionXO.getType());
+        if (conChecker == null) {
+          throw new IllegalArgumentException(STR."No connection checker available for type '{blobStoreConnectionXO.getType()}'.");
         }
-        catch (BlobStoreConnectionException ce) { // NOSONAR
-          log.error(STR."Can't connect to \{blobStoreConnectionXO.getType()} blob store", ce);
+        
+        // Verify the connection using the provided attributes
+        conChecker.verifyConnection(blobStoreConnectionXO.getName(), blobStoreConnectionXO.getAttributes());
+        return null; // Needed for CompletableFuture<Void>
+      }
+      catch (Exception e) {
+        // Using pattern matching for exception handling with improved logging
+        if (e instanceof BlobStoreConnectionException ce) {
+          // Using String Templates for structured logging
+          log.error(STR."Can't connect to {blobStoreConnectionXO.getType()} blob store: {ce.getMessage()}", ce);
           throw new WebApplicationException(Response.status(BAD_REQUEST).entity(ce.getMessage()).build());
         }
-        catch (Exception e) {
-          log.warn(STR."Can't connect to \{blobStoreConnectionXO.getType()} blob store", e);
+        else {
+          // Using String Templates for structured logging
+          log.warn(STR."Can't connect to {blobStoreConnectionXO.getType()} blob store: {e.getMessage()}", e);
           throw new WebApplicationException(Response.status(BAD_REQUEST).entity(messages.connectionError()).build());
         }
-      }).get();
-    }
-    catch (Exception e) {
-      if (e.getCause() instanceof WebApplicationException) {
-        throw (WebApplicationException) e.getCause();
       }
-      log.error(STR."Error during connection verification for \{blobStoreConnectionXO.getType()} blob store", e);
-      throw new WebApplicationException(Response.status(BAD_REQUEST).entity(messages.connectionError()).build());
-    }
+    }).join();
   }
 }

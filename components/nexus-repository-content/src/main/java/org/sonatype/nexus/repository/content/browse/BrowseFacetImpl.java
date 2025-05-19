@@ -19,6 +19,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import javax.inject.Inject;
@@ -220,30 +223,41 @@ public class BrowseFacetImpl
         ProgressLogIntervalHelper progressLogger = new ProgressLogIntervalHelper(log, 60);
         Stopwatch sw = Stopwatch.createStarted();
 
-        long processed = 0;
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+          long processed = 0;
+          Continuation<FluentAsset> page = assets.browse(pageSize, null);
+          
+          while (!page.isEmpty()) {
+            // Create a batch of futures for this page
+            List<Future<?>> futures = page.stream()
+                .map(fluentAsset -> executor.submit(() -> 
+                    createBrowseNodes(fluentAsset, processedComponents)))
+                .toList();
+            
+            // Wait for all tasks in this batch to complete
+            for (Future<?> future : futures) {
+              future.get(); // This will throw an exception if the task failed
+            }
+            
+            processed += page.size();
 
-        Continuation<FluentAsset> page = assets.browse(pageSize, null);
-        while (!page.isEmpty()) {
-          page.forEach(fluentAsset -> createBrowseNodes(fluentAsset, processedComponents));
-          processed += page.size();
-
-          long elapsed = sw.elapsed(TimeUnit.MILLISECONDS);
-          progressLogger.info("Processed {} / {} {} assets in {} ms",
-              processed, total, repositoryName, elapsed);
-          if (progressUpdater != null) {
+            long elapsed = sw.elapsed(TimeUnit.MILLISECONDS);
             long percentageComplete = BigDecimal.valueOf(processed)
-                .divide(BigDecimal.valueOf(total),
-                    2, RoundingMode.HALF_UP)
+                .divide(BigDecimal.valueOf(total), 2, RoundingMode.HALF_UP)
                 .multiply(BigDecimal.valueOf(100))
                 .longValue();
-            progressUpdater.accept(
-                String.format("%d%% Complete", percentageComplete));
+                
+            progressLogger.info(STR."Processed \{processed} / \{total} \{repositoryName} assets in \{elapsed} ms");
+            
+            if (progressUpdater != null) {
+              progressUpdater.accept(STR."\{percentageComplete}% Complete");
+            }
+
+            checkCancellation();
+
+            page = assets.browse(pageSize, page.nextContinuationToken());
           }
-
-          checkCancellation();
-
-          page = assets.browse(pageSize, page.nextContinuationToken());
-        }
+        } // ExecutorService is automatically closed here
 
         progressLogger.flush(); // ensure the final progress message is flushed
       }

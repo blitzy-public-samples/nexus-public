@@ -14,6 +14,8 @@ package org.sonatype.nexus.repository.content.store.internal.migration;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -33,6 +35,7 @@ import org.sonatype.nexus.scheduling.schedule.Schedule;
 import com.google.common.collect.ImmutableMap;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.TASKS;
 import static org.sonatype.nexus.repository.config.ConfigurationConstants.DATA_STORE_NAME;
 import static org.sonatype.nexus.repository.config.ConfigurationConstants.STORAGE;
@@ -42,6 +45,8 @@ import static org.sonatype.nexus.repository.content.store.internal.migration.Ass
 
 /**
  * Manage scheduling {@link AssetBlobRefMigrationTask} for each format separately (if necessary).
+ * <p>
+ * Updated for Java 21 to use Virtual Threads for I/O operations and String Templates for logging.
  */
 @Named
 @Singleton
@@ -68,22 +73,35 @@ public class AssetBlobRefMigrationTaskManager
 
   @Override
   protected void doStart() throws Exception {
-    browseActiveFormatStores().forEach((format, contentStore) -> {
+    // Use ConcurrentHashMap for thread safety in Virtual Thread context
+    Map<String, String> activeFormatStores = browseActiveFormatStores();
+    
+    // Process each format store concurrently using Virtual Threads
+    activeFormatStores.forEach((format, contentStore) -> {
       FormatStoreManager formatStoreManager = formatStoreManagers.get(format);
       if (formatStoreManager != null) {
-        AssetBlobStore<?> assetBlobStore = formatStoreManager.assetBlobStore(contentStore);
-        boolean notMigratedAssetBlobRefsExists = assetBlobStore.notMigratedAssetBlobRefsExists();
-        if (notMigratedAssetBlobRefsExists) {
-          log.info("Found asset blobs with legacy blobRef for {} in {}. Scheduling a migration task for it.",
-              format, contentStore);
-          scheduleMigrationTask(format, contentStore);
-        }
+        // Use Virtual Thread for I/O-bound operation
+        Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+          try {
+            AssetBlobStore<?> assetBlobStore = formatStoreManager.assetBlobStore(contentStore);
+            // This is an I/O operation that benefits from Virtual Threads
+            boolean notMigratedAssetBlobRefsExists = assetBlobStore.notMigratedAssetBlobRefsExists();
+            if (notMigratedAssetBlobRefsExists) {
+              // Use Java 21 String Templates for structured logging
+              log.info(STR."Found asset blobs with legacy blobRef for \{format} in \{contentStore}. Scheduling a migration task for it.");
+              scheduleMigrationTask(format, contentStore);
+            }
+          } catch (Exception e) {
+            log.error(STR."Error checking for legacy blobRefs in format \{format} on store \{contentStore}", e);
+          }
+        });
       }
     });
   }
 
   private Map<String, String> browseActiveFormatStores() {
-    Map<String, String> activeFormatStores = new HashMap<>();
+    // Use ConcurrentHashMap for thread safety in Virtual Thread context
+    Map<String, String> activeFormatStores = new ConcurrentHashMap<>();
 
     repositoryManager.browse().forEach(repository -> {
       Configuration configuration = repository.getConfiguration();
@@ -104,11 +122,11 @@ public class AssetBlobRefMigrationTaskManager
 
     if (taskScheduler.getTaskByTypeId(TYPE_ID, settings) == null) {
       TaskConfiguration taskConfiguration = taskScheduler.createTaskConfigurationInstance(TYPE_ID);
-      taskConfiguration.setName("Migrate blobRef assets field for " + format + " format");
+      taskConfiguration.setName(STR."Migrate blobRef assets field for \{format} format");
       taskConfiguration.setString(FORMAT_FIELD_ID, format);
       taskConfiguration.setString(CONTENT_STORE_FIELD_ID, contentStore);
       Schedule schedule = taskScheduler.getScheduleFactory().now();
-      log.info("Scheduling blobRef migration task for {} format on {}", format, contentStore);
+      log.info(STR."Scheduling blobRef migration task for \{format} format on \{contentStore}");
       taskScheduler.scheduleTask(taskConfiguration, schedule);
     }
   }

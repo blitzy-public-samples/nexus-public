@@ -12,7 +12,13 @@
  */
 package org.sonatype.nexus.repository.content.event.asset;
 
+import java.util.Optional;
+
 import org.sonatype.nexus.repository.content.Asset;
+import org.sonatype.nexus.repository.content.AssetData;
+import org.sonatype.nexus.repository.content.Component;
+
+import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Event sent just before an {@link Asset} is deleted.
@@ -22,12 +28,36 @@ import org.sonatype.nexus.repository.content.Asset;
 public class AssetPreDeleteEvent
     extends AssetEvent
 {
+  /**
+   * Creates a new event for the given asset.
+   * 
+   * @param asset the asset being deleted (must not be null)
+   * @throws NullPointerException if asset is null
+   */
   public AssetPreDeleteEvent(final Asset asset) {
-    super(asset);
+    super(checkNotNull(asset, "Asset cannot be null"));
+  }
+  
+  /**
+   * Extracts asset path and component information using Java 21 Record Patterns.
+   * 
+   * @return asset path and component information if available
+   */
+  public String getAssetInfo() {
+    Asset asset = getAsset();
+    
+    // Using Java 21 Record Patterns for type-safe extraction of asset data
+    if (asset != null && asset.data() instanceof AssetData(var path, var kind, Optional<Component> component, var blob, var lastDownloaded, var blobStoreName, var blobSize)) {
+      return component.map(c -> STR."Asset at \{path} belonging to component \{c.name()}")
+          .orElse(STR."Asset at \{path} with no component");
+    }
+    
+    return "Asset information unavailable";
   }
 
   @Override
   public String toString() {
-    return "AssetPreDeleteEvent{} " + super.toString();
+    // Using Java 21 String Templates for more efficient string formatting
+    return STR."AssetPreDeleteEvent{} \{super.toString()}";
   }
 }

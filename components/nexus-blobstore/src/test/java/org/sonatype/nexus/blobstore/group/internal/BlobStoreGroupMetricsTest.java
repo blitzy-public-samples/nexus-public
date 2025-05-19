@@ -13,7 +13,16 @@
 package org.sonatype.nexus.blobstore.group.internal;
 
 import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.nexus.blobstore.api.BlobStoreMetrics;
 
 import org.junit.jupiter.api.Test;
@@ -21,19 +30,21 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.Collections.emptyList;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
+@Category(Java21TestGroup.class)
 public class BlobStoreGroupMetricsTest
+    extends TestSupport
 {
 
   @Test
   public void emptyMetricsIsAvailable() {
-    assertFalse(new BlobStoreGroupMetrics(emptyList()).isUnavailable());
+    assertThat(new BlobStoreGroupMetrics(emptyList()).isUnavailable(), is(false));
   }
 
   @Test
@@ -48,7 +59,7 @@ public class BlobStoreGroupMetricsTest
     verify(blobStoreMetrics).getAvailableSpaceByFileStore();
     verify(otherBlobStoreMetrics).isUnavailable();
     verify(otherBlobStoreMetrics).getAvailableSpaceByFileStore();
-    assertTrue(groupMetrics.isUnavailable());
+    assertThat(groupMetrics.isUnavailable(), is(true));
   }
 
   @Test
@@ -62,6 +73,59 @@ public class BlobStoreGroupMetricsTest
     verify(blobStoreMetrics).getAvailableSpaceByFileStore();
     verify(otherBlobStoreMetrics).isUnavailable();
     verify(otherBlobStoreMetrics).getAvailableSpaceByFileStore();
-    assertFalse(groupMetrics.isUnavailable());
+    assertThat(groupMetrics.isUnavailable(), is(false));
+  }
+  
+  @Test
+  public void concurrentMetricsAggregationWithVirtualThreads() throws Exception {
+    // Create a large number of mock metrics to simulate high concurrency
+    int metricCount = 1000;
+    List<BlobStoreMetrics> metricsList = new ArrayList<>(metricCount);
+    
+    // Create metrics with alternating availability
+    for (int i = 0; i < metricCount; i++) {
+      BlobStoreMetrics metrics = mock(BlobStoreMetrics.class);
+      when(metrics.isUnavailable()).thenReturn(i % 2 == 0); // even indices are unavailable
+      metricsList.add(metrics);
+    }
+    
+    // Create a group metrics instance with all the mock metrics
+    BlobStoreGroupMetrics groupMetrics = new BlobStoreGroupMetrics(metricsList);
+    
+    // Verify the group is available (since we have odd-indexed available metrics)
+    assertThat(groupMetrics.isUnavailable(), is(false));
+    
+    // Now test concurrent access using virtual threads
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      int taskCount = 100;
+      CountDownLatch latch = new CountDownLatch(taskCount);
+      AtomicInteger errorCount = new AtomicInteger(0);
+      
+      // Submit multiple concurrent tasks using virtual threads
+      for (int i = 0; i < taskCount; i++) {
+        executor.submit(() -> {
+          try {
+            // Verify the metrics in each virtual thread
+            assertThat(groupMetrics.isUnavailable(), is(false));
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      latch.await(30, TimeUnit.SECONDS);
+      
+      // Verify no errors occurred
+      assertThat(errorCount.get(), is(0));
+    }
+    
+    // Verify each mock was called at least once
+    for (BlobStoreMetrics metrics : metricsList) {
+      verify(metrics).isUnavailable();
+      verify(metrics).getAvailableSpaceByFileStore();
+    }
   }
 }

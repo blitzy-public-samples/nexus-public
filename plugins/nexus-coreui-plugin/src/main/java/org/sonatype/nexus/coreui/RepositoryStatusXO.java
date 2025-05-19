@@ -20,37 +20,24 @@ import javax.validation.constraints.NotEmpty;
  * @since 3.0
  */
 public record RepositoryStatusXO(
-    /**
-     * Name of associated Repository.
-     */
-    @NotEmpty
-    String repositoryName,
-
-    /**
-     * Whether or not the repository is online.
-     */
-    boolean online,
-
-    /**
-     * A description of the status.
-     */
-    String description,
-
-    /**
-     * A reason for the status.
-     */
-    String reason
-) {
   /**
-   * Maintains the original toString format for backward compatibility.
+   * Name of associated Repository.
    */
-  @Override
-  public String toString() {
-    return "RepositoryStatusXO{" +
-        "repositoryName='" + repositoryName + '\'' +
-        ", online=" + online +
-        ", description='" + description + '\'' +
-        ", reason='" + reason + '\'' +
-        '}';
-  }
-}
+  @NotEmpty
+  String repositoryName,
+
+  /**
+   * Whether or not the repository is online.
+   */
+  boolean online,
+
+  /**
+   * A description of the status.
+   */
+  String description,
+
+  /**
+   * A reason for the status.
+   */
+  String reason
+) {}

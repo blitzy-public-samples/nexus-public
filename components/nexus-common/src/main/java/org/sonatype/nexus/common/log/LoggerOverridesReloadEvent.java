@@ -23,6 +23,6 @@ public class LoggerOverridesReloadEvent
 
   @Override
   public String toString() {
-    return LoggerOverridesReloadEvent.class.getSimpleName();
+    return STR."{LoggerOverridesReloadEvent.class.getSimpleName()}";
   }
 }

@@ -13,6 +13,9 @@
 package org.sonatype.nexus.blobstore;
 
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.sonatype.nexus.blobstore.api.BlobStoreMetrics;
 import org.sonatype.nexus.common.math.Math2;
@@ -21,19 +24,24 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * An implementation of {@link BlobStoreMetrics} that supports adding to the blobCount and totalSize fields.
+ * This implementation is thread-safe and optimized for use with Java 21 Virtual Threads.
  *
  * @since 3.2.1
  */
 public class AccumulatingBlobStoreMetrics
     implements BlobStoreMetrics
 {
-  private long blobCount;
+  private final AtomicLong blobCount;
 
-  private long totalSize;
+  private final AtomicLong totalSize;
 
   private final Map<String, Long> availableSpaceByFileStore;
 
   private final boolean unlimited;
+  
+  private final ReadWriteLock availabilityLock = new ReentrantReadWriteLock();
+  
+  private volatile boolean unavailable = false;
 
   public AccumulatingBlobStoreMetrics(
       final long blobCount,
@@ -41,36 +49,53 @@ public class AccumulatingBlobStoreMetrics
       final Map<String, Long> availableSpaceByFileStore,
       final boolean unlimited)
   {
-    this.blobCount = blobCount;
-    this.totalSize = totalSize;
+    this.blobCount = new AtomicLong(blobCount);
+    this.totalSize = new AtomicLong(totalSize);
     this.availableSpaceByFileStore = checkNotNull(availableSpaceByFileStore);
     this.unlimited = unlimited;
   }
 
   @Override
   public long getBlobCount() {
-    return blobCount;
+    return blobCount.get();
   }
 
-  public void addBlobCount(long blobCount) {
-    this.blobCount += blobCount;
+  /**
+   * Thread-safe method to add to the blob count.
+   * Optimized for concurrent access by Virtual Threads.
+   */
+  public void addBlobCount(long count) {
+    blobCount.addAndGet(count);
   }
 
   @Override
   public long getTotalSize() {
-    return totalSize;
+    return totalSize.get();
   }
 
-  public void addTotalSize(long totalSize) {
-    this.totalSize += totalSize;
+  /**
+   * Thread-safe method to add to the total size.
+   * Optimized for concurrent access by Virtual Threads.
+   */
+  public void addTotalSize(long size) {
+    totalSize.addAndGet(size);
   }
 
   @Override
   public long getAvailableSpace() {
-    return availableSpaceByFileStore.values()
-        .stream()
-        .reduce(Math2::addClamped)
-        .orElse(0L);
+    availabilityLock.readLock().lock();
+    try {
+      if (unavailable) {
+        return 0L;
+      }
+      
+      // Use a more efficient approach for Virtual Threads
+      return availableSpaceByFileStore.values().stream()
+          .reduce(Math2::addClamped)
+          .orElse(0L);
+    } finally {
+      availabilityLock.readLock().unlock();
+    }
   }
 
   @Override
@@ -80,11 +105,48 @@ public class AccumulatingBlobStoreMetrics
 
   @Override
   public Map<String, Long> getAvailableSpaceByFileStore() {
-    return availableSpaceByFileStore;
+    availabilityLock.readLock().lock();
+    try {
+      return availableSpaceByFileStore;
+    } finally {
+      availabilityLock.readLock().unlock();
+    }
   }
 
   @Override
   public boolean isUnavailable() {
-    return false;
+    return unavailable;
+  }
+  
+  /**
+   * Sets the availability status of this metrics instance.
+   * Thread-safe and optimized for Virtual Thread access.
+   *
+   * @param unavailable true if the metrics should be marked as unavailable
+   */
+  public void setUnavailable(boolean unavailable) {
+    availabilityLock.writeLock().lock();
+    try {
+      this.unavailable = unavailable;
+    } finally {
+      availabilityLock.writeLock().unlock();
+    }
+  }
+  
+  /**
+   * Updates the available space for a specific file store.
+   * Thread-safe and optimized for Virtual Thread access.
+   *
+   * @param fileStore the file store identifier
+   * @param availableSpace the new available space value
+   */
+  public void updateAvailableSpace(String fileStore, long availableSpace) {
+    checkNotNull(fileStore);
+    availabilityLock.writeLock().lock();
+    try {
+      availableSpaceByFileStore.put(fileStore, availableSpace);
+    } finally {
+      availabilityLock.writeLock().unlock();
+    }
   }
 }

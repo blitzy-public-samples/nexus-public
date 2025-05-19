@@ -1,0 +1,218 @@
+{
+  "metadata": {
+    "status": "success",
+    "code": 200,
+    "message": "Data retrieved successfully",
+    "timestamp": "2025-05-19T10:15:30.123Z",
+    "requestId": "req-12345-abcde-67890",
+    "server": "nexus-repository-01",
+    "apiVersion": "v1.2.3",
+    "executionTimeMs": 42,
+    "requestInfo": {
+      "method": "GET",
+      "path": "/api/v1/repositories",
+      "queryParams": {
+        "type": "maven",
+        "format": "maven2",
+        "limit": 25,
+        "offset": 0
+      },
+      "clientIp": "192.168.1.100",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
+  },
+  "pagination": {
+    "totalItems": 42,
+    "itemsPerPage": 10,
+    "currentPage": 1,
+    "totalPages": 5,
+    "links": {
+      "self": "/api/v1/repositories?page=1&limit=10",
+      "first": "/api/v1/repositories?page=1&limit=10",
+      "prev": null,
+      "next": "/api/v1/repositories?page=2&limit=10",
+      "last": "/api/v1/repositories?page=5&limit=10"
+    }
+  },
+  "data": [
+    {
+      "id": "maven-central",
+      "name": "Maven Central",
+      "type": "proxy",
+      "format": "maven2",
+      "url": "https://repo1.maven.org/maven2/",
+      "online": true,
+      "createdAt": "2024-01-15T08:30:45.123Z",
+      "createdBy": "admin",
+      "lastModified": "2025-03-10T14:22:33.456Z",
+      "blobstore": "default",
+      "attributes": {
+        "proxy": {
+          "remoteUrl": "https://repo1.maven.org/maven2/",
+          "contentMaxAge": 1440,
+          "metadataMaxAge": 1440
+        },
+        "httpclient": {
+          "blocked": false,
+          "autoBlock": true,
+          "connection": {
+            "retries": 3,
+            "timeout": 60,
+            "enableCircularRedirects": false,
+            "enableCookies": false
+          },
+          "authentication": null
+        },
+        "storage": {
+          "strictContentTypeValidation": true,
+          "writePolicy": "ALLOW"
+        },
+        "cleanup": {
+          "policyName": "cleanup-weekly"
+        }
+      },
+      "stats": {
+        "blobCount": 12345,
+        "totalSizeBytes": 9876543210,
+        "lastDownloaded": "2025-05-18T22:10:15.789Z",
+        "downloadCount": 5432,
+        "health": "green"
+      }
+    },
+    {
+      "id": "maven-releases",
+      "name": "Maven Releases",
+      "type": "hosted",
+      "format": "maven2",
+      "url": "http://localhost:8081/repository/maven-releases/",
+      "online": true,
+      "createdAt": "2024-01-15T08:35:12.456Z",
+      "createdBy": "admin",
+      "lastModified": "2025-04-22T09:15:33.789Z",
+      "blobstore": "default",
+      "attributes": {
+        "maven": {
+          "versionPolicy": "RELEASE",
+          "layoutPolicy": "STRICT"
+        },
+        "storage": {
+          "strictContentTypeValidation": true,
+          "writePolicy": "ALLOW_ONCE"
+        },
+        "cleanup": {
+          "policyName": "cleanup-monthly"
+        }
+      },
+      "stats": {
+        "blobCount": 3456,
+        "totalSizeBytes": 2345678901,
+        "lastUploaded": "2025-05-15T11:22:33.444Z",
+        "uploadCount": 789,
+        "health": "green"
+      }
+    },
+    {
+      "id": "maven-snapshots",
+      "name": "Maven Snapshots",
+      "type": "hosted",
+      "format": "maven2",
+      "url": "http://localhost:8081/repository/maven-snapshots/",
+      "online": true,
+      "createdAt": "2024-01-15T08:40:22.789Z",
+      "createdBy": "admin",
+      "lastModified": "2025-05-01T16:45:12.345Z",
+      "blobstore": "default",
+      "attributes": {
+        "maven": {
+          "versionPolicy": "SNAPSHOT",
+          "layoutPolicy": "STRICT"
+        },
+        "storage": {
+          "strictContentTypeValidation": true,
+          "writePolicy": "ALLOW"
+        },
+        "cleanup": {
+          "policyName": "cleanup-daily"
+        }
+      },
+      "stats": {
+        "blobCount": 7890,
+        "totalSizeBytes": 3456789012,
+        "lastUploaded": "2025-05-19T09:10:11.222Z",
+        "uploadCount": 1234,
+        "health": "green"
+      }
+    },
+    {
+      "id": "maven-public",
+      "name": "Maven Public",
+      "type": "group",
+      "format": "maven2",
+      "url": "http://localhost:8081/repository/maven-public/",
+      "online": true,
+      "createdAt": "2024-01-15T08:45:33.123Z",
+      "createdBy": "admin",
+      "lastModified": "2025-02-28T10:11:12.345Z",
+      "blobstore": "default",
+      "attributes": {
+        "group": {
+          "memberNames": [
+            "maven-releases",
+            "maven-snapshots",
+            "maven-central"
+          ]
+        },
+        "storage": {
+          "strictContentTypeValidation": true
+        }
+      },
+      "stats": {
+        "health": "green"
+      }
+    },
+    {
+      "id": "npm-proxy",
+      "name": "NPM Proxy",
+      "type": "proxy",
+      "format": "npm",
+      "url": "https://registry.npmjs.org/",
+      "online": true,
+      "createdAt": "2024-02-20T14:30:45.678Z",
+      "createdBy": "admin",
+      "lastModified": "2025-04-15T11:22:33.444Z",
+      "blobstore": "default",
+      "attributes": {
+        "proxy": {
+          "remoteUrl": "https://registry.npmjs.org/",
+          "contentMaxAge": 1440,
+          "metadataMaxAge": 1440
+        },
+        "httpclient": {
+          "blocked": false,
+          "autoBlock": true,
+          "connection": {
+            "retries": 3,
+            "timeout": 60,
+            "enableCircularRedirects": false,
+            "enableCookies": false
+          },
+          "authentication": null
+        },
+        "storage": {
+          "strictContentTypeValidation": true,
+          "writePolicy": "ALLOW"
+        },
+        "cleanup": {
+          "policyName": "cleanup-weekly"
+        }
+      },
+      "stats": {
+        "blobCount": 5678,
+        "totalSizeBytes": 4567890123,
+        "lastDownloaded": "2025-05-18T20:21:22.333Z",
+        "downloadCount": 3210,
+        "health": "green"
+      }
+    }
+  ]
+}

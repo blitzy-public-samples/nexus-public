@@ -27,6 +27,9 @@ import org.sonatype.nexus.repository.view.Content;
 /**
  * Content implementation for {@link UploadProcessor}
  *
+ * <p>This implementation leverages Java 21 pattern matching features for improved
+ * type safety and code readability when processing uploaded content.</p>
+ *
  * @since 3.29
  */
 @Named
@@ -36,14 +39,20 @@ public class UploadComponentProcessor
 {
   /**
    * Extract {@link EntityId} of {@link Component} from {@link Content}
+   * <p>
+   * Uses Java 21 pattern matching to safely extract and process the Asset from Content attributes.
    *
    * @param content uploaded {@link Content} with {@link Asset} in attributes
    * @return {@link EntityId} of {@link Component}
    */
   @Override
   public Optional<EntityId> extractId(final Content content) {
-    Optional<Asset> asset = Optional.ofNullable(content.getAttributes().get(Asset.class));
-    return asset.flatMap(Asset::component)
-        .map(component -> InternalIds.toExternalId(InternalIds.internalComponentId(component)));
+    // Use pattern matching to check if the attribute is an Asset and extract it in one step
+    if (content.getAttributes().get(Asset.class) instanceof Asset asset) {
+      // Use pattern matching in the flatMap chain for improved type safety
+      return asset.component()
+          .map(component -> InternalIds.toExternalId(InternalIds.internalComponentId(component)));
+    }
+    return Optional.empty();
   }
 }

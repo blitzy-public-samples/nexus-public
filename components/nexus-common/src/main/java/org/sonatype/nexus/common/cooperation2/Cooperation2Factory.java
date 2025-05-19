@@ -16,6 +16,10 @@ import java.time.Duration;
 
 /**
  * Supplies {@link Cooperation2} points allowing different threads to cooperate on computationally intensive tasks.
+ * 
+ * With Java 21 support, Cooperation2 can leverage Virtual Threads for improved performance and scalability,
+ * particularly for I/O-bound operations. Virtual Threads are lightweight threads managed by the JVM that enable
+ * efficient handling of blocking operations without consuming excessive resources.
  *
  * @since 3.41
  */
@@ -47,9 +51,50 @@ public interface Cooperation2Factory
     Builder threadsPerKey(int threadsPerKey);
 
     /**
-     * @params disabled indicates whether the resulting co-operation should disable concurrency controls.
+     * @param enabled indicates whether the resulting co-operation should enable concurrency controls.
      */
-    Builder enabled(boolean disabled);
+    Builder enabled(boolean enabled);
+
+    /**
+     * @param useVirtualThreads indicates whether operations should use Virtual Threads (Java 21+)
+     * when executing tasks. Virtual Threads are particularly beneficial for I/O-bound operations
+     * as they allow for efficient handling of blocking operations without consuming excessive resources.
+     * 
+     * When enabled, operations will be executed on Virtual Threads, which are lightweight threads
+     * managed by the JVM rather than the OS. This can significantly improve scalability for
+     * applications with many concurrent operations.
+     * 
+     * @since 3.60
+     */
+    Builder useVirtualThreads(boolean useVirtualThreads);
+
+    /**
+     * @param virtualThreadTimeout specific timeout for Virtual Thread operations
+     * This allows for different timeout handling when using Virtual Threads compared to platform threads.
+     * 
+     * @since 3.60
+     */
+    Builder virtualThreadTimeout(Duration virtualThreadTimeout);
+
+    /**
+     * @param maxVirtualThreads limits the maximum number of Virtual Threads that can be created
+     * for this cooperation point. This provides a safeguard against creating too many Virtual Threads,
+     * which although lightweight, still consume some resources.
+     * 
+     * A value of 0 or negative indicates no limit.
+     * 
+     * @since 3.60
+     */
+    Builder maxVirtualThreads(int maxVirtualThreads);
+
+    /**
+     * @param prioritizeVirtualThreadsForIO when true, automatically routes I/O-bound operations to Virtual Threads
+     * while keeping CPU-intensive operations on platform threads. This optimizes resource usage by leveraging
+     * Virtual Threads where they provide the most benefit.
+     * 
+     * @since 3.60
+     */
+    Builder prioritizeVirtualThreadsForIO(boolean prioritizeVirtualThreadsForIO);
 
     /**
      * Builds a new {@link Cooperation2} point with this configuration.

@@ -13,6 +13,9 @@
 package org.sonatype.nexus.repository.tools.datastore;
 
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
@@ -25,6 +28,7 @@ import org.sonatype.nexus.blobstore.api.BlobId;
 import org.sonatype.nexus.blobstore.api.BlobRef;
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreManager;
+import org.sonatype.nexus.common.thread.VirtualThreadExecutorService;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.content.Asset;
 import org.sonatype.nexus.repository.content.AssetBlob;
@@ -34,6 +38,7 @@ import org.sonatype.nexus.repository.tools.OrphanedBlobFinder;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.util.concurrent.CompletableFuture.allOf;
 import static org.apache.commons.lang.StringUtils.isNotBlank;
 import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_NAME_HEADER;
 import static org.sonatype.nexus.blobstore.api.BlobStore.REPO_NAME_HEADER;
@@ -41,7 +46,7 @@ import static org.sonatype.nexus.repository.config.ConfigurationConstants.BLOB_S
 import static org.sonatype.nexus.repository.config.ConfigurationConstants.STORAGE;
 
 /**
- * Detects orphaned blobs (i.e. nn-deleted blobs that exist in the blobstore but not the asset table)
+ * Detects orphaned blobs (i.e. non-deleted blobs that exist in the blobstore but not the asset table)
  *
  * @since 3.25
  */
@@ -53,11 +58,14 @@ public class DatastoreOrphanedBlobFinder
   private final RepositoryManager repositoryManager;
 
   private final BlobStoreManager blobStoreManager;
+  
+  private final VirtualThreadExecutorService executorService;
 
   @Inject
   public DatastoreOrphanedBlobFinder(final RepositoryManager repositoryManager, final BlobStoreManager blobStoreManager) {
     this.repositoryManager = checkNotNull(repositoryManager);
     this.blobStoreManager = checkNotNull(blobStoreManager);
+    this.executorService = new VirtualThreadExecutorService(Executors.newVirtualThreadPerTaskExecutor());
   }
 
   /**
@@ -65,11 +73,11 @@ public class DatastoreOrphanedBlobFinder
    */
   @Override
   public void delete() {
-    log.info("Starting delete of orphaned blobs for all known blob stores");
+    log.info(STR."Starting delete of orphaned blobs for all known blob stores");
 
     blobStoreManager.browse().forEach(this::delete);
 
-    log.info("Finished deleting orphaned blobs");
+    log.info(STR."Finished deleting orphaned blobs");
   }
 
   /**
@@ -79,16 +87,16 @@ public class DatastoreOrphanedBlobFinder
    */
   @Override
   public void delete(final Repository repository) {
-    log.info("Starting delete of orphaned blobs for {}", repository.getName());
+    log.info(STR."Starting delete of orphaned blobs for \{repository.getName()}");
 
     delete(getBlobStoreForRepository(repository));
 
-    log.info("Finished deleting orphaned blobs for {}", repository.getName());
+    log.info(STR."Finished deleting orphaned blobs for \{repository.getName()}");
   }
 
   private void delete(final BlobStore blobStore) {
     detect(blobStore, blobId -> {
-      log.info("Deleting orphaned blob {} from blobstore {}", blobId, blobStore.getBlobStoreConfiguration().getName());
+      log.info(STR."Deleting orphaned blob \{blobId} from blobstore \{blobStore.getBlobStoreConfiguration().getName()}");
 
       blobStore.deleteHard(blobId);
     });
@@ -109,16 +117,25 @@ public class DatastoreOrphanedBlobFinder
 
   private void detect(final BlobStore blobStore, final Consumer<BlobId> handler) {
     Stream<BlobId> blobIds = blobStore.getBlobIdStream();
-
-    blobIds.forEach(id -> {
-      BlobAttributes attributes = blobStore.getBlobAttributes(id);
-      if (attributes != null) {
-        checkIfOrphaned(handler, id, attributes);
-      }
-      else{
-        log.warn("Skipping cleanup for blob {} because blob properties not found", id);
-      }
-    });
+    
+    // Process BlobIds in parallel using Virtual Threads
+    CompletableFuture<?>[] futures = blobIds
+        .map(id -> executorService.supplyAsync(() -> {
+          // Get blob attributes in a Virtual Thread for non-blocking I/O
+          BlobAttributes attributes = blobStore.getBlobAttributes(id);
+          if (attributes != null) {
+            // Process the blob in the same Virtual Thread
+            checkIfOrphaned(handler, id, attributes);
+          }
+          else {
+            log.warn(STR."Skipping cleanup for blob \{id} because blob properties not found");
+          }
+          return null;
+        }))
+        .toArray(CompletableFuture[]::new);
+    
+    // Wait for all Virtual Threads to complete
+    allOf(futures).join();
   }
 
   private void checkIfOrphaned(final Consumer<BlobId> handler, final BlobId id, final BlobAttributes attributes) {
@@ -129,12 +146,12 @@ public class DatastoreOrphanedBlobFinder
 
       Repository repository = repositoryManager.get(repositoryName);
       if (repository == null) {
-        log.debug("Blob {} considered orphaned because repository with name {} no longer exists", id.asUniqueString(),
-            repositoryName);
+        log.debug(STR."Blob \{id.asUniqueString()} considered orphaned because repository with name \{repositoryName} no longer exists");
 
         handler.accept(id);
       }
       else {
+        // Use Virtual Thread for non-blocking I/O when retrieving asset information
         findAssociatedAsset(assetName, repository).ifPresent(asset -> {
           BlobRef blobRef = asset.blob().map(AssetBlob::blobRef).orElse(null);
           if (blobRef != null && !blobRef.getBlobId().asUniqueString().equals(id.asUniqueString())) {
@@ -142,8 +159,7 @@ public class DatastoreOrphanedBlobFinder
               handler.accept(id);
             }
             else {
-              log.debug("Blob {} in repository {} not considered orphaned because it is already marked soft-deleted",
-                  id.asUniqueString(), repositoryName);
+              log.debug(STR."Blob \{id.asUniqueString()} in repository \{repositoryName} not considered orphaned because it is already marked soft-deleted");
             }
           }
         });
@@ -163,12 +179,13 @@ public class DatastoreOrphanedBlobFinder
   }
 
   private void validateRepositoryConfiguration(final Repository repository) {
+    String repositoryName = repository.getName();
     checkArgument(repository.getConfiguration().getAttributes() != null,
-        "Repository configuration not found " + repository.getName());
+        STR."Repository configuration not found \{repositoryName}");
     checkArgument(repository.getConfiguration().getAttributes().get(STORAGE) != null,
-        "No storage configuration found for the repository " + repository.getName());
+        STR."No storage configuration found for the repository \{repositoryName}");
     checkArgument(
         isNotBlank((String) repository.getConfiguration().getAttributes().get(STORAGE).get(BLOB_STORE_NAME)),
-        "Blob store name not set for repository " + repository.getName());
+        STR."Blob store name not set for repository \{repositoryName}");
   }
 }

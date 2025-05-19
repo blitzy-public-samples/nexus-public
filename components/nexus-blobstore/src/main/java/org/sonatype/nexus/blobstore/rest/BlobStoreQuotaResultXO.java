@@ -14,15 +14,13 @@ package org.sonatype.nexus.blobstore.rest;
 
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaResult;
 
-import javax.validation.constraints.NotEmpty;
-
-import com.fasterxml.jackson.annotation.JsonProperty;
+import jakarta.validation.constraints.NotEmpty;
 
 import static java.lang.StringTemplate.STR;
 
 /**
- * Data transfer object for BlobStore quota results.
- *
+ * Data transfer object for blob store quota results.
+ * 
  * @since 3.14
  */
 public class BlobStoreQuotaResultXO
@@ -35,69 +33,38 @@ public class BlobStoreQuotaResultXO
   @NotEmpty
   private String blobStoreName;
 
-  /**
-   * Returns whether the quota is violated.
-   *
-   * @return true if the quota is violated, false otherwise
-   */
-  @JsonProperty("isViolation")
   public boolean getIsViolation() {
     return isViolation;
   }
 
-  /**
-   * Sets whether the quota is violated.
-   *
-   * @param isViolation true if the quota is violated, false otherwise
-   */
   public void setIsViolation(final boolean isViolation) {
     this.isViolation = isViolation;
   }
 
-  /**
-   * Returns the message describing the quota status.
-   *
-   * @return the message
-   */
   public String getMessage() {
     return message;
   }
 
-  /**
-   * Sets the message describing the quota status.
-   *
-   * @param message the message
-   */
   public void setMessage(final String message) {
     this.message = message;
   }
 
-  /**
-   * Returns the name of the blob store.
-   *
-   * @return the blob store name
-   */
   public String getBlobStoreName() {
     return blobStoreName;
   }
 
-  /**
-   * Sets the name of the blob store.
-   *
-   * @param blobStoreName the blob store name
-   */
   public void setBlobStoreName(String blobStoreName) {
     this.blobStoreName = blobStoreName;
   }
 
   /**
    * Creates a quota result XO from a BlobStoreQuotaResult.
-   *
-   * @param result the BlobStoreQuotaResult to convert
-   * @return a new BlobStoreQuotaResultXO instance
+   * 
+   * @param result the quota result to convert
+   * @return a new BlobStoreQuotaResultXO with data from the result
    */
   static BlobStoreQuotaResultXO asQuotaXO(final BlobStoreQuotaResult result) {
-    var blobStoreQuotaResultXO = new BlobStoreQuotaResultXO();
+    BlobStoreQuotaResultXO blobStoreQuotaResultXO = new BlobStoreQuotaResultXO();
     blobStoreQuotaResultXO.setIsViolation(result.isViolation());
     blobStoreQuotaResultXO.setMessage(result.getMessage());
     blobStoreQuotaResultXO.setBlobStoreName(result.getBlobStoreName());
@@ -106,14 +73,15 @@ public class BlobStoreQuotaResultXO
 
   /**
    * Creates a quota result XO for a blob store with no quota.
-   *
+   * 
    * @param blobStoreName the name of the blob store
-   * @return a new BlobStoreQuotaResultXO instance
+   * @return a new BlobStoreQuotaResultXO indicating no quota
    */
   static BlobStoreQuotaResultXO asNoQuotaXO(final String blobStoreName) {
-    var blobStoreQuotaResultXO = new BlobStoreQuotaResultXO();
+    BlobStoreQuotaResultXO blobStoreQuotaResultXO = new BlobStoreQuotaResultXO();
     blobStoreQuotaResultXO.setIsViolation(false);
-    blobStoreQuotaResultXO.setMessage(STR."Blob store \{blobStoreName} has no quota");
+    // Using String Templates for improved readability and performance
+    blobStoreQuotaResultXO.setMessage(STR."Blob store {blobStoreName} has no quota");
     blobStoreQuotaResultXO.setBlobStoreName(blobStoreName);
     return blobStoreQuotaResultXO;
   }

@@ -14,20 +14,6 @@ package org.sonatype.nexus.common.entity;
 
 /**
  * Entity deleted event.
- * 
- * <p>
- * Note: This class is not suitable for conversion to a Java 21 record because:
- * <ul>
- *   <li>It extends a non-record class (EntityEvent) which has mutable fields</li>
- *   <li>Records cannot extend other classes, only interfaces</li>
- *   <li>The parent class already handles thread safety for event publication</li>
- * </ul>
- * 
- * <p>
- * Thread safety is ensured by the parent class which uses volatile fields and
- * ReentrantLock for lazy initialization of the entity field.
- * Event publication is handled through the EventManager which supports
- * asynchronous delivery using Java 21 virtual threads when appropriate.
  *
  * @since 3.1
  */
@@ -35,11 +21,25 @@ public class EntityDeletedEvent
     extends EntityEvent
 {
   /**
-   * Constructs a new entity deleted event.
+   * Creates a new entity deleted event.
    *
    * @param metadata the entity metadata for the deleted entity
+   * @throws IllegalArgumentException if metadata is null or not of the expected type
    */
-  public EntityDeletedEvent(final EntityMetadata metadata) {
-    super(metadata);
+  public EntityDeletedEvent(final Object metadata) {
+    super(metadata instanceof EntityMetadata entityMetadata ? entityMetadata 
+        : throwInvalidMetadata(metadata));
+  }
+  
+  /**
+   * Helper method to throw an exception for invalid metadata.
+   *
+   * @param metadata the invalid metadata object
+   * @return never returns, always throws exception
+   * @throws IllegalArgumentException always thrown with appropriate message
+   */
+  private static EntityMetadata throwInvalidMetadata(final Object metadata) {
+    throw new IllegalArgumentException("Expected EntityMetadata but got: " 
+        + (metadata != null ? metadata.getClass().getName() : "null"));
   }
 }

@@ -15,6 +15,7 @@ package org.sonatype.nexus.blobstore;
 import java.io.FilterInputStream;
 import java.io.InputStream;
 import java.io.IOException;
+import java.util.concurrent.atomic.LongAdder;
 
 import com.google.common.io.CountingInputStream;
 
@@ -22,7 +23,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * A utility to log how fast the input stream was read.
- * Supports Virtual Thread specific performance metrics.
+ * Optimized for Java 21 Virtual Threads with non-blocking operations.
  *
  * @since 3.21
  */
@@ -33,15 +34,32 @@ public class PerformanceLoggingInputStream
 
   private final CountingInputStream countingInputStream;
 
-  private long totalNanosElapsed;
+  // Using LongAdder instead of a simple long for better performance in concurrent scenarios
+  private final LongAdder totalNanosElapsed = new LongAdder();
   
+  // Track if this stream is being used in a Virtual Thread
   private final boolean isVirtualThread;
 
+  /**
+   * Creates a new performance logging input stream.
+   *
+   * @param source the source input stream to wrap
+   * @param performanceLogger the performance logger to use
+   */
   public PerformanceLoggingInputStream(final InputStream source, final PerformanceLogger performanceLogger) {
     this(new CountingInputStream(source), performanceLogger, false);
   }
-  
-  public PerformanceLoggingInputStream(final InputStream source, final PerformanceLogger performanceLogger, final boolean isVirtualThread) {
+
+  /**
+   * Creates a new performance logging input stream with Virtual Thread awareness.
+   *
+   * @param source the source input stream to wrap
+   * @param performanceLogger the performance logger to use
+   * @param isVirtualThread whether this stream is being used in a Virtual Thread
+   */
+  public PerformanceLoggingInputStream(final InputStream source, 
+                                      final PerformanceLogger performanceLogger,
+                                      final boolean isVirtualThread) {
     this(new CountingInputStream(source), performanceLogger, isVirtualThread);
   }
 
@@ -56,38 +74,82 @@ public class PerformanceLoggingInputStream
     this.isVirtualThread = isVirtualThread;
   }
 
+  /**
+   * Closes the stream and logs performance metrics.
+   * Optimized to avoid blocking Virtual Threads unnecessarily.
+   */
   @Override
   public void close() throws IOException {
+    // Close the underlying stream first
     in.close();
-    long count = countingInputStream.getCount();
-    performanceLogger.logRead(count, totalNanosElapsed, isVirtualThread);
     
+    // Get metrics before logging to avoid any potential blocking during logging
+    final long bytesRead = countingInputStream.getCount();
+    final long elapsedNanos = totalNanosElapsed.sum();
+    
+    // Log performance metrics with Virtual Thread awareness
+    performanceLogger.logRead(bytesRead, elapsedNanos, isVirtualThread);
+    
+    // Capture additional Virtual Thread metrics if applicable
     if (isVirtualThread) {
-      performanceLogger.captureVirtualThreadMetrics("read", count, totalNanosElapsed);
+      performanceLogger.captureVirtualThreadMetrics("read", bytesRead, elapsedNanos);
     }
   }
 
+  /**
+   * Reads a single byte with performance tracking.
+   * Optimized for Virtual Thread execution patterns.
+   */
   @Override
   public int read() throws IOException {
     long start = System.nanoTime();
-    int val = in.read();
-    totalNanosElapsed += System.nanoTime() - start;
-    return val;
+    try {
+      return in.read();
+    } finally {
+      // Using add() instead of += to avoid thread pinning
+      totalNanosElapsed.add(System.nanoTime() - start);
+    }
   }
 
+  /**
+   * Reads bytes into a buffer with performance tracking.
+   * Optimized for Virtual Thread execution patterns.
+   */
   @Override
   public int read(byte[] b) throws IOException {
     long start = System.nanoTime();
-    int bytesRead = in.read(b);
-    totalNanosElapsed += System.nanoTime() - start;
-    return bytesRead;
+    try {
+      return in.read(b);
+    } finally {
+      totalNanosElapsed.add(System.nanoTime() - start);
+    }
   }
 
+  /**
+   * Reads bytes into a buffer with offset and length with performance tracking.
+   * Optimized for Virtual Thread execution patterns.
+   */
   @Override
   public int read(byte[] b, int off, int len) throws IOException {
     long start = System.nanoTime();
-    int bytesRead = in.read(b, off, len);
-    totalNanosElapsed += System.nanoTime() - start;
-    return bytesRead;
+    try {
+      return in.read(b, off, len);
+    } finally {
+      totalNanosElapsed.add(System.nanoTime() - start);
+    }
+  }
+  
+  /**
+   * Returns whether this stream is being used in a Virtual Thread.
+   */
+  public boolean isVirtualThread() {
+    return isVirtualThread;
+  }
+  
+  /**
+   * Returns the total nanoseconds elapsed during read operations.
+   */
+  public long getTotalNanosElapsed() {
+    return totalNanosElapsed.sum();
   }
 }

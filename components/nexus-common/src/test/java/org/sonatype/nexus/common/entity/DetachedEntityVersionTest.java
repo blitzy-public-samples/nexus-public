@@ -13,26 +13,36 @@
 package org.sonatype.nexus.common.entity;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
+import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.Test;
+import org.junit.vintage.engine.descriptor.VintageTestDescriptor;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.not;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for {@link DetachedEntityVersion}
  */
-class DetachedEntityVersionTest
+@Category(Java21TestGroup.class)
+public class DetachedEntityVersionTest
     extends TestSupport
 {
   @Test
-  void testDetachedEquality() {
+  public void detachedEquality() {
     DetachedEntityVersion a = new DetachedEntityVersion("a");
-    assertThat(a, is(a));
-    assertThat(a, is(new DetachedEntityVersion("a")));
+    
+    // Test self-equality
+    assertTrue(a.equals(a), "An entity should equal itself");
+    
+    // Test equality with identical value
+    assertThat(a, equalTo(new DetachedEntityVersion("a")));
 
+    // Test inequality with different value
     DetachedEntityVersion b = new DetachedEntityVersion("b");
-    assertThat(a, not(b));
+    assertThat(a, not(equalTo(b)));
   }
 }

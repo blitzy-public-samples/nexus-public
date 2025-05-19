@@ -17,6 +17,10 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.ExecutionException;
 import javax.inject.Inject;
 import javax.inject.Named;
 
@@ -27,6 +31,9 @@ import org.sonatype.nexus.upgrade.datastore.DatabaseMigrationStep;
 /**
  * Remove duplicate, unnecessary index
  * Add additional index for asset querying (similar to component)
+ * 
+ * Updated for Java 21 to use Virtual Threads for improved I/O performance
+ * and String Templates for better SQL statement readability.
  */
 @Named
 public class BrowseNodeMigrationStep_1_34
@@ -39,10 +46,7 @@ public class BrowseNodeMigrationStep_1_34
     this.formats = formats;
   }
 
-  private static final String DROP_INDEX = "DROP INDEX IF EXISTS idx_%s_browse_node_tree";
-
-  private static final String CREATE_ASSET_INDEX = "CREATE INDEX IF NOT EXISTS " +
-      "idx_%s_browse_node_asset_id ON %s_browse_node (asset_id);";
+  // These constants are no longer needed as we're using inline String Templates
 
   @Override
   public Optional<String> version() {
@@ -51,22 +55,68 @@ public class BrowseNodeMigrationStep_1_34
 
   @Override
   public void migrate(final Connection connection) throws Exception {
-    formats.forEach(format -> migrateFormat(connection, format));
+    // Using Virtual Threads for improved I/O performance with database operations
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      List<Future<?>> futures = formats.stream()
+          .map(format -> executor.submit(() -> {
+              try {
+                  migrateFormat(connection, format);
+              } catch (Exception e) {
+                  log.error(STR."Error migrating format \{format.getValue()}", e);
+                  throw new RuntimeException(e);
+              }
+          }))
+          .toList();
+      
+      // Wait for all migrations to complete and handle any exceptions
+      for (Future<?> future : futures) {
+        try {
+          future.get();
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          log.error(STR."Migration interrupted: \{e.getMessage()}", e);
+          throw new RuntimeException("Migration interrupted", e);
+        } catch (ExecutionException e) {
+          log.error(STR."Migration execution failed: \{e.getCause().getMessage()}", e.getCause());
+          throw new RuntimeException("Migration failed", e.getCause());
+        }
+      }
+      
+      log.info("Successfully completed browse_node index migration for all formats");
+    }
   }
 
   private void migrateFormat(final Connection connection, final Format format) {
-      String formatName = format.getValue();
-      executeStatement(connection, String.format(DROP_INDEX, formatName));
-      executeStatement(connection, String.format(CREATE_ASSET_INDEX, formatName, formatName));
-  }
-
-  private void executeStatement(final Connection connection, final String sqlStatement) {
-    try (PreparedStatement select = connection.prepareStatement(sqlStatement)) {
-      select.executeUpdate();
-    }
-    catch (SQLException e) {
-      log.error("Failed to apply browse_node index change ('{}')", sqlStatement, e);
+    String formatName = format.getValue();
+    try {
+      // Execute DROP INDEX statement
+      String dropSql = STR."DROP INDEX IF EXISTS idx_\{formatName}_browse_node_tree";
+      executeStatement(connection, dropSql);
+      
+      // Execute CREATE INDEX statement
+      String createSql = STR."CREATE INDEX IF NOT EXISTS idx_\{formatName}_browse_node_asset_id ON \{formatName}_browse_node (asset_id);";
+      executeStatement(connection, createSql);
+      
+      log.info(STR."Successfully migrated browse_node indexes for format: \{formatName}");
+    } catch (SQLException e) {
+      log.error(STR."Failed to migrate browse_node indexes for format: \{formatName}", e);
       throw new RuntimeException(e);
     }
   }
+  
+  private void executeStatement(final Connection connection, final String sqlStatement) 
+      throws SQLException {
+    // Using try-with-resources for proper JDBC resource management
+    try (PreparedStatement statement = connection.prepareStatement(sqlStatement)) {
+      statement.executeUpdate();
+      
+      // Log the executed statement for better diagnostics
+      log.debug(STR."Executed SQL statement: \{sqlStatement}");
+    } catch (SQLException e) {
+      log.error(STR."Failed to execute SQL statement: '\{sqlStatement}'", e);
+      throw e;
+    }
+  }
+
+  // This method is no longer used as we've refactored to use the single-parameter version
 }

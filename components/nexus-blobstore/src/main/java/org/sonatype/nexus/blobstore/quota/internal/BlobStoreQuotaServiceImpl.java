@@ -17,7 +17,7 @@ import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import javax.annotation.Nullable;
 import javax.inject.Inject;
@@ -32,6 +32,7 @@ import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaResult;
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaService;
 import org.sonatype.nexus.rest.ValidationErrorsException;
 
+import static java.lang.StringTemplate.STR;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.Optional.ofNullable;
 import static org.sonatype.nexus.blobstore.quota.BlobStoreQuotaSupport.ROOT_KEY;
@@ -49,9 +50,7 @@ public class BlobStoreQuotaServiceImpl
     implements BlobStoreQuotaService
 {
   private final Map<String, BlobStoreQuota> quotas;
-  
-  // Default timeout for quota check operations in seconds
-  private static final int DEFAULT_QUOTA_CHECK_TIMEOUT_SECONDS = 30;
+  private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
   @Inject
   public BlobStoreQuotaServiceImpl(final Map<String, BlobStoreQuota> quotas) {
@@ -77,7 +76,7 @@ public class BlobStoreQuotaServiceImpl
     Optional<BlobStoreQuota> quota = quotaType.map(quotas::get);
 
     if (quotaType.isPresent() && !quota.isPresent()) {
-      log.error("For blob store {} unable to find quota type for key {}", config.getName(), quotaType.get());
+      log.error(STR."For blob store \{config.getName()} unable to find quota type for key \{quotaType.get()}");
     }
     return quota;
   }
@@ -87,41 +86,24 @@ public class BlobStoreQuotaServiceImpl
   public BlobStoreQuotaResult checkQuota(final BlobStore blobStore) {
     checkNotNull(blobStore);
     BlobStoreConfiguration config = blobStore.getBlobStoreConfiguration();
-    
-    // Use Virtual Thread for executing the quota check to improve I/O operation performance
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      log.debug("Starting quota check for blob store {} using Virtual Thread", config.getName());
+
+    return getQuota(config).map(quota -> {
+      log.debug(STR."Checking blob store \{config.getName()} for quota \{quota}");
       
-      Future<BlobStoreQuotaResult> future = executor.submit(() -> {
+      // Use Virtual Threads for I/O-bound quota checking operations
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        // Acquire read lock to ensure thread safety during quota check
+        lock.readLock().lock();
         try {
-          return getQuota(config).map(quota -> {
-            log.debug("Virtual Thread executing quota check for blob store {} with quota {}", 
-                config.getName(), quota);
-            return quota.check(blobStore);
-          }).orElse(null);
-        } catch (Exception e) {
-          log.error("Error during Virtual Thread quota check for blob store {}: {}", 
-              config.getName(), e.getMessage(), e);
-          throw e;
+          Future<BlobStoreQuotaResult> future = executor.submit(() -> quota.check(blobStore));
+          return future.get();
+        } finally {
+          lock.readLock().unlock();
         }
-      });
-      
-      try {
-        // Wait for the result with a timeout to prevent hanging
-        BlobStoreQuotaResult result = future.get(DEFAULT_QUOTA_CHECK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        log.debug("Completed quota check for blob store {} using Virtual Thread", config.getName());
-        return result;
-      } catch (InterruptedException e) {
-        // Handle Virtual Thread interruption
-        log.warn("Virtual Thread quota check for blob store {} was interrupted", config.getName(), e);
-        Thread.currentThread().interrupt(); // Preserve interrupt status
-        return null;
       } catch (Exception e) {
-        // Handle other exceptions (timeout, execution exception)
-        log.error("Virtual Thread quota check for blob store {} failed: {}", 
-            config.getName(), e.getMessage(), e);
+        log.error(STR."Error checking quota for blob store \{config.getName()}", e);
         return null;
       }
-    }
+    }).orElse(null);
   }
 }

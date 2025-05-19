@@ -21,6 +21,11 @@ import org.sonatype.nexus.blobstore.api.OperationType;
 
 /**
  * Marks a blob store method with {@link OperationType} type to collect metrics.
+ * <p>
+ * With Java 21 support, this annotation can also indicate whether an operation is compatible with
+ * Virtual Threads for improved I/O-bound operation performance. Operations that are primarily I/O-bound
+ * (such as file system operations, network transfers, and database access) are good candidates for
+ * Virtual Thread execution. CPU-intensive operations should continue to use platform threads.
  *
  * @since 3.38
  */
@@ -29,4 +34,12 @@ import org.sonatype.nexus.blobstore.api.OperationType;
 public @interface MonitoringBlobStoreMetrics
 {
   OperationType operationType();
+  
+  /**
+   * Indicates if the operation is compatible with Java 21 Virtual Threads.
+   * 
+   * @return true if the operation can be executed on a Virtual Thread, false otherwise
+   * @since 3.60
+   */
+  boolean virtualThreadCompatible() default false;
 }

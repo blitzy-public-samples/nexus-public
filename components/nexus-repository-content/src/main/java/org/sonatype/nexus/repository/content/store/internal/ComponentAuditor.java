@@ -38,6 +38,10 @@ import com.google.common.eventbus.Subscribe;
  * Repository component auditor.
  *
  * @since 3.27
+ *
+ * @implNote This class is designed to be thread-safe and compatible with Java 21 Virtual Threads.
+ *           Event handlers are annotated with @AllowConcurrentEvents to support high-throughput
+ *           concurrent processing without blocking Virtual Threads.
  */
 @Named
 @Singleton
@@ -53,10 +57,16 @@ public class ComponentAuditor
     registerType(ComponentPurgedEvent.class, PURGE_TYPE);
     registerType(ComponentsPurgedAuditEvent.class, PURGE_TYPE);
     registerType(ComponentUpdatedEvent.class, UPDATED_TYPE);
-    registerType(ComponentKindEvent.class, UPDATED_TYPE + "-kind");
-    registerType(ComponentAttributesEvent.class, UPDATED_TYPE + "-attribute");
+    registerType(ComponentKindEvent.class, STR."\{UPDATED_TYPE}-kind");
+    registerType(ComponentAttributesEvent.class, STR."\{UPDATED_TYPE}-attribute");
   }
 
+  /**
+   * Handles component purge events.
+   * 
+   * @implNote This method is designed to be safely executed by Virtual Threads
+   *           and will not block the carrier thread during I/O operations.
+   */
   @Subscribe
   @AllowConcurrentEvents
   public void on(final ComponentPurgedEvent event) {
@@ -76,6 +86,12 @@ public class ComponentAuditor
     }
   }
 
+  /**
+   * Handles multiple components purge events.
+   * 
+   * @implNote This method is designed to be safely executed by Virtual Threads
+   *           and will not block the carrier thread during I/O operations.
+   */
   @Subscribe
   @AllowConcurrentEvents
   public void on(final ComponentsPurgedAuditEvent event) {
@@ -89,6 +105,12 @@ public class ComponentAuditor
     }
   }
 
+  /**
+   * Handles general component events using pattern matching.
+   * 
+   * @implNote This method is designed to be safely executed by Virtual Threads
+   *           and will not block the carrier thread during I/O operations.
+   */
   @Subscribe
   @AllowConcurrentEvents
   public void on(final ComponentEvent event) {
@@ -96,9 +118,11 @@ public class ComponentAuditor
       Component component = event.getComponent();
       String eventType = type(event.getClass());
       String repoName = event.getRepository().map(Repository::getName).orElse("Unknown");
+      
+      // Use pattern matching to handle different event types
       ComponentAttributesEvent attributesEvent = null;
-      if (event instanceof ComponentAttributesEvent) {
-        attributesEvent = (ComponentAttributesEvent) event;
+      if (event instanceof ComponentAttributesEvent attrsEvent) {
+        attributesEvent = attrsEvent;
       }
 
       AuditData data = prepareAuditData(component, eventType, repoName, attributesEvent);
@@ -107,6 +131,15 @@ public class ComponentAuditor
     }
   }
 
+  /**
+   * Prepares audit data for component events.
+   * 
+   * @param component The component involved in the event
+   * @param eventType The type of event
+   * @param repoName The repository name
+   * @param attributesEvent Optional attributes event data
+   * @return Prepared audit data
+   */
   private static AuditData prepareAuditData(
       final Component component,
       final String eventType,

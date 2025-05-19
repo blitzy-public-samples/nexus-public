@@ -18,7 +18,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.Set;
-import java.util.SequencedCollection;
 
 import javax.annotation.Nullable;
 
@@ -28,7 +27,10 @@ import com.google.common.collect.ListMultimap;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
- * String multimap support.
+ * String multimap support with enhanced sequenced collection capabilities.
+ * <p>
+ * Provides methods to access and manipulate values in a defined encounter order,
+ * including first/last element access and reverse traversal.
  *
  * @since 3.0
  */
@@ -60,44 +62,73 @@ public class StringMultimap
   }
 
   /**
+   * Returns all values for named entry in reverse order.
+   */
+  public List<String> getAllReversed(final String name) {
+    List<String> values = backing.get(name);
+    return values.reversed();
+  }
+
+  /**
    * Returns first value of named entry.
    */
   @Nullable
   public String get(final String name) {
     List<String> values = backing.get(name);
     if (!values.isEmpty()) {
-      return values.get(0);
+      return values.getFirst();
     }
     return null;
   }
 
   /**
    * Returns first value of named entry.
-   * Leverages Java 21 Sequenced Collections API concept.
+   * <p>
+   * Alias for {@link #get(String)} for consistency with {@link #getLast(String)}.
    */
   @Nullable
   public String getFirst(final String name) {
-    List<String> values = backing.get(name);
-    return values.isEmpty() ? null : values.getFirst();
+    return get(name);
   }
 
   /**
    * Returns last value of named entry.
-   * Leverages Java 21 Sequenced Collections API concept.
    */
   @Nullable
   public String getLast(final String name) {
     List<String> values = backing.get(name);
-    return values.isEmpty() ? null : values.getLast();
+    if (!values.isEmpty()) {
+      return values.getLast();
+    }
+    return null;
   }
 
   /**
    * Set one or more named entry values.
+   * <p>
+   * Values are added to the end of the list.
    */
   public void set(final String name, final String... values) {
     for (String value : values) {
       backing.put(name, value);
     }
+  }
+
+  /**
+   * Add a value as the first element for the named entry.
+   */
+  public void addFirst(final String name, final String value) {
+    List<String> values = backing.get(name);
+    values.addFirst(value);
+  }
+
+  /**
+   * Add a value as the last element for the named entry.
+   * <p>
+   * Equivalent to {@link #set(String, String...)} with a single value.
+   */
+  public void addLast(final String name, final String value) {
+    backing.put(name, value);
   }
 
   /**
@@ -108,27 +139,10 @@ public class StringMultimap
   }
 
   /**
-   * Set on or more named entry values.
+   * Set one or more named entry values.
    */
   public void set(final String name, final Iterable<String> values) {
     backing.putAll(name, values);
-  }
-
-  /**
-   * Add a value as the first entry for the given name.
-   * Leverages Java 21 Sequenced Collections API concept.
-   */
-  public void addFirst(final String name, final String value) {
-    List<String> values = backing.get(name);
-    values.addFirst(value);
-  }
-
-  /**
-   * Add a value as the last entry for the given name.
-   * Leverages Java 21 Sequenced Collections API concept.
-   */
-  public void addLast(final String name, final String value) {
-    backing.put(name, value); // Same as regular put since ListMultimap appends to the end
   }
 
   /**
@@ -140,36 +154,30 @@ public class StringMultimap
 
   /**
    * Remove and return the first value of named entry.
-   * Leverages Java 21 Sequenced Collections API concept.
+   *
+   * @return the first value, or null if the entry doesn't exist or is empty
    */
   @Nullable
   public String removeFirst(final String name) {
     List<String> values = backing.get(name);
-    if (values.isEmpty()) {
-      return null;
+    if (!values.isEmpty()) {
+      return values.removeFirst();
     }
-    String first = values.removeFirst();
-    if (values.isEmpty()) {
-      backing.removeAll(name); // Clean up the key if no values remain
-    }
-    return first;
+    return null;
   }
 
   /**
    * Remove and return the last value of named entry.
-   * Leverages Java 21 Sequenced Collections API concept.
+   *
+   * @return the last value, or null if the entry doesn't exist or is empty
    */
   @Nullable
   public String removeLast(final String name) {
     List<String> values = backing.get(name);
-    if (values.isEmpty()) {
-      return null;
+    if (!values.isEmpty()) {
+      return values.removeLast();
     }
-    String last = values.removeLast();
-    if (values.isEmpty()) {
-      backing.removeAll(name); // Clean up the key if no values remain
-    }
-    return last;
+    return null;
   }
 
   public void clear() {
@@ -200,17 +208,20 @@ public class StringMultimap
     return backing.entries();
   }
 
-  /**
-   * Returns a reversed view of the values for the named entry.
-   * Leverages Java 21 Sequenced Collections API concept.
-   */
-  public SequencedCollection<String> reversed(final String name) {
-    return backing.get(name).reversed();
-  }
-
   @Override
   public Iterator<Entry<String, String>> iterator() {
     return backing.entries().iterator();
+  }
+
+  /**
+   * Returns a reversed view of this multimap's entries.
+   * <p>
+   * Changes to the original multimap are reflected in the reversed view.
+   *
+   * @return a reversed view of this multimap's entries
+   */
+  public Iterable<Entry<String, String>> reversed() {
+    return backing.entries().reversed();
   }
 
   @Override

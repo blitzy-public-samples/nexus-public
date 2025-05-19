@@ -14,15 +14,14 @@ package org.sonatype.nexus.common.event;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
-import java.lang.reflect.InaccessibleObjectException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
+import com.google.common.base.Throwables;
 import com.google.common.eventbus.EventBus;
 import com.google.common.eventbus.SubscriberExceptionHandler;
 
 import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
-import static java.lang.StringTemplate.STR;
 
 /**
  * Factory to create custom {@link EventBus} instances with behaviour not exposed via the public API.
@@ -54,58 +53,76 @@ public class EventBusFactory
   }
   
   /**
-   * Creates a reentrant {@link EventBus} that dispatches events using Java 21 virtual threads.
-   * This provides optimal performance for I/O-bound event handlers with minimal resource overhead.
+   * Creates a reentrant {@link EventBus} that dispatches events using Java 21 Virtual Threads.
+   * 
+   * <p>Virtual Threads provide significant advantages for I/O-bound event processing:</p>
+   * <ul>
+   *   <li>Extremely lightweight threads (thousands can be created with minimal overhead)</li>
+   *   <li>Automatic yielding during blocking I/O operations</li>
+   *   <li>No thread pool configuration or tuning required</li>
+   *   <li>Simplified concurrency model with improved debugging</li>
+   *   <li>Reduced memory footprint compared to platform thread pools</li>
+   * </ul>
+   * 
+   * <p>This executor is ideal for event handlers that perform I/O operations such as:</p>
+   * <ul>
+   *   <li>Database access</li>
+   *   <li>File system operations</li>
+   *   <li>Network calls</li>
+   *   <li>Remote repository interactions</li>
+   * </ul>
+   * 
+   * <p>Note: For CPU-intensive operations without I/O, traditional thread pools may still be more efficient.</p>
    *
+   * @param name The name of the event bus
+   * @return A new EventBus that uses Virtual Threads for event dispatch
    * @since 3.60.0
    */
   public static EventBus reentrantVirtualThreadEventBus(final String name) {
+    // Check if Virtual Threads are supported in the current runtime
+    if (!isVirtualThreadSupported()) {
+      throw new UnsupportedOperationException("Virtual Threads are not supported in this Java runtime. Java 21+ is required.");
+    }
     return newEventBus(name, Executors.newVirtualThreadPerTaskExecutor());
+  }
+
+  /**
+   * Checks if Virtual Threads are supported in the current Java runtime.
+   * 
+   * @return true if Virtual Threads are supported, false otherwise
+   */
+  private static boolean isVirtualThreadSupported() {
+    try {
+      // Check for the existence of the newVirtualThreadPerTaskExecutor method
+      Executors.class.getMethod("newVirtualThreadPerTaskExecutor");
+      return true;
+    }
+    catch (NoSuchMethodException e) {
+      return false;
+    }
   }
 
   private static EventBus newEventBus(final String name, final Executor executor) {
     try {
-      // Load the Dispatcher class using the EventBus's ClassLoader to ensure compatibility
       Class<?> dispatcherClass = EventBus.class.getClassLoader().loadClass("com.google.common.eventbus.Dispatcher");
 
-      // Get the immediate dispatcher method - events are processed in a reentrant fashion
+      // immediate dispatcher means events are always processed in a reentrant fashion
       Method immediateDispatcherMethod = dispatcherClass.getDeclaredMethod("immediate");
-      try {
-        immediateDispatcherMethod.setAccessible(true);
-      } catch (InaccessibleObjectException e) {
-        // Handle Java 21 module system restrictions with more detailed error message
-        throw new ReflectiveOperationException(STR"Failed to access Guava internal method: \{e.getMessage()}. " + 
-            "This may be due to Java 21 module system restrictions.", e);
-      }
+      immediateDispatcherMethod.setAccessible(true);
 
-      // Get the EventBus constructor that accepts a custom executor (not part of the public API)
+      // EventBus constructor that accepts custom executor is not yet part of the public API
       Constructor<EventBus> eventBusConstructor = EventBus.class.getDeclaredConstructor(
           String.class, Executor.class, dispatcherClass, SubscriberExceptionHandler.class);
-      try {
-        eventBusConstructor.setAccessible(true);
-      } catch (InaccessibleObjectException e) {
-        // Handle Java 21 module system restrictions with more detailed error message
-        throw new ReflectiveOperationException(STR"Failed to access EventBus constructor: \{e.getMessage()}. " + 
-            "This may be due to Java 21 module system restrictions.", e);
-      }
+      eventBusConstructor.setAccessible(true);
 
-      // Create the immediate dispatcher and exception handler
       Object immediateDispatcher = immediateDispatcherMethod.invoke(null);
       SubscriberExceptionHandler exceptionHandler = new Slf4jSubscriberExceptionHandler(name);
 
-      // Create and return the EventBus instance
       return eventBusConstructor.newInstance(name, executor, immediateDispatcher, exceptionHandler);
     }
-    catch (ReflectiveOperationException e) {
-      // Use Java's built-in exception handling for reflective operations
-      throw new LinkageError(STR"Unable to create EventBus with custom executor: \{e.getMessage()}", e);
-    }
     catch (Exception e) {
-      // Handle any other exceptions
-      if (e instanceof RuntimeException) {
-        throw (RuntimeException) e;
-      }
-      throw new LinkageError(STR"Unexpected error creating EventBus with custom executor: \{e.getMessage()}", e);
+      Throwables.throwIfUnchecked(e);
+      throw new LinkageError("Unable to create EventBus with custom executor", e);
     }
   }
 }

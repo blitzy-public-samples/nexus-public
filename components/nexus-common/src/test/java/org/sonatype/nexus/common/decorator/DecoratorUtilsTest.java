@@ -12,36 +12,55 @@
  */
 package org.sonatype.nexus.common.decorator;
 
+// JUnit 4 imports for backward compatibility
+import org.junit.Test;
+
+// JUnit Jupiter imports
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.notNullValue;
-import static org.hamcrest.Matchers.nullValue;
-import static org.hamcrest.MatcherAssert.assertThat;
+// Static imports for assertions
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.sonatype.nexus.common.decorator.DecoratorUtils.getDecoratedEntity;
 
+@DisplayName("DecoratorUtils Tests")
 public class DecoratorUtilsTest
 {
   @Test
-  public void testGetDecoratedEntity() {
+  @DisplayName("Verify getDecoratedEntity returns correct instances based on type")
+  public void getDecoratedEntityReturnsCorrectInstancesBasedOnType() {
     DecoratorTest first = new DefaultDecoratorTest();
     DecoratorTest second = new TestDecorator1(first);
     DecoratorTest third = new TestDecorator2(second);
 
-    assertThat(getDecoratedEntity(first, DefaultDecoratorTest.class), notNullValue());
-    assertThat(getDecoratedEntity(first, TestDecorator1.class), nullValue());
-    assertThat(getDecoratedEntity(first, TestDecorator2.class), nullValue());
+    assertNotNull(getDecoratedEntity(first, DefaultDecoratorTest.class), 
+        "DefaultDecoratorTest instance should be found in first object");
+    assertNull(getDecoratedEntity(first, TestDecorator1.class), 
+        "TestDecorator1 instance should not be found in first object");
+    assertNull(getDecoratedEntity(first, TestDecorator2.class), 
+        "TestDecorator2 instance should not be found in first object");
 
-    assertThat(getDecoratedEntity(second, DefaultDecoratorTest.class), notNullValue());
-    assertThat(getDecoratedEntity(second, TestDecorator1.class), notNullValue());
-    assertThat(getDecoratedEntity(second, TestDecorator1.class).specialMethod1(), equalTo("special1"));
-    assertThat(getDecoratedEntity(second, TestDecorator2.class), nullValue());
+    assertNotNull(getDecoratedEntity(second, DefaultDecoratorTest.class), 
+        "DefaultDecoratorTest instance should be found in second object");
+    assertNotNull(getDecoratedEntity(second, TestDecorator1.class), 
+        "TestDecorator1 instance should be found in second object");
+    assertEquals("special1", getDecoratedEntity(second, TestDecorator1.class).specialMethod1(), 
+        "TestDecorator1's specialMethod1 should return 'special1'");
+    assertNull(getDecoratedEntity(second, TestDecorator2.class), 
+        "TestDecorator2 instance should not be found in second object");
 
-    assertThat(getDecoratedEntity(third, DefaultDecoratorTest.class), notNullValue());
-    assertThat(getDecoratedEntity(third, TestDecorator1.class), notNullValue());
-    assertThat(getDecoratedEntity(second, TestDecorator1.class).specialMethod1(), equalTo("special1"));
-    assertThat(getDecoratedEntity(third, TestDecorator2.class), notNullValue());
-    assertThat(getDecoratedEntity(third, TestDecorator2.class).specialMethod2(), equalTo("special2"));
+    assertNotNull(getDecoratedEntity(third, DefaultDecoratorTest.class), 
+        "DefaultDecoratorTest instance should be found in third object");
+    assertNotNull(getDecoratedEntity(third, TestDecorator1.class), 
+        "TestDecorator1 instance should be found in third object");
+    assertEquals("special1", getDecoratedEntity(second, TestDecorator1.class).specialMethod1(), 
+        "TestDecorator1's specialMethod1 should return 'special1'");
+    assertNotNull(getDecoratedEntity(third, TestDecorator2.class), 
+        "TestDecorator2 instance should be found in third object");
+    assertEquals("special2", getDecoratedEntity(third, TestDecorator2.class).specialMethod2(), 
+        "TestDecorator2's specialMethod2 should return 'special2'");
   }
 
   // DECORATOR CLASSES

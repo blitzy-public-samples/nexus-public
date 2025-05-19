@@ -12,8 +12,9 @@
  */
 package org.sonatype.nexus.blobstore.file;
 
-import java.io.FileReader;
 import java.io.IOException;
+import java.io.Reader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
@@ -24,24 +25,26 @@ import org.sonatype.nexus.blobstore.api.BlobMetrics;
 
 import com.google.common.collect.ImmutableMap;
 import org.joda.time.DateTime;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.empty;
-import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/**
+ * Tests for {@link FileBlobAttributes}.
+ * 
+ * This test is compatible with both platform threads and virtual threads.
+ */
 public class FileBlobAttributesTest
     extends TestSupport
 {
-  @Rule
-  public TemporaryFolder temporaryFolder = new TemporaryFolder();
+  @TempDir
+  Path tempDir;
 
   @Test
   public void testPersistence() throws Exception {
-    Path path = temporaryFolder.newFile().toPath();
+    Path path = Files.createTempFile(tempDir, "blob-attributes", ".properties");
 
     Map<String, String> headers = ImmutableMap.of("hello", "world");
     BlobMetrics metrics = new BlobMetrics(new DateTime(987654321), "0123456789ABCDEF", 42);
@@ -52,50 +55,50 @@ public class FileBlobAttributesTest
     assertTrue(Files.isRegularFile(original.getPath()));
 
     Properties properties = new Properties();
-    try (FileReader reader = new FileReader(original.getPath().toFile())) {
+    try (Reader reader = Files.newBufferedReader(original.getPath(), StandardCharsets.UTF_8)) {
       properties.load(reader);
     }
 
-    assertThat(properties.remove("@hello"), is("world"));
-    assertThat(properties.remove("creationTime"), is("987654321"));
-    assertThat(properties.remove("sha1"), is("0123456789ABCDEF"));
-    assertThat(properties.remove("size"), is("42"));
-    assertThat(properties.keySet(), is(empty()));
+    assertEquals("world", properties.remove("@hello"));
+    assertEquals("987654321", properties.remove("creationTime"));
+    assertEquals("0123456789ABCDEF", properties.remove("sha1"));
+    assertEquals("42", properties.remove("size"));
+    assertTrue(properties.keySet().isEmpty());
 
     original.setDeleted(true);
     original.store();
 
-    try (FileReader reader = new FileReader(original.getPath().toFile())) {
+    try (Reader reader = Files.newBufferedReader(original.getPath(), StandardCharsets.UTF_8)) {
       properties.load(reader);
     }
 
-    assertThat(properties.remove("@hello"), is("world"));
-    assertThat(properties.remove("creationTime"), is("987654321"));
-    assertThat(properties.remove("sha1"), is("0123456789ABCDEF"));
-    assertThat(properties.remove("size"), is("42"));
-    assertThat(properties.remove("deleted"), is("true"));
-    assertThat(properties.remove("deletedReason"), is("No reason supplied"));
-    assertThat(properties.keySet(), is(empty()));
+    assertEquals("world", properties.remove("@hello"));
+    assertEquals("987654321", properties.remove("creationTime"));
+    assertEquals("0123456789ABCDEF", properties.remove("sha1"));
+    assertEquals("42", properties.remove("size"));
+    assertEquals("true", properties.remove("deleted"));
+    assertEquals("No reason supplied", properties.remove("deletedReason"));
+    assertTrue(properties.keySet().isEmpty());
 
     original.setDeletedReason("Spring cleaning");
     original.store();
 
-    try (FileReader reader = new FileReader(original.getPath().toFile())) {
+    try (Reader reader = Files.newBufferedReader(original.getPath(), StandardCharsets.UTF_8)) {
       properties.load(reader);
     }
 
-    assertThat(properties.remove("@hello"), is("world"));
-    assertThat(properties.remove("creationTime"), is("987654321"));
-    assertThat(properties.remove("sha1"), is("0123456789ABCDEF"));
-    assertThat(properties.remove("size"), is("42"));
-    assertThat(properties.remove("deleted"), is("true"));
-    assertThat(properties.remove("deletedReason"), is("Spring cleaning"));
-    assertThat(properties.keySet(), is(empty()));
+    assertEquals("world", properties.remove("@hello"));
+    assertEquals("987654321", properties.remove("creationTime"));
+    assertEquals("0123456789ABCDEF", properties.remove("sha1"));
+    assertEquals("42", properties.remove("size"));
+    assertEquals("true", properties.remove("deleted"));
+    assertEquals("Spring cleaning", properties.remove("deletedReason"));
+    assertTrue(properties.keySet().isEmpty());
   }
 
   @Test
   public void testRoundtrip() throws Exception {
-    Path path = temporaryFolder.newFile().toPath();
+    Path path = Files.createTempFile(tempDir, "blob-attributes", ".properties");
 
     Map<String, String> headers = ImmutableMap.of("hello", "world");
     BlobMetrics metrics = new BlobMetrics(DateTime.now(), "0123456789ABCDEF", 42);
@@ -114,13 +117,13 @@ public class FileBlobAttributesTest
 
   @Test
   public void testUpdateFrom() throws Exception {
-    Path originalPath = temporaryFolder.newFile().toPath();
+    Path originalPath = Files.createTempFile(tempDir, "original-attributes", ".properties");
 
     Map<String, String> headers = ImmutableMap.of("hello", "world");
     BlobMetrics metrics = new BlobMetrics(DateTime.now(), "0123456789ABCDEF", 42);
     FileBlobAttributes original = new FileBlobAttributes(originalPath, headers, metrics);
 
-    Path updatedPath = temporaryFolder.newFile().toPath();
+    Path updatedPath = Files.createTempFile(tempDir, "updated-attributes", ".properties");
 
     FileBlobAttributes updated = new FileBlobAttributes(updatedPath);
     updated.updateFrom(original);
@@ -129,28 +132,27 @@ public class FileBlobAttributesTest
     updated = new FileBlobAttributes(updatedPath);
     updated.load();
 
-    assertThat(updated.getHeaders(), is(original.getHeaders()));
-    assertThat(updated.getMetrics().getCreationTime(), is(original.getMetrics().getCreationTime()));
-    assertThat(updated.getMetrics().getSha1Hash(), is(original.getMetrics().getSha1Hash()));
-    assertThat(updated.getMetrics().getContentSize(), is(original.getMetrics().getContentSize()));
-    assertThat(updated.isDeleted(), is(original.isDeleted()));
-    assertThat(updated.getDeletedReason(), is(original.getDeletedReason()));
+    assertEquals(original.getHeaders(), updated.getHeaders());
+    assertEquals(original.getMetrics().getCreationTime(), updated.getMetrics().getCreationTime());
+    assertEquals(original.getMetrics().getSha1Hash(), updated.getMetrics().getSha1Hash());
+    assertEquals(original.getMetrics().getContentSize(), updated.getMetrics().getContentSize());
+    assertEquals(original.isDeleted(), updated.isDeleted());
+    assertEquals(original.getDeletedReason(), updated.getDeletedReason());
   }
 
   private static void verifyRoundtrip(final FileBlobAttributes original) throws IOException {
-
     original.store();
 
     FileBlobAttributes restored = new FileBlobAttributes(original.getPath());
 
     restored.load();
 
-    assertThat(restored.getPath(), is(original.getPath()));
-    assertThat(restored.getHeaders(), is(original.getHeaders()));
-    assertThat(restored.getMetrics().getCreationTime(), is(original.getMetrics().getCreationTime()));
-    assertThat(restored.getMetrics().getSha1Hash(), is(original.getMetrics().getSha1Hash()));
-    assertThat(restored.getMetrics().getContentSize(), is(original.getMetrics().getContentSize()));
-    assertThat(restored.isDeleted(), is(original.isDeleted()));
-    assertThat(restored.getDeletedReason(), is(original.getDeletedReason()));
+    assertEquals(original.getPath(), restored.getPath());
+    assertEquals(original.getHeaders(), restored.getHeaders());
+    assertEquals(original.getMetrics().getCreationTime(), restored.getMetrics().getCreationTime());
+    assertEquals(original.getMetrics().getSha1Hash(), restored.getMetrics().getSha1Hash());
+    assertEquals(original.getMetrics().getContentSize(), restored.getMetrics().getContentSize());
+    assertEquals(original.isDeleted(), restored.isDeleted());
+    assertEquals(original.getDeletedReason(), restored.getDeletedReason());
   }
 }

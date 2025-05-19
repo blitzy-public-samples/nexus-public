@@ -17,10 +17,12 @@ import java.time.Duration;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 
 import org.sonatype.nexus.common.io.Cooperation.IOCall;
 import org.sonatype.nexus.common.io.CooperationFactorySupport.Config;
@@ -43,10 +45,6 @@ public class CooperatingFuture<T>
 {
   protected static final Logger log = LoggerFactory.getLogger(CooperatingFuture.class);
 
-  // ThreadLocal can cause memory issues with Virtual Threads since each Virtual Thread would get its own copy
-  // However, for this specific use case where we're just tracking a boolean flag for nested calls,
-  // ThreadLocal is still appropriate as the value is short-lived and only used within a single operation
-  // If we experience memory issues in the future, we can consider migrating to ScopedValue when it's no longer in preview
   private static final ThreadLocal<Boolean> callInProgress = new ThreadLocal<>();
 
   private final AtomicLong staggerTimeMillis = new AtomicLong(System.currentTimeMillis());
@@ -56,6 +54,13 @@ public class CooperatingFuture<T>
   private final String requestKey;
 
   private final Config config;
+  
+  /**
+   * Optional executor service for Virtual Thread execution.
+   * 
+   * @since 3.60
+   */
+  private ExecutorService virtualThreadExecutor;
 
   public CooperatingFuture(final String requestKey, final Config config) {
     this.requestKey = checkNotNull(requestKey);
@@ -63,10 +68,91 @@ public class CooperatingFuture<T>
   }
 
   /**
+   * Sets the Virtual Thread executor service to use for I/O operations.
+   * 
+   * @param executor the Virtual Thread executor service
+   * @return this future for fluent API
+   * @since 3.60
+   */
+  public CooperatingFuture<T> setVirtualThreadExecutor(final ExecutorService executor) {
+    this.virtualThreadExecutor = executor;
+    return this;
+  }
+  
+  /**
+   * Checks if this future has a Virtual Thread executor configured.
+   * 
+   * @return true if a Virtual Thread executor is configured, false otherwise
+   * @since 3.60
+   */
+  public boolean hasVirtualThreadExecutor() {
+    return virtualThreadExecutor != null;
+  }
+
+  /**
    * Performs the given I/O request and updates this future with any result or error.
    */
   public T call(final IOCall<T> request) throws IOException {
+    // If we have a Virtual Thread executor, use it for I/O operations
+    if (hasVirtualThreadExecutor()) {
+      return call(request, virtualThreadExecutor);
+    }
     return performCall(request, false);
+  }
+  
+  /**
+   * Performs the given I/O request using the provided executor service and updates this future with any result or error.
+   * 
+   * @param request the I/O request to perform
+   * @param executor the executor service to use
+   * @return the result of the I/O request
+   * @throws IOException if an I/O error occurs
+   * @since 3.60
+   */
+  public T call(final IOCall<T> request, final ExecutorService executor) throws IOException {
+    checkNotNull(executor, "Executor service cannot be null");
+    
+    boolean nested = isNestedCall();
+    try {
+      if (!nested) {
+        callInProgress.set(TRUE);
+      }
+      
+      log.debug("Requesting {} using Virtual Thread executor", this);
+      
+      // Submit the task to the executor service
+      CompletableFuture<T> virtualThreadFuture = CompletableFuture.supplyAsync(() -> {
+        try {
+          return request.call(false);
+        }
+        catch (IOException e) {
+          throw new RuntimeIOException(e);
+        }
+      }, executor);
+      
+      // Wait for the result
+      try {
+        T value = virtualThreadFuture.join();
+        log.debug("Completing {}", this);
+        complete(value);
+        return value;
+      }
+      catch (RuntimeIOException e) {
+        log.debug("Completing {} with exception", this, e.getCause());
+        completeExceptionally(e.getCause());
+        throw e.getCause();
+      }
+      catch (Exception | Error e) {
+        log.debug("Completing {} with exception", this, e);
+        completeExceptionally(e);
+        throw e;
+      }
+    }
+    finally {
+      if (!nested) {
+        callInProgress.remove();
+      }
+    }
   }
 
   /**
@@ -136,7 +222,7 @@ public class CooperatingFuture<T>
     }
     finally {
       if (!nested) {
-        callInProgress.remove(); // Clean up ThreadLocal to avoid memory leaks with Virtual Threads
+        callInProgress.remove();
       }
     }
   }
@@ -149,33 +235,29 @@ public class CooperatingFuture<T>
       final Duration initialTimeout,
       final boolean failover) throws InterruptedException, ExecutionException, IOException
   {
-    // Using pattern matching for switch to handle different timeout scenarios
-    return switch (initialTimeout) {
-      case Duration d when d.isZero() || d.isNegative() -> {
-        log.debug("Attempt cooperative wait on {}", this);
-        yield get(); // wait indefinitely
+    if (initialTimeout.isZero() || initialTimeout.isNegative()) {
+      log.debug("Attempt cooperative wait on {}", this);
+      return get(); // wait indefinitely
+    }
+
+    Duration timeout = initialTimeout;
+    if (failover) {
+      timeout = staggerTimeout(timeout); // preserve minimum gap between failover attempts
+    }
+
+    try {
+      log.debug("Attempt cooperative wait on {} for {}", this, timeout);
+      return get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+    }
+    catch (TimeoutException e) {
+      log.debug("Cooperative wait timed out on {}", this, e);
+
+      if (failover) {
+        return performCall(request, true); // failover and repeat request in case lead thread is stuck
       }
-      case Duration d -> {
-        Duration timeout = d;
-        if (failover) {
-          timeout = staggerTimeout(timeout); // preserve minimum gap between failover attempts
-        }
 
-        try {
-          log.debug("Attempt cooperative wait on {} for {}", this, timeout);
-          yield get(timeout.toMillis(), TimeUnit.MILLISECONDS);
-        }
-        catch (TimeoutException e) {
-          log.debug("Cooperative wait timed out on {}", this, e);
-
-          if (failover) {
-            yield performCall(request, true); // failover and repeat request in case lead thread is stuck
-          }
-
-          throw new CooperationException("Cooperative wait timed out on " + this);
-        }
-      }
-    };
+      throw new CooperationException("Cooperative wait timed out on " + this);
+    }
   }
 
   /**
@@ -225,5 +307,23 @@ public class CooperatingFuture<T>
     while (!staggerTimeMillis.compareAndSet(prevTimeMillis, nextTimeMillis));
 
     return Duration.ofMillis(nextTimeMillis - currentTimeMillis);
+  }
+  
+  /**
+   * Runtime exception wrapper for IOExceptions that occur during Virtual Thread execution.
+   * 
+   * @since 3.60
+   */
+  private static class RuntimeIOException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
+    
+    public RuntimeIOException(final IOException cause) {
+      super(cause);
+    }
+    
+    @Override
+    public IOException getCause() {
+      return (IOException) super.getCause();
+    }
   }
 }

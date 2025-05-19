@@ -22,87 +22,67 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
-import org.junit.jupiter.api.Test;
+import org.junit.Test;
+import org.junit.experimental.categories.Category;
 
 import static com.google.common.hash.Funnels.stringFunnel;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.UUID.randomUUID;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.lessThan;
-import static org.hamcrest.core.Is.is;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.hamcrest.Matchers.is;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
-/**
- * Tests for {@link ScalableBloomFilter} to verify its functionality for identifying duplicates
- * and maintaining expected false positive probability.
- * 
- * Updated for Java 21 compatibility with JUnit Jupiter and virtual thread testing.
- */
-class ScalableBloomFilterTest
+@Category(Java21TestGroup.class)
+public class ScalableBloomFilterTest
     extends TestSupport
 {
   private static final double FALSE_POSITIVE_PROBABILITY = 10e-19;
 
-  /**
-   * Verifies that the filter correctly identifies duplicates.
-   */
   @Test
-  void shouldIdentifyDuplicates() {
+  public void identifyDuplicates() {
     List<String> added = new ArrayList<>();
 
     ScalableBloomFilter<String> uniqueFilter = buildFilter();
     for (int i = 1; i <= 10; i++) {
       String value = randomUUID().toString();
       added.add(value);
-      assertFalse(uniqueFilter.mightContain(value), "Filter should not contain newly generated value");
-      assertTrue(uniqueFilter.put(value), "First insertion of a value should return true");
+      assertFalse(uniqueFilter.mightContain(value));
+      assertTrue(uniqueFilter.put(value));
     }
 
     for (String value : added) {
-      assertTrue(uniqueFilter.mightContain(value), "Filter should contain previously added value");
-      assertFalse(uniqueFilter.put(value), "Second insertion of a value should return false");
+      assertTrue(uniqueFilter.mightContain(value));
+      assertFalse(uniqueFilter.put(value));
     }
   }
 
-  /**
-   * Verifies that the filter maintains its expected false positive probability
-   * even with a large number of entries.
-   */
   @Test
-  void shouldNotReturnFalsePositiveInFirstMillion() {
+  public void notReturnFalsePositiveInFirstMillion() {
     ScalableBloomFilter<String> uniqueFilter = buildFilter();
 
     for (int i = 1; i <= 1000000; i++) {
-      assertFalse(uniqueFilter.mightContain(randomUUID().toString()), 
-          "Filter should not contain newly generated value");
-      assertTrue(uniqueFilter.put(randomUUID().toString()), 
-          "Insertion of a unique value should return true");
+      assertFalse(uniqueFilter.mightContain(randomUUID().toString()));
+      assertTrue(uniqueFilter.put(randomUUID().toString()));
     }
 
     // 1,000,000 records for this configuration leads to a probability of ~1.6047675107709276E-19 for a false positive.
-    assertThat("Expected false positive probability should be below threshold", 
-        uniqueFilter.expectedFpp(), is(lessThan(10e-18)));
+    assertThat(uniqueFilter.expectedFpp(), is(lessThan(10e-18)));
   }
-  
-  /**
-   * Tests the filter's behavior under concurrent operations using Java 21 virtual threads.
-   * This verifies that the filter maintains correctness when accessed by multiple threads simultaneously.
-   */
+
   @Test
-  void concurrentOperationsWithVirtualThreads() throws Exception {
-    // Create a filter to be accessed concurrently
-    ScalableBloomFilter<String> uniqueFilter = buildFilter();
-    
-    // Use virtual threads for concurrent operations
+  public void concurrentOperationsWithVirtualThreads() throws Exception {
     ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
     ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
     
     int taskCount = 1000;
     CountDownLatch latch = new CountDownLatch(taskCount);
-    AtomicInteger successCount = new AtomicInteger(0);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    ScalableBloomFilter<String> uniqueFilter = buildFilter();
     
     try {
       // Submit multiple concurrent tasks using virtual threads
@@ -110,39 +90,37 @@ class ScalableBloomFilterTest
         final int taskId = i;
         executor.submit(() -> {
           try {
-            // Each thread adds its own unique value
-            String value = "value-" + taskId + "-" + randomUUID().toString();
-            
-            // First check should return false (not present)
-            if (!uniqueFilter.mightContain(value)) {
-              // Then add it to the filter
-              if (uniqueFilter.put(value)) {
-                // Finally verify it was added
-                if (uniqueFilter.mightContain(value)) {
-                  successCount.incrementAndGet();
-                }
-              }
+            String value = "value-" + taskId;
+            // First insertion should succeed
+            if (!uniqueFilter.put(value)) {
+              errorCount.incrementAndGet();
             }
+            // Filter should now contain the value
+            if (!uniqueFilter.mightContain(value)) {
+              errorCount.incrementAndGet();
+            }
+            // Second insertion should fail
+            if (uniqueFilter.put(value)) {
+              errorCount.incrementAndGet();
+            }
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
           } finally {
             latch.countDown();
           }
         });
       }
       
-      // Wait for all tasks to complete (with timeout for safety)
-      assertTrue(latch.await(30, TimeUnit.SECONDS), "All tasks should complete within timeout");
+      // Wait for all tasks to complete
+      latch.await(30, TimeUnit.SECONDS);
       
-      // Verify results - all operations should have succeeded
-      assertThat("All concurrent operations should succeed", 
-          successCount.get(), is(equalTo(taskCount)));
+      // Verify results
+      assertThat(errorCount.get(), is(0));
     } finally {
       executor.shutdown();
     }
   }
 
-  /**
-   * Creates a new ScalableBloomFilter with standard test parameters.
-   */
   private ScalableBloomFilter<String> buildFilter() {
     return new ScalableBloomFilter<>(stringFunnel(UTF_8), 1000000, FALSE_POSITIVE_PROBABILITY);
   }

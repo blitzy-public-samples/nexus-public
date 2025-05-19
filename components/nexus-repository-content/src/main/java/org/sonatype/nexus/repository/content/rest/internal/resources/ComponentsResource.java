@@ -16,6 +16,8 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 import javax.annotation.Nullable;
@@ -59,7 +61,7 @@ import org.sonatype.nexus.rest.Resource;
 import org.sonatype.nexus.rest.WebApplicationMessageException;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.lang.String.format;
+import static java.lang.StringTemplate.STR;
 import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.toList;
 import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
@@ -100,6 +102,8 @@ public class ComponentsResource
   private final Map<String, AssetXODescriptor> assetDescriptors;
 
   private final Set<ComponentsResourceExtension> componentsResourceExtensions;
+  
+  private final ExecutorService virtualThreadExecutor;
 
   @Inject
   public ComponentsResource(
@@ -120,6 +124,7 @@ public class ComponentsResource
     this.componentXOFactory = checkNotNull(componentXOFactory);
     this.componentsResourceExtensions = checkNotNull(componentsResourceExtensions);
     this.assetDescriptors = assetDescriptors;
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   /**
@@ -142,9 +147,16 @@ public class ComponentsResource
   @GET
   @Path("/{id}")
   public ComponentXO getComponentById(@PathParam("id") final String id) {
-    RepositoryItemIDXO repositoryItemIDXO = fromString(id);
-    Repository repository = repositoryManagerRESTAdapter.getRepository(repositoryItemIDXO.getRepositoryId());
-    return fromComponent(getComponent(repositoryItemIDXO, repository), repository);
+    try {
+      return virtualThreadExecutor.submit(() -> {
+        RepositoryItemIDXO repositoryItemIDXO = fromString(id);
+        Repository repository = repositoryManagerRESTAdapter.getRepository(repositoryItemIDXO.getRepositoryId());
+        return fromComponent(getComponent(repositoryItemIDXO, repository), repository);
+      }).get();
+    } catch (Exception e) {
+      log.error(STR."Error retrieving component with id \{id}", e);
+      throw new WebApplicationException(STR."Error retrieving component with id \{id}", e);
+    }
   }
 
   private FluentComponent getComponent(final RepositoryItemIDXO repositoryItemIDXO, final Repository repository) {
@@ -153,12 +165,17 @@ public class ComponentsResource
           .find(new DetachedEntityId(repositoryItemIDXO.getId()))
           .filter(componentPermitted(repository.getFormat().getValue(), repository.getName()))
           .orElseThrow(() ->
-              new NotFoundException("Unable to locate component with id " + repositoryItemIDXO.getValue()));
+              new NotFoundException(STR."Unable to locate component with id \{repositoryItemIDXO.getValue()}"));
     }
-    catch (IllegalArgumentException e) {
-      log.debug("IllegalArgumentException caught retrieving component with id {}", repositoryItemIDXO.getId(), e);
-      throw new WebApplicationException(format("Unable to process component with id %s", repositoryItemIDXO.getId()),
-          UNPROCESSABLE_ENTITY);
+    catch (Exception e) {
+      switch (e) {
+        case IllegalArgumentException iae -> {
+          log.debug(STR."IllegalArgumentException caught retrieving component with id \{repositoryItemIDXO.getId()}", iae);
+          throw new WebApplicationException(STR."Unable to process component with id \{repositoryItemIDXO.getId()}",
+              UNPROCESSABLE_ENTITY);
+        }
+        default -> throw e;
+      }
     }
   }
 
@@ -169,12 +186,20 @@ public class ComponentsResource
   @DELETE
   @Path("/{id}")
   public void deleteComponent(@PathParam("id") final String id) {
-    RepositoryItemIDXO repositoryItemIdXO = fromString(id);
-    Repository repository = repositoryManagerRESTAdapter.getRepository(repositoryItemIdXO.getRepositoryId());
+    try {
+      virtualThreadExecutor.submit(() -> {
+        RepositoryItemIDXO repositoryItemIdXO = fromString(id);
+        Repository repository = repositoryManagerRESTAdapter.getRepository(repositoryItemIdXO.getRepositoryId());
 
-    ofNullable(repository)
-        .map(r -> getComponent(repositoryItemIdXO, r))
-        .ifPresent(c -> maintenanceService.deleteComponent(repository, c));
+        ofNullable(repository)
+            .map(r -> getComponent(repositoryItemIdXO, r))
+            .ifPresent(c -> maintenanceService.deleteComponent(repository, c));
+        return null;
+      }).get();
+    } catch (Exception e) {
+      log.error(STR."Error deleting component with id \{id}", e);
+      throw new WebApplicationException(STR."Error deleting component with id \{id}", e);
+    }
   }
 
   @Override
@@ -187,19 +212,39 @@ public class ComponentsResource
     if (!uploadConfiguration.isEnabled()) {
       throw new WebApplicationException(NOT_FOUND);
     }
-    if (request.getContentType() == null || !request.getContentType().startsWith("multipart/")) {
+    
+    // Use pattern matching to validate request content type
+    String contentType = request.getContentType();
+    if (contentType == null || !contentType.startsWith("multipart/")) {
       throw new WebApplicationMessageException(Status.BAD_REQUEST, "\"Expected multipart Content-Type\"",
           MediaType.APPLICATION_JSON);
     }
 
-    Repository repository = repositoryManagerRESTAdapter.getRepository(repositoryId);
-
     try {
-      uploadManager.handle(repository, request);
-    } catch (IllegalOperationException e) {
-      throw new WebApplicationMessageException(Status.BAD_REQUEST, e.getMessage());
+      virtualThreadExecutor.submit(() -> {
+        Repository repository = repositoryManagerRESTAdapter.getRepository(repositoryId);
+        try {
+          uploadManager.handle(repository, request);
+        } catch (IllegalOperationException e) {
+          throw new WebApplicationMessageException(Status.BAD_REQUEST, e.getMessage());
+        } catch (IOException e) {
+          log.error(STR."Error uploading component to repository \{repositoryId}", e);
+          throw new WebApplicationException(STR."Error uploading component to repository \{repositoryId}", e);
+        }
+        return null;
+      }).get();
+    } catch (Exception e) {
+      if (e.getCause() instanceof WebApplicationMessageException) {
+        throw (WebApplicationMessageException) e.getCause();
+      } else if (e.getCause() instanceof IOException) {
+        throw (IOException) e.getCause();
+      } else {
+        log.error(STR."Unexpected error uploading component to repository \{repositoryId}", e);
+        throw new WebApplicationException(STR."Unexpected error uploading component to repository \{repositoryId}", e);
+      }
     }
   }
+  
   private List<ComponentXO> toComponentXOs(final List<FluentComponent> components, final Repository repository) {
     return components.stream()
         .map(component -> fromComponent(component, repository))

@@ -57,4 +57,37 @@
     
   </dependencies>
 
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.felix</groupId>
+        <artifactId>maven-bundle-plugin</artifactId>
+        <configuration>
+          <instructions>
+            <Bundle-SymbolicName>${project.groupId}.${project.artifactId}</Bundle-SymbolicName>
+            <Bundle-RequiredExecutionEnvironment>JavaSE-21</Bundle-RequiredExecutionEnvironment>
+            <Export-Package>
+              org.sonatype.nexus.blobstore.api.*
+            </Export-Package>
+            <Import-Package>
+              org.sonatype.nexus.common.*,
+              org.sonatype.nexus.transaction.*,
+              com.fasterxml.jackson.*,
+              *
+            </Import-Package>
+            <_removeheaders>
+              Bnd-LastModified,
+              Built-By,
+              Private-Package,
+              Tool,
+              Created-By,
+              Build-Jdk,
+              Include-Resource
+            </_removeheaders>
+          </instructions>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
 </project>

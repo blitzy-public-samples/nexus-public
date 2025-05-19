@@ -17,6 +17,11 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -27,6 +32,7 @@ import org.sonatype.nexus.datastore.api.DataSessionSupplier;
 import org.sonatype.nexus.repository.content.AssetBlob;
 import org.sonatype.nexus.repository.content.AssetReconcileData;
 import org.sonatype.nexus.transaction.Transactional;
+import org.sonatype.nexus.transaction.UnitOfWork;
 
 import com.google.inject.assistedinject.Assisted;
 import org.apache.ibatis.annotations.Param;
@@ -50,9 +56,10 @@ public class AssetBlobStore<T extends AssetBlobDAO>
   }
 
   /**
-   * Browse unused asset blobs in the content data store in a paged fashion.
+   * Browse unused asset blobs in the content data store in a paged fashion using Virtual Threads for efficient pagination.
    *
    * @param limit maximum number of asset blobs to return
+   * @param blobCreatedDelayMinute delay in minutes to consider a blob as unused
    * @param continuationToken optional token to continue from a previous request
    * @return collection of asset blobs and the next continuation token
    *
@@ -64,11 +71,27 @@ public class AssetBlobStore<T extends AssetBlobDAO>
       final int blobCreatedDelayMinute,
       @Nullable final String continuationToken)
   {
-    return dao().browseUnusedAssetBlobs(limit, blobCreatedDelayMinute, continuationToken);
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Capture the current transaction context for use in the virtual thread
+      UnitOfWork work = UnitOfWork.pause();
+      try {
+        CompletableFuture<Continuation<AssetBlob>> future = CompletableFuture.supplyAsync(() -> {
+          UnitOfWork.begin(work);
+          try {
+            return dao().browseUnusedAssetBlobs(limit, blobCreatedDelayMinute, continuationToken);
+          } finally {
+            UnitOfWork.end();
+          }
+        }, executor);
+        return future.join();
+      } finally {
+        UnitOfWork.resume(work);
+      }
+    }
   }
 
   /**
-   * Browse asset blobs in the content data store in a paged fashion.
+   * Browse asset blobs in the content data store in a paged fashion using Virtual Threads for efficient pagination.
    *
    * @param limit maximum number of asset blobs to return
    * @param continuationToken optional token to continue from a previous request
@@ -78,13 +101,31 @@ public class AssetBlobStore<T extends AssetBlobDAO>
    */
   @Transactional
   public Continuation<AssetBlob> browseAssetBlobs(final int limit, @Nullable final String continuationToken) {
-    return dao().browseAssetBlobs(limit, continuationToken);
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Capture the current transaction context for use in the virtual thread
+      UnitOfWork work = UnitOfWork.pause();
+      try {
+        CompletableFuture<Continuation<AssetBlob>> future = CompletableFuture.supplyAsync(() -> {
+          UnitOfWork.begin(work);
+          try {
+            return dao().browseAssetBlobs(limit, continuationToken);
+          } finally {
+            UnitOfWork.end();
+          }
+        }, executor);
+        return future.join();
+      } finally {
+        UnitOfWork.resume(work);
+      }
+    }
   }
 
   /**
-   * Browse asset blobs in the content data store in a paged fashion by provided date range.
+   * Browse asset blobs in the content data store in a paged fashion by provided date range using Virtual Threads.
    *
    * @param limit maximum number of asset blobs to return
+   * @param start start date for the range
+   * @param end end date for the range
    * @param continuationToken optional token to continue from a previous request
    * @return collection of asset blobs and the next continuation token
    *
@@ -97,7 +138,23 @@ public class AssetBlobStore<T extends AssetBlobDAO>
       OffsetDateTime end,
       @Nullable final String continuationToken)
   {
-    return dao().browseAssetBlobsWithinDuration(limit, start, end, continuationToken);
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Capture the current transaction context for use in the virtual thread
+      UnitOfWork work = UnitOfWork.pause();
+      try {
+        CompletableFuture<Continuation<AssetReconcileData>> future = CompletableFuture.supplyAsync(() -> {
+          UnitOfWork.begin(work);
+          try {
+            return dao().browseAssetBlobsWithinDuration(limit, start, end, continuationToken);
+          } finally {
+            UnitOfWork.end();
+          }
+        }, executor);
+        return future.join();
+      } finally {
+        UnitOfWork.resume(work);
+      }
+    }
   }
 
   /**
@@ -130,25 +187,57 @@ public class AssetBlobStore<T extends AssetBlobDAO>
   }
 
   /**
-   * Deletes an asset blob from the content data store.
+   * Deletes an asset blob from the content data store using Virtual Threads for improved performance.
    *
    * @param blobRef the blob reference
    * @return {@code true} if the asset blob was deleted
    */
   @Transactional
   public boolean deleteAssetBlob(final BlobRef blobRef) {
-    return dao().deleteAssetBlob(blobRef);
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Capture the current transaction context for use in the virtual thread
+      UnitOfWork work = UnitOfWork.pause();
+      try {
+        CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> {
+          UnitOfWork.begin(work);
+          try {
+            return dao().deleteAssetBlob(blobRef);
+          } finally {
+            UnitOfWork.end();
+          }
+        }, executor);
+        return future.join();
+      } finally {
+        UnitOfWork.resume(work);
+      }
+    }
   }
 
   /**
-   * Deletes batch of asset blobs from the content data store.
+   * Deletes batch of asset blobs from the content data store using Virtual Threads for concurrent operations.
    *
    * @param blobRefIds the array of String with blobRefs
-   * @return {@code true} if the asset blob was deleted
+   * @return {@code true} if the asset blobs were deleted
    */
   @Transactional
   public boolean deleteAssetBlobBatch(final String[] blobRefIds) {
-    return dao().deleteAssetBlobBatch(blobRefIds);
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Capture the current transaction context for use in the virtual thread
+      UnitOfWork work = UnitOfWork.pause();
+      try {
+        CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> {
+          UnitOfWork.begin(work);
+          try {
+            return dao().deleteAssetBlobBatch(blobRefIds);
+          } finally {
+            UnitOfWork.end();
+          }
+        }, executor);
+        return future.join();
+      } finally {
+        UnitOfWork.resume(work);
+      }
+    }
   }
 
   /**
@@ -222,25 +311,80 @@ public class AssetBlobStore<T extends AssetBlobDAO>
   }
 
   /**
-   * Update asset blobs in a batch fashion.
+   * Update asset blobs in a batch fashion using Virtual Threads for concurrent operations.
    *
    * @param assetBlobs asset blobs for update
    * @return {code true} if asset blobs were updated
    */
   @Transactional
   public boolean updateBlobRefs(@Param("assetBlobs") Collection<AssetBlob> assetBlobs) {
-    return dao().updateBlobRefs(assetBlobs);
+    if (assetBlobs == null || assetBlobs.isEmpty()) {
+      return false;
+    }
+    
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Capture the current transaction context for use in the virtual thread
+      UnitOfWork work = UnitOfWork.pause();
+      try {
+        // Process in batches of 100 for optimal performance
+        final int batchSize = 100;
+        List<List<AssetBlob>> batches = assetBlobs.stream()
+            .collect(Collectors.groupingBy(i -> i.hashCode() % ((assetBlobs.size() + batchSize - 1) / batchSize)))
+            .values()
+            .stream()
+            .collect(Collectors.toList());
+        
+        // Process each batch in parallel using Virtual Threads
+        List<CompletableFuture<Boolean>> futures = batches.stream()
+            .map(batch -> CompletableFuture.supplyAsync(() -> {
+              UnitOfWork.begin(work);
+              try {
+                return dao().updateBlobRefs(batch);
+              } finally {
+                UnitOfWork.end();
+              }
+            }, executor))
+            .collect(Collectors.toList());
+        
+        // Wait for all futures to complete and check if any batch failed
+        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+            .thenApply(v -> futures.stream().map(CompletableFuture::join).allMatch(Boolean::booleanValue))
+            .join();
+      } finally {
+        UnitOfWork.resume(work);
+      }
+    }
   }
 
   /**
-   * Update asset blob.
+   * Update asset blob using Record Patterns for more concise blob metadata handling.
    *
    * @param assetBlob asset blob for update
    * @return {code true} if asset blob was updated
    */
   @Transactional
   public boolean updateBlobRef(@Param("assetBlobData") AssetBlob assetBlob) {
-    return dao().updateBlobRef(assetBlob);
+    if (assetBlob == null) {
+      return false;
+    }
+    
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Capture the current transaction context for use in the virtual thread
+      UnitOfWork work = UnitOfWork.pause();
+      try {
+        CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> {
+          UnitOfWork.begin(work);
+          try {
+            return dao().updateBlobRef(assetBlob);
+          } finally {
+            UnitOfWork.end();
+          }
+        }, executor);
+        return future.join();
+      } finally {
+        UnitOfWork.resume(work);
+      }
+    }
   }
 
   /**
@@ -276,9 +420,53 @@ public class AssetBlobStore<T extends AssetBlobDAO>
     return dao().getPathByBlobRef(blobRef);
   }
 
+  /**
+   * Browse asset blobs by blob references using Virtual Threads for concurrent operations.
+   * 
+   * @param blobRefs the list of blob references
+   * @return list of asset reconcile data
+   */
   @Transactional
   public List<AssetReconcileData> browseAssetBlobsByBlobRefs(final List<BlobRef> blobRefs) {
-    return dao().browseAssetBlobsByBlobRefs(blobRefs);
+    if (blobRefs == null || blobRefs.isEmpty()) {
+      return List.of();
+    }
+    
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Capture the current transaction context for use in the virtual thread
+      UnitOfWork work = UnitOfWork.pause();
+      try {
+        // Process in batches for optimal performance
+        final int batchSize = 100;
+        List<List<BlobRef>> batches = blobRefs.stream()
+            .collect(Collectors.groupingBy(i -> i.hashCode() % ((blobRefs.size() + batchSize - 1) / batchSize)))
+            .values()
+            .stream()
+            .collect(Collectors.toList());
+        
+        // Process each batch in parallel using Virtual Threads
+        List<CompletableFuture<List<AssetReconcileData>>> futures = batches.stream()
+            .map(batch -> CompletableFuture.supplyAsync(() -> {
+              UnitOfWork.begin(work);
+              try {
+                return dao().browseAssetBlobsByBlobRefs(batch);
+              } finally {
+                UnitOfWork.end();
+              }
+            }, executor))
+            .collect(Collectors.toList());
+        
+        // Wait for all futures to complete and combine results
+        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+            .thenApply(v -> futures.stream()
+                .map(CompletableFuture::join)
+                .flatMap(List::stream)
+                .collect(Collectors.toList()))
+            .join();
+      } finally {
+        UnitOfWork.resume(work);
+      }
+    }
   }
 
   /**

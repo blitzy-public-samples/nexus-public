@@ -14,30 +14,42 @@ package org.sonatype.nexus.common.io;
 
 import java.time.Duration;
 import java.util.Random;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.io.CooperationFactorySupport.Config;
+import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
 
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.experimental.categories.Category;
 import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.lessThanOrEqualTo;
 
-@ExtendWith(MockitoExtension.class)
+@Category(VirtualThreadTestGroup.class)
 public class CooperatingFutureTest
     extends TestSupport
 {
   @Mock
   Config config;
+  
+  private boolean threadPinningDetectionEnabled;
+  
+  @Before
+  public void setup() {
+    // Check if thread pinning detection is enabled
+    threadPinningDetectionEnabled = System.getProperty("jdk.tracePinnedThreads") != null;
+  }
 
   @Test
-  void downloadTimeoutsAreStaggered() {
+  public void downloadTimeoutsAreStaggeredWithPlatformThreads() {
     CooperatingFuture<String> cooperatingFuture = new CooperatingFuture<>("testKey", config);
 
     Random random = new Random();
@@ -59,6 +71,49 @@ public class CooperatingFutureTest
     for (int i = 1; i < downloadTimeMillis.length; i++) {
       long actualGap = downloadTimeMillis[i] - downloadTimeMillis[i - 1];
       assertThat(actualGap, allOf(greaterThanOrEqualTo(expectedGap - 10), lessThanOrEqualTo(expectedGap + 50)));
+    }
+  }
+  
+  @Test
+  public void downloadTimeoutsAreStaggeredWithVirtualThreads() throws Exception {
+    CooperatingFuture<String> cooperatingFuture = new CooperatingFuture<>("testKey", config);
+    
+    // Create an executor service using virtual threads
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      Random random = new Random();
+      long[] downloadTimeMillis = new long[10];
+      long expectedGap = 200;
+      
+      // First download timestamp
+      downloadTimeMillis[0] = System.currentTimeMillis();
+      
+      // Submit tasks to virtual threads
+      for (int i = 1; i < downloadTimeMillis.length; i++) {
+        final int index = i;
+        executor.submit(() -> {
+          try {
+            // random sleep representing some client-side work
+            LockSupport.parkNanos(Duration.ofMillis(random.nextInt((int) expectedGap)).toNanos());
+            
+            // staggered sleep should bring us close to the expected gap
+            LockSupport.parkNanos(cooperatingFuture.staggerTimeout(Duration.ofMillis(expectedGap)).toNanos());
+            
+            downloadTimeMillis[index] = System.currentTimeMillis(); // record download time
+          } catch (Exception e) {
+            log.error("Error in virtual thread execution", e);
+          }
+        });
+      }
+      
+      // Shutdown and wait for all tasks to complete
+      executor.shutdown();
+      executor.awaitTermination(10, TimeUnit.SECONDS);
+      
+      // Verify the timing gaps
+      for (int i = 1; i < downloadTimeMillis.length; i++) {
+        long actualGap = downloadTimeMillis[i] - downloadTimeMillis[i - 1];
+        assertThat(actualGap, allOf(greaterThanOrEqualTo(expectedGap - 10), lessThanOrEqualTo(expectedGap + 50)));
+      }
     }
   }
 }

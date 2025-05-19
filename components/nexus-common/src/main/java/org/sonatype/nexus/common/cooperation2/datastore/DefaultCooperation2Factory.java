@@ -12,9 +12,8 @@
  */
 package org.sonatype.nexus.common.cooperation2.datastore;
 
-import java.time.Duration;
 import java.util.Arrays;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.stream.Collectors;
 
 import javax.inject.Named;
@@ -24,15 +23,26 @@ import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.cooperation2.Cooperation2;
 import org.sonatype.nexus.common.cooperation2.Cooperation2Factory;
 import org.sonatype.nexus.common.cooperation2.datastore.internal.LocalCooperation2;
+import org.sonatype.nexus.common.cooperation2.datastore.internal.VirtualThreadLocalCooperation2;
 import org.sonatype.nexus.common.cooperation2.internal.DisabledCooperation2;
 import org.sonatype.nexus.common.cooperation2.internal.MutableConfigSupport;
 
 /**
- * Default implementation of {@link Cooperation2Factory} optimized for Java 21 Virtual Threads.
+ * Default implementation of {@link Cooperation2Factory} that leverages Java 21 Virtual Threads
+ * for improved performance with I/O-bound operations.
  * 
- * This factory creates cooperation instances that leverage Java 21's Virtual Threads for
- * improved concurrency, especially for I/O-bound operations. Virtual Threads provide significant
- * performance benefits by allowing thousands of concurrent operations with minimal resource overhead.
+ * <p>This factory creates cooperation instances that can use Virtual Threads to efficiently
+ * handle blocking operations without consuming excessive platform thread resources. Virtual Threads
+ * are particularly beneficial for operations that spend significant time waiting for I/O, such as
+ * network requests, file operations, or database queries.</p>
+ * 
+ * <p>Key features:</p>
+ * <ul>
+ *   <li>Automatic use of Virtual Threads for I/O-bound operations</li>
+ *   <li>Context propagation across Virtual Threads</li>
+ *   <li>Configurable thread management settings</li>
+ *   <li>Backward compatibility with existing cooperation patterns</li>
+ * </ul>
  *
  * @since 3.41
  */
@@ -43,36 +53,67 @@ public class DefaultCooperation2Factory
     implements Cooperation2Factory
 {
   /**
-   * Default major timeout duration for cooperation operations.
+   * Determines if the current JVM supports Virtual Threads (Java 21+).
+   * 
+   * <p>This method checks for the presence of the {@code Thread.ofVirtual()} method,
+   * which is the primary API for creating Virtual Threads in Java 21 and later.</p>
+   * 
+   * <p>Virtual Threads are lightweight threads that dramatically reduce the effort of writing,
+   * maintaining, and debugging high-throughput concurrent applications. They are particularly
+   * beneficial for I/O-bound operations where threads spend significant time waiting.</p>
+   * 
+   * @return true if Virtual Threads are supported, false otherwise
    */
-  private static final Duration DEFAULT_MAJOR_TIMEOUT = Duration.ofMinutes(30);
+  private static boolean isVirtualThreadSupported() {
+    try {
+      // Check if Thread class has the ofVirtual method (Java 21+)
+      Thread.class.getMethod("ofVirtual");
+      return true;
+    } catch (NoSuchMethodException e) {
+      return false;
+    }
+  }
   
   /**
-   * Default minor timeout duration for cooperation operations.
+   * Flag indicating whether Virtual Threads are supported in the current JVM.
    */
-  private static final Duration DEFAULT_MINOR_TIMEOUT = Duration.ofMinutes(10);
-  
-  /**
-   * Default number of threads per key for cooperation operations.
-   * With Virtual Threads, this can be set higher than with platform threads
-   * as Virtual Threads have much lower overhead.
-   */
-  private static final int DEFAULT_THREADS_PER_KEY = 8;
-  
+  private static final boolean VIRTUAL_THREAD_SUPPORTED = isVirtualThreadSupported();
+
   @Override
   public Builder configure() {
-    return new DefaultCooperation2Builder()
-        .majorTimeout(DEFAULT_MAJOR_TIMEOUT)
-        .minorTimeout(DEFAULT_MINOR_TIMEOUT)
-        .threadsPerKey(DEFAULT_THREADS_PER_KEY)
-        .useVirtualThreads(true); // Enable Virtual Threads by default for Java 21
+    return new DefaultCooperation2Builder();
   }
 
   /**
-   * Builder implementation for creating Cooperation2 instances optimized for Java 21.
+   * Builder implementation that creates cooperation instances with Virtual Thread support.
    * 
-   * This builder configures cooperation instances to leverage Virtual Threads for
-   * improved concurrency and performance, particularly for I/O-bound operations.
+   * <p>This builder creates {@link Cooperation2} instances that can leverage Java 21 Virtual Threads
+   * for improved performance with I/O-bound operations. When Virtual Threads are enabled and supported,
+   * operations will be executed on lightweight threads managed by the JVM rather than OS threads.</p>
+   * 
+   * <p>Virtual Threads are particularly beneficial for operations that spend significant time waiting
+   * for I/O, as they allow the JVM to efficiently manage thousands of concurrent operations without
+   * the overhead of platform threads.</p>
+   */
+  /**
+   * Builder implementation that creates cooperation instances with Virtual Thread support.
+   * 
+   * <p>This builder creates {@link Cooperation2} instances that can leverage Java 21 Virtual Threads
+   * for improved performance with I/O-bound operations. When Virtual Threads are enabled and supported,
+   * operations will be executed on lightweight threads managed by the JVM rather than OS threads.</p>
+   * 
+   * <p>Virtual Threads are particularly beneficial for operations that spend significant time waiting
+   * for I/O, as they allow the JVM to efficiently manage thousands of concurrent operations without
+   * the overhead of platform threads.</p>
+   * 
+   * <p>Best practices when using Virtual Threads:</p>
+   * <ul>
+   *   <li>Avoid synchronized blocks in code that runs on Virtual Threads to prevent "pinning"</li>
+   *   <li>Use explicit resource limits (e.g., connection pools, semaphores) rather than relying on
+   *       thread count as an implicit throttling mechanism</li>
+   *   <li>Be aware that Virtual Threads make it easy to create many more concurrent operations,
+   *       which could overwhelm downstream systems if not properly managed</li>
+   * </ul>
    */
   protected class DefaultCooperation2Builder
       extends MutableConfigSupport
@@ -84,11 +125,14 @@ public class DefaultCooperation2Factory
         return new DisabledCooperation2(id);
       }
       
-      if (log.isDebugEnabled() && useVirtualThreads) {
-        log.debug("Creating cooperation with Virtual Thread support: {}", id);
+      // Use Virtual Thread implementation when supported and enabled
+      if (VIRTUAL_THREAD_SUPPORTED && useVirtualThreads) {
+        log.debug("Creating Virtual Thread enabled cooperation: {}", id);
+        return new VirtualThreadLocalCooperation2(id, this.copy());
+      } else {
+        log.debug("Creating standard cooperation (Virtual Threads not available or disabled): {}", id);
+        return new LocalCooperation2(id, this.copy());
       }
-      
-      return new LocalCooperation2(id, this.copy());
     }
 
     @Override
@@ -98,42 +142,19 @@ public class DefaultCooperation2Factory
         return new DisabledCooperation2(stripGuice(id, keys));
       }
       
-      String scopeId = stripGuice(id, keys);
-      
-      if (log.isDebugEnabled() && useVirtualThreads) {
-        log.debug("Creating cooperation with Virtual Thread support: {}", scopeId);
+      // Use Virtual Thread implementation when supported and enabled
+      if (VIRTUAL_THREAD_SUPPORTED && useVirtualThreads) {
+        log.debug("Creating Virtual Thread enabled cooperation: {}", id);
+        return new VirtualThreadLocalCooperation2(stripGuice(id, keys), this.copy());
+      } else {
+        log.debug("Creating standard cooperation (Virtual Threads not available or disabled): {}", stripGuice(id, keys));
+        return new LocalCooperation2(stripGuice(id, keys), this.copy());
       }
-      
-      return new LocalCooperation2(scopeId, this.copy());
-    }
-    
-    /**
-     * Creates a copy of this configuration with all fields properly copied.
-     * 
-     * @return a new instance with the same configuration values
-     */
-    @Override
-    protected Config copy() {
-      Config copy = super.copy();
-      // Copy the additional fields from MutableConfigSupport that aren't in the base Config class
-      if (copy instanceof MutableConfigSupport) {
-        MutableConfigSupport mutableCopy = (MutableConfigSupport) copy;
-        mutableCopy.enabled(this.enabled);
-        mutableCopy.useVirtualThreads(this.useVirtualThreads);
-        // Initialize the concurrency limit with our current value
-        mutableCopy.concurrencyLimit().set(this.concurrencyLimit().get());
-      }
-      return copy;
     }
   }
 
-  /**
-   * When classes are enhanced by Guice AOP they can have random strings and we need them to be consistent.
-   * This method strips Guice-specific parts from class names to ensure consistent cooperation keys.
-   * 
-   * @param clazz the class to get the name from
-   * @param keys additional key components
-   * @return a consistent string identifier for the cooperation
+  /*
+   * When classes are enhanced by Guice AOP they can have random strings and we need them to be consistent
    */
   protected static String stripGuice(final Class<?> clazz, final String... keys) {
     String simpleName = clazz.getSimpleName();
@@ -142,8 +163,6 @@ public class DefaultCooperation2Factory
       return stripGuice(clazz.getSuperclass(), keys);
     }
 
-    // Use modern Stream API features for string joining
-    return Arrays.stream(keys)
-        .collect(Collectors.joining("-", simpleName + '-', ""));
+    return Arrays.asList(keys).stream().collect(Collectors.joining("-", simpleName + '-', ""));
   }
 }

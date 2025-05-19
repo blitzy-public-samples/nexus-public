@@ -15,8 +15,6 @@ package org.sonatype.nexus.blobstore;
 import java.io.FilterInputStream;
 import java.io.InputStream;
 import java.io.IOException;
-import java.time.Duration;
-import java.time.Instant;
 
 import com.google.common.io.CountingInputStream;
 
@@ -24,7 +22,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * A utility to log how fast the input stream was read.
- * Updated for Java 21 to properly handle Virtual Threads and use improved timing mechanisms.
+ * Supports Virtual Thread specific performance metrics.
  *
  * @since 3.21
  */
@@ -36,54 +34,60 @@ public class PerformanceLoggingInputStream
   private final CountingInputStream countingInputStream;
 
   private long totalNanosElapsed;
+  
+  private final boolean isVirtualThread;
 
-  /**
-   * Creates a new PerformanceLoggingInputStream that wraps the given source stream.
-   *
-   * @param source the input stream to wrap
-   * @param performanceLogger the logger to use for performance metrics
-   */
   public PerformanceLoggingInputStream(final InputStream source, final PerformanceLogger performanceLogger) {
-    this(new CountingInputStream(source), performanceLogger);
+    this(new CountingInputStream(source), performanceLogger, false);
+  }
+  
+  public PerformanceLoggingInputStream(final InputStream source, final PerformanceLogger performanceLogger, final boolean isVirtualThread) {
+    this(new CountingInputStream(source), performanceLogger, isVirtualThread);
   }
 
   private PerformanceLoggingInputStream(
       final CountingInputStream countingInputStream,
-      final PerformanceLogger performanceLogger)
+      final PerformanceLogger performanceLogger,
+      final boolean isVirtualThread)
   {
     super(countingInputStream);
     this.countingInputStream = checkNotNull(countingInputStream);
     this.performanceLogger = checkNotNull(performanceLogger);
+    this.isVirtualThread = isVirtualThread;
   }
 
   @Override
   public void close() throws IOException {
     in.close();
-    performanceLogger.logRead(countingInputStream.getCount(), totalNanosElapsed);
+    long count = countingInputStream.getCount();
+    performanceLogger.logRead(count, totalNanosElapsed, isVirtualThread);
+    
+    if (isVirtualThread) {
+      performanceLogger.captureVirtualThreadMetrics("read", count, totalNanosElapsed);
+    }
   }
 
   @Override
   public int read() throws IOException {
-    // Using Instant for better accuracy with Virtual Threads
-    Instant start = Instant.now();
+    long start = System.nanoTime();
     int val = in.read();
-    totalNanosElapsed += Duration.between(start, Instant.now()).toNanos();
+    totalNanosElapsed += System.nanoTime() - start;
     return val;
   }
 
   @Override
   public int read(byte[] b) throws IOException {
-    Instant start = Instant.now();
+    long start = System.nanoTime();
     int bytesRead = in.read(b);
-    totalNanosElapsed += Duration.between(start, Instant.now()).toNanos();
+    totalNanosElapsed += System.nanoTime() - start;
     return bytesRead;
   }
 
   @Override
   public int read(byte[] b, int off, int len) throws IOException {
-    Instant start = Instant.now();
+    long start = System.nanoTime();
     int bytesRead = in.read(b, off, len);
-    totalNanosElapsed += Duration.between(start, Instant.now()).toNanos();
+    totalNanosElapsed += System.nanoTime() - start;
     return bytesRead;
   }
 }

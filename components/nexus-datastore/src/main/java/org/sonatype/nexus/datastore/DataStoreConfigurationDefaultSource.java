@@ -12,9 +12,9 @@
  */
 package org.sonatype.nexus.datastore;
 
-import javax.annotation.Priority;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.annotation.Priority;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.datastore.api.DataStoreConfiguration;
@@ -41,7 +41,7 @@ public class DataStoreConfigurationDefaultSource
 {
   static final String LOCAL = "local";
 
-  private static final String JDBC_TEMPLATE_URL = "jdbc:h2:file:${karaf.data}/db/" + DEFAULT_DATASTORE_NAME;
+  private static final String JDBC_TEMPLATE_URL = "jdbc:h2:file:${karaf.data}/db/" + DEFAULT_DATASTORE_NAME + ";DB_CLOSE_DELAY=-1";
 
   private static final String JDBC = "jdbc";
 

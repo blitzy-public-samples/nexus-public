@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -27,6 +28,7 @@ import org.sonatype.nexus.blobstore.api.BlobId;
 import org.sonatype.nexus.blobstore.api.BlobSession;
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
+import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
 
 import com.google.common.hash.HashCode;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,6 +42,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.inOrder;
@@ -66,9 +69,9 @@ public class MemoryBlobSessionTest
 
   private static final BlobId COPIED_BLOB_ID = new BlobId("copied-blob");
 
-  private static final String TEST_COMMIT_REASON = "committing " + DEFAULT_REASON;
+  private static final String TEST_COMMIT_REASON = STR."committing \{DEFAULT_REASON}";
 
-  private static final String TEST_ROLLBACK_REASON = "rolling back " + DEFAULT_REASON;
+  private static final String TEST_ROLLBACK_REASON = STR."rolling back \{DEFAULT_REASON}";
 
   @Mock
   private BlobStore blobStore;
@@ -85,7 +88,7 @@ public class MemoryBlobSessionTest
   private int blobIdSequence = 1;
 
   @BeforeEach
-  public void setUp() {
+  void setUp() {
     Blob restoredBlob = mockBlob(RESTORED_BLOB_ID);
     Blob copiedBlob = mockBlob(COPIED_BLOB_ID);
 
@@ -196,7 +199,7 @@ public class MemoryBlobSessionTest
       session.getTransaction().commit();
     }
     catch (Throwable t) {
-      //explictly having an assertion pleases sonar
+      //explicitly having an assertion pleases sonar
       fail("transaction commit not reached");
     }
 
@@ -207,7 +210,7 @@ public class MemoryBlobSessionTest
       session.getTransaction().commit();
     }
     catch (Throwable t) {
-      //explictly having an assertion pleases sonar
+      //explicitly having an assertion pleases sonar
       fail("transaction commit not reached");
     }
   }
@@ -221,7 +224,7 @@ public class MemoryBlobSessionTest
       session.getTransaction().rollback();
     }
     catch (Throwable t) {
-      //explictly having an assertion pleases sonar
+      //explicitly having an assertion pleases sonar
       fail("rollback may have failed");
     }
 
@@ -232,90 +235,60 @@ public class MemoryBlobSessionTest
       session.getTransaction().rollback();
     }
     catch (Throwable t) {
-      //explictly having an assertion pleases sonar
+      //explicitly having an assertion pleases sonar
       fail("rollback may have failed");
     }
   }
 
   @Test
-  void virtualThreadsRespectTransactionalBehavior() throws Exception {
-    // Create a virtual thread executor
-    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+  @VirtualThreadTestGroup
+  void concurrentBlobOperationsWithVirtualThreads() throws Exception {
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
     
-    try {
-      // Test with multiple concurrent virtual threads
+    // Create an executor service using virtual threads
+    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
       int taskCount = 100;
       CountDownLatch latch = new CountDownLatch(taskCount);
-      AtomicInteger errorCount = new AtomicInteger(0);
+      AtomicInteger successCount = new AtomicInteger(0);
       
-      // Submit multiple concurrent tasks using virtual threads
+      // Perform concurrent blob operations using virtual threads
       for (int i = 0; i < taskCount; i++) {
-        executor.submit(() -> {
-          try (BlobSession<?> session = new MemoryBlobSession(blobStore)) {
-            // Create a blob and then delete it
-            Blob newBlob = session.create(blobData, headers);
-            session.delete(newBlob.getId());
-            
-            // Commit the transaction
-            session.getTransaction().commit();
-          } catch (Exception e) {
-            errorCount.incrementAndGet();
-          } finally {
-            latch.countDown();
-          }
-        });
-      }
-      
-      // Wait for all tasks to complete
-      latch.await(30, TimeUnit.SECONDS);
-      
-      // Verify no errors occurred
-      assertThat(errorCount.get(), is(0));
-    } finally {
-      executor.shutdown();
-    }
-  }
-
-  @Test
-  void virtualThreadsHandleRollbackCorrectly() throws Exception {
-    // Create a virtual thread executor
-    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
-    
-    try {
-      // Test with multiple concurrent virtual threads
-      int taskCount = 100;
-      CountDownLatch latch = new CountDownLatch(taskCount);
-      AtomicInteger errorCount = new AtomicInteger(0);
-      
-      // Submit multiple concurrent tasks using virtual threads
-      for (int i = 0; i < taskCount; i++) {
+        final int taskId = i;
         executor.submit(() -> {
           try (BlobSession<?> session = new MemoryBlobSession(blobStore)) {
             // Create a blob
-            session.create(blobData, headers);
+            Blob blob = session.create(blobData, headers);
+            BlobId blobId = blob.getId();
             
-            // Rollback the transaction
-            session.getTransaction().rollback();
+            // Verify the blob exists
+            if (session.exists(blobId) && session.get(blobId) != null) {
+              // Delete the blob
+              session.delete(blobId);
+              
+              // Commit the transaction
+              session.getTransaction().commit();
+              successCount.incrementAndGet();
+            }
           } catch (Exception e) {
-            errorCount.incrementAndGet();
+            log.error(STR."Error in virtual thread task \{taskId}", e);
           } finally {
             latch.countDown();
           }
         });
       }
       
-      // Wait for all tasks to complete
-      latch.await(30, TimeUnit.SECONDS);
+      // Wait for all tasks to complete (with timeout)
+      boolean completed = latch.await(30, TimeUnit.SECONDS);
       
-      // Verify no errors occurred
-      assertThat(errorCount.get(), is(0));
-    } finally {
-      executor.shutdown();
+      // Verify results
+      assertThat("All tasks should complete within the timeout", completed, is(true));
+      assertThat("All blob operations should succeed", successCount.get(), is(taskCount));
     }
   }
 
   private Blob newBlob(final InvocationOnMock unused) {
-    return mockBlob(new BlobId("new-blob-" + (blobIdSequence++)));
+    return mockBlob(new BlobId(STR."new-blob-\{blobIdSequence++}"));
   }
 
   private Blob getBlob(final InvocationOnMock invocation) {

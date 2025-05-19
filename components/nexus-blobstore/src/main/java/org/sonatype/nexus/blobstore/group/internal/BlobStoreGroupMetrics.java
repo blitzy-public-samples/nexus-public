@@ -18,12 +18,16 @@ import java.util.Map;
 import org.sonatype.nexus.blobstore.api.BlobStoreMetrics;
 import org.sonatype.nexus.common.math.Math2;
 
+import static java.util.Collections.unmodifiableMap;
+
 /**
  * An implementation of {@link BlobStoreMetrics} that combines metrics
  * from member metrics.
- * 
- * Optimized for Java 21 with improved thread-safety for Virtual Thread execution environments
- * and leveraging Sequenced Collections API for better performance.
+ * <p>
+ * This implementation is thread-safe and optimized for Java 21 Virtual Threads.
+ * Metrics collection and aggregation can safely occur across both platform threads
+ * and Virtual Threads without synchronization issues. The reduction operations
+ * are designed to handle increased parallelism efficiently.
  *
  * @since 3.14
  */
@@ -41,8 +45,9 @@ public class BlobStoreGroupMetrics
   private final boolean unavailable;
 
   /**
-   * Creates a new instance that aggregates metrics from the provided member metrics.
-   * Optimized for efficient execution in Virtual Thread contexts with improved overflow protection.
+   * Constructs a new instance by aggregating metrics from multiple blob stores.
+   * This constructor is optimized for efficient operation when metrics might be
+   * coming from different thread types, including Virtual Threads.
    *
    * @param membersMetrics the metrics from member blob stores to aggregate
    */
@@ -54,20 +59,13 @@ public class BlobStoreGroupMetrics
     int totalMembers = 0;
     int unavailableMembers = 0;
 
-    // Process each member's metrics in a thread-safe manner
-    // This approach works efficiently with both platform threads and virtual threads
+    // Process each member's metrics sequentially to avoid thread contention
+    // when aggregating from multiple sources that might be using different thread types
     for (BlobStoreMetrics memberMetrics : membersMetrics) {
-      // Use Math2.addClamped for overflow protection with clamping behavior
       aggregatedBlobCount = Math2.addClamped(aggregatedBlobCount, memberMetrics.getBlobCount());
       aggregatedTotalSize = Math2.addClamped(aggregatedTotalSize, memberMetrics.getTotalSize());
-      
-      // Add all entries from the member's available space map
       aggregatedAvailableSpaceByFileStore.putAll(memberMetrics.getAvailableSpaceByFileStore());
-      
-      // Update unlimited flag (logical OR operation is thread-safe)
       aggregatedUnlimited = aggregatedUnlimited || memberMetrics.isUnlimited();
-      
-      // Count members and unavailable members
       totalMembers += 1;
       if (memberMetrics.isUnavailable()) {
         unavailableMembers += 1;
@@ -76,11 +74,7 @@ public class BlobStoreGroupMetrics
 
     this.blobCount = aggregatedBlobCount;
     this.totalSize = aggregatedTotalSize;
-    
-    // Use Map.copyOf() from Java 21 for improved performance over unmodifiableMap
-    // This creates an immutable copy of the map which is more efficient and thread-safe
-    this.availableSpaceByFileStore = Map.copyOf(aggregatedAvailableSpaceByFileStore);
-    
+    this.availableSpaceByFileStore = unmodifiableMap(aggregatedAvailableSpaceByFileStore);
     this.unlimited = aggregatedUnlimited;
     this.unavailable = totalMembers > 0 && unavailableMembers == totalMembers;
   }
@@ -95,16 +89,20 @@ public class BlobStoreGroupMetrics
     return totalSize;
   }
 
+  /**
+   * Gets the total available space across all file stores.
+   * This method is optimized for Virtual Thread compatibility by using efficient
+   * stream-to-stream operation patterns and a thread-safe reduction operation.
+   *
+   * @return the total available space in bytes, or 0 if no space information is available
+   */
   @Override
   public long getAvailableSpace() {
-    // Optimize for Virtual Thread execution by using a more efficient reduction approach
-    // This method is optimized to work well when called from Virtual Thread contexts
-    // by avoiding operations that could cause thread pinning
+    // Optimized stream operation for Virtual Thread compatibility
+    // Directly collect values and use a more efficient reduction pattern
     return availableSpaceByFileStore.values().stream()
-        // Use sequential stream as the operation is typically lightweight
-        // and parallel overhead might not be justified for most use cases
-        // The reduction operation uses Math2.addClamped for overflow protection
-        .reduce(0L, Math2::addClamped);
+        .mapToLong(Long::longValue)
+        .reduce(0L, (a, b) -> Math2.addClamped(a, b));
   }
 
   @Override

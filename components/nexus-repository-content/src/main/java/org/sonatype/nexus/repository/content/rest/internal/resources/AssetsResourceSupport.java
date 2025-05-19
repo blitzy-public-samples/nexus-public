@@ -14,6 +14,9 @@ package org.sonatype.nexus.repository.content.rest.internal.resources;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.Predicate;
 
 import org.sonatype.goodies.common.ComponentSupport;
@@ -51,24 +54,51 @@ abstract class AssetsResourceSupport
   }
 
   List<FluentAsset> browse(final Repository repository, final String continuationToken) {
+    log.debug(STR."Browsing assets for repository \{repository.getName()} with token \{continuationToken}");
+    
     List<FluentAsset> permittedAssets = new ArrayList<>();
     String internalToken = toInternalToken(continuationToken);
-    Continuation<FluentAsset> assetContinuation = getAssets(repository, internalToken);
-
-    while (permittedAssets.size() < PAGE_SIZE_LIMIT && !assetContinuation.isEmpty()) {
-      permittedAssets.addAll(removeAssetsNotPermitted(repository, assetContinuation));
-      assetContinuation = getAssets(repository, assetContinuation.nextContinuationToken());
+    
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Get the first batch of assets
+      Continuation<FluentAsset> assetContinuation = getAssets(repository, internalToken);
+      
+      // Process assets concurrently until we reach the page size limit or run out of assets
+      while (permittedAssets.size() < PAGE_SIZE_LIMIT && !assetContinuation.isEmpty()) {
+        // Create a copy of the current continuation to use in the async task
+        Continuation<FluentAsset> currentContinuation = assetContinuation;
+        
+        // Get the next continuation token for the next iteration
+        String nextToken = assetContinuation.nextContinuationToken();
+        
+        // Process current batch of assets asynchronously
+        CompletableFuture<List<FluentAsset>> future = CompletableFuture.supplyAsync(
+            () -> removeAssetsNotPermitted(repository, currentContinuation),
+            executor
+        );
+        
+        // Start fetching the next batch of assets while processing the current batch
+        assetContinuation = getAssets(repository, nextToken);
+        
+        // Add the permitted assets from the current batch
+        permittedAssets.addAll(future.join());
+      }
+      
+      log.debug(STR."Found \{permittedAssets.size()} permitted assets for repository \{repository.getName()}");
+      return trim(permittedAssets, PAGE_SIZE_LIMIT);
+    } catch (Exception e) {
+      log.error(STR."Error browsing assets for repository \{repository.getName()}: \{e.getMessage()}", e);
+      throw e;
     }
-    return trim(permittedAssets, PAGE_SIZE_LIMIT);
   }
 
   private Continuation<FluentAsset> getAssets(Repository repository, final String continuationToken) {
-    // helper for users, if they query by group chances are they want the list of member content
-    if (GroupType.NAME.equals(repository.getType().getValue())) {
-      return repository.facet(ContentFacet.class).assets().withOnlyGroupMemberContent()
+    // Helper for users, if they query by group chances are they want the list of member content
+    return switch (repository.getType().getValue()) {
+      case GroupType.NAME -> repository.facet(ContentFacet.class).assets().withOnlyGroupMemberContent()
           .browse(PAGE_SIZE_LIMIT, continuationToken);
-    }
-    return repository.facet(ContentFacet.class).assets().browse(PAGE_SIZE_LIMIT, continuationToken);
+      default -> repository.facet(ContentFacet.class).assets().browse(PAGE_SIZE_LIMIT, continuationToken);
+    };
   }
 
   private List<FluentAsset> removeAssetsNotPermitted(
@@ -93,7 +123,8 @@ abstract class AssetsResourceSupport
 
   static <T> List<T> trim(List<T> items, final int limit) {
     if (items.size() > limit) {
-      items = items.subList(0, limit);
+      // Use subList to create a view of the first 'limit' elements
+      return items.subList(0, limit);
     }
     return items;
   }

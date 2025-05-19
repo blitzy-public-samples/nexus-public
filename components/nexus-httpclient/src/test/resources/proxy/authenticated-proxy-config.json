@@ -1,0 +1,143 @@
+{
+  "proxyConfigurations": {
+    "basic": {
+      "host": "proxy-basic.example.com",
+      "port": 3128,
+      "enabled": true,
+      "authentication": {
+        "type": "basic",
+        "username": "basicuser",
+        "password": "basicpass",
+        "preemptive": true,
+        "virtualThreadOptimized": true
+      },
+      "connectionSettings": {
+        "connectionTimeout": 5000,
+        "socketTimeout": 30000,
+        "keepAliveEnabled": true,
+        "maxConnections": 200,
+        "nonBlockingIO": true
+      }
+    },
+    "ntlm": {
+      "host": "proxy-ntlm.example.com",
+      "port": 3128,
+      "enabled": true,
+      "authentication": {
+        "type": "ntlm",
+        "username": "ntlmuser",
+        "password": "ntlmpass",
+        "domain": "EXAMPLE",
+        "ntlmHost": "workstation1",
+        "preemptive": false,
+        "virtualThreadOptimized": true
+      },
+      "connectionSettings": {
+        "connectionTimeout": 5000,
+        "socketTimeout": 30000,
+        "keepAliveEnabled": true,
+        "maxConnections": 200,
+        "nonBlockingIO": true
+      }
+    },
+    "digest": {
+      "host": "proxy-digest.example.com",
+      "port": 3128,
+      "enabled": true,
+      "authentication": {
+        "type": "digest",
+        "username": "digestuser",
+        "password": "digestpass",
+        "preemptive": false,
+        "virtualThreadOptimized": true
+      },
+      "connectionSettings": {
+        "connectionTimeout": 5000,
+        "socketTimeout": 30000,
+        "keepAliveEnabled": true,
+        "maxConnections": 200,
+        "nonBlockingIO": true
+      }
+    }
+  },
+  "virtualThreadSettings": {
+    "enabled": true,
+    "pinningPrevention": {
+      "avoidSynchronizedBlocks": true,
+      "useReentrantLocks": true,
+      "avoidNativeMethodsInCriticalPaths": true
+    },
+    "threadPoolSettings": {
+      "useVirtualThreadPerTaskExecutor": true,
+      "schedulerParallelism": 0
+    }
+  },
+  "testScenarios": {
+    "authenticationSequence": [
+      {
+        "name": "Basic Auth Success",
+        "proxyType": "basic",
+        "expectedResult": "success",
+        "responseCode": 200
+      },
+      {
+        "name": "NTLM Auth Success",
+        "proxyType": "ntlm",
+        "expectedResult": "success",
+        "responseCode": 200
+      },
+      {
+        "name": "Digest Auth Success",
+        "proxyType": "digest",
+        "expectedResult": "success",
+        "responseCode": 200
+      },
+      {
+        "name": "Basic Auth Failure",
+        "proxyType": "basic",
+        "credentials": {
+          "username": "wronguser",
+          "password": "wrongpass"
+        },
+        "expectedResult": "failure",
+        "responseCode": 407
+      }
+    ],
+    "concurrencyTests": [
+      {
+        "name": "High Concurrency Basic Auth",
+        "proxyType": "basic",
+        "concurrentConnections": 1000,
+        "requestsPerConnection": 10,
+        "expectedThroughput": "high"
+      },
+      {
+        "name": "High Concurrency NTLM Auth",
+        "proxyType": "ntlm",
+        "concurrentConnections": 1000,
+        "requestsPerConnection": 10,
+        "expectedThroughput": "medium"
+      },
+      {
+        "name": "High Concurrency Digest Auth",
+        "proxyType": "digest",
+        "concurrentConnections": 1000,
+        "requestsPerConnection": 10,
+        "expectedThroughput": "medium"
+      }
+    ]
+  },
+  "nonProxyHosts": [
+    "localhost",
+    "127.0.0.1",
+    "*.internal.example.com",
+    "10.*.*.*"
+  ],
+  "javaSystemProperties": {
+    "jdk.httpclient.allowRestrictedHeaders": "true",
+    "jdk.http.auth.tunneling.disabledSchemes": "",
+    "jdk.http.auth.proxying.disabledSchemes": "",
+    "jdk.virtualThreadScheduler.parallelism": "0",
+    "jdk.httpclient.HttpClient.log": "errors"
+  }
+}

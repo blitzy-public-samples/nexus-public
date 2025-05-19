@@ -12,12 +12,11 @@
  */
 package org.sonatype.nexus.coreui;
 
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.SequencedMap;
-
+import java.util.LinkedHashMap;
 import javax.annotation.Nullable;
 
 import org.sonatype.nexus.formfields.FormField;

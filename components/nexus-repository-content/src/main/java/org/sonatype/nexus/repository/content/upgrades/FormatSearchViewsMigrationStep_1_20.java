@@ -13,23 +13,35 @@
 package org.sonatype.nexus.repository.content.upgrades;
 
 import java.sql.Connection;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 
 import org.sonatype.nexus.repository.Format;
 import org.sonatype.nexus.upgrade.datastore.DatabaseMigrationStep;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
- * Drop legacy format search views.
+ * Drop legacy format search views using Java 21 Virtual Threads for improved I/O performance.
  */
 @Named
 public class FormatSearchViewsMigrationStep_1_20
     implements DatabaseMigrationStep
 {
-  private static final String DROP_FORMAT_SEARCH_VIEW = "DROP VIEW IF EXISTS %s_component_search CASCADE";
+  private static final Logger log = LoggerFactory.getLogger(FormatSearchViewsMigrationStep_1_20.class);
+  
+  private static final int VIRTUAL_THREAD_TIMEOUT_SECONDS = 60;
 
   private final List<Format> formats;
 
@@ -45,10 +57,44 @@ public class FormatSearchViewsMigrationStep_1_20
 
   @Override
   public void migrate(final Connection connection) throws Exception {
-    try (Statement st = connection.createStatement()) {
-      for (Format format : formats) {
-        st.execute(String.format(DROP_FORMAT_SEARCH_VIEW, format.getValue()));
+    // Use Java 21 Virtual Threads for improved I/O performance
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      List<Future<?>> futures = formats.stream()
+          .map(format -> executor.submit(() -> dropFormatSearchView(connection, format)))
+          .toList();
+      
+      // Wait for all tasks to complete
+      for (Future<?> future : futures) {
+        try {
+          future.get(VIRTUAL_THREAD_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        }
+        catch (Exception e) {
+          log.error("Error dropping format search view", e);
+          throw e;
+        }
       }
+    }
+  }
+  
+  /**
+   * Drops the search view for a specific format using a dedicated virtual thread.
+   * 
+   * @param connection the database connection
+   * @param format the repository format
+   */
+  private void dropFormatSearchView(final Connection connection, final Format format) {
+    // Use Java 21 String Templates for improved readability and performance
+    String sql = STR"DROP VIEW IF EXISTS \{format.getValue()}_component_search CASCADE";
+    
+    log.debug("Executing SQL: {}", sql);
+    
+    try (Statement statement = connection.createStatement()) {
+      statement.execute(sql);
+      log.debug("Successfully dropped search view for format: {}", format.getValue());
+    }
+    catch (SQLException e) {
+      log.error(STR"Failed to drop search view for format: \{format.getValue()}", e);
+      throw new RuntimeException(STR"Error dropping search view for format: \{format.getValue()}", e);
     }
   }
 }

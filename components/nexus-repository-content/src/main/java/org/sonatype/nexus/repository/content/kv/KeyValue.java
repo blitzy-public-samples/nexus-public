@@ -14,41 +14,14 @@ package org.sonatype.nexus.repository.content.kv;
 
 import org.sonatype.nexus.common.entity.ContinuationAware;
 
-public class KeyValue
+/**
+ * Record representing a key-value pair in the repository.
+ * 
+ * @since 3.41
+ */
+public record KeyValue(Integer keyValueId, String category, String key, String value)
     implements ContinuationAware
 {
-  Integer keyValueId;
-
-  private String category;
-
-  private String key;
-
-  private String value;
-
-  public String getCategory() {
-    return category;
-  }
-
-  public void setCategory(final String category) {
-    this.category = category;
-  }
-
-  public String getKey() {
-    return key;
-  }
-
-  public void setKey(final String key) {
-    this.key = key;
-  }
-
-  public String getValue() {
-    return value;
-  }
-
-  public void setValue(final String value) {
-    this.value = value;
-  }
-
   @Override
   public String nextContinuationToken() {
     return key;
@@ -56,6 +29,6 @@ public class KeyValue
 
   @Override
   public String toString() {
-    return "KeyValue [keyValueId=" + keyValueId + ", key=" + key + ", value=" + value + "]";
+    return STR."KeyValue [keyValueId=\{keyValueId}, key=\{key}, value=\{value}]";
   }
 }

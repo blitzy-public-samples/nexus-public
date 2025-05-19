@@ -156,7 +156,10 @@ public class BrowseNodeQueryServiceImpl
           .map(browseNodeEquivalence::wrap)
           .distinct()
           .map(Wrapper::get)
-          .filter(node -> filter.test(node, repositoryId == ((BrowseNodeData) node).repositoryId))
+          .filter(node -> switch (node) {
+              case BrowseNodeData data -> filter.test(node, repositoryId == data.repositoryId);
+              default -> filter.test(node, false);
+          })
           .limit(maxNodes)
           .collect(toList());
     }
@@ -200,7 +203,11 @@ public class BrowseNodeQueryServiceImpl
    * Does the current user have permission to browse the full repository?
    */
   private boolean hasBrowsePermission(final String repositoryName, final String format) {
-    return securityHelper.anyPermitted(new RepositoryViewPermission(format, repositoryName, BreadActions.BROWSE));
+    return switch (repositoryName) {
+      case String name when name != null && format != null -> 
+          securityHelper.anyPermitted(new RepositoryViewPermission(format, name, BreadActions.BROWSE));
+      default -> false;
+    };
   }
 
   /**
@@ -214,11 +221,17 @@ public class BrowseNodeQueryServiceImpl
    * Returns the potentially format-specific comparator to use for sorting browse nodes.
    */
   private Comparator<BrowseNode> getBrowseNodeComparator(final String format) {
-    return browseNodeComparators.getOrDefault(format, defaultBrowseNodeComparator);
+    return switch (format) {
+      case String f when browseNodeComparators.containsKey(f) -> browseNodeComparators.get(f);
+      default -> defaultBrowseNodeComparator;
+    };
   }
 
   private boolean isJexl(final SelectorConfiguration selectorConfiguration) {
-    return JexlSelector.TYPE.equals(selectorConfiguration.getType());
+    return switch (selectorConfiguration) {
+      case SelectorConfiguration config when JexlSelector.TYPE.equals(config.getType()) -> true;
+      default -> false;
+    };
   }
 
   /**
@@ -242,34 +255,39 @@ public class BrowseNodeQueryServiceImpl
     }
 
     for (BrowseNode node : nodes) {
-      String lastModified = null;
-      String size = null;
-      String link;
-
-      if (node.isLeaf()) {
-        Optional<FluentAsset> asset = getAssetById(repository, node.getAssetId());
-
-        if (!asset.isPresent()) {
-          log.error("Could not find expected asset (id): {} ({}) in repository: {}",
-              node.getPath(), node.getAssetId(), repository.getName());
-          // expected an asset here but it's missing, move along to the next node
-          continue;
+      BrowseListItem item = switch (node) {
+        case BrowseNode leaf when leaf.isLeaf() -> {
+          Optional<FluentAsset> asset = getAssetById(repository, leaf.getAssetId());
+          
+          if (asset.isEmpty()) {
+            log.error("Could not find expected asset (id): {} ({}) in repository: {}",
+                leaf.getPath(), leaf.getAssetId(), repository.getName());
+            // expected an asset here but it's missing, skip this node
+            yield null;
+          }
+          
+          String lastModified = null;
+          String size = null;
+          
+          Optional<AssetBlob> blob = asset.get().blob();
+          if (blob.isPresent()) {
+            // blobs are immutable so "last-modified" is the creation time of the latest blob
+            lastModified = DATE_TIME_FORMAT.format(blob.get().blobCreated().toZonedDateTime());
+            size = Long.toString(blob.get().blobSize());
+          }
+          
+          String link = getAssetLink(repository, asset.get());
+          yield new BrowseListItem(link, leaf.getName(), false, lastModified, size, "");
         }
-
-        Optional<AssetBlob> blob = asset.get().blob();
-        if (blob.isPresent()) {
-          // blobs are immutable so "last-modified" is the creation time of the latest blob
-          lastModified = DATE_TIME_FORMAT.format(blob.get().blobCreated().toZonedDateTime());
-          size = Long.toString(blob.get().blobSize());
+        case BrowseNode folder -> {
+          String link = escapeHelper.uri(folder.getName()) + SLASH_CHAR;
+          yield new BrowseListItem(link, folder.getName(), true, null, null, "");
         }
-
-        link = getAssetLink(repository, asset.get());
+      };
+      
+      if (item != null) {
+        items.add(item);
       }
-      else {
-        link = escapeHelper.uri(node.getName()) + SLASH_CHAR;
-      }
-
-      items.add(new BrowseListItem(link, node.getName(), !node.isLeaf(), lastModified, size, ""));
     }
 
     return items;
@@ -279,21 +297,25 @@ public class BrowseNodeQueryServiceImpl
    * Retrieves the asset associated with the external id.
    */
   private Optional<FluentAsset> getAssetById(final Repository repository, @Nullable final EntityId assetId) {
-    if (assetId == null) {
-      return Optional.empty();
-    }
-    return findContentFacets(repository)
-        .map(ContentFacet::assets)
-        .map(facet -> facet.find(assetId))
-        .filter(Optional::isPresent)
-        .map(Optional::get)
-        .findFirst();
+    return switch (assetId) {
+      case null -> Optional.empty();
+      case EntityId id -> findContentFacets(repository)
+          .map(ContentFacet::assets)
+          .map(facet -> facet.find(id))
+          .filter(Optional::isPresent)
+          .map(Optional::get)
+          .findFirst();
+    };
   }
 
   /**
    * Get a link to the asset for use in the HTML view.
    */
   private String getAssetLink(final Repository repository, final Asset asset) {
-    return repository.getUrl() + Stream.of(asset.path().split(SLASH)).map(escapeHelper::uri).collect(joining(SLASH));
+    return switch (asset) {
+      case Asset a -> repository.getUrl() + Stream.of(a.path().split(SLASH))
+          .map(escapeHelper::uri)
+          .collect(joining(SLASH));
+    };
   }
 }

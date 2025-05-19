@@ -12,22 +12,25 @@
  */
 package org.sonatype.nexus.common.sequence;
 
+// Maintaining JUnit 4 compatibility while preparing for migration to JUnit 5
+import org.junit.Test;
+import org.junit.experimental.categories.Category;
+
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThanOrEqualTo;
 
-import org.junit.jupiter.api.Test;
-
 /**
  * Tests {@link RandomExponentialSequence}
- * 
- * @since 3.0
  */
+@Category(Java21TestGroup.class)
 public class RandomExponentialSequenceTest
 {
   @Test
-  public void noRandomness() {
+  public void sequenceGeneratesExpectedValuesWithoutRandomness() {
     RandomExponentialSequence seq = RandomExponentialSequence.builder()
         .start(1)
         .factor(2)
@@ -42,7 +45,7 @@ public class RandomExponentialSequenceTest
   }
 
   @Test
-  public void fullRandomness() {
+  public void sequenceGeneratesValuesWithinBoundsWithFullRandomness() {
     for (int i = 0; i < 1000; i++) {
       RandomExponentialSequence seq = RandomExponentialSequence.builder()
           .start(10)

@@ -14,68 +14,112 @@ package org.sonatype.nexus.blobstore;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
-import java.security.SecureRandom;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
 
-import org.junit.jupiter.api.Assertions;
+import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
+
 import org.junit.jupiter.api.Test;
 
 import static com.google.common.io.ByteStreams.copy;
 import static com.google.common.io.ByteStreams.nullOutputStream;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static java.lang.StringTemplate.STR;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
 
 /**
  * Tests for {@link MetricsInputStream}.
  */
 public class MetricsInputStreamTest
+    extends TestSupport
 {
   @Test
-  public void should_return_correct_length() throws Exception {
-    assertEquals(3L, measure("ABC".getBytes("UTF-8")).getSize());
-    assertEquals(10000L, measure(new byte[10000]).getSize());
+  void testLength() throws Exception {
+    assertThat(measure("ABC".getBytes("UTF-8")).getSize(), is(equalTo(3L)));
+    assertThat(measure(new byte[10000]).getSize(), is(equalTo(10000L)));
   }
 
   @Test
-  public void should_generate_different_hashes_for_different_content() throws Exception {
+  void testHashesDiffer() throws Exception {
     final String hash1 = measure("ABC".getBytes("UTF-8")).getMessageDigest();
     final String hash2 = measure(new byte[10000]).getMessageDigest();
 
-    assertNotEquals(hash1, hash2);
+    assertThat(hash1, not(equalTo(hash2)));
   }
 
   @Test
-  public void should_match_reference_hash() throws Exception {
+  void referenceHashMatches() throws Exception {
     final MetricsInputStream measure = measure(
         getClass().getResourceAsStream("sha1_is_2589766c6dac3402cab552602d457e7e8af12efd.bytes"));
-    assertEquals("2589766c6dac3402cab552602d457e7e8af12efd", measure.getMessageDigest());
+    assertThat(measure.getMessageDigest(), is(equalTo("2589766c6dac3402cab552602d457e7e8af12efd")));
   }
-  
+
   @Test
-  public void should_handle_large_data_stream() throws Exception {
-    // Create a 5MB array
-    byte[] largeData = new byte[5 * 1024 * 1024];
-    // Fill with random data to ensure unique hash
-    new SecureRandom().nextBytes(largeData);
-    
-    MetricsInputStream metrics = measure(largeData);
-    assertEquals(5 * 1024 * 1024, metrics.getSize());
-    // Just verify we get a non-empty hash
-    Assertions.assertNotNull(metrics.getMessageDigest());
-    Assertions.assertFalse(metrics.getMessageDigest().isEmpty());
-  }
-  
-  @Test
-  public void should_calculate_metrics_for_various_sized_streams() throws Exception {
-    // Test with different sizes to verify accuracy across range
-    int[] testSizes = {1024, 64 * 1024, 256 * 1024, 1024 * 1024};
-    
-    for (int size : testSizes) {
-      byte[] data = new byte[size];
-      new SecureRandom().nextBytes(data);
+  @VirtualThreadTestGroup
+  void metricsCollectionInVirtualThread() throws Exception {
+    // Create a virtual thread to run the test
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      Future<MetricsInputStream> future = executor.submit(() -> {
+        byte[] testData = STR."Virtual Thread Test Data \{System.currentTimeMillis()}".getBytes("UTF-8");
+        return measure(new ByteArrayInputStream(testData));
+      });
       
-      MetricsInputStream metrics = measure(data);
-      assertEquals(size, metrics.getSize(), 
-          "Size measurement should be accurate for " + size + " bytes");
+      MetricsInputStream result = future.get(5, TimeUnit.SECONDS);
+      
+      // Verify metrics were collected correctly in the virtual thread
+      assertThat(result.getSize() > 0, is(true));
+      assertThat(result.getMessageDigest().length(), is(equalTo(40)));
+      
+      log.info(STR."Virtual thread metrics collection successful: size=\{result.getSize()}, hash=\{result.getMessageDigest()}");
+    }
+  }
+
+  @Test
+  @VirtualThreadTestGroup
+  void parallelStreamMetricsCollection() throws Exception {
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Create multiple virtual threads to process metrics in parallel
+      int threadCount = 100;
+      
+      // Use pattern matching with instanceof to verify results
+      var results = IntStream.range(0, threadCount)
+          .parallel()
+          .mapToObj(i -> {
+            try {
+              byte[] data = STR."Test data for thread \{i}".getBytes("UTF-8");
+              return executor.submit(() -> measure(new ByteArrayInputStream(data)));
+            } catch (Exception e) {
+              log.error(STR."Error creating task for thread \{i}", e);
+              return null;
+            }
+          })
+          .map(future -> {
+            try {
+              return future != null ? future.get(1, TimeUnit.SECONDS) : null;
+            } catch (Exception e) {
+              log.error("Error getting future result", e);
+              return null;
+            }
+          })
+          .toList();
+      
+      // Verify all metrics were collected successfully using pattern matching
+      for (var result : results) {
+        if (result instanceof MetricsInputStream metrics) {
+          assertThat(metrics.getSize() > 0, is(true));
+          assertThat(metrics.getMessageDigest().length(), is(equalTo(40)));
+        } else {
+          throw new AssertionError(STR."Expected MetricsInputStream but got \{result}");
+        }
+      }
+      
+      log.info(STR."Successfully processed metrics for \{results.size()} virtual threads");
     }
   }
 

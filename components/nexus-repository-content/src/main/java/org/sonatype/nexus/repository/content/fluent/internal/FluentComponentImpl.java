@@ -16,6 +16,7 @@ import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Objects;
+import java.util.concurrent.Executors;
 
 import javax.annotation.Nullable;
 
@@ -32,6 +33,7 @@ import org.sonatype.nexus.repository.content.store.WrappedContent;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.collect.Collections2.transform;
+import static java.lang.StringTemplate.STR;
 
 /**
  * {@link FluentComponent} implementation.
@@ -124,22 +126,33 @@ public class FluentComponentImpl
       return assets;
     }
 
-    return transform(facet.stores().assetStore.browseComponentAssets(component),
-        asset -> new FluentAssetImpl(facet, asset));
+    // Using Virtual Threads to optimize asset query operations
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var future = executor.submit(() -> 
+          transform(facet.stores().assetStore.browseComponentAssets(component),
+              asset -> new FluentAssetImpl(facet, asset)));
+      return future.get();
+    } catch (Exception e) {
+      // Fallback to synchronous execution if virtual thread execution fails
+      return transform(facet.stores().assetStore.browseComponentAssets(component),
+          asset -> new FluentAssetImpl(facet, asset));
+    }
   }
 
   @Override
   public Collection<FluentAsset> assets(boolean useCache) {
-    if(useCache && component instanceof ComponentData && ((ComponentData) component).getAssets() != null){
-      return transform(((ComponentData) component).getAssets(), asset -> new FluentAssetImpl(facet, asset));
+    // Using pattern matching for instanceof check and direct access to the component's assets
+    if (useCache && component instanceof ComponentData componentData && componentData.getAssets() != null) {
+      return transform(componentData.getAssets(), asset -> new FluentAssetImpl(facet, asset));
     }
     return assets();
   }
 
   @Override
   public FluentComponent kind(final String kind) {
-    if (!Objects.equals(kind, component.kind())) {
-      ((ComponentData) component).setKind(kind);
+    // Using pattern matching for instanceof check and direct access to the component
+    if (!Objects.equals(kind, component.kind()) && component instanceof ComponentData componentData) {
+      componentData.setKind(kind);
       facet.stores().componentStore.updateComponentKind(component);
     }
     return this;
@@ -157,6 +170,10 @@ public class FluentComponentImpl
 
   @Override
   public String toString() {
+    // Using String Templates for more readable string representation
+    if (component != null) {
+      return STR."FluentComponent{namespace=\{namespace()}, name=\{name()}, version=\{version()}, kind=\{kind()}}";
+    }
     return toStringExternal();
   }
 }

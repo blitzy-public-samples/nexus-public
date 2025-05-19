@@ -12,33 +12,23 @@
  */
 package org.sonatype.nexus.blobstore.quota.internal;
 
-import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
-
-import java.time.Duration;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
-import org.sonatype.nexus.blobstore.api.BlobStoreMetrics;
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuota;
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaResult;
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaSupport;
-import org.sonatype.nexus.common.stateguard.Guarded;
 import org.sonatype.nexus.rest.ValidationErrorsException;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.common.text.UnitFormatter.formatStorage;
-import static java.lang.String.format;
+import static java.lang.StringTemplate.STR;
 
 /**
  * A {@link BlobStoreQuota} which checks that a blob store isn't using more space the limit.
@@ -50,14 +40,12 @@ import static java.lang.String.format;
 public class SpaceUsedQuota
     extends BlobStoreQuotaSupport
 {
-  private static final Logger log = LoggerFactory.getLogger(SpaceUsedQuota.class);
-  
   public static final String ID = "spaceUsedQuota";
 
   private static final String DISPLAY_NAME = "Space Used";
   
-  // Default timeout for storage size calculation (in seconds)
-  private static final long DEFAULT_TIMEOUT_SECONDS = 60;
+  // Lock to ensure thread safety during quota checking
+  private final ReentrantLock quotaCheckLock = new ReentrantLock();
 
   @Override
   public void validateConfig(final BlobStoreConfiguration config) {
@@ -70,71 +58,35 @@ public class SpaceUsedQuota
   public BlobStoreQuotaResult check(final BlobStore blobStore) {
     checkNotNull(blobStore);
     
-    String blobStoreName = blobStore.getBlobStoreConfiguration().getName();
-    long limit = getLimit(blobStore.getBlobStoreConfiguration());
-    long startTime = System.currentTimeMillis();
-    
-    log.debug("Starting storage size calculation for blob store {} using Virtual Thread", blobStoreName);
-    
+    // Acquire lock to ensure thread safety during quota checking
+    quotaCheckLock.lock();
     try {
-      // Create a virtual thread to perform the storage size calculation
-      // This leverages Java 21's Virtual Threads for optimized I/O operations
-      long usedSpace = calculateStorageSizeWithVirtualThread(blobStore);
-      
-      long elapsedTime = System.currentTimeMillis() - startTime;
-      log.debug("Storage size calculation for blob store {} completed in {}ms: {} used of {} limit", 
-          blobStoreName, elapsedTime, formatStorage(usedSpace), formatStorage(limit));
-      
-      String msg = format("Blob store %s is using %s space and has a limit of %s", blobStoreName,
-          formatStorage(usedSpace),
-          formatStorage(limit));
-
-      return new BlobStoreQuotaResult(usedSpace > limit, blobStoreName, msg);
-    } 
-    catch (Exception e) {
-      log.error("Error calculating storage size for blob store {} using Virtual Thread", blobStoreName, e);
-      throw new RuntimeException("Failed to calculate storage size for blob store: " + blobStoreName, e);
-    }
-  }
-  
-  /**
-   * Calculates the storage size using a Virtual Thread for optimized I/O throughput.
-   * Virtual Threads are lightweight threads that are managed by the JVM rather than the OS,
-   * making them ideal for I/O-bound operations like storage calculations.
-   *
-   * @param blobStore the blob store to calculate size for
-   * @return the total size in bytes
-   * @throws ExecutionException if the calculation fails
-   * @throws InterruptedException if the thread is interrupted
-   * @throws TimeoutException if the calculation times out
-   */
-  private long calculateStorageSizeWithVirtualThread(final BlobStore blobStore) 
-      throws ExecutionException, InterruptedException, TimeoutException {
-    
-    // Create a thread factory that produces virtual threads
-    // Virtual threads are lightweight and managed by the JVM, making them ideal for I/O operations
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      
-      // Submit the storage calculation task to run on a virtual thread
-      Future<Long> future = executor.submit(() -> {
-        log.debug("Virtual Thread started for blob store {}", blobStore.getBlobStoreConfiguration().getName());
+      // Create a virtual thread executor for I/O-bound operations
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        // Submit the storage calculation task to a virtual thread
+        Future<Long> usedSpaceFuture = executor.submit(() -> blobStore.getMetrics().getTotalSize());
+        
+        // Get the blob store configuration and limit while the virtual thread is working
+        String name = blobStore.getBlobStoreConfiguration().getName();
+        long limit = getLimit(blobStore.getBlobStoreConfiguration());
+        
+        // Get the result from the virtual thread
+        long usedSpace;
         try {
-          // Get the metrics which includes the total size calculation
-          // This is likely an I/O-bound operation that benefits from Virtual Threads
-          BlobStoreMetrics metrics = blobStore.getMetrics();
-          return metrics.getTotalSize();
+          usedSpace = usedSpaceFuture.get();
+        } catch (Exception e) {
+          // If there's an error, fall back to synchronous calculation
+          usedSpace = blobStore.getMetrics().getTotalSize();
         }
-        catch (Exception e) {
-          log.error("Exception in Virtual Thread while calculating storage size", e);
-          throw e;
-        }
-        finally {
-          log.debug("Virtual Thread completed for blob store {}", blobStore.getBlobStoreConfiguration().getName());
-        }
-      });
-      
-      // Wait for the result with a timeout to prevent hanging indefinitely
-      return future.get(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        
+        // Use Java 21 String Templates for message formatting
+        String msg = STR."Blob store \{name} is using \{formatStorage(usedSpace)} space and has a limit of \{formatStorage(limit)}";
+
+        return new BlobStoreQuotaResult(usedSpace > limit, name, msg);
+      }
+    } finally {
+      // Always release the lock
+      quotaCheckLock.unlock();
     }
   }
 

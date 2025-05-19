@@ -15,16 +15,24 @@ package org.sonatype.nexus.common.io;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
+import java.nio.charset.Charset;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
 
+import com.google.common.io.ByteStreams;
 import com.google.common.io.Resources;
-import org.junit.jupiter.api.Test;
+import org.junit.Test;
+import org.junit.experimental.categories.Category;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.Assert.assertEquals;
 
 /**
  * UT for {@link SanitizingJsonOutputStream}.
@@ -42,16 +50,111 @@ public class SanitizingJsonOutputStreamTest
    * Tests that a sanitizer correctly sanitizes basic content based on field names.
    */
   @Test
-  public void testSanitizeContent() throws IOException {
-    String input = Resources.toString(Resources.getResource(getClass(), "input.json"), StandardCharsets.UTF_8);
-    String output = Resources.toString(Resources.getResource(getClass(), "output.json"), StandardCharsets.UTF_8);
+  public void sanitizeContent() throws IOException {
+    String input = Resources.toString(Resources.getResource(getClass(), "input.json"), Charset.forName("UTF-8"));
+    String output = Resources.toString(Resources.getResource(getClass(), "output.json"), Charset.forName("UTF-8"));
 
-    ByteArrayInputStream is = new ByteArrayInputStream(input.getBytes(StandardCharsets.UTF_8));
+    ByteArrayInputStream is = new ByteArrayInputStream(input.getBytes(Charset.forName("UTF-8")));
     ByteArrayOutputStream os = new ByteArrayOutputStream();
     try (SanitizingJsonOutputStream stream = new SanitizingJsonOutputStream(os, FIELDS, REPLACEMENT)) {
-      is.transferTo(stream);
+      ByteStreams.copy(is, stream);
     }
 
-    assertEquals(output, os.toString(StandardCharsets.UTF_8.name()));
+    assertEquals(output, os.toString("UTF-8"));
+  }
+  
+  /**
+   * Tests that a sanitizer correctly sanitizes content when using Virtual Threads.
+   * This validates that the implementation is compatible with Java 21 Virtual Threads.
+   */
+  @Test
+  @Category(VirtualThreadTestGroup.class)
+  public void sanitizeContentWithVirtualThreads() throws IOException {
+    String input = Resources.toString(Resources.getResource(getClass(), "input.json"), Charset.forName("UTF-8"));
+    String output = Resources.toString(Resources.getResource(getClass(), "output.json"), Charset.forName("UTF-8"));
+
+    // Create a virtual thread to perform the sanitization
+    Thread virtualThread = Thread.ofVirtual().name("sanitize-json-thread").start(() -> {
+      try {
+        ByteArrayInputStream is = new ByteArrayInputStream(input.getBytes(Charset.forName("UTF-8")));
+        ByteArrayOutputStream os = new ByteArrayOutputStream();
+        try (SanitizingJsonOutputStream stream = new SanitizingJsonOutputStream(os, FIELDS, REPLACEMENT)) {
+          ByteStreams.copy(is, stream);
+        }
+        
+        // Verify the output matches the expected result
+        assertEquals(output, os.toString("UTF-8"));
+      }
+      catch (IOException e) {
+        throw new RuntimeException("Error in virtual thread sanitization", e);
+      }
+    });
+    
+    try {
+      // Wait for the virtual thread to complete
+      virtualThread.join();
+    }
+    catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IOException("Virtual thread interrupted", e);
+    }
+  }
+  
+  /**
+   * Tests concurrent JSON processing with multiple Virtual Threads.
+   * This validates that the implementation can handle high concurrency with Virtual Threads.
+   */
+  @Test
+  @Category(VirtualThreadTestGroup.class)
+  public void concurrentJsonProcessingWithVirtualThreads() throws Exception {
+    String input = Resources.toString(Resources.getResource(getClass(), "input.json"), Charset.forName("UTF-8"));
+    String output = Resources.toString(Resources.getResource(getClass(), "output.json"), Charset.forName("UTF-8"));
+    byte[] inputBytes = input.getBytes(Charset.forName("UTF-8"));
+    
+    // Number of concurrent sanitization operations to perform
+    final int concurrentOperations = 100;
+    final AtomicInteger successCount = new AtomicInteger(0);
+    
+    // Create a virtual thread executor
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Create futures for concurrent sanitization operations
+      List<CompletableFuture<String>> futures = Arrays.asList(new CompletableFuture[concurrentOperations]);
+      
+      for (int i = 0; i < concurrentOperations; i++) {
+        final int index = i;
+        futures.set(index, CompletableFuture.supplyAsync(() -> {
+          try {
+            // Create new input/output streams for each operation to avoid sharing
+            ByteArrayInputStream is = new ByteArrayInputStream(inputBytes);
+            ByteArrayOutputStream os = new ByteArrayOutputStream();
+            
+            // Perform the sanitization
+            try (SanitizingJsonOutputStream stream = new SanitizingJsonOutputStream(os, FIELDS, REPLACEMENT)) {
+              ByteStreams.copy(is, stream);
+            }
+            
+            // Get the sanitized output
+            String result = os.toString("UTF-8");
+            
+            // Verify the output matches the expected result
+            if (output.equals(result)) {
+              successCount.incrementAndGet();
+            }
+            
+            return result;
+          }
+          catch (IOException e) {
+            throw new RuntimeException("Error in virtual thread " + index, e);
+          }
+        }, executor));
+      }
+      
+      // Wait for all operations to complete
+      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+          .get(30, TimeUnit.SECONDS);
+    }
+    
+    // Verify all operations completed successfully
+    assertEquals("All sanitization operations should succeed", concurrentOperations, successCount.get());
   }
 }

@@ -32,6 +32,10 @@
 
     CREATE INDEX IF NOT EXISTS idx_${format}_key_value_repository_key
         ON ${format}_key_value(repository_id, key);
+        
+    -- Additional index for improved concurrent access performance with Virtual Threads
+    CREATE INDEX IF NOT EXISTS idx_${format}_key_value_category
+        ON ${format}_key_value(category);
   </insert>
 
   <insert id="createSchema" databaseId="H2">
@@ -51,6 +55,10 @@
 
     CREATE INDEX IF NOT EXISTS idx_${format}_key_value_repository_key
       ON ${format}_key_value(repository_id, `key`);
+      
+    -- Additional index for improved concurrent access performance with Virtual Threads
+    CREATE INDEX IF NOT EXISTS idx_${format}_key_value_category
+      ON ${format}_key_value(category);
   </insert>
 
   <resultMap id="kvResult" type="org.sonatype.nexus.repository.content.kv.KeyValue">
@@ -61,7 +69,8 @@
     <result property="value" column="value"/>
   </resultMap>
 
-  <select id="browse" resultMap="kvResult" databaseId="PostgreSQL">
+  <select id="browse" resultMap="kvResult" databaseId="PostgreSQL" timeout="30">
+      /*+ MAX_EXECUTION_TIME(30000) */
       SELECT key_value_id, category, key, value
         FROM ${format}_key_value
        WHERE repository_id = #{repositoryId}
@@ -71,7 +80,7 @@
        LIMIT #{limit};
   </select>
 
-  <select id="browse" resultMap="kvResult" databaseId="H2">
+  <select id="browse" resultMap="kvResult" databaseId="H2" timeout="30">
     SELECT key_value_id, category, `key`, `value`
     FROM ${format}_key_value
     WHERE repository_id = #{repositoryId}
@@ -81,34 +90,36 @@
     LIMIT #{limit};
   </select>
 
-  <select id="browseCategories" resultType="String">
+  <select id="browseCategories" resultType="String" timeout="20">
       SELECT DISTINCT category
         FROM ${format}_key_value
        WHERE repository_id = #{repositoryId};
   </select>
 
-  <select id="count" resultType="int">
+  <select id="count" resultType="int" timeout="20">
       SELECT count(*)
         FROM ${format}_key_value
        WHERE repository_id = #{repositoryId}
        <if test="category != null"> AND category = #{category}</if>;
   </select>
 
-  <select id="findCategories" resultType="String" databaseId="PostgreSQL">
+  <select id="findCategories" resultType="String" databaseId="PostgreSQL" timeout="15">
+    /*+ MAX_EXECUTION_TIME(15000) */
     SELECT category
       FROM ${format}_key_value
      WHERE repository_id = #{repositoryId}
        AND key = #{key};
   </select>
 
-  <select id="findCategories" resultType="String" databaseId="H2">
+  <select id="findCategories" resultType="String" databaseId="H2" timeout="15">
     SELECT category
     FROM ${format}_key_value
     WHERE repository_id = #{repositoryId}
       AND `key` = #{key};
   </select>
 
-  <select id="get" resultType="String" databaseId="PostgreSQL">
+  <select id="get" resultType="String" databaseId="PostgreSQL" timeout="10">
+      /*+ MAX_EXECUTION_TIME(10000) */
       SELECT value
         FROM ${format}_key_value
        WHERE repository_id = #{repositoryId}
@@ -116,7 +127,7 @@
          AND key = #{key};
   </select>
 
-  <select id="get" resultType="String" databaseId="H2">
+  <select id="get" resultType="String" databaseId="H2" timeout="10">
     SELECT `value`
     FROM ${format}_key_value
     WHERE repository_id = #{repositoryId}
@@ -124,7 +135,8 @@
       AND `key` = #{key};
   </select>
 
-  <select id="findByCategoryAndKeyLike" resultMap="kvResult" databaseId="PostgreSQL">
+  <select id="findByCategoryAndKeyLike" resultMap="kvResult" databaseId="PostgreSQL" timeout="30">
+    /*+ MAX_EXECUTION_TIME(30000) */
     SELECT key_value_id, category, key, value
       FROM ${format}_key_value
      WHERE repository_id = #{repositoryId}
@@ -132,7 +144,7 @@
        AND key LIKE #{keyLike};
   </select>
 
-  <select id="findByCategoryAndKeyLike" resultMap="kvResult" databaseId="H2">
+  <select id="findByCategoryAndKeyLike" resultMap="kvResult" databaseId="H2" timeout="30">
     SELECT key_value_id, category, `key`, `value`
     FROM ${format}_key_value
     WHERE repository_id = #{repositoryId}
@@ -140,15 +152,23 @@
     AND `key` LIKE #{keyLike};
   </select>
 
-  <update id="set" databaseId="PostgreSQL">
-         INSERT INTO ${format}_key_value (repository_id, category, key, value, created)
-         VALUES (#{repositoryId}, #{category}, #{key}, #{value}, now())
-    ON CONFLICT (repository_id, category, key)
-  DO UPDATE SET value = #{value},
-                created = now();
+  <update id="set" databaseId="PostgreSQL" timeout="20">
+    /*+ MAX_EXECUTION_TIME(20000) */
+    WITH upsert AS (
+      UPDATE ${format}_key_value
+         SET value = #{value},
+             created = now()
+       WHERE repository_id = #{repositoryId}
+         AND category = #{category}
+         AND key = #{key}
+      RETURNING *
+    )
+    INSERT INTO ${format}_key_value (repository_id, category, key, value, created)
+    SELECT #{repositoryId}, #{category}, #{key}, #{value}, now()
+    WHERE NOT EXISTS (SELECT 1 FROM upsert);
   </update>
 
-  <update id="set" databaseId="H2">
+  <update id="set" databaseId="H2" timeout="20">
     MERGE INTO ${format}_key_value
          USING (SELECT 1
                   FROM DUAL)
@@ -156,34 +176,36 @@
                category = #{category} AND
                 `key` = #{key})
           WHEN NOT MATCHED THEN
-               INSERT (repository_id, category, `key`, `value`)
-               VALUES (#{repositoryId}, #{category}, #{key}, #{value})
+               INSERT (repository_id, category, `key`, `value`, created)
+               VALUES (#{repositoryId}, #{category}, #{key}, #{value}, now())
           WHEN MATCHED THEN UPDATE SET `value` = #{value},
                                        created = now();
   </update>
 
-  <delete id="remove" databaseId="PostgreSQL">
+  <delete id="remove" databaseId="PostgreSQL" timeout="15">
+    /*+ MAX_EXECUTION_TIME(15000) */
     DELETE FROM ${format}_key_value
           WHERE repository_id = #{repositoryId}
             AND category = #{category}
             AND key = #{key};
   </delete>
 
-  <delete id="remove" databaseId="H2">
+  <delete id="remove" databaseId="H2" timeout="15">
     DELETE FROM ${format}_key_value
     WHERE repository_id = #{repositoryId}
       AND category = #{category}
       AND `key` = #{key};
   </delete>
 
-  <delete id="removeAll">
+  <delete id="removeAll" timeout="30">
     DELETE FROM ${format}_key_value
      WHERE repository_id = #{repositoryId}
       <if test="category != null"> AND category = #{category}</if>
       <if test="limit gt 0"> LIMIT #{limit}</if>;
   </delete>
 
-  <delete id="removeAll" databaseId="PostgreSQL">
+  <delete id="removeAll" databaseId="PostgreSQL" timeout="45">
+    /*+ MAX_EXECUTION_TIME(45000) */
     DELETE FROM ${format}_key_value
      WHERE key_value_id IN (SELECT key_value_id
                               FROM ${format}_key_value
@@ -192,17 +214,63 @@
       <if test="limit gt 0"> LIMIT #{limit}</if>);
   </delete>
 
-  <delete id="removeRepository">
+  <delete id="removeRepository" timeout="60">
     DELETE FROM ${format}_key_value
      WHERE repository_id = #{repositoryId}
      <if test="limit gt 0"> LIMIT #{limit}</if>;
   </delete>
 
-  <delete id="removeRepository" databaseId="PostgreSQL">
+  <delete id="removeRepository" databaseId="PostgreSQL" timeout="60">
+    /*+ MAX_EXECUTION_TIME(60000) */
     DELETE FROM ${format}_key_value
      WHERE key_value_id IN (SELECT key_value_id
                              FROM ${format}_key_value
                             WHERE repository_id = #{repositoryId}
      <if test="limit gt 0"> LIMIT #{limit}</if>);
   </delete>
+  
+  <!-- Add batch operation support for Virtual Threads -->
+  <update id="setBatch" databaseId="PostgreSQL" timeout="45">
+    /*+ MAX_EXECUTION_TIME(45000) */
+    WITH batch_data(repo_id, cat, k, v) AS (
+      VALUES
+      <foreach item="item" collection="batch" separator=",">
+        (#{item.repositoryId}, #{item.category}, #{item.key}, #{item.value})
+      </foreach>
+    ),
+    upserts AS (
+      UPDATE ${format}_key_value kv
+         SET value = bd.v,
+             created = now()
+        FROM batch_data bd
+       WHERE kv.repository_id = bd.repo_id
+         AND kv.category = bd.cat
+         AND kv.key = bd.k
+      RETURNING kv.repository_id, kv.category, kv.key
+    )
+    INSERT INTO ${format}_key_value (repository_id, category, key, value, created)
+    SELECT bd.repo_id, bd.cat, bd.k, bd.v, now()
+      FROM batch_data bd
+     WHERE NOT EXISTS (
+       SELECT 1 FROM upserts u
+        WHERE u.repository_id = bd.repo_id
+          AND u.category = bd.cat
+          AND u.key = bd.k
+     );
+  </update>
+  
+  <update id="setBatch" databaseId="H2" timeout="45">
+    <foreach item="item" collection="batch" separator=";">
+      MERGE INTO ${format}_key_value
+           USING (SELECT 1 FROM DUAL)
+              ON (repository_id = #{item.repositoryId} AND
+                 category = #{item.category} AND
+                  `key` = #{item.key})
+            WHEN NOT MATCHED THEN
+                 INSERT (repository_id, category, `key`, `value`, created)
+                 VALUES (#{item.repositoryId}, #{item.category}, #{item.key}, #{item.value}, now())
+            WHEN MATCHED THEN UPDATE SET `value` = #{item.value},
+                                         created = now()
+    </foreach>
+  </update>
 </mapper>

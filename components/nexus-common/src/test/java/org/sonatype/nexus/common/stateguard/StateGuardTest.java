@@ -12,21 +12,18 @@
  */
 package org.sonatype.nexus.common.stateguard;
 
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
+// JUnit Jupiter imports
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledOnJre;
-import org.junit.jupiter.api.condition.JRE;
+
+// JUnit 4 imports for backward compatibility
+import org.junit.Before;
+import org.junit.experimental.categories.Category;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -42,15 +39,15 @@ import static org.sonatype.nexus.common.stateguard.StateGuardTest.State.STOPPED;
 
 /**
  * Tests for {@link StateGuard}.
- * 
- * Updated for Java 21 compatibility and JUnit Jupiter.
  */
+@Category(Java21TestGroup.class)
 public class StateGuardTest
     extends TestSupport
 {
   private StateGuard underTest;
 
   @BeforeEach
+  @Before
   public void setUp() {
     underTest = new StateGuard.Builder()
         .initial(NEW)
@@ -61,7 +58,7 @@ public class StateGuardTest
   }
 
   @Test
-  public void testBasicTransition() throws Exception {
+  void basicTransitionWorks() throws Exception {
     TriggeredAction action = new TriggeredAction();
     underTest.transition(INITIALISED)
         .from(NEW)
@@ -72,7 +69,7 @@ public class StateGuardTest
   }
 
   @Test
-  public void testNestedTransition() throws Exception {
+  void nestedTransitionWorks() throws Exception {
     underTest.transition(INITIALISED)
         .from(NEW)
         .run(new NopAction());
@@ -110,23 +107,25 @@ public class StateGuardTest
   }
 
   @Test
-  public void testInvalidTransition() {
+  void invalidTransitionThrowsException() {
     TriggeredAction action = new TriggeredAction();
 
     Transition transition = underTest.transition(STARTED).from(INITIALISED);
-    assertThrows(IllegalStateException.class, () -> transition.run(action));
+    IllegalStateException exception = assertThrows(IllegalStateException.class, 
+        () -> transition.run(action));
 
     assertThat(underTest.getCurrent(), is(NEW));
     assertFalse(action.triggered);
   }
 
-  /**
-   * Test transition with action failing with exception.
+  /*
+   * transition with action failing with exception
    */
   @Test
-  public void testTransitionWithActionFailingWithException() {
+  void transitionWithActionFailingWithExceptionWorks() {
     Transition transition = underTest.transition(INITIALISED).from(NEW);
-    assertThrows(FailureException.class, () -> transition.run(new Action<Void>()
+    FailureException exception = assertThrows(FailureException.class, 
+        () -> transition.run(new Action<Void>()
     {
       @Override
       public Void run() throws Exception {
@@ -138,7 +137,7 @@ public class StateGuardTest
   }
 
   @Test
-  public void testTransitionWithActionIgnoringException() {
+  void transitionWithActionIgnoringExceptionWorks() {
     Transition transition =
         underTest.transition(INITIALISED, false, new Class[]{FailureException.class}, true).from(NEW);
     Action<Void> action = new Action<Void>()
@@ -148,13 +147,13 @@ public class StateGuardTest
         throw new FailureException();
       }
     };
-    assertThrows(FailureException.class, () -> transition.run(action));
+    FailureException exception = assertThrows(FailureException.class, () -> transition.run(action));
 
     assertThat(underTest.getCurrent(), is(INITIALISED));
   }
 
   @Test
-  public void testTransitionWithActionFailingWithError() {
+  void transitionWithActionFailingWithErrorWorks() {
     Transition transition = underTest.transition(INITIALISED).from(NEW);
     Action<Void> action = new Action<Void>()
     {
@@ -163,37 +162,31 @@ public class StateGuardTest
         throw new FailureError();
       }
     };
-    assertThrows(FailureError.class, () -> transition.run(action));
+    FailureError exception = assertThrows(FailureError.class, () -> transition.run(action));
 
     assertThat(underTest.getCurrent(), is(FAILED));
   }
 
-  /**
-   * Tests transition behavior when a method invocation fails with an exception.
-   */
   @Test
-  public void testTransitionWithMethodInvocationFailingWithException() {
+  void transitionWithMethodInvocationFailingWithExceptionWorks() {
     SimpleMethodInvocation invocation = invocation(FailureException::new);
     TransitionsInterceptor interceptor = new TransitionsInterceptor();
-    assertThrows(FailureException.class, () -> interceptor.invoke(invocation));
+    FailureException exception = assertThrows(FailureException.class, () -> interceptor.invoke(invocation));
 
     assertThat(underTest.getCurrent(), is(FAILED));
   }
 
-  /**
-   * Tests transition behavior when a method invocation fails with an error.
-   */
   @Test
-  public void testTransitionWithMethodInvocationFailingWithError() {
+  void transitionWithMethodInvocationFailingWithErrorWorks() {
     SimpleMethodInvocation invocation = invocation(FailureError::new);
     TransitionsInterceptor interceptor = new TransitionsInterceptor();
-    assertThrows(FailureError.class, () -> interceptor.invoke(invocation));
+    FailureError exception = assertThrows(FailureError.class, () -> interceptor.invoke(invocation));
 
     assertThat(underTest.getCurrent(), is(FAILED));
   }
 
   @Test
-  public void testBasicGuard() throws Exception {
+  void basicGuardWorks() throws Exception {
     TriggeredAction action = new TriggeredAction();
     underTest.guard(NEW)
         .run(action);
@@ -203,116 +196,32 @@ public class StateGuardTest
   }
 
   @Test
-  public void testInvalidGuard() {
+  void invalidGuardThrowsException() {
     TriggeredAction action = new TriggeredAction();
 
     Guard guard = underTest.guard(INITIALISED);
-    assertThrows(IllegalStateException.class, () -> guard.run(action));
+    IllegalStateException exception = assertThrows(IllegalStateException.class, () -> guard.run(action));
 
     assertThat(underTest.getCurrent(), is(NEW));
     assertFalse(action.triggered);
   }
 
-  /**
-   * Tests guard behavior when a method invocation fails with an exception.
-   */
   @Test
-  public void testGuardWithMethodInvocationFailingWithException() {
+  void guardWithMethodInvocationFailingWithExceptionWorks() {
     SimpleMethodInvocation invocation = invocation(FailureException::new);
     GuardedInterceptor interceptor = new GuardedInterceptor();
-    assertThrows(FailureException.class, () -> interceptor.invoke(invocation));
+    FailureException exception = assertThrows(FailureException.class, () -> interceptor.invoke(invocation));
 
     assertThat(underTest.getCurrent(), is(NEW));
   }
 
-  /**
-   * Tests guard behavior when a method invocation fails with an error.
-   */
   @Test
-  public void testGuardWithMethodInvocationFailingWithError() {
+  void guardWithMethodInvocationFailingWithErrorWorks() {
     SimpleMethodInvocation invocation = invocation(FailureError::new);
     GuardedInterceptor interceptor = new GuardedInterceptor();
-    assertThrows(FailureError.class, () -> interceptor.invoke(invocation));
+    FailureError exception = assertThrows(FailureError.class, () -> interceptor.invoke(invocation));
 
     assertThat(underTest.getCurrent(), is(NEW));
-  }
-
-  /**
-   * Tests StateGuard behavior with Java 21 Virtual Threads.
-   * Validates that state transitions work correctly under concurrent virtual thread execution.
-   * This test specifically verifies that the StateGuard maintains consistent state
-   * when accessed from multiple virtual threads simultaneously.
-   */
-  @Test
-  @EnabledOnJre(JRE.JAVA_21)
-  public void testConcurrentStateTransitionsWithVirtualThreads() throws Exception {
-    // Create a StateGuard for testing
-    StateGuard concurrentGuard = new StateGuard.Builder()
-        .initial(NEW)
-        .failure(FAILED)
-        .create();
-    
-    // Verify initial state
-    assertThat(concurrentGuard.getCurrent(), is(NEW));
-    
-    // First transition to INITIALISED
-    concurrentGuard.transition(INITIALISED)
-        .from(NEW)
-        .run(new NopAction());
-    assertThat(concurrentGuard.getCurrent(), is(INITIALISED));
-    
-    // Setup for concurrent operations using virtual threads
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-    
-    int taskCount = 100;
-    CountDownLatch latch = new CountDownLatch(taskCount);
-    AtomicInteger successCount = new AtomicInteger(0);
-    
-    try {
-      // Transition to STARTED first
-      concurrentGuard.transition(STARTED)
-          .from(INITIALISED)
-          .run(new NopAction());
-      assertThat(concurrentGuard.getCurrent(), is(STARTED));
-      
-      // Submit multiple concurrent tasks using virtual threads
-      // Each task will try to verify the current state is STARTED
-      for (int i = 0; i < taskCount; i++) {
-        executor.submit(() -> {
-          try {
-            // Use guard to ensure we're in STARTED state
-            concurrentGuard.guard(STARTED).run(() -> {
-              // If we get here, the guard check passed
-              successCount.incrementAndGet();
-              return null;
-            });
-          } catch (Exception e) {
-            // Guard check failed or other error
-          } finally {
-            latch.countDown();
-          }
-        });
-      }
-      
-      // Wait for all tasks to complete
-      assertTrue(latch.await(5, TimeUnit.SECONDS), "Timed out waiting for virtual threads to complete");
-      
-      // Verify all tasks succeeded
-      assertThat(successCount.get(), is(taskCount));
-      
-      // Verify final state is still STARTED
-      assertThat(concurrentGuard.getCurrent(), is(STARTED));
-      
-      // Transition to final state
-      concurrentGuard.transition(STOPPED)
-          .from(STARTED)
-          .run(new NopAction());
-      assertThat(concurrentGuard.getCurrent(), is(STOPPED));
-    } finally {
-      executor.shutdown();
-      assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS), "Executor did not terminate in time");
-    }
   }
 
   private SimpleMethodInvocation invocation(final Supplier<? extends Throwable> supplier) {

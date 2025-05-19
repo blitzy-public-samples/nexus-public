@@ -16,6 +16,7 @@ import com.google.common.base.Throwables;
 import org.apache.commons.lang.StringEscapeUtils;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 
 /**
  * Helper to deal with {@link Throwable} instances in a template.
@@ -43,15 +44,32 @@ public class TemplateThrowableAdapter
     return cause.getClass().getSimpleName();
   }
 
+  /**
+   * Gets the HTML-escaped message from the cause using Java 21 String Templates.
+   * 
+   * @return HTML-escaped message
+   */
   public String getMessage() {
-    return StringEscapeUtils.escapeHtml(cause.getMessage());
+    String message = cause.getMessage();
+    return message != null ? STR."\{StringEscapeUtils.escapeHtml(message)}" : null;
   }
 
+  /**
+   * Gets the HTML-escaped stack trace from the cause using Java 21 String Templates.
+   * 
+   * @return HTML-escaped stack trace
+   */
   public String getTrace() {
-    return StringEscapeUtils.escapeHtml(Throwables.getStackTraceAsString(cause));
+    String stackTrace = Throwables.getStackTraceAsString(cause);
+    return STR."\{StringEscapeUtils.escapeHtml(stackTrace)}";
   }
 
+  /**
+   * Returns a string representation of the cause using Java 21 String Templates.
+   * 
+   * @return string representation of the cause
+   */
   public String toString() {
-    return cause.toString();
+    return STR."\{cause.getClass().getName()}: \{cause.getMessage()}";
   }
 }

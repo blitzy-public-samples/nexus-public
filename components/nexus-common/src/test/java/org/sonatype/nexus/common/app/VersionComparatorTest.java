@@ -12,31 +12,24 @@
  */
 package org.sonatype.nexus.common.app;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.SequencedCollection;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThan;
-import static org.hamcrest.core.IsEqual.equalTo;
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 
-/**
- * Tests for {@link VersionComparator}.
- */
 public class VersionComparatorTest
 {
   @Test
-  public void testStringVersionComparator() {
+  public void shouldCorrectlySortVersionStrings() {
     List<String> sorted = Stream.of("1.1", "1.2", "1.0")
         .sorted(VersionComparator.INSTANCE)
         .collect(Collectors.toList());
@@ -47,7 +40,7 @@ public class VersionComparatorTest
   }
 
   @Test
-  public void testStringVersionComparator_Snapshot() {
+  public void shouldCorrectlySortSnapshotVersions() {
     List<String> sorted = Stream
         .of("1.1-20170919.212404-2", "1.1-20170919.212405-3", "1.1-20170919.212403-1")
         .sorted(VersionComparator.INSTANCE)
@@ -58,7 +51,7 @@ public class VersionComparatorTest
   }
 
   @Test
-  public void testStringVersionComparator_isTransitive() {
+  public void shouldDemonstrateTransitiveComparison() {
     assertThat(VersionComparator.INSTANCE.compare("1.0", "1.1"), lessThan(0));
     assertThat(VersionComparator.INSTANCE.compare("1.1", "1.2"), lessThan(0));
     assertThat(VersionComparator.INSTANCE.compare("1.0", "1.2"), lessThan(0));
@@ -69,71 +62,26 @@ public class VersionComparatorTest
   }
 
   @Test
-  public void testStringVersionComparator_mixedVersionAndNonVersionStringAreSortedTogether() {
+  public void shouldSortMixedVersionAndNonVersionStringsTogether() {
     List<String> versions = Arrays.asList("2.0.0", "", "1.0-foo", "1.0-beta", "1.2", "1.1-SNAPSHOT", "foo", "2foo");
     versions.sort(VersionComparator.INSTANCE);
     assertThat(versions, is(Arrays.asList("", "2foo", "foo", "1.0-beta", "1.0-foo", "1.1-SNAPSHOT", "1.2", "2.0.0")));
   }
 
   @Test
-  public void testStringVersionComparator_isNotThrowingExceptionOnMixedParsableAndNotParsableInput() {
+  public void shouldHandleMixedParsableAndNonParsableInputWithoutException() {
     List<String> list = Arrays
         .asList("Z9BtVtVO", "11.0", "93eAzyqO", "saB5kQ64", "9.0", "2.0", "Mevi29bx", "10.0", "nPqYe0qc", "14.0",
             "AsQD7LvI", "7.0", "3.0", "13.0", "W1UmeoHQ", "8.0", "0eyq3xGh", "ADdMasr4", "KsepxKG4", "15.0", "LjEGUAU0",
             "Txu1bI2F", "16.0", "5.0", "1.0", "QmcAWDLQ", "6.0", "4.0", "apUQ6KHw", "ayFi1K6t", "CqJzJm5Z", "ckhC6xIH",
             "12.0");
 
-    assertDoesNotThrow(() -> list.sort(VersionComparator.INSTANCE),
-        "An exception was thrown when sorting a list");
-  }
-
-  /**
-   * Test using Java 21's Sequenced Collections with VersionComparator.
-   */
-  @Test
-  public void testWithSequencedCollection() {
-    // Create a SequencedCollection (new in Java 21)
-    SequencedCollection<String> versions = new ArrayList<>(Arrays.asList("1.1", "1.2", "1.0"));
-    
-    // Sort using VersionComparator
-    versions = versions.stream()
-        .sorted(VersionComparator.INSTANCE)
-        .collect(Collectors.toCollection(ArrayList::new));
-    
-    // Use SequencedCollection methods to verify order
-    assertEquals("1.0", versions.getFirst());
-    assertEquals("1.2", versions.getLast());
-    
-    // Verify the complete sequence
-    assertThat(versions.stream().toList(), is(Arrays.asList("1.0", "1.1", "1.2")));
-  }
-
-  /**
-   * Test using pattern matching with switch expressions (Java 21 feature).
-   */
-  @Test
-  public void testVersionComparatorWithPatternMatching() {
-    List<String> versions = Arrays.asList("1.0", "2.0", "1.1-SNAPSHOT", "not-a-version");
-    
-    for (String version : versions) {
-      String category = switch (version) {
-        case String s when VersionComparator.INSTANCE.compare(s, "1.5") < 0 && s.matches("^\\d+\\.\\d+$") -> 
-            "Early Release";
-        case String s when VersionComparator.INSTANCE.compare(s, "1.5") >= 0 && s.matches("^\\d+\\.\\d+$") -> 
-            "Later Release";
-        case String s when s.contains("SNAPSHOT") -> 
-            "Development Version";
-        default -> 
-            "Not a Version";
-      };
-      
-      switch (version) {
-        case "1.0" -> assertThat(category, is("Early Release"));
-        case "2.0" -> assertThat(category, is("Later Release"));
-        case "1.1-SNAPSHOT" -> assertThat(category, is("Development Version"));
-        case "not-a-version" -> assertThat(category, is("Not a Version"));
-        default -> fail("Unexpected version: " + version);
-      }
+    try {
+      list.sort(VersionComparator.INSTANCE);
+    }
+    catch (IllegalArgumentException e) {
+      fail("An exception was thrown when sorting a list: " + e.getMessage());
     }
   }
+
 }

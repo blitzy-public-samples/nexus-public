@@ -23,14 +23,12 @@ import org.sonatype.nexus.repository.routing.RoutingMode;
  * @since 3.16
  */
 public record RoutingRuleTestXO(
-    @NotBlank
-    RoutingMode mode,
-    
-    @NotBlank
-    List<String> matchers,
-    
-    @NotBlank
-    String path
-) {
-  // Record automatically provides getters, equals, hashCode, and toString methods
-}
+  @NotBlank
+  RoutingMode mode,
+
+  @NotBlank
+  List<String> matchers,
+
+  @NotBlank
+  String path
+) {}

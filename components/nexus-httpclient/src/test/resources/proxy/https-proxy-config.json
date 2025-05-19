@@ -1,0 +1,51 @@
+{
+  "proxy": {
+    "host": "localhost",
+    "port": 8888,
+    "enabled": true,
+    "authentication": {
+      "enabled": false,
+      "username": "",
+      "password": ""
+    }
+  },
+  "ssl": {
+    "enabled": true,
+    "protocols": ["TLSv1.3", "TLSv1.2"],
+    "cipherSuites": [
+      "TLS_AES_256_GCM_SHA384",
+      "TLS_AES_128_GCM_SHA256",
+      "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
+      "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+      "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+      "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
+    ],
+    "verifyHostname": true,
+    "trustAll": false,
+    "keyStore": {
+      "path": "testkeystore",
+      "type": "JKS",
+      "password": "password"
+    },
+    "trustStore": {
+      "path": "testkeystore",
+      "type": "JKS",
+      "password": "password"
+    }
+  },
+  "connection": {
+    "timeout": 30000,
+    "socketTimeout": 30000,
+    "connectionRequestTimeout": 30000,
+    "maxConnections": 200,
+    "maxConnectionsPerRoute": 20,
+    "keepAliveStrategy": "SYSTEM_DEFAULT"
+  },
+  "virtualThread": {
+    "enabled": true,
+    "nonBlockingIO": true,
+    "avoidPinning": true,
+    "connectionPoolSize": 0
+  },
+  "userAgent": "Nexus-HttpClient-VirtualThread-Test"
+}

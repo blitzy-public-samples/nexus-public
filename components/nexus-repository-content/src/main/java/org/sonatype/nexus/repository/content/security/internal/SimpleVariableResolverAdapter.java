@@ -13,6 +13,7 @@
 package org.sonatype.nexus.repository.content.security.internal;
 
 import java.util.Map;
+import java.util.logging.Logger;
 
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -28,6 +29,9 @@ import org.elasticsearch.search.lookup.SourceLookup;
 
 /**
  * Simple implementation that will expose the path/format variable resolvers.
+ * 
+ * This implementation is compatible with Java 21 and utilizes String Templates (STR) 
+ * for enhanced debug logging and improved code readability.
  *
  * @since 3.24
  */
@@ -36,8 +40,11 @@ import org.elasticsearch.search.lookup.SourceLookup;
 public class SimpleVariableResolverAdapter
     extends AssetVariableResolverSupport
 {
+  private static final Logger log = Logger.getLogger(SimpleVariableResolverAdapter.class.getName());
+  
   @Override
   protected void addFromRequest(final VariableSourceBuilder builder, final Request request) {
+    log.fine(STR."Processing request: \{request != null ? request.getPath() : "null"}");
     // no-op the simple impl just allows for the path/format variable resolvers in the support class
   }
 
@@ -46,6 +53,7 @@ public class SimpleVariableResolverAdapter
                                      final SourceLookup sourceLookup,
                                      final Map<String, Object> asset)
   {
+    log.fine(STR."Processing source lookup with asset: \{asset != null ? asset.toString() : "null"}");
     // no-op the simple impl just allows for the path/format variable resolvers in the support class
   }
 
@@ -55,11 +63,13 @@ public class SimpleVariableResolverAdapter
       final ComponentSearchResult component,
       final AssetSearchResult asset)
   {
+    log.fine(STR."Processing search results - component: \{component != null ? component.getRepositoryName() : "null"}, asset: \{asset != null ? asset.getPath() : "null"}");
     // no-op the simple impl just allows for the path/format variable resolvers in the support class
   }
 
   @Override
   protected void addFromAsset(final VariableSourceBuilder builder, final FluentAsset asset) {
+    log.fine(STR."Processing asset: \{asset != null ? asset.path() : "null"}");
     // no-op the simple impl just allows for the path/format variable resolvers in the support class
   }
 }

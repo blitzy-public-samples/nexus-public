@@ -15,14 +15,16 @@ package org.sonatype.nexus.common.collect;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
-import java.util.SequencedSet;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.virtualthread.Java21TestGroup;
 
 import com.google.common.collect.ImmutableSet;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.runner.RunWith;
+import org.junit.experimental.categories.Category;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -37,6 +39,7 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+@Category(Java21TestGroup.class)
 @ExtendWith(MockitoExtension.class)
 public class DetachingSetTest
     extends TestSupport
@@ -57,11 +60,8 @@ public class DetachingSetTest
     underTest = new DetachingSet<>(backing, allowDetach, detach);
   }
 
-  /**
-   * Test that non-escaping queries never trigger detach operations.
-   */
   @Test
-  void nonEscapingQueriesNeverDetach() {
+  public void nonEscapingQueriesNeverDetach() {
 
     underTest.contains(null);
     underTest.containsAll(null);
@@ -86,11 +86,8 @@ public class DetachingSetTest
     verifyNoInteractions(allowDetach, detach);
   }
 
-  /**
-   * Test that escaping queries trigger detach operations when allowed.
-   */
   @Test
-  void escapingQueriesTriggerDetach() {
+  public void escapingQueriesTriggerDetach() {
     when(allowDetach.getAsBoolean()).thenReturn(true);
 
     underTest.iterator();
@@ -107,11 +104,8 @@ public class DetachingSetTest
     verifyNoMoreInteractions(backing, allowDetach, detach);
   }
 
-  /**
-   * Test that mutation operations trigger detach when allowed.
-   */
   @Test
-  void mutationsTriggerDetach() {
+  public void mutationsTriggerDetach() {
     when(allowDetach.getAsBoolean()).thenReturn(true);
 
     underTest.add("");
@@ -128,11 +122,8 @@ public class DetachingSetTest
     verifyNoMoreInteractions(backing, allowDetach, detach);
   }
 
-  /**
-   * Test that detaching can be disallowed, causing operations to be performed on the backing set.
-   */
   @Test
-  void detachingCanBeDisallowed() {
+  public void detachingCanBeDisallowed() {
     when(allowDetach.getAsBoolean()).thenReturn(false);
 
     underTest.add("");
@@ -160,11 +151,8 @@ public class DetachingSetTest
     verifyNoMoreInteractions(backing, allowDetach, detach);
   }
 
-  /**
-   * Test a simple detach scenario with a real backing set.
-   */
   @Test
-  void simpleDetach() {
+  public void simpleDetach() {
     Set<String> original = ImmutableSet.of("HELLO", "THERE");
 
     underTest = new DetachingSet<>(original, allowDetach, detach);
@@ -188,35 +176,65 @@ public class DetachingSetTest
     verifyNoMoreInteractions(allowDetach, detach);
   }
   
-  /**
-   * Test compatibility with Java 21 SequencedSet interface.
-   * This test verifies that DetachingSet properly handles the SequencedSet methods
-   * when the backing set implements SequencedSet.
-   */
   @Test
-  void sequencedSetCompatibility() {
-    // Mock a SequencedSet instead of a regular Set
-    @SuppressWarnings("unchecked")
-    SequencedSet<String> sequencedBacking = (SequencedSet<String>) org.mockito.Mockito.mock(SequencedSet.class);
+  public void firstElementIsAccessible() {
+    Set<String> original = ImmutableSet.of("FIRST", "SECOND", "THIRD");
     
-    // Create DetachingSet with SequencedSet backing
-    DetachingSet<String> sequencedUnderTest = new DetachingSet<>(sequencedBacking, allowDetach, detach);
+    underTest = new DetachingSet<>(original, allowDetach, detach);
     
-    // Test with detaching disallowed to verify delegation to backing set
     when(allowDetach.getAsBoolean()).thenReturn(false);
+    when(backing.iterator()).thenReturn(original.iterator());
     
-    // Call SequencedSet methods
-    sequencedUnderTest.getFirst();
-    sequencedUnderTest.getLast();
+    // Test first() method from Sequenced Collections interface
+    assertThat(underTest.getFirst(), is("FIRST"));
     
-    // Verify interactions
-    InOrder inOrder = inOrder(sequencedBacking, allowDetach);
+    InOrder inOrder = inOrder(backing, allowDetach);
     
     inOrder.verify(allowDetach).getAsBoolean();
-    inOrder.verify(sequencedBacking).getFirst();
-    inOrder.verify(allowDetach).getAsBoolean();
-    inOrder.verify(sequencedBacking).getLast();
+    inOrder.verify(backing).iterator();
     
-    verifyNoMoreInteractions(sequencedBacking, allowDetach, detach);
+    verifyNoMoreInteractions(backing, allowDetach, detach);
+  }
+  
+  @Test
+  public void lastElementIsAccessible() {
+    Set<String> original = ImmutableSet.of("FIRST", "SECOND", "THIRD");
+    
+    underTest = new DetachingSet<>(original, allowDetach, detach);
+    
+    when(allowDetach.getAsBoolean()).thenReturn(false);
+    when(backing.iterator()).thenReturn(original.iterator());
+    
+    // Test last() method from Sequenced Collections interface
+    assertThat(underTest.getLast(), is("THIRD"));
+    
+    InOrder inOrder = inOrder(backing, allowDetach);
+    
+    inOrder.verify(allowDetach).getAsBoolean();
+    inOrder.verify(backing).iterator();
+    
+    verifyNoMoreInteractions(backing, allowDetach, detach);
+  }
+  
+  @Test
+  public void reversedViewIsCorrect() {
+    Set<String> original = ImmutableSet.of("FIRST", "SECOND", "THIRD");
+    
+    underTest = new DetachingSet<>(original, allowDetach, detach);
+    
+    when(allowDetach.getAsBoolean()).thenReturn(false);
+    when(backing.iterator()).thenReturn(original.iterator());
+    
+    // Test reversed() method from Sequenced Collections interface
+    Set<String> reversed = underTest.reversed();
+    assertThat(reversed.getFirst(), is("THIRD"));
+    assertThat(reversed.getLast(), is("FIRST"));
+    
+    InOrder inOrder = inOrder(backing, allowDetach);
+    
+    inOrder.verify(allowDetach).getAsBoolean();
+    inOrder.verify(backing).iterator();
+    
+    verifyNoMoreInteractions(backing, allowDetach, detach);
   }
 }

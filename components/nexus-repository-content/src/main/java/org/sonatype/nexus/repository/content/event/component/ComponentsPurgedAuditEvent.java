@@ -24,6 +24,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
 /**
  * Designed to inform a {@link ComponentAuditor} that some {@link Component}'s from a {@link Repository}, purged and
  * must be recorded in more informative way.
+ * <p>
+ * This event is optimized for Java 21 Virtual Thread execution context and uses String Templates for audit logging.
  */
 public class ComponentsPurgedAuditEvent
     extends ContentStoreEvent
@@ -42,7 +44,34 @@ public class ComponentsPurgedAuditEvent
     this.components = checkNotNull(components);
   }
 
+  /**
+   * Returns the list of purged components.
+   * 
+   * @return immutable list of purged components
+   */
   public List<Component> getComponents() {
     return components;
+  }
+  
+  /**
+   * Formats the event information using Java 21 String Templates for audit logging.
+   * 
+   * @return formatted string for audit logging
+   */
+  public String toAuditLog() {
+    return STR."Components purged from repository ID: \{getRepositoryId()}, count: \{components.size()}, " +
+           STR."first component: \{components.isEmpty() ? "none" : formatComponent(components.get(0))}";
+  }
+  
+  /**
+   * Formats a component for audit logging using String Templates.
+   * 
+   * @param component the component to format
+   * @return formatted component string
+   */
+  private String formatComponent(Component component) {
+    return STR."[namespace=\{component.namespace() != null ? component.namespace() : "<none>"}, " +
+           STR."name=\{component.name()}, version=\{component.version() != null ? component.version() : "<none>"}, " +
+           STR."kind=\{component.kind() != null ? component.kind() : "<none>"}, id=\{component.componentId()}]";
   }
 }

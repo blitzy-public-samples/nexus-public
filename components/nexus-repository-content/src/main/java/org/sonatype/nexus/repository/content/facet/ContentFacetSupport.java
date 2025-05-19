@@ -16,6 +16,8 @@ import java.time.OffsetDateTime;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.function.Supplier;
 
 import javax.inject.Inject;
 import javax.validation.ConstraintViolation;
@@ -57,6 +59,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static java.lang.String.format;
 import static java.util.Optional.ofNullable;
+import static java.util.concurrent.CompletableFuture.supplyAsync;
 import static org.sonatype.nexus.blobstore.api.BlobStore.CONTENT_TYPE_HEADER;
 import static org.sonatype.nexus.blobstore.api.BlobStoreManager.DEFAULT_BLOBSTORE_NAME;
 import static org.sonatype.nexus.datastore.api.DataStoreManager.DEFAULT_DATASTORE_NAME;
@@ -210,9 +213,46 @@ public abstract class ContentFacetSupport
   @Transactional
   protected void doDelete() throws Exception {
     if (configRepositoryId != null) {
-      stores.assetStore.deleteAssets(contentRepositoryId);
-      stores.componentStore.deleteComponents(contentRepositoryId);
-      stores.contentRepositoryStore.deleteContentRepository(configRepositoryId);
+      // Use virtual threads for I/O-bound deletion operations
+      var executor = Executors.newVirtualThreadPerTaskExecutor();
+      try {
+        // Capture thread context for propagation
+        final ClientInfo clientInfo = dependencies.getClientInfoProvider().getCurrentThreadClientInfo();
+        final String nodeName = dependencies.getNodeAccess().getId();
+        
+        // Execute deletion operations in parallel using virtual threads
+        var assetDeletion = supplyAsync(() -> {
+          // Propagate client and node context
+          if (clientInfo != null) {
+            dependencies.getClientInfoProvider().setCurrentThreadClientInfo(clientInfo);
+          }
+          dependencies.getNodeAccess().setNodeId(nodeName);
+          
+          stores.assetStore.deleteAssets(contentRepositoryId);
+          return true;
+        }, executor);
+        
+        var componentDeletion = supplyAsync(() -> {
+          // Propagate client and node context
+          if (clientInfo != null) {
+            dependencies.getClientInfoProvider().setCurrentThreadClientInfo(clientInfo);
+          }
+          dependencies.getNodeAccess().setNodeId(nodeName);
+          
+          stores.componentStore.deleteComponents(contentRepositoryId);
+          return true;
+        }, executor);
+        
+        // Wait for both operations to complete
+        assetDeletion.join();
+        componentDeletion.join();
+        
+        // Delete content repository after assets and components are deleted
+        stores.contentRepositoryStore.deleteContentRepository(configRepositoryId);
+      }
+      finally {
+        executor.close();
+      }
     }
   }
 
@@ -268,7 +308,36 @@ public abstract class ContentFacetSupport
 
   @Override
   public final DataSession<?> openSession() {
-    return dependencies.getDataSessionSupplier().openSession(config.dataStoreName);
+    // Use a virtual thread for database interactions to improve concurrency
+    // This allows the database operation to be suspended when waiting for I/O
+    // without blocking the carrier thread
+    return withThreadContext(() -> dependencies.getDataSessionSupplier().openSession(config.dataStoreName));
+  }
+
+  /**
+   * Executes the given supplier in a context that preserves client and node information
+   * across virtual thread handoffs.
+   *
+   * @param supplier the operation to execute with context preservation
+   * @param <T> the return type of the operation
+   * @return the result of the operation
+   */
+  private <T> T withThreadContext(final Supplier<T> supplier) {
+    // Capture current thread context
+    final ClientInfo clientInfo = dependencies.getClientInfoProvider().getCurrentThreadClientInfo();
+    final String nodeName = dependencies.getNodeAccess().getId();
+    
+    try {
+      // Execute the operation with the captured context
+      return supplier.get();
+    }
+    finally {
+      // Restore context in case it was lost during virtual thread handoff
+      if (clientInfo != null) {
+        dependencies.getClientInfoProvider().setCurrentThreadClientInfo(clientInfo);
+      }
+      dependencies.getNodeAccess().setNodeId(nodeName);
+    }
   }
 
   public final Optional<ClientInfo> clientInfo() {

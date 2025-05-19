@@ -12,22 +12,12 @@
  */
 package org.sonatype.nexus.common.entity;
 
+import javax.annotation.Nullable;
+
 /**
  * Entity updated event.
  * 
- * <p>
- * Note: This class is not suitable for conversion to a Java 21 record because:
- * <ul>
- *   <li>It extends a non-record class (EntityEvent) which has mutable fields</li>
- *   <li>Records cannot extend other classes, only interfaces</li>
- *   <li>The parent class already handles thread safety for event publication</li>
- * </ul>
- * 
- * <p>
- * Thread safety is ensured by the parent class which uses volatile fields and
- * ReentrantLock for lazy initialization of the entity field.
- * Event publication is handled through the EventManager which supports
- * asynchronous delivery using Java 21 virtual threads when appropriate.
+ * Uses Java 21 pattern matching for safer metadata handling.
  *
  * @since 3.1
  */
@@ -35,11 +25,48 @@ public class EntityUpdatedEvent
     extends EntityEvent
 {
   /**
-   * Constructs a new entity updated event.
+   * Creates a new entity updated event.
    *
-   * @param metadata the entity metadata for the updated entity
+   * @param metadata the entity metadata
    */
   public EntityUpdatedEvent(final EntityMetadata metadata) {
     super(metadata);
+  }
+  
+  /**
+   * Gets the entity with pattern matching for safer type handling.
+   * 
+   * @param <T> the entity type
+   * @return the entity, or null if it doesn't exist
+   */
+  @Nullable
+  @Override
+  public <T extends Entity> T getEntity() {
+    // Use pattern matching to safely get and cast the entity
+    Object entity = super.getEntity();
+    if (entity instanceof T t) {
+      return t;
+    }
+    return null;
+  }
+  
+  /**
+   * Gets the entity type with pattern matching for safer type handling.
+   * 
+   * @param <T> the entity type
+   * @return the entity type, or null if it doesn't exist
+   */
+  @Nullable
+  @Override
+  public <T extends Entity> Class<T> getEntityType() {
+    // Use pattern matching to safely get and cast the entity type
+    Class<?> type = super.getEntityType();
+    if (type instanceof Class<? extends Entity> entityType) {
+      // Safe to cast because we've verified it's a Class<? extends Entity>
+      @SuppressWarnings("unchecked")
+      Class<T> result = (Class<T>) entityType;
+      return result;
+    }
+    return null;
   }
 }

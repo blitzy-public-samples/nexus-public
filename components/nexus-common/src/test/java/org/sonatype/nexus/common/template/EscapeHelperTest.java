@@ -12,54 +12,51 @@
  */
 package org.sonatype.nexus.common.template;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.DisplayName;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.experimental.categories.Category;
 
-import static org.hamcrest.CoreMatchers.is;
+import org.sonatype.nexus.virtualthread.Java21TestGroup;
+
+import static java.lang.StringTemplate.STR;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.equalTo;
+import static org.junit.Assert.assertEquals;
 
-/**
- * Tests for {@link EscapeHelper}.
- * 
- * Updated for Java 21 compatibility using JUnit Jupiter.
- */
+@Category(Java21TestGroup.class)
 public class EscapeHelperTest
 {
-  private EscapeHelper underTest;
+  EscapeHelper underTest;
 
-  @BeforeEach
+  @Before
   public void setup() {
     underTest = new EscapeHelper();
   }
 
   @Test
-  @DisplayName("Should strip Java EL syntax from string")
-  public void stripJavaEl() {
+  public void testStripJavaEl() {
     String test = "${badstuffinhere}";
     String result = underTest.stripJavaEl(test);
     assertThat(result, is("{badstuffinhere}"));
   }
 
   @Test
-  @DisplayName("Should strip Java EL syntax with multiple dollar signs")
-  public void stripJavaElWithMultipleDollarSigns() {
+  public void testStripJavaEl_multiple_dollar_signs() {
     String test = "$$$$${badstuffinhere}";
     String result = underTest.stripJavaEl(test);
     assertThat(result, is("{badstuffinhere}"));
   }
 
   @Test
-  @DisplayName("Should strip Java EL syntax with bugged interpolator")
-  public void stripJavaElWithBuggedInterpolator() {
+  public void testStripJavaEl_bugged_interpolator() {
     String test = "$\\A{badstuffinhere}";
     String result = underTest.stripJavaEl(test);
     assertThat(result, is("{badstuffinhere}"));
   }
 
   @Test
-  @DisplayName("Should properly encode URI segments")
-  public void uriSegmentsEncoding() {
+  public void testUriSegmentsEncoding() {
     assertThat(underTest.uriSegments("foo/bar+baz"), is("foo/bar+baz"));
     assertThat(underTest.uriSegments("foo/bar%baz"), is("foo/bar%25baz"));
     assertThat(underTest.uriSegments("foo/bar baz"), is("foo/bar%20baz"));
@@ -67,15 +64,31 @@ public class EscapeHelperTest
   }
   
   @Test
-  @DisplayName("Should handle Java 21 string template syntax")
-  public void handleStringTemplateSyntax() {
-    String templateSyntax = "\\{variable}";
-    String result = underTest.stripJavaEl(templateSyntax);
-    assertThat(result, is("{variable}"));
+  public void testStringTemplateIntegration() {
+    // Test StringTemplate integration with uri method
+    String input = "test space+special&chars";
+    String expected = "test%20space%2Bspecial%26chars";
+    String result = underTest.uri(input);
     
-    // Test with string template-like syntax
-    String stringTemplateLike = "text \\{expression}";
-    result = underTest.stripJavaEl(stringTemplateLike);
-    assertThat(result, is("text {expression}"));
+    // Using both JUnit 4 and Hamcrest 2.2 assertion styles
+    assertEquals(expected, result);
+    assertThat(result, equalTo(expected));
+    
+    // Test with direct StringTemplate usage
+    String directTemplate = STR."Escaped: \{underTest.uri(input)}";
+    assertThat(directTemplate, is("Escaped: " + expected));
+  }
+  
+  @Test
+  public void testStringTemplateWithUriSegments() {
+    String path = "path/with space/and:colon";
+    String expected = "path/with%20space/and%3Acolon";
+    String result = underTest.uriSegments(path);
+    
+    assertThat(result, is(expected));
+    
+    // Test with nested StringTemplate usage
+    String template = STR."Segments: \{underTest.uriSegments(path)}";
+    assertThat(template, is("Segments: " + expected));
   }
 }

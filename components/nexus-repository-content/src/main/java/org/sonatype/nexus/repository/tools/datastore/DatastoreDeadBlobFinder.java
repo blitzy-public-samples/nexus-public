@@ -15,10 +15,14 @@ package org.sonatype.nexus.repository.tools.datastore;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -45,10 +49,12 @@ import org.sonatype.nexus.repository.tools.BlobUnavilableException;
 import org.sonatype.nexus.repository.tools.DeadBlobFinder;
 import org.sonatype.nexus.repository.tools.DeadBlobResult;
 import org.sonatype.nexus.repository.tools.MismatchedSHA1Exception;
+import org.sonatype.nexus.repository.tools.ResultState;
 
 import com.google.common.base.Stopwatch;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.common.entity.Continuations.streamOf;
 import static org.sonatype.nexus.repository.tools.ResultState.ASSET_DELETED;
 import static org.sonatype.nexus.repository.tools.ResultState.DELETED;
@@ -102,8 +108,8 @@ public class DatastoreDeadBlobFinder
       }
       assets = fluentAssets.browse(batchSize, assets.nextContinuationToken());
     }
-    log.info("Inspection of repository {} took {}ms for " + "{} assets and identified {} incorrect Assets",
-        repository.getName(), sw.elapsed(TimeUnit.MILLISECONDS), deadBlobCandidateCount, deadBlobCount);
+    log.info(STR."Inspection of repository \{repository.getName()} took \{sw.elapsed(TimeUnit.MILLISECONDS)}ms for " + 
+        "\{deadBlobCandidateCount} assets and identified \{deadBlobCount} incorrect Assets");
   }
 
   /**
@@ -136,25 +142,30 @@ public class DatastoreDeadBlobFinder
   {
     Stopwatch sw = Stopwatch.createStarted();
     AtomicLong blobsExamined = new AtomicLong();
+    List<DeadBlobResult<Asset>> deadBlobCandidates = new CopyOnWriteArrayList<>();
 
-    List<DeadBlobResult<Asset>> deadBlobCandidates = fluentAssets
-        .peek(a -> blobsExamined.incrementAndGet())
-        .map(asset -> {
-            if (!asset.blob().isPresent() && ignoreMissingBlobRefs) {
-              log.trace("Set to ignore missing blobRef on {}", asset);
-              return null;
-            }
-            else {
-              return checkAsset(repository.getName(), asset);
-            }
-          })
-        .filter(Objects::nonNull)
-        .collect(Collectors.toList());
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      fluentAssets
+          .peek(a -> blobsExamined.incrementAndGet())
+          .forEach(asset -> {
+            executor.submit(() -> {
+              if (!asset.blob().isPresent() && ignoreMissingBlobRefs) {
+                log.trace(STR."Set to ignore missing blobRef on \{asset}");
+                return;
+              }
+              else {
+                DeadBlobResult<Asset> result = checkAsset(repository.getName(), asset);
+                if (result != null) {
+                  deadBlobCandidates.add(result);
+                }
+              }
+            });
+          });
+    }
 
     if (!batchMode) {
       log.debug(
-          "Inspecting repository {} took {}ms for {}  assets and identified {} potentially incorrect Assets for followup assessment",
-          repository.getName(), sw.elapsed(TimeUnit.MILLISECONDS), blobsExamined, deadBlobCandidates.size());
+          STR."Inspecting repository \{repository.getName()} took \{sw.elapsed(TimeUnit.MILLISECONDS)}ms for \{blobsExamined}  assets and identified \{deadBlobCandidates.size()} potentially incorrect Assets for followup assessment");
     }
     return deadBlobCandidates;
   }
@@ -172,26 +183,28 @@ public class DatastoreDeadBlobFinder
     if (!deadBlobCandidates.isEmpty()) {
       Stopwatch sw = Stopwatch.createStarted();
       ContentFacet content = repository.facet(ContentFacet.class);
-      List<DeadBlobResult<Asset>> deadBlobs = deadBlobCandidates.stream()
-          .map(candidateResult -> {
+      List<DeadBlobResult<Asset>> deadBlobs = new CopyOnWriteArrayList<>();
+
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        deadBlobCandidates.forEach(candidateResult -> {
+          executor.submit(() -> {
             DeadBlobResult<Asset> deadBlobResult = checkAsset(repository.getName(),
                 content.assets().path(candidateResult.getAsset().path()).find().orElse(null));
             if (deadBlobResult != null) {
               logResults(candidateResult, deadBlobResult);
-              return deadBlobResult;
+              deadBlobs.add(deadBlobResult);
             }
             else {
               log.debug(
-                  "Asset {} corrected from error state {} during inspection", candidateResult.getAsset().path(), candidateResult.getResultState());
-              return null;
+                  STR."Asset \{candidateResult.getAsset().path()} corrected from error state \{candidateResult.getResultState()} during inspection");
             }
-          })
-        .filter(Objects::nonNull)
-        .collect(Collectors.toList());
+          });
+        });
+      }
 
       if (!batchMode) {
-        log.info("Followup inspection of repository {} took {}ms for " + "{} assets and identified {} incorrect Assets",
-            repository.getName(), sw.elapsed(TimeUnit.MILLISECONDS), deadBlobCandidates.size(), deadBlobs.size());
+        log.info(STR."Followup inspection of repository \{repository.getName()} took \{sw.elapsed(TimeUnit.MILLISECONDS)}ms for " + 
+            "\{deadBlobCandidates.size()} assets and identified \{deadBlobs.size()} incorrect Assets");
       }
 
       return deadBlobs;
@@ -212,23 +225,18 @@ public class DatastoreDeadBlobFinder
           .orElseThrow(() -> new IllegalStateException("Blob not found."));
       verifyBlob(blob, asset);
     }
-    catch (IllegalStateException ise) {
-      return new DeadBlobResult<>(repositoryName, asset, MISSING_BLOB_REF, ise.getMessage());
-    }
-    catch (BlobStoreException bse) {
-      if (bse.getCause() instanceof IOException) {
-        return new DeadBlobResult<>(repositoryName, asset, UNREADABLE_BLOB, bse.getMessage());
-      }
-      return new DeadBlobResult<>(repositoryName, asset, DELETED, bse.getMessage()); // check for specific message?
-    }
-    catch (MismatchedSHA1Exception pae) {
-      return new DeadBlobResult<>(repositoryName, asset, SHA1_DISAGREEMENT, pae.getMessage());
-    }
-    catch (BlobUnavilableException e) {
-      return new DeadBlobResult<>(repositoryName, asset, UNAVAILABLE_BLOB, e.getMessage() == null ? "Blob inputstream unavailable" : e.getMessage());
-    }
     catch (Exception e) {
-      return new DeadBlobResult<>(repositoryName, asset, UNKNOWN, e.getMessage());
+      return switch (e) {
+        case IllegalStateException ise -> new DeadBlobResult<>(repositoryName, asset, MISSING_BLOB_REF, ise.getMessage());
+        case BlobStoreException bse when bse.getCause() instanceof IOException -> 
+            new DeadBlobResult<>(repositoryName, asset, UNREADABLE_BLOB, bse.getMessage());
+        case BlobStoreException bse -> new DeadBlobResult<>(repositoryName, asset, DELETED, bse.getMessage());
+        case MismatchedSHA1Exception pae -> new DeadBlobResult<>(repositoryName, asset, SHA1_DISAGREEMENT, pae.getMessage());
+        case BlobUnavilableException bue -> 
+            new DeadBlobResult<>(repositoryName, asset, UNAVAILABLE_BLOB, 
+                bue.getMessage() == null ? "Blob inputstream unavailable" : bue.getMessage());
+        default -> new DeadBlobResult<>(repositoryName, asset, UNKNOWN, e.getMessage());
+      };
     }
     return null;
   }
@@ -256,15 +264,15 @@ public class DatastoreDeadBlobFinder
    * Log details about an incorrect result, including if state changed between inspections.;
    */
   private void logResults(final DeadBlobResult<Asset> firstResult, final DeadBlobResult<Asset> secondResult) {
-    log.info("Possible bad data found in Asset: {}", secondResult.getAsset());
+    log.info(STR."Possible bad data found in Asset: \{secondResult.getAsset()}");
     if (lastUpdated(firstResult) != lastUpdated(secondResult)) {
-      log.info("Asset metadata was updated during inspection between {} and {}",  lastUpdated(firstResult), lastUpdated(secondResult));
+      log.info(STR."Asset metadata was updated during inspection between \{lastUpdated(firstResult)} and \{lastUpdated(secondResult)}");
     }
     if (firstResult.getResultState() != secondResult.getResultState()) {
-      log.info("Error state changed from {} to {} during inspection", firstResult.getResultState(), secondResult.getResultState());
+      log.info(STR."Error state changed from \{firstResult.getResultState()} to \{secondResult.getResultState()} during inspection");
     }
     if (blobUpdated(firstResult) != blobUpdated(secondResult)) {
-      log.info("Asset blob was updated during inspection between {} and {}", blobUpdated(firstResult), blobUpdated(secondResult));
+      log.info(STR."Asset blob was updated during inspection between \{blobUpdated(firstResult)} and \{blobUpdated(secondResult)}");
     }
   }
 

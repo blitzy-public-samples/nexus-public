@@ -1,0 +1,73 @@
+{
+  "exactMatches": [
+    "localhost",
+    "127.0.0.1",
+    "sonatype.org",
+    "nexus-repository.sonatype.com",
+    "csétamás.hu",
+    "xn--cstams-fxa4c.hu",
+    "example.com",
+    "internal-server",
+    "dev-machine.local"
+  ],
+  "wildcardDomains": [
+    "*.sonatype.org",
+    "*.sonatype.*",
+    "*.example.com",
+    "*.internal.*",
+    "dev-*.local",
+    "*.local",
+    "test-*.example.*"
+  ],
+  "ipv4Addresses": [
+    "1.2.3.4",
+    "10.0.0.1",
+    "192.168.0.1",
+    "172.16.0.1"
+  ],
+  "wildcardIpv4": [
+    "*.2.3.4",
+    "1.2.3.*",
+    "*.2.3.*",
+    "10.*",
+    "*.10",
+    "192.168.*",
+    "172.16.*.*"
+  ],
+  "ipv6Addresses": [
+    "2001:db8:85a3:8d3:1319:8a2e:370:7348",
+    "[2001:db8:85a3:8d3:1319:8a2e:370:7348]",
+    "[::1]",
+    "[2001:db8::1]",
+    "[fe80::1]",
+    "[::ffff:192.168.1.1]"
+  ],
+  "wildcardIpv6": [
+    "*:8]",
+    "[:*",
+    "[2001:db8:*]",
+    "[2001:*]",
+    "[*:370:7348]"
+  ],
+  "corporatePatterns": [
+    "*.internal.company.com",
+    "dev-*.company.org",
+    "*.staging.company.*",
+    "10.0.0.*",
+    "192.168.10.*",
+    "[2001:db8:85a3:*]"
+  ],
+  "specialCases": [
+    "localhost.localdomain",
+    "*.no-proxy",
+    "direct-connect.example.com",
+    "bypass-proxy-*.example.org"
+  ],
+  "invalidPatterns": [
+    "",
+    "  ",
+    "foo|sonatype.org",
+    "comma,com",
+    "[*:8]"
+  ]
+}

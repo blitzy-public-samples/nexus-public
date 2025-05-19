@@ -15,6 +15,9 @@ package org.sonatype.nexus.repository.content.webhooks;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.Optional;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.logging.Logger;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -34,6 +37,7 @@ import org.sonatype.nexus.repository.content.store.InternalIds;
 import org.sonatype.nexus.repository.rest.api.RepositoryItemIDXO;
 import org.sonatype.nexus.repository.webhooks.RepositoryWebhook;
 import org.sonatype.nexus.webhooks.WebhookPayload;
+import org.sonatype.nexus.webhooks.WebhookRequest;
 
 import com.google.common.eventbus.AllowConcurrentEvents;
 import com.google.common.eventbus.Subscribe;
@@ -47,14 +51,20 @@ public class RepositoryComponentWebhook
 {
   public static final String NAME = "component";
 
+  private static final Logger LOG = Logger.getLogger(RepositoryComponentWebhook.class.getName());
+  
   private final NodeAccess nodeAccess;
 
   private final InitiatorProvider initiatorProvider;
+  
+  private final ExecutorService executor;
 
   @Inject
   public RepositoryComponentWebhook(final NodeAccess nodeAccess, final InitiatorProvider initiatorProvider) {
     this.nodeAccess = checkNotNull(nodeAccess);
     this.initiatorProvider = checkNotNull(initiatorProvider);
+    // Create an executor service that creates a new virtual thread for each task
+    this.executor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   @Override
@@ -72,26 +82,27 @@ public class RepositoryComponentWebhook
 
   @Subscribe
   @AllowConcurrentEvents
-  public void on(final ComponentCreatedEvent event) {
-    maybeQueue(event, EventAction.CREATED);
-  }
-
-  @Subscribe
-  @AllowConcurrentEvents
-  public void on(final ComponentUpdatedEvent event) {
-    maybeQueue(event, EventAction.UPDATED);
-  }
-
-  @Subscribe
-  @AllowConcurrentEvents
-  public void on(final ComponentDeletedEvent event) {
-    maybeQueue(event, EventAction.DELETED);
-  }
-
-  @Subscribe
-  @AllowConcurrentEvents
-  public void on(final ComponentPurgedEvent event) {
-    maybeQueue(getPayload(event, EventAction.PURGED));
+  public void on(final ComponentEvent event) {
+    // Use pattern matching for switch to determine the event type and action
+    switch (event) {
+      case ComponentCreatedEvent e -> {
+        LOG.fine(STR."Processing component created event for component: \{e.getComponent().name()}");
+        maybeQueue(e, EventAction.CREATED);
+      }
+      case ComponentUpdatedEvent e -> {
+        LOG.fine(STR."Processing component updated event for component: \{e.getComponent().name()}");
+        maybeQueue(e, EventAction.UPDATED);
+      }
+      case ComponentDeletedEvent e -> {
+        LOG.fine(STR."Processing component deleted event for component: \{e.getComponent().name()}");
+        maybeQueue(e, EventAction.DELETED);
+      }
+      case ComponentPurgedEvent e -> {
+        LOG.fine(STR."Processing component purged event for repository: \{e.getRepository().map(Repository::getName).orElse("unknown")}");
+        maybeQueue(getPayload(e, EventAction.PURGED));
+      }
+      default -> LOG.warning(STR."Unhandled component event type: \{event.getClass().getName()}");
+    }
   }
 
   /**
@@ -103,13 +114,24 @@ public class RepositoryComponentWebhook
 
   /**
    * Maybe queue {@link WebhookRequest} for event matching subscriptions.
+   * Uses virtual threads to process each subscription concurrently.
    */
   private void maybeQueue(final RepositoryComponentWebhookPayload payload) {
+    LOG.fine(STR."Checking subscriptions for repository: \{payload.getRepositoryName()}");
+    
     subscriptions.forEach(subscription -> {
-      RepositoryWebhook.Configuration configuration = (RepositoryWebhook.Configuration) subscription.getConfiguration();
-      if (configuration.getRepository().equals(payload.getRepositoryName())) {
-        queue(subscription, payload);
-      }
+      // Submit each subscription processing to a virtual thread
+      executor.submit(() -> {
+        try {
+          RepositoryWebhook.Configuration configuration = (RepositoryWebhook.Configuration) subscription.getConfiguration();
+          if (configuration.getRepository().equals(payload.getRepositoryName())) {
+            LOG.fine(STR."Queueing webhook for repository: \{payload.getRepositoryName()}, action: \{payload.getAction()}");
+            queue(subscription, payload);
+          }
+        } catch (Exception e) {
+          LOG.warning(STR."Error processing webhook subscription: \{e.getMessage()}");
+        }
+      });
     });
   }
 

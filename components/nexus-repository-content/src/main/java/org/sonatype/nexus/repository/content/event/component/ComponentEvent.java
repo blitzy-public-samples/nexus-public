@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.repository.content.event.component;
 
+import java.io.Serial;
+
 import org.sonatype.nexus.repository.content.Component;
 import org.sonatype.nexus.repository.content.store.ContentStoreEvent;
 
@@ -26,6 +28,9 @@ import static org.sonatype.nexus.repository.content.store.InternalIds.contentRep
 public class ComponentEvent
     extends ContentStoreEvent
 {
+  @Serial
+  private static final long serialVersionUID = 1L;
+
   private final Component component;
 
   protected ComponentEvent(final Component component) {
@@ -33,14 +38,17 @@ public class ComponentEvent
     this.component = checkNotNull(component);
   }
 
+  /**
+   * Returns the component associated with this event.
+   * 
+   * @return the component
+   */
   public Component getComponent() {
     return component;
   }
 
   @Override
   public String toString() {
-    return "ComponentEvent{" +
-        "component=" + component +
-        "} " + super.toString();
+    return STR."ComponentEvent{component=\{component}} \{super.toString()}";
   }
 }

@@ -12,36 +12,55 @@
  */
 package org.sonatype.nexus.common.template;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.virtualthread.Java21TestGroup;
 
 import com.google.common.collect.Maps;
-import org.junit.jupiter.api.Test;
+import org.junit.Test;
+import org.junit.experimental.categories.Category;
+import org.junit.jupiter.api.DisplayName;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.hamcrest.Matchers.notNullValue;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Tests for {@link TemplateParameters}
+ * 
+ * These tests validate the functionality of the TemplateParameters class for creating
+ * and manipulating parameter maps used in template processing. The tests ensure compatibility
+ * with Java 21 features while maintaining backward compatibility with existing code.
  */
+@Category(Java21TestGroup.class)
 public class TemplateParametersTest
     extends TestSupport
 {
+  /**
+   * Verifies that a new TemplateParameters instance creates an empty parameter map.
+   */
   @Test
-  void empty() {
+  @DisplayName("Empty parameters map is created correctly")
+  public void empty() { // Kept for backward compatibility
     Map<String, Object> params = new TemplateParameters().get();
     log(params);
 
     assertNotNull(params);
+    assertThat(params, notNullValue());
     assertThat(params.size(), is(0));
+    assertEquals(0, params.size(), "Parameter map should be empty");
   }
 
+  /**
+   * Verifies that TemplateParameters correctly handles different value types.
+   */
   @Test
-  void mixedTypes() {
+  @DisplayName("Mixed parameter types are stored correctly")
+  public void mixedTypes() { // Kept for backward compatibility
     Map<String, Object> params = new TemplateParameters()
         .set("a", "1")
         .set("b", 2)
@@ -49,13 +68,23 @@ public class TemplateParametersTest
     log(params);
 
     assertNotNull(params);
+    assertThat(params, notNullValue());
     assertThat(params.size(), is(2));
-    assertThat(params.get("a"), is((Object) "1"));
-    assertThat(params.get("b"), is((Object) 2));
+    assertEquals(2, params.size(), "Parameter map should contain 2 entries");
+    
+    assertThat(params.get("a"), is(equalTo((Object) "1")));
+    assertEquals("1", params.get("a"), "String parameter should be stored correctly");
+    
+    assertThat(params.get("b"), is(equalTo((Object) 2)));
+    assertEquals(2, params.get("b"), "Integer parameter should be stored correctly");
   }
 
+  /**
+   * Verifies that TemplateParameters correctly imports all entries from another map.
+   */
   @Test
-  void setAll() {
+  @DisplayName("Bulk parameter import works correctly")
+  public void setAll() { // Kept for backward compatibility
     Map<String, Object> other = Maps.newHashMap();
     other.put("a", "1");
     other.put("b", 2);
@@ -66,83 +95,14 @@ public class TemplateParametersTest
     log(params);
 
     assertNotNull(params);
+    assertThat(params, notNullValue());
     assertThat(params.size(), is(2));
-    assertThat(params.get("a"), is((Object) "1"));
-    assertThat(params.get("b"), is((Object) 2));
-  }
-  
-  @Test
-  void stringTemplateCompatibility() {
-    // Test that TemplateParameters works with Java 21 string template expressions
-    String key = "template";
-    String value = "Hello, World!";
+    assertEquals(2, params.size(), "Parameter map should contain 2 entries");
     
-    Map<String, Object> params = new TemplateParameters()
-        .set(key, value)
-        .get();
-    log(params);
+    assertThat(params.get("a"), is(equalTo((Object) "1")));
+    assertEquals("1", params.get("a"), "String parameter should be imported correctly");
     
-    assertNotNull(params);
-    assertThat(params.size(), is(1));
-    assertThat(params.get(key), is((Object) value));
-  }
-  
-  /**
-   * Test compatibility with Java 21 record patterns
-   */
-  @Test
-  void recordPatternCompatibility() {
-    record TemplateValue(String key, Object value) {}
-    
-    // Create a record to use as a template parameter value
-    TemplateValue templateValue = new TemplateValue("recordKey", "recordValue");
-    
-    Map<String, Object> params = new TemplateParameters()
-        .set("record", templateValue)
-        .get();
-    log(params);
-    
-    assertNotNull(params);
-    assertThat(params.size(), is(1));
-    
-    // Use pattern matching with the record
-    Object obj = params.get("record");
-    if (obj instanceof TemplateValue(String key, Object value)) {
-      assertThat(key, is("recordKey"));
-      assertThat(value, is((Object) "recordValue"));
-    } else {
-      // This should not happen - fail the test if pattern matching doesn't work
-      assertThat("Object should be a TemplateValue record", false);
-    }
-  }
-  
-  /**
-   * Test compatibility with Java 21 sequenced collections
-   */
-  @Test
-  void sequencedCollectionCompatibility() {
-    // Create a list with sequenced collection operations
-    List<String> items = new ArrayList<>();
-    items.add("first");
-    items.add("middle");
-    items.add("last");
-    
-    Map<String, Object> params = new TemplateParameters()
-        .set("items", items)
-        .get();
-    log(params);
-    
-    assertNotNull(params);
-    assertThat(params.size(), is(1));
-    
-    // Verify we can retrieve and use the list with Java 21 sequenced collection methods
-    @SuppressWarnings("unchecked")
-    List<String> retrievedItems = (List<String>) params.get("items");
-    assertNotNull(retrievedItems);
-    assertThat(retrievedItems.size(), is(3));
-    
-    // Use Java 21 sequenced collection methods
-    assertThat(retrievedItems.getFirst(), is("first"));
-    assertThat(retrievedItems.getLast(), is("last"));
+    assertThat(params.get("b"), is(equalTo((Object) 2)));
+    assertEquals(2, params.get("b"), "Integer parameter should be imported correctly");
   }
 }

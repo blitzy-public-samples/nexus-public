@@ -1,45 +1,31 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
 
-  <!-- Console appender with enhanced pattern for Java 21 String Templates support -->
+  <!-- Define property for virtual thread debugging -->
+  <property name="virtualThreadDebug" value="${test.virtual.threads:-false}"/>
+
   <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
     <target>System.out</target>
     <encoder>
-      <pattern>%date %level [%thread%X{DC}%X{virtualThread}%X{vtId}] %logger - %msg%n</pattern>
+      <pattern>%date %level [%thread%X{DC}%X{VirtualThread}] %logger - %msg%n</pattern>
     </encoder>
   </appender>
 
-  <!-- Virtual Thread diagnostic appender -->
-  <appender name="VIRTUAL_THREAD" class="ch.qos.logback.core.ConsoleAppender">
-    <target>System.out</target>
-    <encoder>
-      <pattern>%date %level [VIRTUAL-THREAD] %logger - %msg%n</pattern>
-    </encoder>
-  </appender>
-
-  <!-- Thread pinning events appender -->
-  <appender name="THREAD_PINNING" class="ch.qos.logback.core.ConsoleAppender">
-    <target>System.out</target>
-    <encoder>
-      <pattern>%date %level [THREAD-PINNING] %X{vtId} %logger - %msg%n</pattern>
-    </encoder>
-  </appender>
-
-  <!-- Original BlobStore file logger -->
+  <!-- Standard logging configuration -->
   <logger name="org.sonatype.nexus.blobstore.file" level="DEBUG"/>
-
-  <!-- Virtual Thread diagnostic loggers -->
-  <logger name="jdk.internal.vm.VirtualThread" level="DEBUG">
-    <appender-ref ref="VIRTUAL_THREAD"/>
-  </logger>
   
-  <!-- Thread pinning event logger -->
-  <logger name="jdk.internal.vm.ThreadPinning" level="DEBUG">
-    <appender-ref ref="THREAD_PINNING"/>
-  </logger>
-
-  <!-- Virtual Thread performance metrics logger -->
-  <logger name="org.sonatype.nexus.thread.virtual.metrics" level="DEBUG"/>
+  <!-- Virtual Thread specific logging -->
+  <logger name="org.sonatype.nexus.thread" level="DEBUG"/>
+  
+  <!-- Conditional logging configuration for Virtual Threads -->
+  <if condition='property("virtualThreadDebug").equals("true")'>
+    <then>
+      <logger name="java.lang.VirtualThread" level="TRACE"/>
+      <logger name="org.sonatype.nexus.thread.io" level="TRACE"/>
+      <logger name="org.sonatype.nexus.common.thread" level="TRACE"/>
+      <logger name="org.sonatype.nexus.blobstore.virtualthread" level="DEBUG"/>
+    </then>
+  </if>
 
   <root level="${test.log.level:-INFO}">
     <appender-ref ref="CONSOLE"/>

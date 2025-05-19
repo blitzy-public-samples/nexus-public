@@ -1,0 +1,687 @@
+{
+  "metadata": {
+    "description": "Test data for Virtual Thread database operations in Nexus Repository",
+    "version": "1.0.0",
+    "java_version": "21",
+    "created_at": "2025-05-19T10:00:00Z",
+    "purpose": "Validate database operations with Virtual Threads"
+  },
+  "datastore_configurations": [
+    {
+      "name": "config",
+      "type": "h2",
+      "source": "default",
+      "attributes": {
+        "jdbcUrl": "jdbc:h2:file:${karaf.data}/db/${name};TRACE_LEVEL_FILE=0;DB_CLOSE_DELAY=-1",
+        "username": "sa",
+        "password": "",
+        "maximumPoolSize": 50,
+        "minimumIdle": 10,
+        "connectionTimeout": 30000,
+        "idleTimeout": 60000,
+        "validationTimeout": 5000,
+        "maxLifetime": 1800000,
+        "leakDetectionThreshold": 60000,
+        "threadFactory": "VIRTUAL"
+      }
+    },
+    {
+      "name": "content",
+      "type": "h2",
+      "source": "default",
+      "attributes": {
+        "jdbcUrl": "jdbc:h2:file:${karaf.data}/db/${name};TRACE_LEVEL_FILE=0;DB_CLOSE_DELAY=-1",
+        "username": "sa",
+        "password": "",
+        "maximumPoolSize": 50,
+        "minimumIdle": 10,
+        "connectionTimeout": 30000,
+        "idleTimeout": 60000,
+        "validationTimeout": 5000,
+        "maxLifetime": 1800000,
+        "leakDetectionThreshold": 60000,
+        "threadFactory": "VIRTUAL"
+      }
+    },
+    {
+      "name": "config-postgres",
+      "type": "postgresql",
+      "source": "test",
+      "attributes": {
+        "jdbcUrl": "jdbc:postgresql://localhost:5432/nexus",
+        "username": "nexus",
+        "password": "nexus123",
+        "maximumPoolSize": 50,
+        "minimumIdle": 10,
+        "connectionTimeout": 30000,
+        "idleTimeout": 60000,
+        "validationTimeout": 5000,
+        "maxLifetime": 1800000,
+        "leakDetectionThreshold": 60000,
+        "threadFactory": "VIRTUAL"
+      }
+    },
+    {
+      "name": "content-postgres",
+      "type": "postgresql",
+      "source": "test",
+      "attributes": {
+        "jdbcUrl": "jdbc:postgresql://localhost:5432/nexus_content",
+        "username": "nexus",
+        "password": "nexus123",
+        "maximumPoolSize": 50,
+        "minimumIdle": 10,
+        "connectionTimeout": 30000,
+        "idleTimeout": 60000,
+        "validationTimeout": 5000,
+        "maxLifetime": 1800000,
+        "leakDetectionThreshold": 60000,
+        "threadFactory": "VIRTUAL"
+      }
+    }
+  ],
+  "blobstore_configurations": [
+    {
+      "name": "default",
+      "type": "File",
+      "attributes": {
+        "file": {
+          "path": "${karaf.data}/blobs/default"
+        },
+        "blobStoreQuotaConfig": {
+          "quotaLimitBytes": 5368709120,
+          "quotaType": "spaceUsedQuota"
+        }
+      }
+    },
+    {
+      "name": "test-s3",
+      "type": "S3",
+      "attributes": {
+        "s3": {
+          "bucket": "nexus-test-bucket",
+          "region": "us-west-2",
+          "prefix": "test-prefix",
+          "endpoint": "https://s3.us-west-2.amazonaws.com",
+          "expiration": 3,
+          "signerType": "DEFAULT",
+          "forcePathStyle": false
+        },
+        "blobStoreQuotaConfig": {
+          "quotaLimitBytes": 10737418240,
+          "quotaType": "spaceUsedQuota"
+        },
+        "encryption": {
+          "encryptionType": "s3ManagedEncryption",
+          "encryptionKey": "alias/nexus-test-key"
+        }
+      }
+    }
+  ],
+  "repository_configurations": [
+    {
+      "name": "maven-central",
+      "recipe": "maven2-proxy",
+      "online": true,
+      "attributes": {
+        "maven": {
+          "versionPolicy": "RELEASE",
+          "layoutPolicy": "STRICT",
+          "contentDisposition": "INLINE"
+        },
+        "proxy": {
+          "remoteUrl": "https://repo1.maven.org/maven2/",
+          "contentMaxAge": 1440,
+          "metadataMaxAge": 1440
+        },
+        "httpclient": {
+          "blocked": false,
+          "autoBlock": true,
+          "connection": {
+            "useTrustStore": false
+          }
+        },
+        "storage": {
+          "blobStoreName": "default",
+          "strictContentTypeValidation": true
+        },
+        "negativeCache": {
+          "enabled": true,
+          "timeToLive": 1440
+        },
+        "cleanup": {
+          "policyNames": ["cleanup-weekly"]
+        }
+      }
+    },
+    {
+      "name": "maven-releases",
+      "recipe": "maven2-hosted",
+      "online": true,
+      "attributes": {
+        "maven": {
+          "versionPolicy": "RELEASE",
+          "layoutPolicy": "STRICT",
+          "contentDisposition": "INLINE"
+        },
+        "storage": {
+          "blobStoreName": "default",
+          "strictContentTypeValidation": true,
+          "writePolicy": "ALLOW_ONCE"
+        },
+        "cleanup": {
+          "policyNames": ["cleanup-weekly"]
+        }
+      }
+    },
+    {
+      "name": "maven-snapshots",
+      "recipe": "maven2-hosted",
+      "online": true,
+      "attributes": {
+        "maven": {
+          "versionPolicy": "SNAPSHOT",
+          "layoutPolicy": "STRICT",
+          "contentDisposition": "INLINE"
+        },
+        "storage": {
+          "blobStoreName": "default",
+          "strictContentTypeValidation": true,
+          "writePolicy": "ALLOW"
+        },
+        "cleanup": {
+          "policyNames": ["cleanup-daily"]
+        }
+      }
+    },
+    {
+      "name": "maven-public",
+      "recipe": "maven2-group",
+      "online": true,
+      "attributes": {
+        "maven": {
+          "versionPolicy": "MIXED",
+          "layoutPolicy": "STRICT",
+          "contentDisposition": "INLINE"
+        },
+        "group": {
+          "memberNames": ["maven-releases", "maven-snapshots", "maven-central"]
+        },
+        "storage": {
+          "blobStoreName": "default",
+          "strictContentTypeValidation": true
+        }
+      }
+    },
+    {
+      "name": "docker-hub",
+      "recipe": "docker-proxy",
+      "online": true,
+      "attributes": {
+        "docker": {
+          "v1Enabled": false,
+          "forceBasicAuth": true,
+          "httpPort": 8082,
+          "httpsPort": 8083
+        },
+        "proxy": {
+          "remoteUrl": "https://registry-1.docker.io",
+          "contentMaxAge": 1440,
+          "metadataMaxAge": 1440
+        },
+        "httpclient": {
+          "blocked": false,
+          "autoBlock": true,
+          "connection": {
+            "useTrustStore": false
+          }
+        },
+        "storage": {
+          "blobStoreName": "default",
+          "strictContentTypeValidation": true
+        },
+        "negativeCache": {
+          "enabled": true,
+          "timeToLive": 1440
+        },
+        "cleanup": {
+          "policyNames": ["cleanup-weekly"]
+        }
+      }
+    }
+  ],
+  "content_samples": {
+    "maven": [
+      {
+        "component": {
+          "group": "org.sonatype.nexus",
+          "name": "nexus-common",
+          "version": "3.45.0",
+          "format": "maven2"
+        },
+        "assets": [
+          {
+            "path": "org/sonatype/nexus/nexus-common/3.45.0/nexus-common-3.45.0.jar",
+            "contentType": "application/java-archive",
+            "size": 1024000,
+            "md5": "abcdef1234567890abcdef1234567890",
+            "sha1": "abcdef1234567890abcdef1234567890abcdef12",
+            "sha256": "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+            "sha512": "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+          },
+          {
+            "path": "org/sonatype/nexus/nexus-common/3.45.0/nexus-common-3.45.0.pom",
+            "contentType": "application/xml",
+            "size": 5120,
+            "md5": "abcdef1234567890abcdef1234567890",
+            "sha1": "abcdef1234567890abcdef1234567890abcdef12",
+            "sha256": "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+            "sha512": "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+          }
+        ]
+      },
+      {
+        "component": {
+          "group": "org.sonatype.nexus",
+          "name": "nexus-datastore",
+          "version": "3.45.0-SNAPSHOT",
+          "format": "maven2"
+        },
+        "assets": [
+          {
+            "path": "org/sonatype/nexus/nexus-datastore/3.45.0-SNAPSHOT/nexus-datastore-3.45.0-20250519.123456-1.jar",
+            "contentType": "application/java-archive",
+            "size": 512000,
+            "md5": "abcdef1234567890abcdef1234567890",
+            "sha1": "abcdef1234567890abcdef1234567890abcdef12",
+            "sha256": "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+            "sha512": "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+          },
+          {
+            "path": "org/sonatype/nexus/nexus-datastore/3.45.0-SNAPSHOT/nexus-datastore-3.45.0-20250519.123456-1.pom",
+            "contentType": "application/xml",
+            "size": 4096,
+            "md5": "abcdef1234567890abcdef1234567890",
+            "sha1": "abcdef1234567890abcdef1234567890abcdef12",
+            "sha256": "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+            "sha512": "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+          }
+        ]
+      }
+    ],
+    "docker": [
+      {
+        "component": {
+          "name": "sonatype/nexus",
+          "version": "3.45.0",
+          "format": "docker"
+        },
+        "assets": [
+          {
+            "path": "v2/sonatype/nexus/manifests/3.45.0",
+            "contentType": "application/vnd.docker.distribution.manifest.v2+json",
+            "size": 2048,
+            "md5": "abcdef1234567890abcdef1234567890",
+            "sha1": "abcdef1234567890abcdef1234567890abcdef12",
+            "sha256": "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+            "sha512": "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+          },
+          {
+            "path": "v2/sonatype/nexus/blobs/sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+            "contentType": "application/vnd.docker.container.image.v1+json",
+            "size": 10240,
+            "md5": "abcdef1234567890abcdef1234567890",
+            "sha1": "abcdef1234567890abcdef1234567890abcdef12",
+            "sha256": "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+            "sha512": "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+          }
+        ]
+      }
+    ]
+  },
+  "security_samples": {
+    "users": [
+      {
+        "userId": "admin",
+        "firstName": "Administrator",
+        "lastName": "User",
+        "emailAddress": "admin@example.com",
+        "source": "default",
+        "status": "active",
+        "roles": ["nx-admin"]
+      },
+      {
+        "userId": "anonymous",
+        "firstName": "Anonymous",
+        "lastName": "User",
+        "emailAddress": "anonymous@example.com",
+        "source": "default",
+        "status": "active",
+        "roles": ["nx-anonymous"]
+      },
+      {
+        "userId": "test-user",
+        "firstName": "Test",
+        "lastName": "User",
+        "emailAddress": "test@example.com",
+        "source": "default",
+        "status": "active",
+        "roles": ["nx-repository-view-maven2-maven-central-browse", "nx-repository-view-maven2-maven-releases-add"]
+      }
+    ],
+    "roles": [
+      {
+        "id": "nx-admin",
+        "name": "Administrator",
+        "description": "Administrator role with all permissions",
+        "privileges": ["*"],
+        "roles": []
+      },
+      {
+        "id": "nx-anonymous",
+        "name": "Anonymous",
+        "description": "Anonymous role with limited permissions",
+        "privileges": ["nx-healthcheck-read", "nx-repository-view-*-*-browse"],
+        "roles": []
+      },
+      {
+        "id": "nx-repository-view-maven2-maven-central-browse",
+        "name": "Maven Central - Browse",
+        "description": "Browse permission for Maven Central repository",
+        "privileges": ["nx-repository-view-maven2-maven-central-browse"],
+        "roles": []
+      },
+      {
+        "id": "nx-repository-view-maven2-maven-releases-add",
+        "name": "Maven Releases - Add",
+        "description": "Add permission for Maven Releases repository",
+        "privileges": ["nx-repository-view-maven2-maven-releases-add"],
+        "roles": []
+      }
+    ],
+    "privileges": [
+      {
+        "id": "nx-healthcheck-read",
+        "name": "Health Check - Read",
+        "description": "Read access to health check information",
+        "type": "application",
+        "properties": {
+          "domain": "healthcheck",
+          "actions": "read"
+        }
+      },
+      {
+        "id": "nx-repository-view-maven2-maven-central-browse",
+        "name": "Repository View Maven Central - Browse",
+        "description": "Browse permission for Maven Central repository",
+        "type": "repository-view",
+        "properties": {
+          "format": "maven2",
+          "repository": "maven-central",
+          "actions": "browse"
+        }
+      },
+      {
+        "id": "nx-repository-view-maven2-maven-releases-add",
+        "name": "Repository View Maven Releases - Add",
+        "description": "Add permission for Maven Releases repository",
+        "type": "repository-view",
+        "properties": {
+          "format": "maven2",
+          "repository": "maven-releases",
+          "actions": "add"
+        }
+      }
+    ]
+  },
+  "virtual_thread_test_scenarios": [
+    {
+      "name": "concurrent_read_operations",
+      "description": "Test concurrent read operations with Virtual Threads",
+      "thread_count": 1000,
+      "operations": [
+        {
+          "type": "read",
+          "entity": "component",
+          "repository": "maven-central",
+          "format": "maven2",
+          "query": {
+            "group": "org.sonatype.nexus",
+            "name": "nexus-common",
+            "version": "3.45.0"
+          }
+        }
+      ]
+    },
+    {
+      "name": "concurrent_write_operations",
+      "description": "Test concurrent write operations with Virtual Threads",
+      "thread_count": 100,
+      "operations": [
+        {
+          "type": "write",
+          "entity": "component",
+          "repository": "maven-snapshots",
+          "format": "maven2",
+          "data": {
+            "group": "org.sonatype.nexus.test",
+            "name": "test-component-${thread_id}",
+            "version": "1.0.0-SNAPSHOT"
+          }
+        }
+      ]
+    },
+    {
+      "name": "mixed_read_write_operations",
+      "description": "Test mixed read and write operations with Virtual Threads",
+      "thread_count": 500,
+      "operations": [
+        {
+          "type": "read",
+          "entity": "component",
+          "repository": "maven-central",
+          "format": "maven2",
+          "query": {
+            "group": "org.sonatype.nexus",
+            "name": "nexus-common",
+            "version": "3.45.0"
+          }
+        },
+        {
+          "type": "write",
+          "entity": "component",
+          "repository": "maven-snapshots",
+          "format": "maven2",
+          "data": {
+            "group": "org.sonatype.nexus.test",
+            "name": "test-component-${thread_id}",
+            "version": "1.0.0-SNAPSHOT"
+          }
+        }
+      ]
+    },
+    {
+      "name": "large_blob_operations",
+      "description": "Test operations with large binary objects using Virtual Threads",
+      "thread_count": 50,
+      "operations": [
+        {
+          "type": "write",
+          "entity": "asset",
+          "repository": "maven-snapshots",
+          "format": "maven2",
+          "data": {
+            "path": "org/sonatype/nexus/test/large-blob-${thread_id}/1.0.0-SNAPSHOT/large-blob-${thread_id}-1.0.0-SNAPSHOT.jar",
+            "size": 10485760,
+            "contentType": "application/java-archive"
+          }
+        }
+      ]
+    },
+    {
+      "name": "transaction_boundary_operations",
+      "description": "Test operations that cross transaction boundaries with Virtual Threads",
+      "thread_count": 200,
+      "operations": [
+        {
+          "type": "transaction",
+          "steps": [
+            {
+              "type": "write",
+              "entity": "component",
+              "repository": "maven-snapshots",
+              "format": "maven2",
+              "data": {
+                "group": "org.sonatype.nexus.test",
+                "name": "test-component-${thread_id}",
+                "version": "1.0.0-SNAPSHOT"
+              }
+            },
+            {
+              "type": "write",
+              "entity": "asset",
+              "repository": "maven-snapshots",
+              "format": "maven2",
+              "data": {
+                "path": "org/sonatype/nexus/test/test-component-${thread_id}/1.0.0-SNAPSHOT/test-component-${thread_id}-1.0.0-SNAPSHOT.jar",
+                "size": 1024,
+                "contentType": "application/java-archive"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "thread_pinning_test_scenarios": [
+    {
+      "name": "jdbc_batch_operations",
+      "description": "Test JDBC batch operations for thread pinning with Virtual Threads",
+      "thread_count": 100,
+      "batch_size": 1000,
+      "operations": [
+        {
+          "type": "batch_write",
+          "entity": "component",
+          "repository": "maven-snapshots",
+          "format": "maven2",
+          "data_template": {
+            "group": "org.sonatype.nexus.test",
+            "name": "test-component-${batch_id}-${item_id}",
+            "version": "1.0.0-SNAPSHOT"
+          }
+        }
+      ]
+    },
+    {
+      "name": "blob_streaming_operations",
+      "description": "Test blob streaming operations for thread pinning with Virtual Threads",
+      "thread_count": 50,
+      "operations": [
+        {
+          "type": "stream",
+          "entity": "asset",
+          "repository": "maven-snapshots",
+          "format": "maven2",
+          "data": {
+            "path": "org/sonatype/nexus/test/large-blob-${thread_id}/1.0.0-SNAPSHOT/large-blob-${thread_id}-1.0.0-SNAPSHOT.jar",
+            "size": 104857600,
+            "contentType": "application/java-archive",
+            "chunk_size": 8192
+          }
+        }
+      ]
+    },
+    {
+      "name": "connection_pool_saturation",
+      "description": "Test connection pool saturation with Virtual Threads",
+      "thread_count": 1000,
+      "operations_per_thread": 10,
+      "operations": [
+        {
+          "type": "read",
+          "entity": "component",
+          "repository": "maven-central",
+          "format": "maven2",
+          "query": {
+            "group": "org.sonatype.nexus",
+            "name": "nexus-common",
+            "version": "3.45.0"
+          }
+        }
+      ]
+    }
+  ],
+  "performance_comparison_scenarios": [
+    {
+      "name": "platform_vs_virtual_read",
+      "description": "Compare platform threads vs virtual threads for read operations",
+      "thread_counts": [10, 100, 1000, 10000],
+      "operations": [
+        {
+          "type": "read",
+          "entity": "component",
+          "repository": "maven-central",
+          "format": "maven2",
+          "query": {
+            "group": "org.sonatype.nexus",
+            "name": "nexus-common",
+            "version": "3.45.0"
+          }
+        }
+      ]
+    },
+    {
+      "name": "platform_vs_virtual_write",
+      "description": "Compare platform threads vs virtual threads for write operations",
+      "thread_counts": [10, 100, 1000],
+      "operations": [
+        {
+          "type": "write",
+          "entity": "component",
+          "repository": "maven-snapshots",
+          "format": "maven2",
+          "data": {
+            "group": "org.sonatype.nexus.test",
+            "name": "test-component-${thread_id}",
+            "version": "1.0.0-SNAPSHOT"
+          }
+        }
+      ]
+    },
+    {
+      "name": "platform_vs_virtual_transaction",
+      "description": "Compare platform threads vs virtual threads for transactional operations",
+      "thread_counts": [10, 100, 500],
+      "operations": [
+        {
+          "type": "transaction",
+          "steps": [
+            {
+              "type": "write",
+              "entity": "component",
+              "repository": "maven-snapshots",
+              "format": "maven2",
+              "data": {
+                "group": "org.sonatype.nexus.test",
+                "name": "test-component-${thread_id}",
+                "version": "1.0.0-SNAPSHOT"
+              }
+            },
+            {
+              "type": "write",
+              "entity": "asset",
+              "repository": "maven-snapshots",
+              "format": "maven2",
+              "data": {
+                "path": "org/sonatype/nexus/test/test-component-${thread_id}/1.0.0-SNAPSHOT/test-component-${thread_id}-1.0.0-SNAPSHOT.jar",
+                "size": 1024,
+                "contentType": "application/java-archive"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

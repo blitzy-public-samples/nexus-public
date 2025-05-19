@@ -21,8 +21,6 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
-import java.util.SequencedSet;
-import java.util.SequencedMap;
 import java.util.function.Function;
 
 import javax.annotation.Nullable;
@@ -31,7 +29,6 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Throwables;
 import com.google.common.collect.Maps;
-import java.util.LinkedHashMap;
 import com.google.common.reflect.TypeToken;
 import org.joda.time.DateTime;
 import org.slf4j.Logger;
@@ -39,12 +36,10 @@ import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
+import static java.lang.StringTemplate.STR;
 
 /**
  * Container for [String -> Object] attributes.
- * 
- * When backed by a SequencedMap implementation, this class leverages the Java 21
- * Sequenced Collections API to provide ordered operations.
  *
  * @since 3.0
  */
@@ -60,31 +55,15 @@ public class AttributesMap
     this.backing = checkNotNull(backing);
   }
 
-  /**
-   * Creates a new AttributesMap with a LinkedHashMap backing to leverage
-   * the Sequenced Collections API for ordered operations.
-   */
   public AttributesMap() {
-    this(new LinkedHashMap<String, Object>());
+    this(Maps.<String, Object>newHashMap());
   }
 
   /**
    * Expose the underlying backing for attributes.
-   * 
-   * @return The backing map, which may be a SequencedMap implementation
    */
   public Map<String, Object> backing() {
     return backing;
-  }
-  
-  /**
-   * Returns the backing map as a SequencedMap if it implements that interface.
-   * 
-   * @return The backing map as a SequencedMap, or null if it doesn't implement SequencedMap
-   */
-  @Nullable
-  public SequencedMap<String, Object> sequencedBacking() {
-    return backing instanceof SequencedMap ? (SequencedMap<String, Object>) backing : null;
   }
 
   /**
@@ -95,40 +74,37 @@ public class AttributesMap
   private <T> T coerce(final Object value, final TypeToken<T> type) {
     if (value != null) {
       // TODO: PropertyEditor coercion?
-      log.trace("Coerce: {} -> {}", value, type);
+      log.trace(STR."Coerce: \{value} -> \{type}");
       try {
-        // Using Pattern Matching for switch to handle different value types
-        Class<?> rawType = type.getRawType();
-        return switch (value) {
-          // Special handling for when Date has become a long (ms since epoch)
-          case Number n when Date.class.equals(rawType) -> 
-              (T) new Date(n.longValue());
-          case Number n when DateTime.class.equals(rawType) -> 
-              (T) new DateTime(n.longValue());
-          case Number n when OffsetDateTime.class.equals(rawType) -> 
-              (T) OffsetDateTime.ofInstant(Instant.ofEpochMilli(n.longValue()), ZoneOffset.UTC);
-          
-          // Special handling for booleans from string
-          case String s when Boolean.class.equals(rawType) -> {
-            T result = (T) Boolean.valueOf(s);
-            Throwable stackThrow = null;
-            if (log.isDebugEnabled()) {
-              stackThrow = new Throwable("Unexpected Attribute Coercion. Stack trace output to locate area of concern:");
-            }
-            log.warn("Coerced Boolean Attribute from String. value={}, result={}", value, result, stackThrow);
-            yield result;
+        // special handling for when Date has become a long (ms since epoch)
+        if (value instanceof Number number) {
+          if (Date.class.equals(type.getRawType())) {
+            return (T) new Date(number.longValue());
           }
-          
-          // Default case - try to cast the value
-          default -> (T) rawType.cast(value);
-        };
+          else if (DateTime.class.equals(type.getRawType())) {
+            return (T) new DateTime(number.longValue());
+          }
+          else if (OffsetDateTime.class.equals(type.getRawType())) {
+            return (T) OffsetDateTime.ofInstant(Instant.ofEpochMilli(number.longValue()), ZoneOffset.UTC);
+          }
+        }
+
+        // special handling for booleans from string
+        if (Boolean.class.equals(type.getRawType()) && value instanceof String s) {
+          T result = (T) Boolean.valueOf(s);
+          Throwable stackThrow = null;
+          if (log.isDebugEnabled()) {
+            stackThrow = new Throwable(STR."Unexpected Attribute Coercion. Stack trace output to locate area of concern:");
+          }
+          log.warn(STR."Coerced Boolean Attribute from String. value=\{value}, result=\{result}", stackThrow);
+          return result;
+        }
+
+        return (T) type.getRawType().cast(value);
       }
       catch (ClassCastException ex) {
         // Failure is unexpected but should at least be reported.
-        log.warn("Invalid attempt to coerce Attribute into a {}. Original type {}. value={}",
-            type.getType().getTypeName(),
-            value.getClass().getName(),
-            value,
+        log.warn(STR."Invalid attempt to coerce Attribute into a \{type.getType().getTypeName()}. Original type \{value.getClass().getName()}, value=\{value}",
             log.isDebugEnabled() ? ex : null);
         return null;
       }
@@ -177,7 +153,7 @@ public class AttributesMap
       try {
         // create new attribute value with accessible=true ctor to allow construction of private/package-private
         Constructor<T> ctor = type.getDeclaredConstructor();
-        log.trace("Creating '{}' with constructor: {}", type, ctor);
+        log.trace(STR."Creating '\{type}' with constructor: \{ctor}");
         ctor.setAccessible(true);
         value = ctor.newInstance();
       }
@@ -246,7 +222,7 @@ public class AttributesMap
    * Allow customization of missing key message.
    */
   protected String missingKeyMessage(final String key) {
-    return "Missing: " + key;
+    return STR."Missing: \{key}";
   }
 
   /**
@@ -295,7 +271,7 @@ public class AttributesMap
     }
     Object replaced = backing.put(key, value);
     if (log.isTraceEnabled()) {
-      log.trace("Set: {}={} ({})", key, value, value.getClass().getName());
+      log.trace(STR."Set: \{key}=\{value} (\{value.getClass().getName()})");
     }
     return replaced;
   }
@@ -324,7 +300,7 @@ public class AttributesMap
     checkNotNull(key);
     Object removed = backing.remove(key);
     if (removed != null) {
-      log.trace("Removed: {}", key);
+      log.trace(STR."Removed: \{key}");
     }
     return removed;
   }
@@ -354,37 +330,20 @@ public class AttributesMap
 
   /**
    * Return all attribute keys.
-   * 
-   * @return A SequencedSet if the backing map is a SequencedMap, otherwise a regular Set
    */
   public Set<String> keys() {
-    if (backing instanceof SequencedMap<String, Object> sequencedMap) {
-      return sequencedMap.sequencedKeySet();
-    }
     return backing.keySet();
   }
 
   /**
    * Return all attribute entries.
-   * 
-   * @return A SequencedSet if the backing map is a SequencedMap, otherwise a regular Set
    */
   public Set<Entry<String, Object>> entries() {
-    if (backing instanceof SequencedMap<String, Object> sequencedMap) {
-      return sequencedMap.sequencedEntrySet();
-    }
     return backing.entrySet();
   }
 
-  /**
-   * Returns an iterator over the entries in this map.
-   * If the backing map is a SequencedMap, the iterator will respect the encounter order.
-   */
   @Override
   public Iterator<Entry<String, Object>> iterator() {
-    if (backing instanceof SequencedMap<String, Object> sequencedMap) {
-      return sequencedMap.sequencedEntrySet().iterator();
-    }
     return backing.entrySet().iterator();
   }
 
@@ -408,7 +367,7 @@ public class AttributesMap
    */
   public void clear() {
     backing.clear();
-    log.trace("Cleared");
+    log.trace(STR."Cleared");
   }
 
   @Override

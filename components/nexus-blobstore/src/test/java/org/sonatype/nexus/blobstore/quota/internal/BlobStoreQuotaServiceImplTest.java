@@ -14,6 +14,11 @@ package org.sonatype.nexus.blobstore.quota.internal;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.api.BlobStore;
@@ -23,6 +28,7 @@ import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaResult;
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaSupport;
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import org.sonatype.nexus.rest.ValidationErrorsException;
+import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,7 +47,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-public class BlobStoreQuotaServiceImplTest
+class BlobStoreQuotaServiceImplTest
     extends TestSupport
 {
   BlobStoreQuotaServiceImpl service;
@@ -62,7 +68,7 @@ public class BlobStoreQuotaServiceImplTest
   NestedAttributesMap attributes;
 
   @BeforeEach
-  public void setup() {
+  void setup() {
     when(blobStore.getBlobStoreConfiguration()).thenReturn(config);
     when(config.attributes(eq(BlobStoreQuotaSupport.ROOT_KEY))).thenReturn(attributes);
 
@@ -77,58 +83,101 @@ public class BlobStoreQuotaServiceImplTest
   }
 
   @Test
-  public void noQuotaIsAccepted() {
+  void noQuotaIsAccepted() {
     when(attributes.get(BlobStoreQuotaSupport.TYPE_KEY, String.class)).thenReturn(null);
     assertThat(service.checkQuota(blobStore), nullValue());
   }
 
   @Test
-  public void passingQuota() {
+  void passingQuota() {
     when(attributes.get(BlobStoreQuotaSupport.TYPE_KEY, String.class)).thenReturn("passing");
     BlobStoreQuotaResult result = service.checkQuota(blobStore);
     assertThat(result, notNullValue());
-    assertFalse(result.isViolation());
+    
+    // Using Record Pattern to extract fields from BlobStoreQuotaResult
+    if (result instanceof BlobStoreQuotaResult(boolean isViolation, String message, String reason)) {
+      assertFalse(isViolation, STR."Quota should not be violated but got: \{message} (\{reason})");
+    }
   }
 
   @Test
-  public void failingQuota() {
+  void failingQuota() {
     when(attributes.get(BlobStoreQuotaSupport.TYPE_KEY, String.class)).thenReturn("violated");
     BlobStoreQuotaResult result = service.checkQuota(blobStore);
     assertThat(result, notNullValue());
-    assertTrue(result.isViolation());
+    
+    // Using Record Pattern to extract fields from BlobStoreQuotaResult
+    if (result instanceof BlobStoreQuotaResult(boolean isViolation, String message, String reason)) {
+      assertTrue(isViolation, STR."Quota should be violated but got: \{message} (\{reason})");
+    }
   }
 
   @Test
-  public void missingQuota() {
+  void missingQuota() {
     when(attributes.get(BlobStoreQuotaSupport.TYPE_KEY, String.class)).thenReturn("non-existent");
     assertThat(service.checkQuota(blobStore), nullValue());
   }
 
   @Test
-  public void nullQuotaTypeIsValid() {
+  void nullQuotaTypeIsValid() {
     when(attributes.get(BlobStoreQuotaSupport.TYPE_KEY, String.class)).thenReturn(null);
     service.validateSoftQuotaConfig(config);
   }
 
   @Test
-  public void emptyStringQuotaTypeFails() {
+  void emptyStringQuotaTypeFails() {
     when(attributes.get(BlobStoreQuotaSupport.TYPE_KEY, String.class)).thenReturn("");
-    assertThrows(ValidationErrorsException.class, () -> {
-      service.validateSoftQuotaConfig(config);
-    });
+    assertThrows(ValidationErrorsException.class, () -> service.validateSoftQuotaConfig(config),
+        STR."Expected ValidationErrorsException for empty quota type");
   }
 
   @Test
-  public void unknownQuotaTypeFails() {
+  void unknownQuotaTypeFails() {
     when(attributes.get(BlobStoreQuotaSupport.TYPE_KEY, String.class)).thenReturn("TOTALLY_FAKE");
-    assertThrows(ValidationErrorsException.class, () -> {
-      service.validateSoftQuotaConfig(config);
-    });
+    assertThrows(ValidationErrorsException.class, () -> service.validateSoftQuotaConfig(config),
+        STR."Expected ValidationErrorsException for unknown quota type");
   }
 
   @Test
-  public void knownQuotaTypePasses() {
+  void knownQuotaTypePasses() {
     when(attributes.get(BlobStoreQuotaSupport.TYPE_KEY, String.class)).thenReturn("passing");
     service.validateSoftQuotaConfig(config);
+  }
+  
+  @Test
+  @VirtualThreadTestGroup
+  void concurrentQuotaChecking() throws Exception {
+    when(attributes.get(BlobStoreQuotaSupport.TYPE_KEY, String.class)).thenReturn("passing");
+    
+    int threadCount = 1000;
+    CountDownLatch latch = new CountDownLatch(threadCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    // Create a virtual thread executor
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit multiple concurrent tasks using virtual threads
+      for (int i = 0; i < threadCount; i++) {
+        executor.submit(() -> {
+          try {
+            BlobStoreQuotaResult result = service.checkQuota(blobStore);
+            if (result == null || result.isViolation()) {
+              errorCount.incrementAndGet();
+            }
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      boolean completed = latch.await(30, TimeUnit.SECONDS);
+      
+      // Verify results
+      assertTrue(completed, STR."Timed out waiting for \{threadCount} virtual threads to complete");
+      assertTrue(errorCount.get() == 0, 
+          STR."Expected 0 errors but got \{errorCount.get()} errors during concurrent quota checking");
+    }
   }
 }

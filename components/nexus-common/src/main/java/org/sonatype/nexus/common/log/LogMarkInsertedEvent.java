@@ -33,6 +33,6 @@ public class LogMarkInsertedEvent
 
   @Override
   public String toString() {
-    return getClass().getSimpleName() + "{message='" + message + "'}";
+    return STR."\{getClass().getSimpleName()}{message='\{message}'}";
   }
 }

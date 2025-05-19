@@ -13,7 +13,6 @@
 package org.sonatype.nexus.common.cooperation2.internal;
 
 import java.time.Duration;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.nexus.common.cooperation2.Config;
 import org.sonatype.nexus.common.cooperation2.Cooperation2Factory.Builder;
@@ -21,31 +20,59 @@ import org.sonatype.nexus.common.cooperation2.Cooperation2Factory.Builder;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
- * Mutable configuration support for Cooperation2 points.
+ * Mutable configuration support for Cooperation2 with Java 21 Virtual Thread support.
  * 
+ * <p>This class provides configuration options for controlling Virtual Thread usage in cooperative
+ * operations. Virtual Threads are lightweight threads managed by the JVM rather than the OS,
+ * making them ideal for I/O-bound operations where threads spend most of their time waiting.</p>
+ * 
+ * <p>Performance implications:</p>
+ * <ul>
+ *   <li>Virtual Threads significantly improve scalability for I/O-bound operations</li>
+ *   <li>They consume fewer resources than platform threads, allowing for higher concurrency</li>
+ *   <li>For CPU-intensive tasks, platform threads may still be more efficient</li>
+ *   <li>The useVirtualThreads setting allows fine-tuning based on workload characteristics</li>
+ * </ul>
+ *
  * @since 3.41
  */
 public abstract class MutableConfigSupport
     extends Config
     implements Builder
 {
-  /**
-   * Whether the cooperation is enabled.
-   */
   protected boolean enabled = true;
   
   /**
-   * Whether to use Virtual Threads for I/O operations.
-   * Virtual Threads are lightweight threads introduced in Java 21 that are ideal for I/O-bound operations.
-   * They provide significantly improved throughput for operations that spend most of their time waiting for I/O.
+   * Controls whether Virtual Threads should be used for operations when available (Java 21+).
+   * Defaults to true for optimal performance with I/O-bound operations.
+   * 
+   * @since 3.60
    */
   protected boolean useVirtualThreads = true;
   
   /**
-   * Atomic counter for concurrency control, used when limiting concurrent operations.
-   * This replaces traditional thread pool counters with a more efficient atomic implementation.
+   * Specific timeout in seconds for operations running on Virtual Threads.
+   * A value of 0 means use the same timeout as platform threads.
+   * 
+   * @since 3.60
    */
-  protected AtomicInteger concurrencyLimit = new AtomicInteger(0);
+  protected int virtualThreadTimeoutSeconds = 0;
+  
+  /**
+   * Maximum number of Virtual Threads that can be created for this cooperation point.
+   * A value of 0 or negative indicates no limit.
+   * 
+   * @since 3.60
+   */
+  protected int maxVirtualThreads = 0;
+  
+  /**
+   * When true, automatically routes I/O-bound operations to Virtual Threads
+   * while keeping CPU-intensive operations on platform threads.
+   * 
+   * @since 3.60
+   */
+  protected boolean prioritizeVirtualThreadsForIO = true;
 
   @Override
   public Builder majorTimeout(final Duration majorTimeout) {
@@ -62,8 +89,6 @@ public abstract class MutableConfigSupport
   @Override
   public Builder threadsPerKey(final int threadsPerKey) {
     this.threadsPerKey = threadsPerKey;
-    // Initialize the concurrency limit with the threads per key value
-    this.concurrencyLimit.set(threadsPerKey);
     return this;
   }
 
@@ -73,22 +98,34 @@ public abstract class MutableConfigSupport
     return this;
   }
   
-  /**
-   * Configures whether to use Virtual Threads for I/O operations.
-   * 
-   * @param useVirtualThreads true to use Virtual Threads (recommended for Java 21+), false to use platform threads
-   * @return this builder for fluent API
-   * @since 3.60
-   */
+  @Override
   public Builder useVirtualThreads(final boolean useVirtualThreads) {
     this.useVirtualThreads = useVirtualThreads;
     return this;
   }
   
+  @Override
+  public Builder virtualThreadTimeout(final Duration virtualThreadTimeout) {
+    this.virtualThreadTimeoutSeconds = (int) checkNotNull(virtualThreadTimeout).getSeconds();
+    return this;
+  }
+  
+  @Override
+  public Builder maxVirtualThreads(final int maxVirtualThreads) {
+    this.maxVirtualThreads = maxVirtualThreads;
+    return this;
+  }
+  
+  @Override
+  public Builder prioritizeVirtualThreadsForIO(final boolean prioritizeVirtualThreadsForIO) {
+    this.prioritizeVirtualThreadsForIO = prioritizeVirtualThreadsForIO;
+    return this;
+  }
+  
   /**
-   * Returns whether Virtual Threads are enabled for this configuration.
+   * Returns whether Virtual Threads should be used when available (Java 21+).
    * 
-   * @return true if Virtual Threads are enabled, false otherwise
+   * @return true if Virtual Threads should be used, false otherwise
    * @since 3.60
    */
   public boolean useVirtualThreads() {
@@ -96,45 +133,53 @@ public abstract class MutableConfigSupport
   }
   
   /**
-   * Gets the atomic concurrency limit counter.
+   * Returns the timeout duration specifically for Virtual Thread operations.
+   * If set to zero, the regular timeout values will be used.
    * 
-   * @return the atomic concurrency limit counter
+   * @return the Virtual Thread specific timeout duration
    * @since 3.60
    */
-  public AtomicInteger concurrencyLimit() {
-    return concurrencyLimit;
+  public Duration virtualThreadTimeout() {
+    return Duration.ofSeconds(virtualThreadTimeoutSeconds);
   }
   
   /**
-   * Creates a copy of this configuration.
+   * Returns the maximum number of Virtual Threads that can be created.
+   * A value of 0 or negative indicates no limit.
    * 
-   * @return a new instance with the same configuration values
+   * @return the maximum number of Virtual Threads
+   * @since 3.60
+   */
+  public int maxVirtualThreads() {
+    return maxVirtualThreads;
+  }
+  
+  /**
+   * Returns whether I/O-bound operations should be automatically routed to Virtual Threads.
+   * 
+   * @return true if I/O operations should prioritize Virtual Threads, false otherwise
+   * @since 3.60
+   */
+  public boolean prioritizeVirtualThreadsForIO() {
+    return prioritizeVirtualThreadsForIO;
+  }
+  
+  /**
+   * Creates a copy of this configuration including Virtual Thread settings.
+   *
+   * @return a new Config instance with the same values as this one
    */
   @Override
   protected Config copy() {
-    try {
-      // Create a new instance of this specific class to preserve all fields
-      MutableConfigSupport copy = getClass().getDeclaredConstructor().newInstance();
-      
-      // Copy base Config fields
-      copy.majorTimeoutSeconds = this.majorTimeoutSeconds;
-      copy.minorTimeoutSeconds = this.minorTimeoutSeconds;
-      copy.threadsPerKey = this.threadsPerKey;
-      
-      // Copy MutableConfigSupport-specific fields
-      copy.enabled = this.enabled;
-      copy.useVirtualThreads = this.useVirtualThreads;
-      copy.concurrencyLimit.set(this.concurrencyLimit.get());
-      
-      return copy;
+    Config copy = super.copy();
+    if (copy instanceof MutableConfigSupport) {
+      MutableConfigSupport mutableCopy = (MutableConfigSupport) copy;
+      mutableCopy.enabled = this.enabled;
+      mutableCopy.useVirtualThreads = this.useVirtualThreads;
+      mutableCopy.virtualThreadTimeoutSeconds = this.virtualThreadTimeoutSeconds;
+      mutableCopy.maxVirtualThreads = this.maxVirtualThreads;
+      mutableCopy.prioritizeVirtualThreadsForIO = this.prioritizeVirtualThreadsForIO;
     }
-    catch (ReflectiveOperationException e) {
-      // Fall back to basic copy if reflection fails
-      Config copy = new Config();
-      copy.majorTimeoutSeconds = this.majorTimeoutSeconds;
-      copy.minorTimeoutSeconds = this.minorTimeoutSeconds;
-      copy.threadsPerKey = this.threadsPerKey;
-      return copy;
-    }
+    return copy;
   }
 }

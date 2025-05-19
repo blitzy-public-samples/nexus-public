@@ -18,6 +18,7 @@ import org.sonatype.nexus.common.encoding.EncodingUtil;
 
 import org.apache.commons.lang.StringEscapeUtils;
 
+import static java.lang.StringTemplate.STR;
 import static java.util.stream.Collectors.joining;
 
 /**
@@ -62,13 +63,16 @@ public class EscapeHelper
       return value;
     }
     else {
-      return url(value)
-          .replaceAll("\\+", "%20")
-          .replaceAll("\\%21", "!")
-          .replaceAll("\\%27", "'")
-          .replaceAll("\\%28", "(")
-          .replaceAll("\\%29", ")")
-          .replaceAll("\\%7E", "~");
+      String encoded = url(value);
+      // Using String Template to replace special characters with their URI-friendly equivalents
+      return STR."""
+             \{encoded.replace("+", "%20")
+                    .replace("%21", "!")
+                    .replace("%27", "'")
+                    .replace("%28", "(")
+                    .replace("%29", ")")
+                    .replace("%7E", "~")}
+             """;
     }
   }
 
@@ -77,10 +81,12 @@ public class EscapeHelper
       return value;
     }
     else {
-      return value
-          .replace("%", "%25")
-          .replace(":", "%3A")
-          .replace(" ", "%20");
+      // Using String Template for character replacements
+      return STR."""
+             \{value.replace("%", "%25")
+                   .replace(":", "%3A")
+                   .replace(" ", "%20")}
+             """;
     }
   }
 
@@ -89,7 +95,8 @@ public class EscapeHelper
   }
 
   public String uriSegments(final String value) {
-    return Stream.of(value.split("/")).map(this::transform).collect(joining("/"));
+    // Using String Template with map operation for more concise code
+    return STR."\{Stream.of(value.split("/")).map(this::transform).collect(joining("/"))}";
   }
 
   /**
@@ -99,7 +106,9 @@ public class EscapeHelper
    */
   public String stripJavaEl(final String value) {
     if (value != null) {
-      return value.replaceAll("\\$+\\{", "{").replaceAll("\\$+\\\\A\\{", "{");
+      // Using String Template with replaceAll for regex pattern replacement
+      String result = value.replaceAll("\\$+\\{", "{");
+      return STR."\{result.replaceAll("\\$+\\\\A\\{", "{")}";
     }
     return null;
   }

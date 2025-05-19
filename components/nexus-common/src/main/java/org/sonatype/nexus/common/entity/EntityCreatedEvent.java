@@ -12,15 +12,12 @@
  */
 package org.sonatype.nexus.common.entity;
 
+import javax.annotation.Nullable;
+
 /**
  * Entity created event.
  * 
- * This class is not suitable for conversion to a record because it extends EntityEvent,
- * which contains mutable state and custom thread-safety mechanisms. Records cannot extend
- * non-record classes and are designed for immutable data carriers.
- * 
- * Thread-safety is inherited from the parent class which uses volatile fields and ReentrantLock
- * for concurrent access patterns optimized for Java 21.
+ * Uses Java 21 pattern matching for safer metadata handling.
  *
  * @since 3.1
  */
@@ -30,9 +27,46 @@ public class EntityCreatedEvent
   /**
    * Creates a new entity created event.
    *
-   * @param metadata the metadata of the created entity (non-null)
+   * @param metadata the entity metadata
    */
   public EntityCreatedEvent(final EntityMetadata metadata) {
     super(metadata);
+  }
+  
+  /**
+   * Gets the entity with pattern matching for safer type handling.
+   * 
+   * @param <T> the entity type
+   * @return the entity, or null if it doesn't exist
+   */
+  @Nullable
+  @Override
+  public <T extends Entity> T getEntity() {
+    // Use pattern matching to safely get and cast the entity
+    Object entity = super.getEntity();
+    if (entity instanceof T t) {
+      return t;
+    }
+    return null;
+  }
+  
+  /**
+   * Gets the entity type with pattern matching for safer type handling.
+   * 
+   * @param <T> the entity type
+   * @return the entity type, or null if it doesn't exist
+   */
+  @Nullable
+  @Override
+  public <T extends Entity> Class<T> getEntityType() {
+    // Use pattern matching to safely get and cast the entity type
+    Class<?> type = super.getEntityType();
+    if (type instanceof Class<? extends Entity> entityType) {
+      // Safe to cast because we've verified it's a Class<? extends Entity>
+      @SuppressWarnings("unchecked")
+      Class<T> result = (Class<T>) entityType;
+      return result;
+    }
+    return null;
   }
 }

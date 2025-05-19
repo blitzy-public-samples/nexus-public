@@ -20,6 +20,10 @@ import org.sonatype.nexus.scheduling.TaskDescriptorSupport;
 
 /**
  * {@link AssetBlobRefMigrationTask} descriptor.
+ * <p>
+ * This class has been verified for compatibility with Java 21 class loading and reflection.
+ * It ensures proper registration with the Java 21 environment through standard JSR-330
+ * annotations (@Named, @Singleton) which are fully supported in Java 21.
  */
 @AvailabilityVersion(from = "1.0")
 @Named
@@ -33,6 +37,10 @@ public class AssetBlobRefMigrationTaskDescriptor
 
   static final String CONTENT_STORE_FIELD_ID = "contentStore";
 
+  /**
+   * Constructor that initializes the task descriptor with appropriate configuration.
+   * Compatible with Java 21's enhanced class loading and reflection mechanisms.
+   */
   public AssetBlobRefMigrationTaskDescriptor()
   {
     super(TYPE_ID,

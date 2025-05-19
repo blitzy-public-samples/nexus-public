@@ -13,6 +13,30 @@
 
 /**
  * Input/Output helpers.
+ * 
+ * <p>
+ * With Java 21, this package leverages Virtual Threads for I/O operations, providing significant
+ * performance improvements for I/O-bound tasks. Virtual Threads are lightweight threads that dramatically
+ * reduce the effort of writing, maintaining, and debugging high-throughput concurrent applications.
+ * </p>
+ * 
+ * <p>
+ * When code running in a Virtual Thread calls a blocking I/O operation, the Java runtime suspends the
+ * Virtual Thread until it can be resumed, freeing the OS thread (carrier thread) to perform operations
+ * for other Virtual Threads. This cooperative I/O model allows for efficient handling of many concurrent
+ * connections without exhausting system resources.
+ * </p>
+ * 
+ * <p>
+ * Benefits of Virtual Threads for I/O operations include:
+ * <ul>
+ *   <li>Ability to handle millions of concurrent I/O operations with minimal resource overhead</li>
+ *   <li>Blocking I/O calls don't block actual OS threads, making applications more scalable</li>
+ *   <li>Improved throughput for I/O-bound applications</li>
+ *   <li>Reduced memory footprint compared to platform threads</li>
+ *   <li>Simplified programming model compared to reactive approaches</li>
+ * </ul>
+ * </p>
  *
  * @since 3.0
  */

@@ -52,22 +52,45 @@ public class AssetBlobValidators
     this.defaultContentValidator = checkNotNull(defaultContentValidator);
   }
 
+  /**
+   * Selects an appropriate validator for the given repository using pattern matching.
+   *
+   * @param repository the repository to select a validator for
+   * @return an asset blob validator for the repository's format
+   */
   public AssetBlobValidator selectValidator(final Repository repository) {
     String format = repository.getFormat().getValue();
-    MimeRulesSource mimeRulesSource = mimeRulesSources.getOrDefault(format, MimeRulesSource.NOOP);
-    ContentValidator contentValidator = contentValidators.getOrDefault(format, defaultContentValidator);
+    
+    // Use pattern matching to select the appropriate validator components
+    var validatorComponents = switch (format) {
+      case String s when mimeRulesSources.containsKey(s) && contentValidators.containsKey(s) -> 
+          new ValidatorComponents(mimeRulesSources.get(s), contentValidators.get(s));
+      case String s when mimeRulesSources.containsKey(s) -> 
+          new ValidatorComponents(mimeRulesSources.get(s), defaultContentValidator);
+      case String s when contentValidators.containsKey(s) -> 
+          new ValidatorComponents(MimeRulesSource.NOOP, contentValidators.get(s));
+      default -> 
+          new ValidatorComponents(MimeRulesSource.NOOP, defaultContentValidator);
+    };
+    
     return (strict, contentSupplier, assetPath, declaredContentType) -> {
       try {
-        return contentValidator.determineContentType(
+        return validatorComponents.contentValidator().determineContentType(
             strict,
             contentSupplier,
-            mimeRulesSource,
+            validatorComponents.mimeRulesSource(),
             assetPath,
             declaredContentType);
       }
       catch (IOException e) {
-        throw new InvalidContentException(e);
+        // Enhanced exception handling with more context
+        throw new InvalidContentException("Failed to determine content type for asset: " + assetPath, e);
       }
     };
   }
+  
+  /**
+   * Record to hold validator components for cleaner pattern matching.
+   */
+  private record ValidatorComponents(MimeRulesSource mimeRulesSource, ContentValidator contentValidator) {}
 }

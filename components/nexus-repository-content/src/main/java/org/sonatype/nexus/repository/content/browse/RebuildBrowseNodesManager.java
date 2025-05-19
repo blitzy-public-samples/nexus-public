@@ -36,6 +36,7 @@ import com.google.common.collect.ImmutableMap;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.TASKS;
+import static java.lang.StringTemplate.STR;
 
 /**
  * Triggers a rebuild task for all repositories when requested. This is largely for upgrades or other early
@@ -100,9 +101,9 @@ public class RebuildBrowseNodesManager
       }
     }
     catch (Exception e) {
-      log.error("Failed to determine if the browse nodes need to be rebuilt for any repositories", e);
+      log.error(STR."Failed to determine if the browse nodes need to be rebuilt for any repositories", e);
     }
-    log.debug("scheduling rebuild browse nodes tasks took {} ms", sw.elapsed(TimeUnit.MILLISECONDS));
+    log.debug(STR."scheduling rebuild browse nodes tasks took \{sw.elapsed(TimeUnit.MILLISECONDS)} ms");
   }
 
   private boolean hasAssets(final Repository repository) {
@@ -113,7 +114,7 @@ public class RebuildBrowseNodesManager
     TaskConfiguration configuration = taskScheduler
         .createTaskConfigurationInstance(RebuildBrowseNodesTaskDescriptor.TYPE_ID);
     configuration.setString(RebuildBrowseNodesTaskDescriptor.REPOSITORY_NAME_FIELD_ID, repositoryNames);
-    configuration.setName("Rebuild repository browse tree - (" + repositoryNames + ")");
+    configuration.setName(STR."Rebuild repository browse tree - (\{repositoryNames})");
     taskScheduler.submit(configuration);
   }
 }

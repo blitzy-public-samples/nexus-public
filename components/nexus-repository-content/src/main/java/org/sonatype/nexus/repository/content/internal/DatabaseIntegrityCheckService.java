@@ -14,6 +14,11 @@ package org.sonatype.nexus.repository.content.internal;
 
 import java.sql.Connection;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.ArrayList;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -28,6 +33,7 @@ import static org.sonatype.nexus.datastore.api.DataStoreManager.DEFAULT_DATASTOR
 
 /**
  * Checks database integrity at application startup and configures automated repairs
+ * using Java 21 Virtual Threads for concurrent execution.
  */
 @Named
 @Singleton
@@ -50,9 +56,66 @@ public class DatabaseIntegrityCheckService
 
   @Override
   protected void doStart() throws Exception {
-    Connection connection = dataSessionSupplier.openConnection(DEFAULT_DATASTORE_NAME);
-    for (DatabaseIntegrityChecker checker : databaseIntegrityCheckers) {
-      checker.checkAndRepair(connection);
+    log.info(STR."Starting database integrity checks with \{databaseIntegrityCheckers.size()} checkers");
+    
+    // Use Virtual Threads executor for concurrent execution of database integrity checks
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      List<Future<?>> futures = new ArrayList<>();
+      List<Exception> exceptions = new ArrayList<>();
+      
+      // Submit each checker as a separate task to the executor
+      for (DatabaseIntegrityChecker checker : databaseIntegrityCheckers) {
+        futures.add(executor.submit(() -> {
+          // Each Virtual Thread gets its own connection to avoid transaction conflicts
+          try (Connection connection = dataSessionSupplier.openConnection(DEFAULT_DATASTORE_NAME)) {
+            log.debug(STR."Running integrity check with \{checker.getClass().getSimpleName()}");
+            checker.checkAndRepair(connection);
+            log.debug(STR."Completed integrity check with \{checker.getClass().getSimpleName()}");
+          } catch (Exception e) {
+            log.error(STR."Error during database integrity check with \{checker.getClass().getSimpleName()}: \{e.getMessage()}", e);
+            synchronized (exceptions) {
+              exceptions.add(e);
+            }
+          }
+        }));
+      }
+      
+      // Wait for all tasks to complete
+      for (Future<?> future : futures) {
+        try {
+          future.get();
+        } catch (ExecutionException e) {
+          // Unwrap the actual exception
+          Throwable cause = e.getCause();
+          if (cause instanceof Exception) {
+            synchronized (exceptions) {
+              exceptions.add((Exception) cause);
+            }
+          } else {
+            synchronized (exceptions) {
+              exceptions.add(new Exception(STR."Unexpected error: \{cause}", cause));
+            }
+          }
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          throw new Exception("Database integrity check interrupted", e);
+        }
+      }
+      
+      // If any exceptions occurred, throw a combined exception
+      if (!exceptions.isEmpty()) {
+        if (exceptions.size() == 1) {
+          throw exceptions.get(0);
+        } else {
+          Exception combined = new Exception(STR."Multiple database integrity check failures (\{exceptions.size()})");
+          for (Exception e : exceptions) {
+            combined.addSuppressed(e);
+          }
+          throw combined;
+        }
+      }
+      
+      log.info(STR."Successfully completed all \{databaseIntegrityCheckers.size()} database integrity checks");
     }
   }
 }

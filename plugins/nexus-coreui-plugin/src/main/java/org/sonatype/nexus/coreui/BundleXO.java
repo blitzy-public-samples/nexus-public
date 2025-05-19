@@ -23,34 +23,60 @@ import javax.validation.constraints.NotBlank;
  * @since 3.0
  */
 public record BundleXO(
-  @Min(0L) long id,
-  @NotBlank String state,
-  @NotBlank String name,
-  @NotBlank String symbolicName,
-  @NotBlank String location,
-  @NotBlank String version,
-  @Min(0L) int startLevel,
+  @Min(0L)
+  long id,
+
+  @NotBlank
+  String state,
+
+  @NotBlank
+  String name,
+
+  @NotBlank
+  String symbolicName,
+
+  @NotBlank
+  String location,
+
+  @NotBlank
+  String version,
+
+  @Min(0L)
+  int startLevel,
+
   boolean fragment,
+
   long lastModified,
-  List<Long> fragments,
-  List<Long> fragmentHosts,
-  Map<String, String> headers
-) {
+
   /**
-   * Creates a new BundleXO with the specified id.
-   *
-   * @param id the bundle id
-   * @return a new BundleXO with the specified id and default values for other fields
+   * Fragment bundle ids.
    */
-  public static BundleXO withId(long id) {
-    return new BundleXO(id, "", "", "", "", "", 0, false, 0L, null, null, null);
+  List<Long> fragments,
+
+  /**
+   * Fragment-host bundle ids.
+   */
+  List<Long> fragmentHosts,
+
+  Map<String, String> headers
+)
+{
+  /**
+   * Returns a new BundleXO with the specified id.
+   *
+   * @param id the id to set
+   * @return a new BundleXO with the updated id
+   */
+  public BundleXO withId(long id) {
+    return new BundleXO(id, state, name, symbolicName, location, version, startLevel, fragment, lastModified, 
+        fragments, fragmentHosts, headers);
   }
 
   /**
-   * Creates a new BundleXO with the specified state.
+   * Returns a new BundleXO with the specified state.
    *
-   * @param state the bundle state
-   * @return a new BundleXO with the specified state
+   * @param state the state to set
+   * @return a new BundleXO with the updated state
    */
   public BundleXO withState(String state) {
     return new BundleXO(id, state, name, symbolicName, location, version, startLevel, fragment, lastModified, 
@@ -58,10 +84,10 @@ public record BundleXO(
   }
 
   /**
-   * Creates a new BundleXO with the specified name.
+   * Returns a new BundleXO with the specified name.
    *
-   * @param name the bundle name
-   * @return a new BundleXO with the specified name
+   * @param name the name to set
+   * @return a new BundleXO with the updated name
    */
   public BundleXO withName(String name) {
     return new BundleXO(id, state, name, symbolicName, location, version, startLevel, fragment, lastModified, 
@@ -69,10 +95,10 @@ public record BundleXO(
   }
 
   /**
-   * Creates a new BundleXO with the specified symbolic name.
+   * Returns a new BundleXO with the specified symbolic name.
    *
-   * @param symbolicName the bundle symbolic name
-   * @return a new BundleXO with the specified symbolic name
+   * @param symbolicName the symbolic name to set
+   * @return a new BundleXO with the updated symbolic name
    */
   public BundleXO withSymbolicName(String symbolicName) {
     return new BundleXO(id, state, name, symbolicName, location, version, startLevel, fragment, lastModified, 
@@ -80,10 +106,10 @@ public record BundleXO(
   }
 
   /**
-   * Creates a new BundleXO with the specified location.
+   * Returns a new BundleXO with the specified location.
    *
-   * @param location the bundle location
-   * @return a new BundleXO with the specified location
+   * @param location the location to set
+   * @return a new BundleXO with the updated location
    */
   public BundleXO withLocation(String location) {
     return new BundleXO(id, state, name, symbolicName, location, version, startLevel, fragment, lastModified, 
@@ -91,10 +117,10 @@ public record BundleXO(
   }
 
   /**
-   * Creates a new BundleXO with the specified version.
+   * Returns a new BundleXO with the specified version.
    *
-   * @param version the bundle version
-   * @return a new BundleXO with the specified version
+   * @param version the version to set
+   * @return a new BundleXO with the updated version
    */
   public BundleXO withVersion(String version) {
     return new BundleXO(id, state, name, symbolicName, location, version, startLevel, fragment, lastModified, 
@@ -102,10 +128,10 @@ public record BundleXO(
   }
 
   /**
-   * Creates a new BundleXO with the specified start level.
+   * Returns a new BundleXO with the specified start level.
    *
-   * @param startLevel the bundle start level
-   * @return a new BundleXO with the specified start level
+   * @param startLevel the start level to set
+   * @return a new BundleXO with the updated start level
    */
   public BundleXO withStartLevel(int startLevel) {
     return new BundleXO(id, state, name, symbolicName, location, version, startLevel, fragment, lastModified, 
@@ -113,10 +139,10 @@ public record BundleXO(
   }
 
   /**
-   * Creates a new BundleXO with the specified fragment flag.
+   * Returns a new BundleXO with the specified fragment flag.
    *
-   * @param fragment the bundle fragment flag
-   * @return a new BundleXO with the specified fragment flag
+   * @param fragment the fragment flag to set
+   * @return a new BundleXO with the updated fragment flag
    */
   public BundleXO withFragment(boolean fragment) {
     return new BundleXO(id, state, name, symbolicName, location, version, startLevel, fragment, lastModified, 
@@ -124,10 +150,10 @@ public record BundleXO(
   }
 
   /**
-   * Creates a new BundleXO with the specified last modified timestamp.
+   * Returns a new BundleXO with the specified last modified timestamp.
    *
-   * @param lastModified the bundle last modified timestamp
-   * @return a new BundleXO with the specified last modified timestamp
+   * @param lastModified the last modified timestamp to set
+   * @return a new BundleXO with the updated last modified timestamp
    */
   public BundleXO withLastModified(long lastModified) {
     return new BundleXO(id, state, name, symbolicName, location, version, startLevel, fragment, lastModified, 
@@ -135,10 +161,10 @@ public record BundleXO(
   }
 
   /**
-   * Creates a new BundleXO with the specified fragments.
+   * Returns a new BundleXO with the specified fragments.
    *
-   * @param fragments the bundle fragments
-   * @return a new BundleXO with the specified fragments
+   * @param fragments the fragments to set
+   * @return a new BundleXO with the updated fragments
    */
   public BundleXO withFragments(List<Long> fragments) {
     return new BundleXO(id, state, name, symbolicName, location, version, startLevel, fragment, lastModified, 
@@ -146,10 +172,10 @@ public record BundleXO(
   }
 
   /**
-   * Creates a new BundleXO with the specified fragment hosts.
+   * Returns a new BundleXO with the specified fragment hosts.
    *
-   * @param fragmentHosts the bundle fragment hosts
-   * @return a new BundleXO with the specified fragment hosts
+   * @param fragmentHosts the fragment hosts to set
+   * @return a new BundleXO with the updated fragment hosts
    */
   public BundleXO withFragmentHosts(List<Long> fragmentHosts) {
     return new BundleXO(id, state, name, symbolicName, location, version, startLevel, fragment, lastModified, 
@@ -157,10 +183,10 @@ public record BundleXO(
   }
 
   /**
-   * Creates a new BundleXO with the specified headers.
+   * Returns a new BundleXO with the specified headers.
    *
-   * @param headers the bundle headers
-   * @return a new BundleXO with the specified headers
+   * @param headers the headers to set
+   * @return a new BundleXO with the updated headers
    */
   public BundleXO withHeaders(Map<String, String> headers) {
     return new BundleXO(id, state, name, symbolicName, location, version, startLevel, fragment, lastModified, 

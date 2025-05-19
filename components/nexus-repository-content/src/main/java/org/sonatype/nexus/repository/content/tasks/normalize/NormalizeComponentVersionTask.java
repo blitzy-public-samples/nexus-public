@@ -13,6 +13,8 @@
 package org.sonatype.nexus.repository.content.tasks.normalize;
 
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -113,24 +115,26 @@ public class NormalizeComponentVersionTask
 
     ComponentStore<?> componentStore = manager.componentStore(DEFAULT_DATASTORE_NAME);
 
-    if (!isFormatNormalized(format)) {
-      //initially set normalization state as false
-      setNormalizationState(format, false);
-      normalizeFormat(format, componentStore);
-      //once normalization is done set state as true
-      setNormalizationState(format, true);
-      //publish an event to let interested know the format has been normalized
-      eventManager.post(new FormatVersionNormalizedEvent(format.getValue()));
+    switch (format) {
+      case Format f when !isFormatNormalized(f) -> {
+        //initially set normalization state as false
+        setNormalizationState(format, false);
+        normalizeFormat(format, componentStore);
+        //once normalization is done set state as true
+        setNormalizationState(format, true);
+        //publish an event to let interested know the format has been normalized
+        eventManager.post(new FormatVersionNormalizedEvent(format.getValue()));
 
-      int currentCount = processedCount.incrementAndGet();
+        int currentCount = processedCount.incrementAndGet();
 
-      progressLogger.info(" task progress : {}% ({} of {} formats - skipped : {}) - elapsed : {}",
-          Math.round(((float) currentCount / totalCount) * 100),
-          currentCount, totalCount, skippedCount.get(), progressLogger.getElapsed());
-    }
-    else {
-      log.debug("skipping {} format since is already normalized.", format.getValue());
-      skippedCount.getAndIncrement();
+        progressLogger.info(" task progress : {}% ({} of {} formats - skipped : {}) - elapsed : {}",
+            Math.round(((float) currentCount / totalCount) * 100),
+            currentCount, totalCount, skippedCount.get(), progressLogger.getElapsed());
+      }
+      default -> {
+        log.debug("skipping {} format since is already normalized.", format.getValue());
+        skippedCount.getAndIncrement();
+      }
     }
   }
 
@@ -175,34 +179,67 @@ public class NormalizeComponentVersionTask
   }
 
   /**
-   * Normalizes version of  {format}_component 's records
+   * Normalizes version of {format}_component 's records using Virtual Threads for parallel processing
    *
    * @param format         the given format
    * @param componentStore the format component store
    */
   private void normalizeFormat(final Format format, final ComponentStore<?> componentStore) {
-    Continuation<ComponentData> page =
-        componentStore.browseUnnormalized(Continuations.BROWSE_LIMIT, null);
-
     int totalCount = componentStore.countUnnormalized();
-    int processedCount = 0;
+    AtomicInteger processedCount = new AtomicInteger(0);
 
     log.info("found {} unnormalized records on {} components", totalCount, format.getValue());
 
-    while (!page.isEmpty() && page.nextContinuationToken() != null) {
-      page.forEach((component) -> {
-        String normalizedVersion = versionNormalizerService.getNormalizedVersionByFormat(component.version(), format);
-        component.setNormalizedVersion(normalizedVersion);
-        componentStore.updateComponentNormalizedVersion(component);
-      });
-
-      processedCount += page.size();
-
-      page = componentStore.browseUnnormalized(Continuations.BROWSE_LIMIT, page.nextContinuationToken());
-
-      log.info(" {} format progress : {}% ({} of {}) - elapsed : {}", format.getValue(),
-          Math.round(((float) processedCount / totalCount) * 100),
-          processedCount, totalCount, progressLogger.getElapsed());
+    if (totalCount == 0) {
+      return; // No work to do
     }
+
+    // Create a virtual thread executor for parallel processing
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Process components in batches
+      String continuationToken = null;
+      
+      while (!isCanceled()) {
+        Continuation<ComponentData> page = componentStore.browseUnnormalized(Continuations.BROWSE_LIMIT, continuationToken);
+        
+        if (page.isEmpty() || page.nextContinuationToken() == null) {
+          break; // No more components to process
+        }
+
+        // Process this batch of components in parallel using virtual threads
+        final String nextToken = page.nextContinuationToken();
+        
+        // Submit each component in the batch for parallel processing
+        page.forEach(component -> {
+          if (!isCanceled()) {
+            executor.submit(() -> {
+              try {
+                String normalizedVersion = versionNormalizerService.getNormalizedVersionByFormat(
+                    component.version(), format);
+                component.setNormalizedVersion(normalizedVersion);
+                componentStore.updateComponentNormalizedVersion(component);
+                
+                // Update progress counter and log periodically
+                int currentProcessed = processedCount.incrementAndGet();
+                if (currentProcessed % 100 == 0 || currentProcessed == totalCount) {
+                  log.info(" {} format progress : {}% ({} of {}) - elapsed : {}", format.getValue(),
+                      Math.round(((float) currentProcessed / totalCount) * 100),
+                      currentProcessed, totalCount, progressLogger.getElapsed());
+                }
+              } catch (Exception e) {
+                log.error("Error normalizing component {}: {}", component.version(), e.getMessage(), e);
+              }
+            });
+          }
+        });
+        
+        // Move to next batch
+        continuationToken = nextToken;
+      }
+    }
+    
+    // Final progress update
+    log.info("Completed normalization for {} format: processed {} of {} components", 
+        format.getValue(), processedCount.get(), totalCount);
   }
 }

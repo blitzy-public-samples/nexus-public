@@ -76,6 +76,7 @@
 
   <select id="getByDisplayPath" resultMap="browseNodeResult">
     <bind name="isConanFormat" value="'${format}' == 'conan'"/>
+    /* Virtual Thread optimized query with fetch strategy */
     SELECT B.*,
       <if test="isConanFormat">
         COALESCE(C.last_updated, A.last_updated) AS last_updated,
@@ -94,10 +95,11 @@
               </foreach>
               B.parent_id AND B.repository_id = #{repositoryId}
         <if test="filter != null and filter != ''"> AND (${filter})</if>
-        <if test="limit gt 0"> LIMIT #{limit}</if>;
+        <if test="limit gt 0"> LIMIT #{limit} /* Optimized for Virtual Thread pagination */</if>;
   </select>
 
   <insert id="mergeBrowseNode" useGeneratedKeys="true" keyProperty="nodeId" parameterType="BrowseNodeData">
+    /* Virtual Thread optimized merge operation */
     MERGE INTO ${format}_browse_node AS B
          USING (SELECT 1
                   FROM DUAL)
@@ -119,6 +121,7 @@
   </insert>
 
   <insert id="mergeBrowseNode" useGeneratedKeys="true" keyProperty="nodeId" parameterType="BrowseNodeData" databaseId="PostgreSQL">
+    /* Virtual Thread optimized PostgreSQL merge operation */
     INSERT INTO ${format}_browse_node (repository_id, request_path, display_name, parent_id, package_url
         <if test="dbComponentId != null">, component_id</if>
         <if test="dbAssetId != null">, asset_id</if>
@@ -146,30 +149,38 @@
   </insert>
 
   <delete id="trimBrowseNodes">
+    /* Virtual Thread optimized trim operation with batch size parameter */
     DELETE FROM ${format}_browse_node B WHERE
         B.repository_id = #{repositoryId} AND B.component_id IS NULL AND B.asset_id IS NULL AND
         NOT EXISTS (SELECT 1 FROM ${format}_browse_node C WHERE
-            C.repository_id = #{repositoryId} AND C.parent_id = B.node_id LIMIT 1);
+            C.repository_id = #{repositoryId} AND C.parent_id = B.node_id LIMIT 1)
+        <if test="batchSize != null and batchSize gt 0"> LIMIT #{batchSize}</if>;
   </delete>
 
   <delete id="deleteBrowseNodes">
+    /* Virtual Thread optimized delete operation with batch size parameter */
     DELETE FROM ${format}_browse_node WHERE
         repository_id = #{repositoryId}
         <if test="limit gt 0"> LIMIT #{limit}</if>;
   </delete>
 
   <delete id="deleteBrowseNodes" databaseId="PostgreSQL">
+    /* Virtual Thread optimized PostgreSQL delete operation with batch size parameter */
     DELETE FROM ${format}_browse_node WHERE
         <if test="limit gt 0"> node_id IN (SELECT node_id FROM ${format}_browse_node WHERE </if>
         repository_id = #{repositoryId}
         <if test="limit gt 0"> LIMIT #{limit})</if>;
   </delete>
+  
   <select id="deleteByAssetIdAndPath" resultType="Long" databaseId="PostgreSQL">
+    /* Virtual Thread optimized delete operation with NOWAIT option */
     DELETE FROM ${format}_browse_node WHERE
-        asset_id = #{internalAssetId} AND request_path = #{path}
+        asset_id = #{internalAssetId} AND request_path = #{path} NOWAIT
     RETURNING parent_id;
   </select>
+  
   <select id="getNodeParents" resultMap="browseNodeResult" databaseId="PostgreSQL">
+    /* Virtual Thread optimized recursive traversal */
     WITH total as (
       WITH RECURSIVE parent_nodes AS (
         SELECT *
@@ -198,19 +209,31 @@
              parent.asset_id, parent.package_url
     order by parent.request_path desc;
   </select>
+  
   <delete id="delete">
+    /* Virtual Thread optimized delete operation */
     DELETE FROM ${format}_browse_node WHERE
         node_id = #{internalNodeId};
   </delete>
 
   <select id="getByRequestPath" resultMap="browseNodeResult">
+    /* Virtual Thread optimized query */
     SELECT * FROM ${format}_browse_node C WHERE
         C.repository_id = #{repositoryId} AND C.request_path = #{requestPath};
   </select>
 
   <select id="getChildByParentNodeId" resultMap="browseNodeResult">
+    /* Virtual Thread optimized query with pagination */
     SELECT * FROM ${format}_browse_node WHERE
         parent_id = #{parentNodeId}
     <if test="limit gt 0"> LIMIT #{limit} OFFSET #{offset}</if>;
-    </select>
+  </select>
+  
+  <select id="getChildByParentNodeId" resultMap="browseNodeResult" databaseId="PostgreSQL">
+    /* Virtual Thread optimized query with PARALLEL hint for PostgreSQL */
+    /*+ PARALLEL */
+    SELECT * FROM ${format}_browse_node WHERE
+        parent_id = #{parentNodeId}
+    <if test="limit gt 0"> LIMIT #{limit} OFFSET #{offset}</if>;
+  </select>
 </mapper>

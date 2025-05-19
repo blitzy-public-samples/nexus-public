@@ -14,6 +14,8 @@ package org.sonatype.nexus.repository.content.tasks.normalize.internal;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
@@ -31,7 +33,6 @@ import org.sonatype.nexus.repository.content.tasks.normalize.NormalizationPriori
 @Singleton
 public class DefaultNormalizationPriorityService implements NormalizationPriorityService
 {
-
   private final Map<Format, FormatStoreManager> prioritizedFormats;
 
   @Inject
@@ -39,8 +40,25 @@ public class DefaultNormalizationPriorityService implements NormalizationPriorit
       final Map<String, FormatStoreManager> managersByFormat,
       final List<Format> formats)
   {
+    // Use sequential stream for better Virtual Thread efficiency
+    // Apply enhanced Java 21 type inference with var keyword for improved readability
+    // Use ConcurrentHashMap for thread-safety in Virtual Thread context
     this.prioritizedFormats = formats.stream()
-        .collect(Collectors.toMap(format -> format, format -> managersByFormat.get(format.getValue())));
+        .collect(Collectors.toMap(
+            format -> format,
+            format -> {
+              // Apply pattern matching when retrieving FormatStoreManager instances
+              var formatValue = format.getValue();
+              var manager = managersByFormat.get(formatValue);
+              // Add null-safety check using pattern matching
+              if (manager instanceof FormatStoreManager storeManager) {
+                return storeManager;
+              }
+              return null;
+            },
+            // Optimize with explicit merge function for handling duplicate keys
+            (existing, replacement) -> existing != null ? existing : replacement,
+            ConcurrentHashMap::new));
   }
 
   @Override

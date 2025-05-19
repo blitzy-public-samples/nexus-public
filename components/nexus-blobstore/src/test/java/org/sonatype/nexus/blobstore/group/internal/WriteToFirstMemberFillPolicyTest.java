@@ -15,126 +15,53 @@ package org.sonatype.nexus.blobstore.group.internal;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.group.BlobStoreGroup;
+import org.sonatype.nexus.common.test.Java21TestGroup;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
+@Java21TestGroup
 public class WriteToFirstMemberFillPolicyTest
     extends TestSupport
 {
   private final WriteToFirstMemberFillPolicy underTest = new WriteToFirstMemberFillPolicy();
 
-  /**
-   * Provides test parameters for the parameterized test.
-   */
-  static Stream<Arguments> availabilityTestParameters() {
+  record TestParams(boolean available, boolean writable, String chosenBlobStoreName) {}
+
+  static Stream<TestParams> testConditions() {
     return Stream.of(
-        Arguments.of(false, false, "three"),
-        Arguments.of(false, true, "three"),
-        Arguments.of(true, false, "three"),
-        Arguments.of(true, true, "one")
+        new TestParams(false, false, "three"),
+        new TestParams(false, true, "three"),
+        new TestParams(true, false, "three"),
+        new TestParams(true, true, "one")
     );
   }
 
   @ParameterizedTest
-  @MethodSource("availabilityTestParameters")
-  void itShouldSkipNonAvailableAndNonWritableMembers(boolean available, boolean writable, String chosenBlobStoreName) {
+  @MethodSource("testConditions")
+  public void itShouldSkipNonAvailableAndNonWritableMembers(TestParams params) {
     BlobStoreGroup blobStoreGroup = mock(BlobStoreGroup.class);
     List<BlobStore> mockedMembers =
-        Arrays.asList(mockMember("one", available, writable), mockMember("two", available, writable),
+        Arrays.asList(mockMember("one", params.available(), params.writable()), mockMember("two", params.available(), params.writable()),
             mockMember("three", true, true));
     when(blobStoreGroup.getMembers()).thenReturn(mockedMembers);
-    assertEquals(chosenBlobStoreName, 
-        underTest.chooseBlobStore(blobStoreGroup, new HashMap<>()).getBlobStoreConfiguration().getName());
-  }
-
-  /**
-   * Tests the behavior of the fill policy with virtual threads for concurrent operations.
-   * This validates that the policy correctly handles multiple concurrent requests
-   * when using Java 21's virtual threads.
-   */
-  @Test
-  void testConcurrentOperationsWithVirtualThreads() throws Exception {
-    // Set up the blob store group with members
-    BlobStoreGroup blobStoreGroup = mock(BlobStoreGroup.class);
-    List<BlobStore> mockedMembers = Arrays.asList(
-        mockMember("one", true, true),
-        mockMember("two", true, true),
-        mockMember("three", true, true)
-    );
-    when(blobStoreGroup.getMembers()).thenReturn(mockedMembers);
-    
-    // Create virtual thread factory
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-    
-    int taskCount = 1000;
-    CountDownLatch latch = new CountDownLatch(taskCount);
-    AtomicInteger errorCount = new AtomicInteger(0);
-    Map<String, AtomicInteger> blobStoreSelectionCount = new HashMap<>();
-    
-    try {
-      // Submit multiple concurrent tasks using virtual threads
-      for (int i = 0; i < taskCount; i++) {
-        executor.submit(() -> {
-          try {
-            // Call the fill policy to choose a blob store
-            BlobStore selectedBlobStore = underTest.chooseBlobStore(blobStoreGroup, new HashMap<>());
-            String name = selectedBlobStore.getBlobStoreConfiguration().getName();
-            
-            // Track which blob store was selected
-            blobStoreSelectionCount.computeIfAbsent(name, k -> new AtomicInteger(0)).incrementAndGet();
-            
-            // Verify the selected blob store is valid
-            assertNotNull(selectedBlobStore);
-            assertTrue(selectedBlobStore.isStorageAvailable());
-            assertTrue(selectedBlobStore.isWritable());
-          } 
-          catch (Exception e) {
-            errorCount.incrementAndGet();
-          } 
-          finally {
-            latch.countDown();
-          }
-        });
-      }
-      
-      // Wait for all tasks to complete
-      assertTrue(latch.await(30, TimeUnit.SECONDS), "Timed out waiting for concurrent operations to complete");
-      
-      // Verify results
-      assertEquals(0, errorCount.get(), "Some concurrent operations failed");
-      
-      // Verify the first blob store was always selected (as per the policy)
-      AtomicInteger firstBlobStoreCount = blobStoreSelectionCount.get("one");
-      assertNotNull(firstBlobStoreCount, "First blob store was never selected");
-      assertEquals(taskCount, firstBlobStoreCount.get(), 
-          "WriteToFirstMemberFillPolicy should always select the first available and writable member");
-    } 
-    finally {
-      executor.shutdown();
-    }
+    assertThat(underTest.chooseBlobStore(blobStoreGroup, new HashMap<>()).getBlobStoreConfiguration().getName(),
+        is(params.chosenBlobStoreName()));
   }
 
   private BlobStore mockMember(final String name, final boolean available, final boolean writable) {

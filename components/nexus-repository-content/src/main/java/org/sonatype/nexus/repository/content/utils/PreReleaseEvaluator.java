@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.repository.content.utils;
 
-import java.util.stream.Collectors;
+import java.util.List;
 
 import org.sonatype.nexus.repository.content.Asset;
 import org.sonatype.nexus.repository.content.Component;
@@ -34,7 +34,15 @@ public interface PreReleaseEvaluator
    * Implementations are format specific.
    */
   default boolean isPreRelease(final FluentComponent component) {
-    return isPreRelease(component, component.assets().stream().map(Asset.class::cast).collect(Collectors.toList()));
+    // Using Pattern Matching for type checking and Sequenced Collections API
+    return isPreRelease(component, component.assets().stream()
+        // Using flatMap with Pattern Matching to filter and cast in one operation
+        // This is a more elegant approach than separate filter and map operations
+        .flatMap(obj -> obj instanceof Asset asset ? 
+                        java.util.stream.Stream.of(asset) : 
+                        java.util.stream.Stream.empty())
+        // Using Sequenced Collections API to collect directly to a List
+        .toList());
   }
 
   /**

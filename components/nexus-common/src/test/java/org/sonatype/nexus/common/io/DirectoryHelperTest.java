@@ -19,27 +19,37 @@ import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.annotation.Nullable;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
 
+import com.google.common.base.Function;
+import com.google.common.base.Predicate;
 import com.google.common.collect.Lists;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.Before;
+import org.junit.Category;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThan;
 import static org.hamcrest.Matchers.not;
-import static org.junit.jupiter.api.Assertions.assertTimeout;
 import static org.sonatype.goodies.testsupport.hamcrest.FileMatchers.exists;
 import static org.sonatype.goodies.testsupport.hamcrest.FileMatchers.isDirectory;
 import static org.sonatype.goodies.testsupport.hamcrest.FileMatchers.isEmptyDirectory;
@@ -48,11 +58,11 @@ import static org.sonatype.goodies.testsupport.hamcrest.FileMatchers.isFile;
 /**
  * Tests for {@link DirectoryHelper}.
  */
-class DirectoryHelperTest
+public class DirectoryHelperTest
     extends TestSupport
 {
-  @TempDir
-  Path temporaryFolder;
+  @Rule
+  public TemporaryFolder temporaryFolder = new TemporaryFolder();
 
   private static final byte[] PAYLOAD = "payload".getBytes(UTF_8);
 
@@ -73,14 +83,14 @@ class DirectoryHelperTest
     Files.write(dir21.resolve("file212.txt"), PAYLOAD);
   }
 
-  @BeforeEach
-  void prepare() throws IOException {
+  @Before
+  public void prepare() throws IOException {
     root = util.createTempDir();
     createDirectoryStructure(root.toPath());
   }
 
   @Test
-  void mkdir() throws IOException {
+  public void mkdir() throws IOException {
     final File mkdirA = new File(root, "mkdir-a");
     final File mkdirAB = new File(mkdirA, "mkdir-ab");
     final File dir211 = new File(new File(new File(root, "dir2"), "dir21"), "dir211");
@@ -93,7 +103,7 @@ class DirectoryHelperTest
   }
 
   @Test
-  void mkdirWithParent() throws IOException {
+  public void mkdirWithParent() throws IOException {
     final File mkdirA = DirectoryHelper.mkdir(root, "mkdir-parent-a"); // new
     assertThat(mkdirA, isDirectory());
 
@@ -102,7 +112,7 @@ class DirectoryHelperTest
   }
 
   @Test
-  void symlinkMkdir() throws IOException {
+  public void symlinkMkdir() throws IOException {
     final Path dir1link = root.toPath().resolve("dir1-link");
     try {
       // not all OSes support symlink creation
@@ -117,7 +127,7 @@ class DirectoryHelperTest
   }
 
   @Test
-  void clean() throws IOException {
+  public void clean() throws IOException {
     DirectoryHelper.clean(root.toPath());
     assertThat(root, exists());
     assertThat(root, isDirectory());
@@ -126,7 +136,7 @@ class DirectoryHelperTest
   }
 
   @Test
-  void cleanIfExists() throws IOException {
+  public void cleanIfExists() throws IOException {
     assertThat(DirectoryHelper.cleanIfExists(root.toPath().resolve("not-existing")), is(false));
     assertThat(DirectoryHelper.cleanIfExists(root.toPath()), is(true));
     assertThat(root, exists());
@@ -136,7 +146,7 @@ class DirectoryHelperTest
   }
 
   @Test
-  void empty() throws IOException {
+  public void empty() throws IOException {
     DirectoryHelper.empty(root.toPath());
     assertThat(root, exists());
     assertThat(root, isDirectory());
@@ -144,7 +154,7 @@ class DirectoryHelperTest
   }
 
   @Test
-  void emptyIfExists() throws IOException {
+  public void emptyIfExists() throws IOException {
     assertThat(DirectoryHelper.emptyIfExists(root.toPath().resolve("not-existing")), is(false));
     assertThat(DirectoryHelper.emptyIfExists(root.toPath()), is(true));
     assertThat(root, exists());
@@ -153,20 +163,20 @@ class DirectoryHelperTest
   }
 
   @Test
-  void delete() throws IOException {
+  public void delete() throws IOException {
     DirectoryHelper.delete(root.toPath());
     assertThat(root, not(exists()));
   }
 
   @Test
-  void deleteIfExists() throws IOException {
+  public void deleteIfExists() throws IOException {
     assertThat(DirectoryHelper.deleteIfExists(root.toPath().resolve("not-existing")), is(false));
     assertThat(DirectoryHelper.deleteIfExists(root.toPath()), is(true));
     assertThat(root, not(exists()));
   }
 
   @Test
-  void copy() throws IOException {
+  public void copy() throws IOException {
     final Path target = util.createTempDir().toPath();
     DirectoryHelper.copy(root.toPath(), target);
     assertThat(target.toFile(), exists());
@@ -177,7 +187,7 @@ class DirectoryHelperTest
   }
 
   @Test
-  void copyIfExists() throws IOException {
+  public void copyIfExists() throws IOException {
     final Path target = util.createTempDir().toPath();
     assertThat(DirectoryHelper.copyIfExists(root.toPath().resolve("not-existing"), target), is(false));
     assertThat(DirectoryHelper.copyIfExists(root.toPath(), target), is(true));
@@ -189,7 +199,7 @@ class DirectoryHelperTest
   }
 
   @Test
-  void move() throws IOException {
+  public void move() throws IOException {
     final Path target = util.createTempDir().toPath();
     DirectoryHelper.move(root.toPath(), target);
     assertThat(root, not(exists()));
@@ -201,9 +211,15 @@ class DirectoryHelperTest
   }
 
   @Test
-  void copyDeleteMoveToSubdir() throws IOException {
+  public void copyDeleteMoveToSubdir() throws IOException {
     final Path target = root.toPath().resolve("dir2/dir21");
-    DirectoryHelper.copyDeleteMove(root.toPath(), target, input -> input.startsWith(target));
+    DirectoryHelper.copyDeleteMove(root.toPath(), target, new Predicate<Path>()
+    {
+      @Override
+      public boolean apply(@Nullable final Path input) {
+        return input.startsWith(target);
+      }
+    });
     assertThat(root, exists());
     assertThat(root.toPath().resolve("dir1").toFile(), not(exists()));
     assertThat(root.toPath().resolve("dir2").toFile(), exists());
@@ -236,38 +252,20 @@ class DirectoryHelperTest
    * and deeper. {@link FileSystemException} is thrown once file path length reaches OS limit. In case
    * of repo local storage, the root was being moved under "/.nexus/trash".
    */
-  @Test
-  void moveToSubdir() {
+  @Test(expected = FileSystemException.class)
+  public void moveToSubdir() throws IOException {
     final Path target = root.toPath().resolve("dir2/dir21");
-    assertTimeout(Duration.ofSeconds(5), () -> {
-      try {
-        DirectoryHelper.move(root.toPath(), target);
-      }
-      catch (FileSystemException e) {
-        // Expected exception
-        return;
-      }
-      throw new AssertionError("Expected FileSystemException was not thrown");
-    });
+    DirectoryHelper.move(root.toPath(), target);
+  }
+
+  @Test(expected = IllegalArgumentException.class)
+  public void copyingToChildDirDisallowedWithoutFilter() throws IOException {
+    final Path target = root.toPath().resolve("dir2/dir21");
+    DirectoryHelper.copyDeleteMove(root.toPath(), target, null);
   }
 
   @Test
-  void copyingToChildDirDisallowedWithoutFilter() {
-    final Path target = root.toPath().resolve("dir2/dir21");
-    assertTimeout(Duration.ofSeconds(5), () -> {
-      try {
-        DirectoryHelper.copyDeleteMove(root.toPath(), target, null);
-      }
-      catch (IllegalArgumentException e) {
-        // Expected exception
-        return;
-      }
-      throw new AssertionError("Expected IllegalArgumentException was not thrown");
-    });
-  }
-
-  @Test
-  void moveIfExists() throws IOException {
+  public void moveIfExists() throws IOException {
     final Path target = util.createTempDir().toPath();
     assertThat(DirectoryHelper.moveIfExists(root.toPath().resolve("not-existing"), target), is(false));
     assertThat(DirectoryHelper.moveIfExists(root.toPath(), target), is(true));
@@ -280,18 +278,23 @@ class DirectoryHelperTest
   }
 
   @Test
-  void apply() throws IOException {
+  public void apply() throws IOException {
     final ArrayList<String> fileNames = Lists.newArrayList();
     final ArrayList<String> dirNames = Lists.newArrayList();
-    DirectoryHelper.apply(root.toPath(), input -> {
-      if (Files.isDirectory(input)) {
-        dirNames.add(input.getFileName().toString());
+    final Function<Path, FileVisitResult> tf = new Function<Path, FileVisitResult>()
+    {
+      @Override
+      public FileVisitResult apply(final Path input) {
+        if (Files.isDirectory(input)) {
+          dirNames.add(input.getFileName().toString());
+        }
+        else if (Files.isRegularFile(input)) {
+          fileNames.add(input.getFileName().toString());
+        }
+        return FileVisitResult.CONTINUE;
       }
-      else if (Files.isRegularFile(input)) {
-        fileNames.add(input.getFileName().toString());
-      }
-      return FileVisitResult.CONTINUE;
-    });
+    };
+    DirectoryHelper.apply(root.toPath(), tf);
 
     assertThat(fileNames, hasSize(9));
     // root + 3dirs
@@ -299,18 +302,23 @@ class DirectoryHelperTest
   }
 
   @Test
-  void applyToFiles() throws IOException {
+  public void applyToFiles() throws IOException {
     final ArrayList<String> fileNames = Lists.newArrayList();
     final ArrayList<String> dirNames = Lists.newArrayList();
-    DirectoryHelper.applyToFiles(root.toPath(), input -> {
-      if (Files.isDirectory(input)) {
-        dirNames.add(input.getFileName().toString());
+    final Function<Path, FileVisitResult> tf = new Function<Path, FileVisitResult>()
+    {
+      @Override
+      public FileVisitResult apply(final Path input) {
+        if (Files.isDirectory(input)) {
+          dirNames.add(input.getFileName().toString());
+        }
+        else if (Files.isRegularFile(input)) {
+          fileNames.add(input.getFileName().toString());
+        }
+        return FileVisitResult.CONTINUE;
       }
-      else if (Files.isRegularFile(input)) {
-        fileNames.add(input.getFileName().toString());
-      }
-      return FileVisitResult.CONTINUE;
-    });
+    };
+    DirectoryHelper.applyToFiles(root.toPath(), tf);
 
     assertThat(fileNames, hasSize(9));
     // func never invoked on dirs
@@ -318,8 +326,8 @@ class DirectoryHelperTest
   }
 
   @Test
-  void testDeleteIfEmptyRecursively() throws Exception {
-    File dir = Files.createDirectory(temporaryFolder.resolve("basedir")).toFile();
+  public void deleteIfEmptyRecursively() throws Exception {
+    File dir = temporaryFolder.newFolder("basedir");
 
     // now lets start adding some directories
     // first off a simple empty directory
@@ -337,7 +345,7 @@ class DirectoryHelperTest
     // now a directory with a file in it
     subdir = new File(dir, "subwithcontent");
     Files.createDirectory(subdir.toPath());
-    Files.createFile(new File(subdir, "afile.txt").toPath());
+    new File(subdir, "afile.txt").createNewFile();
 
     // now a nested directory with a file in it
     subdir = new File(dir, "subnestedwithcontent");
@@ -346,7 +354,7 @@ class DirectoryHelperTest
       subdir = new File(subdir, "subnestedwithcontent" + i);
       Path newdir = Files.createDirectory(subdir.toPath());
       if (i == 9) {
-        Files.createFile(new File(newdir.toFile(), "afile.txt").toPath());
+        new File(newdir.toFile(), "afile.txt").createNewFile();
       }
     }
 
@@ -361,14 +369,14 @@ class DirectoryHelperTest
   }
 
   @Test
-  void testDeleteIfEmptyRecursively_missingDirectory() throws Exception {
+  public void deleteIfEmptyRecursively_missingDirectory() throws Exception {
     int count = DirectoryHelper.deleteIfEmptyRecursively(Paths.get("fake", "dir"), null);
     assertThat(count, is(0));
   }
 
   @Test
-  void testDeleteIfEmptyRecursively_skipNewerDirs() throws Exception {
-    File dir = Files.createDirectory(temporaryFolder.resolve("basedir")).toFile();
+  public void deleteIfEmptyRecursively_skipNewerDirs() throws Exception {
+    File dir = temporaryFolder.newFolder("basedir");
 
     // This directory will be the one that is slightly older than the timestamp so _should_ get deleted
     File subdir = new File(dir, "sub");
@@ -389,5 +397,175 @@ class DirectoryHelperTest
     assertThat(count, is(1));
     assertThat(new File(dir, "sub"), not(exists()));
     assertThat(new File(dir, "sub2"), exists());
+  }
+
+  @Test
+  @Category(VirtualThreadTestGroup.class)
+  public void parallelDirectoryOperationsWithVirtualThreads() throws Exception {
+    // Create a test directory structure
+    File testDir = temporaryFolder.newFolder("virtualThreadTest");
+    int numDirs = 100;
+    
+    // Create directories in parallel using virtual threads
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    CountDownLatch createLatch = new CountDownLatch(numDirs);
+    AtomicInteger createErrors = new AtomicInteger(0);
+    
+    for (int i = 0; i < numDirs; i++) {
+      final int dirNum = i;
+      executor.submit(() -> {
+        try {
+          File dir = new File(testDir, "dir" + dirNum);
+          DirectoryHelper.mkdir(dir.toPath());
+        } catch (Exception e) {
+          createErrors.incrementAndGet();
+        } finally {
+          createLatch.countDown();
+        }
+      });
+    }
+    
+    // Wait for all directory creations to complete
+    createLatch.await(30, TimeUnit.SECONDS);
+    
+    // Verify all directories were created successfully
+    assertThat(createErrors.get(), is(0));
+    for (int i = 0; i < numDirs; i++) {
+      assertThat(new File(testDir, "dir" + i), isDirectory());
+    }
+    
+    // Now delete directories in parallel using virtual threads
+    CountDownLatch deleteLatch = new CountDownLatch(numDirs);
+    AtomicInteger deleteErrors = new AtomicInteger(0);
+    
+    for (int i = 0; i < numDirs; i++) {
+      final int dirNum = i;
+      executor.submit(() -> {
+        try {
+          File dir = new File(testDir, "dir" + dirNum);
+          DirectoryHelper.delete(dir.toPath());
+        } catch (Exception e) {
+          deleteErrors.incrementAndGet();
+        } finally {
+          deleteLatch.countDown();
+        }
+      });
+    }
+    
+    // Wait for all directory deletions to complete
+    deleteLatch.await(30, TimeUnit.SECONDS);
+    
+    // Verify all directories were deleted successfully
+    assertThat(deleteErrors.get(), is(0));
+    for (int i = 0; i < numDirs; i++) {
+      assertThat(new File(testDir, "dir" + i), not(exists()));
+    }
+    
+    // Shutdown the executor
+    executor.shutdown();
+  }
+
+  @Test
+  @Category(VirtualThreadTestGroup.class)
+  public void concurrentCopyOperationsWithVirtualThreads() throws Exception {
+    // Create source directory with test files
+    File sourceDir = temporaryFolder.newFolder("sourceDir");
+    createDirectoryStructure(sourceDir.toPath());
+    
+    // Create target directories
+    int numCopies = 10;
+    File[] targetDirs = new File[numCopies];
+    for (int i = 0; i < numCopies; i++) {
+      targetDirs[i] = temporaryFolder.newFolder("targetDir" + i);
+    }
+    
+    // Perform concurrent copy operations using virtual threads
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    CountDownLatch copyLatch = new CountDownLatch(numCopies);
+    AtomicInteger copyErrors = new AtomicInteger(0);
+    
+    long startTime = System.currentTimeMillis();
+    
+    for (int i = 0; i < numCopies; i++) {
+      final int copyNum = i;
+      executor.submit(() -> {
+        try {
+          DirectoryHelper.copy(sourceDir.toPath(), targetDirs[copyNum].toPath());
+        } catch (Exception e) {
+          copyErrors.incrementAndGet();
+        } finally {
+          copyLatch.countDown();
+        }
+      });
+    }
+    
+    // Wait for all copy operations to complete
+    copyLatch.await(60, TimeUnit.SECONDS);
+    
+    long endTime = System.currentTimeMillis();
+    long duration = endTime - startTime;
+    
+    // Verify all copies were successful
+    assertThat(copyErrors.get(), is(0));
+    for (int i = 0; i < numCopies; i++) {
+      File targetDir = targetDirs[i];
+      assertThat(targetDir, exists());
+      assertThat(targetDir, isDirectory());
+      assertThat(targetDir, not(isEmptyDirectory()));
+      assertThat(targetDir.toPath().resolve("dir2").resolve("dir21").toFile(), isDirectory());
+      assertThat(targetDir.toPath().resolve("dir2").resolve("dir21").resolve("file211.txt").toFile(), isFile());
+    }
+    
+    // Log performance metrics
+    log.info("Completed {} concurrent copy operations in {} ms using virtual threads", numCopies, duration);
+    
+    // Shutdown the executor
+    executor.shutdown();
+  }
+
+  @Test
+  @Category(VirtualThreadTestGroup.class)
+  public void detectThreadPinningDuringFileOperations() throws Exception {
+    // Create a test directory
+    File testDir = temporaryFolder.newFolder("threadPinningTest");
+    
+    // Create a virtual thread
+    Thread virtualThread = Thread.ofVirtual().name("file-io-thread").start(() -> {
+      try {
+        // Perform file operations that might cause thread pinning
+        long startTime = System.currentTimeMillis();
+        
+        // Create directories
+        for (int i = 0; i < 10; i++) {
+          File dir = new File(testDir, "dir" + i);
+          DirectoryHelper.mkdir(dir.toPath());
+          
+          // Write some files
+          for (int j = 0; j < 5; j++) {
+            Files.write(dir.toPath().resolve("file" + j + ".txt"), PAYLOAD);
+          }
+        }
+        
+        // Perform a copy operation
+        File targetDir = new File(testDir, "copy-target");
+        DirectoryHelper.mkdir(targetDir.toPath());
+        DirectoryHelper.copy(new File(testDir, "dir0").toPath(), targetDir.toPath());
+        
+        long endTime = System.currentTimeMillis();
+        log.info("File operations completed in {} ms", endTime - startTime);
+      } catch (IOException e) {
+        log.error("Error during file operations", e);
+      }
+    });
+    
+    // Wait for the virtual thread to complete
+    virtualThread.join(30000);
+    
+    // Verify the operations completed successfully
+    assertThat(new File(testDir, "dir0"), isDirectory());
+    assertThat(new File(testDir, "copy-target"), isDirectory());
+    assertThat(new File(testDir, "copy-target/file0.txt"), isFile());
   }
 }

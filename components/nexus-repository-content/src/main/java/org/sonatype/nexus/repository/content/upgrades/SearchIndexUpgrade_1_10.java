@@ -29,6 +29,6 @@ public class SearchIndexUpgrade_1_10
 {
   @Override
   public Optional<String> version() {
-    return Optional.of("1.10");
+    return Optional.of(STR."1.10");
   }
 }

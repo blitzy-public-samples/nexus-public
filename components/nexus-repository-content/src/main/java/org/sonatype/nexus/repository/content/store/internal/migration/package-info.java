@@ -10,6 +10,14 @@
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  */
+
+/**
+ * Migration package for content store implementations.
+ * 
+ * Note: When compiling with Java 21+, explicit annotation processing must be enabled
+ * using the -proc:full option or equivalent build configuration to ensure proper
+ * processing of the FeatureFlag annotation.
+ */
 @FeatureFlag(name = DATASTORE_ENABLED)
 package org.sonatype.nexus.repository.content.store.internal.migration;
 

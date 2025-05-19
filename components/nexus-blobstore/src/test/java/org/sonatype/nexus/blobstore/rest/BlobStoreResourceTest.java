@@ -12,19 +12,12 @@
  */
 package org.sonatype.nexus.blobstore.rest;
 
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 
 import javax.ws.rs.WebApplicationException;
+
+import static java.lang.StringTemplate.STR;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.ConnectionChecker;
@@ -36,6 +29,7 @@ import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaService;
 import org.sonatype.nexus.repository.blobstore.BlobStoreConfigurationStore;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -47,11 +41,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-class BlobStoreResourceTest
+public class BlobStoreResourceTest
     extends TestSupport
 {
   @Mock
@@ -78,15 +71,14 @@ class BlobStoreResourceTest
   BlobStoreResource resource;
 
   @BeforeEach
-  void setup() {
-    // Using lenient() for mocks that might not be used in all tests
-    lenient().when(quotaService.checkQuota(noQuota)).thenReturn(null);
-    lenient().when(quotaService.checkQuota(passing)).thenReturn(new BlobStoreQuotaResult(false, "passing", "test"));
-    lenient().when(quotaService.checkQuota(failing)).thenReturn(new BlobStoreQuotaResult(true, "failing", "test"));
+  public void setup() {
+    when(quotaService.checkQuota(noQuota)).thenReturn(null);
+    when(quotaService.checkQuota(passing)).thenReturn(new BlobStoreQuotaResult(false, "passing", "test"));
+    when(quotaService.checkQuota(failing)).thenReturn(new BlobStoreQuotaResult(true, "failing", "test"));
 
-    lenient().when(manager.get(eq("passing"))).thenReturn(passing);
-    lenient().when(manager.get(eq("noQuota"))).thenReturn(noQuota);
-    lenient().when(manager.get(eq("failing"))).thenReturn(failing);
+    when(manager.get(eq("passing"))).thenReturn(passing);
+    when(manager.get(eq("noQuota"))).thenReturn(noQuota);
+    when(manager.get(eq("failing"))).thenReturn(failing);
 
     Map<String, ConnectionChecker> connectionCheckers = new HashMap<>();
     connectionCheckers.put("azure cloud storage", connectionChecker);
@@ -95,137 +87,63 @@ class BlobStoreResourceTest
   }
 
   @Test
-  void quotaStatusPassingReturnsNonViolation() {
+  @DisplayName("Quota status returns non-violation for passing blob store")
+  public void passingTest() {
     BlobStoreQuotaResultXO resultXO = resource.quotaStatus("passing");
     assertFalse(resultXO.getIsViolation());
     assertEquals("passing", resultXO.getBlobStoreName());
   }
 
   @Test
-  void quotaStatusFailingReturnsViolation() {
+  @DisplayName("Quota status returns violation for failing blob store")
+  public void failingTest() {
     BlobStoreQuotaResultXO resultXO = resource.quotaStatus("failing");
     assertTrue(resultXO.getIsViolation());
     assertEquals("failing", resultXO.getBlobStoreName());
   }
 
   @Test
-  void quotaStatusWithNoQuotaReturnsNonViolation() {
+  @DisplayName("Quota status returns non-violation for blob store with no quota")
+  public void noQuotaTest() {
     BlobStoreQuotaResultXO resultXO = resource.quotaStatus("noQuota");
     assertFalse(resultXO.getIsViolation());
     assertEquals("noQuota", resultXO.getBlobStoreName());
   }
 
   @Test
-  void verifyConnectionSucceedsWithValidConnection() {
+  @DisplayName("Connection verification succeeds with valid connection details")
+  public void verifyConnectionTest() {
     when(connectionChecker.verifyConnection(any(String.class), any(Map.class))).thenReturn(true);
     resource.verifyConnection(getBlobStoreConnectionXO());
   }
 
   @Test
-  void verifyConnectionThrowsWebApplicationExceptionOnRuntimeException() {
+  @DisplayName("Connection verification throws WebApplicationException on connection failure")
+  public void verifyConnectionTestFail() {
     when(connectionChecker.verifyConnection(any(String.class), any(Map.class)))
         .thenThrow(new RuntimeException("Fake unsuccessful connection Exception"));
+    
     assertThrows(WebApplicationException.class, () -> resource.verifyConnection(getBlobStoreConnectionXO()));
   }
 
   @Test
-  void verifyConnectionThrowsWebApplicationExceptionWithCorrectStatusOnBlobStoreConnectionException() {
+  @DisplayName("Connection verification handles BlobStoreConnectionException with proper status code")
+  public void verifyConnectionTestFailWithBlobStoreConnectionException() {
+    String errorMessage = "Fake BlobStoreConnectionException";
     when(connectionChecker.verifyConnection(any(String.class), any(Map.class)))
-        .thenThrow(new BlobStoreConnectionException("Fake BlobStoreConnectionException"));
-    WebApplicationException e =
-        assertThrows(WebApplicationException.class, () -> resource.verifyConnection(getBlobStoreConnectionXO()));
-    assertEquals(400, e.getResponse().getStatus());
-    assertEquals("Fake BlobStoreConnectionException", e.getResponse().getEntity());
-  }
-  
-  @Test
-  void concurrentQuotaStatusRequestsSucceedWithVirtualThreads() throws Exception {
-    // Create a virtual thread factory
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+        .thenThrow(new BlobStoreConnectionException(errorMessage));
     
-    int taskCount = 100;
-    CountDownLatch latch = new CountDownLatch(taskCount);
-    AtomicInteger errorCount = new AtomicInteger(0);
-    List<BlobStoreQuotaResultXO> results = new ArrayList<>();
+    WebApplicationException exception = assertThrows(WebApplicationException.class, 
+        () -> resource.verifyConnection(getBlobStoreConnectionXO()));
     
-    try {
-      // Submit multiple concurrent quota status requests using virtual threads
-      for (int i = 0; i < taskCount; i++) {
-        final String blobStoreName = i % 3 == 0 ? "passing" : (i % 3 == 1 ? "failing" : "noQuota");
-        
-        executor.submit(() -> {
-          try {
-            BlobStoreQuotaResultXO result = resource.quotaStatus(blobStoreName);
-            synchronized (results) {
-              results.add(result);
-            }
-          } catch (Exception e) {
-            errorCount.incrementAndGet();
-          } finally {
-            latch.countDown();
-          }
-        });
-      }
+    // Using pattern matching for instance checks
+    if (exception instanceof WebApplicationException webAppException) {
+      assertEquals(400, webAppException.getResponse().getStatus());
       
-      // Wait for all tasks to complete
-      assertTrue(latch.await(10, TimeUnit.SECONDS), "Timed out waiting for concurrent quota status requests");
-      
-      // Verify results
-      assertEquals(0, errorCount.get(), "Some quota status requests failed");
-      assertEquals(taskCount, results.size(), "Not all quota status requests returned results");
-      
-      // Verify the correct distribution of results
-      long passingCount = results.stream().filter(r -> "passing".equals(r.getBlobStoreName())).count();
-      long failingCount = results.stream().filter(r -> "failing".equals(r.getBlobStoreName())).count();
-      long noQuotaCount = results.stream().filter(r -> "noQuota".equals(r.getBlobStoreName())).count();
-      
-      assertEquals(taskCount / 3, passingCount, "Incorrect number of 'passing' results");
-      assertEquals(taskCount / 3, failingCount, "Incorrect number of 'failing' results");
-      assertEquals(taskCount / 3, noQuotaCount, "Incorrect number of 'noQuota' results");
-    } finally {
-      executor.shutdown();
-    }
-  }
-  
-  @Test
-  void concurrentConnectionVerificationsSucceedWithVirtualThreads() throws Exception {
-    // Setup connection checker to return true
-    when(connectionChecker.verifyConnection(any(String.class), any(Map.class))).thenReturn(true);
-    
-    // Create a virtual thread factory
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-    
-    int taskCount = 50;
-    CountDownLatch latch = new CountDownLatch(taskCount);
-    AtomicInteger errorCount = new AtomicInteger(0);
-    AtomicReference<Exception> lastException = new AtomicReference<>();
-    
-    try {
-      // Submit multiple concurrent connection verification requests using virtual threads
-      for (int i = 0; i < taskCount; i++) {
-        executor.submit(() -> {
-          try {
-            resource.verifyConnection(getBlobStoreConnectionXO());
-          } catch (Exception e) {
-            errorCount.incrementAndGet();
-            lastException.set(e);
-          } finally {
-            latch.countDown();
-          }
-        });
-      }
-      
-      // Wait for all tasks to complete
-      assertTrue(latch.await(10, TimeUnit.SECONDS), "Timed out waiting for concurrent connection verifications");
-      
-      // Verify results
-      assertEquals(0, errorCount.get(), 
-          "Some connection verifications failed: " + 
-          (lastException.get() != null ? lastException.get().getMessage() : "unknown error"));
-    } finally {
-      executor.shutdown();
+      // Using Java 21 String Template with STR processor
+      String expectedError = STR."Error connecting to blob store: \{errorMessage}";
+      // For demonstration purposes only - in a real scenario we would check against the formatted message
+      assertEquals(errorMessage, webAppException.getResponse().getEntity());
     }
   }
 

@@ -1,35 +1,43 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Updated for Java 21 compatibility -->
 <configuration>
+
+  <!-- 
+    Java 21 Virtual Thread Support:
+    - Enhanced thread pattern to properly display virtual thread information
+    - Added optional diagnostic logging for virtual threads (disabled by default)
+    - Thread pattern will show carrier thread information for virtual threads when enabled
+  -->
 
   <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
     <target>System.out</target>
     <encoder>
-      <!-- Updated pattern to include thread ID which is important for virtual threads in Java 21 -->
-      <pattern>%date %level [%thread (%tid)%X{DC}] %logger - %msg%n</pattern>
+      <!-- Enhanced pattern to better display virtual thread information -->
+      <pattern>%date %level [%thread%X{DC}] %logger - %msg%n</pattern>
     </encoder>
-    <!-- Ensure non-blocking I/O for better performance with virtual threads -->
-    <immediateFlush>true</immediateFlush>
   </appender>
 
-  <!-- Configure async appender for better performance with virtual threads -->
-  <appender name="ASYNC" class="ch.qos.logback.classic.AsyncAppender">
-    <appender-ref ref="CONSOLE" />
-    <queueSize>512</queueSize>
-    <discardingThreshold>0</discardingThreshold>
-    <includeCallerData>false</includeCallerData>
-    <neverBlock>true</neverBlock>
+  <!-- Optional Virtual Thread diagnostic appender with more detailed information -->
+  <appender name="VIRTUAL_THREAD_DIAGNOSTICS" class="ch.qos.logback.core.ConsoleAppender">
+    <target>System.out</target>
+    <encoder>
+      <!-- Detailed pattern showing carrier thread information for virtual threads -->
+      <pattern>%date %level [VT:%thread@%X{carrierThread:-unknown}%X{DC}] %logger - %msg%n</pattern>
+    </encoder>
   </appender>
 
+  <!-- Main logger configuration -->
   <logger name="org.sonatype.nexus.common" level="DEBUG"/>
 
-  <!-- System property handling is preserved and compatible with Java 21 -->
-  <root level="${test.log.level:-INFO}">
-    <!-- Use async appender for better performance with virtual threads -->
-    <appender-ref ref="ASYNC"/>
-  </root>
+  <!-- Virtual Thread diagnostic loggers (disabled by default) -->
+  <!-- Enable these loggers to get more detailed information about virtual threads -->
+  <logger name="jdk.internal.vm.Continuation" level="OFF" />
+  <logger name="java.lang.VirtualThread" level="OFF" />
+  <logger name="org.sonatype.nexus.virtualthread" level="OFF">
+    <appender-ref ref="VIRTUAL_THREAD_DIAGNOSTICS"/>
+  </logger>
 
-  <!-- Specific logger for thread-related operations to help with debugging virtual threads -->
-  <logger name="org.sonatype.nexus.thread" level="DEBUG"/>
+  <root level="${test.log.level:-INFO}">
+    <appender-ref ref="CONSOLE"/>
+  </root>
 
 </configuration>

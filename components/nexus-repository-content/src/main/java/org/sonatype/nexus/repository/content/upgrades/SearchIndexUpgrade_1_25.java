@@ -17,6 +17,8 @@ import java.util.Optional;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
+import static java.lang.StringTemplate.STR;
+
 import org.sonatype.nexus.repository.content.search.upgrade.SearchIndexUpgrade;
 
 /**
@@ -27,8 +29,10 @@ import org.sonatype.nexus.repository.content.search.upgrade.SearchIndexUpgrade;
 public class SearchIndexUpgrade_1_25
     extends SearchIndexUpgrade
 {
+  private static final String VERSION = "1.25";
+  
   @Override
   public Optional<String> version() {
-    return Optional.of("1.25");
+    return Optional.of(STR."\{VERSION}");
   }
 }

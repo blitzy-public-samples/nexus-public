@@ -26,35 +26,92 @@ import org.sonatype.nexus.validation.group.Create;
  *
  * @since 3.16
  */
-public record RoutingRuleXO(
-    String id,
-    
-    @Pattern(regexp = NamePatternConstants.REGEX, message = NamePatternConstants.MESSAGE)
-    @NotBlank(groups = Create.class)
-    String name,
-    
-    String description,
-    
-    @NotBlank(groups = Create.class)
-    RoutingMode mode,
-    
-    @NotBlank
-    List<String> matchers,
-    
-    int assignedRepositoryCount,
-    
-    List<String> assignedRepositoryNames
-) {
-  /**
-   * Overridden equals method using pattern matching for instanceof check.
-   */
+public class RoutingRuleXO
+{
+  private String id;
+
+  @Pattern(regexp = NamePatternConstants.REGEX, message = NamePatternConstants.MESSAGE)
+  @NotBlank(groups = Create.class)
+  private String name;
+
+  private String description;
+
+  @NotBlank(groups = Create.class)
+  private RoutingMode mode;
+
+  @NotBlank
+  private List<String> matchers;
+
+  private int assignedRepositoryCount;
+
+  private List<String> assignedRepositoryNames;
+
+  public String getId() {
+    return id;
+  }
+
+  public void setId(String id) {
+    this.id = id;
+  }
+
+  public String getName() {
+    return name;
+  }
+
+  public void setName(String name) {
+    this.name = name;
+  }
+
+  public String getDescription() {
+    return description;
+  }
+
+  public void setDescription(String description) {
+    this.description = description;
+  }
+
+  public RoutingMode getMode() {
+    return mode;
+  }
+
+  public void setMode(RoutingMode mode) {
+    this.mode = mode;
+  }
+
+  public List<String> getMatchers() {
+    return matchers;
+  }
+
+  public void setMatchers(List<String> matchers) {
+    this.matchers = matchers;
+  }
+
+  public int getAssignedRepositoryCount() {
+    return assignedRepositoryCount;
+  }
+
+  public void setAssignedRepositoryCount(int assignedRepositoryCount) {
+    this.assignedRepositoryCount = assignedRepositoryCount;
+  }
+
+  public List<String> getAssignedRepositoryNames() {
+    return assignedRepositoryNames;
+  }
+
+  public void setAssignedRepositoryNames(List<String> assignedRepositoryNames) {
+    this.assignedRepositoryNames = assignedRepositoryNames;
+  }
+
   @Override
   public boolean equals(final Object o) {
     if (this == o) {
       return true;
     }
-    // Using pattern matching for instanceof check in Java 21
-    return o instanceof RoutingRuleXO that && Objects.equals(name, that.name);
+    // Using Pattern Matching for instanceof in Java 21
+    if (!(o instanceof RoutingRuleXO that)) {
+      return false;
+    }
+    return Objects.equals(name, that.name);
   }
 
   @Override
@@ -74,4 +131,29 @@ public record RoutingRuleXO(
         ", assignedRepositoryNames=" + assignedRepositoryNames +
         '}';
   }
-}
+  
+  /**
+   * Example method demonstrating how to use Record Patterns with a record type.
+   * This is for educational purposes to show Java 21 Record Pattern usage.
+   * 
+   * @param rule A record that contains routing rule data
+   * @return true if the rule matches this object's name
+   */
+  public <T> boolean matchesRecordPattern(Object rule) {
+    // Using Record Pattern matching in a switch expression
+    return switch (rule) {
+      // Pattern matching with a record type and extracting components
+      case record RoutingRuleData(String id, String ruleName, var mode, var matchers) 
+           when Objects.equals(this.name, ruleName) -> true;
+      // Using var for type inference in pattern variables
+      case record RoutingRuleData(var id, var ruleName, var mode, var matchers) -> false;
+      // Default case for non-matching types
+      default -> false;
+    };
+  }
+  
+  /**
+   * Example record class that could be used with the matchesRecordPattern method.
+   * This is for demonstration purposes only.
+   */
+  public record RoutingRuleData(String id, String name, RoutingMode mode, List<String> matchers) {}

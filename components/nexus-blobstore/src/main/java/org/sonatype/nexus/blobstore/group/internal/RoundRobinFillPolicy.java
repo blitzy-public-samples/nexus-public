@@ -12,7 +12,6 @@
  */
 package org.sonatype.nexus.blobstore.group.internal;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -30,11 +29,14 @@ import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaService;
 
 import com.google.common.annotations.VisibleForTesting;
 
-import static java.util.Collections.rotate;
 import static org.sonatype.nexus.common.app.FeatureFlags.BLOBSTORE_SKIP_ON_SOFTQUOTA_VIOLATION;
 
 /**
  * {@link FillPolicy} that divides writes to member blob stores evenly based upon a round robin selection.
+ * <p>
+ * This implementation is thread-safe and optimized for high concurrency with Virtual Threads.
+ * It uses an AtomicInteger for sequence tracking to ensure consistent round-robin behavior
+ * even under high concurrent access from many Virtual Threads.
  *
  * @since 3.14
  */
@@ -72,7 +74,11 @@ public class RoundRobinFillPolicy
   }
 
   /**
-   * Retrieves the next writable member in the group
+   * Retrieves the next writable member in the group.
+   * <p>
+   * This method is optimized for high concurrency with Virtual Threads by avoiding unnecessary
+   * object creation and using efficient sequence handling. It starts from the next index in the
+   * round-robin sequence and checks each member in order until finding a writable one.
    *
    * @param members of the BlobStoreGroup
    * @return the first writable {@link BlobStore} or null if none are writable
@@ -82,51 +88,79 @@ public class RoundRobinFillPolicy
     if (members.isEmpty()) {
       return null;
     }
-    final int index = nextIndex() % members.size();
-    log.trace(STR."Using index \{index}");
-
-    ArrayList<BlobStore> rotatedMembers = new ArrayList<>(members);
-    rotate(rotatedMembers, index);
     
-    // Use pattern matching to find the first suitable BlobStore
-    for (BlobStore blobStore : rotatedMembers) {
-      switch (blobStore) {
-        case BlobStore bs when bs.isWritable() && bs.isStorageAvailable() && (!skipOnSoftQuotaViolation || hasNoQuotaViolation(bs)) -> {
-          return bs;
-        }
-        default -> {
-          // Continue to next member
-        }
+    final int size = members.size();
+    final int startIndex = nextIndex() % size;
+    
+    log.trace("Starting search from index {}", startIndex);
+
+    // First try from startIndex to the end of the list
+    for (int i = startIndex; i < size; i++) {
+      BlobStore blobStore = members.get(i);
+      if (isWritable(blobStore)) {
+        return blobStore;
+      }
+    }
+    
+    // If not found, try from the beginning to startIndex
+    for (int i = 0; i < startIndex; i++) {
+      BlobStore blobStore = members.get(i);
+      if (isWritable(blobStore)) {
+        return blobStore;
       }
     }
     
     return null;
   }
 
-  @VisibleForTesting
-  int nextIndex() {
-    // Optimized for Virtual Thread compatibility - avoid lambda in getAndUpdate
-    int current, next;
-    do {
-      current = sequence.get();
-      next = current + 1;
-      if (next < 0) { // Handle overflow
-        next = 0;
-      }
-    } while (!sequence.compareAndSet(current, next));
-    
-    return current;
+  /**
+   * Checks if a BlobStore is writable and meets all criteria for writing.
+   * Extracted as a separate method to improve readability and maintainability.
+   *
+   * @param blobStore the BlobStore to check
+   * @return true if the BlobStore is writable and meets all criteria
+   */
+  private boolean isWritable(BlobStore blobStore) {
+    return blobStore.isWritable() && 
+           blobStore.isStorageAvailable() && 
+           (skipOnSoftQuotaViolation ? hasNoQuotaViolation(blobStore) : true);
   }
 
+  /**
+   * Returns the next index in the round-robin sequence.
+   * <p>
+   * This method is optimized to reduce contention under high concurrency by using
+   * a simple incrementAndGet operation and handling integer overflow safely.
+   * 
+   * @return the next index to use in the round-robin sequence
+   */
+  @VisibleForTesting
+  int nextIndex() {
+    int next = sequence.incrementAndGet();
+    // Handle potential overflow by resetting to 0 if negative
+    if (next < 0) {
+      // Only one thread will succeed in resetting, others will get the updated value
+      sequence.compareAndSet(next, 0);
+      return 0;
+    }
+    return next;
+  }
+
+  /**
+   * Checks if a BlobStore has no quota violation.
+   *
+   * @param blobStore the BlobStore to check
+   * @return true if the BlobStore has no quota violation
+   */
   private boolean hasNoQuotaViolation(final BlobStore blobStore) {
     BlobStoreQuotaResult result = quotaService.checkQuota(blobStore);
     if (result != null && result.isViolation()) {
-      String blobStoreName = result.getBlobStoreName();
       if (log.isTraceEnabled()) {
-        log.info(STR."Skipping blobStore \{blobStoreName} due to soft-quota violation: \{result.getMessage()}");
+        log.info("Skipping blobStore {} due to soft-quota violation: {}", result.getBlobStoreName(),
+            result.getMessage());
       }
       else {
-        log.info(STR."Skipping blobStore \{blobStoreName} due to soft-quota violation");
+        log.info("Skipping blobStore {} due to soft-quota violation", result.getBlobStoreName());
       }
       return false;
     }

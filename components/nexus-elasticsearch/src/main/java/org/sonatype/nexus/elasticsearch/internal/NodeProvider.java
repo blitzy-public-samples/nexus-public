@@ -18,6 +18,9 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 import javax.annotation.Nullable;
@@ -95,9 +98,20 @@ public class NodeProvider
 
         // yellow status means that node is up (green will mean that replicas are online but we have only one node)
         log.debug("Waiting for yellow-status");
-        newNode.client().admin().cluster().prepareHealth().setWaitForYellowStatus().execute().actionGet();
+        
+        // Use a virtual thread to wait for yellow status instead of blocking the current thread
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+          CompletableFuture.runAsync(() -> {
+            newNode.client().admin().cluster().prepareHealth().setWaitForYellowStatus().execute().actionGet();
+          }, executor).join();
+        }
 
         this.node = newNode;
+      }
+      catch (InterruptedException e) {
+        // Properly handle Virtual Thread interruptions
+        Thread.currentThread().interrupt();
+        throw new RuntimeException("Interrupted while waiting for Elasticsearch node to start", e);
       }
       catch (Exception e) {
         // If we can not acquire an ES node reference, give up
@@ -120,22 +134,44 @@ public class NodeProvider
     settings.put("path.plugins", new File(directories.getInstallDirectory(), "plugins").getAbsolutePath());
     NodeBuilder builder = nodeBuilder().settings(settings);
 
+    // Install plugins asynchronously using Virtual Threads for non-blocking I/O
     if (!plugins.isEmpty()) {
-      PluginManager pluginManager = new PluginManager(new Environment(settings.build()), null, OutputMode.VERBOSE,
+      installPlugins(settings.build());
+    }
+
+    // Use try-with-resources to ensure proper TCCL handling with Java 21
+    try (var tccl = TcclBlock.begin(NodeProvider.class.getClassLoader())) {
+      return new PluginUsingNode(builder.settings().build(), deployedPluginClasses()).start();
+    }
+  }
+
+  private void installPlugins(Settings settings) {
+    // Use Virtual Threads for plugin installation to avoid blocking
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      List<CompletableFuture<Void>> futures = new ArrayList<>();
+      
+      PluginManager pluginManager = new PluginManager(
+          new Environment(settings), 
+          null, 
+          OutputMode.VERBOSE,
           new TimeValue(30000));
 
       for (String plugin : plugins) {
-        try {
-          pluginManager.downloadAndExtract(plugin, Terminal.DEFAULT, true);
-        }
-        catch (IOException e) {
-          log.warn("Failed to install elasticsearch plugin: {}", plugin);
-        }
+        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+          try {
+            pluginManager.downloadAndExtract(plugin, Terminal.DEFAULT, true);
+            log.info("Successfully installed Elasticsearch plugin: {}", plugin);
+          }
+          catch (IOException e) {
+            log.warn("Failed to install elasticsearch plugin: {}", plugin, e);
+          }
+        }, executor);
+        
+        futures.add(future);
       }
-    }
-
-    try (TcclBlock tccl = TcclBlock.begin(NodeProvider.class.getClassLoader())) {
-      return new PluginUsingNode(builder.settings().build(), deployedPluginClasses()).start();
+      
+      // Wait for all plugin installations to complete
+      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
     }
   }
 

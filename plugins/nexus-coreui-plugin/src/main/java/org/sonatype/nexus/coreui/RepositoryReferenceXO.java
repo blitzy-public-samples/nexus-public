@@ -12,28 +12,58 @@
  */
 package org.sonatype.nexus.coreui;
 
-import javax.validation.constraints.NotBlank;
+import java.util.Objects;
 
 /**
  * Repository reference exchange object.
- * Refactored as a Java record for Java 21 compatibility.
+ * 
+ * Optimized for Java 21 with immutable fields and pattern matching support.
  *
  * @since 3.0
  */
-public record RepositoryReferenceXO(
-    @NotBlank String id,
-    @NotBlank String name,
-    String type,
-    String format,
-    String versionPolicy,
-    String url,
-    String blobStoreName,
-    RepositoryStatusXO status,
-    int sortOrder)
+public class RepositoryReferenceXO
+    extends ReferenceXO
 {
+  private final String type;
+
+  private final String format;
+
+  private final String versionPolicy;
+
+  private final String url;
+
+  private final String blobStoreName;
+
+  private final RepositoryStatusXO status;
+
   /**
-   * Constructor with default sortOrder (0).
+   * sortOrder will override the typical alphanumeric ordering in the UI, so the higher your sortOrder, the closer to
+   * the top you will get
    */
+  private final int sortOrder;
+
+  public RepositoryReferenceXO(
+      final String id,
+      final String name,
+      final String type,
+      final String format,
+      final String versionPolicy,
+      final String url,
+      final String blobStoreName,
+      final RepositoryStatusXO status,
+      final int sortOrder)
+  {
+    setId(id);
+    setName(name);
+    this.type = type;
+    this.format = format;
+    this.versionPolicy = versionPolicy;
+    this.url = url;
+    this.status = status;
+    this.blobStoreName = blobStoreName;
+    this.sortOrder = sortOrder;
+  }
+
   public RepositoryReferenceXO(
       final String id,
       final String name,
@@ -46,89 +76,96 @@ public record RepositoryReferenceXO(
   {
     this(id, name, type, format, versionPolicy, url, blobStoreName, status, 0);
   }
-  
+
   /**
-   * Returns the ID of this reference.
-   * Provided for backward compatibility with ReferenceXO.
-   * 
-   * @return the ID
+   * Deconstruction pattern method to support pattern matching in Java 21.
+   * Allows using this object with record patterns elsewhere in the codebase.
    */
-  public String getId() {
-    return id();
+  public record Components(
+      String id,
+      String name,
+      String type,
+      String format,
+      String versionPolicy,
+      String url,
+      String blobStoreName,
+      RepositoryStatusXO status,
+      int sortOrder) {}
+
+  /**
+   * Returns the components of this object for use with pattern matching.
+   */
+  public Components components() {
+    return new Components(
+        getId(),
+        getName(),
+        type,
+        format,
+        versionPolicy,
+        url,
+        blobStoreName,
+        status,
+        sortOrder);
   }
-  
-  /**
-   * Returns the name of this reference.
-   * Provided for backward compatibility with ReferenceXO.
-   * 
-   * @return the name
-   */
-  public String getName() {
-    return name();
-  }
-  
-  /**
-   * Returns the type of this repository reference.
-   * 
-   * @return the type
-   */
+
   public String getType() {
-    return type();
+    return type;
   }
-  
-  /**
-   * Returns the format of this repository reference.
-   * 
-   * @return the format
-   */
+
   public String getFormat() {
-    return format();
+    return format;
   }
-  
-  /**
-   * Returns the version policy of this repository reference.
-   * 
-   * @return the version policy
-   */
+
   public String getVersionPolicy() {
-    return versionPolicy();
+    return versionPolicy;
   }
-  
-  /**
-   * Returns the URL of this repository reference.
-   * 
-   * @return the URL
-   */
+
   public String getUrl() {
-    return url();
+    return url;
   }
-  
-  /**
-   * Returns the blob store name of this repository reference.
-   * 
-   * @return the blob store name
-   */
+
   public String getBlobStoreName() {
-    return blobStoreName();
+    return blobStoreName;
   }
-  
-  /**
-   * Returns the status of this repository reference.
-   * 
-   * @return the status
-   */
+
   public RepositoryStatusXO getStatus() {
-    return status();
+    return status;
   }
-  
-  /**
-   * Returns the sort order of this repository reference.
-   * sortOrder will override the typical alphanumeric ordering in the UI, so the higher your sortOrder, the closer to
-   * the top you will get
-   * 
-   * @return the sort order
-   */
+
   public int getSortOrder() {
-    return sortOrder();
+    return sortOrder;
+  }
+
+  @Override
+  public boolean equals(final Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+    if (!super.equals(o)) {
+      return false;
+    }
+    RepositoryReferenceXO that = (RepositoryReferenceXO) o;
+    return sortOrder == that.sortOrder &&
+        Objects.equals(type, that.type) &&
+        Objects.equals(format, that.format) &&
+        Objects.equals(versionPolicy, that.versionPolicy) &&
+        Objects.equals(url, that.url) &&
+        Objects.equals(blobStoreName, that.blobStoreName) &&
+        Objects.equals(status, that.status);
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hash(super.hashCode(), type, format, versionPolicy, url, blobStoreName, status, sortOrder);
+  }
+
+  @Override
+  public String toString() {
+    return STR."RepositoryReferenceXO [id=\{getId()}, name=\{getName()}, type=\{type}, format=\{format}, " +
+        "versionPolicy=\{versionPolicy}, url=\{url}, blobStoreName=\{blobStoreName}, status=\{status}, " +
+        "sortOrder=\{sortOrder}]"; 
   }
 }

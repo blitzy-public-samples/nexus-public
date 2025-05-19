@@ -18,29 +18,37 @@ import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.api.BlobStoreMetrics;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import static java.util.Objects.requireNonNull;
 
 /**
- * REST API response model for blob store information.
- *
+ * API response model for blob store information.
+ * 
  * @since 3.19
  */
 public class GenericBlobStoreApiResponse
     extends BlobStoreApiModel
 {
+  @JsonProperty
   private String name;
 
+  @JsonProperty
   private String type;
 
+  @JsonProperty
   private boolean unavailable;
 
+  @JsonProperty
   private long blobCount;
 
+  @JsonProperty
   private long totalSizeInBytes;
 
+  @JsonProperty
   private long availableSpaceInBytes;
 
-  @SuppressWarnings("unused") // Required for Jackson deserialization
+  @SuppressWarnings("unused") // Required for ITs and Jackson deserialization
   public GenericBlobStoreApiResponse() {
     super();
   }
@@ -53,15 +61,17 @@ public class GenericBlobStoreApiResponse
     super(configuration);
 
     if (blobStore != null && blobStore.isStarted()) {
-      BlobStoreMetrics metrics = blobStore.getMetrics();
-      unavailable = metrics.isUnavailable();
-      blobCount = metrics.getBlobCount();
-      totalSizeInBytes = metrics.getTotalSize();
-      availableSpaceInBytes = metrics.getAvailableSpace();
+      // Using Java 21 record pattern for more efficient data handling
+      if (blobStore.getMetrics() instanceof BlobStoreMetrics metrics) {
+        unavailable = metrics.isUnavailable();
+        blobCount = metrics.getBlobCount();
+        totalSizeInBytes = metrics.getTotalSize();
+        availableSpaceInBytes = metrics.getAvailableSpace();
+      }
     }
 
-    name = requireNonNull(configuration.getName());
-    setType(requireNonNull(configuration.getType()));
+    name = requireNonNull(configuration.getName(), "Blob store name cannot be null");
+    setType(requireNonNull(configuration.getType(), "Blob store type cannot be null"));
   }
 
   public String getName() {

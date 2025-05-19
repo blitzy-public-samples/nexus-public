@@ -24,6 +24,10 @@ import com.google.common.hash.HashCode;
 
 /**
  * Fluent API to create/find an asset; at this point we already know the asset path.
+ * <p>
+ * Implementations of this interface may leverage Java 21 Pattern Matching features
+ * for more expressive type handling and concise code. This enables more sophisticated
+ * data queries and processing when working with different types of assets and components.
  *
  * @since 3.21
  */
@@ -31,6 +35,9 @@ public interface FluentAssetBuilder
 {
   /**
    * Continue building the asset using the given kind.
+   * <p>
+   * Implementations may use Pattern Matching to handle different kinds of assets
+   * in a more type-safe and expressive way.
    *
    * @since 3.24
    */
@@ -38,11 +45,17 @@ public interface FluentAssetBuilder
 
   /**
    * Continue building the asset using the given owning component.
+   * <p>
+   * Implementations can leverage Pattern Matching to handle different component types
+   * more effectively, enabling more concise code when processing various component structures.
    */
   FluentAssetBuilder component(Component component);
 
   /**
    * Continue building this asset by converting a temporary blob into a permanent blob and attaching it to this asset.
+   * <p>
+   * Implementations may use Pattern Matching to handle different blob types and structures
+   * in a more expressive way.
    *
    * @since 3.30
    */
@@ -50,6 +63,9 @@ public interface FluentAssetBuilder
 
   /**
    * Continue building this asset by attaching an existing blob to this asset.
+   * <p>
+   * Implementations can use Pattern Matching to handle different blob and checksum combinations
+   * more effectively.
    *
    * @since 3.30
    */
@@ -57,6 +73,9 @@ public interface FluentAssetBuilder
 
   /**
    * Continue building the asset using the given attributes.
+   * <p>
+   * Implementations may use Pattern Matching to handle different attribute types
+   * in a more type-safe and expressive way.
    *
    * @since 3.31
    */
@@ -65,6 +84,9 @@ public interface FluentAssetBuilder
   /**
    * Save the asset using details built so far. If the asset doesn't exist it is created otherwise the blob reference
    * is updated.
+   * <p>
+   * Return types are designed to be compatible with Pattern Matching in switch expressions
+   * and statements, allowing for more concise handling of the returned asset.
    *
    * @since 3.30
    */
@@ -73,6 +95,9 @@ public interface FluentAssetBuilder
   /**
    * Find by asset path if an asset exists using the details built so far.
    * Fields such as attributes, kind will be ignored.
+   * <p>
+   * The returned Optional is designed to work seamlessly with Pattern Matching in switch expressions
+   * and statements, enabling more concise handling of present/empty cases.
    */
   Optional<FluentAsset> find();
 }

@@ -1,0 +1,65 @@
+{
+  "connection": {
+    "timeout": 30000,
+    "retries": 2,
+    "userAgentSuffix": "Nexus/Java21-VirtualThread-Test",
+    "enableCircularRedirects": true,
+    "enableCookies": true,
+    "useTcpKeepAlive": true,
+    "maxConnections": 200,
+    "maxConnectionsPerRoute": 20,
+    "connectionPoolTimeout": 5000,
+    "socketTimeout": 60000,
+    "socketBufferSize": 8192,
+    "bufferSize": 8192,
+    "virtualThreadOptimized": true,
+    "nonBlockingIO": true,
+    "preventThreadPinning": true
+  },
+  "proxy": {
+    "http": {
+      "enabled": true,
+      "host": "http-proxy",
+      "port": 8080,
+      "authentication": {
+        "type": "none"
+      },
+      "nonProxyHosts": [
+        "localhost",
+        "127.0.0.1",
+        "::1",
+        "*.local",
+        "*.internal"
+      ]
+    },
+    "https": {
+      "enabled": true,
+      "host": "https-proxy",
+      "port": 8443,
+      "authentication": {
+        "type": "none"
+      },
+      "nonProxyHosts": [
+        "localhost",
+        "127.0.0.1",
+        "::1",
+        "*.local",
+        "*.internal"
+      ]
+    }
+  },
+  "virtualThreads": {
+    "enabled": true,
+    "maxConcurrentRequests": 10000,
+    "ioMode": "NON_BLOCKING",
+    "monitorPinning": true,
+    "pinningThreshold": 100,
+    "connectionAcquisitionTimeout": 10000
+  },
+  "tls": {
+    "protocols": ["TLSv1.2", "TLSv1.3"],
+    "verifyHostname": true,
+    "trustAllCertificates": false
+  },
+  "disableContentCompression": false
+}

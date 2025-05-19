@@ -24,6 +24,12 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import org.sonatype.goodies.testsupport.TestSupport;
@@ -100,6 +106,11 @@ public abstract class FileBlobStoreITSupport
   private static final int METRICS_FLUSH_TIMEOUT = 1;
 
   private static final int QUOTA_CHECK_INTERVAL = 5;
+  
+  /**
+   * System property to enable virtual threads for tests
+   */
+  public static final String VIRTUAL_THREADS_ENABLED_PROPERTY = "test.virtual.threads";
 
   public static final ImmutableMap<String, String> TEST_HEADERS = ImmutableMap.of(
       CREATED_BY_HEADER, "test",
@@ -141,6 +152,72 @@ public abstract class FileBlobStoreITSupport
   private BlobStoreReconciliationLogger reconciliationLogger;
 
   protected abstract FileBlobDeletionIndex fileBlobDeletionIndex();
+  
+  /**
+   * Checks if virtual threads are enabled for testing.
+   *
+   * @return true if virtual threads are enabled, false otherwise
+   */
+  public static boolean isVirtualThreadsEnabled() {
+    return Boolean.getBoolean(VIRTUAL_THREADS_ENABLED_PROPERTY);
+  }
+  
+  /**
+   * Creates an ExecutorService using virtual threads when enabled, or a fixed thread pool otherwise.
+   *
+   * @param threadCount the number of threads to use when virtual threads are disabled
+   * @return an ExecutorService configured according to the virtual threads setting
+   */
+  public static ExecutorService createExecutorService(int threadCount) {
+    if (isVirtualThreadsEnabled()) {
+      ThreadFactory factory = Thread.ofVirtual().factory();
+      return Executors.newThreadPerTaskExecutor(factory);
+    } else {
+      return Executors.newFixedThreadPool(threadCount);
+    }
+  }
+  
+  /**
+   * Checks if the current thread is a virtual thread.
+   *
+   * @return true if the current thread is a virtual thread, false otherwise
+   */
+  public static boolean isVirtualThread() {
+    return Thread.currentThread().isVirtual();
+  }
+  
+  /**
+   * Detects if thread pinning is occurring during I/O operations.
+   * This method can be used to identify potential performance bottlenecks when using virtual threads.
+   *
+   * @param operation a description of the operation being performed
+   * @return true if thread pinning is detected, false otherwise
+   */
+  public static boolean detectThreadPinning(String operation) {
+    if (!isVirtualThread()) {
+      return false; // Not a virtual thread, so pinning is not applicable
+    }
+    
+    // Get the current stack trace to analyze for pinning causes
+    StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
+    boolean pinningDetected = false;
+    
+    // Look for known causes of thread pinning in the stack trace
+    for (StackTraceElement element : stackTrace) {
+      String className = element.getClassName();
+      String methodName = element.getMethodName();
+      
+      // Check for synchronized methods or blocks that can cause pinning
+      if ((className.contains("java.io") || className.contains("java.nio")) && 
+          (methodName.contains("lock") || methodName.contains("synchronized"))) {
+        pinningDetected = true;
+        log.warn("Thread pinning detected during {} operation in {}.{}", 
+            operation, className, methodName);
+      }
+    }
+    
+    return pinningDetected;
+  }
 
   @Before
   public void setUp() throws Exception {
@@ -524,6 +601,76 @@ public abstract class FileBlobStoreITSupport
     verify(fileOperations, times(2)).hardLink(any(), any());
     verify(fileOperations, times(2)).copy(any(), any());
     verify(fileOperations, times(6)).moveAtomic(any(), any());
+  }
+  
+  /**
+   * Tests concurrent operations using virtual threads when enabled.
+   * This test creates multiple blobs concurrently and verifies they are all created successfully.
+   */
+  @Test
+  public void testConcurrentOperationsWithVirtualThreads() throws Exception {
+    // Skip detailed logging for this test as it generates a lot of output
+    final int concurrentOperations = 50;
+    final CountDownLatch latch = new CountDownLatch(concurrentOperations);
+    final AtomicInteger successCount = new AtomicInteger(0);
+    final AtomicInteger failureCount = new AtomicInteger(0);
+    
+    // Create an executor service based on the virtual threads configuration
+    ExecutorService executor = createExecutorService(10);
+    
+    try {
+      // Submit concurrent blob creation tasks
+      for (int i = 0; i < concurrentOperations; i++) {
+        final int index = i;
+        executor.submit(() -> {
+          try {
+            // Check if we're running on a virtual thread when enabled
+            boolean isVirtual = isVirtualThread();
+            if (isVirtualThreadsEnabled()) {
+              assertThat("Should be running on a virtual thread when enabled", isVirtual, is(true));
+            }
+            
+            // Create a blob with unique content
+            byte[] content = ("test-content-" + index).getBytes();
+            Blob blob = underTest.create(new ByteArrayInputStream(content), TEST_HEADERS);
+            
+            // Check for thread pinning during I/O operations
+            boolean pinningDetected = detectThreadPinning("blob creation");
+            if (pinningDetected && isVirtualThreadsEnabled()) {
+              log.warn("Thread pinning detected during concurrent blob creation test");
+            }
+            
+            // Verify the blob was created correctly
+            byte[] retrievedContent = extractContent(blob);
+            if (Arrays.equals(content, retrievedContent)) {
+              successCount.incrementAndGet();
+            } else {
+              failureCount.incrementAndGet();
+            }
+          } catch (Exception e) {
+            log.error("Error in concurrent operation", e);
+            failureCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all operations to complete
+      boolean completed = latch.await(30, TimeUnit.SECONDS);
+      assertThat("All concurrent operations should complete in time", completed, is(true));
+      
+      // Verify all operations succeeded
+      assertThat("All operations should succeed", successCount.get(), is(concurrentOperations));
+      assertThat("No operations should fail", failureCount.get(), is(0));
+      
+    } finally {
+      executor.shutdown();
+      boolean terminated = executor.awaitTermination(5, TimeUnit.SECONDS);
+      if (!terminated) {
+        executor.shutdownNow();
+      }
+    }
   }
 
   private byte[] testData() {

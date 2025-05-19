@@ -27,17 +27,23 @@ import org.sonatype.nexus.datastore.api.DataStoreConfiguration;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.inject.Injector;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.contrib.java.lang.system.RestoreSystemProperties;
 import org.mockito.ArgumentCaptor;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+// Java 21 test group annotation
+import org.sonatype.nexus.testcommon.virtualthread.Java21TestGroup;
+import org.junit.experimental.categories.Category;
 
 import static com.google.inject.Guice.createInjector;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasEntry;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -47,10 +53,12 @@ import static org.mockito.Mockito.verify;
 /**
  * {@link DataStoreSupport} tests.
  */
+@ExtendWith(MockitoExtension.class)
+@Category(Java21TestGroup.class)
 public class DataStoreSupportTest
     extends TestSupport
 {
-  @Rule
+  @RegisterExtension
   public final RestoreSystemProperties restoreSystemProperties = new RestoreSystemProperties();
 
   static class TestDataStore
@@ -109,7 +117,7 @@ public class DataStoreSupportTest
 
   private DataStoreSupport<?> underTest;
 
-  @Before
+  @BeforeEach
   public void setUp() throws Exception {
     Injector injector = createInjector(new StateGuardModule());
     underTest = spy(injector.getInstance(TestDataStore.class));

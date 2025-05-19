@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 
+  Specialized logging configuration for Virtual Thread tests.
+  This configuration enables detailed logging of thread activities, pinned threads,
+  and performance metrics for diagnosing thread-related issues during test execution.
+-->
+<configuration debug="true">
+
+  <!-- Console appender for general test output -->
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%date %highlight(%-5level) [%thread] %cyan(%logger{36}) - %msg%n</pattern>
+    </encoder>
+    <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+      <level>INFO</level>
+    </filter>
+  </appender>
+  
+  <!-- Console appender for thread pinning warnings -->
+  <appender name="PINNING_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%boldRed(%date %-5level) [%thread] %boldRed(%logger{36}) - %boldRed(%msg) %n</pattern>
+    </encoder>
+    <filter class="ch.qos.logback.classic.filter.LevelFilter">
+      <level>WARN</level>
+      <onMatch>ACCEPT</onMatch>
+      <onMismatch>DENY</onMismatch>
+    </filter>
+  </appender>
+
+  <!-- Specialized appender for Virtual Thread diagnostics -->
+  <appender name="VIRTUAL_THREAD" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <file>target/test-logs/virtual-thread.log</file>
+    <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+      <fileNamePattern>target/test-logs/virtual-thread-%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+      <maxFileSize>10MB</maxFileSize>
+      <maxHistory>5</maxHistory>
+      <totalSizeCap>50MB</totalSizeCap>
+    </rollingPolicy>
+    <encoder>
+      <pattern>%date %-5level [%thread] %logger{36} - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- Thread pinning detection appender with stack traces -->
+  <appender name="THREAD_PINNING" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <file>target/test-logs/thread-pinning.log</file>
+    <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+      <fileNamePattern>target/test-logs/thread-pinning-%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+      <maxFileSize>10MB</maxFileSize>
+      <maxHistory>5</maxHistory>
+      <totalSizeCap>50MB</totalSizeCap>
+    </rollingPolicy>
+    <encoder>
+      <pattern>%date %-5level [%thread] %logger{36} - %msg%n%xException{full}</pattern>
+    </encoder>
+  </appender>
+
+  <!-- Performance metrics appender for thread behavior analysis -->
+  <appender name="PERFORMANCE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <file>target/test-logs/performance.log</file>
+    <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+      <fileNamePattern>target/test-logs/performance-%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+      <maxFileSize>10MB</maxFileSize>
+      <maxHistory>5</maxHistory>
+      <totalSizeCap>50MB</totalSizeCap>
+    </rollingPolicy>
+    <encoder>
+      <pattern>%date %-5level [%thread] %logger{36} - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- Async wrapper for Virtual Thread appender to avoid blocking -->
+  <appender name="ASYNC_VIRTUAL_THREAD" class="ch.qos.logback.classic.AsyncAppender">
+    <appender-ref ref="VIRTUAL_THREAD" />
+    <queueSize>512</queueSize>
+    <discardingThreshold>0</discardingThreshold>
+    <includeCallerData>true</includeCallerData>
+  </appender>
+
+  <!-- Async wrapper for Thread Pinning appender -->
+  <appender name="ASYNC_THREAD_PINNING" class="ch.qos.logback.classic.AsyncAppender">
+    <appender-ref ref="THREAD_PINNING" />
+    <queueSize>512</queueSize>
+    <discardingThreshold>0</discardingThreshold>
+    <includeCallerData>true</includeCallerData>
+  </appender>
+
+  <!-- Async wrapper for Performance appender -->
+  <appender name="ASYNC_PERFORMANCE" class="ch.qos.logback.classic.AsyncAppender">
+    <appender-ref ref="PERFORMANCE" />
+    <queueSize>512</queueSize>
+    <discardingThreshold>0</discardingThreshold>
+    <includeCallerData>true</includeCallerData>
+  </appender>
+
+  <!-- Virtual Thread specific loggers -->
+  <logger name="org.sonatype.nexus.virtualthread" level="DEBUG" additivity="false">
+    <appender-ref ref="CONSOLE" />
+    <appender-ref ref="ASYNC_VIRTUAL_THREAD" />
+  </logger>
+
+  <!-- Thread pinning detection loggers -->
+  <logger name="jdk.internal.vm.VirtualThread" level="DEBUG" additivity="false">
+    <appender-ref ref="CONSOLE" />
+    <appender-ref ref="PINNING_CONSOLE" />
+    <appender-ref ref="ASYNC_THREAD_PINNING" />
+  </logger>
+  
+  <!-- Carrier thread monitoring -->
+  <logger name="jdk.internal.vm.CarrierThread" level="DEBUG" additivity="false">
+    <appender-ref ref="CONSOLE" />
+    <appender-ref ref="ASYNC_THREAD_PINNING" />
+  </logger>
+  
+  <!-- Thread pinning stack trace capture -->
+  <logger name="jdk.internal.misc.PinnedThreadInfo" level="TRACE" additivity="false">
+    <appender-ref ref="CONSOLE" />
+    <appender-ref ref="ASYNC_THREAD_PINNING" />
+  </logger>
+
+  <!-- JDBC connection pool monitoring -->
+  <logger name="com.zaxxer.hikari" level="DEBUG" additivity="false">
+    <appender-ref ref="CONSOLE" />
+    <appender-ref ref="ASYNC_PERFORMANCE" />
+  </logger>
+
+  <!-- Database driver monitoring for thread pinning detection -->
+  <logger name="org.postgresql.jdbc" level="DEBUG" additivity="false">
+    <appender-ref ref="CONSOLE" />
+    <appender-ref ref="ASYNC_THREAD_PINNING" />
+  </logger>
+  
+  <logger name="org.h2.jdbc" level="DEBUG" additivity="false">
+    <appender-ref ref="CONSOLE" />
+    <appender-ref ref="ASYNC_THREAD_PINNING" />
+  </logger>
+
+  <!-- Transaction management monitoring -->
+  <logger name="org.sonatype.nexus.transaction" level="DEBUG" additivity="false">
+    <appender-ref ref="CONSOLE" />
+    <appender-ref ref="ASYNC_PERFORMANCE" />
+  </logger>
+
+  <!-- DataStore operation monitoring -->
+  <logger name="org.sonatype.nexus.datastore" level="DEBUG" additivity="false">
+    <appender-ref ref="CONSOLE" />
+    <appender-ref ref="ASYNC_PERFORMANCE" />
+  </logger>
+
+  <!-- Thread scheduling and execution monitoring -->
+  <logger name="org.sonatype.nexus.thread" level="DEBUG" additivity="false">
+    <appender-ref ref="CONSOLE" />
+    <appender-ref ref="ASYNC_VIRTUAL_THREAD" />
+  </logger>
+
+  <!-- Performance metrics collection -->
+  <logger name="org.sonatype.nexus.common.thread" level="DEBUG" additivity="false">
+    <appender-ref ref="CONSOLE" />
+    <appender-ref ref="ASYNC_PERFORMANCE" />
+  </logger>
+
+  <!-- Virtual Thread I/O operations monitoring -->
+  <logger name="org.sonatype.nexus.thread.io" level="DEBUG" additivity="false">
+    <appender-ref ref="CONSOLE" />
+    <appender-ref ref="ASYNC_VIRTUAL_THREAD" />
+  </logger>
+
+  <!-- MyBatis SQL logging for JDBC operations with Virtual Threads -->
+  <logger name="org.mybatis.spring.SqlSessionTemplate" level="DEBUG" additivity="false">
+    <appender-ref ref="CONSOLE" />
+    <appender-ref ref="ASYNC_PERFORMANCE" />
+  </logger>
+  
+  <!-- JDBC connection acquisition monitoring -->
+  <logger name="org.sonatype.nexus.datastore.mybatis" level="DEBUG" additivity="false">
+    <appender-ref ref="CONSOLE" />
+    <appender-ref ref="ASYNC_THREAD_PINNING" />
+  </logger>
+  
+  <!-- Root logger configuration -->
+  <root level="INFO">
+    <appender-ref ref="CONSOLE" />
+  </root>
+
+</configuration>

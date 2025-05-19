@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Sonatype Nexus (TM) Open Source Version
+  Copyright (c) 2008-present Sonatype, Inc.
+  All rights reserved. Includes the third-party code listed at http://links.sonatype.com/products/nexus/oss/attributions.
+
+  This program and the accompanying materials are made available under the terms of the Eclipse Public License Version 1.0,
+  which accompanies this distribution and is available at http://www.eclipse.org/legal/epl-v10.html.
+
+  Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
+  of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
+  Eclipse Foundation. All other trademarks are the property of their respective owners.
+-->
+
+<!-- 
+  HikariCP connection pool metrics configuration for Virtual Thread support in Java 21.
+  This configuration enables comprehensive monitoring of connection acquisition, usage, and release patterns
+  with Java 21 Virtual Threads, providing insights into how Virtual Threads interact with the connection pool.
+-->
+<hikari-pool-metrics>
+  <!-- Core metrics configuration -->
+  <metrics enabled="true">
+    <!-- Connection acquisition metrics -->
+    <acquisition>
+      <!-- Track time spent acquiring connections from the pool with Virtual Threads -->
+      <timing enabled="true" threshold-ms="100" />
+      <!-- Track connection acquisition failures with Virtual Threads -->
+      <failures enabled="true" />
+      <!-- Track connection timeouts with Virtual Threads -->
+      <timeouts enabled="true" threshold-ms="1000" />
+    </acquisition>
+    
+    <!-- Thread pinning detection for Virtual Threads -->
+    <thread-pinning>
+      <!-- Enable detection of carrier thread pinning events -->
+      <detection enabled="true" />
+      <!-- Log warning when thread pinning exceeds threshold -->
+      <warning-threshold-ms>200</warning-threshold-ms>
+      <!-- Track operations that cause thread pinning -->
+      <operations-tracking enabled="true" />
+    </thread-pinning>
+    
+    <!-- Connection usage metrics -->
+    <usage>
+      <!-- Track connection usage time -->
+      <timing enabled="true" />
+      <!-- Track connection idle time -->
+      <idle-timing enabled="true" />
+      <!-- Track connection leaks -->
+      <leak-detection enabled="true" threshold-ms="30000" />
+    </usage>
+    
+    <!-- Pool saturation metrics -->
+    <pool-saturation>
+      <!-- Track pool utilization percentage -->
+      <utilization enabled="true" warning-threshold="80" />
+      <!-- Track waiting threads count -->
+      <waiting-threads enabled="true" warning-threshold="10" />
+      <!-- Track connection creation rate -->
+      <creation-rate enabled="true" />
+    </pool-saturation>
+  </metrics>
+  
+  <!-- Virtual Thread specific configuration -->
+  <virtual-threads>
+    <!-- Enable optimizations for Virtual Threads -->
+    <optimizations enabled="true">
+      <!-- Use ReentrantLock instead of synchronized blocks to avoid carrier thread pinning -->
+      <use-reentrant-locks>true</use-reentrant-locks>
+      <!-- Avoid ThreadLocal usage that can cause connection leaks with Virtual Threads -->
+      <avoid-thread-locals>true</avoid-thread-locals>
+      <!-- Use structured concurrency for connection operations -->
+      <structured-concurrency>true</structured-concurrency>
+    </optimizations>
+    
+    <!-- Virtual Thread connection handling -->
+    <connection-handling>
+      <!-- Maximum time a Virtual Thread should wait for a connection -->
+      <max-wait-ms>2000</max-wait-ms>
+      <!-- Timeout for connection acquisition in Virtual Threads -->
+      <acquisition-timeout-ms>3000</acquisition-timeout-ms>
+      <!-- Maximum lifetime of a connection used by Virtual Threads -->
+      <max-lifetime-ms>1800000</max-lifetime-ms>
+    </connection-handling>
+    
+    <!-- Performance monitoring for Virtual Threads -->
+    <performance-monitoring>
+      <!-- Track Virtual Thread scheduling delays -->
+      <scheduling-delay enabled="true" warning-threshold-ms="50" />
+      <!-- Track Virtual Thread mount/unmount events -->
+      <mount-events enabled="true" />
+      <!-- Track Virtual Thread blocking operations -->
+      <blocking-operations enabled="true" warning-threshold-ms="100" />
+    </performance-monitoring>
+  </virtual-threads>
+  
+  <!-- Reporting configuration -->
+  <reporting>
+    <!-- Enable JMX reporting -->
+    <jmx enabled="true" />
+    <!-- Enable metrics logging -->
+    <logging enabled="true" interval-seconds="60" />
+    <!-- Enable Dropwizard metrics integration -->
+    <dropwizard enabled="true" />
+  </reporting>
+</hikari-pool-metrics>

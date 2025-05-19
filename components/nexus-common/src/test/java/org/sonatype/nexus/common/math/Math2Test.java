@@ -13,20 +13,20 @@
 package org.sonatype.nexus.common.math;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
-import org.junit.jupiter.api.Test;
-
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
+import org.junit.Test;
+import org.junit.experimental.categories.Category;
 
 /**
  * Tests for {@link Math2}
  */
+@Category(Java21TestGroup.class)
 public class Math2Test
     extends TestSupport
 {
   @Test
-  public void testAddClamped() {
+  public void addClampedHandlesOverflowAndUnderflow() {
     // no overflow or underflow
     assertThat(Math2.addClamped(0L, 0L), is(0L));
     assertThat(Math2.addClamped(Long.MAX_VALUE, 0L), is(Long.MAX_VALUE));
@@ -41,13 +41,13 @@ public class Math2Test
     assertThat(Math2.addClamped(Long.MAX_VALUE, Long.MIN_VALUE), is(-1L));
 
     // overflow
-    assertThat(Math2.addClamped(Long.MAX_VALUE, 1L), is(Long.MAX_VALUE));
-    assertThat(Math2.addClamped(Long.MAX_VALUE, Long.MAX_VALUE), is(Long.MAX_VALUE));
-    assertThat(Math2.addClamped(Long.MAX_VALUE - 1L, Long.MAX_VALUE - 1L), is(Long.MAX_VALUE));
+    assertEquals(Long.MAX_VALUE, Math2.addClamped(Long.MAX_VALUE, 1L), "Should clamp to MAX_VALUE on overflow");
+    assertEquals(Long.MAX_VALUE, Math2.addClamped(Long.MAX_VALUE, Long.MAX_VALUE), "Should clamp to MAX_VALUE on overflow");
+    assertEquals(Long.MAX_VALUE, Math2.addClamped(Long.MAX_VALUE - 1L, Long.MAX_VALUE - 1L), "Should clamp to MAX_VALUE on overflow");
 
     // underflow
-    assertThat(Math2.addClamped(Long.MIN_VALUE, -1L), is(Long.MIN_VALUE));
-    assertThat(Math2.addClamped(Long.MIN_VALUE, Long.MIN_VALUE), is(Long.MIN_VALUE));
-    assertThat(Math2.addClamped(Long.MIN_VALUE + 1L, Long.MIN_VALUE + 1L), is(Long.MIN_VALUE));
+    assertEquals(Long.MIN_VALUE, Math2.addClamped(Long.MIN_VALUE, -1L), "Should clamp to MIN_VALUE on underflow");
+    assertEquals(Long.MIN_VALUE, Math2.addClamped(Long.MIN_VALUE, Long.MIN_VALUE), "Should clamp to MIN_VALUE on underflow");
+    assertEquals(Long.MIN_VALUE, Math2.addClamped(Long.MIN_VALUE + 1L, Long.MIN_VALUE + 1L), "Should clamp to MIN_VALUE on underflow");
   }
 }

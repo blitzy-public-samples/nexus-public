@@ -19,9 +19,8 @@ import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.ThreadPoolExecutor.AbortPolicy;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -47,7 +46,6 @@ import org.sonatype.nexus.repository.content.facet.ContentFacet;
 import org.sonatype.nexus.repository.content.store.InternalIds;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
 import org.sonatype.nexus.repository.upload.UploadManager.UIUploadEvent;
-import org.sonatype.nexus.thread.NexusThreadFactory;
 
 import com.codahale.metrics.annotation.Gauge;
 import com.google.common.annotations.VisibleForTesting;
@@ -59,7 +57,6 @@ import com.google.common.eventbus.Subscribe;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.lang.Integer.parseInt;
-import static java.lang.Thread.MIN_PRIORITY;
 import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.toList;
 import static org.sonatype.nexus.repository.content.search.SearchEventHandler.RequestType.INDEX;
@@ -75,7 +72,7 @@ import static org.sonatype.nexus.repository.content.store.InternalIds.toExternal
  * A background task periodically grabs a page of components and sends them for indexing.
  *
  * If too many components build up events will start to be posted to flush additional pages.
- * These events are handled by an asynchronous receiver using threads from the event pool.
+ * These events are handled by an asynchronous receiver using virtual threads.
  *
  * @since 3.26
  */
@@ -90,8 +87,6 @@ public abstract class SearchEventHandler
   protected static final String FLUSH_ON_SECONDS_KEY = HANDLER_KEY_PREFIX + "flushOnSeconds";
 
   protected static final String NO_PURGE_DELAY_KEY = HANDLER_KEY_PREFIX + "noPurgeDelay";
-
-  protected static final String FLUSH_POOL_SIZE = HANDLER_KEY_PREFIX + "flushPoolSize";
 
   enum RequestType
   {
@@ -113,9 +108,7 @@ public abstract class SearchEventHandler
 
   private final AtomicInteger pendingCount = new AtomicInteger();
 
-  private final int poolSize;
-
-  protected ThreadPoolExecutor threadPoolExecutor;
+  protected ExecutorService executorService;
 
   private Object flushMutex = new Object();
 
@@ -128,8 +121,7 @@ public abstract class SearchEventHandler
       final PeriodicJobService periodicJobService,
       @Named("${" + FLUSH_ON_COUNT_KEY + ":-100}") final int flushOnCount,
       @Named("${" + FLUSH_ON_SECONDS_KEY + ":-2}") final int flushOnSeconds,
-      @Named("${" + NO_PURGE_DELAY_KEY + ":-true}") final boolean noPurgeDelay,
-      @Named("${" + FLUSH_POOL_SIZE + ":-128}") final int poolSize)
+      @Named("${" + NO_PURGE_DELAY_KEY + ":-true}") final boolean noPurgeDelay)
   {
     this.repositoryManager = checkNotNull(repositoryManager);
     this.periodicJobService = checkNotNull(periodicJobService);
@@ -138,9 +130,6 @@ public abstract class SearchEventHandler
     checkArgument(flushOnSeconds > 0, FLUSH_ON_SECONDS_KEY + " must be positive");
     this.flushOnSeconds = flushOnSeconds;
     this.noPurgeDelay = noPurgeDelay;
-
-    checkArgument(poolSize > 0, "Pool size must be greater than zero");
-    this.poolSize = poolSize;
   }
 
   @Override
@@ -150,18 +139,7 @@ public abstract class SearchEventHandler
       flushTask = periodicJobService.schedule(this::pollSearchUpdateRequest, flushOnSeconds);
     }
 
-    this.threadPoolExecutor = new ThreadPoolExecutor(
-        poolSize, // core-size
-        poolSize, // max-size
-        0L, // keep-alive
-        TimeUnit.MILLISECONDS,
-        new LinkedBlockingQueue<>(), // allow queueing up of requests
-        new NexusThreadFactory(getThreadPoolId(), "flushAndPurge", MIN_PRIORITY),
-        new AbortPolicy());
-  }
-
-  protected String getThreadPoolId() {
-    return "searchEventHandler";
+    this.executorService = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   @Override
@@ -171,12 +149,12 @@ public abstract class SearchEventHandler
       periodicJobService.stopUsing();
     }
 
-    this.threadPoolExecutor.shutdownNow();
+    this.executorService.shutdownNow();
   }
 
   @Gauge(name = "nexus.search.eventHandler.executor.queueSize")
   public int searchEventQueue() {
-    return threadPoolExecutor.getQueue().size();
+    return 0; // Virtual threads don't have a queue
   }
 
   /**
@@ -218,38 +196,24 @@ public abstract class SearchEventHandler
 
   @AllowConcurrentEvents
   @Subscribe
-  public void on(final ComponentCreatedEvent event) {
-    requestIndex(event);
+  public void on(final ComponentEvent event) {
+    switch (event) {
+      case ComponentCreatedEvent e -> requestIndex(e);
+      case ComponentUpdatedEvent e -> requestIndex(e);
+      case ComponentDeletedEvent e -> requestPurge(e);
+      default -> { /* ignore other component events */ }
+    }
   }
 
   @AllowConcurrentEvents
   @Subscribe
-  public void on(final ComponentUpdatedEvent event) {
-    requestIndex(event);
-  }
-
-  @AllowConcurrentEvents
-  @Subscribe
-  public void on(final ComponentDeletedEvent event) {
-    requestPurge(event);
-  }
-
-  @AllowConcurrentEvents
-  @Subscribe
-  public void on(final AssetCreatedEvent event) {
-    requestIndex(event);
-  }
-
-  @AllowConcurrentEvents
-  @Subscribe
-  public void on(final AssetUpdatedEvent event) {
-    requestIndex(event);
-  }
-
-  @AllowConcurrentEvents
-  @Subscribe
-  public void on(final AssetDeletedEvent event) {
-    requestIndex(event); // update the component search document on asset delete
+  public void on(final AssetEvent event) {
+    switch (event) {
+      case AssetCreatedEvent e -> requestIndex(e);
+      case AssetUpdatedEvent e -> requestIndex(e);
+      case AssetDeletedEvent e -> requestIndex(e); // update the component search document on asset delete
+      default -> { /* ignore other asset events */ }
+    }
   }
 
   @AllowConcurrentEvents
@@ -361,7 +325,7 @@ public abstract class SearchEventHandler
     // if there are lots of pending requests then reduce count by a page and
     // trigger an asynchronous flush event (which will actually do the work)
     if (pendingCount.getAndUpdate(c -> c >= flushOnCount ? c - flushOnCount : c) >= flushOnCount) {
-      threadPoolExecutor.execute(() -> flushPageOfComponents(null));
+      executorService.execute(() -> flushPageOfComponents(null));
       return true;
     }
     return false;
@@ -371,7 +335,7 @@ public abstract class SearchEventHandler
     // if it's still too early to flush requests, but we don't want to delay
     // outstanding purge requests then trigger an asynchronous purge event
     if (!maybeTriggerAsyncFlush() && noPurgeDelay) {
-      threadPoolExecutor.execute(() -> flushPageOfComponents(PURGE));
+      executorService.execute(() -> flushPageOfComponents(PURGE));
       return true;
     }
     return false;
@@ -410,25 +374,27 @@ public abstract class SearchEventHandler
       }
     }
 
-    // deliver index/purge requests to the relevant repositories
-    requestsByRepository.asMap()
-        .forEach(
-            (repoTag, componentIds) -> ofNullable(repositoryManager.get(repositoryName(repoTag))).ifPresent(
-                repository -> repository.optionalFacet(SearchFacet.class)
-                    .ifPresent(
-                        searchFacet -> {
-                          if (repoTag.startsWith(INDEX.name())) {
-                            searchFacet.index(componentIds);
-                          }
-                          else {
-                            searchFacet.purge(componentIds);
-                          }
-                        })));
+    // deliver index/purge requests to the relevant repositories in parallel using virtual threads
+    requestsByRepository.asMap().forEach((repoTag, componentIds) -> {
+      String repositoryName = repositoryName(repoTag);
+      Repository repository = repositoryManager.get(repositoryName);
+      if (repository != null) {
+        repository.optionalFacet(SearchFacet.class).ifPresent(searchFacet -> {
+          executorService.execute(() -> {
+            if (repoTag.startsWith(INDEX.name())) {
+              searchFacet.index(componentIds);
+            } else {
+              searchFacet.purge(componentIds);
+            }
+          });
+        });
+      }
+    });
   }
 
   @VisibleForTesting
   public boolean isCalmPeriod() {
-    return threadPoolExecutor.getQueue().isEmpty() && threadPoolExecutor.getActiveCount() == 0;
+    return true; // Virtual threads don't have a queue or active count
   }
 
   /**

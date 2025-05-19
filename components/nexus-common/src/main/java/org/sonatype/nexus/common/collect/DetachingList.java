@@ -33,6 +33,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
  */
 public class DetachingList<V>
     extends ForwardingList<V>
+    implements SequencedCollection<V>
 {
   private List<V> backing;
 
@@ -112,94 +113,6 @@ public class DetachingList<V>
     return backing.toString();
   }
 
-  /* Methods from SequencedCollection that don't mutate the list or allow content to escape */
-
-  /**
-   * Returns the first element of this list without detaching.
-   * This is safe because the element remains in the list.
-   *
-   * @throws java.util.NoSuchElementException if this list is empty
-   * @since 3.60
-   */
-  @Override
-  public V getFirst() {
-    return backing.getFirst();
-  }
-
-  /**
-   * Returns the last element of this list without detaching.
-   * This is safe because the element remains in the list.
-   *
-   * @throws java.util.NoSuchElementException if this list is empty
-   * @since 3.60
-   */
-  @Override
-  public V getLast() {
-    return backing.getLast();
-  }
-
-  /**
-   * Returns a reversed view of this list.
-   * The reversed view will trigger detaching if necessary.
-   *
-   * @return a reversed view of this list
-   * @since 3.60
-   */
-  @Override
-  public List<V> reversed() {
-    return delegate().reversed();
-  }
-
-  /**
-   * Adds an element as the first element of this list.
-   * This will trigger detaching if necessary.
-   *
-   * @param element the element to add
-   * @since 3.60
-   */
-  @Override
-  public void addFirst(V element) {
-    delegate().addFirst(element);
-  }
-
-  /**
-   * Adds an element as the last element of this list.
-   * This will trigger detaching if necessary.
-   *
-   * @param element the element to add
-   * @since 3.60
-   */
-  @Override
-  public void addLast(V element) {
-    delegate().addLast(element);
-  }
-
-  /**
-   * Removes and returns the first element of this list.
-   * This will trigger detaching if necessary.
-   *
-   * @return the first element of this list
-   * @throws java.util.NoSuchElementException if this list is empty
-   * @since 3.60
-   */
-  @Override
-  public V removeFirst() {
-    return delegate().removeFirst();
-  }
-
-  /**
-   * Removes and returns the last element of this list.
-   * This will trigger detaching if necessary.
-   *
-   * @return the last element of this list
-   * @throws java.util.NoSuchElementException if this list is empty
-   * @since 3.60
-   */
-  @Override
-  public V removeLast() {
-    return delegate().removeLast();
-  }
-
   /**
    * Incoming request where either the original content will escape back to the caller or the list will change.
    * If detaching is allowed we detach one level by copying the list and applying the strategy to any elements.
@@ -213,5 +126,90 @@ public class DetachingList<V>
       detached = true;
     }
     return backing;
+  }
+
+  /* SequencedCollection implementation */
+
+  /**
+   * Returns a reversed view of this collection.
+   *
+   * @return a reversed view of this collection
+   */
+  @Override
+  public SequencedCollection<V> reversed() {
+    // Delegate to trigger detachment if needed, then create a new DetachingList with the reversed view
+    return new DetachingList<>(delegate().reversed(), allowDetach, detach);
+  }
+
+  /**
+   * Adds an element as the first element of this collection.
+   *
+   * @param element the element to add
+   */
+  @Override
+  public void addFirst(V element) {
+    // Delegate to trigger detachment if needed, then add the element at the beginning
+    delegate().addFirst(element);
+  }
+
+  /**
+   * Adds an element as the last element of this collection.
+   *
+   * @param element the element to add
+   */
+  @Override
+  public void addLast(V element) {
+    // Delegate to trigger detachment if needed, then add the element at the end
+    delegate().addLast(element);
+  }
+
+  /**
+   * Gets the first element of this collection.
+   *
+   * @return the first element
+   * @throws java.util.NoSuchElementException if this collection is empty
+   */
+  @Override
+  public V getFirst() {
+    // Delegate to trigger detachment if needed, then get the first element
+    return delegate().getFirst();
+  }
+
+  /**
+   * Gets the last element of this collection.
+   *
+   * @return the last element
+   * @throws java.util.NoSuchElementException if this collection is empty
+   */
+  @Override
+  public V getLast() {
+    // Delegate to trigger detachment if needed, then get the last element
+    return delegate().getLast();
+  }
+
+  /**
+   * Removes and returns the first element of this collection.
+   *
+   * @return the first element
+   * @throws java.util.NoSuchElementException if this collection is empty
+   * @throws UnsupportedOperationException if this collection does not support removal
+   */
+  @Override
+  public V removeFirst() {
+    // Delegate to trigger detachment if needed, then remove the first element
+    return delegate().removeFirst();
+  }
+
+  /**
+   * Removes and returns the last element of this collection.
+   *
+   * @return the last element
+   * @throws java.util.NoSuchElementException if this collection is empty
+   * @throws UnsupportedOperationException if this collection does not support removal
+   */
+  @Override
+  public V removeLast() {
+    // Delegate to trigger detachment if needed, then remove the last element
+    return delegate().removeLast();
   }
 }

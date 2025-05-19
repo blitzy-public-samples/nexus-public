@@ -18,7 +18,6 @@ import java.util.List;
 import com.google.common.hash.BloomFilter;
 import com.google.common.hash.Funnel;
 
-import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.stream.Collectors.toList;
 
@@ -42,13 +41,26 @@ public class ScalableBloomFilter<T>
 
   private final double falsePositiveProbability;
 
+  /**
+   * Record to hold filter parameters for validation
+   */
+  private record FilterParams(int capacity, double fpp) {}
+
   public ScalableBloomFilter(
       final Funnel<? super T> funnel,
       final int filterCapacity,
       final double falsePositiveProbability)
   {
-    checkArgument(filterCapacity > 0, "filter capacity must be greater than 0");
-    checkArgument(falsePositiveProbability > 0, "fpp must be greater than 0");
+    // Use Pattern Matching for switch to validate parameters with more expressive error handling
+    switch (new FilterParams(filterCapacity, falsePositiveProbability)) {
+      case FilterParams(int capacity, double fpp) when capacity <= 0 && fpp <= 0 ->
+          throw new IllegalArgumentException("filter capacity and fpp must be greater than 0");
+      case FilterParams(int capacity, _) when capacity <= 0 ->
+          throw new IllegalArgumentException("filter capacity must be greater than 0");
+      case FilterParams(_, double fpp) when fpp <= 0 ->
+          throw new IllegalArgumentException("fpp must be greater than 0");
+      default -> {}
+    }
 
     this.funnel = checkNotNull(funnel);
     this.filterCapacity = filterCapacity;
@@ -62,12 +74,19 @@ public class ScalableBloomFilter<T>
    * @return whether the element may exist in the filter.
    */
   public boolean mightContain(final T input) {
-    for (BloomFilter<T> filter : filters) {
-      if (filter.mightContain(input)) {
-        return true;
+    // Use Pattern Matching for switch to handle different filter states more elegantly
+    return switch (filters.size()) {
+      case 0 -> false; // Empty filter list can't contain anything
+      case 1 -> filters.get(0).mightContain(input); // Single filter optimization
+      default -> { // Multiple filters case
+        for (var filter : filters) {
+          if (filter.mightContain(input)) {
+            yield true;
+          }
+        }
+        yield false;
       }
-    }
-    return false;
+    };
   }
 
   /**
@@ -84,42 +103,65 @@ public class ScalableBloomFilter<T>
    * @return the probability of encountering a false positive.
    */
   public double expectedFpp() {
-    double probabilitySum = 0.0;
-    double combinatorialAnd = 0.0;
+    // Use Pattern Matching to clarify probability calculation logic based on filter count
+    return switch (filters.size()) {
+      case 0 -> 0.0; // No filters means no false positives
+      case 1 -> filters.get(0).expectedFpp(); // Single filter optimization
+      default -> {
+        var probabilities = filters.stream()
+            .mapToDouble(BloomFilter::expectedFpp)
+            .boxed()
+            .collect(toList());
+        
+        double probabilitySum = 0.0;
+        double combinatorialAnd = 0.0;
 
-    List<Double> probabilities = filters.stream().mapToDouble(BloomFilter::expectedFpp).boxed().collect(toList());
-    for (int i = 0; i < probabilities.size(); i++) {
-      Double probability = probabilities.get(i);
-      probabilitySum += probability;
-      for (int j = i + 1; j < probabilities.size(); j++) {
-        combinatorialAnd += (probability * probabilities.get(j));
+        // Calculate sum of individual probabilities
+        for (int i = 0; i < probabilities.size(); i++) {
+          var probability = probabilities.get(i);
+          probabilitySum += probability;
+          
+          // Calculate pairwise combinations
+          for (int j = i + 1; j < probabilities.size(); j++) {
+            combinatorialAnd += (probability * probabilities.get(j));
+          }
+        }
+
+        // Calculate the product of all probabilities
+        var andProbability = filters.stream()
+            .mapToDouble(BloomFilter::expectedFpp)
+            .reduce((a, b) -> a * b)
+            .getAsDouble();
+
+        // These events are not mutually exclusive so the formula for calculating the probability is
+        // P(A) + P(B) + P(C) ... - P(A and B) - P(A and C) - P(B and C) ... + P(A and B and C...)
+        yield probabilitySum - combinatorialAnd + andProbability;
       }
-    }
-
-    double andProbability = filters.stream()
-        .mapToDouble(BloomFilter::expectedFpp)
-        .reduce((a, b) -> a * b)
-        .getAsDouble();
-
-    // These events are not mutually exclusive so the formula for calculating the probability is
-    // P(A) + P(B) + P(C) ... - P(A and B) - P(A and C) - P(B and C) ... + P (A and B and C...)
-    return probabilitySum - combinatorialAnd + andProbability;
+    };
   }
 
   private BloomFilter<T> getFilter() {
-    if (filters.isEmpty()) {
-      filters.add(createFilter());
-    }
-
-    // expectedFpp() is an O(n) call so we create a new filter on count instead
-    if (filters.size() == filterCapacity) {
-      filters.add(createFilter());
-    }
-
-    return filters.get(filters.size() - 1);
+    // Use Pattern Matching for switch to express filter creation logic more clearly
+    return switch (filters.size()) {
+      case 0 -> {
+        // Create first filter if none exists
+        var filter = createFilter();
+        filters.add(filter);
+        yield filter;
+      }
+      case var size when size == filterCapacity -> {
+        // Create new filter when capacity is reached
+        // expectedFpp() is an O(n) call so we create a new filter on count instead
+        var filter = createFilter();
+        filters.add(filter);
+        yield filter;
+      }
+      default -> filters.get(filters.size() - 1); // Return the last filter
+    };
   }
 
   private BloomFilter<T> createFilter() {
+    // Using Java 21's improved type inference
     return BloomFilter.create(funnel, filterCapacity, falsePositiveProbability);
   }
 }

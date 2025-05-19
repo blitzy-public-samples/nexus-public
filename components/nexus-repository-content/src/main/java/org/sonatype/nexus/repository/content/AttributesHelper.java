@@ -26,6 +26,7 @@ import org.sonatype.nexus.repository.content.AttributeChangeSet.AttributeChange;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.collect.Lists.newArrayList;
+import static java.lang.StringTemplate.STR;
 
 /**
  * Helper for applying {@link AttributeOperation}s to repository content.
@@ -88,7 +89,7 @@ public class AttributesHelper
         }
         return false;
       default:
-        throw new IllegalArgumentException("Unknown request");
+        throw new IllegalArgumentException(STR."Unknown request: \{change}");
     }
   }
 
@@ -102,9 +103,14 @@ public class AttributesHelper
     if (list == null) {
       return newArrayList(value);
     }
-    checkArgument(list instanceof List<?>, "Cannot append to non-list attribute");
-    ((List<Object>) list).add(value);
-    return list;
+    
+    // Using pattern matching for instanceof
+    if (list instanceof List<?> listObj) {
+      listObj.add(value);
+      return list;
+    }
+    
+    throw new IllegalArgumentException(STR."Cannot append to non-list attribute: \{list}");
   }
 
   /**
@@ -117,9 +123,14 @@ public class AttributesHelper
     if (list == null) {
       return newArrayList(value);
     }
-    checkArgument(list instanceof List<?>, "Cannot prepend to non-list attribute");
-    ((List<Object>) list).add(0, value);
-    return list;
+    
+    // Using pattern matching for instanceof
+    if (list instanceof List<?> listObj) {
+      listObj.add(0, value);
+      return list;
+    }
+    
+    throw new IllegalArgumentException(STR."Cannot prepend to non-list attribute: \{list}");
   }
 
   /**
@@ -128,26 +139,39 @@ public class AttributesHelper
    * @throws IllegalArgumentException if either the value or attribute is not a map
    */
   private static Object overlay(final Object map, final Object value) {
-    checkArgument(value instanceof Map<?, ?>, "Conflict: cannot overlay '%s' onto '%s'", value, map);
+    // Using pattern matching for instanceof
+    if (!(value instanceof Map<?, ?> valueMap)) {
+      throw new IllegalArgumentException(STR."Conflict: cannot overlay '\{value}' onto '\{map}'");
+    }
+    
     if (map == null) {
       return value;
     }
-    checkArgument(map instanceof Map<?, ?>, "Conflict: cannot overlay '%s' onto '%s'", value, map);
-    @SuppressWarnings("unchecked")
-    Map<Object, Object> resultMap = (Map<Object, Object>) map;
-    for (Entry<?, ?> entry : ((Map<?, ?>) value).entrySet()) {
-      Object oldValue = resultMap.get(entry.getKey());
+    
+    // Using pattern matching for instanceof
+    if (!(map instanceof Map<?, ?> resultMap)) {
+      throw new IllegalArgumentException(STR."Conflict: cannot overlay '\{value}' onto '\{map}'");
+    }
+    
+    // Create a mutable copy of the map to work with
+    Map<Object, Object> mutableMap = new HashMap<>(resultMap);
+    
+    // Process each entry in the value map
+    for (Entry<?, ?> entry : valueMap.entrySet()) {
+      Object oldValue = mutableMap.get(entry.getKey());
       Object newValue = entry.getValue();
-      if (oldValue instanceof Map && !oldValue.equals(newValue)) {
+      
+      // Recursively overlay nested maps
+      if (oldValue instanceof Map<?, ?> && !oldValue.equals(newValue)) {
         newValue = overlay(oldValue, newValue);
       }
+      
+      // Only update if the value has changed
       if (!Objects.equals(oldValue, newValue)) {
-        if (resultMap == map) {
-          resultMap = new HashMap<>(resultMap); // only make shallow copy when necessary
-        }
-        resultMap.put(entry.getKey(), newValue);
+        mutableMap.put(entry.getKey(), newValue);
       }
     }
-    return resultMap;
+    
+    return mutableMap;
   }
 }

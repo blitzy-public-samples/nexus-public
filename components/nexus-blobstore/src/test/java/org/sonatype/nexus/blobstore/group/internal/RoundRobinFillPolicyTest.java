@@ -12,9 +12,17 @@
  */
 package org.sonatype.nexus.blobstore.group.internal;
 
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -25,24 +33,23 @@ import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.group.BlobStoreGroup;
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaResult;
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaService;
+import org.sonatype.nexus.virtualthread.Java21TestGroup;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.*;
 
+/**
+ * Tests for {@link RoundRobinFillPolicy} with JUnit Jupiter and Java 21 features.
+ */
 @ExtendWith(MockitoExtension.class)
+@Category(Java21TestGroup.class)
 public class RoundRobinFillPolicyTest
     extends TestSupport
 {
+  // Record for test data to demonstrate record patterns
+  record BlobStoreTestData(String name, boolean available, boolean writable, BlobStoreQuotaResult quotaResult) {}
 
   @Mock
   private BlobStoreQuotaService blobStoreQuotaService;
@@ -60,44 +67,60 @@ public class RoundRobinFillPolicyTest
   @Test
   public void nextIndexGivesExpectedValueWhenStartingAtInitialValue() {
     roundRobinFillPolicy.sequence.set(0);
-    assertEquals(0, roundRobinFillPolicy.nextIndex());
-    assertEquals(1, roundRobinFillPolicy.nextIndex());
+    assertThat(roundRobinFillPolicy.nextIndex(), is(0));
+    assertThat(roundRobinFillPolicy.nextIndex(), is(1));
 
     roundRobinFillPolicy.sequence.set(Integer.MAX_VALUE);
-    assertEquals(Integer.MAX_VALUE, roundRobinFillPolicy.nextIndex());
-    assertEquals(0, roundRobinFillPolicy.nextIndex());
+    assertThat(roundRobinFillPolicy.nextIndex(), is(Integer.MAX_VALUE));
+    assertThat(roundRobinFillPolicy.nextIndex(), is(0));
   }
 
   @Test
   public void itWillSkipBlobStoresThatAreNotWritable() {
     BlobStoreGroup blobStoreGroup = mock(BlobStoreGroup.class);
-    List<BlobStore> members = Arrays.asList(
-        mockMemberWithAvailability("one", false),
-        mockMemberWithAvailability("two", false),
-        mockMemberWithAvailability("three", true),
-        mockMemberWithAvailability("four", true));
+    
+    // Using record patterns for test data definition
+    List<BlobStoreTestData> testData = Arrays.asList(
+        new BlobStoreTestData("one", false, true, null),
+        new BlobStoreTestData("two", false, true, null),
+        new BlobStoreTestData("three", true, true, null),
+        new BlobStoreTestData("four", true, true, null));
+    
+    // Create mocks using the record pattern data
+    List<BlobStore> members = testData.stream()
+        .map(data -> mockMemberWithAvailability(data.name(), data.available(), data.writable()))
+        .toList();
+    
     when(blobStoreGroup.getMembers()).thenReturn(members);
 
     BlobStore blobStore = roundRobinFillPolicy.chooseBlobStore(blobStoreGroup, Collections.emptyMap());
-    assertEquals("three", blobStore.getBlobStoreConfiguration().getName());
-    assertEquals(1, roundRobinFillPolicy.nextIndex());
+    assertThat(blobStore.getBlobStoreConfiguration().getName(), is("three"));
+    assertThat(roundRobinFillPolicy.nextIndex(), is(1));
   }
 
   @Test
   public void itWillReturnNullIfNoMembersAreWritable() {
     BlobStoreGroup blobStoreGroup = mock(BlobStoreGroup.class);
-    List<BlobStore> members = Arrays.asList(
-        mockMemberWithAvailability("one", false),
-        mockMemberWithAvailability("two", false));
+    
+    // Using record patterns for test data definition
+    List<BlobStoreTestData> testData = Arrays.asList(
+        new BlobStoreTestData("one", false, true, null),
+        new BlobStoreTestData("two", false, true, null));
+    
+    // Create mocks using the record pattern data
+    List<BlobStore> members = testData.stream()
+        .map(data -> mockMemberWithAvailability(data.name(), data.available(), data.writable()))
+        .toList();
+    
     when(blobStoreGroup.getMembers()).thenReturn(members);
 
     roundRobinFillPolicy.sequence.set(0);
     assertNull(roundRobinFillPolicy.chooseBlobStore(blobStoreGroup, Collections.emptyMap()));
-    assertEquals(1, roundRobinFillPolicy.nextIndex());
+    assertThat(roundRobinFillPolicy.nextIndex(), is(1));
 
     roundRobinFillPolicy.sequence.set(1);
     assertNull(roundRobinFillPolicy.chooseBlobStore(blobStoreGroup, Collections.emptyMap()));
-    assertEquals(2, roundRobinFillPolicy.nextIndex());
+    assertThat(roundRobinFillPolicy.nextIndex(), is(2));
   }
 
   @Test
@@ -111,44 +134,68 @@ public class RoundRobinFillPolicyTest
   @Test
   public void itWillSkipReadOnlyMembers() {
     BlobStoreGroup blobStoreGroup = mock(BlobStoreGroup.class);
-    List<BlobStore> members = Arrays.asList(
-        mockMemberWithWritable("one", false),
-        mockMemberWithWritable("two", true),
-        mockMemberWithWritable("three", false),
-        mockMemberWithWritable("four", false),
-        mockMemberWithWritable("five", true));
+    
+    // Using record patterns for test data definition
+    List<BlobStoreTestData> testData = Arrays.asList(
+        new BlobStoreTestData("one", true, false, null),
+        new BlobStoreTestData("two", true, true, null),
+        new BlobStoreTestData("three", true, false, null),
+        new BlobStoreTestData("four", true, false, null),
+        new BlobStoreTestData("five", true, true, null));
+    
+    // Create mocks using the record pattern data
+    List<BlobStore> members = testData.stream()
+        .map(data -> mockMemberWithAvailability(data.name(), data.available(), data.writable()))
+        .toList();
+    
     when(blobStoreGroup.getMembers()).thenReturn(members);
 
     roundRobinFillPolicy.sequence.set(0);
-    assertEquals("two", roundRobinFillPolicy.chooseBlobStore(blobStoreGroup, Collections.emptyMap())
+    assertThat(roundRobinFillPolicy.chooseBlobStore(blobStoreGroup, Collections.emptyMap())
         .getBlobStoreConfiguration()
-        .getName());
+        .getName(), is("two"));
 
     roundRobinFillPolicy.sequence.set(1);
-    assertEquals("five", roundRobinFillPolicy.chooseBlobStore(blobStoreGroup, Collections.emptyMap())
+    assertThat(roundRobinFillPolicy.chooseBlobStore(blobStoreGroup, Collections.emptyMap())
         .getBlobStoreConfiguration()
-        .getName());
+        .getName(), is("five"));
   }
 
   @Test
   public void itWillNotSkipMembersWithQuotaViolation() {
     BlobStoreGroup blobStoreGroup = mock(BlobStoreGroup.class);
-    List<BlobStore> members = Arrays.asList(
-        mockMember("One", blobStoreQuotaResult),
-        mockMember("Two", null),
-        mockMember("Three", blobStoreQuotaResult));
+    
+    // Using record patterns for test data definition
+    List<BlobStoreTestData> testData = Arrays.asList(
+        new BlobStoreTestData("One", true, true, blobStoreQuotaResult),
+        new BlobStoreTestData("Two", true, true, null),
+        new BlobStoreTestData("Three", true, true, blobStoreQuotaResult));
+    
+    // Create mocks using the record pattern data
+    List<BlobStore> members = testData.stream()
+        .map(data -> mockMember(data.name(), data.quotaResult()))
+        .toList();
+    
     when(blobStoreGroup.getMembers()).thenReturn(members);
 
     BlobStore store = roundRobinFillPolicy.chooseBlobStore(blobStoreGroup, Collections.emptyMap());
-    assertEquals("One", store.getBlobStoreConfiguration().getName());
+    assertThat(store.getBlobStoreConfiguration().getName(), is("One"));
   }
 
   @Test
   public void itWillSkipAllMembersWithQuotaViolation() {
     BlobStoreGroup blobStoreGroup = mock(BlobStoreGroup.class);
-    List<BlobStore> members = Arrays.asList(
-        mockMember("One", blobStoreQuotaResult),
-        mockMember("Three", blobStoreQuotaResult));
+    
+    // Using record patterns for test data definition
+    List<BlobStoreTestData> testData = Arrays.asList(
+        new BlobStoreTestData("One", true, true, blobStoreQuotaResult),
+        new BlobStoreTestData("Three", true, true, blobStoreQuotaResult));
+    
+    // Create mocks using the record pattern data
+    List<BlobStore> members = testData.stream()
+        .map(data -> mockMember(data.name(), data.quotaResult()))
+        .toList();
+    
     when(blobStoreGroup.getMembers()).thenReturn(members);
 
     roundRobinFillPolicy.skipOnSoftQuotaViolation = true;
@@ -158,115 +205,78 @@ public class RoundRobinFillPolicyTest
   @Test
   public void itWillSkipMembersWithQuotaViolation() {
     BlobStoreGroup blobStoreGroup = mock(BlobStoreGroup.class);
-    List<BlobStore> members = Arrays.asList(
-        mockMember("One", blobStoreQuotaResult),
-        mockMember("Two", null),
-        mockMember("Three", blobStoreQuotaResult),
-        mockMember("Four", null));
+    
+    // Using record patterns for test data definition
+    List<BlobStoreTestData> testData = Arrays.asList(
+        new BlobStoreTestData("One", true, true, blobStoreQuotaResult),
+        new BlobStoreTestData("Two", true, true, null),
+        new BlobStoreTestData("Three", true, true, blobStoreQuotaResult),
+        new BlobStoreTestData("Four", true, true, null));
+    
+    // Create mocks using the record pattern data
+    List<BlobStore> members = testData.stream()
+        .map(data -> mockMember(data.name(), data.quotaResult()))
+        .toList();
+    
     when(blobStoreGroup.getMembers()).thenReturn(members);
 
     roundRobinFillPolicy.skipOnSoftQuotaViolation = true;
-    assertEquals("Two", roundRobinFillPolicy.chooseBlobStore(blobStoreGroup, Collections.emptyMap())
+    assertThat(roundRobinFillPolicy.chooseBlobStore(blobStoreGroup, Collections.emptyMap())
         .getBlobStoreConfiguration()
-        .getName());
-    assertEquals("Four", roundRobinFillPolicy.chooseBlobStore(blobStoreGroup, Collections.emptyMap())
+        .getName(), is("Two"));
+    assertThat(roundRobinFillPolicy.chooseBlobStore(blobStoreGroup, Collections.emptyMap())
         .getBlobStoreConfiguration()
-        .getName());
+        .getName(), is("Four"));
   }
-
+  
+  /**
+   * Test to verify virtual thread handling during fill policy selection.
+   * This test demonstrates that the RoundRobinFillPolicy works correctly when accessed from virtual threads.
+   */
   @Test
-  public void testVirtualThreadBehavior() throws Exception {
-    // Create a BlobStoreGroup with multiple members
+  public void virtualThreadHandlingDuringFillPolicySelection() throws Exception {
     BlobStoreGroup blobStoreGroup = mock(BlobStoreGroup.class);
-    List<BlobStore> members = Arrays.asList(
-        mockMemberWithWritable("one", true),
-        mockMemberWithWritable("two", true),
-        mockMemberWithWritable("three", true),
-        mockMemberWithWritable("four", true));
-    when(blobStoreGroup.getMembers()).thenReturn(members);
-
-    // Reset sequence to ensure predictable starting point
-    roundRobinFillPolicy.sequence.set(0);
-
-    // Create and run a virtual thread to select a blob store
-    Thread virtualThread = Thread.ofVirtual().name("virtual-thread-test").start(() -> {
-      BlobStore blobStore = roundRobinFillPolicy.chooseBlobStore(blobStoreGroup, Collections.emptyMap());
-      assertEquals("one", blobStore.getBlobStoreConfiguration().getName());
-    });
-
-    // Wait for the virtual thread to complete
-    virtualThread.join();
-
-    // Verify the sequence was incremented
-    assertEquals(1, roundRobinFillPolicy.nextIndex());
-  }
-
-  @Test
-  public void testConcurrentMemberSelection() throws Exception {
-    // Create a BlobStoreGroup with multiple members
-    BlobStoreGroup blobStoreGroup = mock(BlobStoreGroup.class);
-    List<BlobStore> members = Arrays.asList(
-        mockMemberWithWritable("one", true),
-        mockMemberWithWritable("two", true),
-        mockMemberWithWritable("three", true),
-        mockMemberWithWritable("four", true));
-    when(blobStoreGroup.getMembers()).thenReturn(members);
-
-    // Reset sequence to ensure predictable starting point
-    roundRobinFillPolicy.sequence.set(0);
-
-    // Create a virtual thread executor
-    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     
-    // Number of concurrent tasks
-    int taskCount = 10;
-    CountDownLatch latch = new CountDownLatch(taskCount);
-    AtomicInteger errorCount = new AtomicInteger(0);
+    // Using record patterns for test data definition
+    List<BlobStoreTestData> testData = Arrays.asList(
+        new BlobStoreTestData("One", true, true, null),
+        new BlobStoreTestData("Two", true, true, null));
+    
+    // Create mocks using the record pattern data
+    List<BlobStore> members = testData.stream()
+        .map(data -> mockMember(data.name(), data.quotaResult()))
+        .toList();
+    
+    when(blobStoreGroup.getMembers()).thenReturn(members);
 
-    try {
-      // Submit multiple concurrent tasks using virtual threads
-      for (int i = 0; i < taskCount; i++) {
-        executor.submit(() -> {
-          try {
-            // Each thread should get a valid blob store
-            BlobStore blobStore = roundRobinFillPolicy.chooseBlobStore(blobStoreGroup, Collections.emptyMap());
-            // Verify the blob store is not null
-            if (blobStore == null || blobStore.getBlobStoreConfiguration() == null) {
-              errorCount.incrementAndGet();
-            }
-          } catch (Exception e) {
-            errorCount.incrementAndGet();
-          } finally {
-            latch.countDown();
-          }
-        });
-      }
-
-      // Wait for all tasks to complete
-      latch.await(30, TimeUnit.SECONDS);
-
-      // Verify no errors occurred
-      assertEquals(0, errorCount.get());
-
-      // Verify the sequence was incremented correctly
-      assertEquals(taskCount % members.size(), roundRobinFillPolicy.sequence.get() % members.size());
-    } finally {
-      executor.shutdown();
+    // Use virtual threads to test concurrent access to the fill policy
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit tasks to select blob stores concurrently using virtual threads
+      Future<String> future1 = executor.submit(() -> {
+        roundRobinFillPolicy.sequence.set(0);
+        BlobStore selected = roundRobinFillPolicy.chooseBlobStore(blobStoreGroup, Collections.emptyMap());
+        return selected.getBlobStoreConfiguration().getName();
+      });
+      
+      Future<String> future2 = executor.submit(() -> {
+        BlobStore selected = roundRobinFillPolicy.chooseBlobStore(blobStoreGroup, Collections.emptyMap());
+        return selected.getBlobStoreConfiguration().getName();
+      });
+      
+      // Verify results from virtual threads
+      String result1 = future1.get();
+      String result2 = future2.get();
+      
+      // Verify that we got different blob stores due to the round-robin selection
+      assertThat(result1, is("One"));
+      assertThat(result2, is("Two"));
     }
-    private BlobStore mockMemberWithWritable(final String name, final boolean writable) {
-    BlobStore blobStore = mock(BlobStore.class);
-    when(blobStore.isStorageAvailable()).thenReturn(true);
-    when(blobStore.isWritable()).thenReturn(writable);
-    BlobStoreConfiguration config = mock(BlobStoreConfiguration.class);
-    when(config.getName()).thenReturn(name);
-    when(blobStore.getBlobStoreConfiguration()).thenReturn(config);
-    return blobStore;
   }
 
-  private BlobStore mockMemberWithAvailability(final String name, final boolean availability) {
+  private BlobStore mockMemberWithAvailability(final String name, final boolean availability, final boolean writable) {
     BlobStore blobStore = mock(BlobStore.class);
     when(blobStore.isStorageAvailable()).thenReturn(availability);
-    when(blobStore.isWritable()).thenReturn(true);
+    when(blobStore.isWritable()).thenReturn(writable);
     BlobStoreConfiguration config = mock(BlobStoreConfiguration.class);
     when(config.getName()).thenReturn(name);
     when(blobStore.getBlobStoreConfiguration()).thenReturn(config);

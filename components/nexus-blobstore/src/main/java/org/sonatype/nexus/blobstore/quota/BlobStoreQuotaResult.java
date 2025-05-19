@@ -17,6 +17,10 @@ import static com.google.common.base.Preconditions.checkNotNull;
 /**
  * Holds result for the evaluation of {@link BlobStoreQuota}.
  *
+ * <p>This class is immutable and thread-safe. All fields are final and the class provides no
+ * methods that can modify its state. This makes it safe to share instances across threads without
+ * synchronization, including Java 21 Virtual Threads.</p>
+ *
  * @since 3.14
  */
 public class BlobStoreQuotaResult
@@ -27,6 +31,13 @@ public class BlobStoreQuotaResult
 
   private final String blobStoreName;
 
+  /**
+   * Constructs a new immutable quota result.
+   *
+   * @param isViolation whether the quota is violated
+   * @param blobStoreName name of the blob store (must not be null)
+   * @param humanReadableMessage human-readable message describing the result (must not be null)
+   */
   public BlobStoreQuotaResult(
       final boolean isViolation,
       final String blobStoreName,
@@ -37,14 +48,29 @@ public class BlobStoreQuotaResult
     this.humanReadableMessage = checkNotNull(humanReadableMessage);
   }
 
+  /**
+   * Returns whether the quota is violated.
+   *
+   * @return true if the quota is violated, false otherwise
+   */
   public boolean isViolation() {
     return this.isViolation;
   }
 
+  /**
+   * Returns the human-readable message describing the result.
+   *
+   * @return the message
+   */
   public String getMessage() {
     return this.humanReadableMessage;
   }
 
+  /**
+   * Returns the name of the blob store.
+   *
+   * @return the blob store name
+   */
   public String getBlobStoreName() {
     return this.blobStoreName;
   }

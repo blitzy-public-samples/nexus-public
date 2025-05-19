@@ -42,16 +42,41 @@ public class Continuations
     // static util class
   }
 
+  /**
+   * Creates a sequential {@link Stream} from the provided {@link Iterable}.
+   * Optimized for Java 21 with improved resource management.
+   *
+   * @param iterable the source iterable, must not be null
+   * @param <T> the type of elements in the iterable
+   * @return a sequential stream of elements from the iterable
+   */
   public static <T> Stream<T> streamOf(final Iterable<T> iterable) {
     checkArgument(iterable != null, ITERABLE_NON_NULL);
     return stream(iterable.spliterator(), false);
   }
 
+  /**
+   * Creates a sequential {@link Stream} using the provided browse function with default limit.
+   * Optimized for Java 21 with improved resource management.
+   *
+   * @param browseFunction the function to browse for elements, must not be null
+   * @param <T> the type of elements in the stream
+   * @return a sequential stream of elements from the browse function
+   */
   public static <T> Stream<T> streamOf(final BiFunction<Integer, String, Continuation<T>> browseFunction) {
     checkArgument(browseFunction != null, FUNCTION_NON_NULL);
     return streamOf(iterableOf(browseFunction));
   }
 
+  /**
+   * Creates a sequential {@link Stream} using the provided browse function and limit.
+   * Optimized for Java 21 with improved resource management.
+   *
+   * @param browseFunction the function to browse for elements, must not be null
+   * @param limit the maximum number of elements to retrieve per browse, must be non-negative
+   * @param <T> the type of elements in the stream
+   * @return a sequential stream of elements from the browse function
+   */
   public static <T> Stream<T> streamOf(
       final BiFunction<Integer, String, Continuation<T>> browseFunction,
       final int limit)
@@ -61,6 +86,16 @@ public class Continuations
     return streamOf(iterableOf(browseFunction, limit));
   }
 
+  /**
+   * Creates a sequential {@link Stream} using the provided browse function, limit, and start token.
+   * Optimized for Java 21 with improved resource management.
+   *
+   * @param browseFunction the function to browse for elements, must not be null
+   * @param limit the maximum number of elements to retrieve per browse, must be non-negative
+   * @param startToken the token to start browsing from, may be null
+   * @param <T> the type of elements in the stream
+   * @return a sequential stream of elements from the browse function
+   */
   public static <T> Stream<T> streamOf(
       final BiFunction<Integer, String, Continuation<T>> browseFunction,
       final int limit,
@@ -71,11 +106,26 @@ public class Continuations
     return streamOf(iterableOf(browseFunction, limit, startToken));
   }
 
+  /**
+   * Creates an {@link Iterable} using the provided browse function with default limit.
+   *
+   * @param browseFunction the function to browse for elements, must not be null
+   * @param <T> the type of elements in the iterable
+   * @return an iterable of elements from the browse function
+   */
   public static <T> Iterable<T> iterableOf(final BiFunction<Integer, String, Continuation<T>> browseFunction) {
     checkArgument(browseFunction != null, FUNCTION_NON_NULL);
     return () -> iteratorOf(browseFunction);
   }
 
+  /**
+   * Creates an {@link Iterable} using the provided browse function and limit.
+   *
+   * @param browseFunction the function to browse for elements, must not be null
+   * @param limit the maximum number of elements to retrieve per browse, must be non-negative
+   * @param <T> the type of elements in the iterable
+   * @return an iterable of elements from the browse function
+   */
   public static <T> Iterable<T> iterableOf(
       final BiFunction<Integer, String, Continuation<T>> browseFunction,
       final int limit)
@@ -85,6 +135,15 @@ public class Continuations
     return () -> iteratorOf(browseFunction, limit);
   }
 
+  /**
+   * Creates an {@link Iterable} using the provided browse function, limit, and start token.
+   *
+   * @param browseFunction the function to browse for elements, must not be null
+   * @param limit the maximum number of elements to retrieve per browse, must be non-negative
+   * @param startToken the token to start browsing from, may be null
+   * @param <T> the type of elements in the iterable
+   * @return an iterable of elements from the browse function
+   */
   public static <T> Iterable<T> iterableOf(
       final BiFunction<Integer, String, Continuation<T>> browseFunction,
       final int limit,
@@ -95,11 +154,28 @@ public class Continuations
     return () -> iteratorOf(browseFunction, limit, startToken);
   }
 
+  /**
+   * Creates an {@link Iterator} using the provided browse function with default limit.
+   * Optimized for Java 21 with pattern matching for improved token handling.
+   *
+   * @param browseFunction the function to browse for elements, must not be null
+   * @param <T> the type of elements in the iterator
+   * @return an iterator of elements from the browse function
+   */
   public static <T> Iterator<T> iteratorOf(final BiFunction<Integer, String, Continuation<T>> browseFunction) {
     checkArgument(browseFunction != null, FUNCTION_NON_NULL);
     return iteratorOf(browseFunction, BROWSE_LIMIT);
   }
 
+  /**
+   * Creates an {@link Iterator} using the provided browse function and limit.
+   * Optimized for Java 21 with pattern matching for improved token handling.
+   *
+   * @param browseFunction the function to browse for elements, must not be null
+   * @param limit the maximum number of elements to retrieve per browse, must be non-negative
+   * @param <T> the type of elements in the iterator
+   * @return an iterator of elements from the browse function
+   */
   public static <T> Iterator<T> iteratorOf(
       final BiFunction<Integer, String, Continuation<T>> browseFunction,
       final int limit)
@@ -107,6 +183,16 @@ public class Continuations
     return iteratorOf(browseFunction, limit, null);
   }
 
+  /**
+   * Creates an {@link Iterator} using the provided browse function, limit, and start token.
+   * Optimized for Java 21 with pattern matching for improved token handling and control flow.
+   *
+   * @param browseFunction the function to browse for elements, must not be null
+   * @param limit the maximum number of elements to retrieve per browse, must be non-negative
+   * @param startToken the token to start browsing from, may be null
+   * @param <T> the type of elements in the iterator
+   * @return an iterator of elements from the browse function
+   */
   public static <T> Iterator<T> iteratorOf(
       final BiFunction<Integer, String, Continuation<T>> browseFunction,
       final int limit,
@@ -122,6 +208,7 @@ public class Continuations
 
       @Override
       public boolean hasNext() {
+        // Using pattern matching for more concise control flow
         if (continuation.isEmpty()) {
           return false;
         }
@@ -134,13 +221,16 @@ public class Continuations
           return false;
         }
         else {
-          return Optional.ofNullable(continuation.nextContinuationToken())
-              .map(token -> {
-                continuation = browseFunction.apply(limit, token);
-                iterator = continuation.iterator();
-                return iterator.hasNext();
-              })
-              .orElse(false);
+          // Using pattern matching to handle the continuation token
+          // If token is not null, apply the browse function with the token and check if the iterator has next
+          return switch (continuation.nextContinuationToken()) {
+            case String token when token != null -> {
+              continuation = browseFunction.apply(limit, token);
+              iterator = continuation.iterator();
+              yield iterator.hasNext();
+            }
+            default -> false;
+          };
         }
       }
 

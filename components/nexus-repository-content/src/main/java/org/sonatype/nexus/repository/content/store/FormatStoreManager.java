@@ -13,14 +13,11 @@
 package org.sonatype.nexus.repository.content.store;
 
 import java.util.Map;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import javax.inject.Inject;
 
 import org.sonatype.nexus.datastore.api.ContentDataAccess;
-
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
-import com.google.common.util.concurrent.UncheckedExecutionException;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -37,7 +34,13 @@ import static com.google.common.base.Preconditions.checkNotNull;
 @SuppressWarnings("unchecked")
 public class FormatStoreManager
 {
-  private final Cache<String, ContentStoreSupport<?>> cachedStores = CacheBuilder.newBuilder().weakValues().build();
+  // Using ConcurrentHashMap for better performance with Java 21 and Virtual Threads
+  // This provides thread safety without the overhead of synchronized blocks that can cause pinning
+  private final ConcurrentHashMap<String, ContentStoreSupport<?>> cachedStores = new ConcurrentHashMap<>();
+  
+  // Lock for cache operations to ensure thread safety during concurrent access
+  // Using ReentrantReadWriteLock to allow multiple concurrent reads but exclusive writes
+  private final ReentrantReadWriteLock cacheLock = new ReentrantReadWriteLock();
 
   private final String formatClassPrefix;
 
@@ -83,17 +86,46 @@ public class FormatStoreManager
   /**
    * Gets the format-specific store for the named datastore and type of DAO (component/asset/etc...)
    * If the store doesn't exist it is created and cached for other repositories in the same datastore.
+   * 
+   * This implementation is optimized for Java 21 Virtual Threads, avoiding thread pinning
+   * by using non-blocking operations and minimizing synchronization.
    */
   public <T extends ContentStoreSupport<D>, D extends ContentDataAccess> T formatStore(
       final String contentStoreName,
       final Class<? extends D> daoClass)
   {
     String cacheKey = contentStoreName + '/' + formatDaoName(daoClass);
-    try {
-      return (T) cachedStores.get(cacheKey, () -> createFormatStore(contentStoreName, daoClass));
+    
+    // Fast path - check if the store is already in the cache
+    ContentStoreSupport<?> store = cachedStores.get(cacheKey);
+    if (store != null) {
+      return (T) store;
     }
-    catch (ExecutionException e) {
-      throw new UncheckedExecutionException(e.getCause());
+    
+    // Slow path - create the store if it doesn't exist
+    // Using read lock for the check to allow concurrent reads
+    cacheLock.readLock().lock();
+    try {
+      store = cachedStores.get(cacheKey);
+      if (store != null) {
+        return (T) store;
+      }
+    } finally {
+      cacheLock.readLock().unlock();
+    }
+    
+    // Need to create the store - acquire write lock
+    cacheLock.writeLock().lock();
+    try {
+      // Double-check to avoid race conditions
+      store = cachedStores.get(cacheKey);
+      if (store == null) {
+        store = createFormatStore(contentStoreName, daoClass);
+        cachedStores.put(cacheKey, store);
+      }
+      return (T) store;
+    } finally {
+      cacheLock.writeLock().unlock();
     }
   }
 

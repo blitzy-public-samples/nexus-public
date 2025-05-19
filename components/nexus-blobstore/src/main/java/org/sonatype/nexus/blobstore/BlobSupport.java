@@ -18,85 +18,73 @@ import java.util.Map;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-import org.sonatype.goodies.common.Locks;
 import org.sonatype.nexus.blobstore.api.Blob;
 import org.sonatype.nexus.blobstore.api.BlobId;
 import org.sonatype.nexus.blobstore.api.BlobMetrics;
-import org.sonatype.nexus.common.thread.ThreadHelper;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Support for {@link Blob} implementations with support for locking.
- * This class has been updated to work efficiently with Java 21 Virtual Threads by using
- * ReentrantLock instead of synchronized blocks to avoid Virtual Thread pinning, and by ensuring
- * proper memory visibility with volatile variables.
+ * Optimized for Java 21 Virtual Threads.
  *
  * @since 3.3
- * @see java.util.concurrent.locks.ReentrantLock
- * @see java.lang.Thread#startVirtualThread
  */
 public abstract class BlobSupport
     implements Blob
 {
   private final BlobId blobId;
 
-  // Using ReentrantLock with fairness policy to ensure proper ordering when used with Virtual Threads
   private final Lock lock;
 
   private Map<String, String> headers;
 
   private BlobMetrics metrics;
 
-  // Volatile ensures visibility across threads (including Virtual Threads)
-  // in the Java Memory Model without additional synchronization
   private volatile boolean stale;
 
   public BlobSupport(final BlobId blobId) {
     this.blobId = checkNotNull(blobId);
-    // Using fair lock to prevent starvation when multiple Virtual Threads contend for the lock
-    // This helps ensure all Virtual Threads get a chance to acquire the lock in order of arrival
-    lock = new ReentrantLock(true);
+    // Using ReentrantLock which is optimized for Virtual Threads
+    // and doesn't cause pinning like synchronized blocks would
+    lock = new ReentrantLock();
     stale = true;
   }
 
   /**
-   * Refreshes the blob's metadata. This method updates the headers and metrics,
-   * and marks the blob as not stale. The stale flag uses volatile semantics to ensure
-   * visibility across threads, including Virtual Threads.
-   *
-   * @param headers The blob headers to set
-   * @param metrics The blob metrics to set
-   * @since 3.60 Updated for Virtual Thread compatibility
+   * Refreshes the blob's metadata.
+   * Thread-safe and optimized for Virtual Threads.
    */
   public void refresh(final Map<String, String> headers, final BlobMetrics metrics) {
-    this.headers = checkNotNull(headers);
-    this.metrics = checkNotNull(metrics);
-    // Volatile write ensures visibility to all threads including Virtual Threads
-    // without needing explicit synchronization
-    stale = false;
+    checkNotNull(headers);
+    checkNotNull(metrics);
+    
+    // Acquire lock to ensure thread safety when updating multiple fields
+    lock.lock();
+    try {
+      this.headers = headers;
+      this.metrics = metrics;
+      stale = false;
+    }
+    finally {
+      // Always release lock in finally block to ensure it's released even if an exception occurs
+      lock.unlock();
+    }
   }
 
   /**
-   * Marks this blob as stale, indicating its metadata needs to be refreshed.
-   * Uses volatile semantics to ensure visibility across threads, including Virtual Threads.
-   *
-   * @since 3.60 Updated for Virtual Thread compatibility
+   * Marks the blob as stale.
+   * Uses volatile flag for thread safety with Virtual Threads.
    */
   public void markStale() {
-    // Volatile write ensures visibility to all threads including Virtual Threads
     stale = true;
   }
 
   /**
-   * Checks if this blob is stale and needs metadata refresh.
-   * Uses volatile semantics to ensure visibility across threads, including Virtual Threads.
-   *
-   * @return true if the blob is stale, false otherwise
-   * @since 3.60 Updated for Virtual Thread compatibility
+   * Checks if the blob is stale.
+   * Uses volatile flag for thread safety with Virtual Threads.
    */
   public boolean isStale() {
-    // Volatile read ensures we get the latest value across all threads including Virtual Threads
     return stale;
   }
 
@@ -116,47 +104,47 @@ public abstract class BlobSupport
   }
 
   /**
-   * Acquires the lock for this blob. When used with Virtual Threads, this lock will allow
-   * the Virtual Thread to be unmounted from its carrier thread while waiting to acquire the lock,
-   * unlike synchronized blocks which would cause pinning in Java 21.
-   *
-   * @return The acquired lock which must be released in a finally block
-   * @since 3.60
+   * Acquires the lock for this blob.
+   * Optimized for Virtual Threads - caller is responsible for releasing the lock.
+   * 
+   * @return The acquired lock
    */
   public Lock lock() {
-    // Using ReentrantLock instead of synchronized to avoid Virtual Thread pinning in Java 21
-    // The Locks utility ensures proper lock acquisition with exception handling
-    return Locks.lock(lock);
+    lock.lock();
+    return lock;
   }
 
   /**
-   * Gets an input stream for this blob's content. This method is optimized for use with Virtual Threads
-   * to ensure high throughput when many concurrent blob reads are happening.
-   *
-   * @return An input stream for reading the blob's content
-   * @since 3.60 Updated for Virtual Thread compatibility
+   * Tries to acquire the lock without blocking.
+   * This is particularly useful in Virtual Thread contexts to avoid unnecessary blocking.
+   * 
+   * @return true if the lock was acquired, false otherwise
+   */
+  public boolean tryLock() {
+    return lock.tryLock();
+  }
+
+  /**
+   * Gets an input stream for the blob's content.
+   * Optimized for Virtual Threads by ensuring non-blocking operations where possible.
    */
   @Override
   public InputStream getInputStream() {
-    // This I/O operation is suitable for Virtual Threads as it doesn't use synchronized blocks
-    // that would cause pinning. The actual I/O will happen in the implementation's doGetInputStream method.
     InputStream inputStream = doGetInputStream();
     if (!inputStream.markSupported()) {
-      // BufferedInputStream improves performance by reducing the number of underlying I/O operations
-      // and is compatible with Virtual Threads as it doesn't use synchronized for its core operations
+      // Use BufferedInputStream to support mark/reset operations
+      // This is efficient with Virtual Threads as it doesn't block during buffer operations
       return new BufferedInputStream(inputStream);
     }
     return inputStream;
   }
 
   /**
-   * Gets the natural input stream for the given blob. Implementations should ensure this method
-   * is compatible with Virtual Threads by avoiding operations that would cause thread pinning,
-   * such as synchronized blocks around I/O operations.
+   * Gets the natural input stream for the given blob.
+   * Implementation should be optimized for non-blocking I/O operations
+   * to work efficiently with Virtual Threads.
    *
-   * @return An input stream for the blob's content
    * @since 3.19
-   * @since 3.60 Updated documentation for Virtual Thread compatibility
    */
   protected abstract InputStream doGetInputStream();
 }

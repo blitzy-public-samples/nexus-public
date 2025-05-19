@@ -15,51 +15,39 @@ package org.sonatype.nexus.repository.content;
 import org.sonatype.nexus.blobstore.api.BlobRef;
 import org.sonatype.nexus.common.entity.ContinuationAware;
 
-public class AssetReconcileData
+/**
+ * Record for asset reconciliation data, leveraging Java 21 record patterns for efficient data encapsulation.
+ * 
+ * @since 3.20
+ */
+public record AssetReconcileData(BlobRef blobRef, String repository, String path, Integer assetBlobId)
     implements ContinuationAware
 {
-  private BlobRef blobRef;
-
-  private String repository;
-
-  private String path;
-
-  public Integer getAssetBlobId() {
-    return assetBlobId;
-  }
-
-  private Integer assetBlobId;
-
-  public BlobRef getBlobRef() {
-    return blobRef;
-  }
-
-  public void setBlobRef(final BlobRef blobRef) {
-    this.blobRef = blobRef;
-  }
-
-  public String getRepository() {
-    return repository;
-  }
-
-  public void setRepository(final String repository) {
-    this.repository = repository;
-  }
-
-  public String getPath() {
-    return path;
-  }
-
-  public void setPath(final String path) {
-    this.path = path;
-  }
-
+  /**
+   * Creates a continuation token using Java 21 String Templates for improved token generation.
+   * 
+   * @return the token to use when requesting the next set of results
+   */
   @Override
   public String nextContinuationToken() {
-    return Integer.toString(assetBlobId);
+    return STR."asset_blob_\{assetBlobId}";
   }
-
-  public void setAssetBlobId(final Integer assetBlobId) {
-    this.assetBlobId = assetBlobId;
+  
+  /**
+   * Pattern matching utility method to extract the asset blob ID from a token.
+   * 
+   * @param token the continuation token
+   * @return the extracted asset blob ID, or null if the token doesn't match the expected pattern
+   */
+  public static Integer extractAssetBlobId(String token) {
+    if (token != null && token.startsWith("asset_blob_")) {
+      try {
+        return Integer.parseInt(token.substring(11));
+      }
+      catch (NumberFormatException e) {
+        return null;
+      }
+    }
+    return null;
   }
 }

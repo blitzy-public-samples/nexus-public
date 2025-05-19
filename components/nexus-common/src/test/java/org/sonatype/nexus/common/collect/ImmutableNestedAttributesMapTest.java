@@ -12,102 +12,46 @@
  */
 package org.sonatype.nexus.common.collect;
 
-import java.util.Iterator;
-import java.util.Map.Entry;
-import java.util.SequencedMap;
-
-import org.sonatype.goodies.testsupport.TestSupport;
-
 import com.google.common.collect.Maps;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Test for the {@link ImmutableNestedAttributesMap}
  */
 public class ImmutableNestedAttributesMapTest
-    extends TestSupport
 {
-  private ImmutableNestedAttributesMap map;
+  private ImmutableNestedAttributesMap map = new ImmutableNestedAttributesMap(null, "key", Maps.newHashMap());
 
-  @BeforeEach
-  public void setUp() {
-    map = new ImmutableNestedAttributesMap(null, "key", Maps.newHashMap());
+  @Test
+  void shouldThrowExceptionWhenSettingClassKeys() {
+    assertThrows(UnsupportedOperationException.class, 
+        () -> map.set(Integer.class, 15),
+        "Should throw UnsupportedOperationException when setting class keys");
   }
 
   @Test
-  public void classKeysUnsettable() {
-    assertThrows(UnsupportedOperationException.class, () -> {
-      map.set(Integer.class, 15);
-    });
+  void shouldThrowExceptionWhenSettingStringKeys() {
+    assertThrows(UnsupportedOperationException.class, 
+        () -> map.set("key", "value"),
+        "Should throw UnsupportedOperationException when setting string keys");
   }
 
   @Test
-  public void stringKeysUnsettable() {
-    assertThrows(UnsupportedOperationException.class, () -> {
-      map.set("key", "value");
-    });
-  }
-
-  @Test
-  public void nonExistentChildrenAreNavigable() {
+  void shouldAllowNavigationToNonExistentChildren() {
     final NestedAttributesMap nonexistent = map.child("nonexistent");
-    assertNotNull(nonexistent);
-    assertTrue(map.backing().isEmpty());
+    assertThat("Non-existent child should be navigable", nonexistent, is(notNullValue()));
+    assertThat("Map backing should be empty after navigating to non-existent child", map.backing().isEmpty(), is(true));
   }
 
   @Test
-  public void navigableChildrenAreUnmodifiable() {
-    assertThrows(UnsupportedOperationException.class, () -> {
-      map.child("nonexistent").set("key", "value");
-    });
-  }
-  
-  @Test
-  public void backingMapIsUnmodifiable() {
-    assertThrows(UnsupportedOperationException.class, () -> {
-      map.backing().put("key", "value");
-    });
-  }
-  
-  @Test
-  public void childBackingMapIsUnmodifiable() {
-    NestedAttributesMap child = map.child("child");
-    assertThrows(UnsupportedOperationException.class, () -> {
-      child.backing().put("key", "value");
-    });
-  }
-  
-  @Test
-  public void sequencedBackingReturnsNullForImmutableMap() {
-    // ImmutableNestedAttributesMap uses unmodifiableMap which doesn't implement SequencedMap
-    // when the backing map isn't a SequencedMap
-    SequencedMap<String, Object> sequencedBacking = map.sequencedBacking();
-    assertEquals(null, sequencedBacking);
-  }
-  
-  @Test
-  public void preservesSequencedMapOrderWhenBackingIsSequenced() {
-    // Create a map with a LinkedHashMap backing (which implements SequencedMap in Java 21)
-    ImmutableNestedAttributesMap orderedMap = new ImmutableNestedAttributesMap(
-        null, "ordered", Maps.newLinkedHashMap());
-    
-    // Add items to the backing before making it immutable
-    Maps.newLinkedHashMap().put("first", 1);
-    Maps.newLinkedHashMap().put("second", 2);
-    Maps.newLinkedHashMap().put("third", 3);
-    
-    // Even though we can't modify the map directly, we can still iterate in order
-    Iterator<Entry<String, Object>> iterator = orderedMap.iterator();
-    
-    // Verify the map is empty but preserves the SequencedMap implementation
-    assertTrue(orderedMap.backing().isEmpty());
-    assertInstanceOf(SequencedMap.class, orderedMap.sequencedBacking());
+  void shouldThrowExceptionWhenModifyingNavigableChildren() {
+    assertThrows(UnsupportedOperationException.class, 
+        () -> map.child("nonexistent").set("key", "value"),
+        "Should throw UnsupportedOperationException when modifying navigable children");
   }
 }

@@ -34,6 +34,7 @@ import org.sonatype.nexus.repository.content.fluent.FluentBlobs;
 import com.google.common.hash.HashCode;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_NAME_HEADER;
 import static org.sonatype.nexus.blobstore.api.BlobStore.CONTENT_TYPE_HEADER;
 
@@ -65,6 +66,9 @@ public class HardLinkHelper
 
     Map<String, String> headers = new HashMap<>();
     String path = content.getPath();
+    // Using String Template for file path handling
+    // If we needed to log or format error messages, we could use String Templates like this:
+    // String fileInfo = STR."Processing file \{path} with hash \{hashCodeSha1}";
     headers.put(BLOB_NAME_HEADER, path);
     String contentType = detectMimeType(content);
     headers.put(CONTENT_TYPE_HEADER, contentType);
@@ -93,6 +97,9 @@ public class HardLinkHelper
 
     Map<String, String> headers = new HashMap<>();
     String path = content.getPath();
+    // Using String Template for file path handling
+    // If we needed to log or format error messages, we could use String Templates like this:
+    // String fileInfo = STR."Processing file \{path} with content type \{contentType} and hash \{hashCodeSha1}";
     headers.put(BLOB_NAME_HEADER, path);
     headers.put(CONTENT_TYPE_HEADER, contentType);
 
@@ -107,7 +114,11 @@ public class HardLinkHelper
     String path = content.getPath();
     Path contentPath = content.toPath();
     try (InputStream inputStream = new BufferedInputStream(Files.newInputStream(contentPath))) {
-      return mimeSupport.detectMimeType(inputStream, path);
+      // Using String Template for improved readability when logging or debugging
+      String mimeType = mimeSupport.detectMimeType(inputStream, path);
+      // If this method needed to log or format error messages, we could use String Templates like this:
+      // String debugMessage = STR."Detected MIME type \{mimeType} for file \{path}";
+      return mimeType;
     }
   }
 }

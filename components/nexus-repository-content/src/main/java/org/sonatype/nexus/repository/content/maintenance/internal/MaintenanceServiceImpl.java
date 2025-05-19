@@ -14,6 +14,7 @@ package org.sonatype.nexus.repository.content.maintenance.internal;
 
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -35,15 +36,12 @@ import org.sonatype.nexus.repository.security.RepositoryPermissionChecker;
 import org.sonatype.nexus.repository.security.VariableResolverAdapter;
 import org.sonatype.nexus.repository.security.VariableResolverAdapterManager;
 import org.sonatype.nexus.selector.VariableSource;
-import org.sonatype.nexus.thread.NexusThreadFactory;
 
 import org.apache.shiro.authz.AuthorizationException;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.lang.String.format;
-import static java.lang.Thread.MIN_PRIORITY;
 import static java.time.OffsetDateTime.now;
-import static java.util.concurrent.Executors.newSingleThreadExecutor;
 import static org.sonatype.nexus.security.BreadActions.DELETE;
 import static org.sonatype.nexus.thread.NexusExecutorService.forCurrentSubject;
 
@@ -83,8 +81,7 @@ public class MaintenanceServiceImpl
     this.deleteFolderService = checkNotNull(deleteFolderService);
     this.databaseCheck = checkNotNull(databaseCheck);
 
-    this.executorService = forCurrentSubject(newSingleThreadExecutor(
-        new NexusThreadFactory("delete-path", "Delete path in Tree Browse View", MIN_PRIORITY)));
+    this.executorService = forCurrentSubject(Executors.newVirtualThreadPerTaskExecutor());
   }
 
   @Override

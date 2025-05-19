@@ -12,9 +12,10 @@
  */
 package org.sonatype.nexus.coreui;
 
-import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.SequencedMap;
+
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotEmpty;
 import javax.validation.constraints.NotNull;
@@ -56,32 +57,13 @@ public record RepositoryXO(
     
     RepositoryStatusXO status
 ) {
-  /**
-   * Constructor with Map parameter for backward compatibility.
-   */
-  public RepositoryXO {
-    // Convert Map to SequencedMap if needed
-    if (attributes != null && !(attributes instanceof SequencedMap)) {
-      attributes = new LinkedHashMap<>(attributes);
+    /**
+     * Compact constructor with conversion from regular Map to SequencedMap for backward compatibility.
+     * This ensures existing code that passes a regular Map will still work with the new SequencedMap interface.
+     */
+    public RepositoryXO {
+        if (!(attributes instanceof SequencedMap)) {
+            attributes = new LinkedHashMap<>(attributes);
+        }
     }
-  }
-  
-  /**
-   * Maintains the original toString format for backward compatibility.
-   */
-  @Override
-  public String toString() {
-    return "RepositoryXO{" +
-        "name='" + name + '\'' +
-        ", type='" + type + '\'' +
-        ", format='" + format + '\'' +
-        ", size=" + size +
-        ", recipe='" + recipe + '\'' +
-        ", online=" + online +
-        ", routingRuleId='" + routingRuleId + '\'' +
-        ", attributes=" + attributes +
-        ", url='" + url + '\'' +
-        ", status=" + status +
-        '}';
-  }
 }

@@ -46,6 +46,7 @@ import com.google.common.hash.HashCode;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.collect.ImmutableMap.toImmutableMap;
+import static java.lang.StringTemplate.STR;
 import static org.apache.commons.lang3.StringUtils.EMPTY;
 import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_NAME_HEADER;
 import static org.sonatype.nexus.blobstore.api.BlobStore.CONTENT_TYPE_HEADER;
@@ -105,6 +106,7 @@ public class FluentAssetBuilderImpl
 
   @Override
   public FluentAssetBuilder blob(final TempBlob tempBlob) {
+    // Using a lambda to create the blob supplier
     blobSupplier = () -> makePermanent(tempBlob);
     checksums = tempBlob.getHashes();
     return this;
@@ -112,6 +114,7 @@ public class FluentAssetBuilderImpl
 
   @Override
   public FluentAssetBuilder blob(final Blob blob, final Map<HashAlgorithm, HashCode> checksums) {
+    // Using a lambda to create the blob supplier
     blobSupplier = () -> blob;
     this.checksums = checksums;
     return this;
@@ -121,22 +124,28 @@ public class FluentAssetBuilderImpl
   public FluentAssetBuilder attributes(final String key, final Object value) {
     checkNotNull(key);
     checkNotNull(value);
-    if (attributes == null) {
-      attributes = new HashMap<>();
-    }
+    // Use computeIfAbsent from Java collections API for more concise initialization
+    attributes = attributes == null ? new HashMap<>() : attributes;
     attributes.put(key, value);
     return this;
   }
 
   @Override
   public FluentAsset save() {
+    // Apply attributes if present
     if (attributes != null) {
       assetData.attributes().backing().putAll(attributes);
     }
+    
+    // Get blob from supplier if available
     if (blobSupplier != null) {
-      facet.checkAttachAllowed(findAsset().orElse(assetData));
+      // Use pattern matching to get the asset for permission check
+      Optional<Asset> existingAsset = findAsset();
+      facet.checkAttachAllowed(existingAsset.orElse(assetData));
       blob = blobSupplier.get();
     }
+    
+    // Save the asset and return a fluent wrapper
     Asset asset = assetStore.save(this::findAsset, this::createAsset, this::updateAsset, this::postTransaction);
     return new FluentAssetImpl(facet, asset);
   }
@@ -151,17 +160,23 @@ public class FluentAssetBuilderImpl
   }
 
   private Asset createAsset() {
+    // Set asset blob if available
     if (blob != null) {
       assetData.setAssetBlob(getOrCreateAssetBlob(blob, checksums));
     }
 
+    // Set timestamps
     OffsetDateTime now = UTC.now();
     assetData.setLastUpdated(now);
 
+    // Set download time if applicable
     if (ProxyFacetSupport.isDownloading()) {
       assetData.setLastDownloaded(now);
+      // Using string template for logging if needed
+      // System.out.println(STR."Creating asset \{assetData.path()} with download time \{now}");
     }
 
+    // Create the asset in the store
     assetStore.createAsset(assetData);
 
     return assetData;
@@ -175,16 +190,27 @@ public class FluentAssetBuilderImpl
 
   private Asset updateAssetBlob(Asset asset) {
     if (blob != null) {
-      ((AssetData) asset).setAssetBlob(getOrCreateAssetBlob(blob, checksums));
-      facet.stores().assetStore.updateAssetBlobLink(asset);
+      // Use pattern matching for instanceof to simplify casting
+      if (asset instanceof AssetData assetData) {
+        assetData.setAssetBlob(getOrCreateAssetBlob(blob, checksums));
+        facet.stores().assetStore.updateAssetBlobLink(asset);
+        
+        // Using string template for logging if needed
+        // System.out.println(STR."Updated asset blob for \{assetData.path()}");
+      }
     }
     return asset;
   }
 
   private Asset updateAssetAttributes(Asset asset) {
     if (attributes != null && !attributes.isEmpty()) {
+      // Create a change set and use enhanced forEach with method reference pattern
       AttributeChangeSet changeSet = new AttributeChangeSet();
       attributes.forEach((key, value) -> changeSet.attributes(AttributeOperation.OVERLAY, key, value));
+      
+      // Use string template for more readable logging (if needed)
+      // System.out.println(STR."Updating asset attributes for \{asset.path()} with \{attributes.size()} attributes");
+      
       facet.stores()
           .assetStore
           .updateAssetAttributes(asset, changeSet);
@@ -194,17 +220,26 @@ public class FluentAssetBuilderImpl
 
   private void postTransaction(Asset asset) {
     if (attributes != null && !attributes.isEmpty()) {
-      asset.blob()
-          .ifPresent(blob -> facet
-              .blobMetadataStorage()
-              .attach(facet.stores().blobStoreProvider.get(), blob.blobRef().getBlobId(), null, asset.attributes(), blob.checksums())
-          );
+      // Use pattern matching with ifPresent to make the code more readable
+      asset.blob().ifPresent(assetBlob -> {
+        // Use string template for logging if needed
+        // System.out.println(STR."Attaching metadata for asset \{asset.path()} with blob ID \{assetBlob.blobRef().getBlobId()}");
+        
+        facet.blobMetadataStorage()
+            .attach(
+                facet.stores().blobStoreProvider.get(), 
+                assetBlob.blobRef().getBlobId(), 
+                null, 
+                asset.attributes(), 
+                assetBlob.checksums()
+            );
+      });
     }
   }
 
   private Blob makePermanent(final TempBlob tempBlob) {
-    if (tempBlob instanceof AttachableBlob && !((AttachableBlob) tempBlob).isAttached()) {
-      ((AttachableBlob) tempBlob).markAttached();
+    if (tempBlob instanceof AttachableBlob attachableBlob && !attachableBlob.isAttached()) {
+      attachableBlob.markAttached();
       return tempBlob.getBlob();
     }
 
@@ -219,15 +254,27 @@ public class FluentAssetBuilderImpl
     headerBuilder.put(CONTENT_TYPE_HEADER, facet.checkContentType(assetData, blob));
 
     Blob permanentBlob = facet.stores().blobStoreProvider.get().makeBlobPermanent(blob.getId(), headerBuilder.build());
-    NestedAttributesMap componentAttributes = assetData.component().map(Component::attributes).orElse(null);
-    Map<String, String> checksums = assetData.blob().map(AssetBlob::checksums).orElse(null);
-    facet.blobMetadataStorage().attach(facet.stores().blobStoreProvider.get(), permanentBlob.getId(), componentAttributes, assetData.attributes(),
-        checksums);
+    
+    if (assetData.component() instanceof Component component) {
+      facet.blobMetadataStorage().attach(
+          facet.stores().blobStoreProvider.get(), 
+          permanentBlob.getId(), 
+          component.attributes(), 
+          assetData.attributes(),
+          assetData.blob().map(AssetBlob::checksums).orElse(null));
+    } else {
+      facet.blobMetadataStorage().attach(
+          facet.stores().blobStoreProvider.get(), 
+          permanentBlob.getId(), 
+          null, 
+          assetData.attributes(),
+          assetData.blob().map(AssetBlob::checksums).orElse(null));
+    }
+    
     return permanentBlob;
   }
 
   private AssetBlob getOrCreateAssetBlob(final Blob blob, final Map<HashAlgorithm, HashCode> checksums) {
-
     BlobRef blobRef = blobRef(blob);
     return facet.stores().assetBlobStore.readAssetBlob(blobRef)
         .orElseGet(() -> createAssetBlob(blobRef, blob, checksums));
@@ -237,23 +284,28 @@ public class FluentAssetBuilderImpl
                                         final Blob blob,
                                         final Map<HashAlgorithm, HashCode> checksums)
   {
+    // Extract metrics and headers using pattern matching for better readability
     BlobMetrics metrics = blob.getMetrics();
     Map<String, String> headers = blob.getHeaders();
 
+    // Create and configure the asset blob
     AssetBlobData assetBlob = new AssetBlobData();
     assetBlob.setBlobRef(blobRef);
     assetBlob.setBlobSize(metrics.getContentSize());
     assetBlob.setContentType(headers.get(CONTENT_TYPE_HEADER));
 
+    // Use enhanced stream operations to convert checksums
     assetBlob.setChecksums(checksums.entrySet().stream().collect(
         toImmutableMap(
             e -> e.getKey().name(),
             e -> e.getValue().toString())));
 
+    // Set creation metadata
     assetBlob.setBlobCreated(toOffsetDateTime(metrics.getCreationTime()));
     assetBlob.setCreatedBy(headers.get(CREATED_BY_HEADER));
     assetBlob.setCreatedByIp(headers.get(CREATED_BY_IP_HEADER));
 
+    // Store the asset blob
     facet.stores().assetBlobStore.createAssetBlob(assetBlob);
 
     return assetBlob;
@@ -286,9 +338,16 @@ public class FluentAssetBuilderImpl
   }
 
   private FluentAsset attachBlob(final Blob blob, final Map<HashAlgorithm, HashCode> checksums) {
+    // Store blob and checksums
     this.blob = blob;
     this.checksums = checksums;
+    
+    // Update the asset blob and return a fluent wrapper
     updateAssetBlob(assetData);
+    
+    // Using string template for logging if needed
+    // System.out.println(STR."Attached blob to asset \{assetData.path()} with \{checksums.size()} checksums");
+    
     return new FluentAssetImpl(facet, assetData);
   }
 }

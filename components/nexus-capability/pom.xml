@@ -73,4 +73,26 @@
     </dependency>
   </dependencies>
 
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.felix</groupId>
+        <artifactId>maven-bundle-plugin</artifactId>
+        <configuration>
+          <instructions>
+            <!-- Ensure OSGi bundle is compatible with Java 21 -->
+            <Bundle-RequiredExecutionEnvironment>JavaSE-21</Bundle-RequiredExecutionEnvironment>
+            <!-- Ensure proper import/export package versions for Java 21 compatibility -->
+            <Import-Package>
+              *
+            </Import-Package>
+            <Export-Package>
+              org.sonatype.nexus.capability.*;
+            </Export-Package>
+          </instructions>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
 </project>

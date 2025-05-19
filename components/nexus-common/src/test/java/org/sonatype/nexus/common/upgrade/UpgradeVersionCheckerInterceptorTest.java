@@ -17,8 +17,10 @@ import javax.inject.Provider;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.db.DatabaseCheck;
+import org.sonatype.nexus.virtualthread.Java21TestGroup;
 
 import org.aopalliance.intercept.MethodInvocation;
+import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
@@ -28,6 +30,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * Tests for {@link AvailabilityVersionCheckerInterceptor}.
+ */
+@Category(Java21TestGroup.class)
 public class UpgradeVersionCheckerInterceptorTest
     extends TestSupport
 {
@@ -44,13 +50,13 @@ public class UpgradeVersionCheckerInterceptorTest
   }
 
   @Test
-  public void invokeShouldFailWhenDatabaseVersionIsNotAtLeastVersion() throws Throwable {
+  public void shouldFailWhenDatabaseVersionIsNotAtLeast() throws Throwable {
     MethodInvocation methodInvocation = setupMethodInvocation(TestInterface.class.getMethod("annotatedMethod"), false);
     assertThrows(IllegalStateException.class, () -> underTest.invoke(methodInvocation));
   }
 
   @Test
-  public void invokeShouldSucceedWhenDatabaseVersionIsAtLeastVersion() throws Throwable {
+  public void shouldSucceedWhenDatabaseVersionIsAtLeast() throws Throwable {
     MethodInvocation methodInvocation = setupMethodInvocation(TestInterface.class.getMethod("annotatedMethod"), true);
     underTest.invoke(methodInvocation);
     verify(methodInvocation).proceed();

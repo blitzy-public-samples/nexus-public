@@ -22,6 +22,11 @@ import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.MockBlobStoreConfiguration;
@@ -29,46 +34,45 @@ import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import static java.util.stream.Collectors.toList;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class FileRawObjectAccessTest
     extends TestSupport
 {
   private FileRawObjectAccess underTest;
 
-  @Rule
-  public TemporaryFolder temporaryFolder = new TemporaryFolder();
+  @TempDir
+  public Path temporaryFolder;
 
-  @Before
+  @BeforeEach
   public void initBlobStore() {
     BlobStoreConfiguration configuration = new MockBlobStoreConfiguration();
 
     Map<String, Map<String, Object>> attributes = new HashMap<>();
     Map<String, Object> fileMap = new HashMap<>();
-    fileMap.put("path", temporaryFolder.getRoot().toPath());
+    fileMap.put("path", temporaryFolder);
     attributes.put("file", fileMap);
 
     configuration.setAttributes(attributes);
 
-    underTest = new FileRawObjectAccess(temporaryFolder.getRoot().toPath());
+    underTest = new FileRawObjectAccess(temporaryFolder);
   }
 
   @Test
   public void listRawObjects() throws Exception {
     Path dir = Paths.get("path", "to");
 
-    temporaryFolder.newFolder(dir.toString());
-    temporaryFolder.newFile(dir.resolve("object1.txt").toString());
+    Files.createDirectories(temporaryFolder.resolve(dir));
+    Files.createFile(temporaryFolder.resolve(dir).resolve("object1.txt"));
 
     List<String> objects = underTest.listRawObjects(dir).collect(toList());
     assertEquals(1, objects.size());
@@ -79,7 +83,7 @@ public class FileRawObjectAccessTest
   public void listRawObjects_empty() throws Exception {
     Path dir = Paths.get("path", "to");
 
-    temporaryFolder.newFolder(dir.toString());
+    Files.createDirectories(temporaryFolder.resolve(dir));
 
     List<String> objects = underTest.listRawObjects(dir).collect(toList());
     assertTrue(objects.isEmpty());
@@ -87,7 +91,7 @@ public class FileRawObjectAccessTest
 
   @Test
   public void listRawObjects_root() throws Exception {
-    temporaryFolder.newFile("object1.txt");
+    Files.createFile(temporaryFolder.resolve("object1.txt"));
 
     List<String> objects = underTest.listRawObjects(null).collect(toList());
     assertEquals(1, objects.size());
@@ -98,10 +102,10 @@ public class FileRawObjectAccessTest
   public void getRawObject() throws Exception {
     Path dir = Paths.get("path", "to");
 
-    temporaryFolder.newFolder(dir.toString());
-    File file1 = temporaryFolder.newFile(dir.resolve("object1.txt").toString());
+    Files.createDirectories(temporaryFolder.resolve(dir));
+    Path file1 = Files.createFile(temporaryFolder.resolve(dir).resolve("object1.txt"));
 
-    FileUtils.writeStringToFile(file1, "hello!", StandardCharsets.UTF_8.name());
+    FileUtils.writeStringToFile(file1.toFile(), "hello!", StandardCharsets.UTF_8.name());
 
     InputStream in = underTest.getRawObject(dir.resolve("object1.txt"));
     assertNotNull(in);
@@ -117,11 +121,11 @@ public class FileRawObjectAccessTest
   @Test
   public void putRawObject() throws Exception {
     Path dir = Paths.get("path", "to");
-    File dirFile = temporaryFolder.newFolder(dir.toString());
+    Path dirPath = Files.createDirectories(temporaryFolder.resolve(dir));
 
     underTest.putRawObject(dir.resolve("object1.txt"), new ByteArrayInputStream("hello!".getBytes()));
 
-    byte[] object1 = Files.readAllBytes(dirFile.toPath().resolve("object1.txt"));
+    byte[] object1 = Files.readAllBytes(dirPath.resolve("object1.txt"));
     assertEquals("hello!", new String(object1, StandardCharsets.UTF_8));
   }
 
@@ -129,29 +133,140 @@ public class FileRawObjectAccessTest
   public void deleteRawObjectsInPath() throws Exception {
     Path path = Paths.get("path", "to");
 
-    File parent = temporaryFolder.newFolder(path.toString());
-    File file1 = temporaryFolder.newFile(path.resolve("object1.txt").toString());
-    File file2 = temporaryFolder.newFile(path.resolve("object2.txt").toString());
+    Path parent = Files.createDirectories(temporaryFolder.resolve(path));
+    Path file1 = Files.createFile(temporaryFolder.resolve(path).resolve("object1.txt"));
+    Path file2 = Files.createFile(temporaryFolder.resolve(path).resolve("object2.txt"));
 
     underTest.deleteRawObjectsInPath(path);
-    assertFalse(file1.exists());
-    assertFalse(file2.exists());
-    assertFalse(parent.exists());
+    assertFalse(Files.exists(file1));
+    assertFalse(Files.exists(file2));
+    assertFalse(Files.exists(parent));
   }
 
   @Test
   public void deleteRawObjectsInPathNestedContent() throws Exception {
     Path path = Paths.get("path", "to");
 
-    File parent = temporaryFolder.newFolder(path.toString());
-    File file1 = temporaryFolder.newFile(path.resolve("object1.txt").toString());
-    File file2 = temporaryFolder.newFile(path.resolve("object2.txt").toString());
-    temporaryFolder.newFolder(path.resolve("nested").toString());
+    Path parent = Files.createDirectories(temporaryFolder.resolve(path));
+    Path file1 = Files.createFile(temporaryFolder.resolve(path).resolve("object1.txt"));
+    Path file2 = Files.createFile(temporaryFolder.resolve(path).resolve("object2.txt"));
+    Files.createDirectories(temporaryFolder.resolve(path).resolve("nested"));
 
     underTest.deleteRawObjectsInPath(path);
-    assertFalse(file1.exists());
-    assertFalse(file2.exists());
+    assertFalse(Files.exists(file1));
+    assertFalse(Files.exists(file2));
     // can't delete parent because of nested folder
-    assertTrue(parent.exists());
+    assertTrue(Files.exists(parent));
+  }
+
+  @Test
+  public void concurrentFileOperationsWithVirtualThreads() throws Exception {
+    int numThreads = 100;
+    CountDownLatch latch = new CountDownLatch(numThreads);
+    AtomicBoolean anyFailures = new AtomicBoolean(false);
+    
+    // Use virtual threads for I/O operations
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      for (int i = 0; i < numThreads; i++) {
+        final int threadNum = i;
+        executor.submit(() -> {
+          try {
+            // Create a unique path for each thread
+            Path dir = Paths.get("concurrent", "thread" + threadNum);
+            Files.createDirectories(temporaryFolder.resolve(dir));
+            
+            // Write a file
+            String content = "Content from thread " + threadNum;
+            underTest.putRawObject(dir.resolve("file.txt"), 
+                new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8)));
+            
+            // Read it back and verify
+            try (InputStream in = underTest.getRawObject(dir.resolve("file.txt"))) {
+              String readContent = IOUtils.toString(in, StandardCharsets.UTF_8);
+              assertEquals(content, readContent, 
+                  "Content mismatch for thread " + threadNum);
+            }
+            
+            // List objects
+            List<String> objects = underTest.listRawObjects(dir).collect(toList());
+            assertEquals(1, objects.size(), 
+                "Expected one file for thread " + threadNum);
+            
+            // Delete the file
+            underTest.deleteRawObjectsInPath(dir);
+            assertFalse(Files.exists(temporaryFolder.resolve(dir)), 
+                "Directory should be deleted for thread " + threadNum);
+          }
+          catch (Exception e) {
+            log.error("Error in thread " + threadNum, e);
+            anyFailures.set(true);
+          }
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all threads to complete
+      assertTrue(latch.await(30, TimeUnit.SECONDS), "Timed out waiting for threads to complete");
+      assertFalse(anyFailures.get(), "One or more threads encountered errors");
+    }
+  }
+
+  @Test
+  public void verifyNoPinningDuringFileOperations() throws Exception {
+    // This test verifies that file operations don't cause thread pinning
+    // by performing multiple concurrent I/O operations with virtual threads
+    
+    int numThreads = 50;
+    CountDownLatch latch = new CountDownLatch(numThreads);
+    
+    // Use virtual threads for I/O operations
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      for (int i = 0; i < numThreads; i++) {
+        final int threadNum = i;
+        executor.submit(() -> {
+          try {
+            // Create a unique path for each thread
+            Path dir = Paths.get("pinning-test", "thread" + threadNum);
+            Files.createDirectories(temporaryFolder.resolve(dir));
+            
+            // Perform multiple I/O operations that would block if pinned
+            for (int j = 0; j < 10; j++) {
+              String fileName = "file" + j + ".txt";
+              String content = "Content " + j + " from thread " + threadNum;
+              
+              // Write file
+              underTest.putRawObject(dir.resolve(fileName), 
+                  new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8)));
+              
+              // Small delay to increase chance of thread scheduling
+              Thread.sleep(10);
+              
+              // Read file
+              try (InputStream in = underTest.getRawObject(dir.resolve(fileName))) {
+                String readContent = IOUtils.toString(in, StandardCharsets.UTF_8);
+                assertEquals(content, readContent);
+              }
+              
+              // List files
+              underTest.listRawObjects(dir).collect(toList());
+            }
+            
+            // Clean up
+            underTest.deleteRawObjectsInPath(dir);
+          }
+          catch (Exception e) {
+            log.error("Error in thread " + threadNum, e);
+          }
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // If threads are pinned, this would likely time out as carrier threads would be blocked
+      assertTrue(latch.await(30, TimeUnit.SECONDS), "Timed out waiting for threads to complete");
+    }
   }
 }

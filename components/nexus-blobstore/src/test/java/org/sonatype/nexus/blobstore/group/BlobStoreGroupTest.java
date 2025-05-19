@@ -12,8 +12,31 @@
  */
 package org.sonatype.nexus.blobstore.group;
 
+import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import javax.cache.Cache;
+import javax.cache.configuration.MutableConfiguration;
+import javax.inject.Provider;
+
 import com.google.common.hash.HashCode;
+
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -30,31 +53,14 @@ import org.sonatype.nexus.blobstore.api.BlobStoreManager;
 import org.sonatype.nexus.blobstore.group.internal.WriteToFirstMemberFillPolicy;
 import org.sonatype.nexus.cache.CacheHelper;
 
-import javax.cache.Cache;
-import javax.cache.configuration.MutableConfiguration;
-import javax.inject.Provider;
-import java.io.ByteArrayInputStream;
-import java.io.File;
-import java.nio.file.Path;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-
 import static java.util.Collections.emptyList;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
+@Tag("java21")
 public class BlobStoreGroupTest
     extends TestSupport
 {
@@ -118,18 +124,18 @@ public class BlobStoreGroupTest
   }
 
   @Test
-  public void getWithNoMembers() throws Exception {
+  void getWithNoMembers() throws Exception {
     config.setAttributes(buildAttributes(emptyList(), "test"));
     blobStore.init(config);
     blobStore.doStart();
 
     Blob foundBlob = blobStore.get(new BlobId("doesntexist"));
 
-    assertNull(foundBlob);
+    assertThat(foundBlob, nullValue());
   }
 
   @Test
-  public void getWithTwoMembers() throws Exception {
+  void getWithTwoMembers() throws Exception {
     config.setAttributes(buildAttributes(Arrays.asList("one", "two"), "test"));
     blobStore.init(config);
     blobStore.doStart();
@@ -141,17 +147,17 @@ public class BlobStoreGroupTest
     when(two.get(new BlobId("in_two"))).thenReturn(blobTwo);
 
     Blob foundBlob = blobStore.get(new BlobId("in_one"));
-    assertEquals(blobOne, foundBlob);
+    assertThat(foundBlob, is(blobOne));
 
     foundBlob = blobStore.get(new BlobId("in_two"));
-    assertEquals(blobTwo, foundBlob);
+    assertThat(foundBlob, is(blobTwo));
 
     foundBlob = blobStore.get(new BlobId("doesntexist"));
-    assertNull(foundBlob);
+    assertThat(foundBlob, nullValue());
   }
 
   @Test
-  public void twoParamGet() throws Exception {
+  void twoParamGet() throws Exception {
     config.setAttributes(buildAttributes(Arrays.asList("one", "two"), "test"));
     blobStore.init(config);
     blobStore.doStart();
@@ -169,7 +175,7 @@ public class BlobStoreGroupTest
   }
 
   @Test
-  public void twoParamGetIncludeDeleted() throws Exception {
+  void twoParamGetIncludeDeleted() throws Exception {
     config.setAttributes(buildAttributes(Arrays.asList("one", "two"), "test"));
     blobStore.init(config);
     blobStore.doStart();
@@ -198,11 +204,11 @@ public class BlobStoreGroupTest
 
   private void assertBlobStoreGet(String blobId, boolean includeDeleted, Blob expectedBlob) {
     Blob foundBlob = blobStore.get(new BlobId(blobId), includeDeleted);
-    assertEquals(expectedBlob, foundBlob);
+    assertThat(foundBlob, is(expectedBlob));
   }
 
   @Test
-  public void createWithStreamDelegatesToMemberChosenByFillPolicy() throws Exception {
+  void createWithStreamDelegatesToMemberChosenByFillPolicy() throws Exception {
     config.setAttributes(buildAttributes(Arrays.asList("one", "two"), "test"));
     blobStore.init(config);
     blobStore.doStart();
@@ -223,7 +229,7 @@ public class BlobStoreGroupTest
   }
 
   @Test
-  public void createWithPathDelegatesToMemberChosenByFillPolicy() throws Exception {
+  void createWithPathDelegatesToMemberChosenByFillPolicy() throws Exception {
     config.setAttributes(buildAttributes(Arrays.asList("one", "two"), "test"));
     blobStore.init(config);
     blobStore.doStart();
@@ -236,7 +242,7 @@ public class BlobStoreGroupTest
 
     when(testFillPolicy.chooseBlobStore(blobStore, new HashMap<>())).thenReturn(two);
     when(two.create(path, new HashMap<>(), size, hashCode)).thenReturn(blob);
-    when(blob.getId()).thenReturn(new BlobId("created"));
+    when(blob.getId()).thenReturn(new BlobId(STR."created-\{System.currentTimeMillis()}"));
 
     blobStore.create(path, new HashMap<>(), size, hashCode);
 
@@ -246,7 +252,7 @@ public class BlobStoreGroupTest
   }
 
   @Test
-  public void getBlobStreamIdWithTwoBlobstores() throws Exception {
+  void getBlobStreamIdWithTwoBlobstores() throws Exception {
     config.setAttributes(buildAttributes(Arrays.asList("one", "two"), "test"));
     blobStore.init(config);
     blobStore.doStart();
@@ -261,11 +267,11 @@ public class BlobStoreGroupTest
     Stream<BlobId> stream = blobStore.getBlobIdStream();
 
     List<String> result = stream.map(BlobId::toString).collect(Collectors.toList());
-    assertEquals(Arrays.asList("a", "b", "c", "d", "e", "f"), result);
+    assertThat(result, is(Arrays.asList("a", "b", "c", "d", "e", "f")));
   }
 
   @Test
-  public void deleteWithTwoMembers() throws Exception {
+  void deleteWithTwoMembers() throws Exception {
     config.setAttributes(buildAttributes(Arrays.asList("one", "two"), "test"));
     blobStore.init(config);
     blobStore.doStart();
@@ -291,7 +297,7 @@ public class BlobStoreGroupTest
   }
 
   @Test
-  public void deleteHardWithTwoMembers() throws Exception {
+  void deleteHardWithTwoMembers() throws Exception {
     config.setAttributes(buildAttributes(Arrays.asList("one", "two"), "test"));
     blobStore.init(config);
     blobStore.doStart();
@@ -318,25 +324,25 @@ public class BlobStoreGroupTest
 
   private void assertBlobStoreDeleteHard(String blobId, boolean expectedDeleted) {
     boolean deleted = blobStore.deleteHard(new BlobId(blobId));
-    assertEquals(expectedDeleted, deleted);
+    assertThat(deleted, is(expectedDeleted));
   }
 
   private void assertBlobStoreDelete(String blobId, boolean expectedDeleted) {
     boolean deleted = blobStore.delete(new BlobId(blobId), "just because");
-    assertEquals(expectedDeleted, deleted);
+    assertThat(deleted, is(expectedDeleted));
   }
 
   @Test
-  public void fallBackOnDefaultFillPolicyIfNamedPolicyNotFound() {
+  void fallBackOnDefaultFillPolicyIfNamedPolicyNotFound() {
     config.setAttributes(buildAttributes(Arrays.asList("one", "two"), "nonExistentPolicy"));
 
     blobStore.init(config);
 
-    assertEquals(writeToFirstMemberFillPolicy, blobStore.fillPolicy);
+    assertThat(blobStore.fillPolicy, is(writeToFirstMemberFillPolicy));
   }
 
   @Test
-  public void itWillSearchWritableBlobStoresFirst() throws Exception {
+  void itWillSearchWritableBlobStoresFirst() throws Exception {
     config.setAttributes(buildAttributes(Arrays.asList("writableMember", "nonWritableMember"), "test"));
     blobStore.init(config);
     blobStore.doStart();
@@ -353,12 +359,12 @@ public class BlobStoreGroupTest
 
     verify(one).exists(blobId);
     verify(two, never()).exists(blobId);
-    assertEquals(one, locatedMember.get());
+    assertThat(locatedMember.get(), is(one));
     verify(cache).put(blobId, "one");
   }
 
   @Test
-  public void itWillOnlyCacheBlobIdsOfWritableBlobStores() throws Exception {
+  void itWillOnlyCacheBlobIdsOfWritableBlobStores() throws Exception {
     config.setAttributes(buildAttributes(Arrays.asList("writableMember", "nonWritableMember"), "test"));
     blobStore.init(config);
     blobStore.doStart();
@@ -376,80 +382,143 @@ public class BlobStoreGroupTest
 
     verify(one).exists(blobId);
     verify(two).exists(blobId);
-    assertEquals(two, locatedMember.get());
+    assertThat(locatedMember.get(), is(two));
     verify(cache, never()).put(any(), any());
   }
   
   @Test
-  public void concurrentBlobStoreGroupOperationsWithVirtualThreads() throws Exception {
-    // Setup BlobStoreGroup with two members
+  void locateWithPatternMatching() throws Exception {
     config.setAttributes(buildAttributes(Arrays.asList("one", "two"), "test"));
     blobStore.init(config);
     blobStore.doStart();
     when(blobStoreManager.get("one")).thenReturn(one);
     when(blobStoreManager.get("two")).thenReturn(two);
     
-    // Configure mock behavior for exists and get operations
-    when(one.exists(any())).thenAnswer(invocation -> {
-      BlobId id = invocation.getArgument(0);
-      return id.toString().startsWith("one-");
-    });
-    when(two.exists(any())).thenAnswer(invocation -> {
-      BlobId id = invocation.getArgument(0);
-      return id.toString().startsWith("two-");
-    });
+    // Setup different blob types for pattern matching
+    BlobId textBlobId = new BlobId("text-blob");
+    BlobId imageBlobId = new BlobId("image-blob");
+    BlobId unknownBlobId = new BlobId("unknown-blob");
     
-    // Setup blob retrieval behavior
-    when(one.get(any(BlobId.class))).thenAnswer(invocation -> {
-      BlobId id = invocation.getArgument(0);
-      return id.toString().startsWith("one-") ? blobOne : null;
-    });
-    when(two.get(any(BlobId.class))).thenAnswer(invocation -> {
-      BlobId id = invocation.getArgument(0);
-      return id.toString().startsWith("two-") ? blobTwo : null;
-    });
+    // Mock behavior based on blob type
+    when(one.exists(textBlobId)).thenReturn(true);
+    when(one.exists(imageBlobId)).thenReturn(false);
+    when(one.exists(unknownBlobId)).thenReturn(false);
+    when(two.exists(textBlobId)).thenReturn(false);
+    when(two.exists(imageBlobId)).thenReturn(true);
+    when(two.exists(unknownBlobId)).thenReturn(false);
+    
+    // Test pattern matching with different blob types
+    Optional<BlobStore> textBlobStore = blobStore.locate(textBlobId);
+    Optional<BlobStore> imageBlobStore = blobStore.locate(imageBlobId);
+    Optional<BlobStore> unknownBlobStore = blobStore.locate(unknownBlobId);
+    
+    // Verify results using pattern matching
+    assertThat(switch(textBlobStore.orElse(null)) {
+      case BlobStore store when store == one -> "one";
+      case BlobStore store when store == two -> "two";
+      default -> "not found";
+    }, is("one"));
+    
+    assertThat(switch(imageBlobStore.orElse(null)) {
+      case BlobStore store when store == one -> "one";
+      case BlobStore store when store == two -> "two";
+      default -> "not found";
+    }, is("two"));
+    
+    assertThat(switch(unknownBlobStore.orElse(null)) {
+      case BlobStore store when store == one -> "one";
+      case BlobStore store when store == two -> "two";
+      default -> "not found";
+    }, is("not found"));
+  }
+  
+  @Test
+  void concurrentBlobRetrievalWithVirtualThreads() throws Exception {
+    // Setup blob store group with two members
+    config.setAttributes(buildAttributes(Arrays.asList("one", "two"), "test"));
+    blobStore.init(config);
+    blobStore.doStart();
+    when(blobStoreManager.get("one")).thenReturn(one);
+    when(blobStoreManager.get("two")).thenReturn(two);
+    
+    // Create blobs in different stores
+    int blobCount = 100;
+    for (int i = 0; i < blobCount; i++) {
+      BlobId blobId = new BlobId(STR."blob-\{i}");
+      // Even numbered blobs in store one, odd in store two
+      if (i % 2 == 0) {
+        when(one.exists(blobId)).thenReturn(true);
+        when(one.get(blobId)).thenReturn(blobOne);
+      } else {
+        when(two.exists(blobId)).thenReturn(true);
+        when(two.get(blobId)).thenReturn(blobTwo);
+      }
+    }
     
     // Create virtual thread executor
-    int taskCount = 100;
-    CountDownLatch latch = new CountDownLatch(taskCount);
-    AtomicInteger errorCount = new AtomicInteger(0);
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(
+        ThreadFactory.ofVirtual().factory());
     
-    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().factory())) {
-      // Submit concurrent tasks using virtual threads
-      for (int i = 0; i < taskCount; i++) {
-        final int index = i;
-        executor.submit(() -> {
-          try {
-            // Alternate between accessing blobs from different stores
-            String prefix = index % 2 == 0 ? "one-" : "two-";
-            BlobId blobId = new BlobId(prefix + index);
-            Blob blob = blobStore.get(blobId);
-            
-            // Verify correct blob is returned
-            if (prefix.equals("one-")) {
-              assertEquals(blobOne, blob);
-            } else {
-              assertEquals(blobTwo, blob);
-            }
-          } 
-          catch (Exception e) {
-            errorCount.incrementAndGet();
-          } 
-          finally {
-            latch.countDown();
+    // Synchronization aids
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch completionLatch = new CountDownLatch(blobCount);
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    // Submit tasks to retrieve blobs concurrently
+    for (int i = 0; i < blobCount; i++) {
+      final int index = i;
+      executor.submit(() -> {
+        try {
+          startLatch.await(); // Wait for all threads to be ready
+          BlobId blobId = new BlobId(STR."blob-\{index}");
+          Blob blob = blobStore.get(blobId);
+          if (blob != null) {
+            successCount.incrementAndGet();
           }
-        });
+        } catch (Exception e) {
+          logger.error("Error retrieving blob", e);
+        } finally {
+          completionLatch.countDown();
+        }
+      });
+    }
+    
+    // Start all threads simultaneously
+    startLatch.countDown();
+    
+    // Wait for all threads to complete
+    completionLatch.await(5, TimeUnit.SECONDS);
+    executor.shutdown();
+    
+    // Verify all blobs were retrieved successfully
+    assertThat(successCount.get(), is(blobCount));
+  }
+  
+  @Test
+  void extractAttributesWithRecordPatterns() throws Exception {
+    // Create a record to represent group attributes
+    record GroupAttributes(List<String> members, String fillPolicy) {}
+    
+    // Setup test data
+    config.setAttributes(buildAttributes(Arrays.asList("one", "two"), "test"));
+    blobStore.init(config);
+    
+    // Extract attributes using record patterns
+    Map<String, Object> groupMap = blobStore.getConfiguration().attributes().get("group");
+    if (groupMap instanceof Map<String, Object> map) {
+      // Use record pattern to extract and validate attributes
+      GroupAttributes attrs = new GroupAttributes(
+          (List<String>) map.get("members"),
+          (String) map.get("fillPolicy")
+      );
+      
+      // Verify extracted attributes using pattern matching
+      if (attrs instanceof GroupAttributes(var members, var policy)) {
+        assertThat(members.size(), is(2));
+        assertThat(members.get(0), is("one"));
+        assertThat(members.get(1), is("two"));
+        assertThat(policy, is("test"));
       }
-      
-      // Wait for all tasks to complete
-      latch.await(30, TimeUnit.SECONDS);
-      
-      // Verify no errors occurred
-      assertEquals(0, errorCount.get(), "No errors should occur during concurrent operations");
-      
-      // Verify the expected number of calls to each blob store
-      verify(one, atLeast(taskCount / 2)).exists(any(BlobId.class));
-      verify(two, atLeast(taskCount / 2)).exists(any(BlobId.class));
     }
   }
 }

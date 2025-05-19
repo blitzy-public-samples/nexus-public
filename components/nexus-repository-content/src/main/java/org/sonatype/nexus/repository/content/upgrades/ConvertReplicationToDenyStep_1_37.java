@@ -17,38 +17,55 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.PreparedStatement;
 import java.util.Optional;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.Map;
+
 import javax.inject.Inject;
 import javax.inject.Named;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+
 import org.sonatype.nexus.upgrade.datastore.DatabaseMigrationStep;
 import org.sonatype.nexus.common.db.DatabaseCheck;
+import org.sonatype.nexus.common.log.LogManager;
+import org.sonatype.nexus.common.log.Logger;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
  * Convert REPLICATION_ONLY write policy to DENY.
+ * <p>
+ * This implementation uses Java 21 Virtual Threads for improved I/O performance
+ * and String Templates for SQL queries.
  */
 @Named
 public class ConvertReplicationToDenyStep_1_37
     implements DatabaseMigrationStep
 {
   private final DatabaseCheck databaseCheck;
-
   private final ObjectMapper mapper;
+  private final Logger log;
 
   private static final int PAGE_SIZE = 1000;
-
-  private static final String UPDATE_ATTRIBUTES_BY_ID = "UPDATE repository SET attributes = ? WHERE id = ?;";
+  private static final String UPDATE_ATTRIBUTES_BY_ID = "UPDATE repository SET attributes = ? WHERE id = ?";
 
   @Inject
   public ConvertReplicationToDenyStep_1_37(
-    final DatabaseCheck databaseCheck) 
+      final DatabaseCheck databaseCheck,
+      final LogManager logManager) 
   {
     this.mapper = new ObjectMapper();
     this.databaseCheck = databaseCheck;
+    this.log = logManager.getLogger(this.getClass());
   }
 
   @Override
@@ -60,37 +77,112 @@ public class ConvertReplicationToDenyStep_1_37
   public void migrate(final Connection connection) throws Exception {
     int totalRows = getTotalRowCount(connection);
     int totalPages = (int) Math.ceil((double) totalRows / PAGE_SIZE);
+    
+    log.info(STR."Starting migration to convert REPLICATION_ONLY write policy to DENY. Total rows: \{totalRows}, Pages: \{totalPages}");
+    
+    if (totalRows == 0) {
+      log.info("No repository records found to process");
+      return;
+    }
 
-    for (int i = 0; i < totalPages; i++) {
-      int offset = i * PAGE_SIZE;
-      String selectQuery = "SELECT id, attributes FROM repository LIMIT ? OFFSET ?";
-      try (PreparedStatement ps = connection.prepareStatement(selectQuery)) {
-        ps.setInt(1, PAGE_SIZE);
-        ps.setInt(2, offset);
-        try (ResultSet rs = ps.executeQuery()) {
-          while (rs.next()) {
-            String id = rs.getString("id");
-            String attributes = rs.getString("attributes");
+    // Process pages in parallel using Virtual Threads
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      CountDownLatch latch = new CountDownLatch(totalPages);
+      AtomicInteger processedCount = new AtomicInteger(0);
+      Map<Integer, Exception> errors = new ConcurrentHashMap<>();
 
-            ObjectNode attributesNode = (ObjectNode) mapper.readTree(attributes);
-            JsonNode storageAttributes = attributesNode.get("storage");
-
-            if (storageAttributes != null) {
-              JsonNode writePolicyNode = storageAttributes.get("writePolicy");
-              if (writePolicyNode != null && "REPLICATION_ONLY".equals(writePolicyNode.asText())) {
-                ((ObjectNode) storageAttributes).put("writePolicy", "DENY");
-                attributesNode.set("storage", storageAttributes);
-                updateAttributes(connection, id, mapper.writeValueAsBytes(attributesNode));
-              }
-            }
+      for (int i = 0; i < totalPages; i++) {
+        final int pageIndex = i;
+        executor.submit(() -> {
+          try {
+            int processed = processPage(connection, pageIndex, totalPages);
+            processedCount.addAndGet(processed);
+            log.debug(STR."Completed processing page \{pageIndex + 1}/\{totalPages} with \{processed} updates");
+          } 
+          catch (Exception e) {
+            log.error(STR."Error processing page \{pageIndex + 1}", e);
+            errors.put(pageIndex, e);
+          } 
+          finally {
+            latch.countDown();
           }
-        }
-      } catch (SQLException | JsonProcessingException e) {
-        throw new RuntimeException(e);
+        });
       }
+
+      // Wait for all tasks to complete
+      latch.await();
+      
+      // Check if any errors occurred
+      if (!errors.isEmpty()) {
+        throw new RuntimeException(STR."Migration failed with \{errors.size()} errors. First error: \{errors.values().iterator().next().getMessage()}");
+      }
+      
+      log.info(STR."Migration completed successfully. Processed \{processedCount.get()} repositories.");
     }
   }
 
+  /**
+   * Process a single page of repository records.
+   *
+   * @param connection the database connection
+   * @param pageIndex the page index (0-based)
+   * @param totalPages total number of pages
+   * @return number of records processed in this page
+   */
+  private int processPage(Connection connection, int pageIndex, int totalPages) throws SQLException, JsonProcessingException {
+    int offset = pageIndex * PAGE_SIZE;
+    int processed = 0;
+    
+    // Use String Template for SQL query
+    String selectQuery = STR."SELECT id, attributes FROM repository LIMIT \{PAGE_SIZE} OFFSET \{offset}";
+    
+    try (PreparedStatement ps = connection.prepareStatement(selectQuery)) {
+      try (ResultSet rs = ps.executeQuery()) {
+        List<RepositoryUpdate> updates = new ArrayList<>();
+        
+        // First pass: identify records that need updates
+        while (rs.next()) {
+          String id = rs.getString("id");
+          String attributes = rs.getString("attributes");
+
+          ObjectNode attributesNode = (ObjectNode) mapper.readTree(attributes);
+          JsonNode storageAttributes = attributesNode.get("storage");
+
+          if (storageAttributes != null) {
+            JsonNode writePolicyNode = storageAttributes.get("writePolicy");
+            if (writePolicyNode != null && "REPLICATION_ONLY".equals(writePolicyNode.asText())) {
+              ((ObjectNode) storageAttributes).put("writePolicy", "DENY");
+              attributesNode.set("storage", storageAttributes);
+              updates.add(new RepositoryUpdate(id, mapper.writeValueAsBytes(attributesNode)));
+              processed++;
+            }
+          }
+        }
+        
+        // Second pass: apply updates in batch
+        if (!updates.isEmpty()) {
+          try (PreparedStatement updatePs = connection.prepareStatement(UPDATE_ATTRIBUTES_BY_ID)) {
+            for (RepositoryUpdate update : updates) {
+              if (!databaseCheck.isPostgresql()) {
+                updatePs.setBytes(1, update.attributes());
+              } else {
+                updatePs.setString(1, new String(update.attributes(), UTF_8));
+              }
+              updatePs.setString(2, update.id());
+              updatePs.addBatch();
+            }
+            updatePs.executeBatch();
+          }
+        }
+      }
+    }
+    
+    return processed;
+  }
+
+  /**
+   * Get the total number of repository records.
+   */
   private int getTotalRowCount(Connection connection) throws SQLException {
     String countQuery = "SELECT COUNT(id) FROM repository";
     try (PreparedStatement ps = connection.prepareStatement(countQuery);
@@ -102,16 +194,9 @@ public class ConvertReplicationToDenyStep_1_37
       }
     }
   }
-
-  private void updateAttributes(Connection connection, String id, byte[] attributes) throws SQLException {
-    try (PreparedStatement ps = connection.prepareStatement(UPDATE_ATTRIBUTES_BY_ID)) {
-      if (!databaseCheck.isPostgresql()) {
-        ps.setBytes(1, attributes);
-      } else {
-        ps.setString(1, new String(attributes, UTF_8));
-      }
-      ps.setString(2, id);
-      ps.executeUpdate();
-    }
-  }
+  
+  /**
+   * Record class to hold repository update information.
+   */
+  private record RepositoryUpdate(String id, byte[] attributes) {}
 }

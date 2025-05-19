@@ -21,7 +21,9 @@ import java.util.Map;
 import com.google.common.collect.ImmutableList;
 import com.google.common.hash.HashCode;
 import com.google.common.hash.Hashing;
-import org.junit.jupiter.api.Test;
+import org.junit.Test;
+import org.junit.experimental.categories.Category;
+import org.sonatype.nexus.virtualthread.Java21TestGroup;
 
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -32,7 +34,8 @@ import static org.sonatype.nexus.common.hash.HashAlgorithm.SHA512;
 /**
  * Tests for {@link Hashes}.
  */
-class HashesTest
+@Category(Java21TestGroup.class)
+public class HashesTest
 {
   private static final String DATA = "This is a test message for hashing!";
 
@@ -44,14 +47,14 @@ class HashesTest
       "b90de0708205534bf3bc4e478c3718c7bf78b5ec60902dbbea234aadd748c004cdf94deda2034b0fa8bdc559ac59d6ac622211956bf782da33444d29e8d9f160";
 
   @Test
-  void hashOne() throws Exception {
+  public void shouldCorrectlyHashSingleAlgorithm() throws Exception {
     HashCode hashCode = Hashes.hash(MD5, inputStream());
 
     assertThat(hashCode.toString(), is(MD5_HASH));
   }
 
   @Test
-  void hashThree() throws Exception {
+  public void shouldCorrectlyHashMultipleAlgorithms() throws Exception {
     Map<HashAlgorithm, HashCode> hashes = Hashes.hash(ImmutableList.of(MD5, SHA1, SHA512), inputStream());
 
     assertThat(hashes.size(), is(3));
@@ -61,7 +64,7 @@ class HashesTest
   }
 
   @Test
-  void hashZero() throws Exception {
+  public void shouldReturnEmptyMapWhenNoAlgorithmsProvided() throws Exception {
     List<HashAlgorithm> zeroAlgorithms = ImmutableList.of();
     Map<HashAlgorithm, HashCode> hashes = Hashes.hash(zeroAlgorithms, inputStream());
 
@@ -74,7 +77,7 @@ class HashesTest
 
   @SuppressWarnings("deprecation")
   @Test
-  void hashStreamWithFunction() throws Exception {
+  public void shouldCorrectlyHashStreamWithHashFunction() throws Exception {
     byte[] bytes = DATA.getBytes(StandardCharsets.UTF_8);
     String expected = Hashing.sha1().hashBytes(bytes).toString();
     HashCode found = Hashes.hash(Hashing.sha1(), new ByteArrayInputStream(bytes));

@@ -20,7 +20,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.api.BlobStoreManager;
@@ -29,20 +28,25 @@ import org.sonatype.nexus.common.app.ApplicationDirectories;
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import org.sonatype.nexus.rest.ValidationErrorsException;
 import com.codahale.metrics.health.HealthCheck.Result;
-import org.junit.Before;
-import org.junit.Test;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.Mockito;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.blobstore.file.FileBlobStore.BASEDIR;
 import static org.sonatype.nexus.blobstore.file.FileBlobStore.CONFIG_KEY;
 import static org.sonatype.nexus.blobstore.file.FileBlobStore.PATH_KEY;
 
+@ExtendWith(MockitoExtension.class)
 public class FileBlobStorePathValidatorTest
-    extends TestSupport
 {
   @Mock
   private BlobStoreManager blobStoreManager;
@@ -54,7 +58,7 @@ public class FileBlobStorePathValidatorTest
 
   private FileBlobStorePathValidator underTest;
 
-  @Before
+  @BeforeEach
   public void setUp() throws Exception {
     underTest = new FileBlobStorePathValidator(() -> blobStoreManager, () -> applicationDirectories);
 
@@ -71,28 +75,28 @@ public class FileBlobStorePathValidatorTest
 
   @Test
   public void checkHealthyIfPathNotDuplicate() throws Exception {
-    assertThat(underTest.check().isHealthy(), is(true));
+    assertTrue(underTest.check().isHealthy());
   }
 
   @Test
   public void checkUnhealthyIfPathDuplicate() throws Exception {
     blobStores.add(generateBlobStore(FileBlobStore.TYPE, "f_d", "/nexus/0"));
-    assertThat(underTest.check().isHealthy(), is(false));
+    assertFalse(underTest.check().isHealthy());
   }
 
   @Test
   public void checkUnhealthyIfNestedPathDuplicate() throws Exception {
     blobStores.add(generateBlobStore(FileBlobStore.TYPE, "f_d", "/nexus/0/1"));
     Result result = underTest.check();
-    assertThat(result.getMessage().contains("f_d"), is(true));
-    assertThat(result.getMessage().contains("f0"), is(true));
-    assertThat(result.isHealthy(), is(false));
+    assertTrue(result.getMessage().contains("f_d"));
+    assertTrue(result.getMessage().contains("f0"));
+    assertFalse(result.isHealthy());
   }
 
   @Test
   public void checkHealthyIfPathDuplicateInNorFileBlobStore() throws Exception {
     blobStores.add(generateBlobStore("other_type", "f_d", "/nexus/0"));
-    assertThat(underTest.check().isHealthy(), is(true));
+    assertTrue(underTest.check().isHealthy());
   }
 
   @Test
@@ -100,13 +104,17 @@ public class FileBlobStorePathValidatorTest
     BlobStoreConfiguration configuration =
         generateBlobStore(FileBlobStore.TYPE, "f_d", "/nexus/unique").getBlobStoreConfiguration();
     underTest.validatePathUniqueConstraint(configuration);
+    // No exception thrown means test passes
   }
 
-  @Test(expected = ValidationErrorsException.class)
+  @Test
   public void throwsIfPathIsNotUnique() {
     BlobStoreConfiguration configuration =
         generateBlobStore(FileBlobStore.TYPE, "f_d", "/nexus/0").getBlobStoreConfiguration();
-    underTest.validatePathUniqueConstraint(configuration);
+    
+    assertThrows(ValidationErrorsException.class, () -> {
+      underTest.validatePathUniqueConstraint(configuration);
+    });
   }
 
   @Test
@@ -114,13 +122,17 @@ public class FileBlobStorePathValidatorTest
     BlobStoreConfiguration configuration =
         generateBlobStore(FileBlobStore.TYPE, "f_d", "/nexus/10").getBlobStoreConfiguration();
     underTest.validatePathUniqueConstraint(configuration);
+    // No exception thrown means test passes
   }
 
-  @Test(expected = ValidationErrorsException.class)
+  @Test
   public void throwsIfNotAbsolutePathIsNotUnique() {
     BlobStoreConfiguration configuration =
         generateBlobStore(FileBlobStore.TYPE, "f_d", "0").getBlobStoreConfiguration();
-    underTest.validatePathUniqueConstraint(configuration);
+    
+    assertThrows(ValidationErrorsException.class, () -> {
+      underTest.validatePathUniqueConstraint(configuration);
+    });
   }
 
   private List<BlobStore> generateBlobStores() {

@@ -15,8 +15,14 @@ package org.sonatype.nexus.repository.content.search.elasticsearch;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
+import java.lang.ScopedValue;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -57,6 +63,16 @@ public class SearchFacetImpl
     extends FacetSupport
     implements SearchFacet
 {
+  /**
+   * ScopedValue for repository context propagation to virtual threads
+   */
+  private static final ScopedValue<Repository> REPOSITORY_CONTEXT = ScopedValue.newInstance();
+  
+  /**
+   * ScopedValue for repository fields propagation to virtual threads
+   */
+  private static final ScopedValue<Map<String, Object>> REPOSITORY_FIELDS = ScopedValue.newInstance();
+  
   private final ElasticSearchIndexService elasticSearchIndexService;
 
   private final Map<String, SearchDocumentProducer> searchDocumentProducersByFormat;
@@ -105,34 +121,96 @@ public class SearchFacetImpl
   @Override
   public void index(final Collection<EntityId> componentIds) {
     FluentComponents lookup = facet(ContentFacet.class).components();
-
-    Stream<FluentComponent> components = componentIds.stream()
-        .map(lookup::find)
-        .filter(Optional::isPresent)
-        .map(Optional::get);
-
     Repository repository = getRepository();
+    
+    if (componentIds.isEmpty()) {
+      return;
+    }
+    
     if (bulkProcessing) {
+      // Use the existing bulk processing for large collections
+      Stream<FluentComponent> components = componentIds.stream()
+          .map(lookup::find)
+          .filter(Optional::isPresent)
+          .map(Optional::get);
+      
       elasticSearchIndexService.bulkPut(repository, components::iterator, this::identifier, this::document);
     }
     else {
-      components.forEach(c -> elasticSearchIndexService.put(repository, identifier(c), document(c)));
+      // Use Virtual Threads with structured concurrency for parallel processing
+      try (var scope = new StructuredTaskScope.ShutdownOnFailure()) {
+        // Propagate repository context to all virtual threads
+        ScopedValue.where(REPOSITORY_CONTEXT, repository)
+            .where(REPOSITORY_FIELDS, repositoryFields)
+            .run(() -> {
+              // Fork a virtual thread for each component
+              componentIds.stream()
+                  .map(lookup::find)
+                  .filter(Optional::isPresent)
+                  .map(Optional::get)
+                  .forEach(component -> 
+                      scope.fork(() -> {
+                        elasticSearchIndexService.put(
+                            REPOSITORY_CONTEXT.get(), 
+                            identifier(component), 
+                            document(component));
+                        return null; // Required for Callable interface
+                      }));
+              
+              // Wait for all tasks to complete and propagate any exceptions
+              try {
+                scope.join().throwIfFailed();
+              } 
+              catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.warn("Indexing interrupted for repository {}", repository.getName(), e);
+              }
+            });
+      }
     }
   }
 
   @Guarded(by = STARTED)
   @Override
   public void purge(final Collection<EntityId> componentIds) {
-
-    Stream<String> identifiers = componentIds.stream()
-        .map(EntityId::getValue);
-
+    if (componentIds.isEmpty()) {
+      return;
+    }
+    
     Repository repository = getRepository();
+    
     if (bulkProcessing) {
+      // Use the existing bulk processing for large collections
+      Stream<String> identifiers = componentIds.stream()
+          .map(EntityId::getValue);
+      
       elasticSearchIndexService.bulkDelete(repository, identifiers::iterator);
     }
     else {
-      identifiers.forEach(id -> elasticSearchIndexService.delete(repository, id));
+      // Use Virtual Threads with structured concurrency for concurrent deletion
+      try (var scope = new StructuredTaskScope.ShutdownOnFailure()) {
+        // Propagate repository context to all virtual threads
+        ScopedValue.where(REPOSITORY_CONTEXT, repository)
+            .run(() -> {
+              // Fork a virtual thread for each component ID to delete
+              componentIds.stream()
+                  .map(EntityId::getValue)
+                  .forEach(id -> 
+                      scope.fork(() -> {
+                        elasticSearchIndexService.delete(REPOSITORY_CONTEXT.get(), id);
+                        return null; // Required for Callable interface
+                      }));
+              
+              // Wait for all tasks to complete and propagate any exceptions
+              try {
+                scope.join().throwIfFailed();
+              } 
+              catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.warn("Purge operation interrupted for repository {}", repository.getName(), e);
+              }
+            });
+      }
     }
   }
 
@@ -148,36 +226,64 @@ public class SearchFacetImpl
 
   /**
    * Re-submit search documents for every component in the repository for indexing.
+   * Uses Virtual Threads for improved performance with bulk operations.
    */
   private void rebuildComponentIndex() {
     String repositoryName = getRepository().getName();
+    Repository repository = getRepository();
+    
     try {
-      FluentComponents components = getRepository().facet(ContentFacet.class).components();
+      FluentComponents components = repository.facet(ContentFacet.class).components();
 
       long total = components.count();
-      if (total > 0) {
-        ProgressLogIntervalHelper progressLogger = new ProgressLogIntervalHelper(log, 60);
-        Stopwatch sw = Stopwatch.createStarted();
-
-        long processed = 0;
-
-        Continuation<FluentComponent> page = components.browse(pageSize, null);
-        while (!page.isEmpty()) {
-
-          elasticSearchIndexService.bulkPut(getRepository(), page, this::identifier, this::document);
-          processed += page.size();
-
-          long elapsed = sw.elapsed(TimeUnit.MILLISECONDS);
-          progressLogger.info("Indexed {} / {} {} components in {} ms",
-              processed, total, repositoryName, elapsed);
-
-          checkCancellation();
-
-          page = components.browse(pageSize, page.nextContinuationToken());
-        }
-
-        progressLogger.flush(); // ensure the final progress message is flushed
+      if (total <= 0) {
+        return;
       }
+      
+      ProgressLogIntervalHelper progressLogger = new ProgressLogIntervalHelper(log, 60);
+      Stopwatch sw = Stopwatch.createStarted();
+      AtomicLong processed = new AtomicLong(0);
+      
+      // Create a virtual thread executor for processing pages in parallel
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        // Propagate repository context to all virtual threads
+        ScopedValue.where(REPOSITORY_CONTEXT, repository)
+            .where(REPOSITORY_FIELDS, repositoryFields)
+            .run(() -> {
+              Continuation<FluentComponent> page = components.browse(pageSize, null);
+              
+              while (!page.isEmpty()) {
+                // Capture the current page for the lambda
+                final Continuation<FluentComponent> currentPage = page;
+                
+                // Process each page in a separate virtual thread
+                executor.submit(() -> {
+                  try {
+                    elasticSearchIndexService.bulkPut(
+                        REPOSITORY_CONTEXT.get(), 
+                        currentPage, 
+                        this::identifier, 
+                        this::document);
+                    
+                    long currentProcessed = processed.addAndGet(currentPage.size());
+                    long elapsed = sw.elapsed(TimeUnit.MILLISECONDS);
+                    
+                    progressLogger.info("Indexed {} / {} {} components in {} ms",
+                        currentProcessed, total, repositoryName, elapsed);
+                  } 
+                  catch (Exception e) {
+                    log.error("Error indexing page of components for repository {}", 
+                        repositoryName, e);
+                  }
+                });
+                
+                checkCancellation();
+                page = components.browse(pageSize, page.nextContinuationToken());
+              }
+            });
+      }
+      
+      progressLogger.flush(); // ensure the final progress message is flushed
     }
     catch (Exception e) {
       log.error("Unable to rebuild search index for repository {}", repositoryName, e);
@@ -212,10 +318,15 @@ public class SearchFacetImpl
 
   /**
    * Returns the JSON document for the given component in the repository's index.
+   * Uses ScopedValue for repository fields if available, otherwise falls back to instance field.
    */
   private String document(final FluentComponent component) {
     try {
-      return searchDocumentProducer.getDocument(component, repositoryFields);
+      // Use ScopedValue if bound, otherwise fall back to instance field
+      Map<String, Object> fields = REPOSITORY_FIELDS.isBound() ? 
+          REPOSITORY_FIELDS.get() : repositoryFields;
+      
+      return searchDocumentProducer.getDocument(component, fields);
     }
     catch (Exception e) {
       if (log.isDebugEnabled()) {

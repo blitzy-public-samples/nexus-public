@@ -44,5 +44,34 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
+  
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.felix</groupId>
+        <artifactId>maven-bundle-plugin</artifactId>
+        <configuration>
+          <instructions>
+            <!-- Specify Java 21 as the target platform for OSGi -->
+            <Bundle-RequiredExecutionEnvironment>JavaSE-21</Bundle-RequiredExecutionEnvironment>
+            <!-- Ensure proper import/export package declarations for Java 21 compatibility -->
+            <Import-Package>
+              org.sonatype.nexus.common.text,
+              org.sonatype.nexus.common.stateguard,
+              org.sonatype.nexus.common.event,
+              org.sonatype.nexus.common.app,
+              org.sonatype.nexus.common.node,
+              org.sonatype.nexus.common.thread,
+              *
+            </Import-Package>
+            <!-- Maintain module compatibility with Java 21 -->
+            <_fixupmessages>"Classes found in the wrong directory";is:=warning</_fixupmessages>
+            <!-- Support for Java 21 features like Virtual Threads -->
+            <Require-Capability>osgi.ee;filter:="(&amp;(osgi.ee=JavaSE)(version=21))"</Require-Capability>
+          </instructions>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 
 </project>

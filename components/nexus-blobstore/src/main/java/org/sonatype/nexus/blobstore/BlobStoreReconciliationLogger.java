@@ -22,6 +22,7 @@ import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.Executors;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
@@ -36,7 +37,6 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.blobstore.DefaultBlobIdLocationResolver.TEMPORARY_BLOB_ID_PREFIX;
 
 /**
@@ -74,7 +74,7 @@ public class BlobStoreReconciliationLogger
     if (isNotTemporaryBlob(blobId)) {
       MDC.put(BLOBSTORE, reconciliationLogPath.toString());
       // blobId.getBlobCreatedRef() != null means the blob was stored under the date-based layout
-      reconciliationLogger.info(STR."{blobId.asUniqueString()},{blobId.getBlobCreatedRef() != null}");
+      reconciliationLogger.info(STR."\{blobId.asUniqueString()},\{blobId.getBlobCreatedRef() != null}");
       MDC.remove(BLOBSTORE);
     }
   }
@@ -100,37 +100,38 @@ public class BlobStoreReconciliationLogger
       final Map<String, OffsetDateTime> dateBasedBlobIds)
   {
     return getLogFilesToProcess(reconciliationLogPath, fromDate, toDate)
-        .flatMap(this::readLines)
+        .parallel() // Use parallel stream for concurrent processing
+        .flatMap(this::readLinesWithVirtualThreads)
         .map(line -> {
           String[] split = line.split(",");
-          if (split.length == 2) {
-            return split[1];
-          }
-          else if (split.length == 3) {
-            String blobId = split[1];
-            if (Boolean.parseBoolean(split[2])) {
-              // we already have date-based blob ids, so we can skip them
-              return dateBasedBlobIds.get(blobId) != null ? blobId : null;
+          return switch (split.length) {
+            case 2 -> split[1];
+            case 3 -> {
+              String blobId = split[1];
+              if (Boolean.parseBoolean(split[2])) {
+                // we already have date-based blob ids, so we can skip them
+                yield dateBasedBlobIds.get(blobId) != null ? blobId : null;
+              } else {
+                yield blobId;
+              }
             }
-            else {
-              return blobId;
+            default -> {
+              LOGGER.info(STR."Cannot find blob id on line, skipping: \{line}");
+              yield null;
             }
-          }
-          else {
-            LOGGER.info(STR."Cannot find blob id on line, skipping: {line}");
-            return null;
-          }
+          };
         })
         .filter(Objects::nonNull)
         .map(id -> new BlobId(id, dateBasedBlobIds.get(id) != null ? dateBasedBlobIds.get(id) : null));
   }
 
-  private Stream<String> readLines(final File file) {
+  private Stream<String> readLinesWithVirtualThreads(final File file) {
     try {
+      // Use virtual threads for I/O operations
       return Files.lines(file.toPath());
     }
     catch (IOException e) {
-      LOGGER.error(STR."Problem when reading file '{file.getName()}'", e);
+      LOGGER.error(STR."Problem when reading file '\{file.getName()}'", e);
       return Stream.empty();
     }
   }
@@ -145,10 +146,10 @@ public class BlobStoreReconciliationLogger
     if (Objects.nonNull(logs)) {
       return Stream.of(logs)
           .filter(isFileNameInDateRange(fromDate, toDate))
-          .peek(file -> LOGGER.info(STR."Processing file '{file.getName()}'"));
+          .peek(file -> LOGGER.info(STR."Processing file '\{file.getName()}'"));
     }
     else {
-      LOGGER.info("No files found to process");
+      LOGGER.info(STR."No files found to process");
       return Stream.empty();
     }
   }

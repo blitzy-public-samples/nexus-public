@@ -26,6 +26,13 @@
   <artifactId>nexus-base</artifactId>
   <name>${project.groupId}:${project.artifactId}</name>
   <packaging>bundle</packaging>
+  
+  <!-- Override dependency versions for Java 21 compatibility -->
+  <properties>
+    <karaf.version>4.4.4</karaf.version>
+    <metrics.version>4.2.25</metrics.version>
+    <prometheus.version>0.16.0</prometheus.version>
+  </properties>
 
   <dependencies>
     <dependency>

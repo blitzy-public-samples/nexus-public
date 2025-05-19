@@ -25,6 +25,8 @@ import org.sonatype.nexus.transaction.Transactional;
 
 import com.google.inject.assistedinject.Assisted;
 
+import static java.lang.StringTemplate.STR;
+
 /**
  * Browse node store.
  *
@@ -98,13 +100,13 @@ public class BrowseNodeStore<T extends BrowseNodeDAO>
    */
   @Transactional
   public boolean trimBrowseNodes(final int repositoryId) {
-    log.debug("Removing unused browse nodes in repository {}", repositoryId);
+    log.debug(STR."Removing unused browse nodes in repository \{repositoryId}");
     boolean trimmed = false;
     while (dao().trimBrowseNodes(repositoryId)) {
       commitChangesSoFar();
       trimmed = true;
     }
-    log.debug("Removed unused browse nodes in repository {}", repositoryId);
+    log.debug(STR."Removed unused browse nodes in repository \{repositoryId}");
     return trimmed;
   }
 
@@ -116,13 +118,13 @@ public class BrowseNodeStore<T extends BrowseNodeDAO>
    */
   @Transactional
   public boolean deleteBrowseNodes(final int repositoryId) {
-    log.debug("Deleting all browse nodes in repository {}", repositoryId);
+    log.debug(STR."Deleting all browse nodes in repository \{repositoryId}");
     boolean deleted = false;
     while (dao().deleteBrowseNodes(repositoryId, deleteBatchSize())) {
       commitChangesSoFar();
       deleted = true;
     }
-    log.debug("Deleted all browse nodes in repository {}", repositoryId);
+    log.debug(STR."Deleted all browse nodes in repository \{repositoryId}");
     return deleted;
   }
 

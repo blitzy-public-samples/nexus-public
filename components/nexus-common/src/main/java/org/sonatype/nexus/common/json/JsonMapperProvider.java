@@ -12,9 +12,9 @@
  */
 package org.sonatype.nexus.common.json;
 
-import javax.annotation.Priority;
-import javax.inject.Named;
-import javax.inject.Provider;
+import jakarta.annotation.Priority;
+import jakarta.inject.Named;
+import jakarta.inject.Provider;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.MapperFeature;
@@ -39,12 +39,24 @@ public class JsonMapperProvider
   @Override
   public JsonMapper get() {
     return JsonMapper.builder()
+        // Preserve existing functionality
         .enable(MapperFeature.ACCEPT_CASE_INSENSITIVE_ENUMS)
         .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+        
+        // Enable Java 21 record support
+        .configure(MapperFeature.ALLOW_FINAL_FIELDS_AS_MUTATORS, true)
+        .configure(MapperFeature.INFER_RECORD_CONSTRUCTOR, true)
+        .configure(MapperFeature.INFER_CREATOR_FROM_CONSTRUCTOR_PROPERTIES, true)
+        
+        // Optimize serialization/deserialization for Java 21
+        .configure(DeserializationFeature.READ_UNKNOWN_ENUM_VALUES_USING_DEFAULT_VALUE, true)
+        .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false)
+        .configure(SerializationFeature.WRITE_ENUMS_USING_TO_STRING, true)
+        
+        // Maintain existing modules with Java 21 compatibility
         .addModule(new JavaTimeModule())
         .addModule(new Jdk8Module())
         .addModule(new ParameterNamesModule())
-        .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
         .build();
   }
 }

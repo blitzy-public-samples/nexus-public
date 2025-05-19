@@ -12,8 +12,8 @@
  */
 package org.sonatype.nexus.blobstore.rest;
 
-import javax.validation.constraints.Min;
-import javax.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 
 import org.sonatype.nexus.blobstore.quota.internal.SpaceRemainingQuota;
 import org.sonatype.nexus.blobstore.quota.internal.SpaceUsedQuota;
@@ -21,41 +21,17 @@ import org.sonatype.nexus.blobstore.quota.internal.SpaceUsedQuota;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
- * API model for BlobStore soft quota configuration.
+ * Data transfer object for BlobStore soft quota configuration.
  * 
  * @since 3.19
  */
-public class BlobStoreApiSoftQuota
-{
-  /**
-   * The type of quota to apply.
-   * Uses Java 21 String Templates for message formatting (requires --enable-preview flag).
-   */
+public record BlobStoreApiSoftQuota(
   @NotBlank
-  @Schema(description = STR."The type to use such as \{SpaceRemainingQuota.ID}, or \{SpaceUsedQuota.ID}",
-      allowableValues = STR."\{SpaceRemainingQuota.ID},\{SpaceUsedQuota.ID}")
-  private String type;
+  @Schema(description = "The type to use such as " + SpaceRemainingQuota.ID + ", or " + SpaceUsedQuota.ID,
+      allowableValues = {SpaceRemainingQuota.ID, SpaceUsedQuota.ID})
+  String type,
 
-  /**
-   * The quota limit in MB.
-   */
   @Min(0)
   @Schema(description = "The limit in MB.")
-  private Long limit;
-
-  public String getType() {
-    return type;
-  }
-
-  public void setType(final String type) {
-    this.type = type;
-  }
-
-  public Long getLimit() {
-    return limit;
-  }
-
-  public void setLimit(final Long limit) {
-    this.limit = limit;
-  }
-}
+  Long limit
+) {}

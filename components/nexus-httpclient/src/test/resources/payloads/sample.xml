@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 
+  Test XML file for Virtual Thread XML processing verification
+  This file simulates repository metadata with additional complexity
+  to thoroughly test XML parsing with Virtual Threads
+-->
+<metadata xmlns="http://maven.apache.org/METADATA/1.1.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/METADATA/1.1.0 http://maven.apache.org/xsd/metadata-1.1.0.xsd"
+          modelVersion="1.1.0">
+  <groupId>org.sonatype.nexus</groupId>
+  <artifactId>nexus-virtual-thread-test</artifactId>
+  <version>1.0.0</version>
+  <versioning>
+    <latest>1.0.0</latest>
+    <release>1.0.0</release>
+    <versions>
+      <version>0.9.0</version>
+      <version>0.9.1</version>
+      <version>0.9.2-SNAPSHOT</version>
+      <version>1.0.0-RC1</version>
+      <version>1.0.0-RC2</version>
+      <version>1.0.0</version>
+    </versions>
+    <lastUpdated>20250519120000</lastUpdated>
+  </versioning>
+  
+  <!-- Complex nested structure to test deep parsing -->
+  <dependencies>
+    <dependency>
+      <groupId>org.sonatype.nexus</groupId>
+      <artifactId>nexus-common</artifactId>
+      <version>3.60.0</version>
+      <scope>compile</scope>
+      <optional>false</optional>
+      <exclusions>
+        <exclusion>
+          <groupId>com.google.code.findbugs</groupId>
+          <artifactId>jsr305</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.sonatype.nexus</groupId>
+      <artifactId>nexus-thread</artifactId>
+      <version>3.60.0</version>
+      <scope>compile</scope>
+      <optional>false</optional>
+    </dependency>
+  </dependencies>
+  
+  <!-- Test CDATA section handling -->
+  <description><![CDATA[
+    This is a test artifact for verifying XML processing with Java 21 Virtual Threads.
+    It contains various XML features that might trigger different parsing behaviors:
+    - Namespace declarations
+    - Deeply nested elements
+    - Elements with multiple attributes
+    - Mixed content (text and elements)
+    - CDATA sections
+    - Special characters: & < > " '
+  ]]></description>
+  
+  <!-- Test mixed content -->
+  <documentation>
+    See the <a href="https://docs.oracle.com/en/java/javase/21/core/virtual-threads.html">Virtual Threads documentation</a>
+    for more information about Java 21 Virtual Threads.
+  </documentation>
+  
+  <!-- Test attributes with special characters -->
+  <properties>
+    <property name="test:with:colons" value="Value with spaces"/>
+    <property name="special&chars" value="Value with &amp; and &lt; and &gt;"/>
+    <property name="unicode" value="こんにちは世界"/>
+    <property name="long-value" value="This is a very long property value that might trigger different buffer handling in XML parsers. It's important to test with various content lengths to ensure that the parser handles all cases correctly with Virtual Threads. Thread pinning can sometimes occur with certain parsing operations, especially when dealing with large buffers or complex parsing logic."/>
+  </properties>
+  
+  <!-- Test deeply nested structure -->
+  <buildEnvironment>
+    <jdk>
+      <version>21</version>
+      <vendor>Oracle</vendor>
+      <features>
+        <feature>
+          <name>Virtual Threads</name>
+          <description>
+            <summary>Lightweight threads that dramatically reduce the effort of writing, maintaining, and observing high-throughput concurrent applications</summary>
+            <details>
+              <implementation>
+                <class>java.lang.Thread</class>
+                <factory>java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()</factory>
+                <benefits>
+                  <benefit>Reduced memory footprint</benefit>
+                  <benefit>Improved throughput for I/O-bound applications</benefit>
+                  <benefit>Simplified concurrency model</benefit>
+                  <benefit>Better CPU utilization</benefit>
+                </benefits>
+              </implementation>
+            </details>
+          </description>
+        </feature>
+        <feature>
+          <name>Pattern Matching</name>
+          <description>Type-based pattern matching for switch expressions</description>
+        </feature>
+      </features>
+    </jdk>
+    <os name="Linux" version="5.15.0" arch="x86_64"/>
+  </buildEnvironment>
+  
+  <!-- Test large number of siblings -->
+  <testResults>
+    <testCase id="VT-001" name="testVirtualThreadCreation" status="PASSED" duration="12.5"/>
+    <testCase id="VT-002" name="testVirtualThreadScheduling" status="PASSED" duration="8.3"/>
+    <testCase id="VT-003" name="testVirtualThreadBlocking" status="PASSED" duration="15.7"/>
+    <testCase id="VT-004" name="testVirtualThreadPinning" status="PASSED" duration="22.1"/>
+    <testCase id="VT-005" name="testVirtualThreadMemoryUsage" status="PASSED" duration="5.9"/>
+    <testCase id="VT-006" name="testVirtualThreadStackTrace" status="PASSED" duration="3.2"/>
+    <testCase id="VT-007" name="testVirtualThreadInterruption" status="PASSED" duration="7.8"/>
+    <testCase id="VT-008" name="testVirtualThreadDeadlock" status="PASSED" duration="18.4"/>
+    <testCase id="VT-009" name="testVirtualThreadPooling" status="PASSED" duration="9.6"/>
+    <testCase id="VT-010" name="testVirtualThreadContextSwitching" status="PASSED" duration="4.3"/>
+    <testCase id="VT-011" name="testVirtualThreadWithIO" status="PASSED" duration="31.2"/>
+    <testCase id="VT-012" name="testVirtualThreadWithCPUIntensive" status="PASSED" duration="27.5"/>
+    <testCase id="VT-013" name="testVirtualThreadWithMixedWorkload" status="PASSED" duration="19.8"/>
+    <testCase id="VT-014" name="testVirtualThreadWithExceptions" status="PASSED" duration="6.7"/>
+    <testCase id="VT-015" name="testVirtualThreadWithThreadLocal" status="PASSED" duration="11.3"/>
+    <testCase id="VT-016" name="testVirtualThreadWithInheritedThreadLocal" status="PASSED" duration="10.9"/>
+    <testCase id="VT-017" name="testVirtualThreadWithSynchronization" status="PASSED" duration="14.2"/>
+    <testCase id="VT-018" name="testVirtualThreadWithMonitors" status="PASSED" duration="16.8"/>
+    <testCase id="VT-019" name="testVirtualThreadWithLocks" status="PASSED" duration="13.5"/>
+    <testCase id="VT-020" name="testVirtualThreadWithSemaphores" status="PASSED" duration="12.1"/>
+  </testResults>
+  
+  <!-- Test namespace handling -->
+  <ns1:extensions xmlns:ns1="http://example.org/extensions/1.0"
+                 xmlns:ns2="http://example.org/extensions/2.0">
+    <ns1:extension>
+      <ns1:name>Extension 1</ns1:name>
+      <ns1:version>1.0.0</ns1:version>
+      <ns1:configuration>
+        <ns1:param>value1</ns1:param>
+        <ns1:param>value2</ns1:param>
+      </ns1:configuration>
+    </ns1:extension>
+    <ns2:extension>
+      <ns2:name>Extension 2</ns2:name>
+      <ns2:version>2.0.0</ns2:version>
+      <ns2:configuration>
+        <ns2:param>value3</ns2:param>
+        <ns2:param>value4</ns2:param>
+      </ns2:configuration>
+    </ns2:extension>
+  </ns1:extensions>
+</metadata>

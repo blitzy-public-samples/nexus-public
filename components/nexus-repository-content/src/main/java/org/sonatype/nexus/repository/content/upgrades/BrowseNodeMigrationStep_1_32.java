@@ -19,6 +19,8 @@ import javax.inject.Named;
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.upgrade.datastore.DatabaseMigrationStep;
 
+import static java.lang.StringTemplate.STR;
+
 /**
  * Placeholder step, no-op, original step was moved to BrowseNodeMigrationStep_1_34 to retain proper order
  */
@@ -34,6 +36,8 @@ public class BrowseNodeMigrationStep_1_32
 
   @Override
   public void migrate(final Connection connection) throws Exception {
-    //no-op simply placeholder so version doesn't get lost
+    // No-op implementation - this is a placeholder step to maintain version sequence
+    log.debug(STR."BrowseNodeMigrationStep_1_32: Executing placeholder migration step for version \{version().orElse("unknown")}.");
+    log.debug(STR."BrowseNodeMigrationStep_1_32: No operations performed as functionality was moved to BrowseNodeMigrationStep_1_34.");
   }
 }

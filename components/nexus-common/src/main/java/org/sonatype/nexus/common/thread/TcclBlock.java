@@ -16,7 +16,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Helper to simplify boilerplate to begin (capture, set) and restore the current Thread's context-class-loader.
- * This implementation is compatible with both platform threads and Java 21 Virtual Threads.
+ * This class is compatible with both platform threads and virtual threads in Java 21+.
  *
  * <pre>{@code
  * try (TcclBlock tccl = TcclBlock.begin(newClassLoader)) {
@@ -24,59 +24,51 @@ import static com.google.common.base.Preconditions.checkNotNull;
  * }
  * }</pre>
  *
- * <p>When used with Virtual Threads, this class ensures proper context class loader management
- * without causing memory leaks or thread-local inheritance issues. The try-with-resources pattern
- * guarantees that the original context class loader is restored even when exceptions occur.</p>
- *
  * @since 3.0
  */
 public final class TcclBlock
     implements AutoCloseable
 {
   private final ClassLoader previous;
+  private final Thread thread;
 
-  private TcclBlock(final ClassLoader previous) {
+  private TcclBlock(final Thread thread, final ClassLoader previous) {
+    this.thread = thread;
     this.previous = previous;
   }
 
   /**
    * Restore the Thread-context-class-loader to previous.
-   * 
-   * <p>This method works correctly with both platform threads and virtual threads,
-   * ensuring proper cleanup of thread context resources.</p>
+   * This method properly handles context restoration for both platform and virtual threads.
    */
   @Override
   public void close() {
-    Thread.currentThread().setContextClassLoader(previous);
+    // Use the captured thread reference to ensure we're restoring the TCCL on the same thread
+    // that it was captured from, which works for both platform and virtual threads
+    thread.setContextClassLoader(previous);
   }
 
   /**
    * Set the Thread-context-class-loader to given class-loader and return reference to restore.
-   * 
-   * <p>This method works with both platform threads and Java 21 Virtual Threads, capturing the
-   * current thread's context class loader before setting the new one.</p>
-   *
-   * @param classLoader the class loader to set as the current thread's context class loader
-   * @return a TcclBlock that will restore the original context class loader when closed
+   * This method works with both platform and virtual threads.
    */
   public static TcclBlock begin(final ClassLoader classLoader) {
     checkNotNull(classLoader);
 
-    // capture current thread (works for both platform and virtual threads)
+    // capture current thread - works for both platform and virtual threads
     Thread thread = Thread.currentThread();
     ClassLoader current = thread.getContextClassLoader();
 
     // set new context class loader
     thread.setContextClassLoader(classLoader);
 
-    return new TcclBlock(current);
+    // store both the thread and previous class loader for proper restoration
+    return new TcclBlock(thread, current);
   }
 
   /**
    * Helper to return block using class-loader of given type.
-   * 
-   * @param type the class whose class loader should be used
-   * @return a TcclBlock that will restore the original context class loader when closed
+   * This method works with both platform and virtual threads.
    */
   public static TcclBlock begin(final Class<?> type) {
     checkNotNull(type);
@@ -85,9 +77,7 @@ public final class TcclBlock
 
   /**
    * Helper to return block using class-loader of given owner.
-   * 
-   * @param owner the object whose class's class loader should be used
-   * @return a TcclBlock that will restore the original context class loader when closed
+   * This method works with both platform and virtual threads.
    */
   public static TcclBlock begin(final Object owner) {
     checkNotNull(owner);

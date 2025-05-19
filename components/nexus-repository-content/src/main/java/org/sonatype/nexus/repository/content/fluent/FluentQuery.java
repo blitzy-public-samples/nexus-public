@@ -20,6 +20,7 @@ import org.sonatype.nexus.common.entity.Continuation;
  * Fluent API to count/browse elements in a repository.
  *
  * @since 3.26
+ * @see java.util.SequencedCollection Java 21 compatible with Sequenced Collections
  */
 public interface FluentQuery<T>
 {
@@ -30,8 +31,29 @@ public interface FluentQuery<T>
 
   /**
    * Browse through elements in the repository that match the current query.
+   * <p>
+   * The returned {@link Continuation} is a {@link java.util.Collection} with a defined encounter order,
+   * making it compatible with Java 21's {@code SequencedCollection} operations. This allows for
+   * accessing the first and last elements, as well as processing elements in reverse order when
+   * implementations support these features.
+   *
+   * @param limit maximum number of elements to return
+   * @param continuationToken optional token from a previous browse request
+   * @return continuation of elements that can be used with Java 21 Sequenced Collections features
    */
   Continuation<T> browse(int limit, @Nullable String continuationToken);
 
+  /**
+   * Browse through elements in the repository that match the current query, eagerly fetching related data.
+   * <p>
+   * The returned {@link Continuation} is a {@link java.util.Collection} with a defined encounter order,
+   * making it compatible with Java 21's {@code SequencedCollection} operations. This allows for
+   * accessing the first and last elements, as well as processing elements in reverse order when
+   * implementations support these features.
+   *
+   * @param limit maximum number of elements to return
+   * @param continuationToken optional token from a previous browse request
+   * @return continuation of elements that can be used with Java 21 Sequenced Collections features
+   */
   Continuation<T> browseEager(int limit, @Nullable String continuationToken);
 }

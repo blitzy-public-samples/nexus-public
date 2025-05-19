@@ -15,11 +15,11 @@ package org.sonatype.nexus.datastore;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
+import java.util.SequencedSet;
 import java.util.TreeSet;
 import java.util.function.Function;
 
-import javax.annotation.Priority;
+import jakarta.annotation.Priority;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -30,7 +30,6 @@ import org.sonatype.nexus.datastore.api.DataStoreConfiguration;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.collect.Streams.stream;
 import static java.lang.String.CASE_INSENSITIVE_ORDER;
 import static java.util.Comparator.comparingInt;
 
@@ -55,14 +54,14 @@ public class DataStoreConfigurationManager
    * Loads {@link DataStoreConfiguration}s from all enabled sources.
    */
   public Iterable<DataStoreConfiguration> load() {
-    Set<String> configuredStores = new TreeSet<>(CASE_INSENSITIVE_ORDER);
+    SequencedSet<String> configuredStores = new TreeSet<>(CASE_INSENSITIVE_ORDER);
     // only attempt to load a named store once from the first store that has it
     // (if the first attempt fails then that store is considered not available)
     return configurationSources.values()
         .stream()
         .filter(DataStoreConfigurationSource::isEnabled)
         .sorted(comparingInt(this::getPriority).reversed())
-        .flatMap(source -> stream(source.browseStoreNames())
+        .flatMap(source -> source.browseStoreNames().stream()
             .filter(configuredStores::add)
             .map(configLoader(source)))
         .filter(Objects::nonNull)

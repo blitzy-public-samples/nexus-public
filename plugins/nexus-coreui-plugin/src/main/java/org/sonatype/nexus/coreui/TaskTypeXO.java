@@ -22,17 +22,18 @@ import javax.validation.constraints.NotNull;
  * @since 3.0
  */
 public record TaskTypeXO(
-  @NotBlank String id,
-  @NotBlank String name,
-  @NotNull Boolean exposed,
-  @NotNull Boolean concurrentRun,
-  List<FormFieldXO> formFields
-) {
+    @NotBlank String id,
+    @NotBlank String name,
+    @NotNull Boolean exposed,
+    @NotNull Boolean concurrentRun,
+    List<FormFieldXO> formFields
+)
+{
   /**
-   * Returns the id of this task type.
+   * Returns the task type ID.
    * 
-   * @return the id
-   * @deprecated Use {@link #id()} instead, as provided by the record pattern.
+   * @return the task type ID
+   * @deprecated Use {@link #id()} instead, which is automatically provided by the record
    */
   @Deprecated
   public String getId() {
@@ -40,10 +41,10 @@ public record TaskTypeXO(
   }
 
   /**
-   * Returns the name of this task type.
+   * Returns the task type name.
    * 
-   * @return the name
-   * @deprecated Use {@link #name()} instead, as provided by the record pattern.
+   * @return the task type name
+   * @deprecated Use {@link #name()} instead, which is automatically provided by the record
    */
   @Deprecated
   public String getName() {
@@ -51,10 +52,10 @@ public record TaskTypeXO(
   }
 
   /**
-   * Returns whether this task type is exposed.
+   * Returns whether the task type is exposed.
    * 
-   * @return whether exposed
-   * @deprecated Use {@link #exposed()} instead, as provided by the record pattern.
+   * @return whether the task type is exposed
+   * @deprecated Use {@link #exposed()} instead, which is automatically provided by the record
    */
   @Deprecated
   public Boolean getExposed() {
@@ -62,10 +63,10 @@ public record TaskTypeXO(
   }
 
   /**
-   * Returns whether this task type supports concurrent runs.
+   * Returns whether the task type allows concurrent runs.
    * 
-   * @return whether concurrent run is supported
-   * @deprecated Use {@link #concurrentRun()} instead, as provided by the record pattern.
+   * @return whether the task type allows concurrent runs
+   * @deprecated Use {@link #concurrentRun()} instead, which is automatically provided by the record
    */
   @Deprecated
   public Boolean getConcurrentRun() {
@@ -73,10 +74,10 @@ public record TaskTypeXO(
   }
 
   /**
-   * Returns the form fields for this task type.
+   * Returns the form fields for the task type.
    * 
-   * @return the form fields
-   * @deprecated Use {@link #formFields()} instead, as provided by the record pattern.
+   * @return the form fields for the task type
+   * @deprecated Use {@link #formFields()} instead, which is automatically provided by the record
    */
   @Deprecated
   public List<FormFieldXO> getFormFields() {

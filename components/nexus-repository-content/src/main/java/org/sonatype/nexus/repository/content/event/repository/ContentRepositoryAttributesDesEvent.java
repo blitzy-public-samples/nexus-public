@@ -15,25 +15,26 @@ package org.sonatype.nexus.repository.content.event.repository;
 import org.sonatype.nexus.common.event.EventWithSource;
 import org.sonatype.nexus.repository.content.ContentRepository;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Event sent whenever a {@link ContentRepository}'s attributes change between all nodes.
+ * <p>
+ * Implemented as a record for immutable event data representation and enhanced thread safety
+ * in clustered environments.
  */
-public class ContentRepositoryAttributesDesEvent
+public record ContentRepositoryAttributesDesEvent(
+    @JsonProperty("repoName") String repoName)
     extends EventWithSource
 {
-  private final String repoName;
-
-  @JsonCreator
-  public ContentRepositoryAttributesDesEvent(@JsonProperty("repoName") final String repoName) {
-    this.repoName = checkNotNull(repoName);
-  }
-
-  public String getRepoName() {
-    return repoName;
+  /**
+   * Creates a new event with the given repository name.
+   *
+   * @param repoName the repository name, must not be null
+   */
+  public ContentRepositoryAttributesDesEvent {
+    checkNotNull(repoName);
   }
 }

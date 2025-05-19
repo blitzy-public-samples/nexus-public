@@ -15,9 +15,9 @@ package org.sonatype.nexus.blobstore.rest;
 import org.sonatype.nexus.rest.WebApplicationMessageException;
 
 import static java.lang.StringTemplate.STR;
-import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
-import static javax.ws.rs.core.Response.Status.BAD_REQUEST;
-import static javax.ws.rs.core.Response.Status.NOT_FOUND;
+import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON;
+import static jakarta.ws.rs.core.Response.Status.BAD_REQUEST;
+import static jakarta.ws.rs.core.Response.Status.NOT_FOUND;
 
 /**
  * Utility class for BlobStore REST resources exception handling.
@@ -37,7 +37,7 @@ public class BlobStoreResourceUtil
     // Using String Templates for improved readability and performance
     throw new WebApplicationMessageException(
         BAD_REQUEST,
-        STR."\"\{message}\"",
+        STR."\"{message}\"",
         APPLICATION_JSON);
   }
 
@@ -53,10 +53,10 @@ public class BlobStoreResourceUtil
       final String blobStoreType,
       final String blobStoreName)
   {
-    // Using String Templates instead of String.format for improved performance and readability
+    // Using String Templates for improved readability and performance
     return new WebApplicationMessageException(
         NOT_FOUND,
-        STR."Unable to find \{blobStoreType} '\{blobStoreName}' blobstore",
+        STR."Unable to find {blobStoreType} '{blobStoreName}' blobstore",
         APPLICATION_JSON);
   }
 

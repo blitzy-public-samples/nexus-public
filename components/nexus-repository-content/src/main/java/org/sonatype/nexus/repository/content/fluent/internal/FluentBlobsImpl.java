@@ -21,6 +21,8 @@ import java.nio.file.Path;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import javax.annotation.Nullable;
 import javax.inject.Provider;
@@ -49,7 +51,9 @@ import com.google.common.hash.HashCode;
 import org.apache.commons.io.IOUtils;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 import static java.util.Optional.ofNullable;
+import static java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor;
 import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_NAME_HEADER;
 import static org.sonatype.nexus.blobstore.api.BlobStore.CONTENT_TYPE_HEADER;
 import static org.sonatype.nexus.blobstore.api.BlobStore.CREATED_BY_HEADER;
@@ -100,10 +104,18 @@ public class FluentBlobsImpl
       final Map<String, String> headers,
       final Iterable<HashAlgorithm> hashing)
   {
-    MultiHashingInputStream hashingStream = MultiHashingInputStreamFactory.input(hashing, in);
-    Blob blob = blobStore.get().create(hashingStream, tempHeaders(headers, contentType));
-
-    return new TempBlob(blob, hashingStream.hashes(), true, blobStore.get());
+    try (var executor = newVirtualThreadPerTaskExecutor()) {
+      // Use a virtual thread to handle the I/O operation
+      Future<TempBlob> future = executor.submit(() -> {
+        MultiHashingInputStream hashingStream = MultiHashingInputStreamFactory.input(hashing, in);
+        Blob blob = blobStore.get().create(hashingStream, tempHeaders(headers, contentType));
+        return new TempBlob(blob, hashingStream.hashes(), true, blobStore.get());
+      });
+      return future.get();
+    }
+    catch (Exception e) {
+      throw new UncheckedIOException(new IOException(STR."Failed to ingest content: \{e.getMessage()}", e));
+    }
   }
 
   @Override
@@ -113,37 +125,47 @@ public class FluentBlobsImpl
       final Iterable<HashAlgorithm> algorithms,
       final boolean requireHardLink)
   {
-    try {
-      Map<HashAlgorithm, HashCode> hashes = computeHashes(path, algorithms);
-      Map<String, String> tempHeaders = tempHeaders(Collections.emptyMap(), contentType);
-      Blob blob;
-      try {
-        blob = blobStore.get().create(path, tempHeaders, Files.size(path), hashes.get(HashAlgorithm.SHA1));
-      }
-      catch (Exception e) {
-        if (requireHardLink) {
-          throw e;
+    try (var executor = newVirtualThreadPerTaskExecutor()) {
+      // Use a virtual thread to handle the I/O operation
+      Future<TempBlob> future = executor.submit(() -> {
+        Map<HashAlgorithm, HashCode> hashes = computeHashes(path, algorithms);
+        Map<String, String> tempHeaders = tempHeaders(Collections.emptyMap(), contentType);
+        Blob blob;
+        try {
+          blob = blobStore.get().create(path, tempHeaders, Files.size(path), hashes.get(HashAlgorithm.SHA1));
         }
-        log.debug("Failed to hard-link {}", path);
-        try (InputStream in = new BufferedInputStream(Files.newInputStream(path))) {
-          blob = blobStore.get().create(in, tempHeaders);
+        catch (Exception e) {
+          if (requireHardLink) {
+            throw e;
+          }
+          log.debug(STR."Failed to hard-link \{path}");
+          try (InputStream in = new BufferedInputStream(Files.newInputStream(path))) {
+            blob = blobStore.get().create(in, tempHeaders);
+          }
         }
-      }
-      return new TempBlob(blob, hashes, true, blobStore.get());
+        return new TempBlob(blob, hashes, true, blobStore.get());
+      });
+      return future.get();
     }
-    catch (IOException e) {
-      throw new UncheckedIOException(e);
+    catch (Exception e) {
+      throw new UncheckedIOException(new IOException(STR."Failed to ingest path \{path}: \{e.getMessage()}", e));
     }
   }
 
   private Map<HashAlgorithm, HashCode> computeHashes(final Path path, final Iterable<HashAlgorithm> hashing) {
-    try (InputStream in = new BufferedInputStream(Files.newInputStream(path));
-        MultiHashingInputStream hashingStream = new MultiHashingInputStream(hashing, in)) {
-      IOUtils.consume(hashingStream);
-      return hashingStream.hashes();
+    try (var executor = newVirtualThreadPerTaskExecutor()) {
+      // Use a virtual thread to handle the I/O operation
+      Future<Map<HashAlgorithm, HashCode>> future = executor.submit(() -> {
+        try (InputStream in = new BufferedInputStream(Files.newInputStream(path));
+            MultiHashingInputStream hashingStream = new MultiHashingInputStream(hashing, in)) {
+          IOUtils.consume(hashingStream);
+          return hashingStream.hashes();
+        }
+      });
+      return future.get();
     }
-    catch (IOException e) {
-      throw new UncheckedIOException(e);
+    catch (Exception e) {
+      throw new UncheckedIOException(new IOException(STR."Failed to compute hashes for \{path}: \{e.getMessage()}", e));
     }
   }
 
@@ -165,41 +187,46 @@ public class FluentBlobsImpl
 
   @Override
   public TempBlob ingest(final Payload payload, final Iterable<HashAlgorithm> hashing) {
-    if (payload instanceof Content) {
-      return ingest(((Content) payload).getPayload(), hashing);
-    }
-    else if (payload instanceof TempBlobPayload) {
-      return ((TempBlobPayload) payload).getTempBlob();
-    }
-    else if (payload instanceof DetachedBlobPayload) {
-      DetachedBlobPayload detachedBlobPayload = (DetachedBlobPayload) payload;
-      Map<HashAlgorithm, HashCode> hashes = hashes(payload, hashing);
-      return new AttachableBlob(detachedBlobPayload.getBlob(), hashes, true, blobStore.get());
-    }
-    try (InputStream in = payload.openInputStream()) {
-      return ingest(in, cleanupContentType(payload.getContentType()), hashing);
-    }
-    catch (IOException e) {
-      throw new UncheckedIOException(e);
-    }
+    // Use pattern matching for switch to handle different payload types
+    return switch (payload) {
+      case Content content -> ingest(content.getPayload(), hashing);
+      case TempBlobPayload tempBlobPayload -> tempBlobPayload.getTempBlob();
+      case DetachedBlobPayload detachedBlobPayload -> {
+        Map<HashAlgorithm, HashCode> hashes = hashes(payload, hashing);
+        yield new AttachableBlob(detachedBlobPayload.getBlob(), hashes, true, blobStore.get());
+      }
+      default -> {
+        try (InputStream in = payload.openInputStream()) {
+          yield ingest(in, cleanupContentType(payload.getContentType()), hashing);
+        }
+        catch (IOException e) {
+          throw new UncheckedIOException(new IOException(STR."Failed to ingest payload: \{e.getMessage()}", e));
+        }
+      }
+    };
   }
 
   @Override
   public TempBlob ingest(final Blob srcBlob, final BlobStore srcStore, final Map<HashAlgorithm, HashCode> hashes) {
-    BlobStore destination = blobStore.get();
+    try (var executor = newVirtualThreadPerTaskExecutor()) {
+      // Use a virtual thread to handle the I/O operation
+      Future<TempBlob> future = executor.submit(() -> {
+        BlobStore destination = blobStore.get();
+        String contentType = srcBlob.getHeaders().get(CONTENT_TYPE_HEADER);
 
-    String contentType = srcBlob.getHeaders().get(CONTENT_TYPE_HEADER);
+        if (destination.getBlobStoreConfiguration().getName().equals(srcStore.getBlobStoreConfiguration().getName())) {
+          Blob blob = destination.copy(srcBlob.getId(), tempHeaders(srcBlob.getHeaders(), contentType));
+          return new TempBlob(blob, hashes, false, srcStore);
+        }
 
-    if (destination.getBlobStoreConfiguration().getName().equals(srcStore.getBlobStoreConfiguration().getName())) {
-      Blob blob = destination.copy(srcBlob.getId(), tempHeaders(srcBlob.getHeaders(), contentType));
-      return new TempBlob(blob, hashes, false, srcStore);
+        try (InputStream in = srcBlob.getInputStream()) {
+          return ingest(in, contentType, srcBlob.getHeaders(), hashes.keySet());
+        }
+      });
+      return future.get();
     }
-
-    try (InputStream in = srcBlob.getInputStream()) {
-      return ingest(in, contentType, srcBlob.getHeaders(), hashes.keySet());
-    }
-    catch (IOException e) {
-      throw new UncheckedIOException(e);
+    catch (Exception e) {
+      throw new UncheckedIOException(new IOException(STR."Failed to ingest blob: \{e.getMessage()}", e));
     }
   }
 
@@ -232,21 +259,39 @@ public class FluentBlobsImpl
       final HashCode sha1,
       final long size)
   {
-    Optional<ClientInfo> clientInfo = facet.clientInfo();
+    try (var executor = newVirtualThreadPerTaskExecutor()) {
+      // Use a virtual thread to handle the I/O operation
+      Future<Blob> future = executor.submit(() -> {
+        Optional<ClientInfo> clientInfo = facet.clientInfo();
 
-    Builder<String, String> newHeaders = ImmutableMap.builder();
-    newHeaders.putAll(headers);
-    // maybe add additional headers
-    maybePut(newHeaders, headers, REPO_NAME_HEADER, facet.repository().getName());
-    maybePut(newHeaders, headers, CREATED_BY_HEADER, clientInfo.map(ClientInfo::getUserid).orElse(SYSTEM));
-    maybePut(newHeaders, headers, CREATED_BY_IP_HEADER, clientInfo.map(ClientInfo::getRemoteIP).orElse(SYSTEM));
+        Builder<String, String> newHeaders = ImmutableMap.builder();
+        newHeaders.putAll(headers);
+        // maybe add additional headers
+        maybePut(newHeaders, headers, REPO_NAME_HEADER, facet.repository().getName());
+        maybePut(newHeaders, headers, CREATED_BY_HEADER, clientInfo.map(ClientInfo::getUserid).orElse(SYSTEM));
+        maybePut(newHeaders, headers, CREATED_BY_IP_HEADER, clientInfo.map(ClientInfo::getRemoteIP).orElse(SYSTEM));
 
-    return blobStore.get().create(sourceFile, newHeaders.build(), size, sha1);
+        return blobStore.get().create(sourceFile, newHeaders.build(), size, sha1);
+      });
+      return future.get();
+    }
+    catch (Exception e) {
+      throw new UncheckedIOException(new IOException(STR."Failed to ingest file \{sourceFile}: \{e.getMessage()}", e));
+    }
   }
 
   @Override
   public Optional<Blob> blob(final BlobRef blobRef) {
-    return ofNullable(blobStore.get().get(blobRef.getBlobId()));
+    try (var executor = newVirtualThreadPerTaskExecutor()) {
+      // Use a virtual thread to handle the I/O operation
+      Future<Optional<Blob>> future = executor.submit(() -> 
+          ofNullable(blobStore.get().get(blobRef.getBlobId())));
+      return future.get();
+    }
+    catch (Exception e) {
+      log.error(STR."Failed to retrieve blob \{blobRef}: \{e.getMessage()}", e);
+      return Optional.empty();
+    }
   }
 
   private void maybePut(
@@ -261,11 +306,17 @@ public class FluentBlobsImpl
   }
 
   private static Map<HashAlgorithm, HashCode> hashes(final Payload payload, final Iterable<HashAlgorithm> hashing) {
-    try (InputStream in = payload.openInputStream()) {
-      return hash(hashing, in);
+    try (var executor = newVirtualThreadPerTaskExecutor()) {
+      // Use a virtual thread to handle the I/O operation
+      Future<Map<HashAlgorithm, HashCode>> future = executor.submit(() -> {
+        try (InputStream in = payload.openInputStream()) {
+          return hash(hashing, in);
+        }
+      });
+      return future.get();
     }
-    catch (IOException e) {
-      throw new UncheckedIOException(e);
+    catch (Exception e) {
+      throw new UncheckedIOException(new IOException(STR."Failed to compute hashes for payload: \{e.getMessage()}", e));
     }
   }
 }

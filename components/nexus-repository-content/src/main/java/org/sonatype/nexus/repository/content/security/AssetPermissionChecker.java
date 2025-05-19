@@ -18,6 +18,9 @@ import java.util.List;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import javax.inject.Inject;
@@ -32,6 +35,7 @@ import org.sonatype.nexus.repository.manager.RepositoryManager;
 import org.sonatype.nexus.repository.security.ContentPermissionChecker;
 import org.sonatype.nexus.repository.security.VariableResolverAdapter;
 import org.sonatype.nexus.repository.security.VariableResolverAdapterManager;
+import org.sonatype.nexus.security.SecurityHelper;
 import org.sonatype.nexus.selector.VariableSource;
 
 import com.google.common.collect.ImmutableList;
@@ -55,17 +59,21 @@ public class AssetPermissionChecker
 
   private final VariableResolverAdapterManager variableResolverAdapterManager;
 
+  private final SecurityHelper securityHelper;
+
   @Inject
   public AssetPermissionChecker(
       final RepositoryManager repositoryManager,
       final ContentFacetFinder contentFacetFinder,
       final ContentPermissionChecker contentPermissionChecker,
-      final VariableResolverAdapterManager variableResolverAdapterManager)
+      final VariableResolverAdapterManager variableResolverAdapterManager,
+      final SecurityHelper securityHelper)
   {
     this.repositoryManager = checkNotNull(repositoryManager);
     this.contentFacetFinder = checkNotNull(contentFacetFinder);
     this.contentPermissionChecker = checkNotNull(contentPermissionChecker);
     this.variableResolverAdapterManager = checkNotNull(variableResolverAdapterManager);
+    this.securityHelper = checkNotNull(securityHelper);
   }
 
   /**
@@ -89,14 +97,31 @@ public class AssetPermissionChecker
     // only do this once - assumes all assets passed in were uploaded to the same repository
     List<String> containingRepositoryNames = containingRepositoryNames(format, assets.iterator().next());
 
-    return assets.stream().map(asset -> {
-      VariableSource source = variableResolverAdapter.fromPath(asset.path(), format);
-
-      return findPermittingRepository(containingRepositoryNames, format, action, source)
-          .map(r -> (Entry<Asset, String>) new SimpleImmutableEntry<>((Asset) asset, r))
-          .orElse(null);
-
-    }).filter(Objects::nonNull);
+    // Use Virtual Threads for concurrent permission checks
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Capture the current security context to propagate to virtual threads
+      var subject = securityHelper.subject();
+      
+      // Process assets concurrently using virtual threads
+      return assets.stream()
+          .map(asset -> {
+            // Create a variable source for the asset path
+            VariableSource source = variableResolverAdapter.fromPath(asset.path(), format);
+            
+            // Find permitting repository with security context propagation
+            return securityHelper.subject(subject, () -> 
+                findPermittingRepository(containingRepositoryNames, format, action, source)
+                    .map(r -> {
+                      // Use pattern matching for instanceof check
+                      if (asset instanceof Asset assetObj) {
+                        return new SimpleImmutableEntry<>(assetObj, r);
+                      }
+                      return null;
+                    })
+                    .orElse(null));
+          })
+          .filter(Objects::nonNull);
+    }
   }
 
   /**
@@ -134,7 +159,7 @@ public class AssetPermissionChecker
    */
   private List<String> containingRepositoryNames(final String format, final RepositoryContent repositoryContent) {
     Optional<Repository> repository = contentFacetFinder.findRepository(format, repositoryContent);
-    if (!repository.isPresent()) {
+    if (repository.isEmpty()) {
       return ImmutableList.of();
     }
 

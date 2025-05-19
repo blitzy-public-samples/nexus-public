@@ -1,0 +1,541 @@
+{
+  "description": "HTTP client SSL test scenarios with Virtual Threads for Java 21",
+  "version": "1.0",
+  "testCategories": [
+    {
+      "name": "TLS Protocol Version Tests",
+      "description": "Tests for different TLS protocol versions with Virtual Threads",
+      "scenarios": [
+        {
+          "id": "tls-1.3-preferred",
+          "name": "TLS 1.3 Preferred Protocol",
+          "description": "Verify that TLS 1.3 is preferred when available with Virtual Threads",
+          "parameters": {
+            "useVirtualThreads": true,
+            "enabledProtocols": ["TLSv1.3", "TLSv1.2"],
+            "expectedProtocol": "TLSv1.3",
+            "concurrentConnections": 1000,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "Connection established using TLS 1.3 protocol"
+        },
+        {
+          "id": "tls-1.2-fallback",
+          "name": "TLS 1.2 Fallback Protocol",
+          "description": "Verify fallback to TLS 1.2 when TLS 1.3 is not available with Virtual Threads",
+          "parameters": {
+            "useVirtualThreads": true,
+            "enabledProtocols": ["TLSv1.3", "TLSv1.2"],
+            "serverSupportedProtocols": ["TLSv1.2"],
+            "expectedProtocol": "TLSv1.2",
+            "concurrentConnections": 1000,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "Connection established using TLS 1.2 protocol when TLS 1.3 is not available"
+        },
+        {
+          "id": "tls-protocol-enforcement",
+          "name": "TLS Protocol Enforcement",
+          "description": "Verify that only specified TLS protocols are used with Virtual Threads",
+          "parameters": {
+            "useVirtualThreads": true,
+            "enabledProtocols": ["TLSv1.2"],
+            "disabledProtocols": ["TLSv1.1", "TLSv1", "SSLv3"],
+            "expectedProtocol": "TLSv1.2",
+            "concurrentConnections": 1000,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "Connection established using only TLS 1.2, rejecting connections with older protocols"
+        },
+        {
+          "id": "tls-protocol-negotiation",
+          "name": "TLS Protocol Negotiation",
+          "description": "Verify protocol negotiation behavior with Virtual Threads",
+          "parameters": {
+            "useVirtualThreads": true,
+            "enabledProtocols": ["TLSv1.3", "TLSv1.2"],
+            "serverPreferredOrder": true,
+            "serverPreferredProtocol": "TLSv1.2",
+            "expectedProtocol": "TLSv1.2",
+            "concurrentConnections": 1000,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "Connection established using server's preferred protocol (TLS 1.2) even when client supports TLS 1.3"
+        }
+      ]
+    },
+    {
+      "name": "Cipher Suite Tests",
+      "description": "Tests for different cipher suites with Virtual Threads",
+      "scenarios": [
+        {
+          "id": "forward-secrecy-ciphers",
+          "name": "Forward Secrecy Cipher Suites",
+          "description": "Verify that cipher suites with forward secrecy are preferred with Virtual Threads",
+          "parameters": {
+            "useVirtualThreads": true,
+            "protocol": "TLSv1.3",
+            "preferredCipherSuites": [
+              "TLS_AES_256_GCM_SHA384",
+              "TLS_AES_128_GCM_SHA256",
+              "TLS_CHACHA20_POLY1305_SHA256"
+            ],
+            "expectedCipherPattern": ".*GCM.*|.*POLY1305.*",
+            "concurrentConnections": 1000,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "Connection established using a cipher suite with forward secrecy"
+        },
+        {
+          "id": "tls-1.2-ciphers",
+          "name": "TLS 1.2 Cipher Suites",
+          "description": "Verify TLS 1.2 cipher suite selection with Virtual Threads",
+          "parameters": {
+            "useVirtualThreads": true,
+            "protocol": "TLSv1.2",
+            "preferredCipherSuites": [
+              "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
+              "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+              "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+              "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+              "TLS_DHE_RSA_WITH_AES_256_GCM_SHA384",
+              "TLS_DHE_RSA_WITH_AES_128_GCM_SHA256"
+            ],
+            "expectedCipherPattern": ".*ECDHE.*GCM.*|.*DHE.*GCM.*",
+            "concurrentConnections": 1000,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "Connection established using a TLS 1.2 cipher suite with forward secrecy"
+        },
+        {
+          "id": "cipher-suite-order",
+          "name": "Cipher Suite Order Preference",
+          "description": "Verify that server's cipher suite order is respected with Virtual Threads",
+          "parameters": {
+            "useVirtualThreads": true,
+            "protocol": "TLSv1.3",
+            "clientCipherSuites": [
+              "TLS_AES_128_GCM_SHA256",
+              "TLS_AES_256_GCM_SHA384",
+              "TLS_CHACHA20_POLY1305_SHA256"
+            ],
+            "serverCipherSuites": [
+              "TLS_AES_256_GCM_SHA384",
+              "TLS_CHACHA20_POLY1305_SHA256",
+              "TLS_AES_128_GCM_SHA256"
+            ],
+            "serverPreferredOrder": true,
+            "expectedCipherSuite": "TLS_AES_256_GCM_SHA384",
+            "concurrentConnections": 1000,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "Connection established using server's preferred cipher suite"
+        },
+        {
+          "id": "dh-keysize",
+          "name": "Diffie-Hellman Key Size",
+          "description": "Verify that 2048-bit DH key size is used with Virtual Threads",
+          "parameters": {
+            "useVirtualThreads": true,
+            "protocol": "TLSv1.2",
+            "cipherSuite": "TLS_DHE_RSA_WITH_AES_256_GCM_SHA384",
+            "expectedDHKeySize": 2048,
+            "concurrentConnections": 100,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "Connection established using 2048-bit DH key size"
+        }
+      ]
+    },
+    {
+      "name": "Authentication Tests",
+      "description": "Tests for different authentication mechanisms with Virtual Threads",
+      "scenarios": [
+        {
+          "id": "standard-tls-auth",
+          "name": "Standard TLS Authentication",
+          "description": "Verify standard TLS authentication with Virtual Threads",
+          "parameters": {
+            "useVirtualThreads": true,
+            "protocol": "TLSv1.3",
+            "authType": "SERVER_ONLY",
+            "trustStore": "${test.ssl.truststore}",
+            "trustStorePassword": "${test.ssl.truststore.password}",
+            "trustStoreType": "JKS",
+            "verifyHostname": true,
+            "concurrentConnections": 1000,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "Connection established with server authentication only"
+        },
+        {
+          "id": "mutual-tls-auth",
+          "name": "Mutual TLS Authentication",
+          "description": "Verify mutual TLS authentication with Virtual Threads",
+          "parameters": {
+            "useVirtualThreads": true,
+            "protocol": "TLSv1.3",
+            "authType": "MUTUAL",
+            "trustStore": "${test.ssl.truststore}",
+            "trustStorePassword": "${test.ssl.truststore.password}",
+            "trustStoreType": "JKS",
+            "keyStore": "${test.ssl.keystore}",
+            "keyStorePassword": "${test.ssl.keystore.password}",
+            "keyStoreType": "PKCS12",
+            "verifyHostname": true,
+            "concurrentConnections": 1000,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "Connection established with mutual authentication"
+        },
+        {
+          "id": "cert-validation",
+          "name": "Certificate Validation",
+          "description": "Verify certificate validation with Virtual Threads",
+          "parameters": {
+            "useVirtualThreads": true,
+            "protocol": "TLSv1.3",
+            "authType": "SERVER_ONLY",
+            "trustStore": "${test.ssl.truststore}",
+            "trustStorePassword": "${test.ssl.truststore.password}",
+            "trustStoreType": "JKS",
+            "verifyHostname": true,
+            "invalidCertificate": true,
+            "concurrentConnections": 100,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "Connection rejected due to invalid certificate"
+        },
+        {
+          "id": "hostname-verification",
+          "name": "Hostname Verification",
+          "description": "Verify hostname verification with Virtual Threads",
+          "parameters": {
+            "useVirtualThreads": true,
+            "protocol": "TLSv1.3",
+            "authType": "SERVER_ONLY",
+            "trustStore": "${test.ssl.truststore}",
+            "trustStorePassword": "${test.ssl.truststore.password}",
+            "trustStoreType": "JKS",
+            "verifyHostname": true,
+            "invalidHostname": true,
+            "concurrentConnections": 100,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "Connection rejected due to hostname verification failure"
+        }
+      ]
+    },
+    {
+      "name": "Connection Pooling Tests",
+      "description": "Tests for connection pooling with Virtual Threads",
+      "scenarios": [
+        {
+          "id": "connection-reuse",
+          "name": "Connection Reuse",
+          "description": "Verify connection reuse with Virtual Threads",
+          "parameters": {
+            "useVirtualThreads": true,
+            "protocol": "TLSv1.3",
+            "poolingEnabled": true,
+            "maxConnections": 100,
+            "maxConnectionsPerRoute": 20,
+            "connectionTimeToLive": 60000,
+            "validateAfterInactivity": 5000,
+            "concurrentRequests": 1000,
+            "requestsPerConnection": 10,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "Connections are reused efficiently with Virtual Threads"
+        },
+        {
+          "id": "connection-eviction",
+          "name": "Connection Eviction",
+          "description": "Verify connection eviction with Virtual Threads",
+          "parameters": {
+            "useVirtualThreads": true,
+            "protocol": "TLSv1.3",
+            "poolingEnabled": true,
+            "maxConnections": 100,
+            "maxConnectionsPerRoute": 20,
+            "connectionTimeToLive": 5000,
+            "evictIdleConnections": true,
+            "idleConnectionTimeout": 3000,
+            "concurrentRequests": 500,
+            "requestsPerConnection": 5,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "Idle connections are evicted after timeout"
+        },
+        {
+          "id": "connection-validation",
+          "name": "Connection Validation",
+          "description": "Verify connection validation with Virtual Threads",
+          "parameters": {
+            "useVirtualThreads": true,
+            "protocol": "TLSv1.3",
+            "poolingEnabled": true,
+            "maxConnections": 100,
+            "maxConnectionsPerRoute": 20,
+            "validateAfterInactivity": 1000,
+            "concurrentRequests": 500,
+            "requestsPerConnection": 5,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "Connections are validated after inactivity period"
+        },
+        {
+          "id": "connection-limit",
+          "name": "Connection Limit",
+          "description": "Verify connection limit behavior with Virtual Threads",
+          "parameters": {
+            "useVirtualThreads": true,
+            "protocol": "TLSv1.3",
+            "poolingEnabled": true,
+            "maxConnections": 50,
+            "maxConnectionsPerRoute": 10,
+            "concurrentRequests": 1000,
+            "requestsPerConnection": 1,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "Connection limits are respected with Virtual Threads"
+        }
+      ]
+    },
+    {
+      "name": "Thread Pinning Tests",
+      "description": "Tests for thread pinning detection with Virtual Threads",
+      "scenarios": [
+        {
+          "id": "ssl-handshake-pinning",
+          "name": "SSL Handshake Pinning",
+          "description": "Verify that SSL handshake operations don't cause thread pinning with Virtual Threads",
+          "parameters": {
+            "useVirtualThreads": true,
+            "protocol": "TLSv1.3",
+            "detectPinning": true,
+            "pinningThresholdMs": 100,
+            "concurrentConnections": 1000,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "SSL handshake operations don't cause thread pinning"
+        },
+        {
+          "id": "ssl-io-pinning",
+          "name": "SSL I/O Pinning",
+          "description": "Verify that SSL I/O operations don't cause thread pinning with Virtual Threads",
+          "parameters": {
+            "useVirtualThreads": true,
+            "protocol": "TLSv1.3",
+            "detectPinning": true,
+            "pinningThresholdMs": 100,
+            "concurrentConnections": 1000,
+            "requestSize": 1048576,
+            "responseSize": 1048576,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "SSL I/O operations don't cause thread pinning"
+        },
+        {
+          "id": "ssl-session-cache-pinning",
+          "name": "SSL Session Cache Pinning",
+          "description": "Verify that SSL session cache operations don't cause thread pinning with Virtual Threads",
+          "parameters": {
+            "useVirtualThreads": true,
+            "protocol": "TLSv1.3",
+            "detectPinning": true,
+            "pinningThresholdMs": 100,
+            "enableSessionCache": true,
+            "sessionCacheSize": 1000,
+            "sessionTimeout": 3600,
+            "concurrentConnections": 1000,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "SSL session cache operations don't cause thread pinning"
+        },
+        {
+          "id": "synchronized-block-pinning",
+          "name": "Synchronized Block Pinning",
+          "description": "Verify that synchronized blocks in SSL code cause thread pinning with Virtual Threads",
+          "parameters": {
+            "useVirtualThreads": true,
+            "protocol": "TLSv1.3",
+            "detectPinning": true,
+            "pinningThresholdMs": 100,
+            "forceSynchronizedBlocks": true,
+            "concurrentConnections": 1000,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "Synchronized blocks in SSL code cause thread pinning"
+        }
+      ]
+    },
+    {
+      "name": "Performance Comparison Tests",
+      "description": "Tests comparing performance between platform threads and virtual threads",
+      "scenarios": [
+        {
+          "id": "throughput-comparison",
+          "name": "Throughput Comparison",
+          "description": "Compare throughput between platform threads and virtual threads for SSL connections",
+          "parameters": {
+            "runWithVirtualThreads": true,
+            "runWithPlatformThreads": true,
+            "protocol": "TLSv1.3",
+            "concurrentConnections": 10000,
+            "requestsPerConnection": 10,
+            "requestSize": 1024,
+            "responseSize": 10240,
+            "warmupIterations": 5,
+            "measurementIterations": 10,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "Virtual threads provide higher throughput than platform threads for SSL connections"
+        },
+        {
+          "id": "latency-comparison",
+          "name": "Latency Comparison",
+          "description": "Compare latency between platform threads and virtual threads for SSL connections",
+          "parameters": {
+            "runWithVirtualThreads": true,
+            "runWithPlatformThreads": true,
+            "protocol": "TLSv1.3",
+            "concurrentConnections": 10000,
+            "requestsPerConnection": 10,
+            "requestSize": 1024,
+            "responseSize": 10240,
+            "warmupIterations": 5,
+            "measurementIterations": 10,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "Virtual threads provide lower latency than platform threads for SSL connections"
+        },
+        {
+          "id": "memory-comparison",
+          "name": "Memory Usage Comparison",
+          "description": "Compare memory usage between platform threads and virtual threads for SSL connections",
+          "parameters": {
+            "runWithVirtualThreads": true,
+            "runWithPlatformThreads": true,
+            "protocol": "TLSv1.3",
+            "concurrentConnections": 10000,
+            "requestsPerConnection": 10,
+            "requestSize": 1024,
+            "responseSize": 10240,
+            "warmupIterations": 5,
+            "measurementIterations": 10,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "Virtual threads use less memory than platform threads for SSL connections"
+        },
+        {
+          "id": "scalability-comparison",
+          "name": "Scalability Comparison",
+          "description": "Compare scalability between platform threads and virtual threads for SSL connections",
+          "parameters": {
+            "runWithVirtualThreads": true,
+            "runWithPlatformThreads": true,
+            "protocol": "TLSv1.3",
+            "concurrentConnectionsLevels": [100, 1000, 10000, 100000],
+            "requestsPerConnection": 10,
+            "requestSize": 1024,
+            "responseSize": 10240,
+            "warmupIterations": 5,
+            "measurementIterations": 10,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "Virtual threads scale better than platform threads for SSL connections as concurrency increases"
+        }
+      ]
+    },
+    {
+      "name": "Error Handling Tests",
+      "description": "Tests for error handling with Virtual Threads",
+      "scenarios": [
+        {
+          "id": "connection-timeout",
+          "name": "Connection Timeout",
+          "description": "Verify connection timeout handling with Virtual Threads",
+          "parameters": {
+            "useVirtualThreads": true,
+            "protocol": "TLSv1.3",
+            "simulateSlowServer": true,
+            "serverResponseDelay": 10000,
+            "concurrentConnections": 1000,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "Connection timeout is handled correctly with Virtual Threads"
+        },
+        {
+          "id": "read-timeout",
+          "name": "Read Timeout",
+          "description": "Verify read timeout handling with Virtual Threads",
+          "parameters": {
+            "useVirtualThreads": true,
+            "protocol": "TLSv1.3",
+            "simulateSlowResponse": true,
+            "responseDelay": 15000,
+            "concurrentConnections": 1000,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "Read timeout is handled correctly with Virtual Threads"
+        },
+        {
+          "id": "ssl-handshake-failure",
+          "name": "SSL Handshake Failure",
+          "description": "Verify SSL handshake failure handling with Virtual Threads",
+          "parameters": {
+            "useVirtualThreads": true,
+            "protocol": "TLSv1.3",
+            "simulateHandshakeFailure": true,
+            "concurrentConnections": 1000,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "SSL handshake failure is handled correctly with Virtual Threads"
+        },
+        {
+          "id": "connection-reset",
+          "name": "Connection Reset",
+          "description": "Verify connection reset handling with Virtual Threads",
+          "parameters": {
+            "useVirtualThreads": true,
+            "protocol": "TLSv1.3",
+            "simulateConnectionReset": true,
+            "resetAfterBytes": 1024,
+            "concurrentConnections": 1000,
+            "connectionTimeout": 5000,
+            "readTimeout": 10000
+          },
+          "expectedOutcome": "Connection reset is handled correctly with Virtual Threads"
+        }
+      ]
+    }
+  ]
+}

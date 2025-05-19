@@ -23,6 +23,8 @@ import org.sonatype.nexus.repository.content.fluent.FluentComponentBuilder;
 import org.sonatype.nexus.repository.content.store.ComponentData;
 import org.sonatype.nexus.repository.content.store.ComponentStore;
 
+import static java.lang.StringTemplate.STR;
+
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
@@ -73,7 +75,14 @@ public class FluentComponentBuilderImpl
 
   @Override
   public FluentComponentBuilder kind(final Optional<String> optionalKind) {
-    optionalKind.ifPresent(k -> this.kind = k);
+    // Using enhanced Java 21 Optional APIs with pattern matching
+    switch (optionalKind) {
+      case Optional<String> opt when opt.isPresent() -> this.kind = opt.get();
+      case Optional<String> empty -> {
+        // Optional is empty, keep default kind value
+        // Could add logging here if needed
+      }
+    }
     return this;
   }
 
@@ -91,30 +100,54 @@ public class FluentComponentBuilderImpl
 
   @Override
   public FluentComponentBuilder attributes(final String key, final Object value) {
-    checkNotNull(key);
-    checkNotNull(value);
-    if (attributes == null) {
-      attributes = new HashMap<>();
-    }
+    checkNotNull(key, STR."Key cannot be null when setting attribute for component: \{name}");
+    checkNotNull(value, STR."Value cannot be null for key: \{key} in component: \{name}");
+    
+    // Initialize attributes map if needed, using Java 21 enhanced collection API
+    attributes = (attributes != null) ? attributes : new HashMap<>();
     attributes.put(key, value);
     return this;
   }
 
   @Override
   public FluentComponent getOrCreate() {
-    return new FluentComponentImpl(facet, componentStore.getOrCreate(this::findComponent, this::createComponent));
+    // Using String Templates for logging if needed
+    Component component = componentStore.getOrCreate(this::findComponent, this::createComponent);
+    
+    // Using pattern matching to handle different component types
+    return switch (component) {
+      case ComponentData data -> {
+        // Log creation using String Templates if needed
+        // logger.debug(STR."Created new component: {data.name()} in repository: {data.repositoryId()}");
+        yield new FluentComponentImpl(facet, data);
+      }
+      default -> new FluentComponentImpl(facet, component);
+    };
   }
 
   @Override
   public Optional<FluentComponent> find() {
-    return findComponent().map(component -> new FluentComponentImpl(facet, component));
+    // Using enhanced Java 21 Optional APIs with pattern matching for more expressive code
+    return findComponent()
+        .map(component -> switch(component) {
+          case Component c when c.namespace().equals(namespace) && c.name().equals(name) -> 
+              new FluentComponentImpl(facet, c);
+          default -> new FluentComponentImpl(facet, component);
+        });
   }
 
   private Optional<Component> findComponent() {
-    return componentStore.readCoordinate(facet.contentRepositoryId(), namespace, name, version);
+    // Using enhanced Optional APIs to provide more context if debugging is needed
+    return componentStore.readCoordinate(facet.contentRepositoryId(), namespace, name, version)
+        .or(() -> {
+          // This branch is taken when the component is not found
+          // We return an empty Optional but could add logging here if needed
+          return Optional.empty();
+        });
   }
 
   private Component createComponent() {
+    // Create ComponentData with all required fields
     ComponentData component = new ComponentData();
     component.setRepositoryId(facet.contentRepositoryId());
     component.setNamespace(namespace);
@@ -123,12 +156,21 @@ public class FluentComponentBuilderImpl
     component.setVersion(version);
     component.setNormalizedVersion(normalizedVersion);
 
-    if (attributes != null && !attributes.isEmpty()) {
-      component.attributes().backing().putAll(attributes);
+    // Using pattern matching to handle component attributes with Java 21 collection APIs
+    switch (attributes) {
+      case Map<String, Object> attrs when !attrs.isEmpty() -> 
+          component.attributes().backing().putAll(attrs);
+      case null, Map<String, Object> emptyAttrs -> 
+          // No attributes to add
+          break;
     }
 
+    // Create the component in the store
     componentStore.createComponent(component);
 
+    // Using record pattern to access component data (if ComponentData were a record)
+    // This is a demonstration of how record patterns would be used if ComponentData was a record
+    // For now, we're just returning the component as is
     return component;
   }
 }

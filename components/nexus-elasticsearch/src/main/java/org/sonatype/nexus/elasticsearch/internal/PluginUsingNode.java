@@ -12,24 +12,53 @@
  */
 package org.sonatype.nexus.elasticsearch.internal;
 
+import java.nio.file.Path;
 import java.util.Collection;
 
 import org.elasticsearch.Version;
 import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.env.Environment;
 import org.elasticsearch.node.Node;
-import org.elasticsearch.node.internal.InternalSettingsPreparer;
 import org.elasticsearch.plugins.Plugin;
 
 /**
  * Custom {@link org.elasticsearch.node.Node} implementation to allow {@link Plugin} classes to be passed into the
  * constructor.
  *
+ * Updated for Java 21 compatibility with proper module system handling and updated Elasticsearch APIs.
+ *
  * @since 3.1
  */
 public class PluginUsingNode
     extends Node
 {
+  /**
+   * Creates a new PluginUsingNode with the specified settings and plugins.
+   * 
+   * This constructor is updated for Java 21 compatibility, replacing the deprecated
+   * InternalSettingsPreparer with direct Environment creation to ensure proper module system handling.
+   *
+   * @param preparedSettings the settings to use for this node
+   * @param plugins the collection of plugin classes to load
+   */
   public PluginUsingNode(final Settings preparedSettings, Collection<Class<? extends Plugin>> plugins) {
-    super(InternalSettingsPreparer.prepareEnvironment(preparedSettings, null), Version.CURRENT, plugins);
+    // Create Environment directly instead of using deprecated InternalSettingsPreparer
+    // This approach is compatible with Java 21's stronger module encapsulation
+    super(createEnvironment(preparedSettings), Version.CURRENT, plugins);
+  }
+  
+  /**
+   * Creates an Environment instance from the provided settings.
+   * This method replaces the deprecated InternalSettingsPreparer.prepareEnvironment method
+   * with a direct Environment creation that's compatible with Java 21.
+   *
+   * @param settings the settings to create the environment from
+   * @return the created Environment instance
+   */
+  private static Environment createEnvironment(final Settings settings) {
+    // Use the Environment constructor directly, which is compatible with Java 21
+    // This avoids using the deprecated InternalSettingsPreparer class
+    Path configPath = Environment.configPath(settings);
+    return new Environment(settings, configPath);
   }
 }

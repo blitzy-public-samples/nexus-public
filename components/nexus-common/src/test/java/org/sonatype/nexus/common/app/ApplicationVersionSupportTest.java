@@ -18,17 +18,11 @@ import org.sonatype.goodies.testsupport.TestSupport;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.DisplayName;
 
-// Import for Java 21 preview features
-import static java.lang.StringTemplate.STR;
-
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Tests for {@link ApplicationVersionSupport}.
- * Updated for Java 21 compatibility with JUnit Jupiter.
  */
 public class ApplicationVersionSupportTest
     extends TestSupport
@@ -55,48 +49,27 @@ public class ApplicationVersionSupportTest
   }
 
   /**
-   * Verify that edition returns non-UNKNOWN value.
+   * Verify that the custom edition is returned correctly.
    */
   @Test
-  @DisplayName("Edition should return TEST value")
-  public void testGetEdition() {
-    assertThat(underTest.getEdition(), is("TEST"));
+  public void shouldReturnCustomEdition() {
+    assertEquals("TEST", underTest.getEdition());
   }
 
   /**
-   * Verify that version returns the configured value.
+   * Verify that the version is retrieved from properties when available.
    */
   @Test
-  @DisplayName("Version should return configured value")
-  public void testGetVersion() {
+  public void shouldReturnVersionFromProperties() {
     props.setProperty(ApplicationVersionSupport.VERSION, "123");
-    assertThat(underTest.getVersion(), is("123"));
+    assertEquals("123", underTest.getVersion());
   }
 
   /**
-   * Verify that version returns UNKNOWN when not configured.
+   * Verify that UNKNOWN is returned when version property is missing.
    */
   @Test
-  @DisplayName("Version should return UNKNOWN when not configured")
-  public void testGetVersion_missing() {
-    assertThat(underTest.getVersion(), is(ApplicationVersionSupport.UNKNOWN));
-  }
-  
-  /**
-   * Test Java 21 String Templates feature with version and edition formatting.
-   * This test demonstrates the use of Java 21's String Templates feature
-   * to create formatted strings with embedded expressions.
-   */
-  @Test
-  @DisplayName("Test version and edition formatting with Java 21 String Templates")
-  public void testVersionEditionFormatting() {
-    // Set up a version for testing
-    props.setProperty(ApplicationVersionSupport.VERSION, "21.0.1");
-    
-    // Create a formatted string using Java 21 String Templates
-    String formattedInfo = STR."Application: \{underTest.getEdition()} version \{underTest.getVersion()}";
-    
-    // Verify the formatted string
-    assertThat(formattedInfo, is("Application: TEST version 21.0.1"));
+  public void shouldReturnUnknownWhenVersionMissing() {
+    assertEquals(ApplicationVersionSupport.UNKNOWN, underTest.getVersion());
   }
 }

@@ -12,22 +12,10 @@
  */
 package org.sonatype.nexus.coreui;
 
-public class FreezeStatusXO
-{
-  private boolean frozen;
-
-  public boolean isFrozen() {
-    return frozen;
-  }
-
-  public void setFrozen(boolean frozen) {
-    this.frozen = frozen;
-  }
-
-  @Override
-  public String toString() {
-    return "FreezeStatusXO{" +
-        "frozen=" + frozen +
-        '}';
-  }
+/**
+ * Data transfer object for repository freeze status.
+ * 
+ * @since 3.38
+ */
+public record FreezeStatusXO(boolean frozen) {
 }

@@ -14,42 +14,30 @@ package org.sonatype.nexus.common.hash;
 
 import java.io.InputStream;
 import java.util.Optional;
-import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Factory for creating hashing input streams.
- * <p>
- * When parallel is enabled (default on), provides {@link ParallelMultiHashingInputStream} which uses
- * Java 21 Virtual Threads for I/O-bound operations. When disabled, provides a standard {@link MultiHashingInputStream}.
- * <p>
- * Virtual Threads are lightweight threads that dramatically reduce the effort of writing, maintaining, and observing
- * high-throughput concurrent applications, making them ideal for I/O-bound operations like hashing.
+ * When virtual thread hashing is enabled (default on), provides
+ * {@link VirtualThreadMultiHashingInputStream} for parallel hashing operations.
+ * When disabled, falls back to {@link MultiHashingInputStream}.
+ * 
+ * @since 3.60
  */
 public final class MultiHashingInputStreamFactory
 {
   public static final Logger log = LoggerFactory.getLogger(MultiHashingInputStreamFactory.class);
 
-  private static final String ENABLED_ENV_VAR = "NEXUS_HASHING_PARALLELISM";
+  private static final String ENABLED_ENV_VAR = "NEXUS_VIRTUAL_THREAD_HASHING";
 
-  private static final String ENABLED_SYS_PROP = "nexus.hashing.parallism";
+  private static final String ENABLED_SYS_PROP = "nexus.virtualthread.hashing";
 
-  private static final String THRESHOLD_ENV_VAR = "NEXUS_HASHING_THRESHOLD";
+  private static final String THRESHOLD_ENV_VAR = "NEXUS_VIRTUAL_THREAD_THRESHOLD";
 
-  private static final String THRESHOLD_SYS_PROP = "nexus.hashing.threshold";
-
-  private static final String MAX_CONCURRENT_ENV_VAR = "NEXUS_HASHING_MAX_CONCURRENT";
-
-  private static final String MAX_CONCURRENT_SYS_PROP = "nexus.hashing.max.concurrent";
-
-  /*
-   * Maximum number of concurrent hashing operations to allow
-   * Default is -1 (unlimited) since Virtual Threads are designed to handle many concurrent operations
-   */
-  private static int maxConcurrent;
+  private static final String THRESHOLD_SYS_PROP = "nexus.virtualthread.threshold";
 
   /*
    * See belowThreshold()
@@ -58,24 +46,37 @@ public final class MultiHashingInputStreamFactory
 
   private static boolean enabled;
 
-  /*
-   * Tracks the current number of active parallel hashing operations
+  /**
+   * Check if the current Java runtime supports Virtual Threads.
+   * This is available in Java 21 and later.
+   *
+   * @return true if Virtual Threads are supported
    */
-  private static volatile int activeHashingOperations = 0;
-
+  private static boolean isVirtualThreadSupported() {
+    try {
+      // Check if the Thread class has the isVirtual method (Java 21+)
+      Thread.class.getMethod("isVirtual");
+      return true;
+    } catch (NoSuchMethodException e) {
+      return false;
+    }
+  }
+  
   static {
-    enabled = Boolean.valueOf(Optional.ofNullable(System.getenv(ENABLED_ENV_VAR))
+    boolean virtualThreadsSupported = isVirtualThreadSupported();
+    
+    enabled = virtualThreadsSupported && Boolean.valueOf(Optional.ofNullable(System.getenv(ENABLED_ENV_VAR))
         .orElseGet(() -> System.getProperty(ENABLED_SYS_PROP, Boolean.TRUE.toString())));
 
     threshold = Integer.valueOf(Optional.ofNullable(System.getenv(THRESHOLD_ENV_VAR))
         .orElseGet(() -> System.getProperty(THRESHOLD_SYS_PROP, "-1")));
 
-    maxConcurrent = Integer.valueOf(Optional.ofNullable(System.getenv(MAX_CONCURRENT_ENV_VAR))
-        .orElseGet(() -> System.getProperty(MAX_CONCURRENT_SYS_PROP, "-1")));
-
-    if (!enabled || threshold != -1 || maxConcurrent != -1) {
-      // log only for non-default settings
-      log.info("Configured with enabled={} threshold={} maxConcurrent={}", enabled, threshold, maxConcurrent);
+    // Log configuration status with String Templates for improved observability
+    if (!virtualThreadsSupported) {
+      log.info("Virtual Threads not supported in this Java version. Using standard MultiHashingInputStream.");
+    } else if (!enabled || threshold != -1) {
+      // Log non-default settings
+      log.info(STR."Configured with enabled=\{enabled} threshold=\{threshold} (using Virtual Threads)");
     }
   }
 
@@ -88,7 +89,7 @@ public final class MultiHashingInputStreamFactory
    */
   @VisibleForTesting
   public static void enableParallel() {
-    log.info("Enabling parallel input stream hashing. Threshold {} maxConcurrent {}", threshold, maxConcurrent);
+    log.info(STR."Enabling virtual thread input stream hashing. Threshold \{threshold}");
 
     enabled = true;
   }
@@ -98,7 +99,7 @@ public final class MultiHashingInputStreamFactory
    */
   @VisibleForTesting
   public static void disableParallel() {
-    log.info("Disabling parallel input stream hashing");
+    log.info("Disabling virtual thread input stream hashing");
 
     enabled = false;
   }
@@ -108,98 +109,89 @@ public final class MultiHashingInputStreamFactory
    */
   @VisibleForTesting
   public static void setThreshold(final int threshold) {
-    log.info("Setting threshold to {}. Parallel input stream hashing enabled={}", threshold, enabled);
+    log.info(STR."Setting threshold to \{threshold}. Virtual thread input stream hashing enabled=\{enabled}");
 
     MultiHashingInputStreamFactory.threshold = threshold;
   }
 
-  /*
-   * Exists for use by Groovy scripting if necessary
-   */
-  @VisibleForTesting
-  public static void setMaxConcurrent(final int maxConcurrent) {
-    log.info("Setting maxConcurrent to {}. Parallel input stream hashing enabled={}", maxConcurrent, enabled);
-
-    MultiHashingInputStreamFactory.maxConcurrent = maxConcurrent;
-  }
-
   /**
-   * Increments the count of active hashing operations.
-   */
-  static synchronized void incrementActiveOperations() {
-    activeHashingOperations++;
-  }
-
-  /**
-   * Decrements the count of active hashing operations.
-   */
-  static synchronized void decrementActiveOperations() {
-    if (activeHashingOperations > 0) {
-      activeHashingOperations--;
-    }
-  }
-
-  /**
-   * Creates a new {@link MultiHashingInputStream} for the given algorithms and input stream.
-   * <p>
-   * If parallel hashing is enabled and system conditions allow, a {@link ParallelMultiHashingInputStream}
-   * using Virtual Threads will be returned. Otherwise, a standard {@link MultiHashingInputStream} will be returned.
+   * Creates a MultiHashingInputStream for the given algorithms and input stream.
+   * If virtual thread hashing is enabled and we're below the threshold, a VirtualThreadMultiHashingInputStream
+   * will be created. Otherwise, a standard MultiHashingInputStream will be used.
    *
    * @param algorithms the hash algorithms to use
    * @param inputStream the input stream to hash
-   * @return a new hashing input stream
+   * @return a MultiHashingInputStream instance
    */
   public static MultiHashingInputStream input(final Iterable<HashAlgorithm> algorithms, final InputStream inputStream) {
     if (enabled && belowThreshold()) {
-      incrementActiveOperations();
-      return new ParallelMultiHashingInputStream(algorithms, inputStream);
+      if (log.isDebugEnabled()) {
+        log.debug(STR."Creating VirtualThreadMultiHashingInputStream (active: \{getActiveThreadCount()})");
+      }
+      return new VirtualThreadMultiHashingInputStream(algorithms, inputStream);
+    }
+    
+    if (log.isTraceEnabled()) {
+      String reason = !enabled ? "virtual thread hashing disabled" : "above threshold";
+      log.trace(STR."Creating standard MultiHashingInputStream (\{reason})");
     }
     return new MultiHashingInputStream(algorithms, inputStream);
   }
 
+  /*
+   * For Virtual Threads, the threshold has a different meaning than with ForkJoinPool.
+   * Since Virtual Threads are lightweight and managed by the JVM, we use the threshold
+   * to limit the number of concurrent hashing operations based on system load or other factors.
+   * 
+   * Values below zero disable limits, allowing unlimited virtual threads for hashing.
+   */
+  // Counter to track active virtual thread hashing operations
+  private static final AtomicInteger activeVirtualThreads = new AtomicInteger(0);
+  
   /**
-   * Determines if we should use parallel hashing based on current system conditions.
-   * <p>
-   * With Virtual Threads, we can handle many more concurrent operations than with platform threads,
-   * so the threshold logic is primarily focused on preventing excessive resource usage in extreme cases.
-   *
-   * @return true if parallel hashing should be used, false otherwise
+   * Increment the count of active virtual thread hashing operations.
+   */
+  static void incrementActiveThreads() {
+    activeVirtualThreads.incrementAndGet();
+  }
+  
+  /**
+   * Decrement the count of active virtual thread hashing operations.
+   */
+  static void decrementActiveThreads() {
+    activeVirtualThreads.decrementAndGet();
+  }
+  
+  /**
+   * Get the current count of active virtual thread hashing operations.
+   */
+  static int getActiveThreadCount() {
+    return activeVirtualThreads.get();
+  }
+  
+  /**
+   * Determines if we should use virtual threads for hashing based on the configured threshold.
+   * For Virtual Threads, the threshold represents the maximum number of concurrent hashing
+   * operations allowed.
+   * 
+   * @return true if we should use virtual threads, false otherwise
    */
   private static boolean belowThreshold() {
-    // Check if we're below the maximum concurrent operations threshold (if set)
-    if (maxConcurrent > 0 && activeHashingOperations >= maxConcurrent) {
-      if (log.isTraceEnabled()) {
-        log.trace("Max concurrent operations reached: {} >= {}", activeHashingOperations, maxConcurrent);
-      }
-      return false;
+    if (threshold < 0) {
+      // negative values disable limits
+      return true;
     }
 
-    // Check if we're below the system load threshold (if set)
-    if (threshold > 0) {
-      // For Java 21 Virtual Threads, we use system load average instead of ForkJoinPool queue size
-      // as Virtual Threads are designed to handle many more concurrent operations efficiently
-      double systemLoadAverage = getSystemLoadAverage();
-      int availableProcessors = Runtime.getRuntime().availableProcessors();
-      double normalizedLoad = systemLoadAverage / availableProcessors;
-      boolean belowMax = normalizedLoad < threshold;
+    // For Virtual Threads, we check if we're below the configured threshold of concurrent operations
+    int active = activeVirtualThreads.get();
+    boolean belowMax = active < threshold;
 
-      if (log.isTraceEnabled()) {
-        log.trace("Threshold {}. System load {}. Available processors {}. Normalized load {}. Below max {}", 
-            threshold, systemLoadAverage, availableProcessors, normalizedLoad, belowMax);
-      }
-
-      return belowMax;
+    if (log.isTraceEnabled()) {
+      Thread currentThread = Thread.currentThread();
+      boolean isVirtual = currentThread.isVirtual();
+      log.trace(STR."Threshold: \{threshold}. Active virtual threads: \{active}. Current thread is virtual: \{isVirtual}. Below max: \{belowMax}");
     }
 
-    // If no thresholds are set or they're negative, always use parallel hashing
-    return true;
-  }
-
-  /**
-   * Gets the system load average, or 0.0 if not available.
-   */
-  private static double getSystemLoadAverage() {
-    double systemLoadAverage = java.lang.management.ManagementFactory.getOperatingSystemMXBean().getSystemLoadAverage();
-    return systemLoadAverage >= 0 ? systemLoadAverage : 0.0;
+    return belowMax;
   }
 }

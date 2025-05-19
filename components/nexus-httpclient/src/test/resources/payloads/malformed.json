@@ -1,0 +1,25 @@
+{
+  "validKey": "validValue",
+  "missingQuotes": value without quotes,
+  "trailingComma": "This has a trailing comma",
+  invalidKey: "This key has no quotes",
+  "invalidEscape": "This has an invalid escape \z sequence",
+  "incompleteArray": [
+    "item1",
+    "item2",
+    {"nestedObject": "value"
+  ],
+  "invalidUnicode": "This has an invalid unicode \u12ZG sequence",
+  "nestedError": {
+    "level1": {
+      "level2": {
+        "missingBrace": "This nested object is missing a closing brace"
+      
+    }
+  },
+  "unclosedString: "This string never ends,
+  "duplicateKey": "First value",
+  "duplicateKey": "Second value",
+  "nullWithComma": null,
+  "emptyValue": ,
+  "validButLast": "This is the last valid entry"

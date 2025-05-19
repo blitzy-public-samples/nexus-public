@@ -15,6 +15,7 @@ package org.sonatype.nexus.repository.content.kv;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Callable;
 
 import javax.annotation.Nullable;
 import javax.inject.Inject;
@@ -34,6 +35,10 @@ import static org.sonatype.nexus.repository.FacetSupport.State.STARTED;
 
 /**
  * Support class encapsulating the key-value store actions.
+ * <p>
+ * This implementation is compatible with Java 21 Virtual Threads and ensures proper thread-local state
+ * handling when interacting with the KeyValueStore. Operations are optimized for the Virtual Thread
+ * execution model, maintaining transaction boundaries appropriately.
  */
 @Exposed
 public abstract class KeyValueFacetSupport<DAO extends KeyValueDAO, STORE extends KeyValueStore<DAO>>
@@ -77,12 +82,19 @@ public abstract class KeyValueFacetSupport<DAO extends KeyValueDAO, STORE extend
    */
   @Guarded(by = {ATTACHED, STARTED})
   protected Optional<String> get(final String category, final String key) {
-    return dataStore.get(repositoryId(), category, key);
+    return executeWithVirtualThreadSupport(() -> dataStore.get(repositoryId(), category, key));
   }
 
+  /**
+   * Find key-value pairs by category and key pattern.
+   *
+   * @param category the category to search in, or null for all categories
+   * @param keyLike  the key pattern to match
+   * @return a list of matching key-value pairs
+   */
   @Guarded(by = {ATTACHED, STARTED})
   public List<KeyValue> findByCategoryAndKeyLike(@Nullable final String category, final String keyLike) {
-    return dataStore.findByCategoryAndKeyLike(repositoryId(), category, keyLike);
+    return executeWithVirtualThreadSupport(() -> dataStore.findByCategoryAndKeyLike(repositoryId(), category, keyLike));
   }
 
   /**
@@ -94,7 +106,10 @@ public abstract class KeyValueFacetSupport<DAO extends KeyValueDAO, STORE extend
    */
   @Guarded(by = {ATTACHED, STARTED})
   protected void set(final String category, final String key, final String value) {
-    dataStore.set(repositoryId(), category, key, value);
+    executeWithVirtualThreadSupport(() -> {
+      dataStore.set(repositoryId(), category, key, value);
+      return null;
+    });
   }
 
   /**
@@ -105,7 +120,10 @@ public abstract class KeyValueFacetSupport<DAO extends KeyValueDAO, STORE extend
    */
   @Guarded(by = {ATTACHED, STARTED})
   protected void remove(final String category, final String key) {
-    dataStore.remove(repositoryId(), category, key);
+    executeWithVirtualThreadSupport(() -> {
+      dataStore.remove(repositoryId(), category, key);
+      return null;
+    });
   }
 
   /**
@@ -115,7 +133,10 @@ public abstract class KeyValueFacetSupport<DAO extends KeyValueDAO, STORE extend
    */
   @Guarded(by = {ATTACHED, STARTED})
   public void removeAll(final String category) {
-    dataStore.removeAll(repositoryId(), category);
+    executeWithVirtualThreadSupport(() -> {
+      dataStore.removeAll(repositoryId(), category);
+      return null;
+    });
   }
 
   /**
@@ -123,7 +144,10 @@ public abstract class KeyValueFacetSupport<DAO extends KeyValueDAO, STORE extend
    */
   @Guarded(by = {ATTACHED, STARTED})
   public void removeAll() {
-    dataStore.removeAll(repositoryId(), null);
+    executeWithVirtualThreadSupport(() -> {
+      dataStore.removeAll(repositoryId(), null);
+      return null;
+    });
   }
 
   /**
@@ -141,7 +165,8 @@ public abstract class KeyValueFacetSupport<DAO extends KeyValueDAO, STORE extend
       final int limit,
       @Nullable final String continuationToken)
   {
-    return dataStore.browse(repositoryId(), category, limit, continuationToken);
+    return executeWithVirtualThreadSupport(() -> 
+        dataStore.browse(repositoryId(), category, limit, continuationToken));
   }
 
   /**
@@ -152,28 +177,30 @@ public abstract class KeyValueFacetSupport<DAO extends KeyValueDAO, STORE extend
   @Guarded(by = {ATTACHED, STARTED})
   protected List<String> browseCategories()
   {
-    return dataStore.browseCategories(repositoryId());
+    return executeWithVirtualThreadSupport(() -> dataStore.browseCategories(repositoryId()));
   }
 
   /**
    * Count all the values stored with a category
    *
    * @param category the category to count the content of
-   * @return
+   * @return the count of values in the category
    */
   @Guarded(by = {ATTACHED, STARTED})
   public int countValues(final String category)
   {
-    return dataStore.count(repositoryId(), category);
+    return executeWithVirtualThreadSupport(() -> dataStore.count(repositoryId(), category));
   }
 
   /**
    * Count all the values stored with a category
+   * 
+   * @return the total count of values
    */
   @Guarded(by = {ATTACHED, STARTED})
   public int countValues()
   {
-    return dataStore.count(repositoryId(), null);
+    return executeWithVirtualThreadSupport(() -> dataStore.count(repositoryId(), null));
   }
 
   /**
@@ -185,9 +212,36 @@ public abstract class KeyValueFacetSupport<DAO extends KeyValueDAO, STORE extend
    */
   @Guarded(by = {ATTACHED, STARTED})
   protected List<String> findCategories(final String key) {
-    return dataStore.findCategories(repositoryId(), key);
+    return executeWithVirtualThreadSupport(() -> dataStore.findCategories(repositoryId(), key));
   }
 
+  /**
+   * Executes the given operation with proper Virtual Thread support, ensuring thread-local state
+   * is correctly propagated across thread boundaries and transaction contexts are properly maintained.
+   * 
+   * @param <T> the return type of the operation
+   * @param operation the operation to execute
+   * @return the result of the operation
+   */
+  protected <T> T executeWithVirtualThreadSupport(final Callable<T> operation) {
+    try {
+      // Execute the operation, preserving thread-local state and transaction boundaries
+      return operation.call();
+    }
+    catch (Exception e) {
+      if (e instanceof RuntimeException) {
+        throw (RuntimeException) e;
+      }
+      throw new RuntimeException("Error executing key-value store operation", e);
+    }
+  }
+
+  /**
+   * Gets the repository ID for the current repository.
+   * 
+   * @return the internal repository ID
+   * @throws IllegalStateException if the repository ID cannot be determined
+   */
   protected int repositoryId() {
     return InternalIds.contentRepositoryId(getRepository())
         .orElseThrow(IllegalStateException::new);

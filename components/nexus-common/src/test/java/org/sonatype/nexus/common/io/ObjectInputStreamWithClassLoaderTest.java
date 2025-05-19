@@ -25,23 +25,22 @@ import java.util.Map;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.io.ObjectInputStreamWithClassLoader.LoadingFunction;
+import org.sonatype.nexus.java21.Java21TestGroup;
 
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.Test;
+import org.junit.experimental.categories.Category;
 import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.equalTo;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-@ExtendWith(MockitoExtension.class)
-class ObjectInputStreamWithClassLoaderTest
+@Category(Java21TestGroup.class)
+public class ObjectInputStreamWithClassLoaderTest
     extends TestSupport
 {
   private static final String OBJECT_TO_SERIALIZE = "test";
@@ -54,18 +53,16 @@ class ObjectInputStreamWithClassLoaderTest
   @Mock
   private ObjectStreamClass classDescription;
 
-  @Test
-  void failFastWhenClassLoaderNull() {
-    assertThrows(NullPointerException.class, () -> {
-      try (ObjectInputStreamWithClassLoader in = new ObjectInputStreamWithClassLoader(
-          serialize(OBJECT_TO_SERIALIZE), (ClassLoader) null)) {
-        // exception expected
-      }
-    });
+  @Test(expected = NullPointerException.class)
+  public void shouldFailFastWhenClassLoaderNull() throws Exception {
+    try (ObjectInputStreamWithClassLoader in = new ObjectInputStreamWithClassLoader(
+        serialize(OBJECT_TO_SERIALIZE), (ClassLoader) null)) {
+      // exception expected
+    }
   }
 
   @Test
-  void useCustomClassLoaderToResolveClass() throws Exception {
+  public void shouldUseCustomClassLoaderToResolveClass() throws Exception {
     String name = "testClassName";
     when(classDescription.getName()).thenReturn(name);
     try (ObjectInputStreamWithClassLoader underTest = new ObjectInputStreamWithClassLoader(
@@ -79,7 +76,7 @@ class ObjectInputStreamWithClassLoaderTest
   }
 
   @Test
-  void deserializeUsingCustomClassLoader() throws Exception {
+  public void shouldDeserializeUsingCustomClassLoader() throws Exception {
     String contents = "contents";
     TestFixture deserialized;
     try (ObjectInputStream objects = new ObjectInputStreamWithClassLoader(
@@ -89,18 +86,16 @@ class ObjectInputStreamWithClassLoaderTest
     assertThat(deserialized.contents, is(equalTo(contents)));
   }
 
-  @Test
-  void failFastWhenLoadingFunctionNull() {
-    assertThrows(NullPointerException.class, () -> {
-      try (ObjectInputStreamWithClassLoader in = new ObjectInputStreamWithClassLoader(
-          serialize(OBJECT_TO_SERIALIZE), (LoadingFunction) null)) {
-        // exception expected
-      }
-    });
+  @Test(expected = NullPointerException.class)
+  public void shouldFailFastWhenLoadingFunctionNull() throws Exception {
+    try (ObjectInputStreamWithClassLoader in = new ObjectInputStreamWithClassLoader(
+        serialize(OBJECT_TO_SERIALIZE), (LoadingFunction) null)) {
+      // exception expected
+    }
   }
 
   @Test
-  void useCustomLoadingFunctionToResolveClass() throws Exception {
+  public void shouldUseCustomLoadingFunctionToResolveClass() throws Exception {
     String name = "testClassName";
     when(classDescription.getName()).thenReturn(name);
     doReturn(getClass()).when(loadingFunction).loadClass(anyString());
@@ -115,7 +110,7 @@ class ObjectInputStreamWithClassLoaderTest
   }
 
   @Test
-  void deserializeUsingCustomLoadingFunction() throws Exception {
+  public void shouldDeserializeUsingCustomLoadingFunction() throws Exception {
     String contents = "contents";
     TestFixture deserialized;
     doReturn(TestFixture.class).when(loadingFunction).loadClass(anyString());
@@ -148,7 +143,6 @@ class ObjectInputStreamWithClassLoaderTest
   private static class TestClassLoader
       extends ClassLoader
   {
-
     private final Map<String, Class<?>> classes = new HashMap<>();
 
     @Override

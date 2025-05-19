@@ -13,7 +13,10 @@
 package org.sonatype.nexus.common.entity;
 
 import java.util.Collections;
+import java.util.SequencedCollection;
 import java.util.List;
+
+import static java.lang.StringTemplate.STR;
 
 import org.sonatype.nexus.common.event.HasAffinity;
 
@@ -22,7 +25,7 @@ import org.sonatype.nexus.common.event.HasAffinity;
  *
  * @since 3.1
  */
-public record EntityBatchEvent(List<EntityEvent> events) 
+public class EntityBatchEvent
     implements HasAffinity
 {
   /**
@@ -34,17 +37,31 @@ public record EntityBatchEvent(List<EntityEvent> events)
     // empty
   }
 
-  /**
-   * Creates a new EntityBatchEvent with the given events.
-   * 
-   * @param events the list of entity events to batch
-   */
+  private final List<EntityEvent> events;
+
   public EntityBatchEvent(final List<EntityEvent> events) {
     this.events = Collections.unmodifiableList(events);
   }
 
+  public List<EntityEvent> getEvents() {
+    return events;
+  }
+
   @Override
   public String getAffinity() {
-    return events.get(0).getAffinity(); // first event in the batch declares the affinity for the rest
+    // Use pattern matching for safer handling of the first event
+    if (events instanceof SequencedCollection<EntityEvent> seq && !seq.isEmpty()) {
+      return seq.getFirst().getAffinity(); // first event in the batch declares the affinity for the rest
+    } else if (!events.isEmpty()) {
+      return events.get(0).getAffinity(); // fallback for regular List implementation
+    }
+    return null; // Handle empty list case
+  }
+
+  @Override
+  public String toString() {
+    return STR."\{getClass().getSimpleName()}{"
+        + "events=\{events}"
+        + "}";
   }
 }

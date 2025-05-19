@@ -40,7 +40,9 @@ public class TemplateParameters
   }
 
   public TemplateParameters setAll(final Map<String, Object> entries) {
-    params.putAll(entries);
+    if (entries != null) {
+      params.putAll(entries);
+    }
     return this;
   }
 
@@ -50,8 +52,6 @@ public class TemplateParameters
 
   @Override
   public String toString() {
-    return getClass().getSimpleName() + "{" +
-        "params=" + params +
-        '}';
+    return STR."\{getClass().getSimpleName()}\{params=\{params}\}";
   }
 }

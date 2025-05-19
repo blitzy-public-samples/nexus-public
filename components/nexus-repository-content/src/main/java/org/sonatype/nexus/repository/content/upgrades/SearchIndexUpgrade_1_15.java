@@ -29,6 +29,7 @@ public class SearchIndexUpgrade_1_15
 {
   @Override
   public Optional<String> version() {
-    return Optional.of("1.15");
+    // Using String Templates for consistent version formatting
+    return Optional.of(STR."1.15");
   }
 }

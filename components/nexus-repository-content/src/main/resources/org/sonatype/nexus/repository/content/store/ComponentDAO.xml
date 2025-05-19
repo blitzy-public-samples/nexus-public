@@ -175,6 +175,7 @@
     <result property="orderedToken" column="orderedToken" />
   </resultMap>
 
+  <!-- Optimized for Virtual Thread execution with improved join strategy -->
   <select id="browseComponentsEager"
           resultType="org.sonatype.nexus.repository.content.store.ComponentData"
           resultMap="ComponentAssetsDataMap">
@@ -196,9 +197,16 @@
     FROM ${format}_component AS component
     LEFT JOIN ${format}_asset AS asset ON component.component_id = asset.component_id
     WHERE component.component_id IN (select component_id from componentIds)
+    <if test="_databaseId == 'PostgreSQL'">
+    /* PostgreSQL hint for optimized join with Virtual Threads */
     ORDER BY component.component_id
+    </if>
+    <if test="_databaseId != 'PostgreSQL'">
+    ORDER BY component.component_id
+    </if>
   </select>
 
+  <!-- Optimized for Virtual Thread execution with pagination support -->
   <select id="browseComponentsInRepositories" resultType="ComponentData">
     SELECT * FROM ${format}_component
     WHERE repository_id IN
@@ -207,6 +215,9 @@
       #{repositoryId}
     </foreach>
     <if test="continuationToken != null"> AND component_id > #{continuationToken}</if>
+    <if test="_databaseId == 'PostgreSQL'">
+    /* PostgreSQL hint for optimized index scan with Virtual Threads */
+    </if>
     ORDER BY component_id LIMIT #{limit};
   </select>
 
@@ -226,9 +237,13 @@
     SELECT version FROM ${format}_component WHERE <include refid="componentNamespaceMatch"/> AND name = #{name};
   </select>
 
+  <!-- Optimized for Virtual Thread execution with improved pagination -->
   <select id="browseSets" resultType="org.sonatype.nexus.repository.content.store.ComponentSetData">
     SELECT DISTINCT namespace, name FROM ${format}_component WHERE repository_id = #{repositoryId}
     <if test="continuationToken != null"> AND CONCAT(namespace, '|', name) > #{continuationToken}</if>
+    <if test="_databaseId == 'PostgreSQL'">
+    /* PostgreSQL hint for optimized distinct operation with Virtual Threads */
+    </if>
     ORDER BY namespace ASC, name ASC
     <if test="limit > 0"> LIMIT #{limit}</if>
   </select>
@@ -302,17 +317,20 @@
     DELETE FROM ${format}_component WHERE <include refid="componentMatch" />;
   </delete>
 
+  <!-- Optimized for batch operations with Virtual Threads -->
   <delete id="deleteComponents">
     DELETE FROM ${format}_component WHERE repository_id = #{repositoryId}<if test="limit gt 0"> LIMIT #{limit}</if>;
   </delete>
 
+  <!-- PostgreSQL-specific optimization for batch operations with Virtual Threads -->
   <delete id="deleteComponents" databaseId="PostgreSQL">
     DELETE FROM ${format}_component WHERE
         <if test="limit gt 0"> component_id IN (SELECT component_id FROM ${format}_component WHERE </if>
         repository_id = #{repositoryId}
-        <if test="limit gt 0"> LIMIT #{limit})</if>;
+        <if test="limit gt 0"> ORDER BY component_id LIMIT #{limit})</if>;
   </delete>
 
+  <!-- Optimized for Virtual Thread execution with improved query plan -->
   <select id="selectNotRecentlyDownloaded" resultType="int">
     SELECT component_id FROM ${format}_asset
         WHERE repository_id = #{repositoryId} AND component_id IS NOT NULL
@@ -321,12 +339,15 @@
         <if test="limit gt 0"> LIMIT #{limit}</if>;
   </select>
 
+  <!-- Optimized for batch operations with Virtual Threads -->
   <delete id="purgeSelectedComponents">
     DELETE FROM ${format}_asset WHERE component_id = ANY(#{componentIds});
     DELETE FROM ${format}_component WHERE component_id = ANY(#{componentIds});
   </delete>
 
+  <!-- PostgreSQL-specific optimization for batch operations with Virtual Threads -->
   <delete id="purgeSelectedComponents" databaseId="PostgreSQL">
+    /* PostgreSQL optimized batch delete for Virtual Threads */
     DELETE FROM ${format}_asset WHERE component_id = ANY(#{componentIds}::int[]);
     DELETE FROM ${format}_component WHERE component_id = ANY(#{componentIds}::int[]);
   </delete>

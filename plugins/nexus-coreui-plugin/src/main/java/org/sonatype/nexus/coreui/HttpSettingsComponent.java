@@ -15,7 +15,7 @@ package org.sonatype.nexus.coreui;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import javax.annotation.Nullable;
@@ -72,9 +72,8 @@ public class HttpSettingsComponent
   private final SecretsService secretsService;
   
   /**
-   * ExecutorService using Virtual Threads for I/O-bound operations.
-   * Virtual threads are lightweight and efficient for operations that spend most of their time
-   * waiting for I/O, such as HTTP client operations and database access.
+   * Virtual Thread executor for I/O-bound operations.
+   * Using Virtual Threads improves concurrency for HTTP and encryption operations.
    */
   private final ExecutorService virtualThreadExecutor;
 
@@ -94,15 +93,11 @@ public class HttpSettingsComponent
   @RequiresPermissions("nexus:settings:read")
   public HttpSettingsXO read() {
     try {
-      // Execute the I/O-bound operation in a virtual thread for improved scalability
-      CompletableFuture<HttpClientConfiguration> configFuture = CompletableFuture.supplyAsync(
-          httpClientManager::getConfiguration, virtualThreadExecutor);
-      
-      // Convert the configuration to XO once retrieved
-      return convert(configFuture.join());
+      // Execute the I/O-bound operation in a Virtual Thread for improved concurrency
+      return executeWithVirtualThread(() -> convert(httpClientManager.getConfiguration()));
     } catch (Exception e) {
-      log.error("Error retrieving HTTP settings", e);
-      throw e;
+      log.error("Error reading HTTP settings", e);
+      throw new RuntimeException("Failed to read HTTP settings", e);
     }
   }
 
@@ -146,34 +141,37 @@ public class HttpSettingsComponent
   @Validate
   public HttpSettingsXO update(@NotNull @Valid final HttpSettingsXO settings) {
     try {
-      // Get the current configuration using a virtual thread
-      CompletableFuture<HttpClientConfiguration> previousFuture = CompletableFuture.supplyAsync(
-          httpClientManager::getConfiguration, virtualThreadExecutor);
-      
-      HttpClientConfiguration previous = previousFuture.join();
-      HttpClientConfiguration model = null;
-      
-      try {
-        model = convert(settings, previous);
-      }
-      catch (Exception e) {
+      // Execute the I/O-bound operation in a Virtual Thread for improved concurrency
+      return executeWithVirtualThread(() -> {
+        HttpClientConfiguration previous = httpClientManager.getConfiguration();
+        HttpClientConfiguration model = null;
+        try {
+          model = convert(settings, previous);
+        }
+        catch (Exception e) {
+          removeSecrets(previous, model);
+          throw e;
+        }
+        httpClientManager.setConfiguration(model);
         removeSecrets(previous, model);
-        throw e;
-      }
-      
-      // Set the new configuration using a virtual thread
-      CompletableFuture<Void> setConfigFuture = CompletableFuture.runAsync(
-          () -> httpClientManager.setConfiguration(model), virtualThreadExecutor);
-      
-      // Wait for the configuration to be set
-      setConfigFuture.join();
-      
-      removeSecrets(previous, model);
-      return read();
+        return read();
+      });
     } catch (Exception e) {
       log.error("Error updating HTTP settings", e);
-      throw e;
+      throw new RuntimeException("Failed to update HTTP settings", e);
     }
+  }
+
+  /**
+   * Executes a callable task using a Virtual Thread for improved concurrency with I/O operations.
+   * Virtual Threads are lightweight and efficient for I/O-bound operations like HTTP requests and encryption.
+   *
+   * @param task The task to execute
+   * @return The result of the task
+   * @throws Exception If the task execution fails
+   */
+  private <T> T executeWithVirtualThread(Callable<T> task) throws Exception {
+    return virtualThreadExecutor.submit(task).get();
   }
 
   private HttpClientConfiguration convert(final HttpSettingsXO value, final HttpClientConfiguration previous) {
@@ -266,15 +264,10 @@ public class HttpSettingsComponent
       return previous;
     }
     else {
-      // Execute encryption in a virtual thread as it may involve I/O operations
-      CompletableFuture<Secret> encryptFuture = CompletableFuture.supplyAsync(
-          () -> secretsService.encryptMaven(
-              AuthenticationConfiguration.AUTHENTICATION_CONFIGURATION,
-              password.toCharArray(),
-              UserIdHelper.get()),
-          virtualThreadExecutor);
-      
-      return encryptFuture.join();
+      return secretsService.encryptMaven(
+          AuthenticationConfiguration.AUTHENTICATION_CONFIGURATION,
+          password.toCharArray(),
+          UserIdHelper.get());
     }
   }
 
@@ -291,17 +284,11 @@ public class HttpSettingsComponent
     if (authConfig != null) {
       if (NtlmAuthenticationConfiguration.TYPE.equals(authConfig.getType())) {
         NtlmAuthenticationConfiguration ntlmAuth = (NtlmAuthenticationConfiguration) authConfig;
-        // Execute secret removal in a virtual thread as it may involve I/O operations
-        CompletableFuture.runAsync(
-            () -> secretsService.remove(ntlmAuth.getPassword()),
-            virtualThreadExecutor);
+        secretsService.remove(ntlmAuth.getPassword());
       }
       else {
         UsernameAuthenticationConfiguration userNameAuth = (UsernameAuthenticationConfiguration) authConfig;
-        // Execute secret removal in a virtual thread as it may involve I/O operations
-        CompletableFuture.runAsync(
-            () -> secretsService.remove(userNameAuth.getPassword()),
-            virtualThreadExecutor);
+        secretsService.remove(userNameAuth.getPassword());
       }
     }
   }

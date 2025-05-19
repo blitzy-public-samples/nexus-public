@@ -21,15 +21,12 @@ import static org.hamcrest.Matchers.is;
 
 /**
  * Tests for {@link Plural}
- *
- * @since 3.0
- * @see Plural
  */
-class PluralTest
+public class PluralTest
     extends TestSupport
 {
   @Test
-  void testSimplePlural() {
+  public void simplePluralShouldReturnCorrectForm() {
     assertThat(Plural.of(-1, "dog"), is("-1 dogs"));
     assertThat(Plural.of(0, "dog"), is("0 dogs"));
     assertThat(Plural.of(1, "dog"), is("1 dog"));
@@ -37,7 +34,7 @@ class PluralTest
   }
 
   @Test
-  void testComplexPlural() {
+  public void complexPluralShouldReturnCorrectForm() {
     assertThat(Plural.of(-1, "candy", "candies"), is("-1 candies"));
     assertThat(Plural.of(0, "candy", "candies"), is("0 candies"));
     assertThat(Plural.of(1, "candy", "candies"), is("1 candy"));

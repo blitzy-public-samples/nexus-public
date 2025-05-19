@@ -17,6 +17,10 @@ import java.io.InputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -54,16 +58,18 @@ public abstract class GenerateChecksumTaskSupport
 {
   private static class ResultCount
   {
-    int updated;
+    AtomicInteger updated = new AtomicInteger(0);
 
-    int skipped;
+    AtomicInteger skipped = new AtomicInteger(0);
 
-    int error;
+    AtomicInteger error = new AtomicInteger(0);
 
-    int total;
+    AtomicInteger total = new AtomicInteger(0);
   }
 
   private static final int ASSET_BROWSE_LIMIT = 100;
+  
+  private static final int VIRTUAL_THREAD_BATCH_SIZE = 25;
 
   private int bufferSize;
 
@@ -96,17 +102,45 @@ public abstract class GenerateChecksumTaskSupport
     ResultCount resultCount = new ResultCount();
     try (ProgressLogIntervalHelper progressLogger = new ProgressLogIntervalHelper(log, 60)) {
       while (!isCanceled() && !assets.isEmpty()) {
-        assets.forEach(asset -> processAssetChecksums(blobStore, assetBlobStore, asset, resultCount, progressLogger));
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+          // Process assets in parallel batches using Virtual Threads
+          for (FluentAsset asset : assets) {
+            executor.submit(() -> {
+              try {
+                processAssetChecksums(blobStore, assetBlobStore, asset, resultCount, progressLogger);
+              }
+              catch (Exception e) {
+                log.error("Error processing asset: {}", asset.path(), e);
+                resultCount.error.incrementAndGet();
+              }
+              return null;
+            });
+          }
+          
+          // Wait for all tasks to complete before moving to the next batch
+          executor.shutdown();
+          if (!executor.awaitTermination(5, TimeUnit.MINUTES)) {
+            log.warn("Timeout waiting for asset processing to complete");
+            executor.shutdownNow();
+          }
+        }
+        catch (InterruptedException e) {
+          log.warn("Task interrupted while waiting for asset processing");
+          Thread.currentThread().interrupt();
+          throw new TaskInterruptedException("Task interrupted", e);
+        }
+        
+        // Get the next batch of assets
         assets = contentFacet.assets().browse(ASSET_BROWSE_LIMIT, assets.nextContinuationToken());
       }
     }
     catch (TaskInterruptedException ex) {
       log.warn("Task interrupted. Processed {} assets. {} updated, {} skipped, {} errors.",
-          resultCount.total, resultCount.updated, resultCount.skipped, resultCount.error);
+          resultCount.total.get(), resultCount.updated.get(), resultCount.skipped.get(), resultCount.error.get());
       throw ex;
     }
     log.info("Completed processing a total of {} assets. {} updated, {} skipped, {} errors.",
-        resultCount.total, resultCount.updated, resultCount.skipped, resultCount.error);
+        resultCount.total.get(), resultCount.updated.get(), resultCount.skipped.get(), resultCount.error.get());
   }
 
   private void processAssetChecksums(
@@ -130,47 +164,56 @@ public abstract class GenerateChecksumTaskSupport
             log.debug("Updating blob SHA256 checksum for asset: {}, blobID: {}, checksum: {}",
                 assetPath, blobId, sha256);
             assetBlobStore.setChecksums(assetBlob, checksums);
-            resultCount.updated++;
+            resultCount.updated.incrementAndGet();
           }
           else {
             log.debug("Unable to create SHA256 checksum for asset: {}, blobID: {}", assetPath, blobId);
-            resultCount.error++;
+            resultCount.error.incrementAndGet();
           }
         }
         else {
           log.debug("No Blob associated with asset: {}. Skipping", assetPath);
-          resultCount.skipped++;
+          resultCount.skipped.incrementAndGet();
         }
       }
+      else {
+        log.debug("SHA256 checksum already present for asset: {}. Skipping", assetPath);
+        resultCount.skipped.incrementAndGet();
+      }
     }
-    else {
-      log.debug("SHA256 checksum already present for asset: {}. Skipping", assetPath);
-      resultCount.skipped++;
-    }
-    resultCount.total++;
+    resultCount.total.incrementAndGet();
     progressLogger.info("Elapsed time: {}. Processed {} assets. {} updated, {} skipped, {} errors.",
-        progressLogger.getElapsed(), resultCount.total, resultCount.updated, resultCount.skipped, resultCount.error);
+        progressLogger.getElapsed(), resultCount.total.get(), resultCount.updated.get(), 
+        resultCount.skipped.get(), resultCount.error.get());
   }
 
   private String calculateBlobChecksum(final Blob blob, final String assetPath) {
     log.debug("Calculating SHA256 checksum for {}", assetPath);
-    try (InputStream inputStream = blob.getInputStream()) {
-      int bytesRead = 0;
-      byte[] buffer = new byte[bufferSize];
-      while (bytesRead != -1) {
-        bytesRead = inputStream.read(buffer);
-        if (bytesRead > 0) {
-          messageDigest.update(buffer, 0, bytesRead);
+    try {
+      // Use a virtual thread for I/O-bound checksum calculation
+      return Thread.ofVirtual().name("checksum-" + assetPath).call(() -> {
+        try (InputStream inputStream = blob.getInputStream()) {
+          int bytesRead;
+          byte[] buffer = new byte[bufferSize];
+          MessageDigest localDigest = (MessageDigest) messageDigest.clone();
+          
+          while ((bytesRead = inputStream.read(buffer)) != -1) {
+            // Check for cancellation during long-running operations
+            CancelableHelper.checkCancellation();
+            if (bytesRead > 0) {
+              localDigest.update(buffer, 0, bytesRead);
+            }
+          }
+          return HashCode.fromBytes(localDigest.digest()).toString();
         }
-      }
-      return HashCode.fromBytes(messageDigest.digest()).toString();
+      });
     }
-    catch (IOException e) {
+    catch (Exception e) {
       log.warn(String.format("Exception whilst calculating SHA256 checksum for %s: %s", assetPath,
               e.getLocalizedMessage()),
           log.isDebugEnabled() ? e : null);
+      return null;
     }
-    return null;
   }
 
   @Override

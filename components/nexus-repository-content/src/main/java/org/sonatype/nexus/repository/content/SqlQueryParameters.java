@@ -12,6 +12,17 @@
  */
 package org.sonatype.nexus.repository.content;
 
+/**
+ * A marker interface for SQL query parameters.
+ * <p>
+ * This interface serves as a type tag for classes that represent SQL query parameters,
+ * allowing for type-safe parameter handling in repository content operations.
+ * <p>
+ * As a marker interface, it defines no methods but provides runtime type information
+ * that can be used with pattern matching and type checking in Java 21.
+ *
+ * @since 3.0
+ */
 public interface SqlQueryParameters
 {
 }

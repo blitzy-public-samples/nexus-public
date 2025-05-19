@@ -12,51 +12,33 @@
  */
 package org.sonatype.nexus.common.entity;
 
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.VarHandle;
-
 import javax.annotation.Nullable;
 
 // This class is intentionally uber-simple, DO NOT add more helpers to this implementation.
 
 /**
- * Abstract implementation of {@link Entity} that provides thread-safe management of entity metadata
- * using Java 21 concurrency primitives.
- *
+ * Abstract implementation of {@link Entity} that provides a thread-safe metadata field.
+ * 
+ * <p>The metadata field is declared as volatile to ensure visibility across threads,
+ * including virtual threads in Java 21. This guarantees that any thread reading the
+ * metadata field will see the most recent write by any other thread.</p>
+ * 
  * @see EntityHelper
  * @since 3.7
  */
 public abstract class AbstractEntity
     implements Entity
 {
-  /**
-   * Entity metadata field, managed with a VarHandle for improved thread-safety and performance in Java 21.
-   * The field remains transient to prevent serialization of metadata.
-   */
-  private transient EntityMetadata metadata;
-  
-  /**
-   * VarHandle for thread-safe access to the metadata field.
-   * This provides the same memory visibility guarantees as volatile but with potentially better performance.
-   */
-  private static final VarHandle METADATA;
-  
-  static {
-    try {
-      METADATA = MethodHandles.lookup().findVarHandle(AbstractEntity.class, "metadata", EntityMetadata.class);
-    } catch (ReflectiveOperationException e) {
-      throw new ExceptionInInitializerError(e);
-    }
-  }
+  // Volatile ensures memory visibility across threads (including virtual threads in Java 21)
+  // This guarantees that reads will always see the most recent write to this field
+  private transient volatile EntityMetadata metadata;
 
   @Nullable
   public EntityMetadata getEntityMetadata() {
-    // Use getVolatile to maintain the same memory visibility guarantees as the previous volatile field
-    return (EntityMetadata) METADATA.getVolatile(this);
+    return metadata;
   }
 
   public void setEntityMetadata(@Nullable final EntityMetadata metadata) {
-    // Use setVolatile to maintain the same memory visibility guarantees as the previous volatile field
-    METADATA.setVolatile(this, metadata);
+    this.metadata = metadata;
   }
 }

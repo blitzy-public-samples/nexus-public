@@ -17,21 +17,11 @@ import java.lang.StringTemplate;
 import org.slf4j.Logger;
 import org.slf4j.Marker;
 
-import static java.lang.StringTemplate.STR;
-
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 
 /**
  * A delegating {@link Logger} that logs using a {@link Marker} by default.
- * <p>
- * This implementation also provides methods for logging with Java 21 String Templates.
- * <p>
- * Example usage with String Templates:
- * <pre>
- * String name = "World";
- * int value = 42;
- * logger.info(STR."Hello \{name}! The answer is \{value}");
- * </pre>
  * 
  * @since 3.4
  */
@@ -82,6 +72,16 @@ public class MarkedLogger
     trace(marker, msg, t);
   }
 
+  /**
+   * Log a message with the TRACE level using a String Template.
+   * 
+   * @param template the StringTemplate to log
+   * @since 3.60
+   */
+  public void trace(final StringTemplate template) {
+    trace(marker, template);
+  }
+
   @Override
   public boolean isTraceEnabled(final Marker marker) {
     return delegate.isTraceEnabled(marker);
@@ -110,6 +110,19 @@ public class MarkedLogger
   @Override
   public void trace(final Marker marker, final String msg, final Throwable t) {
     delegate.trace(marker, msg, t);
+  }
+
+  /**
+   * Log a message with the TRACE level using a String Template and a marker.
+   * 
+   * @param marker the marker data specific to this log statement
+   * @param template the StringTemplate to log
+   * @since 3.60
+   */
+  public void trace(final Marker marker, final StringTemplate template) {
+    if (isTraceEnabled(marker)) {
+      delegate.trace(marker, STR.process(template));
+    }
   }
 
   @Override
@@ -142,6 +155,16 @@ public class MarkedLogger
     debug(marker, msg, t);
   }
 
+  /**
+   * Log a message with the DEBUG level using a String Template.
+   * 
+   * @param template the StringTemplate to log
+   * @since 3.60
+   */
+  public void debug(final StringTemplate template) {
+    debug(marker, template);
+  }
+
   @Override
   public boolean isDebugEnabled(final Marker marker) {
     return delegate.isDebugEnabled(marker);
@@ -170,6 +193,19 @@ public class MarkedLogger
   @Override
   public void debug(final Marker marker, final String msg, final Throwable t) {
     delegate.debug(marker, msg, t);
+  }
+
+  /**
+   * Log a message with the DEBUG level using a String Template and a marker.
+   * 
+   * @param marker the marker data specific to this log statement
+   * @param template the StringTemplate to log
+   * @since 3.60
+   */
+  public void debug(final Marker marker, final StringTemplate template) {
+    if (isDebugEnabled(marker)) {
+      delegate.debug(marker, STR.process(template));
+    }
   }
 
   @Override
@@ -202,6 +238,16 @@ public class MarkedLogger
     info(marker, msg, t);
   }
 
+  /**
+   * Log a message with the INFO level using a String Template.
+   * 
+   * @param template the StringTemplate to log
+   * @since 3.60
+   */
+  public void info(final StringTemplate template) {
+    info(marker, template);
+  }
+
   @Override
   public boolean isInfoEnabled(final Marker marker) {
     return delegate.isInfoEnabled(marker);
@@ -230,6 +276,19 @@ public class MarkedLogger
   @Override
   public void info(final Marker marker, final String msg, final Throwable t) {
     delegate.info(marker, msg, t);
+  }
+
+  /**
+   * Log a message with the INFO level using a String Template and a marker.
+   * 
+   * @param marker the marker data specific to this log statement
+   * @param template the StringTemplate to log
+   * @since 3.60
+   */
+  public void info(final Marker marker, final StringTemplate template) {
+    if (isInfoEnabled(marker)) {
+      delegate.info(marker, STR.process(template));
+    }
   }
 
   @Override
@@ -262,6 +321,16 @@ public class MarkedLogger
     warn(marker, msg, t);
   }
 
+  /**
+   * Log a message with the WARN level using a String Template.
+   * 
+   * @param template the StringTemplate to log
+   * @since 3.60
+   */
+  public void warn(final StringTemplate template) {
+    warn(marker, template);
+  }
+
   @Override
   public boolean isWarnEnabled(final Marker marker) {
     return delegate.isWarnEnabled(marker);
@@ -290,6 +359,19 @@ public class MarkedLogger
   @Override
   public void warn(final Marker marker, final String msg, final Throwable t) {
     delegate.warn(marker, msg, t);
+  }
+
+  /**
+   * Log a message with the WARN level using a String Template and a marker.
+   * 
+   * @param marker the marker data specific to this log statement
+   * @param template the StringTemplate to log
+   * @since 3.60
+   */
+  public void warn(final Marker marker, final StringTemplate template) {
+    if (isWarnEnabled(marker)) {
+      delegate.warn(marker, STR.process(template));
+    }
   }
 
   @Override
@@ -322,6 +404,16 @@ public class MarkedLogger
     error(marker, msg, t);
   }
 
+  /**
+   * Log a message with the ERROR level using a String Template.
+   * 
+   * @param template the StringTemplate to log
+   * @since 3.60
+   */
+  public void error(final StringTemplate template) {
+    error(marker, template);
+  }
+
   @Override
   public boolean isErrorEnabled(final Marker marker) {
     return delegate.isErrorEnabled(marker);
@@ -351,149 +443,12 @@ public class MarkedLogger
   public void error(final Marker marker, final String msg, final Throwable t) {
     delegate.error(marker, msg, t);
   }
-  
+
   /**
-   * Log a message using a Java 21 String Template at the TRACE level.
-   * <p>
-   * Example usage:
-   * <pre>
-   * String name = "World";
-   * int value = 42;
-   * logger.trace(STR."Hello \{name}! The answer is \{value}");
-   * </pre>
-   * 
-   * @param template the string template to log
-   * @since 3.60
-   */
-  public void trace(final StringTemplate template) {
-    trace(marker, template);
-  }
-  
-  /**
-   * Log a message using a Java 21 String Template at the TRACE level according to the specified marker.
+   * Log a message with the ERROR level using a String Template and a marker.
    * 
    * @param marker the marker data specific to this log statement
-   * @param template the string template to log
-   * @since 3.60
-   */
-  public void trace(final Marker marker, final StringTemplate template) {
-    if (isTraceEnabled(marker)) {
-      delegate.trace(marker, STR.process(template));
-    }
-  }
-  
-  /**
-   * Log a message using a Java 21 String Template at the DEBUG level.
-   * <p>
-   * Example usage:
-   * <pre>
-   * String name = "World";
-   * int value = 42;
-   * logger.debug(STR."Hello \{name}! The answer is \{value}");
-   * </pre>
-   * 
-   * @param template the string template to log
-   * @since 3.60
-   */
-  public void debug(final StringTemplate template) {
-    debug(marker, template);
-  }
-  
-  /**
-   * Log a message using a Java 21 String Template at the DEBUG level according to the specified marker.
-   * 
-   * @param marker the marker data specific to this log statement
-   * @param template the string template to log
-   * @since 3.60
-   */
-  public void debug(final Marker marker, final StringTemplate template) {
-    if (isDebugEnabled(marker)) {
-      delegate.debug(marker, STR.process(template));
-    }
-  }
-  
-  /**
-   * Log a message using a Java 21 String Template at the INFO level.
-   * <p>
-   * Example usage:
-   * <pre>
-   * String name = "World";
-   * int value = 42;
-   * logger.info(STR."Hello \{name}! The answer is \{value}");
-   * </pre>
-   * 
-   * @param template the string template to log
-   * @since 3.60
-   */
-  public void info(final StringTemplate template) {
-    info(marker, template);
-  }
-  
-  /**
-   * Log a message using a Java 21 String Template at the INFO level according to the specified marker.
-   * 
-   * @param marker the marker data specific to this log statement
-   * @param template the string template to log
-   * @since 3.60
-   */
-  public void info(final Marker marker, final StringTemplate template) {
-    if (isInfoEnabled(marker)) {
-      delegate.info(marker, STR.process(template));
-    }
-  }
-  
-  /**
-   * Log a message using a Java 21 String Template at the WARN level.
-   * <p>
-   * Example usage:
-   * <pre>
-   * String name = "World";
-   * int value = 42;
-   * logger.warn(STR."Hello \{name}! The answer is \{value}");
-   * </pre>
-   * 
-   * @param template the string template to log
-   * @since 3.60
-   */
-  public void warn(final StringTemplate template) {
-    warn(marker, template);
-  }
-  
-  /**
-   * Log a message using a Java 21 String Template at the WARN level according to the specified marker.
-   * 
-   * @param marker the marker data specific to this log statement
-   * @param template the string template to log
-   * @since 3.60
-   */
-  public void warn(final Marker marker, final StringTemplate template) {
-    if (isWarnEnabled(marker)) {
-      delegate.warn(marker, STR.process(template));
-    }
-  }
-  
-  /**
-   * Log a message using a Java 21 String Template at the ERROR level.
-   * <p>
-   * Example usage:
-   * <pre>
-   * String name = "World";
-   * int value = 42;
-   * logger.error(STR."Hello \{name}! The answer is \{value}");
-   * </pre>
-   * 
-   * @param template the string template to log
-   * @since 3.60
-   */
-  public void error(final StringTemplate template) {
-    error(marker, template);
-  }
-  
-  /**
-   * Log a message using a Java 21 String Template at the ERROR level according to the specified marker.
-   * 
-   * @param marker the marker data specific to this log statement
-   * @param template the string template to log
+   * @param template the StringTemplate to log
    * @since 3.60
    */
   public void error(final Marker marker, final StringTemplate template) {

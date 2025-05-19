@@ -12,15 +12,21 @@
  */
 package org.sonatype.nexus.common.encoding;
 
-import org.junit.jupiter.api.Test;
+import org.sonatype.nexus.virtualthread.Java21TestGroup;
+
+import org.junit.Test;
+import org.junit.experimental.categories.Category;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.arrayContaining;
 import static org.hamcrest.Matchers.is;
 
 /**
- * Tests for {@link EncodingUtil} class.
+ * Tests for {@link EncodingUtil}.
+ *
+ * @since 3.60.0
  */
+@Category(Java21TestGroup.class)
 public class EncodingUtilTest
 {
   @Test

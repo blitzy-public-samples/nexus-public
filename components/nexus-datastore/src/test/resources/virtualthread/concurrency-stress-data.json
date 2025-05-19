@@ -1,0 +1,423 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "description": "Test data for virtual thread concurrency stress testing in Nexus Repository Manager",
+    "created": "2024-05-19",
+    "javaVersion": "21",
+    "purpose": "Validate datastore resilience under extreme virtual thread parallelism",
+    "notes": "This file provides standardized test data for creating high-concurrency scenarios that validate thread contention scenarios"
+  },
+  "testScenarios": [
+    {
+      "name": "read_heavy_workload",
+      "description": "Test scenario with many concurrent read operations to validate virtual thread scaling",
+      "configuration": {
+        "threadCount": 10000,
+        "operationsPerThread": 50,
+        "readWriteRatio": 0.9,
+        "maxDurationSeconds": 60,
+        "batchSize": 1
+      },
+      "validationCriteria": {
+        "minThroughputOpsPerSec": 5000,
+        "maxResponseTimeMs": 500,
+        "maxErrorRate": 0.001,
+        "minScalingEfficiency": 0.9
+      },
+      "samplePayloads": [
+        {
+          "id": "small_payload",
+          "size": "small",
+          "contentSizeBytes": 1024,
+          "content": "base64:SGVsbG8sIHRoaXMgaXMgYSBzbWFsbCBwYXlsb2FkIGZvciB0ZXN0aW5nIHZpcnR1YWwgdGhyZWFkcyBpbiBOZXh1cyBSZXBvc2l0b3J5IE1hbmFnZXIuIFRoaXMgcGF5bG9hZCBpcyBtZWFudCB0byBzaW11bGF0ZSBzbWFsbCBtZXRhZGF0YSByZXF1ZXN0cy4="
+        },
+        {
+          "id": "medium_payload",
+          "size": "medium",
+          "contentSizeBytes": 10240,
+          "content": "base64:SGVsbG8sIHRoaXMgaXMgYSBtZWRpdW0gc2l6ZWQgcGF5bG9hZCBmb3IgdGVzdGluZyB2aXJ0dWFsIHRocmVhZHMgaW4gTmV4dXMgUmVwb3NpdG9yeSBNYW5hZ2VyLiBUaGlzIHBheWxvYWQgaXMgbWVhbnQgdG8gc2ltdWxhdGUgbWVkaXVtIHNpemVkIGFzc2V0IG1ldGFkYXRhIHJlcXVlc3RzLg=="
+        }
+      ]
+    },
+    {
+      "name": "write_heavy_workload",
+      "description": "Test scenario with many concurrent write operations to validate virtual thread scaling under write contention",
+      "configuration": {
+        "threadCount": 5000,
+        "operationsPerThread": 20,
+        "readWriteRatio": 0.1,
+        "maxDurationSeconds": 120,
+        "batchSize": 1
+      },
+      "validationCriteria": {
+        "minThroughputOpsPerSec": 2000,
+        "maxResponseTimeMs": 1000,
+        "maxErrorRate": 0.005,
+        "minScalingEfficiency": 0.85
+      },
+      "samplePayloads": [
+        {
+          "id": "medium_payload",
+          "size": "medium",
+          "contentSizeBytes": 10240,
+          "content": "base64:SGVsbG8sIHRoaXMgaXMgYSBtZWRpdW0gc2l6ZWQgcGF5bG9hZCBmb3IgdGVzdGluZyB2aXJ0dWFsIHRocmVhZHMgaW4gTmV4dXMgUmVwb3NpdG9yeSBNYW5hZ2VyLiBUaGlzIHBheWxvYWQgaXMgbWVhbnQgdG8gc2ltdWxhdGUgbWVkaXVtIHNpemVkIGFzc2V0IG1ldGFkYXRhIHJlcXVlc3RzLg=="
+        },
+        {
+          "id": "large_payload",
+          "size": "large",
+          "contentSizeBytes": 102400,
+          "content": "base64:SGVsbG8sIHRoaXMgaXMgYSBsYXJnZSBwYXlsb2FkIGZvciB0ZXN0aW5nIHZpcnR1YWwgdGhyZWFkcyBpbiBOZXh1cyBSZXBvc2l0b3J5IE1hbmFnZXIuIFRoaXMgcGF5bG9hZCBpcyBtZWFudCB0byBzaW11bGF0ZSBsYXJnZSBhc3NldCB1cGxvYWRzLg=="
+        }
+      ]
+    },
+    {
+      "name": "mixed_workload",
+      "description": "Test scenario with mixed read/write operations to validate virtual thread scaling under realistic workloads",
+      "configuration": {
+        "threadCount": 8000,
+        "operationsPerThread": 30,
+        "readWriteRatio": 0.7,
+        "maxDurationSeconds": 180,
+        "batchSize": 1
+      },
+      "validationCriteria": {
+        "minThroughputOpsPerSec": 3000,
+        "maxResponseTimeMs": 800,
+        "maxErrorRate": 0.002,
+        "minScalingEfficiency": 0.9
+      },
+      "samplePayloads": [
+        {
+          "id": "small_payload",
+          "size": "small",
+          "contentSizeBytes": 1024,
+          "content": "base64:SGVsbG8sIHRoaXMgaXMgYSBzbWFsbCBwYXlsb2FkIGZvciB0ZXN0aW5nIHZpcnR1YWwgdGhyZWFkcyBpbiBOZXh1cyBSZXBvc2l0b3J5IE1hbmFnZXIuIFRoaXMgcGF5bG9hZCBpcyBtZWFudCB0byBzaW11bGF0ZSBzbWFsbCBtZXRhZGF0YSByZXF1ZXN0cy4="
+        },
+        {
+          "id": "medium_payload",
+          "size": "medium",
+          "contentSizeBytes": 10240,
+          "content": "base64:SGVsbG8sIHRoaXMgaXMgYSBtZWRpdW0gc2l6ZWQgcGF5bG9hZCBmb3IgdGVzdGluZyB2aXJ0dWFsIHRocmVhZHMgaW4gTmV4dXMgUmVwb3NpdG9yeSBNYW5hZ2VyLiBUaGlzIHBheWxvYWQgaXMgbWVhbnQgdG8gc2ltdWxhdGUgbWVkaXVtIHNpemVkIGFzc2V0IG1ldGFkYXRhIHJlcXVlc3RzLg=="
+        },
+        {
+          "id": "large_payload",
+          "size": "large",
+          "contentSizeBytes": 102400,
+          "content": "base64:SGVsbG8sIHRoaXMgaXMgYSBsYXJnZSBwYXlsb2FkIGZvciB0ZXN0aW5nIHZpcnR1YWwgdGhyZWFkcyBpbiBOZXh1cyBSZXBvc2l0b3J5IE1hbmFnZXIuIFRoaXMgcGF5bG9hZCBpcyBtZWFudCB0byBzaW11bGF0ZSBsYXJnZSBhc3NldCB1cGxvYWRzLg=="
+        }
+      ]
+    },
+    {
+      "name": "batch_operations",
+      "description": "Test scenario with batch operations to validate virtual thread scaling with bulk operations",
+      "configuration": {
+        "threadCount": 2000,
+        "operationsPerThread": 10,
+        "readWriteRatio": 0.5,
+        "maxDurationSeconds": 240,
+        "batchSize": 50
+      },
+      "validationCriteria": {
+        "minThroughputOpsPerSec": 10000,
+        "maxResponseTimeMs": 2000,
+        "maxErrorRate": 0.01,
+        "minScalingEfficiency": 0.8
+      },
+      "samplePayloads": [
+        {
+          "id": "batch_payload",
+          "size": "batch",
+          "contentSizeBytes": 5120,
+          "content": "base64:SGVsbG8sIHRoaXMgaXMgYSBiYXRjaCBwYXlsb2FkIGZvciB0ZXN0aW5nIHZpcnR1YWwgdGhyZWFkcyBpbiBOZXh1cyBSZXBvc2l0b3J5IE1hbmFnZXIuIFRoaXMgcGF5bG9hZCBpcyBtZWFudCB0byBzaW11bGF0ZSBiYXRjaCBvcGVyYXRpb25zLg=="
+        }
+      ]
+    },
+    {
+      "name": "pinning_detection",
+      "description": "Test scenario to detect virtual thread pinning issues with synchronized blocks",
+      "configuration": {
+        "threadCount": 1000,
+        "operationsPerThread": 100,
+        "readWriteRatio": 0.5,
+        "maxDurationSeconds": 120,
+        "batchSize": 1,
+        "jvmOptions": ["-Djdk.tracePinnedThreads=full"]
+      },
+      "validationCriteria": {
+        "minThroughputOpsPerSec": 1000,
+        "maxResponseTimeMs": 1500,
+        "maxErrorRate": 0.01,
+        "minScalingEfficiency": 0.7,
+        "maxPinnedThreads": 10
+      },
+      "samplePayloads": [
+        {
+          "id": "small_payload",
+          "size": "small",
+          "contentSizeBytes": 1024,
+          "content": "base64:SGVsbG8sIHRoaXMgaXMgYSBzbWFsbCBwYXlsb2FkIGZvciB0ZXN0aW5nIHZpcnR1YWwgdGhyZWFkcyBpbiBOZXh1cyBSZXBvc2l0b3J5IE1hbmFnZXIuIFRoaXMgcGF5bG9hZCBpcyBtZWFudCB0byBzaW11bGF0ZSBzbWFsbCBtZXRhZGF0YSByZXF1ZXN0cy4="
+        }
+      ]
+    },
+    {
+      "name": "extreme_concurrency",
+      "description": "Test scenario with extreme concurrency (100,000+ threads) to validate virtual thread scaling limits",
+      "configuration": {
+        "threadCount": 100000,
+        "operationsPerThread": 5,
+        "readWriteRatio": 0.95,
+        "maxDurationSeconds": 300,
+        "batchSize": 1
+      },
+      "validationCriteria": {
+        "minThroughputOpsPerSec": 20000,
+        "maxResponseTimeMs": 2000,
+        "maxErrorRate": 0.05,
+        "minScalingEfficiency": 0.6
+      },
+      "samplePayloads": [
+        {
+          "id": "tiny_payload",
+          "size": "tiny",
+          "contentSizeBytes": 128,
+          "content": "base64:SGVsbG8sIHRoaXMgaXMgYSB0aW55IHBheWxvYWQgZm9yIHRlc3RpbmcgdmlydHVhbCB0aHJlYWRzLg=="
+        }
+      ]
+    }
+  ],
+  "readOperationTemplates": [
+    {
+      "name": "get_asset_by_id",
+      "description": "Get asset by ID operation",
+      "template": {
+        "method": "GET",
+        "path": "/assets/{id}",
+        "parameters": {
+          "id": "UUID"
+        }
+      }
+    },
+    {
+      "name": "search_assets",
+      "description": "Search assets by criteria",
+      "template": {
+        "method": "GET",
+        "path": "/search/assets",
+        "parameters": {
+          "q": "STRING",
+          "repository": "STRING",
+          "format": "STRING",
+          "limit": "INTEGER"
+        }
+      }
+    },
+    {
+      "name": "get_component_by_id",
+      "description": "Get component by ID operation",
+      "template": {
+        "method": "GET",
+        "path": "/components/{id}",
+        "parameters": {
+          "id": "UUID"
+        }
+      }
+    }
+  ],
+  "writeOperationTemplates": [
+    {
+      "name": "create_asset",
+      "description": "Create a new asset",
+      "template": {
+        "method": "POST",
+        "path": "/assets",
+        "contentType": "application/json",
+        "body": {
+          "name": "STRING",
+          "format": "STRING",
+          "contentType": "STRING",
+          "size": "LONG",
+          "repositoryId": "UUID",
+          "componentId": "UUID",
+          "attributes": "OBJECT"
+        }
+      }
+    },
+    {
+      "name": "update_asset",
+      "description": "Update an existing asset",
+      "template": {
+        "method": "PUT",
+        "path": "/assets/{id}",
+        "parameters": {
+          "id": "UUID"
+        },
+        "contentType": "application/json",
+        "body": {
+          "name": "STRING",
+          "format": "STRING",
+          "contentType": "STRING",
+          "size": "LONG",
+          "repositoryId": "UUID",
+          "componentId": "UUID",
+          "attributes": "OBJECT"
+        }
+      }
+    },
+    {
+      "name": "delete_asset",
+      "description": "Delete an asset",
+      "template": {
+        "method": "DELETE",
+        "path": "/assets/{id}",
+        "parameters": {
+          "id": "UUID"
+        }
+      }
+    }
+  ],
+  "batchOperationTemplates": [
+    {
+      "name": "batch_create_assets",
+      "description": "Create multiple assets in a single batch operation",
+      "template": {
+        "method": "POST",
+        "path": "/assets/batch",
+        "contentType": "application/json",
+        "body": {
+          "assets": "ARRAY"
+        }
+      }
+    },
+    {
+      "name": "batch_delete_assets",
+      "description": "Delete multiple assets in a single batch operation",
+      "template": {
+        "method": "DELETE",
+        "path": "/assets/batch",
+        "contentType": "application/json",
+        "body": {
+          "ids": "ARRAY"
+        }
+      }
+    }
+  ],
+  "pinningTestCases": [
+    {
+      "name": "synchronized_block_test",
+      "description": "Test case to detect pinning with synchronized blocks",
+      "codeSnippet": "synchronized(lock) { performBlockingOperation(); }",
+      "expectedBehavior": "Thread pinning detected, carrier thread blocked",
+      "mitigation": "Replace synchronized with ReentrantLock",
+      "detectionMethod": "-Djdk.tracePinnedThreads=full",
+      "impact": "Reduces scalability by preventing carrier thread reuse"
+    },
+    {
+      "name": "native_method_test",
+      "description": "Test case to detect pinning with native methods",
+      "codeSnippet": "nativeMethod();",
+      "expectedBehavior": "Thread pinning detected, carrier thread blocked",
+      "mitigation": "Minimize use of native methods with virtual threads",
+      "detectionMethod": "JFR event jdk.VirtualThreadPinned",
+      "impact": "Blocks carrier thread during entire native method execution"
+    },
+    {
+      "name": "foreign_function_test",
+      "description": "Test case to detect pinning with foreign function calls",
+      "codeSnippet": "MemorySegment.allocateNative(100); // Foreign memory access",
+      "expectedBehavior": "Thread pinning detected, carrier thread blocked",
+      "mitigation": "Minimize use of foreign function calls with virtual threads",
+      "detectionMethod": "-Djdk.tracePinnedThreads=full",
+      "impact": "Blocks carrier thread during foreign function execution"
+    },
+    {
+      "name": "database_transaction_test",
+      "description": "Test case to detect pinning with database transactions in synchronized blocks",
+      "codeSnippet": "synchronized(dbLock) { connection.executeQuery(sql); }",
+      "expectedBehavior": "Thread pinning detected during database I/O operations",
+      "mitigation": "Use ReentrantLock instead of synchronized for database operations",
+      "detectionMethod": "JFR event jdk.VirtualThreadPinned with threshold=20ms",
+      "impact": "Severely limits database connection concurrency"
+    }
+  ],
+  "dataStoreSpecificTests": [
+    {
+      "name": "blob_store_concurrent_access",
+      "description": "Test concurrent access to blob store with virtual threads",
+      "configuration": {
+        "threadCount": 5000,
+        "operationsPerThread": 20,
+        "readWriteRatio": 0.8,
+        "maxDurationSeconds": 120
+      },
+      "validationCriteria": {
+        "minThroughputOpsPerSec": 2500,
+        "maxResponseTimeMs": 800,
+        "maxErrorRate": 0.001
+      }
+    },
+    {
+      "name": "transaction_boundary_test",
+      "description": "Test transaction boundaries with virtual threads to ensure proper isolation",
+      "configuration": {
+        "threadCount": 1000,
+        "operationsPerThread": 50,
+        "readWriteRatio": 0.5,
+        "maxDurationSeconds": 180,
+        "transactionIsolationLevel": "READ_COMMITTED"
+      },
+      "validationCriteria": {
+        "minThroughputOpsPerSec": 1500,
+        "maxResponseTimeMs": 1000,
+        "maxErrorRate": 0.002,
+        "dataConsistencyErrors": 0
+      }
+    }
+  ],
+  "monitoringMetrics": [
+    {
+      "name": "thread_count",
+      "description": "Total number of virtual threads created",
+      "unit": "count"
+    },
+    {
+      "name": "active_thread_count",
+      "description": "Number of active virtual threads",
+      "unit": "count"
+    },
+    {
+      "name": "pinned_thread_count",
+      "description": "Number of pinned virtual threads",
+      "unit": "count"
+    },
+    {
+      "name": "thread_creation_rate",
+      "description": "Rate of virtual thread creation",
+      "unit": "threads/second"
+    },
+    {
+      "name": "thread_completion_rate",
+      "description": "Rate of virtual thread completion",
+      "unit": "threads/second"
+    },
+    {
+      "name": "carrier_thread_utilization",
+      "description": "Utilization of carrier threads",
+      "unit": "percentage"
+    },
+    {
+      "name": "operation_throughput",
+      "description": "Number of operations completed per second",
+      "unit": "ops/second"
+    },
+    {
+      "name": "operation_latency",
+      "description": "Latency of operations",
+      "unit": "milliseconds"
+    },
+    {
+      "name": "scaling_efficiency",
+      "description": "Efficiency of scaling with virtual threads",
+      "unit": "ratio"
+    }
+  ]
+}

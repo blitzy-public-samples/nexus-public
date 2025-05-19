@@ -12,17 +12,35 @@
  */
 package org.sonatype.nexus.repository.content.event.component;
 
+import java.io.Serial;
+
 import org.sonatype.nexus.repository.content.Component;
 
 /**
  * Event sent whenever a {@link Component} is deleted.
+ * <p>
+ * Optimized for Java 21 Virtual Thread execution context with improved serialization
+ * and event propagation capabilities.
  *
  * @since 3.26
  */
 public class ComponentDeletedEvent
     extends ComponentEvent
 {
+  @Serial
+  private static final long serialVersionUID = 1L;
+
+  /**
+   * Creates a new component deleted event.
+   *
+   * @param component the deleted component
+   */
   public ComponentDeletedEvent(final Component component) {
     super(component);
+  }
+
+  @Override
+  public String toString() {
+    return STR."ComponentDeletedEvent{component=\{getComponent()}} \{super.toString()}";
   }
 }

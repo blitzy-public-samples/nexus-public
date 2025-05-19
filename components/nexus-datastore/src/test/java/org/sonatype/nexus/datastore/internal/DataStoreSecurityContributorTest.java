@@ -15,21 +15,27 @@ package org.sonatype.nexus.datastore.internal;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.security.config.CPrivilege;
 import org.sonatype.nexus.security.config.SecurityConfiguration;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.junit.experimental.categories.Category;
 
 import static java.util.stream.Collectors.toList;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.is;
 
+@ExtendWith(MockitoExtension.class)
+@Category(Java21TestGroup.class)
 public class DataStoreSecurityContributorTest
     extends TestSupport
 {
   private DataStoreSecurityContributor underTest;
 
-  @Before
+  @BeforeEach
   public void setup() {
     underTest = new DataStoreSecurityContributor();
   }

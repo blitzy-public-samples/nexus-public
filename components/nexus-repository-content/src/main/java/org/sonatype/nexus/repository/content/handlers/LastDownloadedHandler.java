@@ -14,6 +14,8 @@ package org.sonatype.nexus.repository.content.handlers;
 
 import java.time.OffsetDateTime;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -48,10 +50,13 @@ public class LastDownloadedHandler
   private final GlobalRepositorySettings globalSettings;
 
   private LastDownloadedAttributeHandler lastDownloadedAttributeHandler;
+  
+  private final ExecutorService executor;
 
   @Inject
   public LastDownloadedHandler(final GlobalRepositorySettings globalSettings) {
     this.globalSettings = checkNotNull(globalSettings);
+    this.executor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   @Inject
@@ -66,11 +71,12 @@ public class LastDownloadedHandler
     try {
       if (isSuccessfulRequestWithContent(context, response)) {
         Content content = (Content) response.getPayload();
-        maybeUpdateLastDownloaded(content.getAttributes());
+        // Use virtual threads for asynchronous asset download tracking
+        executor.submit(() -> maybeUpdateLastDownloaded(content.getAttributes()));
       }
     }
     catch (Exception e) {
-      log.error("Failed to update last downloaded time for request {}", context.getRequest().getPath(), e);
+      log.error(STR."Failed to update last downloaded time for request \{context.getRequest().getPath()}", e);
     }
 
     return response;
@@ -81,15 +87,13 @@ public class LastDownloadedHandler
   }
 
   protected void maybeUpdateLastDownloaded(@Nullable final Asset asset) {
-    if (asset != null && !isNextUpdateInFuture(asset.lastDownloaded())) {
-      if (asset instanceof FluentAsset) {
-        FluentAsset fluentAsset = (FluentAsset) asset;
+    switch (asset) {
+      case FluentAsset fluentAsset when !isNextUpdateInFuture(fluentAsset.lastDownloaded()) -> {
         fluentAsset.markAsDownloaded();
         lastDownloadedAttributeHandler.writeLastDownloadedAttribute(fluentAsset);
       }
-      else {
-        log.debug("Cannot mark read-only asset {} as downloaded", asset.path());
-      }
+      case null -> {}
+      default -> log.debug(STR."Cannot mark read-only asset \{asset.path()} as downloaded");
     }
   }
 
@@ -98,9 +102,10 @@ public class LastDownloadedHandler
   }
 
   private boolean isSuccessfulRequestWithContent(final Context context, final Response response) {
-    return isGetOrHeadRequest(context)
-        && isSuccessfulOrNotModified(response.getStatus())
-        && response.getPayload() instanceof Content;
+    return switch (context.getRequest().getAction()) {
+      case GET, HEAD when isSuccessfulOrNotModified(response.getStatus()) && response.getPayload() instanceof Content -> true;
+      default -> false;
+    };
   }
 
   private boolean isGetOrHeadRequest(final Context context) {

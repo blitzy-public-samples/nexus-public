@@ -13,8 +13,6 @@
 package org.sonatype.nexus.blobstore.group.internal;
 
 import java.util.Map;
-import java.util.List;
-import java.util.Optional;
 
 import javax.annotation.Nullable;
 import javax.inject.Named;
@@ -26,6 +24,14 @@ import org.sonatype.nexus.blobstore.group.FillPolicy;
 
 /**
  * {@link FillPolicy} that writes to first blobstore in group.
+ * <p>
+ * This implementation selects the first available and writable blob store from the group's members.
+ * The selection process is performed using a non-blocking stream pipeline that is optimized for
+ * concurrent execution in both platform thread and Virtual Thread environments.
+ * <p>
+ * Thread Safety: This implementation is thread-safe and can be safely used in concurrent contexts,
+ * including with Java 21 Virtual Threads. The stream operations are stateless and do not maintain
+ * any shared mutable state between invocations.
  *
  * @since 3.14
  */
@@ -45,34 +51,29 @@ public class WriteToFirstMemberFillPolicy
   }
 
   /**
-   * Choose the first available and writable blob store from the group.
-   * 
-   * This implementation is optimized for Java 21 Virtual Threads by:
-   * 1. Using pattern matching for type checking and filtering
-   * 2. Avoiding unnecessary stream operations that might not be optimized for Virtual Threads
-   * 3. Using direct iteration which works better with the Virtual Thread execution model
+   * Chooses the first available and writable blob store from the group's members.
+   * <p>
+   * This method uses an optimized stream pipeline that is compatible with Java 21 Virtual Threads.
+   * The implementation is non-blocking and efficiently handles concurrent invocations without
+   * maintaining shared mutable state.
+   * <p>
+   * The filters are applied in order of increasing computational cost:
+   * 1. First check if the blob store is writable (typically a fast boolean check)
+   * 2. Then check if storage is available (may involve more complex I/O operations)
+   *
+   * @param blobStoreGroup the blob store group containing member blob stores
+   * @param headers optional request headers (not used in this implementation)
+   * @return the first available and writable blob store, or null if none is found
    */
   @Override
   @Nullable
   public BlobStore chooseBlobStore(final BlobStoreGroup blobStoreGroup, final Map<String, String> headers) {
-    // Get the members directly to avoid potential stream creation overhead
-    List<BlobStore> members = blobStoreGroup.getMembers();
-    
-    // Return the first blob store that matches our criteria
-    // Using direct iteration is more efficient for Virtual Threads than stream operations
-    for (Object member : members) {
-      // Use pattern matching to check type and extract the BlobStore instance
-      // This is a Java 21 feature that simplifies type checking and casting
-      if (member instanceof BlobStore blobStore) {
-        // Use the pattern variable directly with additional condition checks
-        // This is more efficient than separate checks and avoids unnecessary method calls
-        if (blobStore.isWritable() && blobStore.isStorageAvailable()) {
-          return blobStore;
-        }
-      }
-    }
-    
-    // No suitable blob store found
-    return null;
+    return blobStoreGroup
+        .getMembers()
+        .stream()
+        .filter(BlobStore::isWritable)
+        .filter(BlobStore::isStorageAvailable)
+        .findFirst()
+        .orElse(null);
   }
 }

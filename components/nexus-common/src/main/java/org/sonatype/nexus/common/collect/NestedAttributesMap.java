@@ -13,10 +13,8 @@
 package org.sonatype.nexus.common.collect;
 
 import java.util.Map;
-import java.util.SequencedMap;
 
 import javax.annotation.Nullable;
-
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.annotations.VisibleForTesting;
@@ -71,15 +69,14 @@ public class NestedAttributesMap
   }
 
   /**
-   * Gets the parent key, fully qualified if it has a grandparent.
+   * Gets the parent key, using pattern matching for improved type safety.
    */
   @VisibleForTesting
   String getParentKey() {
-    // Using Pattern Matching for switch to handle parent qualification logic
     return switch (parent) {
       case null -> null;
       case NestedAttributesMap p when p.parent != null -> 
-          p.getParentKey() + SEPARATOR + p.getKey();
+          p.getParentKey() + SEPARATOR + p.getKey(); // fully-qualify parent key if it has a grandparent
       case NestedAttributesMap p -> p.getKey();
     };
   }
@@ -93,10 +90,10 @@ public class NestedAttributesMap
 
   /**
    * Returns the key of this nested container qualified with parent if there is one.
+   * Uses pattern matching for improved type safety.
    */
   @VisibleForTesting
   String getQualifiedKey() {
-    // Using Pattern Matching for switch to handle key qualification logic
     return switch (parent) {
       case null -> key;
       case NestedAttributesMap p -> getParentKey() + SEPARATOR + key;
@@ -104,51 +101,51 @@ public class NestedAttributesMap
   }
 
   /**
-   * Include qualified key in missing key message.
+   * Include qualified key in missing key message using String Templates for improved readability.
    */
   @Override
   protected String missingKeyMessage(final String key) {
-    return "Missing: {" + getQualifiedKey() + "} " + key;
+    return STR."Missing: {\{getQualifiedKey()\}} \{key}";
   }
 
   /**
    * Create new backing for new children attributes backing.
-   * Uses SequencedMap to maintain insertion order of elements.
    */
   protected Map<String, Object> newChildBacking() {
-    return Maps.newLinkedHashMap(); // LinkedHashMap implements SequencedMap in Java 21
+    return Maps.newHashMap();
   }
 
-    /**
+  /**
    * Returns nested children attributes for given name.
-   * Uses Java 21 features for more concise code.
+   * Uses pattern matching for more robust null handling and type safety.
    */
   @SuppressWarnings("unchecked")
   public NestedAttributesMap child(final String name) {
-    checkNotNull(name);
+    checkNotNull(name, "Child name cannot be null");
 
-    // Get the child or create a new backing if it doesn't exist
     Object child = backing.get(name);
-    if (child == null) {
-      child = newChildBacking();
-      backing.put(name, child);
-    }
     
-    // Using Pattern Matching for switch to check the type
-    // This is more expressive than the previous instanceof check
-    return switch (child) {
-      case Map<?, ?> m -> new NestedAttributesMap(this, name, (Map<String, Object>) m);
-      default -> throw new IllegalStateException("child '" + name + "' not a Map");
-    };
+    // Use pattern matching for improved type safety
+    Map<String, Object> childMap;
+    if (child == null) {
+      childMap = newChildBacking();
+      backing.put(name, childMap);
+    }
+    else if (child instanceof Map<?,?> map) {
+      @SuppressWarnings("unchecked")
+      Map<String, Object> typedMap = (Map<String, Object>) map;
+      childMap = typedMap;
+    }
+    else {
+      throw new IllegalStateException(STR."Child '\{name}' is not a Map but \{child.getClass().getName()}");
+    }
+    return new NestedAttributesMap(this, name, childMap);
   }
 
   @Override
   public String toString() {
-    return getClass().getSimpleName() + "{" +
-        "parent=" + getParentKey() +
-        ", key='" + key + '\'' +
-        ", backing=" + backing +
-        '}';
+    return STR."\{getClass().getSimpleName()}{"
+        + STR."parent=\{getParentKey()}, "
+        + STR."key='\{key}', "
+        + STR."backing=\{backing}}"; 
   }
-
-}

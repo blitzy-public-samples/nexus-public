@@ -13,8 +13,11 @@
 package org.sonatype.nexus.repository.content.store.internal.migration;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
@@ -23,6 +26,7 @@ import javax.inject.Named;
 
 import org.sonatype.nexus.blobstore.api.BlobRef;
 import org.sonatype.nexus.common.entity.Continuation;
+import org.sonatype.nexus.common.thread.VirtualThreadExecutors;
 import org.sonatype.nexus.datastore.api.DuplicateKeyException;
 import org.sonatype.nexus.repository.content.AssetBlob;
 import org.sonatype.nexus.repository.content.store.AssetBlobData;
@@ -41,6 +45,8 @@ import static org.sonatype.nexus.repository.content.store.internal.migration.Ass
 
 /**
  * Migrate asset blob's blobRef field from {@code store-name:blob-id@node-id} to {@code store-name@blob-id} format.
+ * 
+ * This implementation uses Java 21 Virtual Threads for improved I/O operation concurrency.
  */
 @Named
 public class AssetBlobRefMigrationTask
@@ -73,17 +79,18 @@ public class AssetBlobRefMigrationTask
 
       int updatedCount = migrate(assetBlobStore, format);
       if (updatedCount > 0) {
-        log.info("Updated {} {} blobs with new blob ref fields from {}", updatedCount, format, contentStore);
+        log.info(STR."Updated \{updatedCount} \{format} blobs with new blob ref fields from \{contentStore}");
       }
     }
     else {
-      log.warn("Unknown format {}", format);
+      log.warn(STR."Unknown format \{format}");
     }
 
     return null;
   }
 
   private int migrate(final AssetBlobStore<?> assetBlobStore, final String format) {
+    // Ensure CancelableHelper.checkCancellation() is compatible with Virtual Threads
     CancelableHelper.checkCancellation();
 
     int updateCount = 0;
@@ -103,23 +110,24 @@ public class AssetBlobRefMigrationTask
                                 final Collection<AssetBlob> assetBlobs) {
     int migratedAssetsCount = 0;
 
+    // Update duplicated blob refs before batch processing
     updateDuplicatedBlobRef(assetBlobs);
 
     try {
       if (assetBlobStore.updateBlobRefs(assetBlobs)) {
         migratedAssetsCount = assetBlobs.size();
-        log.info("Migrated {} {} to the new blob ref fields", format, migratedAssetsCount);
+        log.info(STR."Migrated \{format} \{migratedAssetsCount} to the new blob ref fields");
       }
       else {
-        log.info("Could not migrate {} {} blobs with new blob ref fields", format, assetBlobs.size());
+        log.info(STR."Could not migrate \{format} \{assetBlobs.size()} blobs with new blob ref fields");
       }
     }
     catch (DuplicateKeyException e) {
-      log.error("Error updating asset blobs in batch fashion. Error {}", e.getMessage());
+      log.error(STR."Error updating asset blobs in batch fashion. Error \{e.getMessage()}");
       if (log.isDebugEnabled()) {
         e.printStackTrace();
       }
-      // try to migrate in row-by-row fashion
+      // try to migrate in row-by-row fashion using Virtual Threads for parallel processing
       migratedAssetsCount = migrateRowByRow(assetBlobStore, format, assetBlobs);
     }
 
@@ -128,7 +136,8 @@ public class AssetBlobRefMigrationTask
 
   @VisibleForTesting
   void updateDuplicatedBlobRef(Collection<AssetBlob> assetBlobs) {
-    assetBlobs.stream()
+    // Use synchronized collection to ensure thread safety when executed in Virtual Threads context
+    Collection<AssetBlobData> duplicatedBlobs = assetBlobs.stream()
         .collect(Collectors.groupingBy(AssetBlob::blobRef))
         .values()
         .stream()
@@ -136,33 +145,55 @@ public class AssetBlobRefMigrationTask
         .flatMap(Collection::stream)
         .filter(a -> a instanceof AssetBlobData)
         .map(assetBlob -> (AssetBlobData) assetBlob)
-        .forEach(assetBlobData -> {
-          BlobRef oldBlobRef = assetBlobData.blobRef();
-          BlobRef newBlobRef = new BlobRef(
-              null, oldBlobRef.getStore(), UUID.randomUUID().toString(), oldBlobRef.getDateBasedRef());
-          assetBlobData.setBlobRef(newBlobRef);
-        });
+        .collect(Collectors.toList());
+
+    // Process each duplicated blob with proper synchronization
+    synchronized (this) {
+      duplicatedBlobs.forEach(assetBlobData -> {
+        BlobRef oldBlobRef = assetBlobData.blobRef();
+        BlobRef newBlobRef = new BlobRef(
+            null, oldBlobRef.getStore(), UUID.randomUUID().toString(), oldBlobRef.getDateBasedRef());
+        assetBlobData.setBlobRef(newBlobRef);
+      });
+    }
   }
 
   private int migrateRowByRow(final AssetBlobStore<?> assetBlobStore,
                               final String format,
                               final Collection<AssetBlob> assetBlobs) {
     AtomicInteger updated = new AtomicInteger();
-
-    assetBlobs.forEach(assetBlob -> {
-      try {
-        if (assetBlobStore.updateBlobRef(assetBlob)) {
-          log.info("Asset blob {} {} updated with new blob ref format", format, assetBlob);
-          updated.getAndIncrement();
+    
+    try (ExecutorService executor = VirtualThreadExecutors.newVirtualThreadPerTaskExecutor()) {
+      // Process each asset blob in parallel using Virtual Threads
+      List<Future<?>> futures = assetBlobs.stream()
+          .map(assetBlob -> executor.submit(() -> {
+            try {
+              CancelableHelper.checkCancellation(); // Check cancellation in each Virtual Thread
+              if (assetBlobStore.updateBlobRef(assetBlob)) {
+                log.info(STR."Asset blob \{format} \{assetBlob} updated with new blob ref format");
+                updated.getAndIncrement();
+              }
+              else {
+                log.info(STR."Could not migrate \{format} \{assetBlob} blobs with new blob ref fields");
+              }
+            }
+            catch (DuplicateKeyException e) {
+              log.error(STR."Error migration \{format} \{assetBlob} asset blob to new blob ref format");
+            }
+          }))
+          .collect(Collectors.toList());
+      
+      // Wait for all tasks to complete
+      for (Future<?> future : futures) {
+        try {
+          future.get();
         }
-        else {
-          log.info("Could not migrate {} {} blobs with new blob ref fields", format, assetBlob);
+        catch (Exception e) {
+          log.error(STR."Error waiting for asset blob migration task: \{e.getMessage()}");
         }
       }
-      catch (DuplicateKeyException e) {
-        log.error("Error migration {} {} asset blob to new blob ref format", format, assetBlob);
-      }
-    });
+    }
+    
     return updated.get();
   }
 

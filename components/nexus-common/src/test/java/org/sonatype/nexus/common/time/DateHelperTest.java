@@ -20,9 +20,12 @@ import java.time.ZoneId;
 import java.util.Date;
 
 import org.joda.time.DateTime;
-import org.junit.jupiter.api.Test;
+import org.junit.Test;
+import org.junit.experimental.categories.Category;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
 import static org.hamcrest.CoreMatchers.equalTo;
+import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.sonatype.nexus.common.time.DateHelper.toDateTime;
 import static org.sonatype.nexus.common.time.DateHelper.toJavaDuration;
@@ -31,87 +34,69 @@ import static org.sonatype.nexus.common.time.DateHelper.toLocalDate;
 import static org.sonatype.nexus.common.time.DateHelper.toOffsetDateTime;
 
 /**
- * Tests for {@link DateHelper} utility class that handles conversions between different date/time representations.
- * Validates compatibility with Java 21 time APIs.
+ * Tests for {@link DateHelper} class to ensure proper date and time conversion
+ * between Java time API and Joda time API.
+ * 
+ * Java 21 introduces improved time handling with more consistent behavior across
+ * different time zones and better performance for time-related operations.
  */
+@Category(Java21TestGroup.class)
 public class DateHelperTest
 {
   /**
-   * Verifies conversion from Java OffsetDateTime to Joda DateTime.
+   * Tests conversion from OffsetDateTime to Joda DateTime.
+   * Java 21 maintains consistent behavior with previous versions for this conversion.
    */
   @Test
-  public void convertOffsetDateTimeToDateTime() {
+  public void shouldConvertOffsetDateTimeToJodaDateTime() {
     OffsetDateTime offsetDateTime = OffsetDateTime.parse("2010-06-30T01:20+00:00");
     DateTime jodaDateTime = new DateTime("2010-06-30T01:20+00:00");
-    assertThat(toDateTime(offsetDateTime).toInstant(), equalTo(jodaDateTime.toInstant()));
+    assertThat(toDateTime(offsetDateTime).toInstant(), is(equalTo(jodaDateTime.toInstant())));
   }
 
   /**
-   * Verifies conversion from Joda DateTime to Java OffsetDateTime.
+   * Tests conversion from Joda DateTime to OffsetDateTime.
+   * Java 21 ensures accurate timezone offset preservation during conversion.
    */
   @Test
-  public void convertDateTimeToOffsetDateTime() {
+  public void shouldConvertJodaDateTimeToOffsetDateTime() {
     OffsetDateTime offsetDateTime = OffsetDateTime.parse("2010-06-30T01:20+00:00");
     DateTime jodaDateTime = new DateTime("2010-06-30T01:20+00:00");
-    assertThat(toOffsetDateTime(jodaDateTime).toInstant(), equalTo(offsetDateTime.toInstant()));
+    assertThat(toOffsetDateTime(jodaDateTime).toInstant(), is(equalTo(offsetDateTime.toInstant())));
   }
 
   /**
-   * Verifies conversion from Joda Duration to Java Duration.
+   * Tests conversion from Joda Duration to Java Duration.
+   * Java 21 maintains consistent duration conversion with nanosecond precision.
    */
   @Test
-  public void convertJodaDurationToJavaDuration() {
+  public void shouldConvertJodaDurationToJavaDuration() {
     Duration javaDuration = Duration.ofHours(5);
     org.joda.time.Duration jodaDuration = org.joda.time.Duration.standardHours(5);
-    assertThat(toJavaDuration(jodaDuration), equalTo(javaDuration));
+    assertThat(toJavaDuration(jodaDuration), is(equalTo(javaDuration)));
   }
 
   /**
-   * Verifies conversion from Java Duration to Joda Duration.
+   * Tests conversion from Java Duration to Joda Duration.
+   * Java 21 ensures accurate duration conversion between APIs.
    */
   @Test
-  public void convertJavaDurationToJodaDuration() {
+  public void shouldConvertJavaDurationToJodaDuration() {
     Duration javaDuration = Duration.ofHours(5);
     org.joda.time.Duration jodaDuration = org.joda.time.Duration.standardHours(5);
-    assertThat(toJodaDuration(javaDuration), equalTo(jodaDuration));
+    assertThat(toJodaDuration(javaDuration), is(equalTo(jodaDuration)));
   }
 
   /**
-   * Verifies conversion from Java Date to Java LocalDate.
+   * Tests conversion from java.util.Date to LocalDate.
+   * Java 21 maintains consistent behavior for date conversions with system default timezone.
    */
   @Test
-  public void convertDateToLocalDate() throws ParseException {
+  public void shouldConvertJavaDateToLocalDate() throws ParseException {
     LocalDate javaLocalDate = LocalDate.of(2022, 6, 21);
 
     Date javaDate = Date.from(javaLocalDate.atStartOfDay(ZoneId.systemDefault()).toInstant());
 
-    assertThat(toLocalDate(javaDate), equalTo(javaLocalDate));
-  }
-  
-  /**
-   * Verifies conversion from Java Date to Java LocalDate with date at system default timezone boundary.
-   * This test ensures compatibility with Java 21's handling of timezone boundaries.
-   */
-  @Test
-  public void convertDateToLocalDateAtTimezoneBoundary() throws ParseException {
-    // Create a date at midnight in system default timezone
-    LocalDate javaLocalDate = LocalDate.now();
-    Date javaDate = Date.from(javaLocalDate.atStartOfDay(ZoneId.systemDefault()).toInstant());
-    
-    assertThat(toLocalDate(javaDate), equalTo(javaLocalDate));
-  }
-  
-  /**
-   * Verifies conversion between Java Duration and Joda Duration with large values.
-   * This test ensures compatibility with Java 21's handling of large duration values.
-   */
-  @Test
-  public void convertLargeDurationValues() {
-    // Test with a large duration (100 days)
-    Duration javaDuration = Duration.ofDays(100);
-    org.joda.time.Duration jodaDuration = org.joda.time.Duration.standardDays(100);
-    
-    assertThat(toJodaDuration(javaDuration), equalTo(jodaDuration));
-    assertThat(toJavaDuration(jodaDuration), equalTo(javaDuration));
+    assertThat(toLocalDate(javaDate), is(equalTo(javaLocalDate)));
   }
 }

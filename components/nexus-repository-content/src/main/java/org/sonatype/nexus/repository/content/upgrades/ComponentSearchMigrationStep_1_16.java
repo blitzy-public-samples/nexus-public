@@ -17,6 +17,8 @@ import java.util.Optional;
 import javax.inject.Named;
 
 import org.sonatype.nexus.upgrade.datastore.DatabaseMigrationStep;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * This migration step was deleted and is no longer available since the component_search table was deleted in a later step
@@ -25,13 +27,17 @@ import org.sonatype.nexus.upgrade.datastore.DatabaseMigrationStep;
 public class ComponentSearchMigrationStep_1_16
     implements DatabaseMigrationStep
 {
+  private static final Logger log = LoggerFactory.getLogger(ComponentSearchMigrationStep_1_16.class);
 
   @Override
   public Optional<String> version() {
-    return Optional.of("1.16");
+    String version = "1.16";
+    log.debug(STR."Reporting migration step version: \{version}");
+    return Optional.of(version);
   }
 
   @Override
   public void migrate(final Connection connection) throws Exception {
+    log.info(STR."Skipping migration step \{version().orElse("unknown")} as component_search table was deleted in a later step");
   }
 }

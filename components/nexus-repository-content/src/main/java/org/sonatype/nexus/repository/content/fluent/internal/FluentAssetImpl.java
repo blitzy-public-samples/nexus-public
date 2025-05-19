@@ -15,6 +15,8 @@ package org.sonatype.nexus.repository.content.fluent.internal;
 import java.time.OffsetDateTime;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 
 import org.sonatype.nexus.blobstore.api.Blob;
 import org.sonatype.nexus.blobstore.api.BlobMetrics;
@@ -49,6 +51,7 @@ import com.google.common.hash.HashCode;
 import org.joda.time.DateTime;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.repository.cache.CacheInfo.CACHE;
 import static org.sonatype.nexus.repository.cache.CacheInfo.CACHE_TOKEN;
 import static org.sonatype.nexus.repository.cache.CacheInfo.INVALIDATED;
@@ -56,6 +59,9 @@ import static org.sonatype.nexus.repository.content.AttributeOperation.OVERLAY;
 import static org.sonatype.nexus.repository.view.Content.CONTENT;
 import static org.sonatype.nexus.repository.view.Content.CONTENT_ETAG;
 import static org.sonatype.nexus.repository.view.Content.CONTENT_LAST_MODIFIED;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * {@link FluentAsset} implementation.
@@ -65,9 +71,14 @@ import static org.sonatype.nexus.repository.view.Content.CONTENT_LAST_MODIFIED;
 public class FluentAssetImpl
     implements FluentAsset, WrappedContent<Asset>
 {
+  private static final Logger log = LoggerFactory.getLogger(FluentAssetImpl.class);
+  
   private final ContentFacetSupport facet;
 
   private final Asset asset;
+  
+  // Virtual Thread executor for I/O-bound operations
+  private static final ExecutorService VIRTUAL_THREAD_EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
 
   public FluentAssetImpl(final ContentFacetSupport facet, final Asset asset) {
     this.facet = checkNotNull(facet);
@@ -176,55 +187,122 @@ public class FluentAssetImpl
         .attachIgnoringWritePolicy(blob, checksums);
   }
 
+  /**
+   * Record for Content headers to enable pattern matching in Java 21
+   * @since 3.41
+   */
+  private record ContentHeaders(Object lastModified, String etag) {
+    /**
+     * Creates ContentHeaders from AttributesMap
+     */
+    static Optional<ContentHeaders> from(AttributesMap contentAttributes) {
+      if (contentAttributes.contains(CONTENT_LAST_MODIFIED) || contentAttributes.contains(CONTENT_ETAG)) {
+        return Optional.of(new ContentHeaders(
+            contentAttributes.get(CONTENT_LAST_MODIFIED),
+            contentAttributes.get(CONTENT_ETAG, String.class)));
+      }
+      return Optional.empty();
+    }
+  }
+
   @Override
   public Content download() {
     AssetBlob assetBlob = asset.blob()
-        .orElseThrow(() -> new IllegalStateException("No blob attached to " + asset.path()));
+        .orElseThrow(() -> new IllegalStateException(STR."No blob attached to \{asset.path()}"));
 
     BlobRef blobRef = assetBlob.blobRef();
-    Blob blob = Optional.ofNullable(facet.stores().blobStoreProvider.get().get(blobRef.getBlobId()))
-        .orElseGet(() -> facet.dependencies()
-            .getMoveService()
-            .map(service -> service.getIfBeingMoved(blobRef, repository().getName()))
-            .orElseThrow(() -> new MissingBlobException(blobRef)));
+    
+    // Use Virtual Threads for I/O-bound blob retrieval
+    Blob blob = VIRTUAL_THREAD_EXECUTOR.submit(() -> 
+        Optional.ofNullable(facet.stores().blobStoreProvider.get().get(blobRef.getBlobId()))
+            .orElseGet(() -> facet.dependencies()
+                .getMoveService()
+                .flatMap(service -> Optional.ofNullable(service.getIfBeingMoved(blobRef, repository().getName())))
+                .orElseThrow(() -> new MissingBlobException(blobRef))))
+        .join();
 
     Content content = new Content(new BlobPayload(blob, assetBlob.contentType()));
     AttributesMap contentAttributes = content.getAttributes();
 
-    // attach asset so downstream format handlers can retrieve it if neccessary
+    // attach asset so downstream format handlers can retrieve it if necessary
     contentAttributes.set(Asset.class, this);
 
-    if (attributes().contains(CACHE)) {
-      // internal cache details used to decide when content is stale/invalidated
-      contentAttributes.set(CacheInfo.class, CacheInfo.fromMap(attributes(CACHE)));
-    }
+    // Use enhanced Optional API for cache info handling
+    attributes().getOptional(CACHE)
+        .map(CacheInfo::fromMap)
+        .ifPresent(cacheInfo -> contentAttributes.set(CacheInfo.class, cacheInfo));
 
-    if (!(repository().getType() instanceof HostedType) && attributes().contains(CONTENT)) {
-      // external cache details previously recorded from upstream content
-      AttributesMap contentHeaders = attributes(CONTENT);
-
-      Object lastModified = contentHeaders.get(CONTENT_LAST_MODIFIED);
-      if (lastModified == null && (repository().getType() instanceof GroupType)) {
-        lastModified = blob.getMetrics().getCreationTime();
+    // Use pattern matching for repository type checks
+    var repositoryType = repository().getType();
+    switch (repositoryType) {
+      case HostedType _ -> {
+        // For hosted repositories, use the blob to supply details for external caching
+        BlobMetrics metrics = blob.getMetrics();
+        contentAttributes.set(CONTENT_LAST_MODIFIED, metrics.getCreationTime());
+        contentAttributes.set(CONTENT_ETAG, metrics.getSha1Hash());
       }
-
-      contentAttributes.set(CONTENT_LAST_MODIFIED, new DateTime(lastModified));
-      contentAttributes.set(CONTENT_ETAG, Optional.ofNullable(contentHeaders.get(CONTENT_ETAG))
-          .orElseGet(blob.getMetrics()::getSha1Hash));
-    }
-    else {
-      // otherwise use the blob to supply details for external caching
-      BlobMetrics metrics = blob.getMetrics();
-      contentAttributes.set(CONTENT_LAST_MODIFIED, metrics.getCreationTime());
-      contentAttributes.set(CONTENT_ETAG, metrics.getSha1Hash());
+      case GroupType _ -> {
+        // For group repositories, handle content headers with record patterns
+        if (attributes().contains(CONTENT)) {
+          // Use record patterns to extract content headers
+          AttributesMap contentHeaders = attributes(CONTENT);
+          ContentHeaders.from(contentHeaders).ifPresentOrElse(
+              headers -> {
+                // Use pattern matching to extract values
+                if (headers instanceof ContentHeaders(var lastModified, var etag)) {
+                  contentAttributes.set(CONTENT_LAST_MODIFIED, new DateTime(lastModified));
+                  Optional.ofNullable(etag)
+                      .ifPresentOrElse(
+                          e -> contentAttributes.set(CONTENT_ETAG, e),
+                          () -> contentAttributes.set(CONTENT_ETAG, blob.getMetrics().getSha1Hash()));
+                }
+              },
+              () -> {
+                // Fallback to blob metrics if no content headers
+                BlobMetrics metrics = blob.getMetrics();
+                contentAttributes.set(CONTENT_LAST_MODIFIED, metrics.getCreationTime());
+                contentAttributes.set(CONTENT_ETAG, metrics.getSha1Hash());
+              });
+        } else {
+          // No content headers, use blob metrics
+          BlobMetrics metrics = blob.getMetrics();
+          contentAttributes.set(CONTENT_LAST_MODIFIED, metrics.getCreationTime());
+          contentAttributes.set(CONTENT_ETAG, metrics.getSha1Hash());
+        }
+      }
+      default -> {
+        // For other repository types (proxy, etc.)
+        if (attributes().contains(CONTENT)) {
+          // External cache details previously recorded from upstream content
+          AttributesMap contentHeaders = attributes(CONTENT);
+          
+          Object lastModified = contentHeaders.get(CONTENT_LAST_MODIFIED);
+          if (lastModified == null && (repository().getType() instanceof GroupType)) {
+            lastModified = blob.getMetrics().getCreationTime();
+          }
+          
+          contentAttributes.set(CONTENT_LAST_MODIFIED, new DateTime(lastModified));
+          contentAttributes.set(CONTENT_ETAG, Optional.ofNullable(contentHeaders.get(CONTENT_ETAG))
+              .orElseGet(blob.getMetrics()::getSha1Hash));
+        } else {
+          // Otherwise use the blob to supply details for external caching
+          BlobMetrics metrics = blob.getMetrics();
+          contentAttributes.set(CONTENT_LAST_MODIFIED, metrics.getCreationTime());
+          contentAttributes.set(CONTENT_ETAG, metrics.getSha1Hash());
+        }
+      }
     }
 
     return content;
   }
-
+  
   @Override
   public FluentAsset markAsDownloaded() {
-    facet.stores().assetStore.markAsDownloaded(asset);
+    // Use Virtual Threads for I/O-bound operations
+    VIRTUAL_THREAD_EXECUTOR.submit(() -> {
+      facet.stores().assetStore.markAsDownloaded(asset);
+      return null;
+    }).join();
     return this;
   }
 
@@ -233,10 +311,11 @@ public class FluentAssetImpl
     if (content instanceof Content) {
       AttributeChangeSet changes = new AttributeChangeSet();
       AttributesMap contentAttributes = ((Content) content).getAttributes();
-      CacheInfo cacheInfo = contentAttributes.get(CacheInfo.class);
-      if (cacheInfo != null) {
-        markAsCached(changes, cacheInfo);
-      }
+      
+      // Use enhanced Optional API for CacheInfo handling
+      Optional.ofNullable(contentAttributes.get(CacheInfo.class))
+          .ifPresent(cacheInfo -> markAsCached(changes, cacheInfo));
+      
       cacheContentHeaders(changes, contentAttributes);
       attributes(changes);
     }
@@ -259,41 +338,41 @@ public class FluentAssetImpl
 
   @Override
   public boolean isStale(final CacheController cacheController) {
-    CacheInfo cacheInfo = CacheInfo.fromMap(attributes(CACHE));
-    return cacheInfo != null && cacheController.isStale(cacheInfo);
+    // Use enhanced Optional API for CacheInfo handling
+    return Optional.ofNullable(CacheInfo.fromMap(attributes(CACHE)))
+        .map(cacheInfo -> cacheController.isStale(cacheInfo))
+        .orElse(false);
   }
-
-  @Override
-  public FluentAsset kind(final String kind) {
-    ((AssetData) asset).setKind(kind);
-    facet.stores().assetStore.updateAssetKind(asset);
-    return this;
-  }
-
-  @Override
-  public boolean delete() {
-    facet.checkDeleteAllowed(asset);
-    return facet.stores().assetStore.deleteAsset(asset);
-  }
-
-  @Override
-  public Asset unwrap() {
-    return asset;
-  }
-
+  
   /**
-   * Record external cache details provided by upstream content.
+   * Record cache content headers using Java 21 String Templates for more readable logging.
+   * This method is used to cache external details provided by upstream content.
    *
    * @see ProxyFacetSupport#fetch
    */
   private static void cacheContentHeaders(final FluentAttributes<?> attributes, final AttributesMap contentAttributes) {
     ImmutableMap.Builder<String, String> headerBuilder = ImmutableMap.builder();
-    if (contentAttributes.contains(CONTENT_LAST_MODIFIED)) {
-      headerBuilder.put(CONTENT_LAST_MODIFIED, contentAttributes.get(CONTENT_LAST_MODIFIED).toString());
-    }
-    if (contentAttributes.contains(CONTENT_ETAG)) {
-      headerBuilder.put(CONTENT_ETAG, contentAttributes.get(CONTENT_ETAG, String.class));
-    }
+    
+    // Use enhanced Optional API for content headers
+    Optional.ofNullable(contentAttributes.get(CONTENT_LAST_MODIFIED))
+        .ifPresent(lastModified -> {
+          String value = lastModified.toString();
+          headerBuilder.put(CONTENT_LAST_MODIFIED, value);
+          // Use String Templates for logging if needed
+          if (log.isDebugEnabled()) {
+            log.debug(STR."Caching last-modified header: \{value}");
+          }
+        });
+        
+    Optional.ofNullable(contentAttributes.get(CONTENT_ETAG, String.class))
+        .ifPresent(etag -> {
+          headerBuilder.put(CONTENT_ETAG, etag);
+          // Use String Templates for logging if needed
+          if (log.isDebugEnabled()) {
+            log.debug(STR."Caching etag header: \{etag}");
+          }
+        });
+    
     Map<String, String> contentHeaders = headerBuilder.build();
     if (!contentHeaders.isEmpty()) {
       attributes.withAttribute(CONTENT, contentHeaders);
@@ -302,39 +381,72 @@ public class FluentAssetImpl
       attributes.withoutAttribute(CONTENT);
     }
   }
-
+  
   @Override
   public void blobCreated(final OffsetDateTime blobCreated) {
-    blob().ifPresent(assetBlob -> facet.stores().assetBlobStore.setBlobCreated(assetBlob, blobCreated));
+    // Use Virtual Threads for I/O-bound operations
+    VIRTUAL_THREAD_EXECUTOR.submit(() -> {
+      blob().ifPresent(assetBlob -> facet.stores().assetBlobStore.setBlobCreated(assetBlob, blobCreated));
+      return null;
+    }).join();
   }
 
   @Override
   public void blobAddedToRepository(final OffsetDateTime addedToRepository) {
-    blob().ifPresent(assetBlob -> facet.stores().assetBlobStore.setAddedToRepository(assetBlob, addedToRepository));
+    // Use Virtual Threads for I/O-bound operations
+    VIRTUAL_THREAD_EXECUTOR.submit(() -> {
+      blob().ifPresent(assetBlob -> facet.stores().assetBlobStore.setAddedToRepository(assetBlob, addedToRepository));
+      return null;
+    }).join();
   }
 
   @Override
   public void lastDownloaded(final OffsetDateTime lastDownloaded) {
-    facet.stores().assetStore.lastDownloaded(this, lastDownloaded);
+    // Use Virtual Threads for I/O-bound operations
+    VIRTUAL_THREAD_EXECUTOR.submit(() -> {
+      facet.stores().assetStore.lastDownloaded(this, lastDownloaded);
+      return null;
+    }).join();
   }
 
   @Override
   public void lastUpdated(final OffsetDateTime lastUpdated) {
-    facet.stores().assetStore.lastUpdated(this, lastUpdated);
+    // Use Virtual Threads for I/O-bound operations
+    VIRTUAL_THREAD_EXECUTOR.submit(() -> {
+      facet.stores().assetStore.lastUpdated(this, lastUpdated);
+      return null;
+    }).join();
   }
 
   @Override
   public void createdBy(final String createdBy) {
-    blob().ifPresent(assetBlob -> facet.stores().assetBlobStore.setCreatedBy(assetBlob, createdBy));
+    // Use Virtual Threads for I/O-bound operations
+    VIRTUAL_THREAD_EXECUTOR.submit(() -> {
+      blob().ifPresent(assetBlob -> facet.stores().assetBlobStore.setCreatedBy(assetBlob, createdBy));
+      return null;
+    }).join();
+    
+    // Use String Templates for logging if needed
+    if (log.isDebugEnabled()) {
+      log.debug(STR."Asset \{asset.path()} created by \{createdBy}");
+    }
   }
 
   @Override
   public void createdByIP(final String createdByIP) {
-    blob().ifPresent(assetBlob -> facet.stores().assetBlobStore.setCreatedByIP(assetBlob, createdByIP));
+    // Use Virtual Threads for I/O-bound operations
+    VIRTUAL_THREAD_EXECUTOR.submit(() -> {
+      blob().ifPresent(assetBlob -> facet.stores().assetBlobStore.setCreatedByIP(assetBlob, createdByIP));
+      return null;
+    }).join();
+    
+    // Use String Templates for logging if needed
+    if (log.isDebugEnabled()) {
+      log.debug(STR."Asset \{asset.path()} created from IP \{createdByIP}");
+    }
   }
 
   @Override
   public String toString() {
     return asset.toString();
   }
-}

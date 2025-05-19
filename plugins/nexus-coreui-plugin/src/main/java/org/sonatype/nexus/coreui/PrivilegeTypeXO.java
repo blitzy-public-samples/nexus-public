@@ -26,26 +26,14 @@ public record PrivilegeTypeXO(
     List<FormFieldXO> formFields
 ) {
   /**
-   * Creates a new instance with validation annotations applied at the record component level.
-   * 
-   * @param id The privilege type identifier
-   * @param name The privilege type name
-   * @param formFields The list of form fields associated with this privilege type
+   * Maintains the same string representation as the original class for compatibility.
    */
-  public PrivilegeTypeXO {
-    // Records perform implicit null checks, but we can add additional validation if needed
-  }
-  
-  /**
-   * Factory method to create a PrivilegeTypeXO from individual components.
-   * This provides backward compatibility with code that used the setter pattern.
-   *
-   * @param id The privilege type identifier
-   * @param name The privilege type name
-   * @param formFields The list of form fields
-   * @return A new PrivilegeTypeXO instance
-   */
-  public static PrivilegeTypeXO create(String id, String name, List<FormFieldXO> formFields) {
-    return new PrivilegeTypeXO(id, name, formFields);
+  @Override
+  public String toString() {
+    return "PrivilegeTypeXO{" +
+        "id='" + id + '\'' +
+        ", name='" + name + '\'' +
+        ", formFields=" + formFields +
+        '}';
   }
 }

@@ -13,36 +13,46 @@
 package org.sonatype.nexus.common.sequence;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
-import org.junit.jupiter.api.Test;
+import org.junit.Assert;
+import org.junit.Test; // Using JUnit 4 for backward compatibility
+import org.junit.experimental.categories.Category;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+// JUnit Jupiter imports are commented out for now to avoid conflicts
+// Will be used when fully migrating to JUnit Jupiter
+// import org.junit.jupiter.api.Test;
+
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.is;
 
 /**
  * Tests for various {@link NumberSequence} implementations.
  */
+@Category(Java21TestGroup.class)
 public class NumberSequenceTest
     extends TestSupport
 {
   @Test
-  public void testConstantSequence() {
+  public void constantSequenceGeneratesExpectedValues() {
     long startValue = 10;
 
     ConstantNumberSequence cs = new ConstantNumberSequence(startValue);
 
     for (int i = 0; i < 20; i++) {
-      assertEquals(startValue, cs.next());
+      assertThat(cs.next(), is(startValue));
     }
 
     cs.reset();
 
     for (int i = 0; i < 20; i++) {
-      assertEquals(startValue, cs.next());
+      assertThat(cs.next(), is(startValue));
     }
   }
 
   @Test
-  public void testLinearSequence() {
+  public void linearSequenceGeneratesExpectedValues() {
     long startValue = 0;
 
     // step=1, multiplier=1, shift=0
@@ -50,22 +60,22 @@ public class NumberSequenceTest
     LinearNumberSequence ls = new LinearNumberSequence(startValue, 1, 1, 0);
 
     for (int i = 1; i < 20; i++) {
-      assertEquals(i, ls.next());
+      assertThat(ls.next(), is((long) i));
     }
 
     ls.reset();
 
     // forth and back
     for (int i = 1; i < 20; i++) {
-      assertEquals(i, ls.next());
+      assertThat(ls.next(), is((long) i));
     }
     for (int i = 18; i >= 1; i--) {
-      assertEquals(i, ls.prev());
+      assertThat(ls.prev(), is((long) i));
     }
   }
 
   @Test
-  public void testLinearSequenceBitMore() {
+  public void linearSequenceWithComplexParametersGeneratesExpectedValues() {
     long startValue = 0;
 
     // step=10, multiplier=2, shift=10
@@ -76,7 +86,7 @@ public class NumberSequenceTest
 
     for (int i = 1; i < 20; i++) {
       f = 2 * (i * 10) + 10;
-      assertEquals(f, ls.next());
+      assertThat(ls.next(), is(f));
     }
 
     ls.reset();
@@ -84,45 +94,45 @@ public class NumberSequenceTest
     // forth and back
     for (int i = 1; i < 20; i++) {
       f = 2 * (i * 10) + 10;
-      assertEquals(f, ls.next());
+      assertThat(ls.next(), is(f));
     }
     for (int i = 18; i >= 1; i--) {
       f = 2 * (i * 10) + 10;
-      assertEquals(f, ls.prev());
+      assertThat(ls.prev(), is(f));
     }
   }
 
   @Test
-  public void testFibonacciSequence() {
+  public void fibonacciSequenceGeneratesExpectedValues() {
     int[] fibonacciNumbers = new int[]{1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233};
 
     FibonacciNumberSequence fs = new FibonacciNumberSequence();
 
     for (int f : fibonacciNumbers) {
-      assertEquals(f, fs.next());
+      assertThat(fs.next(), is((long) f));
     }
 
     fs.reset();
 
     for (int f : fibonacciNumbers) {
-      assertEquals(f, fs.next());
+      assertThat(fs.next(), is((long) f));
     }
   }
 
   @Test
-  public void testFoxiedFibonacciSequence() {
+  public void customizedFibonacciSequenceGeneratesExpectedValues() {
     int[] fibonacciNumbers = new int[]{10, 10, 20, 30, 50, 80, 130, 210, 340, 550, 890, 1440, 2330};
 
     FibonacciNumberSequence fs = new FibonacciNumberSequence(10);
 
     for (int f : fibonacciNumbers) {
-      assertEquals(f, fs.next());
+      assertThat(fs.next(), is((long) f));
     }
 
     fs.reset();
 
     for (int f : fibonacciNumbers) {
-      assertEquals(f, fs.next());
+      assertThat(fs.next(), is((long) f));
     }
   }
 
@@ -143,30 +153,30 @@ public class NumberSequenceTest
   }
 
   @Test
-  public void testFibonacciSequenceBackAndForth() {
+  public void fibonacciSequenceSupportsBackAndForthNavigation() {
     int[] fibonacciNumbers = new int[]{10, 10, 20, 30, 50, 80, 130, 210, 340, 550, 890, 1440, 2330};
 
     FibonacciNumberSequence fs = new FibonacciNumberSequence(10);
 
     for (int f : fibonacciNumbers) {
-      assertEquals(f, fs.next());
+      assertThat(fs.next(), is((long) f));
     }
 
     fs.reset();
 
     for (int f : fibonacciNumbers) {
-      assertEquals(f, fs.next());
+      assertThat(fs.next(), is((long) f));
     }
 
     ArrayUtils_reverse(fibonacciNumbers);
 
     for (int f : fibonacciNumbers) {
-      assertEquals(f, fs.prev());
+      assertThat(fs.prev(), is((long) f));
     }
   }
 
   @Test
-  public void testLinearSequenceWithLimiter() {
+  public void linearSequenceWithLimiterRespectsLowerBound() {
     long startValue = 0;
 
     // step=1, multiplier=1, shift=0
@@ -176,18 +186,18 @@ public class NumberSequenceTest
 
     // go prev 5 times, it should actually result in ONE state change
     for (int i = 1; i < 5; i++) {
-      assertEquals(1, seq.prev());
+      assertThat(seq.prev(), is(1L));
     }
 
-    assertEquals(1, seq.peek());
+    assertThat(seq.peek(), is(1L));
 
-    assertEquals(1, seq.next());
-    assertEquals(2, seq.next());
+    assertThat(seq.next(), is(1L));
+    assertThat(seq.next(), is(2L));
 
     seq.reset();
 
-    assertEquals(1, seq.next());
-    assertEquals(2, seq.next());
+    assertThat(seq.next(), is(1L));
+    assertThat(seq.next(), is(2L));
   }
 
 }

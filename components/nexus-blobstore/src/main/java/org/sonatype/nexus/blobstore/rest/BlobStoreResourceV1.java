@@ -12,19 +12,32 @@
  */
 package org.sonatype.nexus.blobstore.rest;
 
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import jakarta.inject.Singleton;
+import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.WebApplicationException;
 
 import org.sonatype.nexus.blobstore.ConnectionChecker;
+import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreManager;
+import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaResult;
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaService;
+import org.sonatype.nexus.common.thread.VirtualThreadExecutorService;
 import org.sonatype.nexus.repository.blobstore.BlobStoreConfigurationStore;
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import org.apache.shiro.authz.annotation.RequiresAuthentication;
+import org.apache.shiro.authz.annotation.RequiresPermissions;
+
+import static java.lang.String.format;
+import static jakarta.ws.rs.core.Response.Status.NOT_FOUND;
 import static org.sonatype.nexus.blobstore.rest.BlobStoreResourceV1.RESOURCE_URI;
 import static org.sonatype.nexus.rest.APIConstants.V1_API_PREFIX;
 
@@ -40,15 +53,9 @@ public class BlobStoreResourceV1
     extends BlobStoreResource
 {
   static final String RESOURCE_URI = V1_API_PREFIX + "/blobstores";
+  
+  private final VirtualThreadExecutorService virtualThreadExecutor;
 
-  /**
-   * Constructor with dependency injection compatible with Guice 7.0.0
-   *
-   * @param blobStoreManager     Manager for blob stores
-   * @param store                Configuration store for blob stores
-   * @param quotaService         Service for blob store quotas
-   * @param connectionCheckers   Map of connection checkers for different blob store types
-   */
   @Inject
   public BlobStoreResourceV1(
       final BlobStoreManager blobStoreManager,
@@ -56,9 +63,64 @@ public class BlobStoreResourceV1
       final BlobStoreQuotaService quotaService,
       final Map<String, ConnectionChecker> connectionCheckers)
   {
-    super(checkNotNull(blobStoreManager), 
-          checkNotNull(store), 
-          checkNotNull(quotaService), 
-          checkNotNull(connectionCheckers));
+    super(blobStoreManager, store, quotaService, connectionCheckers);
+    this.virtualThreadExecutor = new VirtualThreadExecutorService(
+        Executors.newVirtualThreadPerTaskExecutor());
+  }
+  
+  @Override
+  @RequiresAuthentication
+  @RequiresPermissions("nexus:blobstores:read")
+  @GET
+  public List<GenericBlobStoreApiResponse> listBlobStores() {
+    // Use virtual threads for I/O-bound operations to improve scalability
+    try {
+      return virtualThreadExecutor.supplyAsync(() -> super.listBlobStores()).join();
+    }
+    catch (Exception e) {
+      // Ensure proper exception propagation in Virtual Thread context
+      if (e.getCause() != null) {
+        if (e.getCause() instanceof RuntimeException) {
+          throw (RuntimeException) e.getCause();
+        }
+        throw new RuntimeException(e.getCause());
+      }
+      throw e;
+    }
+  }
+
+  @Override
+  @RequiresAuthentication
+  @RequiresPermissions("nexus:blobstores:read")
+  @GET
+  @Path("/{name}/quota-status")
+  public BlobStoreQuotaResultXO quotaStatus(@PathParam("name") final String name) {
+    // Use virtual threads for I/O-bound operations to improve scalability
+    try {
+      return virtualThreadExecutor.supplyAsync(() -> {
+        BlobStore blobStore = blobStoreManager.get(name);
+
+        if (blobStore == null) {
+          throw new WebApplicationException(format("No blob store found for id '%s' ", name), NOT_FOUND);
+        }
+
+        BlobStoreQuotaResult result = quotaService.checkQuota(blobStore);
+
+        return result != null ? BlobStoreQuotaResultXO.asQuotaXO(result) : BlobStoreQuotaResultXO.asNoQuotaXO(name);
+      }).join();
+    }
+    catch (Exception e) {
+      // Ensure proper exception propagation in Virtual Thread context
+      if (e.getCause() != null) {
+        if (e.getCause() instanceof WebApplicationException) {
+          throw (WebApplicationException) e.getCause();
+        }
+        if (e.getCause() instanceof RuntimeException) {
+          throw (RuntimeException) e.getCause();
+        }
+        throw new RuntimeException(e.getCause());
+      }
+      throw e;
+    }
   }
 }

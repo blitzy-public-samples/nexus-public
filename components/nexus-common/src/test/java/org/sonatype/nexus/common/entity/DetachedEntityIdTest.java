@@ -14,25 +14,30 @@ package org.sonatype.nexus.common.entity;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
-import org.junit.jupiter.api.Test;
+// JUnit 4 backward compatibility
+import org.junit.Test;
+import org.junit.experimental.categories.Category;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.not;
+// JUnit Jupiter API
+import org.junit.jupiter.api.Assertions;
+
+// Java 21 compatibility marker
+import org.sonatype.nexus.virtualthread.Java21TestGroup;
 
 /**
  * Tests for {@link DetachedEntityId}
  */
+@Category(Java21TestGroup.class)
 public class DetachedEntityIdTest
     extends TestSupport
 {
   @Test
-  void testDetachedEquality() {
+  public void detachedEquality() {
     DetachedEntityId a = new DetachedEntityId("a");
-    assertThat(a, is(a));
-    assertThat(a, is(new DetachedEntityId("a")));
+    Assertions.assertEquals(a, a);
+    Assertions.assertEquals(a, new DetachedEntityId("a"));
 
     DetachedEntityId b = new DetachedEntityId("b");
-    assertThat(a, not(b));
+    Assertions.assertNotEquals(a, b);
   }
 }

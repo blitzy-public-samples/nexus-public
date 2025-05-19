@@ -17,6 +17,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 import javax.annotation.Nullable;
 
@@ -38,6 +42,7 @@ import org.sonatype.nexus.repository.types.GroupType;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.Collections.singletonList;
+import static java.util.concurrent.CompletableFuture.supplyAsync;
 import static org.sonatype.nexus.repository.content.fluent.constraints.GroupRepositoryConstraint.GroupRepositoryLocation.BOTH;
 import static org.sonatype.nexus.repository.content.fluent.constraints.GroupRepositoryConstraint.GroupRepositoryLocation.LOCAL;
 import static org.sonatype.nexus.repository.content.fluent.constraints.GroupRepositoryConstraint.GroupRepositoryLocation.MEMBERS;
@@ -57,6 +62,9 @@ public class FluentAssetsImpl
   private final ContentFacetSupport facet;
 
   private final AssetStore<?> assetStore;
+  
+  // Virtual thread executor for parallel operations
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   public FluentAssetsImpl(final ContentFacetSupport facet, final AssetStore<?> assetStore) {
     this.facet = checkNotNull(facet);
@@ -83,7 +91,41 @@ public class FluentAssetsImpl
       @Nullable final String filter,
       @Nullable final Map<String, Object> filterParams)
   {
-    return assetStore.countAssets(facet.contentRepositoryId(), kind, filter, filterParams);
+    // Using pattern matching to check repository type
+    if (facet.repository().getType() instanceof GroupType groupType) {
+      // For group repositories, count assets across all members using virtual threads
+      try {
+        GroupFacet groupFacet = facet.repository().facet(GroupFacet.class);
+        List<CompletableFuture<Integer>> countFutures = groupFacet.allMembers().stream()
+            .map(member -> supplyAsync(() -> {
+              try {
+                Optional<Integer> repoId = InternalIds.contentRepositoryId(member);
+                if (repoId.isPresent()) {
+                  return assetStore.countAssets(repoId.get(), kind, filter, filterParams);
+                }
+                return 0;
+              } catch (Exception e) {
+                // Using String Template for more readable logging message
+                log(STR."Error counting assets in member repository \{member.getName()}: \{e.getMessage()}");
+                return 0;
+              }
+            }, virtualThreadExecutor))
+            .collect(Collectors.toList());
+
+        // Wait for all counts to complete and sum them
+        return countFutures.stream()
+            .map(CompletableFuture::join)
+            .mapToInt(Integer::intValue)
+            .sum();
+      } catch (Exception e) {
+        log(STR."Error counting assets in group repository: \{e.getMessage()}");
+        // Fallback to standard count if virtual thread approach fails
+        return assetStore.countAssets(facet.contentRepositoryId(), kind, filter, filterParams);
+      }
+    } else {
+      // For non-group repositories, use standard count
+      return assetStore.countAssets(facet.contentRepositoryId(), kind, filter, filterParams);
+    }
   }
 
   @Override
@@ -109,9 +151,87 @@ public class FluentAssetsImpl
       @Nullable final List<FluentQueryConstraint> constraints)
   {
     Set<Integer> repositoryIds = getRepositoryIds(constraints, facet, facet.repository());
+    
+    // Using pattern matching with switch to handle different repository types
+    switch (facet.repository().getType()) {
+      case GroupType groupType when constraints != null && hasGroupMemberConstraint(constraints) -> {
+        // Process group members in parallel using virtual threads
+        try {
+          GroupFacet groupFacet = facet.repository().facet(GroupFacet.class);
+          
+          // Create a list of futures for browsing each member repository
+          List<CompletableFuture<Continuation<Asset>>> browseFutures = groupFacet.allMembers().stream()
+              .map(member -> supplyAsync(() -> {
+                try {
+                  Optional<Integer> repoId = InternalIds.contentRepositoryId(member);
+                  if (repoId.isPresent()) {
+                    return assetStore.browseAssets(Set.of(repoId.get()),
+                        continuationToken, kind, filter, filterParams, limit);
+                  }
+                  return Continuation.empty();
+                } catch (Exception e) {
+                  log(STR."Error browsing assets in member repository \{member.getName()}: \{e.getMessage()}");
+                  return Continuation.empty();
+                }
+              }, virtualThreadExecutor))
+              .collect(Collectors.toList());
 
-    return new FluentContinuation<>(assetStore.browseAssets(repositoryIds,
-        continuationToken, kind, filter, filterParams, limit), this::with);
+          // Combine results from all member repositories
+          List<Asset> combinedAssets = browseFutures.stream()
+              .map(CompletableFuture::join)
+              .flatMap(continuation -> continuation.stream())
+              .limit(limit)
+              .collect(Collectors.toList());
+
+          // Create a continuation from the combined results
+          // Using Sequenced Collections for better continuation token handling
+          String nextContinuationToken = combinedAssets.size() < limit ? null : 
+              generateContinuationToken(combinedAssets);
+              
+          return new FluentContinuation<>(new Continuation<>(combinedAssets, nextContinuationToken), this::with);
+        } catch (Exception e) {
+          log(STR."Error browsing assets in group repository: \{e.getMessage()}");
+          // Fallback to standard browse if virtual thread approach fails
+          return new FluentContinuation<>(assetStore.browseAssets(repositoryIds,
+              continuationToken, kind, filter, filterParams, limit), this::with);
+        }
+      }
+      default -> {
+        // For non-group repositories or when not browsing member content, use standard browse
+        return new FluentContinuation<>(assetStore.browseAssets(repositoryIds,
+            continuationToken, kind, filter, filterParams, limit), this::with);
+      }
+    }
+  }
+
+  /**
+   * Checks if the constraints include a group member constraint.
+   */
+  private boolean hasGroupMemberConstraint(List<FluentQueryConstraint> constraints) {
+    return constraints.stream()
+        .filter(constraint -> constraint instanceof GroupRepositoryConstraint)
+        .map(constraint -> (GroupRepositoryConstraint) constraint)
+        .anyMatch(constraint -> constraint.getLocation() == MEMBERS || constraint.getLocation() == BOTH);
+  }
+
+  /**
+   * Generates a continuation token from the last asset in the list.
+   */
+  private String generateContinuationToken(List<Asset> assets) {
+    if (assets.isEmpty()) {
+      return null;
+    }
+    // Get the last asset using Sequenced Collections approach
+    Asset lastAsset = assets.getLast();
+    return String.valueOf(lastAsset.id());
+  }
+
+  /**
+   * Simple logging method for demonstration purposes.
+   */
+  private void log(String message) {
+    // In a real implementation, this would use a proper logger
+    System.out.println(message);
   }
 
   @Override

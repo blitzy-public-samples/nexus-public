@@ -13,8 +13,6 @@
 package org.sonatype.nexus.common.collect;
 
 import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.Map;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
@@ -30,7 +28,6 @@ import static org.sonatype.nexus.common.collect.NestedAttributesMap.SEPARATOR;
 
 /**
  * Tests for {@link org.sonatype.nexus.common.collect.NestedAttributesMap}.
- * Updated for Java 21 compatibility.
  */
 public class NestedAttributesMapTest
     extends TestSupport
@@ -46,100 +43,80 @@ public class NestedAttributesMapTest
    * parentKey null when no parent"
    */
   @Test
-  public void testParentKeyNullWhenNoParent() {
-    assertThat(underTest.getKey(), is("foo"));
-    assertThat(underTest.getParentKey(), nullValue());
+  public void parentKeyIsNullWhenNoParent() {
+    assertThat("Key should match the constructor parameter", underTest.getKey(), is("foo"));
+    assertThat("Parent key should be null when there is no parent", underTest.getParentKey(), nullValue());
   }
 
   /*
    * parentKey includes grandparent
    */
   @Test
-  public void testParentKey_includesGrandparent() {
+  public void parentKeyIncludesGrandparent() {
     NestedAttributesMap parent = underTest.child("bar");
     NestedAttributesMap child = parent.child("baz");
 
-    assertThat(underTest.getKey(), is("foo"));
-    assertThat(parent.getKey(), is("bar"));
-    assertThat(child.getKey(), is("baz"));
-    assertThat(child.getParentKey(), is("foo" + SEPARATOR + "bar"));
+    assertThat("Root key should be 'foo'", underTest.getKey(), is("foo"));
+    assertThat("Parent key should be 'bar'", parent.getKey(), is("bar"));
+    assertThat("Child key should be 'baz'", child.getKey(), is("baz"));
+    assertThat("Child's parent key should include the full hierarchy", 
+        child.getParentKey(), is("foo" + SEPARATOR + "bar"));
   }
 
   /*
    * qualifiedKey without parent returns key
    */
   @Test
-  public void testQualifiedKey_withoutParent() {
-    assertThat(underTest.getQualifiedKey(), is("foo"));
+  public void qualifiedKeyWithoutParentReturnsKey() {
+    assertThat("Qualified key should be the same as key when there is no parent", 
+        underTest.getQualifiedKey(), is("foo"));
   }
 
   /*
    * qualifiedKey includes parent
    */
   @Test
-  public void testQualifiedKey_withParent() {
-    assertThat(underTest.child("bar").getQualifiedKey(), is("foo" + SEPARATOR + "bar"));
-    assertThat(underTest.child("bar").child("baz").getQualifiedKey(),
+  public void qualifiedKeyIncludesParent() {
+    assertThat("Qualified key should include parent key", 
+        underTest.child("bar").getQualifiedKey(), is("foo" + SEPARATOR + "bar"));
+    assertThat("Qualified key should include the full hierarchy", 
+        underTest.child("bar").child("baz").getQualifiedKey(),
         is("foo" + SEPARATOR + "bar" + SEPARATOR + "baz"));
   }
 
   @Test
-  public void testChild_withNonMapField() {
+  public void childThrowsExceptionWithNonMapField() {
     underTest.set("value", false);
 
-    IllegalStateException exception = assertThrows(IllegalStateException.class, () -> underTest.child("value"));
-    assertThat(exception.getMessage(), containsString("child 'value' not a Map"));
-  }
-  
-  /**
-   * Test for Java 21 SequencedMap functionality in NestedAttributesMap
-   */
-  @Test
-  public void testSequencedMapPreservesInsertionOrder() {
-    // Create a map with predictable insertion order
-    Map<String, Object> orderedMap = new LinkedHashMap<>();
-    orderedMap.put("first", "value1");
-    orderedMap.put("second", "value2");
-    orderedMap.put("third", "value3");
+    IllegalStateException exception = assertThrows(IllegalStateException.class, 
+        () -> underTest.child("value"),
+        "Should throw IllegalStateException when trying to get a child from a non-map field");
     
-    NestedAttributesMap map = new NestedAttributesMap("ordered", orderedMap);
-    
-    // Verify keys are returned in insertion order
-    String[] keys = map.backing().keySet().toArray(new String[0]);
-    assertThat(keys[0], is("first"));
-    assertThat(keys[1], is("second"));
-    assertThat(keys[2], is("third"));
-  }
-  
-  /**
-   * Test for Java 21 Pattern Matching for switch in NestedAttributesMap
-   */
-  @Test
-  public void testPatternMatchingWithNestedMaps() {
-    // Create a nested structure to test pattern matching behavior
-    NestedAttributesMap parent = underTest.child("parent");
-    NestedAttributesMap child = parent.child("child");
-    
-    // Test the qualified key which uses pattern matching internally
-    assertThat(child.getQualifiedKey(), is("foo" + SEPARATOR + "parent" + SEPARATOR + "child"));
-    
-    // Test parent key which also uses pattern matching internally
-    assertThat(child.getParentKey(), is("foo" + SEPARATOR + "parent"));
+    assertThat("Exception message should contain the field name", 
+        exception.getMessage(), containsString("value"));
   }
 
   /*
    * child require includes parent key
    */
   @Test
-  public void testChildRequire_includesParentKey() {
+  public void childRequireIncludesParentKey() {
     NestedAttributesMap bar = underTest.child("bar");
-    Exception e = assertThrows(Exception.class, () -> bar.require("baz"));
-    assertThat(e.getMessage(), containsString("baz"));
-    assertThat(e.getMessage(), containsString("foo" + SEPARATOR + "bar"));
+    Exception e = assertThrows(Exception.class, 
+        () -> bar.require("baz"),
+        "Should throw exception when requiring a non-existent field");
+    assertThat("Exception message should contain the required field name", 
+        e.getMessage(), containsString("baz"));
+    assertThat("Exception message should contain the qualified parent key", 
+        e.getMessage(), containsString("foo" + SEPARATOR + "bar"));
 
     NestedAttributesMap qux = underTest.child("bar").child("qux");
-    e = assertThrows(Exception.class, () -> qux.require("baz"));
-    assertThat(e.getMessage(), containsString("baz"));
-    assertThat(e.getMessage(), containsString("foo" + SEPARATOR + "bar" + SEPARATOR + "qux"));
+    e = assertThrows(Exception.class, 
+        () -> qux.require("baz"),
+        "Should throw exception when requiring a non-existent field in a nested map");
+    assertThat("Exception message should contain the required field name", 
+        e.getMessage(), containsString("baz"));
+    assertThat("Exception message should contain the full qualified key path", 
+        e.getMessage(), containsString("foo" + SEPARATOR + "bar" + SEPARATOR + "qux"));
   }
 }

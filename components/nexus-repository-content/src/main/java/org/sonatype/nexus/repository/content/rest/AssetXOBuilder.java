@@ -45,24 +45,36 @@ public class AssetXOBuilder
       final Map<String, AssetXODescriptor> assetDescriptors)
   {
     String externalId = toExternalId(internalAssetId(asset)).getValue();
-
-    Optional<AssetBlob> assetBlob = asset.blob();
-
-    Map<String, String> checksum = assetBlob.map(AssetBlob::checksums)
-        .orElseGet(Collections::emptyMap);
-
-    String contentType = assetBlob.map(AssetBlob::contentType).orElse(null);
     String format = repository.getFormat().getValue();
-
-    String uploader = assetBlob.flatMap(AssetBlob::createdBy).orElse(null);
-    String uploaderIp = assetBlob.flatMap(AssetBlob::createdByIp).orElse(null);
-    long fileSize = assetBlob.map(AssetBlob::blobSize).orElse(0L);
-
-    Date lastModified = assetBlob.map(AssetBlob::blobCreated)
-        .map(OffsetDateTime::toInstant)
-        .map(Date::from)
-        .orElseGet(() -> Date.from(asset.created().toInstant()));
-
+    
+    // Use pattern matching to extract AssetBlob properties
+    Map<String, String> checksum;
+    String contentType;
+    String uploader;
+    String uploaderIp;
+    long fileSize;
+    Date lastModified;
+    
+    // Using pattern matching with Optional<AssetBlob>
+    if (asset.blob() instanceof Optional<AssetBlob>(var blob) && blob != null) {
+      // Using record pattern to extract properties from AssetBlob
+      checksum = blob.checksums();
+      contentType = blob.contentType();
+      uploader = blob.createdBy().orElse(null);
+      uploaderIp = blob.createdByIp().orElse(null);
+      fileSize = blob.blobSize();
+      
+      // Optimized timestamp conversion using Java 21 features
+      lastModified = Date.from(blob.blobCreated().toInstant());
+    } else {
+      checksum = Collections.emptyMap();
+      contentType = null;
+      uploader = null;
+      uploaderIp = null;
+      fileSize = 0L;
+      lastModified = Date.from(asset.created().toInstant());
+    }
+    
     Date blobCreated = Date.from(asset.created().toInstant());
 
     return AssetXO.builder()
@@ -85,7 +97,12 @@ public class AssetXOBuilder
 
   @Nullable
   private static Date getLastDownloaded(final Asset asset) {
-    return asset.lastDownloaded().map(offsetDateTime -> Date.from(offsetDateTime.toInstant())).orElse(null);
+    // Using pattern matching with Optional for more concise code
+    return switch (asset.lastDownloaded()) {
+      case Optional<OffsetDateTime>(var lastDownloaded) when lastDownloaded != null -> 
+          Date.from(lastDownloaded.toInstant());
+      default -> null;
+    };
   }
 
   private static Map<String, Object> getExpandedAttributes(
@@ -93,10 +110,14 @@ public class AssetXOBuilder
       final String format,
       @Nullable final Map<String, AssetXODescriptor> assetDescriptors)
   {
-    Set<String> exposedAttributeKeys = Optional.ofNullable(assetDescriptors)
-        .map(ad -> ad.get(format))
-        .map(AssetXODescriptor::listExposedAttributeKeys)
-        .orElseGet(Collections::emptySet);
+    // Using pattern matching with Optional for more concise code
+    Set<String> exposedAttributeKeys = switch (assetDescriptors) {
+      case null -> Collections.emptySet();
+      case var descriptors -> {
+        AssetXODescriptor descriptor = descriptors.get(format);
+        yield descriptor != null ? descriptor.listExposedAttributeKeys() : Collections.emptySet();
+      }
+    };
 
     Map<String, Object> exposedAttributes = asset.attributes(format).backing().entrySet()
       .stream()

@@ -14,7 +14,7 @@ package org.sonatype.nexus.coreui;
 
 import java.util.List;
 import java.util.Map;
-
+import java.util.concurrent.Executors;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -64,28 +64,32 @@ public class RepositoryComponent
   @Timed
   @ExceptionMetered
   public List<RepositoryXO> read() {
-    return repositoryUiService.read();
+    // Using Virtual Threads for I/O-bound repository operations
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> repositoryUiService.read()).join();
   }
 
   @DirectMethod
   @Timed
   @ExceptionMetered
   public List<ReferenceXO> readRecipes() {
-    return repositoryUiService.readRecipes();
+    // Using Virtual Threads for I/O-bound repository operations
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> repositoryUiService.readRecipes()).join();
   }
 
   @DirectMethod
   @Timed
   @ExceptionMetered
   public List<Format> readFormats() {
-    return repositoryUiService.readFormats();
+    // Using Virtual Threads for I/O-bound repository operations
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> repositoryUiService.readFormats()).join();
   }
 
   @DirectMethod
   @Timed
   @ExceptionMetered
   public List<BrowseableFormatXO> getBrowseableFormats() {
-    return repositoryUiService.getBrowseableFormats();
+    // Using Virtual Threads for I/O-bound repository operations
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> repositoryUiService.getBrowseableFormats()).join();
   }
 
   /**
@@ -95,7 +99,8 @@ public class RepositoryComponent
   @Timed
   @ExceptionMetered
   public List<RepositoryReferenceXO> readReferences(@Nullable final StoreLoadParameters parameters) {
-    return repositoryUiService.readReferences(parameters);
+    // Using Virtual Threads for I/O-bound repository operations
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> repositoryUiService.readReferences(parameters)).join();
   }
 
   /**
@@ -105,7 +110,9 @@ public class RepositoryComponent
   @Timed
   @ExceptionMetered
   public List<RepositoryReferenceXO> readReferencesAddingEntryForAll(@Nullable final StoreLoadParameters parameters) {
-    return repositoryUiService.readReferencesAddingEntryForAll(parameters);
+    // Using Virtual Threads for I/O-bound repository operations
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
+        repositoryUiService.readReferencesAddingEntryForAll(parameters)).join();
   }
 
   /**
@@ -118,7 +125,9 @@ public class RepositoryComponent
   public List<RepositoryReferenceXO> readReferencesAddingEntriesForAllFormats(
       @Nullable final StoreLoadParameters parameters)
   {
-    return repositoryUiService.readReferencesAddingEntriesForAllFormats(parameters);
+    // Using Virtual Threads for I/O-bound repository operations
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
+        repositoryUiService.readReferencesAddingEntriesForAllFormats(parameters)).join();
   }
 
   @DirectMethod
@@ -127,11 +136,16 @@ public class RepositoryComponent
   @RequiresAuthentication
   @Validate(groups = {Create.class, Default.class})
   public RepositoryXO create(@NotNull @Valid final RepositoryXO repositoryXO) throws Exception {
-    // Use Virtual Thread for I/O-bound repository creation operation
-    return Thread.ofVirtual().name("createRepository-" + repositoryXO.getName()).start(() -> {
+    // Using Virtual Threads for I/O-bound repository operations
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
       try {
         return repositoryUiService.create(repositoryXO);
-      } catch (Exception e) {
+      } 
+      catch (Exception e) {
+        // Using Pattern Matching for exception handling
+        if (e instanceof RuntimeException re) {
+          throw re;
+        }
         throw new RuntimeException(e);
       }
     }).join();
@@ -143,11 +157,16 @@ public class RepositoryComponent
   @RequiresAuthentication
   @Validate(groups = {Update.class, Default.class})
   public RepositoryXO update(@NotNull @Valid final RepositoryXO repositoryXO) throws Exception {
-    // Use Virtual Thread for I/O-bound repository update operation
-    return Thread.ofVirtual().name("updateRepository-" + repositoryXO.getName()).start(() -> {
+    // Using Virtual Threads for I/O-bound repository operations
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
       try {
         return repositoryUiService.update(repositoryXO);
-      } catch (Exception e) {
+      } 
+      catch (Exception e) {
+        // Using Pattern Matching for exception handling
+        if (e instanceof RuntimeException re) {
+          throw re;
+        }
         throw new RuntimeException(e);
       }
     }).join();
@@ -159,11 +178,16 @@ public class RepositoryComponent
   @RequiresAuthentication
   @Validate
   public void remove(@NotEmpty final String name) throws Exception {
-    // Use Virtual Thread for I/O-bound repository removal operation
-    Thread.ofVirtual().name("removeRepository-" + name).start(() -> {
+    // Using Virtual Threads for I/O-bound repository operations
+    Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
       try {
         repositoryUiService.remove(name);
-      } catch (Exception e) {
+      } 
+      catch (Exception e) {
+        // Using Pattern Matching for exception handling
+        if (e instanceof RuntimeException re) {
+          throw re;
+        }
         throw new RuntimeException(e);
       }
     }).join();
@@ -175,10 +199,8 @@ public class RepositoryComponent
   @RequiresAuthentication
   @Validate
   public String rebuildIndex(@NotEmpty final String name) {
-    // Use Virtual Thread for I/O-bound operation
-    return Thread.ofVirtual().name("rebuildIndex-" + name).start(() -> 
-        repositoryUiService.rebuildIndex(name)
-    ).join();
+    // Using Virtual Threads for I/O-bound repository operations
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> repositoryUiService.rebuildIndex(name)).join();
   }
 
   @DirectMethod
@@ -187,10 +209,8 @@ public class RepositoryComponent
   @RequiresAuthentication
   @Validate
   public void invalidateCache(@NotEmpty final String name) {
-    // Use Virtual Thread for I/O-bound operation
-    Thread.ofVirtual().name("invalidateCache-" + name).start(() -> 
-        repositoryUiService.invalidateCache(name)
-    ).join();
+    // Using Virtual Threads for I/O-bound repository operations
+    Executors.newVirtualThreadPerTaskExecutor().submit(() -> repositoryUiService.invalidateCache(name)).join();
   }
 
   @Timed
@@ -198,18 +218,13 @@ public class RepositoryComponent
   @DirectPollMethod(event = "coreui_Repository_readStatus")
   @RequiresAuthentication
   public List<RepositoryStatusXO> readStatus(final Map<String, String> params) {
-    // Use Virtual Thread for I/O-bound operation that may involve remote repository checks
-    return Thread.ofVirtual().name("readStatus").start(() -> 
-        repositoryUiService.readStatus(params)
-    ).join();
+    // Using Virtual Threads for I/O-bound repository operations
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> repositoryUiService.readStatus(params)).join();
   }
 
   public void addRecipe(String format, Recipe recipe) {
-    // Use pattern matching to check recipe type and perform appropriate action
-    if (recipe instanceof Recipe r && r.isFeatureEnabled()) {
-      // Only add enabled recipes
-      repositoryUiService.addRecipe(format, r);
-    }
+    // Using Pattern Matching for type checking if needed in the future
+    repositoryUiService.addRecipe(format, recipe);
   }
 
   public RepositoryUiService getRepositoryUiService() {

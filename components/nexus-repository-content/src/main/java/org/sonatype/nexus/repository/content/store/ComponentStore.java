@@ -18,6 +18,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.SequencedCollection;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -46,6 +52,8 @@ import com.google.inject.assistedinject.Assisted;
 import org.apache.ibatis.annotations.Param;
 
 import static java.util.Arrays.stream;
+import static java.util.concurrent.CompletableFuture.allOf;
+import static java.util.concurrent.CompletableFuture.supplyAsync;
 import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_CLUSTERED_ENABLED_NAMED;
 import static org.sonatype.nexus.repository.content.AttributesHelper.applyAttributeChange;
 import static org.sonatype.nexus.scheduling.CancelableHelper.checkCancellation;
@@ -62,6 +70,9 @@ public class ComponentStore<T extends ComponentDAO>
   private static final int BATCH_SIZE = SystemPropertiesHelper.getInteger("nexus.component.purge.size", 100);
 
   private final boolean clustered;
+  
+  // Virtual thread executor for I/O-bound operations
+  private final Executor virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   @Inject
   public ComponentStore(
@@ -123,7 +134,7 @@ public class ComponentStore<T extends ComponentDAO>
   }
 
   /**
-   * Browse all components in the given repository in a paged fashion.
+   * Browse all components in the given repository in a paged fashion using virtual threads.
    *
    * @param repositoryId the repository to browse
    * @param limit maximum number of components to return
@@ -143,8 +154,15 @@ public class ComponentStore<T extends ComponentDAO>
       @Nullable final String filter,
       @Nullable final Map<String, Object> filterParams)
   {
-    return dao().browseComponents(repositoryId, limit, continuationToken, kind, filter,
-        filterParams);
+    try {
+      return supplyAsync(() -> 
+          dao().browseComponents(repositoryId, limit, continuationToken, kind, filter, filterParams),
+          virtualThreadExecutor).get();
+    } catch (InterruptedException | ExecutionException e) {
+      log.error("Error browsing components with virtual threads", e);
+      Thread.currentThread().interrupt();
+      return dao().browseComponents(repositoryId, limit, continuationToken, kind, filter, filterParams);
+    }
   }
 
   @Transactional
@@ -156,11 +174,19 @@ public class ComponentStore<T extends ComponentDAO>
       @Nullable final String filter,
       @Nullable final Map<String, Object> filterParams)
   {
-    return dao().browseComponentsEager(repositoryIds, limit, continuationToken, kind, filter, filterParams);
+    try {
+      return supplyAsync(() -> 
+          dao().browseComponentsEager(repositoryIds, limit, continuationToken, kind, filter, filterParams),
+          virtualThreadExecutor).get();
+    } catch (InterruptedException | ExecutionException e) {
+      log.error("Error browsing components eagerly with virtual threads", e);
+      Thread.currentThread().interrupt();
+      return dao().browseComponentsEager(repositoryIds, limit, continuationToken, kind, filter, filterParams);
+    }
   }
 
   /**
-   * Browse all components without normalized_version
+   * Browse all components without normalized_version using virtual threads
    *
    * @param limit maximum number of components to return
    * @param continuationToken optional token to continue from a previous request
@@ -172,11 +198,19 @@ public class ComponentStore<T extends ComponentDAO>
       final int limit,
       @Nullable final String continuationToken)
   {
-    return dao().browseUnnormalized(limit, continuationToken);
+    try {
+      return supplyAsync(() -> 
+          dao().browseUnnormalized(limit, continuationToken),
+          virtualThreadExecutor).get();
+    } catch (InterruptedException | ExecutionException e) {
+      log.error("Error browsing unnormalized components with virtual threads", e);
+      Thread.currentThread().interrupt();
+      return dao().browseUnnormalized(limit, continuationToken);
+    }
   }
 
   /**
-   * Browse all components in the given repository ids in a paged fashion.
+   * Browse all components in the given repository ids in a paged fashion using virtual threads.
    *
    * @param repositoryIds the ids repositories to browse
    * @param limit maximum number of components to return
@@ -190,11 +224,19 @@ public class ComponentStore<T extends ComponentDAO>
       final int limit,
       @Nullable final String continuationToken)
   {
-    return dao().browseComponentsInRepositories(repositoryIds, limit, continuationToken);
+    try {
+      return supplyAsync(() -> 
+          dao().browseComponentsInRepositories(repositoryIds, limit, continuationToken),
+          virtualThreadExecutor).get();
+    } catch (InterruptedException | ExecutionException e) {
+      log.error("Error browsing components in repositories with virtual threads", e);
+      Thread.currentThread().interrupt();
+      return dao().browseComponentsInRepositories(repositoryIds, limit, continuationToken);
+    }
   }
 
   /**
-   * Browse all components in the given repository and component set, in a paged fashion.
+   * Browse all components in the given repository and component set, in a paged fashion using virtual threads.
    *
    * @param repositoryId the repository to browse
    * @param componentSet the component set to browse
@@ -210,12 +252,19 @@ public class ComponentStore<T extends ComponentDAO>
       final int limit,
       @Nullable final String continuationToken)
   {
-    return dao().browseComponentsBySet(repositoryId,
-        componentSet.namespace(), componentSet.name(), limit, continuationToken);
+    try {
+      return supplyAsync(() -> 
+          dao().browseComponentsBySet(repositoryId, componentSet.namespace(), componentSet.name(), limit, continuationToken),
+          virtualThreadExecutor).get();
+    } catch (InterruptedException | ExecutionException e) {
+      log.error("Error browsing components by set with virtual threads", e);
+      Thread.currentThread().interrupt();
+      return dao().browseComponentsBySet(repositoryId, componentSet.namespace(), componentSet.name(), limit, continuationToken);
+    }
   }
 
   /**
-   * Select components using the provided query generator and parameters.
+   * Select components using the provided query generator and parameters with virtual threads.
    *
    * @param generator generator for the select
    * @param params parameters for the select
@@ -225,11 +274,19 @@ public class ComponentStore<T extends ComponentDAO>
       final SqlGenerator<? extends SqlQueryParameters> generator,
       final SqlQueryParameters params)
   {
-    return dao().selectComponents(generator, params);
+    try {
+      return supplyAsync(() -> 
+          dao().selectComponents(generator, params),
+          virtualThreadExecutor).get();
+    } catch (InterruptedException | ExecutionException e) {
+      log.error("Error selecting components with virtual threads", e);
+      Thread.currentThread().interrupt();
+      return dao().selectComponents(generator, params);
+    }
   }
 
   /**
-   * Select components with its related assets using the provided query generator and parameters.
+   * Select components with its related assets using the provided query generator and parameters with virtual threads.
    *
    * @param generator generator for the select
    * @param params parameters for the select
@@ -239,7 +296,15 @@ public class ComponentStore<T extends ComponentDAO>
       final SqlGenerator<? extends SqlQueryParameters> generator,
       final SqlQueryParameters params)
   {
-    return dao().selectComponentsWithAssets(generator, params);
+    try {
+      return supplyAsync(() -> 
+          dao().selectComponentsWithAssets(generator, params),
+          virtualThreadExecutor).get();
+    } catch (InterruptedException | ExecutionException e) {
+      log.error("Error selecting components with assets using virtual threads", e);
+      Thread.currentThread().interrupt();
+      return dao().selectComponentsWithAssets(generator, params);
+    }
   }
 
   /**
@@ -248,11 +313,25 @@ public class ComponentStore<T extends ComponentDAO>
    * The result will include the empty string if there are any components that don't have a namespace.
    *
    * @param repositoryId the repository to browse
-   * @return collection of component namespaces
+   * @return sequenced collection of component namespaces
    */
   @Transactional
-  public Collection<String> browseNamespaces(final int repositoryId) {
-    return dao().browseNamespaces(repositoryId);
+  public SequencedCollection<String> browseNamespaces(final int repositoryId) {
+    try {
+      Collection<String> namespaces = supplyAsync(() -> 
+          dao().browseNamespaces(repositoryId),
+          virtualThreadExecutor).get();
+      return namespaces instanceof SequencedCollection ? 
+          (SequencedCollection<String>) namespaces : 
+          List.copyOf(namespaces);
+    } catch (InterruptedException | ExecutionException e) {
+      log.error("Error browsing namespaces with virtual threads", e);
+      Thread.currentThread().interrupt();
+      Collection<String> namespaces = dao().browseNamespaces(repositoryId);
+      return namespaces instanceof SequencedCollection ? 
+          (SequencedCollection<String>) namespaces : 
+          List.copyOf(namespaces);
+    }
   }
 
   /**
@@ -260,11 +339,25 @@ public class ComponentStore<T extends ComponentDAO>
    *
    * @param repositoryId the repository to browse
    * @param namespace the namespace to browse (empty string to browse components that don't have a namespace)
-   * @return collection of component names
+   * @return sequenced collection of component names
    */
   @Transactional
-  public Collection<String> browseNames(final int repositoryId, final String namespace) {
-    return dao().browseNames(repositoryId, namespace);
+  public SequencedCollection<String> browseNames(final int repositoryId, final String namespace) {
+    try {
+      Collection<String> names = supplyAsync(() -> 
+          dao().browseNames(repositoryId, namespace),
+          virtualThreadExecutor).get();
+      return names instanceof SequencedCollection ? 
+          (SequencedCollection<String>) names : 
+          List.copyOf(names);
+    } catch (InterruptedException | ExecutionException e) {
+      log.error("Error browsing names with virtual threads", e);
+      Thread.currentThread().interrupt();
+      Collection<String> names = dao().browseNames(repositoryId, namespace);
+      return names instanceof SequencedCollection ? 
+          (SequencedCollection<String>) names : 
+          List.copyOf(names);
+    }
   }
 
   /**
@@ -283,7 +376,15 @@ public class ComponentStore<T extends ComponentDAO>
       @Param("limit") int limit,
       @Nullable @Param("continuationToken") String continuationToken)
   {
-    return dao().browseSets(repositoryId, limit, continuationToken);
+    try {
+      return supplyAsync(() -> 
+          dao().browseSets(repositoryId, limit, continuationToken),
+          virtualThreadExecutor).get();
+    } catch (InterruptedException | ExecutionException e) {
+      log.error("Error browsing sets with virtual threads", e);
+      Thread.currentThread().interrupt();
+      return dao().browseSets(repositoryId, limit, continuationToken);
+    }
   }
 
   /**
@@ -294,38 +395,70 @@ public class ComponentStore<T extends ComponentDAO>
    * @param repositoryId the repository to browse
    * @param namespace the namespace of the component
    * @param name the name of the component
-   * @return collection of component versions
+   * @return sequenced collection of component versions
    */
   @Transactional
-  public Collection<String> browseVersions(final int repositoryId, final String namespace, final String name) {
-    return dao().browseVersions(repositoryId, namespace, name);
+  public SequencedCollection<String> browseVersions(final int repositoryId, final String namespace, final String name) {
+    try {
+      Collection<String> versions = supplyAsync(() -> 
+          dao().browseVersions(repositoryId, namespace, name),
+          virtualThreadExecutor).get();
+      return versions instanceof SequencedCollection ? 
+          (SequencedCollection<String>) versions : 
+          List.copyOf(versions);
+    } catch (InterruptedException | ExecutionException e) {
+      log.error("Error browsing versions with virtual threads", e);
+      Thread.currentThread().interrupt();
+      Collection<String> versions = dao().browseVersions(repositoryId, namespace, name);
+      return versions instanceof SequencedCollection ? 
+          (SequencedCollection<String>) versions : 
+          List.copyOf(versions);
+    }
   }
 
   /**
-   * Creates the given component in the content data store.
+   * Creates the given component in the content data store using a virtual thread.
    *
    * @param component the component to create
    */
   @Transactional
   public void createComponent(final ComponentData component) {
-    dao().createComponent(component, clustered);
+    try {
+      supplyAsync(() -> {
+        dao().createComponent(component, clustered);
+        return null;
+      }, virtualThreadExecutor).get();
 
-    postCommitEvent(() -> new ComponentCreatedEvent(component));
+      postCommitEvent(() -> new ComponentCreatedEvent(component));
+    } catch (InterruptedException | ExecutionException e) {
+      log.error("Error creating component with virtual threads", e);
+      Thread.currentThread().interrupt();
+      dao().createComponent(component, clustered);
+      postCommitEvent(() -> new ComponentCreatedEvent(component));
+    }
   }
 
   /**
-   * Retrieves a component from the content data store.
+   * Retrieves a component from the content data store using a virtual thread.
    *
    * @param componentId the internal id of the component
    * @return component if it was found
    */
   @Transactional
   public Optional<Component> readComponent(final int componentId) {
-    return dao().readComponent(componentId);
+    try {
+      return supplyAsync(() -> 
+          dao().readComponent(componentId),
+          virtualThreadExecutor).get();
+    } catch (InterruptedException | ExecutionException e) {
+      log.error("Error reading component with virtual threads", e);
+      Thread.currentThread().interrupt();
+      return dao().readComponent(componentId);
+    }
   }
 
   /**
-   * Retrieves a component located at the given coordinate in the content data store.
+   * Retrieves a component located at the given coordinate in the content data store using a virtual thread.
    *
    * @param repositoryId the repository containing the component
    * @param namespace the namespace of the component
@@ -340,33 +473,60 @@ public class ComponentStore<T extends ComponentDAO>
       final String name,
       final String version)
   {
-    return dao().readCoordinate(repositoryId, namespace, name, version);
+    try {
+      return supplyAsync(() -> 
+          dao().readCoordinate(repositoryId, namespace, name, version),
+          virtualThreadExecutor).get();
+    } catch (InterruptedException | ExecutionException e) {
+      log.error("Error reading coordinate with virtual threads", e);
+      Thread.currentThread().interrupt();
+      return dao().readCoordinate(repositoryId, namespace, name, version);
+    }
   }
 
   /**
-   * Updates the kind of the given component in the content data store.
+   * Updates the kind of the given component in the content data store using a virtual thread.
    *
    * @param component the component to update
    */
   @Transactional
   public void updateComponentKind(final Component component) {
-    dao().updateComponentKind(component, clustered);
+    try {
+      supplyAsync(() -> {
+        dao().updateComponentKind(component, clustered);
+        return null;
+      }, virtualThreadExecutor).get();
 
-    postCommitEvent(() -> new ComponentKindEvent(component));
+      postCommitEvent(() -> new ComponentKindEvent(component));
+    } catch (InterruptedException | ExecutionException e) {
+      log.error("Error updating component kind with virtual threads", e);
+      Thread.currentThread().interrupt();
+      dao().updateComponentKind(component, clustered);
+      postCommitEvent(() -> new ComponentKindEvent(component));
+    }
   }
 
   /**
-   * Updates the normalized_version of the given component in the content data store.
+   * Updates the normalized_version of the given component in the content data store using a virtual thread.
    *
    * @param component the component to update
    */
   @Transactional
   public void updateComponentNormalizedVersion(final Component component) {
-    dao().updateComponentNormalizedVersion(component, clustered);
+    try {
+      supplyAsync(() -> {
+        dao().updateComponentNormalizedVersion(component, clustered);
+        return null;
+      }, virtualThreadExecutor).get();
+    } catch (InterruptedException | ExecutionException e) {
+      log.error("Error updating component normalized version with virtual threads", e);
+      Thread.currentThread().interrupt();
+      dao().updateComponentNormalizedVersion(component, clustered);
+    }
   }
 
   /**
-   * Updates the attributes of the given component in the content data store.
+   * Updates the attributes of the given component in the content data store using a virtual thread.
    *
    * @param component the component to update
    */
@@ -377,20 +537,51 @@ public class ComponentStore<T extends ComponentDAO>
       final String key,
       final @Nullable Object value)
   {
-    // reload latest attributes, apply change, then update database if necessary
-    dao().readComponentAttributes(component).ifPresent(attributes -> {
-      ((ComponentData) component).setAttributes(attributes);
+    try {
+      // Using record pattern matching for ComponentData when available
+      if (component instanceof ComponentData(var componentId, var repositoryId, var namespace, var name, var version, var normalizedVersion, var kind, var attributes)) {
+        supplyAsync(() -> {
+          dao().readComponentAttributes(component).ifPresent(attrs -> {
+            ((ComponentData) component).setAttributes(attrs);
 
-      if (applyAttributeChange(attributes, change, key, value)) {
-        dao().updateComponentAttributes(component, clustered);
+            if (applyAttributeChange(attrs, change, key, value)) {
+              dao().updateComponentAttributes(component, clustered);
+              postCommitEvent(() -> new ComponentAttributesEvent(component, change, key, value));
+            }
+          });
+          return null;
+        }, virtualThreadExecutor).get();
+      } else {
+        // Fallback for non-record pattern case
+        supplyAsync(() -> {
+          dao().readComponentAttributes(component).ifPresent(attributes -> {
+            ((ComponentData) component).setAttributes(attributes);
 
-        postCommitEvent(() -> new ComponentAttributesEvent(component, change, key, value));
+            if (applyAttributeChange(attributes, change, key, value)) {
+              dao().updateComponentAttributes(component, clustered);
+              postCommitEvent(() -> new ComponentAttributesEvent(component, change, key, value));
+            }
+          });
+          return null;
+        }, virtualThreadExecutor).get();
       }
-    });
+    } catch (InterruptedException | ExecutionException e) {
+      log.error("Error updating component attributes with virtual threads", e);
+      Thread.currentThread().interrupt();
+      // Fallback to non-virtual thread execution
+      dao().readComponentAttributes(component).ifPresent(attributes -> {
+        ((ComponentData) component).setAttributes(attributes);
+
+        if (applyAttributeChange(attributes, change, key, value)) {
+          dao().updateComponentAttributes(component, clustered);
+          postCommitEvent(() -> new ComponentAttributesEvent(component, change, key, value));
+        }
+      });
+    }
   }
 
   /**
-   * Deletes a component from the content data store.
+   * Deletes a component from the content data store using a virtual thread.
    *
    * @param component the component to delete
    * @return {@code true} if the component was deleted
@@ -399,15 +590,27 @@ public class ComponentStore<T extends ComponentDAO>
   public boolean deleteComponent(final Component component) {
     preCommitEvent(() -> new ComponentPreDeleteEvent(component));
 
-    boolean deleted = dao().deleteComponent(component);
-    if (deleted) {
-      postCommitEvent(() -> new ComponentDeletedEvent(component));
+    try {
+      boolean deleted = supplyAsync(() -> 
+          dao().deleteComponent(component),
+          virtualThreadExecutor).get();
+      if (deleted) {
+        postCommitEvent(() -> new ComponentDeletedEvent(component));
+      }
+      return deleted;
+    } catch (InterruptedException | ExecutionException e) {
+      log.error("Error deleting component with virtual threads", e);
+      Thread.currentThread().interrupt();
+      boolean deleted = dao().deleteComponent(component);
+      if (deleted) {
+        postCommitEvent(() -> new ComponentDeletedEvent(component));
+      }
+      return deleted;
     }
-    return deleted;
   }
 
   /**
-   * Deletes the component located at the given coordinate in the content data store.
+   * Deletes the component located at the given coordinate in the content data store using a virtual thread.
    *
    * @param repositoryId the repository containing the component
    * @param namespace the namespace of the component
@@ -422,13 +625,23 @@ public class ComponentStore<T extends ComponentDAO>
       final String name,
       final String version)
   {
-    return dao().readCoordinate(repositoryId, namespace, name, version)
-        .map(this::deleteComponent)
-        .orElse(false);
+    try {
+      return supplyAsync(() -> 
+          dao().readCoordinate(repositoryId, namespace, name, version)
+              .map(this::deleteComponent)
+              .orElse(false),
+          virtualThreadExecutor).get();
+    } catch (InterruptedException | ExecutionException e) {
+      log.error("Error deleting coordinate with virtual threads", e);
+      Thread.currentThread().interrupt();
+      return dao().readCoordinate(repositoryId, namespace, name, version)
+          .map(this::deleteComponent)
+          .orElse(false);
+    }
   }
 
   /**
-   * Deletes all components in the given repository from the content data store.
+   * Deletes all components in the given repository from the content data store using virtual threads.
    * <p>
    *
    * @param repositoryId the repository containing the components
@@ -437,17 +650,32 @@ public class ComponentStore<T extends ComponentDAO>
   @Transactional
   public void deleteComponents(final int repositoryId) {
     log.debug("Deleting all components in repository {}", repositoryId);
-    int deletedCount;
-    while ((deletedCount = dao().deleteComponents(repositoryId, deleteBatchSize())) > 0) {
-      final int finalDeletedCount = deletedCount;
-      postCommitEvent(() -> new RepositoryDeletedComponentEvent(repositoryId, finalDeletedCount));
-      checkCancellation();
+    try {
+      int deletedCount;
+      while ((deletedCount = supplyAsync(() -> 
+          dao().deleteComponents(repositoryId, deleteBatchSize()),
+          virtualThreadExecutor).get()) > 0) {
+        final int finalDeletedCount = deletedCount;
+        postCommitEvent(() -> new RepositoryDeletedComponentEvent(repositoryId, finalDeletedCount));
+        checkCancellation();
+      }
+    } catch (InterruptedException | ExecutionException e) {
+      log.error("Error deleting components with virtual threads", e);
+      Thread.currentThread().interrupt();
+      // Fallback to non-virtual thread execution
+      int deletedCount;
+      while ((deletedCount = dao().deleteComponents(repositoryId, deleteBatchSize())) > 0) {
+        final int finalDeletedCount = deletedCount;
+        postCommitEvent(() -> new RepositoryDeletedComponentEvent(repositoryId, finalDeletedCount));
+        checkCancellation();
+      }
     }
     log.debug("Deleted all components in repository {}", repositoryId);
   }
 
   /**
    * Purge components in the given repository whose assets were last downloaded more than given number of days ago
+   * using virtual threads.
    *
    * @param repositoryId the repository to check
    * @param daysAgo the number of days ago to check
@@ -457,20 +685,37 @@ public class ComponentStore<T extends ComponentDAO>
   @Transactional
   public int purgeNotRecentlyDownloaded(final int repositoryId, final int daysAgo) {
     int purged = 0;
-    while (true) {
-      int[] componentIds = dao().selectNotRecentlyDownloaded(repositoryId, daysAgo, deleteBatchSize());
-      if (componentIds.length == 0) {
-        break; // nothing left to purge
-      }
-      purged += purge(repositoryId, componentIds);
+    try {
+      while (true) {
+        int[] componentIds = supplyAsync(() -> 
+            dao().selectNotRecentlyDownloaded(repositoryId, daysAgo, deleteBatchSize()),
+            virtualThreadExecutor).get();
+        if (componentIds.length == 0) {
+          break; // nothing left to purge
+        }
+        purged += purge(repositoryId, componentIds);
 
-      checkCancellation();
+        checkCancellation();
+      }
+    } catch (InterruptedException | ExecutionException e) {
+      log.error("Error purging not recently downloaded components with virtual threads", e);
+      Thread.currentThread().interrupt();
+      // Fallback to non-virtual thread execution
+      while (true) {
+        int[] componentIds = dao().selectNotRecentlyDownloaded(repositoryId, daysAgo, deleteBatchSize());
+        if (componentIds.length == 0) {
+          break; // nothing left to purge
+        }
+        purged += purge(repositoryId, componentIds);
+
+        checkCancellation();
+      }
     }
     return purged;
   }
 
   /**
-   * Purge the specified components in the given repository
+   * Purge the specified components in the given repository using virtual threads.
    *
    * @param repositoryId the repository to check
    * @param componentIds ids of the components to purge
@@ -480,15 +725,47 @@ public class ComponentStore<T extends ComponentDAO>
   public int purge(final int repositoryId, final int[] componentIds) {
     final int iterations = componentIds.length / BATCH_SIZE + 1;
 
-    int purged = 0;
-    for (int i = 0; i < iterations; i++) {
-      int startIndex = i * BATCH_SIZE;
-      int[] page = new int[Math.min(BATCH_SIZE, componentIds.length - startIndex)];
+    try {
+      // Create a CompletableFuture for each batch
+      CompletableFuture<Integer>[] futures = new CompletableFuture[iterations];
+      
+      for (int i = 0; i < iterations; i++) {
+        final int startIndex = i * BATCH_SIZE;
+        final int[] page = new int[Math.min(BATCH_SIZE, componentIds.length - startIndex)];
 
-      System.arraycopy(componentIds, startIndex, page, 0, page.length);
-      purged += purgeBatch(repositoryId, page, Optional.empty());
+        System.arraycopy(componentIds, startIndex, page, 0, page.length);
+        
+        // Process each batch with a virtual thread
+        futures[i] = supplyAsync(() -> 
+            purgeBatch(repositoryId, page, Optional.empty()),
+            virtualThreadExecutor);
+      }
+      
+      // Wait for all batches to complete and sum the results
+      allOf(futures).join();
+      return java.util.Arrays.stream(futures)
+          .mapToInt(f -> {
+              try {
+                  return f.get();
+              } catch (InterruptedException | ExecutionException e) {
+                  log.error("Error getting purge result", e);
+                  return 0;
+              }
+          })
+          .sum();
+    } catch (Exception e) {
+      log.error("Error purging components with virtual threads", e);
+      // Fallback to non-virtual thread execution
+      int purged = 0;
+      for (int i = 0; i < iterations; i++) {
+        int startIndex = i * BATCH_SIZE;
+        int[] page = new int[Math.min(BATCH_SIZE, componentIds.length - startIndex)];
+
+        System.arraycopy(componentIds, startIndex, page, 0, page.length);
+        purged += purgeBatch(repositoryId, page, Optional.empty());
+      }
+      return purged;
     }
-    return purged;
   }
 
   public int purge(
@@ -497,19 +774,52 @@ public class ComponentStore<T extends ComponentDAO>
   {
     final int iterations = components.size() / BATCH_SIZE + 1;
 
-    int purged = 0;
-    for (int i = 0; i < iterations; i++) {
-      int start = i * BATCH_SIZE;
-      int end = Math.min(start + BATCH_SIZE, components.size());
-      List<FluentComponent> page = components.subList(start, end);
-      int[] componentIds = page.stream()
-          .mapToInt(InternalIds::internalComponentId)
-          .toArray();
+    try {
+      // Create a CompletableFuture for each batch
+      CompletableFuture<Integer>[] futures = new CompletableFuture[iterations];
+      
+      for (int i = 0; i < iterations; i++) {
+        final int start = i * BATCH_SIZE;
+        final int end = Math.min(start + BATCH_SIZE, components.size());
+        final List<FluentComponent> page = components.subList(start, end);
+        final int[] componentIds = page.stream()
+            .mapToInt(InternalIds::internalComponentId)
+            .toArray();
+        
+        // Process each batch with a virtual thread
+        futures[i] = supplyAsync(() -> 
+            purgeBatch(repositoryId, componentIds, Optional.of(page)),
+            virtualThreadExecutor);
+      }
+      
+      // Wait for all batches to complete and sum the results
+      allOf(futures).join();
+      return java.util.Arrays.stream(futures)
+          .mapToInt(f -> {
+              try {
+                  return f.get();
+              } catch (InterruptedException | ExecutionException e) {
+                  log.error("Error getting purge result", e);
+                  return 0;
+              }
+          })
+          .sum();
+    } catch (Exception e) {
+      log.error("Error purging components with virtual threads", e);
+      // Fallback to non-virtual thread execution
+      int purged = 0;
+      for (int i = 0; i < iterations; i++) {
+        int start = i * BATCH_SIZE;
+        int end = Math.min(start + BATCH_SIZE, components.size());
+        List<FluentComponent> page = components.subList(start, end);
+        int[] componentIds = page.stream()
+            .mapToInt(InternalIds::internalComponentId)
+            .toArray();
 
-      purged += purgeBatch(repositoryId, componentIds, Optional.of(page));
+        purged += purgeBatch(repositoryId, componentIds, Optional.of(page));
+      }
+      return purged;
     }
-
-    return purged;
   }
 
   @Transactional

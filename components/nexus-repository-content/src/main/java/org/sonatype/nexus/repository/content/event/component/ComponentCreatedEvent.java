@@ -12,17 +12,33 @@
  */
 package org.sonatype.nexus.repository.content.event.component;
 
+import java.io.Serial;
+
 import org.sonatype.nexus.repository.content.Component;
 
 /**
  * Event sent whenever a {@link Component} is created.
+ * Optimized for Virtual Thread execution context in Java 21.
  *
  * @since 3.26
  */
 public class ComponentCreatedEvent
     extends ComponentEvent
 {
+  @Serial
+  private static final long serialVersionUID = 1L;
+
+  /**
+   * Constructor.
+   *
+   * @param component the component that was created
+   */
   public ComponentCreatedEvent(final Component component) {
     super(component);
+  }
+
+  @Override
+  public String toString() {
+    return STR."ComponentCreatedEvent{component=\{getComponent()}} \{super.toString()}";
   }
 }

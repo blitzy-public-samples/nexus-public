@@ -28,11 +28,13 @@
     <dependency>
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>
+      <version>2.16.1</version>
     </dependency>
 
     <dependency>
       <groupId>com.google.guava</groupId>
       <artifactId>guava</artifactId>
+      <version>33.4.8-jre</version>
     </dependency>
     <dependency>
       <groupId>org.sonatype.nexus</groupId>
@@ -43,4 +45,32 @@
   <artifactId>nexus-distributed-event-service-api</artifactId>
   <name>${project.groupId}:${project.artifactId}</name>
   <packaging>bundle</packaging>
+  
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.felix</groupId>
+        <artifactId>maven-bundle-plugin</artifactId>
+        <configuration>
+          <instructions>
+            <!-- Ensure proper OSGi manifest compatibility with Java 21 -->
+            <Bundle-RequiredExecutionEnvironment>JavaSE-21</Bundle-RequiredExecutionEnvironment>
+            <Import-Package>
+              org.sonatype.nexus.*,
+              com.fasterxml.jackson.*,
+              com.google.common.*,
+              *
+            </Import-Package>
+            <Export-Package>
+              org.sonatype.nexus.distributed.event.service.*
+            </Export-Package>
+            <!-- Ensure proper capability requirements for Java 21 -->
+            <Require-Capability>
+              osgi.ee;filter:="(&amp;(osgi.ee=JavaSE)(version=21))"
+            </Require-Capability>
+          </instructions>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 </project>

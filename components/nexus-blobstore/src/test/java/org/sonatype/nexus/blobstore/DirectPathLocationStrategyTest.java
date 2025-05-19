@@ -17,6 +17,8 @@ import org.sonatype.nexus.blobstore.api.BlobId;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -26,6 +28,7 @@ import static org.sonatype.nexus.blobstore.DirectPathLocationStrategy.DIRECT_PAT
 /**
  * Tests for {@link DirectPathLocationStrategy}.
  */
+@ExtendWith(MockitoExtension.class)
 public class DirectPathLocationStrategyTest
     extends TestSupport
 {
@@ -36,7 +39,7 @@ public class DirectPathLocationStrategyTest
   private static final String PATH_WITH_PREFIX_INSIDE_TRAVERSAL =
       "/healthCheckSummary/maven-central/1/.path$./details/details.html";
 
-  private static final String EXPECTED_PATH = DIRECT_PATH_ROOT + "/" + CORRECT_PATH;
+  private static final String EXPECTED_PATH = STR"#{DIRECT_PATH_ROOT}/#{CORRECT_PATH}";
 
   private LocationStrategy underTest;
 
@@ -47,25 +50,28 @@ public class DirectPathLocationStrategyTest
 
   @Test
   public void testLocation() {
-    String location = underTest.location(new BlobId(DIRECT_PATH_PREFIX + CORRECT_PATH));
+    String location = underTest.location(new BlobId(STR"#{DIRECT_PATH_PREFIX}#{CORRECT_PATH}"));
     assertEquals(EXPECTED_PATH, location);
   }
 
   @Test
   public void testLocationWithTraversal() {
-    assertThrows(IllegalArgumentException.class, () -> 
-        underTest.location(new BlobId(DIRECT_PATH_PREFIX + PATH_WITH_TRAVERSAL)));
+    assertThrows(IllegalArgumentException.class, () -> {
+      underTest.location(new BlobId(STR"#{DIRECT_PATH_PREFIX}#{PATH_WITH_TRAVERSAL}"));
+    });
   }
 
   @Test
   public void testLocationWithPrefixInsideTraversal() {
-    assertThrows(IllegalArgumentException.class, () -> 
-        underTest.location(new BlobId(DIRECT_PATH_PREFIX + PATH_WITH_PREFIX_INSIDE_TRAVERSAL)));
+    assertThrows(IllegalArgumentException.class, () -> {
+      underTest.location(new BlobId(STR"#{DIRECT_PATH_PREFIX}#{PATH_WITH_PREFIX_INSIDE_TRAVERSAL}"));
+    });
   }
 
   @Test
   public void testLocationWithNullableBlobId() {
-    assertThrows(NullPointerException.class, () -> 
-        underTest.location(null));
+    assertThrows(NullPointerException.class, () -> {
+      underTest.location(null);
+    });
   }
 }

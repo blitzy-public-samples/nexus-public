@@ -25,11 +25,16 @@ public interface RepositoryContent
 {
   /**
    * Schemaless content attributes.
+   *
+   * @return the nested attributes map containing all content attributes
    */
   NestedAttributesMap attributes();
 
   /**
    * Shortcut to content sub-attributes.
+   *
+   * @param key the key of the sub-attributes to retrieve
+   * @return the nested attributes map for the given key
    */
   default NestedAttributesMap attributes(String key) {
     return attributes().child(key);
@@ -37,11 +42,35 @@ public interface RepositoryContent
 
   /**
    * When the metadata was first created.
+   *
+   * @return the creation timestamp with timezone information
    */
   OffsetDateTime created();
 
   /**
    * When the metadata was last updated.
+   *
+   * @return the last updated timestamp with timezone information
    */
   OffsetDateTime lastUpdated();
+
+  /**
+   * Checks if this content was created after the given timestamp.
+   *
+   * @param timestamp the timestamp to compare against
+   * @return true if this content was created after the given timestamp
+   */
+  default boolean createdAfter(OffsetDateTime timestamp) {
+    return created().isAfter(timestamp);
+  }
+
+  /**
+   * Checks if this content was last updated after the given timestamp.
+   *
+   * @param timestamp the timestamp to compare against
+   * @return true if this content was last updated after the given timestamp
+   */
+  default boolean lastUpdatedAfter(OffsetDateTime timestamp) {
+    return lastUpdated().isAfter(timestamp);
+  }
 }

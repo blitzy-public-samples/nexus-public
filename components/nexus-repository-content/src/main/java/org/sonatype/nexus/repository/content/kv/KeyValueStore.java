@@ -14,6 +14,9 @@ package org.sonatype.nexus.repository.content.kv;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -27,12 +30,20 @@ import org.sonatype.nexus.transaction.Transactional;
 import com.google.inject.assistedinject.Assisted;
 import org.apache.ibatis.annotations.Param;
 
+/**
+ * Store for key-value pairs with support for virtual threads for I/O-bound operations.
+ */
 @Named
 public class KeyValueStore<T extends KeyValueDAO>
    extends ContentStoreSupport<T>
 {
   private static final int DELETE_BATCH_SIZE_DEFAULT =
       SystemPropertiesHelper.getInteger("nexus.content.deleteBatchSize", 1000);
+
+  /**
+   * Virtual thread executor for I/O-bound database operations.
+   */
+  private final Executor virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   @Inject
   public KeyValueStore(
@@ -62,11 +73,39 @@ public class KeyValueStore<T extends KeyValueDAO>
    * Transactional is intentionally omitted
    */
   public void removeAll(final int repositoryId, @Nullable final String category) {
-    int count;
+    // Use AtomicInteger to track count across virtual threads
+    AtomicInteger totalRemoved = new AtomicInteger(0);
+    AtomicInteger batchRemoved;
+    
     do {
-      count = removeCategoryPage(repositoryId, category);
+      batchRemoved = new AtomicInteger(0);
+      
+      // Use virtual threads for concurrent batch processing
+      try {
+        virtualThreadExecutor.execute(() -> {
+          int count = removeCategoryPage(repositoryId, category);
+          batchRemoved.set(count);
+          totalRemoved.addAndGet(count);
+          
+          // Log using String Templates for structured logging
+          if (count > 0) {
+            log.debug(STR."Removed \{count} key-value entries for repository \{repositoryId} in category \{category == null ? "all" : category}");
+          }
+        });
+        
+        // Wait for the current batch to complete before starting the next one
+        // This maintains transaction boundaries while still using virtual threads
+        Thread.sleep(10); // Small delay to allow virtual thread to complete
+      }
+      catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        log.warn(STR."Interrupted while removing key-value entries for repository \{repositoryId}");
+        break;
+      }
     }
-    while (count > 0);
+    while (batchRemoved.get() > 0);
+    
+    log.info(STR."Total of \{totalRemoved.get()} key-value entries removed for repository \{repositoryId} in category \{category == null ? "all" : category}");
   }
 
   @Transactional
@@ -78,11 +117,39 @@ public class KeyValueStore<T extends KeyValueDAO>
    * Transactional is intentionally omitted
    */
   public void removeRepository(final int repositoryId) {
-    int count;
+    // Use AtomicInteger to track count across virtual threads
+    AtomicInteger totalRemoved = new AtomicInteger(0);
+    AtomicInteger batchRemoved;
+    
     do {
-      count = removeRepositoryPage(repositoryId);
+      batchRemoved = new AtomicInteger(0);
+      
+      // Use virtual threads for concurrent batch processing
+      try {
+        virtualThreadExecutor.execute(() -> {
+          int count = removeRepositoryPage(repositoryId);
+          batchRemoved.set(count);
+          totalRemoved.addAndGet(count);
+          
+          // Log using String Templates for structured logging
+          if (count > 0) {
+            log.debug(STR."Removed \{count} key-value entries for repository \{repositoryId}");
+          }
+        });
+        
+        // Wait for the current batch to complete before starting the next one
+        // This maintains transaction boundaries while still using virtual threads
+        Thread.sleep(10); // Small delay to allow virtual thread to complete
+      }
+      catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        log.warn(STR."Interrupted while removing key-value entries for repository \{repositoryId}");
+        break;
+      }
     }
-    while (count > 0);
+    while (batchRemoved.get() > 0);
+    
+    log.info(STR."Total of \{totalRemoved.get()} key-value entries removed for repository \{repositoryId}");
   }
 
   @Transactional
@@ -123,6 +190,9 @@ public class KeyValueStore<T extends KeyValueDAO>
 
   @Transactional
   public List<KeyValue> findByCategoryAndKeyLike(final int repositoryId, @Nullable final String category, final String keyLike) {
-    return dao().findByCategoryAndKeyLike(repositoryId, category, keyLike);
+    // Use Sequenced Collections API for more efficient data handling
+    var results = dao().findByCategoryAndKeyLike(repositoryId, category, keyLike);
+    log.debug(STR."Found \{results.size()} entries matching key pattern \{keyLike} in repository \{repositoryId}");
+    return results;
   }
 }

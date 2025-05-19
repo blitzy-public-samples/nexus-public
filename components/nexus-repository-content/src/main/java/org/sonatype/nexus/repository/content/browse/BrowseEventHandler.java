@@ -20,6 +20,8 @@ import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -57,6 +59,7 @@ import com.google.common.eventbus.Subscribe;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.lang.Integer.parseInt;
+import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_ENABLED;
 import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.SERVICES;
 import static org.sonatype.nexus.repository.content.store.InternalIds.internalAssetId;
@@ -70,7 +73,7 @@ import static org.sonatype.nexus.repository.content.store.InternalIds.toExternal
  * A scheduled task periodically grabs a page of assets and updates the tree.
  *
  * If the pending map gets too big events will start to be posted to flush additional pages.
- * These events are handled by an asynchronous receiver using threads from the event pool.
+ * These events are handled by an asynchronous receiver using Virtual Threads from Java 21.
  *
  * @since 3.26
  */
@@ -111,6 +114,8 @@ public class BrowseEventHandler
   private final AtomicBoolean needsTrim = new AtomicBoolean();
 
   private final Cooperation2 cooperation;
+  
+  private final ExecutorService virtualThreadExecutor;
 
   private Object flushMutex = new Object();
 
@@ -145,6 +150,7 @@ public class BrowseEventHandler
     this.flushOnSeconds = flushOnSeconds;
     this.noPurgeDelay = noPurgeDelay;
     this.databaseCheck = checkNotNull(databaseCheck);
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     eventManager.register(flushEventReceiver);
   }
@@ -163,6 +169,7 @@ public class BrowseEventHandler
       flushTask.cancel();
       periodicJobService.stopUsing();
     }
+    virtualThreadExecutor.shutdown();
   }
 
   @AllowConcurrentEvents
@@ -219,7 +226,7 @@ public class BrowseEventHandler
   private void markAssetAsPending(final AssetEvent event) {
     Optional<Repository> repository = event.getRepository();
     if (!repository.isPresent()) {
-      log.debug("Missing repository for event {}", event);
+      log.debug(STR."Missing repository for event \{event}");
       return;
     }
     // bump count if this is the first time we've seen this request key in this batch
@@ -240,7 +247,7 @@ public class BrowseEventHandler
   private void markRepositoryForTrimming(final ContentStoreEvent event) {
     Optional<Repository> repository = event.getRepository();
     if (!repository.isPresent()) {
-      log.debug("Unable to determine repository for trimming for event {}", event);
+      log.debug(STR."Unable to determine repository for trimming for event \{event}");
       return;
     }
     repositoriesToTrim.add(repository.get());
@@ -269,6 +276,7 @@ public class BrowseEventHandler
 
   /**
    * Asynchronous receiver of {@link FlushEvent}s and {@link PurgeEvent}s.
+   * Uses Java 21 Virtual Threads for high-concurrency event processing.
    */
   private class FlushEventReceiver
       implements EventAware.Asynchronous
@@ -276,13 +284,13 @@ public class BrowseEventHandler
     @AllowConcurrentEvents
     @Subscribe
     public void on(final FlushEvent event) {
-      flushPageOfAssets();
+      virtualThreadExecutor.submit(BrowseEventHandler.this::flushPageOfAssets);
     }
 
     @AllowConcurrentEvents
     @Subscribe
     public void on(final PurgeEvent event) {
-      maybeTrimRepositories();
+      virtualThreadExecutor.submit(BrowseEventHandler.this::maybeTrimRepositories);
     }
   }
 
@@ -291,14 +299,17 @@ public class BrowseEventHandler
    */
   void pollBrowseUpdateRequests() {
     if (pendingCount.get() > 0) {
-      flushPageOfAssets();
+      virtualThreadExecutor.submit(this::flushPageOfAssets);
     }
 
-    maybeTrimRepositories();
+    if (needsTrim.get()) {
+      virtualThreadExecutor.submit(this::maybeTrimRepositories);
+    }
   }
 
   /**
    * Grabs a page of assets and updates the browse tree.
+   * Executed on a Virtual Thread for improved scalability.
    */
   void flushPageOfAssets() {
     Multimap<Repository, EntityId> requestsByRepository = ArrayListMultimap.create();
@@ -329,15 +340,15 @@ public class BrowseEventHandler
               .cooperate(repository.getName());
         }
         catch (IOException e) {
-          logWarning("An error occurred while processing browse nodes for {}", repository, e);
+          logWarning(STR."An error occurred while processing browse nodes for \{repository}", repository, e);
         }
       });
     }
-
   }
 
   /**
    * Trims all pending repositories of dangling nodes.
+   * Executed on a Virtual Thread for improved scalability.
    */
   void maybeTrimRepositories() {
     if (databaseCheck.isPostgresql()) {
@@ -359,7 +370,7 @@ public class BrowseEventHandler
               .cooperate(nextRepository.getName());
         }
         catch (IOException e) {
-          logWarning("An error occurred while trying to trim {}", nextRepository, e);
+          logWarning(STR."An error occurred while trying to trim \{nextRepository}", nextRepository, e);
         }
       }
     }
@@ -370,7 +381,7 @@ public class BrowseEventHandler
       log.warn(message, repository.getName(), e);
     }
     else {
-      log.warn(message + " - {}", repository.getName(), e.getMessage());
+      log.warn(STR."\{message} - \{repository.getName()}", e.getMessage());
     }
   }
 

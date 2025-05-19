@@ -38,27 +38,27 @@ public class DecoratorUtils
    * @return The instance if found, otherwise null
    */
   @Nullable
-  @SuppressWarnings("unchecked")
   public static <T> T getDecoratedEntity(final Object decoratedObject, final Class<T> clazz) {
     if (clazz.isAssignableFrom(decoratedObject.getClass())) {
       // the object itself is the one we are looking for
-      return (T) decoratedObject;
+      return clazz.cast(decoratedObject);
     }
 
-    if (!(decoratedObject instanceof DecoratedObject)) {
-      // not a DecoratedObject, no need to look further
-      return null;
-    }
+    // Use pattern matching to check if decoratedObject is a DecoratedObject and bind it to a variable
+    if (decoratedObject instanceof DecoratedObject<?> decorated) {
+      // Get the wrapped object
+      Object wrappedObject = decorated.getWrappedObject();
+      
+      if (clazz.isAssignableFrom(wrappedObject.getClass())) {
+        // wrapped object is the one we are looking for
+        return clazz.cast(wrappedObject);
+      }
 
-    T wrappedObject = ((DecoratedObject<T>) decoratedObject).getWrappedObject();
-    if (clazz.isAssignableFrom(wrappedObject.getClass())) {
-      // wrapped object is the one we are looking for
-      return wrappedObject;
-    }
-
-    if (wrappedObject instanceof DecoratedObject) {
-      // nest and keep looking
-      return getDecoratedEntity(wrappedObject, clazz);
+      // Use pattern matching to check if wrappedObject is also a DecoratedObject
+      if (wrappedObject instanceof DecoratedObject<?>) {
+        // nest and keep looking
+        return getDecoratedEntity(wrappedObject, clazz);
+      }
     }
 
     return null;

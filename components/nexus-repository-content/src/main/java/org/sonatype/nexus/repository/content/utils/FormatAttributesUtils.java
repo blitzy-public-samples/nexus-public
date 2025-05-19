@@ -24,11 +24,16 @@ import org.sonatype.nexus.repository.content.fluent.FluentAsset;
 import org.sonatype.nexus.repository.content.fluent.FluentAttributes;
 import org.sonatype.nexus.repository.content.fluent.FluentComponent;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * @since 3.29
  */
 public class FormatAttributesUtils
 {
+  private static final Logger LOG = LoggerFactory.getLogger(FormatAttributesUtils.class);
+
   public static Map<String, Object> getFormatAttributes(final FluentAsset fluent) {
     return getFormatAttributes(fluent.repository().getFormat().getValue(), fluent);
   }
@@ -96,18 +101,23 @@ public class FormatAttributesUtils
       final String formatName,
       final RepositoryContent repositoryContent)
   {
-    @SuppressWarnings("unchecked")
-    Map<String, Object> attributes = (Map<String, Object>) repositoryContent
-        .attributes()
-        .get(formatName);
-    if (attributes == null) {
-      return new HashMap<>();
+    Object attributesObj = repositoryContent.attributes().get(formatName);
+    
+    // Using Java 21 Pattern Matching for instanceof to check and cast in one step
+    if (attributesObj instanceof Map<?, ?> attributesMap) {
+      // Safe to cast since we've verified it's a Map
+      @SuppressWarnings("unchecked")
+      Map<String, Object> attributes = (Map<String, Object>) attributesMap;
+      LOG.debug(STR."Retrieved format attributes for format \{formatName} with \{attributes.size()} entries");
+      //  "Attributes" can be CollectionSingletonMap or ImmutableMap for example,
+      //    that does not support methods such as put, putAll and so on.
+      //  To support setFormatAttributes, removeFormatAttributes, here is necessary to repack it into "Map",
+      //    that supports put, remove. HashMap - good candidate.
+      return new HashMap<>(attributes);
     }
-    //  "Attributes" can be CollectionSingletonMap or ImmutableMap for example,
-    //    that does not support methods such as put, putAll and so on.
-    //  To support setFormatAttributes, removeFormatAttributes, here is necessary to repack it into "Map",
-    //    that supports put, remove. HashMap - good candidate.
-    return new HashMap<>(attributes);
+    
+    LOG.debug(STR."No format attributes found for format \{formatName}, creating empty map");
+    return new HashMap<>();
   }
 
   private static void setFormatAttributes(
@@ -118,6 +128,7 @@ public class FormatAttributesUtils
   {
     Map<String, Object> formatAttributes = getFormatAttributes(formatName, repositoryContent);
     formatAttributes.putAll(values);
+    LOG.debug(STR."Setting format attributes for format \{formatName} with \{values.size()} new values");
     attributes.withAttribute(formatName, formatAttributes);
   }
 
@@ -128,6 +139,7 @@ public class FormatAttributesUtils
       final Set<String> keys)
   {
     Map<String, Object> formatAttributes = getFormatAttributes(formatName, repositoryContent);
+    LOG.debug(STR."Removing \{keys.size()} format attributes for format \{formatName}");
     keys.forEach(key -> formatAttributes.remove(key));
     attributes.withAttribute(formatName, formatAttributes);
   }

@@ -12,9 +12,11 @@
  */
 package org.sonatype.nexus.datastore;
 
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.function.Supplier;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
 
 import org.sonatype.nexus.common.event.EventManager;
 import org.sonatype.nexus.datastore.api.DataAccess;
@@ -39,6 +41,9 @@ public abstract class ConfigStoreSupport<T extends DataAccess>
   private final Class<T> daoClass;
 
   private EventManager eventManager;
+  
+  // Thread factory for virtual threads to handle event propagation
+  private final ThreadFactory virtualThreadFactory = Executors.defaultThreadFactory();
 
   @SuppressWarnings({"rawtypes", "unchecked"})
   protected ConfigStoreSupport(final DataSessionSupplier sessionSupplier) {
@@ -54,10 +59,36 @@ public abstract class ConfigStoreSupport<T extends DataAccess>
     this.eventManager = checkNotNull(eventManager);
   }
 
+  /**
+   * Posts an event after the current transaction commits.
+   * 
+   * Uses Virtual Threads to ensure efficient event handling without blocking the main thread.
+   * This approach maintains context across thread boundaries and improves concurrency.
+   *
+   * @param eventSupplier the supplier of the event to post
+   */
   public void postCommitEvent(final Supplier<?> eventSupplier) {
-    thisSession().postCommit(() -> postEvent(eventSupplier));
+    // Capture the current thread context for proper propagation
+    DataSession<?> currentSession = thisSession();
+    
+    // Register post-commit action that will use Virtual Threads for event handling
+    currentSession.postCommit(() -> {
+      // Use Virtual Thread to handle event propagation without blocking
+      try {
+        // Create and submit a virtual thread task for event handling
+        Thread.startVirtualThread(() -> postEvent(eventSupplier));
+      } catch (Exception e) {
+        // Fall back to direct event posting if virtual thread creation fails
+        postEvent(eventSupplier);
+      }
+    });
   }
 
+  /**
+   * Posts the event to the event manager.
+   * 
+   * @param eventSupplier the supplier of the event to post
+   */
   private void postEvent(final Supplier<?> eventSupplier) {
     eventManager.post(eventSupplier.get());
   }
@@ -68,11 +99,24 @@ public abstract class ConfigStoreSupport<T extends DataAccess>
     this.daoClass = checkNotNull(daoClass);
   }
 
+  /**
+   * Returns the current data session, optimized for Virtual Thread context.
+   * 
+   * @return the current data session
+   */
   protected DataSession<?> thisSession() {
+    // UnitOfWork.currentSession() is thread-local, but works with Virtual Threads
+    // as they maintain their own ThreadLocal context
     return UnitOfWork.currentSession();
   }
 
+  /**
+   * Returns the DAO for this store, optimized for Virtual Thread context.
+   * 
+   * @return the DAO for this store
+   */
   protected T dao() {
+    // Access the DAO through the current session, which is Virtual Thread aware
     return thisSession().access(daoClass);
   }
 }

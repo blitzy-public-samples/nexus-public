@@ -13,9 +13,10 @@
 package org.sonatype.nexus.common.collect;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.SequencedMap;
 import java.util.SequencedCollection;
+import java.util.SequencedMap;
 import java.util.SequencedSet;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
@@ -29,8 +30,6 @@ import static com.google.common.base.Preconditions.checkNotNull;
  * or when content escapes back to the caller, as we may need to wrap that content and store it locally.
  *
  * This provides a good balance between an eager copy and a completely lazy (but complex) wrapper.
- * 
- * Supports Java 21 Sequenced Collections API when the backing map is a SequencedMap.
  *
  * @since 3.5
  */
@@ -45,8 +44,6 @@ public class DetachingMap<K, V>
   private final Function<V, V> detach;
 
   private boolean detached;
-  
-  // Tracks whether the backing map implements SequencedMap for Java 21 Sequenced Collections API support
 
   /**
    * Wraps a map that detaches on-demand when allowed; its mapped values are detached using the given strategy.
@@ -115,171 +112,172 @@ public class DetachingMap<K, V>
   @Override
   protected Map<K, V> delegate() {
     if (!detached && allowDetach.getAsBoolean()) {
-      Map<K, V> detaching = new HashMap<>(backing.size());
+      // Use LinkedHashMap instead of HashMap to preserve order for SequencedMap operations
+      Map<K, V> detaching = backing instanceof SequencedMap ? new LinkedHashMap<>(backing.size()) : new HashMap<>(backing.size());
       backing.entrySet().forEach(e -> detaching.put(e.getKey(), detach.apply(e.getValue())));
       backing = detaching;
       detached = true;
     }
     return backing;
   }
-  
-  /* SequencedMap methods - Java 21 Sequenced Collections API support */
-  
+
   /**
-   * Returns a reverse-ordered view of this map.
-   * Uses Java 21 Pattern Matching for switch to check if backing map is a SequencedMap.
+   * Returns the first key-value mapping in this map, or null if the map is empty.
    *
-   * @return a reverse-ordered view of this map
-   * @throws UnsupportedOperationException if backing map is not a SequencedMap
+   * @return the first entry in the map, or null if empty
    */
   @Override
-  public SequencedMap<K, V> reversed() {
-    return switch (backing) {
-      case SequencedMap<K, V> sequencedMap -> new DetachingMap<>(sequencedMap.reversed(), allowDetach, detach);
-      default -> throw new UnsupportedOperationException("Backing map is not a SequencedMap");
-    };
+  public Map.Entry<K, V> firstEntry() {
+    if (backing instanceof SequencedMap) {
+      return ((SequencedMap<K, V>) delegate()).firstEntry();
+    }
+    return isEmpty() ? null : entrySet().iterator().next();
   }
-  
+
   /**
-   * Returns a sequenced set view of the keys contained in this map.
-   * Uses Java 21 Pattern Matching for switch to check if backing map is a SequencedMap.
+   * Returns the last key-value mapping in this map, or null if the map is empty.
    *
-   * @return a sequenced set view of the keys contained in this map
-   * @throws UnsupportedOperationException if backing map is not a SequencedMap
+   * @return the last entry in the map, or null if empty
    */
   @Override
-  public SequencedSet<K> sequencedKeySet() {
-    return switch (backing) {
-      case SequencedMap<K, V> sequencedMap -> sequencedMap.sequencedKeySet();
-      default -> throw new UnsupportedOperationException("Backing map is not a SequencedMap");
-    };
+  public Map.Entry<K, V> lastEntry() {
+    if (backing instanceof SequencedMap) {
+      return ((SequencedMap<K, V>) delegate()).lastEntry();
+    }
+    if (isEmpty()) {
+      return null;
+    }
+    // Fallback implementation for non-SequencedMap backing
+    Map.Entry<K, V> last = null;
+    for (Map.Entry<K, V> entry : entrySet()) {
+      last = entry;
+    }
+    return last;
   }
-  
+
   /**
-   * Returns a sequenced collection view of the values contained in this map.
-   * Uses Java 21 Pattern Matching for switch to check if backing map is a SequencedMap.
+   * Removes and returns the first key-value mapping in this map, or null if the map is empty.
    *
-   * @return a sequenced collection view of the values contained in this map
-   * @throws UnsupportedOperationException if backing map is not a SequencedMap
+   * @return the removed first entry, or null if empty
    */
   @Override
-  public SequencedCollection<V> sequencedValues() {
-    return switch (backing) {
-      case SequencedMap<K, V> sequencedMap -> sequencedMap.sequencedValues();
-      default -> throw new UnsupportedOperationException("Backing map is not a SequencedMap");
-    };
+  public Map.Entry<K, V> pollFirstEntry() {
+    if (backing instanceof SequencedMap) {
+      return ((SequencedMap<K, V>) delegate()).pollFirstEntry();
+    }
+    if (isEmpty()) {
+      return null;
+    }
+    // Fallback implementation for non-SequencedMap backing
+    Map.Entry<K, V> first = firstEntry();
+    if (first != null) {
+      remove(first.getKey());
+    }
+    return first;
   }
-  
+
   /**
-   * Returns a sequenced set view of the mappings contained in this map.
-   * Uses Java 21 Pattern Matching for switch to check if backing map is a SequencedMap.
+   * Removes and returns the last key-value mapping in this map, or null if the map is empty.
    *
-   * @return a sequenced set view of the mappings contained in this map
-   * @throws UnsupportedOperationException if backing map is not a SequencedMap
+   * @return the removed last entry, or null if empty
    */
   @Override
-  public SequencedSet<Entry<K, V>> sequencedEntrySet() {
-    return switch (backing) {
-      case SequencedMap<K, V> sequencedMap -> sequencedMap.sequencedEntrySet();
-      default -> throw new UnsupportedOperationException("Backing map is not a SequencedMap");
-    };
+  public Map.Entry<K, V> pollLastEntry() {
+    if (backing instanceof SequencedMap) {
+      return ((SequencedMap<K, V>) delegate()).pollLastEntry();
+    }
+    if (isEmpty()) {
+      return null;
+    }
+    // Fallback implementation for non-SequencedMap backing
+    Map.Entry<K, V> last = lastEntry();
+    if (last != null) {
+      remove(last.getKey());
+    }
+    return last;
   }
-  
+
   /**
-   * Associates the specified value with the specified key as the first entry in this map.
-   * Ensures detaching before modification and uses Java 21 Pattern Matching for switch.
+   * Inserts the given mapping at the beginning of this map.
    *
-   * @param key key with which the specified value is to be associated
-   * @param value value to be associated with the specified key
-   * @return the previous value associated with key, or null if there was no mapping for key
-   * @throws UnsupportedOperationException if backing map is not a SequencedMap
+   * @param key the key to insert
+   * @param value the value to insert
+   * @return the previous value associated with the key, or null if none
    */
   @Override
   public V putFirst(K key, V value) {
-    delegate(); // ensure detached before modification
-    return switch (backing) {
-      case SequencedMap<K, V> sequencedMap -> sequencedMap.putFirst(key, value);
-      default -> throw new UnsupportedOperationException("Backing map is not a SequencedMap");
-    };
+    if (backing instanceof SequencedMap) {
+      return ((SequencedMap<K, V>) delegate()).putFirst(key, value);
+    }
+    // Fallback implementation for non-SequencedMap backing
+    return put(key, value);
   }
-  
+
   /**
-   * Associates the specified value with the specified key as the last entry in this map.
-   * Ensures detaching before modification and uses Java 21 Pattern Matching for switch.
+   * Inserts the given mapping at the end of this map.
    *
-   * @param key key with which the specified value is to be associated
-   * @param value value to be associated with the specified key
-   * @return the previous value associated with key, or null if there was no mapping for key
-   * @throws UnsupportedOperationException if backing map is not a SequencedMap
+   * @param key the key to insert
+   * @param value the value to insert
+   * @return the previous value associated with the key, or null if none
    */
   @Override
   public V putLast(K key, V value) {
-    delegate(); // ensure detached before modification
-    return switch (backing) {
-      case SequencedMap<K, V> sequencedMap -> sequencedMap.putLast(key, value);
-      default -> throw new UnsupportedOperationException("Backing map is not a SequencedMap");
-    };
+    if (backing instanceof SequencedMap) {
+      return ((SequencedMap<K, V>) delegate()).putLast(key, value);
+    }
+    // Fallback implementation for non-SequencedMap backing
+    return put(key, value);
   }
-  
+
   /**
-   * Returns the first entry in this map, or null if the map is empty.
-   * Uses Java 21 Pattern Matching for switch to check if backing map is a SequencedMap.
+   * Returns a reverse-ordered view of this map.
    *
-   * @return the first entry in this map, or null if the map is empty
-   * @throws UnsupportedOperationException if backing map is not a SequencedMap
+   * @return a reverse-ordered view of this map
    */
   @Override
-  public Entry<K, V> firstEntry() {
-    return switch (backing) {
-      case SequencedMap<K, V> sequencedMap -> sequencedMap.firstEntry();
-      default -> throw new UnsupportedOperationException("Backing map is not a SequencedMap");
-    };
+  public SequencedMap<K, V> reversed() {
+    if (backing instanceof SequencedMap) {
+      return ((SequencedMap<K, V>) delegate()).reversed();
+    }
+    throw new UnsupportedOperationException("Cannot reverse a non-SequencedMap backing");
   }
-  
+
   /**
-   * Returns the last entry in this map, or null if the map is empty.
-   * Uses Java 21 Pattern Matching for switch to check if backing map is a SequencedMap.
+   * Returns a SequencedSet view of this map's keys.
    *
-   * @return the last entry in this map, or null if the map is empty
-   * @throws UnsupportedOperationException if backing map is not a SequencedMap
+   * @return a SequencedSet view of this map's keys
    */
   @Override
-  public Entry<K, V> lastEntry() {
-    return switch (backing) {
-      case SequencedMap<K, V> sequencedMap -> sequencedMap.lastEntry();
-      default -> throw new UnsupportedOperationException("Backing map is not a SequencedMap");
-    };
+  public SequencedSet<K> sequencedKeySet() {
+    if (backing instanceof SequencedMap) {
+      return ((SequencedMap<K, V>) delegate()).sequencedKeySet();
+    }
+    throw new UnsupportedOperationException("Cannot get sequencedKeySet from a non-SequencedMap backing");
   }
-  
+
   /**
-   * Removes and returns the first entry in this map, or returns null if the map is empty.
-   * Ensures detaching before modification and uses Java 21 Pattern Matching for switch.
+   * Returns a SequencedCollection view of this map's values.
    *
-   * @return the first entry in this map, or null if the map is empty
-   * @throws UnsupportedOperationException if backing map is not a SequencedMap
+   * @return a SequencedCollection view of this map's values
    */
   @Override
-  public Entry<K, V> pollFirstEntry() {
-    delegate(); // ensure detached before modification
-    return switch (backing) {
-      case SequencedMap<K, V> sequencedMap -> sequencedMap.pollFirstEntry();
-      default -> throw new UnsupportedOperationException("Backing map is not a SequencedMap");
-    };
+  public SequencedCollection<V> sequencedValues() {
+    if (backing instanceof SequencedMap) {
+      return ((SequencedMap<K, V>) delegate()).sequencedValues();
+    }
+    throw new UnsupportedOperationException("Cannot get sequencedValues from a non-SequencedMap backing");
   }
-  
+
   /**
-   * Removes and returns the last entry in this map, or returns null if the map is empty.
-   * Ensures detaching before modification and uses Java 21 Pattern Matching for switch.
+   * Returns a SequencedSet view of this map's entries.
    *
-   * @return the last entry in this map, or null if the map is empty
-   * @throws UnsupportedOperationException if backing map is not a SequencedMap
+   * @return a SequencedSet view of this map's entries
    */
   @Override
-  public Entry<K, V> pollLastEntry() {
-    delegate(); // ensure detached before modification
-    return switch (backing) {
-      case SequencedMap<K, V> sequencedMap -> sequencedMap.pollLastEntry();
-      default -> throw new UnsupportedOperationException("Backing map is not a SequencedMap");
-    };
+  public SequencedSet<Map.Entry<K, V>> sequencedEntrySet() {
+    if (backing instanceof SequencedMap) {
+      return ((SequencedMap<K, V>) delegate()).sequencedEntrySet();
+    }
+    throw new UnsupportedOperationException("Cannot get sequencedEntrySet from a non-SequencedMap backing");
   }
 }

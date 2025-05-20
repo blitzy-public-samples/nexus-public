@@ -19,10 +19,13 @@ import org.sonatype.nexus.security.internal.rest.NexusSecurityApiConstants;
 import org.sonatype.nexus.security.privilege.Privilege;
 import org.sonatype.nexus.security.privilege.rest.PrivilegeAction;
 
-import io.swagger.v3.oas.annotations.media.Schema;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import io.swagger.annotations.ApiModelProperty;
 import jakarta.validation.constraints.NotBlank;
 
 /**
+ * Repository content selector privilege API model.
+ * 
  * @since 3.19
  */
 public class ApiPrivilegeRepositoryContentSelector
@@ -31,16 +34,20 @@ public class ApiPrivilegeRepositoryContentSelector
   public static final String CSEL_KEY = "contentSelector";
 
   @NotBlank
-  @Schema(description = NexusSecurityApiConstants.PRIVILEGE_CONTENT_SELECTOR_DESCRIPTION)
+  @JsonProperty
+  @ApiModelProperty(NexusSecurityApiConstants.PRIVILEGE_CONTENT_SELECTOR_DESCRIPTION)
   private String contentSelector;
 
   /**
-   * for deserialization
+   * Default constructor for deserialization
    */
   private ApiPrivilegeRepositoryContentSelector() {
     super(RepositoryContentSelectorPrivilegeDescriptor.TYPE);
   }
 
+  /**
+   * Constructor for creating a new privilege
+   */
   public ApiPrivilegeRepositoryContentSelector(final String name,
                                                final String description,
                                                final boolean readOnly,
@@ -53,23 +60,39 @@ public class ApiPrivilegeRepositoryContentSelector
     this.contentSelector = contentSelector;
   }
 
+  /**
+   * Constructor for creating from an existing privilege
+   */
   public ApiPrivilegeRepositoryContentSelector(final Privilege privilege) {
     super(privilege);
-    contentSelector = privilege.getPrivilegeProperty(CSEL_KEY);
+    // Use pattern matching to extract property
+    if (privilege instanceof Privilege p) {
+      contentSelector = p.getPrivilegeProperty(CSEL_KEY);
+    }
   }
 
+  /**
+   * Sets the content selector
+   */
   public void setContentSelector(final String contentSelector) {
     this.contentSelector = contentSelector;
   }
 
+  /**
+   * Gets the content selector
+   */
   public String getContentSelector() {
     return contentSelector;
   }
 
   @Override
   protected Privilege doAsPrivilege(final Privilege privilege) {
-    super.doAsPrivilege(privilege);
-    privilege.addProperty(CSEL_KEY, contentSelector);
+    // Use pattern matching to simplify type checking and method chaining
+    if (privilege instanceof Privilege p) {
+      super.doAsPrivilege(p);
+      p.addProperty(CSEL_KEY, contentSelector);
+      return p;
+    }
     return privilege;
   }
 }

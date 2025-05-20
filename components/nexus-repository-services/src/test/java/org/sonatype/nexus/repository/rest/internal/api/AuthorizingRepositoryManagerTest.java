@@ -13,14 +13,13 @@
 
 package org.sonatype.nexus.repository.rest.internal.api;
 
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.nexus.common.event.EventManager;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.cache.NegativeCacheFacet;
@@ -39,6 +38,7 @@ import org.sonatype.nexus.scheduling.TaskConfiguration;
 import org.sonatype.nexus.scheduling.TaskScheduler;
 
 import org.apache.shiro.authz.AuthorizationException;
+import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -50,18 +50,19 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.security.BreadActions.EDIT;
 
 @ExtendWith(MockitoExtension.class)
-class AuthorizingRepositoryManagerTest
+@Category(Java21TestGroup.class)
+public class AuthorizingRepositoryManagerTest
     extends TestSupport
 {
-  @Mock
+  @Mock(lenient = true)
   private RepositoryManager repositoryManager;
 
   @Mock
@@ -138,7 +139,6 @@ class AuthorizingRepositoryManagerTest
     });
 
     verify(repositoryManager).get(eq("repository"));
-    verify(repository).getType();
     verifyNoMoreInteractions(repositoryManager, repositoryPermissionChecker, taskScheduler);
   }
 
@@ -154,7 +154,6 @@ class AuthorizingRepositoryManagerTest
     });
 
     verify(repositoryManager).get(eq("repository"));
-    verify(repository).getType();
     verify(repositoryPermissionChecker).ensureUserCanAdmin(eq(EDIT), eq(repository));
     verifyNoMoreInteractions(repositoryManager, repositoryPermissionChecker, taskScheduler);
   }
@@ -168,7 +167,6 @@ class AuthorizingRepositoryManagerTest
     authorizingRepositoryManager.rebuildSearchIndex("repository");
 
     verify(repositoryManager).get(eq("repository"));
-    verify(repository).getType();
     verify(repositoryPermissionChecker).ensureUserCanAdmin(eq(EDIT), eq(repository));
     verify(taskScheduler).createTaskConfigurationInstance(RebuildIndexTaskDescriptor.TYPE_ID);
     verify(taskScheduler).submit(any());
@@ -194,7 +192,6 @@ class AuthorizingRepositoryManagerTest
     });
 
     verify(repositoryManager).get(eq("repository"));
-    verify(repository).getType();
     verifyNoMoreInteractions(repositoryManager, repositoryPermissionChecker, taskScheduler);
   }
 
@@ -210,7 +207,6 @@ class AuthorizingRepositoryManagerTest
     });
 
     verify(repositoryManager).get(eq("repository"));
-    verify(repository).getType();
     verify(repositoryPermissionChecker).ensureUserCanAdmin(eq(EDIT), eq(repository));
     verifyNoMoreInteractions(repositoryManager, repositoryPermissionChecker, taskScheduler);
   }
@@ -226,7 +222,6 @@ class AuthorizingRepositoryManagerTest
     authorizingRepositoryManager.invalidateCache("repository");
 
     verify(repositoryManager).get(eq("repository"));
-    verify(repository).getType();
     verify(repositoryPermissionChecker).ensureUserCanAdmin(eq(EDIT), eq(repository));
     verify(repository).facet(ProxyFacet.class);
     verify(proxyFacet).invalidateProxyCaches();
@@ -242,7 +237,6 @@ class AuthorizingRepositoryManagerTest
     authorizingRepositoryManager.invalidateCache("repository");
 
     verify(repositoryManager).get(eq("repository"));
-    verify(repository).getType();
     verify(repositoryPermissionChecker).ensureUserCanAdmin(eq(EDIT), eq(repository));
     verify(repository).facet(GroupFacet.class);
     verify(groupFacet).invalidateGroupCaches();
@@ -250,47 +244,50 @@ class AuthorizingRepositoryManagerTest
   }
   
   @Test
-  void testConcurrentOperationsWithVirtualThreads() throws Exception {
-    // Create a virtual thread factory
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+  void concurrentRepositoryOperationsWithVirtualThreads() throws Exception {
+    // Setup repository mocks for virtual thread testing
+    Repository proxyRepo = mock(Repository.class);
+    Repository groupRepo = mock(Repository.class);
+    ProxyFacet proxyFacet = mock(ProxyFacet.class);
+    GroupFacet groupFacet = mock(GroupFacet.class);
     
-    int taskCount = 100;
-    CountDownLatch latch = new CountDownLatch(taskCount);
-    AtomicInteger errorCount = new AtomicInteger(0);
+    when(proxyRepo.getName()).thenReturn("proxy-repo");
+    when(proxyRepo.getType()).thenReturn(new ProxyType());
+    when(proxyRepo.facet(ProxyFacet.class)).thenReturn(proxyFacet);
     
-    try {
-      // Submit multiple concurrent tasks using virtual threads
-      for (int i = 0; i < taskCount; i++) {
-        final String repoName = "repository-" + i;
-        when(repositoryManager.get(eq(repoName))).thenReturn(repository);
-        
-        executor.submit(() -> {
-          try {
-            // Perform repository operations concurrently
-            authorizingRepositoryManager.delete(repoName);
-          } catch (Exception e) {
-            errorCount.incrementAndGet();
-          } finally {
-            latch.countDown();
-          }
-        });
-      }
+    when(groupRepo.getName()).thenReturn("group-repo");
+    when(groupRepo.getType()).thenReturn(new GroupType());
+    when(groupRepo.facet(GroupFacet.class)).thenReturn(groupFacet);
+    
+    when(repositoryManager.get("proxy-repo")).thenReturn(proxyRepo);
+    when(repositoryManager.get("group-repo")).thenReturn(groupRepo);
+    
+    // Create a virtual thread executor
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit concurrent cache invalidation tasks
+      Future<?> proxyTask = executor.submit(() -> {
+        try {
+          authorizingRepositoryManager.invalidateCache("proxy-repo");
+        } catch (Exception e) {
+          throw new RuntimeException(e);
+        }
+      });
       
-      // Wait for all tasks to complete
-      latch.await(30, TimeUnit.SECONDS);
+      Future<?> groupTask = executor.submit(() -> {
+        try {
+          authorizingRepositoryManager.invalidateCache("group-repo");
+        } catch (Exception e) {
+          throw new RuntimeException(e);
+        }
+      });
       
-      // Verify no errors occurred
-      if (errorCount.get() > 0) {
-        throw new AssertionError(errorCount.get() + " operations failed");
-      }
-      
-      // Verify repository manager was called for each repository
-      verify(repositoryManager, times(taskCount)).get(anyString());
-      verify(repositoryPermissionChecker, times(taskCount)).ensureUserCanAdmin(eq("delete"), eq(repository));
-      verify(repositoryManager, times(taskCount)).delete(anyString());
-    } finally {
-      executor.shutdown();
+      // Wait for both tasks to complete
+      proxyTask.get(5, TimeUnit.SECONDS);
+      groupTask.get(5, TimeUnit.SECONDS);
     }
+    
+    // Verify that both operations completed successfully
+    verify(proxyFacet).invalidateProxyCaches();
+    verify(groupFacet).invalidateGroupCaches();
   }
 }

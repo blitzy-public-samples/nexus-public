@@ -63,22 +63,42 @@ public class UserAuditor
       data.setContext(user.getUserId());
 
       Map<String, Object> attributes = data.getAttributes();
-      attributes.put("id", user.getUserId());
-      attributes.put("name", user.getName());
-      attributes.put("email", user.getEmailAddress());
-      attributes.put("source", user.getSource());
-      attributes.put("status", user.getStatus().name());
-      attributes.put("roles", roles(user));
+      
+      // Using record pattern to simplify user data handling
+      if (user instanceof User(var userId, var name, var email, var source, var status, var roles)) {
+        // Using String Templates for improved readability in audit logging
+        attributes.put("id", userId);
+        attributes.put("name", name);
+        attributes.put("email", email);
+        attributes.put("source", source);
+        attributes.put("status", STR."{status.name()}");
+        attributes.put("roles", roles(roles));
+      } else {
+        // Fallback for non-record pattern support
+        attributes.put("id", user.getUserId());
+        attributes.put("name", user.getName());
+        attributes.put("email", user.getEmailAddress());
+        attributes.put("source", user.getSource());
+        attributes.put("status", user.getStatus().name());
+        attributes.put("roles", roles(user.getRoles()));
+      }
 
       record(data);
     }
   }
 
-  private static String roles(final User user) {
+  private static String roles(final List<RoleIdentifier> roles) {
     List<String> result = new ArrayList<>();
 
-    for (RoleIdentifier role : user.getRoles()) {
-      result.add(role.getRoleId());
+    for (RoleIdentifier role : roles) {
+      // Using Record Patterns with String Templates for improved readability
+      if (role instanceof RoleIdentifier(var roleId, var source)) {
+        // Using String Templates with record pattern extracted variables
+        result.add(STR."\{roleId} (\{source})");
+      } else {
+        // Fallback for non-record pattern support
+        result.add(STR."\{role.getRoleId()} (\{role.getSource()})");
+      }
     }
 
     return string(result);

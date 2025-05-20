@@ -28,6 +28,8 @@ import org.sonatype.nexus.security.user.UserRoleMappingUpdatedEvent;
 import com.google.common.eventbus.AllowConcurrentEvents;
 import com.google.common.eventbus.Subscribe;
 
+import static java.lang.StringTemplate.STR;
+
 /**
  * User role-mapping auditor.
  *
@@ -51,17 +53,22 @@ public class UserRoleMappingAuditor
   @AllowConcurrentEvents
   public void on(final UserRoleMappingEvent event) {
     if (isRecording()) {
-      AuditData data = new AuditData();
-      data.setDomain(DOMAIN);
-      data.setType(type(event.getClass()));
-      data.setContext(event.getUserId());
+      // Using Record Patterns to extract data from the event
+      if (event instanceof UserRoleMappingEvent(var userId, var userSource, var roles)) {
+        AuditData data = new AuditData();
+        data.setDomain(DOMAIN);
+        data.setType(type(event.getClass()));
+        data.setContext(userId);
 
-      Map<String, Object> attributes = data.getAttributes();
-      attributes.put("id", event.getUserId());
-      attributes.put("source", event.getUserSource());
-      attributes.put("roles", string(event.getRoles()));
+        Map<String, Object> attributes = data.getAttributes();
+        attributes.put("id", userId);
+        attributes.put("source", userSource);
+        
+        // Using String Templates for improved readability in audit logging
+        attributes.put("roles", STR."\{string(roles)}\{roles.isEmpty() ? " (empty)" : ""}");
 
-      record(data);
+        record(data);
+      }
     }
   }
 }

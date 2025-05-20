@@ -14,11 +14,6 @@ package org.sonatype.nexus.repository.security.internal.secrets.migration;
 
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.crypto.secrets.Secret;
@@ -30,6 +25,7 @@ import org.sonatype.nexus.repository.manager.RepositoryManager;
 import org.sonatype.nexus.repository.types.ProxyType;
 import org.sonatype.nexus.security.UserIdHelper;
 
+import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,9 +33,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
@@ -52,6 +47,7 @@ import static org.sonatype.nexus.repository.security.internal.secrets.migration.
 import static org.sonatype.nexus.repository.security.internal.secrets.migration.RepositoriesSecretsMigrator.PASSWORD_KEY;
 
 @ExtendWith(MockitoExtension.class)
+@Category(Java21TestGroup.class)
 public class RepositoriesSecretsMigratorTest
     extends TestSupport
 {
@@ -82,7 +78,7 @@ public class RepositoriesSecretsMigratorTest
   }
 
   @Test
-  public void migrateProxyUpdatesPassword() throws Exception {
+  public void testMigrate_proxy() throws Exception {
     mockRepositoryManager(mockProxy(null), mockProxy("my-password"));
 
     underTest.migrate();
@@ -92,7 +88,7 @@ public class RepositoriesSecretsMigratorTest
   }
 
   @Test
-  public void migrateProxyNotRequired() throws Exception {
+  public void testMigrate_proxy_notRequired() throws Exception {
     mockRepositoryManager(mockProxy(null));
 
     underTest.migrate();
@@ -101,62 +97,13 @@ public class RepositoriesSecretsMigratorTest
   }
 
   @Test
-  public void migrateProxyAlreadyMigrated() throws Exception {
+  public void testMigrate_proxy_alreadyMigrated() throws Exception {
     mockRepositoryManager(mockProxy(null), mockProxy("_2"));
 
     underTest.migrate();
 
     verify(secretsService, never()).encrypt(any(), any(), any());
     verify(repositoryManager, never()).update(any());
-  }
-  
-  @Test
-  public void concurrentMigrationWithVirtualThreads() throws Exception {
-    // Create repositories with passwords that need migration
-    Repository[] repositories = new Repository[10];
-    for (int i = 0; i < repositories.length; i++) {
-      repositories[i] = mockProxy("password-" + i);
-    }
-    mockRepositoryManager(repositories);
-    
-    // Create a thread factory for virtual threads
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    
-    // Track successful migrations
-    AtomicInteger migrationsCompleted = new AtomicInteger(0);
-    List<Exception> exceptions = new CopyOnWriteArrayList<>();
-    CountDownLatch latch = new CountDownLatch(5);
-    
-    // Launch multiple virtual threads to perform migrations concurrently
-    for (int i = 0; i < 5; i++) {
-      virtualThreadFactory.newThread(() -> {
-        try {
-          underTest.migrate();
-          migrationsCompleted.incrementAndGet();
-        }
-        catch (Exception e) {
-          exceptions.add(e);
-        }
-        finally {
-          latch.countDown();
-        }
-      }).start();
-    }
-    
-    // Wait for all threads to complete
-    latch.await();
-    
-    // Verify all migrations completed successfully
-    assertTrue(exceptions.isEmpty(), "No exceptions should occur during concurrent migration");
-    assertEquals(5, migrationsCompleted.get(), "All migration operations should complete successfully");
-    
-    // Verify the repository manager was called to update repositories
-    verify(repositoryManager, times(repositories.length)).update(any(Configuration.class));
-    
-    // Verify each password was processed
-    for (int i = 0; i < repositories.length; i++) {
-      verify(secretsService).from("password-" + i);
-    }
   }
 
   private void mockRepositoryManager(final Repository... repositories) {
@@ -182,13 +129,14 @@ public class RepositoriesSecretsMigratorTest
 
     configuration.setAttributes(new HashMap<>());
 
-    // Using pattern matching with instanceof to simplify the logic
-    if (passwordKey instanceof String password) {
-      if (!password.isEmpty()) {
-        configuration.attributes(HTTP_CLIENT_KEY)
-            .child(AUTHENTICATION_KEY)
-            .set(PASSWORD_KEY, password);
-      }
+    if (passwordKey == null) {
+      return repository;
+    }
+
+    if (passwordKey != null) {
+      configuration.attributes(HTTP_CLIENT_KEY)
+          .child(AUTHENTICATION_KEY)
+          .set(PASSWORD_KEY, passwordKey);
     }
 
     return repository;

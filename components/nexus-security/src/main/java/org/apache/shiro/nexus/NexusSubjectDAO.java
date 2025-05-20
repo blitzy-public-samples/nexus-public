@@ -19,7 +19,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Custom {@link SubjectDAO}.
+ * Custom {@link SubjectDAO} compatible with Apache Shiro 2.0.0.
  *
  * @since 3.0
  */
@@ -30,7 +30,7 @@ public class NexusSubjectDAO
 
   @Override
   public Subject save(final Subject subject) {
-    log.trace("Saving: {}", subject);
+    log.trace(STR."Saving: \{subject}");
     return super.save(subject);
   }
 }

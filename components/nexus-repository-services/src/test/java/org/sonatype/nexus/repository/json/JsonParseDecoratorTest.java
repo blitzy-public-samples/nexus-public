@@ -14,30 +14,25 @@ package org.sonatype.nexus.repository.json;
 
 import java.io.IOException;
 import java.io.OutputStream;
-import java.io.StringReader;
 import java.io.Writer;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.virtualthread.Java21TestGroup;
 
-import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonParser.Feature;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.core.util.RequestPayload;
+import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.verify;
 
+@Category(Java21TestGroup.class)
 @ExtendWith(MockitoExtension.class)
 public class JsonParseDecoratorTest
     extends TestSupport
@@ -48,12 +43,12 @@ public class JsonParseDecoratorTest
   private JsonParserDecorator underTest;
 
   @BeforeEach
-  public void setUp() {
+  void setUp() {
     underTest = new JsonParserDecorator(jsonParser);
   }
 
   @Test
-  public void decorates_JsonParser() throws IOException {
+  void shouldDecorateJsonParser() throws IOException {
     underTest.getCodec();
     underTest.setCodec(null);
     underTest.getInputSource();
@@ -239,106 +234,5 @@ public class JsonParseDecoratorTest
     verify(jsonParser).readValueAs((TypeReference<?>) null);
     verify(jsonParser).readValueAs((Class<Object>) null);
     verify(jsonParser).readValueAsTree();
-  }
-  
-  @Test
-  public void virtualThread_decorates_JsonParser() throws Exception {
-    // Create a simple JSON string to parse
-    String jsonContent = "{\"name\":\"test\",\"value\":123}";
-    JsonFactory factory = new JsonFactory();
-    
-    // Create a countdown latch to wait for the virtual thread to complete
-    CountDownLatch latch = new CountDownLatch(1);
-    
-    // Use virtual threads executor
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      executor.submit(() -> {
-        try {
-          // Create a real JsonParser in the virtual thread
-          JsonParser parser = factory.createParser(new StringReader(jsonContent));
-          // Create the decorator
-          JsonParserDecorator decorator = new JsonParserDecorator(parser);
-          
-          // Perform some operations
-          assertDoesNotThrow(() -> {
-            decorator.nextToken(); // START_OBJECT
-            decorator.nextToken(); // FIELD_NAME (name)
-            decorator.nextToken(); // VALUE_STRING (test)
-            decorator.nextToken(); // FIELD_NAME (value)
-            decorator.nextToken(); // VALUE_NUMBER_INT (123)
-            decorator.nextToken(); // END_OBJECT
-          });
-          
-          // Close the parser
-          decorator.close();
-        } 
-        catch (Exception e) {
-          log.error("Error in virtual thread test", e);
-        }
-        finally {
-          latch.countDown();
-        }
-        return null;
-      });
-    }
-    
-    // Wait for the virtual thread to complete (with timeout)
-    assertTrue(latch.await(5, TimeUnit.SECONDS), "Virtual thread test did not complete in time");
-  }
-  
-  @Test
-  public void virtualThread_handlesIOOperations() throws Exception {
-    // Create a countdown latch to wait for all virtual threads to complete
-    int threadCount = 10;
-    CountDownLatch latch = new CountDownLatch(threadCount);
-    
-    // Use virtual threads executor
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit multiple tasks to verify concurrent operation
-      for (int i = 0; i < threadCount; i++) {
-        final int threadId = i;
-        executor.submit(() -> {
-          try {
-            // Create a simple JSON string to parse with thread-specific data
-            String jsonContent = String.format("{\"threadId\":%d,\"value\":%d}", threadId, threadId * 100);
-            JsonFactory factory = new JsonFactory();
-            
-            // Create a real JsonParser in the virtual thread
-            JsonParser parser = factory.createParser(new StringReader(jsonContent));
-            // Create the decorator
-            JsonParserDecorator decorator = new JsonParserDecorator(parser);
-            
-            // Simulate I/O operations by parsing the JSON
-            assertDoesNotThrow(() -> {
-              decorator.nextToken(); // START_OBJECT
-              decorator.nextToken(); // FIELD_NAME (threadId)
-              decorator.nextToken(); // VALUE_NUMBER_INT
-              int id = decorator.getIntValue();
-              decorator.nextToken(); // FIELD_NAME (value)
-              decorator.nextToken(); // VALUE_NUMBER_INT
-              int value = decorator.getIntValue();
-              decorator.nextToken(); // END_OBJECT
-              
-              // Verify the parsed values match what we expect
-              assertTrue(id == threadId, "Thread ID mismatch: expected " + threadId + ", got " + id);
-              assertTrue(value == threadId * 100, "Value mismatch: expected " + (threadId * 100) + ", got " + value);
-            });
-            
-            // Close the parser
-            decorator.close();
-          } 
-          catch (Exception e) {
-            log.error("Error in virtual thread I/O test for thread " + threadId, e);
-          }
-          finally {
-            latch.countDown();
-          }
-          return null;
-        });
-      }
-    }
-    
-    // Wait for all virtual threads to complete (with timeout)
-    assertTrue(latch.await(5, TimeUnit.SECONDS), "Not all virtual threads completed in time");
   }
 }

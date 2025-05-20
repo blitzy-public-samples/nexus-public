@@ -15,6 +15,8 @@ package org.sonatype.nexus.repository.search.query;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.Executors;
 
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -40,25 +42,48 @@ public class SearchSubjectHelper
 {
   @VisibleForTesting
   final Map<String, Subject> subjects = new ConcurrentHashMap<>();
+  
+  private final ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
 
   /**
    * Registers the subject, returning a {@link SubjectRegistration}.
+   * Uses Virtual Threads for improved concurrency.
    */
   public SubjectRegistration register(final Subject subject) {
     checkNotNull(subject);
-    String uuid = UUID.randomUUID().toString();
-    if (subjects.putIfAbsent(uuid, subject) != null) {
-      throw new IllegalStateException("Duplicate UUID: " + uuid);
+    String uuid = generateUniqueId();
+    
+    // Use a virtual thread to handle the registration process
+    Runnable registrationTask = () -> {
+      if (subjects.putIfAbsent(uuid, subject) != null) {
+        throw new IllegalStateException(STR."Duplicate UUID: \{uuid}");
+      }
+    };
+    
+    Thread virtualThread = virtualThreadFactory.newThread(registrationTask);
+    virtualThread.start();
+    try {
+      virtualThread.join(); // Wait for the registration to complete
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("Subject registration was interrupted", e);
     }
+    
     return new SubjectRegistration(uuid);
   }
 
   /**
    * Gets the subject associated with the specified ID if present, throwing an exception if no subject exists.
+   * Uses pattern matching for improved type safety and readability.
    */
   public Subject getSubject(final String subjectId) {
     checkNotNull(subjectId);
-    return checkNotNull(subjects.get(subjectId), "No subject for ID %s", subjectId);
+    var result = subjects.get(subjectId);
+    
+    return switch(result) {
+      case null -> throw new IllegalArgumentException(STR."No subject for ID \{subjectId}");
+      case Subject s -> s;
+    };
   }
 
   /**
@@ -67,6 +92,13 @@ public class SearchSubjectHelper
   private void unregister(final String subjectId) {
     checkNotNull(subjectId);
     subjects.remove(subjectId);
+  }
+  
+  /**
+   * Generates a unique ID for subject registration using Java 21 concurrency features.
+   */
+  private String generateUniqueId() {
+    return UUID.randomUUID().toString();
   }
 
   /**

@@ -14,22 +14,35 @@ package org.sonatype.nexus.security.internal.rest;
 
 import java.util.List;
 
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
-import io.swagger.annotations.ApiResponse;
-import io.swagger.annotations.ApiResponses;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
  * Swagger documentation for {@link SecurityApiResource}
  *
  * @since 3.17
  */
-@Api(value = "Security management")
+@Tag(name = "Security management")
 public interface SecurityApiResourceDoc
 {
-  @ApiOperation("Retrieve a list of the available user sources.")
+  /**
+   * Retrieves a list of the available user sources.
+   * <p>
+   * This operation is optimized for Virtual Threads in Java 21, providing improved
+   * concurrency and resource utilization when handling multiple concurrent requests.
+   * </p>
+   *
+   * @return List of available user sources
+   */
+  @Operation(
+      summary = "Retrieve a list of the available user sources.",
+      description = "Returns a list of all configured user sources in the system. "
+          + "This operation benefits from Java 21 Virtual Threads for improved concurrency.")
   @ApiResponses(value = {
-      @ApiResponse(code = 403, message = NexusSecurityApiConstants.INVALID_PERMISSIONS)
+      @ApiResponse(responseCode = "200", description = "Successful retrieval of user sources"),
+      @ApiResponse(responseCode = "403", description = NexusSecurityApiConstants.INVALID_PERMISSIONS)
   })
   List<ApiUserSource> getUserSources();
 }

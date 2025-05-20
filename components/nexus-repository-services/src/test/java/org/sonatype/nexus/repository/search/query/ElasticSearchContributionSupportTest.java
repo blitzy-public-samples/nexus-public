@@ -13,61 +13,87 @@
 package org.sonatype.nexus.repository.search.query;
 
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.junit.jupiter.MockitoExtension;
+import org.junit.experimental.categories.Category;
+import org.sonatype.nexus.virtualthread.Java21TestGroup;
 
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 
-@ExtendWith(MockitoExtension.class)
+@Category(Java21TestGroup.class)
 public class ElasticSearchContributionSupportTest
 {
   private ElasticSearchContributionSupport
       elasticSearchContributionSupport = new ElasticSearchContributionSupport();
 
   @Test
-  void regularCharactersRemainUnchanged() {
+  void leavesRegularCharactersAsIs() {
     String regularCharacters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890.";
     assertThat(elasticSearchContributionSupport.escape(regularCharacters), is(regularCharacters));
   }
 
   @Test
-  void supportedSpecialCharactersRemainUnescaped() {
+  void leavesSupportedSpecialCharactersUnescaped() {
     String supportedSpecialCharacters = "?*\"\"";
     assertThat(elasticSearchContributionSupport.escape(supportedSpecialCharacters), is(supportedSpecialCharacters));
   }
 
   @Test
-  void unsupportedSpecialCharactersAreEscaped() {
-    assertThat(
-        elasticSearchContributionSupport.escape(":[]-+!(){}^~/\\"),
-        is("\\:\\[\\]\\-\\+\\!\\(\\)\\{\\}\\^\\~\\/\\\\")
-    );
+  void escapesAllUnsupportedSpecialCharacters() {
+    String input = ":[]-+!(){}^~/\\";
+    String expected = "\\:\\[\\]\\-\\+\\!\\(\\)\\{\\}\\^\\~\\/\\\\";
+    
+    // Using pattern matching to validate the escape behavior
+    String result = elasticSearchContributionSupport.escape(input);
+    assertThat(result, is(expected));
   }
 
   @Test
-  void oddNumberOfDoubleQuotesAreEscaped() {
-    assertThat(elasticSearchContributionSupport.escape("\""), is("\\\""));
-    assertThat(elasticSearchContributionSupport.escape("\"a\"b\""), is("\\\"a\\\"b\\\""));
+  void escapesOddNumberOfDoubleQuotes() {
+    // Using pattern matching to test different cases with odd number of quotes
+    String result1 = elasticSearchContributionSupport.escape("\"");
+    String result2 = elasticSearchContributionSupport.escape("\"a\"b\"");
+    
+    switch (result1) {
+      case String s when s.equals("\\\"") -> assertThat(true, is(true)); // Success case
+      default -> assertThat("Failed to properly escape single quote", false, is(true));
+    }
+    
+    assertThat(result2, is("\\\"a\\\"b\\\""));
   }
 
   @Test
-  void evenNumberOfDoubleQuotesRemainUnescaped() {
-    assertThat(elasticSearchContributionSupport.escape("\"ab\""), is("\"ab\""));
-    assertThat(elasticSearchContributionSupport.escape("\"ab\" \"ab\""), is("\"ab\" \"ab\""));
-    assertThat(elasticSearchContributionSupport.escape("\"\"\"\""), is("\"\"\"\""));
+  void ignoresEvenNumberOfDoubleQuotes() {
+    // Test cases with even number of quotes using pattern matching
+    String input1 = "\"ab\"";
+    String input2 = "\"ab\" \"ab\"";
+    String input3 = "\"\"\"\"";
+    
+    // Pattern matching to validate results
+    switch (elasticSearchContributionSupport.escape(input1)) {
+      case String s when s.equals(input1) -> assertThat(true, is(true)); // Success case
+      default -> assertThat("Failed to preserve even number of quotes", false, is(true));
+    }
+    
+    assertThat(elasticSearchContributionSupport.escape(input2), is(input2));
+    assertThat(elasticSearchContributionSupport.escape(input3), is(input3));
   }
 
   @Test
-  void commonSearchPatternsAreHandledCorrectly() {
-    assertThat(elasticSearchContributionSupport.escape("library/alpine-dev"), is("library\\/alpine\\-dev"));
-
-    String mavenGroup = "org.sonatype.nexus";
-    assertThat(elasticSearchContributionSupport.escape(mavenGroup), is(mavenGroup));
-
-    assertThat(
-        elasticSearchContributionSupport.escape("org.apache.maven maven-plugin-registry"),
-        is("org.apache.maven maven\\-plugin\\-registry")
-    );
+  void supportsCommonSearches() {
+    // Test common search patterns with pattern matching for validation
+    String input1 = "library/alpine-dev";
+    String expected1 = "library\\/alpine\\-dev";
+    String input2 = "org.sonatype.nexus";
+    String input3 = "org.apache.maven maven-plugin-registry";
+    String expected3 = "org.apache.maven maven\\-plugin\\-registry";
+    
+    String result1 = elasticSearchContributionSupport.escape(input1);
+    switch (result1) {
+      case String s when s.equals(expected1) -> assertThat(true, is(true)); // Success case
+      default -> assertThat("Failed to escape path separator correctly", false, is(true));
+    }
+    
+    assertThat(elasticSearchContributionSupport.escape(input2), is(input2));
+    assertThat(elasticSearchContributionSupport.escape(input3), is(expected3));
   }
 }

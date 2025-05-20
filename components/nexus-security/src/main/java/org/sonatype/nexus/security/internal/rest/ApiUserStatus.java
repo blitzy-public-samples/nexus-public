@@ -33,10 +33,16 @@ public enum ApiUserStatus
     return status;
   }
 
+  /**
+   * Converts a {@link UserStatus} to an {@link ApiUserStatus} using pattern matching.
+   *
+   * @param status the user status to convert
+   * @return the corresponding API user status, or null if the input is null
+   */
   public static ApiUserStatus convert(final UserStatus status) {
-    if (status == null) {
-      return null;
-    }
-    return ApiUserStatus.valueOf(status.toString());
+    return switch (status) {
+      case null -> null;
+      case UserStatus s -> ApiUserStatus.valueOf(s.toString());
+    };
   }
 }

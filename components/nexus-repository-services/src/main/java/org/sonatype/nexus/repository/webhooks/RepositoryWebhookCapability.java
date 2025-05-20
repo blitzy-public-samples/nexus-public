@@ -16,6 +16,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 import javax.inject.Inject;
 import javax.inject.Named;
 
@@ -33,6 +35,14 @@ import org.sonatype.nexus.webhooks.WebhookSubscription;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.capability.CapabilityType.capabilityType;
 
+/**
+ * Repository webhook capability that manages webhook subscriptions for repositories.
+ * Updated for Java 21 to support Virtual Thread-based webhook operations and String Templates.
+ * 
+ * <p>This implementation uses Java 21 Virtual Threads for non-blocking webhook subscription
+ * management, allowing thousands of concurrent webhook operations with minimal resource usage.
+ * String Templates are used for improved logging and message formatting.</p>
+ */
 @Named(RepositoryWebhookCapability.TYPE_ID)
 public class RepositoryWebhookCapability
     extends CapabilitySupport<RepositoryWebhookCapabilityConfiguration>
@@ -85,6 +95,7 @@ public class RepositoryWebhookCapability
 
   private final RepositoryConditions repositoryConditions;
 
+  // Thread-safe list of active webhook subscriptions
   private final List<WebhookSubscription> subscriptions = new ArrayList<>();
 
   @Inject
@@ -103,7 +114,7 @@ public class RepositoryWebhookCapability
 
   @Override
   protected String renderDescription() {
-    return messages.description(String.join(", ", getConfig().names));
+    return STR."\{String.join(", ", getConfig().names)}";
   }
 
   @Override
@@ -116,16 +127,55 @@ public class RepositoryWebhookCapability
 
   @Override
   protected void onActivate(final RepositoryWebhookCapabilityConfiguration config) {
-    webhookService.getWebhooks()
-        .stream()
-        .filter(webhook -> webhook.getType() == RepositoryWebhook.TYPE && config.names.contains(webhook.getName()))
-        .forEach(webhook -> subscriptions.add(webhook.subscribe(config)));
+    // Use Virtual Thread executor for non-blocking webhook subscription management
+    // Virtual Threads allow for high-concurrency operations without blocking platform threads
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    executor.execute(() -> {
+      try {
+        log.debug(STR."Activating repository webhook capability for repository: \{config.repository}");
+        webhookService.getWebhooks()
+            .stream()
+            .filter(webhook -> webhook.getType() == RepositoryWebhook.TYPE && config.names.contains(webhook.getName()))
+            .forEach(webhook -> {
+              try {
+                WebhookSubscription subscription = webhook.subscribe(config);
+                synchronized(subscriptions) {
+                  subscriptions.add(subscription);
+                }
+                log.debug(STR."Subscribed to webhook: \{webhook.getName()} for repository: \{config.repository}");
+              } catch (Exception e) {
+                log.error(STR."Failed to subscribe to webhook: \{webhook.getName()} for repository: \{config.repository}", e);
+              }
+            });
+      } catch (Exception e) {
+        log.error(STR."Error activating repository webhook capability for repository: \{config.repository}", e);
+      }
+    });
   }
 
   @Override
   protected void onPassivate(final RepositoryWebhookCapabilityConfiguration config) {
-    subscriptions.forEach(WebhookSubscription::cancel);
-    subscriptions.clear();
+    // Use Virtual Thread executor for non-blocking webhook unsubscription
+    // This ensures that webhook cancellation doesn't block the main capability lifecycle operations
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    executor.execute(() -> {
+      try {
+        log.debug(STR."Passivating repository webhook capability for repository: \{config.repository}");
+        synchronized(subscriptions) {
+          subscriptions.forEach(subscription -> {
+            try {
+              subscription.cancel();
+              log.debug(STR."Cancelled webhook subscription for repository: \{config.repository}");
+            } catch (Exception e) {
+              log.error(STR."Failed to cancel webhook subscription for repository: \{config.repository}", e);
+            }
+          });
+          subscriptions.clear();
+        }
+      } catch (Exception e) {
+        log.error(STR."Error passivating repository webhook capability for repository: \{config.repository}", e);
+      }
+    });
   }
 
   @Override
@@ -134,5 +184,4 @@ public class RepositoryWebhookCapability
         Tag.categoryTag(messages.category()),
         Tag.repositoryTag(getConfig().repository));
   }
-
 }

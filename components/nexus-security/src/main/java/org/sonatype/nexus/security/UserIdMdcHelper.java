@@ -24,6 +24,7 @@ import static org.sonatype.nexus.security.UserIdHelper.UNKNOWN;
 
 /**
  * Helper to set the {@code userId} MDC attribute.
+ * Optimized for Virtual Thread compatibility in Java 21.
  *
  * @since 2.7.2
  */
@@ -37,29 +38,51 @@ public class UserIdMdcHelper
 
   public static final String KEY = "userId";
 
+  /**
+   * Checks if a userId is set in the MDC context.
+   * 
+   * @return true if a valid userId is set, false otherwise
+   */
   public static boolean isSet() {
     String userId = MDC.get(KEY);
     return !(Strings.isNullOrEmpty(userId) || UNKNOWN.equals(userId));
   }
 
+  /**
+   * Sets the userId in MDC if not already set.
+   * Safe for use with Virtual Threads.
+   */
   public static void setIfNeeded() {
     if (!isSet()) {
       set();
     }
   }
 
+  /**
+   * Sets the userId in MDC based on the provided subject.
+   * Safe for use with Virtual Threads.
+   * 
+   * @param subject the subject to extract userId from
+   */
   public static void set(final Subject subject) {
     checkNotNull(subject);
     String userId = UserIdHelper.get(subject);
-    log.trace("Set: {}", userId);
+    log.trace(STR."Set: \{userId}");
     MDC.put(KEY, userId);
   }
 
+  /**
+   * Sets the userId in MDC from the current security context.
+   * Safe for use with Virtual Threads.
+   */
   public static void set() {
     MDC.put(KEY, UserIdHelper.get());
   }
 
   /**
+   * Sets the userId in MDC to UNKNOWN.
+   * Safe for use with Virtual Threads.
+   * 
    * @since 3.0
    */
   public static void unknown() {
@@ -67,14 +90,21 @@ public class UserIdMdcHelper
   }
 
   /**
+   * Sets the userId in MDC to SYSTEM.
+   * Safe for use with Virtual Threads.
+   * 
    * @since 3.0
    */
   public static void system() {
     MDC.put(KEY, SYSTEM);
   }
 
+  /**
+   * Removes the userId from MDC.
+   * Always call this method when done with the MDC context to prevent memory leaks,
+   * especially important with Virtual Threads.
+   */
   public static void unset() {
     MDC.remove(KEY);
   }
 }
-

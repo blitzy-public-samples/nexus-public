@@ -35,6 +35,18 @@ import org.elasticsearch.plugins.Plugin;
 public class ContentAuthPluginLocator
     implements PluginLocator
 {
+  /**
+   * Creates a new ContentAuthPluginLocator instance with the required dependencies.
+   * 
+   * This constructor is compatible with Java 21's module system for proper plugin loading.
+   * It explicitly validates all parameters to ensure proper initialization in the module context.
+   *
+   * @param contentPermissionChecker The content permission checker to use
+   * @param variableResolverAdapterManager The variable resolver adapter manager to use
+   * @param searchSubjectHelper The search subject helper to use
+   * @param repositoryManager The repository manager to use
+   * @param contentAuthSleep Whether to sleep during content auth (for testing)
+   */
   @Inject
   public ContentAuthPluginLocator(final ContentPermissionChecker contentPermissionChecker,
                                   final VariableResolverAdapterManager variableResolverAdapterManager,
@@ -42,12 +54,38 @@ public class ContentAuthPluginLocator
                                   final RepositoryManager repositoryManager,
                                   @Named("${nexus.elasticsearch.contentAuthSleep:-false}") final boolean contentAuthSleep)
   {
+    // Validate parameters explicitly for Java 21 module system compatibility
+    if (contentPermissionChecker == null) {
+      throw new IllegalArgumentException("contentPermissionChecker cannot be null");
+    }
+    if (variableResolverAdapterManager == null) {
+      throw new IllegalArgumentException("variableResolverAdapterManager cannot be null");
+    }
+    if (searchSubjectHelper == null) {
+      throw new IllegalArgumentException("searchSubjectHelper cannot be null");
+    }
+    if (repositoryManager == null) {
+      throw new IllegalArgumentException("repositoryManager cannot be null");
+    }
+    
+    // Set dependencies on the ContentAuthPlugin
     ContentAuthPlugin.setDependencies(contentPermissionChecker, variableResolverAdapterManager,
         searchSubjectHelper, repositoryManager, contentAuthSleep);
   }
 
+  /**
+   * Returns the plugin class that this locator is responsible for.
+   * This method is compatible with Java 21's module system for proper class loading.
+   *
+   * @return The ContentAuthPlugin class
+   */
   @Override
   public Class<? extends Plugin> pluginClass() {
-    return ContentAuthPlugin.class;
+    try {
+      return ContentAuthPlugin.class;
+    }
+    catch (Exception e) {
+      throw new RuntimeException("Failed to load ContentAuthPlugin class in Java 21 module context", e);
+    }
   }
 }

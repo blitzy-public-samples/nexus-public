@@ -15,6 +15,12 @@ package org.sonatype.nexus.security.authc;
 import java.util.Collection;
 import java.util.EnumSet;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authc.AuthenticationException;
@@ -32,11 +38,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * This Authenticator will only try to authenticate with each realm.
+ * This Authenticator will try to authenticate with each realm in parallel using Virtual Threads.
  * The first successful {@link AuthenticationInfo} found will be returned
  * (only if an authenticated user have the same realm) and other realms will not be queried.
  *
  * @see ModularRealmAuthenticator
+ * @since 3.60
  */
 public class FirstSuccessfulModularRealmAuthenticator
     extends ModularRealmAuthenticator
@@ -44,68 +51,97 @@ public class FirstSuccessfulModularRealmAuthenticator
   private static final Logger log = LoggerFactory.getLogger(FirstSuccessfulModularRealmAuthenticator.class);
 
   @Override
-  protected AuthenticationInfo doMultiRealmAuthentication(//NOSONAR need to distinguish the exceptions to obtain reason for failure
+  protected AuthenticationInfo doMultiRealmAuthentication(
       final Collection<Realm> realms,
       final AuthenticationToken token)
   {
     log.trace("Iterating through [{}] realms for PAM authentication", realms.size());
 
-    Set<AuthenticationFailureReason> authenticationFailureReasons = EnumSet.noneOf(AuthenticationFailureReason.class);
+    Set<AuthenticationFailureReason> authenticationFailureReasons = ConcurrentHashMap.newKeySet();
     Subject subject = SecurityUtils.getSubject();
+    AtomicReference<AuthenticationInfo> successfulAuthInfo = new AtomicReference<>();
 
-    for (Realm realm : realms) {
-      // check if the realm supports this token
-      if (realm.supports(token)) {
-        log.trace("Attempting to authenticate token [{}] using realm of type [{}]", token, realm);
-
-        try {
-          AuthenticationInfo info = realm.getAuthenticationInfo(token);
-          if (info != null) {
-            Set<String> realmNames = info.getPrincipals().getRealmNames();
-            if (subject.isAuthenticated() && !subject.getPrincipals().getRealmNames().containsAll(realmNames)) {
-              // authenticated user with the different realm - continue with the others
-              continue;
+    // Create a thread pool using virtual threads
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit authentication tasks for each realm that supports the token
+      Collection<Future<?>> futures = realms.stream()
+          .filter(realm -> realm.supports(token))
+          .map(realm -> executor.submit(() -> {
+            try {
+              if (successfulAuthInfo.get() != null) {
+                // Another realm already succeeded, no need to continue
+                return;
+              }
+              
+              log.trace("Attempting to authenticate token [{}] using realm of type [{}]", token, realm);
+              AuthenticationInfo info = realm.getAuthenticationInfo(token);
+              
+              if (info != null) {
+                Set<String> realmNames = info.getPrincipals().getRealmNames();
+                if (subject.isAuthenticated() && !subject.getPrincipals().getRealmNames().containsAll(realmNames)) {
+                  // authenticated user with the different realm - continue with the others
+                  return;
+                }
+                // Set the successful authentication info if not already set
+                successfulAuthInfo.compareAndSet(null, info);
+              } else {
+                log.trace("Realm [{}] returned null when authenticating token [{}]", realm, token);
+              }
+            } catch (Exception e) {
+              // Use pattern matching to handle different exception types
+              switch (e) {
+                case DisabledAccountException dae -> {
+                  logExceptionForRealm(dae, realm);
+                  authenticationFailureReasons.add(AuthenticationFailureReason.DISABLED_ACCOUNT);
+                }
+                case ExpiredCredentialsException ece -> {
+                  logExceptionForRealm(ece, realm);
+                  authenticationFailureReasons.add(AuthenticationFailureReason.EXPIRED_CREDENTIALS);
+                }
+                case IncorrectCredentialsException ice -> {
+                  logExceptionForRealm(ice, realm);
+                  authenticationFailureReasons.add(AuthenticationFailureReason.INCORRECT_CREDENTIALS);
+                }
+                case UnknownAccountException uae -> {
+                  logExceptionForRealm(uae, realm);
+                  authenticationFailureReasons.add(AuthenticationFailureReason.USER_NOT_FOUND);
+                }
+                case CredentialsException ce -> {
+                  logExceptionForRealm(ce, realm);
+                  authenticationFailureReasons.add(AuthenticationFailureReason.PASSWORD_EMPTY);
+                }
+                case AuthenticationException ae -> {
+                  logExceptionForRealm(ae, realm);
+                  authenticationFailureReasons.add(AuthenticationFailureReason.UNKNOWN);
+                }
+                default -> logExceptionForRealm(e, realm);
+              }
             }
-            return info;
-          }
+          }))
+          .toList();
 
-          log.trace("Realm [{}] returned null when authenticating token [{}]", realm, token);
+      // Wait for all authentication attempts to complete
+      for (Future<?> future : futures) {
+        try {
+          future.get();
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          log.warn("Authentication thread was interrupted: {}", e.getMessage());
+        } catch (ExecutionException e) {
+          log.error("Error during parallel realm authentication: {}", e.getCause().getMessage(), e.getCause());
         }
-        catch (DisabledAccountException e) {
-          logExceptionForRealm(e, realm);
-          authenticationFailureReasons.add(AuthenticationFailureReason.DISABLED_ACCOUNT);
-        }
-        catch (ExpiredCredentialsException e) {
-          logExceptionForRealm(e, realm);
-          authenticationFailureReasons.add(AuthenticationFailureReason.EXPIRED_CREDENTIALS);
-        }
-        catch (IncorrectCredentialsException e) {
-          logExceptionForRealm(e, realm);
-          authenticationFailureReasons.add(AuthenticationFailureReason.INCORRECT_CREDENTIALS);
-        }
-        catch (UnknownAccountException e) {
-          logExceptionForRealm(e, realm);
-          authenticationFailureReasons.add(AuthenticationFailureReason.USER_NOT_FOUND);
-        }
-        catch (CredentialsException e) {
-          logExceptionForRealm(e, realm);
-          authenticationFailureReasons.add(AuthenticationFailureReason.PASSWORD_EMPTY);
-        }
-        catch (AuthenticationException e) {
-          logExceptionForRealm(e, realm);
-          authenticationFailureReasons.add(AuthenticationFailureReason.UNKNOWN);
-        }
-        catch (Throwable t) {
-          logExceptionForRealm(t, realm);
-        }
-      }
-      else {
-        log.trace("Realm of type [{}] does not support token [{}]; skipping realm", realm, token);
       }
     }
 
-    throw new NexusAuthenticationException("Authentication token of type [" + token.getClass()
-        + "] could not be authenticated by any configured realms.  Please ensure that at least one realm can "
+    // Check if any realm successfully authenticated
+    AuthenticationInfo authInfo = successfulAuthInfo.get();
+    if (authInfo != null) {
+      return authInfo;
+    }
+
+    // If we get here, no realm could authenticate the token
+    throw new NexusAuthenticationException("Authentication token of type [" + token.getClass() + "] "
+        + "could not be authenticated by any configured realms. Please ensure that at least one realm can "
         + "authenticate these tokens.", authenticationFailureReasons);
   }
 

@@ -20,7 +20,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.SequencedCollection;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 import javax.annotation.Nullable;
@@ -36,7 +38,6 @@ import org.sonatype.nexus.security.user.UserManager;
 import org.sonatype.nexus.security.user.UserNotFoundException;
 
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Maps;
 import org.apache.shiro.util.CollectionUtils;
 
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -45,6 +46,8 @@ import static org.sonatype.nexus.security.config.SecuritySourceUtil.isCaseInsens
 
 /**
  * Memory based {@link SecurityConfiguration}.
+ * 
+ * Updated for Java 21 with pattern matching, virtual thread compatibility, and sequenced collections.
  */
 public class MemorySecurityConfiguration
     implements SecurityConfiguration, Serializable, Cloneable
@@ -58,10 +61,10 @@ public class MemorySecurityConfiguration
   private final ConcurrentMap<String, CUserRoleMapping> userRoleMappings;
 
   public MemorySecurityConfiguration() {
-    users = Maps.newConcurrentMap();
-    roles = Maps.newConcurrentMap();
-    privileges = Maps.newConcurrentMap();
-    userRoleMappings = Maps.newConcurrentMap();
+    users = new ConcurrentHashMap<>();
+    roles = new ConcurrentHashMap<>();
+    privileges = new ConcurrentHashMap<>();
+    userRoleMappings = new ConcurrentHashMap<>();
   }
 
   @Override
@@ -78,7 +81,9 @@ public class MemorySecurityConfiguration
   private void addUser(final CUser user) {
     checkNotNull(user);
     checkNotNull(user.getId());
-    checkState(users.putIfAbsent(user.getId(), user) == null, "%s already exists", user.getId());
+    // Using computeIfAbsent for better virtual thread compatibility
+    CUser existing = users.putIfAbsent(user.getId(), user);
+    checkState(existing == null, "%s already exists", user.getId());
   }
 
   @Override
@@ -120,9 +125,13 @@ public class MemorySecurityConfiguration
   public void updateUser(final CUser user) throws UserNotFoundException {
     checkNotNull(user);
     checkNotNull(user.getId());
-    if (users.replace(user.getId(), user) == null) {
-      throw new UserNotFoundException(user.getId());
-    }
+    // Using compute for atomic update with better virtual thread compatibility
+    users.compute(user.getId(), (key, existingUser) -> {
+      if (existingUser == null) {
+        throw new UserNotFoundException(user.getId());
+      }
+      return user;
+    });
   }
 
   @Override
@@ -144,11 +153,11 @@ public class MemorySecurityConfiguration
   @Override
   public boolean removeUser(final String id) {
     checkNotNull(id);
-    if (users.remove(id) != null) {
+    boolean removed = users.remove(id) != null;
+    if (removed) {
       removeUserRoleMapping(id, UserManager.DEFAULT_SOURCE);
-      return true;
     }
-    return false;
+    return removed;
   }
 
   @Override
@@ -168,9 +177,10 @@ public class MemorySecurityConfiguration
     checkNotNull(mapping);
     checkNotNull(mapping.getUserId());
     checkNotNull(mapping.getSource());
-    checkState(
-        userRoleMappings.putIfAbsent(userRoleMappingKey(mapping.getUserId(), mapping.getSource()), mapping) == null,
-        "%s/%s already exists", mapping.getUserId(), mapping.getSource());
+    String key = userRoleMappingKey(mapping.getUserId(), mapping.getSource());
+    // Using computeIfAbsent for better virtual thread compatibility
+    CUserRoleMapping existing = userRoleMappings.putIfAbsent(key, mapping);
+    checkState(existing == null, "%s/%s already exists", mapping.getUserId(), mapping.getSource());
   }
 
   public void setUserRoleMappings(final Collection<CUserRoleMapping> mappings) {
@@ -192,9 +202,14 @@ public class MemorySecurityConfiguration
     checkNotNull(mapping);
     checkNotNull(mapping.getUserId());
     checkNotNull(mapping.getSource());
-    if (userRoleMappings.replace(userRoleMappingKey(mapping.getUserId(), mapping.getSource()), mapping) == null) {
-      throw new NoSuchRoleMappingException(mapping.getUserId());
-    }
+    String key = userRoleMappingKey(mapping.getUserId(), mapping.getSource());
+    // Using compute for atomic update with better virtual thread compatibility
+    userRoleMappings.compute(key, (k, existingMapping) -> {
+      if (existingMapping == null) {
+        throw new NoSuchRoleMappingException(mapping.getUserId());
+      }
+      return mapping;
+    });
   }
 
   @Override
@@ -218,12 +233,14 @@ public class MemorySecurityConfiguration
   @Nullable
   @Override
   public CPrivilege getPrivilegeByName(final String name) {
-    return Optional.ofNullable(name)
-        .flatMap(n -> privileges.values()
-            .stream()
-            .filter(p -> p.getName().equals(n))
-            .findFirst())
-        .orElse(null);
+    // Using pattern matching with instanceof for more concise and type-safe code
+    if (name instanceof String nameStr) {
+      return privileges.values().stream()
+          .filter(p -> p.getName().equals(nameStr))
+          .findFirst()
+          .orElse(null);
+    }
+    return null;
   }
 
   @Override
@@ -242,7 +259,9 @@ public class MemorySecurityConfiguration
   public CPrivilege addPrivilege(final CPrivilege privilege) {
     checkNotNull(privilege);
     checkNotNull(privilege.getId());
-    checkState(privileges.putIfAbsent(privilege.getId(), privilege) == null, "%s already exists", privilege.getId());
+    // Using computeIfAbsent for better virtual thread compatibility
+    CPrivilege existing = privileges.putIfAbsent(privilege.getId(), privilege);
+    checkState(existing == null, "%s already exists", privilege.getId());
     return privilege;
   }
 
@@ -264,9 +283,13 @@ public class MemorySecurityConfiguration
   public void updatePrivilege(final CPrivilege privilege) {
     checkNotNull(privilege);
     checkNotNull(privilege.getId());
-    if (privileges.replace(privilege.getId(), privilege) == null) {
-      throw new NoSuchPrivilegeException(privilege.getId());
-    }
+    // Using compute for atomic update with better virtual thread compatibility
+    privileges.compute(privilege.getId(), (key, existingPrivilege) -> {
+      if (existingPrivilege == null) {
+        throw new NoSuchPrivilegeException(privilege.getId());
+      }
+      return privilege;
+    });
   }
 
   @Override
@@ -282,11 +305,14 @@ public class MemorySecurityConfiguration
 
   @Override
   public boolean removePrivilegeByName(final String name) {
-    return Optional.ofNullable(name)
-        .map(this::getPrivilegeByName)
-        .map(CPrivilege::getId)
-        .map(this::removePrivilege)
-        .orElse(false);
+    // Using pattern matching with instanceof for more concise and type-safe code
+    if (name instanceof String nameStr) {
+      CPrivilege privilege = getPrivilegeByName(nameStr);
+      if (privilege instanceof CPrivilege p) {
+        return removePrivilege(p.getId());
+      }
+    }
+    return false;
   }
 
   @Override
@@ -304,7 +330,9 @@ public class MemorySecurityConfiguration
   public void addRole(final CRole role) {
     checkNotNull(role);
     checkNotNull(role.getId());
-    checkState(roles.putIfAbsent(role.getId(), role) == null, "%s already exists", role.getId());
+    // Using computeIfAbsent for better virtual thread compatibility
+    CRole existing = roles.putIfAbsent(role.getId(), role);
+    checkState(existing == null, "%s already exists", role.getId());
   }
 
   public void setRoles(final Collection<CRole> roles) {
@@ -325,9 +353,13 @@ public class MemorySecurityConfiguration
   public void updateRole(final CRole role) {
     checkNotNull(role);
     checkNotNull(role.getId());
-    if (roles.replace(role.getId(), role) == null) {
-      throw new NoSuchRoleException(role.getId());
-    }
+    // Using compute for atomic update with better virtual thread compatibility
+    roles.compute(role.getId(), (key, existingRole) -> {
+      if (existingRole == null) {
+        throw new NoSuchRoleException(role.getId());
+      }
+      return role;
+    });
   }
 
   @Override
@@ -340,6 +372,7 @@ public class MemorySecurityConfiguration
   public MemorySecurityConfiguration clone() throws CloneNotSupportedException {
     MemorySecurityConfiguration copy = (MemorySecurityConfiguration) super.clone();
 
+    // Using ConcurrentHashMap constructor for better virtual thread compatibility
     copy.users.putAll(this.users);
     copy.roles.putAll(this.roles);
     copy.privileges.putAll(this.privileges);

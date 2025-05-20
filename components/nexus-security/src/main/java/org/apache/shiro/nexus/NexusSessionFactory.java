@@ -12,8 +12,8 @@
  */
 package org.apache.shiro.nexus;
 
-import java.util.Collections;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.shiro.session.Session;
 import org.apache.shiro.session.mgt.SessionContext;
@@ -24,7 +24,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Custom {@link SessionFactory}.
+ * Custom {@link SessionFactory} optimized for Java 21 and Apache Shiro 2.0.0.
  *
  * @since 3.0
  */
@@ -51,7 +51,9 @@ public class NexusSessionFactory
   }
 
   /**
-   * Customized session impl to apply synchronized-treatment to attributes map.
+   * Customized session impl to use ConcurrentHashMap for attributes map.
+   * This implementation is optimized for Java 21 virtual threads and provides
+   * better concurrency without pinning threads.
    */
   private static class SimpleSessionImpl
     extends SimpleSession
@@ -65,13 +67,20 @@ public class NexusSessionFactory
     }
 
     /**
-     * Work around bug in Shiro which uses a non-synchronized map to back attributes.
-     *
-     * This appears to only be called by {@link SimpleSession#getAttributesLazy()}.
+     * Override to use ConcurrentHashMap instead of Collections.synchronizedMap.
+     * ConcurrentHashMap provides better performance for concurrent access patterns
+     * and is optimized for Java 21 virtual threads.
      */
     @Override
     public void setAttributes(final Map<Object, Object> attributes) {
-      super.setAttributes(attributes != null ? Collections.synchronizedMap(attributes) : null);
+      if (attributes != null) {
+        // Use ConcurrentHashMap directly instead of wrapping with Collections.synchronizedMap
+        // This provides better concurrency and avoids thread pinning with virtual threads
+        super.setAttributes(new ConcurrentHashMap<>(attributes));
+      }
+      else {
+        super.setAttributes(null);
+      }
     }
   }
 }

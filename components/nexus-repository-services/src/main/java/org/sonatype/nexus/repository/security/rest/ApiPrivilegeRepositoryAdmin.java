@@ -13,73 +13,91 @@
 package org.sonatype.nexus.repository.security.rest;
 
 import java.util.Collection;
+import java.util.Map;
+import java.util.Optional;
 
 import org.sonatype.nexus.repository.security.RepositoryAdminPrivilegeDescriptor;
 import org.sonatype.nexus.security.privilege.Privilege;
 import org.sonatype.nexus.security.privilege.rest.PrivilegeAction;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 /**
- * Repository admin privilege API model.
- * 
+ * Repository admin privilege API representation that leverages Java 21 pattern matching features.
+ *
  * @since 3.19
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class ApiPrivilegeRepositoryAdmin
     extends ApiPrivilegeWithRepository
 {
   /**
-   * Default constructor for Jackson deserialization.
-   * 
-   * Using {@link JsonCreator} to explicitly mark this constructor for Jackson,
-   * ensuring compatibility with Jackson 2.16.1 deserialization behavior.
+   * For Jackson deserialization
    */
   @JsonCreator
-  protected ApiPrivilegeRepositoryAdmin() {
+  private ApiPrivilegeRepositoryAdmin() {
     super(RepositoryAdminPrivilegeDescriptor.TYPE);
   }
 
   /**
-   * Constructs a new instance with the specified properties.
-   * 
-   * @param name the privilege name
-   * @param description the privilege description
-   * @param readOnly whether the privilege is read-only
-   * @param format the repository format
-   * @param repository the repository name
-   * @param actions the collection of privilege actions
+   * Constructor with all fields
    */
-  public ApiPrivilegeRepositoryAdmin(
-      @JsonProperty("name") final String name,
-      @JsonProperty("description") final String description,
-      @JsonProperty("readOnly") final boolean readOnly,
-      @JsonProperty("format") final String format,
-      @JsonProperty("repository") final String repository,
-      @JsonProperty("actions") final Collection<PrivilegeAction> actions)
+  public ApiPrivilegeRepositoryAdmin(final String name,
+                                     final String description,
+                                     final boolean readOnly,
+                                     final String format,
+                                     final String repository,
+                                     final Collection<PrivilegeAction> actions)
   {
     super(RepositoryAdminPrivilegeDescriptor.TYPE, name, description, readOnly, format, repository, actions);
   }
 
   /**
-   * Constructs a new instance from an existing Privilege.
-   * 
-   * @param privilege the privilege to copy properties from
+   * Constructor from a Privilege object using pattern matching
    */
   public ApiPrivilegeRepositoryAdmin(final Privilege privilege) {
     super(privilege);
   }
   
   /**
-   * Pattern matching example for handling Privilege objects.
-   * This demonstrates how Java 21 pattern matching can be used to process different types.
-   * 
-   * @param obj the object to check
-   * @return true if the object is a compatible privilege, false otherwise
+   * Converts a Privilege to an ApiPrivilegeRepositoryAdmin if it matches the expected type,
+   * otherwise returns null.
    */
-  public static boolean isCompatiblePrivilege(Object obj) {
-    // Using Java 21 pattern matching to check and extract type information in one step
-    return obj instanceof Privilege privilege && 
-           RepositoryAdminPrivilegeDescriptor.TYPE.equals(privilege.getType());
+  public static ApiPrivilegeRepositoryAdmin from(final Object obj) {
+    return switch (obj) {
+      case Privilege p when RepositoryAdminPrivilegeDescriptor.TYPE.equals(p.getType()) -> 
+          new ApiPrivilegeRepositoryAdmin(p);
+      default -> null;
+    };
+  }
+  
+  /**
+   * Extracts repository admin privilege properties using record patterns.
+   * Returns an Optional containing the format and repository if both are present,
+   * otherwise returns an empty Optional.
+   */
+  public static Optional<Map.Entry<String, String>> extractProperties(final Object obj) {
+    return switch (obj) {
+      case Privilege p when RepositoryAdminPrivilegeDescriptor.TYPE.equals(p.getType()) -> {
+        var format = p.getPrivilegeProperty(FORMAT_KEY);
+        var repository = p.getPrivilegeProperty(REPOSITORY_KEY);
+        if (format != null && repository != null) {
+          yield Optional.of(Map.entry(format, repository));
+        }
+        yield Optional.empty();
+      }
+      default -> Optional.empty();
+    };
+  }
+  
+  @Override
+  protected Privilege doAsPrivilege(final Privilege privilege) {
+    // Use pattern matching to simplify type checking and method chaining
+    if (privilege instanceof Privilege p) {
+      super.doAsPrivilege(p);
+      return p;
+    }
+    return privilege;
   }
 }

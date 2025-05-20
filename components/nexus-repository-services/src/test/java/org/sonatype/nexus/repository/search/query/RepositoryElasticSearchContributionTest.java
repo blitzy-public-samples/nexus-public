@@ -19,6 +19,9 @@ import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.group.GroupFacet;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
+import org.sonatype.nexus.test.Java21TestGroup;
+
+import org.junit.experimental.categories.Category;
 
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
@@ -35,6 +38,7 @@ import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.repository.search.index.SearchConstants.REPOSITORY_NAME;
 
 @ExtendWith(MockitoExtension.class)
+@Category(Java21TestGroup.class)
 public class RepositoryElasticSearchContributionTest
   extends TestSupport
 {
@@ -49,7 +53,7 @@ public class RepositoryElasticSearchContributionTest
   }
 
   @Test
-  public void shouldContributeQueryForRepository() {
+  public void contribute() {
     mockRepo("repo");
 
     BoolQueryBuilder query = QueryBuilders.boolQuery();
@@ -62,7 +66,7 @@ public class RepositoryElasticSearchContributionTest
   }
 
   @Test
-  public void shouldContributeQueryWhenRepositoryDoesNotExist() {
+  public void contributeNoRepoMatch() {
     //this isn't necessary, null will be returned by default, but I think it helps point out exactly what is going on
     when(repositoryManager.get("repo")).thenReturn(null);
 
@@ -76,7 +80,7 @@ public class RepositoryElasticSearchContributionTest
   }
 
   @Test
-  public void shouldContributeQueryForGroupRepository() {
+  public void contributeWithGroup() {
     Repository repository = mockRepo("repo");
     Repository repository2 = mockRepo("repo2");
     mockRepo("group", repository, repository2);

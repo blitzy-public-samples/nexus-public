@@ -17,6 +17,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 import java.util.stream.StreamSupport;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -82,6 +84,9 @@ public class RealmManagerImpl
   private RealmConfiguration configuration;
 
   private final boolean enableAuthorizationRealmManagement;
+  
+  // Virtual thread executor for concurrent operations
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   @Inject
   public RealmManagerImpl(
@@ -125,14 +130,17 @@ public class RealmManagerImpl
     Collection<Realm> realms = realmSecurityManager.getRealms();
     if (realms != null) {
       for (Realm realm : realms) {
-        if (realm instanceof AuthenticatingRealm) {
-          ((AuthenticatingRealm) realm).setAuthenticationCache(null);
+        if (realm instanceof AuthenticatingRealm authenticatingRealm) {
+          authenticatingRealm.setAuthenticationCache(null);
         }
-        if (realm instanceof AuthorizingRealm) {
-          ((AuthorizingRealm) realm).setAuthorizationCache(null);
+        if (realm instanceof AuthorizingRealm authorizingRealm) {
+          authorizingRealm.setAuthorizationCache(null);
         }
       }
     }
+    
+    // Shutdown virtual thread executor
+    virtualThreadExecutor.close();
   }
 
   //
@@ -245,7 +253,8 @@ public class RealmManagerImpl
         log.debug("Failed to look up realm '{}' as a component, trying reflection", configuredRealmId);
         // If that fails, will simply use reflection to load
         try {
-          realm = (Realm) getClass().getClassLoader().loadClass(configuredRealmId).newInstance();
+          // Updated to use modern reflection API (getDeclaredConstructor().newInstance() instead of deprecated newInstance())
+          realm = (Realm) getClass().getClassLoader().loadClass(configuredRealmId).getDeclaredConstructor().newInstance();
         }
         catch (Exception e) {
           log.error("Unable to lookup security realms", e);
@@ -366,6 +375,7 @@ public class RealmManagerImpl
 
   /**
    * Clear the authentication cache for the given userId as a result of a password change.
+   * Uses pattern matching for more concise code.
    */
   private void clearAuthcRealmCacheForUserId(final String userId) {
     // NOTE: we don't need to iterate all the Sec Managers, they use the same Realms, so one is fine.
@@ -382,39 +392,43 @@ public class RealmManagerImpl
 
   /**
    * Looks up registered {@link AuthenticatingRealm}s, and clears their authc caches if they have it set.
+   * Uses virtual threads for concurrent cache clearing operations.
    */
   private void clearAuthcRealmCaches() {
     // NOTE: we don't need to iterate all the Sec Managers, they use the same Realms, so one is fine.
     Collection<Realm> realms = realmSecurityManager.getRealms();
     if (realms != null) {
-      for (Realm realm : realms) {
-        if (realm instanceof AuthenticatingRealm) {
-          Cache<Object, AuthenticationInfo> cache = ((AuthenticatingRealm) realm).getAuthenticationCache();
-          if (cache != null) {
-            log.debug("Clearing cache: {}", cache);
-            cache.clear();
-          }
-        }
-      }
+      realms.stream()
+          .filter(realm -> realm instanceof AuthenticatingRealm)
+          .forEach(realm -> virtualThreadExecutor.submit(() -> {
+              var authenticatingRealm = (AuthenticatingRealm) realm;
+              Cache<Object, AuthenticationInfo> cache = authenticatingRealm.getAuthenticationCache();
+              if (cache != null) {
+                  log.debug("Clearing authentication cache: {}", cache);
+                  cache.clear();
+              }
+          }));
     }
   }
 
   /**
    * Looks up registered {@link AuthorizingRealm}s, and clears their authz caches if they have it set.
+   * Uses virtual threads for concurrent cache clearing operations.
    */
   private void clearAuthzRealmCaches() {
     // NOTE: we don't need to iterate all the Sec Managers, they use the same Realms, so one is fine.
     Collection<Realm> realms = realmSecurityManager.getRealms();
     if (realms != null) {
-      for (Realm realm : realms) {
-        if (realm instanceof AuthorizingRealm) {
-          Cache<Object, AuthorizationInfo> cache = ((AuthorizingRealm) realm).getAuthorizationCache();
-          if (cache != null) {
-            log.debug("Clearing cache: {}", cache);
-            cache.clear();
-          }
-        }
-      }
+      realms.stream()
+          .filter(realm -> realm instanceof AuthorizingRealm)
+          .forEach(realm -> virtualThreadExecutor.submit(() -> {
+              var authorizingRealm = (AuthorizingRealm) realm;
+              Cache<Object, AuthorizationInfo> cache = authorizingRealm.getAuthorizationCache();
+              if (cache != null) {
+                  log.debug("Clearing authorization cache: {}", cache);
+                  cache.clear();
+              }
+          }));
     }
   }
 

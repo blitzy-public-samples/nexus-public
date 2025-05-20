@@ -16,6 +16,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.nexus.common.io.InputStreamSupplier;
 import org.sonatype.nexus.mime.MimeRulesSource;
 import org.sonatype.nexus.mime.internal.DefaultMimeSupport;
@@ -23,6 +24,7 @@ import org.sonatype.nexus.repository.InvalidContentException;
 import org.sonatype.nexus.repository.view.ContentTypes;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -31,6 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @ExtendWith(MockitoExtension.class)
+@Tag("Java21TestGroup")
 public class DefaultContentValidatorTest
     extends TestSupport
 {
@@ -43,8 +46,18 @@ public class DefaultContentValidatorTest
     testSubject = new DefaultContentValidator(new DefaultMimeSupport());
   }
 
+  /**
+   * Creates an InputStreamSupplier that properly handles virtual threads.
+   * This implementation ensures that the ByteArrayInputStream is created
+   * fresh for each invocation, avoiding thread pinning issues when used
+   * with virtual threads.
+   */
   private InputStreamSupplier supplier(byte[] bytes) {
-    return () -> new ByteArrayInputStream(bytes);
+    return () -> {
+      // Create a new ByteArrayInputStream for each call to avoid thread pinning
+      // and ensure proper resource cleanup when used with virtual threads
+      return new ByteArrayInputStream(bytes.clone());
+    };
   }
 
   @Test
@@ -247,7 +260,7 @@ public class DefaultContentValidatorTest
           MimeRulesSource.NOOP,
           "test.txt",
           "@#$*(#&%$*(%)k;lasj;klfjsdfas");
-    });
+    }, STR."Invalid content type: @#$*(#&%$*(%)k;lasj;klfjsdfas");
   }
 
   @Test
@@ -295,6 +308,6 @@ public class DefaultContentValidatorTest
           MimeRulesSource.NOOP,
           "vim",
           null);
-    });
+    }, STR."Unable to determine content type for: vim");
   }
 }

@@ -12,10 +12,35 @@
  */
 package org.sonatype.nexus.security.authc;
 
-public class LogoutEvent
-  extends SecurityEvent
-{
-  public LogoutEvent(final String principal, final String realm) {
-    super(principal, realm);
+/**
+ * Event fired when a user logs out.
+ *
+ * @since 3.0
+ */
+public final record LogoutEvent(
+    String principal,
+    String realm
+) implements java.io.Serializable, SecurityEvent {
+  
+  /**
+   * Pattern matching example for working with LogoutEvent records.
+   * 
+   * @param event The security event to check
+   * @return true if this is a logout event with a non-empty principal
+   */
+  public static boolean isValidLogoutEvent(SecurityEvent event) {
+    return switch(event) {
+      case LogoutEvent(String principal, String realm) when principal != null && !principal.isEmpty() -> true;
+      default -> false;
+    };
+  }
+  
+  /**
+   * Returns a formatted message using String Templates for logging purposes.
+   * 
+   * @return A formatted logout message
+   */
+  public String getLogMessage() {
+    return STR."User \{principal} logged out from realm \{realm}";
   }
 }

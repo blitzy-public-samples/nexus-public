@@ -13,14 +13,15 @@
 package org.sonatype.nexus.security.config.memory;
 
 import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.SequencedSet;
 import java.util.Set;
 
 import org.sonatype.nexus.security.config.CRole;
 
-import com.google.common.collect.Sets;
-
 /**
  * An implementation of {@link CRole} suitable for an in-memory backing store.
+ * Updated for Java 21 with Sequenced Collections and modern language features.
  *
  * @since 3.0
  */
@@ -33,11 +34,11 @@ public class MemoryCRole
 
   private String name;
 
-  private Set<String> privileges;
+  private SequencedSet<String> privileges;
 
   private boolean readOnly = false;
 
-  private Set<String> roles;
+  private SequencedSet<String> roles;
 
   private int version;
 
@@ -69,7 +70,7 @@ public class MemoryCRole
   @Override
   public Set<String> getPrivileges() {
     if (this.privileges == null) {
-      this.privileges = Sets.newHashSet();
+      this.privileges = new LinkedHashSet<>();
     }
 
     return this.privileges;
@@ -78,7 +79,7 @@ public class MemoryCRole
   @Override
   public Set<String> getRoles() {
     if (this.roles == null) {
-      this.roles = Sets.newHashSet();
+      this.roles = new LinkedHashSet<>();
     }
 
     return this.roles;
@@ -121,7 +122,13 @@ public class MemoryCRole
 
   @Override
   public void setPrivileges(final Set<String> privileges) {
-    this.privileges = privileges;
+    if (privileges instanceof SequencedSet<String> sequencedPrivileges) {
+      this.privileges = sequencedPrivileges;
+    } else if (privileges != null) {
+      this.privileges = new LinkedHashSet<>(privileges);
+    } else {
+      this.privileges = null;
+    }
   }
 
   @Override
@@ -131,7 +138,13 @@ public class MemoryCRole
 
   @Override
   public void setRoles(final Set<String> roles) {
-    this.roles = roles;
+    if (roles instanceof SequencedSet<String> sequencedRoles) {
+      this.roles = sequencedRoles;
+    } else if (roles != null) {
+      this.roles = new LinkedHashSet<>(roles);
+    } else {
+      this.roles = null;
+    }
   }
 
   @Override
@@ -155,7 +168,7 @@ public class MemoryCRole
   }
 
   public MemoryCRole withPrivileges(final String... privileges) {
-    this.privileges = new HashSet<>(Set.of(privileges));
+    this.privileges = LinkedHashSet.of(privileges);
     return this;
   }
 
@@ -165,7 +178,7 @@ public class MemoryCRole
   }
 
   public MemoryCRole withRoles(final String... roles) {
-    this.roles = Set.of(roles);
+    this.roles = LinkedHashSet.of(roles);
     return this;
   }
 
@@ -179,12 +192,21 @@ public class MemoryCRole
     try {
       MemoryCRole copy = (MemoryCRole) super.clone();
 
+      // Use pattern matching for type checking and handle each case appropriately
       if (this.privileges != null) {
-        copy.privileges = Sets.newHashSet(this.privileges);
+        copy.privileges = switch (this.privileges) {
+          case LinkedHashSet<String> lhs -> new LinkedHashSet<>(lhs);
+          case SequencedSet<String> ss -> new LinkedHashSet<>(ss);
+          default -> new LinkedHashSet<>(this.privileges);
+        };
       }
 
       if (this.roles != null) {
-        copy.roles = Sets.newHashSet(this.roles);
+        copy.roles = switch (this.roles) {
+          case LinkedHashSet<String> lhs -> new LinkedHashSet<>(lhs);
+          case SequencedSet<String> ss -> new LinkedHashSet<>(ss);
+          default -> new LinkedHashSet<>(this.roles);
+        };
       }
 
       return copy;
@@ -196,14 +218,14 @@ public class MemoryCRole
 
   @Override
   public String toString() {
-    return getClass().getSimpleName() + "{" +
-        "id='" + id + '\'' +
-        ", name='" + name + '\'' +
-        ", description='" + description + '\'' +
-        ", privileges=" + privileges +
-        ", roles=" + roles +
-        ", readOnly=" + readOnly +
-        ", version='" + version + '\'' +
-        '}';
+    return STR."{getClass().getSimpleName()}{
+        id='{id}'
+        name='{name}'
+        description='{description}'
+        privileges={privileges}
+        roles={roles}
+        readOnly={readOnly}
+        version={version}
+        }";
   }
 }

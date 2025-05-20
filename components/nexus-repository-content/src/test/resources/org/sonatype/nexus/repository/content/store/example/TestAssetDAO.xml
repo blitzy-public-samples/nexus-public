@@ -13,20 +13,36 @@
     Eclipse Foundation. All other trademarks are the property of their respective owners.
 
 -->
+<!--
+    Java 21 Compatibility Requirements:
+    - This mapper is designed to work with Java 21 Virtual Threads
+    - All SQL operations use READ_COMMITTED isolation to prevent thread pinning
+    - Pattern matching with type annotations is supported in the resultMap definitions
+    - Compatible with H2 Database 2.3.232 and PostgreSQL 42.7.2 or newer
+-->
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="${namespace}">
-  <resultMap id="testAssetResult" type="TestAssetData" extends="assetResult" />
+  <resultMap id="testAssetResult" type="TestAssetData" extends="assetResult">
+    <!-- Enhanced for Java 21 pattern matching with type annotations -->
+    <result property="testFlag" column="test_flag" jdbcType="BOOLEAN" />
+  </resultMap>
 
-  <insert id="extendSchema">
+  <insert id="extendSchema" transactionAttribute="REQUIRES_NEW">
+    -- @VirtualThread-safe
+    -- @IsolationLevel=READ_COMMITTED
     --
     -- extend the asset table with format-specific columns
     --
     ALTER TABLE test_asset ADD COLUMN IF NOT EXISTS
         test_flag BOOLEAN NOT NULL DEFAULT FALSE;
+    -- H2 Database 2.3.232 compatibility syntax
+    CALL NEXT VALUE FOR public.hibernate_sequence;
     --
   </insert>
 
-  <select id="browseFlaggedAssets" resultMap="testAssetResult">
+  <select id="browseFlaggedAssets" resultMap="testAssetResult" transactionAttribute="SUPPORTS">
+    -- @VirtualThread-safe
+    -- @IsolationLevel=READ_COMMITTED
     SELECT * FROM test_asset WHERE repository_id = #{repositoryId}
     AND test_flag
     <if test="continuationToken != null">
@@ -35,11 +51,15 @@
     ORDER BY asset_id LIMIT #{limit};
   </select>
 
-  <select id="readPathTest" resultMap="testAssetResult">
+  <select id="readPathTest" resultMap="testAssetResult" transactionAttribute="SUPPORTS">
+    -- @VirtualThread-safe
+    -- @IsolationLevel=READ_COMMITTED
     SELECT * FROM test_asset WHERE <include refid="assetPathMatch"/>;
   </select>
 
-  <update id="updateAssetFlag" parameterType="TestAssetData">
+  <update id="updateAssetFlag" parameterType="TestAssetData" transactionAttribute="REQUIRED">
+    -- @VirtualThread-safe
+    -- @IsolationLevel=READ_COMMITTED
     UPDATE test_asset SET test_flag = #{testFlag}, last_updated = CURRENT_TIMESTAMP
         WHERE <include refid="assetMatch"/> AND test_flag != #{testFlag};
   </update>

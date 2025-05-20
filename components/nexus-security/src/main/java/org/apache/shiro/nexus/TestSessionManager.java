@@ -22,7 +22,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Custom {@link SessionManager} for tests.
+ * Custom {@link SessionManager} for tests, compatible with Apache Shiro 2.0.0 and Java 21.
+ * <p>
+ * This implementation addresses SHIRO-443 by ensuring session validation is properly
+ * initialized in a thread-safe manner.
  */
 public class TestSessionManager
     extends DefaultSessionManager
@@ -37,7 +40,11 @@ public class TestSessionManager
   }
 
   /**
-   * See https://issues.sonatype.org/browse/NEXUS-5727, https://issues.apache.org/jira/browse/SHIRO-443
+   * Ensures session validation is enabled in a thread-safe manner.
+   * <p>
+   * Addresses https://issues.sonatype.org/browse/NEXUS-5727 and https://issues.apache.org/jira/browse/SHIRO-443
+   * <p>
+   * Updated for compatibility with Shiro 2.0.0 and Java 21.
    */
   @Override
   protected synchronized void enableSessionValidation() {

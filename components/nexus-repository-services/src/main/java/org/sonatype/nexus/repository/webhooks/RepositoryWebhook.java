@@ -24,8 +24,18 @@ import org.sonatype.nexus.webhooks.WebhookType;
 public abstract class RepositoryWebhook
     extends Webhook
 {
-  public static final WebhookType TYPE = new WebhookType("repository") {};
+  /**
+   * Repository webhook type.
+   */
+  private static final class RepositoryWebhookType extends WebhookType {
+    RepositoryWebhookType() {
+      super("repository");
+    }
+  }
 
+  public static final WebhookType TYPE = new RepositoryWebhookType();
+
+  @Override
   public final WebhookType getType() {
     return TYPE;
   }

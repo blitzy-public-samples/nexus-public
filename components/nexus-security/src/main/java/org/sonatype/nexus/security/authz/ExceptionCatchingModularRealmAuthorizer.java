@@ -14,6 +14,11 @@ package org.sonatype.nexus.security.authz;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.stream.Collectors;
 
 import javax.inject.Inject;
 import javax.inject.Provider;
@@ -30,11 +35,12 @@ import org.slf4j.LoggerFactory;
 
 /**
  * A implementation of the Shiro ModularRealmAuthorizer, that catches exceptions caused by individual realms and
- * ignores
- * them. For example if a JDBC realm throws an exception while getting the list of users Roles (and is not caught, the
+ * ignores them. For example if a JDBC realm throws an exception while getting the list of users Roles (and is not caught, the
  * system should continue looking for permissions in other realms).
+ * 
+ * This implementation has been updated for Java 21 to use pattern matching for exceptions, Virtual Threads for concurrent
+ * realm evaluation, and String Templates for more readable log messages.
  */
-
 public class ExceptionCatchingModularRealmAuthorizer
     extends ModularRealmAuthorizer
 {
@@ -63,14 +69,14 @@ public class ExceptionCatchingModularRealmAuthorizer
   @Override
   public void checkPermission(PrincipalCollection subjectPrincipal, String permission) {
     if (!isPermitted(subjectPrincipal, permission)) {
-      throw new AuthorizationException("User is not permitted: " + permission);
+      throw new AuthorizationException(STR."User is not permitted: \{permission}");
     }
   }
 
   @Override
   public void checkPermission(PrincipalCollection subjectPrincipal, Permission permission) {
     if (!isPermitted(subjectPrincipal, permission)) {
-      throw new AuthorizationException("User is not permitted: " + permission);
+      throw new AuthorizationException(STR."User is not permitted: \{permission}");
     }
   }
 
@@ -91,14 +97,14 @@ public class ExceptionCatchingModularRealmAuthorizer
   @Override
   public void checkRole(PrincipalCollection subjectPrincipal, String roleIdentifier) {
     if (!hasRole(subjectPrincipal, roleIdentifier)) {
-      throw new AuthorizationException("User is not permitted role: " + roleIdentifier);
+      throw new AuthorizationException(STR."User is not permitted role: \{roleIdentifier}");
     }
   }
 
   @Override
   public void checkRoles(PrincipalCollection subjectPrincipal, Collection<String> roleIdentifiers) {
     if (!hasAllRoles(subjectPrincipal, roleIdentifiers)) {
-      throw new AuthorizationException("User is not permitted role: " + roleIdentifiers);
+      throw new AuthorizationException(STR."User is not permitted role: \{roleIdentifiers}");
     }
   }
 
@@ -119,16 +125,13 @@ public class ExceptionCatchingModularRealmAuthorizer
       if (!(realm instanceof Authorizer)) {
         continue; // ignore non-authorizing realms
       }
-      // need to catch an AuthorizationException, the user might only belong to on of the realms
+      // Using pattern matching with guards for exception handling
       try {
         if (((Authorizer) realm).hasRole(subjectPrincipal, roleIdentifier)) {
           return true;
         }
       }
-      catch (AuthorizationException e) {
-        logAndIgnore(realm, e);
-      }
-      catch (RuntimeException e) {
+      catch (Exception e) when (e instanceof AuthorizationException || e instanceof RuntimeException) {
         logAndIgnore(realm, e);
       }
     }
@@ -150,12 +153,8 @@ public class ExceptionCatchingModularRealmAuthorizer
         for (int i = 0; i < combinedResult.length; i++) {
           combinedResult[i] = combinedResult[i] | result[i];
         }
-
       }
-      catch (AuthorizationException e) {
-        logAndIgnore(realm, e);
-      }
-      catch (RuntimeException e) {
+      catch (Exception e) when (e instanceof AuthorizationException || e instanceof RuntimeException) {
         logAndIgnore(realm, e);
       }
     }
@@ -165,57 +164,82 @@ public class ExceptionCatchingModularRealmAuthorizer
 
   @Override
   public boolean isPermitted(PrincipalCollection subjectPrincipal, String permission) {
-    for (Realm realm : getRealms()) {
-      if (!(realm instanceof Authorizer)) {
-        continue; // ignore non-authorizing realms
-      }
-      try {
-        if (((Authorizer) realm).isPermitted(subjectPrincipal, permission)) {
-          if (logger.isTraceEnabled()) {
-            logger.trace("Realm: " + realm.getName() + " user: " + subjectPrincipal.iterator().next()
-                + " has permission: " + permission);
+    // Using Virtual Threads for concurrent realm evaluation
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      Collection<Realm> realms = getRealms().stream()
+          .filter(realm -> realm instanceof Authorizer)
+          .collect(Collectors.toList());
+      
+      List<Future<Boolean>> futures = realms.stream()
+          .map(realm -> executor.submit(() -> checkPermissionInRealm(realm, subjectPrincipal, permission)))
+          .collect(Collectors.toList());
+      
+      // If any realm returns true, the permission is granted
+      for (Future<Boolean> future : futures) {
+        try {
+          if (future.get()) {
+            return true;
           }
-          return true;
+        } catch (InterruptedException | ExecutionException e) {
+          // Ignore exceptions from individual realm checks
+          Thread.currentThread().interrupt();
         }
-        else {
-          if (logger.isTraceEnabled()) {
-            logger.trace("Realm: " + realm.getName() + " user: " + subjectPrincipal.iterator().next()
-                + " does NOT have permission: " + permission);
-          }
-        }
-
       }
-      catch (AuthorizationException e) {
-        logAndIgnore(realm, e);
-      }
-      catch (RuntimeException e) {
-        logAndIgnore(realm, e);
-      }
+      
+      return false;
     }
+  }
 
-    return false;
+  private boolean checkPermissionInRealm(Realm realm, PrincipalCollection subjectPrincipal, String permission) {
+    try {
+      boolean permitted = ((Authorizer) realm).isPermitted(subjectPrincipal, permission);
+      if (permitted && logger.isTraceEnabled()) {
+        logger.trace(STR."Realm: \{realm.getName()} user: \{subjectPrincipal.iterator().next()} has permission: \{permission}");
+      } else if (logger.isTraceEnabled()) {
+        logger.trace(STR."Realm: \{realm.getName()} user: \{subjectPrincipal.iterator().next()} does NOT have permission: \{permission}");
+      }
+      return permitted;
+    } catch (Exception e) when (e instanceof AuthorizationException || e instanceof RuntimeException) {
+      logAndIgnore(realm, e);
+      return false;
+    }
   }
 
   @Override
   public boolean isPermitted(PrincipalCollection subjectPrincipal, Permission permission) {
-    for (Realm realm : getRealms()) {
-      if (!(realm instanceof Authorizer)) {
-        continue; // ignore non-authorizing realms
-      }
-      try {
-        if (((Authorizer) realm).isPermitted(subjectPrincipal, permission)) {
-          return true;
+    // Using Virtual Threads for concurrent realm evaluation
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      Collection<Realm> realms = getRealms().stream()
+          .filter(realm -> realm instanceof Authorizer)
+          .collect(Collectors.toList());
+      
+      List<Future<Boolean>> futures = realms.stream()
+          .map(realm -> executor.submit(() -> checkPermissionInRealm(realm, subjectPrincipal, permission)))
+          .collect(Collectors.toList());
+      
+      // If any realm returns true, the permission is granted
+      for (Future<Boolean> future : futures) {
+        try {
+          if (future.get()) {
+            return true;
+          }
+        } catch (InterruptedException | ExecutionException e) {
+          // Ignore exceptions from individual realm checks
+          Thread.currentThread().interrupt();
         }
       }
-      catch (AuthorizationException e) {
-        logAndIgnore(realm, e);
-      }
-      catch (RuntimeException e) {
-        logAndIgnore(realm, e);
-      }
+      
+      return false;
     }
+  }
 
-    return false;
+  private boolean checkPermissionInRealm(Realm realm, PrincipalCollection subjectPrincipal, Permission permission) {
+    try {
+      return ((Authorizer) realm).isPermitted(subjectPrincipal, permission);
+    } catch (Exception e) when (e instanceof AuthorizationException || e instanceof RuntimeException) {
+      logAndIgnore(realm, e);
+      return false;
+    }
   }
 
   @Override
@@ -233,10 +257,7 @@ public class ExceptionCatchingModularRealmAuthorizer
           combinedResult[i] = combinedResult[i] | result[i];
         }
       }
-      catch (AuthorizationException e) {
-        logAndIgnore(realm, e);
-      }
-      catch (RuntimeException e) {
+      catch (Exception e) when (e instanceof AuthorizationException || e instanceof RuntimeException) {
         logAndIgnore(realm, e);
       }
     }
@@ -259,10 +280,7 @@ public class ExceptionCatchingModularRealmAuthorizer
           combinedResult[i] = combinedResult[i] | result[i];
         }
       }
-      catch (AuthorizationException e) {
-        logAndIgnore(realm, e);
-      }
-      catch (RuntimeException e) {
+      catch (Exception e) when (e instanceof AuthorizationException || e instanceof RuntimeException) {
         logAndIgnore(realm, e);
       }
     }
@@ -293,6 +311,6 @@ public class ExceptionCatchingModularRealmAuthorizer
   }
 
   private void logAndIgnore(Realm realm, Exception e) {
-    logger.trace("Realm '{}' failure", realm.getName(), e);
+    logger.trace(STR."Realm '\{realm.getName()}' failure", e);
   }
 }

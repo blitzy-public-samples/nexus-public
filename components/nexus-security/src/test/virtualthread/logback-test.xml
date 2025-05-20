@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Specialized Logback configuration for Virtual Thread tests in the Nexus Security module.
+  This configuration provides enhanced logging for virtual thread diagnostics including:
+  - Thread pinning detection with carrier thread information
+  - MDC context propagation across virtual threads
+  - Detailed logging of security components under virtual threads
+  - JFR event monitoring for virtual thread behavior
+-->
+<configuration>
+
+  <!-- Console appender for general logging -->  
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <target>System.out</target>
+    <encoder>
+      <!-- Enhanced pattern that includes carrier thread information for virtual threads -->
+      <pattern>%date %level [%thread%X{VirtualThread.carrier}%X{DC}] %logger{36} - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- Special appender for virtual thread diagnostics with thread pinning information -->
+  <appender name="VIRTUAL_THREAD_DIAGNOSTICS" class="ch.qos.logback.core.ConsoleAppender">
+    <target>System.out</target>
+    <encoder>
+      <pattern>%date %level [VT-DIAG] [%thread@%X{VirtualThread.carrier:-none}] %logger{36} - %msg%n</pattern>
+    </encoder>
+    <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+      <level>DEBUG</level>
+    </filter>
+  </appender>
+
+  <!-- File appender for thread pinning detection logs -->
+  <appender name="THREAD_PINNING_FILE" class="ch.qos.logback.core.FileAppender">
+    <file>target/thread-pinning.log</file>
+    <append>true</append>
+    <encoder>
+      <pattern>%date %level [%thread@%X{VirtualThread.carrier:-none}] %logger{36} - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- MDC context propagation for virtual threads -->
+  <contextListener class="ch.qos.logback.classic.jul.LevelChangePropagator">
+    <resetJUL>true</resetJUL>
+  </contextListener>
+
+  <!-- Set detailed logging for security components -->
+  <logger name="org.sonatype.nexus.security" level="TRACE"/>
+  <logger name="org.apache.shiro" level="TRACE"/>
+  <logger name="org.sonatype.nexus.security.virtualthread" level="TRACE"/>
+  
+  <!-- Shiro realm-specific loggers for Java 21 compatibility verification -->
+  <logger name="org.sonatype.nexus.security.realm" level="TRACE"/>
+  <logger name="org.apache.shiro.realm" level="TRACE"/>
+  <logger name="org.sonatype.nexus.security.ldap" level="TRACE"/>
+  <logger name="org.sonatype.nexus.security.authc" level="TRACE"/>
+  <logger name="org.sonatype.nexus.security.authz" level="TRACE"/>
+  
+  <!-- Virtual thread internal logging -->
+  <logger name="jdk.internal.vm.Continuation" level="DEBUG"/>
+  <logger name="java.lang.VirtualThread" level="DEBUG"/>
+  <logger name="jdk.internal.misc.VirtualThreads" level="DEBUG"/>
+  
+  <!-- Thread pinning detection loggers -->
+  <logger name="jdk.internal.vm.VirtualThreadPinned" level="DEBUG" additivity="false">
+    <appender-ref ref="VIRTUAL_THREAD_DIAGNOSTICS"/>
+    <appender-ref ref="THREAD_PINNING_FILE"/>
+  </logger>
+  
+  <!-- JFR event logging for virtual thread pinning -->
+  <logger name="jdk.jfr.events.VirtualThreadPinned" level="DEBUG" additivity="false">
+    <appender-ref ref="VIRTUAL_THREAD_DIAGNOSTICS"/>
+    <appender-ref ref="THREAD_PINNING_FILE"/>
+  </logger>
+
+  <!-- Shiro security specific loggers for virtual thread testing -->
+  <logger name="org.apache.shiro.subject.support.SubjectThreadState" level="TRACE"/>
+  <logger name="org.apache.shiro.util.ThreadContext" level="TRACE"/>
+  <logger name="org.apache.shiro.mgt.DefaultSecurityManager" level="TRACE"/>
+  <logger name="org.apache.shiro.subject.support.DelegatingSubject" level="TRACE"/>
+  <logger name="org.apache.shiro.web.session.mgt.WebSessionManager" level="TRACE"/>
+  
+  <!-- MDC propagation loggers -->
+  <logger name="org.slf4j.MDC" level="TRACE"/>
+  <logger name="ch.qos.logback.classic.util.LogbackMDCAdapter" level="TRACE"/>
+  
+  <!-- Cryptography providers for Java 21 compatibility verification -->
+  <logger name="org.sonatype.nexus.crypto" level="TRACE"/>
+  <logger name="org.bouncycastle" level="DEBUG"/>
+
+  <root level="${test.log.level:-INFO}">
+    <appender-ref ref="CONSOLE"/>
+  </root>
+
+</configuration>

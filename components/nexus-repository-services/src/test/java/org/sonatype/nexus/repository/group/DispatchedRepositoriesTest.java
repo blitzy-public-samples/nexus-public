@@ -12,23 +12,22 @@
  */
 package org.sonatype.nexus.repository.group;
 
-import java.util.Set;
-
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.group.GroupHandler.DispatchedRepositories;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
+@Tag("Java21")
 public class DispatchedRepositoriesTest
     extends TestSupport
 {
@@ -51,7 +50,7 @@ public class DispatchedRepositoriesTest
 
   @BeforeEach
   public void setUp() throws Exception {
-    underTest = new DispatchedRepositories();
+    underTest= new DispatchedRepositories();
     when(repository1.toString()).thenReturn(REPOSITORY_1);
     when(repository1.getName()).thenReturn(REPOSITORY_1);
     when(repository2.toString()).thenReturn(REPOSITORY_2);
@@ -61,61 +60,22 @@ public class DispatchedRepositoriesTest
   }
 
   @Test
-  public void checkDispatchedRepositoryInsertionWillPreserveOrder() {
+  public void shouldPreserveOrderWhenAddingRepositories() {
     underTest.add(repository1);
     underTest.add(repository2);
     underTest.add(repository3);
 
-    Set<String> dispatched = underTest.getDispatched();
-    assertEquals(3, dispatched.size(), "Should have 3 repositories");
-    assertTrue(dispatched.toString().contains(String.format("[%s, %s, %s]", REPOSITORY_1, REPOSITORY_2, REPOSITORY_3)), 
-        "Repositories should be in the correct order");
+    assertTrue(underTest.getDispatched().toString()
+        .contains(String.format("[%s, %s, %s]", REPOSITORY_1, REPOSITORY_2, REPOSITORY_3)));
   }
 
   @Test
-  public void checkDispatchedRepositoryInsertionWillPreserveOrderWhenAlternateSequence() {
+  public void shouldPreserveOrderWhenAddingRepositoriesInAlternateSequence() {
     underTest.add(repository3);
     underTest.add(repository1);
     underTest.add(repository2);
 
-    Set<String> dispatched = underTest.getDispatched();
-    assertEquals(3, dispatched.size(), "Should have 3 repositories");
-    assertTrue(dispatched.toString().contains(String.format("[%s, %s, %s]", REPOSITORY_3, REPOSITORY_1, REPOSITORY_2)),
-        "Repositories should be in the correct order");
-  }
-
-  /**
-   * Test using Java 21 Record Patterns to verify repository dispatching.
-   * This demonstrates how to use pattern matching with records for more
-   * expressive and type-safe testing.
-   */
-  @Test
-  public void verifyDispatchedRepositoriesUsingRecordPatterns() {
-    // Define a record to represent repository results
-    record RepositoryResult(String name, boolean dispatched) {}
-    
-    // Add repositories in a specific order
-    underTest.add(repository1);
-    underTest.add(repository2);
-    underTest.add(repository3);
-    
-    // Create result records using repository information
-    RepositoryResult result1 = new RepositoryResult(repository1.getName(), true);
-    RepositoryResult result2 = new RepositoryResult(repository2.getName(), true);
-    RepositoryResult result3 = new RepositoryResult(repository3.getName(), true);
-    
-    // Use pattern matching to verify results
-    if (result1 instanceof RepositoryResult(String name, boolean dispatched)) {
-      assertEquals(REPOSITORY_1, name, "First repository name should match");
-      assertTrue(dispatched, "First repository should be marked as dispatched");
-      assertTrue(underTest.getDispatched().contains(name), "Dispatched set should contain the repository");
-    }
-    
-    // Verify all repositories are in the dispatched set in the correct order
-    var dispatchedNames = underTest.getDispatched().toArray(new String[0]);
-    assertEquals(3, dispatchedNames.length, "Should have 3 dispatched repositories");
-    assertEquals(REPOSITORY_1, dispatchedNames[0], "First dispatched repository should be repository1");
-    assertEquals(REPOSITORY_2, dispatchedNames[1], "Second dispatched repository should be repository2");
-    assertEquals(REPOSITORY_3, dispatchedNames[2], "Third dispatched repository should be repository3");
+    assertTrue(underTest.getDispatched().toString()
+        .contains(String.format("[%s, %s, %s]", REPOSITORY_3, REPOSITORY_1, REPOSITORY_2)));
   }
 }

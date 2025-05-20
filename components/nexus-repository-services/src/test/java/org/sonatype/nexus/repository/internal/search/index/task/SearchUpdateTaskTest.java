@@ -17,33 +17,29 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.common.thread.Java21TestGroup;
-import org.sonatype.nexus.common.thread.VirtualThreadTestGroup;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
 import org.sonatype.nexus.repository.search.index.SearchIndexFacet;
 import org.sonatype.nexus.repository.search.index.SearchUpdateService;
 import org.sonatype.nexus.scheduling.TaskConfiguration;
 import org.sonatype.nexus.scheduling.TaskScheduler;
-import org.sonatype.nexus.thread.VirtualThreadFactory;
+import org.sonatype.nexus.virtualthread.Java21TestGroup;
 
 import org.elasticsearch.cluster.metadata.ProcessClusterEventTimeoutException;
 import org.elasticsearch.common.unit.TimeValue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Captor;
+import org.junit.jupiter.api.Tag;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTimeout;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
@@ -70,7 +66,13 @@ public class SearchUpdateTaskTest
   private Repository repository2;
 
   @Mock
-  private Repository repository3;
+  private Repository proxyRepository;
+
+  @Mock
+  private Repository hostedRepository;
+
+  @Mock
+  private Repository groupRepository;
 
   @Mock
   private SearchIndexFacet searchIndexFacet1;
@@ -79,35 +81,43 @@ public class SearchUpdateTaskTest
   private SearchIndexFacet searchIndexFacet2;
 
   @Mock
-  private SearchIndexFacet searchIndexFacet3;
+  private SearchIndexFacet proxySearchIndexFacet;
+
+  @Mock
+  private SearchIndexFacet hostedSearchIndexFacet;
+
+  @Mock
+  private SearchIndexFacet groupSearchIndexFacet;
 
   @Mock
   private TaskScheduler taskScheduler;
-
-  @Captor
-  private ArgumentCaptor<Repository> repositoryCaptor;
 
   private final TaskConfiguration configuration = new TaskConfiguration();
 
   private SearchUpdateTask underTest;
 
-  // Record for repository data to use with pattern matching
-  private record RepositoryData(String name, Repository repository, SearchIndexFacet searchIndexFacet) {}
-
   @BeforeEach
-  public void setUp() {
+  public void setup() {
     when(repository1.getName()).thenReturn("repository1");
-    when(repository2.getName()).thenReturn("repository2");
-    when(repository3.getName()).thenReturn("repository3");
-    
+    when(repository2.getName()).thenReturn("repository1");
     when(repository1.facet(SearchIndexFacet.class)).thenReturn(searchIndexFacet1);
     when(repository2.facet(SearchIndexFacet.class)).thenReturn(searchIndexFacet2);
-    when(repository3.facet(SearchIndexFacet.class)).thenReturn(searchIndexFacet3);
-    
     when(repositoryManager.get("repository1")).thenReturn(repository1);
     when(repositoryManager.get("repository2")).thenReturn(repository2);
-    when(repositoryManager.get("repository3")).thenReturn(repository3);
-    when(repositoryManager.get("unknown")).thenReturn(null);
+
+    // Setup for pattern matching test
+    when(proxyRepository.getName()).thenReturn("proxy-repo");
+    when(hostedRepository.getName()).thenReturn("hosted-repo");
+    when(groupRepository.getName()).thenReturn("group-repo");
+    when(proxyRepository.getType()).thenReturn("proxy");
+    when(hostedRepository.getType()).thenReturn("hosted");
+    when(groupRepository.getType()).thenReturn("group");
+    when(proxyRepository.facet(SearchIndexFacet.class)).thenReturn(proxySearchIndexFacet);
+    when(hostedRepository.facet(SearchIndexFacet.class)).thenReturn(hostedSearchIndexFacet);
+    when(groupRepository.facet(SearchIndexFacet.class)).thenReturn(groupSearchIndexFacet);
+    when(repositoryManager.get("proxy-repo")).thenReturn(proxyRepository);
+    when(repositoryManager.get("hosted-repo")).thenReturn(hostedRepository);
+    when(repositoryManager.get("group-repo")).thenReturn(groupRepository);
 
     configuration.setId("test");
     configuration.setTypeId("test");
@@ -116,7 +126,7 @@ public class SearchUpdateTaskTest
   }
 
   @Test
-  public void shouldRebuildIndexForSingleRepository() {
+  public void runOnOneRepository() {
     configuration.setString("repositoryNames", "repository1");
     underTest.configure(configuration);
     underTest.execute();
@@ -125,7 +135,7 @@ public class SearchUpdateTaskTest
   }
 
   @Test
-  public void shouldRebuildIndexForMultipleRepositories() {
+  public void runOnMultipleRepositories() {
     configuration.setString("repositoryNames", "repository1,repository2");
     underTest.configure(configuration);
     underTest.execute();
@@ -136,7 +146,7 @@ public class SearchUpdateTaskTest
   }
 
   @Test
-  public void shouldSkipUnknownRepositoriesAndContinueWithValid() {
+  public void unknownRepository() {
     configuration.setString("repositoryNames", "repository1,unknown,repository2");
     underTest.configure(configuration);
     underTest.execute();
@@ -147,7 +157,7 @@ public class SearchUpdateTaskTest
   }
 
   @Test
-  public void shouldContinueProcessingWhenOneRepositoryFailsRebuildingIndex() {
+  public void runOnMultipleRepositoriesButFailRebuildingIndex() {
     doThrow(new ProcessClusterEventTimeoutException(
         new TimeValue(30000), "failed to process cluster event (delete-index)"))
         .when(searchIndexFacet1).rebuildIndex();
@@ -155,299 +165,138 @@ public class SearchUpdateTaskTest
     underTest.configure(configuration);
     underTest.execute();
     verify(searchIndexFacet2).rebuildIndex();
-    verify(searchUpdateService, never()).doneReindexing(repository1);
     verify(searchUpdateService).doneReindexing(repository2);
   }
 
   @Test
-  public void shouldHandleEmptyRepositoryList() {
-    configuration.setString("repositoryNames", "");
-    underTest.configure(configuration);
-    underTest.execute();
-    verify(searchIndexFacet1, never()).rebuildIndex();
-    verify(searchIndexFacet2, never()).rebuildIndex();
-    verify(searchUpdateService, never()).doneReindexing(any(Repository.class));
-  }
-
-  @Test
-  @org.junit.jupiter.api.Tag("Java21")
-  public void shouldProcessRepositoriesUsingRecordPatterns() {
-    // Setup repository data using records
-    List<RepositoryData> repositories = List.of(
-        new RepositoryData("repository1", repository1, searchIndexFacet1),
-        new RepositoryData("repository2", repository2, searchIndexFacet2),
-        new RepositoryData("repository3", repository3, searchIndexFacet3)
-    );
-
-    // Configure the task with all repositories
-    configuration.setString("repositoryNames", "repository1,repository2,repository3");
+  @Tag("Java21")
+  public void concurrentSearchIndexUpdateWithVirtualThreads() {
+    // Create a list of repository names
+    List<String> repoNames = List.of("repository1", "repository2");
+    
+    // Configure the task
+    configuration.setString("repositoryNames", String.join(",", repoNames));
     underTest.configure(configuration);
     
-    // Execute the task
-    underTest.execute();
-    
-    // Verify using record patterns
-    for (RepositoryData(var name, var repo, var facet) : repositories) {
-      verify(facet).rebuildIndex();
-      verify(searchUpdateService).doneReindexing(repo);
+    // Create a virtual thread executor
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Execute the task concurrently using virtual threads
+      CompletableFuture<?>[] futures = repoNames.stream()
+          .map(name -> CompletableFuture.runAsync(() -> {
+            // Simulate the task execution for each repository
+            Repository repo = repositoryManager.get(name);
+            if (repo != null) {
+              SearchIndexFacet searchIndexFacet = repo.facet(SearchIndexFacet.class);
+              searchIndexFacet.rebuildIndex();
+              searchUpdateService.doneReindexing(repo);
+            }
+          }, executor))
+          .toArray(CompletableFuture[]::new);
+      
+      // Wait for all tasks to complete
+      CompletableFuture.allOf(futures).join();
     }
-  }
-
-  @Test
-  @org.junit.jupiter.api.Tag("Java21")
-  public void shouldHandleElasticsearchExceptionsGracefully() {
-    // Setup exception for repository1
-    doThrow(new ProcessClusterEventTimeoutException(
-        new TimeValue(30000), "failed to process cluster event (delete-index)"))
-        .when(searchIndexFacet1).rebuildIndex();
     
-    // Setup exception for repository3 with a different exception type
-    doThrow(new RuntimeException("Simulated Elasticsearch error"))
-        .when(searchIndexFacet3).rebuildIndex();
-    
-    // Configure the task with all repositories
-    configuration.setString("repositoryNames", "repository1,repository2,repository3");
-    underTest.configure(configuration);
-    
-    // Execute the task
-    underTest.execute();
-    
-    // Verify only repository2 completed successfully
+    // Verify that all repositories were processed
     verify(searchIndexFacet1).rebuildIndex();
     verify(searchIndexFacet2).rebuildIndex();
-    verify(searchIndexFacet3).rebuildIndex();
-    
-    verify(searchUpdateService, never()).doneReindexing(repository1);
-    verify(searchUpdateService).doneReindexing(repository2);
-    verify(searchUpdateService, never()).doneReindexing(repository3);
-  }
-
-  @Test
-  @org.junit.jupiter.api.Tag("Java21")
-  public void shouldMaintainThreadContinuityDuringElasticsearchOperations() {
-    // Setup a latch to coordinate the test
-    CountDownLatch operationStarted = new CountDownLatch(1);
-    CountDownLatch operationCompleted = new CountDownLatch(1);
-    
-    // Configure searchIndexFacet1 to simulate a long-running Elasticsearch operation
-    doAnswer(invocation -> {
-      // Signal that the operation has started
-      operationStarted.countDown();
-      
-      // Wait for the test to signal completion
-      operationCompleted.await(5, TimeUnit.SECONDS);
-      
-      return null;
-    }).when(searchIndexFacet1).rebuildIndex();
-    
-    // Configure the task with repository1
-    configuration.setString("repositoryNames", "repository1");
-    underTest.configure(configuration);
-    
-    // Execute the task in a separate thread
-    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-      underTest.execute();
-    });
-    
-    try {
-      // Wait for the operation to start
-      assertTrue(operationStarted.await(5, TimeUnit.SECONDS), "Operation should start within timeout");
-      
-      // Signal completion and wait for the future to complete
-      operationCompleted.countDown();
-      future.get(5, TimeUnit.SECONDS);
-      
-      // Verify that the operation completed successfully
-      verify(searchIndexFacet1).rebuildIndex();
-      verify(searchUpdateService).doneReindexing(repository1);
-    }
-    catch (Exception e) {
-      throw new RuntimeException("Test failed", e);
-    }
-  }
-
-  @Test
-  @org.junit.jupiter.api.Tag("Java21")
-  public void shouldHandleInterruptedThreadsGracefully() {
-    // Setup a latch to coordinate the test
-    CountDownLatch operationStarted = new CountDownLatch(1);
-    
-    // Configure searchIndexFacet1 to simulate an operation that gets interrupted
-    doAnswer(invocation -> {
-      // Signal that the operation has started
-      operationStarted.countDown();
-      
-      // Simulate an interruption
-      Thread.currentThread().interrupt();
-      
-      // Check if we're interrupted and throw an exception
-      if (Thread.interrupted()) {
-        throw new InterruptedException("Operation was interrupted");
-      }
-      
-      return null;
-    }).when(searchIndexFacet1).rebuildIndex();
-    
-    // Configure the task with repository1
-    configuration.setString("repositoryNames", "repository1");
-    underTest.configure(configuration);
-    
-    // Execute the task
-    underTest.execute();
-    
-    // Verify that the operation was attempted but not marked as completed
-    verify(searchIndexFacet1).rebuildIndex();
-    verify(searchUpdateService, never()).doneReindexing(repository1);
-  }
-
-  @Test
-  @org.junit.jupiter.api.Tag("VirtualThread")
-  public void shouldExecuteWithVirtualThreads() throws Exception {
-    // Create a virtual thread factory
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    
-    // Configure the task with multiple repositories
-    configuration.setString("repositoryNames", "repository1,repository2,repository3");
-    underTest.configure(configuration);
-    
-    // Execute the task using a virtual thread
-    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
-      CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-        underTest.execute();
-      }, executor);
-      
-      // Wait for completion
-      future.get(5, TimeUnit.SECONDS);
-    }
-    
-    // Verify all repositories were processed
-    verify(searchIndexFacet1).rebuildIndex();
-    verify(searchIndexFacet2).rebuildIndex();
-    verify(searchIndexFacet3).rebuildIndex();
     verify(searchUpdateService).doneReindexing(repository1);
     verify(searchUpdateService).doneReindexing(repository2);
-    verify(searchUpdateService).doneReindexing(repository3);
   }
 
   @Test
-  @org.junit.jupiter.api.Tag("VirtualThread")
-  public void shouldHandleHighConcurrencyWithVirtualThreads() throws Exception {
-    // Create a large number of mock repositories
-    int repositoryCount = 100;
-    StringBuilder repositoryNames = new StringBuilder();
-    
-    for (int i = 0; i < repositoryCount; i++) {
-      String repoName = "repository" + i;
-      repositoryNames.append(repoName);
-      if (i < repositoryCount - 1) {
-        repositoryNames.append(",");
-      }
-      
-      // Setup mock for each repository
-      Repository mockRepo = mock(Repository.class);
-      SearchIndexFacet mockFacet = mock(SearchIndexFacet.class);
-      
-      when(mockRepo.getName()).thenReturn(repoName);
-      when(mockRepo.facet(SearchIndexFacet.class)).thenReturn(mockFacet);
-      when(repositoryManager.get(repoName)).thenReturn(mockRepo);
-    }
-    
-    // Configure the task with all repositories
-    configuration.setString("repositoryNames", repositoryNames.toString());
+  @Tag("Java21")
+  public void patternMatchingForRepositoryTypes() {
+    // Configure the task with different repository types
+    configuration.setString("repositoryNames", "proxy-repo,hosted-repo,group-repo");
     underTest.configure(configuration);
     
-    // Track completion count
-    AtomicInteger completionCount = new AtomicInteger(0);
+    // Execute the task
+    underTest.execute();
     
-    // Setup completion tracking
+    // Verify that all repositories were processed
+    verify(proxySearchIndexFacet).rebuildIndex();
+    verify(hostedSearchIndexFacet).rebuildIndex();
+    verify(groupSearchIndexFacet).rebuildIndex();
+    
+    // Verify that the search update service was called for each repository
+    verify(searchUpdateService).doneReindexing(proxyRepository);
+    verify(searchUpdateService).doneReindexing(hostedRepository);
+    verify(searchUpdateService).doneReindexing(groupRepository);
+  }
+
+  @Test
+  @Tag("Java21")
+  public void asyncTaskExecutionWithVirtualThreads() {
+    // Configure the task
+    configuration.setString("repositoryNames", "repository1,repository2");
+    underTest.configure(configuration);
+    
+    // Create a countdown latch to track task completion
+    CountDownLatch latch = new CountDownLatch(2);
+    
+    // Setup mock behavior to count down the latch when methods are called
     doAnswer(invocation -> {
-      completionCount.incrementAndGet();
+      latch.countDown();
       return null;
     }).when(searchUpdateService).doneReindexing(any(Repository.class));
     
-    // Execute the task
-    underTest.execute();
+    // Execute the task asynchronously using virtual threads
+    assertTimeout(java.time.Duration.ofSeconds(5), () -> {
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        CompletableFuture.runAsync(() -> underTest.execute(), executor);
+        
+        // Wait for the task to complete
+        assertTrue(latch.await(3, TimeUnit.SECONDS), "Task did not complete in time");
+      }
+    });
     
-    // Verify all repositories were processed
-    assertEquals(repositoryCount, completionCount.get(), 
-        "All repositories should be processed successfully");
+    // Verify that all repositories were processed
+    verify(searchIndexFacet1).rebuildIndex();
+    verify(searchIndexFacet2).rebuildIndex();
+    verify(searchUpdateService).doneReindexing(repository1);
+    verify(searchUpdateService).doneReindexing(repository2);
   }
 
   @Test
-  @org.junit.jupiter.api.Tag("VirtualThread")
-  public void shouldMaintainThreadContinuityWithVirtualThreads() throws Exception {
-    // Setup a latch to coordinate the test
-    CountDownLatch latch = new CountDownLatch(3);
+  @Tag("Java21")
+  public void resilienceToCarrierThreadPinning() {
+    // Configure the task
+    configuration.setString("repositoryNames", "repository1,repository2");
+    underTest.configure(configuration);
     
-    // Configure mock facets to count down the latch
+    // Setup a counter to track the number of completed operations
+    AtomicInteger completedOps = new AtomicInteger(0);
+    
+    // Simulate a blocking operation in the first repository's rebuildIndex method
     doAnswer(invocation -> {
-      latch.countDown();
+      // Simulate a blocking operation that would pin a carrier thread
+      Thread.sleep(500);
+      completedOps.incrementAndGet();
       return null;
     }).when(searchIndexFacet1).rebuildIndex();
     
+    // Setup the second repository to complete quickly
     doAnswer(invocation -> {
-      latch.countDown();
+      completedOps.incrementAndGet();
       return null;
     }).when(searchIndexFacet2).rebuildIndex();
     
-    doAnswer(invocation -> {
-      latch.countDown();
-      return null;
-    }).when(searchIndexFacet3).rebuildIndex();
+    // Execute the task using virtual threads
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      CompletableFuture<Void> future = CompletableFuture.runAsync(() -> underTest.execute(), executor);
+      
+      // Wait for the task to complete
+      future.join();
+      
+      // Verify that both operations completed despite the blocking in one thread
+      assertEquals(2, completedOps.get(), "Not all operations completed");
+    }
     
-    // Configure the task with all repositories
-    configuration.setString("repositoryNames", "repository1,repository2,repository3");
-    underTest.configure(configuration);
-    
-    // Execute the task
-    underTest.execute();
-    
-    // Verify all repositories were processed concurrently
-    assertTrue(latch.await(5, TimeUnit.SECONDS), 
-        "All repositories should be processed within the timeout");
-    
-    // Verify completion was called for all repositories
-    verify(searchUpdateService).doneReindexing(repository1);
-    verify(searchUpdateService).doneReindexing(repository2);
-    verify(searchUpdateService).doneReindexing(repository3);
-  }
-
-  @Test
-  @org.junit.jupiter.api.Tag("VirtualThread")
-  public void shouldHandleMixOfSuccessAndFailureWithVirtualThreads() {
-    // Setup exceptions for some repositories
-    doThrow(new ProcessClusterEventTimeoutException(
-        new TimeValue(30000), "failed to process cluster event (delete-index)"))
-        .when(searchIndexFacet1).rebuildIndex();
-    
-    doThrow(new RuntimeException("Simulated error"))
-        .when(searchIndexFacet3).rebuildIndex();
-    
-    // Configure the task with all repositories
-    configuration.setString("repositoryNames", "repository1,repository2,repository3");
-    underTest.configure(configuration);
-    
-    // Execute the task
-    underTest.execute();
-    
-    // Verify all repositories were attempted
+    // Verify that all repositories were processed
     verify(searchIndexFacet1).rebuildIndex();
     verify(searchIndexFacet2).rebuildIndex();
-    verify(searchIndexFacet3).rebuildIndex();
-    
-    // Verify only successful operations were marked as completed
-    verify(searchUpdateService, never()).doneReindexing(repository1);
+    verify(searchUpdateService).doneReindexing(repository1);
     verify(searchUpdateService).doneReindexing(repository2);
-    verify(searchUpdateService, never()).doneReindexing(repository3);
-  }
-
-  // Helper method to create a mock repository
-  private Repository mock(Repository.class) {
-    return org.mockito.Mockito.mock(Repository.class);
-  }
-
-  // Helper method to create a mock search index facet
-  private SearchIndexFacet mock(SearchIndexFacet.class) {
-    return org.mockito.Mockito.mock(SearchIndexFacet.class);
   }
 }

@@ -13,20 +13,24 @@
 package org.sonatype.nexus.repository.search.normalize;
 
 import java.util.Map;
-import java.util.Objects;
 
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.nexus.repository.Format;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 
 @Named
 @Singleton
 public class VersionNormalizerService
 {
+  private static final Logger log = LoggerFactory.getLogger(VersionNormalizerService.class);
+  
   private final Map<String, VersionNormalizer> versionNormalizers;
 
   @Inject
@@ -42,12 +46,16 @@ public class VersionNormalizerService
    * @return normalized version
    */
   public String getNormalizedVersionByFormat(final String version, final Format format) {
-    VersionNormalizer normalizerForFormat = versionNormalizers.get(format.getValue());
-    if (Objects.nonNull(normalizerForFormat)) {
-      return normalizerForFormat.getNormalizedVersion(version);
-    }
-    else {
-      return VersionNumberExpander.expand(version);
-    }
+    // Using pattern matching to check for format-specific normalizer and delegate accordingly
+    return switch (versionNormalizers.get(format.getValue())) {
+      case VersionNormalizer normalizer -> {
+        log.debug(STR."Using format-specific normalizer for \{format.getValue()} to normalize version \{version}");
+        yield normalizer.getNormalizedVersion(version);
+      }
+      case null -> {
+        log.debug(STR."No format-specific normalizer found for \{format.getValue()}, using default expansion for version \{version}");
+        yield VersionNumberExpander.expand(version);
+      }
+    };
   }
 }

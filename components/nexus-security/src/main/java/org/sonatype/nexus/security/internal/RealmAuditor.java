@@ -18,6 +18,8 @@ import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
+import static java.lang.StringTemplate.STR;
+
 import org.sonatype.nexus.audit.AuditData;
 import org.sonatype.nexus.audit.AuditorSupport;
 import org.sonatype.nexus.common.event.EventAware;
@@ -51,15 +53,27 @@ public class RealmAuditor
   @AllowConcurrentEvents
   public void on(final RealmConfigurationChangedEvent event) {
     if (isRecording()) {
-      AuditData data = new AuditData();
-      data.setDomain(DOMAIN);
-      data.setType(CHANGED_TYPE);
-      data.setContext(SYSTEM_CONTEXT);
+      // Use Java 21 Virtual Threads for concurrent event processing
+      Thread.startVirtualThread(() -> {
+        // Create audit data with Java 21 compatibility
+        AuditData data = new AuditData();
+        data.setDomain(DOMAIN);
+        data.setType(CHANGED_TYPE);
+        data.setContext(SYSTEM_CONTEXT);
 
-      Map<String, Object> attributes = data.getAttributes();
-      attributes.put("realms", string(realmManager.getConfiguredRealmIds()));
+        // Add attributes using Java 21 String Templates for improved readability
+        Map<String, Object> attributes = data.getAttributes();
+        var configuredRealmIds = realmManager.getConfiguredRealmIds();
+        
+        // Log using Java 21 String Templates for improved readability
+        log.debug(STR."Recording realm configuration change: \{string(configuredRealmIds)}");
+        
+        // Store the original string representation for compatibility
+        attributes.put("realms", string(configuredRealmIds));
 
-      record(data);
+        // Record the audit data
+        record(data);
+      });
     }
   }
 }

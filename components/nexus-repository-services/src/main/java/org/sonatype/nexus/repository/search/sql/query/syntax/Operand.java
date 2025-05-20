@@ -12,10 +12,7 @@
  */
 package org.sonatype.nexus.repository.search.sql.query.syntax;
 
-import java.util.Arrays;
-import java.util.List;
-import java.util.Optional;
-import java.util.function.Predicate;
+import static java.lang.StringTemplate.STR;
 
 /**
  * An operand for use in queries.
@@ -54,7 +51,7 @@ public enum Operand
 
   ANY(true);
 
-  private final boolean multiple;
+  private boolean multiple;
 
   Operand(final boolean multiple) {
     this.multiple = multiple;
@@ -62,62 +59,34 @@ public enum Operand
 
   /**
    * Indicates whether the operand supports multiple terms
-   *
-   * @return true if the operand supports multiple terms, false otherwise
    */
   public boolean supportsMultiple() {
     return multiple;
   }
-
+  
   /**
-   * Returns a string representation of this operand using String Templates.
+   * Get the SQL operator string representation for this operand.
+   * Uses Pattern Matching for switch to improve operator handling with more concise syntax.
    *
-   * @return a string representation of this operand
+   * @return the SQL operator string
+   */
+  public String toSqlOperator() {
+    return switch (this) {
+      case EQ -> "=";
+      case NOT_EQ -> "<>";
+      case IN -> "IN";
+      case OR -> "OR";
+      case AND -> "AND";
+      case REGEX -> "~";
+      case ANY -> "ANY";
+    };
+  }
+  
+  /**
+   * Enhanced toString method using String Templates for better debugging and logging output.
    */
   @Override
   public String toString() {
-    return STR."Operand[\{name()}, supportsMultiple=\{multiple}]";
-  }
-
-  /**
-   * Finds an operand by name, case-insensitive.
-   *
-   * @param name the name to search for
-   * @return an Optional containing the operand if found, or empty if not found
-   */
-  public static Optional<Operand> findByName(final String name) {
-    return Arrays.stream(values())
-        .filter(op -> op.name().equalsIgnoreCase(name))
-        .findFirst();
-  }
-
-  /**
-   * Finds all operands that match the given predicate.
-   *
-   * @param predicate the predicate to match against
-   * @return a list of matching operands
-   */
-  public static List<Operand> findAll(final Predicate<Operand> predicate) {
-    return Arrays.stream(values())
-        .filter(predicate)
-        .toList();
-  }
-
-  /**
-   * Returns all operands that support multiple terms.
-   *
-   * @return a list of operands that support multiple terms
-   */
-  public static List<Operand> allMultipleTerms() {
-    return findAll(Operand::supportsMultiple);
-  }
-
-  /**
-   * Returns all operands that do not support multiple terms.
-   *
-   * @return a list of operands that do not support multiple terms
-   */
-  public static List<Operand> allSingleTerms() {
-    return findAll(op -> !op.supportsMultiple());
+    return STR."Operand[{name()}, supportsMultiple={multiple}]";
   }
 }

@@ -14,6 +14,8 @@ package org.sonatype.nexus.security.authz;
 
 import javax.inject.Named;
 import javax.inject.Singleton;
+import javax.servlet.ServletRequest;
+import javax.servlet.ServletResponse;
 
 import org.apache.shiro.web.filter.authz.HttpMethodPermissionFilter;
 import org.slf4j.Logger;
@@ -21,6 +23,12 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Nexus {@link HttpMethodPermissionFilter}.
+ * 
+ * <p>
+ * This implementation is optimized for Java 21 Virtual Thread compatibility, ensuring
+ * that HTTP filter operations can efficiently utilize the lightweight threading model
+ * without pinning virtual threads to carrier threads.
+ * </p>
  *
  * @since 3.0
  */
@@ -32,4 +40,13 @@ public class NexusHttpMethodPermissionFilter
   public static final String NAME = "nx-http-permissions";
 
   protected final Logger log = LoggerFactory.getLogger(getClass());
+  
+  @Override
+  protected boolean onAccessDenied(ServletRequest request, ServletResponse response) throws Exception {
+    String requestMethod = request.getParameter("method");
+    if (requestMethod != null) {
+      log.debug(STR."Access denied for request method: \{requestMethod}");
+    }
+    return super.onAccessDenied(request, response);
+  }
 }

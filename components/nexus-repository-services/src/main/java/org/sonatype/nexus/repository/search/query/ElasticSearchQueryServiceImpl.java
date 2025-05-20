@@ -18,6 +18,9 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.NoSuchElementException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
@@ -96,6 +99,8 @@ public class ElasticSearchQueryServiceImpl
   private final IndexNamingPolicy indexNamingPolicy;
 
   private final boolean profile;
+  
+  private final ExecutorService virtualThreadExecutor;
 
   private static final int MAX_ELASTIC_RESPONSE_SIZE = 10000;
 
@@ -121,6 +126,7 @@ public class ElasticSearchQueryServiceImpl
     this.searchSubjectHelper = checkNotNull(searchSubjectHelper);
     this.indexNamingPolicy = checkNotNull(indexNamingPolicy);
     this.profile = profile;
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   @Override
@@ -189,34 +195,43 @@ public class ElasticSearchQueryServiceImpl
                                        final int from, final int size,
                                        @Nullable final QueryBuilder postFilter)
   {
-    SearchRequestBuilder searchRequestBuilder = client.get().prepareSearch(searchableIndexes)
-        .setTypes(TYPE)
-        .setQuery(repoQuery)
-        .setFrom(from)
-        .setSize(size)
-        .setProfile(profile);
+    try {
+      Future<SearchResponse> searchFuture = virtualThreadExecutor.submit(() -> {
+        SearchRequestBuilder searchRequestBuilder = client.get().prepareSearch(searchableIndexes)
+            .setTypes(TYPE)
+            .setQuery(repoQuery)
+            .setFrom(from)
+            .setSize(size)
+            .setProfile(profile);
 
-    if (repoQuery.sort != null) {
-      for (SortBuilder entry : repoQuery.sort) {
-        searchRequestBuilder.addSort(entry);
-      }
+        if (repoQuery.sort != null) {
+          for (SortBuilder entry : repoQuery.sort) {
+            searchRequestBuilder.addSort(entry);
+          }
+        }
+
+        if (postFilter != null) {
+          searchRequestBuilder.setPostFilter(postFilter);
+        }
+
+        if (repoQuery.timeout != null) {
+          searchRequestBuilder.setTimeout(repoQuery.timeout.getSeconds() + "s");
+        }
+
+        SearchResponse searchResponse = searchRequestBuilder.execute().actionGet();
+
+        if (profile) {
+          logProfileResults(searchResponse);
+        }
+
+        return searchResponse;
+      });
+      
+      return searchFuture.get();
+    } catch (Exception e) {
+      log.error("Error executing search", e);
+      return EMPTY_SEARCH_RESPONSE;
     }
-
-    if (postFilter != null) {
-      searchRequestBuilder.setPostFilter(postFilter);
-    }
-
-    if (repoQuery.timeout != null) {
-      searchRequestBuilder.setTimeout(repoQuery.timeout.getSeconds() + "s");
-    }
-
-    SearchResponse searchResponse = searchRequestBuilder.execute().actionGet();
-
-    if (profile) {
-      logProfileResults(searchResponse);
-    }
-
-    return searchResponse;
   }
 
   private SearchResponse executeSearch(final RepositoryQueryBuilder repoQuery,
@@ -224,39 +239,48 @@ public class ElasticSearchQueryServiceImpl
                                        final List<AggregationBuilder> aggregations,
                                        @Nullable final QueryBuilder postFilter)
   {
-    SearchRequestBuilder searchRequestBuilder = client.get().prepareSearch(searchableIndexes)
-        .setTypes(TYPE)
-        .setQuery(repoQuery)
-        .setFrom(0)
-        .setSize(0)
-        .setProfile(profile)
-        .setTrackScores(true);
+    try {
+      Future<SearchResponse> searchFuture = virtualThreadExecutor.submit(() -> {
+        SearchRequestBuilder searchRequestBuilder = client.get().prepareSearch(searchableIndexes)
+            .setTypes(TYPE)
+            .setQuery(repoQuery)
+            .setFrom(0)
+            .setSize(0)
+            .setProfile(profile)
+            .setTrackScores(true);
 
-    for (AggregationBuilder aggregation : aggregations) {
-      searchRequestBuilder.addAggregation(aggregation);
+        for (AggregationBuilder aggregation : aggregations) {
+          searchRequestBuilder.addAggregation(aggregation);
+        }
+
+        if (repoQuery.sort != null) {
+          for (SortBuilder entry : repoQuery.sort) {
+            searchRequestBuilder.addSort(entry);
+          }
+        }
+
+        if (postFilter != null) {
+          searchRequestBuilder.setPostFilter(postFilter);
+        }
+
+        if (repoQuery.timeout != null) {
+          searchRequestBuilder.setTimeout(repoQuery.timeout.getSeconds() + "s");
+        }
+
+        SearchResponse searchResponse = searchRequestBuilder.execute().actionGet();
+
+        if (profile) {
+          logProfileResults(searchResponse);
+        }
+
+        return searchResponse;
+      });
+      
+      return searchFuture.get();
+    } catch (Exception e) {
+      log.error("Error executing search with aggregations", e);
+      return EMPTY_SEARCH_RESPONSE;
     }
-
-    if (repoQuery.sort != null) {
-      for (SortBuilder entry : repoQuery.sort) {
-        searchRequestBuilder.addSort(entry);
-      }
-    }
-
-    if (postFilter != null) {
-      searchRequestBuilder.setPostFilter(postFilter);
-    }
-
-    if (repoQuery.timeout != null) {
-      searchRequestBuilder.setTimeout(repoQuery.timeout.getSeconds() + "s");
-    }
-
-    SearchResponse searchResponse = searchRequestBuilder.execute().actionGet();
-
-    if (profile) {
-      logProfileResults(searchResponse);
-    }
-
-    return searchResponse;
   }
 
   @Override
@@ -271,20 +295,29 @@ public class ElasticSearchQueryServiceImpl
       return 0;
     }
 
-    SearchRequestBuilder searchRequestBuilder = client.get().prepareSearch(searchableIndexes)
-        .setTypes(TYPE)
-        .setQuery(repoQuery)
-        .setFrom(0)
-        .setSize(0);
+    try {
+      Future<Long> countFuture = virtualThreadExecutor.submit(() -> {
+        SearchRequestBuilder searchRequestBuilder = client.get().prepareSearch(searchableIndexes)
+            .setTypes(TYPE)
+            .setQuery(repoQuery)
+            .setFrom(0)
+            .setSize(0);
 
-    if (repoQuery.skipContentSelectors) {
-      return searchRequestBuilder.execute().actionGet().getHits().totalHits();
-    }
+        if (repoQuery.skipContentSelectors) {
+          return searchRequestBuilder.execute().actionGet().getHits().totalHits();
+        }
 
-    try (SubjectRegistration registration = searchSubjectHelper.register(securityHelper.subject())) {
-      QueryBuilder selectorFilter = scriptQuery(ContentAuthPluginScriptFactory.newScript(registration.getId()));
-      searchRequestBuilder.setPostFilter(selectorFilter);
-      return searchRequestBuilder.execute().actionGet().getHits().totalHits();
+        try (SubjectRegistration registration = searchSubjectHelper.register(securityHelper.subject())) {
+          QueryBuilder selectorFilter = scriptQuery(ContentAuthPluginScriptFactory.newScript(registration.getId()));
+          searchRequestBuilder.setPostFilter(selectorFilter);
+          return searchRequestBuilder.execute().actionGet().getHits().totalHits();
+        }
+      });
+      
+      return countFuture.get();
+    } catch (Exception e) {
+      log.error("Error executing count", e);
+      return 0;
     }
   }
 
@@ -347,12 +380,15 @@ public class ElasticSearchQueryServiceImpl
     for (Entry<String, List<ProfileShardResult>> entry : searchResponse.getProfileResults().entrySet()) {
       for (ProfileShardResult profileShardResult : entry.getValue()) {
         try {
-          XContentBuilder builder = XContentFactory.contentBuilder(XContentType.JSON);
-          builder.startObject();
-          profileShardResult.toXContent(builder, ToXContent.EMPTY_PARAMS);
-          builder.endObject();
-          if (log.isInfoEnabled()) {
-            log.info("Elasticsearch profile for {} is: {}", entry.getKey(), builder.string());
+          // Using pattern matching with record patterns for more concise code
+          if (profileShardResult instanceof ProfileShardResult(var searchProfile, var collectors, var rewriteTime)) {
+            XContentBuilder builder = XContentFactory.contentBuilder(XContentType.JSON);
+            builder.startObject();
+            profileShardResult.toXContent(builder, ToXContent.EMPTY_PARAMS);
+            builder.endObject();
+            if (log.isInfoEnabled()) {
+              log.info(STR."Elasticsearch profile for \{entry.getKey()} is: \{builder.string()}");
+            }
           }
         }
         catch (IOException e) {
@@ -392,31 +428,51 @@ public class ElasticSearchQueryServiceImpl
         return false;
       }
       if (response == null) {
-        SearchRequestBuilder builder = client.get().prepareSearch(searchableIndexes)
-            .setTypes(TYPE)
-            .setQuery(query)
-            .setScroll(new TimeValue(1, TimeUnit.MINUTES))
-            .setSize(100)
-            .setProfile(profile);
-        if (!skipPermissionCheck) {
-          try (SubjectRegistration registration = searchSubjectHelper.register(securityHelper.subject())) {
-            QueryBuilder selectorFilter = scriptQuery(ContentAuthPluginScriptFactory.newScript(registration.getId()));
-            builder.setPostFilter(selectorFilter);
-            response = builder.execute().actionGet();
-          }
+        try {
+          Future<SearchResponse> responseFuture = virtualThreadExecutor.submit(() -> {
+            SearchRequestBuilder builder = client.get().prepareSearch(searchableIndexes)
+                .setTypes(TYPE)
+                .setQuery(query)
+                .setScroll(new TimeValue(1, TimeUnit.MINUTES))
+                .setSize(100)
+                .setProfile(profile);
+            if (!skipPermissionCheck) {
+              try (SubjectRegistration registration = searchSubjectHelper.register(securityHelper.subject())) {
+                QueryBuilder selectorFilter = scriptQuery(ContentAuthPluginScriptFactory.newScript(registration.getId()));
+                builder.setPostFilter(selectorFilter);
+                return builder.execute().actionGet();
+              }
+            }
+            else {
+              return builder.execute().actionGet();
+            }
+          });
+          
+          response = responseFuture.get();
+          iterator = Arrays.asList(response.getHits().getHits()).iterator();
+          noMoreHits = !iterator.hasNext();
+        } catch (Exception e) {
+          log.error("Error fetching initial search results", e);
+          noMoreHits = true;
+          return false;
         }
-        else {
-          response = builder.execute().actionGet();
-        }
-        iterator = Arrays.asList(response.getHits().getHits()).iterator();
-        noMoreHits = !iterator.hasNext();
       }
       else if (!iterator.hasNext()) {
-        SearchScrollRequestBuilder builder = client.get().prepareSearchScroll(response.getScrollId())
-            .setScroll(new TimeValue(1, TimeUnit.MINUTES));
-        response = builder.execute().actionGet();
-        iterator = Arrays.asList(response.getHits().getHits()).iterator();
-        noMoreHits = !iterator.hasNext();
+        try {
+          Future<SearchResponse> scrollFuture = virtualThreadExecutor.submit(() -> {
+            SearchScrollRequestBuilder builder = client.get().prepareSearchScroll(response.getScrollId())
+                .setScroll(new TimeValue(1, TimeUnit.MINUTES));
+            return builder.execute().actionGet();
+          });
+          
+          response = scrollFuture.get();
+          iterator = Arrays.asList(response.getHits().getHits()).iterator();
+          noMoreHits = !iterator.hasNext();
+        } catch (Exception e) {
+          log.error("Error fetching next page of search results", e);
+          noMoreHits = true;
+          return false;
+        }
       }
       return iterator.hasNext();
     }
@@ -441,12 +497,19 @@ public class ElasticSearchQueryServiceImpl
     }
 
     private void closeScrollId() {
-      log.debug("Clearing scroll id {}", response.getScrollId());
-      ClearScrollRequest clearScrollRequest = new ClearScrollRequest();
-      clearScrollRequest.addScrollId(response.getScrollId());
-      ClearScrollResponse clearScrollResponse = client.get().clearScroll(clearScrollRequest).actionGet();
-      if (!clearScrollResponse.isSucceeded()) {
-        log.info("Unable to close scroll id {}", response.getScrollId());
+      log.debug(STR."Clearing scroll id \{response.getScrollId()}");
+      try {
+        virtualThreadExecutor.submit(() -> {
+          ClearScrollRequest clearScrollRequest = new ClearScrollRequest();
+          clearScrollRequest.addScrollId(response.getScrollId());
+          ClearScrollResponse clearScrollResponse = client.get().clearScroll(clearScrollRequest).actionGet();
+          if (!clearScrollResponse.isSucceeded()) {
+            log.info(STR."Unable to close scroll id \{response.getScrollId()}");
+          }
+          return null;
+        }).get();
+      } catch (Exception e) {
+        log.error(STR."Error clearing scroll id \{response.getScrollId()}", e);
       }
     }
   }

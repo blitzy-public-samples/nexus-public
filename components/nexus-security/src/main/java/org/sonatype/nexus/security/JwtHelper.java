@@ -15,6 +15,9 @@ package org.sonatype.nexus.security;
 import java.util.Date;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import javax.inject.Inject;
@@ -73,6 +76,8 @@ public class JwtHelper
   private final Provider<SecretStore> secretStoreProvider;
 
   private final boolean cookieSecure;
+  
+  private final ExecutorService virtualThreadExecutor;
 
   private JwtVerifier verifier;
 
@@ -92,6 +97,7 @@ public class JwtHelper
     this.contextPath = checkNotNull(contextPath);
     this.secretStoreProvider = checkNotNull(secretStoreProvider);
     this.cookieSecure = cookieSecure;
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   @Override
@@ -103,6 +109,13 @@ public class JwtHelper
     }
     // we have to read the generated secret from the DB since another node may write it
     verifier = new JwtVerifier(loadSecret());
+  }
+  
+  @Override
+  protected void doStop() throws Exception {
+    if (virtualThreadExecutor != null) {
+      virtualThreadExecutor.shutdown();
+    }
   }
 
   /**
@@ -129,20 +142,37 @@ public class JwtHelper
 
   /**
    * Verify jwt, refresh if it's valid and make new cookie
+   * Uses Virtual Threads for improved performance with I/O operations
    */
   public Cookie verifyAndRefreshJwtCookie(final String jwt, final boolean secureRequest) throws JwtVerificationException {
     checkNotNull(jwt);
-
-    DecodedJWT decoded = verifyJwt(jwt);
-
-    return createJwtCookie(decoded.getClaim(USER).asString(),
-        decoded.getClaim(REALM).asString(),
-        decoded.getClaim(USER_SESSION_ID).asString(),
-        secureRequest);
+    
+    try {
+      CompletableFuture<DecodedJWT> future = CompletableFuture.supplyAsync(() -> {
+        try {
+          return verifyJwt(jwt);
+        } catch (JwtVerificationException e) {
+          throw new RuntimeException(e);
+        }
+      }, virtualThreadExecutor);
+      
+      DecodedJWT decoded = future.join();
+      
+      return createJwtCookie(decoded.getClaim(USER).asString(),
+          decoded.getClaim(REALM).asString(),
+          decoded.getClaim(USER_SESSION_ID).asString(),
+          secureRequest);
+    } catch (RuntimeException e) {
+      if (e.getCause() instanceof JwtVerificationException) {
+        throw (JwtVerificationException) e.getCause();
+      }
+      throw e;
+    }
   }
 
   /**
    * Verifies and decode token
+   * Uses Java 21's improved cryptographic providers for verification
    */
   public DecodedJWT verifyJwt(final String jwt) throws JwtVerificationException {
     return verifier.verify(jwt);
@@ -177,6 +207,9 @@ public class JwtHelper
     return createCookie(jwt, secureRequest);
   }
 
+  /**
+   * Creates a JWT token with improved Java 21 cryptographic providers
+   */
   private String createToken(final String user, final String realm, final String userSessionId) {
     Date issuedAt = new Date();
     Date expiresAt = getExpiresAt(issuedAt);

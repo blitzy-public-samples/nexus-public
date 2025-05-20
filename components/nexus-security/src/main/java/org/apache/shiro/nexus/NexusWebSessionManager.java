@@ -14,12 +14,17 @@ package org.apache.shiro.nexus;
 
 import javax.inject.Inject;
 import javax.inject.Named;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.sonatype.nexus.common.app.FeatureFlags;
 
 import org.apache.shiro.session.Session;
 import org.apache.shiro.session.mgt.SessionContext;
 import org.apache.shiro.session.mgt.SessionValidationScheduler;
+import org.apache.shiro.session.mgt.ValidatingSessionManager;
 import org.apache.shiro.web.servlet.Cookie;
 import org.apache.shiro.web.session.mgt.DefaultWebSessionManager;
 import org.apache.shiro.web.session.mgt.WebSessionManager;
@@ -28,10 +33,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Custom {@link WebSessionManager}.
+ * Custom {@link WebSessionManager} for Nexus Repository Manager.
  *
  * This session manager predates the more recent JWT session management in org.sonatype.nexus.security. It's used
  * in for single node deployments typically, however it is not used for Pro deployments using SAML (HA or not).
+ * 
+ * Updated for Java 21 and Apache Shiro 2.0.0 compatibility with Virtual Thread support for session validation.
  */
 public class NexusWebSessionManager
     extends DefaultWebSessionManager
@@ -40,7 +47,64 @@ public class NexusWebSessionManager
 
   private static final String DEFAULT_NEXUS_SESSION_COOKIE_NAME = "NXSESSIONID";
 
-  private static final ThreadLocal<Boolean> requestIsHttps = ThreadLocal.withInitial(() -> Boolean.TRUE);
+  // Using AtomicBoolean for thread-safety in Java 21
+  private static final ThreadLocal<AtomicBoolean> requestIsHttps = 
+      ThreadLocal.withInitial(() -> new AtomicBoolean(true));
+
+  /**
+   * Virtual Thread-based session validation scheduler for Java 21.
+   */
+  private static class VirtualThreadSessionValidationScheduler implements SessionValidationScheduler {
+    private final ValidatingSessionManager sessionManager;
+    private final long sessionValidationInterval;
+    private ScheduledExecutorService service;
+    private boolean enabled = false;
+
+    public VirtualThreadSessionValidationScheduler(ValidatingSessionManager sessionManager, long sessionValidationInterval) {
+      this.sessionManager = sessionManager;
+      this.sessionValidationInterval = sessionValidationInterval;
+    }
+
+    @Override
+    public boolean isEnabled() {
+      return this.enabled;
+    }
+
+    @Override
+    public void enableSessionValidation() {
+      if (this.enabled) {
+        return;
+      }
+
+      // Using virtual threads for session validation in Java 21
+      this.service = Executors.newScheduledThreadPool(1, r -> {
+        Thread t = Thread.ofVirtual().name("shiro-session-validation").unstarted(r);
+        return t;
+      });
+
+      this.service.scheduleAtFixedRate(
+          () -> {
+            try {
+              sessionManager.validateSessions();
+            } catch (Throwable t) {
+              log.error("Error validating sessions", t);
+            }
+          },
+          sessionValidationInterval,
+          sessionValidationInterval,
+          TimeUnit.MILLISECONDS);
+
+      this.enabled = true;
+    }
+
+    @Override
+    public void disableSessionValidation() {
+      if (this.service != null) {
+        this.service.shutdownNow();
+      }
+      this.enabled = false;
+    }
+  }
 
   @Inject
   public void configureProperties(
@@ -56,20 +120,36 @@ public class NexusWebSessionManager
     Cookie cookie = getSessionIdCookie();
     cookie.setName(sessionCookieName);
     cookie.setSecure(cookieSecure);
-    log.info("Session-cookie prototype: name={}, secure={}", cookie.getName(), cookie.isSecure());
+    
+    // Set HttpOnly flag to true for enhanced security in Java 21/TLS 1.3 environment
+    cookie.setHttpOnly(true);
+    
+    // Set SameSite attribute to Lax for better CSRF protection with modern browsers
+    if (cookie instanceof org.apache.shiro.web.servlet.SimpleCookie) {
+      ((org.apache.shiro.web.servlet.SimpleCookie) cookie).setSameSite("Lax");
+    }
+    
+    log.info("Session-cookie prototype: name={}, secure={}, httpOnly={}", 
+        cookie.getName(), cookie.isSecure(), cookie.isHttpOnly());
+    
+    // Configure session validation with virtual threads
+    setSessionValidationScheduler(new VirtualThreadSessionValidationScheduler(
+        this, getSessionValidationInterval()));
+    enableSessionValidation();
   }
 
   /**
    * Overrides the {@link #onStart(Session, SessionContext)} to first check to see if the request is coming
    * on a secure channel.
    *
-   * @param session
-   * @param context
+   * @param session The session being started
+   * @param context The session context
    */
   @Override
   protected void onStart(final Session session, final SessionContext context) {
-    if (WebUtils.isHttp((context))) {
-      requestIsHttps.set(WebUtils.getHttpRequest(context).isSecure());
+    if (WebUtils.isHttp(context)) {
+      // Thread-safe update for Java 21
+      requestIsHttps.get().set(WebUtils.getHttpRequest(context).isSecure());
     }
     try {
       super.onStart(session, context);
@@ -92,13 +172,19 @@ public class NexusWebSessionManager
   public Cookie getSessionIdCookie() {
     Cookie cookie = super.getSessionIdCookie();
     boolean templateValue = cookie.isSecure();
-    boolean requestIsSecure = requestIsHttps.get();
-    log.trace("setting Secure flag on session cookie: systemValue={}, requestIsSecure={}",templateValue, requestIsSecure);
+    
+    // Thread-safe access for Java 21
+    boolean requestIsSecure = requestIsHttps.get().get();
+    
+    log.trace("Setting Secure flag on session cookie: systemValue={}, requestIsSecure={}", 
+        templateValue, requestIsSecure);
+    
     cookie.setSecure(templateValue && requestIsSecure);
     return cookie;
   }
 
   /**
+   * Ensures session validation is properly enabled with thread-safety for Java 21.
    * See https://issues.sonatype.org/browse/NEXUS-5727, https://issues.apache.org/jira/browse/SHIRO-443
    */
   @Override
@@ -106,6 +192,8 @@ public class NexusWebSessionManager
     final SessionValidationScheduler scheduler = getSessionValidationScheduler();
     if (scheduler == null) {
       super.enableSessionValidation();
+    } else if (!scheduler.isEnabled()) {
+      scheduler.enableSessionValidation();
     }
   }
 }

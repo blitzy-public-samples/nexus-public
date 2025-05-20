@@ -339,9 +339,30 @@ public class GroupHandler
     return HttpResponses.notFound();
   }
 
+  /**
+   * Validates if a response should be considered valid for group handler processing.
+   * Uses pattern matching for switch to handle different response types.
+   *
+   * @param response the response to validate
+   * @return true if the response is valid, false otherwise
+   */
   protected boolean isValidResponse(final Response response) {
-    return response != null && (response.getStatus().isSuccessful() ||
-        response.getAttributes().contains(USE_DISPATCHED_RESPONSE) ||
-        BYPASS_HTTP_ERRORS_HEADER_VALUE.equals(response.getHeaders().get(BYPASS_HTTP_ERRORS_HEADER_NAME)));
+    if (response == null) {
+      return false;
+    }
+    
+    return switch (response) {
+      // Case for successful responses
+      case Response r when r.getStatus().isSuccessful() -> true;
+      
+      // Case for responses with USE_DISPATCHED_RESPONSE attribute
+      case Response r when r.getAttributes().contains(USE_DISPATCHED_RESPONSE) -> true;
+      
+      // Case for responses with bypass header
+      case Response r when BYPASS_HTTP_ERRORS_HEADER_VALUE.equals(r.getHeaders().get(BYPASS_HTTP_ERRORS_HEADER_NAME)) -> true;
+      
+      // Default case for any other response
+      default -> false;
+    };
   }
 }

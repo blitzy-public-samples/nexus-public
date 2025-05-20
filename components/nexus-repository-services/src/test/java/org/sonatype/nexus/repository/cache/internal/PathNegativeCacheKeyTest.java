@@ -13,7 +13,9 @@
 package org.sonatype.nexus.repository.cache.internal;
 
 import org.sonatype.nexus.repository.cache.NegativeCacheKey;
+import org.sonatype.nexus.testcommon.Java21TestGroup;
 
+import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -23,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 @ExtendWith(MockitoExtension.class)
+@Category(Java21TestGroup.class)
 public class PathNegativeCacheKeyTest
 {
   /**

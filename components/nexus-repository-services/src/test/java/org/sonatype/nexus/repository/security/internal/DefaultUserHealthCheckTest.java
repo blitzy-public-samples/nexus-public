@@ -15,6 +15,7 @@ package org.sonatype.nexus.repository.security.internal;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.security.internal.AuthenticatingRealmImpl;
 import org.sonatype.nexus.security.realm.RealmManager;
+import org.sonatype.nexus.virtualthread.Java21TestGroup;
 
 import com.codahale.metrics.health.HealthCheck.Result;
 import org.apache.shiro.authc.AuthenticationException;
@@ -24,18 +25,21 @@ import org.apache.shiro.mgt.RealmSecurityManager;
 import org.apache.shiro.realm.Realm;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.experimental.categories.Category;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.Collections.singleton;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
+@Category(Java21TestGroup.class)
 public class DefaultUserHealthCheckTest
     extends TestSupport
 {
@@ -54,7 +58,7 @@ public class DefaultUserHealthCheckTest
 
     Result result = defaultUserHealthCheck.check();
 
-    assertThat(result.isHealthy(), is(true));
+    assertTrue(result.isHealthy());
   }
 
   @Test
@@ -67,7 +71,7 @@ public class DefaultUserHealthCheckTest
 
     Result result = defaultUserHealthCheck.check();
 
-    assertThat(result.isHealthy(), is(true));
+    assertTrue(result.isHealthy());
   }
 
   @Test
@@ -80,7 +84,7 @@ public class DefaultUserHealthCheckTest
 
     Result result = defaultUserHealthCheck.check();
 
-    assertThat(result.isHealthy(), is(false));
-    assertThat(result.getMessage(), is(DefaultUserHealthCheck.ERROR_MESSAGE));
+    assertFalse(result.isHealthy());
+    assertEquals(DefaultUserHealthCheck.ERROR_MESSAGE, result.getMessage());
   }
 }

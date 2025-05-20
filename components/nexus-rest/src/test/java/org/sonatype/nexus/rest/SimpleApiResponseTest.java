@@ -19,86 +19,90 @@ import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.Response.Status;
 
 import static jakarta.ws.rs.core.Response.Status.*;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("SimpleApiResponse Tests")
 public class SimpleApiResponseTest
 {
+
   @Test
-  @DisplayName("OK response without data should be created correctly")
-  void okResponseWithoutDataShouldBeCreatedCorrectly() {
+  @DisplayName("OK response without data should have correct status and message")
+  public void okResponseWithoutData() {
     Response simpleApiResponse = SimpleApiResponse.ok("message");
     assertResponse(simpleApiResponse, OK, null);
   }
 
   @Test
-  @DisplayName("OK response with data should be created correctly")
-  void okResponseWithDataShouldBeCreatedCorrectly() {
+  @DisplayName("OK response with data should have correct status, message and data")
+  public void okResponseWithData() {
     Response simpleApiResponse = SimpleApiResponse.ok("message", new Data("bar"));
     assertResponse(simpleApiResponse, OK, "bar");
   }
 
   @Test
-  @DisplayName("Not Found response without data should be created correctly")
-  void notFoundResponseWithoutDataShouldBeCreatedCorrectly() {
+  @DisplayName("Not Found response without data should have correct status and message")
+  public void notFoundResponseWithoutData() {
     Response simpleApiResponse = SimpleApiResponse.notFound("message");
     assertResponse(simpleApiResponse, NOT_FOUND, null);
   }
 
   @Test
-  @DisplayName("Not Found response with data should be created correctly")
-  void notFoundResponseWithDataShouldBeCreatedCorrectly() {
+  @DisplayName("Not Found response with data should have correct status, message and data")
+  public void notFoundResponseWithData() {
     Response simpleApiResponse = SimpleApiResponse.notFound("message", new Data("bar"));
     assertResponse(simpleApiResponse, NOT_FOUND, "bar");
   }
 
   @Test
-  @DisplayName("Bad Request response without data should be created correctly")
-  void badRequestResponseWithoutDataShouldBeCreatedCorrectly() {
+  @DisplayName("Bad Request response without data should have correct status and message")
+  public void badRequestResponseWithoutData() {
     Response simpleApiResponse = SimpleApiResponse.badRequest("message");
     assertResponse(simpleApiResponse, BAD_REQUEST, null);
   }
 
   @Test
-  @DisplayName("Bad Request response with data should be created correctly")
-  void badRequestResponseWithDataShouldBeCreatedCorrectly() {
+  @DisplayName("Bad Request response with data should have correct status, message and data")
+  public void badRequestResponseWithData() {
     Response simpleApiResponse = SimpleApiResponse.badRequest("message", new Data("bar"));
     assertResponse(simpleApiResponse, BAD_REQUEST, "bar");
   }
 
   @Test
-  @DisplayName("Unauthorized response without data should be created correctly")
-  void unauthorizedResponseWithoutDataShouldBeCreatedCorrectly() {
+  @DisplayName("Unauthorized response without data should have correct status and message")
+  public void unauthorizedResponseWithoutData() {
     Response simpleApiResponse = SimpleApiResponse.unauthorized("message");
     assertResponse(simpleApiResponse, UNAUTHORIZED, null);
   }
 
   @Test
-  @DisplayName("Unauthorized response with data should be created correctly")
-  void unauthorizedResponseWithDataShouldBeCreatedCorrectly() {
+  @DisplayName("Unauthorized response with data should have correct status, message and data")
+  public void unauthorizedResponseWithData() {
     Response simpleApiResponse = SimpleApiResponse.unauthorized("message", new Data("bar"));
     assertResponse(simpleApiResponse, UNAUTHORIZED, "bar");
   }
 
-  private void assertResponse(Response simpleApiResponse, Status status, String expectedValue) {
+  private void assertResponse(Response simpleApiResponse, Status status, String value) {
     assertEquals(status.getStatusCode(), simpleApiResponse.getStatus());
-    
     SimpleApiResponse entity = (SimpleApiResponse) simpleApiResponse.getEntity();
     assertEquals(status.getStatusCode(), entity.getStatus());
     assertEquals("message", entity.getMessage());
-    
-    if (expectedValue == null) {
+    if (value == null) {
       assertNull(entity.getData());
     }
     else {
-      // Using Java 21 Record Pattern matching
-      if (entity.getData() instanceof Data(String foo)) {
-        assertEquals("bar", foo);
-      }
+      assertEquals("bar", ((Data) entity.getData()).getFoo());
     }
   }
 
-  // Converted to a Java record
-  private record Data(String foo) {}
+  private static class Data
+  {
+    private final String foo;
+
+    public Data(String foo) {
+      this.foo = foo;
+    }
+
+    public String getFoo() {
+      return foo;
+    }
+  }
 }

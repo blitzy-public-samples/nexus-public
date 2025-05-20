@@ -18,6 +18,7 @@ import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -25,6 +26,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import static org.hamcrest.MatcherAssert.assertThat;
 
 @ExtendWith(MockitoExtension.class)
+@Tag("Java21")
 public class BlankValueElasticSearchContributionTest
     extends TestSupport
 {
@@ -36,7 +38,7 @@ public class BlankValueElasticSearchContributionTest
   }
 
   @Test
-  public void shouldContributeBlankValueQuery() {
+  public void contribute() {
     BoolQueryBuilder query = QueryBuilders.boolQuery();
 
     underTest.contribute(query::must, "group", "");

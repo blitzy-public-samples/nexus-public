@@ -13,7 +13,6 @@
 package org.sonatype.nexus.rest;
 
 import java.util.UUID;
-import java.util.concurrent.Future;
 
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.ExceptionMapper;
@@ -42,45 +41,33 @@ public abstract class ExceptionMapperSupport<E extends Throwable>
     // Generate unique identifier
     final String id = generateFaultId();
 
-    // Process the exception mapping on a virtual thread for improved concurrency
+    // debug/trace log exception details
+    if (log.isTraceEnabled()) {
+      log.trace(STR."(ID \{id}) Mapping exception: \{exception}", exception);
+    }
+    else {
+      log.debug(STR."(ID \{id}) Mapping exception: \{exception}");
+    }
+
+    // Prepare the response
+    Response response;
     try {
-      Future<Response> future = Thread.startVirtualThread(() -> {
-        // debug/trace log exception details
-        if (log.isTraceEnabled()) {
-          log.trace(STR."(ID \{id}) Mapping exception: \{exception}", exception);
-        }
-        else {
-          log.debug(STR."(ID \{id}) Mapping exception: \{exception}");
-        }
-
-        // Prepare the response
-        Response response;
-        try {
-          response = convert(exception, id);
-        }
-        catch (Exception e) {
-          log.warn(STR."(ID \{id}) Failed to map exception", e);
-          response = Response.serverError().entity(new FaultXO(id, e)).build();
-        }
-
-        // Add fault-id to the response as header
-        response.getHeaders().putSingle(X_SIESTA_FAULT_ID, id);
-
-        // Log terse (unless debug enabled) warning with fault details
-        final Object entity = response.getEntity();
-        log.warn(STR."(ID \{id}) Response: [\{response.getStatus()}] \{entity == null ? "(no entity/body)" : String.format("'%s'", entity)}; mapped from: \{exception}",
-            log.isDebugEnabled() ? exception : null);
-
-        return response;
-      }).join();
-      
-      return future;
+      response = convert(exception, id);
     }
     catch (Exception e) {
-      // If virtual thread execution fails, fall back to synchronous processing
-      log.error(STR."(ID \{id}) Virtual thread execution failed: \{e.getMessage()}", e);
-      return unexpectedResponse(e, id);
+      log.warn(STR."(ID \{id}) Failed to map exception", e);
+      response = Response.serverError().entity(new FaultXO(id, e)).build();
     }
+
+    // Add fault-id to the response as header
+    response.getHeaders().putSingle(X_SIESTA_FAULT_ID, id);
+
+    // Log terse (unless debug enabled) warning with fault details
+    final Object entity = response.getEntity();
+    log.warn(STR."(ID \{id}) Response: [\{response.getStatus()}] \{entity == null ? "(no entity/body)" : String.format("'%s'", entity)}; mapped from: \{exception}",
+        log.isDebugEnabled() ? exception : null);
+
+    return response;
   }
 
   private static String generateFaultId() {

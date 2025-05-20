@@ -15,10 +15,12 @@ package org.sonatype.nexus.repository.manager.internal;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.repository.Facet;
 import org.sonatype.nexus.repository.FacetSupport;
+import org.sonatype.nexus.testcommon.Java21TestGroup;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.experimental.categories.Category;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -27,6 +29,7 @@ import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @ExtendWith(MockitoExtension.class)
+@Category(Java21TestGroup.class)
 public class FacetLookupTest
     extends TestSupport
 {
@@ -65,7 +68,7 @@ public class FacetLookupTest
   }
 
   @Test
-  public void addAndGetFacet() {
+  public void shouldAddAndGetFacet() {
     MyExampleFacet facet1 = new MyExampleFacet();
     underTest.add(facet1);
 
@@ -74,7 +77,7 @@ public class FacetLookupTest
   }
 
   @Test
-  public void addAndGetFacetExposure() {
+  public void shouldAddAndGetFacetExposure() {
     MyExampleFacet facet1 = new MyExampleFacet();
     underTest.add(facet1);
 
@@ -92,13 +95,13 @@ public class FacetLookupTest
   }
 
   @Test
-  public void addFacetWithNothingExposed() {
+  public void shouldThrowExceptionWhenAddingFacetWithNothingExposed() {
     FacetNoExposure facet1 = new FacetNoExposure();
     assertThrows(Exception.class, () -> underTest.add(facet1));
   }
 
   @Test
-  public void addDuplicateFacetExposureDisallowed() {
+  public void shouldDisallowAddingDuplicateFacetExposure() {
     underTest.add(new MyExampleFacet());
     assertThrows(Exception.class, () -> underTest.add(new MyExampleFacet()));
   }

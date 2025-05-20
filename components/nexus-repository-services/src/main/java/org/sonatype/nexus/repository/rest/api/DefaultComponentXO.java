@@ -21,23 +21,12 @@ import com.fasterxml.jackson.annotation.JsonAnyGetter;
 
 /**
  * Component transfer object for REST APIs.
+ * Implementation of {@link ComponentXO} that uses Java 21 Record Patterns for efficient data handling.
  */
 public class DefaultComponentXO
     implements ComponentXO
 {
-  /**
-   * Immutable record representing component data.
-   */
-  private record ComponentData(
-      String id,
-      String group,
-      String name,
-      String version,
-      String repository,
-      String format,
-      List<AssetXO> assets
-  ) {}
-
+  // Using the ComponentData record from the interface
   private ComponentData data;
 
   public DefaultComponentXO() {
@@ -138,6 +127,11 @@ public class DefaultComponentXO
   public Map<String, Object> getExtraJsonAttributes() {
     return Collections.emptyMap();
   }
+  
+  @Override
+  public ComponentData asRecord() {
+    return data;
+  }
 
   @Override
   public boolean equals(Object o) {
@@ -149,8 +143,8 @@ public class DefaultComponentXO
     }
     
     // Using record pattern matching for type-safe comparison
-    if (o instanceof DefaultComponentXO other) {
-      return Objects.equals(data.id(), other.data.id());
+    if (o instanceof DefaultComponentXO(var otherData)) {
+      return Objects.equals(data.id(), otherData.id());
     }
     return false;
   }

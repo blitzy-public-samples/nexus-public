@@ -14,6 +14,7 @@ package org.sonatype.nexus.repository.manager.internal;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -87,22 +88,30 @@ public class RepositoryAuditor
   @AllowConcurrentEvents
   public void on(final RepositoryEvent event) {
     if (isRecording()) {
-      Repository repository = event.getRepository();
-      AuditData data = getAuditData(repository.getName());
-      data.setType(type(event.getClass()));
+      // Use Virtual Thread to handle event processing asynchronously
+      Thread.startVirtualThread(() -> {
+        try {
+          Repository repository = event.getRepository();
+          AuditData data = getAuditData(repository.getName());
+          data.setType(type(event.getClass()));
 
-      if (event instanceof RepositoryCreatedEvent || event instanceof RepositoryUpdatedEvent) {
-        data.setAttributes(createFullAttributes(repository));
-      }
-      else {
-        Map<String, Object> attributes = createSimple(repository);
-        if (event instanceof RemoteConnectionStatusEvent) {
-          attributes.put("statusType", ((RemoteConnectionStatusEvent) event).getStatus().getType());
+          if (event instanceof RepositoryCreatedEvent || event instanceof RepositoryUpdatedEvent) {
+            data.setAttributes(createFullAttributes(repository));
+          }
+          else {
+            Map<String, Object> attributes = createSimple(repository);
+            if (event instanceof RemoteConnectionStatusEvent) {
+              attributes.put("statusType", ((RemoteConnectionStatusEvent) event).getStatus().getType());
+            }
+            data.setAttributes(attributes);
+          }
+
+          record(data);
+        } 
+        catch (Exception e) {
+          log.error(STR."Error processing repository event: \{e.getMessage()}", e);
         }
-        data.setAttributes(attributes);
-      }
-
-      record(data);
+      });
     }
   }
 
@@ -110,9 +119,17 @@ public class RepositoryAuditor
   @AllowConcurrentEvents
   public void on(final RepositoryCacheInvalidationEvent event) {
     if (isRecording()) {
-      AuditData data = getAuditData(event.getRepositoryName());
-      data.setType(type(event.getClass()));
-      record(data);
+      // Use Virtual Thread to handle cache invalidation events asynchronously
+      Thread.startVirtualThread(() -> {
+        try {
+          AuditData data = getAuditData(event.getRepositoryName());
+          data.setType(type(event.getClass()));
+          record(data);
+        }
+        catch (Exception e) {
+          log.error(STR."Error processing cache invalidation event: \{e.getMessage()}", e);
+        }
+      });
     }
   }
 
@@ -120,6 +137,11 @@ public class RepositoryAuditor
     AuditData data = new AuditData();
     data.setDomain(DOMAIN);
     data.setContext(repositoryName);
+    
+    if (log.isTraceEnabled()) {
+      log.trace(STR."Created audit data for repository \{repositoryName} in domain \{DOMAIN}");
+    }
+    
     return data;
   }
 
@@ -132,16 +154,32 @@ public class RepositoryAuditor
 
       AbstractApiRepository apiObject = convert(repository);
 
-      ObjectWriter writer = mapper.writerFor(apiObject.getClass());
+      // Use CompletableFuture to perform JSON serialization asynchronously with Virtual Threads
+      CompletableFuture<String> jsonFuture = CompletableFuture.supplyAsync(() -> {
+        try {
+          ObjectWriter writer = mapper.writerFor(apiObject.getClass());
+          return writer.writeValueAsString(apiObject);
+        } 
+        catch (Exception e) {
+          throw new RuntimeException(STR."JSON serialization failed: \{e.getMessage()}", e);
+        }
+      });
 
-      String json = writer.writeValueAsString(apiObject);
+      // Use CompletableFuture to perform JSON deserialization asynchronously
+      CompletableFuture<Map<String, Object>> mapFuture = jsonFuture.thenApplyAsync(json -> {
+        try {
+          return mapper.readerFor(new TypeReference<Map<String, Object>>() {}).readValue(json);
+        } 
+        catch (Exception e) {
+          throw new RuntimeException(STR."JSON deserialization failed: \{e.getMessage()}", e);
+        }
+      });
 
-      return mapper.readerFor(new TypeReference<Map<String, Object>>()
-      {
-      }).readValue(json);
+      // Get the result, which will block until the computation is complete
+      return mapFuture.join();
     }
     catch (Exception e) {
-      log.error("Failed to convert repo object falling back to simple", e);
+      log.error(STR."Failed to convert repository object falling back to simple: \{e.getMessage()}", e);
       return createSimple(repository);
     }
     finally {
@@ -152,15 +190,22 @@ public class RepositoryAuditor
   }
 
   private Map<String, Object> createSimple(final Repository repository) {
-    Map<String, Object> attributes = new HashMap<>();
-    attributes.put("name", repository.getName());
-    attributes.put("type", repository.getType().getValue());
-    attributes.put("format", repository.getFormat().getValue());
+    // Use Java 21 Map.of for small immutable maps when possible
+    // For larger maps or when we need to conditionally add entries, use HashMap with putAll
+    Map<String, Object> attributes = new HashMap<>(Map.of(
+        "name", repository.getName(),
+        "type", repository.getType().getValue(),
+        "format", repository.getFormat().getValue()
+    ));
     return attributes;
-
   }
 
   private AbstractApiRepository convert(final Repository repository) {
-    return convertersByFormat.getOrDefault(repository.getFormat().getValue(), defaultAdapter).adapt(repository);
+    String formatValue = repository.getFormat().getValue();
+    // Use Java 21 String Templates for more readable logging if needed
+    if (log.isDebugEnabled()) {
+      log.debug(STR."Converting repository \{repository.getName()} with format \{formatValue}");
+    }
+    return convertersByFormat.getOrDefault(formatValue, defaultAdapter).adapt(repository);
   }
 }

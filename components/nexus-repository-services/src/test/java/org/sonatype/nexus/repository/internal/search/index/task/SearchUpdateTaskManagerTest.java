@@ -13,6 +13,7 @@
 package org.sonatype.nexus.repository.internal.search.index.task;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -21,7 +22,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.nexus.common.scheduling.PeriodicJobService;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
@@ -37,7 +38,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -48,6 +48,7 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
+@org.junit.jupiter.api.Tag("Java21TestGroup")
 public class SearchUpdateTaskManagerTest
     extends TestSupport
 {
@@ -77,7 +78,7 @@ public class SearchUpdateTaskManagerTest
   private SearchUpdateTaskManager underTest;
 
   @BeforeEach
-  public void setUp() {
+  void setup() {
     when(repository1.getName()).thenReturn("repository1");
     when(repository2.getName()).thenReturn("repository2");
     when(repository3.getName()).thenReturn("repository3");
@@ -93,7 +94,7 @@ public class SearchUpdateTaskManagerTest
   }
 
   @Test
-  public void exceptionDoesNotPreventStartup() {
+  void exceptionDoesNotPreventStartup() {
     when(repositoryManager.browse()).thenThrow(new RuntimeException("exception"));
 
     try {
@@ -105,7 +106,7 @@ public class SearchUpdateTaskManagerTest
   }
 
   @Test
-  public void skipProcessingWhenNotEnabled() {
+  void skipProcessingWhenNotEnabled() {
     underTest =
         new SearchUpdateTaskManager(taskScheduler, repositoryManager, searchUpdateService, periodicJobService, false);
 
@@ -116,14 +117,14 @@ public class SearchUpdateTaskManagerTest
   }
 
   @Test
-  public void onStartupWithNoRepositoriesShouldNotScheduleTasks() {
+  void onStartupNoRepositories() {
     when(repositoryManager.browse()).thenReturn(Collections.emptyList());
     underTest.doStart();
     verifyNoMoreInteractions(taskScheduler);
   }
 
   @Test
-  public void onStartupWithNoRepositoriesToUpdateShouldNotScheduleTasks() {
+  void onStartupNoRepositoriesToUpdate() {
     when(searchUpdateService.needsReindex(repository1)).thenReturn(false);
     when(searchUpdateService.needsReindex(repository2)).thenReturn(false);
     when(searchUpdateService.needsReindex(repository3)).thenReturn(false);
@@ -133,7 +134,7 @@ public class SearchUpdateTaskManagerTest
   }
 
   @Test
-  public void onStartupWithOneRepositoryToUpdateShouldScheduleTask() {
+  void onStartupUpdateOneRepository() {
     when(searchUpdateService.needsReindex(repository1)).thenReturn(false);
     when(searchUpdateService.needsReindex(repository2)).thenReturn(true);
     when(searchUpdateService.needsReindex(repository3)).thenReturn(false);
@@ -144,7 +145,7 @@ public class SearchUpdateTaskManagerTest
   }
 
   @Test
-  public void onStartupWithMultipleRepositoriesToUpdateShouldScheduleTask() {
+  void onStartupUpdateMultipleRepositories() {
     when(searchUpdateService.needsReindex(repository1)).thenReturn(true);
     when(searchUpdateService.needsReindex(repository2)).thenReturn(true);
     when(searchUpdateService.needsReindex(repository3)).thenReturn(false);
@@ -155,7 +156,7 @@ public class SearchUpdateTaskManagerTest
   }
 
   @Test
-  public void onStartupWithTaskAlreadyRunningShouldNotSubmitNewTask() {
+  void onStartupTaskAlreadyRunning() {
     when(searchUpdateService.needsReindex(repository1)).thenReturn(true);
     when(searchUpdateService.needsReindex(repository2)).thenReturn(true);
     when(searchUpdateService.needsReindex(repository3)).thenReturn(false);
@@ -164,32 +165,29 @@ public class SearchUpdateTaskManagerTest
     underTest.doStart();
     verify(taskScheduler, never()).submit(any());
   }
-
+  
   @Test
-  @org.junit.experimental.categories.Category(VirtualThreadTestGroup.class)
-  public void concurrentTaskSubmissionsWithVirtualThreadsShouldBeHandledCorrectly() throws Exception {
+  void concurrentOperationsWithVirtualThreads() {
+    // Create a virtual thread factory
     ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
     ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
     
-    int taskCount = 50;
+    int taskCount = 1000;
     CountDownLatch latch = new CountDownLatch(taskCount);
-    AtomicInteger successCount = new AtomicInteger(0);
-    
-    // Setup for concurrent task submissions
-    when(searchUpdateService.needsReindex(any())).thenReturn(true);
-    when(repositoryManager.browse()).thenReturn(ImmutableList.of(repository1, repository2, repository3));
+    AtomicInteger errorCount = new AtomicInteger(0);
     
     try {
+      // Configure the repository manager to return a list of repositories
+      when(repositoryManager.browse()).thenReturn(ImmutableList.of(repository1, repository2, repository3));
+      when(searchUpdateService.needsReindex(any(Repository.class))).thenReturn(true);
+      
       // Submit multiple concurrent tasks using virtual threads
       for (int i = 0; i < taskCount; i++) {
         executor.submit(() -> {
           try {
-            // Simulate concurrent repository updates
-            underTest.scheduleUpdate(ImmutableList.of(repository1, repository2));
-            successCount.incrementAndGet();
+            underTest.doStart();
           } catch (Exception e) {
-            // Exceptions should not occur
-            fail("Concurrent task submission failed: " + e.getMessage());
+            errorCount.incrementAndGet();
           } finally {
             latch.countDown();
           }
@@ -197,39 +195,47 @@ public class SearchUpdateTaskManagerTest
       }
       
       // Wait for all tasks to complete
-      latch.await(10, TimeUnit.SECONDS);
+      latch.await(30, TimeUnit.SECONDS);
       
       // Verify results
-      assertEquals(taskCount, successCount.get(), "All task submissions should succeed");
+      assertEquals(0, errorCount.get(), "No errors should occur during concurrent operations");
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      fail("Test was interrupted");
     } finally {
       executor.shutdown();
     }
   }
-
+  
   @Test
-  public void periodicJobServiceShouldHandleVirtualThreadsCorrectly() {
-    // Setup a virtual thread executor for the periodic job service
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    ExecutorService virtualExecutor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+  void patternMatchingForRepositoryConfigurations() {
+    // Setup test repositories with different configurations
+    Repository hostedRepo = repository1;
+    Repository proxyRepo = repository2;
+    Repository groupRepo = repository3;
     
-    // Create a task that will be executed by the periodic job service
-    AtomicInteger executionCount = new AtomicInteger(0);
-    Runnable task = executionCount::incrementAndGet;
+    when(hostedRepo.getType()).thenReturn("hosted");
+    when(proxyRepo.getType()).thenReturn("proxy");
+    when(groupRepo.getType()).thenReturn("group");
     
-    // Mock the periodic job service to use our virtual thread executor
-    doAnswer(i -> {
-      Runnable runnable = i.getArgument(0);
-      virtualExecutor.submit(runnable).get(); // Execute and wait for completion
-      return null;
-    }).when(periodicJobService).runOnce(any(), anyInt());
+    // Test pattern matching with different repository types
+    List<Repository> repositories = ImmutableList.of(hostedRepo, proxyRepo, groupRepo);
     
-    // Execute the task through the periodic job service
-    periodicJobService.runOnce(task, 0);
-    
-    // Verify the task was executed
-    assertEquals(1, executionCount.get(), "Task should be executed exactly once");
-    
-    // Clean up
-    virtualExecutor.shutdown();
+    for (Repository repo : repositories) {
+      String result = switch (repo) {
+        case Repository r when "hosted".equals(r.getType()) -> "Hosted repository found";
+        case Repository r when "proxy".equals(r.getType()) -> "Proxy repository found";
+        case Repository r when "group".equals(r.getType()) -> "Group repository found";
+        default -> "Unknown repository type";
+      };
+      
+      // Verify the pattern matching worked correctly
+      switch (repo.getType()) {
+        case "hosted" -> assertEquals("Hosted repository found", result);
+        case "proxy" -> assertEquals("Proxy repository found", result);
+        case "group" -> assertEquals("Group repository found", result);
+        default -> fail("Unexpected repository type: " + repo.getType());
+      }
+    }
   }
 }

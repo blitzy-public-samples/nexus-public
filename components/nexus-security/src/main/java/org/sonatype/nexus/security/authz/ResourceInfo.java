@@ -12,79 +12,61 @@
  */
 package org.sonatype.nexus.security.authz;
 
+import java.io.Serializable;
+
 /**
  * Resource info collects the description of HOW and WHAT has been accessed.
+ * <p>
+ * Implemented as a Java 21 Record for improved immutability and reduced boilerplate.
  */
-public class ResourceInfo
+public record ResourceInfo(
+    String accessProtocol,
+    String accessMethod,
+    String action,
+    String accessedUri
+) implements Serializable
 {
-  private final String accessProtocol;
-
-  private final String accessMethod;
-
-  private final String action;
-
-  private final String accessedUri;
-
-  public ResourceInfo(final String accessProtocol,
-                      final String accessMethod,
-                      final String action,
-                      final String accessedUri)
-  {
-    this.accessProtocol = accessProtocol;
-    this.accessMethod = accessMethod;
-    this.action = action;
-    this.accessedUri = accessedUri;
-  }
-
+  /**
+   * Returns the access protocol.
+   * 
+   * @return the access protocol
+   * @deprecated Use {@link #accessProtocol()} instead (record accessor method)
+   */
+  @Deprecated
   public String getAccessProtocol() {
     return accessProtocol;
   }
 
+  /**
+   * Returns the access method.
+   * 
+   * @return the access method
+   * @deprecated Use {@link #accessMethod()} instead (record accessor method)
+   */
+  @Deprecated
   public String getAccessMethod() {
     return accessMethod;
   }
 
+  /**
+   * Returns the action.
+   * 
+   * @return the action
+   * @deprecated Use {@link #action()} instead (record accessor method)
+   */
+  @Deprecated
   public String getAction() {
     return action;
   }
 
+  /**
+   * Returns the accessed URI.
+   * 
+   * @return the accessed URI
+   * @deprecated Use {@link #accessedUri()} instead (record accessor method)
+   */
+  @Deprecated
   public String getAccessedUri() {
     return accessedUri;
-  }
-
-  @Override
-  public boolean equals(final Object o) {
-    if (this == o) {
-      return true;
-    }
-    if (o == null || getClass() != o.getClass()) {
-      return false;
-    }
-
-    ResourceInfo that = (ResourceInfo) o;
-
-    if (accessMethod != null ? !accessMethod.equals(that.accessMethod) : that.accessMethod != null) {
-      return false;
-    }
-    if (accessProtocol != null ? !accessProtocol.equals(that.accessProtocol) : that.accessProtocol != null) {
-      return false;
-    }
-    if (accessedUri != null ? !accessedUri.equals(that.accessedUri) : that.accessedUri != null) {
-      return false;
-    }
-    if (action != null ? !action.equals(that.action) : that.action != null) {
-      return false;
-    }
-
-    return true;
-  }
-
-  @Override
-  public int hashCode() {
-    int result = accessProtocol != null ? accessProtocol.hashCode() : 0;
-    result = 31 * result + (accessMethod != null ? accessMethod.hashCode() : 0);
-    result = 31 * result + (action != null ? action.hashCode() : 0);
-    result = 31 * result + (accessedUri != null ? accessedUri.hashCode() : 0);
-    return result;
   }
 }

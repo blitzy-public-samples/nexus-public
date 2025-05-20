@@ -15,10 +15,12 @@ package org.sonatype.nexus.repository.json;
 import java.util.Map;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
 
 import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.deser.std.StdValueInstantiator;
+import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,9 +28,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static com.google.common.collect.Maps.newHashMap;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.equalTo;
 import static org.mockito.Mockito.when;
 
+@Category(Java21TestGroup.class)
 @ExtendWith(MockitoExtension.class)
 public class NestedAttributesMapStdValueInstantiatorTest
     extends TestSupport
@@ -53,7 +57,7 @@ public class NestedAttributesMapStdValueInstantiatorTest
   }
 
   @Test
-  public void assure_CreateUsingDefault_Returns_backing() {
-    assertEquals(map, underTest.createUsingDefault(context));
+  public void shouldReturnBackingMapWhenCreatingUsingDefault() {
+    assertThat(underTest.createUsingDefault(context), equalTo(map));
   }
 }

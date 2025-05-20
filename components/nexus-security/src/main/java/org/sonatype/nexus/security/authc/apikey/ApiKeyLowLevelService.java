@@ -13,7 +13,7 @@
 package org.sonatype.nexus.security.authc.apikey;
 
 import java.time.OffsetDateTime;
-import java.util.Collection;
+import java.util.SequencedCollection;
 
 import javax.annotation.Nullable;
 
@@ -26,35 +26,53 @@ public interface ApiKeyLowLevelService extends ApiKeyService
 {
   /**
    * Browse tokens in the domain
+   * 
+   * @return a sequenced collection of API keys
    */
-  Collection<ApiKey> browse(String domain);
+  SequencedCollection<ApiKey> browse(String domain);
 
   /**
    * Browse tokens in the domain created after the provided date
+   * 
+   * @return a sequenced collection of API keys created after the specified date
    */
-  Collection<ApiKey> browseByCreatedDate(String domain, OffsetDateTime date);
+  SequencedCollection<ApiKey> browseByCreatedDate(String domain, OffsetDateTime date);
 
   /**
    * Browse tokens in the domain (paginated)
+   * 
+   * @return a sequenced collection of API keys for the specified page
    */
-  Collection<ApiKey> browsePaginated(String domain, int page, int pageSize);
+  SequencedCollection<ApiKey> browsePaginated(String domain, int page, int pageSize);
 
   /**
    * Persists an API-Key with a predetermined value.
+   * Uses enhanced pattern matching to handle different input scenarios.
    *
    * @since 3.1
    */
   default void persistApiKey(final String domain, final PrincipalCollection principals, final char[] apiKey) {
-    persistApiKey(domain, principals, apiKey, null);
+    // Using Java 21 pattern matching for switch to handle different cases
+    switch (domain) {
+      case null -> throw new IllegalArgumentException("Domain cannot be null");
+      case String s when s.isEmpty() -> throw new IllegalArgumentException("Domain cannot be empty");
+      default -> persistApiKey(domain, principals, apiKey, null);
+    }
   }
 
   /**
    * Persists an API-Key with a predetermined value.
+   * 
+   * @implNote Implementations should utilize Virtual Threads for this I/O-bound operation
+   *           to improve scalability and performance when handling multiple concurrent requests.
    */
   void persistApiKey(String domain, PrincipalCollection principals, char[] apiKey, @Nullable OffsetDateTime created);
 
   /**
    * Updates an existing API-key.
+   * 
+   * @implNote Implementations should utilize Virtual Threads for this I/O-bound operation
+   *           to improve scalability and performance when handling multiple concurrent requests.
    */
   void updateApiKeyRealm(ApiKey from, PrincipalCollection newPrincipal);
 }

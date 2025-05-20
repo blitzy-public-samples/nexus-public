@@ -18,7 +18,19 @@
   "multi-null-field": null,
   "multi-depth": {
     "first": {
-      "title": "This is the first depth"
+      "title": "This is the first depth",
+      "variants": [
+        {
+          "type": "variant1",
+          "value": 42,
+          "active": true
+        },
+        {
+          "type": "variant2",
+          "value": "string value",
+          "active": false
+        }
+      ]
     }
   },
   "reverse-multi-depth": {
@@ -28,7 +40,12 @@
         "title": "This is the second depth",
         "third": {
           "title": "This is the third depth",
-          "description": "The first file has a description for reversegodeep third"
+          "description": "The first file has a description for reversegodeep third",
+          "metadata": {
+            "created": "2023-01-01T12:00:00Z",
+            "modified": "2023-02-15T09:30:00Z",
+            "tags": ["test", "json", "pattern-matching"]
+          }
         }
       }
     }
@@ -49,5 +66,101 @@
         }
       }
     }
+  },
+  "recordPatterns": {
+    "person": {
+      "id": 1001,
+      "name": "John Doe",
+      "email": "john.doe@example.com",
+      "address": {
+        "street": "123 Main St",
+        "city": "Anytown",
+        "zipCode": "12345",
+        "coordinates": {
+          "latitude": 40.7128,
+          "longitude": -74.0060
+        }
+      },
+      "phoneNumbers": [
+        {
+          "type": "home",
+          "number": "555-1234"
+        },
+        {
+          "type": "work",
+          "number": "555-5678"
+        }
+      ]
+    },
+    "employees": [
+      {
+        "id": 1,
+        "name": "Alice Smith",
+        "department": "Engineering",
+        "position": {
+          "title": "Senior Developer",
+          "level": 4,
+          "responsibilities": ["coding", "mentoring", "architecture"]
+        }
+      },
+      {
+        "id": 2,
+        "name": "Bob Johnson",
+        "department": "Marketing",
+        "position": {
+          "title": "Marketing Specialist",
+          "level": 3,
+          "responsibilities": ["campaigns", "social media"]
+        }
+      }
+    ],
+    "mixedTypes": [
+      {
+        "type": "string",
+        "value": "text value"
+      },
+      {
+        "type": "number",
+        "value": 42.5
+      },
+      {
+        "type": "boolean",
+        "value": true
+      },
+      {
+        "type": "object",
+        "value": {
+          "key1": "value1",
+          "key2": "value2"
+        }
+      },
+      {
+        "type": "array",
+        "value": [1, 2, 3, 4]
+      }
+    ]
+  },
+  "stringTemplates": {
+    "simpleText": "This is a simple text for string templates",
+    "withQuotes": "Text with \"double quotes\" and 'single quotes'",
+    "withBackslashes": "C:\\Program Files\\Java\\jdk-21",
+    "withSpecialChars": "Special chars: \u00A9 \u00AE \u2122 \u20AC \u00A3 \u00A5",
+    "withFormatting": "Value is ${value} and status is ${status}",
+    "withEscaping": "To use a variable like ${name}, you need to escape it",
+    "multiline": "This is a multiline\nstring template\nwith several\nlines of text",
+    "withHtml": "<div class=\"container\">\n  <h1>Title</h1>\n  <p>Content</p>\n</div>"
+  },
+  "jacksonCompatibility": {
+    "emptyObject": {},
+    "emptyArray": [],
+    "nullInArray": [1, null, 3],
+    "specialNumbers": {
+      "nan": "NaN",
+      "infinity": "Infinity",
+      "negativeInfinity": "-Infinity",
+      "maxInt": 9007199254740991,
+      "minInt": -9007199254740991
+    },
+    "unicode": "\u0000\u0001\u0002\u0003"
   }
 }

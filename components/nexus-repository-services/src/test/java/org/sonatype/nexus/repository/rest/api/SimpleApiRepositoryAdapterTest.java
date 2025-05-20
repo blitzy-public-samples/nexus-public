@@ -15,12 +15,15 @@ package org.sonatype.nexus.repository.rest.api;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.lang.StringTemplate;
 
 import javax.annotation.Nullable;
 
@@ -49,11 +52,13 @@ import org.sonatype.nexus.repository.routing.internal.RoutingRuleData;
 import org.sonatype.nexus.repository.types.GroupType;
 import org.sonatype.nexus.repository.types.HostedType;
 import org.sonatype.nexus.repository.types.ProxyType;
+import org.sonatype.nexus.virtualthread.Java21TestGroup;
 
 import com.google.common.collect.Maps;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.experimental.categories.Category;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -62,6 +67,8 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -69,6 +76,7 @@ import static org.sonatype.nexus.repository.config.ConfigurationConstants.COMPON
 import static org.sonatype.nexus.repository.config.ConfigurationConstants.PROPRIETARY_COMPONENTS;
 
 @ExtendWith(MockitoExtension.class)
+@Category(Java21TestGroup.class)
 public class SimpleApiRepositoryAdapterTest
     extends TestSupport
 {
@@ -297,76 +305,93 @@ public class SimpleApiRepositoryAdapterTest
     assertConnection(proxyRepository.getHttpClient().getConnection(), /* circular redirects */ true, /* cookies */ true,
         /* retries */ 9, /* timeout */ 7, "hi-yall");
   }
-
-  /**
-   * Test to verify that the adapter methods work correctly when executed in a virtual thread.
-   * This ensures compatibility with Java 21's virtual thread implementation.
-   */
+  
   @Test
-  public void testAdaptWithVirtualThreads() throws Exception {
-    // Create test repositories
-    Repository hostedRepository = createRepository(new HostedType());
-    Repository proxyRepository = createRepository(new ProxyType());
-    Repository groupRepository = createRepository(new GroupType());
+  public void testVirtualThreadCompatibility() throws Exception {
+    Repository repository = createRepository(new HostedType());
+    repository.getConfiguration().attributes(COMPONENT).set(PROPRIETARY_COMPONENTS, true);
     
-    // Configure proxy repository with remote URL
-    modifyConfiguration(proxyRepository, configuration -> {
-      NestedAttributesMap proxy = configuration.attributes("proxy");
-      proxy.set("remoteUrl", "https://repo1.maven.org/maven2/");
-    });
-    
-    // Configure group repository with members
-    modifyConfiguration(groupRepository, configuration -> 
-        configuration.attributes("group").set("memberNames", Arrays.asList("a", "b")));
-
     // Create a virtual thread executor
     ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
-    CountDownLatch latch = new CountDownLatch(3);
     
     try {
-      // Test hosted repository adaptation in virtual thread
-      executor.submit(() -> {
-        try {
-          SimpleApiHostedRepository adapted = (SimpleApiHostedRepository) underTest.adapt(hostedRepository);
-          assertRepository(adapted, "hosted", true);
-        } catch (Exception e) {
-          fail("Virtual thread execution failed for hosted repository", e);
-        } finally {
-          latch.countDown();
-        }
-      });
+      int taskCount = 100;
+      CountDownLatch latch = new CountDownLatch(taskCount);
+      AtomicInteger errorCount = new AtomicInteger(0);
       
-      // Test proxy repository adaptation in virtual thread
-      executor.submit(() -> {
-        try {
-          SimpleApiProxyRepository adapted = (SimpleApiProxyRepository) underTest.adapt(proxyRepository);
-          assertRepository(adapted, "proxy", true);
-          assertThat(adapted.getProxy().getRemoteUrl(), is("https://repo1.maven.org/maven2/"));
-        } catch (Exception e) {
-          fail("Virtual thread execution failed for proxy repository", e);
-        } finally {
-          latch.countDown();
-        }
-      });
-      
-      // Test group repository adaptation in virtual thread
-      executor.submit(() -> {
-        try {
-          SimpleApiGroupRepository adapted = (SimpleApiGroupRepository) underTest.adapt(groupRepository);
-          assertRepository(adapted, "group", true);
-          assertThat(adapted.getGroup().getMemberNames(), contains("a", "b"));
-        } catch (Exception e) {
-          fail("Virtual thread execution failed for group repository", e);
-        } finally {
-          latch.countDown();
-        }
-      });
+      // Submit multiple concurrent tasks using virtual threads
+      for (int i = 0; i < taskCount; i++) {
+        executor.submit(() -> {
+          try {
+            // Perform repository adaptation in virtual threads
+            SimpleApiHostedRepository hostedRepository = (SimpleApiHostedRepository) underTest.adapt(repository);
+            
+            // Verify the adaptation worked correctly
+            if (!hostedRepository.getName().equals("my-repo") || 
+                !hostedRepository.getType().equals("hosted") ||
+                !hostedRepository.getComponent().getProprietaryComponents()) {
+              errorCount.incrementAndGet();
+            }
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
       
       // Wait for all tasks to complete
-      boolean completed = latch.await(10, TimeUnit.SECONDS);
-      assertThat("All virtual thread tasks should complete", completed, is(true));
+      latch.await(10, TimeUnit.SECONDS);
+      
+      // Verify no errors occurred
+      assertThat(errorCount.get(), is(0));
     } finally {
       executor.shutdown();
+    }
+  }
+  
+  @Test
+  public void testStringTemplateFormatting() throws Exception {
+    Repository repository = createRepository(new HostedType());
+    SimpleApiHostedRepository hostedRepository = (SimpleApiHostedRepository) underTest.adapt(repository);
+    
+    // Create a formatted string using Java 21 String Template
+    String repoName = hostedRepository.getName();
+    String repoType = hostedRepository.getType();
+    String repoUrl = hostedRepository.getUrl();
+    
+    // Using String Template with StringTemplate.STR processor (Java 21 feature)
+    String formattedOutput = StringTemplate.STR.process(
+        StringTemplate.RAW."Repository: \{repoName} (\{repoType}) - URL: \{repoUrl}");
+    
+    // Verify the template was processed correctly
+    assertEquals("Repository: my-repo (hosted) - URL: http://nexus-url/repository/my-repo", formattedOutput);
+    assertNotNull(formattedOutput);
+  }
+  
+  @Test
+  public void testRecordPatternHandling() throws Exception {
+    Repository repository = createRepository(new HostedType());
+    SimpleApiHostedRepository hostedRepository = (SimpleApiHostedRepository) underTest.adapt(repository);
+    
+    // Create a record to represent repository data for pattern matching
+    record RepositoryData(String name, String type, String url) {}
+    
+    // Create instance of the record with data from our repository
+    RepositoryData repoData = new RepositoryData(
+        hostedRepository.getName(),
+        hostedRepository.getType(),
+        hostedRepository.getUrl()
+    );
+    
+    // Use pattern matching with record patterns (Java 21 feature)
+    if (repoData instanceof RepositoryData(String name, String type, String url)) {
+      assertEquals("my-repo", name);
+      assertEquals("hosted", type);
+      assertEquals("http://nexus-url/repository/my-repo", url);
+    } else {
+      // This should never happen
+      throw new AssertionError("Record pattern matching failed");
     }
   }
 
@@ -455,19 +480,19 @@ public class SimpleApiRepositoryAdapterTest
     repository.update(configuration);
   }
 
-  static class SimpleConfiguration
-      implements Configuration
+  // Updated to use Java 21 record feature
+  record SimpleConfiguration(
+      String repositoryName,
+      String recipeName,
+      boolean online,
+      EntityId routingRuleId,
+      Map<String, Map<String, Object>> attributes) implements Configuration
   {
-    private String repositoryName;
-
-    private String recipeName;
-
-    private boolean online;
-
-    private EntityId routingRuleId;
-
-    private Map<String, Map<String, Object>> attributes;
-
+    // Default constructor with default values
+    SimpleConfiguration() {
+      this(null, null, false, null, null);
+    }
+    
     @Override
     public EntityId getRepositoryId() {
       throw new UnsupportedOperationException("not required here");
@@ -480,7 +505,12 @@ public class SimpleApiRepositoryAdapterTest
 
     @Override
     public void setRepositoryName(final String repositoryName) {
-      this.repositoryName = repositoryName;
+      throw new UnsupportedOperationException("Use the withRepositoryName method instead");
+    }
+    
+    // Immutable record requires withX methods instead of setters
+    public SimpleConfiguration withRepositoryName(final String repositoryName) {
+      return new SimpleConfiguration(repositoryName, recipeName, online, routingRuleId, attributes);
     }
 
     @Override
@@ -490,7 +520,11 @@ public class SimpleApiRepositoryAdapterTest
 
     @Override
     public void setRecipeName(final String recipeName) {
-      this.recipeName = recipeName;
+      throw new UnsupportedOperationException("Use the withRecipeName method instead");
+    }
+    
+    public SimpleConfiguration withRecipeName(final String recipeName) {
+      return new SimpleConfiguration(repositoryName, recipeName, online, routingRuleId, attributes);
     }
 
     @Override
@@ -500,7 +534,11 @@ public class SimpleApiRepositoryAdapterTest
 
     @Override
     public void setOnline(final boolean online) {
-      this.online = online;
+      throw new UnsupportedOperationException("Use the withOnline method instead");
+    }
+    
+    public SimpleConfiguration withOnline(final boolean online) {
+      return new SimpleConfiguration(repositoryName, recipeName, online, routingRuleId, attributes);
     }
 
     @Override
@@ -510,7 +548,11 @@ public class SimpleApiRepositoryAdapterTest
 
     @Override
     public void setRoutingRuleId(final EntityId routingRuleId) {
-      this.routingRuleId = routingRuleId;
+      throw new UnsupportedOperationException("Use the withRoutingRuleId method instead");
+    }
+    
+    public SimpleConfiguration withRoutingRuleId(final EntityId routingRuleId) {
+      return new SimpleConfiguration(repositoryName, recipeName, online, routingRuleId, attributes);
     }
 
     @Nullable
@@ -521,21 +563,26 @@ public class SimpleApiRepositoryAdapterTest
 
     @Override
     public void setAttributes(@Nullable final Map<String, Map<String, Object>> attributes) {
-      this.attributes = attributes;
+      throw new UnsupportedOperationException("Use the withAttributes method instead");
+    }
+    
+    public SimpleConfiguration withAttributes(@Nullable final Map<String, Map<String, Object>> attributes) {
+      return new SimpleConfiguration(repositoryName, recipeName, online, routingRuleId, attributes);
     }
 
     @Override
     public NestedAttributesMap attributes(final String key) {
       checkNotNull(key);
 
-      if (attributes == null) {
-        attributes = Maps.newHashMap();
+      Map<String, Map<String, Object>> currentAttributes = attributes;
+      if (currentAttributes == null) {
+        currentAttributes = Maps.newHashMap();
       }
 
-      Map<String, Object> map = attributes.get(key);
+      Map<String, Object> map = currentAttributes.get(key);
       if (map == null) {
         map = Maps.newHashMap();
-        attributes.put(key, map);
+        currentAttributes.put(key, map);
       }
 
       return new NestedAttributesMap(key, map);

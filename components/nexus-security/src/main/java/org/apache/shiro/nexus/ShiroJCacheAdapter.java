@@ -16,7 +16,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Set;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.Executors;
 
 import javax.cache.Cache.Entry;
@@ -30,7 +30,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Shiro {@link javax.cache.Cache} to {@link Cache} adapter.
- * Updated for Java 21 and Shiro 2.0.0 compatibility with optimized collections and Virtual Threads support.
+ * Updated for Java 21 and Apache Shiro 2.0.0 compatibility.
  *
  * @since 3.0
  */
@@ -54,46 +54,48 @@ public class ShiroJCacheAdapter<K, V>
 
   @Override
   public V put(final K key, final V value) {
-    // Use Virtual Thread for potentially blocking cache operations
-    if (isLikelyToBlock()) {
-      return Executors.newVirtualThreadPerTaskExecutor().submit(() -> cache.getAndPut(key, value)).join();
+    // Use virtual thread for potentially blocking cache operation
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      return executor.submit(() -> cache.getAndPut(key, value)).join();
     }
-    return cache.getAndPut(key, value);
   }
 
   @Override
   public V remove(final K key) {
-    // Use Virtual Thread for potentially blocking cache operations
-    if (isLikelyToBlock()) {
-      return Executors.newVirtualThreadPerTaskExecutor().submit(() -> cache.getAndRemove(key)).join();
+    // Use virtual thread for potentially blocking cache operation
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      return executor.submit(() -> cache.getAndRemove(key)).join();
     }
-    return cache.getAndRemove(key);
   }
 
   // NOTE: This appears unused in Shiro, but used by NX
+  // Deprecated in Shiro 2.0.0 but maintained for backward compatibility
   @Override
+  @Deprecated(since = "Java 21 / Shiro 2.0.0", forRemoval = true)
   public void clear() {
-    // Use Virtual Thread for potentially blocking cache operations
-    if (isLikelyToBlock()) {
-      Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+    // Use virtual thread for potentially blocking cache operation
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      executor.submit(() -> {
         cache.clear();
         return null;
       }).join();
-    } else {
-      cache.clear();
     }
   }
 
   // NOTE: This appears unused in Shiro.
+  // Deprecated in Shiro 2.0.0 but maintained for backward compatibility
   @Override
+  @Deprecated(since = "Java 21 / Shiro 2.0.0", forRemoval = true)
   public int size() {
     return Iterables.size(cache);
   }
 
   // NOTE: This appears unused in Shiro.
+  // Deprecated in Shiro 2.0.0 but maintained for backward compatibility
   @Override
+  @Deprecated(since = "Java 21 / Shiro 2.0.0", forRemoval = true)
   public Set<K> keys() {
-    // Use LinkedHashSet (a Sequenced Collection) for better performance in Java 21
+    // Using LinkedHashSet which implements SequencedSet in Java 21
     Set<K> keys = new LinkedHashSet<>();
     for (Entry<K, V> entry : cache) {
       keys.add(entry.getKey());
@@ -103,37 +105,27 @@ public class ShiroJCacheAdapter<K, V>
 
   @Override
   public Collection<V> values() {
-    // Use ConcurrentLinkedQueue for better concurrent performance in Java 21
-    Collection<V> values = new ConcurrentLinkedQueue<>();
-    for (Entry<K, V> entry : cache) {
-      values.add(entry.getValue());
+    // Using ConcurrentLinkedDeque which implements SequencedCollection in Java 21
+    Collection<V> values = new ConcurrentLinkedDeque<>();
+    
+    // Use virtual thread for potentially blocking cache iteration
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      executor.submit(() -> {
+        for (Entry<K, V> entry : cache) {
+          values.add(entry.getValue());
+        }
+        return null;
+      }).join();
     }
+    
     return Collections.unmodifiableCollection(values);
-  }
-  
-  /**
-   * Determines if a cache operation is likely to block based on cache size or other heuristics.
-   * This helps decide when to use Virtual Threads for potentially blocking operations.
-   *
-   * @return true if the operation is likely to block
-   */
-  private boolean isLikelyToBlock() {
-    // Simple heuristic: if cache is large, operations might block
-    // This could be enhanced with more sophisticated detection
-    try {
-      int cacheSize = Iterables.size(cache);
-      return cacheSize > 1000; // Threshold for considering an operation potentially blocking
-    } catch (Exception e) {
-      log.debug("Error determining cache size, assuming non-blocking", e);
-      return false;
-    }
   }
 
   @Override
   public String toString() {
-    return getClass().getSimpleName() + "{" +
-        "cache=" + cache +
-        ", name='" + name + '\'' +
-        "}";
+    return getClass().getSimpleName() + "{"
+        + "cache=" + cache
+        + ", name='" + name + '\''
+        + '}';
   }
 }

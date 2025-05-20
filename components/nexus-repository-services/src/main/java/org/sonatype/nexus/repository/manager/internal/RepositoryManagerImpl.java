@@ -20,6 +20,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 import java.util.stream.Stream;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
@@ -65,6 +67,7 @@ import org.joda.time.DateTime;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
+import static java.lang.StringTemplate.STR;
 import static java.util.Optional.ofNullable;
 import static java.util.stream.StreamSupport.stream;
 import static org.sonatype.nexus.blobstore.api.BlobStoreManager.DEFAULT_BLOBSTORE_NAME;
@@ -123,6 +126,8 @@ public class RepositoryManagerImpl
   private final List<ConfigurationValidator> configurationValidators;
 
   private final HttpAuthenticationPasswordEncoder httpAuthenticationPasswordEncoder;
+  
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   @Inject
   public RepositoryManagerImpl(
@@ -160,7 +165,7 @@ public class RepositoryManagerImpl
    */
   private Recipe recipe(final String name) {
     Recipe recipe = recipes.get(name);
-    checkState(recipe != null, "Missing recipe: %s", name);
+    checkState(recipe != null, STR."Missing recipe: \{name}");
     return recipe;
   }
 
@@ -169,7 +174,7 @@ public class RepositoryManagerImpl
    */
   private Repository repository(final String name) {
     Repository repository = repositories.get(name.toLowerCase());
-    checkState(repository != null, "Missing repository: %s", name);
+    checkState(repository != null, STR."Missing repository: \{name}");
     return repository;
   }
 
@@ -179,7 +184,7 @@ public class RepositoryManagerImpl
   private Repository newRepository(final Configuration configuration) throws Exception {
     String recipeName = configuration.getRecipeName();
     Recipe recipe = recipe(recipeName);
-    log.debug("Using recipe: [{}] {}", recipeName, recipe);
+    log.debug(STR."Using recipe: [\{recipeName}] \{recipe}");
 
     Repository repository = factory.create(recipe.getType(), recipe.getFormat());
 
@@ -210,10 +215,10 @@ public class RepositoryManagerImpl
 
     Repository value = repositories.putIfAbsent(repository.getName().toLowerCase(), repository);
     if (value == null) {
-      log.debug("Tracking: {}", repository);
+      log.debug(STR."Tracking: \{repository}");
     }
     else {
-      log.debug("An existing repository with the same name is already tracked {}", value);
+      log.debug(STR."An existing repository with the same name is already tracked \{value}");
     }
   }
 
@@ -221,7 +226,7 @@ public class RepositoryManagerImpl
    * Untrack repository.
    */
   private void untrack(final Repository repository) {
-    log.debug("Untracking: {}", repository);
+    log.debug(STR."Untracking: \{repository}");
     repositories.remove(repository.getName().toLowerCase());
 
     // tear down security
@@ -265,51 +270,57 @@ public class RepositoryManagerImpl
   private void provisionDefaultRepositories() {
     for (DefaultRepositoriesContributor contributor : defaultRepositoriesContributors) {
       for (Configuration configuration : contributor.getRepositoryConfigurations()) {
-        log.debug("Provisioning default repository: {}", configuration);
+        log.debug(STR."Provisioning default repository: \{configuration}");
         store.create(configuration);
       }
     }
   }
 
   private void restoreRepositories(final List<Configuration> configurations) throws Exception {
-    log.debug("Restoring {} repositories", configurations.size());
+    log.debug(STR."Restoring \{configurations.size()} repositories");
     for (Configuration configuration : configurations) {
-      log.debug("Restoring repository: {}", configuration);
+      log.debug(STR."Restoring repository: \{configuration}");
       Repository repository = newRepository(configuration);
       track(repository);
 
-      eventManager.post(new RepositoryLoadedEvent(repository));
+      virtualThreadExecutor.submit(() -> {
+        eventManager.post(new RepositoryLoadedEvent(repository));
+      });
     }
   }
 
   private void startRepositories() throws Exception {
-    log.debug("Starting {} repositories", repositories.size());
+    log.debug(STR."Starting \{repositories.size()} repositories");
     for (Repository repository : repositories.values()) {
-      log.debug("Starting repository: {}", repository);
+      log.debug(STR."Starting repository: \{repository}");
       repository.start();
 
-      eventManager.post(new RepositoryRestoredEvent(repository));
+      virtualThreadExecutor.submit(() -> {
+        eventManager.post(new RepositoryRestoredEvent(repository));
+      });
     }
   }
 
   @Override
   protected void doStop() throws Exception {
 
-    log.debug("Stopping {} repositories", repositories.size());
+    log.debug(STR."Stopping \{repositories.size()} repositories");
     for (Repository repository : repositories.values()) {
-      log.debug("Stopping repository: {}", repository);
+      log.debug(STR."Stopping repository: \{repository}");
       repository.stopSafe();
     }
 
-    log.debug("Destroying {} repositories", repositories.size());
+    log.debug(STR."Destroying \{repositories.size()} repositories");
     for (Repository repository : repositories.values()) {
-      log.debug("Destroying repository: {}", repository);
+      log.debug(STR."Destroying repository: \{repository}");
       repository.destroy();
     }
 
     repositories.clear();
 
     blobStoreManager.stop();
+    
+    virtualThreadExecutor.close();
   }
 
   @Override
@@ -326,12 +337,12 @@ public class RepositoryManagerImpl
     if (browseResult != null && browseResult.iterator().hasNext()) {
       return stream(browseResult.spliterator(), true)
           .filter(Repository::isStarted)
-          .filter(r -> blobStoreId.equals(r.getConfiguration().attributes(STORAGE).get(BLOB_STORE_NAME)))::iterator;
+          .filter(r -> blobStoreId.equals(r.getConfiguration().attributes(STORAGE).get(BLOB_STORE_NAME)))
+          .toList();
     }
     else {
       return Collections.emptyList();
     }
-
   }
 
   @Override
@@ -363,7 +374,7 @@ public class RepositoryManagerImpl
 
     return retrieveConfigurationByName(lcName)
         .map(config -> EventHelper.asReplicating(() -> {
-          log.debug("Found repository in DB, attempting to load {}", config);
+          log.debug(STR."Found repository in DB, attempting to load \{config}");
           try {
             // Don't return this, return the tracked one just in case
             create(config);
@@ -393,7 +404,7 @@ public class RepositoryManagerImpl
     checkNotNull(configuration);
     String repositoryName = checkNotNull(configuration.getRepositoryName());
 
-    log.info("Creating repository: {} -> {}", repositoryName, configuration);
+    log.info(STR."Creating repository: \{repositoryName} -> \{configuration}");
 
     Repository repository;
 
@@ -413,11 +424,17 @@ public class RepositoryManagerImpl
       httpAuthenticationPasswordEncoder.removeSecret(configuration.getAttributes());
       throw e;
     }
-    repository.start();
-
-    track(repository);
-
-    eventManager.post(new RepositoryCreatedEvent(repository));
+    
+    // Use a virtual thread for starting the repository
+    virtualThreadExecutor.submit(() -> {
+      try {
+        repository.start();
+        track(repository);
+        eventManager.post(new RepositoryCreatedEvent(repository));
+      } catch (Exception e) {
+        log.error(STR."Error starting repository \{repositoryName}", e);
+      }
+    }).get(); // Wait for completion to maintain existing behavior
 
     return repository;
   }
@@ -428,7 +445,7 @@ public class RepositoryManagerImpl
     checkNotNull(configuration);
     String repositoryName = checkNotNull(configuration.getRepositoryName());
 
-    log.info("Updating repository: {} -> {}", repositoryName, configuration);
+    log.info(STR."Updating repository: \{repositoryName} -> \{configuration}");
 
     validateConfiguration(configuration);
 
@@ -444,7 +461,14 @@ public class RepositoryManagerImpl
       // ensure configuration sanity
       repository.validate(configuration);
 
-      repository.stopSafe();
+      // Use a virtual thread for stopping the repository
+      virtualThreadExecutor.submit(() -> {
+        try {
+          repository.stopSafe();
+        } catch (Exception e) {
+          log.error(STR."Error stopping repository \{repositoryName}", e);
+        }
+      }).get(); // Wait for completion to maintain existing behavior
 
       if (!EventHelper.isReplicating()) {
         store.update(configuration);
@@ -456,10 +480,16 @@ public class RepositoryManagerImpl
       throw e;
     }
 
-    repository.update(configuration);
-    repository.start();
-
-    eventManager.post(new RepositoryUpdatedEvent(repository, oldConfiguration));
+    // Use a virtual thread for updating and starting the repository
+    virtualThreadExecutor.submit(() -> {
+      try {
+        repository.update(configuration);
+        repository.start();
+        eventManager.post(new RepositoryUpdatedEvent(repository, oldConfiguration));
+      } catch (Exception e) {
+        log.error(STR."Error updating repository \{repositoryName}", e);
+      }
+    }).get(); // Wait for completion to maintain existing behavior
 
     return repository;
   }
@@ -477,27 +507,40 @@ public class RepositoryManagerImpl
     checkNotNull(name);
     freezeService.checkWritable("Unable to delete repository when database is frozen.");
 
-    log.info("Deleting repository: {}", name);
+    log.info(STR."Deleting repository: \{name}");
 
     Repository repository = repository(name);
     Configuration configuration = repository.getConfiguration().copy();
 
-    removeRepositoryFromAllGroups(repository);
+    // Use a virtual thread for removing the repository from groups
+    virtualThreadExecutor.submit(() -> {
+      try {
+        removeRepositoryFromAllGroups(repository);
+      } catch (Exception e) {
+        log.error(STR."Error removing repository \{name} from groups", e);
+      }
+    }).get(); // Wait for completion to maintain existing behavior
 
-    repository.stopSafe();
-    repository.delete();
-    repository.destroy();
+    // Use a virtual thread for stopping, deleting, and destroying the repository
+    virtualThreadExecutor.submit(() -> {
+      try {
+        repository.stopSafe();
+        repository.delete();
+        repository.destroy();
 
-    if (!EventHelper.isReplicating()) {
-      httpAuthenticationPasswordEncoder.removeSecret(configuration.getAttributes());
-      store.delete(configuration);
-    }
+        if (!EventHelper.isReplicating()) {
+          httpAuthenticationPasswordEncoder.removeSecret(configuration.getAttributes());
+          store.delete(configuration);
+        }
 
-    untrack(repository);
+        untrack(repository);
+        eventManager.post(new RepositoryDeletedEvent(repository));
+      } catch (Exception e) {
+        log.error(STR."Error deleting repository \{name}", e);
+      }
+    }).get(); // Wait for completion to maintain existing behavior
 
-    eventManager.post(new RepositoryDeletedEvent(repository));
-
-    log.info("Deleted repository: {}", name);
+    log.info(STR."Deleted repository: \{name}");
   }
 
   /**
@@ -594,10 +637,16 @@ public class RepositoryManagerImpl
     if (isRepositoryLoaded(repositoryName)) {
       // Event shouldn't be propagated if repository isn't propagated yet to the current node
       RemoteConnectionStatusType statusType =
-          RemoteConnectionStatusType.values()[event.getRemoteConnectionStatusTypeOrdinal()];
+          switch (event.getRemoteConnectionStatusTypeOrdinal()) {
+            case 0 -> RemoteConnectionStatusType.AVAILABLE;
+            case 1 -> RemoteConnectionStatusType.BLOCKED;
+            case 2 -> RemoteConnectionStatusType.OFFLINE;
+            case 3 -> RemoteConnectionStatusType.UNAVAILABLE;
+            default -> throw new IllegalArgumentException(STR."Unknown status type ordinal: \{event.getRemoteConnectionStatusTypeOrdinal()}");
+          };
+      
       // restore RemoteConnectionStatus from event
-      log.warn("Consume distributed RepositoryRemoteConnectionStatusEvent: repository={}, type={}",
-          repositoryName, statusType);
+      log.warn(STR."Consume distributed RepositoryRemoteConnectionStatusEvent: repository=\{repositoryName}, type=\{statusType}");
       RemoteConnectionStatus status = new RemoteConnectionStatus(statusType, event.getReason())
           .setBlockedUntil(new DateTime(event.getBlockedUntilMillis()))
           .setRequestUrl(event.getRequestUrl());

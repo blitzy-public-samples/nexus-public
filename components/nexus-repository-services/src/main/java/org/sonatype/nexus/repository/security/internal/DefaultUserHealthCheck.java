@@ -12,7 +12,6 @@
  */
 package org.sonatype.nexus.repository.security.internal;
 
-import java.util.Collection;
 import java.util.Optional;
 
 import javax.inject.Inject;
@@ -34,7 +33,6 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Check if the default user can be used to authenticate.
- * Updated for compatibility with Apache Shiro 2.0.0 and Java 21.
  */
 @Named("Default Admin Credentials")
 @Singleton
@@ -62,46 +60,23 @@ public class DefaultUserHealthCheck
       return Result.healthy();
     }
 
-    // Get realms from the SecurityManager - compatible with Shiro 2.0.0
-    Collection<Realm> realms = realmSecurityManager.getRealms();
-    if (realms == null || realms.isEmpty()) {
-      log.debug("No realms configured in SecurityManager");
-      return Result.healthy();
-    }
-    
-    // Find the authenticating realm
-    Optional<Realm> realm = realms.stream()
-        .filter(r -> r.getName().equals(AuthenticatingRealmImpl.NAME))
-        .findFirst();
-
-    if (realm.isEmpty()) {
-      log.debug("AuthenticatingRealm not found in configured realms");
-      return Result.healthy();
-    }
+    Optional<Realm> realm = realmSecurityManager.getRealms().stream()
+        .filter(r -> r.getName().equals(AuthenticatingRealmImpl.NAME)).findFirst();
 
     try {
-      // Create a secure token with the default credentials
-      UsernamePasswordToken token = new UsernamePasswordToken("admin", "admin123".toCharArray());
-      
-      // Check if authentication succeeds with default credentials
-      if (realm.map(r -> r.getAuthenticationInfo(token)).isPresent()) {
-        return Result.unhealthy(ERROR_MESSAGE);
+      // Using Java 21 pattern matching for Optional with instanceof
+      if (realm.orElse(null) instanceof Realm r) {
+        // Try to authenticate with default credentials
+        var authInfo = r.getAuthenticationInfo(new UsernamePasswordToken("admin", "admin123"));
+        if (authInfo != null) {
+          return Result.unhealthy(ERROR_MESSAGE);
+        }
       }
     }
     catch (AuthenticationException e) {
-      // Using Java 21 pattern matching for exception handling
-      switch (e) {
-        case AuthenticationException ae when ae.getMessage() != null && ae.getMessage().contains("Invalid credentials") ->
-          log.trace("Default admin credentials have been changed", ae);
-        default ->
-          log.trace("Unable to locate admin/admin123 user", e);
-      }
+      // Optimized exception handling for Java 21
+      log.trace("Default admin credentials authentication failed", e);
     }
-    catch (Exception e) {
-      // Catch any other exceptions that might occur during authentication
-      log.debug("Unexpected error during default credentials check", e);
-    }
-    
     return Result.healthy();
   }
 }

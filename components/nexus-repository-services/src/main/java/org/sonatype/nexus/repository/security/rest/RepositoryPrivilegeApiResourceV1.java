@@ -19,11 +19,16 @@ import jakarta.inject.Named;
 import jakarta.inject.Singleton;
 import jakarta.ws.rs.Path;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.sonatype.nexus.security.SecuritySystem;
 import org.sonatype.nexus.security.internal.rest.SecurityApiResourceV1;
 import org.sonatype.nexus.security.privilege.PrivilegeDescriptor;
 
 /**
+ * Repository privilege API resource for v1 endpoints.
+ * 
  * @since 3.26
  */
 @Named
@@ -32,6 +37,8 @@ import org.sonatype.nexus.security.privilege.PrivilegeDescriptor;
 public class RepositoryPrivilegeApiResourceV1
     extends RepositoryPrivilegeApiResource
 {
+  private static final Logger log = LoggerFactory.getLogger(RepositoryPrivilegeApiResourceV1.class);
+  
   static final String RESOURCE_URI = SecurityApiResourceV1.V1_RESOURCE_URI + "privileges";
 
   @Inject
@@ -40,5 +47,6 @@ public class RepositoryPrivilegeApiResourceV1
       final Map<String, PrivilegeDescriptor> privilegeDescriptors)
   {
     super(securitySystem, privilegeDescriptors);
+    log.debug(STR."Initialized \{getClass().getSimpleName()} with resource URI: \{RESOURCE_URI}");
   }
 }

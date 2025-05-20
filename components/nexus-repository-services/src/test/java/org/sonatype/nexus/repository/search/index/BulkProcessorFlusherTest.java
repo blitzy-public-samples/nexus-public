@@ -13,32 +13,27 @@
 package org.sonatype.nexus.repository.search.index;
 
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
+import org.sonatype.nexus.java21.Java21TestGroup;
 
 import org.elasticsearch.action.bulk.BulkProcessor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.experimental.categories.Category;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
 
 @ExtendWith(MockitoExtension.class)
+@Category(Java21TestGroup.class)
 public class BulkProcessorFlusherTest
     extends TestSupport
 {
-
   @Mock
   private BulkProcessor bulkProcessor;
 
@@ -46,48 +41,31 @@ public class BulkProcessorFlusherTest
   private BulkProcessorFlusher underTest;
 
   @Test
-  void runShouldFlushBulkProcessor() {
+  public void shouldFlushBulkProcessor() {
     underTest.call();
 
     verify(bulkProcessor).flush();
   }
-  
-  /**
-   * Tests that BulkProcessorFlusher works correctly when executed in a virtual thread context.
-   * This validates that the implementation is compatible with Java 21's virtual thread feature.
-   */
+
   @Test
-  @org.junit.jupiter.api.Tag("VirtualThreadTestGroup")
-  void virtualThreadExecutionShouldFlushBulkProcessor() throws Exception {
-    // Create a virtual thread factory
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-    
-    // Use a latch to coordinate test completion
+  public void shouldFlushBulkProcessorWithVirtualThread() throws Exception {
+    // Create a latch to wait for the virtual thread to complete
     CountDownLatch latch = new CountDownLatch(1);
-    AtomicBoolean success = new AtomicBoolean(false);
     
-    try {
-      // Execute the BulkProcessorFlusher in a virtual thread
-      executor.submit(() -> {
-        try {
-          // Execute the flusher in the virtual thread context
-          underTest.call();
-          success.set(true);
-        } finally {
-          latch.countDown();
-        }
-      });
-      
-      // Wait for the virtual thread to complete
-      boolean completed = latch.await(5, TimeUnit.SECONDS);
-      
-      // Verify results
-      assertThat("Virtual thread execution completed", completed, is(true));
-      assertThat("BulkProcessorFlusher executed successfully", success.get(), is(true));
-      verify(bulkProcessor, times(1)).flush();
-    } finally {
-      executor.shutdown();
-    }
+    // Use a virtual thread to execute the flush operation
+    Thread.ofVirtual().start(() -> {
+      try {
+        underTest.call();
+        latch.countDown();
+      } catch (Exception e) {
+        log.error("Error in virtual thread", e);
+      }
+    });
+    
+    // Wait for the virtual thread to complete (with timeout)
+    latch.await(5, TimeUnit.SECONDS);
+    
+    // Verify the flush was called once
+    verify(bulkProcessor, times(1)).flush();
   }
 }

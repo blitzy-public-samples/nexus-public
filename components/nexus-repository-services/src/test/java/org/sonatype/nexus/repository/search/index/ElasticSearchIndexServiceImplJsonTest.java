@@ -12,19 +12,23 @@
  */
 package org.sonatype.nexus.repository.search.index;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.Test;
 
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.DisplayName;
+import org.sonatype.nexus.virtualthread.Java21TestGroup;
+import org.junit.jupiter.api.Tag;
+
+@Tag("Java21")
 public class ElasticSearchIndexServiceImplJsonTest {
 
-  private final ObjectMapper mapper = new ObjectMapper();
-
   @Test
-  public void testRemoveAttributes() throws JsonProcessingException {
+  @DisplayName("Should remove non-essential attributes from Conan assets")
+  void should_remove_attributes() throws JsonProcessingException {
     String json = "{\n"
         + "  \"assets\": [\n"
         + "    {\n"
@@ -89,42 +93,14 @@ public class ElasticSearchIndexServiceImplJsonTest {
         + "  },\n"
         + "  \"tags\": []\n"
         + "}";
-    
-    // Parse JSON for more detailed assertions
-    JsonNode actualNode = mapper.readTree(newJson);
-    JsonNode expectedNode = mapper.readTree(expected);
-    
-    // Main assertion comparing the entire JSON structure
-    assertThat(actualNode).isEqualTo(expectedNode);
-    
-    // Additional assertions for specific elements in the JSON structure
-    assertThat(actualNode.get("format").asText()).isEqualTo("conan");
-    assertThat(actualNode.get("assets").isArray()).isTrue();
-    assertThat(actualNode.get("assets").size()).isEqualTo(1);
-    
-    // Verify asset attributes
-    JsonNode assetNode = actualNode.get("assets").get(0);
-    assertThat(assetNode.get("content_type").asText()).isEqualTo("text/plain");
-    assertThat(assetNode.get("name").asText()).isEqualTo("/info.txt");
-    assertThat(assetNode.get("id").asText()).isEqualTo("daa66d2e");
-    
-    // Verify conan attributes
-    JsonNode attributesNode = assetNode.get("attributes");
-    assertThat(attributesNode.has("conan")).isTrue();
-    assertThat(attributesNode.has("cona.n")).isFalse(); // Should be removed
-    assertThat(attributesNode.has("content")).isFalse(); // Should be removed
-    
-    // Verify specific conan attributes
-    JsonNode conanNode = attributesNode.get("conan");
-    assertThat(conanNode.has("packageId")).isTrue();
-    assertThat(conanNode.has("packageRevision")).isTrue();
-    assertThat(conanNode.has("channel")).isFalse(); // Should be removed
-    assertThat(conanNode.has("revision")).isFalse(); // Should be removed
-    assertThat(conanNode.has("baseVersion")).isFalse(); // Should be removed
+    ObjectMapper mapper = new ObjectMapper();
+    assertEquals(mapper.readTree(expected), mapper.readTree(newJson));
   }
 
+
   @Test
-  public void testRemoveAttributesNoAssetAttributes() throws JsonProcessingException {
+  @DisplayName("Should handle JSON without asset attributes")
+  void should_handle_json_without_asset_attributes() throws JsonProcessingException {
     String json = "{\n"
         + "  \"format\": \"conan\",\n"
         + "  \"attributes\": {\n"
@@ -137,30 +113,17 @@ public class ElasticSearchIndexServiceImplJsonTest {
         + "}";
 
     String newJson = ElasticSearchIndexServiceImpl.filterConanAssetAttributes(json);
+    ObjectMapper mapper = new ObjectMapper();
     
-    // Parse JSON for assertions
-    JsonNode actualNode = mapper.readTree(newJson);
-    JsonNode expectedNode = mapper.readTree(json);
-    
-    // Main assertion comparing the entire JSON structure
-    assertThat(actualNode).isEqualTo(expectedNode);
-    
-    // Additional assertions for specific elements
-    assertThat(actualNode.get("format").asText()).isEqualTo("conan");
-    assertThat(actualNode.has("assets")).isFalse();
-    
-    // Verify attributes structure is preserved
-    JsonNode attributesNode = actualNode.get("attributes");
-    assertThat(attributesNode.has("conan")).isTrue();
-    
-    // Verify conan attributes
-    JsonNode conanNode = attributesNode.get("conan");
-    assertThat(conanNode.get("channel").asText()).isEqualTo("_");
-    assertThat(conanNode.get("baseVersion").asText()).isEqualTo("1.5.2");
+    // Using pattern matching to parse and compare JSON nodes
+    JsonNode originalNode = mapper.readTree(json);
+    JsonNode filteredNode = mapper.readTree(newJson);
+    assertEquals(originalNode, filteredNode);
   }
 
   @Test
-  public void testRemoveAttributesNotConan() throws JsonProcessingException {
+  @DisplayName("Should not modify non-Conan format JSON")
+  void should_not_modify_non_conan_format() throws JsonProcessingException {
     String json = "{\n"
         + "  \"assets\": [\n"
         + "    {\n"
@@ -199,35 +162,14 @@ public class ElasticSearchIndexServiceImplJsonTest {
         + "}";
 
     String newJson = ElasticSearchIndexServiceImpl.filterConanAssetAttributes(json);
+    ObjectMapper mapper = new ObjectMapper();
     
-    // Parse JSON for assertions
-    JsonNode actualNode = mapper.readTree(newJson);
-    JsonNode expectedNode = mapper.readTree(json);
+    // Using pattern matching to parse and compare JSON nodes
+    JsonNode originalNode = mapper.readTree(json);
+    JsonNode filteredNode = mapper.readTree(newJson);
     
-    // Main assertion comparing the entire JSON structure
-    assertThat(actualNode).isEqualTo(expectedNode);
-    
-    // Additional assertions for specific elements
-    assertThat(actualNode.get("format").asText()).isEqualTo("maven");
-    assertThat(actualNode.get("assets").isArray()).isTrue();
-    assertThat(actualNode.get("assets").size()).isEqualTo(1);
-    
-    // Verify that for non-conan format, attributes are not modified
-    JsonNode assetNode = actualNode.get("assets").get(0);
-    JsonNode attributesNode = assetNode.get("attributes");
-    
-    // All original attributes should still be present
-    assertThat(attributesNode.has("cona.n")).isTrue();
-    assertThat(attributesNode.has("conan")).isTrue();
-    assertThat(attributesNode.has("checksum")).isTrue();
-    assertThat(attributesNode.has("content")).isTrue();
-    
-    // Verify conan attributes are unchanged
-    JsonNode conanNode = attributesNode.get("conan");
-    assertThat(conanNode.has("channel")).isTrue();
-    assertThat(conanNode.has("revision")).isTrue();
-    assertThat(conanNode.has("packageId")).isTrue();
-    assertThat(conanNode.has("baseVersion")).isTrue();
-    assertThat(conanNode.has("packageRevision")).isTrue();
+    if (originalNode instanceof JsonNode original && filteredNode instanceof JsonNode filtered) {
+      assertEquals(original, filtered, "Non-Conan format JSON should not be modified");
+    }
   }
 }

@@ -16,24 +16,18 @@ package org.sonatype.nexus.security.internal.rest;
 import org.sonatype.nexus.security.user.UserManager;
 
 /**
+ * Immutable representation of a user source.
+ *
  * @since 3.17
  */
-public class ApiUserSource
-{
-  private String id;
-
-  private String name;
-
+public record ApiUserSource(String id, String name) {
+  
+  /**
+   * Creates a new ApiUserSource from the given UserManager.
+   * 
+   * @param manager the UserManager to extract source information from
+   */
   public ApiUserSource(final UserManager manager) {
-    this.id = manager.getSource();
-    this.name = manager.getAuthenticationRealmName();
-  }
-
-  public String getId() {
-    return id;
-  }
-
-  public String getName() {
-    return name;
+    this(manager.getSource(), manager.getAuthenticationRealmName());
   }
 }

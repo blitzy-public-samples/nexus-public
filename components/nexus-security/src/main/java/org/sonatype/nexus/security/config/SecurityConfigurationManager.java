@@ -14,6 +14,8 @@ package org.sonatype.nexus.security.config;
 
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.function.Function;
 
 import org.sonatype.nexus.security.user.NoSuchRoleMappingException;
 import org.sonatype.nexus.security.user.UserNotFoundException;
@@ -27,6 +29,10 @@ import org.sonatype.nexus.security.user.UserNotFoundException;
  *
  * Direct calls to read-based ConfigurationManager methods can be called in a thread-safe manner. However, operations
  * that require multiple read-based calls should be encapsulated into an action and executed via the runRead method.
+ *
+ * As of Java 21, this interface supports enhanced thread safety with Virtual Threads and Pattern Matching for switch.
+ * Virtual Threads provide lightweight concurrency for I/O-bound operations, while Pattern Matching improves type safety
+ * and code readability when handling different entity types.
  */
 public interface SecurityConfigurationManager
 {
@@ -208,4 +214,69 @@ public interface SecurityConfigurationManager
   List<CUserRoleMapping> listUserRoleMappings();
 
   void deleteUserRoleMapping(String userId, String source) throws NoSuchRoleMappingException;
+  
+  //
+  // Thread-safe operations with Java 21 Virtual Threads support
+  //
+  
+  /**
+   * Executes a read action in a thread-safe manner using Java 21 Virtual Threads for improved concurrency.
+   * This method is optimized for I/O-bound operations and can handle a large number of concurrent requests
+   * with minimal resource consumption.
+   *
+   * @param <T> the type of the result
+   * @param action the action to execute
+   * @return the result of the action
+   * @since 3.60
+   */
+  <T> T runVirtualThreadRead(Callable<T> action);
+  
+  /**
+   * Executes a read action in a thread-safe manner using Java 21 Virtual Threads for improved concurrency.
+   * This variant accepts a function that takes a SecurityConfigurationManager as input.
+   *
+   * @param <T> the type of the result
+   * @param action the action to execute, which takes this manager as input
+   * @return the result of the action
+   * @since 3.60
+   */
+  <T> T runVirtualThreadRead(Function<SecurityConfigurationManager, T> action);
+  
+  /**
+   * Executes a write action in a thread-safe manner using Java 21 Virtual Threads for improved concurrency.
+   * This method is optimized for I/O-bound operations and ensures proper synchronization.
+   *
+   * @param <T> the type of the result
+   * @param action the action to execute
+   * @return the result of the action
+   * @since 3.60
+   */
+  <T> T runVirtualThreadWrite(Callable<T> action);
+  
+  /**
+   * Executes a write action in a thread-safe manner using Java 21 Virtual Threads for improved concurrency.
+   * This variant accepts a function that takes a SecurityConfigurationManager as input.
+   *
+   * @param <T> the type of the result
+   * @param action the action to execute, which takes this manager as input
+   * @return the result of the action
+   * @since 3.60
+   */
+  <T> T runVirtualThreadWrite(Function<SecurityConfigurationManager, T> action);
+  
+  /**
+   * Executes a read action that doesn't return a result in a thread-safe manner using Java 21 Virtual Threads.
+   *
+   * @param action the action to execute
+   * @since 3.60
+   */
+  void runVirtualThreadReadAction(Runnable action);
+  
+  /**
+   * Executes a write action that doesn't return a result in a thread-safe manner using Java 21 Virtual Threads.
+   *
+   * @param action the action to execute
+   * @since 3.60
+   */
+  void runVirtualThreadWriteAction(Runnable action);
 }

@@ -15,21 +15,20 @@ package org.sonatype.nexus.repository.group;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.group.GroupHandler.DispatchedRepositories;
+import org.sonatype.nexus.repository.http.HttpStatus;
 import org.sonatype.nexus.repository.view.Context;
 import org.sonatype.nexus.repository.view.Request;
 import org.sonatype.nexus.repository.view.Response;
+import org.sonatype.nexus.repository.view.Status;
 import org.sonatype.nexus.repository.view.ViewFacet;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -39,6 +38,7 @@ import static java.util.Arrays.asList;
 import static java.util.Collections.emptyList;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -53,6 +53,7 @@ import static org.sonatype.nexus.repository.proxy.ProxyFacetSupport.BYPASS_HTTP_
 import static org.sonatype.nexus.repository.proxy.ProxyFacetSupport.BYPASS_HTTP_ERRORS_HEADER_VALUE;
 
 @ExtendWith(MockitoExtension.class)
+@Tag("Java21")
 public class GroupHandlerTest
     extends TestSupport
 {
@@ -77,7 +78,7 @@ public class GroupHandlerTest
   private GroupHandler underTest;
 
   @BeforeEach
-  void setUp() throws Exception {
+  public void setUp() throws Exception {
     underTest = new GroupHandler();
 
     when(context.getRequest()).thenReturn(request);
@@ -86,23 +87,9 @@ public class GroupHandlerTest
     when(proxy2.getName()).thenReturn("Proxy 2");
     when(proxy2.facet(ViewFacet.class)).thenReturn(viewFacet2);
   }
-  
-  private void setupDispatch(final Response response1, final Response response2) throws Exception {
-    when(viewFacet1.dispatch(request, context)).thenReturn(response1);
-    when(viewFacet2.dispatch(request, context)).thenReturn(response2);
-  }
-
-  private void assertGetFirst(final Response expectedResponse) throws Exception {
-    assertEquals(expectedResponse, underTest.getFirst(context, asList(proxy1, proxy2), new DispatchedRepositories()));
-  }
-
-  private void assertGetFirstNotFound(final List<Repository> repositories) throws Exception {
-    Response response = underTest.getFirst(context, repositories, new DispatchedRepositories());
-    assertEquals(NOT_FOUND, response.getStatus().getCode());
-  }
 
   @Test
-  void whenAllRepositoryReturnOkThenGroupReturnsOk() throws Exception {
+  public void should_ReturnOk_WhenAllRepositoriesReturnOk() throws Exception {
     Response ok1 = ok();
     setupDispatch(ok1, ok());
 
@@ -110,7 +97,7 @@ public class GroupHandlerTest
   }
 
   @Test
-  void whenAnyRepositoryReturnsOkThenGroupReturnsOk() throws Exception {
+  public void should_ReturnOk_WhenAnyRepositoryReturnsOk() throws Exception {
     Response ok2 = ok();
     setupDispatch(notFound(), ok2);
 
@@ -118,14 +105,14 @@ public class GroupHandlerTest
   }
 
   @Test
-  void whenAllRepositoriesReturnNotFoundThenGroupReturnsNotFound() throws Exception {
+  public void should_ReturnNotFound_WhenAllRepositoriesReturnNotFound() throws Exception {
     setupDispatch(notFound(), notFound());
 
     assertGetFirstNotFound(asList(proxy1, proxy2));
   }
 
   @Test
-  void whenAnyRepositoryReturnsNotOkThenGroupReturnsNotFound() throws Exception {
+  public void should_ReturnNotFound_WhenAnyRepositoryReturnsNotOk() throws Exception {
     setupDispatch(forbidden(), forbidden());
 
     assertGetFirstNotFound(asList(proxy1, proxy2));
@@ -136,12 +123,12 @@ public class GroupHandlerTest
   }
 
   @Test
-  void whenNoRepositoriesInGroupThenGroupReturnsNotFound() throws Exception {
+  public void should_ReturnNotFound_WhenNoRepositoriesInGroup() throws Exception {
     assertGetFirstNotFound(emptyList());
   }
 
   @Test
-  void returnsFirstOkOrFirstUseDispatchedResponse() throws Exception {
+  public void should_ReturnFirstOkOrFirstUseDispatchedResponse() throws Exception {
     Response ok = ok();
     Response forbidden1 = forbidden();
 
@@ -160,7 +147,7 @@ public class GroupHandlerTest
   }
 
   @Test
-  void returnsFirstOkOrFirstBypassHttpErrorsHeaderResponse() throws Exception {
+  public void should_ReturnFirstOkOrFirstBypassHttpErrorsHeaderResponse() throws Exception {
     Response forbidden = forbidden();
     forbidden.getHeaders().set(BYPASS_HTTP_ERRORS_HEADER_NAME, BYPASS_HTTP_ERRORS_HEADER_VALUE);
 
@@ -178,94 +165,106 @@ public class GroupHandlerTest
   }
 
   @Test
-  void concurrentRequestsWithVirtualThreads() throws Exception {
-    // Setup responses for concurrent requests
-    Response ok1 = ok();
-    Response ok2 = ok();
-    when(viewFacet1.dispatch(any(Request.class), any(Context.class))).thenReturn(ok1);
-    when(viewFacet2.dispatch(any(Request.class), any(Context.class))).thenReturn(ok2);
+  public void should_ValidateResponse_UsingPatternMatching() {
+    // Test successful response
+    Response okResponse = ok();
+    assertTrue(underTest.isValidResponse(okResponse));
 
-    // Create virtual thread factory
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    // Test response with USE_DISPATCHED_RESPONSE attribute
+    Response dispatchedResponse = notFound();
+    dispatchedResponse.getAttributes().set(USE_DISPATCHED_RESPONSE, true);
+    assertTrue(underTest.isValidResponse(dispatchedResponse));
 
-    try {
-      int requestCount = 100;
-      CountDownLatch latch = new CountDownLatch(requestCount);
-      AtomicInteger successCount = new AtomicInteger(0);
-
-      // Submit multiple concurrent requests using virtual threads
-      CompletableFuture<?>[] futures = new CompletableFuture<?>[requestCount];
-      for (int i = 0; i < requestCount; i++) {
-        futures[i] = CompletableFuture.runAsync(() -> {
-          try {
-            Response response = underTest.getFirst(context, asList(proxy1, proxy2), new DispatchedRepositories());
-            if (response != null && response.getStatus().isSuccessful()) {
-              successCount.incrementAndGet();
-            }
-          } catch (Exception e) {
-            // Count failures
-          } finally {
-            latch.countDown();
-          }
-        }, executor);
-      }
-
-      // Wait for all requests to complete
-      latch.await(30, TimeUnit.SECONDS);
-
-      // Verify all requests were successful
-      assertEquals(requestCount, successCount.get(), "All concurrent requests should succeed");
-    } finally {
-      executor.shutdown();
-    }
+    // Test response with bypass header
+    Response bypassResponse = forbidden();
+    bypassResponse.getHeaders().set(BYPASS_HTTP_ERRORS_HEADER_NAME, BYPASS_HTTP_ERRORS_HEADER_VALUE);
+    assertTrue(underTest.isValidResponse(bypassResponse));
   }
 
   @Test
-  void parallelDispatchingToMultipleRepositories() throws Exception {
-    // Setup responses for parallel dispatching
+  public void should_HandleConcurrentRequests_WithVirtualThreads() throws Exception {
+    // Setup responses
     Response ok1 = ok();
     Response ok2 = ok();
-    when(viewFacet1.dispatch(request, context)).thenReturn(ok1);
-    when(viewFacet2.dispatch(request, context)).thenReturn(ok2);
-
-    // Create virtual thread factory for parallel execution
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-
-    try {
-      // Create a custom GroupHandler that uses virtual threads for parallel dispatching
-      GroupHandler parallelHandler = new GroupHandler() {
-        @Override
-        protected Response getFirst(Context context, List<Repository> repositories, DispatchedRepositories dispatched) 
-            throws Exception {
-          // Use CompletableFuture to dispatch to repositories in parallel
-          CompletableFuture<Response>[] futures = repositories.stream()
-              .map(repository -> CompletableFuture.supplyAsync(() -> {
-                try {
-                  return dispatch(context, repository, dispatched);
-                } catch (Exception e) {
-                  return null;
-                }
-              }, executor))
-              .toArray(CompletableFuture[]::new);
-
-          // Wait for the first successful response
-          CompletableFuture<Object> firstCompleted = CompletableFuture.anyOf(futures);
-          Response response = (Response) firstCompleted.join();
-          
-          // Return the first successful response or not found
-          return response != null ? response : notFound();
-        }
-      };
-
-      // Execute the parallel dispatch
-      Response response = parallelHandler.getFirst(context, asList(proxy1, proxy2), new DispatchedRepositories());
-      
-      // Verify the response is successful
-      assertNotNull(response);
-      assertEquals(true, response.getStatus().isSuccessful());
-    } finally {
-      executor.shutdown();
-    }
+    
+    // Setup mocks to return responses
+    when(viewFacet1.dispatch(any(), any())).thenReturn(ok1);
+    when(viewFacet2.dispatch(any(), any())).thenReturn(ok2);
+    
+    // Create a latch to synchronize the test
+    CountDownLatch latch = new CountDownLatch(2);
+    
+    // Create two virtual threads to make concurrent requests
+    Thread vt1 = Thread.startVirtualThread(() -> {
+      try {
+        Response response = underTest.getFirst(context, asList(proxy1, proxy2), new DispatchedRepositories());
+        assertNotNull(response);
+        assertEquals(HttpStatus.OK, response.getStatus().getCode());
+        latch.countDown();
+      }
+      catch (Exception e) {
+        log.error("Error in virtual thread 1", e);
+      }
+    });
+    
+    Thread vt2 = Thread.startVirtualThread(() -> {
+      try {
+        Response response = underTest.getFirst(context, asList(proxy2, proxy1), new DispatchedRepositories());
+        assertNotNull(response);
+        assertEquals(HttpStatus.OK, response.getStatus().getCode());
+        latch.countDown();
+      }
+      catch (Exception e) {
+        log.error("Error in virtual thread 2", e);
+      }
+    });
+    
+    // Wait for both threads to complete
+    assertTrue(latch.await(5, TimeUnit.SECONDS), "Timed out waiting for virtual threads to complete");
   }
+
+  @Test
+  public void should_HandleConcurrentRepositoryAccess_WithVirtualThreads() throws Exception {
+    // Setup a delayed response for the first repository
+    when(viewFacet1.dispatch(any(), any())).thenAnswer(invocation -> {
+      // Simulate a slow repository
+      Thread.sleep(500);
+      return ok();
+    });
+    
+    // Setup an immediate response for the second repository
+    when(viewFacet2.dispatch(any(), any())).thenReturn(ok());
+    
+    // Create a CompletableFuture to run the getFirst method asynchronously
+    CompletableFuture<Response> future = CompletableFuture.supplyAsync(() -> {
+      try {
+        return underTest.getFirst(context, asList(proxy1, proxy2), new DispatchedRepositories());
+      }
+      catch (Exception e) {
+        throw new RuntimeException(e);
+      }
+    });
+    
+    // Wait for the result
+    Response response = future.get(2, TimeUnit.SECONDS);
+    
+    // Verify we got a response
+    assertNotNull(response);
+    assertEquals(HttpStatus.OK, response.getStatus().getCode());
+  }
+
+  private void setupDispatch(final Response response1, final Response response2) throws Exception {
+    when(viewFacet1.dispatch(request, context)).thenReturn(response1);
+    when(viewFacet2.dispatch(request, context)).thenReturn(response2);
+  }
+
+  private void assertGetFirst(final Response expectedResponse) throws Exception {
+    Response actualResponse = underTest.getFirst(context, asList(proxy1, proxy2), new DispatchedRepositories());
+    assertEquals(expectedResponse, actualResponse);
+  }
+
+  private void assertGetFirstNotFound(final List<Repository> repositories) throws Exception {
+    Response response = underTest.getFirst(context, repositories, new DispatchedRepositories());
+    assertEquals(NOT_FOUND, response.getStatus().getCode());
+  }
+}

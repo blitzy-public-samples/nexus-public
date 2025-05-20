@@ -13,6 +13,8 @@
 package org.sonatype.nexus.security;
 
 import java.util.Collection;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -25,7 +27,8 @@ import org.apache.shiro.web.servlet.AdviceFilter;
 import static com.google.common.net.HttpHeaders.SET_COOKIE;
 
 /**
- * Cookie munging filter.
+ * Cookie munging filter with Java 21 optimizations.
+ * Uses Virtual Threads for cookie processing to improve performance.
  *
  * @since 2.11.2
  */
@@ -35,6 +38,9 @@ public class CookieFilter
     extends AdviceFilter
 {
   private static final String SECURE_FLAG = "; Secure";
+  
+  // Executor for processing cookies using Virtual Threads
+  private final Executor virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   @Override
   protected boolean preHandle(final ServletRequest request, final ServletResponse response) throws Exception {
@@ -51,25 +57,38 @@ public class CookieFilter
    * Perform filtering on cookie headers.
    *
    * If the request is secure, examine response for cookies and adds the Secure flag if not already present in the
-   * cookie value.
+   * cookie value. Uses Virtual Threads for processing to improve performance.
    */
   protected void filterCookies(final ServletRequest request, final ServletResponse response) {
     if (request.isSecure() && response instanceof HttpServletResponse) {
-      secureCookies((HttpServletResponse) response);
+      // Use a Virtual Thread to process cookies asynchronously
+      virtualThreadExecutor.execute(() -> {
+        secureCookies((HttpServletResponse) response);
+      });
     }
   }
 
+  /**
+   * Adds the Secure flag to cookies if not already present.
+   * Optimized with Java 21 pattern matching and string templates.
+   */
   private void secureCookies(HttpServletResponse response) {
     final Collection<String> cookies = response.getHeaders(SET_COOKIE);
     boolean mustAdd = false;
+    
     for (final String cookie : cookies) {
-      final String cookieVal = cookie.lastIndexOf(SECURE_FLAG) == -1 ? cookie + SECURE_FLAG : cookie;
-      if (mustAdd) {
-        response.addHeader(SET_COOKIE, cookieVal);
+      // Use pattern matching to determine if the cookie already has the Secure flag
+      String cookieVal = switch (cookie) {
+        case String c when c.lastIndexOf(SECURE_FLAG) == -1 -> STR."\{c}\{SECURE_FLAG}";
+        default -> cookie;
+      };
+      
+      // Use pattern matching to determine whether to set or add the header
+      switch (mustAdd) {
+        case true -> response.addHeader(SET_COOKIE, cookieVal);
+        case false -> response.setHeader(SET_COOKIE, cookieVal);
       }
-      else {
-        response.setHeader(SET_COOKIE, cookieVal);
-      }
+      
       mustAdd = true;
     }
   }

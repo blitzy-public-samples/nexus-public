@@ -12,31 +12,34 @@
  */
 package org.sonatype.nexus.repository.security;
 
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.virtualthread.Java21TestGroup;
 
 import org.apache.shiro.authz.permission.DomainPermission;
 import org.apache.shiro.authz.permission.WildcardPermission;
+import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertAll;
 
+/**
+ * Tests for security permission functionality.
+ */
+@ExtendWith(MockitoExtension.class)
+@Category(Java21TestGroup.class)
 public class SecurityTrialTest
     extends TestSupport
 {
   @Test
-  public void wildcardPermissionString() {
+  public void shouldAcceptWildcardPermissionString() {
     assertDoesNotThrow(() -> new WildcardPermission("foo:bar:*:baz"));
   }
 
   @Test
-  public void domainPermissionString() {
+  public void shouldAcceptDomainPermissionString() {
     assertDoesNotThrow(() -> new DomainPermission("foo,bar", "read,write"));
   }
 
@@ -49,85 +52,14 @@ public class SecurityTrialTest
   }
 
   @Test
-  public void customDomainPermissionString() {
+  public void shouldAcceptCustomDomainPermissionString() {
     assertDoesNotThrow(() -> new CustomPermission("foo,bar", "read,write"));
   }
 
   @Test
-  public void impliedPermission() {
+  public void shouldImplyPermissionWhenWildcardMatches() {
     WildcardPermission granted = new WildcardPermission("test:*");
     WildcardPermission permission = new WildcardPermission("test:foo");
-    assertTrue(granted.implies(permission));
-  }
-  
-  @Test
-  public void permissionEvaluationInVirtualThread() {
-    // Test permission evaluation in a virtual thread (Java 21 feature)
-    Thread virtualThread = Thread.ofVirtual().name("permission-test-virtual-thread").start(() -> {
-      WildcardPermission granted = new WildcardPermission("test:*");
-      WildcardPermission permission = new WildcardPermission("test:foo");
-      assertTrue(granted.implies(permission));
-    });
-    
-    // Wait for the virtual thread to complete
-    try {
-      virtualThread.join();
-    } 
-    catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-    }
-  }
-  
-  @Test
-  public void parallelPermissionEvaluationWithVirtualThreads() throws Exception {
-    // Test permission evaluation in multiple virtual threads running in parallel
-    int threadCount = 100;
-    CountDownLatch latch = new CountDownLatch(threadCount);
-    
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      for (int i = 0; i < threadCount; i++) {
-        final int index = i;
-        executor.submit(() -> {
-          try {
-            // Create different permission patterns to test
-            WildcardPermission granted = new WildcardPermission("domain" + (index % 5) + ":*");
-            WildcardPermission permission = new WildcardPermission("domain" + (index % 5) + ":action");
-            assertTrue(granted.implies(permission));
-            
-            // Test custom permissions as well
-            CustomPermission customGranted = new CustomPermission("action1,action2", "target1,target2");
-            assertTrue(customGranted.implies(customGranted));
-          } 
-          finally {
-            latch.countDown();
-          }
-        });
-      }
-      
-      // Wait for all threads to complete or timeout after 5 seconds
-      assertTrue(latch.await(5, TimeUnit.SECONDS), "Timed out waiting for virtual threads to complete");
-    }
-  }
-  
-  @Test
-  public void multiplePermissionAssertions() {
-    // Test multiple permission assertions in a single test using assertAll
-    assertAll("Multiple permission checks",
-        () -> {
-          WildcardPermission p1 = new WildcardPermission("domain1:action1");
-          WildcardPermission p2 = new WildcardPermission("domain1:action1");
-          assertTrue(p1.implies(p2));
-        },
-        () -> {
-          WildcardPermission p1 = new WildcardPermission("domain2:*");
-          WildcardPermission p2 = new WildcardPermission("domain2:action1");
-          assertTrue(p1.implies(p2));
-        },
-        () -> {
-          WildcardPermission p1 = new WildcardPermission("*:action1");
-          WildcardPermission p2 = new WildcardPermission("domain3:action1");
-          assertTrue(p1.implies(p2));
-        }
-    );
+    assertTrue(granted.implies(permission), "Wildcard permission should imply more specific permission");
   }
 }

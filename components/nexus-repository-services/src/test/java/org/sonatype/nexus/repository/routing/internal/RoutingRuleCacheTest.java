@@ -21,16 +21,18 @@ import org.sonatype.nexus.repository.manager.RepositoryDeletedEvent;
 import org.sonatype.nexus.repository.manager.RepositoryUpdatedEvent;
 import org.sonatype.nexus.repository.routing.RoutingRule;
 import org.sonatype.nexus.repository.routing.RoutingRuleStore;
+import org.sonatype.nexus.virtualthread.Java21TestGroup;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.experimental.categories.Category;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -38,6 +40,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
+@Category(Java21TestGroup.class)
 public class RoutingRuleCacheTest
     extends TestSupport
 {
@@ -55,7 +58,7 @@ public class RoutingRuleCacheTest
   }
 
   @Test
-  public void invalidateRepoCacheOnUpdate() throws Exception {
+  public void shouldInvalidateRepoCacheOnUpdate() throws Exception {
     mockRule("rule-a");
     Repository repository = createRepository("repo-a", "rule-a");
 
@@ -70,11 +73,11 @@ public class RoutingRuleCacheTest
     Configuration configuration = repository.getConfiguration();
     when(configuration.getRoutingRuleId()).thenReturn(new DetachedEntityId("rule-b"));
 
-    assertEquals(rule, routingRuleCache.getRoutingRule(repository));
+    assertThat(routingRuleCache.getRoutingRule(repository)).isEqualTo(rule);
   }
 
   @Test
-  public void invalidateRepoCacheOnDelete() throws Exception {
+  public void shouldInvalidateRepoCacheOnDelete() throws Exception {
     mockRule("rule-a");
     Repository repository = createRepository("repo-a", "rule-a");
 
@@ -89,11 +92,11 @@ public class RoutingRuleCacheTest
     Configuration configuration = repository.getConfiguration();
     when(configuration.getRoutingRuleId()).thenReturn(new DetachedEntityId("rule-b"));
 
-    assertEquals(rule, routingRuleCache.getRoutingRule(repository));
+    assertThat(routingRuleCache.getRoutingRule(repository)).isEqualTo(rule);
   }
 
   @Test
-  public void invalidateRuleCacheOnUpdate() throws Exception {
+  public void shouldInvalidateRuleCacheOnUpdate() throws Exception {
     RoutingRule rule = mockRule("rule-a");
     Repository repository = createRepository("repo-a", "rule-a");
 
@@ -110,7 +113,7 @@ public class RoutingRuleCacheTest
   }
 
   @Test
-  public void invalidateRuleCacheOnDelete() throws Exception {
+  public void shouldInvalidateRuleCacheOnDelete() throws Exception {
     RoutingRule rule = mockRule("rule-a");
     Repository repository = createRepository("repo-a", "rule-a");
 
@@ -127,19 +130,19 @@ public class RoutingRuleCacheTest
   }
 
   @Test
-  public void testGetRoutingRule_bogusConfig() throws Exception {
+  public void shouldReturnNullForBogusConfig() throws Exception {
     Repository repository = createRepository("missing-val", "");
     assertNull(routingRuleCache.getRoutingRule(repository));
   }
 
   @Test
-  public void testGetRoutingRule_null() throws Exception {
+  public void shouldReturnNullForNullRuleId() throws Exception {
     Repository repository = createRepository("null-id", null);
     assertNull(routingRuleCache.getRoutingRule(repository));
   }
 
   @Test
-  public void testGetRoutingRule_notConfigured() throws Exception {
+  public void shouldReturnNullForNotConfiguredRepository() throws Exception {
     Configuration configuration = mock(Configuration.class);
     when(configuration.getRepositoryName()).thenReturn("missing-config");
     Repository repository = createRepository(configuration);
@@ -147,12 +150,12 @@ public class RoutingRuleCacheTest
   }
 
   @Test
-  public void testGetRoutingRule() throws Exception {
+  public void shouldGetRoutingRuleAndCacheResults() throws Exception {
     RoutingRule ruleA = mockRule("rule-a");
     Repository repository = createRepository("repo-a", "rule-a");
 
     // verify we get right value back
-    assertEquals(ruleA, routingRuleCache.getRoutingRule(repository));
+    assertThat(routingRuleCache.getRoutingRule(repository)).isEqualTo(ruleA);
     verify(store, times(1)).getById("rule-a");
 
     // verify we don't hit DB twice
@@ -160,20 +163,20 @@ public class RoutingRuleCacheTest
     verify(store, times(1)).getById("rule-a");
 
     // check another repo
-    assertEquals(ruleA, routingRuleCache.getRoutingRule(createRepository("repo-b", "rule-a")));
+    assertThat(routingRuleCache.getRoutingRule(createRepository("repo-b", "rule-a"))).isEqualTo(ruleA);
     verify(store, times(1)).getById("rule-a");
 
     RoutingRule ruleC = mockRule("rule-c");
-    assertEquals(ruleC, routingRuleCache.getRoutingRule(createRepository("repo-c", "rule-c")));
+    assertThat(routingRuleCache.getRoutingRule(createRepository("repo-c", "rule-c"))).isEqualTo(ruleC);
     verify(store, times(1)).getById("rule-c");
   }
 
   @Test
-  public void testGetRoutingRuleId() throws Exception {
+  public void shouldGetRoutingRuleId() throws Exception {
     Repository repository = createRepository("repo-a", "rule-a");
 
     // verify we get right value back
-    assertEquals(new DetachedEntityId("rule-a"), routingRuleCache.getRoutingRuleId(repository));
+    assertThat(routingRuleCache.getRoutingRuleId(repository)).isEqualTo(new DetachedEntityId("rule-a"));
     verifyNoInteractions(store);
   }
 

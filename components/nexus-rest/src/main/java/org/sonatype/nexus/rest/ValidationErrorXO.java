@@ -23,23 +23,27 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  */
 @XmlRootElement(name = "validationError")
 public record ValidationErrorXO(
-    @JsonProperty String id,
-    @JsonProperty String message
+  /**
+   * Identifies the value value that is failing validation. A value of "*" denotes that validation
+   * does not applies to a specific value.
+   *
+   * E.g. "name".
+   */
+  @JsonProperty
+  String id,
+
+  /**
+   * Description of failing validation.
+   *
+   * E.g. "Name cannot be null".
+   */
+  @JsonProperty
+  String message
 ) {
   /**
    * Denotes that validation does not applies to a specific value.
    */
   public static final String GENERIC = "*";
-
-  /**
-   * Creates a validation error with default constructor.
-   * Initializes id to GENERIC.
-   */
-  public ValidationErrorXO {
-    if (id == null) {
-      id = GENERIC;
-    }
-  }
 
   /**
    * Creates a validation error that does not applies to a specific value.
@@ -51,33 +55,28 @@ public record ValidationErrorXO(
   }
 
   /**
-   * Creates a validation error with the specified id and message.
-   * Static factory method for fluent API usage.
+   * Creates a validation error for a specific value.
    *
-   * @param id identifier of value failing validation
+   * @param id identifier of value failing validation.
    * @param message validation description
-   * @return a new ValidationErrorXO instance
    */
-  public static ValidationErrorXO withId(final String id, final String message) {
-    return new ValidationErrorXO(id, message);
+  public ValidationErrorXO {
+    this.id = id == null ? GENERIC : id;
   }
 
   /**
-   * Creates a validation error with the specified message and GENERIC id.
-   * Static factory method for fluent API usage.
-   *
-   * @param message validation description
-   * @return a new ValidationErrorXO instance
+   * @param id of value failing validation
+   * @return itself, for fluent api usage
    */
-  public static ValidationErrorXO withMessage(final String message) {
-    return new ValidationErrorXO(GENERIC, message);
+  public ValidationErrorXO withId(final String id) {
+    return new ValidationErrorXO(id == null ? GENERIC : id, message);
   }
 
-  @Override
-  public String toString() {
-    return getClass().getSimpleName() + "{" +
-        "id='" + id + '\'' +
-        ", message='" + message + '\'' +
-        '}';
+  /**
+   * @param message validation description
+   * @return itself, for fluent api usage
+   */
+  public ValidationErrorXO withMessage(final String message) {
+    return new ValidationErrorXO(id, message);
   }
 }

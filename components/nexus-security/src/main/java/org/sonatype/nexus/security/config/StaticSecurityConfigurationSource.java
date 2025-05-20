@@ -13,9 +13,11 @@
 package org.sonatype.nexus.security.config;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicReference;
 
 import javax.annotation.Nullable;
 import javax.annotation.Priority;
@@ -45,6 +47,7 @@ public class StaticSecurityConfigurationSource
     implements SecurityConfigurationSource
 {
   private static final String NEXUS_SECURITY_INITIAL_PASSWORD = "NEXUS_SECURITY_INITIAL_PASSWORD";
+  private static final String NEXUS_SECURITY_RANDOMPASSWORD = "NEXUS_SECURITY_RANDOMPASSWORD";
 
   private final PasswordService passwordService;
 
@@ -54,7 +57,7 @@ public class StaticSecurityConfigurationSource
 
   private final String password;
 
-  private SecurityConfiguration configuration;
+  private final AtomicReference<SecurityConfiguration> configurationCache = new AtomicReference<>();
 
   @Inject
   public StaticSecurityConfigurationSource(
@@ -76,7 +79,7 @@ public class StaticSecurityConfigurationSource
     this.password = password;
 
     if (StringUtils.isBlank(password)) {
-      boolean enabled = Optional.ofNullable(System.getenv("NEXUS_SECURITY_RANDOMPASSWORD"))
+      boolean enabled = Optional.ofNullable(System.getenv(NEXUS_SECURITY_RANDOMPASSWORD))
           .map(Boolean::valueOf)
           .orElse(true);
       this.randomPassword = randomPassword && enabled;
@@ -88,17 +91,24 @@ public class StaticSecurityConfigurationSource
 
   @Override
   public SecurityConfiguration getConfiguration() {
-    if (configuration != null) {
-      return configuration;
+    SecurityConfiguration config = configurationCache.get();
+    if (config != null) {
+      return config;
     }
     return loadConfiguration();
   }
 
   @Override
   public synchronized SecurityConfiguration loadConfiguration() {
+    // Check again in case another thread loaded the configuration while we were waiting
+    SecurityConfiguration config = configurationCache.get();
+    if (config != null) {
+      return config;
+    }
+    
     String encryptedPassword = passwordService.encryptPassword(getPassword());
 
-    return new MemorySecurityConfiguration().withUsers(
+    config = new MemorySecurityConfiguration().withUsers(
         new MemoryCUser()
             .withId("admin")
             .withPassword(encryptedPassword)
@@ -124,6 +134,44 @@ public class StaticSecurityConfigurationSource
                 .withUserId("anonymous")
                 .withSource("default")
                 .withRoles(Roles.ANONYMOUS_ROLE_ID));
+    
+    configurationCache.set(config);
+    return config;
+  }
+
+  /**
+   * Execute I/O operation using Virtual Threads for better performance.
+   * 
+   * @param operation The I/O operation to execute
+   * @return The result of the operation
+   */
+  private <T> T executeWithVirtualThread(IOOperation<T> operation) {
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      Future<T> future = executor.submit(() -> {
+        try {
+          return operation.execute();
+        } 
+        catch (IOException e) {
+          throw new RuntimeException(e);
+        }
+      });
+      
+      return future.get();
+    } 
+    catch (Exception e) {
+      if (e instanceof RuntimeException rte && rte.getCause() instanceof IOException ioe) {
+        throw new RuntimeException(STR."Failed to execute I/O operation: \{ioe.getMessage()}", ioe);
+      }
+      throw new RuntimeException(STR."Failed to execute operation: \{e.getMessage()}", e);
+    }
+  }
+  
+  /**
+   * Functional interface for I/O operations that may throw IOException.
+   */
+  @FunctionalInterface
+  private interface IOOperation<T> {
+    T execute() throws IOException;
   }
 
   private String getPassword() {
@@ -132,7 +180,8 @@ public class StaticSecurityConfigurationSource
     }
 
     try {
-      String savedPassword = adminPasswordFileManager.readFile();
+      // Use Virtual Thread for file I/O operations
+      String savedPassword = executeWithVirtualThread(() -> adminPasswordFileManager.readFile());
 
       if (!Strings2.isBlank(savedPassword)) {
         return savedPassword;
@@ -143,14 +192,21 @@ public class StaticSecurityConfigurationSource
 
       savedPassword = UUID.randomUUID().toString();
 
+      // Use Virtual Thread for file I/O operations
+      boolean writeSuccess = executeWithVirtualThread(() -> adminPasswordFileManager.writeFile(savedPassword));
+      
       // failure writing file to disk, revert to using default
-      if (!adminPasswordFileManager.writeFile(savedPassword)) {
+      if (!writeSuccess) {
         savedPassword = "admin123";
       }
       return savedPassword;
     }
-    catch (IOException e) {
-      throw new UncheckedIOException(e);
+    catch (Exception e) {
+      // Use pattern matching for exception handling
+      if (e instanceof RuntimeException rte && rte.getCause() instanceof IOException ioe) {
+        throw new RuntimeException(STR."Failed to access admin password file: \{ioe.getMessage()}", ioe);
+      }
+      throw new RuntimeException(STR."Unexpected error accessing admin password: \{e.getMessage()}", e);
     }
   }
 }

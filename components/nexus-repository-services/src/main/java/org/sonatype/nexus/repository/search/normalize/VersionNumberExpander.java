@@ -37,25 +37,51 @@ import org.slf4j.Logger;
 public class VersionNumberExpander
 {
   private static final String NUMBER_FORMAT = "%09d";
+  private static final Pattern NUMBER_PATTERN = Pattern.compile("\\d+");
 
   private VersionNumberExpander() {}
 
   public static final Logger log = Loggers.getLogger(VersionNumberExpander.class);
 
+  /**
+   * Expands numbers in a version string to a fixed width format for proper lexical sorting.
+   *
+   * @param version the version string to expand
+   * @return the expanded version string with fixed-width numbers
+   */
   public static String expand(String version) {
     if (StringUtils.isBlank(version)) {
       return "";
     }
 
-    Matcher matcher = Pattern.compile("\\d+").matcher(version);
+    Matcher matcher = NUMBER_PATTERN.matcher(version);
     StringBuffer result = new StringBuffer();
+    
     while (matcher.find()) {
       try {
-        matcher.appendReplacement(result, String.format(NUMBER_FORMAT, Long.parseLong(matcher.group())));
+        String numberGroup = matcher.group();
+        String expandedNumber = switch (numberGroup.length()) {
+          case 0 -> "000000000"; // Empty match (shouldn't happen with \d+)
+          case var len when len >= 9 -> numberGroup; // Already at or exceeding target width
+          default -> STR."\{String.format(NUMBER_FORMAT, Long.parseLong(numberGroup))}"; 
+        };
+        matcher.appendReplacement(result, expandedNumber);
       }
-      catch (NumberFormatException e) {
-        log.debug("Unable to parse number as long '{}'", matcher.group());
-        matcher.appendReplacement(result, matcher.group());
+      catch (Exception e) {
+        switch (e) {
+          case NumberFormatException nfe -> {
+            log.debug(STR."Unable to parse number as long: '\{matcher.group()}'");
+            matcher.appendReplacement(result, matcher.group());
+          }
+          case IllegalArgumentException iae -> {
+            log.debug(STR."Invalid argument while processing version: '\{matcher.group()}'");
+            matcher.appendReplacement(result, matcher.group());
+          }
+          default -> {
+            log.debug(STR."Unexpected error while expanding version number '\{matcher.group()}': \{e.getMessage()}");
+            matcher.appendReplacement(result, matcher.group());
+          }
+        };
       }
     }
 

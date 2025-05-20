@@ -1,0 +1,413 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "description": "Test data for virtual thread concurrency stress testing of repository content operations",
+    "testPurpose": "Validate repository content operations under high concurrency with Java 21 Virtual Threads",
+    "targetScalingEfficiency": 90,
+    "created": "2025-05-19T10:00:00Z"
+  },
+  "testScenarios": [
+    {
+      "name": "asset-retrieval-concurrency",
+      "description": "Test concurrent asset retrieval operations using virtual threads",
+      "concurrencyLevels": [100, 500, 1000, 5000, 10000],
+      "operations": ["read", "browse", "search"],
+      "validationCriteria": {
+        "responseTimeThresholdMs": 500,
+        "successRateThreshold": 99.5,
+        "threadPinningAllowed": false
+      }
+    },
+    {
+      "name": "component-browsing-concurrency",
+      "description": "Test concurrent component browsing operations using virtual threads",
+      "concurrencyLevels": [100, 500, 1000, 2500, 5000],
+      "operations": ["browse", "search", "filter"],
+      "validationCriteria": {
+        "responseTimeThresholdMs": 750,
+        "successRateThreshold": 99.0,
+        "threadPinningAllowed": false
+      }
+    },
+    {
+      "name": "content-routing-concurrency",
+      "description": "Test concurrent content routing operations using virtual threads",
+      "concurrencyLevels": [50, 250, 500, 1000, 2000],
+      "operations": ["route", "resolve", "redirect"],
+      "validationCriteria": {
+        "responseTimeThresholdMs": 300,
+        "successRateThreshold": 99.8,
+        "threadPinningAllowed": false
+      }
+    },
+    {
+      "name": "fluent-api-concurrency",
+      "description": "Test concurrent fluent API operations using virtual threads",
+      "concurrencyLevels": [100, 500, 1000, 2000, 5000],
+      "operations": ["query", "transform", "filter"],
+      "validationCriteria": {
+        "responseTimeThresholdMs": 400,
+        "successRateThreshold": 99.5,
+        "threadPinningAllowed": false
+      }
+    },
+    {
+      "name": "mixed-workload-concurrency",
+      "description": "Test mixed workload operations using virtual threads",
+      "concurrencyLevels": [500, 1000, 5000, 10000, 20000],
+      "operations": ["read", "browse", "search", "route", "query"],
+      "validationCriteria": {
+        "responseTimeThresholdMs": 800,
+        "successRateThreshold": 98.5,
+        "threadPinningAllowed": false
+      }
+    }
+  ],
+  "repositories": [
+    {
+      "name": "maven-central-proxy",
+      "format": "maven2",
+      "type": "proxy",
+      "testDataSize": "large",
+      "componentCount": 5000,
+      "assetCount": 25000
+    },
+    {
+      "name": "docker-hub-proxy",
+      "format": "docker",
+      "type": "proxy",
+      "testDataSize": "medium",
+      "componentCount": 1000,
+      "assetCount": 5000
+    },
+    {
+      "name": "npm-registry-proxy",
+      "format": "npm",
+      "type": "proxy",
+      "testDataSize": "medium",
+      "componentCount": 2000,
+      "assetCount": 8000
+    },
+    {
+      "name": "raw-hosted",
+      "format": "raw",
+      "type": "hosted",
+      "testDataSize": "small",
+      "componentCount": 500,
+      "assetCount": 1500
+    },
+    {
+      "name": "maven-releases",
+      "format": "maven2",
+      "type": "hosted",
+      "testDataSize": "medium",
+      "componentCount": 2000,
+      "assetCount": 10000
+    },
+    {
+      "name": "maven-group",
+      "format": "maven2",
+      "type": "group",
+      "testDataSize": "large",
+      "memberRepositories": ["maven-central-proxy", "maven-releases"],
+      "componentCount": 7000,
+      "assetCount": 35000
+    }
+  ],
+  "components": {
+    "maven2": [
+      {
+        "namespace": "org.apache.commons",
+        "name": "commons-lang3",
+        "version": "3.12.0",
+        "assets": [
+          {
+            "path": "org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.jar",
+            "contentType": "application/java-archive",
+            "size": 587402,
+            "sha1": "c6842c86792ff03b9f1d1fe2aab8dc23aa6c6f0e"
+          },
+          {
+            "path": "org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.pom",
+            "contentType": "application/xml",
+            "size": 26445,
+            "sha1": "a5a3a83c9f0c5e3f69e068d3f6e92f1b026f7cf"
+          },
+          {
+            "path": "org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0-sources.jar",
+            "contentType": "application/java-archive",
+            "size": 771844,
+            "sha1": "198b882fdc2c72c89c63401d946f6ba46c3acea3"
+          },
+          {
+            "path": "org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0-javadoc.jar",
+            "contentType": "application/java-archive",
+            "size": 1673259,
+            "sha1": "df5c09256e2c5d0e7b73b4a3c1a9c1b954b8d495"
+          }
+        ]
+      },
+      {
+        "namespace": "com.google.guava",
+        "name": "guava",
+        "version": "32.1.2-jre",
+        "assets": [
+          {
+            "path": "com/google/guava/guava/32.1.2-jre/guava-32.1.2-jre.jar",
+            "contentType": "application/java-archive",
+            "size": 2935958,
+            "sha1": "5a0ef8e3bc2a82c3d3e5c7c3e3ab45b6d14aaaf4"
+          },
+          {
+            "path": "com/google/guava/guava/32.1.2-jre/guava-32.1.2-jre.pom",
+            "contentType": "application/xml",
+            "size": 10745,
+            "sha1": "7d5a2c8e4fd2c9f9f9c0c5e5c2fd3a9c8c6f1e67"
+          }
+        ]
+      }
+    ],
+    "docker": [
+      {
+        "namespace": "library",
+        "name": "nginx",
+        "version": "1.25.3",
+        "assets": [
+          {
+            "path": "v2/library/nginx/manifests/1.25.3",
+            "contentType": "application/vnd.docker.distribution.manifest.v2+json",
+            "size": 1570,
+            "sha256": "a8758716a6d59bd4dd0ea24d7e2f4a3eb8e3cbd6da03d6e8f877957aa81b9a3"
+          },
+          {
+            "path": "v2/library/nginx/blobs/sha256:a8758716a6d59bd4dd0ea24d7e2f4a3eb8e3cbd6da03d6e8f877957aa81b9a3",
+            "contentType": "application/vnd.docker.container.image.v1+json",
+            "size": 1570,
+            "sha256": "a8758716a6d59bd4dd0ea24d7e2f4a3eb8e3cbd6da03d6e8f877957aa81b9a3"
+          },
+          {
+            "path": "v2/library/nginx/blobs/sha256:2f44b7a888fa005d07c031d3cfad2a1c3a1a2ef1a8767f6e3ce5e5a6157472aa",
+            "contentType": "application/vnd.docker.image.rootfs.diff.tar.gzip",
+            "size": 31457280,
+            "sha256": "2f44b7a888fa005d07c031d3cfad2a1c3a1a2ef1a8767f6e3ce5e5a6157472aa"
+          }
+        ]
+      }
+    ],
+    "npm": [
+      {
+        "namespace": "",
+        "name": "react",
+        "version": "18.2.0",
+        "assets": [
+          {
+            "path": "react/-/react-18.2.0.tgz",
+            "contentType": "application/gzip",
+            "size": 147835,
+            "sha1": "6a4f6dd0f5a8d2ad7e7f1c6e8a2e8c9a3a1e4f1e"
+          },
+          {
+            "path": "react/package.json",
+            "contentType": "application/json",
+            "size": 2345,
+            "sha1": "7a4f6dd0f5a8d2ad7e7f1c6e8a2e8c9a3a1e4f1e"
+          }
+        ]
+      }
+    ],
+    "raw": [
+      {
+        "namespace": "docs",
+        "name": "architecture",
+        "version": "1.0.0",
+        "assets": [
+          {
+            "path": "docs/architecture/system-overview.pdf",
+            "contentType": "application/pdf",
+            "size": 2097152,
+            "sha1": "8a4f6dd0f5a8d2ad7e7f1c6e8a2e8c9a3a1e4f1e"
+          },
+          {
+            "path": "docs/architecture/deployment-guide.md",
+            "contentType": "text/markdown",
+            "size": 15360,
+            "sha1": "9a4f6dd0f5a8d2ad7e7f1c6e8a2e8c9a3a1e4f1e"
+          }
+        ]
+      }
+    ]
+  },
+  "contentRouting": {
+    "rules": [
+      {
+        "name": "maven-central-routing",
+        "description": "Routing rule for Maven Central content",
+        "mode": "BLOCK",
+        "matchers": [
+          "^/org/example/blocked/.*",
+          "^/com/example/blocked/.*"
+        ]
+      },
+      {
+        "name": "docker-routing",
+        "description": "Routing rule for Docker content",
+        "mode": "ALLOW",
+        "matchers": [
+          "^/v2/library/.*",
+          "^/v2/approved/.*"
+        ]
+      }
+    ],
+    "testPaths": [
+      {
+        "path": "/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.jar",
+        "expectedRepository": "maven-central-proxy",
+        "expectedResult": "ALLOWED"
+      },
+      {
+        "path": "/org/example/blocked/library/1.0.0/library-1.0.0.jar",
+        "expectedRepository": "maven-central-proxy",
+        "expectedResult": "BLOCKED"
+      },
+      {
+        "path": "/v2/library/nginx/manifests/1.25.3",
+        "expectedRepository": "docker-hub-proxy",
+        "expectedResult": "ALLOWED"
+      },
+      {
+        "path": "/v2/unapproved/app/manifests/latest",
+        "expectedRepository": "docker-hub-proxy",
+        "expectedResult": "BLOCKED"
+      }
+    ]
+  },
+  "fluentApiOperations": {
+    "browse": [
+      {
+        "description": "Browse all Maven components",
+        "repository": "maven-central-proxy",
+        "operation": "components().browse()",
+        "expectedResultCount": 5000,
+        "paginationSize": 100
+      },
+      {
+        "description": "Browse assets by name pattern",
+        "repository": "maven-releases",
+        "operation": "assets().byNameMatching('.*\\.jar$').browse()",
+        "expectedResultCount": 5000,
+        "paginationSize": 100
+      },
+      {
+        "description": "Browse components by namespace",
+        "repository": "npm-registry-proxy",
+        "operation": "components().byNamespace('@angular').browse()",
+        "expectedResultCount": 200,
+        "paginationSize": 50
+      }
+    ],
+    "search": [
+      {
+        "description": "Search for specific Maven artifact",
+        "repository": "maven-group",
+        "operation": "components().byNamespace('org.apache.commons').byName('commons-lang3').browse()",
+        "expectedResultCount": 1,
+        "paginationSize": 10
+      },
+      {
+        "description": "Search for Docker images by name pattern",
+        "repository": "docker-hub-proxy",
+        "operation": "components().byNameMatching('nginx.*').browse()",
+        "expectedResultCount": 10,
+        "paginationSize": 10
+      }
+    ],
+    "assetOperations": [
+      {
+        "description": "Find asset by path",
+        "repository": "maven-central-proxy",
+        "operation": "assets().byPath('/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.jar').find().orElse(null)",
+        "expectedResultCount": 1,
+        "paginationSize": 1
+      },
+      {
+        "description": "Find assets by content type",
+        "repository": "raw-hosted",
+        "operation": "assets().byContentType('application/pdf').browse()",
+        "expectedResultCount": 50,
+        "paginationSize": 20
+      }
+    ]
+  },
+  "virtualThreadTestConfigurations": {
+    "threadCreationMethods": [
+      {
+        "name": "virtualThreadPerTaskExecutor",
+        "code": "Executors.newVirtualThreadPerTaskExecutor()",
+        "description": "Creates an executor that creates a new virtual thread for each task"
+      },
+      {
+        "name": "threadFactory",
+        "code": "Thread.ofVirtual().name(\"vt-\", 0).factory()",
+        "description": "Creates a thread factory that creates named virtual threads"
+      },
+      {
+        "name": "directCreation",
+        "code": "Thread.startVirtualThread(() -> task)",
+        "description": "Directly creates and starts a virtual thread"
+      }
+    ],
+    "pinningDetectionTests": [
+      {
+        "name": "synchronizedBlockTest",
+        "description": "Test for pinning with synchronized blocks",
+        "code": "synchronized(lock) { /* repository operation */ }",
+        "expectedPinning": true,
+        "recommendation": "Replace with ReentrantLock or other java.util.concurrent lock"
+      },
+      {
+        "name": "reentrantLockTest",
+        "description": "Test for pinning with ReentrantLock",
+        "code": "lock.lock(); try { /* repository operation */ } finally { lock.unlock(); }",
+        "expectedPinning": false,
+        "recommendation": "Preferred approach for locking with virtual threads"
+      },
+      {
+        "name": "threadLocalTest",
+        "description": "Test for ThreadLocal impact on virtual threads",
+        "code": "ThreadLocal<Context> contextHolder = new ThreadLocal<>();",
+        "expectedPinning": false,
+        "recommendation": "Use ThreadLocal sparingly with virtual threads to reduce memory usage"
+      },
+      {
+        "name": "nativeMethodTest",
+        "description": "Test for pinning with native methods",
+        "code": "/* call to native method during repository operation */",
+        "expectedPinning": true,
+        "recommendation": "Avoid native method calls in virtual thread execution path"
+      }
+    ],
+    "scalingEfficiencyTests": [
+      {
+        "name": "repositoryContentScaling",
+        "description": "Test scaling efficiency of repository content operations",
+        "concurrencyLevels": [100, 500, 1000, 5000, 10000, 20000],
+        "expectedEfficiency": 95,
+        "operationsPerSecondBaseline": 1000
+      },
+      {
+        "name": "assetRetrievalScaling",
+        "description": "Test scaling efficiency of asset retrieval operations",
+        "concurrencyLevels": [100, 500, 1000, 5000, 10000, 20000],
+        "expectedEfficiency": 90,
+        "operationsPerSecondBaseline": 2000
+      },
+      {
+        "name": "contentRoutingScaling",
+        "description": "Test scaling efficiency of content routing operations",
+        "concurrencyLevels": [100, 500, 1000, 5000, 10000],
+        "expectedEfficiency": 98,
+        "operationsPerSecondBaseline": 5000
+      }
+    ]
+  }
+}

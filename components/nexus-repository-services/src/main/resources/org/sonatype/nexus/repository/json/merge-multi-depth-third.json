@@ -23,27 +23,177 @@
         "title": "This is the second depth",
         "third": {
           "title": "This is the third depth",
-          "description": "The third file has a description for godeep third"
+          "description": "The third file has a description for godeep third",
+          "fourth": {
+            "title": "This is the fourth depth",
+            "description": "Added for deep pattern matching tests",
+            "fifth": {
+              "title": "This is the fifth depth",
+              "values": [1, 2, 3, 4, 5],
+              "metadata": {
+                "created": "2023-09-21",
+                "updated": "2023-10-15",
+                "tags": ["deep", "nested", "pattern", "matching"]
+              }
+            }
+          }
         }
       }
     }
   },
   "reverse-multi-depth": {
     "first": {
-      "title": "This is the first depth"
+      "title": "This is the first depth",
+      "second": {
+        "title": "This is the second depth",
+        "third": {
+          "title": "This is the third depth",
+          "description": "Enhanced for pattern matching in third file"
+        }
+      }
     }
   },
   "dependencies": {
-    "equire(\"orchestrator\"": "*",
+    "equire(\"orchestrator\")": "*",
     "@types/node": "*",
     "@types/orchestrator": "*",
-    "funcky(\"fieldname\"": {
-      "test": "value"
+    "funcky(\"fieldname\")": {
+      "test": "value",
+      "nested": {
+        "property": "for pattern matching"
+      }
     }
   },
   "multi-depth-merge": {
     "first": {
-      "summary": "We have here the first depth from the third response"
+      "summary": "We have here the first depth from the third response",
+      "details": {
+        "purpose": "Testing deep merging with pattern matching",
+        "version": "3.0.0"
+      }
+    }
+  },
+  "record_patterns": {
+    "point": {
+      "x": 10,
+      "y": 20
+    },
+    "box": {
+      "width": 100,
+      "height": 50,
+      "position": {
+        "x": 25,
+        "y": 30
+      }
+    },
+    "person": {
+      "name": "John Doe",
+      "age": 30,
+      "address": {
+        "street": "123 Main St",
+        "city": "Anytown",
+        "zipCode": "12345"
+      },
+      "contacts": [
+        {
+          "type": "email",
+          "value": "john@example.com"
+        },
+        {
+          "type": "phone",
+          "value": "555-1234"
+        }
+      ]
+    },
+    "nested_records": {
+      "outer": {
+        "id": "outer-1",
+        "middle": {
+          "id": "middle-1",
+          "inner": {
+            "id": "inner-1",
+            "value": "Deeply nested value for pattern matching"
+          }
+        }
+      }
+    }
+  },
+  "pattern_matching": {
+    "shapes": [
+      {
+        "type": "circle",
+        "radius": 10.5
+      },
+      {
+        "type": "rectangle",
+        "width": 20,
+        "height": 15
+      },
+      {
+        "type": "triangle",
+        "base": 10,
+        "height": 8
+      }
+    ],
+    "sealed_hierarchy": {
+      "vehicle": {
+        "type": "car",
+        "wheels": 4,
+        "make": "Toyota"
+      },
+      "alternative_vehicle": {
+        "type": "motorcycle",
+        "wheels": 2,
+        "make": "Honda"
+      },
+      "complex_vehicle": {
+        "type": "truck",
+        "wheels": 18,
+        "make": "Volvo",
+        "cargo": {
+          "capacity": 5000,
+          "unit": "kg"
+        }
+      }
+    },
+    "exhaustive_patterns": {
+      "option_a": {
+        "value": "First option",
+        "priority": 1
+      },
+      "option_b": {
+        "value": "Second option",
+        "priority": 2
+      },
+      "option_c": {
+        "value": "Third option",
+        "priority": 3,
+        "extra": "Additional data for pattern matching"
+      }
+    }
+  },
+  "string_template_examples": {
+    "simple": {
+      "name": "Alice",
+      "greeting": "Hello, Alice!"
+    },
+    "complex": {
+      "user": "Bob",
+      "count": 5,
+      "message": "User Bob has 5 notifications"
+    },
+    "nested": {
+      "product": {
+        "name": "Widget",
+        "price": 19.99,
+        "currency": "USD"
+      },
+      "formatted": "Widget costs $19.99 USD"
+    },
+    "conditional": {
+      "status": "active",
+      "days": 30,
+      "message": "Your account is active with 30 days remaining"
     }
   }
 }

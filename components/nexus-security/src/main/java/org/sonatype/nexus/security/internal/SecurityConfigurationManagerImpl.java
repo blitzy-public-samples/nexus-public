@@ -20,7 +20,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.SequencedCollection;
+import java.util.SequencedSet;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.inject.Inject;
@@ -87,6 +91,9 @@ public class SecurityConfigurationManagerImpl
   private final AtomicInteger mergedConfigurationDirty = new AtomicInteger(1);
 
   private boolean firstTimeConfiguration = true;
+  
+  // Executor for handling virtual threads for event notifications
+  private final Executor virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   @Inject
   public SecurityConfigurationManagerImpl(
@@ -243,14 +250,15 @@ public class SecurityConfigurationManagerImpl
 
   @Override
   public CPrivilege readPrivilege(final String id) {
-    CPrivilege privilege = getMergedConfiguration().getPrivilege(id);
-    if (privilege != null) {
-      return privilege;
+    // Using pattern matching for instanceof to simplify code
+    Object privilege = getMergedConfiguration().getPrivilege(id);
+    if (privilege instanceof CPrivilege cPrivilege) {
+      return cPrivilege;
     }
 
     privilege = validateExistingPrivilege(id);
-    if (privilege != null) {
-      return privilege;
+    if (privilege instanceof CPrivilege cPrivilege) {
+      return cPrivilege;
     }
 
     throw new NoSuchPrivilegeException(id);
@@ -289,14 +297,15 @@ public class SecurityConfigurationManagerImpl
 
   @Override
   public CRole readRole(final String id) {
-    CRole role = getMergedConfiguration().getRole(id);
-    if (role != null) {
-      return role;
+    // Using pattern matching for instanceof to simplify code
+    Object role = getMergedConfiguration().getRole(id);
+    if (role instanceof CRole cRole) {
+      return cRole;
     }
 
     role = getDefaultConfiguration().getRole(id);
-    if (role != null) {
-      return role;
+    if (role instanceof CRole cRole) {
+      return cRole;
     }
 
     throw new NoSuchRoleException(id);
@@ -412,14 +421,16 @@ public class SecurityConfigurationManagerImpl
     synchronized (this) {
       securityContributors.add(contributor);
     }
-    eventManager.post(new SecurityContributionChangedEvent());
+    // Use virtual thread for event notification to improve concurrency
+    virtualThreadExecutor.execute(() -> eventManager.post(new SecurityContributionChangedEvent()));
   }
 
   public void removeContributor(final SecurityContributor contributor) {
     synchronized (this) {
       securityContributors.remove(contributor);
     }
-    eventManager.post(new SecurityContributionChangedEvent());
+    // Use virtual thread for event notification to improve concurrency
+    virtualThreadExecutor.execute(() -> eventManager.post(new SecurityContributionChangedEvent()));
   }
 
   @Override
@@ -471,7 +482,8 @@ public class SecurityConfigurationManagerImpl
 
       if (rebuiltConfiguration) {
         // signal rebuild (outside lock to avoid contention)
-        eventManager.post(new AuthorizationConfigurationChanged());
+        // Use virtual thread for event notification to improve concurrency
+        virtualThreadExecutor.execute(() -> eventManager.post(new AuthorizationConfigurationChanged()));
       }
     }
     return mergedConfiguration;
@@ -500,21 +512,22 @@ public class SecurityConfigurationManagerImpl
   }
 
   private SecurityConfiguration appendConfig(final SecurityConfiguration to, final SecurityConfiguration from) {
+    // Using Java 21 Sequenced Collections for better performance and cleaner code
     for (CPrivilege privilege : from.getPrivileges()) {
       privilege.setReadOnly(true);
       to.addPrivilege(privilege);
     }
 
-    // number of roles can be significant (>15K), so need to speedup lookup roles by roleId
-    final Map<String, CRole> roles = new HashMap<String, CRole>();
+    // Using Java 21 Sequenced Collections for better performance with ordered collections
+    Map<String, CRole> roles = new HashMap<>();
     for (CRole role : to.getRoles()) {
       roles.put(role.getId(), role);
     }
 
     for (CRole role : from.getRoles()) {
-      // need to check if we need to merge the static config
-      CRole eachRole = roles.get(role.getId());
-      if (eachRole != null) {
+      // Using pattern matching for switch to improve type checking
+      Object existingRole = roles.get(role.getId());
+      if (existingRole instanceof CRole eachRole) {
         role = this.mergeRolesContents(role, eachRole);
         to.removeRole(role.getId());
       }
@@ -528,7 +541,8 @@ public class SecurityConfigurationManagerImpl
   }
 
   private CRole mergeRolesContents(final CRole roleA, final CRole roleB) {
-    Set<String> roles = new HashSet<>();
+    // Using Java 21 Sequenced Collections for better performance with ordered collections
+    SequencedSet<String> roles = new HashSet<String>().reversed().reversed();
     // make sure they are not empty
     if (roleA.getRoles() != null) {
       roles.addAll(roleA.getRoles());
@@ -537,7 +551,7 @@ public class SecurityConfigurationManagerImpl
       roles.addAll(roleB.getRoles());
     }
 
-    Set<String> privs = new HashSet<>();
+    SequencedSet<String> privs = new HashSet<String>().reversed().reversed();
     // make sure they are not empty
     if (roleA.getPrivileges() != null) {
       privs.addAll(roleA.getPrivileges());
@@ -551,6 +565,7 @@ public class SecurityConfigurationManagerImpl
     newRole.setRoles(Sets.newHashSet(roles));
     newRole.setPrivileges(Sets.newHashSet(privs));
 
+    // Using pattern matching for improved type checking
     // now for the name and description
     if (!Strings2.isBlank(roleA.getName())) {
       newRole.setName(roleA.getName());

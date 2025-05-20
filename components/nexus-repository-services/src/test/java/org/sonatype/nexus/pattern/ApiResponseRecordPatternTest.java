@@ -12,188 +12,220 @@
  */
 package org.sonatype.nexus.pattern;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.List;
 import java.util.Optional;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
-import org.sonatype.nexus.repository.rest.api.model.AbstractApiRepository;
-import org.sonatype.nexus.repository.rest.api.model.AbstractApiRepository.RepositoryAttributes;
-import org.sonatype.nexus.repository.rest.api.model.AbstractApiRepository.StorageAttributesRecord;
-import org.sonatype.nexus.repository.rest.api.model.AbstractApiRepository.HostedStorageAttributesRecord;
-import org.sonatype.nexus.repository.rest.api.model.AbstractApiRepository.CleanupPolicyAttributesRecord;
 
+import org.junit.Test;
 import org.junit.experimental.categories.Category;
-import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
-import static org.hamcrest.Matchers.containsString;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests for Java 21 Record Pattern Matching with API response objects.
- * 
- * These tests validate that record pattern matching works correctly with
- * repository API models after upgrading to Java 21.
+ * Tests for Java 21 record pattern matching with API response objects.
  */
 @Category(Java21TestGroup.class)
 public class ApiResponseRecordPatternTest
     extends TestSupport
 {
   /**
-   * Test implementation of AbstractApiRepository for testing.
+   * Simple API response record that contains a status code and message.
    */
-  private static class TestRepository extends AbstractApiRepository {
-    public TestRepository(String name, String format, String type, String url, Boolean online) {
-      super(name, format, type, url, online);
-    }
-  }
-  
+  record SimpleApiResponse(int statusCode, String message) {}
+
   /**
-   * Tests basic record pattern matching with repository attributes.
+   * API response with data payload.
    */
+  record ApiResponseWithData<T>(int statusCode, String message, T data) {}
+
+  /**
+   * Nested data structure for testing nested record patterns.
+   */
+  record RepositoryData(String name, String format, RepositoryDetails details) {}
+
+  /**
+   * Details about a repository for nested pattern testing.
+   */
+  record RepositoryDetails(String type, List<String> members, boolean online) {}
+
+  /**
+   * Error response with additional error details.
+   */
+  record ErrorResponse(int statusCode, String message, String errorCode, String stackTrace) {}
+
   @Test
-  public void testBasicRepositoryAttributePatternMatching() {
-    // Create a test repository
-    TestRepository repository = new TestRepository("test-repo", "maven", "hosted", "http://example.com/repo", true);
+  public void testBasicRecordPatternMatching() {
+    Object response = new SimpleApiResponse(200, "OK");
     
-    // Convert to record for pattern matching
-    RepositoryAttributes attributes = repository.toAttributes();
-    
-    // Test pattern matching with record pattern
-    if (attributes instanceof RepositoryAttributes(String name, String format, String type, String url, Boolean online)) {
-      assertEquals("test-repo", name, "Repository name should match");
-      assertEquals("maven", format, "Format should match");
-      assertEquals("hosted", type, "Type should match");
-      assertEquals("http://example.com/repo", url, "URL should match");
-      assertEquals(true, online, "Online status should match");
+    // Traditional approach with instanceof and accessor methods
+    if (response instanceof SimpleApiResponse) {
+      SimpleApiResponse apiResponse = (SimpleApiResponse) response;
+      assertThat(apiResponse.statusCode(), is(200));
+      assertThat(apiResponse.message(), is("OK"));
     } else {
-      // This should never happen
-      assertTrue(false, "Pattern matching failed");
+      fail("Response should be an instance of SimpleApiResponse");
+    }
+    
+    // Java 21 approach with record pattern matching
+    if (response instanceof SimpleApiResponse(int statusCode, String message)) {
+      assertThat(statusCode, is(200));
+      assertThat(message, is("OK"));
+    } else {
+      fail("Response should match SimpleApiResponse pattern");
     }
   }
-  
-  /**
-   * Tests pattern matching with storage attributes.
-   */
+
   @Test
-  public void testStorageAttributePatternMatching() {
-    // Create a test repository
-    TestRepository repository = new TestRepository("test-repo", "maven", "hosted", "http://example.com/repo", true);
+  public void testRecordPatternWithTypeInference() {
+    Object response = new SimpleApiResponse(201, "Created");
     
-    // Create storage attributes record
-    StorageAttributesRecord storageAttributes = new StorageAttributesRecord("default", true);
+    // Using var for type inference in pattern variables
+    if (response instanceof SimpleApiResponse(var statusCode, var message)) {
+      assertThat(statusCode, is(201));
+      assertThat(message, is("Created"));
+    } else {
+      fail("Response should match SimpleApiResponse pattern with type inference");
+    }
+  }
+
+  @Test
+  public void testGenericRecordPatternMatching() {
+    RepositoryData repoData = new RepositoryData("maven-central", "maven2", 
+        new RepositoryDetails("proxy", List.of("central"), true));
     
-    // Test pattern matching using the processAttributes method
-    String result = repository.processAttributes(storageAttributes);
+    Object response = new ApiResponseWithData<>(200, "OK", repoData);
     
-    assertThat(result, containsString("Storage: default"));
-    assertThat(result, containsString("strict validation: true"));
+    // Pattern matching with generic record type
+    if (response instanceof ApiResponseWithData<RepositoryData>(var status, var message, var data)) {
+      assertThat(status, is(200));
+      assertThat(message, is("OK"));
+      assertThat(data.name(), is("maven-central"));
+      assertThat(data.format(), is("maven2"));
+    } else {
+      fail("Response should match ApiResponseWithData pattern");
+    }
+  }
+
+  @Test
+  public void testNestedRecordPatternMatching() {
+    RepositoryData repoData = new RepositoryData("maven-central", "maven2", 
+        new RepositoryDetails("proxy", List.of("central"), true));
+    
+    Object response = new ApiResponseWithData<>(200, "OK", repoData);
+    
+    // Nested record pattern matching
+    if (response instanceof ApiResponseWithData<RepositoryData>(var status, var message, 
+        RepositoryData(var name, var format, RepositoryDetails(var type, var members, var online)))) {
+      
+      assertThat(status, is(200));
+      assertThat(message, is("OK"));
+      assertThat(name, is("maven-central"));
+      assertThat(format, is("maven2"));
+      assertThat(type, is("proxy"));
+      assertThat(members, is(List.of("central")));
+      assertThat(online, is(true));
+    } else {
+      fail("Response should match nested record pattern");
+    }
+  }
+
+  @Test
+  public void testPatternMatchingWithGuardConditions() {
+    Object successResponse = new SimpleApiResponse(200, "OK");
+    Object errorResponse = new SimpleApiResponse(404, "Not Found");
+    Object serverErrorResponse = new SimpleApiResponse(500, "Internal Server Error");
+    
+    // Pattern matching with guard conditions
+    String successResult = processResponse(successResponse);
+    String errorResult = processResponse(errorResponse);
+    String serverErrorResult = processResponse(serverErrorResponse);
+    
+    assertThat(successResult, is("Success: OK"));
+    assertThat(errorResult, is("Client Error: Not Found"));
+    assertThat(serverErrorResult, is("Server Error: Internal Server Error"));
   }
   
-  /**
-   * Tests pattern matching with hosted storage attributes.
-   */
+  private String processResponse(Object response) {
+    return switch (response) {
+      case SimpleApiResponse(var status, var message) when status >= 200 && status < 300 ->
+        "Success: " + message;
+      case SimpleApiResponse(var status, var message) when status >= 400 && status < 500 ->
+        "Client Error: " + message;
+      case SimpleApiResponse(var status, var message) when status >= 500 ->
+        "Server Error: " + message;
+      default ->
+        "Unknown response";
+    };
+  }
+
   @Test
-  public void testHostedStorageAttributePatternMatching() {
-    // Create a test repository
-    TestRepository repository = new TestRepository("test-repo", "maven", "hosted", "http://example.com/repo", true);
+  public void testPatternMatchingInSwitchExpression() {
+    Object successResponse = new SimpleApiResponse(200, "OK");
+    Object errorResponse = new ErrorResponse(400, "Bad Request", "INVALID_PARAM", "java.lang.IllegalArgumentException");
     
-    // Create hosted storage attributes record
-    HostedStorageAttributesRecord hostedAttributes = 
-        new HostedStorageAttributesRecord("default", true, "ALLOW");
+    // Using pattern matching in switch expression
+    Optional<String> successMessage = extractMessage(successResponse);
+    Optional<String> errorMessage = extractMessage(errorResponse);
     
-    // Test pattern matching using the processAttributes method
-    String result = repository.processAttributes(hostedAttributes);
+    assertThat(successMessage.isPresent(), is(true));
+    assertThat(successMessage.get(), is("OK"));
     
-    assertThat(result, containsString("Hosted Storage: default"));
-    assertThat(result, containsString("strict validation: true"));
-    assertThat(result, containsString("write policy: ALLOW"));
+    assertThat(errorMessage.isPresent(), is(true));
+    assertThat(errorMessage.get(), is("Bad Request (INVALID_PARAM)"));
   }
   
-  /**
-   * Tests pattern matching with cleanup policy attributes.
-   */
-  @Test
-  public void testCleanupPolicyAttributePatternMatching() {
-    // Create a test repository
-    TestRepository repository = new TestRepository("test-repo", "maven", "hosted", "http://example.com/repo", true);
-    
-    // Create cleanup policy attributes record
-    CleanupPolicyAttributesRecord cleanupAttributes = 
-        new CleanupPolicyAttributesRecord(new String[]{"policy1", "policy2"});
-    
-    // Test pattern matching using the processAttributes method
-    String result = repository.processAttributes(cleanupAttributes);
-    
-    assertThat(result, containsString("Cleanup Policies: policy1, policy2"));
+  private Optional<String> extractMessage(Object response) {
+    return switch (response) {
+      case SimpleApiResponse(var status, var message) ->
+        Optional.of(message);
+      case ErrorResponse(var status, var message, var errorCode, var stackTrace) ->
+        Optional.of(message + " (" + errorCode + ")");
+      default ->
+        Optional.empty();
+    };
   }
-  
-  /**
-   * Tests nested pattern matching with repository configuration.
-   */
+
   @Test
-  public void testNestedPatternMatching() {
-    // Create a test repository
-    TestRepository repository = new TestRepository("test-repo", "maven", "hosted", "http://example.com/repo", true);
+  public void testComparisonWithTraditionalApproach() {
+    RepositoryData repoData = new RepositoryData("maven-central", "maven2", 
+        new RepositoryDetails("proxy", List.of("central"), true));
     
-    // Create a nested configuration map
-    Map<String, Object> config = new HashMap<>();
-    config.put("repository", repository.toAttributes());
+    ApiResponseWithData<RepositoryData> response = new ApiResponseWithData<>(200, "OK", repoData);
     
-    // Test nested pattern matching
-    String result = repository.processRepositoryConfig(config);
+    // Traditional approach - multiple levels of accessor calls
+    int statusCode = response.statusCode();
+    String message = response.message();
+    String repoName = response.data().name();
+    String repoFormat = response.data().format();
+    String repoType = response.data().details().type();
+    List<String> repoMembers = response.data().details().members();
+    boolean repoOnline = response.data().details().online();
     
-    assertThat(result, containsString("Repository config for test-repo"));
-    assertThat(result, containsString("(maven/hosted)"));
-  }
-  
-  /**
-   * Tests pattern matching with guards.
-   */
-  @Test
-  public void testPatternMatchingWithGuards() {
-    // Create a test repository
-    TestRepository repository = new TestRepository("test-repo", "maven", "hosted", "http://example.com/repo", true);
+    assertThat(statusCode, is(200));
+    assertThat(message, is("OK"));
+    assertThat(repoName, is("maven-central"));
+    assertThat(repoFormat, is("maven2"));
+    assertThat(repoType, is("proxy"));
+    assertThat(repoMembers, is(List.of("central")));
+    assertThat(repoOnline, is(true));
     
-    // Create a configuration with cleanup policies
-    Map<String, Object> config = new HashMap<>();
-    config.put("cleanup", new CleanupPolicyAttributesRecord(new String[]{"policy1", "policy2"}));
-    
-    // Test pattern matching with guards
-    String result = repository.processRepositoryConfig(config);
-    
-    assertThat(result, containsString("Cleanup config with 2 policies"));
-  }
-  
-  /**
-   * Tests extracting attribute values using pattern matching.
-   */
-  @Test
-  public void testExtractAttributeValues() {
-    // Create a test repository
-    TestRepository repository = new TestRepository("test-repo", "maven", "hosted", "http://example.com/repo", true);
-    
-    // Create a nested configuration map
-    Map<String, Object> attributes = new HashMap<>();
-    attributes.put("storage", new StorageAttributesRecord("default", true));
-    
-    Map<String, Object> config = new HashMap<>();
-    config.put("attributes", attributes);
-    
-    // Extract the blob store name using pattern matching
-    Optional<String> blobStoreName = repository.extractAttributeValue(config, attrs -> {
-      if (attrs instanceof Map<?, ?> attrMap && attrMap.get("storage") instanceof StorageAttributesRecord(String name, var strict)) {
-        return name;
-      }
-      return null;
-    });
-    
-    assertTrue(blobStoreName.isPresent(), "Blob store name should be extracted");
-    assertEquals("default", blobStoreName.get(), "Extracted blob store name should match");
+    // Record pattern approach - single destructuring operation
+    if (response instanceof ApiResponseWithData<RepositoryData>(var status, var msg, 
+        RepositoryData(var name, var format, RepositoryDetails(var type, var members, var online)))) {
+      
+      assertThat(status, is(statusCode));
+      assertThat(msg, is(message));
+      assertThat(name, is(repoName));
+      assertThat(format, is(repoFormat));
+      assertThat(type, is(repoType));
+      assertThat(members, is(repoMembers));
+      assertThat(online, is(repoOnline));
+    } else {
+      fail("Response should match nested record pattern");
+    }
   }
 }

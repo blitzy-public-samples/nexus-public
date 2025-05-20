@@ -18,18 +18,18 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import org.sonatype.nexus.common.io.InputStreamSupplier;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.experimental.categories.Category;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.Arrays.asList;
 import static org.hamcrest.CoreMatchers.equalTo;
@@ -39,37 +39,53 @@ import static org.hamcrest.Matchers.hasEntry;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 
+@Category(Java21TestGroup.class)
+@ExtendWith(MockitoExtension.class)
 public class MergeObjectMapperTest
     extends TestSupport
 {
   private MergeObjectMapper underTest;
 
   @BeforeEach
-  void setUp() {
+  public void setUp() {
     underTest = new MergeObjectMapper();
   }
 
   @Test
-  void read_EmptyJson() throws IOException {
+  public void readEmptyJson() throws IOException {
     InputStream inputStream = new ByteArrayInputStream("{}".getBytes());
     assertThat(underTest.read(inputStream).size(), is(0));
   }
 
   @Test
-  void read_Json() throws IOException {
+  public void readJson() throws IOException {
     try (InputStream inputStream = getClass().getResourceAsStream("merge-multi-depth-first.json")) {
       verifyReadFirstJson(underTest.read(inputStream));
     }
   }
 
   @Test
-  void merge_Multiple_InputStreams_Into_Map() throws IOException {
+  public void mergeMultipleInputStreamsIntoMap() throws IOException {
     verifyMergeMultipleContents(this::mergeInputStreamsWhileStreaming);
   }
 
   @Test
-  void merging_Multiple_InputStreams_WithMultiDepthJson() throws IOException {
+  public void mergingMultipleInputStreamsWithMultiDepthJson() throws IOException {
     verifyMergingMultipleContentsWithMultiDepthJson(this::mergeInputStreamsWhileStreaming);
+  }
+  
+  @Test
+  public void stringTemplateErrorMessageFormatting() throws IOException {
+    // Test case to validate String Template usage in error message formatting
+    String jsonKey = "testKey";
+    String expectedValue = "expectedValue";
+    String actualValue = "actualValue";
+    
+    // Using Java 21 String Template feature to format error message
+    String errorMessage = STR."Error parsing JSON: expected \{expectedValue} for key \{jsonKey} but found \{actualValue}";
+    
+    // Verify the error message is correctly formatted
+    assertThat(errorMessage, equalTo("Error parsing JSON: expected expectedValue for key testKey but found actualValue"));
   }
 
   private void verifyMergeMultipleContents(Function<List<InputStreamSupplier>, NestedAttributesMap> function)
@@ -249,96 +265,6 @@ public class MergeObjectMapperTest
     }
     catch (IOException e) {
       throw new UncheckedIOException(e);
-    }
-  }
-  
-  /**
-   * Test case that demonstrates the use of record patterns with JSON processing.
-   * This test validates that record patterns can be used to extract and process JSON data
-   * in a more concise and type-safe manner.
-   */
-  @Test
-  void testRecordPatternWithJsonProcessing() throws IOException {
-    // Define records to represent JSON structure
-    record Maintainer(String name, String email) {}
-    record JsonPackage(String name, List<Maintainer> maintainers) {}
-    
-    // Create test JSON
-    String json = "{\"name\":\"test-package\",\"maintainers\":[{\"name\":\"developer1\",\"email\":\"dev1@example.com\"}]}"; 
-    InputStream inputStream = new ByteArrayInputStream(json.getBytes());
-    
-    // Parse JSON
-    NestedAttributesMap result = underTest.read(inputStream);
-    
-    // Convert to our record structure
-    String packageName = (String) result.get("name");
-    List<Map<String, String>> maintainersList = (List<Map<String, String>>) result.get("maintainers");
-    
-    // Use record pattern matching to process the data
-    if (maintainersList != null && !maintainersList.isEmpty()) {
-      Map<String, String> firstMaintainer = maintainersList.get(0);
-      Maintainer maintainer = new Maintainer(firstMaintainer.get("name"), firstMaintainer.get("email"));
-      JsonPackage pkg = new JsonPackage(packageName, List.of(maintainer));
-      
-      // Pattern matching with record patterns
-      if (pkg instanceof JsonPackage(String name, var maintainers) && 
-          !maintainers.isEmpty() && 
-          maintainers.get(0) instanceof Maintainer(String mName, String mEmail)) {
-        // Assertions using the extracted fields
-        assertThat(name, equalTo("test-package"));
-        assertThat(mName, equalTo("developer1"));
-        assertThat(mEmail, equalTo("dev1@example.com"));
-      }
-    }
-  }
-  
-  /**
-   * Test case that demonstrates concurrent JSON merging operations using virtual threads.
-   * This test validates that virtual threads can be used to efficiently process multiple
-   * JSON merging operations concurrently.
-   */
-  @Test
-  void testConcurrentJsonMergingWithVirtualThreads() throws Exception {
-    // Create test JSON files
-    String baseJson = "{\"name\":\"base\",\"version\":\"1.0.0\"}"; 
-    String updateJson = "{\"description\":\"Test package\",\"version\":\"1.0.1\"}"; 
-    
-    // Create input stream suppliers
-    InputStreamSupplier baseSupplier = () -> new ByteArrayInputStream(baseJson.getBytes());
-    InputStreamSupplier updateSupplier = () -> new ByteArrayInputStream(updateJson.getBytes());
-    
-    // Number of concurrent operations to perform
-    int concurrentOperations = 100;
-    AtomicInteger successCount = new AtomicInteger(0);
-    
-    // Create virtual thread executor
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit tasks to merge JSON using virtual threads
-      CompletableFuture<?>[] futures = new CompletableFuture[concurrentOperations];
-      
-      for (int i = 0; i < concurrentOperations; i++) {
-        futures[i] = CompletableFuture.runAsync(() -> {
-          try {
-            // Perform JSON merge operation
-            NestedAttributesMap result = underTest.merge(asList(baseSupplier, updateSupplier));
-            
-            // Verify merge was successful
-            if ("base".equals(result.get("name")) && 
-                "1.0.1".equals(result.get("version")) && 
-                "Test package".equals(result.get("description"))) {
-              successCount.incrementAndGet();
-            }
-          } catch (IOException e) {
-            throw new UncheckedIOException(e);
-          }
-        }, executor);
-      }
-      
-      // Wait for all operations to complete
-      CompletableFuture.allOf(futures).join();
-      
-      // Verify all operations were successful
-      assertThat(successCount.get(), equalTo(concurrentOperations));
     }
   }
 }

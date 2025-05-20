@@ -12,12 +12,13 @@
  */
 package org.sonatype.nexus.security.config.memory;
 
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Set;
 
 import org.sonatype.nexus.security.config.CUserRoleMapping;
 
-import static com.google.common.collect.Sets.newHashSet;
+import static java.lang.StringTemplate.STR;
+import static java.util.Set.of;
 
 /**
  * An implementation of {@link CUserRoleMapping} suitable for an in-memory backing store.
@@ -46,7 +47,7 @@ public class MemoryCUserRoleMapping
       MemoryCUserRoleMapping copy = (MemoryCUserRoleMapping) super.clone();
 
       if (this.roles != null) {
-        copy.roles = newHashSet(this.roles);
+        copy.roles = new LinkedHashSet<>(this.roles);
       }
 
       return copy;
@@ -59,7 +60,7 @@ public class MemoryCUserRoleMapping
   @Override
   public Set<String> getRoles() {
     if (this.roles == null) {
-      this.roles = newHashSet();
+      this.roles = new LinkedHashSet<>();
     }
     return this.roles;
   }
@@ -105,7 +106,7 @@ public class MemoryCUserRoleMapping
   }
 
   public MemoryCUserRoleMapping withRoles(final String... roles) {
-    setRoles(new HashSet<>(Set.of(roles)));
+    setRoles(Set.of(roles));
     return this;
   }
 
@@ -121,11 +122,6 @@ public class MemoryCUserRoleMapping
 
   @Override
   public String toString() {
-    return getClass().getSimpleName() + "{" +
-        "userId='" + userId + '\'' +
-        ", source='" + source + '\'' +
-        ", roles=" + roles +
-        ", version='" + version + '\'' +
-        '}';
+    return STR."\{getClass().getSimpleName()}{\n        userId='\{userId}'\n        source='\{source}'\n        roles=\{roles}\n        version='\{version}'\n        }";
   }
 }

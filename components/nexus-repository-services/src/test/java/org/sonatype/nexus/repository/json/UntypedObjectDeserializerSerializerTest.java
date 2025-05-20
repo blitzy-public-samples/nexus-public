@@ -13,22 +13,21 @@
 package org.sonatype.nexus.repository.json;
 
 import java.io.IOException;
-import static java.lang.StringTemplate.STR;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.DeserializationContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.experimental.categories.Category;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static com.fasterxml.jackson.core.JsonToken.END_ARRAY;
-import static com.fasterxml.jackson.core.JsonToken.VALUE_STRING;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -38,6 +37,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+@Category(Java21TestGroup.class)
 @ExtendWith(MockitoExtension.class)
 public class UntypedObjectDeserializerSerializerTest
     extends TestSupport
@@ -66,7 +66,7 @@ public class UntypedObjectDeserializerSerializerTest
   }
 
   @Test
-  public void mapping_Objects_Serializes_During_Deserialization_And_Returns_Null() throws IOException {
+  public void mappingObjectsSerializesDuringDeserializationAndReturnsNull() throws IOException {
     assertThat(underTest.mapObject(parser, context), nullValue());
 
     verify(generator).writeStartObject();
@@ -74,7 +74,7 @@ public class UntypedObjectDeserializerSerializerTest
   }
 
   @Test
-  public void mapping_Array_Serializes_During_Deserialization_And_Returns_Null() throws IOException {
+  public void mappingArraySerializesDuringDeserializationAndReturnsNull() throws IOException {
     when(parser.nextToken()).thenReturn(END_ARRAY);
 
     assertThat(underTest.mapArray(parser, context), nullValue());
@@ -84,7 +84,7 @@ public class UntypedObjectDeserializerSerializerTest
   }
 
   @Test
-  public void serializes_During_Deserialization() throws IOException {
+  public void serializesDuringDeserialization() throws IOException {
     Object deserializedValue = underTest.deserialize(parser, context);
 
     assertThat(deserializedValue, equalTo(FIELD_VALUE));
@@ -93,7 +93,7 @@ public class UntypedObjectDeserializerSerializerTest
   }
 
   @Test
-  public void serializes_During_DefaultDeserialize() throws IOException {
+  public void serializesDuringDefaultDeserialize() throws IOException {
     Object deserializedValue = underTest.defaultDeserialize(FIELD_NAME, parser, context);
 
     assertThat(deserializedValue, equalTo(FIELD_VALUE));
@@ -102,62 +102,11 @@ public class UntypedObjectDeserializerSerializerTest
   }
 
   @Test
-  public void use_Default_Deserialize() throws IOException {
+  public void usesDefaultDeserialize() throws IOException {
     Object deserializedValue = underTest.defaultValueDeserialize(parser, context);
 
     assertThat(deserializedValue, equalTo(FIELD_VALUE));
     verify(generator, never()).writeFieldName(any(String.class));
     verify(generator, never()).writeObject(any(String.class));
   }
-
-  @Test
-  public void string_Template_Usage_In_JSON_Messages() throws IOException {
-    // Setup a string template for JSON field name
-    String fieldType = "title";
-    String fieldId = "main";
-    String templateFieldName = STR."\{fieldType}_\{fieldId}";
-    
-    // Configure mock behavior
-    when(parser.getCurrentName()).thenReturn(templateFieldName);
-    when(context.handleUnexpectedToken(eq(Object.class), eq(parser))).thenReturn(FIELD_VALUE);
-    
-    // Execute test
-    Object deserializedValue = underTest.deserialize(parser, context);
-    
-    // Verify results
-    assertThat(deserializedValue, equalTo(FIELD_VALUE));
-    verify(generator).writeFieldName(eq(templateFieldName));
-    verify(generator).writeObject(eq(FIELD_VALUE));
-  }
-
-  @Test
-  public void pattern_Matching_In_JSON_Value_Processing() throws IOException {
-    // Setup for pattern matching test
-    when(parser.getCurrentToken()).thenReturn(VALUE_STRING);
-    when(parser.getText()).thenReturn("42");
-    
-    // Execute test with pattern matching
-    Object result = processJsonTokenWithPatternMatching(parser);
-    
-    // Verify results
-    assertThat(result, equalTo(42));
-  }
-  
-  /**
-   * Helper method that demonstrates pattern matching with JSON tokens
-   */
-  private Object processJsonTokenWithPatternMatching(JsonParser parser) throws IOException {
-    return switch (parser.getCurrentToken()) {
-      case VALUE_STRING -> {
-        String text = parser.getText();
-        if (text.matches("\\d+")) {
-          yield Integer.parseInt(text);
-        } else {
-          yield text;
-        }
-      }
-      case JsonToken token when token.isNumeric() -> parser.getNumberValue();
-      case null -> null;
-      default -> parser.getText();
-    };
-  }
+}

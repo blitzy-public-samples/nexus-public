@@ -12,7 +12,8 @@
  */
 package org.sonatype.nexus.security.authc;
 
-import java.util.Date;
+import java.io.Serializable;
+import java.time.Instant;
 import java.util.Set;
 
 import org.sonatype.nexus.security.ClientInfo;
@@ -23,48 +24,104 @@ import static java.util.Collections.emptySet;
 
 /**
  * Event fired when authentication validation is performed (someone tries to log in).
+ * <p>
+ * This class uses Java 21 Record feature for immutability and concise representation.
+ * Consumers can use Record Patterns for type-safe, destructuring access to the event data:
+ * <pre>
+ * if (event instanceof NexusAuthenticationEvent(var clientInfo, var successful, var eventDate, var reasons)) {
+ *   // Use the extracted components directly
+ *   if (successful) {
+ *     log.info("User {} logged in at {}", clientInfo.getUserid(), eventDate);
+ *   } else {
+ *     log.warn("Login failed for user {} with reasons: {}", clientInfo.getUserid(), reasons);
+ *   }
+ * }
+ * </pre>
  */
-public class NexusAuthenticationEvent
+public record NexusAuthenticationEvent(
+    ClientInfo clientInfo,
+    boolean successful,
+    Instant eventDate,
+    Set<AuthenticationFailureReason> authenticationFailureReasons) 
+    implements Serializable
 {
-  private final ClientInfo clientInfo;
+  private static final long serialVersionUID = 1L;
 
-  private final boolean successful;
-
-  private final Date date;
-
-  private final Set<AuthenticationFailureReason> authenticationFailureReasons;
-
+  /**
+   * Constructor with successful flag and empty failure reasons.
+   */
   public NexusAuthenticationEvent(
       final ClientInfo info,
       final boolean successful)
   {
-    this(info, successful, emptySet());
+    this(info, successful, Instant.now(), emptySet());
   }
 
+  /**
+   * Constructor with successful flag and specified failure reasons.
+   */
   public NexusAuthenticationEvent(
       final ClientInfo info,
       final boolean successful,
       final Set<AuthenticationFailureReason> authenticationFailureReasons)
   {
-    this.clientInfo = info;
-    this.successful = successful;
-    this.date = new Date();
-    this.authenticationFailureReasons = authenticationFailureReasons;
+    this(info, successful, Instant.now(), authenticationFailureReasons);
   }
 
-  public ClientInfo getClientInfo() {
-    return clientInfo;
-  }
-
+  /**
+   * Returns whether the authentication was successful.
+   * 
+   * @return true if authentication was successful, false otherwise
+   */
   public boolean isSuccessful() {
     return successful;
   }
-
-  public Date getEventDate() {
-    return date;
+  
+  /**
+   * Returns the client information.
+   * Provided for backward compatibility with pre-record code.
+   * 
+   * @return the client information
+   */
+  public ClientInfo getClientInfo() {
+    return clientInfo;
   }
-
+  
+  /**
+   * Returns the event date.
+   * Provided for backward compatibility with pre-record code.
+   * 
+   * @return the event date as an Instant
+   */
+  public Instant getEventDate() {
+    return eventDate;
+  }
+  
+  /**
+   * Returns the authentication failure reasons.
+   * Provided for backward compatibility with pre-record code.
+   * 
+   * @return the set of authentication failure reasons
+   */
   public Set<AuthenticationFailureReason> getAuthenticationFailureReasons() {
     return authenticationFailureReasons;
+  }
+
+  /**
+   * Returns a formatted string representation of this event using Java 21 String Templates.
+   */
+  @Override
+  public String toString() {
+    String userInfo = clientInfo != null ? clientInfo.getUserid() : "unknown";
+    String ipInfo = clientInfo != null ? clientInfo.getRemoteIP() : "unknown";
+    
+    return STR."""
+        NexusAuthenticationEvent {
+          user: \{userInfo}
+          ip: \{ipInfo}
+          successful: \{successful}
+          timestamp: \{eventDate}
+          \{successful ? "" : "failure reasons: " + authenticationFailureReasons}
+        }""";
   }
 }

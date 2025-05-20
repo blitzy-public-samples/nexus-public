@@ -7,10 +7,22 @@
       "version": "1.0",
       "foo": "bar",
       "foo1": "bar1"
+    },
+    "2.0": {
+      "version": "2.0",
+      "dependencies": {
+        "lib1": "^1.0.0",
+        "lib2": "~2.1.0"
+      },
+      "devDependencies": {
+        "test-lib": "3.0.0"
+      }
     }
   },
   "dist-tags": {
-    "latest": "2.0.1"
+    "latest": "2.0.1",
+    "beta": "2.1.0-beta.1",
+    "dev": "2.0.0-dev.3"
   },
   "notindominant": "always present",
   "not": {
@@ -25,6 +37,23 @@
         "e",
         "f"
       ]
+    },
+    "es": {
+      "alphabet": [
+        "a",
+        "b",
+        "c"
+      ],
+      "variants": {
+        "es-MX": {
+          "region": "Mexico",
+          "speakers": 129000000
+        },
+        "es-ES": {
+          "region": "Spain",
+          "speakers": 47000000
+        }
+      }
     }
   },
   "alphabet": [
@@ -47,6 +76,11 @@
     {
       "name": "jeremy",
       "email": "jeremy@sonatype.com"
+    },
+    {
+      "name": "alex",
+      "email": "alex@sonatype.com",
+      "roles": ["developer", "tester"]
     }
   ],
   "array-of-arrays": [
@@ -84,5 +118,74 @@
     {
       "color": "red"
     }
-  ]
+  ],
+  "pattern-matching-test": {
+    "primitives": [
+      true,
+      42,
+      3.14,
+      "string",
+      null
+    ],
+    "objects": [
+      {"type": "circle", "radius": 10.5},
+      {"type": "rectangle", "width": 5, "height": 10},
+      {"type": "triangle", "base": 4, "height": 3}
+    ],
+    "nested": {
+      "point": {"x": 10, "y": 20},
+      "line": {"start": {"x": 0, "y": 0}, "end": {"x": 100, "y": 100}},
+      "polygon": {"points": [{"x": 0, "y": 0}, {"x": 10, "y": 0}, {"x": 10, "y": 10}]}
+    }
+  },
+  "virtual-thread-test": {
+    "concurrent-operations": [
+      {"id": 1, "operation": "read", "resource": "file1.txt", "timeout": 1000},
+      {"id": 2, "operation": "write", "resource": "file2.txt", "data": "test content", "timeout": 2000},
+      {"id": 3, "operation": "delete", "resource": "file3.txt", "timeout": 500}
+    ],
+    "parallel-tasks": {
+      "task1": {"priority": "high", "dependencies": []},
+      "task2": {"priority": "medium", "dependencies": ["task1"]},
+      "task3": {"priority": "low", "dependencies": ["task1", "task2"]},
+      "task4": {"priority": "medium", "dependencies": []}
+    }
+  },
+  "record-pattern-test": [
+    {"firstName": "John", "lastName": "Doe", "age": 30},
+    {"firstName": "Jane", "lastName": "Smith", "age": 25},
+    {"firstName": "Bob", "lastName": "Johnson", "age": 45}
+  ],
+  "switch-pattern-test": [
+    {"variant": "string", "value": "test string"},
+    {"variant": "number", "value": 42},
+    {"variant": "boolean", "value": true},
+    {"variant": "object", "value": {"key": "value"}},
+    {"variant": "array", "value": [1, 2, 3]},
+    {"variant": "null", "value": null}
+  ],
+  "jackson-parser-test": {
+    "tokens": [
+      {"type": "START_OBJECT"},
+      {"type": "FIELD_NAME", "value": "name"},
+      {"type": "VALUE_STRING", "value": "test"},
+      {"type": "FIELD_NAME", "value": "age"},
+      {"type": "VALUE_NUMBER_INT", "value": 30},
+      {"type": "END_OBJECT"}
+    ],
+    "nested-tokens": {
+      "person": [
+        {"type": "START_OBJECT"},
+        {"type": "FIELD_NAME", "value": "name"},
+        {"type": "VALUE_STRING", "value": "John"},
+        {"type": "END_OBJECT"}
+      ],
+      "address": [
+        {"type": "START_OBJECT"},
+        {"type": "FIELD_NAME", "value": "street"},
+        {"type": "VALUE_STRING", "value": "123 Main St"},
+        {"type": "END_OBJECT"}
+      ]
+    }
+  }
 }

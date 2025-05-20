@@ -13,11 +13,13 @@
 package org.sonatype.nexus.security.config.memory;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.SequencedMap;
 
 import org.sonatype.nexus.security.config.CPrivilege;
 
-import com.google.common.collect.Maps;
+import static java.lang.StringTemplate.STR;
 
 /**
  * An implementation of {@link CPrivilege} suitable for an in-memory backing store.
@@ -33,7 +35,7 @@ public class MemoryCPrivilege
 
   private String name;
 
-  private Map<String, String> properties;
+  private SequencedMap<String, String> properties;
 
   private boolean readOnly = false;
 
@@ -44,10 +46,10 @@ public class MemoryCPrivilege
   @Override
   public MemoryCPrivilege clone() {
     try {
-      MemoryCPrivilege copy = (MemoryCPrivilege) super.clone();
+      var copy = (MemoryCPrivilege) super.clone();
 
       if (this.properties != null) {
-        copy.properties = Maps.newHashMap(this.properties);
+        copy.properties = new LinkedHashMap<>(this.properties);
       }
 
       return copy;
@@ -75,7 +77,7 @@ public class MemoryCPrivilege
   @Override
   public Map<String, String> getProperties() {
     if (this.properties == null) {
-      this.properties = Maps.newHashMap();
+      this.properties = new LinkedHashMap<>();
     }
     return this.properties;
   }
@@ -122,7 +124,13 @@ public class MemoryCPrivilege
 
   @Override
   public void setProperties(final Map<String, String> properties) {
-    this.properties = properties;
+    if (properties instanceof SequencedMap<String, String> sequencedMap) {
+      this.properties = sequencedMap;
+    } else if (properties != null) {
+      this.properties = new LinkedHashMap<>(properties);
+    } else {
+      this.properties = null;
+    }
   }
 
   @Override
@@ -147,15 +155,15 @@ public class MemoryCPrivilege
 
   @Override
   public String toString() {
-    return getClass().getSimpleName() + "{" +
-        "id='" + id + '\'' +
-        ", name='" + name + '\'' +
-        ", description='" + description + '\'' +
-        ", type='" + type + '\'' +
-        ", properties=" + properties +
-        ", readOnly=" + readOnly +
-        ", version='" + version + '\'' +
-        '}';
+    return STR."""{\{getClass().getSimpleName()}{
+        id='\{id}'
+        , name='\{name}'
+        , description='\{description}'
+        , type='\{type}'
+        , properties=\{properties}
+        , readOnly=\{readOnly}
+        , version='\{version}'
+        }""";
   }
 
   public static class MemoryCPrivilegeBuilder {
@@ -165,7 +173,7 @@ public class MemoryCPrivilege
 
     private String name;
 
-    private final Map<String, String> properties = new HashMap<>();
+    private final SequencedMap<String, String> properties = new LinkedHashMap<>();
 
     private boolean readOnly = false;
 
@@ -201,14 +209,34 @@ public class MemoryCPrivilege
       this.version = version;
       return this;
     }
-
+    
+    /**
+     * Add a property to the privilege.
+     * Uses record pattern matching for handling property entries when merging.
+     */
     public MemoryCPrivilegeBuilder property(final String key, final String value) {
       properties.put(key, value);
       return this;
     }
+    
+    /**
+     * Add all properties from the given map to this builder.
+     * Demonstrates record pattern matching for Map.Entry objects.
+     */
+    public MemoryCPrivilegeBuilder properties(final Map<String, String> additionalProperties) {
+      if (additionalProperties != null) {
+        for (var entry : additionalProperties.entrySet()) {
+          // Using record pattern matching for Map.Entry
+          if (entry instanceof Map.Entry<String, String>(var k, var v)) {
+            properties.put(k, v);
+          }
+        }
+      }
+      return this;
+    }
 
     public MemoryCPrivilege build() {
-      MemoryCPrivilege privilege = new MemoryCPrivilege();
+      var privilege = new MemoryCPrivilege();
       privilege.setId(id);
       privilege.setDescription(description);
       privilege.setName(name);

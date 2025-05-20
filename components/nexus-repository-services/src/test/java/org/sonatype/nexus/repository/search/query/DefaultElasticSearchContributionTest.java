@@ -18,17 +18,19 @@ import org.hamcrest.Matchers;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 
 @ExtendWith(MockitoExtension.class)
-class DefaultElasticSearchContributionTest
+@org.junit.experimental.categories.Category(Java21TestGroup.class)
+public class DefaultElasticSearchContributionTest
 {
   private DefaultElasticSearchContribution
       defaultSearchContribution = new DefaultElasticSearchContribution();
 
   @Test
-  void defaultSearchContributionEscapesStartingSlash() {
+  public void escapesStartingSlash() {
     BoolQueryBuilder query = QueryBuilders.boolQuery();
     String field = "name";
     String value = "/foo";
@@ -39,7 +41,7 @@ class DefaultElasticSearchContributionTest
   }
 
   @Test
-  void defaultSearchContributionEscapesContainedSlashes() {
+  public void escapesContainedSlashes() {
     BoolQueryBuilder query = QueryBuilders.boolQuery();
     String field = "name";
     String value = "a/b/";

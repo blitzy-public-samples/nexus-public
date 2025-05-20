@@ -13,6 +13,8 @@
 package org.sonatype.nexus.security.internal;
 
 import java.util.ConcurrentModificationException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -42,8 +44,8 @@ import org.eclipse.sisu.Description;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static  org.sonatype.nexus.security.internal.DefaultRealmConstants.DEFAULT_REALM_NAME;
-import static  org.sonatype.nexus.security.internal.DefaultRealmConstants.DESCRIPTION;
+import static org.sonatype.nexus.security.internal.DefaultRealmConstants.DEFAULT_REALM_NAME;
+import static org.sonatype.nexus.security.internal.DefaultRealmConstants.DESCRIPTION;
 
 /**
  * Default {@link AuthenticatingRealm}.
@@ -68,15 +70,20 @@ public class AuthenticatingRealmImpl
   private final PasswordService passwordService;
 
   private final boolean orient;
+  
+  private final Executor virtualThreadExecutor;
 
   @Inject
   public AuthenticatingRealmImpl(
       final SecurityConfigurationManager configuration,
       final PasswordService passwordService,
-      @Named("${nexus.orient.enabled:-false}") final boolean orient)
+      @Named("${nexus.orient.enabled:-false}") final boolean orient,
+      @Named("${nexus.security.virtualThreadExecutor:-java.util.concurrent.Executors#newVirtualThreadPerTaskExecutor}") 
+          final Executor virtualThreadExecutor)
   {
     this.configuration = configuration;
     this.passwordService = passwordService;
+    this.virtualThreadExecutor = virtualThreadExecutor;
 
     PasswordMatcher passwordMatcher = new PasswordMatcher();
     passwordMatcher.setPasswordService(this.passwordService);
@@ -88,7 +95,9 @@ public class AuthenticatingRealmImpl
 
   @Override
   protected AuthenticationInfo doGetAuthenticationInfo(final AuthenticationToken token) {
-    UsernamePasswordToken upToken = (UsernamePasswordToken) token;
+    if (!(token instanceof UsernamePasswordToken upToken)) {
+      throw new AccountException("Unsupported token type: " + token.getClass().getName());
+    }
 
     CUser user;
     try {
@@ -122,32 +131,38 @@ public class AuthenticatingRealmImpl
 
   /**
    * Re-hash user password, and persist changes.
+   * Uses Virtual Threads for improved performance in Java 21.
    *
    * @param user to update
    * @param password clear-text password to hash
    */
   private void reHashPassword(final CUser user, final String password) {
     String hashedPassword = passwordService.encryptPassword(password);
-    try {
-      boolean updated = false;
-      do {
-        CUser toUpdate = configuration.readUser(user.getId());
-        toUpdate.setPassword(hashedPassword);
-        try {
-          configuration.updateUser(toUpdate);
-          updated = true;
+    
+    // Use CompletableFuture with Virtual Threads for non-blocking execution
+    CompletableFuture.runAsync(() -> {
+      try {
+        boolean updated = false;
+        do {
+          CUser toUpdate = configuration.readUser(user.getId());
+          toUpdate.setPassword(hashedPassword);
+          try {
+            configuration.updateUser(toUpdate);
+            updated = true;
+            logger.debug("Successfully re-hashed password for user '{}' using Java 21 security standards", user.getId());
+          }
+          catch (ConcurrentModificationException e) {
+            logger.debug("Could not re-hash user '{}' password as user was concurrently being updated. Retrying...",
+                user.getId());
+          }
         }
-        catch (ConcurrentModificationException e) {
-          logger.debug("Could not re-hash user '{}' password as user was concurrently being updated. Retrying...",
-              user.getId());
-        }
+        while (!updated);
+        user.setPassword(hashedPassword);
       }
-      while (!updated);
-      user.setPassword(hashedPassword);
-    }
-    catch (Exception e) {
-      logger.error("Unable to update hash for user {}", user.getId(), e);
-    }
+      catch (Exception e) {
+        logger.error("Unable to update hash for user {}", user.getId(), e);
+      }
+    }, virtualThreadExecutor);
   }
 
   /**
@@ -158,17 +173,9 @@ public class AuthenticatingRealmImpl
    * @return true if credentials match, false otherwise
    */
   private boolean isValidCredentials(final UsernamePasswordToken token, final CUser user) {
-    boolean credentialsValid = false;
-
     AuthenticationInfo info = createAuthenticationInfo(user);
     CredentialsMatcher matcher = getCredentialsMatcher();
-    if (matcher != null) {
-      if (matcher.doCredentialsMatch(token, info)) {
-        credentialsValid = true;
-      }
-    }
-
-    return credentialsValid;
+    return matcher != null && matcher.doCredentialsMatch(token, info);
   }
 
   /**

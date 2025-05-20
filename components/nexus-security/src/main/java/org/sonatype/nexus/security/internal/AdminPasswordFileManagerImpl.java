@@ -16,6 +16,13 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -28,6 +35,8 @@ import org.sonatype.nexus.security.config.AdminPasswordFileManager;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
+ * Implementation of {@link AdminPasswordFileManager} that uses Java 21 features for improved performance.
+ *
  * @since 3.17
  */
 @Named
@@ -37,64 +46,141 @@ public class AdminPasswordFileManagerImpl
   implements AdminPasswordFileManager
 {
   private static final String FILENAME = "admin.password";
+  private static final Set<PosixFilePermission> OWNER_ONLY_PERMISSIONS = 
+      PosixFilePermissions.fromString("rw-------");
 
-  public final ApplicationDirectories applicationDirectories;
-
-  private final File adminPasswordFile;
+  private final ApplicationDirectories applicationDirectories;
+  private final Path adminPasswordFilePath;
 
   @Inject
   public AdminPasswordFileManagerImpl(final ApplicationDirectories applicationDirectories) {
     this.applicationDirectories = checkNotNull(applicationDirectories);
-    adminPasswordFile = new File(applicationDirectories.getWorkDirectory(), FILENAME);
+    this.adminPasswordFilePath = Path.of(applicationDirectories.getWorkDirectory().getPath(), FILENAME);
   }
 
   @Override
   public boolean writeFile(String password) throws IOException {
-    File workdir = applicationDirectories.getWorkDirectory();
-    if (!workdir.isDirectory() && !workdir.mkdirs()) {
-      log.error("Failed to create work directory {}", workdir);
-      return false;
+    // Create a virtual thread to handle the file I/O operation
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      Future<Boolean> result = executor.submit(() -> {
+        try {
+          Path workDirPath = applicationDirectories.getWorkDirectory().toPath();
+          
+          // Create work directory if it doesn't exist
+          if (!Files.exists(workDirPath)) {
+            try {
+              Files.createDirectories(workDirPath);
+            } catch (IOException e) {
+              log.error(STR."Failed to create work directory \{workDirPath}", e);
+              return false;
+            }
+          }
+          
+          // Create the file if it doesn't exist and set permissions
+          if (!Files.exists(adminPasswordFilePath)) {
+            try {
+              Files.createFile(adminPasswordFilePath);
+              try {
+                Files.setPosixFilePermissions(adminPasswordFilePath, OWNER_ONLY_PERMISSIONS);
+              } catch (UnsupportedOperationException e) {
+                // Not on a POSIX filesystem, fall back to standard file permissions
+                adminPasswordFilePath.toFile().setReadable(true, true);
+                adminPasswordFilePath.toFile().setWritable(true, true);
+              }
+            } catch (IOException e) {
+              log.error(STR."Failed to create admin password file \{adminPasswordFilePath}", e);
+              return false;
+            }
+          }
+          
+          // Write the password to the file
+          try {
+            log.info(STR."Writing admin user temporary password to \{adminPasswordFilePath}");
+            Files.writeString(adminPasswordFilePath, password, StandardCharsets.UTF_8, 
+                StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+            return true;
+          } catch (IOException e) {
+            log.error("Failed to write temporary password to disk", e);
+            return false;
+          }
+        } catch (Exception e) {
+          log.error("Unexpected error writing admin password file", e);
+          return false;
+        }
+      });
+      
+      return result.get(); // Wait for the virtual thread to complete
+    } catch (Exception e) {
+      // Use pattern matching for exceptions to handle different error types
+      if (e instanceof IOException ioe) {
+        throw ioe; // Rethrow IOException as specified in the interface
+      } else if (e instanceof InterruptedException ie) {
+        Thread.currentThread().interrupt(); // Restore interrupted status
+        throw new IOException("Interrupted while writing admin password file", ie);
+      } else {
+        throw new IOException("Failed to write admin password file", e);
+      }
     }
-
-    if (adminPasswordFile.createNewFile()) {
-      adminPasswordFile.setReadable(true, true);
-    }
-
-    try {
-      log.info("Writing admin user temporary password to {}", adminPasswordFile.toString());
-      Files.write(adminPasswordFile.toPath(), password.getBytes(StandardCharsets.UTF_8));
-    }
-    catch (Exception e) {
-      log.error("Failed to write temporary password to disk", e);
-      return false;
-    }
-
-    return true;
   }
 
   @Override
   public boolean exists() {
-    return adminPasswordFile.exists();
+    return Files.exists(adminPasswordFilePath);
   }
 
   @Override
   public String getPath() {
-    return adminPasswordFile.getAbsolutePath();
+    return adminPasswordFilePath.toAbsolutePath().toString();
   }
 
   @Override
   public String readFile() throws IOException {
-    if (adminPasswordFile.exists()) {
-      return new String(Files.readAllBytes(adminPasswordFile.toPath()), StandardCharsets.UTF_8);
+    // Use a virtual thread to handle the file read operation
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      Future<String> result = executor.submit(() -> {
+        if (Files.exists(adminPasswordFilePath)) {
+          try {
+            return Files.readString(adminPasswordFilePath, StandardCharsets.UTF_8);
+          } catch (IOException e) {
+            log.error(STR."Failed to read admin password file \{adminPasswordFilePath}", e);
+            throw e;
+          }
+        }
+        return null;
+      });
+      
+      return result.get(); // Wait for the virtual thread to complete
+    } catch (Exception e) {
+      // Use pattern matching for exceptions
+      if (e instanceof IOException ioe) {
+        throw ioe;
+      } else if (e instanceof InterruptedException ie) {
+        Thread.currentThread().interrupt();
+        throw new IOException("Interrupted while reading admin password file", ie);
+      } else {
+        throw new IOException("Failed to read admin password file", e);
+      }
     }
-
-    return null;
   }
 
   @Override
   public void removeFile() {
-    if (adminPasswordFile.exists() && !adminPasswordFile.delete()) {
-      log.error("Failed to delete admin.password file {}", adminPasswordFile);
+    // Use a virtual thread to handle the file deletion operation
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      executor.submit(() -> {
+        try {
+          if (Files.exists(adminPasswordFilePath)) {
+            Files.delete(adminPasswordFilePath);
+            log.debug(STR."Successfully deleted admin password file \{adminPasswordFilePath}");
+          }
+        } catch (IOException e) {
+          log.error(STR."Failed to delete admin password file \{adminPasswordFilePath}", e);
+        }
+        return null;
+      }).get(); // Wait for completion
+    } catch (Exception e) {
+      // Just log the error since the interface doesn't throw exceptions
+      log.error(STR."Error during admin password file removal: \{e.getMessage()}", e);
     }
   }
 }

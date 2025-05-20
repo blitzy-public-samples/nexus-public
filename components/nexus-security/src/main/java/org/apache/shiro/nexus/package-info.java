@@ -1,6 +1,6 @@
 /*
  * Sonatype Nexus (TM) Open Source Version
- * Copyright (c) 2008-present Sonatype, Inc.
+ * Copyright (c) 2008-2024 Sonatype, Inc.
  * All rights reserved. Includes the third-party code listed at http://links.sonatype.com/products/nexus/oss/attributions.
  *
  * This program and the accompanying materials are made available under the terms of the Eclipse Public License Version 1.0,
@@ -11,7 +11,10 @@
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  */
 /**
- * Customized Shiro components, which need to be under a {@code org.apache.shiro} package
- * for default bean configuration handling.
+ * Customized Shiro components compatible with Apache Shiro 2.0.0 and Java 21, which need to be under 
+ * a {@code org.apache.shiro} package for default bean configuration handling.
+ * <p>
+ * These components are designed to work with Apache Shiro 2.0.0+ and take advantage of Java 21 features
+ * while maintaining backward compatibility with the Shiro security framework.
  */
 package org.apache.shiro.nexus;

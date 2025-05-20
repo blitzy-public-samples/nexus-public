@@ -25,6 +25,7 @@ import com.google.common.collect.ImmutableMap;
 import org.apache.shiro.subject.Subject;
 import org.elasticsearch.search.lookup.SourceLookup;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -45,6 +46,7 @@ import static org.sonatype.nexus.security.BreadActions.BROWSE;
  * Tests for {@link ContentAuthPluginScript}.
  */
 @ExtendWith(MockitoExtension.class)
+@Tag("Java21TestGroup")
 public class ContentAuthPluginScriptTest
     extends TestSupport
 {
@@ -93,39 +95,39 @@ public class ContentAuthPluginScriptTest
   }
 
   @Test
-  public void testPermitted() {
-    sourceLookup.setSource(new ImmutableMap.Builder<String, Object>()
-        .put("format", FORMAT)
-        .put("repository_name", REPOSITORY_NAME)
-        .put("assets", Collections.singletonList(Collections.singletonMap("name", PATH)))
-        .build());
+  void permittedReturnsTrue() {
+    sourceLookup.setSource(STR."""
+        {"format": "{FORMAT}", 
+         "repository_name": "{REPOSITORY_NAME}", 
+         "assets": [{Collections.singletonMap("name", PATH)}]}
+        """);
     when(contentPermissionChecker.isPermitted(Collections.singleton(REPOSITORY_NAME), FORMAT, BROWSE, variableSource))
         .thenReturn(true);
     assertThat(underTest.run(), is(true));
-    verify(contentPermissionChecker, times(1)).isPermitted(Collections.singleton(REPOSITORY_NAME), FORMAT, BROWSE,
+    verify(contentPermissionChecker).isPermitted(Collections.singleton(REPOSITORY_NAME), FORMAT, BROWSE,
         variableSource);
   }
 
   @Test
-  public void testNotPermitted() {
-    sourceLookup.setSource(new ImmutableMap.Builder<String, Object>()
-        .put("format", FORMAT)
-        .put("repository_name", REPOSITORY_NAME)
-        .put("assets", Collections.singletonList(Collections.singletonMap("name", PATH)))
-        .build());
+  void notPermittedReturnsFalse() {
+    sourceLookup.setSource(STR."""
+        {"format": "{FORMAT}", 
+         "repository_name": "{REPOSITORY_NAME}", 
+         "assets": [{Collections.singletonMap("name", PATH)}]}
+        """);
     when(contentPermissionChecker.isPermitted(Collections.singleton(REPOSITORY_NAME), FORMAT, BROWSE, variableSource))
         .thenReturn(false);
     assertThat(underTest.run(), is(false));
-    verify(contentPermissionChecker, times(1)).isPermitted(Collections.singleton(REPOSITORY_NAME), FORMAT, BROWSE,
+    verify(contentPermissionChecker).isPermitted(Collections.singleton(REPOSITORY_NAME), FORMAT, BROWSE,
         variableSource);
   }
 
   @Test
-  public void testWithoutAssets() {
-    sourceLookup.setSource(new ImmutableMap.Builder<String, Object>()
-        .put("format", FORMAT)
-        .put("repository_name", REPOSITORY_NAME)
-        .build());
+  void withoutAssetsReturnsFalse() {
+    sourceLookup.setSource(STR."""
+        {"format": "{FORMAT}", 
+         "repository_name": "{REPOSITORY_NAME}"}
+        """);
     assertThat(underTest.run(), is(false));
     verifyNoInteractions(contentPermissionChecker);
   }

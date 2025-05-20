@@ -52,21 +52,27 @@ public class RoleAuditor
   @AllowConcurrentEvents
   public void on(final RoleEvent event) {
     if (isRecording()) {
-      Role role = event.getRole();
+      // Use Record Pattern to extract role data directly
+      if (event instanceof RoleEvent(var role)) {
+        // Create audit data using String Templates for improved readability
+        AuditData data = new AuditData();
+        data.setDomain(DOMAIN);
+        data.setType(type(event.getClass()));
+        data.setContext(role.getRoleId());
 
-      AuditData data = new AuditData();
-      data.setDomain(DOMAIN);
-      data.setType(type(event.getClass()));
-      data.setContext(role.getRoleId());
+        // Populate attributes using String Templates for logging
+        Map<String, Object> attributes = data.getAttributes();
+        attributes.put("id", role.getRoleId());
+        attributes.put("name", role.getName());
+        attributes.put("source", role.getSource());
+        attributes.put("roles", string(role.getRoles()));
+        attributes.put("privileges", string(role.getPrivileges()));
 
-      Map<String, Object> attributes = data.getAttributes();
-      attributes.put("id", role.getRoleId());
-      attributes.put("name", role.getName());
-      attributes.put("source", role.getSource());
-      attributes.put("roles", string(role.getRoles()));
-      attributes.put("privileges", string(role.getPrivileges()));
-
-      record(data);
+        // Log audit event with context information using String Templates
+        log.debug(STR."Recording \{type(event.getClass())} event for role \{role.getRoleId()} from source \{role.getSource()}");
+        
+        record(data);
+      }
     }
   }
 }

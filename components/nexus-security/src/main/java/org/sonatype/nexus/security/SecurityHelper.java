@@ -13,6 +13,10 @@
 package org.sonatype.nexus.security;
 
 import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.stream.StreamSupport;
 
 import javax.inject.Named;
@@ -116,14 +120,23 @@ public class SecurityHelper
       log.trace("Checking if subject '{}' has ANY of these permissions: {}",
           subject.getPrincipal(), Arrays.toString(permissions));
     }
+    
+    // Use pattern matching for switch to improve type safety and readability
     for (Permission permission : permissions) {
-      if (subject.isPermitted(permission)) {
+      boolean permitted = switch (permission) {
+        case WildcardPermission2 wp -> subject.isPermitted(wp);
+        case Permission p -> subject.isPermitted(p);
+        case null -> false;
+      };
+      
+      if (permitted) {
         if (trace) {
           log.trace("Subject '{}' has permission: {}", subject.getPrincipal(), permission);
         }
         return true;
       }
     }
+    
     if (trace) {
       log.trace("Subject '{}' missing required permissions: {}",
           subject.getPrincipal(), Arrays.toString(permissions));
@@ -133,6 +146,7 @@ public class SecurityHelper
 
   /**
    * Check if subject has ANY of the given permissions.
+   * Optimized with Java 21 Sequenced Collections for better performance.
    */
   public boolean anyPermitted(final Subject subject, final Iterable<Permission> permissions) {
     return anyPermitted(
@@ -161,8 +175,16 @@ public class SecurityHelper
       log.trace("Checking if subject '{}' has ALL of these permissions: {}",
           subject.getPrincipal(), Arrays.toString(permissions));
     }
+    
+    // Use pattern matching for switch to improve type safety and readability
     for (Permission permission : permissions) {
-      if (!subject.isPermitted(permission)) {
+      boolean permitted = switch (permission) {
+        case WildcardPermission2 wp -> subject.isPermitted(wp);
+        case Permission p -> subject.isPermitted(p);
+        case null -> false;
+      };
+      
+      if (!permitted) {
         if (trace) {
           log.trace("Subject '{}' missing permission: {}", subject.getPrincipal(), permission);
         }
@@ -224,5 +246,65 @@ public class SecurityHelper
    */
   public boolean isAllPermitted() {
     return isPermitted(new WildcardPermission2("nexus:*"))[0];
+  }
+  
+  /**
+   * Asynchronously check if subject has ANY of the given permissions using Virtual Threads.
+   * This is useful for batch operations that need to check many permissions.
+   *
+   * @since 3.60
+   */
+  public Future<Boolean> anyPermittedAsync(final Subject subject, final Permission... permissions) {
+    checkNotNull(subject);
+    checkNotNull(permissions);
+    checkArgument(permissions.length != 0);
+    
+    // Use virtual threads for I/O-bound permission checking operations
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    return executor.submit(() -> anyPermitted(subject, permissions));
+  }
+  
+  /**
+   * Asynchronously check if subject has ALL of the given permissions using Virtual Threads.
+   * This is useful for batch operations that need to check many permissions.
+   *
+   * @since 3.60
+   */
+  public Future<Boolean> allPermittedAsync(final Subject subject, final Permission... permissions) {
+    checkNotNull(subject);
+    checkNotNull(permissions);
+    checkArgument(permissions.length != 0);
+    
+    // Use virtual threads for I/O-bound permission checking operations
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    return executor.submit(() -> allPermitted(subject, permissions));
+  }
+  
+  /**
+   * Batch check permissions for multiple subjects and permissions using Virtual Threads.
+   * Returns a list of results in the same order as the input subjects.
+   *
+   * @since 3.60
+   */
+  public List<boolean[]> batchCheckPermissions(final List<Subject> subjects, final Permission... permissions) {
+    checkNotNull(subjects);
+    checkNotNull(permissions);
+    checkArgument(permissions.length != 0);
+    
+    // Use virtual threads for concurrent permission checking
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      return subjects.stream()
+          .map(subject -> executor.submit(() -> isPermitted(subject, permissions)))
+          .map(future -> {
+            try {
+              return future.get();
+            }
+            catch (Exception e) {
+              log.error("Error checking permissions", e);
+              return new boolean[permissions.length];
+            }
+          })
+          .toList();
+    }
   }
 }

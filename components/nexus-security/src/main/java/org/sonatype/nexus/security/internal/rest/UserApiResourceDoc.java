@@ -17,18 +17,18 @@ import java.util.Collection;
 import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
 
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
-import io.swagger.annotations.ApiParam;
-import io.swagger.annotations.ApiResponse;
-import io.swagger.annotations.ApiResponses;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
  * Swagger documentation for {@link UserApiResource}
  *
  * @since 3.17
  */
-@Api(value = "Security management: users")
+@Tag(name = "Security management: users")
 public interface UserApiResourceDoc
 {
   String USER_ID_DESCRIPTION = "The userid the request should apply to.";
@@ -39,38 +39,53 @@ public interface UserApiResourceDoc
 
   String PASSWORD_REQUIRED = "Password was not supplied in the body of the request";
 
-  @ApiOperation("Retrieve a list of users.")
-  @ApiResponses(value = {@ApiResponse(code = 400, message = PASSWORD_REQUIRED),
-      @ApiResponse(code = 403, message = NexusSecurityApiConstants.INVALID_PERMISSIONS)})
+  @Operation(
+      summary = "Retrieve a list of users.",
+      description = "Returns a list of users. This operation supports non-blocking retrieval with Virtual Threads for improved concurrency.")
+  @ApiResponses(value = {
+      @ApiResponse(responseCode = "400", description = PASSWORD_REQUIRED),
+      @ApiResponse(responseCode = "403", description = NexusSecurityApiConstants.INVALID_PERMISSIONS)})
   Collection<ApiUser> getUsers(
-      @ApiParam("An optional term to search userids for.") String userId,
-      @ApiParam("An optional user source to restrict the search to.") String source);
+      @Parameter(description = "An optional term to search userids for.") String userId,
+      @Parameter(description = "An optional user source to restrict the search to.") String source);
 
-  @ApiOperation("Create a new user in the default source.")
-  @ApiResponses(value = {@ApiResponse(code = 400, message = PASSWORD_REQUIRED),
-      @ApiResponse(code = 403, message = NexusSecurityApiConstants.INVALID_PERMISSIONS)})
-  ApiUser createUser(@ApiParam("A representation of the user to create.") @NotNull @Valid ApiCreateUser user);
+  @Operation(
+      summary = "Create a new user in the default source.",
+      description = "Creates a new user account in the default source. This operation is thread-safe and supports Virtual Threads.")
+  @ApiResponses(value = {
+      @ApiResponse(responseCode = "400", description = PASSWORD_REQUIRED),
+      @ApiResponse(responseCode = "403", description = NexusSecurityApiConstants.INVALID_PERMISSIONS)})
+  ApiUser createUser(@Parameter(description = "A representation of the user to create.") @NotNull @Valid ApiCreateUser user);
 
-  @ApiOperation("Update an existing user.")
-  @ApiResponses(value = {@ApiResponse(code = 400, message = PASSWORD_REQUIRED),
-      @ApiResponse(code = 403, message = NexusSecurityApiConstants.INVALID_PERMISSIONS),
-      @ApiResponse(code = 404, message = NexusSecurityApiConstants.USER_OR_SOURCE_NOT_FOUND)})
+  @Operation(
+      summary = "Update an existing user.",
+      description = "Updates an existing user account. This operation is thread-safe and supports Virtual Threads.")
+  @ApiResponses(value = {
+      @ApiResponse(responseCode = "400", description = PASSWORD_REQUIRED),
+      @ApiResponse(responseCode = "403", description = NexusSecurityApiConstants.INVALID_PERMISSIONS),
+      @ApiResponse(responseCode = "404", description = NexusSecurityApiConstants.USER_OR_SOURCE_NOT_FOUND)})
   void updateUser(
-      @ApiParam(value = USER_ID_DESCRIPTION) String userId,
-      @ApiParam("A representation of the user to update.") @NotNull @Valid ApiUser user);
+      @Parameter(description = USER_ID_DESCRIPTION) String userId,
+      @Parameter(description = "A representation of the user to update.") @NotNull @Valid ApiUser user);
 
-  @ApiOperation("Delete a user.")
-  @ApiResponses(value = {@ApiResponse(code = 400, message = NexusSecurityApiConstants.NON_LOCAL_USER_CANNOT_BE_DELETED),
-      @ApiResponse(code = 403, message = NexusSecurityApiConstants.INVALID_PERMISSIONS),
-      @ApiResponse(code = 404, message = NexusSecurityApiConstants.USER_OR_SOURCE_NOT_FOUND)})
-  void deleteUser(@ApiParam(value = USER_ID_DESCRIPTION) String userId,
-                  @ApiParam(value = REALM_DESCRIPTION) String realm);
+  @Operation(
+      summary = "Delete a user.",
+      description = "Deletes a user account. This operation is thread-safe and supports Virtual Threads.")
+  @ApiResponses(value = {
+      @ApiResponse(responseCode = "400", description = NexusSecurityApiConstants.NON_LOCAL_USER_CANNOT_BE_DELETED),
+      @ApiResponse(responseCode = "403", description = NexusSecurityApiConstants.INVALID_PERMISSIONS),
+      @ApiResponse(responseCode = "404", description = NexusSecurityApiConstants.USER_OR_SOURCE_NOT_FOUND)})
+  void deleteUser(@Parameter(description = USER_ID_DESCRIPTION) String userId,
+                  @Parameter(description = REALM_DESCRIPTION) String realm);
 
-  @ApiOperation("Change a user's password.")
-  @ApiResponses(value = {@ApiResponse(code = 400, message = PASSWORD_REQUIRED),
-      @ApiResponse(code = 403, message = NexusSecurityApiConstants.INVALID_PERMISSIONS),
-      @ApiResponse(code = 404, message = NexusSecurityApiConstants.USER_NOT_FOUND)})
+  @Operation(
+      summary = "Change a user's password.",
+      description = "Updates a user's password. This operation is thread-safe and supports Virtual Threads.")
+  @ApiResponses(value = {
+      @ApiResponse(responseCode = "400", description = PASSWORD_REQUIRED),
+      @ApiResponse(responseCode = "403", description = NexusSecurityApiConstants.INVALID_PERMISSIONS),
+      @ApiResponse(responseCode = "404", description = NexusSecurityApiConstants.USER_NOT_FOUND)})
   void changePassword(
-      @ApiParam(value = USER_ID_DESCRIPTION) String userId,
-      @ApiParam(value = PASSWORD_DESCRIPTION) @NotNull String password);
+      @Parameter(description = USER_ID_DESCRIPTION) String userId,
+      @Parameter(description = PASSWORD_DESCRIPTION) @NotNull String password);
 }

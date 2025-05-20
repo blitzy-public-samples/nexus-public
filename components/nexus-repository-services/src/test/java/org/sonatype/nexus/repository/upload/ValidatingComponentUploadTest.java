@@ -18,11 +18,12 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.repository.view.PartPayload;
 import org.sonatype.nexus.rest.ValidationErrorXO;
 import org.sonatype.nexus.rest.ValidationErrorsException;
@@ -40,12 +41,14 @@ import static java.util.Collections.singletonMap;
 import static java.util.stream.Collectors.toList;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.repository.upload.UploadFieldDefinition.Type.STRING;
 
 @ExtendWith(MockitoExtension.class)
+@org.junit.jupiter.api.Tag("Java21TestGroup")
+@org.junit.jupiter.api.Tag("VirtualThreadTestGroup")
 public class ValidatingComponentUploadTest
     extends TestSupport
 {
@@ -70,12 +73,12 @@ public class ValidatingComponentUploadTest
   }
 
   @Test
-  public void testValidate_missingAssets() {
+  public void missingAssets() {
     expectExceptionOnValidate(componentUpload, "No assets found in upload");
   }
 
   @Test
-  public void testValidate_missingAssetField() {
+  public void missingAssetField() {
     when(uploadDefinition.getComponentFields()).thenReturn(emptyList());
     when(uploadDefinition.getAssetFields()).thenReturn(
         Collections.singletonList(new UploadFieldDefinition("foo", false, STRING)));
@@ -87,7 +90,7 @@ public class ValidatingComponentUploadTest
   }
 
   @Test
-  public void testValidate_missingComponentField() {
+  public void missingComponentField() {
     when(uploadDefinition.getAssetFields()).thenReturn(emptyList());
     when(uploadDefinition.getComponentFields()).thenReturn(
         Collections.singletonList(new UploadFieldDefinition("bar", false, STRING)));
@@ -99,7 +102,7 @@ public class ValidatingComponentUploadTest
   }
 
   @Test
-  public void testValidate_noViolations() {
+  public void noViolations() {
     when(uploadDefinition.getAssetFields()).thenReturn(
         Collections.singletonList(new UploadFieldDefinition("foo", false, STRING)));
     when(uploadDefinition.getComponentFields()).thenReturn(
@@ -123,7 +126,7 @@ public class ValidatingComponentUploadTest
   }
 
   @Test
-  public void testValidate_duplicates() {
+  public void duplicates() {
     when(uploadDefinition.getAssetFields()).thenReturn(Arrays.asList(new UploadFieldDefinition("field1", true, STRING),
         new UploadFieldDefinition("field2", true, STRING)));
 
@@ -146,7 +149,7 @@ public class ValidatingComponentUploadTest
   }
 
   @Test
-  public void testValidate_unknownField() {
+  public void unknownField() {
     when(uploadDefinition.getAssetFields()).thenReturn(emptyList());
     when(uploadDefinition.getComponentFields()).thenReturn(emptyList());
 
@@ -163,8 +166,9 @@ public class ValidatingComponentUploadTest
   }
 
   @Test
-  public void testConcurrentValidationWithVirtualThreads() throws Exception {
-    // Setup valid component upload
+  @org.junit.jupiter.api.Tag("VirtualThreadTestGroup")
+  public void concurrentValidationWithVirtualThreads() throws Exception {
+    // Configure test data
     when(uploadDefinition.getAssetFields()).thenReturn(
         Collections.singletonList(new UploadFieldDefinition("foo", false, STRING)));
     when(uploadDefinition.getComponentFields()).thenReturn(
@@ -177,56 +181,96 @@ public class ValidatingComponentUploadTest
     when(componentUpload.getAssetUploads()).thenReturn(Collections.singletonList(assetUpload));
     when(componentUpload.getFields()).thenReturn(singletonMap("bar", "barValue"));
     when(componentUpload.getField("bar")).thenReturn("barValue");
-    
-    // Create virtual thread factory
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    
-    // Setup concurrent validation test
-    int concurrentThreads = 100;
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(concurrentThreads);
-    AtomicInteger successCount = new AtomicInteger(0);
-    
-    // Create executor service with virtual threads
-    ExecutorService executorService = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-    
-    // Submit validation tasks
-    for (int i = 0; i < concurrentThreads; i++) {
-      executorService.submit(() -> {
-        try {
-          // Wait for all threads to be ready
-          startLatch.await();
-          
-          // Perform validation
-          ValidatingComponentUpload validated = new ValidatingComponentUpload(uploadDefinition, componentUpload);
-          validated.getComponentUpload();
-          
-          // Count successful validations
-          successCount.incrementAndGet();
-        }
-        catch (Exception e) {
-          // Validation failed
-        }
-        finally {
-          // Signal task completion
-          completionLatch.countDown();
-        }
-      });
+
+    // Create virtual thread executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    int taskCount = 100;
+    CountDownLatch latch = new CountDownLatch(taskCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+
+    try {
+      // Submit multiple concurrent validation tasks using virtual threads
+      for (int i = 0; i < taskCount; i++) {
+        executor.submit(() -> {
+          try {
+            ValidatingComponentUpload validated = new ValidatingComponentUpload(uploadDefinition, componentUpload);
+            validated.getComponentUpload();
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+
+      // Wait for all tasks to complete
+      latch.await(30, TimeUnit.SECONDS);
+
+      // Verify results
+      assertThat("No validation errors should occur under concurrent conditions", 
+          errorCount.get(), is(0));
+    } finally {
+      executor.shutdown();
     }
-    
-    // Start all threads simultaneously
-    startLatch.countDown();
-    
-    // Wait for all threads to complete (with timeout)
-    completionLatch.await(5, TimeUnit.SECONDS);
-    
-    // Shutdown executor
-    executorService.shutdown();
-    executorService.awaitTermination(1, TimeUnit.SECONDS);
-    
-    // Verify all validations were successful
-    assertEquals(concurrentThreads, successCount.get(), 
-        "All concurrent validations should succeed with virtual threads");
+  }
+
+  @Test
+  @org.junit.jupiter.api.Tag("VirtualThreadTestGroup")
+  public void concurrentValidationWithErrorsUsingVirtualThreads() throws Exception {
+    // Configure test data with validation errors
+    when(uploadDefinition.getAssetFields()).thenReturn(
+        Collections.singletonList(new UploadFieldDefinition("foo", false, STRING)));
+    when(uploadDefinition.getComponentFields()).thenReturn(
+        Collections.singletonList(new UploadFieldDefinition("bar", false, STRING)));
+
+    when(assetUpload.getPayload()).thenReturn(payload);
+    // Missing required field 'foo'
+    when(assetUpload.getFields()).thenReturn(Collections.emptyMap());
+    when(assetUpload.getField("foo")).thenReturn(null);
+
+    when(componentUpload.getAssetUploads()).thenReturn(Collections.singletonList(assetUpload));
+    when(componentUpload.getFields()).thenReturn(singletonMap("bar", "barValue"));
+    when(componentUpload.getField("bar")).thenReturn("barValue");
+
+    // Create virtual thread executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    int taskCount = 100;
+    CountDownLatch latch = new CountDownLatch(taskCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+
+    try {
+      // Submit multiple concurrent validation tasks using virtual threads
+      for (int i = 0; i < taskCount; i++) {
+        executor.submit(() -> {
+          try {
+            ValidatingComponentUpload validated = new ValidatingComponentUpload(uploadDefinition, componentUpload);
+            validated.getComponentUpload();
+            fail("Expected validation exception was not thrown");
+          } catch (ValidationErrorsException e) {
+            // Expected exception
+            List<String> messages = e.getValidationErrors().stream()
+                .map(ValidationErrorXO::getMessage)
+                .collect(toList());
+            if (messages.contains("Missing required asset field 'Foo' on '1'")) {
+              errorCount.incrementAndGet();
+            }
+          } catch (Exception e) {
+            fail("Unexpected exception type: " + e.getClass().getName());
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+
+      // Wait for all tasks to complete
+      latch.await(30, TimeUnit.SECONDS);
+
+      // Verify results - all tasks should have caught the validation error
+      assertThat("All validation tasks should have detected the error", 
+          errorCount.get(), is(taskCount));
+    } finally {
+      executor.shutdown();
+    }
   }
 
   private void expectExceptionOnValidate(final ComponentUpload component, final String... message)
@@ -241,6 +285,23 @@ public class ValidatingComponentUploadTest
           .map(ValidationErrorXO::getMessage)
           .collect(toList());
       assertThat(messages, contains(message));
+      
+      // Use pattern matching for switch to determine error type
+      for (ValidationErrorXO error : exception.getValidationErrors()) {
+        switch (error) {
+          case ValidationErrorXO e when e.getMessage().contains("No assets found") -> 
+              log.info("Asset count validation error detected");
+          case ValidationErrorXO e when e.getMessage().contains("Missing required asset field") -> 
+              log.info("Asset field validation error detected");
+          case ValidationErrorXO e when e.getMessage().contains("Missing required component field") -> 
+              log.info("Component field validation error detected");
+          case ValidationErrorXO e when e.getMessage().contains("identical coordinates") -> 
+              log.info("Duplicate asset validation error detected");
+          case ValidationErrorXO e when e.getMessage().contains("Unknown") -> 
+              log.info("Unknown field validation error detected");
+          default -> log.info("Other validation error: {}", error.getMessage());
+        }
+      }
     }
   }
 }

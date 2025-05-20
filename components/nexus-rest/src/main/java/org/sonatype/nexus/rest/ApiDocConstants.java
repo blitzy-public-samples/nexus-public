@@ -17,9 +17,10 @@ package org.sonatype.nexus.rest;
  *
  * @since 3.20
  */
-public class ApiDocConstants
+public final class ApiDocConstants
 {
   private ApiDocConstants() {
+    // Prevent instantiation
   }
 
   public static final String SUCCESS = "Success";
@@ -53,7 +54,7 @@ public class ApiDocConstants
   public static final String BLOBSTORE_NOT_FOUND = "Blob store not found";
 
   public static final String BLOBSTORE_CHANGE_NOT_ALLOWED =
-      "You cannot change a repository’s blob store through the API";
+      "You cannot change a repository's blob store through the API";
 
   public static final String BAD_REQUEST = "Bad request";
 

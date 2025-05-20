@@ -12,11 +12,18 @@
  */
 package org.sonatype.nexus.security.authc;
 
+import java.util.Arrays;
+
 import org.apache.shiro.authc.AuthenticationToken;
 import org.apache.shiro.authc.HostAuthenticationToken;
 
+import static java.lang.StringTemplate.STR;
+
 /**
  * {@link AuthenticationToken} that contains credentials from a known API-Key.
+ * <p>
+ * This implementation uses char[] for credentials to allow secure handling and
+ * proper clearing of sensitive data from memory.
  */
 public class NexusApiKeyAuthenticationToken
     implements HostAuthenticationToken
@@ -27,38 +34,73 @@ public class NexusApiKeyAuthenticationToken
 
   private final String host;
 
+  /**
+   * Creates a new authentication token with the given principal, credentials, and host.
+   *
+   * @param principal the principal identifying the user
+   * @param credentials the credentials verifying the user identity
+   * @param host the host from which the authentication attempt originates
+   */
   public NexusApiKeyAuthenticationToken(final Object principal, final char[] credentials, final String host) {
     this.principal = principal;
-    this.credentials = credentials;
+    // Create a defensive copy of the credentials to prevent external modification
+    this.credentials = (credentials != null) ? Arrays.copyOf(credentials, credentials.length) : null;
     this.host = host;
   }
 
+  /**
+   * Returns the principal, or subject, of the authentication token.
+   * 
+   * @return the principal
+   */
   public Object getPrincipal() {
     return principal;
   }
 
+  /**
+   * Returns the credentials for the authentication token.
+   * <p>
+   * Note: The returned array should not be modified and should be cleared
+   * after use for security reasons.
+   * 
+   * @return the credentials as a char array
+   */
   public Object getCredentials() {
     return credentials;
   }
 
+  /**
+   * Returns the host from which the authentication attempt originates.
+   * 
+   * @return the host name or IP address
+   */
   public String getHost() {
     return host;
   }
 
   /**
    * Assigns a new account identity to the current authentication token.
+   * 
+   * @param principal the new principal to set
    */
   public void setPrincipal(final Object principal) {
     this.principal = principal;
   }
+  
+  /**
+   * Clears the credentials from memory for security purposes.
+   * This method should be called when the credentials are no longer needed.
+   */
+  public void clearCredentials() {
+    if (credentials != null) {
+      Arrays.fill(credentials, '\0');
+    }
+  }
 
   @Override
   public String toString() {
-    final StringBuilder buf = new StringBuilder(getClass().getName());
-    buf.append(" - ").append(getPrincipal());
-    if (host != null) {
-      buf.append(" (").append(host).append(")");
-    }
-    return buf.toString();
+    // Using Java 21 String Templates for improved security logging
+    // Intentionally not including credentials in the string representation
+    return STR."""{getClass().getName()} - {getPrincipal()}{host != null ? STR." ({host})" : ""}"""; 
   }
 }

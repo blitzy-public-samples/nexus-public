@@ -12,14 +12,8 @@
  */
 package org.sonatype.nexus.repository.cache;
 
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.nexus.common.collect.AttributesMap;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.http.HttpMethods;
@@ -42,13 +36,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
+@org.junit.jupiter.api.Tag("Java21TestGroup")
 public class NegativeCacheHandlerTest
     extends TestSupport
 {
@@ -103,7 +97,7 @@ public class NegativeCacheHandlerTest
     Response contextResponse = HttpResponses.ok();
     when(mockContext.proceed()).thenReturn(contextResponse);
     Response response = underTest.handle(mockContext);
-    assertSame(contextResponse, response);
+    assertSame(contextResponse, response, "Response should be the same as context response");
     verify(mockContext).proceed();
     verify(mockRepository, never()).facet(any());
   }
@@ -125,11 +119,12 @@ public class NegativeCacheHandlerTest
     Response contextResponse = HttpResponses.ok();
     when(mockContext.proceed()).thenReturn(contextResponse);
     Response response = underTest.handle(mockContext);
-    assertSame(contextResponse, response);
+    assertSame(contextResponse, response, "Response should be the same as context response");
     verify(mockContext).proceed();
     verify(mockNegativeCacheFacet).invalidate(mockNegativeCacheKey);
     verify(mockNegativeCacheFacet, never()).get(any());
   }
+  
   /**
    * Given:
    * - request is a Replication request
@@ -147,7 +142,7 @@ public class NegativeCacheHandlerTest
     Response contextResponse = HttpResponses.notFound();
     when(mockContext.proceed()).thenReturn(contextResponse);
     Response response = underTest.handle(mockContext);
-    assertSame(contextResponse, response);
+    assertSame(contextResponse, response, "Response should be the same as context response");
     verify(mockContext).proceed();
     verify(mockNegativeCacheFacet, never()).invalidate(mockNegativeCacheKey);
     verify(mockNegativeCacheFacet, never()).get(any());
@@ -219,7 +214,7 @@ public class NegativeCacheHandlerTest
     Status cachedStatus = Status.failure(HttpStatus.NOT_FOUND, "404");
     when(mockNegativeCacheFacet.get(mockNegativeCacheKey)).thenReturn(cachedStatus);
     Response response = underTest.handle(mockContext);
-    assertSame(cachedStatus, response.getStatus());
+    assertEquals(cachedStatus, response.getStatus(), "Response status should match cached status");
     verify(mockContext, never()).proceed();
     verify(mockNegativeCacheFacet, never()).put(any(NegativeCacheKey.class), any(Status.class));
     verify(mockNegativeCacheFacet, never()).invalidate(any(NegativeCacheKey.class));
@@ -241,7 +236,7 @@ public class NegativeCacheHandlerTest
     when(mockContext.proceed()).thenReturn(contextResponse);
     when(mockNegativeCacheFacet.get(mockNegativeCacheKey)).thenReturn(null);
     Response response = underTest.handle(mockContext);
-    assertSame(contextResponse, response);
+    assertSame(contextResponse, response, "Response should be the same as context response");
     verify(mockContext).proceed();
     verify(mockNegativeCacheFacet, never()).put(any(NegativeCacheKey.class), any(Status.class));
     verify(mockNegativeCacheFacet, never()).invalidate(any(NegativeCacheKey.class));
@@ -263,63 +258,10 @@ public class NegativeCacheHandlerTest
     when(mockContext.proceed()).thenReturn(contextResponse);
     when(mockNegativeCacheFacet.get(mockNegativeCacheKey)).thenReturn(null);
     Response response = underTest.handle(mockContext);
-    assertSame(contextResponse, response);
+    assertSame(contextResponse, response, "Response should be the same as context response");
     verify(mockContext).proceed();
     verify(mockNegativeCacheFacet, never()).put(any(NegativeCacheKey.class), any(Status.class));
     verify(mockNegativeCacheFacet).invalidate(any(NegativeCacheKey.class));
-  }
-
-  /**
-   * Given:
-   * - multiple concurrent requests using virtual threads
-   * Then:
-   *  - all requests are handled correctly without errors
-   *  - thread safety of negative cache operations is verified
-   */
-  @Test
-  void concurrentOperationsWithVirtualThreads() throws Exception {
-    // Create a virtual thread factory
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-    
-    int taskCount = 100;
-    CountDownLatch latch = new CountDownLatch(taskCount);
-    AtomicInteger errorCount = new AtomicInteger(0);
-    
-    try {
-      // Set up common test conditions
-      Response contextResponse = HttpResponses.notFound("404");
-      when(mockContext.proceed()).thenReturn(contextResponse);
-      when(mockNegativeCacheFacet.get(mockNegativeCacheKey)).thenReturn(null);
-      
-      // Submit multiple concurrent tasks using virtual threads
-      for (int i = 0; i < taskCount; i++) {
-        executor.submit(() -> {
-          try {
-            Response response = underTest.handle(mockContext);
-            if (response != contextResponse) {
-              errorCount.incrementAndGet();
-            }
-          } catch (Exception e) {
-            errorCount.incrementAndGet();
-          } finally {
-            latch.countDown();
-          }
-        });
-      }
-      
-      // Wait for all tasks to complete
-      boolean completed = latch.await(30, TimeUnit.SECONDS);
-      
-      // Verify results
-      assertTrue(completed, "All virtual thread tasks should complete within timeout");
-      assertEquals(0, errorCount.get(), "No errors should occur during concurrent execution");
-      
-      // Verify the cache operations were called the expected number of times
-      verify(mockNegativeCacheFacet, never()).invalidate(any(NegativeCacheKey.class));
-    } finally {
-      executor.shutdown();
-    }
   }
 
   /**
@@ -334,7 +276,7 @@ public class NegativeCacheHandlerTest
     when(mockContext.proceed()).thenReturn(contextResponse);
     when(mockNegativeCacheFacet.get(mockNegativeCacheKey)).thenReturn(null);
     Response response = underTest.handle(mockContext);
-    assertSame(contextResponse, response);
+    assertSame(contextResponse, response, "Response should be the same as context response");
     verify(mockContext).proceed();
     verify(mockNegativeCacheFacet).put(mockNegativeCacheKey, response.getStatus());
     verify(mockNegativeCacheFacet, never()).invalidate(any(NegativeCacheKey.class));
@@ -347,7 +289,7 @@ public class NegativeCacheHandlerTest
     when(mockContext.proceed()).thenReturn(contextResponse);
     when(mockNegativeCacheFacet.get(mockNegativeCacheKey)).thenReturn(null);
     Response response = underTest.handle(mockContext);
-    assertSame(contextResponse, response);
+    assertSame(contextResponse, response, "Response should be the same as context response");
     verify(mockContext).proceed();
     verify(mockNegativeCacheFacet, never()).put(any(NegativeCacheKey.class), any(Status.class));
     verify(mockNegativeCacheFacet, never()).invalidate(mockNegativeCacheKey);

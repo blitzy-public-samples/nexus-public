@@ -16,6 +16,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Optional;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -35,6 +36,8 @@ import static java.util.stream.Collectors.toMap;
 import static java.util.stream.StreamSupport.stream;
 
 /**
+ * Utility class for search operations in Nexus Repository.
+ * 
  * @since 3.38
  */
 @Named
@@ -68,50 +71,140 @@ public class SearchUtils
     this.assetSearchParams = searchParams.entrySet().stream()
         .filter(e -> e.getValue().startsWith(ASSET_PREFIX))
         .collect(toMap(Entry::getKey, Entry::getValue));
+    
+    log.debug(STR."Initialized SearchUtils with \{searchParams.size()} search parameters and \{assetSearchParams.size()} asset search parameters");
   }
 
+  /**
+   * Returns all search parameters mapping.
+   *
+   * @return Map of search parameter aliases to their attribute names
+   */
   public Map<String, String> getSearchParameters() {
     return searchParams;
   }
 
+  /**
+   * Returns asset-specific search parameters mapping.
+   *
+   * @return Map of asset search parameter aliases to their attribute names
+   */
   public Map<String, String> getAssetSearchParameters() {
     return assetSearchParams;
   }
 
+  /**
+   * Retrieves a repository by name, ensuring it is readable.
+   *
+   * @param repository the repository name
+   * @return the Repository object
+   */
   public Repository getRepository(final String repository) {
-    return repoAdapter.getReadableRepository(repository);
+    Repository repo = repoAdapter.getReadableRepository(repository);
+    log.debug(STR."Retrieved repository: \{repository}");
+    return repo;
   }
 
   /**
    * Builds a collection of {@link SearchFilter} based on configured search parameters.
    *
    * @param uriInfo {@link UriInfo} to extract query parameters from
-   * @return
+   * @return List of search filters
    */
   public List<SearchFilter> getSearchFilters(final UriInfo uriInfo) {
-    return convertParameters(uriInfo, Arrays.asList(CONTINUATION_TOKEN, SORT_FIELD, SORT_DIRECTION));
+    List<SearchFilter> filters = convertParameters(uriInfo, Arrays.asList(CONTINUATION_TOKEN, SORT_FIELD, SORT_DIRECTION));
+    log.debug(STR."Created \{filters.size()} search filters from URI parameters");
+    return filters;
   }
 
-  private List<SearchFilter> convertParameters(final UriInfo uriInfo, final List<String> keys) {
+  /**
+   * Converts URI parameters to search filters, excluding specified keys.
+   *
+   * @param uriInfo the URI info containing query parameters
+   * @param excludedKeys keys to exclude from conversion
+   * @return List of search filters
+   */
+  private List<SearchFilter> convertParameters(final UriInfo uriInfo, final List<String> excludedKeys) {
     return uriInfo.getQueryParameters().entrySet().stream()
-        .filter(entry -> !keys.contains(entry.getKey()))
+        .filter(entry -> !excludedKeys.contains(entry.getKey()))
         .flatMap(entry -> entry.getValue().stream()
             .map(value -> {
-                String key = searchParams.getOrDefault(entry.getKey(), entry.getKey());
-                return new SearchFilter(key, value);
+                // Use pattern matching to handle different value types
+                return switch (value) {
+                    case String s when s.isEmpty() -> {
+                        log.trace(STR."Empty value for parameter: \{entry.getKey()}");
+                        yield createSearchFilter(entry.getKey(), s);
+                    }
+                    case String s when s.startsWith("*") && s.endsWith("*") -> {
+                        log.trace(STR."Wildcard search value for parameter: \{entry.getKey()}");
+                        yield createSearchFilter(entry.getKey(), s);
+                    }
+                    case String s -> {
+                        log.trace(STR."Standard search value for parameter: \{entry.getKey()}");
+                        yield createSearchFilter(entry.getKey(), s);
+                    }
+                    case null -> {
+                        log.warn(STR."Null value for parameter: \{entry.getKey()}, using empty string");
+                        yield createSearchFilter(entry.getKey(), "");
+                    }
+                    default -> {
+                        log.warn(STR."Unexpected value type for parameter: \{entry.getKey()}, using toString()");
+                        yield createSearchFilter(entry.getKey(), value.toString());
+                    }
+                };
             }))
         .collect(toList());
   }
+  
+  /**
+   * Creates a SearchFilter with the appropriate key mapping.
+   *
+   * @param paramKey the original parameter key
+   * @param value the parameter value
+   * @return a new SearchFilter
+   */
+  private SearchFilter createSearchFilter(final String paramKey, final String value) {
+    String key = searchParams.getOrDefault(paramKey, paramKey);
+    return new SearchFilter(key, value);
+  }
 
+  /**
+   * Checks if the parameter is an asset search parameter.
+   *
+   * @param assetSearchParam the parameter to check
+   * @return true if it's an asset search parameter, false otherwise
+   */
   public boolean isAssetSearchParam(final String assetSearchParam) {
+    if (assetSearchParam == null) {
+      log.warn("Null asset search parameter provided");
+      return false;
+    }
     return assetSearchParams.containsKey(assetSearchParam) || isFullAssetAttributeName(assetSearchParam);
   }
 
+  /**
+   * Checks if the parameter is a full asset attribute name.
+   *
+   * @param assetSearchParam the parameter to check
+   * @return true if it's a full asset attribute name, false otherwise
+   */
   public boolean isFullAssetAttributeName(final String assetSearchParam) {
-    return assetSearchParam.startsWith(ASSET_PREFIX);
+    return Optional.ofNullable(assetSearchParam)
+        .map(param -> param.startsWith(ASSET_PREFIX))
+        .orElse(false);
   }
 
+  /**
+   * Gets the full asset attribute name for a key.
+   *
+   * @param key the key to get the full asset attribute name for
+   * @return the full asset attribute name
+   */
   public String getFullAssetAttributeName(final String key) {
+    if (key == null) {
+      log.warn("Null key provided for getFullAssetAttributeName");
+      return null;
+    }
     return isFullAssetAttributeName(key) ? key : getAssetSearchParameters().get(key);
   }
 }

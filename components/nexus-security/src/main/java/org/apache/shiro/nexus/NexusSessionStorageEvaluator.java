@@ -22,25 +22,42 @@ import org.apache.shiro.subject.Subject;
 import org.apache.shiro.web.mgt.DefaultWebSessionStorageEvaluator;
 
 /**
- * Custom {@link SessionStorageEvaluator}.
+ * Custom {@link SessionStorageEvaluator} for Nexus that disables session storage for anonymous subjects
+ * and respects the global session configuration.
  *
  * @since 3.0
  */
 public class NexusSessionStorageEvaluator
   extends DefaultWebSessionStorageEvaluator
 {
+  /**
+   * Flag indicating whether sessions are enabled globally.
+   * Injected from system property or configuration with default of true.
+   */
   @Inject
   @Named("${nexus.session.enabled:-true}")
-  private boolean sessionsEnabled;
+  private volatile boolean sessionsEnabled;
 
   /**
-   * Disable storage for anonymous subject.
+   * Determines if session storage is enabled for the given subject.
+   * <p>
+   * Session storage is disabled for anonymous subjects to improve performance and reduce resource usage.
+   * If sessions are globally disabled via configuration, this method always returns false.
+   *
+   * @param subject the subject to check
+   * @return true if session storage is enabled for the subject, false otherwise
    */
   @Override
   public boolean isSessionStorageEnabled(final Subject subject) {
-    if (sessionsEnabled) {
-       return !AnonymousHelper.isAnonymous(subject) && super.isSessionStorageEnabled(subject);
+    if (!sessionsEnabled) {
+      return false;
     }
-    return false;
+    
+    // Disable session storage for anonymous subjects
+    if (subject != null && AnonymousHelper.isAnonymous(subject)) {
+      return false;
+    }
+    
+    return super.isSessionStorageEnabled(subject);
   }
 }

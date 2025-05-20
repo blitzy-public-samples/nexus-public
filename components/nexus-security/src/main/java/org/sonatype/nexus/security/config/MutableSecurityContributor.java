@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.security.config;
 
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -41,6 +43,9 @@ public class MutableSecurityContributor
   private final SecurityConfiguration model = new MemorySecurityConfiguration();
 
   private final ReadWriteLock readWriteLock = new ReentrantReadWriteLock();
+  
+  // Executor service for asynchronous event broadcasting using virtual threads
+  private final ExecutorService eventExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   private boolean initialized;
 
@@ -89,7 +94,7 @@ public class MutableSecurityContributor
   }
 
   public void apply(final Mutator mutator) {
-    checkState(initialized, "not initialized");
+    checkState(initialized, STR."\{this.getClass().getSimpleName()} not initialized");
     checkNotNull(mutator);
 
     Lock lock = Locks.write(readWriteLock);
@@ -100,7 +105,8 @@ public class MutableSecurityContributor
       lock.unlock();
     }
 
-    eventManager.post(new SecurityContributionChangedEvent());
+    // Use virtual threads for asynchronous event broadcasting
+    eventExecutor.submit(() -> eventManager.post(new SecurityContributionChangedEvent()));
   }
 
   /**
@@ -108,6 +114,7 @@ public class MutableSecurityContributor
    */
   protected void maybeAddPrivilege(final SecurityConfiguration model, final CPrivilege privilege) {
     if (model.getPrivilege(privilege.getId()) == null) {
+      log.debug(STR."Adding privilege \{privilege.getId()} to security configuration");
       model.addPrivilege(privilege);
     }
   }

@@ -13,6 +13,8 @@
 package org.sonatype.nexus.security;
 
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -53,6 +55,7 @@ public class JwtSecurityFilter
     extends SecurityFilter
 {
   private final JwtHelper jwtHelper;
+  private final ExecutorService executor;
 
   private static final Logger log = LoggerFactory.getLogger(JwtSecurityFilter.class);
 
@@ -64,6 +67,7 @@ public class JwtSecurityFilter
   {
     super(webSecurityManager, filterChainResolver);
     this.jwtHelper = checkNotNull(jwtHelper);
+    this.executor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   @Override
@@ -77,43 +81,54 @@ public class JwtSecurityFilter
 
       if (jwtCookie.isPresent()) {
         Cookie cookie = jwtCookie.get();
-
-        SimpleSession session = new SimpleSession(request.getRemoteHost());
-        DecodedJWT decodedJwt;
         String jwt = cookie.getValue();
+        
         if (!Strings2.isEmpty(jwt)) {
           try {
-            decodedJwt = jwtHelper.verifyJwt(jwt);
+            // Use virtual thread for JWT verification which is I/O bound
+            DecodedJWT decodedJwt = executor.submit(() -> jwtHelper.verifyJwt(jwt)).join();
+            
+            // Create session with Java 21 compatibility
+            SimpleSession session = new SimpleSession(request.getRemoteHost());
+            session.setTimeout(TimeUnit.SECONDS.toMillis(jwtHelper.getExpirySeconds()));
+            session.setAttribute(JWT_COOKIE_NAME, jwt);
+            
+            // Use pattern matching for claim extraction
+            return switch (decodedJwt) {
+              case DecodedJWT jwt when jwt.getClaim(USER) != null && jwt.getClaim(REALM) != null -> {
+                Claim user = jwt.getClaim(USER);
+                Claim realm = jwt.getClaim(REALM);
+                
+                PrincipalCollection principals = new SimplePrincipalCollection(
+                    user.asString(),
+                    realm.asString()
+                );
+                
+                yield new WebDelegatingSubject(
+                    principals,
+                    true,
+                    request.getRemoteHost(),
+                    session,
+                    true,
+                    request,
+                    response,
+                    getSecurityManager());
+              }
+              default -> {
+                log.debug(STR."Invalid JWT token: missing required claims \{USER} or \{REALM}");
+                cookie.setValue("");
+                cookie.setMaxAge(0);
+                WebUtils.toHttp(response).addCookie(cookie);
+                yield super.createSubject(request, response);
+              }
+            };
           }
           catch (JwtVerificationException e) {
-            log.debug("Expire and reset the JWT cookie due to the error: {}", e.getMessage());
+            log.debug(STR."Expire and reset the JWT cookie due to the error: \{e.getMessage()}");
             cookie.setValue("");
             cookie.setMaxAge(0);
             WebUtils.toHttp(response).addCookie(cookie);
-
-            return super.createSubject(request, response);
           }
-
-          Claim user = decodedJwt.getClaim(USER);
-          Claim realm = decodedJwt.getClaim(REALM);
-
-          PrincipalCollection principals = new SimplePrincipalCollection(
-              user.asString(),
-              realm.asString()
-          );
-
-          session.setTimeout(TimeUnit.SECONDS.toMillis(jwtHelper.getExpirySeconds()));
-          session.setAttribute(JWT_COOKIE_NAME, jwt);
-
-          return new WebDelegatingSubject(
-              principals,
-              true,
-              request.getRemoteHost(),
-              session,
-              true,
-              request,
-              response,
-              getSecurityManager());
         }
       }
     }

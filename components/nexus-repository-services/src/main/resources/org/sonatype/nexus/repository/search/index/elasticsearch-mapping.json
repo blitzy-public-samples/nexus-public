@@ -2,7 +2,8 @@
   "settings": {
     "index" : {
       "number_of_shards" : 1,
-      "number_of_replicas" : 0
+      "number_of_replicas" : 0,
+      "refresh_interval" : "5s"
     },
     "analysis": {
       "analyzer": {
@@ -21,84 +22,71 @@
         "assets": {
           "properties": {
             "name": {
-              "type": "string",
-              "index": "not_analyzed"
+              "type": "keyword"
             },
             "attributes": {
               "properties": {
                 "checksum": {
                   "properties": {
                     "md5": {
-                      "type": "string",
-                      "index": "not_analyzed"
+                      "type": "keyword"
                     },
                     "sha1": {
-                      "type": "string",
-                      "index": "not_analyzed"
+                      "type": "keyword"
                     }
                   }
                 }
               }
             },
             "content_type": {
-              "type": "string",
-              "index": "not_analyzed"
+              "type": "keyword"
             },
             "last_updated": {
-              "type": "long",
-              "doc_values": true
+              "type": "long"
             },
             "id": {
-              "type": "string",
-              "index": "not_analyzed"
+              "type": "keyword"
             }
           }
         },
         "format": {
-          "type": "string",
-          "index": "not_analyzed"
+          "type": "keyword"
         },
         "group": {
-          "type": "string",
+          "type": "text",
           "fields": {
             "case_insensitive": {
-              "type": "string",
+              "type": "text",
               "analyzer": "case_insensitive_sort"
             },
             "raw": {
-              "type": "string",
-              "index": "not_analyzed"
+              "type": "keyword"
             }
           }
         },
         "name": {
-          "type": "string",
+          "type": "text",
           "fields": {
             "case_insensitive": {
-              "type": "string",
+              "type": "text",
               "analyzer": "case_insensitive_sort"
             },
             "raw": {
-              "type": "string",
-              "index": "not_analyzed"
+              "type": "keyword"
             }
           }
         },
         "repository_name": {
-          "type": "string",
-          "index": "not_analyzed"
+          "type": "keyword"
         },
         "version": {
-          "type": "string",
-          "index": "not_analyzed"
+          "type": "keyword"
         },
         "normalized_version": {
-          "type": "string",
-          "index": "not_analyzed"
+          "type": "keyword"
         },
         "tags": {
-          "type": "string",
-          "index": "not_analyzed"
+          "type": "keyword"
         },
         "lastDownloaded": {
           "type": "date",

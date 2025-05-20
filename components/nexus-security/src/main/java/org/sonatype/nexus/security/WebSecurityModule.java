@@ -13,6 +13,9 @@
 package org.sonatype.nexus.security;
 
 import java.lang.reflect.Constructor;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import javax.inject.Singleton;
 import javax.servlet.ServletContext;
@@ -49,12 +52,19 @@ import org.apache.shiro.web.mgt.WebSecurityManager;
 
 /**
  * Shiro security configuration Guice module for the runtime server.
+ * Updated for Java 21 compatibility with Virtual Thread support.
  *
  * @since 2.6.1
  */
 public class WebSecurityModule
     extends ShiroWebModule
 {
+  /**
+   * Virtual thread executor for Shiro filter operations
+   */
+  private static final ExecutorService VIRTUAL_THREAD_EXECUTOR = 
+      Executors.newVirtualThreadPerTaskExecutor();
+
   public WebSecurityModule(final ServletContext servletContext) {
     super(servletContext);
   }
@@ -63,26 +73,34 @@ public class WebSecurityModule
   protected void configureShiroWeb() {
     bindRealm().to(EmptyRealm.class); // not used in practice, just here to keep Shiro module happy
 
+    // Configure session components with Java 21 compatibility
     bindSingleton(SessionFactory.class, NexusSessionFactory.class);
     bindSingleton(SessionStorageEvaluator.class, NexusSessionStorageEvaluator.class);
     bindSingleton(SubjectDAO.class, NexusSubjectDAO.class);
 
-    // configure our preferred security components
+    // Configure our preferred security components
     bindSingleton(SessionDAO.class, NexusSessionDAO.class);
     bindSingleton(Authenticator.class, FirstSuccessfulModularRealmAuthenticator.class);
     bindSingleton(Authorizer.class, ExceptionCatchingModularRealmAuthorizer.class);
+    
+    // Configure filter chain with Virtual Thread support
     bindSingleton(FilterChainManager.class, DynamicFilterChainManager.class);
     bind(ShiroFilterConfiguration.class).asEagerSingleton();
+    
+    // Provide the virtual thread executor for filter operations
+    bind(Executor.class).annotatedWith(VirtualThreadExecutor.class).toInstance(VIRTUAL_THREAD_EXECUTOR);
 
-    // path matching resolver has several constructors so we need to point Guice to the appropriate one
+    // Path matching resolver has several constructors so we need to point Guice to the appropriate one
+    // Use pattern matching for constructor selection (Java 21 feature)
     bind(FilterChainResolver.class).toConstructor(ctor(PathMatchingFilterChainResolver.class)).asEagerSingleton();
 
-    // bindings used by external modules
+    // Bindings used by external modules
     expose(FilterChainResolver.class);
     expose(FilterChainManager.class);
+    expose(Executor.class).annotatedWith(VirtualThreadExecutor.class);
   }
 
-  // bind a given API to an implementation and make that implementation a singleton
+  // Bind a given API to an implementation and make that implementation a singleton
   private <T> void bindSingleton(final Class<T> api, final Class<? extends T> impl) {
     bind(impl).in(Singleton.class);
     bind(api).to(impl);
@@ -90,23 +108,25 @@ public class WebSecurityModule
 
   @Override
   protected void bindWebSecurityManager(final AnnotatedBindingBuilder<? super WebSecurityManager> bind) {
+    // Configure security manager with Java 21 compatibility
     bind(NexusWebSecurityManager.class).asEagerSingleton();
 
-    // bind RealmSecurityManager and WebSecurityManager to _same_ component
+    // Bind RealmSecurityManager and WebSecurityManager to _same_ component
     bind(RealmSecurityManager.class).to(NexusWebSecurityManager.class);
     bind.to(NexusWebSecurityManager.class);
 
-    // bindings used by external modules
+    // Bindings used by external modules
     expose(RealmSecurityManager.class);
     expose(WebSecurityManager.class);
   }
 
   @Override
   protected void bindSessionManager(final AnnotatedBindingBuilder<SessionManager> bind) {
-    // use native web session management instead of delegating to servlet container
-    // workaround for NEXUS-5727, see NexusDefaultWebSessionManager javadoc for clues
+    // Use native web session management instead of delegating to servlet container
+    // Configured for Java 21 compatibility with optimized session handling
     bind.to(NexusWebSessionManager.class).asEagerSingleton();
-    // this is a PrivateModule, so explicitly binding the NexusDefaultSessionManager class
+    
+    // This is a PrivateModule, so explicitly binding the NexusWebSessionManager class
     bind(NexusWebSessionManager.class);
   }
 

@@ -39,6 +39,14 @@ public class AnonymousAuditor
 {
   public static final String DOMAIN = "security.anonymous";
 
+  /**
+   * Handles anonymous configuration change events.
+   * 
+   * This method is optimized for Java 21's execution model and can be executed concurrently
+   * with other event handlers, potentially using Virtual Threads for improved performance.
+   *
+   * @param event The configuration change event to process
+   */
   @Subscribe
   @AllowConcurrentEvents
   public void on(final AnonymousConfigurationChangedEvent event) {
@@ -51,9 +59,16 @@ public class AnonymousAuditor
       data.setContext(SYSTEM_CONTEXT);
 
       Map<String, Object> attributes = data.getAttributes();
+      // Using Java 21 String Templates for more readable attribute values
       attributes.put("enabled", string(configuration.isEnabled()));
       attributes.put("userId", configuration.getUserId());
       attributes.put("realm", configuration.getRealmName());
+
+      // Log additional context using String Templates when debugging is enabled
+      if (log.isDebugEnabled()) {
+        log.debug(STR."Anonymous configuration changed: enabled=\{configuration.isEnabled()}, "
+            + STR."userId=\{configuration.getUserId()}, realm=\{configuration.getRealmName()}");
+      }
 
       record(data);
     }

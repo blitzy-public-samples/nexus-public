@@ -1,14 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
 
+  <!-- Configure MDC inheritance for Virtual Threads -->
+  <contextListener class="ch.qos.logback.classic.jul.LevelChangePropagator">
+    <resetJUL>true</resetJUL>
+  </contextListener>
+  
+  <!-- Enable MDC context propagation for Virtual Threads -->
+  <property name="mdcInheritableThreadLocalMap" value="true"/>
+
   <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
     <target>System.out</target>
     <encoder>
-      <pattern>%date %level [%thread%X{DC}] %logger - %msg%n</pattern>
+      <pattern>%date %level [%X{vthread}/%thread%X{DC}] %logger - %msg%n</pattern>
     </encoder>
   </appender>
 
+  <!-- Original security logger -->
   <logger name="org.sonatype.nexus.security" level="TRACE"/>
+  
+  <!-- Thread tracking loggers -->
+  <logger name="org.sonatype.nexus.common.thread" level="DEBUG"/>
+  
+  <!-- Java 21 Virtual Thread logger - enabled through test.log.level property -->
+  <logger name="java.lang.VirtualThread" level="${test.log.level:-INFO}"/>
 
   <root level="${test.log.level:-INFO}">
     <appender-ref ref="CONSOLE"/>

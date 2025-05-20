@@ -14,6 +14,8 @@ package org.apache.shiro.nexus;
 
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -35,20 +37,27 @@ import org.apache.shiro.session.mgt.eis.SessionDAO;
 import org.apache.shiro.subject.Subject;
 import org.apache.shiro.web.mgt.DefaultWebSecurityManager;
 import org.apache.shiro.web.mgt.WebSecurityManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.Collections.emptySet;
 import static org.sonatype.nexus.common.app.ManagedLifecycleManager.isShuttingDown;
 
 /**
- * Custom {@link WebSecurityManager}.
+ * Custom {@link WebSecurityManager} with Java 21 enhancements.
  *
  * @since 2.7.2
  */
 public class NexusWebSecurityManager
     extends DefaultWebSecurityManager
 {
+  private static final Logger log = LoggerFactory.getLogger(NexusWebSecurityManager.class);
+  
   private final Provider<EventManager> eventManager;
+  
+  // Virtual thread executor for authentication processing
+  private final Executor virtualThreadExecutor;
 
   @Inject
   public NexusWebSecurityManager(final Provider<EventManager> eventManager,
@@ -56,48 +65,79 @@ public class NexusWebSecurityManager
                                  @Named("${nexus.shiro.cache.defaultTimeToLive:-2m}") final Provider<Time> defaultTimeToLive)
   {
     this.eventManager = checkNotNull(eventManager);
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    // Configure cache manager with Shiro 2.0.0 compatible adapter
     setCacheManager(new ShiroJCacheManagerAdapter(cacheHelper, defaultTimeToLive));
-    //explicitly disable rememberMe
-    this.setRememberMeManager(null); 
+    
+    // Explicitly disable rememberMe
+    this.setRememberMeManager(null);
+    
+    log.debug(STR."Initialized \{getClass().getSimpleName()} with virtual thread support");
   }
 
   /**
-   * Post {@link AuthenticationEvent}.
+   * Post {@link AuthenticationEvent} using virtual threads for improved concurrency.
    */
   private void post(
       final AuthenticationToken token,
       final boolean successful,
       final Set<AuthenticationFailureReason> authenticationFailureReasons)
   {
-    eventManager.get()
-        .post(new AuthenticationEvent(token.getPrincipal().toString(), successful, authenticationFailureReasons));
+    // Use virtual threads for event posting to improve concurrency
+    virtualThreadExecutor.execute(() -> {
+      String principal = token.getPrincipal().toString();
+      log.debug(STR."Posting authentication event for principal: \{principal}, successful: \{successful}");
+      eventManager.get()
+          .post(new AuthenticationEvent(principal, successful, authenticationFailureReasons));
+    });
   }
 
   /**
    * After login set the userId MDC attribute.
+   * Enhanced with virtual threads and Java 21 String Templates for logging.
    */
   @Override
   public Subject login(Subject subject, final AuthenticationToken token) {
-    //anonymous user isn't allowed to authenticate
+    // Anonymous user isn't allowed to authenticate
     if ("anonymous".equals(token.getPrincipal())) {
+      log.debug(STR."Rejecting authentication attempt for anonymous user");
       throw new AuthenticationException("Cannot login with anonymous user");
     }
+    
     try {
+      // Perform authentication
       subject = super.login(subject, token);
+      
+      // Set MDC context
       UserIdMdcHelper.set(subject);
+      
+      // Post authentication event
       post(token, true, emptySet());
-      Optional<String> realmName = subject.getPrincipals().getRealmNames().stream()
-          .filter(realm -> realm.equals("SamlRealm")).findFirst();
+      
+      // Handle SAML realm login events
       String principal = subject.getPrincipal().toString();
-      realmName.ifPresent(realm -> eventManager.get().post(new LoginEvent(principal, realm)));
+      Optional<String> realmName = subject.getPrincipals().getRealmNames().stream()
+          .filter(realm -> realm.equals("SamlRealm"))
+          .findFirst();
+      
+      // Post login event for SAML realm using virtual threads
+      realmName.ifPresent(realm -> 
+          virtualThreadExecutor.execute(() -> 
+              eventManager.get().post(new LoginEvent(principal, realm))
+          )
+      );
 
+      log.debug(STR."Successfully authenticated principal: \{principal}");
       return subject;
     }
     catch (NexusAuthenticationException e) {
+      log.debug(STR."Authentication failed for token: \{token.getPrincipal()}, reason: \{e.getMessage()}");
       post(token, false, e.getAuthenticationFailureReasons());
       throw e;
     }
     catch (AuthenticationException e) {
+      log.debug(STR."Authentication failed for token: \{token.getPrincipal()}, reason: \{e.getMessage()}");
       post(token, false, emptySet());
       throw e;
     }
@@ -105,24 +145,30 @@ public class NexusWebSecurityManager
 
   /**
    * After logout unset the userId MDC attribute.
+   * Enhanced with Java 21 String Templates for logging.
    */
   @Override
   public void logout(final Subject subject) {
+    if (subject != null && subject.getPrincipal() != null) {
+      log.debug(STR."Logging out principal: \{subject.getPrincipal()}");
+    }
     super.logout(subject);
     UserIdMdcHelper.unset();
   }
 
   @Override
   public void destroy() {
-    // underlying manager cannot be restarted, so avoid shutting it down when bouncing the service
+    // Underlying manager cannot be restarted, so avoid shutting it down when bouncing the service
     if (isShuttingDown()) {
+      log.debug(STR."Shutting down \{getClass().getSimpleName()}");
       super.destroy();
     }
     else {
-      // null out the session cache to force it to be recreated on the next request after bouncing
+      // Null out the session cache to force it to be recreated on the next request after bouncing
       SessionDAO sessionDAO = ((NexusWebSessionManager) getSessionManager()).getSessionDAO();
-      if (sessionDAO instanceof CachingSessionDAO) {
-        ((CachingSessionDAO) sessionDAO).setActiveSessionsCache(null);
+      if (sessionDAO instanceof CachingSessionDAO cachingSessionDAO) {
+        log.debug(STR."Clearing session cache for \{sessionDAO.getClass().getSimpleName()}");
+        cachingSessionDAO.setActiveSessionsCache(null);
       }
     }
   }

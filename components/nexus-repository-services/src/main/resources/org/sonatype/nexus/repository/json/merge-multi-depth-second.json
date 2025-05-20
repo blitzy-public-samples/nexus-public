@@ -32,5 +32,100 @@
     "first": {
       "description": "We have here the first depth from the second response"
     }
+  },
+  "dependencies": {
+    "equire(\"orchestrator\")": "*",
+    "@types/node": "*",
+    "@types/orchestrator": "*",
+    "funcky(\"fieldname\")": {
+      "godeep": {
+        "first": {
+          "title": "This is the first depth from second"
+        }
+      }
+    }
+  },
+  "record-patterns": {
+    "point": {
+      "x": 10,
+      "y": 20
+    },
+    "location": {
+      "name": "Home",
+      "point": {
+        "x": 35.6895,
+        "y": 139.6917
+      }
+    },
+    "box": {
+      "content": {
+        "name": "Nested Content",
+        "value": 42
+      }
+    }
+  },
+  "type-hierarchy": {
+    "shape": {
+      "type": "circle",
+      "radius": 5.0,
+      "color": "blue"
+    },
+    "shapes": [
+      {
+        "type": "rectangle",
+        "width": 10.0,
+        "height": 20.0,
+        "color": "red"
+      },
+      {
+        "type": "triangle",
+        "base": 15.0,
+        "height": 8.0,
+        "color": "green"
+      }
+    ]
+  },
+  "pattern-matching": {
+    "employee": {
+      "type": "freelancer",
+      "name": "John Doe",
+      "hourlyRate": 250.0,
+      "skills": ["Java", "Python", "JavaScript"]
+    },
+    "result": {
+      "status": "success",
+      "data": {
+        "id": 123,
+        "value": "test value"
+      }
+    },
+    "optional": {
+      "present": true,
+      "value": "This is present"
+    }
+  },
+  "nested-records": {
+    "user": {
+      "id": 1001,
+      "username": "javauser",
+      "profile": {
+        "firstName": "Java",
+        "lastName": "User",
+        "address": {
+          "street": "Oracle Parkway",
+          "city": "Redwood City",
+          "zipCode": "94065",
+          "coordinates": {
+            "latitude": 37.5329,
+            "longitude": -122.2573
+          }
+        }
+      },
+      "preferences": {
+        "theme": "dark",
+        "notifications": true,
+        "language": "en-US"
+      }
+    }
   }
 }

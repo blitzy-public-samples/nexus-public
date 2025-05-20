@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.repository.rest;
 
+import java.util.concurrent.CompletableFuture;
+
 /**
  * Provide a listing of all {@link SearchMapping}s that have been contributed via {@link SearchMappings}.
  *
@@ -21,6 +23,32 @@ public interface SearchMappingsService
 {
   /**
    * Get all {@link SearchMapping}s.
+   * 
+   * This method is thread-safe and can be called from any context.
    */
   Iterable<SearchMapping> getAllMappings();
+  
+  /**
+   * Get all {@link SearchMapping}s asynchronously using Java 21 Virtual Threads.
+   * 
+   * <p>This method leverages Java 21 Virtual Threads for improved concurrency performance when
+   * retrieving search mappings. Virtual Threads provide lightweight concurrency with minimal
+   * overhead, allowing thousands of concurrent operations without the resource constraints
+   * of traditional platform threads.</p>
+   * 
+   * <p>Implementation notes:</p>
+   * <ul>
+   *   <li>The returned CompletableFuture will be completed on a Virtual Thread</li>
+   *   <li>This method is non-blocking and returns immediately</li>
+   *   <li>For optimal performance, avoid blocking operations when processing the result</li>
+   *   <li>Error handling should be managed through CompletableFuture's exception handling methods</li>
+   * </ul>
+   * 
+   * @return A CompletableFuture that will be completed with all search mappings
+   * @since Java 21
+   */
+  default CompletableFuture<Iterable<SearchMapping>> getAllMappingsAsync() {
+    return CompletableFuture.supplyAsync(this::getAllMappings, 
+        java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
+  }
 }

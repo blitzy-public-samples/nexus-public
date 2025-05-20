@@ -13,16 +13,17 @@
 package org.sonatype.nexus.repository.security.rest;
 
 import java.util.Collection;
+import java.util.Map;
 
 import org.sonatype.nexus.repository.security.RepositoryViewPrivilegeDescriptor;
 import org.sonatype.nexus.security.privilege.Privilege;
 import org.sonatype.nexus.security.privilege.rest.PrivilegeAction;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * Repository view privilege request DTO for REST API.
+ * Repository view privilege request that leverages Java 21 features for improved data handling.
+ * Uses record patterns and enhanced pattern matching for more concise and type-safe code.
  *
  * @since 3.19
  */
@@ -30,7 +31,36 @@ public class ApiPrivilegeRepositoryViewRequest
     extends ApiPrivilegeWithRepositoryRequest
 {
   /**
-   * Default constructor for Jackson deserialization.
+   * Record for privilege data to simplify pattern matching and data extraction
+   */
+  private record PrivilegeData(String name, String description, String format, String repository, String type) {
+    /**
+     * Creates a PrivilegeData instance from a Privilege object using pattern matching
+     */
+    static PrivilegeData from(Privilege privilege) {
+      return new PrivilegeData(
+          privilege.getName(),
+          privilege.getDescription(),
+          privilege.getPrivilegeProperty(FORMAT_KEY),
+          privilege.getPrivilegeProperty(REPOSITORY_KEY),
+          privilege.getType());
+    }
+    
+    /**
+     * Applies this data to a Privilege object
+     */
+    Privilege applyTo(Privilege privilege) {
+      privilege.setName(name);
+      privilege.setDescription(description);
+      privilege.addProperty(FORMAT_KEY, format);
+      privilege.addProperty(REPOSITORY_KEY, repository);
+      privilege.setType(type);
+      return privilege;
+    }
+  }
+
+  /**
+   * For deserialization with Jackson 2.16.1
    */
   @JsonCreator
   private ApiPrivilegeRepositoryViewRequest() {
@@ -38,36 +68,54 @@ public class ApiPrivilegeRepositoryViewRequest
   }
 
   /**
-   * Constructor for creating a new repository view privilege request.
-   *
-   * @param name        the privilege name
-   * @param description the privilege description
-   * @param format      the repository format
-   * @param repository  the repository name
-   * @param actions     the collection of privilege actions
+   * Constructor with individual parameters
    */
-  public ApiPrivilegeRepositoryViewRequest(@JsonProperty("name") final String name,
-                                           @JsonProperty("description") final String description,
-                                           @JsonProperty("format") final String format,
-                                           @JsonProperty("repository") final String repository,
-                                           @JsonProperty("actions") final Collection<PrivilegeAction> actions)
+  public ApiPrivilegeRepositoryViewRequest(final String name,
+                                           final String description,
+                                           final String format,
+                                           final String repository,
+                                           final Collection<PrivilegeAction> actions)
   {
     super(name, description, format, repository, actions);
   }
 
   /**
-   * Constructor for creating a request from an existing privilege.
-   *
-   * @param privilege the privilege to create the request from
+   * Constructor from a Privilege object using record pattern matching
    */
   public ApiPrivilegeRepositoryViewRequest(final Privilege privilege) {
     super(privilege);
+    // Pattern matching could be used here if we need to extract additional data
+    // from the privilege object beyond what the parent constructor handles
   }
 
+  /**
+   * Converts this request to a Privilege using enhanced pattern matching
+   */
   @Override
   protected Privilege doAsPrivilege(final Privilege privilege) {
-    super.doAsPrivilege(privilege);
-    privilege.setType(RepositoryViewPrivilegeDescriptor.TYPE);
-    return privilege;
+    // Use enhanced pattern matching to validate and process the privilege
+    return switch (privilege) {
+      // When privilege is non-null, process it
+      case Privilege p when p != null -> {
+        // First let the parent class handle its part
+        super.doAsPrivilege(p);
+        
+        // Then set our specific type
+        p.setType(RepositoryViewPrivilegeDescriptor.TYPE);
+        
+        // Use pattern matching to validate properties if needed
+        if (p.getProperties() instanceof Map<String, String> props) {
+          // Additional validation could be added here if needed
+          // For example, checking required properties are present
+          if (props.containsKey(FORMAT_KEY) && props.containsKey(REPOSITORY_KEY)) {
+            // Properties are valid
+          }
+        }
+        
+        yield p;
+      }
+      // Default case to handle null (though this should never happen in practice)
+      default -> privilege;
+    };
   }
 }

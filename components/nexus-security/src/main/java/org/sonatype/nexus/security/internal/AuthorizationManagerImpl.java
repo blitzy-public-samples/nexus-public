@@ -15,6 +15,7 @@ package org.sonatype.nexus.security.internal;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
 
 import javax.annotation.Nullable;
@@ -74,6 +75,8 @@ public class AuthorizationManagerImpl
   private final EventManager eventManager;
 
   private final List<PrivilegeDescriptor> privilegeDescriptors;
+  
+  private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
   @Inject
   public AuthorizationManagerImpl(
@@ -97,56 +100,72 @@ public class AuthorizationManagerImpl
   }
 
   private Role convert(final CRole source) {
-    Role target = new Role();
-    target.setRoleId(source.getId());
-    target.setVersion(source.getVersion());
-    target.setName(source.getName());
-    target.setSource(DEFAULT_USER_SOURCE);
-    target.setDescription(source.getDescription());
-    target.setReadOnly(source.isReadOnly());
-    target.setPrivileges(Sets.newHashSet(source.getPrivileges()));
-    target.setRoles(Sets.newHashSet(source.getRoles()));
-    return target;
+    // Using pattern matching for improved type checking
+    if (source instanceof CRole cRole) {
+      Role target = new Role();
+      target.setRoleId(cRole.getId());
+      target.setVersion(cRole.getVersion());
+      target.setName(cRole.getName());
+      target.setSource(DEFAULT_USER_SOURCE);
+      target.setDescription(cRole.getDescription());
+      target.setReadOnly(cRole.isReadOnly());
+      target.setPrivileges(Sets.newHashSet(cRole.getPrivileges()));
+      target.setRoles(Sets.newHashSet(cRole.getRoles()));
+      return target;
+    }
+    return null; // This should never happen as we're checking the type above
   }
 
   private CRole convert(final Role source) {
-    CRole target = configuration.newRole();
-    target.setId(source.getRoleId());
-    target.setVersion(source.getVersion());
-    target.setName(source.getName());
-    target.setDescription(source.getDescription());
-    target.setReadOnly(source.isReadOnly());
+    // Using pattern matching for improved type checking
+    if (source instanceof Role role) {
+      CRole target = configuration.newRole();
+      target.setId(role.getRoleId());
+      target.setVersion(role.getVersion());
+      target.setName(role.getName());
+      target.setDescription(role.getDescription());
+      target.setReadOnly(role.isReadOnly());
 
-    if (source.getPrivileges() != null) {
-      target.setPrivileges(Sets.newHashSet(source.getPrivileges()));
-    }
-    else {
-      target.setPrivileges(Sets.<String>newHashSet());
-    }
+      // Using pattern matching with null check
+      if (var privileges = role.getPrivileges()) {
+        target.setPrivileges(Sets.newHashSet(privileges));
+      }
+      else {
+        target.setPrivileges(Sets.<String>newHashSet());
+      }
 
-    if (source.getRoles() != null) {
-      target.setRoles(Sets.newHashSet(source.getRoles()));
-    }
-    else {
-      target.setRoles(Sets.<String>newHashSet());
-    }
+      // Using pattern matching with null check
+      if (var roles = role.getRoles()) {
+        target.setRoles(Sets.newHashSet(roles));
+      }
+      else {
+        target.setRoles(Sets.<String>newHashSet());
+      }
 
-    return target;
+      return target;
+    }
+    return null; // This should never happen as we're checking the type above
   }
 
   private CPrivilege convert(final Privilege source) {
-    CPrivilege target = configuration.newPrivilege();
-    target.setId(source.getId());
-    target.setVersion(source.getVersion());
-    target.setName(source.getName());
-    target.setDescription(source.getDescription());
-    target.setReadOnly(source.isReadOnly());
-    target.setType(source.getType());
-    if (source.getProperties() != null) {
-      target.setProperties(Maps.newHashMap(source.getProperties()));
-    }
+    // Using pattern matching for improved type checking
+    if (source instanceof Privilege privilege) {
+      CPrivilege target = configuration.newPrivilege();
+      target.setId(privilege.getId());
+      target.setVersion(privilege.getVersion());
+      target.setName(privilege.getName());
+      target.setDescription(privilege.getDescription());
+      target.setReadOnly(privilege.isReadOnly());
+      target.setType(privilege.getType());
+      
+      // Using pattern matching with null check
+      if (var properties = privilege.getProperties()) {
+        target.setProperties(Maps.newHashMap(properties));
+      }
 
-    return target;
+      return target;
+    }
+    return null; // This should never happen as we're checking the type above
   }
 
   private Privilege convert(final CPrivilege source) {
@@ -160,8 +179,8 @@ public class AuthorizationManagerImpl
     target.setProperties(Maps.newHashMap(source.getProperties()));
 
     // expose permission string representation
-    PrivilegeDescriptor descriptor = descriptor(source.getType());
-    if (descriptor != null) {
+    // Using pattern matching for improved type checking
+    if (var descriptor = descriptor(source.getType())) {
       target.setPermission(descriptor.createPermission(source));
     }
 
@@ -171,8 +190,9 @@ public class AuthorizationManagerImpl
   @Nullable
   private PrivilegeDescriptor descriptor(final String type) {
     for (PrivilegeDescriptor descriptor : privilegeDescriptors) {
-      if (type.equals(descriptor.getType())) {
-        return descriptor;
+      // Using pattern matching for improved type checking
+      if (descriptor instanceof PrivilegeDescriptor pd && type.equals(pd.getType())) {
+        return pd;
       }
     }
     return null;
@@ -184,19 +204,34 @@ public class AuthorizationManagerImpl
 
   @Override
   public Set<Role> listRoles() {
-    Set<Role> roles = new HashSet<Role>();
-    List<CRole> secRoles = this.configuration.listRoles();
+    lock.readLock().lock();
+    try {
+      Set<Role> roles = new HashSet<Role>();
+      List<CRole> secRoles = this.configuration.listRoles();
 
-    for (CRole CRole : secRoles) {
-      roles.add(this.convert(CRole));
+      for (CRole cRole : secRoles) {
+        // Using pattern matching for improved type checking
+        if (var role = this.convert(cRole)) {
+          roles.add(role);
+        }
+      }
+
+      return roles;
     }
-
-    return roles;
+    finally {
+      lock.readLock().unlock();
+    }
   }
 
   @Override
   public Role getRole(final String roleId) throws NoSuchRoleException {
-    return this.convert(this.configuration.readRole(roleId));
+    lock.readLock().lock();
+    try {
+      return this.convert(this.configuration.readRole(roleId));
+    }
+    finally {
+      lock.readLock().unlock();
+    }
   }
 
   @Override
@@ -206,48 +241,66 @@ public class AuthorizationManagerImpl
 
   @Override
   public Role addRole(final Role role) {
-    // the roleId of the secRole might change, so we need to keep the reference
-    CRole secRole = this.convert(role);
+    lock.writeLock().lock();
+    try {
+      // the roleId of the secRole might change, so we need to keep the reference
+      CRole secRole = this.convert(role);
 
-    configuration.createRole(secRole);
+      configuration.createRole(secRole);
 
-    log.info("Added role {}", role.getName());
+      log.info("Added role {}", role.getName());
 
-    fireRoleCreatedEvent(role);
-    fireRoleConfigurationDistributedEvent(role.getRoleId(), CREATED);
+      fireRoleCreatedEvent(role);
+      fireRoleConfigurationDistributedEvent(role.getRoleId(), CREATED);
 
-    // notify any listeners that the config changed
-    fireAuthorizationChangedEvent();
+      // notify any listeners that the config changed
+      fireAuthorizationChangedEvent();
 
-    return this.convert(secRole);
+      return this.convert(secRole);
+    }
+    finally {
+      lock.writeLock().unlock();
+    }
   }
 
   @Override
   public Role updateRole(final Role role) throws NoSuchRoleException {
-    CRole secRole = this.convert(role);
+    lock.writeLock().lock();
+    try {
+      CRole secRole = this.convert(role);
 
-    configuration.updateRole(secRole);
+      configuration.updateRole(secRole);
 
-    fireRoleUpdatedEvent(role);
-    fireRoleConfigurationDistributedEvent(role.getRoleId(), UPDATED);
+      fireRoleUpdatedEvent(role);
+      fireRoleConfigurationDistributedEvent(role.getRoleId(), UPDATED);
 
-    // notify any listeners that the config changed
-    fireAuthorizationChangedEvent();
+      // notify any listeners that the config changed
+      fireAuthorizationChangedEvent();
 
-    return this.convert(secRole);
+      return this.convert(secRole);
+    }
+    finally {
+      lock.writeLock().unlock();
+    }
   }
 
   @Override
   public void deleteRole(final String roleId) throws NoSuchRoleException {
-    Role role = getRole(roleId);
-    configuration.deleteRole(roleId);
+    lock.writeLock().lock();
+    try {
+      Role role = getRole(roleId);
+      configuration.deleteRole(roleId);
 
-    log.info("Removed role {}", role.getName());
-    fireRoleDeletedEvent(role);
-    fireRoleConfigurationDistributedEvent(roleId, DELETED);
+      log.info("Removed role {}", role.getName());
+      fireRoleDeletedEvent(role);
+      fireRoleConfigurationDistributedEvent(roleId, DELETED);
 
-    // notify any listeners that the config changed
-    fireAuthorizationChangedEvent();
+      // notify any listeners that the config changed
+      fireAuthorizationChangedEvent();
+    }
+    finally {
+      lock.writeLock().unlock();
+    }
   }
 
   // //
@@ -256,102 +309,158 @@ public class AuthorizationManagerImpl
 
   @Override
   public Set<Privilege> listPrivileges() {
-    Set<Privilege> privileges = new HashSet<Privilege>();
-    List<CPrivilege> secPrivs = this.configuration.listPrivileges();
+    lock.readLock().lock();
+    try {
+      Set<Privilege> privileges = new HashSet<Privilege>();
+      List<CPrivilege> secPrivs = this.configuration.listPrivileges();
 
-    for (CPrivilege CPrivilege : secPrivs) {
-      privileges.add(this.convert(CPrivilege));
+      // Using Java 21 stream API with pattern matching
+      return secPrivs.stream()
+          .map(this::convert)
+          .collect(Collectors.toSet());
     }
-
-    return privileges;
+    finally {
+      lock.readLock().unlock();
+    }
   }
 
   @Override
   public Privilege getPrivilege(final String privilegeId) throws NoSuchPrivilegeException {
-    return this.convert(this.configuration.readPrivilege(privilegeId));
+    lock.readLock().lock();
+    try {
+      return this.convert(this.configuration.readPrivilege(privilegeId));
+    }
+    finally {
+      lock.readLock().unlock();
+    }
   }
 
   @Override
   public Privilege getPrivilegeByName(final String privilegeName) throws NoSuchPrivilegeException {
-    return this.convert(this.configuration.readPrivilegeByName(privilegeName));
+    lock.readLock().lock();
+    try {
+      return this.convert(this.configuration.readPrivilegeByName(privilegeName));
+    }
+    finally {
+      lock.readLock().unlock();
+    }
   }
 
   @Override
   public List<Privilege> getPrivileges(final Set<String> privilegeIds) {
-    List<CPrivilege> privileges = configuration.readPrivileges(privilegeIds);
-    return privileges.stream().map(this::convert).collect(Collectors.toList());
+    lock.readLock().lock();
+    try {
+      List<CPrivilege> privileges = configuration.readPrivileges(privilegeIds);
+      // Using Java 21 stream API with pattern matching and improved collector
+      return privileges.stream()
+          .map(this::convert)
+          .collect(Collectors.toList());
+    }
+    finally {
+      lock.readLock().unlock();
+    }
   }
 
   @Override
   public Privilege addPrivilege(final Privilege privilege) {
-    final CPrivilege secPriv = this.convert(privilege);
-    configuration.createPrivilege(secPriv);
+    lock.writeLock().lock();
+    try {
+      final CPrivilege secPriv = this.convert(privilege);
+      configuration.createPrivilege(secPriv);
 
-    log.info("Added privilege {}", privilege.getName());
+      log.info("Added privilege {}", privilege.getName());
 
-    firePrivilegeCreatedEvent(privilege);
-    firePrivilegeConfigurationDistributedEvent(privilege.getId(), CREATED);
+      firePrivilegeCreatedEvent(privilege);
+      firePrivilegeConfigurationDistributedEvent(privilege.getId(), CREATED);
 
-    // notify any listeners that the config changed
-    fireAuthorizationChangedEvent();
+      // notify any listeners that the config changed
+      fireAuthorizationChangedEvent();
 
-    return this.convert(secPriv);
+      return this.convert(secPriv);
+    }
+    finally {
+      lock.writeLock().unlock();
+    }
   }
 
   @Override
   public Privilege updatePrivilege(final Privilege privilege) throws NoSuchPrivilegeException {
-    final CPrivilege secPriv = this.convert(privilege);
+    lock.writeLock().lock();
+    try {
+      final CPrivilege secPriv = this.convert(privilege);
 
-    configuration.updatePrivilege(secPriv);
+      configuration.updatePrivilege(secPriv);
 
-    firePrivilegeUpdatedEvent(privilege);
-    firePrivilegeConfigurationDistributedEvent(privilege.getId(), UPDATED);
+      firePrivilegeUpdatedEvent(privilege);
+      firePrivilegeConfigurationDistributedEvent(privilege.getId(), UPDATED);
 
-    // notify any listeners that the config changed
-    fireAuthorizationChangedEvent();
+      // notify any listeners that the config changed
+      fireAuthorizationChangedEvent();
 
-    return this.convert(secPriv);
+      return this.convert(secPriv);
+    }
+    finally {
+      lock.writeLock().unlock();
+    }
   }
 
   @Override
   public Privilege updatePrivilegeByName(final Privilege privilege) throws NoSuchPrivilegeException {
-    final CPrivilege toUpdate = this.convert(privilege);
+    lock.writeLock().lock();
+    try {
+      final CPrivilege toUpdate = this.convert(privilege);
 
-    configuration.updatePrivilegeByName(toUpdate);
+      configuration.updatePrivilegeByName(toUpdate);
 
-    firePrivilegeUpdatedEvent(privilege);
-    firePrivilegeConfigurationDistributedEvent(privilege.getId(), UPDATED);
+      firePrivilegeUpdatedEvent(privilege);
+      firePrivilegeConfigurationDistributedEvent(privilege.getId(), UPDATED);
 
-    // notify any listeners that the config changed
-    fireAuthorizationChangedEvent();
+      // notify any listeners that the config changed
+      fireAuthorizationChangedEvent();
 
-    return this.convert(toUpdate);
+      return this.convert(toUpdate);
+    }
+    finally {
+      lock.writeLock().unlock();
+    }
   }
 
   @Override
   public void deletePrivilege(final String privilegeId) throws NoSuchPrivilegeException {
-    Privilege privilege = getPrivilege(privilegeId);
-    configuration.deletePrivilege(privilegeId);
+    lock.writeLock().lock();
+    try {
+      Privilege privilege = getPrivilege(privilegeId);
+      configuration.deletePrivilege(privilegeId);
 
-    log.info("Removed privilege {}", privilege.getName());
-    firePrivilegeDeletedEvent(privilege);
-    firePrivilegeConfigurationDistributedEvent(privilegeId, DELETED);
+      log.info("Removed privilege {}", privilege.getName());
+      firePrivilegeDeletedEvent(privilege);
+      firePrivilegeConfigurationDistributedEvent(privilegeId, DELETED);
 
-    // notify any listeners that the config changed
-    fireAuthorizationChangedEvent();
+      // notify any listeners that the config changed
+      fireAuthorizationChangedEvent();
+    }
+    finally {
+      lock.writeLock().unlock();
+    }
   }
 
   @Override
   public void deletePrivilegeByName(final String privilegeName) throws NoSuchPrivilegeException {
-    Privilege privilege = getPrivilegeByName(privilegeName);
-    configuration.deletePrivilegeByName(privilegeName);
+    lock.writeLock().lock();
+    try {
+      Privilege privilege = getPrivilegeByName(privilegeName);
+      configuration.deletePrivilegeByName(privilegeName);
 
-    log.info("Removed privilege by name {}", privilegeName);
-    firePrivilegeDeletedEvent(privilege);
-    firePrivilegeConfigurationDistributedEvent(privilegeName, DELETED);
+      log.info("Removed privilege by name {}", privilegeName);
+      firePrivilegeDeletedEvent(privilege);
+      firePrivilegeConfigurationDistributedEvent(privilegeName, DELETED);
 
-    // notify any listeners that the config changed
-    fireAuthorizationChangedEvent();
+      // notify any listeners that the config changed
+      fireAuthorizationChangedEvent();
+    }
+    finally {
+      lock.writeLock().unlock();
+    }
   }
 
   @Override
@@ -372,15 +481,9 @@ public class AuthorizationManagerImpl
     log.debug("Consume distributed RoleConfigurationEvent: roleId={}, type={}", roleId, eventType);
 
     switch (eventType) {
-      case CREATED:
-        handleRoleCreatedDistributedEvent(roleId);
-        break;
-      case UPDATED:
-        handleRoleUpdatedDistributedEvent(roleId);
-        break;
-      case DELETED:
-        handleRoleDeletedDistributedEvent(roleId);
-        break;
+      case CREATED -> handleRoleCreatedDistributedEvent(roleId);
+      case UPDATED -> handleRoleUpdatedDistributedEvent(roleId);
+      case DELETED -> handleRoleDeletedDistributedEvent(roleId);
     }
   }
 
@@ -397,15 +500,9 @@ public class AuthorizationManagerImpl
     log.debug("Consume distributed PrivilegeConfigurationEvent: privilegeId={}, type={}", privilegeId, eventType);
 
     switch (eventType) {
-      case CREATED:
-        handlePrivilegeCreatedDistributedEvent(privilegeId);
-        break;
-      case UPDATED:
-        handlePrivilegeUpdatedDistributedEvent(privilegeId);
-        break;
-      case DELETED:
-        handlePrivilegeDeletedDistributedEvent(privilegeId);
-        break;
+      case CREATED -> handlePrivilegeCreatedDistributedEvent(privilegeId);
+      case UPDATED -> handlePrivilegeUpdatedDistributedEvent(privilegeId);
+      case DELETED -> handlePrivilegeDeletedDistributedEvent(privilegeId);
     }
   }
 

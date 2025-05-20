@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.security.authc;
 
+import java.io.Serializable;
+
 /**
  * Event fired when a user successfully logs in.
  *
@@ -20,18 +22,21 @@ package org.sonatype.nexus.security.authc;
 public final record LoginEvent(
     String principal,
     String realm
-) implements java.io.Serializable, SecurityEvent {
+) extends SecurityEvent(principal, realm) implements Serializable {
   
   /**
-   * Pattern matching example for working with LoginEvent records.
+   * Creates a new login event with the specified principal and realm.
    * 
-   * @param event The security event to check
-   * @return true if this is a login event with a non-empty principal
+   * @param principal the user principal that logged in
+   * @param realm the authentication realm used for login
    */
-  public static boolean isValidLoginEvent(SecurityEvent event) {
-    return switch(event) {
-      case LoginEvent(String principal, String realm) when principal != null && !principal.isEmpty() -> true;
-      default -> false;
-    };
+  public LoginEvent {
+    // Compact constructor for validation if needed
+    if (principal == null || principal.isEmpty()) {
+      throw new IllegalArgumentException("Principal cannot be null or empty");
+    }
+    if (realm == null || realm.isEmpty()) {
+      throw new IllegalArgumentException("Realm cannot be null or empty");
+    }
   }
 }

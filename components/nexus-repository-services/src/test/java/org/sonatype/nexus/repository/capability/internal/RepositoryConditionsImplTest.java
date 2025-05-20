@@ -17,11 +17,13 @@ import org.sonatype.nexus.capability.Condition;
 import org.sonatype.nexus.common.event.EventManager;
 import org.sonatype.nexus.repository.capability.RepositoryConditions;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
+import org.sonatype.nexus.virtualthread.Java21TestGroup;
 
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.experimental.categories.Category;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -34,6 +36,7 @@ import static org.mockito.Mockito.mock;
  * @since capabilities 2.0
  */
 @ExtendWith(MockitoExtension.class)
+@Category(Java21TestGroup.class)
 public class RepositoryConditionsImplTest
     extends TestSupport
 {
@@ -41,7 +44,7 @@ public class RepositoryConditionsImplTest
   private RepositoryConditions underTest;
 
   @BeforeEach
-  public void setUpRepositoryConditions() {
+  void setUpRepositoryConditions() {
     final EventManager eventManager = mock(EventManager.class);
     underTest = new RepositoryConditionsImpl(eventManager, mock(RepositoryManager.class));
   }
@@ -50,18 +53,18 @@ public class RepositoryConditionsImplTest
    * repositoryIsInService() factory method returns expected condition.
    */
   @Test
-  public void repositoryIsInService() {
-    var condition = underTest.repositoryIsOnline(() -> "repo-name");
-    assertThat(condition instanceof RepositoryOnlineCondition, is(true));
+  void shouldReturnRepositoryOnlineConditionInstance() {
+    Condition condition = underTest.repositoryIsOnline(() -> "repo-name");
+    assertThat(condition, is(Matchers.instanceOf(RepositoryOnlineCondition.class)));
   }
 
   /**
    * repositoryExists() factory method returns expected condition.
    */
   @Test
-  public void repositoryExists() {
-    var condition = underTest.repositoryExists(() -> "repo-name");
-    assertThat(condition instanceof RepositoryExistsCondition, is(true));
+  void shouldReturnRepositoryExistsConditionInstance() {
+    Condition condition = underTest.repositoryExists(() -> "repo-name");
+    assertThat(condition, is(Matchers.instanceOf(RepositoryExistsCondition.class)));
   }
 
 }

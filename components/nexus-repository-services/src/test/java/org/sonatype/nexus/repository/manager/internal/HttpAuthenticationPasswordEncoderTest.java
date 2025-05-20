@@ -19,14 +19,16 @@ import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.crypto.secrets.Secret;
 import org.sonatype.nexus.crypto.secrets.SecretsService;
 import org.sonatype.nexus.security.UserIdHelper;
+import org.sonatype.nexus.virtualthread.Java21TestGroup;
 
+import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
@@ -35,6 +37,7 @@ import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.httpclient.config.AuthenticationConfiguration.AUTHENTICATION_CONFIGURATION;
 
 @ExtendWith(MockitoExtension.class)
+@Category(Java21TestGroup.class)
 public class HttpAuthenticationPasswordEncoderTest
     extends TestSupport
 {

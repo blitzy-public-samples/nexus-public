@@ -20,12 +20,16 @@ import com.fasterxml.jackson.core.JsonFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.experimental.categories.Category;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.sonatype.nexus.testcommon.Java21TestGroup;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.hamcrest.CoreMatchers.equalTo;
+import static org.hamcrest.CoreMatchers.notNullValue;
+import static org.hamcrest.MatcherAssert.assertThat;
 
 @ExtendWith(MockitoExtension.class)
+@Category(Java21TestGroup.class)
 public class CurrentPathJsonParserTest
     extends TestSupport
 {
@@ -39,58 +43,58 @@ public class CurrentPathJsonParserTest
   }
 
   @Test
-  public void should_Return_CurrentPath_For_Parser() throws IOException {
-    assertEquals("/", underTest.currentPath());
+  public void shouldReturnCurrentPathForParser() throws IOException {
+    assertThat(underTest.currentPath(), equalTo("/"));
 
     underTest.nextValue();
-    assertEquals("/", underTest.currentPath());
+    assertThat(underTest.currentPath(), equalTo("/"));
 
     underTest.nextValue();
-    assertEquals("/_id", underTest.currentPath());
+    assertThat(underTest.currentPath(), equalTo("/_id"));
 
     underTest.nextValue();
-    assertEquals("/user", underTest.currentPath());
+    assertThat(underTest.currentPath(), equalTo("/user"));
 
     underTest.nextValue();
-    assertEquals("/user/description", underTest.currentPath());
+    assertThat(underTest.currentPath(), equalTo("/user/description"));
 
     underTest.nextValue();
-    assertEquals("/user", underTest.currentPath());
+    assertThat(underTest.currentPath(), equalTo("/user"));
 
     underTest.nextValue();
-    assertEquals("/", underTest.currentPath());
+    assertThat(underTest.currentPath(), equalTo("/"));
   }
 
   @Test
-  public void should_Return_CurrentPath_InParts_For_Parser() throws IOException {
-    assertEquals(0, underTest.currentPathInParts().length);
+  public void shouldReturnCurrentPathInPartsForParser() throws IOException {
+    assertThat(underTest.currentPathInParts().length, equalTo(0));
 
     underTest.nextValue();
-    assertEquals(0, underTest.currentPathInParts().length);
+    assertThat(underTest.currentPathInParts().length, equalTo(0));
 
     underTest.nextValue();
-    assertEquals(1, underTest.currentPathInParts().length);
-    assertEquals("_id", underTest.currentPathInParts()[0]);
+    assertThat(underTest.currentPathInParts().length, equalTo(1));
+    assertThat(underTest.currentPathInParts()[0], equalTo("_id"));
 
     underTest.nextValue();
-    assertEquals(1, underTest.currentPathInParts().length);
-    assertEquals("user", underTest.currentPathInParts()[0]);
+    assertThat(underTest.currentPathInParts().length, equalTo(1));
+    assertThat(underTest.currentPathInParts()[0], equalTo("user"));
 
     underTest.nextValue();
-    assertEquals(2, underTest.currentPathInParts().length);
-    assertEquals("user", underTest.currentPathInParts()[0]);
-    assertEquals("description", underTest.currentPathInParts()[1]);
+    assertThat(underTest.currentPathInParts().length, equalTo(2));
+    assertThat(underTest.currentPathInParts()[0], equalTo("user"));
+    assertThat(underTest.currentPathInParts()[1], equalTo("description"));
 
     underTest.nextValue();
-    assertEquals(1, underTest.currentPathInParts().length);
-    assertEquals("user", underTest.currentPathInParts()[0]);
+    assertThat(underTest.currentPathInParts().length, equalTo(1));
+    assertThat(underTest.currentPathInParts()[0], equalTo("user"));
 
     underTest.nextValue();
-    assertEquals(0, underTest.currentPathInParts().length);
+    assertThat(underTest.currentPathInParts().length, equalTo(0));
   }
 
   @Test
-  public void should_Return_CurrentPointer() {
-    assertNotNull(underTest.currentPointer());
+  public void shouldReturnCurrentPointer() {
+    assertThat(underTest.currentPointer(), notNullValue());
   }
 }

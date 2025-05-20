@@ -16,18 +16,21 @@ package org.sonatype.nexus.security.internal.rest;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import javax.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotNull;
 
 import org.sonatype.nexus.security.role.RoleIdentifier;
 import org.sonatype.nexus.security.user.User;
 import org.sonatype.nexus.security.user.UserManager;
+import org.sonatype.nexus.security.user.UserStatus;
 
 import io.swagger.annotations.ApiModelProperty;
-import javax.validation.constraints.Email;
-import javax.validation.constraints.NotBlank;
-import javax.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 
 /**
+ * Request DTO for user creation.
+ * 
  * @since 3.17
  */
 public class ApiCreateUser
@@ -140,18 +143,37 @@ public class ApiCreateUser
     this.roles = roles;
   }
 
+  /**
+   * Converts this DTO to a User domain object using pattern matching.
+   * 
+   * @return a new User instance populated with data from this DTO
+   */
   User toUser() {
     User user = new User();
+    
+    // Using pattern matching to handle ApiUserStatus conversion
+    switch (status) {
+      case ApiUserStatus s -> user.setStatus(s.getStatus());
+    }
+    
+    // Set basic properties
     user.setUserId(userId);
     user.setFirstName(firstName);
     user.setLastName(lastName);
     user.setEmailAddress(emailAddress);
-    user.setStatus(status.getStatus());
     user.setReadOnly(false);
     user.setVersion(1);
     user.setSource(UserManager.DEFAULT_SOURCE);
-    user.setRoles(roles.stream().map(r -> new RoleIdentifier(UserManager.DEFAULT_SOURCE, r))
-        .collect(Collectors.toSet()));
+    
+    // Optimize roles conversion using enhanced Stream operations in Java 21
+    user.setRoles(roles.stream()
+        .map(role -> switch (role) {
+          // Pattern matching for role string types
+          case String r when !r.isEmpty() -> new RoleIdentifier(UserManager.DEFAULT_SOURCE, r);
+          default -> throw new IllegalArgumentException("Invalid role: " + role);
+        })
+        .collect(Collectors.toUnmodifiableSet()));
+    
     return user;
   }
 }

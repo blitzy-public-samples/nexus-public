@@ -13,10 +13,12 @@
 package org.sonatype.nexus.rest;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.SequencedCollection;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.lang.StringTemplate.STR;
 
 /**
  * Thrown when there are request validation errors.
@@ -27,7 +29,13 @@ import static java.lang.StringTemplate.STR;
 public class ValidationErrorsException
     extends RuntimeException
 {
-  private final List<ValidationErrorXO> errors = new ArrayList<ValidationErrorXO>();
+  /**
+   * Thread-safe list to store validation errors, optimized for read-heavy scenarios
+   * which is the typical use case for validation errors (added once, read multiple times).
+   * Uses CopyOnWriteArrayList which is compatible with Java 21 SequencedCollection interface,
+   * ensuring thread safety for Virtual Thread execution.
+   */
+  private final List<ValidationErrorXO> errors = new CopyOnWriteArrayList<>();
 
   public ValidationErrorsException() {
     super();
@@ -58,7 +66,7 @@ public class ValidationErrorsException
 
   public ValidationErrorsException withErrors(final ValidationErrorXO... validationErrors) {
     checkNotNull(validationErrors);
-    errors.addAll(List.of(validationErrors));
+    errors.addAll(Arrays.asList(validationErrors));
     return this;
   }
 
@@ -68,21 +76,73 @@ public class ValidationErrorsException
     return this;
   }
 
+  /**
+   * Returns the list of validation errors.
+   * The returned list is a thread-safe view of the internal errors collection,
+   * which is compatible with Java 21 SequencedCollection interface.
+   *
+   * @return List of validation errors in their encounter order
+   */
   public List<ValidationErrorXO> getValidationErrors() {
     return errors;
   }
+  
+  /**
+   * Returns the first validation error if any exists.
+   * Leverages the SequencedCollection concept of ordered elements.
+   *
+   * @return The first validation error or null if no errors exist
+   */
+  public ValidationErrorXO getFirstValidationError() {
+    return errors.isEmpty() ? null : errors.get(0);
+  }
+  
+  /**
+   * Returns the last validation error if any exists.
+   * Leverages the SequencedCollection concept of ordered elements.
+   *
+   * @return The last validation error or null if no errors exist
+   */
+  public ValidationErrorXO getLastValidationError() {
+    return errors.isEmpty() ? null : errors.get(errors.size() - 1);
+  }
 
+  /**
+   * Checks if there are any validation errors.
+   * Thread-safe operation for use with Virtual Threads.
+   *
+   * @return true if there are validation errors, false otherwise
+   */
   public boolean hasValidationErrors() {
     return !errors.isEmpty();
   }
 
+  /**
+   * Returns a formatted message containing all validation error messages.
+   * Optimized for Java 21 with improved string handling and thread safety.
+   * 
+   * @return Formatted error message string
+   */
   @Override
   public String getMessage() {
     if (errors.isEmpty()) {
       return "(No validation errors)";
     }
     
-    // Use String Templates with String.join for efficient message formatting
-    return STR."\{String.join(", ", errors.stream().map(ValidationErrorXO::getMessage).toList())}";
+    // Using StringJoiner pattern for better performance with large collections
+    StringBuilder sb = new StringBuilder();
+    boolean first = true;
+    
+    // Thread-safe iteration over CopyOnWriteArrayList
+    for (ValidationErrorXO error : errors) {
+      if (!first) {
+        sb.append(", ");
+      } else {
+        first = false;
+      }
+      sb.append(error.getMessage());
+    }
+    
+    return sb.toString();
   }
 }

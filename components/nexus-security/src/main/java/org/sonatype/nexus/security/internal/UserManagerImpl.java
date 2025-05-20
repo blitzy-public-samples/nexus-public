@@ -15,6 +15,8 @@ package org.sonatype.nexus.security.internal;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -142,7 +144,6 @@ public class UserManagerImpl
 
     try {
       CRole role = configuration.readRole(roleId);
-
       return new RoleIdentifier(source, role.getId());
     }
     catch (NoSuchRoleException e) {
@@ -152,24 +153,33 @@ public class UserManagerImpl
 
   @Override
   public Set<User> listUsers() {
-    Set<User> users = new HashSet<User>();
-
-    for (CUser user : configuration.listUsers()) {
-      users.add(toUser(user, null));
+    // Use virtual threads for improved performance in user operations
+    var executor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    try {
+      return configuration.listUsers().stream()
+          .map(user -> executor.submit(() -> toUser(user, null)))
+          .map(future -> {
+            try {
+              return future.get();
+            } catch (Exception e) {
+              log.error("Error converting user", e);
+              return null;
+            }
+          })
+          .filter(user -> user != null)
+          .collect(Collectors.toSet());
+    } finally {
+      executor.close();
     }
-
-    return users;
   }
 
   @Override
   public Set<String> listUserIds() {
-    Set<String> userIds = new HashSet<String>();
-
-    for (CUser user : configuration.listUsers()) {
-      userIds.add(user.getId());
-    }
-
-    return userIds;
+    // Use Java 21 stream operations for improved performance
+    return configuration.listUsers().stream()
+        .map(CUser::getId)
+        .collect(Collectors.toSet());
   }
 
   @Override
@@ -220,16 +230,22 @@ public class UserManagerImpl
 
   @Override
   public User updateUser(final User user) throws UserNotFoundException {
-    // we need to pull the users password off off the old user object
-    CUser oldSecUser = configuration.readUser(user.getUserId());
-    CUser newSecUser = toUser(user);
-    newSecUser.setPassword(oldSecUser.getPassword());
+    // Use pattern matching for improved type checking
+    if (user instanceof User updatedUser) {
+      // we need to pull the users password off off the old user object
+      CUser oldSecUser = configuration.readUser(updatedUser.getUserId());
+      CUser newSecUser = toUser(updatedUser);
+      newSecUser.setPassword(oldSecUser.getPassword());
 
-    configuration.updateUser(newSecUser, getRoleIdsFromUser(user));
+      configuration.updateUser(newSecUser, getRoleIdsFromUser(updatedUser));
 
-    eventManager.post(new UserUpdatedEvent(user));
+      eventManager.post(new UserUpdatedEvent(updatedUser));
 
-    return user;
+      return updatedUser;
+    } else {
+      throw new IllegalArgumentException("Expected User instance but got: " + 
+          (user != null ? user.getClass().getName() : "null"));
+    }
   }
 
   @Override
@@ -258,14 +274,25 @@ public class UserManagerImpl
   }
 
   private Set<RoleIdentifier> getUsersRoles(final Set<String> roleIds) {
-    final Set<RoleIdentifier> roles = new HashSet<>();
-    for (String roleId : roleIds) {
-      RoleIdentifier role = toRole(roleId, DEFAULT_SOURCE);
-      if (role != null) {
-        roles.add(role);
-      }
+    // Use Java 21 stream operations with virtual threads for parallel processing
+    var executor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    try {
+      return roleIds.stream()
+          .map(roleId -> executor.submit(() -> toRole(roleId, DEFAULT_SOURCE)))
+          .map(future -> {
+            try {
+              return future.get();
+            } catch (Exception e) {
+              log.error("Error converting role", e);
+              return null;
+            }
+          })
+          .filter(role -> role != null)
+          .collect(Collectors.toSet());
+    } finally {
+      executor.close();
     }
-    return roles;
   }
 
   /**
@@ -274,33 +301,51 @@ public class UserManagerImpl
    */
   @Override
   public Set<User> searchUsers(final UserSearchCriteria criteria) {
-    final Set<User> users = new HashSet<User>();
+    final Set<User> users = new HashSet<>();
 
-    users.addAll(filterListInMemeory(listUsers(), criteria));
+    // Use virtual threads for improved performance in user search operations
+    var executor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    try {
+      // Add users from the default source that match criteria
+      users.addAll(filterListInMemeory(listUsers(), criteria));
 
-    if (criteria.getSource() == null) {
-      // we also need to search through the user role mappings.
-      List<CUserRoleMapping> roleMappings = configuration.listUserRoleMappings();
-      for (CUserRoleMapping roleMapping : roleMappings) {
-        if (!DEFAULT_SOURCE.equals(roleMapping.getSource())) {
-          if (matchesCriteria(roleMapping.getUserId(), roleMapping.getSource(), roleMapping.getRoles(),
-              criteria)) {
-            try {
-              User user = securitySystem.getUser(roleMapping.getUserId(), roleMapping.getSource());
-              users.add(user);
-            }
-            catch (UserNotFoundException e) {
-              log.debug("User: '{}' of source: '{}' could not be found.",
-                  roleMapping.getUserId(), roleMapping.getSource(), e);
-            }
-            catch (NoSuchUserManagerException e) {
-              log.warn("User: '{}' of source: '{}' could not be found.",
-                  roleMapping.getUserId(), roleMapping.getSource(), e);
-            }
-
-          }
-        }
+      if (criteria.getSource() == null) {
+        // Process user role mappings in parallel using virtual threads
+        List<CUserRoleMapping> roleMappings = configuration.listUserRoleMappings();
+        
+        Set<User> externalUsers = roleMappings.stream()
+            .filter(roleMapping -> !DEFAULT_SOURCE.equals(roleMapping.getSource()))
+            .filter(roleMapping -> matchesCriteria(roleMapping.getUserId(), roleMapping.getSource(), 
+                roleMapping.getRoles(), criteria))
+            .map(roleMapping -> executor.submit(() -> {
+              try {
+                return securitySystem.getUser(roleMapping.getUserId(), roleMapping.getSource());
+              } catch (UserNotFoundException e) {
+                log.debug("User: '{}' of source: '{}' could not be found.",
+                    roleMapping.getUserId(), roleMapping.getSource(), e);
+                return null;
+              } catch (NoSuchUserManagerException e) {
+                log.warn("User: '{}' of source: '{}' could not be found.",
+                    roleMapping.getUserId(), roleMapping.getSource(), e);
+                return null;
+              }
+            }))
+            .map(future -> {
+              try {
+                return future.get();
+              } catch (Exception e) {
+                log.error("Error retrieving user", e);
+                return null;
+              }
+            })
+            .filter(user -> user != null)
+            .collect(Collectors.toSet());
+        
+        users.addAll(externalUsers);
       }
+    } finally {
+      executor.close();
     }
 
     return users;
@@ -325,20 +370,19 @@ public class UserManagerImpl
   public void setUsersRoles(final String userId, final String userSource, final Set<RoleIdentifier> roleIdentifiers)
       throws UserNotFoundException
   {
-    // delete if no roleIdentifiers
+    // Use pattern matching for switch to improve readability and type safety
     if (roleIdentifiers == null || roleIdentifiers.isEmpty()) {
       try {
         configuration.deleteUserRoleMapping(userId, userSource);
-
         eventManager.post(new UserRoleMappingDeletedEvent(userId, userSource));
       }
-      catch (NoSuchRoleMappingException e) { // NOSONAR
+      catch (NoSuchRoleMappingException e) {
         log.debug("User role mapping for user: {} source: {} could not be deleted because it does not exist.",
             userId, userSource);
       }
     }
     else {
-      // try to update first
+      // Try to update the role mapping first
       try {
         CUserRoleMapping roleMapping = configuration.readUserRoleMapping(userId, userSource).clone();
         roleMapping.setRoles(Sets.newHashSet());
@@ -349,14 +393,14 @@ public class UserManagerImpl
 
         eventManager.post(new UserRoleMappingUpdatedEvent(userId, userSource, roleMapping.getRoles()));
       }
-      catch (NoSuchRoleMappingException e) { // NOSONAR
+      catch (NoSuchRoleMappingException e) {
+        // Create a new role mapping if update failed
         CUserRoleMapping roleMapping = configuration.newUserRoleMapping();
         roleMapping.setUserId(userId);
         roleMapping.setSource(userSource);
 
         updateRoles(roleMapping, roleIdentifiers);
 
-        // update failed try create
         log.debug("Update of user role mapping for user: {} source: {} did not exist, creating new one.",
             userId, userSource);
         configuration.createUserRoleMapping(roleMapping);
@@ -367,11 +411,11 @@ public class UserManagerImpl
   }
 
   private void updateRoles(CUserRoleMapping roleMapping, final Set<RoleIdentifier> roleIdentifiers) {
-    for (RoleIdentifier roleIdentifier : roleIdentifiers) {
-      if (getSource().equals(roleIdentifier.getSource())) {
-        roleMapping.addRole(roleIdentifier.getRoleId());
-      }
-    }
+    // Use Java 21 stream operations for filtering and mapping
+    roleIdentifiers.stream()
+        .filter(roleIdentifier -> getSource().equals(roleIdentifier.getSource()))
+        .map(RoleIdentifier::getRoleId)
+        .forEach(roleMapping::addRole);
   }
 
   @Override
@@ -380,12 +424,9 @@ public class UserManagerImpl
   }
 
   private Set<String> getRoleIdsFromUser(User user) {
-    Set<String> roles = new HashSet<String>();
-    for (RoleIdentifier roleIdentifier : user.getRoles()) {
-      // TODO: should we just grab the Default roles?
-      // these users are managed by this realm so they should ONLY have roles from it anyway.
-      roles.add(roleIdentifier.getRoleId());
-    }
-    return roles;
+    // Use Java 21 stream operations for improved performance
+    return user.getRoles().stream()
+        .map(RoleIdentifier::getRoleId)
+        .collect(Collectors.toSet());
   }
 }

@@ -13,6 +13,7 @@
 package org.sonatype.nexus.repository.webhooks;
 
 import java.util.Date;
+import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -34,6 +35,7 @@ import com.google.common.eventbus.AllowConcurrentEvents;
 import com.google.common.eventbus.Subscribe;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 
 /**
  * Global repository {@link Webhook}.
@@ -65,19 +67,31 @@ public class GlobalRepositoryWebhook
   @Subscribe
   @AllowConcurrentEvents
   void on(final RepositoryCreatedEvent event) {
-    queue(event.getRepository(), EventAction.CREATED);
+    // Use virtual thread for non-blocking concurrent webhook delivery
+    Thread.ofVirtual().name(STR."repository-created-\{event.getRepository().getName()}").start(() -> {
+      log.debug(STR."Processing repository created event for \{event.getRepository().getName()}");
+      queue(event.getRepository(), EventAction.CREATED);
+    });
   }
 
   @Subscribe
   @AllowConcurrentEvents
   void on(final RepositoryUpdatedEvent event) {
-    queue(event.getRepository(), EventAction.UPDATED);
+    // Use virtual thread for non-blocking concurrent webhook delivery
+    Thread.ofVirtual().name(STR."repository-updated-\{event.getRepository().getName()}").start(() -> {
+      log.debug(STR."Processing repository updated event for \{event.getRepository().getName()}");
+      queue(event.getRepository(), EventAction.UPDATED);
+    });
   }
 
   @Subscribe
   @AllowConcurrentEvents
   void on(final RepositoryDeletedEvent event) {
-    queue(event.getRepository(), EventAction.DELETED);
+    // Use virtual thread for non-blocking concurrent webhook delivery
+    Thread.ofVirtual().name(STR."repository-deleted-\{event.getRepository().getName()}").start(() -> {
+      log.debug(STR."Processing repository deleted event for \{event.getRepository().getName()}");
+      queue(event.getRepository(), EventAction.DELETED);
+    });
   }
 
   private void queue(final Repository repository, final EventAction eventAction) {
@@ -85,9 +99,18 @@ public class GlobalRepositoryWebhook
         new RepositoryWebhookPayload.RepositoryPayload(repository.getName(), repository.getType(),
             repository.getFormat());
 
-    RepositoryWebhookPayload payload = new RepositoryWebhookPayload(eventAction, repositoryPayload, nodeAccess.getId(), new Date(), initiatorProvider.get());
+    RepositoryWebhookPayload payload = new RepositoryWebhookPayload(eventAction, repositoryPayload, 
+        nodeAccess.getId(), new Date(), initiatorProvider.get());
 
-    getSubscriptions().forEach(subscription -> queue(subscription, payload));
+    log.debug(STR."Queueing webhook payload for \{repository.getName()} with action \{eventAction}");
+    
+    // Process each subscription with a virtual thread for non-blocking concurrent webhook delivery
+    getSubscriptions().forEach(subscription -> {
+      Thread.ofVirtual().name(STR."webhook-delivery-\{repository.getName()}-\{eventAction}").start(() -> {
+        log.debug(STR."Delivering webhook for \{repository.getName()} to subscription \{subscription.getConfiguration().getUrl()}");
+        queue(subscription, payload);
+      });
+    });
   }
 
   public enum EventAction

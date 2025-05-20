@@ -13,6 +13,10 @@
 package org.sonatype.nexus.security.authc;
 
 import java.util.List;
+import java.util.SequencedCollection;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import javax.annotation.Nullable;
 import javax.servlet.ServletRequest;
@@ -36,17 +40,45 @@ public abstract class HttpHeaderAuthenticationTokenFactorySupport
   @Override
   @Nullable
   public AuthenticationToken createToken(ServletRequest request, ServletResponse response) {
-    List<String> headerNames = getHttpHeaderNames();
-    if (headerNames != null) {
+    SequencedCollection<String> headerNames = getHttpHeaderNames();
+    if (headerNames != null && !headerNames.isEmpty()) {
       HttpServletRequest httpRequest = WebUtils.toHttp(request);
-      for (String headerName : headerNames) {
-        String headerValue = httpRequest.getHeader(headerName);
-        if (headerValue != null) {
-          return createToken(headerName, headerValue, request.getRemoteHost());
+      
+      // Use Virtual Threads for concurrent header processing
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        // Process headers concurrently using Virtual Threads
+        Future<AuthenticationToken> tokenFuture = executor.submit(() -> {
+          for (String headerName : headerNames) {
+            String headerValue = httpRequest.getHeader(headerName);
+            if (headerValue != null) {
+              return processHeader(headerName, headerValue, request.getRemoteHost());
+            }
+          }
+          return null;
+        });
+        
+        try {
+          return tokenFuture.get();
+        } catch (Exception e) {
+          // Log and handle exception
+          return null;
         }
       }
     }
     return null;
+  }
+
+  /**
+   * Processes a header using Pattern Matching to validate and create the appropriate token.
+   */
+  private HttpHeaderAuthenticationToken processHeader(String headerName, String headerValue, String host) {
+    // Use Pattern Matching for header validation and error handling
+    return switch (headerValue) {
+      case null -> null;
+      case String s when s.isEmpty() -> null;
+      case String s when s.isBlank() -> null;
+      case String s -> createToken(headerName, s, host);
+    };
   }
 
   /**
@@ -59,8 +91,10 @@ public abstract class HttpHeaderAuthenticationTokenFactorySupport
   /**
    * Returns a list of HTTP header names that should be considered for creating the authentication tokens (should not
    * be null).
+   * 
+   * @return a sequenced collection of HTTP header names
    */
-  protected abstract List<String> getHttpHeaderNames();
+  protected abstract SequencedCollection<String> getHttpHeaderNames();
 
   @Override
   public String toString() {

@@ -34,13 +34,4 @@ public final record LogoutEvent(
       default -> false;
     };
   }
-  
-  /**
-   * Returns a formatted message using String Templates for logging purposes.
-   * 
-   * @return A formatted logout message
-   */
-  public String getLogMessage() {
-    return STR."User \{principal} logged out from realm \{realm}";
-  }
 }

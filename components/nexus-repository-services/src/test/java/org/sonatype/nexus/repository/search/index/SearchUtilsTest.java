@@ -20,9 +20,11 @@ import org.sonatype.nexus.repository.rest.SearchMappings;
 import org.sonatype.nexus.repository.rest.api.RepositoryManagerRESTAdapter;
 import org.sonatype.nexus.repository.rest.sql.SearchField;
 import org.sonatype.nexus.repository.search.SearchUtils;
+import org.sonatype.nexus.virtualthread.Java21TestGroup;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -34,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
+@Category(Java21TestGroup.class)
 public class SearchUtilsTest
     extends TestSupport
 {
@@ -49,7 +52,7 @@ public class SearchUtilsTest
   SearchUtils underTest;
 
   @BeforeEach
-  void setup() {
+  public void setup() {
 
     Map<String, SearchMappings> searchMappings = ImmutableMap.of(
         "default", () -> ImmutableList.of(
@@ -61,42 +64,42 @@ public class SearchUtilsTest
   }
 
   @Test
-  void testIsAssetSearchParam_MappedAlias_Sha1() {
+  public void testIsAssetSearchParam_MappedAlias_Sha1() {
     assertTrue(underTest.isAssetSearchParam(SHA1_ALIAS));
   }
 
   @Test
-  void testIsAssetSearchParam_UnMapped_FullAssetAttributeName() {
+  public void testIsAssetSearchParam_UnMapped_FullAssetAttributeName() {
     assertTrue(underTest.isAssetSearchParam(VALID_SHA1_ATTRIBUTE_NAME));
   }
 
   @Test
-  void testIsAssetSearchParam_UnMappedAlias_Returns_False() {
+  public void testIsAssetSearchParam_UnMappedAlias_Returns_False() {
     assertFalse(underTest.isAssetSearchParam("new.asset"));
   }
 
   @Test
-  void testIsAssetSearchParam_Invalid_Full_AssetAttribute() {
+  public void testIsAssetSearchParam_Invalid_Full_AssetAttribute() {
     assertFalse(underTest.isAssetSearchParam(INVALID_SHA1_ATTRIBUTE_NAME));
   }
 
   @Test
-  void testIsFullAssetAttributeName() {
+  public void testIsFullAssetAttributeName() {
     assertTrue(underTest.isFullAssetAttributeName(VALID_SHA1_ATTRIBUTE_NAME));
   }
 
   @Test
-  void testIsFullAssetAttributeName_Invalid_LongForm_Attribute_ReturnsFalse() {
+  public void testIsFullAssetAttributeName_Invalid_LongForm_Attribute_ReturnsFalse() {
     assertFalse(underTest.isFullAssetAttributeName(INVALID_SHA1_ATTRIBUTE_NAME));
   }
 
   @Test
-  void testIsFullAssetAttributeName_MappedAlias_ReturnsFalse() {
+  public void testIsFullAssetAttributeName_MappedAlias_ReturnsFalse() {
     assertFalse(underTest.isFullAssetAttributeName(SHA1_ALIAS));
   }
 
   @Test
-  void testGetRepository() {
+  public void testGetRepository() {
     String repositoryId = "repositoryId";
     underTest.getRepository(repositoryId);
 

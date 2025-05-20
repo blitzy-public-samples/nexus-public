@@ -18,6 +18,9 @@ import org.apache.shiro.subject.PrincipalCollection;
 
 /**
  * A database-stored object representing the association between a {@link PrincipalCollection} and a Api Key (char[]).
+ * 
+ * <p>Java 21 implementations of this interface can leverage Record Patterns for efficient data handling
+ * and Pattern Matching for type-safe operations.</p>
  */
 public interface ApiKey
 {
@@ -28,9 +31,7 @@ public interface ApiKey
   OffsetDateTime getCreated();
 
   default String getPrimaryPrincipal() {
-    if (getPrincipals() == null) {
-      return null;
-    }
-    return getPrincipals().getPrimaryPrincipal().toString();
+    // Using Pattern Matching for the null check
+    return getPrincipals() instanceof PrincipalCollection principals ? principals.getPrimaryPrincipal().toString() : null;
   }
 }

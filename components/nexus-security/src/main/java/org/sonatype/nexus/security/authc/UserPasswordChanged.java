@@ -12,31 +12,39 @@
  */
 package org.sonatype.nexus.security.authc;
 
+import org.sonatype.nexus.common.event.Event;
+
 /**
  * An event fired when the user's password has changed.
  *
  * @since 3.13
  */
-public class UserPasswordChanged
+public record UserPasswordChanged(
+    String userId,
+    boolean clearCache
+) implements Event
 {
-  private final String userId;
-
-  private final boolean clearCache;
-
+  /**
+   * Constructs a new event with clearCache set to true by default.
+   *
+   * @param userId the ID of the user whose password changed
+   */
   public UserPasswordChanged(final String userId) {
     this(userId, true);
   }
 
-  public UserPasswordChanged(final String userId, final boolean clearCache) {
-    this.userId = userId;
-    this.clearCache = clearCache;
-  }
-
-  public String getUserId() {
-    return userId;
-  }
-
-  public boolean isClearCache() {
-    return clearCache;
+  /**
+   * Returns a string representation of this event using Java 21 String Templates.
+   * The userId is partially masked for security purposes.
+   */
+  @Override
+  public String toString() {
+    // Use String Template to create a more readable representation
+    // Mask part of the userId for security in logs
+    String maskedUserId = userId != null && userId.length() > 3 ?
+        userId.substring(0, 2) + "***" + (userId.length() > 5 ? userId.substring(userId.length() - 2) : "") :
+        userId;
+    
+    return STR."UserPasswordChanged[userId=\{maskedUserId}, clearCache=\{clearCache}]";
   }
 }

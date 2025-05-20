@@ -17,10 +17,13 @@ import java.util.Collection;
 import org.sonatype.nexus.common.entity.EntityId;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.upload.ComponentUpload;
-
+import org.sonatype.nexus.thread.io.NonBlockingOperation;
 
 /**
  * Extension point interface used within {@link ComponentsResource#uploadComponent}
+ * 
+ * Implementations should be designed to work efficiently with Virtual Threads
+ * for high-throughput upload processing.
  *
  * @since 3.10
  */
@@ -29,11 +32,19 @@ public interface ComponentUploadExtension
   /**
    * Apply data in the {@link ComponentUpload} to the provided {@link EntityId} within
    * the provided {@link Repository}
+   * 
+   * This method is designed to be executed in a Virtual Thread context for improved
+   * throughput when handling multiple concurrent uploads.
    */
+  @NonBlockingOperation
   void apply(Repository repository, ComponentUpload componentUpload, Collection<EntityId> entityIds);
 
   /**
    * Validate elements within {@link ComponentsResource#uploadComponent}
+   * 
+   * This method is designed to be executed in a Virtual Thread context for improved
+   * throughput when handling multiple concurrent validations.
    */
+  @NonBlockingOperation
   void validate(ComponentUpload componentUpload);
 }

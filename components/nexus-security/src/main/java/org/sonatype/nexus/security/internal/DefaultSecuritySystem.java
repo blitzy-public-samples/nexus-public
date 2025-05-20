@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 import javax.annotation.Nullable;
@@ -120,8 +121,17 @@ public class DefaultSecuritySystem
 
   @Override
   protected void doStart() throws Exception {
-    if (Cipher.getMaxAllowedKeyLength("AES") == Integer.MAX_VALUE) {
-      log.info("Unlimited strength JCE policy detected");
+    // Java 21 has unlimited strength cryptography by default, but we still check for compatibility
+    try {
+      if (Cipher.getMaxAllowedKeyLength("AES") == Integer.MAX_VALUE) {
+        log.info("Unlimited strength JCE policy detected (default in Java 21+)");
+      }
+      else {
+        log.warn("Limited strength JCE policy detected - this is unexpected in Java 21+");
+      }
+    }
+    catch (Exception e) {
+      log.warn("Unable to verify JCE policy strength", e);
     }
 
     SecurityUtils.setSecurityManager(realmSecurityManager);
@@ -171,13 +181,10 @@ public class DefaultSecuritySystem
 
   @Override
   public Set<Role> listRoles(String sourceId) throws NoSuchAuthorizationManagerException {
-    if (ALL_ROLES_KEY.equalsIgnoreCase(sourceId)) {
-      return listRoles();
-    }
-    else {
-      AuthorizationManager authzManager = getAuthorizationManager(sourceId);
-      return authzManager.listRoles();
-    }
+    return switch (sourceId) {
+      case ALL_ROLES_KEY -> listRoles();
+      default -> getAuthorizationManager(sourceId).listRoles();
+    };
   }
 
   @Override
@@ -220,9 +227,8 @@ public class DefaultSecuritySystem
       // skip the user manager that owns the user, we already did that
       // these user managers will only save roles
       if (!tmpUserManager.getSource().equals(user.getSource()) &&
-          RoleMappingUserManager.class.isInstance(tmpUserManager)) {
+          tmpUserManager instanceof RoleMappingUserManager roleMappingUserManager) {
         try {
-          RoleMappingUserManager roleMappingUserManager = (RoleMappingUserManager) tmpUserManager;
           roleMappingUserManager.setUsersRoles(
               user.getUserId(),
               user.getSource(),
@@ -260,9 +266,8 @@ public class DefaultSecuritySystem
       // skip the user manager that owns the user, we already did that
       // these user managers will only save roles
       if (!tmpUserManager.getSource().equals(user.getSource())
-          && RoleMappingUserManager.class.isInstance(tmpUserManager)) {
+          && tmpUserManager instanceof RoleMappingUserManager roleMappingUserManager) {
         try {
-          RoleMappingUserManager roleMappingUserManager = (RoleMappingUserManager) tmpUserManager;
           roleMappingUserManager.setUsersRoles(
               user.getUserId(),
               user.getSource(),
@@ -318,30 +323,32 @@ public class DefaultSecuritySystem
   public void setUsersRoles(String userId, String source, Set<RoleIdentifier> roleIdentifiers)
       throws UserNotFoundException
   {
-    // TODO: this is a bit sticky, what we really want to do is just expose the RoleMappingUserManagers this way (i
-    // think), maybe this is too generic
+    // Using virtual threads for concurrent role mapping operations
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      boolean foundUser = false;
 
-    boolean foundUser = false;
-
-    for (UserManager userManager : getUserManagers()) {
-      if (RoleMappingUserManager.class.isInstance(userManager)) {
-        RoleMappingUserManager roleMappingUserManager = (RoleMappingUserManager) userManager;
-        try {
+      for (UserManager userManager : getUserManagers()) {
+        if (userManager instanceof RoleMappingUserManager roleMappingUserManager) {
+          executor.submit(() -> {
+            try {
+              roleMappingUserManager.setUsersRoles(
+                  userId,
+                  source,
+                  RoleIdentifier.getRoleIdentifiersForSource(userManager.getSource(), roleIdentifiers)
+              );
+            }
+            catch (UserNotFoundException e) {
+              log.debug("User '{}' is not managed by the user-manager: {}", userId, userManager.getSource());
+            }
+            return null; // Void result
+          });
           foundUser = true;
-          roleMappingUserManager.setUsersRoles(
-              userId,
-              source,
-              RoleIdentifier.getRoleIdentifiersForSource(userManager.getSource(), roleIdentifiers)
-          );
-        }
-        catch (UserNotFoundException e) {
-          log.debug("User '{}' is not managed by the user-manager: {}", userId, userManager.getSource());
         }
       }
-    }
 
-    if (!foundUser) {
-      throw new UserNotFoundException(userId);
+      if (!foundUser) {
+        throw new UserNotFoundException(userId);
+      }
     }
     // clear the authz realm caches
     eventManager.post(new AuthorizationConfigurationChanged());
@@ -436,11 +443,21 @@ public class DefaultSecuritySystem
 
     // if the source is not set search all realms.
     if (Strings2.isBlank(criteria.getSource())) {
-      // search all user managers
-      for (UserManager userManager : getUserManagers()) {
-        Set<User> users = userManager.searchUsers(criteria);
-        if (users != null) {
-          result.addAll(users);
+      // Using virtual threads for concurrent user search operations
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        var futures = getUserManagers().stream()
+            .map(userManager -> executor.submit(() -> userManager.searchUsers(criteria)))
+            .toList();
+        
+        for (var future : futures) {
+          try {
+            Set<User> users = future.get();
+            if (users != null) {
+              result.addAll(users);
+            }
+          } catch (Exception e) {
+            log.warn("Error searching users", e);
+          }
         }
       }
     }
@@ -505,21 +522,32 @@ public class DefaultSecuritySystem
   }
 
   private void addOtherRolesToUser(final User user) {
-    // then save the users Roles
-    for (UserManager userManager : getUserManagers()) {
-      // skip the user manager that owns the user, we already did that
-      // these user managers will only have roles
-      if (!userManager.getSource().equals(user.getSource()) && RoleMappingUserManager.class.isInstance(userManager)) {
+    // Using virtual threads for concurrent role retrieval operations
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var futures = getUserManagers().stream()
+          .filter(userManager -> !userManager.getSource().equals(user.getSource()) && 
+                                userManager instanceof RoleMappingUserManager)
+          .map(userManager -> executor.submit(() -> {
+              try {
+                RoleMappingUserManager roleMappingUserManager = (RoleMappingUserManager) userManager;
+                return roleMappingUserManager.getUsersRoles(user.getUserId(), user.getSource());
+              }
+              catch (UserNotFoundException e) {
+                log.debug("User '{}' is not managed by the user-manager: {}", 
+                          user.getUserId(), userManager.getSource());
+                return null;
+              }
+          }))
+          .toList();
+      
+      for (var future : futures) {
         try {
-          RoleMappingUserManager roleMappingUserManager = (RoleMappingUserManager) userManager;
-          Set<RoleIdentifier> roleIdentifiers = roleMappingUserManager
-              .getUsersRoles(user.getUserId(), user.getSource());
+          Set<RoleIdentifier> roleIdentifiers = future.get();
           if (roleIdentifiers != null) {
             user.addAllRoles(roleIdentifiers);
           }
-        }
-        catch (UserNotFoundException e) {
-          log.debug("User '{}' is not managed by the user-manager: {}", user.getUserId(), userManager.getSource());
+        } catch (Exception e) {
+          log.warn("Error retrieving user roles", e);
         }
       }
     }

@@ -12,75 +12,87 @@
  */
 package org.sonatype.nexus.repository.security.rest;
 
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotNull;
-import jakarta.ws.rs.core.Response;
+import javax.validation.Valid;
+import javax.validation.constraints.NotNull;
+import javax.ws.rs.core.Response;
 
 import org.sonatype.nexus.security.internal.rest.NexusSecurityApiConstants;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
-import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.annotations.Api;
+import io.swagger.annotations.ApiOperation;
+import io.swagger.annotations.ApiParam;
+import io.swagger.annotations.ApiResponse;
+import io.swagger.annotations.ApiResponses;
 
 /**
+ * Repository privilege API resource documentation.
+ * Compatible with Java 21 and RESTEasy 6.2.7.Final.
+ *
  * @since 3.19
  */
-@Tag(name = "Security management: privileges")
+@Api(value = "Security management: privileges")
 public interface RepositoryPrivilegeApiResourceDoc
 {
-  @Operation(summary = "Create a repository admin type privilege.")
+  @ApiOperation(value = "Create a repository admin type privilege.", 
+      response = Response.class,
+      produces = "application/json")
   @ApiResponses(value = {
-      @ApiResponse(responseCode = "400", description = NexusSecurityApiConstants.PRIVILEGE_MISCONFIGURED),
-      @ApiResponse(responseCode = "403", description = NexusSecurityApiConstants.INVALID_PERMISSIONS)
+      @ApiResponse(code = 400, message = NexusSecurityApiConstants.PRIVILEGE_MISCONFIGURED),
+      @ApiResponse(code = 403, message = NexusSecurityApiConstants.INVALID_PERMISSIONS)
   })
-  Response createPrivilege(@Parameter(
-      description = "The privilege to create.") @NotNull @Valid final ApiPrivilegeRepositoryAdminRequest privilege);
+  Response createPrivilege(@ApiParam(
+      value = "The privilege to create.", required = true) @NotNull @Valid final ApiPrivilegeRepositoryAdminRequest privilege);
 
-  @Operation(summary = "Update a repository admin type privilege.")
+  @ApiOperation(value = "Update a repository admin type privilege.",
+      produces = "application/json")
   @ApiResponses(value = {
-      @ApiResponse(responseCode = "400", description = NexusSecurityApiConstants.PRIVILEGE_MISCONFIGURED),
-      @ApiResponse(responseCode = "403", description = NexusSecurityApiConstants.INVALID_PERMISSIONS),
-      @ApiResponse(responseCode = "404", description = NexusSecurityApiConstants.PRIVILEGE_NOT_FOUND)
+      @ApiResponse(code = 400, message = NexusSecurityApiConstants.PRIVILEGE_MISCONFIGURED),
+      @ApiResponse(code = 403, message = NexusSecurityApiConstants.INVALID_PERMISSIONS),
+      @ApiResponse(code = 404, message = NexusSecurityApiConstants.PRIVILEGE_NOT_FOUND)
   })
-  void updatePrivilege(@Parameter(description = "The name of the privilege to update.") @NotNull final String privilegeName,
-                       @Parameter(
-                           description = "The privilege to update.") @NotNull @Valid final ApiPrivilegeRepositoryAdminRequest privilege);
+  void updatePrivilege(@ApiParam(value = "The name of the privilege to update.", required = true) @NotNull final String privilegeName,
+                       @ApiParam(
+                           value = "The privilege to update.", required = true) @NotNull @Valid final ApiPrivilegeRepositoryAdminRequest privilege);
 
-  @Operation(summary = "Create a repository view type privilege.")
+  @ApiOperation(value = "Create a repository view type privilege.",
+      response = Response.class,
+      produces = "application/json")
   @ApiResponses(value = {
-      @ApiResponse(responseCode = "400", description = NexusSecurityApiConstants.PRIVILEGE_MISCONFIGURED),
-      @ApiResponse(responseCode = "403", description = NexusSecurityApiConstants.INVALID_PERMISSIONS)
+      @ApiResponse(code = 400, message = NexusSecurityApiConstants.PRIVILEGE_MISCONFIGURED),
+      @ApiResponse(code = 403, message = NexusSecurityApiConstants.INVALID_PERMISSIONS)
   })
-  Response createPrivilege(@Parameter(
-      description = "The privilege to create.") @NotNull @Valid final ApiPrivilegeRepositoryViewRequest privilege);
+  Response createPrivilege(@ApiParam(
+      value = "The privilege to create.", required = true) @NotNull @Valid final ApiPrivilegeRepositoryViewRequest privilege);
 
-  @Operation(summary = "Update a repository view type privilege.")
+  @ApiOperation(value = "Update a repository view type privilege.",
+      produces = "application/json")
   @ApiResponses(value = {
-      @ApiResponse(responseCode = "400", description = NexusSecurityApiConstants.PRIVILEGE_MISCONFIGURED),
-      @ApiResponse(responseCode = "403", description = NexusSecurityApiConstants.INVALID_PERMISSIONS),
-      @ApiResponse(responseCode = "404", description = NexusSecurityApiConstants.PRIVILEGE_NOT_FOUND)
+      @ApiResponse(code = 400, message = NexusSecurityApiConstants.PRIVILEGE_MISCONFIGURED),
+      @ApiResponse(code = 403, message = NexusSecurityApiConstants.INVALID_PERMISSIONS),
+      @ApiResponse(code = 404, message = NexusSecurityApiConstants.PRIVILEGE_NOT_FOUND)
   })
-  void updatePrivilege(@Parameter(description = "The name of the privilege to update.") @NotNull final String privilegeName,
-                       @Parameter(
-                           description = "The privilege to update.") @NotNull @Valid final ApiPrivilegeRepositoryViewRequest privilege);
+  void updatePrivilege(@ApiParam(value = "The name of the privilege to update.", required = true) @NotNull final String privilegeName,
+                       @ApiParam(
+                           value = "The privilege to update.", required = true) @NotNull @Valid final ApiPrivilegeRepositoryViewRequest privilege);
 
-  @Operation(summary = "Create a repository content selector type privilege.")
+  @ApiOperation(value = "Create a repository content selector type privilege.",
+      response = Response.class,
+      produces = "application/json")
   @ApiResponses(value = {
-      @ApiResponse(responseCode = "400", description = NexusSecurityApiConstants.PRIVILEGE_MISCONFIGURED),
-      @ApiResponse(responseCode = "403", description = NexusSecurityApiConstants.INVALID_PERMISSIONS)
+      @ApiResponse(code = 400, message = NexusSecurityApiConstants.PRIVILEGE_MISCONFIGURED),
+      @ApiResponse(code = 403, message = NexusSecurityApiConstants.INVALID_PERMISSIONS)
   })
-  Response createPrivilege(@Parameter(
-      description = "The privilege to create.") @NotNull @Valid final ApiPrivilegeRepositoryContentSelectorRequest privilege);
+  Response createPrivilege(@ApiParam(
+      value = "The privilege to create.", required = true) @NotNull @Valid final ApiPrivilegeRepositoryContentSelectorRequest privilege);
 
-  @Operation(summary = "Update a repository content selector type privilege.")
+  @ApiOperation(value = "Update a repository content selector type privilege.",
+      produces = "application/json")
   @ApiResponses(value = {
-      @ApiResponse(responseCode = "400", description = NexusSecurityApiConstants.PRIVILEGE_MISCONFIGURED),
-      @ApiResponse(responseCode = "403", description = NexusSecurityApiConstants.INVALID_PERMISSIONS),
-      @ApiResponse(responseCode = "404", description = NexusSecurityApiConstants.PRIVILEGE_NOT_FOUND)
+      @ApiResponse(code = 400, message = NexusSecurityApiConstants.PRIVILEGE_MISCONFIGURED),
+      @ApiResponse(code = 403, message = NexusSecurityApiConstants.INVALID_PERMISSIONS),
+      @ApiResponse(code = 404, message = NexusSecurityApiConstants.PRIVILEGE_NOT_FOUND)
   })
-  void updatePrivilege(@Parameter(description = "The name of the privilege to update.") @NotNull final String privilegeName,
-                       @Parameter(
-                           description = "The privilege to update.") @NotNull @Valid final ApiPrivilegeRepositoryContentSelectorRequest privilege);
+  void updatePrivilege(@ApiParam(value = "The name of the privilege to update.", required = true) @NotNull final String privilegeName,
+                       @ApiParam(
+                           value = "The privilege to update.", required = true) @NotNull @Valid final ApiPrivilegeRepositoryContentSelectorRequest privilege);
 }

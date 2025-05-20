@@ -7,10 +7,21 @@
       "version": "1.0",
       "foo": "baz",
       "foo2": "bar2"
+    },
+    "2.0": {
+      "version": "2.0",
+      "foo": "baz2",
+      "foo2": "bar3",
+      "dependencies": {
+        "lib1": "^1.0.0",
+        "lib2": "^2.0.0"
+      }
     }
   },
   "dist-tags": {
-    "latest": "1.0.0"
+    "latest": "2.0.0",
+    "stable": "1.0.0",
+    "beta": "2.0.0"
   },
   "notinrecessive": "always present",
   "languages": {
@@ -19,6 +30,24 @@
         "a",
         "b",
         "c"
+      ]
+    },
+    "es": {
+      "alphabet": [
+        "a",
+        "b",
+        "c",
+        "ch",
+        "d"
+      ]
+    },
+    "fr": {
+      "alphabet": [
+        "a",
+        "b",
+        "c",
+        "d",
+        "e"
       ]
     }
   },
@@ -83,5 +112,144 @@
     {
       "color": "blue"
     }
-  ]
+  ],
+  "virtual-thread-optimized-arrays": [
+    {
+      "id": 1,
+      "data": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "metadata": {
+        "type": "sequence",
+        "created": "2023-09-19T10:15:30Z"
+      }
+    },
+    {
+      "id": 2,
+      "data": [11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+      "metadata": {
+        "type": "sequence",
+        "created": "2023-09-19T10:16:30Z"
+      }
+    },
+    {
+      "id": 3,
+      "data": [21, 22, 23, 24, 25, 26, 27, 28, 29, 30],
+      "metadata": {
+        "type": "sequence",
+        "created": "2023-09-19T10:17:30Z"
+      }
+    }
+  ],
+  "pattern-matching-structures": [
+    {
+      "type": "point",
+      "x": 10,
+      "y": 20
+    },
+    {
+      "type": "circle",
+      "center": {
+        "x": 15,
+        "y": 25
+      },
+      "radius": 5
+    },
+    {
+      "type": "rectangle",
+      "topLeft": {
+        "x": 10,
+        "y": 10
+      },
+      "bottomRight": {
+        "x": 20,
+        "y": 20
+      }
+    }
+  ],
+  "record-patterns": {
+    "person": {
+      "name": {
+        "first": "John",
+        "last": "Doe"
+      },
+      "address": {
+        "street": "123 Main St",
+        "city": "Anytown",
+        "state": "CA",
+        "zip": "12345"
+      },
+      "contacts": [
+        {
+          "type": "email",
+          "value": "john.doe@example.com"
+        },
+        {
+          "type": "phone",
+          "value": "555-123-4567"
+        }
+      ]
+    },
+    "employee": {
+      "name": {
+        "first": "Jane",
+        "last": "Smith"
+      },
+      "position": {
+        "title": "Software Engineer",
+        "department": "Engineering",
+        "level": 3
+      },
+      "projects": [
+        {
+          "id": "proj-1",
+          "name": "API Redesign",
+          "role": "Lead"
+        },
+        {
+          "id": "proj-2",
+          "name": "Database Migration",
+          "role": "Contributor"
+        }
+      ]
+    }
+  },
+  "concurrent-processing-test": {
+    "tasks": [
+      {"id": 1, "name": "Task 1", "duration": 100, "dependencies": [2, 3]},
+      {"id": 2, "name": "Task 2", "duration": 200, "dependencies": [4]},
+      {"id": 3, "name": "Task 3", "duration": 150, "dependencies": [5, 6]},
+      {"id": 4, "name": "Task 4", "duration": 120, "dependencies": []},
+      {"id": 5, "name": "Task 5", "duration": 180, "dependencies": []},
+      {"id": 6, "name": "Task 6", "duration": 90, "dependencies": []},
+      {"id": 7, "name": "Task 7", "duration": 210, "dependencies": [1]},
+      {"id": 8, "name": "Task 8", "duration": 130, "dependencies": [1]},
+      {"id": 9, "name": "Task 9", "duration": 170, "dependencies": [7, 8]},
+      {"id": 10, "name": "Task 10", "duration": 140, "dependencies": [9]}
+    ]
+  },
+  "streaming-optimized-large-array": [
+    {"index": 0, "value": "value-0"},
+    {"index": 1, "value": "value-1"},
+    {"index": 2, "value": "value-2"},
+    {"index": 3, "value": "value-3"},
+    {"index": 4, "value": "value-4"},
+    {"index": 5, "value": "value-5"},
+    {"index": 6, "value": "value-6"},
+    {"index": 7, "value": "value-7"},
+    {"index": 8, "value": "value-8"},
+    {"index": 9, "value": "value-9"}
+  ],
+  "jackson-2-16-features": {
+    "sequencedCollection": ["first", "second", "third", "fourth", "fifth"],
+    "stringTemplates": {
+      "template1": "Hello, ${name}!",
+      "template2": "The answer is ${answer}."
+    },
+    "patternMatching": {
+      "shapes": [
+        {"type": "circle", "radius": 10},
+        {"type": "square", "side": 5},
+        {"type": "rectangle", "width": 10, "height": 5}
+      ]
+    }
+  }
 }

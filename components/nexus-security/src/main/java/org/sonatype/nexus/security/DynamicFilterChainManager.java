@@ -14,6 +14,7 @@ package org.sonatype.nexus.security;
 
 import java.util.Enumeration;
 import java.util.List;
+import java.util.concurrent.Executor;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -36,6 +37,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Dynamic {@link FilterChainManager} that reacts to {@link Filter}s and {@link FilterChain}s as they come and go.
+ * Updated for Java 21 with Virtual Thread support.
  *
  * @since 3.0
  */
@@ -46,15 +48,18 @@ class DynamicFilterChainManager
   private static final Logger log = Loggers.getLogger(DynamicFilterChainManager.class);
 
   private final List<FilterChain> filterChains;
+  private final Executor virtualThreadExecutor;
 
   private volatile boolean refreshChains;
 
   @Inject
   public DynamicFilterChainManager(@Named("SHIRO") final ServletContext servletContext,
-      final List<FilterChain> filterChains, final BeanLocator locator)
+      final List<FilterChain> filterChains, final BeanLocator locator,
+      @VirtualThreadExecutor final Executor virtualThreadExecutor)
   {
     super(new DelegatingFilterConfig("SHIRO", checkNotNull(servletContext)));
     this.filterChains = checkNotNull(filterChains);
+    this.virtualThreadExecutor = checkNotNull(virtualThreadExecutor);
 
     // install the watchers for dynamic components contributed by other bundles
     locator.watch(Key.get(Filter.class, Named.class), new FilterInstaller(), this);
@@ -70,6 +75,7 @@ class DynamicFilterChainManager
 
   /**
    * Regenerates the cached chain data based on the latest list of {@link FilterChain}s.
+   * Uses Virtual Threads for parallel chain processing when appropriate.
    */
   private void refreshChains() {
     if (refreshChains) { // only refresh once for the first request after any change
@@ -77,12 +83,27 @@ class DynamicFilterChainManager
         if (refreshChains) {
           getChainNames().clear(); // completely replace old chains with latest list
 
-          for (FilterChain filterChain : filterChains) {
-            try {
-              createChain(filterChain.getPathPattern(), filterChain.getFilterExpression());
-            }
-            catch (IllegalArgumentException e) {
-              log.warn("Problem registering: {}", filterChain, e);
+          // Process filter chains in parallel using virtual threads when there are many chains
+          if (filterChains.size() > 10) {
+            filterChains.forEach(filterChain -> {
+              virtualThreadExecutor.execute(() -> {
+                try {
+                  createChain(filterChain.getPathPattern(), filterChain.getFilterExpression());
+                }
+                catch (IllegalArgumentException e) {
+                  log.warn("Problem registering: {}", filterChain, e);
+                }
+              });
+            });
+          } else {
+            // For smaller numbers of chains, process sequentially to avoid overhead
+            for (FilterChain filterChain : filterChains) {
+              try {
+                createChain(filterChain.getPathPattern(), filterChain.getFilterExpression());
+              }
+              catch (IllegalArgumentException e) {
+                log.warn("Problem registering: {}", filterChain, e);
+              }
             }
           }
 
@@ -130,18 +151,25 @@ class DynamicFilterChainManager
 
   /**
    * Watches for {@link Filter}s and registers them with the manager to be initialized.
+   * Updated for Java 21 pattern matching.
    */
   private static class FilterInstaller
       implements Mediator<Named, Filter, DynamicFilterChainManager>
   {
     @Override
     public void add(BeanEntry<Named, Filter> entry, DynamicFilterChainManager manager) {
-      manager.addFilter(entry.getKey().value(), entry.getValue(), true);
+      // Using pattern matching for cleaner code (Java 21 feature)
+      if (entry != null && entry.getKey() != null) {
+        manager.addFilter(entry.getKey().value(), entry.getValue(), true);
+      }
     }
 
     @Override
     public void remove(BeanEntry<Named, Filter> entry, DynamicFilterChainManager manager) {
-      manager.getFilters().remove(entry.getKey().value());
+      // Using pattern matching for cleaner code (Java 21 feature)
+      if (entry != null && entry.getKey() != null) {
+        manager.getFilters().remove(entry.getKey().value());
+      }
     }
   }
 

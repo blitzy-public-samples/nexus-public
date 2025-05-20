@@ -14,9 +14,9 @@ package org.sonatype.nexus.repository.security.internal;
 
 import java.util.Map;
 
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
+import javax.inject.Inject;
+import javax.inject.Named;
+import javax.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.repository.security.VariableResolverAdapter;
@@ -24,7 +24,7 @@ import org.sonatype.nexus.repository.security.VariableResolverAdapterManager;
 
 import com.google.common.annotations.VisibleForTesting;
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import static java.util.Objects.requireNonNull;
 
 /**
  * Default implementation of {@link VariableResolverAdapterManager}.
@@ -44,24 +44,16 @@ public class VariableResolverAdapterManagerImpl
 
   private final Map<String, VariableResolverAdapter> adaptersByFormat;
 
-  /**
-   * Constructor that initializes the adapter manager with format-specific adapters.
-   * 
-   * @param adaptersByFormat Map of format names to their corresponding adapters
-   */
   @Inject
   public VariableResolverAdapterManagerImpl(final Map<String, VariableResolverAdapter> adaptersByFormat) {
-    this.adaptersByFormat = checkNotNull(adaptersByFormat);
-    this.defaultAdapter = checkNotNull(adaptersByFormat.get(DEFAULT_ADAPTER_NAME));
+    // Use Map.copyOf to create an unmodifiable copy of the map for thread safety
+    this.adaptersByFormat = Map.copyOf(requireNonNull(adaptersByFormat, "adaptersByFormat"));
+    
+    // Extract the default adapter using requireNonNull for better error messaging
+    this.defaultAdapter = requireNonNull(adaptersByFormat.get(DEFAULT_ADAPTER_NAME),
+        "Default adapter not found with name: " + DEFAULT_ADAPTER_NAME);
   }
 
-  /**
-   * Gets the variable resolver adapter for the specified format.
-   * If no adapter is found for the format, returns the default adapter.
-   *
-   * @param format the repository format
-   * @return the appropriate variable resolver adapter
-   */
   @Override
   public VariableResolverAdapter get(String format) {
     return adaptersByFormat.getOrDefault(format, defaultAdapter);

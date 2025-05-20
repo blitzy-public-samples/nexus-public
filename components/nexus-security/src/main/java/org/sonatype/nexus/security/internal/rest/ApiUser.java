@@ -16,17 +16,17 @@ package org.sonatype.nexus.security.internal.rest;
 import java.util.HashSet;
 import java.util.Set;
 
-import javax.annotation.Nullable;
-import javax.validation.constraints.NotNull;
+import jakarta.annotation.Nullable;
+import jakarta.validation.constraints.NotNull;
 
 import org.sonatype.nexus.security.role.RoleIdentifier;
 import org.sonatype.nexus.security.user.User;
 import org.sonatype.nexus.security.user.UserManager;
 
 import io.swagger.annotations.ApiModelProperty;
-import javax.validation.constraints.Email;
-import javax.validation.constraints.NotBlank;
-import javax.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 
 /**
  * REST API representation of a user.
@@ -72,11 +72,27 @@ public class ApiUser
       + "e.g. LDAP group. These cannot be changed within the Nexus Repository Manager.")
   private Set<String> externalRoles;
 
+  /**
+   * Default constructor for deserialization
+   */
   @SuppressWarnings("unused")
   private ApiUser() {
     // deserialization
   }
 
+  /**
+   * Constructs a new ApiUser with all required fields
+   * 
+   * @param userId the user ID
+   * @param firstName the user's first name
+   * @param lastName the user's last name
+   * @param emailAddress the user's email address
+   * @param source the source of the user
+   * @param status the user's status
+   * @param readOnly whether the user is read-only
+   * @param roles the user's roles
+   * @param externalRoles the user's external roles
+   */
   ApiUser(
       final String userId,
       final String firstName,
@@ -172,6 +188,11 @@ public class ApiUser
     this.roles = roles;
   }
 
+  /**
+   * Converts this ApiUser to a User entity
+   * 
+   * @return the converted User entity
+   */
   User toUser() {
     User user = new User();
     user.setUserId(userId);
@@ -179,15 +200,30 @@ public class ApiUser
     user.setLastName(lastName);
     user.setEmailAddress(emailAddress);
     user.setSource(source);
-    user.setStatus(status.getStatus());
+    
+    // Use pattern matching for status conversion
+    user.setStatus(switch (status) {
+      case null -> null;
+      case ApiUserStatus s -> s.getStatus();
+    });
+    
     user.setReadOnly(readOnly);
     user.setVersion(1);
 
     Set<RoleIdentifier> roleIdentifiers = new HashSet<>();
-    roles.stream().map(r -> new RoleIdentifier(UserManager.DEFAULT_SOURCE, r)).forEach(roleIdentifiers::add);
-    if (externalRoles != null) {
-      externalRoles.stream().map(r -> new RoleIdentifier(source, r)).forEach(roleIdentifiers::add);
+    
+    // Use pattern matching for role handling with enhanced for loop
+    for (var role : roles) {
+      roleIdentifiers.add(new RoleIdentifier(UserManager.DEFAULT_SOURCE, role));
     }
+    
+    // Use pattern matching for external roles with enhanced for loop if not null
+    if (externalRoles != null) {
+      for (var role : externalRoles) {
+        roleIdentifiers.add(new RoleIdentifier(source, role));
+      }
+    }
+    
     user.setRoles(roleIdentifiers);
     return user;
   }

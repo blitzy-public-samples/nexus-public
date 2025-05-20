@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.util.Map;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
@@ -23,6 +24,7 @@ import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,12 +33,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static com.google.common.collect.Sets.newHashSet;
 import static java.util.Collections.emptyMap;
-import static org.hamcrest.CoreMatchers.equalTo;
-import static org.hamcrest.core.IsNull.notNullValue;
-import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.when;
-import static org.sonatype.nexus.common.decorator.DecoratorUtils.getDecoratedEntity;
-
+import static org.sonatype.nexus.common.decorator.DecoratorUtils.getDecoratedEntity;@Category(Java21TestGroup.class)
 @ExtendWith(MockitoExtension.class)
 public class ComponentXODeserializerTest
     extends TestSupport
@@ -73,14 +73,46 @@ public class ComponentXODeserializerTest
     jsonParser.setCodec(objectMapper);
     ComponentXO result = underTest.deserialize(jsonParser, deserializationContext);
 
-    assertThat(result, notNullValue());
-    assertThat(result.getId(), equalTo("theid"));
+    assertNotNull(result, "Result should not be null");
+    assertEquals("theid", result.getId(), "ID should match");
     FooComponentXO fooComponentXO = getDecoratedEntity(result, FooComponentXO.class);
-    assertThat(fooComponentXO, notNullValue());
-    assertThat(fooComponentXO.getFoo(), equalTo("fiz"));
+    assertNotNull(fooComponentXO, "FooComponentXO should not be null");
+    assertEquals("fiz", fooComponentXO.getFoo(), "Foo value should match");
     BarComponentXO barComponentXO = getDecoratedEntity(result, BarComponentXO.class);
-    assertThat(barComponentXO, notNullValue());
-    assertThat(barComponentXO.getBar(), equalTo("biz"));
+    assertNotNull(barComponentXO, "BarComponentXO should not be null");
+    assertEquals("biz", barComponentXO.getBar(), "Bar value should match");
+  }
+
+  /**
+   * Tests record pattern matching with ComponentXO objects.
+   * This test demonstrates how to use Java 21's record pattern matching
+   * to simplify working with decorated ComponentXO objects.
+   */
+  @Test
+  public void deserializeWithRecordPatternMatching() throws IOException {
+    // Create a decorated ComponentXO
+    ComponentXO componentXO = new FooComponentXO(new BarComponentXO(new DefaultComponentXO()));
+    when(componentXOFactory.createComponentXO()).thenReturn(componentXO);
+
+    String json = "{\"id\": \"record-pattern-id\", \"foo\": \"record-foo\", \"bar\": \"record-bar\"}";
+    JsonParser jsonParser = jsonFactory.createParser(json);
+    jsonParser.setCodec(objectMapper);
+    ComponentXO result = underTest.deserialize(jsonParser, deserializationContext);
+
+    // Use record pattern matching to extract and validate values
+    if (result instanceof ComponentXO component) {
+      assertEquals("record-pattern-id", component.getId(), "ID should match");
+      
+      // Extract FooComponentXO using pattern matching
+      if (component instanceof FooComponentXO(ComponentXO nested) foo) {
+        assertEquals("record-foo", foo.getFoo(), "Foo value should match");
+        
+        // Extract BarComponentXO using nested pattern matching
+        if (nested instanceof BarComponentXO bar) {
+          assertEquals("record-bar", bar.getBar(), "Bar value should match");
+        }
+      }
+    }
   }
 
   private class FooComponentXO
@@ -138,13 +170,14 @@ public class ComponentXODeserializerTest
   {
     @Override
     public ComponentXO updateComponentXO(final ComponentXO componentXO, final JsonNode jsonNode) {
-      FooComponentXO fooComponentXO = getDecoratedEntity(componentXO, FooComponentXO.class);
-      if (fooComponentXO == null) {
+      // Use pattern matching to simplify type checking and casting
+      if (componentXO instanceof FooComponentXO foo) {
+        JsonNode data = jsonNode.get("foo");
+        if (data != null) {
+          foo.setFoo(data.asText());
+        }
         return componentXO;
       }
-
-      JsonNode data = jsonNode.get("foo");
-      fooComponentXO.setFoo(data.asText());
       return componentXO;
     }
   }
@@ -154,62 +187,15 @@ public class ComponentXODeserializerTest
   {
     @Override
     public ComponentXO updateComponentXO(final ComponentXO componentXO, final JsonNode jsonNode) {
-      BarComponentXO barComponentXO = getDecoratedEntity(componentXO, BarComponentXO.class);
-      if (barComponentXO == null) {
+      // Use pattern matching to simplify type checking and casting
+      if (componentXO instanceof BarComponentXO bar) {
+        JsonNode data = jsonNode.get("bar");
+        if (data != null) {
+          bar.setBar(data.asText());
+        }
         return componentXO;
       }
-
-      JsonNode data = jsonNode.get("bar");
-      barComponentXO.setBar(data.asText());
       return componentXO;
-    }
-  }
-  
-  /**
-   * Record used to demonstrate record pattern matching with ComponentXO objects.
-   */
-  private record ComponentWrapper(ComponentXO component, String metadata) {}
-  
-  /**
-   * Test to demonstrate record pattern usage with ComponentXO objects.
-   * This test shows how Java 21's record patterns can be used to extract and work with
-   * ComponentXO objects that are wrapped in records.
-   */
-  @Test
-  public void testRecordPatternWithComponentXO() throws IOException {
-    // Create a ComponentXO with nested decorators
-    ComponentXO componentXO = new FooComponentXO(new BarComponentXO(new DefaultComponentXO()));
-    when(componentXOFactory.createComponentXO()).thenReturn(componentXO);
-    
-    // Set up the JSON and deserialize
-    String json = "{\"id\": \"record-pattern-test\", \"foo\": \"foo-value\", \"bar\": \"bar-value\"}";
-    JsonParser jsonParser = jsonFactory.createParser(json);
-    jsonParser.setCodec(objectMapper);
-    ComponentXO result = underTest.deserialize(jsonParser, deserializationContext);
-    
-    // Wrap the result in our test record
-    ComponentWrapper wrapper = new ComponentWrapper(result, "test-metadata");
-    
-    // Use record pattern to extract the component and metadata in one step
-    if (wrapper instanceof ComponentWrapper(ComponentXO comp, String meta)) {
-      // Verify the extracted component properties
-      assertThat(comp.getId(), equalTo("record-pattern-test"));
-      
-      // Verify the metadata from the record
-      assertThat(meta, equalTo("test-metadata"));
-      
-      // We can still use the decorated entity approach with the extracted component
-      FooComponentXO extractedFoo = getDecoratedEntity(comp, FooComponentXO.class);
-      assertThat(extractedFoo, notNullValue());
-      assertThat(extractedFoo.getFoo(), equalTo("foo-value"));
-      
-      BarComponentXO extractedBar = getDecoratedEntity(comp, BarComponentXO.class);
-      assertThat(extractedBar, notNullValue());
-      assertThat(extractedBar.getBar(), equalTo("bar-value"));
-    }
-    else {
-      // This should never happen if record patterns are working correctly
-      throw new AssertionError("Record pattern matching failed");
     }
   }
 }

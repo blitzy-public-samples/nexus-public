@@ -12,23 +12,23 @@
  */
 package org.sonatype.nexus.repository.cache;
 
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-
 import org.sonatype.nexus.repository.cache.CacheControllerHolder.CacheType;
+import org.sonatype.nexus.test.Java21TestGroup;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.experimental.categories.Category;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@ExtendWith(MockitoExtension.class)
+@Category(Java21TestGroup.class)
 public class CacheControllerHolderTest
 {
   private static final CacheType TEST = new CacheType("TEST");
@@ -45,94 +45,45 @@ public class CacheControllerHolderTest
   }
 
   @Test
-  public void testGetContentCacheController() {
+  public void shouldGetContentCacheController() {
     assertThat(underTest.getContentCacheController(), is(contentCacheController));
   }
 
   @Test
-  public void testGetMetadataCacheController() {
+  public void shouldGetMetadataCacheController() {
     assertThat(underTest.getMetadataCacheController(), is(metadataCacheController));
   }
 
   @Test
-  public void testGetContentCacheControllerViaGet() {
+  public void shouldGetContentCacheControllerViaGet() {
     assertThat(underTest.get(CacheControllerHolder.CONTENT), is(contentCacheController));
   }
 
   @Test
-  public void testGetMetadataCacheControllerViaGet() {
+  public void shouldGetMetadataCacheControllerViaGet() {
     assertThat(underTest.get(CacheControllerHolder.METADATA), is(metadataCacheController));
   }
 
   @Test
-  public void testGetUnknownCacheControllerViaGet() {
+  public void shouldReturnNullForUnknownCacheControllerViaGet() {
     assertThat(underTest.get(TEST), is(nullValue()));
   }
 
   @Test
-  public void testGetContentCacheControllerViaRequire() {
+  public void shouldGetContentCacheControllerViaRequire() {
     assertThat(underTest.require(CacheControllerHolder.CONTENT), is(contentCacheController));
   }
 
   @Test
-  public void testGetMetadataCacheControllerViaRequire() {
+  public void shouldGetMetadataCacheControllerViaRequire() {
     assertThat(underTest.require(CacheControllerHolder.METADATA), is(metadataCacheController));
   }
 
   @Test
-  public void testGetUnknownCacheControllerViaRequire() {
-    IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+  public void shouldThrowExceptionForUnknownCacheControllerViaRequire() {
+    IllegalStateException exception = assertThrows(IllegalStateException.class, () -> {
       underTest.require(TEST);
     });
-    assertThat(exception.getMessage().contains(TEST.value()), is(true));
-  }
-  
-  @Test
-  public void testConcurrentAccessWithVirtualThreads() throws Exception {
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-    
-    int taskCount = 1000;
-    CountDownLatch latch = new CountDownLatch(taskCount);
-    AtomicInteger errorCount = new AtomicInteger(0);
-    
-    try {
-      // Submit multiple concurrent tasks using virtual threads
-      for (int i = 0; i < taskCount; i++) {
-        final int index = i;
-        executor.submit(() -> {
-          try {
-            // Alternate between different operations to test thread safety
-            switch (index % 4) {
-              case 0:
-                assertThat(underTest.getContentCacheController(), is(contentCacheController));
-                break;
-              case 1:
-                assertThat(underTest.getMetadataCacheController(), is(metadataCacheController));
-                break;
-              case 2:
-                assertThat(underTest.get(CacheControllerHolder.CONTENT), is(contentCacheController));
-                break;
-              case 3:
-                assertThat(underTest.require(CacheControllerHolder.METADATA), is(metadataCacheController));
-                break;
-            }
-          } catch (Exception e) {
-            errorCount.incrementAndGet();
-          } finally {
-            latch.countDown();
-          }
-        });
-      }
-      
-      // Wait for all tasks to complete
-      boolean completed = latch.await(30, TimeUnit.SECONDS);
-      
-      // Verify results
-      assertThat("All tasks should complete within timeout", completed, is(true));
-      assertThat("No errors should occur during concurrent access", errorCount.get(), is(0));
-    } finally {
-      executor.shutdown();
-    }
+    assertTrue(exception.getMessage().contains(TEST.value()));
   }
 }

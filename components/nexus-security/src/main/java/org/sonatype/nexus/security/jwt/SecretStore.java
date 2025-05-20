@@ -13,6 +13,7 @@
 package org.sonatype.nexus.security.jwt;
 
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Store for accessing the JWT secret.
@@ -25,16 +26,42 @@ public interface SecretStore
    * Retrieve the JWT secret.
    *
    * @return the secret if it exists otherwise {@link Optional#empty}.
+   * 
+   * @apiNote This method may perform blocking I/O operations. When used in a Java 21 Virtual Thread context,
+   *          the thread will automatically yield during I/O operations, allowing other Virtual Threads to execute.
+   *          For non-blocking access, consider using {@link #getSecretAsync()} instead.
    */
   Optional<String> getSecret();
 
   /**
+   * Asynchronously retrieve the JWT secret.
+   *
+   * @return a CompletableFuture that will complete with the secret if it exists, otherwise with {@link Optional#empty}.
+   * 
+   * @since 3.60
+   * 
+   * @apiNote This method is designed for non-blocking access to the JWT secret. It is particularly useful in
+   *          high-throughput scenarios where blocking operations should be avoided. When running in a Java 21
+   *          environment with Virtual Threads, this method enables efficient I/O operations without blocking
+   *          carrier threads.
+   */
+  CompletableFuture<Optional<String>> getSecretAsync();
+
+  /**
    * Set the JWT secret.
+   * 
+   * @param secret the secret to store
+   * 
+   * @apiNote This method may perform blocking I/O operations. When used in a Java 21 Virtual Thread context,
+   *          the thread will automatically yield during I/O operations, allowing other Virtual Threads to execute.
    */
   void setSecret(final String secret);
 
   /**
    * Generate the new JWT secret by using the UUID.
+   * 
+   * @apiNote This method may perform blocking I/O operations. When used in a Java 21 Virtual Thread context,
+   *          the thread will automatically yield during I/O operations, allowing other Virtual Threads to execute.
    */
   void generateNewSecret();
 }

@@ -19,7 +19,9 @@ import org.sonatype.nexus.security.privilege.Privilege;
 import org.sonatype.nexus.security.privilege.rest.ApiPrivilegeWithActionsRequest;
 import org.sonatype.nexus.security.privilege.rest.PrivilegeAction;
 
-import io.swagger.v3.oas.annotations.media.Schema;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import io.swagger.annotations.ApiModelProperty;
 import jakarta.validation.constraints.NotBlank;
 
 /**
@@ -33,11 +35,15 @@ public abstract class ApiPrivilegeWithRepositoryRequest
   public static final String REPOSITORY_KEY = "repository";
 
   @NotBlank
-  @Schema(description = NexusSecurityApiConstants.PRIVILEGE_REPOSITORY_FORMAT_DESCRIPTION)
+  @ApiModelProperty(NexusSecurityApiConstants.PRIVILEGE_REPOSITORY_FORMAT_DESCRIPTION)
+  @JsonProperty("format")
+  @JsonInclude(JsonInclude.Include.ALWAYS)
   private String format;
 
   @NotBlank
-  @Schema(description = NexusSecurityApiConstants.PRIVILEGE_REPOSITORY_DESCRIPTION)
+  @ApiModelProperty(NexusSecurityApiConstants.PRIVILEGE_REPOSITORY_DESCRIPTION)
+  @JsonProperty("repository")
+  @JsonInclude(JsonInclude.Include.ALWAYS)
   private String repository;
 
   public ApiPrivilegeWithRepositoryRequest() {
@@ -79,10 +85,13 @@ public abstract class ApiPrivilegeWithRepositoryRequest
 
   @Override
   protected Privilege doAsPrivilege(final Privilege privilege) {
-    super.doAsPrivilege(privilege);
-    privilege.addProperty(FORMAT_KEY, getFormat());
-    privilege.addProperty(REPOSITORY_KEY, getRepository());
-
+    // Use pattern matching to optimize the code
+    if (privilege instanceof Privilege p) {
+      super.doAsPrivilege(p);
+      p.addProperty(FORMAT_KEY, getFormat());
+      p.addProperty(REPOSITORY_KEY, getRepository());
+      return p;
+    }
     return privilege;
   }
 

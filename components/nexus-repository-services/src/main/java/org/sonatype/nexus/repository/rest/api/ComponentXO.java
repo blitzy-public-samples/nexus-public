@@ -1,1 +1,85 @@
-Failed to process file
+/*
+ * Sonatype Nexus (TM) Open Source Version
+ * Copyright (c) 2008-present Sonatype, Inc.
+ * All rights reserved. Includes the third-party code listed at http://links.sonatype.com/products/nexus/oss/attributions.
+ *
+ * This program and the accompanying materials are made available under the terms of the Eclipse Public License Version 1.0,
+ * which accompanies this distribution and is available at http://www.eclipse.org/legal/epl-v10.html.
+ *
+ * Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
+ * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
+ * Eclipse Foundation. All other trademarks are the property of their respective owners.
+ */
+package org.sonatype.nexus.repository.rest.api;
+
+import java.util.List;
+import java.util.Map;
+
+import com.fasterxml.jackson.annotation.JsonAnyGetter;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
+
+/**
+ * Component transfer object for REST APIs.
+ * 
+ * @since 3.8
+ */
+@JsonPropertyOrder({"id", "repository", "format", "group", "name", "version", "assets"})
+public interface ComponentXO
+{
+  /**
+   * Record pattern for component data structure.
+   * This allows for more memory-efficient and type-safe data handling when using pattern matching.
+   * 
+   * @since Java 21
+   */
+  record ComponentData(String id, String group, String name, String version, 
+                      String repository, String format, List<AssetXO> assets) {}
+  
+  String getId();
+
+  void setId(String id);
+
+  String getGroup();
+
+  void setGroup(String group);
+
+  String getName();
+
+  void setName(String name);
+
+  String getVersion();
+
+  void setVersion(String version);
+
+  String getRepository();
+
+  void setRepository(String repository);
+
+  String getFormat();
+
+  void setFormat(String format);
+
+  List<AssetXO> getAssets();
+
+  void setAssets(List<AssetXO> assets);
+
+  /**
+   * Attributes to add the JSON payload
+   *
+   * @return Map of additional attributes to include in JSON
+   */
+  @JsonAnyGetter
+  Map<String, Object> getExtraJsonAttributes();
+  
+  /**
+   * Get component data as a record for pattern matching.
+   * This enables Java 21 Record Pattern usage with this object.
+   *
+   * @return ComponentData record containing all component properties
+   */
+  default ComponentData asRecord() {
+    return new ComponentData(
+        getId(), getGroup(), getName(), getVersion(),
+        getRepository(), getFormat(), getAssets());
+  }
+}

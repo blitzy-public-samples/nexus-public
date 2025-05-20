@@ -17,6 +17,7 @@ import java.util.List;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.capability.Condition;
+import org.sonatype.nexus.capability.ConditionEvent;
 import org.sonatype.nexus.capability.ConditionEvent.Satisfied;
 import org.sonatype.nexus.capability.ConditionEvent.Unsatisfied;
 import org.sonatype.nexus.common.event.EventManager;
@@ -25,8 +26,10 @@ import org.hamcrest.BaseMatcher;
 import org.hamcrest.Description;
 import org.hamcrest.Matcher;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.invocation.InvocationOnMock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.stubbing.Answer;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -42,6 +45,7 @@ import static org.mockito.Mockito.doAnswer;
  *
  * @since capabilities 2.0
  */
+@ExtendWith(MockitoExtension.class)
 public class EventManagerTestSupport
     extends TestSupport
 {
@@ -86,12 +90,18 @@ public class EventManagerTestSupport
         {
           @Override
           public boolean matches(final Object argument) {
-            return argument instanceof Satisfied satisfied && satisfied.getCondition() == condition;
+            if (argument instanceof ConditionEvent event) {
+              return switch (event) {
+                case Satisfied satisfied -> satisfied.getCondition() == condition;
+                default -> false;
+              };
+            }
+            return false;
           }
 
           @Override
           public void describeTo(final Description description) {
-
+            description.appendText("Satisfied event for condition " + condition);
           }
         }
     );
@@ -104,12 +114,18 @@ public class EventManagerTestSupport
         {
           @Override
           public boolean matches(final Object argument) {
-            return argument instanceof Unsatisfied unsatisfied && unsatisfied.getCondition() == condition;
+            if (argument instanceof ConditionEvent event) {
+              return switch (event) {
+                case Unsatisfied unsatisfied -> unsatisfied.getCondition() == condition;
+                default -> false;
+              };
+            }
+            return false;
           }
 
           @Override
           public void describeTo(final Description description) {
-
+            description.appendText("Unsatisfied event for condition " + condition);
           }
         }
     );

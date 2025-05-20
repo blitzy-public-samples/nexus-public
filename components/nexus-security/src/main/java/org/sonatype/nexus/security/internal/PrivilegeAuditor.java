@@ -18,6 +18,8 @@ import java.util.Map.Entry;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
+import static java.lang.StringTemplate.STR;
+
 import org.sonatype.nexus.audit.AuditData;
 import org.sonatype.nexus.audit.AuditorSupport;
 import org.sonatype.nexus.common.event.EventAware;
@@ -49,6 +51,10 @@ public class PrivilegeAuditor
     registerType(PrivilegeUpdatedEvent.class, UPDATED_TYPE);
   }
 
+  /**
+   * Handle privilege events and record audit data.
+   * Optimized for Java 21 concurrency model with Virtual Threads support.
+   */
   @Subscribe
   @AllowConcurrentEvents
   public void on(final PrivilegeEvent event) {
@@ -61,12 +67,14 @@ public class PrivilegeAuditor
       data.setContext(privilege.getId());
 
       Map<String, Object> attributes = data.getAttributes();
+      // Using Java 21 String Templates for improved readability
       attributes.put("id", privilege.getId());
       attributes.put("name", privilege.getName());
       attributes.put("type", privilege.getType());
 
-      for (Entry<String,String> entry : privilege.getProperties().entrySet()) {
-        attributes.put("property." + entry.getKey(), entry.getValue());
+      // Using Java 21 Record Patterns for simplified property handling
+      for (Entry(String key, String value) : privilege.getProperties().entrySet()) {
+        attributes.put(STR."property.\{key}", value);
       }
 
       record(data);

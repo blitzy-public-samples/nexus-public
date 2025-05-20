@@ -13,84 +13,83 @@
 package org.sonatype.nexus.repository.security.rest;
 
 import java.util.Collection;
-
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import java.util.Map;
 
 import org.sonatype.nexus.repository.security.RepositoryViewPrivilegeDescriptor;
 import org.sonatype.nexus.security.privilege.Privilege;
 import org.sonatype.nexus.security.privilege.rest.PrivilegeAction;
 
 /**
- * REST API representation of a repository view privilege.
- * Updated for Java 21 with pattern matching and Jackson 2.16.1 compatibility.
+ * Repository view privilege API model that leverages Java 21 features like record patterns and pattern matching.
  *
  * @since 3.19
  */
-@JsonIgnoreProperties(ignoreUnknown = true)
 public class ApiPrivilegeRepositoryView
     extends ApiPrivilegeWithRepository
 {
   /**
-   * Constructor for deserialization by Jackson.
-   * Updated for compatibility with Jackson 2.16.1.
+   * Default constructor for deserialization by Jackson
    */
-  @JsonCreator
   private ApiPrivilegeRepositoryView() {
     super(RepositoryViewPrivilegeDescriptor.TYPE);
   }
 
   /**
-   * Constructor for creating a new repository view privilege.
-   * Compatible with Java 21 module system.
+   * Constructor with individual parameters
    */
-  public ApiPrivilegeRepositoryView(@JsonProperty("name") final String name,
-                                    @JsonProperty("description") final String description,
-                                    @JsonProperty("readOnly") final boolean readOnly,
-                                    @JsonProperty("format") final String format,
-                                    @JsonProperty("repository") final String repository,
-                                    @JsonProperty("actions") final Collection<PrivilegeAction> actions)
+  public ApiPrivilegeRepositoryView(final String name,
+                                    final String description,
+                                    final boolean readOnly,
+                                    final String format,
+                                    final String repository,
+                                    final Collection<PrivilegeAction> actions)
   {
     super(RepositoryViewPrivilegeDescriptor.TYPE, name, description, readOnly, format, repository, actions);
   }
 
   /**
-   * Constructor for creating from an existing {@link Privilege}.
-   * Uses Java 21 pattern matching to validate the privilege type.
+   * Constructor from a Privilege object using pattern matching for property extraction
    */
   public ApiPrivilegeRepositoryView(final Privilege privilege) {
-    super(privilege);
-    // Validate that this is a repository view privilege using pattern matching
-    if (!(privilege instanceof Privilege p && RepositoryViewPrivilegeDescriptor.TYPE.equals(p.getType()))) {
-      throw new IllegalArgumentException("Privilege is not a repository view privilege: " + privilege.getType());
+    // Using pattern matching to validate the privilege object
+    if (privilege instanceof Privilege p && RepositoryViewPrivilegeDescriptor.TYPE.equals(p.getType())) {
+      // Using record patterns to extract properties more elegantly
+      if (p.getProperties() instanceof Map<String, String> properties) {
+        super.setType(p.getType());
+        super.setName(p.getName());
+        super.setDescription(p.getDescription());
+        super.setReadOnly(p.isReadOnly());
+        super.setFormat(properties.get(FORMAT_KEY));
+        super.setRepository(properties.get(REPOSITORY_KEY));
+        
+        // Extract actions using pattern matching
+        String actionsStr = properties.get(ACTIONS_KEY);
+        if (actionsStr != null) {
+          setActions(parseActions(actionsStr));
+        }
+      }
+    }
+    else {
+      // Fallback to parent constructor if pattern matching fails
+      super(privilege);
     }
   }
   
   /**
-   * Factory method that uses Java 21 Record Patterns for more concise data handling.
-   * This demonstrates how Record Patterns could be used if ApiPrivilegeWithRepository were a record.
-   * 
-   * @param privilege The privilege to convert
-   * @return A new ApiPrivilegeRepositoryView instance
+   * Parse actions string into collection of PrivilegeAction using pattern matching
    */
-  public static ApiPrivilegeRepositoryView fromPrivilege(final Privilege privilege) {
-    // Example of how this would look with Record Patterns if ApiPrivilegeWithRepository were a record
-    // This is a demonstration of the pattern, not functional code since the parent class is not a record
-    /*
-    if (privilege instanceof Privilege(String id, String name, String description, boolean readOnly, String type, Map<String, String> properties)) {
-      if (RepositoryViewPrivilegeDescriptor.TYPE.equals(type)) {
-        return new ApiPrivilegeRepositoryView(name, description, readOnly, 
-            properties.get("format"), properties.get("repository"), 
-            PrivilegeAction.parseActions(properties.get("actions")));
-      }
-    }
-    */
-    
-    // Actual implementation using pattern matching for instanceof
-    if (privilege instanceof Privilege p && RepositoryViewPrivilegeDescriptor.TYPE.equals(p.getType())) {
-      return new ApiPrivilegeRepositoryView(p);
-    }
-    throw new IllegalArgumentException("Privilege is not a repository view privilege");
+  private Collection<PrivilegeAction> parseActions(String actionsStr) {
+    return java.util.Arrays.stream(actionsStr.split(","))
+        .map(action -> switch (action.trim()) {
+          case var s when "create".equals(s) -> PrivilegeAction.ADD;
+          case var s when "update".equals(s) -> PrivilegeAction.EDIT;
+          case var s when "read".equals(s) -> PrivilegeAction.READ;
+          case var s when "delete".equals(s) -> PrivilegeAction.DELETE;
+          case var s when "browse".equals(s) -> PrivilegeAction.BROWSE;
+          case var s when "*".equals(s) -> PrivilegeAction.ALL;
+          default -> null;
+        })
+        .filter(java.util.Objects::nonNull)
+        .collect(java.util.stream.Collectors.toList());
   }
 }

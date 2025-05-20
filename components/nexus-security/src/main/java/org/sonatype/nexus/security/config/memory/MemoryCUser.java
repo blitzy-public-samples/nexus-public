@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.security.config.memory;
 
+import static java.lang.StringTemplate.STR;
+
 import org.sonatype.nexus.common.text.Strings2;
 import org.sonatype.nexus.security.config.CUser;
 
@@ -72,9 +74,19 @@ public class MemoryCUser
     return version;
   }
 
+  /**
+   * Determines if the user is active using pattern matching for switch.
+   * This implementation uses pattern matching to check if the status matches
+   * either STATUS_ACTIVE or STATUS_CHANGE_PASSWORD.
+   *
+   * @return true if the user is active, false otherwise
+   */
   @Override
   public boolean isActive() {
-    return STATUS_ACTIVE.equals(status) || STATUS_CHANGE_PASSWORD.equals(status);
+    return switch (status) {
+      case STATUS_ACTIVE, STATUS_CHANGE_PASSWORD -> true;
+      default -> false;
+    };
   }
 
   @Override
@@ -112,61 +124,113 @@ public class MemoryCUser
     this.version = version;
   }
 
+  /**
+   * Enhanced builder method for setting email with improved chaining.
+   *
+   * @param email the email to set
+   * @return this instance for method chaining
+   */
   public MemoryCUser withEmail(final String email) {
-    setEmail(email);
+    this.email = email;
     return this;
   }
 
+  /**
+   * Enhanced builder method for setting firstName with improved chaining.
+   *
+   * @param firstName the firstName to set
+   * @return this instance for method chaining
+   */
   public MemoryCUser withFirstName(final String firstName) {
-    setFirstName(firstName);
+    this.firstName = firstName;
     return this;
   }
 
+  /**
+   * Enhanced builder method for setting id with improved chaining.
+   *
+   * @param id the id to set
+   * @return this instance for method chaining
+   */
   public MemoryCUser withId(final String id) {
-    setId(id);
+    this.id = id;
     return this;
   }
 
+  /**
+   * Enhanced builder method for setting lastName with improved chaining.
+   *
+   * @param lastName the lastName to set
+   * @return this instance for method chaining
+   */
   public MemoryCUser withLastName(final String lastName) {
-    setLastName(lastName);
+    this.lastName = lastName;
     return this;
   }
 
+  /**
+   * Enhanced builder method for setting password with improved chaining.
+   *
+   * @param password the password to set
+   * @return this instance for method chaining
+   */
   public MemoryCUser withPassword(final String password) {
-    setPassword(password);
+    this.password = password;
     return this;
   }
 
+  /**
+   * Enhanced builder method for setting status with improved chaining.
+   *
+   * @param status the status to set
+   * @return this instance for method chaining
+   */
   public MemoryCUser withStatus(final String status) {
-    setStatus(status);
+    this.status = status;
     return this;
   }
 
+  /**
+   * Enhanced builder method for setting version with improved chaining.
+   *
+   * @param version the version to set
+   * @return this instance for method chaining
+   */
   public MemoryCUser withVersion(final int version) {
-    setVersion(version);
+    this.version = version;
     return this;
   }
 
+  /**
+   * Creates a clone of this user with improved type handling.
+   * Uses pattern matching to handle the CloneNotSupportedException more elegantly.
+   *
+   * @return a clone of this user
+   */
   @Override
   public MemoryCUser clone() {
     try {
       return (MemoryCUser) super.clone();
     }
-    catch (CloneNotSupportedException e) {
-      throw new RuntimeException(e);
+    catch (Exception e) {
+      // Use pattern matching to handle different exception types
+      Throwable cause = switch (e) {
+        case CloneNotSupportedException cnse -> cnse;
+        case RuntimeException re when re.getCause() != null -> re.getCause();
+        default -> e;
+      };
+      throw new RuntimeException("Failed to clone user: " + getId(), cause);
     }
   }
 
+  /**
+   * Returns a string representation of this user using Java 21 String Templates.
+   * This implementation uses the STR processor for more readable and efficient string creation.
+   *
+   * @return a string representation of this user
+   */
   @Override
   public String toString() {
-    return getClass().getSimpleName() + "{" +
-        "id='" + id + '\'' +
-        ", firstName='" + firstName + '\'' +
-        ", lastName='" + lastName + '\'' +
-        ", password='" + Strings2.mask(password) + '\'' +
-        ", status='" + status + '\'' +
-        ", email='" + email + '\'' +
-        ", version='" + version + '\'' +
-        '}';
+    return STR."{getClass().getSimpleName()}{id='{id}', firstName='{firstName}', lastName='{lastName}', password='{Strings2.mask(password)}', status='{status}', email='{email}', version='{version}'}";
   }
 }

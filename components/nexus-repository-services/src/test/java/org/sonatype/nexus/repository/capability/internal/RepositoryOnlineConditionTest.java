@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.repository.capability.internal;
 
-import java.util.List;
+import java.util.Collections;
 import java.util.function.Supplier;
 
 import org.sonatype.nexus.repository.Repository;
@@ -21,7 +21,9 @@ import org.sonatype.nexus.repository.manager.RepositoryCreatedEvent;
 import org.sonatype.nexus.repository.manager.RepositoryDeletedEvent;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
 import org.sonatype.nexus.repository.manager.RepositoryUpdatedEvent;
+import org.sonatype.nexus.virtualthread.Java21TestGroup;
 
+import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,6 +32,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -39,6 +42,7 @@ import static org.mockito.Mockito.when;
  * @since capabilities 2.0
  */
 @ExtendWith(MockitoExtension.class)
+@Category(Java21TestGroup.class)
 public class RepositoryOnlineConditionTest
     extends EventManagerTestSupport
 {
@@ -60,7 +64,7 @@ public class RepositoryOnlineConditionTest
   public final void setUpRepositoryLocalStatusCondition()
       throws Exception
   {
-    when(repositoryManager.browse()).thenReturn(List.of());
+    lenient().when(repositoryManager.browse()).thenReturn(Collections.<Repository>emptyList());
 
     final Supplier<String> repositoryName = () -> TEST_REPOSITORY;
 
@@ -82,7 +86,7 @@ public class RepositoryOnlineConditionTest
    * Condition should become unsatisfied and notification sent when repository is out of service.
    */
   @Test
-  public void unsatisfiedWhenRepositoryIsOutOfService() {
+  public void shouldBeUnsatisfiedWhenRepositoryIsOutOfService() {
     assertThat(underTest.isSatisfied(), is(true));
 
     when(configuration.isOnline()).thenReturn(false);
@@ -96,7 +100,7 @@ public class RepositoryOnlineConditionTest
    * Condition should become satisfied and notification sent when repository is back on service.
    */
   @Test
-  public void satisfiedWhenRepositoryIsBackToService() {
+  public void shouldBeSatisfiedWhenRepositoryIsBackToService() {
     assertThat(underTest.isSatisfied(), is(true));
 
     when(configuration.isOnline()).thenReturn(false);
@@ -113,7 +117,7 @@ public class RepositoryOnlineConditionTest
    * Condition should become unsatisfied when repository is removed.
    */
   @Test
-  public void unsatisfiedWhenRepositoryIsRemoved() {
+  public void shouldBeUnsatisfiedWhenRepositoryIsRemoved() {
     assertThat(underTest.isSatisfied(), is(true));
 
     underTest.handle(new RepositoryDeletedEvent(repository));
@@ -126,7 +130,7 @@ public class RepositoryOnlineConditionTest
    * Event bus handler is removed when releasing.
    */
   @Test
-  public void releaseRemovesItselfAsHandler() {
+  public void shouldRemoveItselfAsHandlerWhenReleased() {
     underTest.release();
 
     verify(eventManager).unregister(underTest);

@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.stream.Stream;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import org.sonatype.nexus.repository.Format;
 import org.sonatype.nexus.repository.Repository;
@@ -25,6 +26,8 @@ import org.sonatype.nexus.repository.types.GroupType;
 import org.sonatype.nexus.repository.types.HostedType;
 import org.sonatype.nexus.repository.types.ProxyType;
 
+import org.junit.experimental.categories.Category;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -32,6 +35,8 @@ import org.mockito.Mock;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.params.provider.Arguments.arguments;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -41,54 +46,32 @@ public class RepositoryXOTest
   @Mock
   private Repository repository;
 
-  private final String name;
-
-  private final Format format;
-
-  private final String expectedFormat;
-
-  private final Type type;
-
-  private final String expectedType;
-
-  private final String url;
-
-  private final Map<String, Object> attributes;
-
-  private final Map<String, Map<String, Object>> expectedAttributes;
-
-  public RepositoryXOTest(
-      final String name,
-      final Format format,
-      final String expectedFormat,
-      final Type type,
-      final String expectedType,
-      final String url,
-      final Map<String, Object> attributes,
-      final Map<String, Map<String, Object>> expectedAttributes)
-  {
-    this.name = name;
-    this.format = format;
-    this.expectedFormat = expectedFormat;
-    this.type = type;
-    this.expectedType = expectedType;
-    this.url = url;
-    this.attributes = attributes;
-    this.expectedAttributes = expectedAttributes;
-  }
-
-  static Stream<Arguments> data() {
+  /**
+   * Provides test data for parameterized tests.
+   */
+  static Stream<Arguments> repositoryTestData() {
     return Stream.of(
-        Arguments.of("x", format("npm"), "npm", new ProxyType(), "proxy", "u", Map.of("remoteUrl", "url"),
-            Map.of("proxy", Map.of("remoteUrl", "url"))),
-        Arguments.of("y", format("maven"), "maven", new HostedType(), "hosted", "u", Map.of("remoteUrl", "foo"), Map.of()),
-        Arguments.of("z", format("nuget"), "nuget", new GroupType(), "group", "u", Map.of("remoteUrl", "foo"), Map.of())
+        arguments(
+            "x", format("npm"), "npm", new ProxyType(), "proxy", "u", Map.of("remoteUrl", "url"),
+            Map.of("proxy", Map.of("remoteUrl", "url"))
+        ),
+        arguments("y", format("maven"), "maven", new HostedType(), "hosted", "u", Map.of("remoteUrl", "foo"), Map.of()),
+        arguments("z", format("nuget"), "nuget", new GroupType(), "group", "u", Map.of("remoteUrl", "foo"), Map.of())
     );
   }
 
-  @ParameterizedTest
-  @MethodSource("data")
-  public void testConvertRepositoryToRepositoryXO() {
+  @ParameterizedTest(name = "{index}: {0} - {2}/{4}")
+  @MethodSource("repositoryTestData")
+  void testConvertRepositoryToRepositoryXO(
+      String name,
+      Format format,
+      String expectedFormat,
+      Type type,
+      String expectedType,
+      String url,
+      Map<String, Object> attributes,
+      Map<String, Map<String, Object>> expectedAttributes) 
+  {
     when(repository.getName()).thenReturn(name);
     when(repository.getFormat()).thenReturn(format);
     when(repository.getType()).thenReturn(type);
@@ -104,6 +87,77 @@ public class RepositoryXOTest
     assertThat(repositoryXO.getType(), is(expectedType));
     assertThat(repositoryXO.getUrl(), is(url));
     assertThat(repositoryXO.getAttributes(), is(expectedAttributes));
+  }
+  
+  /**
+   * Tests record pattern matching with repository type extraction.
+   */
+  @Test
+  @Category(Java21TestGroup.class)
+  void testRepositoryTypePatternMatching() {
+    // Create test repositories with different types
+    Repository proxyRepo = mock(Repository.class);
+    when(proxyRepo.getType()).thenReturn(new ProxyType());
+    
+    Repository hostedRepo = mock(Repository.class);
+    when(hostedRepo.getType()).thenReturn(new HostedType());
+    
+    Repository groupRepo = mock(Repository.class);
+    when(groupRepo.getType()).thenReturn(new GroupType());
+    
+    // Test pattern matching with instanceof and type patterns
+    String proxyTypeResult = getRepositoryTypeUsingPatternMatching(proxyRepo);
+    String hostedTypeResult = getRepositoryTypeUsingPatternMatching(hostedRepo);
+    String groupTypeResult = getRepositoryTypeUsingPatternMatching(groupRepo);
+    
+    assertEquals("proxy", proxyTypeResult, "Should identify proxy repository type");
+    assertEquals("hosted", hostedTypeResult, "Should identify hosted repository type");
+    assertEquals("group", groupTypeResult, "Should identify group repository type");
+  }
+  
+  /**
+   * Tests String Template usage in URL construction.
+   */
+  @Test
+  @Category(Java21TestGroup.class)
+  void testStringTemplateUrlConstruction() {
+    // Test data for URL construction
+    String baseUrl = "http://localhost:8081";
+    String repoName = "maven-central";
+    String format = "maven";
+    String path = "org/example/artifact/1.0/artifact-1.0.jar";
+    
+    // Construct URL using String Template
+    String url = constructUrlWithStringTemplate(baseUrl, format, repoName, path);
+    String expectedUrl = "http://localhost:8081/repository/maven-central/org/example/artifact/1.0/artifact-1.0.jar";
+    
+    assertEquals(expectedUrl, url, "URL should be correctly constructed using String Template");
+  }
+  
+  /**
+   * Uses pattern matching to determine repository type.
+   * This demonstrates Java 21's pattern matching for instanceof feature.
+   */
+  private String getRepositoryTypeUsingPatternMatching(Repository repository) {
+    Type type = repository.getType();
+    
+    if (type instanceof ProxyType(var value)) {
+      return "proxy";
+    } else if (type instanceof HostedType(var value)) {
+      return "hosted";
+    } else if (type instanceof GroupType(var value)) {
+      return "group";
+    } else {
+      return "unknown";
+    }
+  }
+  
+  /**
+   * Constructs a repository URL using Java 21 String Templates.
+   */
+  private String constructUrlWithStringTemplate(String baseUrl, String format, String repoName, String path) {
+    // Using Java 21 String Template feature
+    return STR."{baseUrl}/repository/{repoName}/{path}";
   }
 
   private static Format format(final String value) {

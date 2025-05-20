@@ -19,7 +19,10 @@ import org.sonatype.nexus.security.internal.rest.NexusSecurityApiConstants;
 import org.sonatype.nexus.security.privilege.Privilege;
 import org.sonatype.nexus.security.privilege.rest.PrivilegeAction;
 
-import io.swagger.v3.oas.annotations.media.Schema;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import io.swagger.annotations.ApiModelProperty;
 import jakarta.validation.constraints.NotBlank;
 
 /**
@@ -31,12 +34,15 @@ public class ApiPrivilegeRepositoryContentSelectorRequest
   public static final String CSEL_KEY = "contentSelector";
 
   @NotBlank
-  @Schema(description = NexusSecurityApiConstants.PRIVILEGE_CONTENT_SELECTOR_DESCRIPTION)
+  @ApiModelProperty(NexusSecurityApiConstants.PRIVILEGE_CONTENT_SELECTOR_DESCRIPTION)
+  @JsonProperty("contentSelector")
+  @JsonInclude(JsonInclude.Include.ALWAYS)
   private String contentSelector;
 
   /**
    * for deserialization
    */
+  @JsonCreator
   private ApiPrivilegeRepositoryContentSelectorRequest() {
     super();
   }
@@ -52,9 +58,18 @@ public class ApiPrivilegeRepositoryContentSelectorRequest
     this.contentSelector = contentSelector;
   }
 
+  /**
+   * Creates a request from a privilege using pattern matching to extract properties
+   */
   public ApiPrivilegeRepositoryContentSelectorRequest(final Privilege privilege) {
     super(privilege);
-    contentSelector = privilege.getPrivilegeProperty(CSEL_KEY);
+    // Using enhanced pattern matching to extract property
+    switch (privilege) {
+      case Privilege p when p.getPrivilegeProperty(CSEL_KEY) != null -> 
+        contentSelector = p.getPrivilegeProperty(CSEL_KEY);
+      default -> 
+        contentSelector = null;
+    }
   }
 
   public void setContentSelector(final String contentSelector) {
@@ -67,9 +82,15 @@ public class ApiPrivilegeRepositoryContentSelectorRequest
 
   @Override
   protected Privilege doAsPrivilege(final Privilege privilege) {
-    super.doAsPrivilege(privilege);
-    privilege.setType(RepositoryContentSelectorPrivilegeDescriptor.TYPE);
-    privilege.addProperty(CSEL_KEY, contentSelector);
-    return privilege;
+    // Using pattern matching for switch to validate and set properties
+    return switch (privilege) {
+      case Privilege p -> {
+        super.doAsPrivilege(p);
+        p.setType(RepositoryContentSelectorPrivilegeDescriptor.TYPE);
+        p.addProperty(CSEL_KEY, contentSelector);
+        yield p;
+      }
+      default -> privilege;
+    };
   }
 }

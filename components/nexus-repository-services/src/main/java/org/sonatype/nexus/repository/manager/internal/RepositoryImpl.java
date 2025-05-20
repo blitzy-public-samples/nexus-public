@@ -17,6 +17,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import javax.annotation.Nonnull;
@@ -45,6 +47,7 @@ import org.sonatype.nexus.repository.config.Configuration;
 import com.google.inject.assistedinject.Assisted;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.repository.manager.internal.RepositoryImpl.State.DELETED;
 import static org.sonatype.nexus.repository.manager.internal.RepositoryImpl.State.DESTROYED;
 import static org.sonatype.nexus.repository.manager.internal.RepositoryImpl.State.FAILED;
@@ -165,16 +168,16 @@ public class RepositoryImpl
     MultipleFailures failures = new MultipleFailures();
 
     for (Facet facet : facets) {
-      log.debug("Validating facet: {}", facet);
+      log.debug(STR."Validating facet: \{facet}");
       try {
         facet.validate(configuration);
       }
       catch (ConstraintViolationException e) {
-        log.debug("Facet validation produced violations: {}", facet, e);
+        log.debug(STR."Facet validation produced violations: \{facet}", e);
         violations.addAll(e.getConstraintViolations());
       }
       catch (Throwable t) {
-        log.error("Failed to validate facet: {}", facet, t);
+        log.error(STR."Failed to validate facet: \{facet}", t);
         failures.add(t);
       }
     }
@@ -194,11 +197,11 @@ public class RepositoryImpl
     MultipleFailures failures = new MultipleFailures();
     for (Facet facet : facets) {
       try {
-        log.debug("Initializing facet: {}", facet);
+        log.debug(STR."Initializing facet: \{facet}");
         facet.init();
       }
       catch (Throwable t) {
-        log.error("Failed to initialize facet: {}", facet, t);
+        log.error(STR."Failed to initialize facet: \{facet}", t);
         failures.add(t);
       }
     }
@@ -217,11 +220,11 @@ public class RepositoryImpl
     MultipleFailures failures = new MultipleFailures();
     for (Facet facet : facets) {
       try {
-        log.debug("Updating facet: {}", facet);
+        log.debug(STR."Updating facet: \{facet}");
         facet.update();
       }
       catch (Throwable t) {
-        log.error("Failed to update facet: {}", facet, t);
+        log.error(STR."Failed to update facet: \{facet}", t);
         failures.add(t);
       }
     }
@@ -231,18 +234,31 @@ public class RepositoryImpl
   @Override
   @Transitions(from = {INITIALISED, STOPPED}, to = STARTED)
   public void start() throws Exception {
-    MultipleFailures failures = new MultipleFailures();
-    for (Facet facet : facets) {
-      try {
-        log.debug("Starting facet: {}", facet);
-        facet.start();
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      MultipleFailures failures = new MultipleFailures();
+      List<Facet> startedFacets = new ArrayList<>();
+      
+      for (Facet facet : facets) {
+        executor.submit(() -> {
+          try {
+            log.debug(STR."Starting facet: \{facet}");
+            facet.start();
+            startedFacets.add(facet);
+          }
+          catch (Throwable t) {
+            log.error(STR."Failed to start facet: \{facet}", t);
+            failures.add(t);
+          }
+          return null;
+        });
       }
-      catch (Throwable t) {
-        log.error("Failed to start facet: {}", facet, t);
-        failures.add(t);
-      }
+      
+      // Wait for all facets to be processed
+      executor.shutdown();
+      executor.awaitTermination(LOCK_TIMEOUT, TimeUnit.SECONDS);
+      
+      failures.maybePropagate("Failed to start facets");
     }
-    failures.maybePropagate("Failed to start facets");
 
     eventManager.post(new RepositoryStartedEvent(this));
   }
@@ -260,18 +276,37 @@ public class RepositoryImpl
     MultipleFailures failures = new MultipleFailures();
     Lock repositoryLock = getWriteLock();
     List<Lock> facetLocks = new ArrayList<>();
+    
     if (repositoryLock.tryLock(LOCK_TIMEOUT, TimeUnit.SECONDS)) {
       try {
-        for (Facet facet : facets.reverse()) {
-          Lock facetLock = facet.getWriteLock();
-          if (facetLock.tryLock(LOCK_TIMEOUT, TimeUnit.SECONDS)) { //NOSONAR
-            facetLocks.add(facetLock);
+        // Use a virtual thread executor to acquire locks in parallel
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+          List<Lock> acquiredLocks = new ArrayList<>();
+          
+          for (Facet facet : facets.reverse()) {
+            executor.submit(() -> {
+              Lock facetLock = facet.getWriteLock();
+              if (facetLock.tryLock(LOCK_TIMEOUT, TimeUnit.SECONDS)) {
+                synchronized(acquiredLocks) {
+                  acquiredLocks.add(facetLock);
+                }
+              }
+              else {
+                log.error(STR."Failed to lock facet: \{facet}");
+                failures.add(new RuntimeException(STR."Failed to lock facet: \{facet}"));
+              }
+              return null;
+            });
           }
-          else {
-            log.error("Failed to lock facet: {}", facet);
-            failures.add(new RuntimeException(String.format("Failed to lock facet: %s", facet)));
-          }
+          
+          // Wait for all lock attempts to complete
+          executor.shutdown();
+          executor.awaitTermination(LOCK_TIMEOUT, TimeUnit.SECONDS);
+          
+          // Transfer to our main list
+          facetLocks.addAll(acquiredLocks);
         }
+        
         failures.maybePropagate("Failed to lock facets");
         stop();
       }
@@ -295,16 +330,26 @@ public class RepositoryImpl
   public void stop() throws Exception {
     MultipleFailures failures = new MultipleFailures();
 
-    for (Facet facet : facets.reverse()) {
-      try {
-        log.debug("Stopping facet: {}", facet);
-        facet.stop();
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      for (Facet facet : facets.reverse()) {
+        executor.submit(() -> {
+          try {
+            log.debug(STR."Stopping facet: \{facet}");
+            facet.stop();
+          }
+          catch (Throwable t) {
+            log.error(STR."Failed to stop facet: \{facet}", t);
+            failures.add(t);
+          }
+          return null;
+        });
       }
-      catch (Throwable t) {
-        log.error("Failed to stop facet: {}", facet, t);
-        failures.add(t);
-      }
+      
+      // Wait for all facets to be processed
+      executor.shutdown();
+      executor.awaitTermination(LOCK_TIMEOUT, TimeUnit.SECONDS);
     }
+    
     failures.maybePropagate("Failed to stop facets");
 
     eventManager.post(new RepositoryStoppedEvent(this));
@@ -315,16 +360,26 @@ public class RepositoryImpl
   public void delete() throws Exception {
     MultipleFailures failures = new MultipleFailures();
 
-    for (Facet facet : facets.reverse()) {
-      try {
-        log.debug("Deleting facet: {}", facet);
-        facet.delete();
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      for (Facet facet : facets.reverse()) {
+        executor.submit(() -> {
+          try {
+            log.debug(STR."Deleting facet: \{facet}");
+            facet.delete();
+          }
+          catch (Throwable t) {
+            log.error(STR."Failed to delete facet: \{facet}", t);
+            failures.add(t);
+          }
+          return null;
+        });
       }
-      catch (Throwable t) {
-        log.error("Failed to delete facet: {}", facet, t);
-        failures.add(t);
-      }
+      
+      // Wait for all facets to be processed
+      executor.shutdown();
+      executor.awaitTermination(LOCK_TIMEOUT, TimeUnit.SECONDS);
     }
+    
     failures.maybePropagate("Failed to delete facets");
   }
 
@@ -336,16 +391,27 @@ public class RepositoryImpl
     }
 
     MultipleFailures failures = new MultipleFailures();
-    for (Facet facet : facets.reverse()) {
-      try {
-        log.debug("Destroying facet: {}", facet);
-        facet.destroy();
+    
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      for (Facet facet : facets.reverse()) {
+        executor.submit(() -> {
+          try {
+            log.debug(STR."Destroying facet: \{facet}");
+            facet.destroy();
+          }
+          catch (Throwable t) {
+            log.error(STR."Failed to destroy facet: \{facet}", t);
+            failures.add(t);
+          }
+          return null;
+        });
       }
-      catch (Throwable t) {
-        log.error("Failed to destroy facet: {}", facet, t);
-        failures.add(t);
-      }
+      
+      // Wait for all facets to be processed
+      executor.shutdown();
+      executor.awaitTermination(LOCK_TIMEOUT, TimeUnit.SECONDS);
     }
+    
     failures.maybePropagate("Failed to destroy facets");
 
     facets.clear();
@@ -362,7 +428,7 @@ public class RepositoryImpl
   @Guarded(by = NEW)
   public void attach(final Facet facet) throws Exception {
     checkNotNull(facet);
-    log.debug("Attaching facet: {}", facet);
+    log.debug(STR."Attaching facet: \{facet}");
     facet.attach(this);
     facets.add(facet);
   }

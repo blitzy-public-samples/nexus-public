@@ -20,6 +20,7 @@ import org.sonatype.nexus.repository.view.Context;
 import org.sonatype.nexus.repository.view.Parameters;
 import org.sonatype.nexus.repository.view.Request;
 import org.sonatype.nexus.repository.view.Response;
+import org.sonatype.nexus.test.Java21TestGroup;
 
 import com.google.common.collect.LinkedListMultimap;
 import com.google.common.collect.ListMultimap;
@@ -39,7 +40,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-class RoutingRuleHandlerTest
+@Category(Java21TestGroup.class)
+public class RoutingRuleHandlerTest
     extends TestSupport
 {
   private static final String SOME_PATH = "/some/path";
@@ -62,7 +64,7 @@ class RoutingRuleHandlerTest
   private Repository repository;
 
   @BeforeEach
-  void setup() throws Exception {
+  public void setup() throws Exception {
     underTest = new RoutingRuleHandler(routingRuleHelper);
 
     when(request.getPath()).thenReturn(SOME_PATH);
@@ -73,7 +75,7 @@ class RoutingRuleHandlerTest
   }
 
   @Test
-  void testHandle_allowed() throws Exception {
+  void should_allow_when_rule_permits() throws Exception {
     when(routingRuleHelper.isAllowed(nullable(Repository.class), eq(SOME_PATH))).thenReturn(true);
 
     Response response = underTest.handle(context);
@@ -82,7 +84,7 @@ class RoutingRuleHandlerTest
   }
 
   @Test
-  void testHandle_blocked() throws Exception {
+  void should_block_when_rule_denies() throws Exception {
     when(routingRuleHelper.isAllowed(nullable(Repository.class), eq(SOME_PATH))).thenReturn(false);
 
     Type typeMock = mock(Type.class);
@@ -98,102 +100,16 @@ class RoutingRuleHandlerTest
   }
 
   @Test
-  void testHandle_parameters() throws Exception {
+  void should_include_parameters_in_path_check() throws Exception {
     ListMultimap<String, String> params = LinkedListMultimap.create();
     params.put("foo", "bar");
     params.put("bar", "foo");
     when(request.getParameters()).thenReturn(new Parameters(params));
-    
-    // Using Java 21 enhanced String processing with String templates
-    String expectedPath = STR."\(SOME_PATH)?foo=bar&bar=foo";
-    when(routingRuleHelper.isAllowed(nullable(Repository.class), eq(expectedPath))).thenReturn(true);
+    when(routingRuleHelper.isAllowed(nullable(Repository.class), eq("/some/path?foo=bar&bar=foo"))).thenReturn(true);
 
     Response response = underTest.handle(context);
     assertEquals(contextResponse, response);
     verify(context).proceed();
-    verify(routingRuleHelper).isAllowed(nullable(Repository.class), eq(expectedPath));
-  }
-  
-  @Test
-  void testHandleWithDifferentRepositoryTypes() throws Exception {
-    // Setup different repository types for testing
-    Type mavenType = mock(Type.class);
-    when(mavenType.getValue()).thenReturn("maven2");
-    
-    Type npmType = mock(Type.class);
-    when(npmType.getValue()).thenReturn("npm");
-    
-    Type dockerType = mock(Type.class);
-    when(dockerType.getValue()).thenReturn("docker");
-    
-    // Test with pattern matching for switch
-    String result = getRepositoryTypeCategory(mavenType);
-    assertEquals("Maven Repository", result);
-    
-    result = getRepositoryTypeCategory(npmType);
-    assertEquals("JavaScript Repository", result);
-    
-    result = getRepositoryTypeCategory(dockerType);
-    assertEquals("Container Repository", result);
-    
-    // Test with unknown type
-    Type unknownType = mock(Type.class);
-    when(unknownType.getValue()).thenReturn("unknown");
-    result = getRepositoryTypeCategory(unknownType);
-    assertEquals("Other Repository Type", result);
-  }
-  
-  /**
-   * Demonstrates pattern matching for switch with repository types
-   */
-  private String getRepositoryTypeCategory(Type type) {
-    return switch (type) {
-      case Type t when "maven2".equals(t.getValue()) -> "Maven Repository";
-      case Type t when "npm".equals(t.getValue()) || "yarn".equals(t.getValue()) -> "JavaScript Repository";
-      case Type t when "docker".equals(t.getValue()) -> "Container Repository";
-      case Type t when "nuget".equals(t.getValue()) -> ".NET Repository";
-      case Type t when "pypi".equals(t.getValue()) -> "Python Repository";
-      case Type t -> "Other Repository Type";
-    };
-  }
-  
-  @Test
-  void testResponsePatternMatching() throws Exception {
-    // Setup test with different response types
-    Response successResponse = mock(Response.class);
-    Response errorResponse = mock(Response.class);
-    Response redirectResponse = mock(Response.class);
-    
-    // Configure responses
-    when(successResponse.getStatus()).thenReturn(new Response.Status(200));
-    when(errorResponse.getStatus()).thenReturn(new Response.Status(500));
-    when(redirectResponse.getStatus()).thenReturn(new Response.Status(302));
-    
-    // Test with pattern matching
-    assertEquals("Success", getResponseCategory(successResponse));
-    assertEquals("Server Error", getResponseCategory(errorResponse));
-    assertEquals("Redirect", getResponseCategory(redirectResponse));
-  }
-  
-  /**
-   * Demonstrates pattern matching for response types
-   */
-  private String getResponseCategory(Response response) {
-    if (response instanceof Response r && r.getStatus() != null) {
-      int code = r.getStatus().getCode();
-      if (code >= 200 && code < 300) {
-        return "Success";
-      }
-      else if (code >= 300 && code < 400) {
-        return "Redirect";
-      }
-      else if (code >= 400 && code < 500) {
-        return "Client Error";
-      }
-      else if (code >= 500) {
-        return "Server Error";
-      }
-    }
-    return "Unknown";
+    verify(routingRuleHelper).isAllowed(nullable(Repository.class), eq("/some/path?foo=bar&bar=foo"));
   }
 }

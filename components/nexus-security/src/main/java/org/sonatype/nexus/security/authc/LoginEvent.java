@@ -12,10 +12,26 @@
  */
 package org.sonatype.nexus.security.authc;
 
-public class LoginEvent
-  extends SecurityEvent
-{
-  public LoginEvent(final String principal, final String realm) {
-    super(principal, realm);
+/**
+ * Event fired when a user successfully logs in.
+ *
+ * @since 3.0
+ */
+public final record LoginEvent(
+    String principal,
+    String realm
+) implements java.io.Serializable, SecurityEvent {
+  
+  /**
+   * Pattern matching example for working with LoginEvent records.
+   * 
+   * @param event The security event to check
+   * @return true if this is a login event with a non-empty principal
+   */
+  public static boolean isValidLoginEvent(SecurityEvent event) {
+    return switch(event) {
+      case LoginEvent(String principal, String realm) when principal != null && !principal.isEmpty() -> true;
+      default -> false;
+    };
   }
 }

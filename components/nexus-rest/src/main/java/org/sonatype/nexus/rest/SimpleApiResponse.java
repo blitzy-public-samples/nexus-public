@@ -25,16 +25,16 @@ import static jakarta.ws.rs.core.Response.Status.OK;
 import static jakarta.ws.rs.core.Response.Status.UNAUTHORIZED;
 
 /**
- * Simple API response object for REST endpoints.
+ * Simple API response record for REST endpoints.
  * Provides a standardized response format with status, message, and optional data.
  */
-public record SimpleApiResponse(int status, String message, @JsonInclude(NON_NULL) Object data) {
-
+public record SimpleApiResponse(
+    int status,
+    String message,
+    @JsonInclude(NON_NULL) Object data
+) {
   /**
    * Creates a successful response with the given message.
-   *
-   * @param message the success message
-   * @return a Response with 200 OK status
    */
   public static Response ok(final String message) {
     return ok(message, null);
@@ -42,10 +42,6 @@ public record SimpleApiResponse(int status, String message, @JsonInclude(NON_NUL
 
   /**
    * Creates a successful response with the given message and data.
-   *
-   * @param message the success message
-   * @param data the response data
-   * @return a Response with 200 OK status
    */
   public static Response ok(final String message, final Object data) {
     return response(OK, message, data);
@@ -53,9 +49,6 @@ public record SimpleApiResponse(int status, String message, @JsonInclude(NON_NUL
 
   /**
    * Creates a not found response with the given message.
-   *
-   * @param message the not found message
-   * @return a Response with 404 NOT_FOUND status
    */
   public static Response notFound(final String message) {
     return notFound(message, null);
@@ -63,10 +56,6 @@ public record SimpleApiResponse(int status, String message, @JsonInclude(NON_NUL
 
   /**
    * Creates a not found response with the given message and data.
-   *
-   * @param message the not found message
-   * @param data the response data
-   * @return a Response with 404 NOT_FOUND status
    */
   public static Response notFound(final String message, final Object data) {
     return response(NOT_FOUND, message, data);
@@ -74,9 +63,6 @@ public record SimpleApiResponse(int status, String message, @JsonInclude(NON_NUL
 
   /**
    * Creates a bad request response with the given message.
-   *
-   * @param message the bad request message
-   * @return a Response with 400 BAD_REQUEST status
    */
   public static Response badRequest(final String message) {
     return badRequest(message, null);
@@ -84,10 +70,6 @@ public record SimpleApiResponse(int status, String message, @JsonInclude(NON_NUL
 
   /**
    * Creates a bad request response with the given message and data.
-   *
-   * @param message the bad request message
-   * @param data the response data
-   * @return a Response with 400 BAD_REQUEST status
    */
   public static Response badRequest(final String message, final Object data) {
     return response(BAD_REQUEST, message, data);
@@ -95,9 +77,6 @@ public record SimpleApiResponse(int status, String message, @JsonInclude(NON_NUL
 
   /**
    * Creates an unauthorized response with the given message.
-   *
-   * @param message the unauthorized message
-   * @return a Response with 401 UNAUTHORIZED status
    */
   public static Response unauthorized(final String message) {
     return unauthorized(message, null);
@@ -105,10 +84,6 @@ public record SimpleApiResponse(int status, String message, @JsonInclude(NON_NUL
 
   /**
    * Creates an unauthorized response with the given message and data.
-   *
-   * @param message the unauthorized message
-   * @param data the response data
-   * @return a Response with 401 UNAUTHORIZED status
    */
   public static Response unauthorized(final String message, final Object data) {
     return response(UNAUTHORIZED, message, data);
@@ -116,11 +91,6 @@ public record SimpleApiResponse(int status, String message, @JsonInclude(NON_NUL
 
   /**
    * Creates a response with the given status, message, and data.
-   *
-   * @param status the HTTP status
-   * @param message the response message
-   * @param data the response data
-   * @return a Response with the specified status
    */
   private static Response response(final Status status, final String message, final Object data) {
     SimpleApiResponse response = new SimpleApiResponse(status.getStatusCode(), message, data);

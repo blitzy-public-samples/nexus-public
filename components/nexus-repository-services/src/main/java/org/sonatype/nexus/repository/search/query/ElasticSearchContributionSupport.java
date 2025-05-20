@@ -32,18 +32,32 @@ public class ElasticSearchContributionSupport
     // do nothing
   }
 
+  /**
+   * Escapes special characters in Lucene query strings while preserving certain characters that should remain unescaped.
+   * Uses Java 21 String Templates and Pattern Matching for improved readability and maintainability.
+   *
+   * @param value the string to escape
+   * @return the escaped string, or null if the input was null
+   */
   public String escape(final String value) {
     if (null == value) {
       return null;
     }
 
     String escaped = QueryParserBase.escape(value);
-
-    boolean shouldLeaveDoubleQuotesEscaped = StringUtils.countMatches(value, "\"") % 2 != 0;
-    String escapedCharactersRegex = shouldLeaveDoubleQuotesEscaped ? "\\\\([?*])" : "\\\\([?*\"])";
-
-    // unescape supported special characters
-    return escaped.replaceAll(escapedCharactersRegex, "$1");
+    
+    // Use pattern matching to determine which characters to unescape
+    return switch (StringUtils.countMatches(value, "\"") % 2) {
+      case 0 -> {
+        // Even number of double quotes - unescape ?, *, and "
+        String regex = STR."\\\\([?*\"])";
+        yield escaped.replaceAll(regex, "$1");
+      }
+      default -> {
+        // Odd number of double quotes - only unescape ? and *
+        String regex = STR."\\\\([?*])";
+        yield escaped.replaceAll(regex, "$1");
+      }
+    };
   }
-
 }

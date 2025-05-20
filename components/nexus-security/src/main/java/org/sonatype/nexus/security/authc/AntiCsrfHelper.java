@@ -14,6 +14,8 @@ package org.sonatype.nexus.security.authc;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -31,6 +33,8 @@ import org.apache.shiro.authz.UnauthorizedException;
 import org.apache.shiro.subject.Subject;
 
 /**
+ * Helper class for Anti-CSRF token validation.
+ * 
  * @since 3.16
  */
 @Named
@@ -42,10 +46,13 @@ public class AntiCsrfHelper extends ComponentSupport
   public static final String ERROR_MESSAGE_TOKEN_MISMATCH = "Anti cross-site request forgery token mismatch";
 
   public static final String ANTI_CSRF_TOKEN_NAME = "NX-ANTI-CSRF-TOKEN";
-
+  
   private final boolean enabled;
 
   private final List<CsrfExemption> csrfExemptPaths;
+  
+  // Thread pool for virtual thread execution
+  private final ExecutorService virtualThreadExecutor;
 
   @Inject
   public AntiCsrfHelper(
@@ -54,6 +61,8 @@ public class AntiCsrfHelper extends ComponentSupport
   {
     this.enabled = enabled;
     this.csrfExemptPaths = csrfExemptPaths;
+    // Create a virtual thread per task executor for token validation operations
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   /**
@@ -73,7 +82,7 @@ public class AntiCsrfHelper extends ComponentSupport
                                                 // to create the cookie above
         || !isSessionAuthentication() // non-session auth
         || isExemptRequest(httpRequest)
-        || isAntiCsrfTokenValid(httpRequest, Optional.ofNullable(httpRequest.getHeader(ANTI_CSRF_TOKEN_NAME)));
+        || validateTokenAsync(httpRequest, Optional.ofNullable(httpRequest.getHeader(ANTI_CSRF_TOKEN_NAME)));
   }
 
   /**
@@ -85,10 +94,30 @@ public class AntiCsrfHelper extends ComponentSupport
   public void requireValidToken(final HttpServletRequest httpRequest, @Nullable final String token) {
     Optional<String> optToken = token == null ? Optional.ofNullable(httpRequest.getHeader(ANTI_CSRF_TOKEN_NAME))
         : Optional.of(token);
-    if (!enabled || !isSessionAuthentication() || isAntiCsrfTokenValid(httpRequest, optToken)) {
+    if (!enabled || !isSessionAuthentication() || validateTokenAsync(httpRequest, optToken)) {
       return;
     }
-    throw new UnauthorizedException(ERROR_MESSAGE_TOKEN_MISMATCH);
+    throw new UnauthorizedException(STR."\{ERROR_MESSAGE_TOKEN_MISMATCH}: Token validation failed");
+  }
+
+  /**
+   * Validates the CSRF token asynchronously using a virtual thread.
+   * This method offloads the token validation to a virtual thread for improved performance.
+   * 
+   * @param request The HTTP request containing the cookie
+   * @param token The token to validate
+   * @return true if the token is valid, false otherwise
+   */
+  private boolean validateTokenAsync(final HttpServletRequest request, final Optional<String> token) {
+    try {
+      // Submit token validation to virtual thread and get the result
+      return virtualThreadExecutor.submit(() -> isAntiCsrfTokenValid(request, token)).get();
+    } 
+    catch (Exception e) {
+      log.warn(STR."Error during async token validation: \{e.getMessage()}");
+      // Fall back to synchronous validation in case of error
+      return isAntiCsrfTokenValid(request, token);
+    }
   }
 
   private boolean isSafeHttpMethod(final HttpServletRequest request) {
@@ -126,7 +155,15 @@ public class AntiCsrfHelper extends ComponentSupport
   private boolean isAntiCsrfTokenValid(final HttpServletRequest request, final Optional<String> token) {
     Optional<String> cookie = getAntiCsrfTokenCookie(request);
 
-    return token.isPresent() && token.equals(cookie);
+    if (token.isPresent() && cookie.isPresent()) {
+      // Use String Templates for improved error message formatting if needed for debugging
+      if (log.isDebugEnabled() && !token.equals(cookie)) {
+        log.debug(STR."Token validation failed: expected \{cookie.get()} but got \{token.get()}");
+      }
+      return token.equals(cookie);
+    }
+    
+    return false;
   }
 
   private boolean isExemptRequest(final HttpServletRequest request) {

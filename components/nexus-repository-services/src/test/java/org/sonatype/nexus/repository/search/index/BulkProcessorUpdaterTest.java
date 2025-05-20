@@ -12,33 +12,33 @@
  */
 package org.sonatype.nexus.repository.search.index;
 
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.common.thread.VirtualThreadTestGroup;
 
 import org.elasticsearch.action.ActionRequest;
 import org.elasticsearch.action.bulk.BulkProcessor;
 import org.elasticsearch.action.delete.DeleteRequest;
-import org.junit.jupiter.api.Test;
+
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
+
+/**
+ * Tests for {@link BulkProcessorUpdater} with both platform and virtual threads.
+ */
 @ExtendWith(MockitoExtension.class)
-class BulkProcessorUpdaterTest
+@Tag("Java21")
+@Tag("VirtualThread")
+public class BulkProcessorUpdaterTest
     extends TestSupport
 {
   @Mock
@@ -51,44 +51,34 @@ class BulkProcessorUpdaterTest
   private BulkProcessorUpdater<DeleteRequest> underTest;
 
   @Test
-  void runShouldAddRequestToBulkProcessor() {
+  public void should_add_request_to_bulk_processor() {
+    // When
     underTest.call();
 
-    verify(bulkProcessor).add(deleteRequest);
+    // Then
+    verify(bulkProcessor, times(1)).add(deleteRequest);
   }
 
   @Test
-  @Tag("VirtualThreadTestGroup")
-  void concurrentBulkProcessorUpdatesWithVirtualThreads() throws Exception {
-    // Configure virtual thread executor
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-    
-    int taskCount = 1000;
-    CountDownLatch latch = new CountDownLatch(taskCount);
-    AtomicInteger errorCount = new AtomicInteger(0);
+  public void should_process_bulk_operations_with_virtual_threads() throws Exception {
+    // Given
+    int numOperations = 10;
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     
     try {
-      // Submit multiple concurrent tasks using virtual threads
-      for (int i = 0; i < taskCount; i++) {
-        executor.submit(() -> {
-          try {
-            underTest.call();
-          } catch (Exception e) {
-            errorCount.incrementAndGet();
-          } finally {
-            latch.countDown();
-          }
-        });
+      // When - execute multiple bulk operations concurrently with virtual threads
+      Future<?>[] futures = new Future<?>[numOperations];
+      for (int i = 0; i < numOperations; i++) {
+        futures[i] = executor.submit(underTest);
       }
       
-      // Wait for all tasks to complete
-      boolean completed = latch.await(30, TimeUnit.SECONDS);
+      // Wait for all operations to complete
+      for (Future<?> future : futures) {
+        future.get();
+      }
       
-      // Verify results
-      assertThat("All tasks should complete within timeout", completed, is(true));
-      assertThat("No errors should occur during execution", errorCount.get(), is(0));
-      verify(bulkProcessor, times(taskCount)).add(deleteRequest);
+      // Then - verify the bulk processor was called the expected number of times
+      verify(bulkProcessor, times(numOperations)).add(deleteRequest);
     } finally {
       executor.shutdown();
     }

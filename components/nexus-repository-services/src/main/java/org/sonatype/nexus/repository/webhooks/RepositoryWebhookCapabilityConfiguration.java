@@ -15,11 +15,12 @@ package org.sonatype.nexus.repository.webhooks;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
+import java.util.Arrays;
+import java.util.stream.Collectors;
 import javax.annotation.Nullable;
 
 import org.sonatype.nexus.capability.CapabilityConfigurationSupport;
 
-import com.google.common.base.Splitter;
 import com.google.common.base.Strings;
 
 public class RepositoryWebhookCapabilityConfiguration
@@ -50,10 +51,21 @@ public class RepositoryWebhookCapabilityConfiguration
     secret = Strings.emptyToNull(properties.get(P_SECRET));
   }
 
-  private static final Splitter LIST_SPLITTER = Splitter.on(',').trimResults().omitEmptyStrings();
-
+  /**
+   * Parse a comma-separated list of values, trimming each value and omitting empty strings.
+   * 
+   * @param value the comma-separated string to parse
+   * @return a list of non-empty, trimmed strings
+   */
   private static List<String> parseList(final String value) {
-    return LIST_SPLITTER.splitToList(value);
+    if (value == null || value.isEmpty()) {
+      return List.of();
+    }
+    
+    return Arrays.stream(value.split(","))
+        .map(String::trim)
+        .filter(s -> !s.isEmpty())
+        .collect(Collectors.toList());
   }
 
   @Override

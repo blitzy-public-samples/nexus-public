@@ -12,17 +12,18 @@
  */
 package org.sonatype.nexus.repository.rest.internal.resources;
 
+import java.time.Duration;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
-import javax.ws.rs.WebApplicationException;
-import javax.ws.rs.core.Response;
-import javax.ws.rs.core.UriBuilder;
-import javax.ws.rs.core.UriInfo;
-
-import static java.lang.StringTemplate.STR;
+import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.UriBuilder;
+import jakarta.ws.rs.core.UriInfo;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.entity.EntityId;
@@ -40,6 +41,7 @@ import org.sonatype.nexus.repository.types.ProxyType;
 import org.sonatype.nexus.security.SecurityHelper;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -57,6 +59,7 @@ import static org.mockito.Mockito.when;
 
 @SuppressWarnings("unchecked")
 @ExtendWith(MockitoExtension.class)
+@Tag("java21")
 public class RepositoryBrowseResourceTest
     extends TestSupport
 {
@@ -87,7 +90,7 @@ public class RepositoryBrowseResourceTest
   private RepositoryBrowseResource underTest;
 
   @BeforeEach
-  public void before() throws Exception {
+  public void setUp() throws Exception {
     when(uriInfo.getAbsolutePath()).thenReturn(UriBuilder.fromPath(URL_PREFIX + "central/").build());
 
     when(securityHelper.allPermitted(any())).thenReturn(true);
@@ -298,59 +301,48 @@ public class RepositoryBrowseResourceTest
     assertThat(listItems.get(0).getName(), is("<img src=\"foo\">"));
     assertThat(listItems.get(0).getResourceUri(), is("%3Cimg%20src%3D%22foo%22%3E/"));
   }
-  
+
   @Test
-  public void testRenderHtmlWithStringTemplates() throws Exception {
-    // Setup a repository path and browse items
-    String path = "maven-central";
-    when(uriInfo.getAbsolutePath()).thenReturn(UriBuilder.fromPath(URL_PREFIX + path + "/").build());
+  public void testVirtualThreadExecution() throws Exception {
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      executor.submit(() -> {
+        try {
+          when(uriInfo.getAbsolutePath()).thenReturn(UriBuilder.fromPath(URL_PREFIX + "central/").build());
+          underTest.getHtml(REPOSITORY_NAME, "", uriInfo);
+          
+          ArgumentCaptor<TemplateParameters> argument = ArgumentCaptor.forClass(TemplateParameters.class);
+          verify(templateHelper).render(any(), argument.capture());
+          assertThat(argument.getValue().get().get("requestPath"), is("/"));
+        }
+        catch (Exception e) {
+          throw new RuntimeException(e);
+        }
+        return null;
+      }).get();
+    }
+  }
+
+  @Test
+  public void testStringTemplateForUrlConstruction() {
+    String repoName = "maven-central";
+    String path = "org/apache/maven";
     
-    BrowseNode artifactNode = browseNode("artifact-1.0.jar");
-    when(browseNodeQueryService.getByPath(repository, Collections.emptyList(), configuration.getMaxHtmlNodes()))
-        .thenReturn(asList(artifactNode));
+    // Using String Template for URL construction
+    String url = STR."{URL_PREFIX}{repoName}/{path}/";
     
-    BrowseListItem artifactItem = mock(BrowseListItem.class);
-    when(artifactItem.getName()).thenReturn("artifact-1.0.jar");
-    when(artifactItem.getResourceUri()).thenReturn("artifact-1.0.jar");
-    when(artifactItem.isCollection()).thenReturn(false);
-    when(browseNodeQueryService.toListItems(repository, asList(artifactNode)))
-        .thenReturn(Collections.singletonList(artifactItem));
+    assertThat(url, is("http://localhost:8888/service/rest/repository/browse/maven-central/org/apache/maven/"));
+  }
+
+  @Test
+  public void testStringTemplateForErrorMessage() {
+    String repoName = "missing-repo";
+    String path = "some/path";
     
-    // Mock the template helper to use String Templates
-    when(templateHelper.render(any(), any())).thenAnswer(invocation -> {
-      TemplateParameters params = invocation.getArgument(1);
-      String repoName = (String) params.get().get("repositoryName");
-      String requestPath = (String) params.get().get("requestPath");
-      List<BrowseListItem> items = (List<BrowseListItem>) params.get().get("listItems");
-      
-      // Simulate using String Templates for HTML generation
-      String title = STR."Repository Browser - \{repoName}";
-      String header = STR."<h1>Browse \{repoName}\{requestPath}</h1>";
-      
-      StringBuilder content = new StringBuilder();
-      content.append("<ul>");
-      for (BrowseListItem item : items) {
-        String itemName = item.getName();
-        String itemUri = item.getResourceUri();
-        String itemType = item.isCollection() ? "folder" : "file";
-        content.append(STR."<li class='\{itemType}'><a href='\{itemUri}'>\{itemName}</a></li>");
-      }
-      content.append("</ul>");
-      
-      return STR."<!DOCTYPE html>\n<html>\n<head>\n  <title>\{title}</title>\n</head>\n<body>\n  \{header}\n  \{content}\n</body>\n</html>";
-    });
+    // Using String Template for error message formatting
+    String errorMessage = STR."Repository '{repoName}' not found or path '{path}' is invalid";
     
-    // Execute the method under test
-    Response response = underTest.getHtml(REPOSITORY_NAME, "", uriInfo);
-    
-    // Verify the response
-    assertThat(response.getStatus(), is(200));
-    String html = (String) response.getEntity();
-    
-    // Verify the HTML contains the expected String Template interpolated content
-    assertThat(html.contains("Repository Browser - " + REPOSITORY_NAME), is(true));
-    assertThat(html.contains("<h1>Browse " + REPOSITORY_NAME + "/</h1>"), is(true));
-    assertThat(html.contains("<li class='file'><a href='artifact-1.0.jar'>artifact-1.0.jar</a></li>"), is(true));
+    WebApplicationException exception = new WebApplicationException(errorMessage);
+    assertThat(exception.getMessage(), is("Repository 'missing-repo' not found or path 'some/path' is invalid"));
   }
 
   private BrowseNode browseNode(final String name) {

@@ -12,22 +12,24 @@
  */
 package org.sonatype.nexus.security.authc;
 
-public abstract class SecurityEvent
-{
-  private final String realm;
+import java.io.Serializable;
 
-  private final String principal;
+/**
+ * Base record for all security-related events in the Nexus security subsystem.
+ * Provides immutable storage of principal and realm information.
+ *
+ * @since 3.0
+ */
+public sealed abstract record SecurityEvent(
+    String principal,
+    String realm
+) implements Serializable permits LoginEvent, LogoutEvent {
 
-  protected SecurityEvent(final String principal, final String realm) {
-    this.realm = realm;
-    this.principal = principal;
-  }
-
-  public String getRealm() {
-    return realm;
-  }
-
-  public String getPrincipal() {
-    return principal;
+  /**
+   * Returns a string representation of this security event using Java 21 String Templates.
+   */
+  @Override
+  public String toString() {
+    return STR."\{getClass().getSimpleName()}[principal=\{principal}, realm=\{realm}]"; 
   }
 }

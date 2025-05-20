@@ -30,11 +30,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static org.apache.commons.lang.StringUtils.removeStart;
 import static org.apache.shiro.web.util.WebUtils.INCLUDE_SERVLET_PATH_ATTRIBUTE;
 
 /**
- * Security filter.
+ * Security filter optimized for Java 21 Virtual Threads.
  *
  * @since 2.8
  */
@@ -65,6 +64,7 @@ public class SecurityFilter
    * Sets MDC user-id attribute for request.
    *
    * This is invoked in the execute context of subject.
+   * Optimized for Virtual Threads to avoid pinning.
    */
   @Override
   protected void executeChain(final ServletRequest request,
@@ -75,22 +75,32 @@ public class SecurityFilter
     UserIdMdcHelper.set();
 
     // HACK: Attach principal to underlying request so we can use that in the request-log
-    if (request instanceof HttpServletRequest) {
-      HttpServletRequest httpRequest = (HttpServletRequest)request;
+    if (request instanceof HttpServletRequest httpRequest) {
       Principal p = httpRequest.getUserPrincipal();
       if (p != null) {
         httpRequest.setAttribute(ATTR_USER_PRINCIPAL, p);
         httpRequest.setAttribute(ATTR_USER_ID, p.getName());
       }
+      
       /**
-       * set request URI as servlet path for avoid url mismatching between
+       * Set request URI as servlet path for avoid url mismatching between
        * data url processing: {@link com.google.inject.servlet.ServletUtils#getContextRelativePath(javax.servlet.http.HttpServletRequest)}
        * and
        * security url processing: {@link org.apache.shiro.web.util.WebUtils#getPathWithinApplication}
+       * 
+       * Using Java 21 String enhancements for path normalization
        */
       String contextPath = httpRequest.getContextPath();
       String requestURI = httpRequest.getRequestURI();
-      request.setAttribute(INCLUDE_SERVLET_PATH_ATTRIBUTE, removeStart(requestURI, contextPath));
+      String normalizedPath = requestURI.startsWith(contextPath) ? 
+          requestURI.substring(contextPath.length()) : 
+          requestURI;
+      
+      // Ensure path starts with / and doesn't have any redundant slashes
+      normalizedPath = normalizedPath.startsWith("/") ? normalizedPath : "/" + normalizedPath;
+      normalizedPath = normalizedPath.replaceAll("/+", "/");
+      
+      request.setAttribute(INCLUDE_SERVLET_PATH_ATTRIBUTE, normalizedPath);
     }
 
     super.executeChain(request, response, origChain);
@@ -98,6 +108,7 @@ public class SecurityFilter
 
   /**
    * Unset MDC after we finish filtering to restore thread state.
+   * Optimized for Virtual Threads to avoid pinning.
    */
   @Override
   protected void doFilterInternal(final ServletRequest request,

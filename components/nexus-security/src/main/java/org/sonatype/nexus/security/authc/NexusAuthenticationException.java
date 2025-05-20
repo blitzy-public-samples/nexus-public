@@ -24,17 +24,48 @@ import org.apache.shiro.authc.AccountException;
 public class NexusAuthenticationException
     extends AccountException
 {
+  private static final long serialVersionUID = 1L;
+
   private final Set<AuthenticationFailureReason> authenticationFailureReasons;
 
+  /**
+   * Constructs a new exception with the specified cause and authentication failure reasons.
+   *
+   * @param cause the cause message for the exception
+   * @param authenticationFailureReasons the set of reasons why authentication failed
+   */
   public NexusAuthenticationException(
       final String cause,
-      final Set<AuthenticationFailureReason> authenticationFailureReason)
+      final Set<AuthenticationFailureReason> authenticationFailureReasons)
   {
     super(cause);
-    this.authenticationFailureReasons = authenticationFailureReason;
+    this.authenticationFailureReasons = authenticationFailureReasons;
   }
 
+  /**
+   * Returns the set of reasons why authentication failed.
+   *
+   * @return the set of authentication failure reasons
+   */
   public Set<AuthenticationFailureReason> getAuthenticationFailureReasons() {
     return authenticationFailureReasons;
+  }
+
+  /**
+   * Creates a formatted message using String Templates that includes all failure reasons.
+   * 
+   * @return a detailed error message including all failure reasons
+   * @since 3.60
+   */
+  @Override
+  public String getMessage() {
+    if (authenticationFailureReasons == null || authenticationFailureReasons.isEmpty()) {
+      return super.getMessage();
+    }
+    
+    return STR."""
+        Authentication failed: {super.getMessage()}
+        Failure reasons: {authenticationFailureReasons}
+        """;
   }
 }

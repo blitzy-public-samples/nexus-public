@@ -17,9 +17,12 @@ import java.util.List;
 import org.sonatype.nexus.formfields.FormField;
 import org.sonatype.nexus.formfields.NumberTextFormField;
 import org.sonatype.nexus.scheduling.TaskDescriptor;
+import org.sonatype.nexus.virtualthread.Java21TestGroup;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -27,12 +30,14 @@ import static org.sonatype.nexus.repository.RepositoryTaskSupport.REPOSITORY_NAM
 import static org.sonatype.nexus.repository.purge.PurgeUnusedTaskDescriptor.LAST_USED_INIT_VALUE;
 import static org.sonatype.nexus.repository.purge.PurgeUnusedTaskDescriptor.LAST_USED_MIN_VALUE;
 
+@ExtendWith(MockitoExtension.class)
+@org.junit.Category(Java21TestGroup.class)
 public class PurgeUnusedTaskDescriptorTest
 {
   private TaskDescriptor purgeUnusedTaskDescriptor;
 
   @BeforeEach
-  public void before() {
+  public void setUp() {
     purgeUnusedTaskDescriptor = new PurgeUnusedTaskDescriptor();
   }
 
@@ -40,13 +45,13 @@ public class PurgeUnusedTaskDescriptorTest
    * Ensures the construction of the descriptor has the appropriate/default values
    */
   @Test
-  public void descriptorConfig() {
+  public void shouldHaveCorrectDescriptorConfiguration() {
     List<FormField> formFields = purgeUnusedTaskDescriptor.getFormFields();
 
     assertThat(formFields.size(), is(2));
     assertThat(formFields.get(0).getId(), is(REPOSITORY_NAME_FIELD_ID));
 
-    // Using Java 21 pattern matching for instanceof
+    // Using pattern matching for NumberTextFormField
     if (formFields.get(1) instanceof NumberTextFormField lastUsedField) {
       assertThat(lastUsedField.getId(), is(PurgeUnusedTask.LAST_USED_FIELD_ID));
       assertThat(lastUsedField.getMinimumValue(), is(LAST_USED_MIN_VALUE));

@@ -14,11 +14,11 @@ package org.sonatype.nexus.capability.condition.internal;
 
 import org.sonatype.nexus.capability.condition.EventManagerTestSupport;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * {@link NexusIsActiveCondition} UTs.
@@ -31,7 +31,7 @@ public class NexusIsActiveConditionTest
 
   private NexusIsActiveCondition underTest;
 
-  @Before
+  @BeforeEach
   public final void setUpNexusIsActiveCondition() throws Exception {
     underTest = new NexusIsActiveCondition(eventManager);
   }
@@ -41,7 +41,7 @@ public class NexusIsActiveConditionTest
    */
   @Test
   public void notSatisfiedInitially() {
-    assertThat(underTest.isSatisfied(), is(false));
+    assertFalse(underTest.isSatisfied(), STR."Expected condition to be unsatisfied initially: \{underTest}");
   }
 
   /**
@@ -50,7 +50,7 @@ public class NexusIsActiveConditionTest
   @Test
   public void satisfiedWhenNexusStarted() {
     underTest.start();
-    assertThat(underTest.isSatisfied(), is(true));
+    assertTrue(underTest.isSatisfied(), STR."Expected condition to be satisfied after Nexus started: \{underTest}");
 
     verifyEventManagerEvents(satisfied(underTest));
   }
@@ -62,7 +62,7 @@ public class NexusIsActiveConditionTest
   public void unsatisfiedWhenNexusStopped() {
     underTest.start();
     underTest.stop();
-    assertThat(underTest.isSatisfied(), is(false));
+    assertFalse(underTest.isSatisfied(), STR."Expected condition to be unsatisfied after Nexus stopped: \{underTest}");
 
     verifyEventManagerEvents(satisfied(underTest), unsatisfied(underTest));
   }

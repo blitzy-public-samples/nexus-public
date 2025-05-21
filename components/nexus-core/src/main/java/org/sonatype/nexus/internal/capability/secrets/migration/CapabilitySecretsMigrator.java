@@ -13,8 +13,13 @@
 package org.sonatype.nexus.internal.capability.secrets.migration;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 
@@ -23,6 +28,9 @@ import org.sonatype.nexus.capability.CapabilityRegistry;
 import org.sonatype.nexus.formfields.Encrypted;
 import org.sonatype.nexus.scheduling.CancelableHelper;
 import org.sonatype.nexus.security.secrets.SecretsMigrator;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -33,6 +41,9 @@ import static com.google.common.base.Preconditions.checkNotNull;
 public class CapabilitySecretsMigrator
     implements SecretsMigrator
 {
+  private static final Logger log = LoggerFactory.getLogger(CapabilitySecretsMigrator.class);
+  private static final long MIGRATION_TIMEOUT_SECONDS = 60;
+  
   private final CapabilityRegistry capabilityRegistry;
 
   @Inject
@@ -44,20 +55,41 @@ public class CapabilitySecretsMigrator
   public void migrate() {
     List<CapabilityReference> maybeEncrypted = capabilityRegistry.getAll()
         .stream()
-        .filter(containsEncryptedField())
+        .filter(this::containsEncryptedField)
         .collect(Collectors.toList());
 
-    for (CapabilityReference ref : maybeEncrypted) {
-      CancelableHelper.checkCancellation();
-      capabilityRegistry.migrateSecrets(ref, this::isLegacyEncryptedString);
+    log.info(STR."Starting migration of \{maybeEncrypted.size()} capabilities with encrypted fields");
+    
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      List<CompletableFuture<Void>> futures = maybeEncrypted.stream()
+          .map(ref -> CompletableFuture.runAsync(() -> {
+            try {
+              CancelableHelper.checkCancellation();
+              log.debug(STR."Migrating secrets for capability: \{ref.context().id()}");
+              capabilityRegistry.migrateSecrets(ref, this::isLegacyEncryptedString);
+            } catch (Exception e) {
+              log.error(STR."Error migrating secrets for capability: \{ref.context().id()}", e);
+              throw e;
+            }
+          }, executor)
+          .orTimeout(MIGRATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+          .exceptionally(ex -> {
+            log.error(STR."Migration task failed or timed out: \{ex.getMessage()}");
+            return null;
+          }))
+          .collect(Collectors.toList());
+      
+      // Wait for all tasks to complete
+      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+      log.info("Capability secrets migration completed");
     }
   }
 
-  private Predicate<CapabilityReference> containsEncryptedField() {
-    return reference -> reference.context()
+  private boolean containsEncryptedField(CapabilityReference reference) {
+    return reference.context()
         .descriptor()
         .formFields()
         .stream()
-        .anyMatch(f -> f instanceof Encrypted);
+        .anyMatch(f -> f instanceof Encrypted encrypted);
   }
 }

@@ -15,14 +15,17 @@ package org.sonatype.nexus.cleanup.storage.config;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.cleanup.storage.CleanupPolicyStorage;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class UniqueCleanupPolicyNameValidatorTest
     extends TestSupport
 {
@@ -33,20 +36,20 @@ public class UniqueCleanupPolicyNameValidatorTest
   @Mock
   private CleanupPolicyStorage cleanupPolicyStorage;
 
-  @Before
+  @BeforeEach
   public void setUp() {
     underTest = new UniqueCleanupPolicyNameValidator(cleanupPolicyStorage);
   }
 
   @Test
-  public void isValidByCleanupPolicyName() {
+  public void shouldBeValidWhenNameDoesNotExist() {
     when(cleanupPolicyStorage.exists(TEST_NAME)).thenReturn(false);
 
     assertThat(underTest.isValid(TEST_NAME, null), is(true));
   }
 
   @Test
-  public void isInvalidByCleanupPolicyName() {
+  public void shouldBeInvalidWhenNameExists() {
     when(cleanupPolicyStorage.exists(TEST_NAME)).thenReturn(true);
 
     assertThat(underTest.isValid(TEST_NAME, null), is(false));

@@ -12,25 +12,55 @@
  */
 package org.sonatype.nexus.security.realm;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.SequencedCollection;
 
+import javax.annotation.Nullable;
+
+/**
+ * Test implementation of {@link RealmConfiguration} that is thread-safe and immutable.
+ * 
+ * @since 3.0
+ */
 public class TestRealmConfiguration
     implements RealmConfiguration
 {
-  private List<String> realmNames;
+  private final SequencedCollection<String> realmNames;
 
-  @Override
-  public List<String> getRealmNames() {
-    return realmNames;
+  /**
+   * Creates a new instance with no realm names.
+   */
+  public TestRealmConfiguration() {
+    this.realmNames = Collections.unmodifiableSequencedCollection(new ArrayList<>());
+  }
+
+  /**
+   * Creates a new instance with the given realm names.
+   *
+   * @param realmNames the realm names to use, or null for an empty list
+   */
+  public TestRealmConfiguration(@Nullable final List<String> realmNames) {
+    if (realmNames == null) {
+      this.realmNames = Collections.unmodifiableSequencedCollection(new ArrayList<>());
+    } else {
+      this.realmNames = Collections.unmodifiableSequencedCollection(new ArrayList<>(realmNames));
+    }
   }
 
   @Override
-  public void setRealmNames(final List<String> realmNames) {
-    this.realmNames = realmNames;
+  public List<String> getRealmNames() {
+    return Collections.unmodifiableList(new ArrayList<>(realmNames));
+  }
+
+  @Override
+  public void setRealmNames(@Nullable final List<String> realmNames) {
+    throw new UnsupportedOperationException("TestRealmConfiguration is immutable");
   }
 
   @Override
   public RealmConfiguration copy() {
-    return this;
+    return new TestRealmConfiguration(new ArrayList<>(realmNames));
   }
 }

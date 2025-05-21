@@ -19,12 +19,24 @@ import org.sonatype.nexus.security.config.memory.MemoryCUser;
 import org.sonatype.nexus.security.config.memory.MemoryCUserRoleMapping;
 
 /**
+ * Test security configuration utility that provides a memory-based security model for testing.
+ * This implementation is compatible with Java 21 virtual threads and ensures thread-safety
+ * when accessed concurrently.
+ *
  * @since 3.0
  */
 public class UserManagerTestSecurity
 {
 
+  /**
+   * Creates a new thread-safe MemorySecurityConfiguration instance with test users, roles, and privileges.
+   * This method is safe to call from multiple threads, including virtual threads in Java 21.
+   * 
+   * @return A new MemorySecurityConfiguration instance populated with test data
+   */
   static MemorySecurityConfiguration securityModel() {
+    // Create a new instance for each call to ensure thread-safety
+    // Each caller gets their own independent copy of the security configuration
     return new MemorySecurityConfiguration()
         .withUsers(
             new MemoryCUser()

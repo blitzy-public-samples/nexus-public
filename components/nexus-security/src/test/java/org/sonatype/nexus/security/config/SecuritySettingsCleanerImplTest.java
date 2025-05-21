@@ -15,10 +15,10 @@ package org.sonatype.nexus.security.config;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.security.internal.SecurityConfigurationCleanerImpl;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 /**
  * Tests for {@link SecurityConfigurationCleanerImpl}.
@@ -30,7 +30,7 @@ public class SecuritySettingsCleanerImplTest
 
   private MemorySecurityConfiguration configuration;
 
-  @Before
+  @BeforeEach
   public void setUp() throws Exception {
     underTest = new SecurityConfigurationCleanerImpl();
     configuration = DefaultSecurityConfigurationCleanerTestSecurity.securityModel();

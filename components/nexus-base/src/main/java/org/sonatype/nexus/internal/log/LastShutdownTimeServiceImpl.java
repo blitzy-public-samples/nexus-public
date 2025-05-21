@@ -19,6 +19,9 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Optional;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -88,18 +91,30 @@ public class LastShutdownTimeServiceImpl
     Optional<Date> estimatedTime = Optional.empty();
 
     if (nexusFile == null) {
-      log.warn("Missing log file for {} , so last shutdown time can't be estimated.", DEFAULT_LOGGER);
+      log.warn(STR."Missing log file for \{DEFAULT_LOGGER}, so last shutdown time can't be estimated.");
     }
     else if (nexusFile.length() == 0) {
-      log.warn("Empty log file {} , so last shutdown time can't be estimated.", nexusFile);
+      log.warn(STR."Empty log file \{nexusFile}, so last shutdown time can't be estimated.");
     }
     else {
-      try (ReversedLinesFileReader logReader = new ReversedLinesFileReader(nexusFile)) {
-        estimatedTime = findShutdownTimeInLog(logReader, START_INDICATOR, nexusPattern, DEFAULT_LINE_READING_LIMIT,
-            GROUP_NAME, nexusFormat);
-      }
-      catch (Exception e) {
-        log.warn("Failed to process file {}.  Assuming no previous start time", nexusFile, e);
+      // Use a virtual thread for file reading operations to improve performance
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        Future<Optional<Date>> future = executor.submit(() -> {
+          try (ReversedLinesFileReader logReader = new ReversedLinesFileReader(nexusFile)) {
+            return findShutdownTimeInLog(logReader, START_INDICATOR, nexusPattern, DEFAULT_LINE_READING_LIMIT,
+                GROUP_NAME, nexusFormat);
+          }
+          catch (Exception e) {
+            log.warn(STR."Failed to process file \{nexusFile}. Assuming no previous start time", e);
+            return Optional.empty();
+          }
+        });
+        
+        try {
+          estimatedTime = future.get();
+        } catch (Exception e) {
+          log.warn(STR."Error while processing log file \{nexusFile}", e);
+        }
       }
     }
 

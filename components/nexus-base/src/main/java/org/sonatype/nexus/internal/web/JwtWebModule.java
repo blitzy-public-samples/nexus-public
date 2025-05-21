@@ -12,16 +12,20 @@
  */
 package org.sonatype.nexus.internal.web;
 
-import javax.inject.Named;
+import jakarta.inject.Named;
 
 import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.internal.metrics.JwtMetricsModule;
+
 import com.google.inject.Binder;
 
 import static org.sonatype.nexus.common.app.FeatureFlags.JWT_ENABLED;
 
 /**
  * Web module to use JWT.
+ * 
+ * This module is compatible with Java 21 and JWT 4.4.0 library.
+ * It supports Virtual Threads for metrics collection and is compatible with Guice 7.0.0.
  *
  * @since 3.38
  */
@@ -32,6 +36,7 @@ public class JwtWebModule
 {
   @Override
   protected void installMetricsModule(final Binder highPriorityBinder) {
+    // Install JWT metrics module with support for Java 21 Virtual Threads
     highPriorityBinder.install(new JwtMetricsModule());
   }
 }

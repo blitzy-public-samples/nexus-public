@@ -14,6 +14,8 @@ package org.sonatype.nexus.cache.internal.ehcache;
 
 import java.io.File;
 import java.net.URI;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 
 import javax.annotation.Nullable;
 import javax.cache.CacheManager;
@@ -33,6 +35,7 @@ import org.ehcache.jsr107.EhcacheCachingProvider;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
+import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.STORAGE;
 
 /**
@@ -55,18 +58,26 @@ public class EhCacheManagerProvider
 
   // provide same manager instance until bounced
   private volatile CacheManager cacheManager;
+  
+  // future to track asynchronous initialization
+  private volatile CompletableFuture<CacheManager> initializationFuture;
 
   @Inject
   public EhCacheManagerProvider(final ApplicationDirectories directories) {
     checkNotNull(directories);
     File file = new File(directories.getConfigDirectory("fabric"), CONFIG_FILE);
-    if (file.exists()) {
-      configUri = file.toURI();
-    }
-    else {
-      log.warn("Missing configuration: {}", file.getAbsolutePath());
-      configUri = null;
-    }
+    
+    // Use pattern matching to determine if the configuration file exists
+    configUri = switch (file) {
+      case File f when f.exists() -> {
+        log.debug(STR."Found configuration file: \{f.getAbsolutePath()}");
+        yield f.toURI();
+      }
+      default -> {
+        log.warn(STR."Missing configuration: \{file.getAbsolutePath()}");
+        yield null;
+      }
+    };
   }
 
   @VisibleForTesting
@@ -79,18 +90,49 @@ public class EhCacheManagerProvider
         EhcacheCachingProvider.class.getName(),
         EhcacheCachingProvider.class.getClassLoader());
 
-    log.info("Creating cache-manager with configuration: {}", config);
+    log.info(STR."Creating cache-manager with configuration: \{config}");
     CacheManager manager = provider.getCacheManager(config, getClass().getClassLoader());
-    log.debug("Created cache-manager: {}", manager);
+    log.debug(STR."Created cache-manager: \{manager}");
     return manager;
+  }
+
+  /**
+   * Initializes the CacheManager asynchronously using a Virtual Thread.
+   * This improves startup performance by allowing the initialization to happen in parallel.
+   */
+  private synchronized void initializeAsync() {
+    if (initializationFuture == null) {
+      initializationFuture = CompletableFuture.supplyAsync(() -> {
+        log.debug(STR."Starting asynchronous CacheManager initialization with config: \{configUri}");
+        CacheManager manager = create(configUri);
+        log.debug(STR."Completed asynchronous CacheManager initialization");
+        return manager;
+      }, task -> Thread.startVirtualThread(() -> task.run()));
+    }
   }
 
   @Override
   public synchronized CacheManager get() {
     checkState(!isStopped(), "Cache-manager destroyed");
+    
     if (cacheManager == null) {
-      this.cacheManager = create(configUri);
+      if (initializationFuture == null) {
+        // Start async initialization if not already started
+        initializeAsync();
+      }
+      
+      try {
+        // Wait for the initialization to complete
+        cacheManager = initializationFuture.get();
+        log.info(STR."Cache-manager initialized and ready for use");
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new RuntimeException(STR."CacheManager initialization interrupted: \{e.getMessage()}", e);
+      } catch (ExecutionException e) {
+        throw new RuntimeException(STR."Failed to initialize CacheManager: \{e.getCause().getMessage()}", e.getCause());
+      }
     }
+    
     return cacheManager;
   }
 
@@ -98,8 +140,14 @@ public class EhCacheManagerProvider
   protected void doStop() {
     if (cacheManager != null) {
       cacheManager.close();
-      log.info("Cache-manager closed");
+      log.info(STR."Cache-manager closed successfully");
       cacheManager = null;
+    }
+    
+    if (initializationFuture != null) {
+      initializationFuture.cancel(true);
+      initializationFuture = null;
+      log.debug(STR."Cancelled any pending CacheManager initialization");
     }
   }
 

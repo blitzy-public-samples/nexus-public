@@ -13,6 +13,9 @@
 
 /**
  * Support for shell commands.
+ * 
+ * This package is compatible with Java 21 and optimized to leverage its features.
+ * It is also compatible with Apache Karaf 4.4.4 which provides the OSGi runtime environment.
  *
  * @since 3.0
  */

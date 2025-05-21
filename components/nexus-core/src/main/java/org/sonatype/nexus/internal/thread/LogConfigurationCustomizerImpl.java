@@ -19,7 +19,8 @@ import org.sonatype.nexus.common.log.LogConfigurationCustomizer;
 import org.sonatype.nexus.common.log.LoggerLevel;
 
 /**
- * Thread {@link LogConfigurationCustomizer}.
+ * Thread {@link LogConfigurationCustomizer} with enhanced support for Java 21 features.
+ * Configures logging for thread-related components including Virtual Threads and String Templates.
  *
  * @since 3.0
  */
@@ -30,6 +31,19 @@ public class LogConfigurationCustomizerImpl
 {
   @Override
   public void customize(final Configuration configuration) {
+    // Base thread package configuration
     configuration.setLoggerLevel("org.sonatype.nexus.thread", LoggerLevel.DEFAULT);
+    
+    // Virtual Threads specific logging (Java 21)
+    configuration.setLoggerLevel("org.sonatype.nexus.thread.virtual", LoggerLevel.DEFAULT);
+    
+    // Configure String Templates support for logging (JEP 430)
+    configuration.setLoggerLevel("org.sonatype.nexus.common.log.template", LoggerLevel.DEFAULT);
+    
+    // Virtual Thread context propagation for MDC inheritance
+    configuration.setLoggerLevel("org.sonatype.nexus.thread.mdc", LoggerLevel.DEFAULT);
+    
+    // Thread pool attribution and virtual thread ID logging
+    configuration.setLoggerLevel("org.sonatype.nexus.thread.metrics", LoggerLevel.DEFAULT);
   }
 }

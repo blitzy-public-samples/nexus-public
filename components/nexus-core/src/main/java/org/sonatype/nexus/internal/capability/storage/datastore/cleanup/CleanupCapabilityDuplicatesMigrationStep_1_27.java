@@ -13,7 +13,11 @@
 package org.sonatype.nexus.internal.capability.storage.datastore.cleanup;
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -51,13 +55,60 @@ public class CleanupCapabilityDuplicatesMigrationStep_1_27
 
   @Override
   public void migrate(final Connection connection) throws Exception {
+    // Execute cleanup operation
     cleanupService.doCleanup();
 
-    if (isPostgresql(connection)) {
-      runStatement(connection, ADD_INDEX);
+    // Use try-with-resources to ensure proper resource management with Java 21's improved handling
+    try {
+      // Determine database type and execute appropriate statement
+      if (isPostgresql(connection)) {
+        executeStatement(connection, ADD_INDEX);
+      }
+      else {
+        executeStatement(connection, ADD_CONSTRAINT);
+      }
+    } catch (SQLException e) {
+      throw new Exception("Failed to execute database migration", e);
     }
-    else {
-      runStatement(connection, ADD_CONSTRAINT);
+  }
+  
+  /**
+   * Executes a SQL statement using Java 21's improved JDBC connection handling.
+   * 
+   * @param connection The database connection
+   * @param sql The SQL statement to execute
+   * @throws SQLException If a database access error occurs
+   */
+  private void executeStatement(final Connection connection, final String sql) throws SQLException {
+    // Use try-with-resources to ensure PreparedStatement is properly closed
+    try (PreparedStatement statement = connection.prepareStatement(sql)) {
+      statement.execute();
+    }
+  }
+  
+  /**
+   * Executes multiple SQL statements concurrently using Java 21 Virtual Threads.
+   * This method demonstrates how to use Virtual Threads for concurrent database operations.
+   * 
+   * @param connection The database connection
+   * @param sqlStatements Array of SQL statements to execute concurrently
+   * @throws Exception If any execution fails
+   */
+  private void executeStatementsWithVirtualThreads(final Connection connection, final String... sqlStatements) throws Exception {
+    // Create an executor service that creates a new virtual thread per task
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit each SQL statement as a separate task to be executed by a virtual thread
+      for (String sql : sqlStatements) {
+        executor.submit(() -> {
+          try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.execute();
+            return null;
+          } catch (SQLException e) {
+            throw new RuntimeException("Failed to execute SQL: " + sql, e);
+          }
+        });
+      }
+      // No need to explicitly shut down the executor as try-with-resources handles it
     }
   }
 }

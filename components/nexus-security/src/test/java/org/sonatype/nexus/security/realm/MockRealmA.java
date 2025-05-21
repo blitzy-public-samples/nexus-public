@@ -12,9 +12,9 @@
  */
 package org.sonatype.nexus.security.realm;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.security.user.UserManager;
 
@@ -26,6 +26,10 @@ import org.apache.shiro.authc.UsernamePasswordToken;
 import org.apache.shiro.realm.AuthenticatingRealm;
 import org.eclipse.sisu.Description;
 
+/**
+ * Mock realm implementation for testing authentication with Shiro 2.0.0 and Java 21 virtual threads.
+ * This realm is optimized for concurrent execution in virtual thread environments.
+ */
 @Singleton
 @Named("MockRealmA")
 @Description("MockRealmA")
@@ -37,15 +41,35 @@ public class MockRealmA
     this.setAuthenticationTokenClass(UsernamePasswordToken.class);
   }
 
+  /**
+   * Performs authentication for the given token.
+   * This implementation is optimized for virtual threads by avoiding synchronization
+   * and thread-local variables that could cause pinning.
+   *
+   * @param token the authentication token containing the user's principal and credentials
+   * @return an {@code AuthenticationInfo} object containing account data resulting from the
+   *         authentication if successful, or null if not
+   * @throws AuthenticationException if there is an error acquiring data or performing
+   *         realm-specific authentication logic for the specified token
+   */
   @Override
   protected AuthenticationInfo doGetAuthenticationInfo(AuthenticationToken token)
       throws AuthenticationException
   {
-    // only allow jcoder/jcoder
-
-    UsernamePasswordToken userpass = (UsernamePasswordToken) token;
-    if ("jcoder".equals(userpass.getUsername()) && "jcoder".equals(new String(userpass.getPassword()))) {
-      return new SimpleAuthenticationInfo(userpass.getUsername(), new String(userpass.getPassword()), this.getName());
+    // Virtual thread-friendly implementation - no synchronization or thread locals used
+    if (!(token instanceof UsernamePasswordToken userpass)) {
+      return null;
+    }
+    
+    // Using local variables to avoid shared state issues in concurrent environments
+    String username = userpass.getUsername();
+    char[] password = userpass.getPassword();
+    
+    // Perform authentication check without blocking or pinning virtual threads
+    if (username != null && password != null && 
+        "jcoder".equals(username) && "jcoder".equals(new String(password))) {
+      // Create immutable authentication info object for thread safety
+      return new SimpleAuthenticationInfo(username, new String(password), getName());
     }
 
     return null;

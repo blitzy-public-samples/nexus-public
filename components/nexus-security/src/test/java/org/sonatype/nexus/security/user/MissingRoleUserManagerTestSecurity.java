@@ -19,11 +19,25 @@ import org.sonatype.nexus.security.config.memory.MemoryCUser;
 import org.sonatype.nexus.security.config.memory.MemoryCUserRoleMapping;
 
 /**
+ * Test security configuration for MissingRoleUserManager tests.
+ * 
  * @since 3.0
  */
 public class MissingRoleUserManagerTestSecurity
 {
 
+  /**
+   * Creates a security model for testing purposes.
+   * 
+   * <p>This method is thread-safe and compatible with Java 21 virtual threads. The returned
+   * {@link MemorySecurityConfiguration} uses thread-safe collections internally (ConcurrentMap)
+   * which makes it suitable for use in environments with virtual threads.</p>
+   * 
+   * <p>Note that while individual operations on the returned configuration are thread-safe,
+   * compound operations may require external synchronization when used concurrently.</p>
+   * 
+   * @return A memory-based security configuration populated with test data
+   */
   public static MemorySecurityConfiguration securityModel() {
     return new MemorySecurityConfiguration()
         .withUsers(

@@ -15,6 +15,14 @@ package org.sonatype.nexus.internal.atlas.customizers;
 import java.io.File;
 import java.time.Instant;
 import java.time.ZonedDateTime;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.Future;
+import java.util.concurrent.ExecutionException;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Queue;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
@@ -26,8 +34,9 @@ import org.sonatype.nexus.supportzip.SupportBundleCustomizer;
 
 import com.google.common.annotations.VisibleForTesting;
 
+import static java.lang.StringTemplate.STR;
 import static java.time.Instant.ofEpochMilli;
-import static org.apache.commons.io.FileUtils.iterateFiles;
+import static org.apache.commons.io.FileUtils.listFiles;
 import static org.sonatype.nexus.supportzip.SupportBundle.ContentSource.Priority.DEFAULT;
 import static org.sonatype.nexus.supportzip.SupportBundle.ContentSource.Type.TASKLOG;
 
@@ -42,22 +51,56 @@ public class TaskLogCustomizer
     extends ComponentSupport
     implements SupportBundleCustomizer
 {
-  private static final String[] extensions = new String[]{"log"};
+  private static final String[] EXTENSIONS = new String[]{"log"};
 
   @Override
   public void customize(final SupportBundle supportBundle) {
     Instant cutoff = ZonedDateTime.now().minusHours(24).toInstant();
     String taskLogHome = getTaskLogHome();
+    
     if (taskLogHome != null) {
-      iterateFiles(new File(taskLogHome), extensions, false).forEachRemaining(file -> {
-        if (ofEpochMilli(file.lastModified()).isAfter(cutoff)) {
-          supportBundle.add(
-              new FileContentSourceSupport(TASKLOG, String.format("log/tasks/%s", file.getName()), file, DEFAULT));
+      File taskLogDir = new File(taskLogHome);
+      if (!taskLogDir.exists() || !taskLogDir.isDirectory()) {
+        log.debug(STR."Task log directory not found: \{taskLogHome}");
+        return;
+      }
+      
+      // Get all log files
+      List<File> logFiles = new ArrayList<>(listFiles(taskLogDir, EXTENSIONS, false));
+      
+      // Use Virtual Threads for parallel processing of log files
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        Queue<FileContentSourceSupport> contentSources = new ConcurrentLinkedQueue<>();
+        List<Future<?>> futures = new ArrayList<>();
+        
+        // Process each file in a separate virtual thread
+        for (File file : logFiles) {
+          futures.add(executor.submit(() -> {
+            if (ofEpochMilli(file.lastModified()).isAfter(cutoff)) {
+              contentSources.add(
+                  new FileContentSourceSupport(TASKLOG, STR."log/tasks/\{file.getName()}", file, DEFAULT));
+            } else {
+              log.debug(STR."Skipping file [past 24 hours]: \{file}");
+            }
+          }));
         }
-        else {
-          log.debug("Skipping file [past 24 hours]: {}", file);
+        
+        // Wait for all tasks to complete
+        for (Future<?> future : futures) {
+          try {
+            future.get();
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn(STR."Interrupted while processing log files: \{e.getMessage()}");
+            break;
+          } catch (ExecutionException e) {
+            log.error(STR."Error processing log file: \{e.getCause().getMessage()}", e.getCause());
+          }
         }
-      });
+        
+        // Add all collected content sources to the support bundle
+        contentSources.forEach(supportBundle::add);
+      }
     }
   }
 

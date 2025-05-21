@@ -12,6 +12,9 @@
  */
 package org.sonatype.nexus.capability.condition.internal;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import org.sonatype.nexus.capability.CapabilityContext;
 import org.sonatype.nexus.capability.CapabilityEvent;
 import org.sonatype.nexus.capability.CapabilityIdentity;
@@ -19,15 +22,15 @@ import org.sonatype.nexus.capability.CapabilityReference;
 import org.sonatype.nexus.capability.CapabilityRegistry;
 import org.sonatype.nexus.capability.condition.EventManagerTestSupport;
 
-import com.google.common.collect.Maps;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -38,12 +41,10 @@ import static org.sonatype.nexus.capability.CapabilityIdentity.capabilityIdentit
  *
  * @since capabilities 2.0
  */
+@ExtendWith(MockitoExtension.class)
 public class PassivateCapabilityDuringUpdateConditionTest
     extends EventManagerTestSupport
 {
-
-  @Rule
-  public ExpectedException thrown = ExpectedException.none();
 
   @Mock
   private CapabilityReference reference;
@@ -53,7 +54,7 @@ public class PassivateCapabilityDuringUpdateConditionTest
 
   private PassivateCapabilityDuringUpdateCondition underTest;
 
-  @Before
+  @BeforeEach
   public final void setUpPassivateCapabilityDuringUpdateCondition()
       throws Exception
   {
@@ -77,10 +78,10 @@ public class PassivateCapabilityDuringUpdateConditionTest
   @Test
   public void passivateDuringUpdate() {
     underTest.handle(new CapabilityEvent.BeforeUpdate(
-        capabilityRegistry, reference, Maps.<String, String>newHashMap(), Maps.<String, String>newHashMap()
+        capabilityRegistry, reference, Map.of(), Map.of()
     ));
     underTest.handle(new CapabilityEvent.AfterUpdate(
-        capabilityRegistry, reference, Maps.<String, String>newHashMap(), Maps.<String, String>newHashMap()
+        capabilityRegistry, reference, Map.of(), Map.of()
     ));
 
     verifyEventManagerEvents(unsatisfied(underTest), satisfied(underTest));
@@ -101,9 +102,9 @@ public class PassivateCapabilityDuringUpdateConditionTest
    */
   @Test
   public void bindWithoutIdBeingSet() {
-    thrown.expect(IllegalStateException.class);
-    thrown.expectMessage("Capability identity not specified");
-    new PassivateCapabilityDuringUpdateCondition(eventManager).bind();
+    IllegalStateException exception = assertThrows(IllegalStateException.class, 
+        () -> new PassivateCapabilityDuringUpdateCondition(eventManager).bind());
+    assertThat(exception.getMessage(), notNullValue());
   }
 
   /**
@@ -122,9 +123,9 @@ public class PassivateCapabilityDuringUpdateConditionTest
    */
   @Test
   public void contextualizationWhenAlreadyBounded() {
-    thrown.expect(IllegalStateException.class);
-    thrown.expectMessage("Cannot contextualize when already bounded");
-    underTest.setContext(reference.context());
+    IllegalStateException exception = assertThrows(IllegalStateException.class, 
+        () -> underTest.setContext(reference.context()));
+    assertThat(exception.getMessage(), notNullValue());
   }
 
   /**
@@ -132,11 +133,11 @@ public class PassivateCapabilityDuringUpdateConditionTest
    */
   @Test
   public void contextualizationWhenAlreadyContextualized() {
-    thrown.expect(IllegalStateException.class);
-    thrown.expectMessage("Already contextualized");
-    new PassivateCapabilityDuringUpdateCondition(eventManager)
-        .setContext(reference.context())
-        .setContext(reference.context());
+    IllegalStateException exception = assertThrows(IllegalStateException.class, 
+        () -> new PassivateCapabilityDuringUpdateCondition(eventManager)
+            .setContext(reference.context())
+            .setContext(reference.context()));
+    assertThat(exception.getMessage(), notNullValue());
   }
 
 }

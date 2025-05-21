@@ -16,6 +16,13 @@ import org.sonatype.nexus.common.event.EventWithSource;
 import org.sonatype.nexus.security.realm.RealmConfiguration;
 import org.sonatype.nexus.security.realm.RealmConfigurationEvent;
 
+/**
+ * Event fired when realm configuration changes.
+ * <p>
+ * This event is thread-safe and compatible with Virtual Thread dispatching.
+ * When used with Virtual Threads, this event maintains proper thread isolation
+ * and can be safely dispatched across thread boundaries without synchronization concerns.
+ */
 public class RealmConfigurationChangedEvent
     extends EventWithSource
     implements RealmConfigurationEvent
@@ -37,5 +44,10 @@ public class RealmConfigurationChangedEvent
   @Override
   public RealmConfiguration getConfiguration() {
     return configuration;
+  }
+  
+  @Override
+  public String toString() {
+    return STR."RealmConfigurationChangedEvent{configuration=\{configuration}}";
   }
 }

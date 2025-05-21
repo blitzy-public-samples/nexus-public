@@ -20,8 +20,9 @@ import org.sonatype.nexus.security.AbstractSecurityTest;
 import org.sonatype.nexus.security.config.MemorySecurityConfiguration;
 import org.sonatype.nexus.security.role.RoleIdentifier;
 
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.hasItem;
@@ -38,9 +39,8 @@ public class UserManager2Test
 {
   private UserManager underTest;
 
-  @Override
+  @BeforeEach
   protected void setUp() throws Exception {
-    super.setUp();
     underTest = getUserManager();
   }
 
@@ -68,32 +68,32 @@ public class UserManager2Test
     assertThat(userMap, hasKey("anonymous"));
     assertThat(userMap, hasKey("admin"));
 
-    Assert.assertEquals(4, users.size());
+    Assertions.assertEquals(4, users.size());
   }
 
   @Test
   public void testGetUser() throws Exception {
     User testUser = underTest.getUser("test-user");
 
-    Assert.assertEquals("Test User", testUser.getName());
-    Assert.assertEquals("test-user", testUser.getUserId());
-    Assert.assertEquals("test-user@example.org", testUser.getEmailAddress());
+    Assertions.assertEquals("Test User", testUser.getName());
+    Assertions.assertEquals("test-user", testUser.getUserId());
+    Assertions.assertEquals("test-user@example.org", testUser.getEmailAddress());
 
     // test roles
     Map<String, RoleIdentifier> roleMap = this.toRoleMap(testUser.getRoles());
 
     assertThat(roleMap, hasKey("role1"));
     assertThat(roleMap, hasKey("role2"));
-    Assert.assertEquals(2, roleMap.size());
+    Assertions.assertEquals(2, roleMap.size());
   }
 
   @Test
   public void testGetUserWithEmptyRole() throws Exception {
     User testUser = underTest.getUser("test-user-with-empty-role");
 
-    Assert.assertEquals("Test User With Empty Role", testUser.getName());
-    Assert.assertEquals("test-user-with-empty-role", testUser.getUserId());
-    Assert.assertEquals("test-user-with-empty-role@example.org", testUser.getEmailAddress());
+    Assertions.assertEquals("Test User With Empty Role", testUser.getName());
+    Assertions.assertEquals("test-user-with-empty-role", testUser.getUserId());
+    Assertions.assertEquals("test-user-with-empty-role@example.org", testUser.getEmailAddress());
 
     // test roles
     Map<String, RoleIdentifier> roleMap = this.toRoleMap(testUser.getRoles());
@@ -101,7 +101,7 @@ public class UserManager2Test
     assertThat(roleMap, hasKey("empty-role"));
     assertThat(roleMap, hasKey("role1"));
     assertThat(roleMap, hasKey("role2"));
-    Assert.assertEquals(3, roleMap.size());
+    Assertions.assertEquals(3, roleMap.size());
   }
 
   @Test
@@ -112,7 +112,7 @@ public class UserManager2Test
     assertThat(userMap, hasKey("test-user"));
     assertThat(userMap, hasKey("test-user-with-empty-role"));
 
-    Assert.assertEquals(2, users.size());
+    Assertions.assertEquals(2, users.size());
   }
 
   private Map<String, RoleIdentifier> toRoleMap(final Set<RoleIdentifier> roles) {

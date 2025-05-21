@@ -13,6 +13,7 @@
 package org.sonatype.nexus.internal.selector;
 
 import java.util.List;
+import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -65,8 +66,8 @@ public class SelectorConfigurationStoreImpl
   @Override
   public void create(final SelectorConfiguration configuration) {
     doCreate(configuration);
-    postEvent(configuration);
-    postDesEvent(EventType.CREATED);
+    postEventAsync(configuration);
+    postDesEventAsync(EventType.CREATED);
   }
 
   @Transactional
@@ -82,8 +83,8 @@ public class SelectorConfigurationStoreImpl
   @Override
   public void update(final SelectorConfiguration configuration) {
     if (doUpdate(configuration)) {
-      postEvent(configuration);
-      postDesEvent(EventType.UPDATED);
+      postEventAsync(configuration);
+      postDesEventAsync(EventType.UPDATED);
     }
   }
 
@@ -95,8 +96,8 @@ public class SelectorConfigurationStoreImpl
   @Override
   public void delete(final SelectorConfiguration configuration) {
     if (doDelete(configuration)) {
-      postEvent(configuration);
-      postDesEvent(EventType.DELETED);
+      postEventAsync(configuration);
+      postDesEventAsync(EventType.DELETED);
     }
   }
 
@@ -111,23 +112,33 @@ public class SelectorConfigurationStoreImpl
     return dao().read(name).orElse(null);
   }
 
-  private void postEvent(final SelectorConfiguration configuration) {
-    // trigger invalidation of SelectorManagerImpl caches
-    eventManager.post(new SelectorConfigurationEvent()
-    {
-      @Override
-      public boolean isLocal() {
-        return true;
-      }
+  /**
+   * Posts an event asynchronously using a Virtual Thread to avoid blocking the current thread.
+   */
+  private void postEventAsync(final SelectorConfiguration configuration) {
+    Executors.newVirtualThreadPerTaskExecutor().execute(() -> {
+      // trigger invalidation of SelectorManagerImpl caches
+      eventManager.post(new SelectorConfigurationEvent()
+      {
+        @Override
+        public boolean isLocal() {
+          return true;
+        }
 
-      @Override
-      public SelectorConfiguration getSelectorConfiguration() {
-        return configuration;
-      }
+        @Override
+        public SelectorConfiguration getSelectorConfiguration() {
+          return configuration;
+        }
+      });
     });
   }
 
-  private void postDesEvent(final EventType eventType) {
-    eventManager.post(new SelectorConfigurationChangedEvent(eventType));
+  /**
+   * Posts a distributed event service event asynchronously using a Virtual Thread.
+   */
+  private void postDesEventAsync(final EventType eventType) {
+    Executors.newVirtualThreadPerTaskExecutor().execute(() -> {
+      eventManager.post(new SelectorConfigurationChangedEvent(eventType));
+    });
   }
 }

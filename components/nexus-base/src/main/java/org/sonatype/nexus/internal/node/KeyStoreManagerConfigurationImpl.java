@@ -24,6 +24,10 @@ import com.google.common.annotations.VisibleForTesting;
 
 /**
  * Node {@link KeyStoreManagerConfiguration}.
+ * 
+ * Provides stronger cryptographic defaults appropriate for Java 21:
+ * - Uses SHA256withRSA signature algorithm instead of SHA1WITHRSA
+ * - Uses 3072-bit key size instead of 2048-bit for enhanced security
  *
  * @since 3.0
  */
@@ -32,6 +36,8 @@ import com.google.common.annotations.VisibleForTesting;
 public class KeyStoreManagerConfigurationImpl
     extends KeyStoreManagerConfigurationSupport
 {
+  // Using standard property placeholder syntax for dependency injection
+  // This is intentionally not using Java 21 String Templates as it would break the property resolution
   private static final String CPREFIX = "${node.keyStoreManager";
 
   /**
@@ -53,9 +59,9 @@ public class KeyStoreManagerConfigurationImpl
   public KeyStoreManagerConfigurationImpl(
       @Named(CPREFIX + ".keyStoreType:-JKS}") final String keyStoreType,
       @Named(CPREFIX + ".keyAlgorithm:-RSA}") final String keyAlgorithm,
-      @Named(CPREFIX + ".keyAlgorithmSize:-2048}") final int keyAlgorithmSize,
+      @Named(CPREFIX + ".keyAlgorithmSize:-3072}") final int keyAlgorithmSize,
       @Named(CPREFIX + ".certificateValidity:-36500d}") final Time certificateValidity,
-      @Named(CPREFIX + ".signatureAlgorithm:-SHA1WITHRSA}") final String signatureAlgorithm,
+      @Named(CPREFIX + ".signatureAlgorithm:-SHA256withRSA}") final String signatureAlgorithm,
       @Named(CPREFIX + ".keyManagerAlgorithm:-DEFAULT}") final String keyManagerAlgorithm,
       @Named(CPREFIX + ".trustManagerAlgorithm:-DEFAULT}") final String trustManagerAlgorithm)
   {

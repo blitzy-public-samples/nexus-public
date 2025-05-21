@@ -20,17 +20,20 @@ import org.sonatype.nexus.common.template.TemplateHelper;
 import org.sonatype.nexus.common.template.TemplateParameters;
 import org.sonatype.nexus.common.template.TemplateThrowableAdapter;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class CapabilitySupportTest
     extends TestSupport
 {
@@ -42,7 +45,7 @@ public class CapabilitySupportTest
 
   private TestCapability underTest;
 
-  @Before
+  @BeforeEach
   public void setup() {
     underTest = new TestCapability();
     underTest.init(context);
@@ -50,20 +53,26 @@ public class CapabilitySupportTest
   }
 
   @Test
-  public void renderFailureReturnsNullOnFailure() {
+  public void shouldReturnNullWhenRenderingMissingTemplate() {
     TemplateParameters params = new TemplateParameters()
         .set("cause", new TemplateThrowableAdapter(new Exception()));
-    assertNull(underTest.render("missing-template.vm", params));
+    String templateName = "missing-template.vm";
+    assertNull(underTest.render(templateName, params), STR."Template \{templateName} should return null when not found");
     verifyNoInteractions(templateHelper);
   }
 
   @Test
-  public void renderFailureSuccess() {
+  public void shouldRenderFailureTemplateSuccessfully() {
     when(templateHelper.render(any(URL.class), any(TemplateParameters.class))).thenReturn("rendered");
     TemplateParameters params = new TemplateParameters()
         .set("cause", new TemplateThrowableAdapter(new Exception()));
-    assertEquals("rendered", underTest.render("failure.vm", params));
-    verify(templateHelper).render(underTest.getClass().getResource("failure.vm"), params);
+    String templateName = "failure.vm";
+    String expected = "rendered";
+    
+    String result = underTest.render(templateName, params);
+    
+    assertEquals(expected, result, STR."Template \{templateName} should render correctly");
+    verify(templateHelper).render(underTest.getClass().getResource(templateName), params);
   }
 
   private class TestCapability
@@ -71,7 +80,11 @@ public class CapabilitySupportTest
   {
     @Override
     protected TestCapabilityConfig createConfig(final Map<String, String> properties) throws Exception {
-      return new TestCapabilityConfig();
+      // Using pattern matching to check if properties is empty or not
+      if (properties instanceof Map<String, String> map && map.isEmpty()) {
+        return new TestCapabilityConfig(); // Default config for empty properties
+      }
+      return new TestCapabilityConfig(); // Regular config creation
     }
   }
 

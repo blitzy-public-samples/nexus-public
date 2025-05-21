@@ -13,6 +13,9 @@
 package org.sonatype.nexus.internal.httpclient;
 
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import javax.inject.Inject;
@@ -38,10 +41,8 @@ import static org.sonatype.nexus.common.app.ManagedLifecycleManager.isShuttingDo
 import static org.sonatype.nexus.httpclient.HttpSchemes.HTTP;
 import static org.sonatype.nexus.httpclient.HttpSchemes.HTTPS;
 
-// TODO: Restore JMX support for httpclient bits
-
 /**
- * Shared {@link PoolingHttpClientConnectionManager}.
+ * Shared {@link PoolingHttpClientConnectionManager} optimized for Java 21 Virtual Threads.
  *
  * @since 3.0
  */
@@ -57,7 +58,9 @@ public class SharedHttpClientConnectionManager
 
   private final Time connectionPoolEvictingDelayTime;
 
-  private ConnectionEvictionThread evictionThread;
+  private ExecutorService virtualThreadExecutor;
+  
+  private ScheduledExecutorService connectionEvictionExecutor;
 
   @Inject
   public SharedHttpClientConnectionManager(
@@ -113,18 +116,83 @@ public class SharedHttpClientConnectionManager
   // Lifecycle
   //
 
-  // TODO: Maybe better to delegate to use lifecycle framework as LifecycleAware
-
   @Override
   public void start() throws Exception {
-    evictionThread = new ConnectionEvictionThread(this, connectionPoolIdleTime, connectionPoolEvictingDelayTime);
-    evictionThread.start();
+    // Create a virtual thread executor for connection operations
+    virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    log.debug("Created virtual thread executor for connection operations");
+    
+    // Schedule connection eviction using virtual threads
+    connectionEvictionExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+      Thread t = Thread.ofVirtual().name("nexus-httpclient-eviction-scheduler").unstarted(r);
+      t.setDaemon(true);
+      return t;
+    });
+    
+    connectionEvictionExecutor.scheduleWithFixedDelay(
+        this::evictConnections,
+        connectionPoolEvictingDelayTime.toMillis(),
+        connectionPoolEvictingDelayTime.toMillis(),
+        TimeUnit.MILLISECONDS
+    );
+    
+    log.debug("Started connection eviction scheduler with delay {} ms", connectionPoolEvictingDelayTime.toMillis());
+  }
+
+  /**
+   * Evicts expired and idle connections using virtual threads for non-blocking operation
+   */
+  private void evictConnections() {
+    virtualThreadExecutor.execute(() -> {
+      try {
+        log.debug("Closing expired connections");
+        closeExpiredConnections();
+      }
+      catch (Exception e) {
+        log.warn("Failed to close expired connections", e);
+      }
+    });
+    
+    virtualThreadExecutor.execute(() -> {
+      try {
+        log.debug("Closing idle connections (idle time: {})", connectionPoolIdleTime);
+        closeIdleConnections(connectionPoolIdleTime.toMillis(), TimeUnit.MILLISECONDS);
+      }
+      catch (Exception e) {
+        log.warn("Failed to close idle connections", e);
+      }
+    });
   }
 
   @Override
   public void stop() throws Exception {
-    evictionThread.interrupt();
-    evictionThread = null;
+    if (connectionEvictionExecutor != null) {
+      connectionEvictionExecutor.shutdown();
+      try {
+        if (!connectionEvictionExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+          connectionEvictionExecutor.shutdownNow();
+        }
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        connectionEvictionExecutor.shutdownNow();
+      }
+      connectionEvictionExecutor = null;
+      log.debug("Stopped connection eviction scheduler");
+    }
+    
+    if (virtualThreadExecutor != null) {
+      virtualThreadExecutor.shutdown();
+      try {
+        if (!virtualThreadExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+          virtualThreadExecutor.shutdownNow();
+        }
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        virtualThreadExecutor.shutdownNow();
+      }
+      virtualThreadExecutor = null;
+      log.debug("Stopped virtual thread executor");
+    }
 
     // underlying pool cannot be restarted, so avoid shutting it down when bouncing the service
     if (isShuttingDown()) {

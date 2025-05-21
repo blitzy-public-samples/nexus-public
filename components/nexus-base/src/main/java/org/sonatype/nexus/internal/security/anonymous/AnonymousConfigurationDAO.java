@@ -16,6 +16,10 @@ import org.sonatype.nexus.datastore.api.SingletonDataAccess;
 
 /**
  * {@link AnonymousConfigurationData} access.
+ * <p>
+ * This interface is compatible with Java 21 Virtual Threads for database operations.
+ * All methods can be safely executed in a Virtual Thread context without blocking
+ * the carrier thread during I/O operations.
  *
  * @since 3.21
  */
@@ -23,4 +27,5 @@ public interface AnonymousConfigurationDAO
     extends SingletonDataAccess<AnonymousConfigurationData>
 {
   // no additional behaviour
+  // All operations inherited from SingletonDataAccess are Virtual Thread compatible
 }

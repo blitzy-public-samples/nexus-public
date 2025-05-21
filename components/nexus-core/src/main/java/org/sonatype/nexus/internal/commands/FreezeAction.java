@@ -16,11 +16,15 @@ import javax.inject.Inject;
 import javax.inject.Named;
 
 import org.sonatype.nexus.common.app.FreezeService;
+import org.sonatype.nexus.common.log.LogManager;
+import org.sonatype.nexus.common.log.LoggerLevel;
 
 import com.google.common.annotations.VisibleForTesting;
 import org.apache.karaf.shell.api.action.Action;
 import org.apache.karaf.shell.api.action.Command;
 import org.apache.karaf.shell.api.action.Option;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.internal.commands.FreezeAction.Mode.enable;
@@ -35,6 +39,8 @@ import static org.sonatype.nexus.internal.commands.FreezeAction.Mode.enable;
 public class FreezeAction
     implements Action
 {
+  private static final Logger log = LoggerFactory.getLogger(FreezeAction.class);
+  
   private final FreezeService freezeService;
 
   @Option(name = "-m", aliases = {"--mode"}, description = "Manage mode: enable or release (default enable)")
@@ -53,15 +59,16 @@ public class FreezeAction
 
   @Override
   public Object execute() throws Exception {
-    switch (mode) { //NOSONAR
-      case enable:
+    switch (mode) {
+      case enable -> {
+        log.info(STR."Freezing Nexus Repository Manager via console request");
         freezeService.requestFreeze("console request");
-        break;
-      case release:
+      }
+      case release -> {
+        log.info(STR."Releasing freeze on Nexus Repository Manager via console request");
         freezeService.cancelFreeze();
-        break;
+      }
     }
     return null;
   }
 }
-

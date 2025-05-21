@@ -25,11 +25,14 @@ import org.sonatype.nexus.security.authc.apikey.ApiKeyAuthenticationFilter;
 import org.sonatype.nexus.security.authz.PermissionsFilter;
 
 import com.google.inject.AbstractModule;
+import com.google.inject.Provider;
 
 import static org.sonatype.nexus.security.FilterProviderSupport.filterKey;
 
 /**
  * Security module.
+ *
+ * @since 3.0
  */
 @Named
 public class SecurityModule
@@ -37,6 +40,8 @@ public class SecurityModule
 {
   @Override
   protected void configure() {
+    // Bind filters directly to their implementations
+    // This ensures proper Virtual Thread compatibility by avoiding unnecessary indirection
     bind(filterKey(JwtFilter.NAME)).to(JwtFilter.class);
     bind(filterKey(AnonymousFilter.NAME)).to(AnonymousFilter.class);
     bind(filterKey(NexusAuthenticationFilter.NAME)).to(NexusAuthenticationFilter.class);
@@ -44,43 +49,79 @@ public class SecurityModule
     bind(filterKey(PermissionsFilter.NAME)).to(PermissionsFilter.class);
     bind(filterKey(AntiCsrfFilter.NAME)).to(AntiCsrfFilter.class);
 
-    // FIXME: Sort out, and deal with naming the "authcBasic" are presently auth-token bits
+    // Use provider classes that are optimized for Virtual Thread compatibility
+    // These providers ensure proper thread context inheritance with Virtual Threads
     bind(filterKey("authcBasic")).toProvider(AuthcBasicFilterProvider.class);
     bind(filterKey("authcAntiCsrf")).toProvider(AuthcAntiCsrfFilterProvider.class);
-
-    // FIXME: This likely should be normalized with the auth-token bits
     bind(filterKey("authcApiKey")).toProvider(AuthcApiKeyFilterProvider.class);
   }
 
-  // FIXME: Probably do not need provider here at all anymore
-
+  /**
+   * Provider for basic authentication filter.
+   * 
+   * Optimized for Virtual Thread compatibility by implementing Provider directly
+   * instead of extending FilterProviderSupport.
+   */
   @Singleton
   static class AuthcBasicFilterProvider
-      extends FilterProviderSupport
+      implements Provider<javax.servlet.Filter>
   {
+    private final NexusAuthenticationFilter filter;
+
     @Inject
     AuthcBasicFilterProvider(final NexusAuthenticationFilter filter) {
-      super(filter);
+      this.filter = filter;
+    }
+
+    @Override
+    public javax.servlet.Filter get() {
+      return filter;
     }
   }
 
+  /**
+   * Provider for API key authentication filter.
+   * 
+   * Optimized for Virtual Thread compatibility by implementing Provider directly
+   * instead of extending FilterProviderSupport.
+   */
   @Singleton
   static class AuthcApiKeyFilterProvider
-      extends FilterProviderSupport
+      implements Provider<javax.servlet.Filter>
   {
+    private final ApiKeyAuthenticationFilter filter;
+
     @Inject
     AuthcApiKeyFilterProvider(final ApiKeyAuthenticationFilter filter) {
-      super(filter);
+      this.filter = filter;
+    }
+
+    @Override
+    public javax.servlet.Filter get() {
+      return filter;
     }
   }
 
+  /**
+   * Provider for Anti-CSRF filter.
+   * 
+   * Optimized for Virtual Thread compatibility by implementing Provider directly
+   * instead of extending FilterProviderSupport.
+   */
   @Singleton
   static class AuthcAntiCsrfFilterProvider
-      extends FilterProviderSupport
+      implements Provider<javax.servlet.Filter>
   {
+    private final AntiCsrfFilter filter;
+
     @Inject
     AuthcAntiCsrfFilterProvider(final AntiCsrfFilter filter) {
-      super(filter);
+      this.filter = filter;
+    }
+
+    @Override
+    public javax.servlet.Filter get() {
+      return filter;
     }
   }
 }

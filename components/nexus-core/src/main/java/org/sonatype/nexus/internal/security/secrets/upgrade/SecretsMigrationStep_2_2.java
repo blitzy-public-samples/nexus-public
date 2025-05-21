@@ -14,6 +14,7 @@ package org.sonatype.nexus.internal.security.secrets.upgrade;
 
 import java.sql.Connection;
 import java.util.Optional;
+import java.util.concurrent.Executors;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -50,10 +51,50 @@ public class SecretsMigrationStep_2_2
 
   @Override
   public void migrate(final Connection connection) throws Exception {
-    if (tableExists(connection, "secrets")) {
-      log.debug("starting secrets migration task");
-      startupScheduler.schedule(
-          startupScheduler.createTaskConfigurationInstance(SecretsMigrationTaskDescriptor.TYPE_ID));
+    // Use pattern matching for switch to check table existence state
+    switch (checkTableExists(connection, "secrets")) {
+      case TableExistenceState.EXISTS -> {
+        log.debug(STR."Starting secrets migration task for table 'secrets'.");
+        // Use virtual threads for scheduling to improve I/O concurrency
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+          executor.submit(() -> {
+            startupScheduler.schedule(
+                startupScheduler.createTaskConfigurationInstance(SecretsMigrationTaskDescriptor.TYPE_ID));
+          });
+        }
+      }
+      case TableExistenceState.DOES_NOT_EXIST -> 
+        log.debug(STR."Table 'secrets' does not exist, skipping migration.");
+      case TableExistenceState.ERROR -> 
+        log.warn(STR."Error checking existence of table 'secrets', proceeding with caution.");
+    }
+  }
+  
+  /**
+   * Enum representing the possible states of table existence
+   */
+  private enum TableExistenceState {
+    EXISTS,
+    DOES_NOT_EXIST,
+    ERROR
+  }
+  
+  /**
+   * Checks if a table exists in the database
+   * 
+   * @param connection the database connection
+   * @param tableName the name of the table to check
+   * @return the state of table existence
+   */
+  private TableExistenceState checkTableExists(final Connection connection, final String tableName) {
+    try {
+      var metaData = connection.getMetaData();
+      try (var resultSet = metaData.getTables(null, null, tableName, null)) {
+        return resultSet.next() ? TableExistenceState.EXISTS : TableExistenceState.DOES_NOT_EXIST;
+      }
+    } catch (Exception e) {
+      log.warn(STR."Error checking if table \{tableName} exists", e);
+      return TableExistenceState.ERROR;
     }
   }
 }

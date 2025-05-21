@@ -24,9 +24,9 @@ import org.sonatype.nexus.security.config.MemorySecurityConfiguration;
 import org.sonatype.nexus.security.role.Role;
 import org.sonatype.nexus.security.role.RoleIdentifier;
 
-import org.junit.Assert;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.empty;
@@ -53,7 +53,7 @@ public class AdditionalRoleSecuritySystemTest
   private Set<String> getRoles() throws Exception {
     AuthorizationManager authzManager = lookup(AuthorizationManager.class);
 
-    Set<String> roles = new HashSet<String>();
+    Set<String> roles = new HashSet<>();
     for (Role role : authzManager.listRoles()) {
       roles.add(role.getRoleId());
     }
@@ -69,7 +69,7 @@ public class AdditionalRoleSecuritySystemTest
     Map<String, User> userMap = toUserMap(users);
 
     User user = userMap.get("jcoder");
-    Assert.assertNotNull(user);
+    Assertions.assertNotNull(user);
 
     // A,B,C,1
     Set<String> roleIds = toRoleIdSet(user.getRoles());
@@ -77,7 +77,7 @@ public class AdditionalRoleSecuritySystemTest
     assertThat(roleIds, hasSize(4));
 
     user = userMap.get("dknudsen");
-    Assert.assertNotNull(user);
+    Assertions.assertNotNull(user);
     assertThat(user.getRoles(), hasSize(1));
 
     // Role2
@@ -85,7 +85,7 @@ public class AdditionalRoleSecuritySystemTest
     assertThat(roleIds, hasItems("Role2"));
 
     user = userMap.get("cdugas");
-    Assert.assertNotNull(user);
+    Assertions.assertNotNull(user);
     assertThat(user.getRoles(), hasSize(3));
 
     // A,B,1
@@ -93,23 +93,23 @@ public class AdditionalRoleSecuritySystemTest
     assertThat(roleIds, hasItems("RoleA", "RoleB", "Role1"));
 
     user = userMap.get("pperalez");
-    Assert.assertNotNull(user);
+    Assertions.assertNotNull(user);
     assertThat(user.getRoles(), empty());
   }
 
-  @Ignore("TESTING, issue here with more usermanager bound than test requires")
+  @Disabled("TESTING, issue here with more usermanager bound than test requires")
   public void testSearchEffectiveTrue() throws Exception {
     UserSearchCriteria criteria = new UserSearchCriteria();
     criteria.setOneOfRoleIds(getRoles());
 
     criteria.setUserId("pperalez");
     User user = searchForSingleUser(criteria, "pperalez", null);
-    Assert.assertNull(user);
+    Assertions.assertNull(user);
 
     criteria.setUserId("jcoder");
     user = searchForSingleUser(criteria, "jcoder", null);
-    Assert.assertNotNull(user);
-    Assert.assertEquals("Roles: " + toRoleIdSet(user.getRoles()), 4, user.getRoles().size());
+    Assertions.assertNotNull(user);
+    Assertions.assertEquals(4, user.getRoles().size(), "Roles: " + toRoleIdSet(user.getRoles()));
 
     // A,B,C,1
     Set<String> roleIds = toRoleIdSet(user.getRoles());
@@ -117,7 +117,7 @@ public class AdditionalRoleSecuritySystemTest
 
     criteria.setUserId("dknudsen");
     user = searchForSingleUser(criteria, "dknudsen", null);
-    Assert.assertNotNull(user);
+    Assertions.assertNotNull(user);
     assertThat(user.getRoles(), hasSize(1));
 
     // Role2
@@ -126,7 +126,7 @@ public class AdditionalRoleSecuritySystemTest
 
     criteria.setUserId("cdugas");
     user = searchForSingleUser(criteria, "cdugas", null);
-    Assert.assertNotNull(user);
+    Assertions.assertNotNull(user);
     assertThat(user.getRoles(), hasSize(3));
 
     // A,B,1
@@ -140,11 +140,11 @@ public class AdditionalRoleSecuritySystemTest
 
     criteria.setUserId("pperalez");
     User user = searchForSingleUser(criteria, "pperalez", "MockUserManagerA");
-    Assert.assertNotNull(user);
+    Assertions.assertNotNull(user);
 
     criteria.setUserId("jcoder");
     user = searchForSingleUser(criteria, "jcoder", "MockUserManagerA");
-    Assert.assertNotNull(user);
+    Assertions.assertNotNull(user);
 
     // A,B,C,1
     Set<String> roleIds = toRoleIdSet(user.getRoles());
@@ -153,7 +153,7 @@ public class AdditionalRoleSecuritySystemTest
 
     criteria.setUserId("dknudsen");
     user = searchForSingleUser(criteria, "dknudsen", "MockUserManagerA");
-    Assert.assertNotNull(user);
+    Assertions.assertNotNull(user);
     assertThat(user.getRoles(), hasSize(1));
 
     // Role2
@@ -162,7 +162,7 @@ public class AdditionalRoleSecuritySystemTest
 
     criteria.setUserId("cdugas");
     user = searchForSingleUser(criteria, "cdugas", "MockUserManagerA");
-    Assert.assertNotNull(user);
+    Assertions.assertNotNull(user);
     assertThat(user.getRoles(), hasSize(3));
 
     // A,B,1
@@ -170,7 +170,7 @@ public class AdditionalRoleSecuritySystemTest
     assertThat(roleIds, hasItems("RoleA", "RoleB", "Role1"));
   }
 
-  @Ignore("TESTING, issue here with more usermanager bound than test requires")
+  @Disabled("TESTING, issue here with more usermanager bound than test requires")
   public void testNestedRoles() throws Exception {
     UserSearchCriteria criteria = new UserSearchCriteria();
     criteria.getOneOfRoleIds().add("Role1");
@@ -178,11 +178,11 @@ public class AdditionalRoleSecuritySystemTest
     Set<User> result = securitySystem.searchUsers(criteria);
 
     Map<String, User> userMap = toUserMap(result);
-    Assert.assertTrue("User not found in: " + userMap, userMap.containsKey("admin"));
-    Assert.assertTrue("User not found in: " + userMap, userMap.containsKey("test-user"));
-    Assert.assertTrue("User not found in: " + userMap, userMap.containsKey("jcoder"));
-    Assert.assertTrue("User not found in: " + userMap, userMap.containsKey("cdugas"));
-    // Assert.assertTrue( "User not found in: " + userMap, userMap.containsKey( "other-user" ) );
+    Assertions.assertTrue(userMap.containsKey("admin"), "User not found in: " + userMap);
+    Assertions.assertTrue(userMap.containsKey("test-user"), "User not found in: " + userMap);
+    Assertions.assertTrue(userMap.containsKey("jcoder"), "User not found in: " + userMap);
+    Assertions.assertTrue(userMap.containsKey("cdugas"), "User not found in: " + userMap);
+    // Assertions.assertTrue(userMap.containsKey("other-user"), "User not found in: " + userMap);
     // other user is only defined in the mapping, simulates a user that was deleted
 
     assertThat(result, hasSize(4));
@@ -202,13 +202,13 @@ public class AdditionalRoleSecuritySystemTest
     }
 
     Map<String, User> userMap = toUserMap(users);
-    Assert.assertTrue("More then 1 User was returned: " + userMap.keySet(), users.size() <= 1);
+    Assertions.assertTrue(users.size() <= 1, "More then 1 User was returned: " + userMap.keySet());
 
     return userMap.get(userId);
   }
 
   private Map<String, User> toUserMap(final Set<User> users) {
-    HashMap<String, User> map = new HashMap<String, User>();
+    HashMap<String, User> map = new HashMap<>();
     for (User plexusUser : users) {
       map.put(plexusUser.getUserId(), plexusUser);
     }
@@ -216,7 +216,7 @@ public class AdditionalRoleSecuritySystemTest
   }
 
   private Set<String> toRoleIdSet(final Set<RoleIdentifier> roles) {
-    Set<String> roleIds = new HashSet<String>();
+    Set<String> roleIds = new HashSet<>();
     for (RoleIdentifier role : roles) {
       roleIds.add(role.getRoleId());
     }

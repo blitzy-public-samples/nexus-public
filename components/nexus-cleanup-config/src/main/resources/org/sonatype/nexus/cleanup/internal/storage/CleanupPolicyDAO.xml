@@ -13,7 +13,7 @@
     Eclipse Foundation. All other trademarks are the property of their respective owners.
 
 -->
-<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="org.sonatype.nexus.cleanup.internal.storage.CleanupPolicyDAO">
 
   <insert id="createSchema">
@@ -30,7 +30,7 @@
     CREATE INDEX IF NOT EXISTS idx_cleanup_policy_format ON cleanup_policy (format);
   </insert>
 
-  <select id="browse" resultType="CleanupPolicyData">
+  <select id="browse" resultType="CleanupPolicyData" fetchSize="-1" resultOrdered="false">
     SELECT * FROM cleanup_policy;
   </select>
 
@@ -39,7 +39,7 @@
         values (#{name}, #{notes}, #{format}, #{mode}, #{criteria});
   </insert>
 
-  <select id="read" resultType="CleanupPolicyData">
+  <select id="read" resultType="CleanupPolicyData" fetchSize="-1" resultOrdered="false">
     SELECT * FROM cleanup_policy WHERE name = #{value};
   </select>
 
@@ -57,7 +57,7 @@
     SELECT COUNT(*) FROM cleanup_policy;
   </select>
 
-  <select id="browseByFormat" resultType="CleanupPolicyData">
+  <select id="browseByFormat" resultType="CleanupPolicyData" fetchSize="-1" resultOrdered="false">
     SELECT * FROM cleanup_policy WHERE format = #{value} OR format = 'ALL_FORMATS';
   </select>
 

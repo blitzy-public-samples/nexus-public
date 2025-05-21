@@ -27,6 +27,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * JMX controller to manage the Nexus application lifecycle.
+ * <p>
+ * Updated for Java 21 compatibility with enhanced error handling and String Templates for logging.
  *
  * @since 3.16
  */
@@ -43,30 +45,57 @@ public class ManagedLifecycleBean
     this.lifecycleManager = checkNotNull(lifecycleManager);
   }
 
+  /**
+   * Get the current lifecycle phase.
+   * 
+   * @return the current phase name
+   */
   @ManagedAttribute
   public String getPhase() {
     return lifecycleManager.getCurrentPhase().name();
   }
 
+  /**
+   * Set the lifecycle phase.
+   * 
+   * @param phase the target phase name
+   * @throws RuntimeException if there is a problem moving to the specified phase
+   */
   @ManagedAttribute
   public void setPhase(final String phase) {
     try {
-      lifecycleManager.to(Phase.valueOf(phase));
+      Phase targetPhase = Phase.valueOf(phase);
+      lifecycleManager.to(targetPhase);
+    }
+    catch (IllegalArgumentException e) {
+      log.warn(STR."Invalid phase name: \{phase}", e);
+      throw new RuntimeException(STR."Invalid phase name: \{phase}", e);
     }
     catch (Exception e) {
-      log.warn("Problem moving to phase {}", phase, e);
-      throw new RuntimeException("Problem moving to phase " + phase + ": " + e);
+      log.warn(STR."Problem moving to phase \{phase}", e);
+      throw new RuntimeException(STR."Problem moving to phase \{phase}: \{e.getMessage()}", e);
     }
   }
 
+  /**
+   * Bounce (restart) the specified lifecycle phase.
+   * 
+   * @param phase the phase to bounce
+   * @throws RuntimeException if there is a problem bouncing the specified phase
+   */
   @ManagedOperation
   public void bounce(final String phase) {
     try {
-      lifecycleManager.bounce(Phase.valueOf(phase));
+      Phase targetPhase = Phase.valueOf(phase);
+      lifecycleManager.bounce(targetPhase);
+    }
+    catch (IllegalArgumentException e) {
+      log.warn(STR."Invalid phase name: \{phase}", e);
+      throw new RuntimeException(STR."Invalid phase name: \{phase}", e);
     }
     catch (Exception e) {
-      log.warn("Problem bouncing phase {}", phase, e);
-      throw new RuntimeException("Problem bouncing phase " + phase + ": " + e);
+      log.warn(STR."Problem bouncing phase \{phase}", e);
+      throw new RuntimeException(STR."Problem bouncing phase \{phase}: \{e.getMessage()}", e);
     }
   }
 }

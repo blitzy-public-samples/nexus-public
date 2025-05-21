@@ -13,13 +13,14 @@
 package org.sonatype.nexus.internal.security.secrets.rest;
 
 import java.util.Map;
-import javax.validation.Valid;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.Response;
-import javax.ws.rs.core.Response.Status;
+import java.util.concurrent.Executors;
+import jakarta.validation.Valid;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response.Status;
 
 import org.sonatype.nexus.crypto.secrets.MissingKeyException;
 import org.sonatype.nexus.crypto.secrets.ReEncryptService;
@@ -32,7 +33,7 @@ import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
+import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON;
 
 @Consumes(APPLICATION_JSON)
 @Produces(APPLICATION_JSON)
@@ -54,21 +55,33 @@ public abstract class SecretsEncryptionApiResource
   @RequiresPermissions("nexus:*")
   public Response reEncrypt(@Valid final ReEncryptionRequestApiXO request) {
     try {
-      String taskId = reEncryptService.submitReEncryption(request.getSecretKeyId(), request.getNotifyEmail());
-      Map<String, Object> response = ImmutableMap.of("status", Status.ACCEPTED.getStatusCode(), "message",
-          "Task submitted. ID: " + taskId);
-      return Response
-          .status(Status.ACCEPTED)
-          .entity(response)
-          .type(APPLICATION_JSON)
-          .build();
+      // Use Virtual Threads for I/O-bound operations to improve performance
+      var executor = Executors.newVirtualThreadPerTaskExecutor();
+      try (executor) {
+        var future = executor.submit(() -> reEncryptService.submitReEncryption(
+            request.getSecretKeyId(), request.getNotifyEmail()));
+        String taskId = future.get();
+        
+        Map<String, Object> response = ImmutableMap.of(
+            "status", Status.ACCEPTED.getStatusCode(), 
+            "message", "Task submitted. ID: " + taskId);
+        
+        return Response.status(Status.ACCEPTED)
+            .entity(response)
+            .type(APPLICATION_JSON)
+            .build();
+      }
     }
-    catch (MissingKeyException | ReEncryptionNotSupportedException ex) {
-      throw new WebApplicationMessageException(Status.BAD_REQUEST, ex.getMessage(), APPLICATION_JSON);
-    }
-    catch (IllegalStateException ex) {
-      throw new WebApplicationMessageException(Status.CONFLICT, ex.getMessage(), APPLICATION_JSON);
+    // Using Java 21 pattern matching for exception handling
+    catch (Exception ex) {
+      return switch (ex) {
+        case MissingKeyException | ReEncryptionNotSupportedException e -> 
+          throw new WebApplicationMessageException(Status.BAD_REQUEST, e.getMessage(), APPLICATION_JSON);
+        case IllegalStateException e -> 
+          throw new WebApplicationMessageException(Status.CONFLICT, e.getMessage(), APPLICATION_JSON);
+        default -> 
+          throw new WebApplicationMessageException(Status.INTERNAL_SERVER_ERROR, ex.getMessage(), APPLICATION_JSON);
+      };
     }
   }
-
 }

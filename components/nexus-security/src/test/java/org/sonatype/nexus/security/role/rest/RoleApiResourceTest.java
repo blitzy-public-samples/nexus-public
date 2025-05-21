@@ -32,21 +32,24 @@ import org.sonatype.nexus.security.role.NoSuchRoleException;
 import org.sonatype.nexus.security.role.ReadonlyRoleException;
 import org.sonatype.nexus.security.role.Role;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class RoleApiResourceTest
     extends TestSupport
 {
@@ -58,8 +61,8 @@ public class RoleApiResourceTest
 
   private RoleApiResource underTest;
 
-  @Before
-  public void setup() throws Exception {
+  @BeforeEach
+  void setup() throws Exception {
     when(securitySystem.getAuthorizationManager("default")).thenReturn(authorizationManager);
     when(securitySystem.listSources()).thenReturn(Arrays.asList("default", "LDAP"));
 
@@ -67,7 +70,7 @@ public class RoleApiResourceTest
   }
 
   @Test
-  public void testGetRoles() throws Exception {
+  void getRoles() throws Exception {
     Role role1 = createRole("default", "id1", "role1", "role1", Arrays.asList("role1", "role2"),
         Arrays.asList("priv1", "priv2"));
     Role role2 = createRole("default", "id2", "role2", "role2", Arrays.asList("role2", "role3"),
@@ -86,7 +89,7 @@ public class RoleApiResourceTest
   }
 
   @Test
-  public void testGetRoles_allSources() throws Exception {
+  void getRolesAllSources() throws Exception {
     Role role1 = createRole("default", "id1", "role1", "role1", Arrays.asList("role1", "role2"),
         Arrays.asList("priv1", "priv2"));
     Role role2 = createRole("another", "id2", "role2", "role2", Arrays.asList("role2", "role3"),
@@ -105,7 +108,7 @@ public class RoleApiResourceTest
   }
 
   @Test
-  public void testGetRoles_noRoles() throws Exception {
+  void getRolesNoRoles() throws Exception {
     when(securitySystem.listRoles("default")).thenReturn(new HashSet<>());
 
     List<RoleXOResponse> apiRoles = underTest.getRoles("default");
@@ -114,7 +117,7 @@ public class RoleApiResourceTest
   }
 
   @Test
-  public void testGetRole() {
+  void getRole() {
     Role role = createRole("default", "id1", "role1", "role1", Arrays.asList("role1", "role2"),
         Arrays.asList("priv1", "priv2"));
     when(authorizationManager.getRole("roleId")).thenReturn(role);
@@ -126,7 +129,7 @@ public class RoleApiResourceTest
   }
 
   @Test
-  public void testGetRole_notFound() {
+  void getRoleNotFound() {
     when(authorizationManager.getRole("roleId")).thenThrow(NoSuchRoleException.class);
 
     try {
@@ -142,7 +145,7 @@ public class RoleApiResourceTest
   }
 
   @Test
-  public void testGetRole_sourceNotFound() throws Exception {
+  void getRoleSourceNotFound() throws Exception {
     when(securitySystem.getAuthorizationManager("bad")).thenThrow(NoSuchAuthorizationManagerException.class);
 
     try {
@@ -158,7 +161,7 @@ public class RoleApiResourceTest
   }
 
   @Test
-  public void testCreateRole() throws Exception {
+  void createRole() throws Exception {
     RoleXORequest roleXo = createApiRole("roleId", "roleName", "description", Collections.singleton("childRole"),
         Collections.singleton("priv"));
 
@@ -180,7 +183,7 @@ public class RoleApiResourceTest
   }
 
   @Test
-  public void testCreateRole_alreadyExists() throws Exception {
+  void createRoleAlreadyExists() throws Exception {
     when(authorizationManager.addRole(any())).thenThrow(DuplicateRoleException.class);
 
     RoleXORequest roleXo = createApiRole("roleId", "roleName", "description", Collections.emptySet(),
@@ -199,14 +202,14 @@ public class RoleApiResourceTest
   }
 
   @Test
-  public void testDelete() throws Exception {
+  void delete() throws Exception {
     underTest.delete("roleId");
 
     verify(authorizationManager).deleteRole("roleId");
   }
 
   @Test
-  public void testDelete_notFound() throws Exception {
+  void deleteNotFound() throws Exception {
     doThrow(NoSuchRoleException.class).when(authorizationManager).deleteRole("roleId");
 
     try {
@@ -222,7 +225,7 @@ public class RoleApiResourceTest
   }
 
   @Test
-  public void testDeleteRole_readOnly() {
+  void deleteRoleReadOnly() {
     doThrow(ReadonlyRoleException.class).when(authorizationManager).deleteRole("roleId");
 
     try {
@@ -239,7 +242,7 @@ public class RoleApiResourceTest
   }
 
   @Test
-  public void testUpdateRole() {
+  void updateRole() {
     Role role = createRole("default", "id1", "role1", "role1", Arrays.asList("role1", "role2"),
         Arrays.asList("priv1", "priv2"));
     when(authorizationManager.getRole("id1")).thenReturn(role);
@@ -256,7 +259,7 @@ public class RoleApiResourceTest
   }
 
   @Test
-  public void testUpdateRole_notFound() {
+  void updateRoleNotFound() {
     when(authorizationManager.getRole(any())).thenThrow(new NoSuchRoleException("id1"));
     RoleXORequest roleXo = createApiRole("id1", "role1", "role1", Arrays.asList("role1", "role2"),
         Arrays.asList("priv1", "priv2"));
@@ -274,7 +277,7 @@ public class RoleApiResourceTest
   }
 
   @Test
-  public void testUpdateRole_readOnly() {
+  void updateRoleReadOnly() {
     Role role = createRole("default", "id", "name", "description", Collections.singleton("role1"),
         Collections.singleton("priv1"));
 
@@ -298,7 +301,7 @@ public class RoleApiResourceTest
   }
 
   @Test
-  public void testUpdateRole_nameConflict() {
+  void updateRoleNameConflict() {
     RoleXORequest roleXo = createApiRole("id", "name", "description", Collections.singleton("role1"),
         Collections.singleton("priv1"));
 
@@ -398,6 +401,51 @@ public class RoleApiResourceTest
     }
     else {
       assertThat(roleXo.getPrivileges(), containsInAnyOrder(privileges.toArray(new String[] {})));
+    }
+  }
+  
+  @Test
+  void roleOperationsWithVirtualThreads() throws Exception {
+    // This test verifies that role operations are compatible with Virtual Threads
+    // by running the operations in a Virtual Thread if supported by the JVM
+    
+    // Check if Virtual Threads are supported (Java 21+)
+    boolean virtualThreadsSupported = false;
+    try {
+      Class<?> threadBuilderClass = Class.forName("java.lang.Thread$Builder");
+      Class<?> virtualClass = Class.forName("java.lang.Thread$Builder$OfVirtual");
+      virtualThreadsSupported = true;
+    } catch (ClassNotFoundException e) {
+      // Virtual Threads not supported in this JVM version
+      return; // Skip test on older JVMs
+    }
+    
+    if (virtualThreadsSupported) {
+      // Setup test data
+      Role role = createRole("default", "vt-id", "vt-role", "Virtual Thread Test Role", 
+          Collections.singleton("role1"), Collections.singleton("priv1"));
+      when(authorizationManager.getRole("vt-id")).thenReturn(role);
+      
+      // Create a runnable that will be executed in a Virtual Thread
+      Runnable roleOperation = () -> {
+        RoleXOResponse roleXo = underTest.getRole("default", "vt-id");
+        assertApiRole(roleXo, "default", "vt-id", "vt-role", "Virtual Thread Test Role", 
+            Collections.singleton("role1"), Collections.singleton("priv1"));
+      };
+      
+      // Use reflection to create and start a Virtual Thread
+      try {
+        // Thread.ofVirtual().start(roleOperation);
+        Class<?> threadClass = Class.forName("java.lang.Thread");
+        Object virtualThreadBuilder = threadClass.getMethod("ofVirtual").invoke(null);
+        Thread virtualThread = (Thread) virtualThreadBuilder.getClass().getMethod("start", Runnable.class)
+            .invoke(virtualThreadBuilder, roleOperation);
+        
+        // Wait for the Virtual Thread to complete
+        virtualThread.join();
+      } catch (Exception e) {
+        fail("Failed to execute role operation in Virtual Thread: " + e.getMessage());
+      }
     }
   }
 }

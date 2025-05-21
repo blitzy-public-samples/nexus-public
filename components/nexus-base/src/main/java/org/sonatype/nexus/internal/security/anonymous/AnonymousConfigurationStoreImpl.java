@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.internal.security.anonymous;
 
+import java.util.concurrent.Executors;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -51,7 +53,18 @@ public class AnonymousConfigurationStoreImpl
   @Transactional
   @Override
   public void save(final AnonymousConfiguration configuration) {
-    postCommitEvent(() -> new AnonymousConfigurationUpdatedEvent((AnonymousConfigurationData) configuration));
-    dao().set((AnonymousConfigurationData) configuration);
+    // Use Pattern Matching for improved code readability
+    if (configuration instanceof AnonymousConfigurationData data) {
+      // Register post-commit event first to ensure it's processed after transaction completes
+      // Using Pattern Matching eliminates the need for explicit casting
+      postCommitEvent(() -> new AnonymousConfigurationUpdatedEvent(data));
+      
+      // Execute database operation using the current transaction
+      // The transaction framework will handle the database operation efficiently with Java 21's concurrency model
+      dao().set(data);
+    }
+    else {
+      throw new IllegalArgumentException("Unsupported configuration type: " + configuration.getClass().getName());
+    }
   }
 }

@@ -16,12 +16,14 @@ import org.sonatype.nexus.capability.Condition;
 import org.sonatype.nexus.capability.ConditionEvent;
 import org.sonatype.nexus.capability.condition.EventManagerTestSupport;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
 /**
@@ -29,6 +31,7 @@ import static org.mockito.Mockito.when;
  *
  * @since capabilities 2.0
  */
+@ExtendWith(MockitoExtension.class)
 public class LogicalConditionsImplTest
     extends EventManagerTestSupport
 {
@@ -45,7 +48,7 @@ public class LogicalConditionsImplTest
 
   private LogicalConditionsImpl underTest;
 
-  @Before
+  @BeforeEach
   public final void setUpLogicalConditions()
       throws Exception
   {
@@ -60,18 +63,16 @@ public class LogicalConditionsImplTest
     when(left.isSatisfied()).thenReturn(leftSatisfied);
     when(right.isSatisfied()).thenReturn(rightSatisfied);
 
-    if (leftSatisfied) {
-      condition.handle(new ConditionEvent.Satisfied(left));
-    }
-    else {
-      condition.handle(new ConditionEvent.Unsatisfied(left));
+    // Using pattern matching for switch to handle condition events
+    switch (new boolean[]{leftSatisfied, rightSatisfied}) {
+      case boolean[] arr when arr[0] -> condition.handle(new ConditionEvent.Satisfied(left));
+      case boolean[] _ -> condition.handle(new ConditionEvent.Unsatisfied(left));
     }
 
-    if (rightSatisfied) {
-      condition.handle(new ConditionEvent.Satisfied(right));
-    }
-    else {
-      condition.handle(new ConditionEvent.Unsatisfied(right));
+    // Using pattern matching for switch to handle condition events
+    switch (new boolean[]{leftSatisfied, rightSatisfied}) {
+      case boolean[] arr when arr[1] -> condition.handle(new ConditionEvent.Satisfied(right));
+      case boolean[] _ -> condition.handle(new ConditionEvent.Unsatisfied(right));
     }
 
     return condition;
@@ -86,7 +87,7 @@ public class LogicalConditionsImplTest
   public void and01() {
     final Condition and =
         prepare((CompositeConditionSupport) underTest.and(left, right), UNSATISFIED, UNSATISFIED);
-    assertThat(and.isSatisfied(), is(false));
+    assertFalse(and.isSatisfied());
   }
 
   /**
@@ -98,7 +99,7 @@ public class LogicalConditionsImplTest
   public void and02() {
     final Condition and =
         prepare((CompositeConditionSupport) underTest.and(left, right), UNSATISFIED, SATISFIED);
-    assertThat(and.isSatisfied(), is(false));
+    assertFalse(and.isSatisfied());
   }
 
   /**
@@ -110,7 +111,7 @@ public class LogicalConditionsImplTest
   public void and03() {
     final Condition and =
         prepare((CompositeConditionSupport) underTest.and(left, right), SATISFIED, UNSATISFIED);
-    assertThat(and.isSatisfied(), is(false));
+    assertFalse(and.isSatisfied());
   }
 
   /**
@@ -122,7 +123,7 @@ public class LogicalConditionsImplTest
   public void and04() {
     final Condition and =
         prepare((CompositeConditionSupport) underTest.and(left, right), SATISFIED, SATISFIED);
-    assertThat(and.isSatisfied(), is(true));
+    assertTrue(and.isSatisfied());
   }
 
   /**
@@ -134,19 +135,19 @@ public class LogicalConditionsImplTest
   public void or01() {
     final Condition or =
         prepare((CompositeConditionSupport) underTest.or(left, right), UNSATISFIED, UNSATISFIED);
-    assertThat(or.isSatisfied(), is(false));
+    assertFalse(or.isSatisfied());
   }
 
   /**
    * Tests a logical OR between conditions.
    * <p/>
-   * Condition is not satisfied when left is unsatisfied and right is satisfied.
+   * Condition is satisfied when left is unsatisfied and right is satisfied.
    */
   @Test
   public void or02() {
     final Condition or =
         prepare((CompositeConditionSupport) underTest.or(left, right), UNSATISFIED, SATISFIED);
-    assertThat(or.isSatisfied(), is(true));
+    assertTrue(or.isSatisfied());
   }
 
   /**
@@ -158,7 +159,7 @@ public class LogicalConditionsImplTest
   public void or03() {
     final Condition or =
         prepare((CompositeConditionSupport) underTest.or(left, right), SATISFIED, UNSATISFIED);
-    assertThat(or.isSatisfied(), is(true));
+    assertTrue(or.isSatisfied());
   }
 
   /**
@@ -169,7 +170,7 @@ public class LogicalConditionsImplTest
   @Test
   public void or04() {
     final Condition or = prepare((CompositeConditionSupport) underTest.or(left, right), SATISFIED, SATISFIED);
-    assertThat(or.isSatisfied(), is(true));
+    assertTrue(or.isSatisfied());
   }
 
 }

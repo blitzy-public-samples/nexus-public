@@ -17,12 +17,14 @@ import org.sonatype.nexus.capability.ConditionEvent;
 import org.sonatype.nexus.capability.condition.EventManagerTestSupport;
 import org.sonatype.nexus.common.event.EventManager;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -31,6 +33,7 @@ import static org.mockito.Mockito.when;
  *
  * @since capabilities 2.0
  */
+@ExtendWith(MockitoExtension.class)
 public class CompositeConditionTestSupport
     extends EventManagerTestSupport
 {
@@ -46,7 +49,7 @@ public class CompositeConditionTestSupport
 
   private TestCondition underTest;
 
-  @Before
+  @BeforeEach
   public final void setUpTestCondition()
       throws Exception
   {
@@ -63,7 +66,7 @@ public class CompositeConditionTestSupport
    */
   @Test
   public void notSatisfiedInitially() {
-    assertThat(underTest.isSatisfied(), is(false));
+    assertFalse(underTest.isSatisfied());
   }
 
   /**
@@ -74,7 +77,7 @@ public class CompositeConditionTestSupport
   public void whenMemberConditionIsSatisfiedAndReevaluateReturnsTrue() {
     when(c1.isSatisfied()).thenReturn(true);
     underTest.handle(new ConditionEvent.Satisfied(c1));
-    assertThat(underTest.isSatisfied(), is(true));
+    assertTrue(underTest.isSatisfied());
 
     verifyEventManagerEvents(satisfied(underTest));
   }
@@ -91,7 +94,7 @@ public class CompositeConditionTestSupport
     when(c1.isSatisfied()).thenReturn(false);
     when(c2.isSatisfied()).thenReturn(false);
     underTest.handle(new ConditionEvent.Satisfied(c2));
-    assertThat(underTest.isSatisfied(), is(false));
+    assertFalse(underTest.isSatisfied());
 
     verifyEventManagerEvents(satisfied(underTest), unsatisfied(underTest));
   }
@@ -105,7 +108,7 @@ public class CompositeConditionTestSupport
     when(c1.isSatisfied()).thenReturn(false);
     when(c2.isSatisfied()).thenReturn(true);
     underTest.handle(new ConditionEvent.Unsatisfied(c1));
-    assertThat(underTest.isSatisfied(), is(true));
+    assertTrue(underTest.isSatisfied());
 
     verifyEventManagerEvents(satisfied(underTest));
   }
@@ -123,7 +126,7 @@ public class CompositeConditionTestSupport
     when(c1.isSatisfied()).thenReturn(false);
     when(c2.isSatisfied()).thenReturn(false);
     underTest.handle(new ConditionEvent.Unsatisfied(c2));
-    assertThat(underTest.isSatisfied(), is(false));
+    assertFalse(underTest.isSatisfied());
 
     verifyEventManagerEvents(satisfied(underTest), unsatisfied(underTest));
   }

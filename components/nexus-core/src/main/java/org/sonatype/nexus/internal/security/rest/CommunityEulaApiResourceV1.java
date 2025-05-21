@@ -12,13 +12,14 @@
  */
 package org.sonatype.nexus.internal.security.rest;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.Path;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.Path;
 
 import org.sonatype.nexus.kv.GlobalKeyValueStore;
 
+import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.rest.APIConstants.V1_API_PREFIX;
 
 /**
@@ -30,7 +31,8 @@ import static org.sonatype.nexus.rest.APIConstants.V1_API_PREFIX;
 public class CommunityEulaApiResourceV1
     extends CommunityEulaApiResource
 {
-  public static final String RESOURCE_URI = V1_API_PREFIX + "/system/eula";
+  // Using String Template for resource path construction
+  public static final String RESOURCE_URI = STR."\{V1_API_PREFIX}/system/eula";
 
   @Inject
   public CommunityEulaApiResourceV1(final GlobalKeyValueStore globalKeyValueStore) {

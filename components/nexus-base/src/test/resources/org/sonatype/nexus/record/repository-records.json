@@ -1,0 +1,509 @@
+{
+  "repositories": [
+    {
+      "type": "hosted",
+      "format": "maven2",
+      "name": "maven-releases",
+      "configuration": {
+        "storage": {
+          "blobStoreName": "default",
+          "strictContentTypeValidation": true,
+          "writePolicy": "ALLOW_ONCE"
+        },
+        "maven": {
+          "versionPolicy": "RELEASE",
+          "layoutPolicy": "STRICT"
+        },
+        "cleanup": {
+          "policyNames": ["cleanup-releases"]
+        }
+      },
+      "attributes": {
+        "proxy": null,
+        "negative-cache": null,
+        "httpclient": null
+      },
+      "components": [
+        {
+          "id": "c1",
+          "group": "org.sonatype.nexus",
+          "name": "nexus-core",
+          "version": "3.45.0",
+          "assets": [
+            {
+              "id": "a1",
+              "name": "nexus-core-3.45.0.jar",
+              "contentType": "application/java-archive",
+              "size": 2456789,
+              "checksums": {
+                "sha1": "abcdef1234567890abcdef1234567890abcdef12",
+                "md5": "abcdef1234567890abcdef1234567890"
+              },
+              "lastModified": "2023-10-15T14:30:45.123Z",
+              "lastDownloaded": "2023-11-20T09:15:22.456Z",
+              "downloadCount": 1245,
+              "blobRef": {
+                "store": "default",
+                "blob": "12345678-abcd-1234-efgh-123456789012",
+                "properties": {
+                  "creationTime": "2023-10-15T14:30:45.123Z",
+                  "size": 2456789
+                }
+              }
+            },
+            {
+              "id": "a2",
+              "name": "nexus-core-3.45.0.pom",
+              "contentType": "application/xml",
+              "size": 4567,
+              "checksums": {
+                "sha1": "12345abcdef1234567890abcdef1234567890abc",
+                "md5": "12345abcdef1234567890abcdef123456"
+              },
+              "lastModified": "2023-10-15T14:30:46.789Z",
+              "lastDownloaded": "2023-11-20T09:15:20.123Z",
+              "downloadCount": 1567,
+              "blobRef": {
+                "store": "default",
+                "blob": "87654321-dcba-4321-hgfe-210987654321",
+                "properties": {
+                  "creationTime": "2023-10-15T14:30:46.789Z",
+                  "size": 4567
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "c2",
+          "group": "org.sonatype.nexus",
+          "name": "nexus-repository-maven",
+          "version": "3.45.0",
+          "assets": [
+            {
+              "id": "a3",
+              "name": "nexus-repository-maven-3.45.0.jar",
+              "contentType": "application/java-archive",
+              "size": 1234567,
+              "checksums": {
+                "sha1": "fedcba9876543210fedcba9876543210fedcba98",
+                "md5": "fedcba9876543210fedcba9876543210"
+              },
+              "lastModified": "2023-10-15T14:35:12.345Z",
+              "lastDownloaded": "2023-11-19T16:45:33.789Z",
+              "downloadCount": 987,
+              "blobRef": {
+                "store": "default",
+                "blob": "abcdef12-3456-7890-abcd-ef1234567890",
+                "properties": {
+                  "creationTime": "2023-10-15T14:35:12.345Z",
+                  "size": 1234567
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "proxy",
+      "format": "maven2",
+      "name": "maven-central",
+      "configuration": {
+        "storage": {
+          "blobStoreName": "default",
+          "strictContentTypeValidation": true,
+          "writePolicy": "READ_ONLY"
+        },
+        "maven": {
+          "versionPolicy": "MIXED",
+          "layoutPolicy": "PERMISSIVE"
+        },
+        "proxy": {
+          "remoteUrl": "https://repo1.maven.org/maven2/",
+          "contentMaxAge": 1440,
+          "metadataMaxAge": 1440
+        },
+        "negativeCache": {
+          "enabled": true,
+          "timeToLive": 1440
+        },
+        "httpClient": {
+          "blocked": false,
+          "autoBlock": true,
+          "connection": {
+            "retries": 3,
+            "timeout": 60,
+            "enableCircularRedirects": false,
+            "enableCookies": false
+          },
+          "authentication": null
+        }
+      },
+      "attributes": {
+        "proxy": {
+          "remoteUrl": "https://repo1.maven.org/maven2/",
+          "contentMaxAge": 1440,
+          "metadataMaxAge": 1440
+        },
+        "negative-cache": {
+          "enabled": true,
+          "timeToLive": 1440
+        },
+        "httpclient": {
+          "blocked": false,
+          "autoBlock": true,
+          "connection": {
+            "retries": 3,
+            "timeout": 60,
+            "enableCircularRedirects": false,
+            "enableCookies": false
+          },
+          "authentication": null
+        }
+      },
+      "status": {
+        "online": true,
+        "available": true,
+        "description": "Repository is available",
+        "reason": null,
+        "lastChecked": "2023-11-21T10:15:30.456Z"
+      }
+    },
+    {
+      "type": "group",
+      "format": "maven2",
+      "name": "maven-public",
+      "configuration": {
+        "storage": {
+          "blobStoreName": "default",
+          "strictContentTypeValidation": true,
+          "writePolicy": "READ_ONLY"
+        },
+        "group": {
+          "memberNames": ["maven-releases", "maven-snapshots", "maven-central"]
+        }
+      },
+      "attributes": {
+        "group": {
+          "memberNames": ["maven-releases", "maven-snapshots", "maven-central"]
+        }
+      }
+    },
+    {
+      "type": "hosted",
+      "format": "raw",
+      "name": "raw-releases",
+      "configuration": {
+        "storage": {
+          "blobStoreName": "default",
+          "strictContentTypeValidation": false,
+          "writePolicy": "ALLOW"
+        }
+      },
+      "attributes": {
+        "raw": {
+          "contentDisposition": "ATTACHMENT"
+        }
+      },
+      "assets": [
+        {
+          "id": "a4",
+          "name": "example-config.json",
+          "contentType": "application/json",
+          "size": 2345,
+          "checksums": {
+            "sha1": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+            "md5": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+          },
+          "lastModified": "2023-11-10T08:45:12.345Z",
+          "lastDownloaded": "2023-11-20T14:22:33.456Z",
+          "downloadCount": 56,
+          "blobRef": {
+            "store": "default",
+            "blob": "11223344-5566-7788-99aa-bbccddeeff00",
+            "properties": {
+              "creationTime": "2023-11-10T08:45:12.345Z",
+              "size": 2345
+            }
+          },
+          "attributes": {
+            "raw": {
+              "contentDisposition": "ATTACHMENT"
+            }
+          }
+        },
+        {
+          "id": "a5",
+          "name": "deployment-script.sh",
+          "contentType": "application/x-sh",
+          "size": 5678,
+          "checksums": {
+            "sha1": "f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5",
+            "md5": "f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3"
+          },
+          "lastModified": "2023-11-12T16:30:45.678Z",
+          "lastDownloaded": "2023-11-21T09:10:22.345Z",
+          "downloadCount": 34,
+          "blobRef": {
+            "store": "default",
+            "blob": "aabbccdd-eeff-0011-2233-445566778899",
+            "properties": {
+              "creationTime": "2023-11-12T16:30:45.678Z",
+              "size": 5678
+            }
+          },
+          "attributes": {
+            "raw": {
+              "contentDisposition": "INLINE"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "hosted",
+      "format": "apt",
+      "name": "apt-internal",
+      "configuration": {
+        "storage": {
+          "blobStoreName": "default",
+          "strictContentTypeValidation": true,
+          "writePolicy": "ALLOW"
+        },
+        "apt": {
+          "distribution": "bionic",
+          "flat": false
+        },
+        "aptSigning": {
+          "keypair": "apt-signing-key",
+          "passphrase": "**********"
+        }
+      },
+      "attributes": {
+        "apt": {
+          "distribution": "bionic"
+        },
+        "aptSigning": {
+          "keypair": "apt-signing-key"
+        }
+      },
+      "components": [
+        {
+          "id": "c3",
+          "name": "nexus-repository-apt",
+          "version": "1.0.20",
+          "architecture": "amd64",
+          "assets": [
+            {
+              "id": "a6",
+              "name": "nexus-repository-apt_1.0.20_amd64.deb",
+              "contentType": "application/vnd.debian.binary-package",
+              "size": 3456789,
+              "checksums": {
+                "sha1": "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b",
+                "md5": "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d"
+              },
+              "lastModified": "2023-10-20T11:22:33.456Z",
+              "lastDownloaded": "2023-11-18T15:40:12.345Z",
+              "downloadCount": 123,
+              "blobRef": {
+                "store": "default",
+                "blob": "12345678-90ab-cdef-1234-567890abcdef",
+                "properties": {
+                  "creationTime": "2023-10-20T11:22:33.456Z",
+                  "size": 3456789
+                }
+              },
+              "attributes": {
+                "apt": {
+                  "architecture": "amd64",
+                  "component": "main"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "blobStores": [
+    {
+      "name": "default",
+      "type": "file",
+      "attributes": {
+        "file": {
+          "path": "${karaf.data}/blobs/default"
+        },
+        "metrics": {
+          "totalSize": 7654321098,
+          "blobCount": 12345,
+          "availableSpace": 102400000000
+        }
+      },
+      "blobCount": 12345,
+      "totalSize": 7654321098,
+      "availableSpace": 102400000000,
+      "unlimited": false
+    },
+    {
+      "name": "s3-backup",
+      "type": "s3",
+      "attributes": {
+        "s3": {
+          "region": "us-west-2",
+          "bucket": "nexus-backup-bucket",
+          "prefix": "repository-blobs",
+          "expiration": 3,
+          "encryption": {
+            "type": "s3ManagedEncryption"
+          }
+        },
+        "metrics": {
+          "totalSize": 9876543210,
+          "blobCount": 23456,
+          "availableSpace": -1
+        }
+      },
+      "blobCount": 23456,
+      "totalSize": 9876543210,
+      "availableSpace": -1,
+      "unlimited": true
+    }
+  ],
+  "securityRealms": [
+    {
+      "id": "NexusAuthenticatingRealm",
+      "name": "Local Authenticating Realm",
+      "enabled": true
+    },
+    {
+      "id": "NexusAuthorizingRealm",
+      "name": "Local Authorizing Realm",
+      "enabled": true
+    },
+    {
+      "id": "LdapRealm",
+      "name": "LDAP Realm",
+      "enabled": false,
+      "configuration": {
+        "connection": {
+          "host": "ldap.example.com",
+          "port": 389,
+          "protocol": "ldap",
+          "searchBase": "dc=example,dc=com",
+          "authScheme": "simple",
+          "systemUsername": "cn=admin,dc=example,dc=com",
+          "systemPassword": "**********"
+        },
+        "userMapping": {
+          "emailAddressAttribute": "mail",
+          "ldapFilter": "(objectClass=inetOrgPerson)",
+          "userBaseDn": "ou=users",
+          "userIdAttribute": "uid",
+          "userObjectClass": "inetOrgPerson",
+          "userPasswordAttribute": "userPassword",
+          "userRealNameAttribute": "cn"
+        },
+        "groupMapping": {
+          "groupBaseDn": "ou=groups",
+          "groupIdAttribute": "cn",
+          "groupMemberAttribute": "uniqueMember",
+          "groupMemberFormat": "uid=${username},ou=users,dc=example,dc=com",
+          "groupObjectClass": "groupOfUniqueNames"
+        }
+      }
+    }
+  ],
+  "cleanupPolicies": [
+    {
+      "name": "cleanup-releases",
+      "format": "maven2",
+      "notes": "Cleanup policy for release repositories",
+      "criteria": {
+        "lastBlobUpdated": 365,
+        "lastDownloaded": 180,
+        "regex": ".*-SNAPSHOT.*",
+        "assetRegex": ".*\\.(jar|pom|war|ear)$"
+      }
+    },
+    {
+      "name": "cleanup-snapshots",
+      "format": "maven2",
+      "notes": "Cleanup policy for snapshot repositories",
+      "criteria": {
+        "lastBlobUpdated": 30,
+        "lastDownloaded": 15
+      }
+    }
+  ],
+  "tasks": [
+    {
+      "id": "t1",
+      "name": "Admin - Compact blob store",
+      "type": "blobstore.compact",
+      "enabled": true,
+      "schedule": {
+        "type": "cron",
+        "cronExpression": "0 0 2 * * ?"
+      },
+      "properties": {
+        "blobstoreName": "default"
+      },
+      "lastRun": "2023-11-20T02:00:00.000Z",
+      "nextRun": "2023-11-21T02:00:00.000Z",
+      "status": "WAITING"
+    },
+    {
+      "id": "t2",
+      "name": "Admin - Cleanup repositories using cleanup policies",
+      "type": "repository.cleanup",
+      "enabled": true,
+      "schedule": {
+        "type": "cron",
+        "cronExpression": "0 0 1 * * ?"
+      },
+      "properties": {
+        "repositoryName": "*"
+      },
+      "lastRun": "2023-11-20T01:00:00.000Z",
+      "nextRun": "2023-11-21T01:00:00.000Z",
+      "status": "WAITING"
+    }
+  ],
+  "routingRules": [
+    {
+      "name": "external-dependencies",
+      "description": "Route for external dependencies",
+      "mode": "BLOCK",
+      "matchers": [
+        "^/org/apache/.*",
+        "^/commons-.*",
+        "^/log4j/.*"
+      ]
+    },
+    {
+      "name": "internal-only",
+      "description": "Route for internal artifacts",
+      "mode": "ALLOW",
+      "matchers": [
+        "^/com/example/.*",
+        "^/org/example/.*"
+      ]
+    }
+  ],
+  "selectors": [
+    {
+      "name": "all-maven-releases",
+      "type": "csel",
+      "expression": "format == \"maven2\" and path =~ \"^/org/sonatype/.*\" and not path =~ \".*-SNAPSHOT.*\"",
+      "description": "All Maven release artifacts"
+    },
+    {
+      "name": "raw-executables",
+      "type": "csel",
+      "expression": "format == \"raw\" and path =~ \".*\\.(sh|bat|exe|cmd|ps1)$\"",
+      "description": "Executable files in raw repositories"
+    }
+  ]
+}

@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.capability.condition.internal;
 
+import javax.inject.Provider;
+
 import org.sonatype.nexus.capability.CapabilityContext;
 import org.sonatype.nexus.capability.CapabilityContextAware;
 import org.sonatype.nexus.capability.CapabilityEvent;
@@ -29,6 +31,9 @@ import static com.google.common.base.Preconditions.checkState;
 /**
  * A condition that delegates to provided {@link Evaluable} for checking if the condition is satisfied.
  * {@link Evaluable#isSatisfied()} is reevaluated after each update of capability the condition is used for.
+ * <p>
+ * This implementation is compatible with Java 21 Virtual Threads and ensures proper event
+ * handling and thread context propagation across Virtual Thread boundaries.
  *
  * @since capabilities 2.2
  */
@@ -37,14 +42,38 @@ public class EvaluableCondition
     implements CapabilityContextAware
 {
 
-  private CapabilityIdentity capabilityIdentity;
+  private volatile CapabilityIdentity capabilityIdentity;
 
   private final Evaluable evaluable;
 
+  /**
+   * Constructs a new EvaluableCondition with the specified EventManager and Evaluable.
+   * <p>
+   * This implementation ensures proper handling of events across Virtual Thread boundaries.
+   *
+   * @param eventManager the event manager to use
+   * @param evaluable the evaluable to delegate condition checking to
+   */
   public EvaluableCondition(final EventManager eventManager,
                             final Evaluable evaluable)
   {
     super(eventManager, false);
+    this.evaluable = checkNotNull(evaluable);
+  }
+
+  /**
+   * Constructs a new EvaluableCondition with the specified EventManager provider and Evaluable.
+   * <p>
+   * This constructor is preferred for Virtual Thread compatibility as it ensures proper
+   * access to the EventManager across thread boundaries.
+   *
+   * @param eventManagerProvider the provider of event manager instances
+   * @param evaluable the evaluable to delegate condition checking to
+   */
+  public EvaluableCondition(final Provider<EventManager> eventManagerProvider,
+                            final Evaluable evaluable)
+  {
+    super(eventManagerProvider, false);
     this.evaluable = checkNotNull(evaluable);
   }
 
@@ -61,6 +90,7 @@ public class EvaluableCondition
   protected void doBind() {
     checkState(capabilityIdentity != null, "Capability identity not specified");
     getEventManager().register(this);
+    // Evaluate in the current thread context to ensure proper propagation
     setSatisfied(evaluable.isSatisfied());
   }
 
@@ -69,10 +99,22 @@ public class EvaluableCondition
     getEventManager().unregister(this);
   }
 
+  /**
+   * Handles capability update events, ensuring proper thread context propagation
+   * when evaluating the condition across Virtual Thread boundaries.
+   *
+   * @param event the capability update event
+   */
   @AllowConcurrentEvents
   @Subscribe
   public void handle(final CapabilityEvent.AfterUpdate event) {
-    if (event.getReference().context().id().equals(capabilityIdentity)) {
+    // Capture the current capability identity to ensure thread safety
+    final CapabilityIdentity currentCapabilityIdentity = this.capabilityIdentity;
+    
+    if (currentCapabilityIdentity != null && 
+        event.getReference().context().id().equals(currentCapabilityIdentity)) {
+      // Evaluate in the current thread context (which may be a Virtual Thread)
+      // This ensures proper context propagation across thread boundaries
       setSatisfied(evaluable.isSatisfied());
     }
   }

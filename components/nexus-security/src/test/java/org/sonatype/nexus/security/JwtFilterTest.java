@@ -21,9 +21,11 @@ import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.security.jwt.JwtVerificationException;
 
 import com.google.common.collect.ImmutableList;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -33,6 +35,7 @@ import static org.sonatype.nexus.security.JwtHelper.JWT_COOKIE_NAME;
 /**
  * Test for {@link JwtFilter}
  */
+@ExtendWith(MockitoExtension.class)
 public class JwtFilterTest
     extends TestSupport
 {
@@ -51,7 +54,7 @@ public class JwtFilterTest
 
   private JwtFilter jwtFilter;
 
-  @Before
+  @BeforeEach
   public void setupFilter() {
     this.jwtFilter = new JwtFilter(jwtHelper, new ArrayList<>());
     when(request.getServletPath()).thenReturn("/somepath");
@@ -111,11 +114,43 @@ public class JwtFilterTest
     verifyNoInteractions(response);
   }
 
+  @Test
+  public void testPreHandle_Http2Request() throws Exception {
+    Cookie oldCookie = makeCookie(OLD_JWT);
+    Cookie newCookie = makeCookie(NEW_JWT);
+    Cookie[] cookies = new Cookie[] {oldCookie};
+
+    when(jwtHelper.verifyAndRefreshJwtCookie(OLD_JWT, false)).thenReturn(newCookie);
+    when(request.getCookies()).thenReturn(cookies);
+    when(request.getProtocol()).thenReturn("HTTP/2.0");
+
+    jwtFilter.preHandle(request, response);
+
+    verify(response).addCookie(newCookie);
+  }
+
+  @Test
+  public void testPreHandle_Http3Request() throws Exception {
+    Cookie oldCookie = makeCookie(OLD_JWT);
+    Cookie newCookie = makeCookie(NEW_JWT);
+    Cookie[] cookies = new Cookie[] {oldCookie};
+
+    when(jwtHelper.verifyAndRefreshJwtCookie(OLD_JWT, false)).thenReturn(newCookie);
+    when(request.getCookies()).thenReturn(cookies);
+    when(request.getProtocol()).thenReturn("HTTP/3.0");
+
+    jwtFilter.preHandle(request, response);
+
+    verify(response).addCookie(newCookie);
+  }
+
   private Cookie makeCookie(final String jwt) {
     Cookie cookie = new Cookie(JWT_COOKIE_NAME, jwt);
     cookie.setMaxAge(300);
     cookie.setPath("/");
     cookie.setHttpOnly(true);
+    cookie.setSecure(true);
+    cookie.setAttribute("SameSite", "None");
     return cookie;
   }
 }

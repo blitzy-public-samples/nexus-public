@@ -17,6 +17,10 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Event fired after {@link AuditData} had been recorded.
+ * <p>
+ * This event is designed to be efficiently processed by Virtual Threads in Java 21.
+ * It is immutable and thread-safe, making it suitable for concurrent processing
+ * in high-throughput event handling scenarios.
  *
  * @since 3.1
  */
@@ -24,10 +28,20 @@ public class AuditDataRecordedEvent
 {
   private final AuditData data;
 
+  /**
+   * Creates a new audit data recorded event.
+   * 
+   * @param data the audit data that was recorded (not null)
+   */
   public AuditDataRecordedEvent(final AuditData data) {
     this.data = checkNotNull(data);
   }
 
+  /**
+   * Returns the recorded audit data.
+   * 
+   * @return the immutable audit data
+   */
   public AuditData getData() {
     return data;
   }

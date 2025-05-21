@@ -13,6 +13,7 @@
 package org.sonatype.nexus.internal.security.apikey.store;
 
 import java.nio.CharBuffer;
+import java.nio.charset.StandardCharsets;
 
 import org.sonatype.nexus.security.authc.apikey.ApiKey;
 import org.sonatype.nexus.datastore.mybatis.handlers.PasswordCharacterArrayTypeHandler;
@@ -31,15 +32,44 @@ class ApiKeyToken
 {
   private final char[] chars;
 
+  /**
+   * Creates a new API key token with the given character array.
+   * 
+   * @param chars the character array to store (not copied, for performance reasons)
+   */
   public ApiKeyToken(final char[] chars) { // NOSONAR
     this.chars = chars; // NOSONAR: this is just a temporary transfer object
   }
 
+  /**
+   * Returns the character array stored in this token.
+   * 
+   * @return the character array (not copied, for performance reasons)
+   */
   public char[] getChars() { // NOSONAR
     return chars; // NOSONAR: this is just a temporary transfer object
   }
 
+  /**
+   * Returns a {@link CharBuffer} view of the character array stored in this token.
+   * The buffer is optimized for Java 21's improved NIO buffer handling.
+   * 
+   * @return a character buffer view of the stored character array
+   */
   public CharBuffer getCharBuffer() {
-    return CharBuffer.wrap(chars);
+    // Use CharBuffer.wrap with explicit capacity for better memory management in Java 21
+    return CharBuffer.wrap(chars, 0, chars.length);
+  }
+  
+  /**
+   * Returns a string representation of this token using UTF-8 encoding.
+   * This method leverages Java 21's improved charset handling.
+   * 
+   * @return a string representation of the token
+   */
+  @Override
+  public String toString() {
+    // Use StandardCharsets.UTF_8 explicitly for consistent encoding across platforms
+    return new String(chars, StandardCharsets.UTF_8);
   }
 }

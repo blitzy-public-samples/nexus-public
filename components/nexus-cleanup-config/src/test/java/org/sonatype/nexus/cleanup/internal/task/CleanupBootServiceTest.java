@@ -14,8 +14,12 @@ package org.sonatype.nexus.cleanup.internal.task;
 
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
-import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.scheduling.TaskConfiguration;
 import org.sonatype.nexus.scheduling.TaskInfo;
 import org.sonatype.nexus.scheduling.TaskScheduler;
@@ -23,14 +27,15 @@ import org.sonatype.nexus.scheduling.schedule.Cron;
 import org.sonatype.nexus.scheduling.schedule.ScheduleFactory;
 
 import com.google.common.collect.ImmutableList;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.Collections.emptyList;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.core.Is.is;
-import static org.hamcrest.core.IsEqual.equalTo;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -38,10 +43,11 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.sonatype.nexus.cleanup.internal.task.CleanupBootService.CRON;
 import static org.sonatype.nexus.cleanup.internal.task.CleanupBootService.TASK_NAME;
 
+@ExtendWith(MockitoExtension.class)
 public class CleanupBootServiceTest
-    extends TestSupport
 {
   private TaskConfiguration taskConfig;
 
@@ -56,7 +62,7 @@ public class CleanupBootServiceTest
 
   private CleanupBootService underTest;
 
-  @Before
+  @BeforeEach
   public void setup() throws Exception {
     underTest = new CleanupBootService(taskScheduler);
 
@@ -92,7 +98,7 @@ public class CleanupBootServiceTest
   public void setTaskName() throws Exception {
     underTest.doStart();
 
-    assertThat(taskConfig.getName(), is(equalTo(TASK_NAME)));
+    assertThat(taskConfig.getName()).isEqualTo(TASK_NAME);
   }
 
   @Test
@@ -106,14 +112,14 @@ public class CleanupBootServiceTest
 
   @Test
   public void duplicatesRemoved() {
-    TaskInfo nameMismatch = mockTask("foo", CleanupBootService.CRON);
-    TaskInfo cronMismatch = mockTask(CleanupBootService.TASK_NAME, "1 0 1 * * ?");
+    TaskInfo nameMismatch = mockTask("foo", CRON);
+    TaskInfo cronMismatch = mockTask(TASK_NAME, "1 0 1 * * ?");
     TaskInfo scheduleMismatch = mock(TaskInfo.class);
     when(scheduleMismatch.getConfiguration()).thenReturn(taskConfig);
-    when(scheduleMismatch.getName()).thenReturn(CleanupBootService.TASK_NAME);
+    when(scheduleMismatch.getName()).thenReturn(TASK_NAME);
 
-    TaskInfo matchA = mockTask(CleanupBootService.TASK_NAME, CleanupBootService.CRON);
-    TaskInfo matchB = mockTask(CleanupBootService.TASK_NAME, CleanupBootService.CRON);
+    TaskInfo matchA = mockTask(TASK_NAME, CRON);
+    TaskInfo matchB = mockTask(TASK_NAME, CRON);
 
     List<TaskInfo> tasks = ImmutableList.of(nameMismatch, cronMismatch, scheduleMismatch, matchA, matchB);
 
@@ -126,7 +132,43 @@ public class CleanupBootServiceTest
     verify(scheduleMismatch, never()).remove();
     verify(matchA, never()).remove();
     verify(matchB).remove();
-
+  }
+  
+  @Test
+  @Tag("VirtualThreadTestGroup")
+  public void duplicatesRemovedWithVirtualThreads() throws Exception {
+    // Create multiple matching tasks that should be considered duplicates
+    final int DUPLICATE_COUNT = 10;
+    TaskInfo[] duplicateTasks = new TaskInfo[DUPLICATE_COUNT];
+    for (int i = 0; i < DUPLICATE_COUNT; i++) {
+      duplicateTasks[i] = mockTask(TASK_NAME, CRON);
+    }
+    
+    // Add one non-matching task
+    TaskInfo nonMatchingTask = mockTask("different-name", CRON);
+    
+    // Build the task list with all tasks
+    ImmutableList.Builder<TaskInfo> tasksBuilder = ImmutableList.builder();
+    tasksBuilder.add(nonMatchingTask);
+    tasksBuilder.add(duplicateTasks);
+    List<TaskInfo> tasks = tasksBuilder.build();
+    
+    when(taskScheduler.listsTasks()).thenReturn(tasks);
+    
+    // Track how many tasks were removed
+    AtomicInteger removedCount = new AtomicInteger(0);
+    for (TaskInfo task : duplicateTasks) {
+      when(task.remove()).thenAnswer(invocation -> {
+        removedCount.incrementAndGet();
+        return null;
+      });
+    }
+    
+    underTest.doStart();
+    
+    // Verify that all duplicates except one were removed
+    assertThat(removedCount.get()).isEqualTo(DUPLICATE_COUNT - 1);
+    verify(nonMatchingTask, never()).remove();
   }
 
   private static TaskInfo mockTask(final String name, final String cron) {
@@ -138,5 +180,61 @@ public class CleanupBootServiceTest
     when(task.getConfiguration()).thenReturn(taskConfig);
     when(task.getSchedule()).thenReturn(new Cron(new Date(), cron));
     return task;
+  }
+  
+  @Test
+  @Tag("VirtualThreadTestGroup")
+  public void concurrentVirtualThreadExecution() throws Exception {
+    // Setup a scenario with multiple duplicate tasks
+    final int TASK_COUNT = 100;
+    final int THREAD_COUNT = 10;
+    
+    // Create tasks with the same name and cron schedule
+    TaskInfo[] tasks = new TaskInfo[TASK_COUNT];
+    for (int i = 0; i < TASK_COUNT; i++) {
+      tasks[i] = mockTask(TASK_NAME, CRON);
+    }
+    
+    when(taskScheduler.listsTasks()).thenReturn(ImmutableList.copyOf(tasks));
+    
+    // Setup synchronization for concurrent execution
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch completionLatch = new CountDownLatch(THREAD_COUNT);
+    AtomicInteger removedCount = new AtomicInteger(0);
+    
+    // Mock the remove method to track calls
+    for (TaskInfo task : tasks) {
+      when(task.remove()).thenAnswer(invocation -> {
+        removedCount.incrementAndGet();
+        return null;
+      });
+    }
+    
+    // Create virtual thread executor
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit multiple concurrent tasks
+      for (int i = 0; i < THREAD_COUNT; i++) {
+        executor.submit(() -> {
+          try {
+            startLatch.await(); // Wait for all threads to be ready
+            underTest.doStart(); // Execute the cleanup boot service
+            completionLatch.countDown();
+          }
+          catch (Exception e) {
+            throw new RuntimeException(e);
+          }
+        });
+      }
+      
+      // Start all threads simultaneously
+      startLatch.countDown();
+      
+      // Wait for all threads to complete
+      boolean completed = completionLatch.await(10, TimeUnit.SECONDS);
+      assertThat(completed).isTrue();
+      
+      // Verify that exactly TASK_COUNT-1 tasks were removed (keeping only one)
+      assertThat(removedCount.get()).isEqualTo(TASK_COUNT - 1);
+    }
   }
 }

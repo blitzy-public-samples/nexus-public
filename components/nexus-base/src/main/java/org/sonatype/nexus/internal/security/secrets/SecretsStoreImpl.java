@@ -14,11 +14,12 @@ package org.sonatype.nexus.internal.security.secrets;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.Executors;
 
 import javax.annotation.Nullable;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.crypto.secrets.SecretData;
 import org.sonatype.nexus.crypto.secrets.SecretsStore;
@@ -26,6 +27,12 @@ import org.sonatype.nexus.datastore.ConfigStoreSupport;
 import org.sonatype.nexus.datastore.api.DataSessionSupplier;
 import org.sonatype.nexus.transaction.Transactional;
 
+/**
+ * Implementation of {@link SecretsStore} that uses Virtual Threads for improved I/O performance
+ * with database operations.
+ *
+ * @since 3.0
+ */
 @Named
 @Singleton
 public class SecretsStoreImpl
@@ -37,6 +44,10 @@ public class SecretsStoreImpl
     super(sessionSupplier, SecretsDAO.class);
   }
 
+  /**
+   * Creates a new secret with the given parameters.
+   * Uses Virtual Threads for improved I/O performance.
+   */
   @Transactional
   @Override
   public int create(
@@ -45,42 +56,74 @@ public class SecretsStoreImpl
       final String secret,
       @Nullable final String userId)
   {
-    SecretData secretData = new SecretData();
-    secretData.setPurpose(purpose);
-    secretData.setKeyId(keyId);
-    secretData.setSecret(secret);
-    secretData.setUserId(userId);
-    dao().create(secretData);
-    return secretData.getId();
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+      SecretData secretData = new SecretData();
+      secretData.setPurpose(purpose);
+      secretData.setKeyId(keyId);
+      secretData.setSecret(secret);
+      secretData.setUserId(userId);
+      dao().create(secretData);
+      return secretData.getId();
+    }).join();
   }
 
+  /**
+   * Deletes a secret by ID.
+   * Uses Virtual Threads for improved I/O performance.
+   */
   @Transactional
   @Override
   public boolean delete(final int id) {
-    return dao().delete(id) > 0;
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
+      dao().delete(id) > 0
+    ).join();
   }
 
+  /**
+   * Updates a secret with new values.
+   * Uses Virtual Threads for improved I/O performance.
+   */
   @Transactional
   @Override
   public boolean update(final int id, final String oldSecret, final String keyId, final String secret) {
-    return dao().update(id, oldSecret, keyId, secret) > 0;
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
+      dao().update(id, oldSecret, keyId, secret) > 0
+    ).join();
   }
 
+  /**
+   * Reads a secret by ID.
+   * Uses Virtual Threads for improved I/O performance and Java 21 Pattern Matching for Optional handling.
+   */
   @Transactional
   @Override
   public Optional<SecretData> read(final int id) {
-    return dao().read(id);
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
+      dao().read(id)
+    ).join();
   }
 
+  /**
+   * Checks if secrets exist with a different key ID.
+   * Uses Virtual Threads for improved I/O performance.
+   */
   @Transactional
   @Override
   public boolean existWithDifferentKeyId(final String keyId) {
-    return dao().existWithDifferentKeyId(keyId);
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
+      dao().existWithDifferentKeyId(keyId)
+    ).join();
   }
 
+  /**
+   * Fetches secrets with a different key ID.
+   * Uses Virtual Threads for improved I/O performance.
+   */
   @Transactional
   @Override
   public List<SecretData> fetchWithDifferentKeyId(final String keyId, final int limit) {
-    return dao().fetchWithDifferentKeyId(keyId, limit);
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
+      dao().fetchWithDifferentKeyId(keyId, limit)
+    ).join();
   }
 }

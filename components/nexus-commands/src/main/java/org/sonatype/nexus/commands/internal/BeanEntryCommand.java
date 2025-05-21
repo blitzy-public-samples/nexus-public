@@ -12,7 +12,9 @@
  */
 package org.sonatype.nexus.commands.internal;
 
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Map;
 
 import org.sonatype.nexus.commands.CommandSupport;
 import org.sonatype.nexus.commands.SessionAware;
@@ -38,6 +40,9 @@ public class BeanEntryCommand
   private final BeanLocator beanLocator;
 
   private final BeanEntry<?, Action> beanEntry;
+  
+  // Cache for completer instances to improve performance
+  private final Map<Class<?>, Completer> completerCache = new HashMap<>();
 
   public BeanEntryCommand(final BeanLocator beanLocator, final BeanEntry<?, Action> beanEntry) {
     super(beanEntry.getImplementationClass());
@@ -48,8 +53,17 @@ public class BeanEntryCommand
 
   @Override
   protected Completer getCompleter(final Class<?> clazz) {
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    Iterator<? extends BeanEntry<?, Completer>> itr = beanLocator.locate(Key.get((Class) clazz)).iterator();
+    // Use computeIfAbsent for caching completer instances
+    return completerCache.computeIfAbsent(clazz, this::lookupCompleter);
+  }
+  
+  /**
+   * Looks up a completer for the given class.
+   */
+  private Completer lookupCompleter(final Class<?> clazz) {
+    // Use proper generic type parameters for improved type safety
+    Iterator<? extends BeanEntry<?, Completer>> itr = beanLocator.<Object, Completer>locate(
+        Key.get(clazz)).iterator();
     if (itr.hasNext()) {
       return itr.next().getValue();
     }
@@ -59,8 +73,10 @@ public class BeanEntryCommand
   @Override
   protected Action createNewAction(final Session session) {
     Action action = beanEntry.getProvider().get(); // create new instance each time
-    if (action instanceof SessionAware) {
-      ((SessionAware) action).setSession(session);
+    
+    // Use Java 21 pattern matching for instanceof check
+    if (action instanceof SessionAware sessionAware) {
+      sessionAware.setSession(session);
     }
     return action;
   }

@@ -16,10 +16,10 @@ import java.io.IOException;
 
 import javax.inject.Named;
 import javax.inject.Singleton;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServlet;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.sonatype.nexus.common.text.Strings2;
 
@@ -43,10 +43,10 @@ public class ThrowServlet
     RUNTIME, ERROR, IO, SERVLET;
 
     static Type parse(final String value) {
-      if (value == null) {
-        return RUNTIME;
-      }
-      return valueOf(Strings2.upper(value));
+      return switch (value) {
+        case null -> RUNTIME;
+        case String s -> valueOf(Strings2.upper(s));
+      };
     }
   }
 
@@ -57,21 +57,17 @@ public class ThrowServlet
   {
     Type type = Type.parse(request.getParameter("type"));
     String message = request.getParameter("message");
-    log.info("Throwing {} w/message: {}", type, message);
+    log.info(STR."Throwing \{type} w/message: \{message}");
+
+    // Test for Virtual Thread context propagation in error scenarios
+    boolean isVirtualThread = Thread.currentThread().isVirtual();
+    log.debug(STR."Current thread is virtual: \{isVirtualThread}");
 
     switch (type) {
-      case RUNTIME:
-        throw new RuntimeException(message);
-
-      case IO:
-        throw new IOException(message);
-
-      case SERVLET:
-        throw new ServletException(message);
-
-      case ERROR:
-      default:
-        throw new Error(message);
+      case RUNTIME -> throw new RuntimeException(message);
+      case IO -> throw new IOException(message);
+      case SERVLET -> throw new ServletException(message);
+      case ERROR -> throw new Error(message);
     }
   }
 }

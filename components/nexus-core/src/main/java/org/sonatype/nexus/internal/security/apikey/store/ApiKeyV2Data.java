@@ -21,10 +21,16 @@ import org.sonatype.nexus.internal.security.apikey.ApiKeyInternal;
 
 import org.apache.shiro.subject.PrincipalCollection;
 
+import java.util.Arrays;
+import java.util.Objects;
+
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * An {@link ApiKeyInternal} data for use with {@link ApiKeyStoreV2Impl}
+ * <p>
+ * This implementation has been updated to use Java 21 pattern matching features for improved
+ * type safety and security handling.
  */
 public class ApiKeyV2Data
     implements ApiKeyInternal
@@ -52,7 +58,12 @@ public class ApiKeyV2Data
   {
     this.domain = checkNotNull(domain);
     this.principals = checkNotNull(principals);
-    this.username = principals.getPrimaryPrincipal().toString();
+    // Use pattern matching to extract the primary principal
+    this.username = switch (principals.getPrimaryPrincipal()) {
+      case String s -> s;
+      case null -> throw new IllegalArgumentException("Primary principal cannot be null");
+      case Object o -> o.toString();
+    };
     this.accessKey = checkNotNull(accessKey);
     this.secret = checkNotNull(secret);
     this.created = created;
@@ -64,14 +75,30 @@ public class ApiKeyV2Data
 
   @Override
   public char[] getApiKey() {
+    // Optimize secret handling with Java 21's improved type-checking capabilities
+    if (accessKey == null || secret == null) {
+      throw new IllegalStateException("Access key and secret must be set");
+    }
+    
     int keyLength = accessKey.length();
-    char[] secretPart = secret.decrypt();
+    // Use pattern matching to safely handle the secret
+    char[] secretPart = switch (secret) {
+      case null -> throw new IllegalStateException("Secret cannot be null");
+      case Secret s -> s.decrypt();
+    };
+    
+    // Create and populate the token with improved security handling
     char[] token = new char[keyLength + secretPart.length];
-
-    System.arraycopy(accessKey.toCharArray(), 0, token, 0, keyLength);
-    System.arraycopy(secretPart, 0, token, keyLength, secretPart.length);
-
-    return token;
+    try {
+      System.arraycopy(accessKey.toCharArray(), 0, token, 0, keyLength);
+      System.arraycopy(secretPart, 0, token, keyLength, secretPart.length);
+      return token;
+    } finally {
+      // Ensure secretPart is cleared from memory after use for security
+      if (secretPart.length > 0) {
+        java.util.Arrays.fill(secretPart, '\0');
+      }
+    }
   }
 
   @Override
@@ -98,7 +125,12 @@ public class ApiKeyV2Data
   }
 
   public void setAccessKey(final String accessKey) {
-    this.accessKey = checkNotNull(accessKey);
+    // Use pattern matching to validate the access key
+    this.accessKey = switch (accessKey) {
+      case null -> throw new IllegalArgumentException("Access key cannot be null");
+      case String s when s.isEmpty() -> throw new IllegalArgumentException("Access key cannot be empty");
+      case String s -> s;
+    };
   }
 
   @Override
@@ -108,16 +140,58 @@ public class ApiKeyV2Data
 
   @Override
   public void setDomain(final String domain) {
-    this.domain = domain;
+    // Use pattern matching with guarded patterns to validate domain
+    this.domain = switch (domain) {
+      case null -> throw new IllegalArgumentException("Domain cannot be null");
+      case String s when s.isEmpty() -> throw new IllegalArgumentException("Domain cannot be empty");
+      case String s -> s;
+    };
   }
 
   @Override
   public void setPrincipals(final PrincipalCollection principals) {
     this.principals = checkNotNull(principals);
-    this.username = principals.getPrimaryPrincipal().toString();
+    // Use pattern matching to extract the primary principal with improved type safety
+    Object primaryPrincipal = principals.getPrimaryPrincipal();
+    this.username = switch (primaryPrincipal) {
+      case String s -> s;
+      case null -> throw new IllegalArgumentException("Primary principal cannot be null");
+      case Object o when o.getClass().isRecord() -> extractUsernameFromRecord(o);
+      case Object o -> o.toString();
+    };
+  }
+  
+  /**
+   * Extracts a username from a record-type principal using record patterns
+   * 
+   * @param recordPrincipal the principal that is a record
+   * @return the extracted username
+   */
+  private String extractUsernameFromRecord(Object recordPrincipal) {
+    // Use reflection to check if the record has a 'username' or 'name' component
+    try {
+      var recordClass = recordPrincipal.getClass();
+      // Try to find username or name component using pattern matching
+      for (var component : recordClass.getRecordComponents()) {
+        if ("username".equals(component.getName()) || "name".equals(component.getName())) {
+          var accessor = component.getAccessor();
+          var value = accessor.invoke(recordPrincipal);
+          if (value instanceof String s) {
+            return s;
+          }
+        }
+      }
+    } catch (Exception e) {
+      // Fall back to toString if any reflection error occurs
+    }
+    return recordPrincipal.toString();
   }
 
   public void setSecret(final Secret secret) {
-    this.secret = secret;
+    // Use pattern matching to validate the secret before setting it
+    this.secret = switch (secret) {
+      case null -> throw new IllegalArgumentException("Secret cannot be null");
+      case Secret s -> s;
+    };
   }
 }

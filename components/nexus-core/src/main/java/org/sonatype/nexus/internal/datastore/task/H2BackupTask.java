@@ -16,6 +16,9 @@ import java.io.File;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.StructuredTaskScope;
+import java.util.concurrent.StructuredTaskScope.ShutdownOnFailure;
 import javax.inject.Inject;
 import javax.inject.Named;
 
@@ -30,6 +33,9 @@ import static org.sonatype.nexus.datastore.api.DataStoreManager.DEFAULT_DATASTOR
 
 /**
  * A {@link Task} for backing up an embedded H2 datastore.
+ * <p>
+ * Uses Java 21 Virtual Threads for improved I/O performance during backup operations.
+ * Compatible with H2 database driver version 2.2.224+ for Java 21.
  *
  * @since 3.21
  */
@@ -57,29 +63,43 @@ public class H2BackupTask
     Optional<DataStore<?>> dataStore = dataStoreManager.get(DEFAULT_DATASTORE_NAME);
 
     if (!dataStore.isPresent()) {
-      throw new RuntimeException("Unable to locate datastore with name " + DEFAULT_DATASTORE_NAME);
+      throw new RuntimeException(STR."Unable to locate datastore with name \{DEFAULT_DATASTORE_NAME}");
     }
 
-    File backupFolder = applicationDirectories.getWorkDirectory(checkNotNull(getConfiguration().getString(H2BackupTaskDescriptor.LOCATION), "Backup location not configured"));
+    File backupFolder = applicationDirectories.getWorkDirectory(checkNotNull(
+        getConfiguration().getString(H2BackupTaskDescriptor.LOCATION), 
+        "Backup location not configured"));
     File backupFile = new File(backupFolder, getBackupFileName());
 
     if(backupFile.isFile()){
-      throw new IOException("File already exists at backup file location: " + backupFile.getAbsolutePath());
+      throw new IOException(STR."File already exists at backup file location: \{backupFile.getAbsolutePath()}");
     }
 
-    log.info("Starting backup of {} to {}", DEFAULT_DATASTORE_NAME, backupFile.getAbsolutePath());
+    log.info(STR."Starting backup of \{DEFAULT_DATASTORE_NAME} to \{backupFile.getAbsolutePath()}");
 
     long start = System.currentTimeMillis();
 
-    dataStore.get().backup(backupFile.getAbsolutePath());
+    // Use structured concurrency with virtual threads for the backup operation
+    try (ShutdownOnFailure scope = new StructuredTaskScope.ShutdownOnFailure()) {
+      // Fork a virtual thread to perform the backup operation
+      scope.fork(() -> {
+        dataStore.get().backup(backupFile.getAbsolutePath());
+        return null;
+      });
+      
+      // Wait for the backup to complete or fail
+      scope.join();
+      // Propagate any exceptions that occurred during backup
+      scope.throwIfFailed(e -> new RuntimeException(STR."Backup failed: \{e.getMessage()}", e));
+    }
 
-    log.info("Completed backup of {} in {} ms", DEFAULT_DATASTORE_NAME, System.currentTimeMillis() - start);
+    long duration = System.currentTimeMillis() - start;
+    log.info(STR."Completed backup of \{DEFAULT_DATASTORE_NAME} in \{duration} ms");
 
     return null;
   }
 
   private String getBackupFileName() {
-    return DEFAULT_DATASTORE_NAME + "-" +
-        String.format(TIMESTAMP_FORMAT, LocalDateTime.now()) + ".zip";
+    return STR."\{DEFAULT_DATASTORE_NAME}-\{String.format(TIMESTAMP_FORMAT, LocalDateTime.now())}.zip";
   }
 }

@@ -13,20 +13,31 @@
 package org.sonatype.nexus.security.config;
 
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.inject.Inject;
 
 import org.sonatype.nexus.common.event.EventManager;
 import org.sonatype.nexus.security.AbstractSecurityTest;
+import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 
 import com.google.inject.AbstractModule;
 import com.google.inject.Module;
 import com.google.inject.name.Names;
-import edu.umd.cs.mtc.MultithreadedTestCase;
-import edu.umd.cs.mtc.TestFramework;
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
+import org.junit.experimental.categories.Category;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+@Tag("VirtualThreadTestGroup")
+@Category(VirtualThreadTestGroup.class)
 public class SecurityContributorThreadedTest
     extends AbstractSecurityTest
 {
@@ -90,53 +101,126 @@ public class SecurityContributorThreadedTest
     eventManager.register(manager);
 
     // test the lookup, make sure we have 200
-    Assert.assertEquals(200, testContributors.size());
+    assertEquals(200, testContributors.size());
 
     this.expectedPrivilegeCount = this.manager.listPrivileges().size();
 
     // 100 static items with 3 privs each + 100 dynamic items + 2 from default config
-    Assert.assertEquals((100 * 3) + 100 + 2, expectedPrivilegeCount);
+    assertEquals((100 * 3) + 100 + 2, expectedPrivilegeCount);
   }
-
+  
+  /**
+   * Test concurrent access to security contributors using virtual threads.
+   * This replaces the previous MultithreadedTestCase implementation with Java 21 Virtual Threads.
+   */
   @Test
-  public void testThreading() throws Throwable {
-    TestFramework.runOnce(new MultithreadedTestCase()
-    {
-      // public void initialize()
-      // {
-      //
-      // }
-
-      public void thread1() {
+  void testThreading() throws Exception {
+    // Create a latch to coordinate thread completion
+    CountDownLatch latch = new CountDownLatch(5);
+    
+    // Start 5 virtual threads to perform concurrent operations
+    Thread thread1 = Thread.ofVirtual().name("thread-1").start(() -> {
+      try {
         mutableTestContributors.get(1).setDirty(true);
-        Assert.assertEquals(expectedPrivilegeCount, manager.listPrivileges().size());
+        assertEquals(expectedPrivilegeCount, manager.listPrivileges().size());
+      } finally {
+        latch.countDown();
       }
-
-      public void thread2() {
-        Assert.assertEquals(expectedPrivilegeCount, manager.listPrivileges().size());
+    });
+    
+    Thread thread2 = Thread.ofVirtual().name("thread-2").start(() -> {
+      try {
+        assertEquals(expectedPrivilegeCount, manager.listPrivileges().size());
+      } finally {
+        latch.countDown();
       }
-
-      public void thread3() {
+    });
+    
+    Thread thread3 = Thread.ofVirtual().name("thread-3").start(() -> {
+      try {
         mutableTestContributors.get(3).setDirty(true);
-        Assert.assertEquals(expectedPrivilegeCount, manager.listPrivileges().size());
+        assertEquals(expectedPrivilegeCount, manager.listPrivileges().size());
+      } finally {
+        latch.countDown();
       }
-
-      public void thread4() {
-        Assert.assertEquals(expectedPrivilegeCount, manager.listPrivileges().size());
+    });
+    
+    Thread thread4 = Thread.ofVirtual().name("thread-4").start(() -> {
+      try {
+        assertEquals(expectedPrivilegeCount, manager.listPrivileges().size());
+      } finally {
+        latch.countDown();
       }
-
-      public void thread5() {
+    });
+    
+    Thread thread5 = Thread.ofVirtual().name("thread-5").start(() -> {
+      try {
         mutableTestContributors.get(5).setDirty(true);
-        Assert.assertEquals(expectedPrivilegeCount, manager.listPrivileges().size());
+        assertEquals(expectedPrivilegeCount, manager.listPrivileges().size());
+      } finally {
+        latch.countDown();
       }
-
-    });// , Integer.MAX_VALUE, Integer.MAX_VALUE ); // uncomment this for debugging, if you don't the framework
-    // will timeout and close your debug session
-
+    });
+    
+    // Wait for all threads to complete
+    assertTrue(latch.await(10, TimeUnit.SECONDS), "Threads did not complete in time");
+    
+    // Verify all contributors were accessed
     for (MutableTestSecurityContributor contributor : mutableTestContributors) {
-      Assert.assertTrue(
-          "Get config should be called on each contributor after any changed: " + contributor.getId(),
-          contributor.wasConfigRequested());
+      assertTrue(
+          contributor.wasConfigRequested(),
+          "Get config should be called on each contributor after any changed: " + contributor.getId());
     }
   }
-}
+  
+  /**
+   * Test with a higher number of concurrent threads to validate scalability with virtual threads.
+   * This test creates 100 virtual threads that concurrently access the security manager.
+   */
+  @Test
+  void testHighConcurrencyWithVirtualThreads() throws Exception {
+    final int threadCount = 100;
+    CountDownLatch latch = new CountDownLatch(threadCount);
+    AtomicBoolean failed = new AtomicBoolean(false);
+    
+    // Create an executor service that uses virtual threads
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit tasks to the executor
+      for (int i = 0; i < threadCount; i++) {
+        final int index = i % mutableTestContributors.size();
+        executor.submit(() -> {
+          try {
+            // Every third thread will modify a contributor
+            if (index % 3 == 0) {
+              mutableTestContributors.get(index).setDirty(true);
+            }
+            
+            // All threads verify the privilege count remains consistent
+            int actualCount = manager.listPrivileges().size();
+            if (actualCount != expectedPrivilegeCount) {
+              failed.set(true);
+              System.err.println("Expected " + expectedPrivilegeCount + " privileges but got " + actualCount);
+            }
+          } catch (Exception e) {
+            failed.set(true);
+            e.printStackTrace();
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all threads to complete
+      assertTrue(latch.await(30, TimeUnit.SECONDS), "High concurrency test did not complete in time");
+    }
+    
+    // Verify the test passed
+    assertTrue(!failed.get(), "High concurrency test failed with inconsistent privilege counts");
+    
+    // Verify all contributors were accessed
+    for (MutableTestSecurityContributor contributor : mutableTestContributors) {
+      assertTrue(
+          contributor.wasConfigRequested(),
+          "Get config should be called on each contributor after high concurrency test: " + contributor.getId());
+    }
+  }

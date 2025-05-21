@@ -17,10 +17,22 @@ import org.apache.karaf.shell.api.console.Session;
 
 /**
  * Allows {@link Action} instances to be aware of the current session.
+ * <p>
+ * This interface is compatible with Karaf 4.4.4 and Java 21, maintaining
+ * backward compatibility with existing implementations while supporting
+ * the latest Java features and runtime environment.
  * 
  * @since 3.0
  */
 public interface SessionAware
 {
+  /**
+   * Sets the current session for this action.
+   * <p>
+   * This method is called by the Karaf shell framework before executing
+   * the action, providing access to the current console session context.
+   *
+   * @param session the current Karaf shell session
+   */
   void setSession(Session session);
 }

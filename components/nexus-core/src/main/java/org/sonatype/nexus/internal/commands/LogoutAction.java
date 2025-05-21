@@ -19,6 +19,8 @@ import org.sonatype.nexus.security.SecurityHelper;
 
 import org.apache.karaf.shell.api.action.Action;
 import org.apache.karaf.shell.api.action.Command;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -32,6 +34,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
 public class LogoutAction
     implements Action
 {
+  private static final Logger log = LoggerFactory.getLogger(LogoutAction.class);
+  
   private final SecurityHelper securityHelper;
 
   @Inject
@@ -41,7 +45,16 @@ public class LogoutAction
 
   @Override
   public Object execute() throws Exception {
+    String username = securityHelper.subject().getPrincipal() != null ? 
+        securityHelper.subject().getPrincipal().toString() : "anonymous";
+    
+    // Log the logout event using Java 21 String Templates
+    log.info(STR."User \{username} logging out from console");
+    
+    // Perform the logout operation using Shiro 2.0.0 compatible approach
     securityHelper.subject().logout();
+    
+    log.debug(STR."Logout completed for user \{username}");
     return null;
   }
 }

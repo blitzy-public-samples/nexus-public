@@ -18,37 +18,45 @@ import org.sonatype.nexus.capability.condition.CryptoConditions;
 import org.sonatype.nexus.capability.condition.LogicalConditions;
 import org.sonatype.nexus.capability.condition.NexusConditions;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.is;
-import static org.mockito.Mockito.mock;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * {@link ConditionsImpl} UTs.
  *
  * @since capabilities 2.0
  */
+@ExtendWith(MockitoExtension.class)
 public class ConditionsImplTest
     extends TestSupport
 {
+  @Mock
+  private LogicalConditions logicalConditions;
+  
+  @Mock
+  private CapabilityConditions capabilityConditions;
+  
+  @Mock
+  private NexusConditions nexusConditions;
+  
+  @Mock
+  private CryptoConditions cryptoConditions;
 
   /**
    * Passed in factories are returned.
    */
   @Test
-  public void and01() {
-    final LogicalConditions logicalConditions = mock(LogicalConditions.class);
-    final CapabilityConditions capabilityConditions = mock(CapabilityConditions.class);
-    final NexusConditions nexusConditions = mock(NexusConditions.class);
-    CryptoConditions cryptoConditions = mock(CryptoConditions.class);
+  void and01() {
     final ConditionsImpl underTest = new ConditionsImpl(
         logicalConditions, capabilityConditions, nexusConditions, cryptoConditions
     );
-    assertThat(underTest.logical(), is(equalTo(logicalConditions)));
-    assertThat(underTest.capabilities(), is(equalTo(capabilityConditions)));
-    assertThat(underTest.nexus(), is(equalTo(nexusConditions)));
+    assertEquals(logicalConditions, underTest.logical(), STR."Expected logical conditions to match \{logicalConditions}");
+    assertEquals(capabilityConditions, underTest.capabilities(), STR."Expected capability conditions to match \{capabilityConditions}");
+    assertEquals(nexusConditions, underTest.nexus(), STR."Expected nexus conditions to match \{nexusConditions}");
   }
 
 }

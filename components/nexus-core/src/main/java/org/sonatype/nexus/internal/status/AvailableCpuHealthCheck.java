@@ -36,11 +36,6 @@ public class AvailableCpuHealthCheck
    */
   static final int MIN_RECOMMENDED_CPU_COUNT = 4;
 
-  private static final String HEALTHY_MESSAGE =
-      "The host system is allocating a maximum of %d cores to the application.";
-
-  private static final String UNHEALTHY_MESSAGE = HEALTHY_MESSAGE + " A minimum of %d is recommended.";
-
   private int minCpuCount;
 
   public AvailableCpuHealthCheck() {
@@ -52,18 +47,22 @@ public class AvailableCpuHealthCheck
     this.minCpuCount = minCpuCount;
   }
 
-  private Runtime getRuntime() {
-    return Runtime.getRuntime();
-  }
-
   @Override
   protected Result check() {
-    int available = getRuntime().availableProcessors();
-
-    if (minCpuCount > available) {
-      return Result.unhealthy(UNHEALTHY_MESSAGE, available, minCpuCount);
-    }
-
-    return Result.healthy(HEALTHY_MESSAGE, available);
+    // Direct access to Runtime.availableProcessors() for improved efficiency in Java 21
+    int available = Runtime.getRuntime().availableProcessors();
+    
+    // Using Java 21 Pattern Matching with switch expression for threshold comparison
+    return switch (Integer.valueOf(available)) {
+      // Case with a guard pattern - when available is less than minCpuCount
+      case Integer count when count < minCpuCount -> 
+        // Using Java 21 String Templates for more readable message formatting
+        Result.unhealthy(STR."The host system is allocating a maximum of \{available} cores to the application. A minimum of \{minCpuCount} is recommended.");
+      
+      // Default case - when available is greater than or equal to minCpuCount
+      default -> 
+        // Using Java 21 String Templates for more readable message formatting
+        Result.healthy(STR."The host system is allocating a maximum of \{available} cores to the application.");
+    };
   }
 }

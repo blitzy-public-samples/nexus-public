@@ -18,9 +18,11 @@ import org.sonatype.nexus.security.config.SecurityConfigurationManager;
 import org.sonatype.nexus.security.config.memory.MemoryCUser;
 
 import org.apache.shiro.authc.UsernamePasswordToken;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -29,6 +31,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class AuthenticatingRealmImplTest
     extends TestSupport
 {
@@ -43,7 +46,7 @@ public class AuthenticatingRealmImplTest
 
   private CUser testUser = new MemoryCUser();
 
-  @Before
+  @BeforeEach
   public void setUp() throws Exception {
 
     testUser.setId(TEST_USERNAME);
@@ -67,6 +70,7 @@ public class AuthenticatingRealmImplTest
     AuthenticatingRealmImpl underTestOrient = new AuthenticatingRealmImpl(configuration,
         new DefaultSecurityPasswordService(new LegacyNexusPasswordService()), true);
     underTestOrient.getAuthenticationInfo(new UsernamePasswordToken(TEST_USERNAME, TEST_PASSWORD));
+    // Verify password is rehashed using SHA-512 with 1024 iterations (compatible with Java 21 and BouncyCastle 1.78.1)
     assertThat(testUser.getPassword(), startsWith("$shiro1$SHA-512$1024$"));
   }
 
@@ -76,6 +80,7 @@ public class AuthenticatingRealmImplTest
     AuthenticatingRealmImpl underTestOrient = new AuthenticatingRealmImpl(configuration,
         new DefaultSecurityPasswordService(new LegacyNexusPasswordService()), false);
     underTestOrient.getAuthenticationInfo(new UsernamePasswordToken(TEST_USERNAME, TEST_PASSWORD));
+    // Verify password is rehashed using SHA-512 with 1024 iterations (compatible with Java 21 and BouncyCastle 1.78.1)
     assertThat(testUser.getPassword(), startsWith("$shiro1$SHA-512$1024$"));
   }
 }

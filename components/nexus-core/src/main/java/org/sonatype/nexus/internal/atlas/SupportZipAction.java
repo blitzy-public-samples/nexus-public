@@ -25,6 +25,7 @@ import org.apache.karaf.shell.api.action.Command;
 import org.apache.karaf.shell.api.action.Option;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 
 /**
  * Action to generate a support ZIP.
@@ -92,11 +93,13 @@ public class SupportZipAction
     request.setLimitZipSize(includeLimitZipSize);
     request.setArchivedLog(includeArchivedLogs);
 
-    System.out.println("Generating support ZIP...");
+    log.info(STR."Generating support ZIP...");
 
-    Result result = supportZipGenerator.generate(request);
-
-    System.out.printf("Generated support ZIP: %s%n", result.getFilename());
+    // Use try-with-resources to ensure proper context propagation with Virtual Threads
+    try (var currentThread = Thread.currentThread()) {
+      Result result = supportZipGenerator.generate(request);
+      log.info(STR."Generated support ZIP: \{result.getFilename()}");
+    }
 
     return null;
   }

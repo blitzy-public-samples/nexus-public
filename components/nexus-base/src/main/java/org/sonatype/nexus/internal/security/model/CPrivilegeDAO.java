@@ -24,6 +24,10 @@ import org.apache.ibatis.annotations.Param;
 /**
  * {@link CPrivilegeData} access.
  *
+ * <p>This interface is designed to be compatible with Java 21 Virtual Threads for database operations.
+ * Implementations should ensure that database operations can run efficiently on virtual threads
+ * without causing thread pinning.</p>
+ *
  * @since 3.21
  */
 public interface CPrivilegeDAO
@@ -32,18 +36,27 @@ public interface CPrivilegeDAO
 
   /**
    * Retrieve the entity with the given name.
+   *
+   * @param name the name of the privilege to retrieve
+   * @return the privilege if found
    */
-  Optional<CPrivilege> readByName(String name);
+  Optional<CPrivilege> readByName(@Param("name") String name);
 
   /**
    * Update an entity by its name
+   *
+   * @param entity the entity to update
+   * @return true if the entity was updated
    */
-  boolean updateByName(CPrivilegeData entity);
+  boolean updateByName(@Param("entity") CPrivilegeData entity);
 
   /**
    * Delete an entity with the given name.
+   *
+   * @param name the name of the privilege to delete
+   * @return true if the entity was deleted
    */
-  boolean deleteByName(String name);
+  boolean deleteByName(@Param("name") String name);
 
   /**
    * Find privileges by their ids.

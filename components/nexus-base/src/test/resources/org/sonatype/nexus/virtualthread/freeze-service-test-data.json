@@ -1,0 +1,288 @@
+{
+  "testCategories": [
+    {
+      "name": "concurrentFreezeUnfreeze",
+      "description": "Test scenarios for concurrent freeze and unfreeze operations using virtual threads",
+      "testCases": [
+        {
+          "id": "basic-freeze-unfreeze",
+          "description": "Basic freeze and unfreeze operation with a small number of virtual threads",
+          "virtualThreadCount": 10,
+          "freezeDurationMs": 500,
+          "operationsPerThread": 5,
+          "expectedResults": {
+            "allOperationsShouldComplete": true,
+            "operationsShouldBeSuspendedDuringFreeze": true,
+            "maxConcurrentOperationsDuringFreeze": 0
+          }
+        },
+        {
+          "id": "medium-concurrency",
+          "description": "Medium concurrency test with moderate number of virtual threads",
+          "virtualThreadCount": 100,
+          "freezeDurationMs": 1000,
+          "operationsPerThread": 10,
+          "expectedResults": {
+            "allOperationsShouldComplete": true,
+            "operationsShouldBeSuspendedDuringFreeze": true,
+            "maxConcurrentOperationsDuringFreeze": 0
+          }
+        },
+        {
+          "id": "high-concurrency",
+          "description": "High concurrency test with large number of virtual threads",
+          "virtualThreadCount": 1000,
+          "freezeDurationMs": 2000,
+          "operationsPerThread": 20,
+          "expectedResults": {
+            "allOperationsShouldComplete": true,
+            "operationsShouldBeSuspendedDuringFreeze": true,
+            "maxConcurrentOperationsDuringFreeze": 0
+          }
+        },
+        {
+          "id": "rapid-freeze-unfreeze",
+          "description": "Rapid succession of freeze and unfreeze operations",
+          "virtualThreadCount": 50,
+          "freezeDurationMs": 100,
+          "freezeUnfreezeCount": 20,
+          "operationsPerThread": 50,
+          "expectedResults": {
+            "allOperationsShouldComplete": true,
+            "operationsShouldBeSuspendedDuringFreeze": true,
+            "freezeStateShouldBeConsistent": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "eventProcessing",
+      "description": "Test scenarios for event processing during system freeze with virtual threads",
+      "testCases": [
+        {
+          "id": "event-processing-during-freeze",
+          "description": "Verify event processing behavior during system freeze",
+          "virtualThreadCount": 50,
+          "eventCount": 1000,
+          "freezeDurationMs": 1500,
+          "eventTypes": ["SYSTEM", "REPOSITORY", "SECURITY", "TASK"],
+          "expectedResults": {
+            "systemEventsShouldBeProcessed": true,
+            "nonSystemEventsShouldBeSuspended": true,
+            "allEventsShouldBeProcessedAfterUnfreeze": true
+          }
+        },
+        {
+          "id": "prioritized-events",
+          "description": "Verify prioritized events are processed even during freeze",
+          "virtualThreadCount": 30,
+          "eventCount": 500,
+          "freezeDurationMs": 1000,
+          "prioritizedEventTypes": ["SYSTEM_CRITICAL", "SECURITY_CRITICAL"],
+          "regularEventTypes": ["REPOSITORY", "TASK", "AUDIT"],
+          "expectedResults": {
+            "prioritizedEventsShouldBeProcessed": true,
+            "regularEventsShouldBeSuspended": true,
+            "eventOrderingShouldBePreserved": true
+          }
+        },
+        {
+          "id": "event-backlog-processing",
+          "description": "Verify backlogged events are processed correctly after unfreeze",
+          "virtualThreadCount": 100,
+          "eventCount": 2000,
+          "freezeDurationMs": 3000,
+          "eventGenerationRatePerSecond": 1000,
+          "expectedResults": {
+            "allEventsShouldBeProcessedAfterUnfreeze": true,
+            "eventOrderingShouldBePreserved": true,
+            "noEventsShouldBeLost": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "boundaryConditions",
+      "description": "Test scenarios for boundary conditions and edge cases with virtual threads",
+      "testCases": [
+        {
+          "id": "nested-freeze-requests",
+          "description": "Test behavior with nested freeze requests",
+          "virtualThreadCount": 20,
+          "nestedFreezeDepth": 5,
+          "operationsPerThread": 10,
+          "expectedResults": {
+            "systemShouldRemainFrozenUntilAllUnfreezes": true,
+            "nestedFreezeShouldIncrementCounter": true,
+            "operationsShouldResumeAfterFullUnfreeze": true
+          }
+        },
+        {
+          "id": "freeze-during-startup",
+          "description": "Test freeze operations during system startup phase",
+          "virtualThreadCount": 50,
+          "startupPhases": ["KERNEL", "STORAGE", "SECURITY", "SERVICES"],
+          "freezeAtPhase": "STORAGE",
+          "expectedResults": {
+            "startupShouldPause": true,
+            "startupShouldCompleteAfterUnfreeze": true,
+            "systemStateShouldBeConsistent": true
+          }
+        },
+        {
+          "id": "freeze-timeout",
+          "description": "Test behavior when freeze operation times out",
+          "virtualThreadCount": 200,
+          "longRunningOperationCount": 10,
+          "operationDurationMs": 5000,
+          "freezeTimeoutMs": 2000,
+          "expectedResults": {
+            "freezeShouldTimeoutGracefully": true,
+            "systemStateShouldRemainConsistent": true,
+            "longRunningOperationsShouldComplete": true
+          }
+        },
+        {
+          "id": "concurrent-freeze-requests",
+          "description": "Test behavior with concurrent freeze requests from multiple threads",
+          "virtualThreadCount": 50,
+          "concurrentFreezeRequests": 20,
+          "operationsPerThread": 30,
+          "expectedResults": {
+            "allFreezeShouldBeProcessed": true,
+            "systemShouldFreezeOnce": true,
+            "systemShouldUnfreezeAfterAllRequests": true,
+            "operationsShouldBeSuspendedOnce": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "virtualThreadSpecific",
+      "description": "Test scenarios specific to virtual thread behavior during freeze",
+      "testCases": [
+        {
+          "id": "mixed-thread-types",
+          "description": "Test with mix of platform and virtual threads",
+          "virtualThreadCount": 100,
+          "platformThreadCount": 20,
+          "freezeDurationMs": 1000,
+          "operationsPerThread": 10,
+          "expectedResults": {
+            "allThreadsShouldBeSuspended": true,
+            "virtualThreadsResumeCorrectly": true,
+            "platformThreadsResumeCorrectly": true,
+            "noThreadsShouldBeStarved": true
+          }
+        },
+        {
+          "id": "pinned-virtual-threads",
+          "description": "Test behavior with pinned virtual threads during freeze",
+          "virtualThreadCount": 50,
+          "pinnedThreadCount": 10,
+          "freezeDurationMs": 1500,
+          "pinnedOperationDurationMs": 3000,
+          "expectedResults": {
+            "pinnedThreadsShouldCompleteOperations": true,
+            "unpinnedThreadsShouldSuspend": true,
+            "systemShouldHandlePinnedThreadsGracefully": true
+          }
+        },
+        {
+          "id": "carrier-thread-saturation",
+          "description": "Test behavior when carrier threads are saturated during freeze/unfreeze",
+          "virtualThreadCount": 1000,
+          "carrierThreadCount": 10,
+          "cpuIntensiveOperations": 20,
+          "freezeDurationMs": 2000,
+          "expectedResults": {
+            "freezeShouldSucceed": true,
+            "unfreezeOperationShouldComplete": true,
+            "virtualThreadsShouldResumeCorrectly": true,
+            "noDeadlocksShouldOccur": true
+          }
+        },
+        {
+          "id": "thread-local-state",
+          "description": "Test preservation of thread local state during freeze/unfreeze",
+          "virtualThreadCount": 100,
+          "threadLocalVariables": ["SECURITY_CONTEXT", "TRANSACTION_CONTEXT", "REQUEST_ID"],
+          "freezeDurationMs": 1000,
+          "operationsWithState": 50,
+          "expectedResults": {
+            "threadLocalStateShouldBePreserved": true,
+            "operationsShouldCompleteWithCorrectState": true,
+            "noStateShouldLeak": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "freezeServicePerformance",
+      "description": "Performance tests for freeze service with virtual threads",
+      "testCases": [
+        {
+          "id": "freeze-latency",
+          "description": "Measure latency of freeze operation under load",
+          "virtualThreadCount": 500,
+          "activeOperations": 200,
+          "measurementIterations": 10,
+          "expectedResults": {
+            "freezeLatencyMs": {
+              "max": 500,
+              "p99": 300,
+              "p95": 200,
+              "p50": 100
+            },
+            "unfreezeLatencyMs": {
+              "max": 500,
+              "p99": 300,
+              "p95": 200,
+              "p50": 100
+            }
+          }
+        },
+        {
+          "id": "operation-throughput",
+          "description": "Measure operation throughput before, during, and after freeze",
+          "virtualThreadCount": 200,
+          "operationDurationMs": 50,
+          "freezeDurationMs": 2000,
+          "warmupPeriodMs": 5000,
+          "measurementPeriodMs": 10000,
+          "expectedResults": {
+            "throughputBeforeFreeze": {
+              "min": 1000,
+              "target": 2000
+            },
+            "throughputDuringFreeze": {
+              "max": 0
+            },
+            "throughputAfterFreeze": {
+              "min": 1000,
+              "target": 2000
+            },
+            "recoveryTimeMs": {
+              "max": 1000
+            }
+          }
+        },
+        {
+          "id": "memory-usage",
+          "description": "Measure memory usage during freeze with many virtual threads",
+          "virtualThreadCount": 10000,
+          "operationsPerThread": 5,
+          "freezeDurationMs": 3000,
+          "expectedResults": {
+            "peakMemoryUsageMB": {
+              "max": 500
+            },
+            "memoryLeakMB": {
+              "max": 10
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

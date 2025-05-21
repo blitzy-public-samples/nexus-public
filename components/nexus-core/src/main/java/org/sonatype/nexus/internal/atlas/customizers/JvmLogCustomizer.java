@@ -12,14 +12,14 @@
  */
 package org.sonatype.nexus.internal.atlas.customizers;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.stream.Stream;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -32,6 +32,7 @@ import org.sonatype.nexus.supportzip.SupportBundle;
 import org.sonatype.nexus.supportzip.SupportBundleCustomizer;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.common.text.Strings2.MASK;
 import static org.sonatype.nexus.supportzip.SupportBundle.ContentSource.Priority.LOW;
 import static org.sonatype.nexus.supportzip.SupportBundle.ContentSource.Type.LOG;
@@ -65,17 +66,13 @@ public class JvmLogCustomizer
         File logFile = logManager.getLogFile("jvm.log");
 
         if (logFile != null) {
-          try (BufferedReader reader = new BufferedReader(new FileReader(logFile));
-               BufferedWriter writer = new BufferedWriter(new FileWriter(file))) {
-
-            String line;
-            while ((line = reader.readLine()) != null) {
-              String redactedLine = maybeMaskSensitiveData(line);
-              writer.write(redactedLine);
-              writer.newLine();
+          try {
+            // Use virtual threads for file I/O operations
+            try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+              executor.submit(() -> processLogFile(logFile.toPath(), file.toPath())).get();
             }
-          } catch (IOException e) {
-            log.debug("Unable to include jvm.log file", e);
+          } catch (Exception e) {
+            log.debug(STR."Unable to include jvm.log file: \{e.getMessage()}");
           }
         }
         else {
@@ -83,12 +80,41 @@ public class JvmLogCustomizer
         }
       }
 
-      private String maybeMaskSensitiveData(final String input) {
-        String result = input;
-        for (String name : SENSITIVE_FIELD_NAMES) {
-          result =  result.replaceAll(name + "=\\S*", name + "=" + MASK);
+      private void processLogFile(Path sourcePath, Path targetPath) {
+        try {
+          // Use NIO Files API with buffered streams for better performance
+          try (Stream<String> lines = Files.lines(sourcePath)) {
+            List<String> processedLines = lines
+                .map(this::maybeMaskSensitiveData)
+                .toList();
+            
+            Files.write(targetPath, processedLines);
+          }
+        } catch (IOException e) {
+          log.debug(STR."Error processing log file: \{e.getMessage()}");
         }
-        return result;
+      }
+
+      private String maybeMaskSensitiveData(final String input) {
+        // Use pattern matching for switch to enhance sensitive data masking
+        return switch (input) {
+          // Special case: empty line
+          case String s when s.isEmpty() -> s;
+          
+          // Process lines with sensitive data
+          case String s -> {
+            String result = s;
+            for (String fieldName : SENSITIVE_FIELD_NAMES) {
+              // Check if the line contains the sensitive field
+              switch (fieldName) {
+                case String field when result.contains(field + "=") -> 
+                  result = result.replaceAll(field + "=\\S*", field + "=" + MASK);
+                default -> { /* No action needed */ }
+              }
+            }
+            yield result;
+          }
+        };
       }
     });
   }

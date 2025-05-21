@@ -27,13 +27,16 @@ import org.sonatype.nexus.security.privilege.Privilege;
 import org.sonatype.nexus.security.role.NoSuchRoleException;
 import org.sonatype.nexus.security.role.Role;
 
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
  * Tests for {@link AuthorizationManager}.
  */
-public class AuthorizationManagerTest
+@ExtendWith(MockitoExtension.class)
+class AuthorizationManagerTest
     extends AbstractSecurityTest
 {
   @Override
@@ -41,53 +44,53 @@ public class AuthorizationManagerTest
     return AuthorizationManagerTestSecurity.securityModel();
   }
 
-  public AuthorizationManager getAuthorizationManager() throws Exception {
+  AuthorizationManager getAuthorizationManager() throws Exception {
     return this.lookup(AuthorizationManager.class);
   }
 
-  public SecurityConfigurationManager getConfigurationManager() throws Exception {
+  SecurityConfigurationManager getConfigurationManager() throws Exception {
     return lookup(SecurityConfigurationManager.class);
   }
 
   // ROLES
 
   @Test
-  public void testListRoles() throws Exception {
+  void listRoles() throws Exception {
     AuthorizationManager authzManager = this.getAuthorizationManager();
     Set<Role> roles = authzManager.listRoles();
 
     Map<String, Role> roleMap = this.toRoleMap(roles);
-    Assert.assertTrue(roleMap.containsKey("role1"));
-    Assert.assertTrue(roleMap.containsKey("role2"));
-    Assert.assertTrue(roleMap.containsKey("role3"));
-    Assert.assertEquals(3, roles.size());
+    Assertions.assertTrue(roleMap.containsKey("role1"));
+    Assertions.assertTrue(roleMap.containsKey("role2"));
+    Assertions.assertTrue(roleMap.containsKey("role3"));
+    Assertions.assertEquals(3, roles.size());
 
     Role role3 = roleMap.get("role3");
 
-    Assert.assertEquals("role3", role3.getRoleId());
-    Assert.assertEquals("RoleThree", role3.getName());
-    Assert.assertEquals("Role Three", role3.getDescription());
-    Assert.assertTrue(role3.getPrivileges().contains("1"));
-    Assert.assertTrue(role3.getPrivileges().contains("4"));
-    Assert.assertEquals(2, role3.getPrivileges().size());
+    Assertions.assertEquals("role3", role3.getRoleId());
+    Assertions.assertEquals("RoleThree", role3.getName());
+    Assertions.assertEquals("Role Three", role3.getDescription());
+    Assertions.assertTrue(role3.getPrivileges().contains("1"));
+    Assertions.assertTrue(role3.getPrivileges().contains("4"));
+    Assertions.assertEquals(2, role3.getPrivileges().size());
   }
 
   @Test
-  public void testGetRole() throws Exception {
+  void getRole() throws Exception {
     AuthorizationManager authzManager = this.getAuthorizationManager();
 
     Role role1 = authzManager.getRole("role1");
 
-    Assert.assertEquals("role1", role1.getRoleId());
-    Assert.assertEquals("RoleOne", role1.getName());
-    Assert.assertEquals("Role One", role1.getDescription());
-    Assert.assertTrue(role1.getPrivileges().contains("1"));
-    Assert.assertTrue(role1.getPrivileges().contains("2"));
-    Assert.assertEquals(2, role1.getPrivileges().size());
+    Assertions.assertEquals("role1", role1.getRoleId());
+    Assertions.assertEquals("RoleOne", role1.getName());
+    Assertions.assertEquals("Role One", role1.getDescription());
+    Assertions.assertTrue(role1.getPrivileges().contains("1"));
+    Assertions.assertTrue(role1.getPrivileges().contains("2"));
+    Assertions.assertEquals(2, role1.getPrivileges().size());
   }
 
   @Test
-  public void testAddRole() throws Exception {
+  void addRole() throws Exception {
     AuthorizationManager authzManager = this.getAuthorizationManager();
 
     Role role = new Role();
@@ -101,16 +104,16 @@ public class AuthorizationManagerTest
 
     CRole secRole = this.getConfigurationManager().readRole(role.getRoleId());
 
-    Assert.assertEquals(role.getRoleId(), secRole.getId());
-    Assert.assertEquals(role.getName(), secRole.getName());
-    Assert.assertEquals(role.getDescription(), secRole.getDescription());
-    Assert.assertTrue(secRole.getPrivileges().contains("2"));
-    Assert.assertTrue(secRole.getPrivileges().contains("4"));
-    Assert.assertEquals(2, secRole.getPrivileges().size());
+    Assertions.assertEquals(role.getRoleId(), secRole.getId());
+    Assertions.assertEquals(role.getName(), secRole.getName());
+    Assertions.assertEquals(role.getDescription(), secRole.getDescription());
+    Assertions.assertTrue(secRole.getPrivileges().contains("2"));
+    Assertions.assertTrue(secRole.getPrivileges().contains("4"));
+    Assertions.assertEquals(2, secRole.getPrivileges().size());
   }
 
   @Test
-  public void testUpdateRole() throws Exception {
+  void updateRole() throws Exception {
     AuthorizationManager authzManager = this.getAuthorizationManager();
 
     Role role2 = authzManager.getRole("role2");
@@ -125,51 +128,37 @@ public class AuthorizationManagerTest
 
     CRole secRole = this.getConfigurationManager().readRole(role2.getRoleId());
 
-    Assert.assertEquals(role2.getRoleId(), secRole.getId());
-    Assert.assertEquals(role2.getName(), secRole.getName());
-    Assert.assertEquals(role2.getDescription(), secRole.getDescription());
-    Assert.assertTrue(secRole.getPrivileges().contains("2"));
-    Assert.assertEquals(1, secRole.getPrivileges().size());
+    Assertions.assertEquals(role2.getRoleId(), secRole.getId());
+    Assertions.assertEquals(role2.getName(), secRole.getName());
+    Assertions.assertEquals(role2.getDescription(), secRole.getDescription());
+    Assertions.assertTrue(secRole.getPrivileges().contains("2"));
+    Assertions.assertEquals(1, secRole.getPrivileges().size());
   }
 
   @Test
-  public void testDeleteRole() throws Exception {
+  void deleteRole() throws Exception {
     AuthorizationManager authzManager = this.getAuthorizationManager();
-    try {
+    
+    // Test deleting an invalid role name
+    NoSuchRoleException exception = Assertions.assertThrows(NoSuchRoleException.class, () -> {
       authzManager.deleteRole("INVALID-ROLENAME");
-      Assert.fail("Expected NoSuchRoleException");
-    }
-    catch (NoSuchRoleException e) {
-      // expected
-    }
+    }, "Expected NoSuchRoleException");
 
-    // this one will work
+    // This one will work
     authzManager.deleteRole("role2");
 
-    // this one should fail
-    try {
+    // This one should fail
+    Assertions.assertThrows(NoSuchRoleException.class, () -> {
       authzManager.deleteRole("role2");
-      Assert.fail("Expected NoSuchRoleException");
-    }
-    catch (NoSuchRoleException e) {
-      // expected
-    }
+    }, "Expected NoSuchRoleException");
 
-    try {
+    Assertions.assertThrows(NoSuchRoleException.class, () -> {
       authzManager.getRole("role2");
-      Assert.fail("Expected NoSuchRoleException");
-    }
-    catch (NoSuchRoleException e) {
-      // expected
-    }
+    }, "Expected NoSuchRoleException");
 
-    try {
+    Assertions.assertThrows(NoSuchRoleException.class, () -> {
       this.getConfigurationManager().readRole("role2");
-      Assert.fail("Expected NoSuchRoleException");
-    }
-    catch (NoSuchRoleException e) {
-      // expected
-    }
+    }, "Expected NoSuchRoleException");
   }
 
   private Map<String, Role> toRoleMap(Set<Role> roles) {
@@ -185,57 +174,57 @@ public class AuthorizationManagerTest
   // Privileges
 
   @Test
-  public void testListPrivileges() throws Exception {
+  void listPrivileges() throws Exception {
     AuthorizationManager authzManager = this.getAuthorizationManager();
     Set<Privilege> privileges = authzManager.listPrivileges();
 
     Map<String, Privilege> roleMap = this.toPrivilegeMap(privileges);
-    Assert.assertTrue(roleMap.containsKey("1"));
-    Assert.assertTrue(roleMap.containsKey("2"));
-    Assert.assertTrue(roleMap.containsKey("3"));
-    Assert.assertTrue(roleMap.containsKey("4"));
-    Assert.assertEquals(4, privileges.size());
+    Assertions.assertTrue(roleMap.containsKey("1"));
+    Assertions.assertTrue(roleMap.containsKey("2"));
+    Assertions.assertTrue(roleMap.containsKey("3"));
+    Assertions.assertTrue(roleMap.containsKey("4"));
+    Assertions.assertEquals(4, privileges.size());
 
     Privilege priv3 = roleMap.get("3");
 
-    Assert.assertEquals("3", priv3.getId());
-    Assert.assertEquals("3-name", priv3.getName());
-    Assert.assertEquals("Privilege Three", priv3.getDescription());
-    Assert.assertEquals("method", priv3.getType());
-    Assert.assertEquals("read", priv3.getPrivilegeProperty("method"));
-    Assert.assertEquals("/some/path/", priv3.getPrivilegeProperty("permission"));
+    Assertions.assertEquals("3", priv3.getId());
+    Assertions.assertEquals("3-name", priv3.getName());
+    Assertions.assertEquals("Privilege Three", priv3.getDescription());
+    Assertions.assertEquals("method", priv3.getType());
+    Assertions.assertEquals("read", priv3.getPrivilegeProperty("method"));
+    Assertions.assertEquals("/some/path/", priv3.getPrivilegeProperty("permission"));
   }
 
   @Test
-  public void testGetPrivilege() throws Exception {
+  void getPrivilege() throws Exception {
     AuthorizationManager authzManager = this.getAuthorizationManager();
 
     Privilege priv3 = authzManager.getPrivilege("3");
 
-    Assert.assertEquals("3", priv3.getId());
-    Assert.assertEquals("3-name", priv3.getName());
-    Assert.assertEquals("Privilege Three", priv3.getDescription());
-    Assert.assertEquals("method", priv3.getType());
-    Assert.assertEquals("read", priv3.getPrivilegeProperty("method"));
-    Assert.assertEquals("/some/path/", priv3.getPrivilegeProperty("permission"));
+    Assertions.assertEquals("3", priv3.getId());
+    Assertions.assertEquals("3-name", priv3.getName());
+    Assertions.assertEquals("Privilege Three", priv3.getDescription());
+    Assertions.assertEquals("method", priv3.getType());
+    Assertions.assertEquals("read", priv3.getPrivilegeProperty("method"));
+    Assertions.assertEquals("/some/path/", priv3.getPrivilegeProperty("permission"));
   }
 
   @Test
-  public void testGetPrivilegeByName() throws Exception {
+  void getPrivilegeByName() throws Exception {
     AuthorizationManager authzManager = this.getAuthorizationManager();
 
     Privilege priv3 = authzManager.getPrivilegeByName("3-name");
 
-    Assert.assertEquals("3", priv3.getId());
-    Assert.assertEquals("3-name", priv3.getName());
-    Assert.assertEquals("Privilege Three", priv3.getDescription());
-    Assert.assertEquals("method", priv3.getType());
-    Assert.assertEquals("read", priv3.getPrivilegeProperty("method"));
-    Assert.assertEquals("/some/path/", priv3.getPrivilegeProperty("permission"));
+    Assertions.assertEquals("3", priv3.getId());
+    Assertions.assertEquals("3-name", priv3.getName());
+    Assertions.assertEquals("Privilege Three", priv3.getDescription());
+    Assertions.assertEquals("method", priv3.getType());
+    Assertions.assertEquals("read", priv3.getPrivilegeProperty("method"));
+    Assertions.assertEquals("/some/path/", priv3.getPrivilegeProperty("permission"));
   }
 
   @Test
-  public void testAddPrivilege() throws Exception {
+  void addPrivilege() throws Exception {
     AuthorizationManager authzManager = this.getAuthorizationManager();
 
     Privilege privilege = new Privilege();
@@ -251,18 +240,18 @@ public class AuthorizationManagerTest
 
     CPrivilege secPriv = this.getConfigurationManager().readPrivilege(privilege.getId());
 
-    Assert.assertEquals(privilege.getId(), secPriv.getId());
-    Assert.assertEquals(privilege.getName(), secPriv.getName());
-    Assert.assertEquals(privilege.getDescription(), secPriv.getDescription());
-    Assert.assertEquals(privilege.getType(), secPriv.getType());
-    Assert.assertEquals(privilege.getProperties().size(), secPriv.getProperties().size());
+    Assertions.assertEquals(privilege.getId(), secPriv.getId());
+    Assertions.assertEquals(privilege.getName(), secPriv.getName());
+    Assertions.assertEquals(privilege.getDescription(), secPriv.getDescription());
+    Assertions.assertEquals(privilege.getType(), secPriv.getType());
+    Assertions.assertEquals(privilege.getProperties().size(), secPriv.getProperties().size());
 
-    Assert.assertEquals("bar2", secPriv.getProperty("foo1"));
-    Assert.assertEquals("foo2", secPriv.getProperty("bar1"));
+    Assertions.assertEquals("bar2", secPriv.getProperty("foo1"));
+    Assertions.assertEquals("foo2", secPriv.getProperty("bar1"));
   }
 
   @Test
-  public void testUpdatePrivilege() throws Exception {
+  void updatePrivilege() throws Exception {
     AuthorizationManager authzManager = this.getAuthorizationManager();
 
     Privilege priv2 = authzManager.getPrivilege("2");
@@ -272,18 +261,18 @@ public class AuthorizationManagerTest
 
     CPrivilege secPriv = this.getConfigurationManager().readPrivilege(priv2.getId());
 
-    Assert.assertEquals(priv2.getId(), secPriv.getId());
-    Assert.assertEquals(priv2.getName(), secPriv.getName());
-    Assert.assertEquals(priv2.getDescription(), secPriv.getDescription());
-    Assert.assertEquals(priv2.getType(), secPriv.getType());
+    Assertions.assertEquals(priv2.getId(), secPriv.getId());
+    Assertions.assertEquals(priv2.getName(), secPriv.getName());
+    Assertions.assertEquals(priv2.getDescription(), secPriv.getDescription());
+    Assertions.assertEquals(priv2.getType(), secPriv.getType());
 
-    Assert.assertEquals("read", secPriv.getProperty("method"));
-    Assert.assertEquals("/some/path/", secPriv.getProperty("permission"));
-    Assert.assertEquals(2, secPriv.getProperties().size());
+    Assertions.assertEquals("read", secPriv.getProperty("method"));
+    Assertions.assertEquals("/some/path/", secPriv.getProperty("permission"));
+    Assertions.assertEquals(2, secPriv.getProperties().size());
   }
 
   @Test
-  public void testUpdatePrivilegeByName() throws Exception {
+  void updatePrivilegeByName() throws Exception {
     AuthorizationManager authzManager = this.getAuthorizationManager();
 
     Privilege privilege = authzManager.getPrivilegeByName("3-name");
@@ -293,69 +282,51 @@ public class AuthorizationManagerTest
 
     CPrivilege persistenPrivilege = this.getConfigurationManager().readPrivilegeByName(privilege.getName());
 
-    Assert.assertEquals(privilege.getId(), persistenPrivilege.getId());
-    Assert.assertEquals(privilege.getName(), persistenPrivilege.getName());
-    Assert.assertEquals(privilege.getDescription(), persistenPrivilege.getDescription());
-    Assert.assertEquals(privilege.getType(), persistenPrivilege.getType());
+    Assertions.assertEquals(privilege.getId(), persistenPrivilege.getId());
+    Assertions.assertEquals(privilege.getName(), persistenPrivilege.getName());
+    Assertions.assertEquals(privilege.getDescription(), persistenPrivilege.getDescription());
+    Assertions.assertEquals(privilege.getType(), persistenPrivilege.getType());
 
-    Assert.assertEquals("read", persistenPrivilege.getProperty("method"));
-    Assert.assertEquals("/some/path/", persistenPrivilege.getProperty("permission"));
-    Assert.assertEquals(2, persistenPrivilege.getProperties().size());
+    Assertions.assertEquals("read", persistenPrivilege.getProperty("method"));
+    Assertions.assertEquals("/some/path/", persistenPrivilege.getProperty("permission"));
+    Assertions.assertEquals(2, persistenPrivilege.getProperties().size());
   }
 
   @Test
-  public void testDeletePrivilegeUser() throws Exception {
+  void deletePrivilegeUser() throws Exception {
     AuthorizationManager authzManager = this.getAuthorizationManager();
-    try {
+    
+    // Test deleting an invalid privilege name
+    Assertions.assertThrows(NoSuchPrivilegeException.class, () -> {
       authzManager.deletePrivilege("INVALID-PRIVILEGENAME");
-      Assert.fail("Expected NoSuchPrivilegeException");
-    }
-    catch (NoSuchPrivilegeException e) {
-      // expected
-    }
+    }, "Expected NoSuchPrivilegeException");
 
-    // this one will work
+    // This one will work
     authzManager.deletePrivilege("2");
 
-    // this one should fail
-    try {
+    // This one should fail
+    Assertions.assertThrows(NoSuchPrivilegeException.class, () -> {
       authzManager.deletePrivilege("2");
-      Assert.fail("Expected NoSuchPrivilegeException");
-    }
-    catch (NoSuchPrivilegeException e) {
-      // expected
-    }
+    }, "Expected NoSuchPrivilegeException");
 
-    try {
+    Assertions.assertThrows(NoSuchPrivilegeException.class, () -> {
       authzManager.getPrivilege("2");
-      Assert.fail("Expected NoSuchPrivilegeException");
-    }
-    catch (NoSuchPrivilegeException e) {
-      // expected
-    }
+    }, "Expected NoSuchPrivilegeException");
 
-    try {
+    Assertions.assertThrows(NoSuchPrivilegeException.class, () -> {
       this.getConfigurationManager().readPrivilege("2");
-      Assert.fail("Expected NoSuchPrivilegeException");
-    }
-    catch (NoSuchPrivilegeException e) {
-      // expected
-    }
+    }, "Expected NoSuchPrivilegeException");
   }
 
   @Test
-  public void testDeletePrivilegeByName() throws Exception {
+  void deletePrivilegeByName() throws Exception {
     AuthorizationManager authzManager = this.getAuthorizationManager();
 
     authzManager.deletePrivilegeByName("3-name");
 
-    try {
+    Assertions.assertThrows(NoSuchPrivilegeException.class, () -> {
       this.getConfigurationManager().readPrivilegeByName("3-name");
-      Assert.fail("Expected NoSuchPrivilegeException");
-    }
-    catch (NoSuchPrivilegeException e) {
-      // expected
-    }
+    }, "Expected NoSuchPrivilegeException");
   }
 
   private Map<String, Privilege> toPrivilegeMap(Set<Privilege> privileges) {

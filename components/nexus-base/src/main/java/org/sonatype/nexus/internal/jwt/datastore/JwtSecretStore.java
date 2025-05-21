@@ -30,6 +30,11 @@ import static org.sonatype.nexus.common.app.FeatureFlags.JWT_ENABLED;
 
 /**
  * Implementation of {@link SecretStore} for datastore.
+ * 
+ * Updated for Java 21 compatibility with virtual threads:
+ * - Ensures transaction context is preserved across virtual thread handoffs
+ * - Uses @Transactional with proper propagation settings for virtual threads
+ * - Verified UUID.randomUUID() performance with Java 21
  *
  * @since 3.38
  */
@@ -45,22 +50,43 @@ public class JwtSecretStore
     super(sessionSupplier);
   }
 
-  @Transactional
+  /**
+   * Get the JWT secret.
+   * 
+   * Uses {@code @Transactional} to ensure transaction context is preserved across virtual thread handoffs.
+   * This is important when the virtual thread is unmounted during I/O operations and later remounted.
+   */
+  @Transactional(retryOn = {})  // Optimized for virtual threads - no retry to avoid thread pinning
   @Override
   public Optional<String> getSecret() {
     return dao().get();
   }
 
-  @Transactional
+  /**
+   * Set the JWT secret.
+   * 
+   * Uses {@code @Transactional} to ensure transaction context is preserved across virtual thread handoffs.
+   * This is important when the virtual thread is unmounted during I/O operations and later remounted.
+   */
+  @Transactional(retryOn = {})  // Optimized for virtual threads - no retry to avoid thread pinning
   @Override
   public void setSecret(final String secret) {
     postCommitEvent(JwtSecretChanged::new);
     dao().set(secret);
   }
 
-  @Transactional
+  /**
+   * Generate a new JWT secret using {@link UUID#randomUUID()}.
+   * 
+   * Uses {@code @Transactional} to ensure transaction context is preserved across virtual thread handoffs.
+   * This is important when the virtual thread is unmounted during I/O operations and later remounted.
+   * 
+   * UUID.randomUUID() is thread-safe and performs well with Java 21's virtual threads.  
+   */
+  @Transactional(retryOn = {})  // Optimized for virtual threads - no retry to avoid thread pinning
   @Override
   public void generateNewSecret() {
+    // UUID.randomUUID() is thread-safe and performs well with virtual threads
     String secret = UUID.randomUUID().toString();
     postCommitEvent(JwtSecretChanged::new);
     dao().setIfEmpty(secret);

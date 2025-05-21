@@ -1,0 +1,75 @@
+{
+  "virtualThreadPoolConfig": {
+    "general": {
+      "useVirtualThreads": true,
+      "description": "Configuration for Virtual Thread pool testing in Nexus Repository"
+    },
+    "platformThreadPool": {
+      "parallelism": 4,
+      "maxPoolSize": 256,
+      "minThreads": 2,
+      "corePoolSize": 8,
+      "keepAliveTimeMs": 60000,
+      "allowCoreThreadTimeOut": false,
+      "namePrefix": "nexus-vt-carrier-"
+    },
+    "virtualThreadSettings": {
+      "threadNamePattern": "nexus-vt-%d",
+      "pinningTimeout": 5000,
+      "unmountOnBlocking": true,
+      "maxPinnedThreads": 16
+    },
+    "executionBehavior": {
+      "queueCapacity": 10000,
+      "rejectionPolicy": "CALLER_RUNS",
+      "priorityForIOTasks": true,
+      "monitoringEnabled": true
+    },
+    "testParameters": {
+      "testDuration": 30000,
+      "concurrentTasks": 1000,
+      "taskTypes": [
+        {
+          "name": "IO_BOUND",
+          "percentage": 70,
+          "simulatedBlockingTimeMs": {
+            "min": 50,
+            "max": 500
+          }
+        },
+        {
+          "name": "CPU_BOUND",
+          "percentage": 20,
+          "cpuIntensityLevel": "MEDIUM"
+        },
+        {
+          "name": "MIXED",
+          "percentage": 10,
+          "simulatedBlockingTimeMs": {
+            "min": 10,
+            "max": 100
+          },
+          "cpuIntensityLevel": "LOW"
+        }
+      ]
+    },
+    "osgiCompatibility": {
+      "karafCompatibilityMode": true,
+      "bundleContextAware": true,
+      "serviceRegistryIntegration": true
+    },
+    "monitoring": {
+      "jmxEnabled": true,
+      "metricsEnabled": true,
+      "loggingLevel": "INFO",
+      "threadDumpIntervalMs": 60000
+    },
+    "advancedSettings": {
+      "adaptivePoolSizing": true,
+      "mountUnmountThreshold": 1000,
+      "stackChunkSize": 1024,
+      "threadLocalSupport": true,
+      "inheritableThreadLocalsSupport": true
+    }
+  }
+}

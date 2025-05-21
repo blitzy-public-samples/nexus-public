@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.capability.condition.internal;
 
-import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.locks.StampedLock;
 
 import org.sonatype.nexus.capability.CapabilityDescriptor;
 import org.sonatype.nexus.capability.CapabilityDescriptorRegistry;
@@ -39,7 +39,7 @@ public class CapabilityOfTypeExistsCondition
 
   private final CapabilityRegistry capabilityRegistry;
 
-  private final ReentrantReadWriteLock bindLock;
+  private final StampedLock lock;
 
   final CapabilityType type;
 
@@ -55,19 +55,19 @@ public class CapabilityOfTypeExistsCondition
     this.type = checkNotNull(type);
     final CapabilityDescriptor descriptor = checkNotNull(descriptorRegistry).get(type);
     typeName = descriptor == null ? type.toString() : descriptor.name();
-    bindLock = new ReentrantReadWriteLock();
+    lock = new StampedLock();
   }
 
   @Override
   protected void doBind() {
+    long stamp = lock.writeLock();
     try {
-      bindLock.writeLock().lock();
       for (final CapabilityReference reference : capabilityRegistry.getAll()) {
         handle(new CapabilityEvent.Created(capabilityRegistry, reference));
       }
     }
     finally {
-      bindLock.writeLock().unlock();
+      lock.unlockWrite(stamp);
     }
     getEventManager().register(this);
   }
@@ -109,12 +109,12 @@ public class CapabilityOfTypeExistsCondition
 
   @Override
   protected void setSatisfied(final boolean satisfied) {
+    long stamp = lock.readLock();
     try {
-      bindLock.readLock().lock();
       super.setSatisfied(satisfied);
     }
     finally {
-      bindLock.readLock().unlock();
+      lock.unlockRead(stamp);
     }
   }
 

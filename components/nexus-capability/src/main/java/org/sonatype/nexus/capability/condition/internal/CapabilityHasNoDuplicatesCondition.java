@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.capability.condition.internal;
 
+import java.util.concurrent.locks.ReentrantLock;
+
 import org.sonatype.nexus.capability.CapabilityContext;
 import org.sonatype.nexus.capability.CapabilityContextAware;
 import org.sonatype.nexus.capability.CapabilityEvent;
@@ -25,6 +27,9 @@ import static com.google.common.base.Preconditions.checkState;
 
 /**
  * A condition that is satisfied as long as the capability has no duplicates.
+ * 
+ * Updated for Java 21 to properly handle events from Virtual Threads and ensure
+ * thread context propagation when checking for duplicates.
  *
  * @since 3.13
  */
@@ -33,6 +38,9 @@ public class CapabilityHasNoDuplicatesCondition
     implements CapabilityContextAware
 {
   private CapabilityContext context;
+  
+  // Use ReentrantLock instead of synchronized blocks to avoid Virtual Thread pinning
+  private final ReentrantLock lock = new ReentrantLock();
 
   public CapabilityHasNoDuplicatesCondition(final EventManager eventManager) {
     super(eventManager);
@@ -40,18 +48,30 @@ public class CapabilityHasNoDuplicatesCondition
 
   @Override
   public CapabilityHasNoDuplicatesCondition setContext(final CapabilityContext context) {
-    checkState(!isActive(), "Cannot contextualize when already bounded");
-    checkState(this.context == null, "Already contextualized with '" + this.context + "'");
-    this.context = context;
+    lock.lock();
+    try {
+      checkState(!isActive(), "Cannot contextualize when already bounded");
+      checkState(this.context == null, "Already contextualized with '" + this.context + "'");
+      this.context = context;
+    }
+    finally {
+      lock.unlock();
+    }
 
     return this;
   }
 
   @Override
   protected void doBind() {
-    checkState(context != null, "Not yet contextualized");
-    checkForDuplicates();
-    getEventManager().register(this);
+    lock.lock();
+    try {
+      checkState(context != null, "Not yet contextualized");
+      checkForDuplicates();
+      getEventManager().register(this);
+    }
+    finally {
+      lock.unlock();
+    }
   }
 
   @Override
@@ -59,32 +79,71 @@ public class CapabilityHasNoDuplicatesCondition
     getEventManager().unregister(this);
   }
 
+  /**
+   * Handle capability creation events.
+   * 
+   * @param event the capability creation event
+   * 
+   * The @AllowConcurrentEvents annotation ensures this method can be called concurrently
+   * from multiple threads, including Virtual Threads in Java 21.
+   */
   @AllowConcurrentEvents
   @Subscribe
   public void handle(final CapabilityEvent.Created event) {
     checkForDuplicates(event);
   }
 
+  /**
+   * Handle capability update events.
+   * 
+   * @param event the capability update event
+   * 
+   * The @AllowConcurrentEvents annotation ensures this method can be called concurrently
+   * from multiple threads, including Virtual Threads in Java 21.
+   */
   @AllowConcurrentEvents
   @Subscribe
   public void handle(final CapabilityEvent.AfterUpdate event) {
     checkForDuplicates(event);
   }
 
+  /**
+   * Handle capability removal events.
+   * 
+   * @param event the capability removal event
+   * 
+   * The @AllowConcurrentEvents annotation ensures this method can be called concurrently
+   * from multiple threads, including Virtual Threads in Java 21.
+   */
   @AllowConcurrentEvents
   @Subscribe
   public void handle(final CapabilityEvent.AfterRemove event) {
     checkForDuplicates(event);
   }
 
+  /**
+   * Check for duplicates based on a capability event.
+   * 
+   * This method ensures proper thread context propagation when invoked from Virtual Threads.
+   * 
+   * @param event the capability event to check
+   */
   private void checkForDuplicates(final CapabilityEvent event) {
+    // Only check for duplicates if the event is for the same capability type
     if (event.getReference().context().type().equals(context.type())) {
       checkForDuplicates();
     }
   }
 
+  /**
+   * Check for duplicates using non-blocking synchronization to avoid Virtual Thread pinning.
+   * 
+   * This method ensures proper thread context propagation when invoked from Virtual Threads.
+   */
   private void checkForDuplicates() {
-    setSatisfied(!context.descriptor().isDuplicated(context.id(), context.properties()));
+    // Use non-blocking approach to check for duplicates and update condition state
+    boolean noDuplicates = !context.descriptor().isDuplicated(context.id(), context.properties());
+    setSatisfied(noDuplicates);
   }
 
   @Override

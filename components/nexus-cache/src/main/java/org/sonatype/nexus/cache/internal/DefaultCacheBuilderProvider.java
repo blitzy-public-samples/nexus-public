@@ -34,6 +34,9 @@ import static com.google.common.base.Preconditions.checkState;
  *
  * Defaults to {@code ehcache}.
  *
+ * This implementation is compatible with Java 21 and leverages pattern matching
+ * for switch statements and string templates for improved code readability.
+ *
  * @since 3.14
  */
 @SuppressWarnings("rawtypes")
@@ -60,11 +63,18 @@ public class DefaultCacheBuilderProvider
     checkState(providers.containsKey(name), "Missing cache-builder: %s", name);
   }
 
+  /**
+   * Determines the appropriate cache implementation based on Orient enablement and clustering status.
+   * Uses pattern matching for switch to improve code readability.
+   */
   private String getCustomName(
       @Named("nexus.orient.enabled") final boolean orient,
       final NodeAccess nodeAccess)
   {
-    return orient && nodeAccess.isClustered() ? "hazelcast" : "ehcache";
+    return switch (orient) {
+      case true when nodeAccess.isClustered() -> "hazelcast";
+      case true, false -> "ehcache";
+    };
   }
 
   @Override
@@ -72,7 +82,7 @@ public class DefaultCacheBuilderProvider
     Provider<CacheBuilder> provider = providers.get(name);
     checkState(provider != null, "Cache-builder vanished: %s", name);
     CacheBuilder builder = provider.get();
-    log.debug("Constructed cache-builder: {} -> {}", name, builder);
+    log.debug(STR."Constructed cache-builder: \{name} -> \{builder}");
     return builder;
   }
 }

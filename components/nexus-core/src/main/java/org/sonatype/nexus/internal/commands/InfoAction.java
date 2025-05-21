@@ -75,11 +75,11 @@ public class InfoAction
   }
 
   private void printSection(final String name) {
-    System.out.println(INTENSITY_BOLD + name + INTENSITY_NORMAL);
+    System.out.println(STR."\{INTENSITY_BOLD}\{name}\{INTENSITY_NORMAL}");
   }
 
   private void printEntry(final String key, final Object value) {
-    System.out.printf("  %s: %s%n", key, value);
+    System.out.println(STR."  \{key}: \{value}");
   }
 
   private void printSeparator() {

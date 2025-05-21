@@ -16,13 +16,14 @@ import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.event.EventManager;
 import org.sonatype.nexus.crypto.CryptoHelper;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
-import static org.mockito.Mockito.mock;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
 /**
@@ -30,19 +31,23 @@ import static org.mockito.Mockito.when;
  *
  * @since 2.7
  */
+@ExtendWith(MockitoExtension.class)
 public class CipherKeyUnlimitedStrengthConditionTest
     extends TestSupport
 {
-  public static final String FAKE_TRANSFORMATION = "fake-transformation";
+  // Using String Template for better readability
+  private static final String FAKE_TRANSFORMATION = STR."fake-transformation";
 
   private CipherKeyUnlimitedStrengthCondition condition;
 
   @Mock
   private CryptoHelper crypto;
+  
+  @Mock
+  private EventManager eventManager;
 
-  @Before
+  @BeforeEach
   public void setUp() throws Exception {
-    EventManager eventManager = mock(EventManager.class);
     condition = new CipherKeyUnlimitedStrengthCondition(eventManager, crypto, FAKE_TRANSFORMATION);
   }
 
@@ -51,7 +56,7 @@ public class CipherKeyUnlimitedStrengthConditionTest
     when(crypto.getCipherMaxAllowedKeyLength(FAKE_TRANSFORMATION))
         .thenReturn(CipherKeyUnlimitedStrengthCondition.MIN_BITS - 1);
     condition.bind();
-    assertThat(condition.isSatisfied(), is(false));
+    assertFalse(condition.isSatisfied());
   }
 
   @Test
@@ -59,6 +64,6 @@ public class CipherKeyUnlimitedStrengthConditionTest
     when(crypto.getCipherMaxAllowedKeyLength(FAKE_TRANSFORMATION))
         .thenReturn(CipherKeyUnlimitedStrengthCondition.MIN_BITS);
     condition.bind();
-    assertThat(condition.isSatisfied(), is(true));
+    assertTrue(condition.isSatisfied());
   }
 }

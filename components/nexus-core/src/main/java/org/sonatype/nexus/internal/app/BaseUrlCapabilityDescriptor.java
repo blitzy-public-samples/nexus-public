@@ -29,8 +29,7 @@ import org.sonatype.nexus.common.upgrade.AvailabilityVersion;
 import org.sonatype.nexus.formfields.FormField;
 import org.sonatype.nexus.formfields.UrlFormField;
 
-import com.google.common.collect.ImmutableList;
-
+import static java.util.List.of;
 import static org.sonatype.nexus.capability.Tag.categoryTag;
 import static org.sonatype.nexus.capability.Tag.tags;
 
@@ -68,8 +67,9 @@ public class BaseUrlCapabilityDescriptor
   private final List<FormField> formFields;
 
   public BaseUrlCapabilityDescriptor() {
-    this.formFields = ImmutableList.of(
-        (FormField)new UrlFormField(
+    // Use Java 21's enhanced collection handling instead of ImmutableList
+    this.formFields = of(
+        new UrlFormField(
             BaseUrlCapabilityConfiguration.URL,
             messages.urlLabel(),
             messages.urlHelp(),

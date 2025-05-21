@@ -16,6 +16,8 @@ import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.ToIntFunction;
@@ -72,6 +74,8 @@ public class ApiKeyServiceImpl
   private final Map<String, ApiKeyFactory> apiKeyFactories;
 
   private final DefaultApiKeyFactory defaultApiKeyFactory;
+  
+  private final Executor virtualThreadExecutor;
 
   private volatile boolean secretMigrationComplete = false;
 
@@ -94,6 +98,7 @@ public class ApiKeyServiceImpl
     this.principalsHelper = checkNotNull(principalsHelper);
     this.apiKeyFactories = checkNotNull(apiKeyFactories);
     this.defaultApiKeyFactory = checkNotNull(defaultApiKeyFactory);
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   @Override
@@ -103,73 +108,163 @@ public class ApiKeyServiceImpl
 
   @Override
   public Collection<ApiKey> browse(final String domain) {
-    return callBrowse(store -> store.browse(domain)
-        .stream()
-        .map(ApiKey.class::cast)
-        .collect(Collectors.toList()));
+    return callBrowse(store -> {
+      var future = virtualThreadExecutor.submit(() -> store.browse(domain)
+          .stream()
+          .map(ApiKey.class::cast)
+          .collect(Collectors.toList()));
+      try {
+        return future.get();
+      } catch (Exception e) {
+        log.error(STR."Error browsing API keys for domain \{domain}", e);
+        return java.util.Collections.emptyList();
+      }
+    });
   }
 
   @Override
   public Collection<ApiKey> browseByCreatedDate(final String domain, final OffsetDateTime date) {
-    return callBrowse(store -> store.browseByCreatedDate(domain, date)
-        .stream()
-        .map(ApiKey.class::cast)
-        .collect(Collectors.toList()));
+    return callBrowse(store -> {
+      var future = virtualThreadExecutor.submit(() -> store.browseByCreatedDate(domain, date)
+          .stream()
+          .map(ApiKey.class::cast)
+          .collect(Collectors.toList()));
+      try {
+        return future.get();
+      } catch (Exception e) {
+        log.error(STR."Error browsing API keys for domain \{domain} by date \{date}", e);
+        return java.util.Collections.emptyList();
+      }
+    });
   }
 
   @Override
   public Collection<ApiKey> browsePaginated(final String domain, final int page, final int pageSize) {
-    return callBrowse(store -> store.browsePaginated(domain, page, pageSize)
-        .stream()
-        .map(ApiKey.class::cast)
-        .collect(Collectors.toList()));
+    return callBrowse(store -> {
+      var future = virtualThreadExecutor.submit(() -> store.browsePaginated(domain, page, pageSize)
+          .stream()
+          .map(ApiKey.class::cast)
+          .collect(Collectors.toList()));
+      try {
+        return future.get();
+      } catch (Exception e) {
+        log.error(STR."Error browsing paginated API keys for domain \{domain} (page \{page}, size \{pageSize})", e);
+        return java.util.Collections.emptyList();
+      }
+    });
   }
 
   @Override
   public int count(final String domain) {
-    return callModify(store -> store.count(domain));
+    return callModify(store -> {
+      var future = virtualThreadExecutor.submit(() -> store.count(domain));
+      try {
+        return future.get();
+      } catch (Exception e) {
+        log.error(STR."Error counting API keys for domain \{domain}", e);
+        return 0;
+      }
+    });
   }
 
   @Override
   public char[] createApiKey(final String domain, final PrincipalCollection principals) {
     char[] apiKey = makeApiKey(domain, principals);
 
-    modify(store -> store.persistApiKey(domain, principals, apiKey));
+    modify(store -> {
+      virtualThreadExecutor.execute(() -> store.persistApiKey(domain, principals, apiKey));
+    });
 
     return apiKey;
   }
 
   @Override
   public int deleteApiKey(final String domain, final PrincipalCollection principals) {
-    return callModify(store -> store.deleteApiKey(domain, principals));
+    return callModify(store -> {
+      var future = virtualThreadExecutor.submit(() -> store.deleteApiKey(domain, principals));
+      try {
+        return future.get();
+      } catch (Exception e) {
+        log.error(STR."Error deleting API key for domain \{domain}", e);
+        return 0;
+      }
+    });
   }
 
   @Override
   public int deleteApiKeys(final OffsetDateTime expiration) {
-    return callModify(store -> store.deleteApiKeys(expiration));
+    return callModify(store -> {
+      var future = virtualThreadExecutor.submit(() -> store.deleteApiKeys(expiration));
+      try {
+        return future.get();
+      } catch (Exception e) {
+        log.error(STR."Error deleting API keys with expiration \{expiration}", e);
+        return 0;
+      }
+    });
   }
 
   @Override
   public int deleteApiKeys(final PrincipalCollection principals) {
     checkCancellation();
-    return callModify(store -> store.deleteApiKeys(principals));
+    return callModify(store -> {
+      var future = virtualThreadExecutor.submit(() -> store.deleteApiKeys(principals));
+      try {
+        return future.get();
+      } catch (Exception e) {
+        if (principals instanceof SimplePrincipalCollection(var primaryPrincipal, var realmName)) {
+          log.error(STR."Error deleting API keys for principal \{primaryPrincipal} from realm \{realmName}", e);
+        } else {
+          log.error(STR."Error deleting API keys for principals \{principals}", e);
+        }
+        return 0;
+      }
+    });
   }
 
   @Override
   public int deleteApiKeys(final String domain) {
-    return callModify(store -> store.deleteApiKeys(domain));
+    return callModify(store -> {
+      var future = virtualThreadExecutor.submit(() -> store.deleteApiKeys(domain));
+      try {
+        return future.get();
+      } catch (Exception e) {
+        log.error(STR."Error deleting API keys for domain \{domain}", e);
+        return 0;
+      }
+    });
   }
 
   @Override
   public Optional<ApiKey> getApiKey(final String domain, final PrincipalCollection principals) {
-    return find(store -> store.getApiKey(domain, principals)
-        .map(ApiKey.class::cast));
+    return find(store -> {
+      var future = virtualThreadExecutor.submit(() -> store.getApiKey(domain, principals)
+          .map(ApiKey.class::cast));
+      try {
+        return future.get();
+      } catch (Exception e) {
+        if (principals instanceof SimplePrincipalCollection(var primaryPrincipal, var realmName)) {
+          log.error(STR."Error getting API key for domain \{domain}, principal \{primaryPrincipal} from realm \{realmName}", e);
+        } else {
+          log.error(STR."Error getting API key for domain \{domain}, principals \{principals}", e);
+        }
+        return Optional.empty();
+      }
+    });
   }
 
   @Override
   public Optional<ApiKey> getApiKeyByToken(final String domain, final char[] apiKey) {
-    return find(store -> store.getApiKeyByToken(domain, apiKey)
-        .map(ApiKey.class::cast));
+    return find(store -> {
+      var future = virtualThreadExecutor.submit(() -> store.getApiKeyByToken(domain, apiKey)
+          .map(ApiKey.class::cast));
+      try {
+        return future.get();
+      } catch (Exception e) {
+        log.error(STR."Error getting API key by token for domain \{domain}", e);
+        return Optional.empty();
+      }
+    });
   }
 
   @Override
@@ -179,7 +274,9 @@ public class ApiKeyServiceImpl
       final char[] apiKey,
       final OffsetDateTime created)
   {
-    modify(store -> store.persistApiKey(domain, principals, apiKey, created));
+    modify(store -> {
+      virtualThreadExecutor.execute(() -> store.persistApiKey(domain, principals, apiKey, created));
+    });
   }
 
   @Override
@@ -195,8 +292,9 @@ public class ApiKeyServiceImpl
 
   @Override
   public void updateApiKeyRealm(final ApiKey from, final PrincipalCollection newPrincipal) {
-    modify(store -> store.updateApiKey((ApiKeyInternal) from,
-        newPrincipal));
+    modify(store -> {
+      virtualThreadExecutor.execute(() -> store.updateApiKey((ApiKeyInternal) from, newPrincipal));
+    });
   }
 
   /**
@@ -206,12 +304,14 @@ public class ApiKeyServiceImpl
   @AllowConcurrentEvents
   public void on(final UserPrincipalsExpired event) {
     final String userId = event.getUserId();
-    if (userId != null) {
-      deleteApiKeys(new SimplePrincipalCollection(userId, event.getSource()));
-    }
-    else {
-      purgeApiKeys();
-    }
+    virtualThreadExecutor.execute(() -> {
+      if (userId != null) {
+        deleteApiKeys(new SimplePrincipalCollection(userId, event.getSource()));
+      }
+      else {
+        purgeApiKeys();
+      }
+    });
   }
 
   private char[] makeApiKey(final String domain, final PrincipalCollection principals) {
@@ -227,11 +327,11 @@ public class ApiKeyServiceImpl
       principalsHelper.getUserStatus(principals);
     }
     catch (UserNotFoundException e) {
-      log.debug("Stale user found", e);
+      log.debug(STR."Stale user found: \{principals}", e);
       return false;
     }
     catch (Exception e) {
-      log.warn("Failed to lookup user {}", principals);
+      log.warn(STR."Failed to lookup user \{principals}", e);
     }
     return true;
   }
@@ -246,17 +346,17 @@ public class ApiKeyServiceImpl
   private void modify(final Consumer<ApiKeyStore> consumer) {
     if (isMigrationComplete()) {
       // if migration is complete we only need to update the migrated table
-      log.trace("modify new table");
+      log.trace(STR."modify new table");
       consumer.accept(apiKeyStoreV2);
     }
     else if (!isOnDBVersion()) {
       // ZDU, if db migration has not begun we can safely modify only the old store
-      log.trace("modify old table");
+      log.trace(STR."modify old table");
       consumer.accept(apiKeyStore);
     }
     else {
       // DB migration has happened, table migration is in an ambiguous state so we try modifications on both
-      log.trace("modify both tables");
+      log.trace(STR."modify both tables");
       consumer.accept(apiKeyStore);
       consumer.accept(apiKeyStoreV2);
     }
@@ -265,33 +365,33 @@ public class ApiKeyServiceImpl
   private int callModify(final ToIntFunction<ApiKeyStore> consumer) {
     if (isMigrationComplete()) {
       // if migration is complete we only need to update the migrated table
-      log.trace("callModify new table");
+      log.trace(STR."callModify new table");
       return consumer.applyAsInt(apiKeyStoreV2);
     }
     else if (!isOnDBVersion()) {
       // ZDU, if db migration has not begun we can safely modify only the old store
-      log.trace("callModify old table");
+      log.trace(STR."callModify old table");
       return consumer.applyAsInt(apiKeyStore);
     }
     // DB migration has happened, table migration is in an ambiguous state so we try modifications on both
-    log.trace("callModify both tables");
+    log.trace(STR."callModify both tables");
     return Math.max(consumer.applyAsInt(apiKeyStore), consumer.applyAsInt(apiKeyStoreV2));
   }
 
   private Collection<ApiKey> callBrowse(final Function<ApiKeyStore, Collection<ApiKey>> fn) {
     if (isMigrationComplete()) {
-      log.trace("Browsing new table");
+      log.trace(STR."Browsing new table");
       return fn.apply(apiKeyStoreV2);
     }
     // We'll rely on the modify methods to potentially update both tables
-    log.trace("Browsing old table");
+    log.trace(STR."Browsing old table");
     return fn.apply(apiKeyStore);
   }
 
   private <E> E find(final Function<ApiKeyStore, E> fn) {
     if (isMigrationComplete()) {
       // if migration is complete we only need to lookup the migrated table
-      log.trace("find on new table");
+      log.trace(STR."find on new table");
       return fn.apply(apiKeyStoreV2);
     }
 

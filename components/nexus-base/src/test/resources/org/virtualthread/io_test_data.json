@@ -1,0 +1,379 @@
+{
+  "virtualThreadIOTestData": {
+    "version": "1.0",
+    "description": "Test data for Virtual Thread I/O operations in Java 21",
+    "fileOperations": [
+      {
+        "id": "file_read_small",
+        "operationType": "READ",
+        "path": "/tmp/test/small.dat",
+        "sizeBytes": 1024,
+        "expectedDurationMs": 5,
+        "concurrentOperations": 10,
+        "metadata": {
+          "contentType": "application/octet-stream",
+          "virtualThreadBenefit": "HIGH"
+        }
+      },
+      {
+        "id": "file_read_large",
+        "operationType": "READ",
+        "path": "/tmp/test/large.dat",
+        "sizeBytes": 104857600,
+        "expectedDurationMs": 250,
+        "concurrentOperations": 5,
+        "metadata": {
+          "contentType": "application/octet-stream",
+          "virtualThreadBenefit": "HIGH"
+        }
+      },
+      {
+        "id": "file_write_small",
+        "operationType": "WRITE",
+        "path": "/tmp/test/output_small.dat",
+        "sizeBytes": 2048,
+        "expectedDurationMs": 10,
+        "concurrentOperations": 20,
+        "metadata": {
+          "contentType": "application/octet-stream",
+          "virtualThreadBenefit": "MEDIUM"
+        }
+      },
+      {
+        "id": "file_write_large",
+        "operationType": "WRITE",
+        "path": "/tmp/test/output_large.dat",
+        "sizeBytes": 209715200,
+        "expectedDurationMs": 500,
+        "concurrentOperations": 3,
+        "metadata": {
+          "contentType": "application/octet-stream",
+          "virtualThreadBenefit": "HIGH"
+        }
+      },
+      {
+        "id": "file_copy",
+        "operationType": "COPY",
+        "sourcePath": "/tmp/test/source.dat",
+        "destinationPath": "/tmp/test/destination.dat",
+        "sizeBytes": 52428800,
+        "expectedDurationMs": 300,
+        "concurrentOperations": 5,
+        "metadata": {
+          "contentType": "application/octet-stream",
+          "virtualThreadBenefit": "HIGH"
+        }
+      }
+    ],
+    "networkOperations": [
+      {
+        "id": "http_get_small",
+        "operationType": "HTTP_GET",
+        "url": "https://example.com/api/resource",
+        "expectedResponseSizeBytes": 4096,
+        "expectedDurationMs": 150,
+        "concurrentOperations": 100,
+        "metadata": {
+          "contentType": "application/json",
+          "headers": {
+            "Accept": "application/json",
+            "User-Agent": "Nexus-VirtualThread-Test/1.0"
+          },
+          "virtualThreadBenefit": "VERY_HIGH"
+        }
+      },
+      {
+        "id": "http_get_large",
+        "operationType": "HTTP_GET",
+        "url": "https://example.com/api/large-resource",
+        "expectedResponseSizeBytes": 10485760,
+        "expectedDurationMs": 500,
+        "concurrentOperations": 50,
+        "metadata": {
+          "contentType": "application/octet-stream",
+          "headers": {
+            "Accept": "application/octet-stream",
+            "User-Agent": "Nexus-VirtualThread-Test/1.0"
+          },
+          "virtualThreadBenefit": "VERY_HIGH"
+        }
+      },
+      {
+        "id": "http_post",
+        "operationType": "HTTP_POST",
+        "url": "https://example.com/api/upload",
+        "requestSizeBytes": 1048576,
+        "expectedResponseSizeBytes": 1024,
+        "expectedDurationMs": 300,
+        "concurrentOperations": 75,
+        "metadata": {
+          "contentType": "application/json",
+          "headers": {
+            "Content-Type": "application/json",
+            "User-Agent": "Nexus-VirtualThread-Test/1.0"
+          },
+          "virtualThreadBenefit": "HIGH"
+        }
+      },
+      {
+        "id": "http_download",
+        "operationType": "HTTP_DOWNLOAD",
+        "url": "https://example.com/downloads/large-file.zip",
+        "expectedResponseSizeBytes": 104857600,
+        "expectedDurationMs": 2000,
+        "concurrentOperations": 25,
+        "metadata": {
+          "contentType": "application/zip",
+          "headers": {
+            "Accept": "application/zip",
+            "User-Agent": "Nexus-VirtualThread-Test/1.0"
+          },
+          "virtualThreadBenefit": "VERY_HIGH"
+        }
+      }
+    ],
+    "databaseOperations": [
+      {
+        "id": "db_query_simple",
+        "operationType": "DB_QUERY",
+        "query": "SELECT * FROM test_table WHERE id = ?",
+        "parameters": ["test-id-1"],
+        "expectedResultCount": 1,
+        "expectedDurationMs": 20,
+        "concurrentOperations": 1000,
+        "metadata": {
+          "database": "PostgreSQL",
+          "virtualThreadBenefit": "VERY_HIGH"
+        }
+      },
+      {
+        "id": "db_query_complex",
+        "operationType": "DB_QUERY",
+        "query": "SELECT t1.*, t2.* FROM test_table t1 JOIN other_table t2 ON t1.id = t2.test_id WHERE t1.status = ? ORDER BY t1.created_at DESC LIMIT ?",
+        "parameters": ["ACTIVE", 100],
+        "expectedResultCount": 100,
+        "expectedDurationMs": 150,
+        "concurrentOperations": 500,
+        "metadata": {
+          "database": "PostgreSQL",
+          "virtualThreadBenefit": "VERY_HIGH"
+        }
+      },
+      {
+        "id": "db_transaction",
+        "operationType": "DB_TRANSACTION",
+        "statements": [
+          {
+            "query": "INSERT INTO test_table (id, name, status) VALUES (?, ?, ?)",
+            "parameters": ["new-id-1", "Test Name", "PENDING"]
+          },
+          {
+            "query": "UPDATE related_table SET last_modified = NOW() WHERE test_id = ?",
+            "parameters": ["new-id-1"]
+          }
+        ],
+        "expectedDurationMs": 100,
+        "concurrentOperations": 200,
+        "metadata": {
+          "database": "PostgreSQL",
+          "virtualThreadBenefit": "HIGH"
+        }
+      },
+      {
+        "id": "db_batch_operation",
+        "operationType": "DB_BATCH",
+        "batchQuery": "INSERT INTO test_table (id, name, status) VALUES (?, ?, ?)",
+        "batchSize": 1000,
+        "expectedDurationMs": 500,
+        "concurrentOperations": 50,
+        "metadata": {
+          "database": "PostgreSQL",
+          "virtualThreadBenefit": "HIGH"
+        }
+      }
+    ],
+    "mixedWorkloads": [
+      {
+        "id": "repository_sync",
+        "description": "Simulates repository synchronization with multiple I/O operations",
+        "operations": [
+          {
+            "type": "HTTP_GET",
+            "weight": 0.3,
+            "concurrentOperations": 50
+          },
+          {
+            "type": "FILE_WRITE",
+            "weight": 0.4,
+            "concurrentOperations": 30
+          },
+          {
+            "type": "DB_QUERY",
+            "weight": 0.2,
+            "concurrentOperations": 100
+          },
+          {
+            "type": "DB_TRANSACTION",
+            "weight": 0.1,
+            "concurrentOperations": 20
+          }
+        ],
+        "totalOperations": 10000,
+        "expectedDurationMs": 15000,
+        "metadata": {
+          "virtualThreadBenefit": "VERY_HIGH",
+          "platformThreadEquivalent": 200
+        }
+      },
+      {
+        "id": "content_indexing",
+        "description": "Simulates content indexing with file reads and database writes",
+        "operations": [
+          {
+            "type": "FILE_READ",
+            "weight": 0.6,
+            "concurrentOperations": 100
+          },
+          {
+            "type": "DB_TRANSACTION",
+            "weight": 0.4,
+            "concurrentOperations": 200
+          }
+        ],
+        "totalOperations": 5000,
+        "expectedDurationMs": 10000,
+        "metadata": {
+          "virtualThreadBenefit": "HIGH",
+          "platformThreadEquivalent": 150
+        }
+      }
+    ],
+    "virtualThreadSpecificTests": [
+      {
+        "id": "massive_concurrent_connections",
+        "description": "Test with extremely high number of concurrent connections",
+        "operationType": "HTTP_GET",
+        "concurrentOperations": 10000,
+        "expectedDurationMs": 5000,
+        "metadata": {
+          "virtualThreadBenefit": "EXTREME",
+          "notes": "This test is designed to validate the scalability benefits of Virtual Threads with a number of concurrent operations that would be impractical with platform threads"
+        }
+      },
+      {
+        "id": "long_running_io_operations",
+        "description": "Test with long-running I/O operations that would tie up platform threads",
+        "operationType": "MIXED",
+        "operations": [
+          {
+            "type": "HTTP_DOWNLOAD",
+            "count": 100,
+            "durationMs": 10000
+          },
+          {
+            "type": "DB_QUERY",
+            "count": 500,
+            "durationMs": 5000
+          }
+        ],
+        "concurrentOperations": 1000,
+        "expectedDurationMs": 15000,
+        "metadata": {
+          "virtualThreadBenefit": "EXTREME",
+          "notes": "This test validates that Virtual Threads can efficiently handle long-running I/O operations without exhausting system resources"
+        }
+      },
+      {
+        "id": "pinning_test",
+        "description": "Test to validate behavior when Virtual Threads are pinned to carrier threads",
+        "operationType": "SYNCHRONIZED_IO",
+        "concurrentOperations": 100,
+        "expectedDurationMs": 2000,
+        "metadata": {
+          "virtualThreadBenefit": "LOW",
+          "notes": "This test intentionally creates a scenario where Virtual Threads are pinned to carrier threads to validate the performance impact"
+        }
+      }
+    ],
+    "blobStoreOperations": [
+      {
+        "id": "blob_store_write",
+        "operationType": "BLOB_WRITE",
+        "storeType": "FILE",
+        "blobId": "test-blob-1",
+        "sizeBytes": 5242880,
+        "expectedDurationMs": 200,
+        "concurrentOperations": 50,
+        "metadata": {
+          "contentType": "application/octet-stream",
+          "virtualThreadBenefit": "HIGH"
+        }
+      },
+      {
+        "id": "blob_store_read",
+        "operationType": "BLOB_READ",
+        "storeType": "FILE",
+        "blobId": "test-blob-2",
+        "sizeBytes": 10485760,
+        "expectedDurationMs": 150,
+        "concurrentOperations": 100,
+        "metadata": {
+          "contentType": "application/octet-stream",
+          "virtualThreadBenefit": "HIGH"
+        }
+      },
+      {
+        "id": "blob_store_s3_write",
+        "operationType": "BLOB_WRITE",
+        "storeType": "S3",
+        "blobId": "test-s3-blob-1",
+        "sizeBytes": 20971520,
+        "expectedDurationMs": 1000,
+        "concurrentOperations": 25,
+        "metadata": {
+          "contentType": "application/octet-stream",
+          "virtualThreadBenefit": "VERY_HIGH",
+          "s3Bucket": "test-bucket",
+          "s3Region": "us-west-2"
+        }
+      },
+      {
+        "id": "blob_store_s3_read",
+        "operationType": "BLOB_READ",
+        "storeType": "S3",
+        "blobId": "test-s3-blob-2",
+        "sizeBytes": 52428800,
+        "expectedDurationMs": 800,
+        "concurrentOperations": 40,
+        "metadata": {
+          "contentType": "application/octet-stream",
+          "virtualThreadBenefit": "VERY_HIGH",
+          "s3Bucket": "test-bucket",
+          "s3Region": "us-west-2"
+        }
+      }
+    ],
+    "performanceMetrics": {
+      "platformThreadBaseline": {
+        "maxConcurrentOperations": 200,
+        "averageThroughputOpsPerSec": 500,
+        "averageLatencyMs": 150,
+        "resourceUtilization": {
+          "cpuPercent": 60,
+          "memoryMB": 2048,
+          "threadCount": 200
+        }
+      },
+      "virtualThreadExpected": {
+        "maxConcurrentOperations": 10000,
+        "averageThroughputOpsPerSec": 5000,
+        "averageLatencyMs": 120,
+        "resourceUtilization": {
+          "cpuPercent": 80,
+          "memoryMB": 2048,
+          "threadCount": 20
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,287 @@
+[
+  {
+    "id": "simple-capability",
+    "name": "Simple Capability",
+    "description": "A basic capability type for testing pattern matching",
+    "version": "1.0.0",
+    "enabled": true,
+    "properties": {
+      "stringProperty": "value",
+      "numericProperty": 42,
+      "booleanProperty": true
+    }
+  },
+  {
+    "id": "http-client-capability",
+    "name": "HTTP Client Capability",
+    "description": "Capability for HTTP client configuration",
+    "version": "2.1.0",
+    "enabled": true,
+    "properties": {
+      "timeout": 30000,
+      "retries": 3,
+      "userAgent": "Nexus-Repository/3.42.0",
+      "connectionPool": {
+        "maxConnections": 200,
+        "maxPerRoute": 20,
+        "validateAfterInactivity": 5000
+      },
+      "tls": {
+        "enabled": true,
+        "protocols": ["TLSv1.2", "TLSv1.3"],
+        "verifyHostname": true
+      }
+    }
+  },
+  {
+    "id": "blobstore-capability",
+    "name": "BlobStore Capability",
+    "description": "Configuration for BlobStore operations",
+    "version": "1.2.0",
+    "enabled": true,
+    "type": "file",
+    "properties": {
+      "path": "/nexus-data/blobs",
+      "quotaEnabled": true,
+      "quotaType": "space",
+      "quotaLimit": 1073741824,
+      "fileTypeValidation": true,
+      "metrics": {
+        "enabled": true,
+        "collectionInterval": 60,
+        "retention": {
+          "days": 30,
+          "enabled": true
+        }
+      }
+    }
+  },
+  {
+    "id": "s3-blobstore-capability",
+    "name": "S3 BlobStore Capability",
+    "description": "Configuration for S3 BlobStore operations",
+    "version": "1.3.0",
+    "enabled": true,
+    "type": "s3",
+    "properties": {
+      "bucket": "nexus-blobs",
+      "region": "us-west-2",
+      "prefix": "content/",
+      "encryption": {
+        "enabled": true,
+        "type": "s3ManagedKeys"
+      },
+      "authentication": {
+        "type": "roleAssumption",
+        "roleARN": "arn:aws:iam::123456789012:role/NexusS3Access",
+        "sessionDuration": 3600
+      },
+      "advanced": {
+        "endpointUrl": "https://s3.us-west-2.amazonaws.com",
+        "signerType": "AWSS3V4SignerType",
+        "forcePathStyle": false,
+        "expiration": 86400
+      }
+    }
+  },
+  {
+    "id": "repository-capability",
+    "name": "Repository Capability",
+    "description": "Configuration for repository management",
+    "version": "2.0.0",
+    "enabled": true,
+    "type": "hosted",
+    "format": "maven2",
+    "properties": {
+      "storage": {
+        "blobStoreName": "default",
+        "strictContentTypeValidation": true,
+        "writePolicy": "ALLOW"
+      },
+      "cleanup": {
+        "policyNames": ["weekly-cleanup"],
+        "enabled": true
+      },
+      "maven": {
+        "versionPolicy": "RELEASE",
+        "layoutPolicy": "STRICT",
+        "contentDisposition": "ATTACHMENT"
+      },
+      "component": {
+        "proprietaryComponents": false
+      }
+    }
+  },
+  {
+    "id": "proxy-repository-capability",
+    "name": "Proxy Repository Capability",
+    "description": "Configuration for proxy repository",
+    "version": "2.0.0",
+    "enabled": true,
+    "type": "proxy",
+    "format": "npm",
+    "properties": {
+      "storage": {
+        "blobStoreName": "npm-store",
+        "strictContentTypeValidation": true
+      },
+      "proxy": {
+        "remoteUrl": "https://registry.npmjs.org",
+        "contentMaxAge": 1440,
+        "metadataMaxAge": 1440
+      },
+      "negativeCache": {
+        "enabled": true,
+        "timeToLive": 1440
+      },
+      "httpClient": {
+        "blocked": false,
+        "autoBlock": true,
+        "connection": {
+          "useTrustStore": false
+        }
+      },
+      "routingRule": "npm-routing-rule"
+    }
+  },
+  {
+    "id": "security-capability",
+    "name": "Security Capability",
+    "description": "Configuration for security settings",
+    "version": "1.5.0",
+    "enabled": true,
+    "type": "security",
+    "properties": {
+      "anonymousAccess": {
+        "enabled": false,
+        "userId": "anonymous",
+        "realmName": "NexusAuthorizingRealm"
+      },
+      "contentSecurityPolicy": "default-src 'self'",
+      "sessionTimeout": 30,
+      "userTokens": {
+        "enabled": true,
+        "protectContent": true
+      },
+      "saml": {
+        "enabled": false,
+        "entityId": "nexus-repository-manager",
+        "idpMetadata": null
+      }
+    }
+  },
+  {
+    "id": "task-capability",
+    "name": "Task Capability",
+    "description": "Configuration for scheduled tasks",
+    "version": "1.0.0",
+    "enabled": true,
+    "type": "task",
+    "properties": {
+      "name": "Cleanup Repository",
+      "typeId": "repository.cleanup",
+      "alertEmail": "admin@example.com",
+      "schedule": {
+        "type": "cron",
+        "cronExpression": "0 0 3 * * ?"
+      },
+      "taskProperties": {
+        "repositoryName": "maven-central",
+        "minimumRetained": 3,
+        "removeIfReleased": true
+      }
+    }
+  },
+  {
+    "id": "virtual-thread-capability",
+    "name": "Virtual Thread Capability",
+    "description": "Configuration for Java 21 Virtual Threads",
+    "version": "1.0.0",
+    "enabled": true,
+    "type": "virtualthread",
+    "properties": {
+      "enabled": true,
+      "threadPoolSize": -1,
+      "maxThreads": 1000000,
+      "threadFactory": "virtual",
+      "threadNamePrefix": "nexus-vt-",
+      "pinned": false,
+      "monitoring": {
+        "enabled": true,
+        "jfrRecording": true,
+        "metricsEnabled": true
+      },
+      "components": [
+        {
+          "name": "blobstore",
+          "enabled": true,
+          "operations": ["read", "write", "delete", "exists"]
+        },
+        {
+          "name": "repository",
+          "enabled": true,
+          "operations": ["browse", "search", "proxy"]
+        },
+        {
+          "name": "http",
+          "enabled": true,
+          "operations": ["client", "server"]
+        }
+      ]
+    }
+  },
+  {
+    "id": "pattern-matching-test-capability",
+    "name": "Pattern Matching Test Capability",
+    "description": "Test capability for Java 21 pattern matching features",
+    "version": "1.0.0",
+    "enabled": true,
+    "type": "test",
+    "properties": {
+      "point": {
+        "x": 10,
+        "y": 20
+      },
+      "rectangle": {
+        "topLeft": {
+          "x": 0,
+          "y": 0
+        },
+        "bottomRight": {
+          "x": 100,
+          "y": 100
+        }
+      },
+      "circle": {
+        "center": {
+          "x": 50,
+          "y": 50
+        },
+        "radius": 25
+      },
+      "shapes": [
+        {
+          "type": "rectangle",
+          "width": 30,
+          "height": 40
+        },
+        {
+          "type": "circle",
+          "radius": 15
+        },
+        {
+          "type": "triangle",
+          "base": 20,
+          "height": 25
+        }
+      ],
+      "nestedRecords": {
+        "box": {
+          "innerBox": {
+            "content": "Nested content for pattern matching"
+          }
+        }
+      }
+    }
+  }
+]

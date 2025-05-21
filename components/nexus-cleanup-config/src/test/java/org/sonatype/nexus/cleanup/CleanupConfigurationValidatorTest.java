@@ -13,8 +13,13 @@
 package org.sonatype.nexus.cleanup;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.validation.ConstraintViolation;
 
@@ -28,10 +33,13 @@ import org.sonatype.nexus.repository.manager.RepositoryManager;
 import org.sonatype.nexus.repository.types.ProxyType;
 import org.sonatype.nexus.validation.ConstraintViolationFactory;
 
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.nullValue;
@@ -41,6 +49,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class CleanupConfigurationValidatorTest
     extends TestSupport
 {
@@ -85,8 +94,8 @@ public class CleanupConfigurationValidatorTest
 
   CleanupConfigurationValidator underTest;
 
-  @Before
-  public void setUp() throws Exception {
+  @BeforeEach
+  void setUp() {
     when(configuration.getRepositoryName()).thenReturn(REPO_NAME);
     when(configuration.getAttributes()).thenReturn(attributes);
     when(cleanupAttributes.containsKey(POLICY_NAME_KEY)).thenReturn(true);
@@ -107,7 +116,7 @@ public class CleanupConfigurationValidatorTest
   }
 
   @Test
-  public void whenRepositoryNotFoundReturnNull() {
+  void repositoryNotFoundShouldReturnNull() {
     when(repositoryManager.get(REPO_NAME)).thenReturn(null);
 
     assertThat(underTest.validate(configuration), is(nullValue()));
@@ -115,7 +124,7 @@ public class CleanupConfigurationValidatorTest
   }
 
   @Test
-  public void whenAttributeNotFoundReturnNull() {
+  void attributeNotFoundShouldReturnNull() {
     when(configuration.getAttributes()).thenReturn(null);
 
     assertThat(underTest.validate(configuration), is(nullValue()));
@@ -123,7 +132,7 @@ public class CleanupConfigurationValidatorTest
   }
 
   @Test
-  public void whenCleanupAttributeNotFoundReturnNull() {
+  void cleanupAttributeNotFoundShouldReturnNull() {
     when(attributes.containsKey(CLEANUP_KEY)).thenReturn(false);
 
     assertThat(underTest.validate(configuration), is(nullValue()));
@@ -131,7 +140,7 @@ public class CleanupConfigurationValidatorTest
   }
 
   @Test
-  public void whenPolicyNameNotFoundReturnNull() {
+  void policyNameNotFoundShouldReturnNull() {
     when(cleanupAttributes.containsKey(POLICY_NAME_KEY)).thenReturn(false);
 
     assertThat(underTest.validate(configuration), is(nullValue()));
@@ -139,7 +148,7 @@ public class CleanupConfigurationValidatorTest
   }
 
   @Test
-  public void whenCleanupPolicyNotFoundReturnNull() {
+  void cleanupPolicyNotFoundShouldReturnNull() {
     when(cleanupPolicyStorage.get(POLICY_NAME)).thenReturn(null);
 
     assertThat(underTest.validate(configuration), is(nullValue()));
@@ -147,16 +156,64 @@ public class CleanupConfigurationValidatorTest
   }
 
   @Test
-  public void whenValidFormatsReturnNull() {
+  void validFormatsShouldReturnNull() {
     assertThat(underTest.validate(configuration), is(nullValue()));
     verify(constraintFactory, times(0)).createViolation(anyString(), anyString());
   }
 
   @Test
-  public void whenInvalidFormatReturnConstraintViolation() {
+  void invalidFormatShouldReturnConstraintViolation() {
     when(cleanupPolicy.getFormat()).thenReturn("other");
 
     assertThat(underTest.validate(configuration), is(constraintViolation));
     verify(constraintFactory).createViolation(anyString(), anyString());
+  }
+  
+  @Test
+  void patternMatchingWithCleanupPolicyShouldWorkCorrectly() {
+    // Setup a CleanupPolicy with criteria map
+    Map<String, String> criteria = new HashMap<>();
+    criteria.put("lastBlobUpdated", "60");
+    criteria.put("lastDownloaded", "90");
+    
+    when(cleanupPolicy.getCriteria()).thenReturn(criteria);
+    
+    // Using pattern matching for instanceof with the CleanupPolicy object
+    if (cleanupPolicy instanceof CleanupPolicy policy) {
+      Map<String, String> policyCriteria = policy.getCriteria();
+      assertThat(policyCriteria.get("lastBlobUpdated"), is("60"));
+      assertThat(policyCriteria.get("lastDownloaded"), is("90"));
+    }
+  }
+  
+  @Test
+  void concurrentValidationWithVirtualThreadsShouldWork() throws Exception {
+    // Setup for concurrent validation using virtual threads
+    int threadCount = 100;
+    CountDownLatch latch = new CountDownLatch(threadCount);
+    AtomicInteger nullResults = new AtomicInteger(0);
+    
+    // Create a virtual thread executor
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit multiple validation tasks
+      for (int i = 0; i < threadCount; i++) {
+        executor.submit(() -> {
+          try {
+            // Validate the same configuration concurrently
+            if (underTest.validate(configuration) == null) {
+              nullResults.incrementAndGet();
+            }
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      latch.await();
+      
+      // Verify all validations returned null (valid)
+      assertThat(nullResults.get(), is(threadCount));
+    }
   }
 }

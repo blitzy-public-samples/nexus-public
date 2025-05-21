@@ -13,6 +13,13 @@
 package org.sonatype.nexus.security.internal;
 
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.event.EventManager;
@@ -27,18 +34,22 @@ import com.google.common.collect.ImmutableMap;
 import org.apache.shiro.mgt.RealmSecurityManager;
 import org.apache.shiro.realm.Realm;
 import org.eclipse.sisu.inject.BeanLocator;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-public class RealmManagerImplTest
+@ExtendWith(MockitoExtension.class)
+class RealmManagerImplTest
     extends TestSupport
 {
   @Mock
@@ -64,8 +75,8 @@ public class RealmManagerImplTest
 
   private RealmManagerImpl manager;
 
-  @Before
-  public void setUp() {
+  @BeforeEach
+  void setUp() {
     Map<String, Realm> realms = ImmutableMap.of("A", realmA, "B", realmB);
     RealmConfiguration defaultConfig = new TestRealmConfiguration();
     defaultConfig.setRealmNames(ImmutableList.of("A"));
@@ -74,14 +85,14 @@ public class RealmManagerImplTest
   }
 
   @Test
-  public void testOnStoreChanged_LocalEvent() {
+  void testOnStoreChanged_LocalEvent() {
     when(configEvent.isLocal()).thenReturn(true);
     manager.on(configEvent);
     verifyNoInteractions(eventManager, configStore);
   }
 
   @Test
-  public void testOnStoreChanged_RemoteEvent() {
+  void testOnStoreChanged_RemoteEvent() {
     RealmConfiguration eventConfig = new TestRealmConfiguration();
     eventConfig.setRealmNames(ImmutableList.of("B"));
     when(configEvent.isLocal()).thenReturn(false);
@@ -96,5 +107,65 @@ public class RealmManagerImplTest
 
     RealmConfiguration storeConfig = eventCaptor.getValue().getConfiguration();
     assertThat(storeConfig.getRealmNames(), is(eventConfig.getRealmNames()));
+  }
+  
+  @Test
+  void testConcurrentRealmConfigurationEvents() throws Exception {
+    // Create multiple event configurations
+    List<RealmConfiguration> eventConfigs = new ArrayList<>();
+    for (int i = 0; i < 10; i++) {
+      RealmConfiguration config = new TestRealmConfiguration();
+      config.setRealmNames(ImmutableList.of("B"));
+      eventConfigs.add(config);
+    }
+    
+    // Setup for concurrent execution
+    int taskCount = eventConfigs.size();
+    CountDownLatch latch = new CountDownLatch(taskCount);
+    AtomicInteger processedEvents = new AtomicInteger(0);
+    
+    // Use virtual threads for concurrent execution
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    try {
+      // Submit multiple concurrent tasks using virtual threads
+      for (RealmConfiguration config : eventConfigs) {
+        executor.submit(() -> {
+          try {
+            // Create a new event for each thread
+            RealmConfigurationEvent event = new RealmConfigurationEvent(config);
+            
+            // Configure the mock to return non-local for this event
+            when(event.isLocal()).thenReturn(false);
+            when(event.getConfiguration()).thenReturn(config);
+            
+            // Process the event
+            manager.on(event);
+            
+            // Count processed events
+            processedEvents.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      latch.await(5, TimeUnit.SECONDS);
+      
+      // Verify all events were processed
+      assertEquals(taskCount, processedEvents.get(), "All events should be processed");
+      
+      // Verify event manager was called for each event
+      ArgumentCaptor<RealmConfigurationChangedEvent> eventCaptor =
+          ArgumentCaptor.forClass(RealmConfigurationChangedEvent.class);
+      verify(eventManager).post(eventCaptor.capture());
+      
+      // Verify the configuration in the captured event
+      RealmConfiguration storeConfig = eventCaptor.getValue().getConfiguration();
+      assertThat(storeConfig.getRealmNames(), is(ImmutableList.of("B")));
+    } finally {
+      executor.shutdown();
+    }
   }
 }

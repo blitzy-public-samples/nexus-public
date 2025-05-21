@@ -19,7 +19,7 @@ import javax.ws.rs.Path;
 
 import org.sonatype.nexus.email.EmailManager;
 
-import io.swagger.annotations.Api;
+import io.swagger.v3.oas.annotations.Hidden;
 
 import static org.sonatype.nexus.internal.email.rest.EmailConfigurationApiResourceBeta.RESOURCE_URI;
 import static org.sonatype.nexus.rest.APIConstants.BETA_API_PREFIX;
@@ -30,7 +30,7 @@ import static org.sonatype.nexus.rest.APIConstants.BETA_API_PREFIX;
  * @since 3.25
  * @deprecated moving to {@link EmailConfigurationApiResourceV1}
  */
-@Api(hidden = true)
+@Hidden
 @Named
 @Singleton
 @Path(RESOURCE_URI)

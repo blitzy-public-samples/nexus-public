@@ -17,6 +17,11 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.stream.Collectors;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -30,6 +35,7 @@ import org.sonatype.nexus.supportzip.SupportBundle.ContentSource.Priority;
 import org.sonatype.nexus.supportzip.SupportBundleCustomizer;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.supportzip.SupportBundle.ContentSource.Priority.OPTIONAL;
 import static org.sonatype.nexus.supportzip.SupportBundle.ContentSource.Type.ARCHIVEDLOG;
 
@@ -53,53 +59,73 @@ public class ArchivedLogCustomizer
     includeArchivedLogs(supportBundle, archivedLogSize);
   }
 
-  private void includeFileIfExists(
-      final SupportBundle supportBundle,
-      final File file,
-      final String prefix,
-      final Priority priority)
-  {
+  /**
+   * Checks if a file exists and includes it in the support bundle if it does.
+   * Returns the file if it exists, null otherwise.
+   */
+  private File checkFileExists(final File file, final String prefix, final SupportBundle supportBundle) {
     if (file != null && file.exists()) {
-      log.debug("Including file: {}", file);
+      log.debug(STR."Including file: \{file}");
       supportBundle.add(
-          new FileContentSourceSupport(ARCHIVEDLOG, String.format("%s/%s", prefix, file.getName()), file, priority));
+          new FileContentSourceSupport(ARCHIVEDLOG, STR."\{prefix}/\{file.getName()}", file, OPTIONAL));
+      return file;
     }
     else {
-      log.debug("Skipping non-existent file: {}", file);
+      log.debug(STR."Skipping non-existent file: \{file}");
+      return null;
     }
   }
 
+  /**
+   * Includes archived logs in the support bundle using virtual threads for concurrent file existence checks.
+   */
   private void includeArchivedLogs(final SupportBundle supportBundle, final int archivedLogSize) {
     List<String> archivedLogList = archivedLogFormatter(archivedLogSize);
-    for (String log : archivedLogList) {
-      includeFileIfExists(supportBundle, new File(applicationDirectories.getWorkDirectory(), log), "log/archived-logs/",
-          OPTIONAL);
+    
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit file existence check tasks concurrently
+      List<Future<File>> futures = archivedLogList.stream()
+          .map(log -> executor.submit(() -> {
+            File file = new File(applicationDirectories.getWorkDirectory(), log);
+            return checkFileExists(file, "log/archived-logs/", supportBundle);
+          }))
+          .collect(Collectors.toList());
+      
+      // Wait for all tasks to complete (results are already added to supportBundle in checkFileExists)
+      futures.forEach(future -> {
+        try {
+          future.get();
+        } catch (Exception e) {
+          log.warn("Error checking archived log file", e);
+        }
+      });
     }
   }
 
+  /**
+   * Formats archived log file paths using pattern matching and string templates.
+   */
   private List<String> archivedLogFormatter(int archivedLogSize) {
-    ArrayList<String> archivedLogList = new ArrayList<String>();
-    String LOGEXT = ".log.gz";
+    ArrayList<String> archivedLogList = new ArrayList<>();
+    final String LOGEXT = ".log.gz";
     LocalDate currentDate = LocalDate.now();
     DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     for (int i = 0; i <= archivedLogSize; i++) {
-      StringBuilder requestLog = new StringBuilder("log/request-");
-      StringBuilder auditLog = new StringBuilder("log/audit/audit-");
-      StringBuilder nexusLog = new StringBuilder("log/nexus-");
-      // need to take the current date and subtract i days from it
+      // Use string templates instead of StringBuilder
       LocalDate previousDate = currentDate.minusDays(i);
-      String formattedPreviousDate = previousDate.format(formatter);
+      String formattedDate = previousDate.format(formatter);
+      
+      // Use pattern matching with switch expression if needed in the future
+      // For now, using string templates for path construction
+      String requestLog = STR."log/request-\{formattedDate}\{LOGEXT}";
+      String auditLog = STR."log/audit/audit-\{formattedDate}\{LOGEXT}";
+      String nexusLog = STR."log/nexus-\{formattedDate}\{LOGEXT}";
 
-      requestLog.append(formattedPreviousDate).append(LOGEXT);
-      auditLog.append(formattedPreviousDate).append(LOGEXT);
-      nexusLog.append(formattedPreviousDate).append(LOGEXT);
-
-      archivedLogList.add(requestLog.toString());
-      archivedLogList.add(auditLog.toString());
-      archivedLogList.add(nexusLog.toString());
+      archivedLogList.add(requestLog);
+      archivedLogList.add(auditLog);
+      archivedLogList.add(nexusLog);
     }
     return archivedLogList;
   }
-
 }

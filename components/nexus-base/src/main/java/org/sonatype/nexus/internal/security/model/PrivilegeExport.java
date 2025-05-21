@@ -15,6 +15,9 @@ package org.sonatype.nexus.internal.security.model;
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -27,7 +30,10 @@ import org.sonatype.nexus.supportzip.ImportData;
 import org.sonatype.nexus.supportzip.datastore.JsonExporter;
 
 /**
- * Write/Read {@link CPrivilege} data to/from a JSON file.
+ * Write/Read {@link CPrivilege} data to/from a JSON file using Java 21 features.
+ * <p>
+ * This implementation leverages Virtual Threads for I/O operations to improve performance
+ * and scalability during export/import operations.
  *
  * @since 3.29
  */
@@ -38,22 +44,73 @@ public class PrivilegeExport
     implements ExportSecurityData, ImportData
 {
   private final SecurityConfiguration configuration;
+  
+  // Virtual thread executor for I/O operations
+  private final ExecutorService virtualThreadExecutor;
 
   @Inject
   public PrivilegeExport(final SecurityConfiguration configuration) {
     this.configuration = configuration;
+    // Create a virtual thread per task executor for I/O operations
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   @Override
   public void export(final File file) throws IOException {
     log.debug("Export CPrivilege data to {}", file);
-    List<CPrivilege> cleanupPolicies = configuration.getPrivileges();
-    exportToJson(cleanupPolicies, file);
+    
+    // Get privileges from configuration
+    List<CPrivilege> privileges = configuration.getPrivileges();
+    
+    try {
+      // Use virtual threads for I/O operations to improve performance
+      Future<?> exportTask = virtualThreadExecutor.submit(() -> {
+        try {
+          exportToJson(privileges, file);
+        } 
+        catch (IOException e) {
+          log.error("Failed to export CPrivilege data to {}", file, e);
+          throw new RuntimeException("Failed to export CPrivilege data", e);
+        }
+      });
+      
+      // Wait for the export task to complete
+      exportTask.get();
+    } 
+    catch (Exception e) {
+      log.error("Error during CPrivilege export", e);
+      if (e.getCause() instanceof IOException) {
+        throw (IOException) e.getCause();
+      }
+      throw new IOException("Failed to export CPrivilege data", e);
+    }
   }
 
   @Override
   public void restore(final File file) throws IOException {
     log.debug("Restoring CPrivilege data from {}", file);
-    importFromJson(file, CPrivilegeData.class).forEach(configuration::addPrivilege);
+    
+    try {
+      // Use virtual threads for I/O operations to improve performance
+      Future<List<CPrivilege>> importTask = virtualThreadExecutor.submit(() -> {
+        try {
+          return importFromJson(file, CPrivilegeData.class);
+        } 
+        catch (IOException e) {
+          log.error("Failed to import CPrivilege data from {}", file, e);
+          throw new RuntimeException("Failed to import CPrivilege data", e);
+        }
+      });
+      
+      // Wait for the import task to complete and add privileges to configuration
+      importTask.get().forEach(configuration::addPrivilege);
+    } 
+    catch (Exception e) {
+      log.error("Error during CPrivilege import", e);
+      if (e.getCause() instanceof IOException) {
+        throw (IOException) e.getCause();
+      }
+      throw new IOException("Failed to import CPrivilege data", e);
+    }
   }
 }

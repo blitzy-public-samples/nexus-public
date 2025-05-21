@@ -17,6 +17,7 @@ import java.security.Principal;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Callable;
 
 import javax.security.auth.Subject;
 import javax.security.auth.callback.Callback;
@@ -39,12 +40,15 @@ import org.apache.karaf.jaas.boot.principal.RolePrincipal;
 import org.apache.karaf.jaas.boot.principal.UserPrincipal;
 import org.apache.shiro.authc.AuthenticationException;
 import org.apache.shiro.authc.UsernamePasswordToken;
+import org.apache.shiro.subject.support.SubjectThreadState;
+import org.apache.shiro.util.ThreadState;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 
 /**
  * JAAS {@link LoginModule} that delegates to Shiro for authentication.
+ * Updated for Java 21 Virtual Threads compatibility.
  *
  * @since 3.0
  */
@@ -52,7 +56,7 @@ public class ShiroLoginModule
     extends ComponentSupport
     implements LoginModule
 {
-  private final Set<Principal> principals = new HashSet<Principal>();
+  private final Set<Principal> principals = new HashSet<>();
 
   private Subject jaasSubject;
 
@@ -80,12 +84,13 @@ public class ShiroLoginModule
 
   @Override
   public boolean login() throws LoginException {
+    // Create callbacks for username and password
     Callback[] callbacks = new Callback[2];
-
     callbacks[0] = new NameCallback("Username: ");
     callbacks[1] = new PasswordCallback("Password: ", false);
 
     try {
+      // Handle callbacks to get credentials
       callbackHandler.handle(callbacks);
     }
     catch (IOException | UnsupportedCallbackException e) {
@@ -93,33 +98,69 @@ public class ShiroLoginModule
       throw new LoginException(e.getMessage());
     }
 
+    // Get the current Shiro subject
     org.apache.shiro.subject.Subject shiroSubject = securityHelper.subject();
     checkState(shiroSubject != null);
 
+    // Create a thread state to ensure proper context propagation with virtual threads
+    final ThreadState threadState = new SubjectThreadState(shiroSubject);
+    
     try {
-      shiroSubject.login(
-          new UsernamePasswordToken(
-              ((NameCallback) callbacks[0]).getName(),
-              ((PasswordCallback) callbacks[1]).getPassword()));
+      // Execute login within a properly bound thread context to support virtual threads
+      return executeWithThreadState(threadState, () -> {
+        try {
+          // Attempt to login with the provided credentials
+          shiroSubject.login(
+              new UsernamePasswordToken(
+                  ((NameCallback) callbacks[0]).getName(),
+                  ((PasswordCallback) callbacks[1]).getPassword()));
 
-      if (!shiroSubject.hasRole(Roles.ANONYMOUS_ROLE_ID)) {
-        user = securitySystem.getUser(shiroSubject.getPrincipal().toString());
-      }
-      else {
-        throw new LoginException("Invalid username or password");
-      }
+          // Check if the user has a non-anonymous role
+          if (!shiroSubject.hasRole(Roles.ANONYMOUS_ROLE_ID)) {
+            user = securitySystem.getUser(shiroSubject.getPrincipal().toString());
+            return true;
+          }
+          else {
+            throw new LoginException("Invalid username or password");
+          }
+        }
+        catch (AuthenticationException | UserNotFoundException e) {
+          log.debug("Authentication failed", e);
+          throw new LoginException("Invalid username or password");
+        }
+        finally {
+          if (user == null) {
+            shiroSubject.logout();
+          }
+        }
+      });
     }
-    catch (AuthenticationException | UserNotFoundException e) {
-      log.debug("Authentication failed", e);
-      throw new LoginException("Invalid username or password");
+    catch (LoginException e) {
+      throw e;
+    }
+    catch (Exception e) {
+      log.error("Unexpected error during login", e);
+      throw new LoginException("Authentication failed: " + e.getMessage());
+    }
+  }
+
+  /**
+   * Executes the given callable with the thread state properly bound and restored.
+   * This ensures proper thread context handling for both platform and virtual threads.
+   *
+   * @param threadState the thread state to bind
+   * @param callable the callable to execute
+   * @return the result of the callable
+   * @throws Exception if the callable throws an exception
+   */
+  private <V> V executeWithThreadState(ThreadState threadState, Callable<V> callable) throws Exception {
+    threadState.bind();
+    try {
+      return callable.call();
     }
     finally {
-      if (user == null) {
-        shiroSubject.logout();
-      }
+      threadState.restore();
     }
-
-    return true;
   }
 
   @Override
@@ -160,14 +201,31 @@ public class ShiroLoginModule
 
   /**
    * Clears cached user state; returns {@code true} if user was authenticated, otherwise {@code false}.
+   * Updated to properly handle thread context with virtual threads.
    */
   private boolean clearState() {
     if (user != null) {
+      // Clear JAAS subject principals
       jaasSubject.getPrincipals().removeAll(principals);
       principals.clear();
       user = null;
 
-      securityHelper.subject().logout();
+      // Get the current Shiro subject
+      org.apache.shiro.subject.Subject shiroSubject = securityHelper.subject();
+      if (shiroSubject != null) {
+        // Create a thread state to ensure proper context propagation with virtual threads
+        final ThreadState threadState = new SubjectThreadState(shiroSubject);
+        try {
+          // Execute logout within a properly bound thread context
+          executeWithThreadState(threadState, () -> {
+            shiroSubject.logout();
+            return null;
+          });
+        }
+        catch (Exception e) {
+          log.error("Error during logout", e);
+        }
+      }
       return true;
     }
     else {

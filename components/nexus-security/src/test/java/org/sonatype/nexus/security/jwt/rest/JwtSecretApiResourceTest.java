@@ -12,26 +12,39 @@
  */
 package org.sonatype.nexus.security.jwt.rest;
 
-import org.sonatype.goodies.testsupport.TestSupport;
+import java.util.UUID;
+import javax.ws.rs.core.Response;
+
 import org.sonatype.nexus.security.jwt.SecretStore;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Captor;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
+import static javax.ws.rs.core.Response.Status.OK;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 
+@ExtendWith(MockitoExtension.class)
 public class JwtSecretApiResourceTest
-    extends TestSupport
 {
   @Mock
   private SecretStore secretStore;
 
+  @Captor
+  private ArgumentCaptor<String> secretCaptor;
+
   private JwtSecretApiResourceV1 underTest;
 
-  @Before
-  public void setup() throws Exception {
+  @BeforeEach
+  public void setup() {
     underTest = new JwtSecretApiResourceV1(secretStore);
   }
 
@@ -40,5 +53,25 @@ public class JwtSecretApiResourceTest
     underTest.resetSecret();
 
     verify(secretStore).setSecret(any(String.class));
+  }
+  
+  @Test
+  public void resetSecretReturnsOkResponse() {
+    Response response = underTest.resetSecret();
+    
+    assertThat(response.getStatus(), is(OK.getStatusCode()));
+  }
+  
+  @Test
+  public void resetSecretGeneratesValidUuid() {
+    underTest.resetSecret();
+    
+    verify(secretStore).setSecret(secretCaptor.capture());
+    String secret = secretCaptor.getValue();
+    
+    assertThat(secret, notNullValue());
+    // Verify the secret is a valid UUID by attempting to parse it
+    UUID uuid = UUID.fromString(secret);
+    assertThat(uuid, notNullValue());
   }
 }

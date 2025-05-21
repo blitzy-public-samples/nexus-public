@@ -13,6 +13,8 @@
 package org.sonatype.nexus.internal.capability;
 
 import javax.inject.Inject;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.capability.CapabilityContextAware;
@@ -27,9 +29,11 @@ import com.google.common.eventbus.Subscribe;
 import com.google.inject.assistedinject.Assisted;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 
 /**
  * Handles capability automatic removing by reacting to capability validity condition being satisfied/unsatisfied.
+ * Uses Java 21 features including Virtual Threads, Pattern Matching, and String Templates.
  *
  * @since capabilities 2.0
  */
@@ -44,6 +48,8 @@ public class ValidityConditionHandler
   private final CapabilityRegistry capabilityRegistry;
 
   private final Conditions conditions;
+  
+  private final Executor virtualThreadExecutor;
 
   private Condition nexusActiveCondition;
 
@@ -59,30 +65,32 @@ public class ValidityConditionHandler
     this.capabilityRegistry = checkNotNull(capabilityRegistry);
     this.conditions = checkNotNull(conditions);
     this.reference = checkNotNull(reference);
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   @AllowConcurrentEvents
   @Subscribe
-  public void handle(final ConditionEvent.Satisfied event) {
-    if (event.getCondition() == nexusActiveCondition) {
-      bindValidity();
-    }
-  }
-
-  @AllowConcurrentEvents
-  @Subscribe
-  public void handle(final ConditionEvent.Unsatisfied event) {
-    if (event.getCondition() == nexusActiveCondition) {
-      releaseValidity();
-    }
-    else if (event.getCondition() == validityCondition) {
-      reference.disable();
-      try {
-        capabilityRegistry.remove(reference.context().id());
+  public void handle(final ConditionEvent event) {
+    // Use pattern matching for switch to handle different event types
+    switch (event) {
+      case ConditionEvent.Satisfied satisfied when satisfied.getCondition() == nexusActiveCondition -> 
+          virtualThreadExecutor.execute(this::bindValidity);
+          
+      case ConditionEvent.Unsatisfied unsatisfied when unsatisfied.getCondition() == nexusActiveCondition -> 
+          virtualThreadExecutor.execute(this::releaseValidity);
+          
+      case ConditionEvent.Unsatisfied unsatisfied when unsatisfied.getCondition() == validityCondition -> {
+        reference.disable();
+        try {
+          capabilityRegistry.remove(reference.context().id());
+        }
+        catch (Exception e) {
+          // Use String Templates for improved logging
+          log.error(STR."Failed to remove capability with id '\{reference.context().id()}'\{e}");
+        }
       }
-      catch (Exception e) {
-        log.error("Failed to remove capability with id '{}'", reference.context().id(), e);
-      }
+      
+      default -> { /* No action needed */ }
     }
   }
 
@@ -111,18 +119,16 @@ public class ValidityConditionHandler
     if (validityCondition == null) {
       try {
         validityCondition = reference.capability().validityCondition();
-        if (validityCondition instanceof CapabilityContextAware) {
-          ((CapabilityContextAware) validityCondition).setContext(reference.context());
+        if (validityCondition instanceof CapabilityContextAware contextAware) {
+          contextAware.setContext(reference.context());
         }
       }
       catch (Exception e) {
         validityCondition = conditions.always(
             "Always satisfied (failed to determine validity condition)"
         );
-        log.error(
-            "Could not get validation condition from capability {} ({}). Considering it as always valid",
-            new Object[]{reference.capability(), reference.context().id(), e}
-        );
+        // Use String Templates for improved logging with multiple parameters
+        log.error(STR."Could not get validation condition from capability \{reference.capability()} (\{reference.context().id()}). Considering it as always valid", e);
       }
       if (validityCondition == null) {
         validityCondition = conditions.always("Always satisfied (capability has no validity condition)");
@@ -146,10 +152,7 @@ public class ValidityConditionHandler
     if (validityCondition != null) {
       condition = validityCondition + " WHEN " + condition;
     }
-    return String.format(
-        "Watching '%s' condition to validate/invalidate capability '%s (id=%s)'",
-        condition, reference.capability(), reference.context().id()
-    );
+    // Use String Templates instead of String.format
+    return STR."Watching '\{condition}' condition to validate/invalidate capability '\{reference.capability()} (id=\{reference.context().id()})'";
   }
-
 }

@@ -19,23 +19,28 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Annotation indicating that a method is designed to be safely executed within a Java 21 Virtual Thread.
+ * Annotation indicating that a method is safe to be called from a Virtual Thread.
  * <p>
- * Methods marked with this annotation are guaranteed to:
+ * Methods annotated with {@code @VirtualThreadFriendly} are designed to work efficiently with
+ * Java 21 Virtual Threads by avoiding operations that would cause thread pinning. This includes:
  * <ul>
- *   <li>Avoid thread pinning operations that would block the carrier thread</li>
- *   <li>Use non-blocking I/O operations where possible</li>
- *   <li>Minimize synchronized blocks that could cause carrier thread blocking</li>
- *   <li>Be safe for high-concurrency execution with thousands of virtual threads</li>
+ *   <li>Avoiding synchronized blocks or methods for I/O operations</li>
+ *   <li>Using non-blocking I/O where possible</li>
+ *   <li>Properly handling thread mounting/unmounting during blocking operations</li>
  * </ul>
  * <p>
- * This annotation serves both as documentation and as a marker for static analysis tools
- * to verify virtual thread compatibility.
+ * Implementations of methods marked with this annotation should ensure they don't perform
+ * operations that would cause a Virtual Thread to be pinned to its carrier thread, such as:
+ * <ul>
+ *   <li>Using synchronized blocks around I/O operations</li>
+ *   <li>Calling native methods that block</li>
+ *   <li>Using third-party libraries that aren't Virtual Thread aware</li>
+ * </ul>
  *
  * @since 3.60
  */
 @Documented
-@Target(ElementType.METHOD)
+@Target({ElementType.METHOD})
 @Retention(RetentionPolicy.RUNTIME)
 public @interface VirtualThreadFriendly {
 }

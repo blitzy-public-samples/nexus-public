@@ -13,8 +13,10 @@
 package org.sonatype.nexus.internal.jetty;
 
 import java.util.ArrayList;
-import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -26,7 +28,7 @@ import org.sonatype.nexus.bootstrap.jetty.ConnectorRegistrar;
 import org.sonatype.nexus.bootstrap.jetty.JettyServerConfiguration;
 import org.sonatype.nexus.bootstrap.jetty.UnsupportedHttpSchemeException;
 
-import com.google.common.collect.Maps;
+// Updated import for Jetty 12.0.5 compatibility
 import org.eclipse.jetty.http.HttpScheme;
 import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
@@ -49,12 +51,24 @@ public class ConnectorRegistrarImpl
 {
   private final JettyServerConfiguration serverConfiguration;
 
-  private final IdentityHashMap<ConnectorConfiguration, ServiceRegistration<ConnectorConfiguration>> managedConfigurations;
+  private final ConcurrentHashMap<ConnectorConfiguration, ServiceRegistration<ConnectorConfiguration>> managedConfigurations;
+  
+  private final ExecutorService executorService;
 
   @Inject
   public ConnectorRegistrarImpl(final JettyServerConfiguration serverConfiguration) {
     this.serverConfiguration = checkNotNull(serverConfiguration);
-    this.managedConfigurations = Maps.newIdentityHashMap();
+    this.managedConfigurations = new ConcurrentHashMap<>();
+    this.executorService = Executors.newVirtualThreadPerTaskExecutor();
+  }
+  
+  /**
+   * Shutdown the executor service when the component is stopped.
+   */
+  @Override
+  protected void doStop() throws Exception {
+    executorService.shutdown();
+    super.doStop();
   }
 
   @Override
@@ -83,55 +97,73 @@ public class ConnectorRegistrarImpl
     checkNotNull(connectorConfiguration);
     validate(connectorConfiguration);
 
-    final Bundle bundle = FrameworkUtil.getBundle(connectorConfiguration.getClass());
-    if (bundle == null) {
-      log.warn("No bundle found for {}, not registering connector", connectorConfiguration);
-      return;
-    }
-    final BundleContext bundleContext = bundle.getBundleContext();
-    if (bundleContext == null) {
-      log.warn("No context found for bundle {}, not registering connector", bundle);
-      return;
-    }
+    executorService.submit(() -> {
+      final Bundle bundle = FrameworkUtil.getBundle(connectorConfiguration.getClass());
+      if (bundle == null) {
+        log.warn(STR."No bundle found for \{connectorConfiguration}, not registering connector");
+        return;
+      }
+      final BundleContext bundleContext = bundle.getBundleContext();
+      if (bundleContext == null) {
+        log.warn(STR."No context found for bundle \{bundle}, not registering connector");
+        return;
+      }
 
-    log.info("Adding connector configuration {}", connectorConfiguration);
-    final ServiceRegistration<ConnectorConfiguration> serviceRegistration =
-        bundleContext.registerService(ConnectorConfiguration.class, connectorConfiguration, null);
-    managedConfigurations.put(connectorConfiguration, serviceRegistration);
+      log.info(STR."Adding connector configuration \{connectorConfiguration}");
+      final ServiceRegistration<ConnectorConfiguration> serviceRegistration =
+          bundleContext.registerService(ConnectorConfiguration.class, connectorConfiguration, null);
+      managedConfigurations.put(connectorConfiguration, serviceRegistration);
+    });
   }
 
   @Override
   public void removeConnector(final ConnectorConfiguration connectorConfiguration) {
     checkNotNull(connectorConfiguration);
-    final ServiceRegistration<ConnectorConfiguration> serviceRegistration =
-        managedConfigurations.remove(connectorConfiguration);
-    if (serviceRegistration != null) {
-      log.info("Removing connector configuration {}", connectorConfiguration);
-      try {
-        serviceRegistration.unregister();
+    
+    executorService.submit(() -> {
+      final ServiceRegistration<ConnectorConfiguration> serviceRegistration =
+          managedConfigurations.remove(connectorConfiguration);
+      if (serviceRegistration != null) {
+        log.info(STR."Removing connector configuration \{connectorConfiguration}");
+        try {
+          serviceRegistration.unregister();
+        }
+        catch (IllegalStateException e) {
+          // nop, happens on shutdown when context unregisters automatically all services
+          log.debug(STR."Could not unregister connector", e);
+        }
       }
-      catch (IllegalStateException e) {
-        // nop, happens on shutdown when context unregisters automatically all services
-        log.debug("Could not unregister connector", e);
-      }
-    }
+    });
   }
 
   private void validate(final ConnectorConfiguration connectorConfiguration) {
-    // connector is not already added
-    checkArgument(!managedConfigurations.containsKey(connectorConfiguration));
-
-    // schema is not null and is available
-    final HttpScheme httpScheme = connectorConfiguration.getScheme();
-    checkNotNull(httpScheme);
-    if (!availableSchemes().contains(httpScheme)) {
-      throw new UnsupportedHttpSchemeException(httpScheme);
+    // Use pattern matching to validate the connector configuration
+    switch (connectorConfiguration) {
+      case null -> throw new NullPointerException("Connector configuration cannot be null");
+      case var config when managedConfigurations.containsKey(config) -> 
+          throw new IllegalArgumentException("Connector is already added");
+      case var config -> {
+        // Validate HTTP scheme
+        HttpScheme httpScheme = config.getScheme();
+        switch (httpScheme) {
+          case null -> throw new NullPointerException("HTTP scheme cannot be null");
+          case var scheme when !availableSchemes().contains(scheme) -> 
+              throw new UnsupportedHttpSchemeException(scheme);
+          default -> { /* Valid scheme */ }
+        }
+        
+        // Validate port
+        int port = config.getPort();
+        switch (port) {
+          case var p when p <= 0 -> 
+              throw new IllegalArgumentException(STR."Port must be positive, got \{p}");
+          case var p when p >= 65536 -> 
+              throw new IllegalArgumentException(STR."Port must be less than 65536, got \{p}");
+          case var p when unavailablePorts().contains(p) -> 
+              throw new IllegalArgumentException(STR."Port \{p} is already in use");
+          default -> { /* Valid port */ }
+        }
+      }
     }
-
-    // port is ok and free
-    final int port = connectorConfiguration.getPort();
-    checkArgument(port > 0);
-    checkArgument(port < 65536);
-    checkArgument(!unavailablePorts().contains(port));
   }
 }

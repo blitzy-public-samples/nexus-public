@@ -26,6 +26,7 @@ import org.apache.karaf.shell.api.action.Option;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.lang.Boolean.TRUE;
+import static java.lang.StringTemplate.STR;
 
 /**
  * Action to set or display logger level.
@@ -61,30 +62,42 @@ public class LoggerAction
     this.logManager = checkNotNull(logManager);
   }
 
+  /**
+   * Record to represent the logger action state for pattern matching
+   */
+  private record LoggerState(Boolean delete, LoggerLevel level, Boolean effective) {}
+
   @Override
   public Object execute() throws Exception {
-    if (TRUE.equals(delete)) {
-      logManager.unsetLoggerLevel(name);
-    }
-    else if (level != null) {
-      logManager.setLoggerLevel(name, level);
-    }
-    else {
-      if (TRUE.equals(effective)) {
+    // Create a state object for pattern matching
+    LoggerState state = new LoggerState(delete, level, effective);
+    
+    // Use pattern matching for switch to handle different cases
+    switch (state) {
+      case LoggerState(TRUE, _, _) -> logManager.unsetLoggerLevel(name);
+      case LoggerState(_, var lvl, _) when lvl != null -> logManager.setLoggerLevel(name, lvl);
+      case LoggerState(_, _, TRUE) -> {
         level = logManager.getLoggerEffectiveLevel(name);
+        printLoggerLevel();
       }
-      else {
+      default -> {
         level = logManager.getLoggerLevel(name);
-      }
-
-      if (level != null) {
-        System.out.println(name + " = " + level.toString());
-      }
-      else {
-        System.out.println(name + " is not set");
+        printLoggerLevel();
       }
     }
 
     return null;
+  }
+  
+  /**
+   * Print the logger level using String Templates for improved formatting
+   */
+  private void printLoggerLevel() {
+    if (level != null) {
+      System.out.println(STR."\{name} = \{level}");
+    }
+    else {
+      System.out.println(STR."\{name} is not set");
+    }
   }
 }

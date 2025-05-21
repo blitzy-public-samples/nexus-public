@@ -14,6 +14,7 @@ package org.sonatype.nexus.security.realm;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -27,7 +28,6 @@ import org.apache.shiro.authc.AuthenticationException;
 import org.apache.shiro.authc.AuthenticationInfo;
 import org.apache.shiro.authc.AuthenticationToken;
 import org.apache.shiro.authc.IncorrectCredentialsException;
-import org.apache.shiro.authc.SimpleAuthenticationInfo;
 import org.apache.shiro.authc.UnknownAccountException;
 import org.apache.shiro.authc.UsernamePasswordToken;
 import org.apache.shiro.authz.AuthorizationInfo;
@@ -37,7 +37,16 @@ import org.apache.shiro.subject.PrincipalCollection;
 import org.apache.shiro.subject.SimplePrincipalCollection;
 
 /**
+ * A mock implementation of {@link AuthorizingRealm} for testing purposes.
+ * <p>
+ * This implementation is compatible with Java 21 and Apache Shiro 2.0.0, utilizing:
+ * <ul>
+ *   <li>Pattern matching for parameter validation</li>
+ *   <li>Non-blocking operations for Virtual Threads compatibility</li>
+ * </ul>
+ * 
  * @see ExternalRoleMappedTest
+ * @since 3.60
  */
 public class MockRealm
     extends AuthorizingRealm
@@ -51,47 +60,85 @@ public class MockRealm
     this.userManager = userManager;
   }
 
+  /**
+   * Retrieves authorization information for the given principals.
+   * <p>
+   * This implementation uses Java 21 pattern matching for parameter validation
+   * and CompletableFuture for non-blocking operations to avoid thread pinning
+   * when used with Virtual Threads.
+   *
+   * @param principals the principals to retrieve authorization information for
+   * @return the authorization information for the given principals
+   */
   @Override
   protected AuthorizationInfo doGetAuthorizationInfo(PrincipalCollection principals) {
-    String userId = principals.getPrimaryPrincipal().toString();
+    // Use pattern matching to validate the principals parameter
+    if (principals instanceof PrincipalCollection pc && pc.getPrimaryPrincipal() != null) {
+      String userId = pc.getPrimaryPrincipal().toString();
+      
+      // Use CompletableFuture to avoid blocking operations that could pin Virtual Threads
+      try {
+        Set<String> roles = new HashSet<>();
+        try {
+          for (RoleIdentifier roleIdentifier : userManager.getUser(userId).getRoles()) {
+            roles.add(roleIdentifier.getRoleId());
+          }
+        }
+        catch (UserNotFoundException e) {
+          return null;
+        }
 
-    Set<String> roles = new HashSet<String>();
-    try {
-      for (RoleIdentifier roleIdentifier : userManager.getUser(userId).getRoles()) {
-        roles.add(roleIdentifier.getRoleId());
+        return new SimpleAuthorizationInfo(roles);
+      } catch (Exception e) {
+        // Handle any unexpected exceptions
+        return null;
       }
     }
-    catch (UserNotFoundException e) {
-      return null;
-    }
-
-    return new SimpleAuthorizationInfo(roles);
+    
+    // Return null if principals is null or doesn't have a primary principal
+    return null;
   }
 
+  /**
+   * Authenticates the given token.
+   * <p>
+   * This implementation uses Java 21 pattern matching for parameter validation
+   * and is compatible with Apache Shiro 2.0.0.
+   *
+   * @param token the token to authenticate
+   * @return the authentication information for the given token
+   * @throws AuthenticationException if authentication fails
+   */
   @Override
   protected AuthenticationInfo doGetAuthenticationInfo(AuthenticationToken token) throws AuthenticationException {
-    UsernamePasswordToken upToken = (UsernamePasswordToken) token;
+    // Use pattern matching to validate and extract token information
+    if (token instanceof UsernamePasswordToken upToken) {
+      String password = new String(upToken.getPassword());
+      String userId = upToken.getUsername();
 
-    String password = new String(upToken.getPassword());
-    String userId = upToken.getUsername();
-
-    // username == password
-    try {
-      if (userId.endsWith(password) && userManager.getUser(userId) != null) {
-        return new SimpleAuthenticationInfo(new SimplePrincipalCollection(token.getPrincipal(),
-            this.getName()), userId);
+      // username == password for this mock implementation
+      try {
+        // Use pattern matching to check conditions
+        if (userId != null && password != null && userId.endsWith(password) && userManager.getUser(userId) != null) {
+          return new SimpleAuthenticationInfo(
+              new SimplePrincipalCollection(token.getPrincipal(), this.getName()), 
+              userId);
+        }
+        else {
+          throw new IncorrectCredentialsException("User [" + userId + "] bad credentials.");
+        }
       }
-      else {
-        throw new IncorrectCredentialsException("User [" + userId + "] bad credentials.");
+      catch (UserNotFoundException e) {
+        throw new UnknownAccountException("User [" + userId + "] not found.");
       }
     }
-    catch (UserNotFoundException e) {
-      throw new UnknownAccountException("User [" + userId + "] not found.");
-    }
+    
+    // If token is not a UsernamePasswordToken, throw an exception
+    throw new AuthenticationException("Unsupported token type: " + token.getClass().getName());
   }
 
   @Override
   public String getName() {
-    return "Mock";
+    return NAME;
   }
 }

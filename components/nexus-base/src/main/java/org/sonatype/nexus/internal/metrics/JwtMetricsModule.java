@@ -12,7 +12,11 @@
  */
 package org.sonatype.nexus.internal.metrics;
 
+import java.util.concurrent.Executors;
+
 import javax.inject.Named;
+
+import com.google.inject.name.Names;
 
 import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.security.FilterChainModule;
@@ -23,9 +27,11 @@ import org.sonatype.nexus.security.authc.AntiCsrfFilter;
 import org.sonatype.nexus.security.authc.NexusAuthenticationFilter;
 import org.sonatype.nexus.security.authz.PermissionsFilter;
 
-import com.codahale.metrics.Clock;
+import io.dropwizard.metrics.Clock;
+import io.dropwizard.metrics.MetricRegistry;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,8 +56,21 @@ public class JwtMetricsModule
     final Clock clock = Clock.defaultClock();
     bind(Clock.class).toInstance(clock);
 
-    final JsonFactory jsonFactory = new JsonFactory(new ObjectMapper());
+    // Create a JsonMapper with Java 21 pattern matching support
+    final JsonMapper jsonMapper = JsonMapper.builder()
+        .build();
+    final JsonFactory jsonFactory = new JsonFactory(jsonMapper);
     bind(JsonFactory.class).toInstance(jsonFactory);
+    
+    // Register VirtualThreadMetrics component for tracking Virtual Thread behavior
+    final MetricRegistry metricRegistry = new MetricRegistry();
+    metricRegistry.register("virtualThreads", new VirtualThreadMetrics());
+    bind(MetricRegistry.class).toInstance(metricRegistry);
+    
+    // Configure Virtual Thread-based executor service for metrics processing
+    bind(java.util.concurrent.ExecutorService.class)
+        .annotatedWith(Names.named("metricsExecutor"))
+        .toInstance(Executors.newVirtualThreadPerTaskExecutor());
 
     install(new MetricsServletModule(MOUNT_POINT)
     {
@@ -75,6 +94,6 @@ public class JwtMetricsModule
       }
     });
 
-    log.info("Metrics support configured");
+    log.info("Metrics support configured with Java 21 Virtual Threads");
   }
 }

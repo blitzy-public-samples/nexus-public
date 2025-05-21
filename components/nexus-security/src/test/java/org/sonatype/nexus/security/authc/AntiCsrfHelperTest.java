@@ -13,6 +13,9 @@
 package org.sonatype.nexus.security.authc;
 
 import java.util.Collections;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.HttpMethod;
@@ -25,20 +28,25 @@ import org.apache.shiro.mgt.SecurityManager;
 import org.apache.shiro.session.Session;
 import org.apache.shiro.subject.Subject;
 import org.apache.shiro.util.ThreadContext;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class AntiCsrfHelperTest
   extends TestSupport
 {
@@ -53,7 +61,7 @@ public class AntiCsrfHelperTest
   @Mock
   Subject subject;
 
-  @Before
+  @BeforeEach
   public void setup() {
     underTest = new AntiCsrfHelper(true, Collections.EMPTY_LIST);
     when(httpServletRequest.getServletPath()).thenReturn("/somepath");
@@ -62,7 +70,7 @@ public class AntiCsrfHelperTest
     ThreadContext.bind(subject);
   }
 
-  @After
+  @AfterEach
   public void teardown() {
     ThreadContext.unbindSubject();
     ThreadContext.unbindSecurityManager();
@@ -81,10 +89,10 @@ public class AntiCsrfHelperTest
   /*
    * Requests with a session but no token are invalid.
    */
-  @Test(expected = UnauthorizedException.class)
+  @Test
   public void testRequireValidToken_Session_NoToken() {
     setupBrowserSubject();
-    underTest.requireValidToken(httpServletRequest, null);
+    assertThrows(UnauthorizedException.class, () -> underTest.requireValidToken(httpServletRequest, null));
   }
 
   /*
@@ -95,12 +103,7 @@ public class AntiCsrfHelperTest
     underTest.requireValidToken(httpServletRequest, null);
 
     setupClientSubject();
-    try {
-      underTest.requireValidToken(httpServletRequest, null);
-    }
-    catch (Exception e) {
-      fail("expected requiring a valid token to succeed");
-    }
+    assertDoesNotThrow(() -> underTest.requireValidToken(httpServletRequest, null));
   }
 
   /*
@@ -111,23 +114,19 @@ public class AntiCsrfHelperTest
     setupBrowserSubject();
     when(httpServletRequest.getCookies())
         .thenReturn(new Cookie[] { new Cookie(AntiCsrfHelper.ANTI_CSRF_TOKEN_NAME, "a-value") });
-    try {
-      underTest.requireValidToken(httpServletRequest, "a-value");
-    }
-    catch (Exception e) {
-      fail("expected requiring a valid token to succeed");
-    }
+    assertDoesNotThrow(() -> underTest.requireValidToken(httpServletRequest, "a-value"));
   }
 
   /*
    * Requests with a browser UserAgent and mismatched tokens are invalid.
    */
-  @Test(expected = UnauthorizedException.class)
+  @Test
   public void testRequireValidToken_tokenMismatch() {
     setupBrowserSubject();
     when(httpServletRequest.getCookies())
         .thenReturn(new Cookie[] { new Cookie(AntiCsrfHelper.ANTI_CSRF_TOKEN_NAME, "a-value") });
-    underTest.requireValidToken(httpServletRequest, "a-different-value");
+    assertThrows(UnauthorizedException.class, 
+        () -> underTest.requireValidToken(httpServletRequest, "a-different-value"));
   }
 
   /*
@@ -296,6 +295,109 @@ public class AntiCsrfHelperTest
     when(httpServletRequest.getServletPath()).thenReturn("/v1/rest/some-service/config?s=a");
 
     assertThat(underTest.isAccessAllowed(httpServletRequest), is(true));
+  }
+
+  /*
+   * Test SameSite cookie attribute with Strict value
+   */
+  @Test
+  public void testSameSiteCookieStrict() {
+    Cookie cookie = new Cookie(AntiCsrfHelper.ANTI_CSRF_TOKEN_NAME, "test-value");
+    cookie.setSecure(true);
+    cookie.setAttribute("SameSite", "Strict");
+    
+    when(httpServletRequest.getCookies()).thenReturn(new Cookie[] { cookie });
+    when(httpServletRequest.getMethod()).thenReturn(HttpMethod.POST);
+    setupBrowserSubject();
+    when(httpServletRequest.getHeader("NX-ANTI-CSRF-TOKEN")).thenReturn("test-value");
+    
+    assertThat(underTest.isAccessAllowed(httpServletRequest), is(true));
+  }
+
+  /*
+   * Test SameSite cookie attribute with Lax value
+   */
+  @Test
+  public void testSameSiteCookieLax() {
+    Cookie cookie = new Cookie(AntiCsrfHelper.ANTI_CSRF_TOKEN_NAME, "test-value");
+    cookie.setSecure(true);
+    cookie.setAttribute("SameSite", "Lax");
+    
+    when(httpServletRequest.getCookies()).thenReturn(new Cookie[] { cookie });
+    when(httpServletRequest.getMethod()).thenReturn(HttpMethod.POST);
+    setupBrowserSubject();
+    when(httpServletRequest.getHeader("NX-ANTI-CSRF-TOKEN")).thenReturn("test-value");
+    
+    assertThat(underTest.isAccessAllowed(httpServletRequest), is(true));
+  }
+
+  /*
+   * Test SameSite cookie attribute with None value (requires Secure flag)
+   */
+  @Test
+  public void testSameSiteCookieNone() {
+    Cookie cookie = new Cookie(AntiCsrfHelper.ANTI_CSRF_TOKEN_NAME, "test-value");
+    cookie.setSecure(true); // Required for SameSite=None
+    cookie.setAttribute("SameSite", "None");
+    
+    when(httpServletRequest.getCookies()).thenReturn(new Cookie[] { cookie });
+    when(httpServletRequest.getMethod()).thenReturn(HttpMethod.POST);
+    setupBrowserSubject();
+    when(httpServletRequest.getHeader("NX-ANTI-CSRF-TOKEN")).thenReturn("test-value");
+    
+    assertThat(underTest.isAccessAllowed(httpServletRequest), is(true));
+  }
+
+  /*
+   * Test Cross-Site Request Forgery protection with modern browser security headers
+   */
+  @Test
+  public void testCsrfProtectionWithSecurityHeaders() {
+    setupBrowserSubject();
+    when(httpServletRequest.getMethod()).thenReturn(HttpMethod.POST);
+    when(httpServletRequest.getHeader(HttpHeaders.ORIGIN)).thenReturn("https://nexus.example.com");
+    when(httpServletRequest.getHeader(HttpHeaders.REFERER)).thenReturn("https://nexus.example.com/some/path");
+    when(httpServletRequest.getHeader("Sec-Fetch-Site")).thenReturn("same-origin");
+    when(httpServletRequest.getHeader("Sec-Fetch-Mode")).thenReturn("cors");
+    when(httpServletRequest.getHeader("Sec-Fetch-Dest")).thenReturn("empty");
+    when(httpServletRequest.getHeader("NX-ANTI-CSRF-TOKEN")).thenReturn("test-value");
+    when(httpServletRequest.getCookies())
+        .thenReturn(new Cookie[] { new Cookie("NX-ANTI-CSRF-TOKEN", "test-value") });
+    
+    assertThat(underTest.isAccessAllowed(httpServletRequest), is(true));
+  }
+
+  /*
+   * Test that helper methods function correctly with Virtual Threads
+   */
+  @Test
+  public void testVirtualThreadCompatibility() throws Exception {
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      Future<Boolean> future = executor.submit(() -> {
+        // Setup thread context in the virtual thread
+        ThreadContext.bind(securityManager);
+        ThreadContext.bind(subject);
+        setupBrowserSubject();
+        
+        // Configure request
+        when(httpServletRequest.getMethod()).thenReturn(HttpMethod.POST);
+        when(httpServletRequest.getHeader("NX-ANTI-CSRF-TOKEN")).thenReturn("test-value");
+        when(httpServletRequest.getCookies())
+            .thenReturn(new Cookie[] { new Cookie("NX-ANTI-CSRF-TOKEN", "test-value") });
+        
+        // Test the helper method
+        boolean result = underTest.isAccessAllowed(httpServletRequest);
+        
+        // Clean up thread context
+        ThreadContext.unbindSubject();
+        ThreadContext.unbindSecurityManager();
+        
+        return result;
+      });
+      
+      // Verify the result from the virtual thread
+      assertThat(future.get(), is(true));
+    }
   }
 
   private void setupBrowserSubject() {

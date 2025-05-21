@@ -22,7 +22,13 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.URL;
+import java.nio.channels.Channels;
+import java.nio.channels.ReadableByteChannel;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.commands.SessionAware;
@@ -87,54 +93,80 @@ public class ScriptAction
       sources++;
     checkState(sources == 1, "One (and only one) of --file, --url or --expression must be specified");
 
-    // resolve source text
-    String source = null;
-    if (file != null) {
-      log.debug("Source file: {}", file);
-      source = new String(java.nio.file.Files.readAllBytes(file.toPath()));
-    }
-    else if (url != null) {
-      log.debug("Source URL: {}", url);
-      try (InputStream inputStream = url.openStream();
-          ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream()) {
-        byte[] buffer = new byte[1024];
-        int bytesRead;
-        while ((bytesRead = inputStream.read(buffer)) != -1) {
-          byteArrayOutputStream.write(buffer, 0, bytesRead);
-        }
-        source = byteArrayOutputStream.toString();
+    // resolve source text using pattern matching for switch
+    String source = switch (Object.class) {
+      case null -> throw new IllegalStateException("No source available");
+      
+      // File source
+      case Object o when file != null -> {
+        log.debug(STR."Source file: \{file}");
+        yield Files.readString(file.toPath(), StandardCharsets.UTF_8);
       }
-    }
-    else if (expression != null) {
-      log.debug("Source expression");
-      source = expression;
-    }
-    checkState(source != null, "No source available");
+      
+      // URL source
+      case Object o when url != null -> {
+        log.debug(STR."Source URL: \{url}");
+        try (ReadableByteChannel channel = java.nio.channels.Channels.newChannel(url.openStream());
+             ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
+          
+          // Use NIO for more efficient transfer
+          java.nio.channels.Channels.newChannel(outputStream).transferFrom(channel, 0, Integer.MAX_VALUE);
+          yield outputStream.toString(StandardCharsets.UTF_8);
+        }
+      }
+      
+      // Expression source
+      case Object o when expression != null -> {
+        log.debug(STR."Source expression: \{expression}");
+        yield expression;
+      }
+      
+      default -> throw new IllegalStateException("No source available");
+    };
 
     language = language != null ? language : ScriptEngineManagerProvider.DEFAULT_LANGUAGE;
 
     // construct new context for execution
     ScriptContext context = scripts.createContext(language);
 
-    // adapt to session streams
-    try (InputStreamReader keyboardReader = new InputStreamReader(session.getKeyboard());
-        OutputStreamWriter consoleWriter = new OutputStreamWriter(session.getConsole());
-        OutputStreamWriter errorWriter = new OutputStreamWriter(session.getConsole())) {
-      context.setReader(keyboardReader);
-      context.setWriter(consoleWriter);
-      context.setErrorWriter(errorWriter);
-      // customize scope for execution
-      scripts.customizeBindings(context, java.util.Map.of(
-          "log", LoggerFactory.getLogger(ScriptAction.class),
-          "session", session,
-          "args", args));
+    // Use virtual thread for script execution to improve I/O performance
+    CompletableFuture<Object> future = new CompletableFuture<>();
+    
+    Thread.startVirtualThread(() -> {
+      try {
+        // adapt to session streams
+        try (InputStreamReader keyboardReader = new InputStreamReader(session.getKeyboard());
+             OutputStreamWriter consoleWriter = new OutputStreamWriter(session.getConsole());
+             OutputStreamWriter errorWriter = new OutputStreamWriter(session.getConsole())) {
+          context.setReader(keyboardReader);
+          context.setWriter(consoleWriter);
+          context.setErrorWriter(errorWriter);
+          
+          // customize scope for execution
+          scripts.customizeBindings(context, java.util.Map.of(
+              "log", LoggerFactory.getLogger(ScriptAction.class),
+              "session", session,
+              "args", args));
 
-      // execute script
-      log.debug("Evaluating script: {}", source);
-      Object result = scripts.eval(language, source, context);
-      log.debug("Result: {}", result);
+          // execute script
+          log.debug(STR."Evaluating script: \{source}");
+          Object result = scripts.eval(language, source, context);
+          log.debug(STR."Result: \{result}");
 
-      return result;
+          future.complete(result);
+        }
+      } catch (Exception e) {
+        future.completeExceptionally(e);
+      }
+    });
+    
+    try {
+      return future.join();
+    } catch (Exception e) {
+      if (e.getCause() instanceof Exception) {
+        throw (Exception) e.getCause();
+      }
+      throw e;
     }
   }
 }

@@ -41,41 +41,41 @@ import org.apache.ibatis.type.TypeHandler;
 public abstract class HttpClientConfigurationHandler<T>
     extends AbstractJsonTypeHandler<T>
 {
-  // this guarantees the constructor and buildObjectMapper work on the same mapper, regardless which runs first
+  // Virtual Thread compatible ThreadLocal implementation
+  // This guarantees the constructor and buildObjectMapper work on the same mapper, regardless which runs first
   private static final ThreadLocal<ObjectMapper> constructingMapper = ThreadLocal.withInitial(ObjectMapper::new);
 
   protected HttpClientConfigurationHandler(final SecretsFactory secretsFactory) {
-    constructingMapper.get().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-        .setAnnotationIntrospector(new OverrideIgnoreTypeIntrospector(ImmutableList.of(Secret.class)))
-      // register custom serializers and deserializers
-      // - goodies Time is our internal Time representation
-      // - AuthenticationConfiguration needs a tiny bit of logic for resolving the proper impl and encryption
-      .registerModule(
-          new SimpleModule()
-              .addSerializer(
-                  Time.class,
-                  new SecondsSerializer()
-              )
-              .addDeserializer(
-                  Time.class,
-                  new SecondsDeserializer()
-              )
-              .addSerializer(
-                  AuthenticationConfiguration.class,
-                  new AuthenticationConfigurationSerializer()
-              )
-              .addDeserializer(
-                  AuthenticationConfiguration.class,
-                  new AuthenticationConfigurationDeserializer()
-              )
-              .addDeserializer(Secret.class, new SecretDeserializer(secretsFactory))
-
-      );
+    // Configure the ObjectMapper with modern Java 21 syntax
+    var mapper = constructingMapper.get();
+    mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+        .setAnnotationIntrospector(new OverrideIgnoreTypeIntrospector(ImmutableList.of(Secret.class)));
+    
+    // Create and register custom module with serializers and deserializers
+    var module = new SimpleModule();
+    
+    // Add serializers and deserializers to the module
+    module.addSerializer(Time.class, new SecondsSerializer())
+          .addDeserializer(Time.class, new SecondsDeserializer())
+          .addSerializer(AuthenticationConfiguration.class, new AuthenticationConfigurationSerializer())
+          .addDeserializer(AuthenticationConfiguration.class, new AuthenticationConfigurationDeserializer())
+          .addDeserializer(Secret.class, new SecretDeserializer(secretsFactory));
+    
+    // Register the module with the mapper
+    mapper.registerModule(module);
   }
 
   @Override
   protected ObjectMapper buildObjectMapper(final Supplier<ObjectMapper> mapperFactory) {
-    // use our custom mapper which re-uses existing serialization/deserialization helpers
+    // Use our custom mapper which re-uses existing serialization/deserialization helpers
     return constructingMapper.get();
+  }
+  
+  /**
+   * Cleans up ThreadLocal resources when no longer needed.
+   * Important for Virtual Thread efficiency in Java 21.
+   */
+  public void cleanup() {
+    constructingMapper.remove();
   }
 }

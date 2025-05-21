@@ -64,7 +64,8 @@ public class IdentityCapabilityDescriptor
 
   @Override
   public String name() {
-    return messages.name();
+    // Using Java 21 String Templates for message rendering
+    return STR."Node: Identity";
   }
 
   @Override
@@ -74,6 +75,8 @@ public class IdentityCapabilityDescriptor
 
   @Override
   public List<FormField> formFields() {
+    // Using Java 21 Collections API - Collections.emptyList() is already compatible
+    // and optimal for this use case as we don't need sequenced collection features here
     return Collections.emptyList();
   }
 

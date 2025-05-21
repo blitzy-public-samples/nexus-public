@@ -24,20 +24,24 @@ import org.sonatype.nexus.capability.CapabilityReferenceFilterBuilder.Capability
 import org.sonatype.nexus.formfields.FormField;
 import org.sonatype.nexus.formfields.RepositoryCombobox;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
-import static org.junit.Assert.assertThrows;
+import static java.lang.StringTemplate.STR;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class CapabilityDescriptorSupportTest
     extends TestSupport
 {
@@ -55,7 +59,7 @@ public class CapabilityDescriptorSupportTest
   @Captor
   private ArgumentCaptor<CapabilityReferenceFilter> filterRecorder;
 
-  @Before
+  @BeforeEach
   public void prepare() {
     capabilityIdentity = CapabilityIdentity.capabilityIdentity("test");
     when(capabilityContext.id()).thenReturn(capabilityIdentity);
@@ -63,7 +67,7 @@ public class CapabilityDescriptorSupportTest
   }
 
   @Test
-  public void capabilityWithSameTypeDoesNotExist() {
+  public void shouldAllowCreationWhenCapabilityWithSameTypeDoesNotExist() {
     when(capabilityRegistry.get(filterRecorder.capture())).thenReturn(Collections.emptyList());
     TestCapabilityDescriptor underTest = new TestCapabilityDescriptor(Collections.emptyList(), Collections.emptySet());
     underTest.installComponents(() -> capabilityRegistry);
@@ -74,14 +78,15 @@ public class CapabilityDescriptorSupportTest
   }
 
   @Test
-  public void capabilityWithSameTypeAlreadyPresent() {
+  public void shouldThrowExceptionWhenCapabilityWithSameTypeAlreadyPresent() {
     when(capabilityRegistry.get(filterRecorder.capture())).thenAnswer(
         invocation -> Collections.singletonList(capabilityReference));
     TestCapabilityDescriptor underTest = new TestCapabilityDescriptor(Collections.emptyList(), Collections.emptySet());
     underTest.installComponents(() -> capabilityRegistry);
 
     ValidationException expected = assertThrows(ValidationException.class,
-        () -> underTest.validate(null, Collections.emptyMap(), ValidationMode.CREATE));
+        () -> underTest.validate(null, Collections.emptyMap(), ValidationMode.CREATE),
+        STR."Failed to throw expected exception when capability of type \"Test\" already exists");
 
     assertThat(expected.getMessage(), containsString("Test"));
     assertThat(filterRecorder.getValue().getTypeId(), is("test"));
@@ -89,7 +94,7 @@ public class CapabilityDescriptorSupportTest
   }
 
   @Test
-  public void sameCapabilityWithSameTypeAlreadyPresent() {
+  public void shouldAllowUpdateWhenSameCapabilityWithSameTypeAlreadyPresent() {
     when(capabilityRegistry.get(filterRecorder.capture())).thenReturn(Collections.emptyList());
     TestCapabilityDescriptor underTest = new TestCapabilityDescriptor(Collections.emptyList(), Collections.emptySet());
     underTest.installComponents(() -> capabilityRegistry);
@@ -100,7 +105,7 @@ public class CapabilityDescriptorSupportTest
   }
 
   @Test
-  public void capabilityWithSameTypeAndSameRepositoryDoesNotExist() {
+  public void shouldAllowCreationWhenCapabilityWithSameTypeAndSameRepositoryDoesNotExist() {
     when(capabilityRegistry.get(filterRecorder.capture())).thenReturn(Collections.emptyList());
     TestCapabilityDescriptor underTest =
         new TestCapabilityDescriptor(Collections.singletonList(new RepositoryCombobox("repository")),
@@ -115,7 +120,7 @@ public class CapabilityDescriptorSupportTest
   }
 
   @Test
-  public void capabilityWithSameTypeAndSameRepositoryAlreadyPresent() {
+  public void shouldThrowExceptionWhenCapabilityWithSameTypeAndSameRepositoryAlreadyPresent() {
     when(capabilityRegistry.get(filterRecorder.capture())).thenAnswer(
         invocation -> Collections.singletonList(capabilityReference));
     TestCapabilityDescriptor underTest =
@@ -124,11 +129,13 @@ public class CapabilityDescriptorSupportTest
 
     underTest.installComponents(() -> capabilityRegistry);
 
-    ValidationException expected = assertThrows(ValidationException.class, () ->
-        underTest.validate(null, Collections.singletonMap("repository", "foo"), ValidationMode.CREATE));
+    String repoName = "foo";
+    ValidationException expected = assertThrows(ValidationException.class, 
+        () -> underTest.validate(null, Collections.singletonMap("repository", repoName), ValidationMode.CREATE),
+        STR."Failed to throw expected exception when capability of type \"Test\" with repository \{repoName} already exists");
 
     assertThat(expected.getMessage(),
-        allOf(containsString("Test"), containsString("repository"), containsString("foo")));
+        allOf(containsString("Test"), containsString("repository"), containsString(repoName)));
 
     assertThat(filterRecorder.getValue().getTypeId(), is("test"));
     assertThat(filterRecorder.getValue().getIgnoreCapabilityId(), is(nullValue()));
@@ -136,7 +143,7 @@ public class CapabilityDescriptorSupportTest
   }
 
   @Test
-  public void sameCapabilityWithSameTypeAndSameRepositoryAlreadyPresent() {
+  public void shouldAllowUpdateWhenSameCapabilityWithSameTypeAndSameRepositoryAlreadyPresent() {
     when(capabilityRegistry.get(filterRecorder.capture())).thenReturn(Collections.emptyList());
     TestCapabilityDescriptor underTest =
         new TestCapabilityDescriptor(Collections.singletonList(new RepositoryCombobox("repository")),
@@ -181,6 +188,15 @@ public class CapabilityDescriptorSupportTest
     @Override
     protected Set<String> uniqueProperties() {
       return uniqueProperties;
+    }
+    
+    @Override
+    protected String renderReason(final ValidationMode mode) {
+      return switch(mode) {
+        case ValidationMode.CREATE -> STR."Cannot create capability of type \{name()}";
+        case ValidationMode.UPDATE -> STR."Cannot update capability of type \{name()}";
+        default -> STR."Cannot validate capability of type \{name()}";
+      };
     }
   }
 }

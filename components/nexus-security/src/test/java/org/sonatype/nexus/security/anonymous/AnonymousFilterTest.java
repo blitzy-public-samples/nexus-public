@@ -12,6 +12,9 @@
  */
 package org.sonatype.nexus.security.anonymous;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import javax.inject.Provider;
 import javax.servlet.http.HttpServletRequest;
 
@@ -20,14 +23,17 @@ import org.sonatype.nexus.common.event.EventManager;
 import org.sonatype.nexus.security.subject.FakeAlmightySubject;
 
 import org.apache.shiro.util.ThreadContext;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class AnonymousFilterTest
     extends TestSupport
 {
@@ -47,14 +53,14 @@ public class AnonymousFilterTest
   @Mock
   private AnonymousManager anonymousManager;
 
-  @Before
-  public void setup() {
+  @BeforeEach
+  void setup() {
     underTest = new AnonymousFilter(anonymousManagerProvider, eventManager);
     ThreadContext.bind(FakeAlmightySubject.forUserId(ANONYMOUS_USER));
   }
 
   @Test
-  public void testBuildSubjectWhenIsAnonymousUser() throws Exception {
+  void buildSubjectWhenIsAnonymousUser() throws Exception {
     when(eventManager.get()).thenReturn(mock(EventManager.class));
     when(anonymousManagerProvider.get()).thenReturn(anonymousManager);
     when(anonymousManager.isEnabled()).thenReturn(true);
@@ -66,4 +72,55 @@ public class AnonymousFilterTest
     verify(anonymousManager).buildSubject();
   }
 
+  @Test
+  void buildSubjectWithHttp2Protocol() throws Exception {
+    when(eventManager.get()).thenReturn(mock(EventManager.class));
+    when(anonymousManagerProvider.get()).thenReturn(anonymousManager);
+    when(anonymousManager.isEnabled()).thenReturn(true);
+    when(anonymousManager.getConfiguration()).thenReturn(mock(AnonymousConfiguration.class));
+    when(anonymousManager.getConfiguration().getUserId()).thenReturn(ANONYMOUS_USER);
+    when(request.getProtocol()).thenReturn("HTTP/2.0");
+
+    underTest.preHandle(request, null);
+
+    verify(anonymousManager).buildSubject();
+  }
+
+  @Test
+  void buildSubjectWithHttp3Protocol() throws Exception {
+    when(eventManager.get()).thenReturn(mock(EventManager.class));
+    when(anonymousManagerProvider.get()).thenReturn(anonymousManager);
+    when(anonymousManager.isEnabled()).thenReturn(true);
+    when(anonymousManager.getConfiguration()).thenReturn(mock(AnonymousConfiguration.class));
+    when(anonymousManager.getConfiguration().getUserId()).thenReturn(ANONYMOUS_USER);
+    when(request.getProtocol()).thenReturn("HTTP/3.0");
+
+    underTest.preHandle(request, null);
+
+    verify(anonymousManager).buildSubject();
+  }
+
+  @Test
+  void buildSubjectWithVirtualThreads() throws Exception {
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    try {
+      executor.submit(() -> {
+        try {
+          when(eventManager.get()).thenReturn(mock(EventManager.class));
+          when(anonymousManagerProvider.get()).thenReturn(anonymousManager);
+          when(anonymousManager.isEnabled()).thenReturn(true);
+          when(anonymousManager.getConfiguration()).thenReturn(mock(AnonymousConfiguration.class));
+          when(anonymousManager.getConfiguration().getUserId()).thenReturn(ANONYMOUS_USER);
+          
+          underTest.preHandle(request, null);
+          
+          verify(anonymousManager).buildSubject();
+        } catch (Exception e) {
+          throw new RuntimeException(e);
+        }
+      }).get(5, TimeUnit.SECONDS); // Add timeout to prevent test hanging
+    } finally {
+      executor.shutdown();
+    }
+  }
 }

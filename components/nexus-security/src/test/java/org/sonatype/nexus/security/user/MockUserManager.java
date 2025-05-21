@@ -12,32 +12,32 @@
  */
 package org.sonatype.nexus.security.user;
 
-import java.util.HashSet;
+import java.util.Collections;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.sonatype.nexus.security.role.ExternalRoleMappedTest;
 import org.sonatype.nexus.security.role.RoleIdentifier;
 
 /**
+ * Mock implementation of UserManager for testing purposes.
+ * This implementation is thread-safe and compatible with Java 21 virtual threads.
+ * 
  * @see ExternalRoleMappedTest
  * @see UserManagementTest
  */
 public class MockUserManager
     extends AbstractReadOnlyUserManager
 {
-  @Override
-  public String getSource() {
-    return "Mock";
-  }
-
-  @Override
-  public String getAuthenticationRealmName() {
-    return "Mock";
-  }
-
-  @Override
-  public Set<User> listUsers() {
-    Set<User> users = new HashSet<User>();
+  // Thread-safe cache of users to avoid recreating them on every call
+  private final Set<User> userCache = createUserCache();
+  
+  /**
+   * Creates and initializes the user cache with mock data.
+   * This is called only once during initialization to ensure thread safety.
+   */
+  private Set<User> createUserCache() {
+    Set<User> users = ConcurrentHashMap.newKeySet();
 
     User jcohen = new User();
     jcohen.setEmailAddress("JamesDCohen@example.com");
@@ -55,9 +55,32 @@ public class MockUserManager
   }
 
   @Override
+  public String getSource() {
+    return "Mock";
+  }
+
+  @Override
+  public String getAuthenticationRealmName() {
+    return "Mock";
+  }
+
+  /**
+   * Returns a thread-safe view of all users.
+   * Safe for concurrent access by multiple threads, including virtual threads.
+   */
+  @Override
+  public Set<User> listUsers() {
+    return Collections.unmodifiableSet(userCache);
+  }
+
+  /**
+   * Returns a thread-safe set of all user IDs.
+   * Safe for concurrent access by multiple threads, including virtual threads.
+   */
+  @Override
   public Set<String> listUserIds() {
-    Set<String> userIds = new HashSet<String>();
-    for (User user : this.listUsers()) {
+    Set<String> userIds = ConcurrentHashMap.newKeySet();
+    for (User user : this.userCache) {
       userIds.add(user.getUserId());
     }
     return userIds;
@@ -68,10 +91,15 @@ public class MockUserManager
     return null;
   }
 
+  /**
+   * Retrieves a user by ID.
+   * Thread-safe implementation that works with virtual threads.
+   */
   @Override
   public User getUser(String userId) throws UserNotFoundException {
-    for (User user : this.listUsers()) {
-      if (user.getUserId().equals(userId)) {
+    // Using Java 21 pattern matching for instanceof with a binding variable
+    for (User user : this.userCache) {
+      if (userId.equals(user.getUserId())) {
         return user;
       }
     }

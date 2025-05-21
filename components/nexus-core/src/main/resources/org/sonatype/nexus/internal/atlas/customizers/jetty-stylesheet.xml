@@ -3,7 +3,7 @@
   <xsl:output omit-xml-declaration="no"
               indent="yes"
               doctype-public="-//Jetty//Configure//EN"
-              doctype-system="http://www.eclipse.org/jetty/configure_9_0.dtd"/>
+              doctype-system="https://jetty.org/configure_10_0.dtd"/>
 
   <xsl:template match="node()|@*">
     <xsl:copy>

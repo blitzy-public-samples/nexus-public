@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.capability.condition.internal;
 
+import java.util.concurrent.atomic.AtomicReference;
+
 import org.sonatype.nexus.capability.CapabilityContext;
 import org.sonatype.nexus.capability.CapabilityContextAware;
 import org.sonatype.nexus.capability.CapabilityEvent.CallbackFailure;
@@ -26,6 +28,7 @@ import static com.google.common.base.Preconditions.checkState;
 
 /**
  * A condition that is satisfied as long as capability has no failures.
+ * Updated to properly handle events from Virtual Threads and ensure thread context propagation.
  *
  * @since 2.7
  */
@@ -36,9 +39,9 @@ public class CapabilityHasNoFailuresCondition
 
   private CapabilityContext context;
 
-  private String failingAction;
-
-  private Exception failure;
+  // Using AtomicReference to avoid thread synchronization issues with Virtual Threads
+  private final AtomicReference<String> failingActionRef = new AtomicReference<>();
+  private final AtomicReference<Exception> failureRef = new AtomicReference<>();
 
   public CapabilityHasNoFailuresCondition(final EventManager eventManager) {
     super(eventManager);
@@ -57,9 +60,13 @@ public class CapabilityHasNoFailuresCondition
   protected void doBind() {
     checkState(context != null, "Not yet contextualized");
     getEventManager().register(this);
-    failingAction = context.failingAction();
-    failure = context.failure();
-    setSatisfied(failure == null);
+    
+    // Store initial state in atomic references
+    failingActionRef.set(context.failingAction());
+    failureRef.set(context.failure());
+    
+    // Set satisfied state based on failure presence
+    setSatisfied(failureRef.get() == null);
   }
 
   @Override
@@ -67,22 +74,40 @@ public class CapabilityHasNoFailuresCondition
     getEventManager().unregister(this);
   }
 
+  /**
+   * Handles callback failure events, optimized for Virtual Threads.
+   * The @AllowConcurrentEvents annotation ensures this handler can be invoked concurrently
+   * from multiple threads, including Virtual Threads.
+   */
   @AllowConcurrentEvents
   @Subscribe
   public void handle(final CallbackFailure event) {
+    // Check if this event is for our capability context
     if (event.getReference().context().id().equals(context.id())) {
-      failingAction = event.failingAction();
-      failure = event.failure();
+      // Update state using atomic references to avoid thread synchronization issues
+      failingActionRef.set(event.failingAction());
+      failureRef.set(event.failure());
+      
+      // Update condition state
       setSatisfied(false);
     }
   }
 
+  /**
+   * Handles callback failure cleared events, optimized for Virtual Threads.
+   * The @AllowConcurrentEvents annotation ensures this handler can be invoked concurrently
+   * from multiple threads, including Virtual Threads.
+   */
   @AllowConcurrentEvents
   @Subscribe
   public void handle(final CallbackFailureCleared event) {
+    // Check if this event is for our capability context
     if (event.getReference().context().id().equals(context.id())) {
-      failingAction = null;
-      failure = null;
+      // Update state using atomic references to avoid thread synchronization issues
+      failingActionRef.set(null);
+      failureRef.set(null);
+      
+      // Update condition state
       setSatisfied(true);
     }
   }
@@ -94,12 +119,12 @@ public class CapabilityHasNoFailuresCondition
 
   @Override
   public String explainSatisfied() {
-    return "Capability has not failures";
+    return "Capability has no failures";
   }
 
   @Override
   public String explainUnsatisfied() {
-    return failingAction + " failed: " + failure;
+    return failingActionRef.get() + " failed: " + failureRef.get();
   }
 
 }

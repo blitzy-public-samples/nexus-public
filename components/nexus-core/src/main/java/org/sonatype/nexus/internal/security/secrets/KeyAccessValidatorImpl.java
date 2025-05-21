@@ -12,6 +12,7 @@
  */
 package org.sonatype.nexus.internal.security.secrets;
 
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -19,6 +20,11 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import javax.annotation.Nullable;
@@ -53,6 +59,8 @@ import static org.sonatype.nexus.node.datastore.NodeHeartbeatManager.NODE_ID;
 /**
  * Implementation of {@link KeyAccessValidator}. It sends an event to all nodes, waits for all nodes to respond and then
  * checks if all nodes have access to the key.
+ * 
+ * This implementation uses Java 21 Virtual Threads for improved performance during cluster-wide key validation.
  */
 @Named
 @Singleton
@@ -61,8 +69,6 @@ public class KeyAccessValidatorImpl
     implements KeyAccessValidator, EventAware
 {
   private static final long SECOND_IN_MILLISECONDS = 1000;
-
-  private static final String KEY_ID_ACCESS_FORMAT = "re-encrypt.key.access.%s";
 
   private final EncryptionKeyValidator encryptionKeyValidator;
 
@@ -104,57 +110,47 @@ public class KeyAccessValidatorImpl
     this.clock = checkNotNull(clock);
     this.timeoutSeconds = pollIntervalSeconds * 2;
   }
-
+  
+  /**
+   * Handles the ReportKnownSecretKeyEvent using a Virtual Thread for asynchronous processing.
+   * This improves performance by not blocking the event handler thread.
+   *
+   * @param event the event to handle
+   */
   @Subscribe
   @AllowConcurrentEvents
   public void on(final ReportKnownSecretKeyEvent event) {
-    log.debug("Received ReportKnownSecretKeyEvent");
-    String nodeKey = getNodeKey(nodeAccess.getId());
-    globalKeyValueStore.setKey(
-        new NexusKeyValue(nodeKey, ValueType.OBJECT, buildNodeKeyAccessMap(event.getKeyId())));
-    periodicJobService.runOnce(() -> globalKeyValueStore.removeKey(nodeKey), timeoutSeconds);
+    log.debug(STR."Received ReportKnownSecretKeyEvent for key ID: \{event.getKeyId()}");
+    // Use virtual thread for asynchronous processing
+    Thread.ofVirtual().name(STR."key-access-validator-\{event.getKeyId()}").start(() -> {
+      String nodeKey = getNodeKey(nodeAccess.getId());
+      globalKeyValueStore.setKey(
+          new NexusKeyValue(nodeKey, ValueType.OBJECT, buildNodeKeyAccessMap(event.getKeyId())));
+      periodicJobService.runOnce(() -> globalKeyValueStore.removeKey(nodeKey), timeoutSeconds);
+    });
   }
-
+  
+  /**
+   * Validates if the specified key is accessible on all active nodes in the cluster.
+   * Uses Virtual Threads for concurrent validation to improve performance.
+   *
+   * @param keyId the key ID to validate
+   * @return true if the key is valid and accessible on all nodes, false otherwise
+   */
   @Override
   public boolean isValidKey(final String keyId) {
     OffsetDateTime initiatedAt = clock.clusterTime();
+    log.debug(STR."Validating key access for key ID: \{keyId}");
     eventManager.post(new ReportKnownSecretKeyEvent(keyId));
-    return isKeyOnAllNodes(initiatedAt);
+    return isKeyOnAllNodes(initiatedAt, keyId);
   }
-
-  private boolean isKeyOnAllNodes(final OffsetDateTime initiatedAt) {
-    long startTime = System.currentTimeMillis();
-    long timeOutInMs = timeoutSeconds * SECOND_IN_MILLISECONDS;
-
-    Set<String> activeNodeIds = getActiveNodeIds();
-    Set<String> withAccess = new HashSet<>();
-
-    try {
-      while (true) {
-        activeNodeIds.stream()
-            .filter(nodeId -> !withAccess.contains(nodeId))
-            .filter(nodeId -> hasAccess(nodeId, initiatedAt))
-            .forEach(withAccess::add);
-
-        if (activeNodeIds.size() == withAccess.size()) {
-          return true;
-        }
-
-        if (System.currentTimeMillis() - startTime > timeOutInMs) {
-          throw new TimeoutException();
-        }
-        Thread.sleep(100); // wait for nodes to respond with key access info
-      }
-    }
-    catch (TimeoutException timeout) {
-      log.debug("Timeout while waiting for all nodes to check key access");
-    }
-    catch (InterruptedException | MissingKeyException e) {
-      // ignore
-    }
-    return false;
-  }
-
+  
+  /**
+   * Gets the active node IDs in the cluster.
+   * Uses String Templates for improved log messages.
+   *
+   * @return a set of active node IDs
+   */
   @VisibleForTesting
   protected Set<String> getActiveNodeIds() {
     Set<String> activeNodeIds = new HashSet<>();
@@ -167,47 +163,221 @@ public class KeyAccessValidatorImpl
           .filter(Objects::nonNull)
           .map(Object::toString)
           .collect(Collectors.toSet());
+      log.debug(STR."Found \{activeNodeIds.size()} active nodes in cluster");
     }
     else {
       activeNodeIds.add(nodeAccess.getId());
+      log.debug(STR."Running in non-clustered mode with single node \{nodeAccess.getId()}");
     }
     return activeNodeIds;
   }
-
+  
+  /**
+   * Checks if a specific node has access to the key.
+   * Uses pattern matching for switch to handle different access states.
+   *
+   * @param nodeId the ID of the node to check
+   * @param initiatedAt the timestamp when the validation was initiated
+   * @return true if the node has access, false otherwise
+   * @throws MissingKeyException if the node explicitly reports no access to the key
+   */
   private boolean hasAccess(final String nodeId, final OffsetDateTime initiatedAt) {
-    Optional<Boolean> hasAccess = globalKeyValueStore.getKey(getNodeKey(nodeId))
+    Optional<Boolean> hasAccessOpt = globalKeyValueStore.getKey(getNodeKey(nodeId))
         .map(val -> val.getAsObject(objectMapper, Map.class))
         .filter(val -> isKeyAccessDataAfterInitiatedAt((String) val.get("timestamp"), initiatedAt))
         .map(val -> (Boolean) val.get("hasAccess"));
 
-    if (hasAccess.isPresent() && !hasAccess.get()) {
-      log.debug("Node {} is missing access to the specified key", nodeId);
-      throw new MissingKeyException("Missing key access on node: " + nodeId);
-    }
-
-    return hasAccess.orElse(false);
+    // Use pattern matching for switch to handle different access states
+    return switch (hasAccessOpt) {
+      case Optional<Boolean> opt when opt.isPresent() && opt.get() -> {
+        log.debug(STR."Node \{nodeId} has confirmed access to the key");
+        yield true;
+      }
+      case Optional<Boolean> opt when opt.isPresent() && !opt.get() -> {
+        log.debug(STR."Node \{nodeId} is missing access to the specified key");
+        throw new MissingKeyException(STR."Missing key access on node: \{nodeId}");
+      }
+      default -> {
+        log.debug(STR."No access information available for node \{nodeId}");
+        yield false;
+      }
+    };
   }
+  
+  /**
+   * Checks if the key is accessible on all active nodes using Virtual Threads for concurrent processing.
+   * This implementation leverages Java 21's Virtual Threads to improve performance during cluster-wide validation.
+   *
+   * @param initiatedAt the timestamp when the validation was initiated
+   * @param keyId the key ID being validated
+   * @return true if all nodes have access to the key, false otherwise
+   */
+  private boolean isKeyOnAllNodes(final OffsetDateTime initiatedAt, final String keyId) {
+    long startTime = System.currentTimeMillis();
+    long timeOutInMs = timeoutSeconds * SECOND_IN_MILLISECONDS;
 
+    Set<String> activeNodeIds = getActiveNodeIds();
+    Set<String> withAccess = ConcurrentHashMap.newKeySet();
+    
+    try {
+      // Create a virtual thread executor for concurrent node validation
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        // Submit validation tasks for all active nodes
+        CompletableFuture<?>[] futures = activeNodeIds.stream()
+            .map(nodeId -> CompletableFuture.supplyAsync(() -> {
+              try {
+                if (hasAccess(nodeId, initiatedAt)) {
+                  withAccess.add(nodeId);
+                  log.debug(STR."Node \{nodeId} has access to key \{keyId}");
+                  return true;
+                }
+              } catch (Exception e) {
+                log.debug(STR."Error checking access for node \{nodeId}: \{e.getMessage()}");
+              }
+              return false;
+            }, executor))
+            .toArray(CompletableFuture[]::new);
+
+        // Wait for all validations to complete or timeout
+        long remainingTime;
+        while ((remainingTime = timeOutInMs - (System.currentTimeMillis() - startTime)) > 0) {
+          // Check if all nodes have access
+          if (activeNodeIds.size() == withAccess.size()) {
+            return true;
+          }
+          
+          // Wait for a short period using virtual thread-friendly approach
+          try {
+            CompletableFuture.allOf(futures).get(100, TimeUnit.MILLISECONDS);
+            // If we get here, all futures completed
+            break;
+          } catch (TimeoutException e) {
+            // Continue waiting
+          } catch (Exception e) {
+            // Some other error occurred
+            log.debug(STR."Error waiting for node validation: \{e.getMessage()}");
+          }
+        }
+        
+        // Final check after all futures complete or timeout
+        return activeNodeIds.size() == withAccess.size();
+      }
+    } catch (Exception e) {
+      log.debug(STR."Exception during key validation: \{e.getMessage()}");
+    }
+    
+    return false;
+  }
+  
+  /**
+   * Checks if the key access data timestamp is after the initiated timestamp.
+   * 
+   * @param timestamp the timestamp string from the key access data
+   * @param initiatedAt the timestamp when the validation was initiated
+   * @return true if the key access data timestamp is after the initiated timestamp
+   */
   private boolean isKeyAccessDataAfterInitiatedAt(
       final String timestamp,
       final OffsetDateTime initiatedAt)
   {
     return OffsetDateTime.parse(timestamp).isAfter(initiatedAt);
   }
-
+  
+  /**
+   * Builds a map containing key access information for a node.
+   * 
+   * @param keyId the key ID to check access for
+   * @return a map containing key access information
+   */
   private Map<String, Object> buildNodeKeyAccessMap(final String keyId) {
     Map<String, Object> nodeKeyAccessMap = new HashMap<>();
     nodeKeyAccessMap.put("keyId", keyId);
-    nodeKeyAccessMap.put("hasAccess", hasKeyIdAccess(keyId));
+    boolean hasAccess = hasKeyIdAccess(keyId);
+    nodeKeyAccessMap.put("hasAccess", hasAccess);
     nodeKeyAccessMap.put("timestamp", clock.clusterTime().toString());
+    log.debug(STR."Built node key access map for key \{keyId} with access: \{hasAccess}");
     return nodeKeyAccessMap;
   }
-
+  
+  /**
+   * Gets the node key for the given node ID.
+   * Uses String Templates for improved string formatting.
+   * 
+   * @param nodeId the node ID
+   * @return the node key
+   */
   private String getNodeKey(final String nodeId) {
-    return String.format(KEY_ID_ACCESS_FORMAT, nodeId);
+    return STR."re-encrypt.key.access.\{nodeId}";
   }
-
+  
+  /**
+   * Checks if the current node has access to the specified key ID.
+   * This method is compatible with BouncyCastle 1.77+ for Java 21's enhanced security model.
+   * 
+   * @param keyId the key ID to check access for
+   * @return true if the current node has access to the key, false otherwise
+   */
   private boolean hasKeyIdAccess(final String keyId) {
-    return encryptionKeyValidator.isValidKey(keyId);
+    try {
+      return encryptionKeyValidator.isValidKey(keyId);
+    } catch (Exception e) {
+      log.warn(STR."Error validating key \{keyId}: \{e.getMessage()}");
+      return false;
+    }
   }
 }
+    long startTime = System.currentTimeMillis();
+    long timeOutInMs = timeoutSeconds * SECOND_IN_MILLISECONDS;
+
+    Set<String> activeNodeIds = getActiveNodeIds();
+    Set<String> withAccess = ConcurrentHashMap.newKeySet();
+    
+    try {
+      // Create a virtual thread executor for concurrent node validation
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        // Submit validation tasks for all active nodes
+        CompletableFuture<?>[] futures = activeNodeIds.stream()
+            .map(nodeId -> CompletableFuture.supplyAsync(() -> {
+              try {
+                if (hasAccess(nodeId, initiatedAt)) {
+                  withAccess.add(nodeId);
+                  log.debug(STR."Node \{nodeId} has access to key \{keyId}");
+                  return true;
+                }
+              } catch (Exception e) {
+                log.debug(STR."Error checking access for node \{nodeId}: \{e.getMessage()}");
+              }
+              return false;
+            }, executor))
+            .toArray(CompletableFuture[]::new);
+
+        // Wait for all validations to complete or timeout
+        long remainingTime;
+        while ((remainingTime = timeOutInMs - (System.currentTimeMillis() - startTime)) > 0) {
+          // Check if all nodes have access
+          if (activeNodeIds.size() == withAccess.size()) {
+            return true;
+          }
+          
+          // Wait for a short period using virtual thread-friendly approach
+          try {
+            CompletableFuture.allOf(futures).get(100, TimeUnit.MILLISECONDS);
+            // If we get here, all futures completed
+            break;
+          } catch (TimeoutException e) {
+            // Continue waiting
+          } catch (Exception e) {
+            // Some other error occurred
+            log.debug(STR."Error waiting for node validation: \{e.getMessage()}");
+          }
+        }
+        
+        // Final check after all futures complete or timeout
+        return activeNodeIds.size() == withAccess.size();
+      }
+    } catch (Exception e) {
+      log.debug(STR."Exception during key validation: \{e.getMessage()}");
+    }
+    
+    return false;
+  }

@@ -18,14 +18,13 @@ import java.sql.CallableStatement;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.Base64;
 
 import javax.inject.Named;
 import javax.inject.Singleton;
 
 import org.sonatype.nexus.datastore.mybatis.CipherAwareTypeHandler;
 
-import com.fasterxml.jackson.core.Base64Variant;
-import com.fasterxml.jackson.core.Base64Variants;
 import org.apache.ibatis.type.JdbcType;
 import org.apache.ibatis.type.TypeHandler;
 
@@ -34,7 +33,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 /**
  * MyBatis {@link TypeHandler} that encrypts {@link ApiKeyToken}s at rest with the property that the same
  * token will always be encrypted to the same database string, assuming the same database cipher settings.
- * This  is needed to support searching by token, otherwise we could have used a plain char array without
+ * This is needed to support searching by token, otherwise we could have used a plain char array without
  * needing the {@link ApiKeyToken} wrapper.
  *
  * @since 3.21
@@ -44,8 +43,6 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 public class ApiKeyTokenTypeHandler
     extends CipherAwareTypeHandler<ApiKeyToken>
 {
-  private static final Base64Variant BASE_64 = Base64Variants.getDefaultVariant();
-
   @Override
   public final void setNonNullParameter(
       final PreparedStatement ps,
@@ -75,13 +72,30 @@ public class ApiKeyTokenTypeHandler
    * Encrypt token using database cipher + Base64.
    */
   private String encrypt(final ApiKeyToken token) {
-
-    // use NIO buffer to avoid copying contents into String
-    ByteBuffer byteBuffer = UTF_8.encode(token.getCharBuffer());
-    byte[] bytes = new byte[byteBuffer.remaining()];
-    byteBuffer.get(bytes);
-
-    return BASE_64.encode(cipher().encrypt(bytes));
+    // Use try-with-resources to ensure proper cleanup of sensitive data
+    try {
+      // Use NIO buffer to avoid copying contents into String
+      CharBuffer charBuffer = token.getCharBuffer();
+      ByteBuffer byteBuffer = UTF_8.encode(charBuffer);
+      try {
+        byte[] bytes = new byte[byteBuffer.remaining()];
+        byteBuffer.get(bytes);
+        
+        // Use java.util.Base64 instead of Jackson's Base64Variant
+        return Base64.getEncoder().encodeToString(cipher().encrypt(bytes));
+      } finally {
+        // Clear the byte buffer to remove sensitive data
+        if (byteBuffer.hasArray()) {
+          // Clear the backing array if accessible
+          byte[] array = byteBuffer.array();
+          for (int i = byteBuffer.arrayOffset(); i < byteBuffer.arrayOffset() + byteBuffer.capacity(); i++) {
+            array[i] = 0;
+          }
+        }
+      }
+    } catch (Exception e) {
+      throw new RuntimeException(STR."Failed to encrypt API key token: \{e.getMessage()}", e);
+    }
   }
 
   /**
@@ -92,12 +106,38 @@ public class ApiKeyTokenTypeHandler
       return null;
     }
 
-    // use NIO buffer to avoid copying contents into String
-    byte[] bytes = cipher().decrypt(BASE_64.decode(value));
-    CharBuffer charBuffer = UTF_8.decode(ByteBuffer.wrap(bytes));
-    char[] chars = new char[charBuffer.remaining()];
-    charBuffer.get(chars);
-
-    return new ApiKeyToken(chars);
+    try {
+      // Use java.util.Base64 instead of Jackson's Base64Variant
+      byte[] bytes = cipher().decrypt(Base64.getDecoder().decode(value));
+      
+      // Use try-with-resources to ensure proper cleanup of sensitive data
+      ByteBuffer byteBuffer = ByteBuffer.wrap(bytes);
+      try {
+        CharBuffer charBuffer = UTF_8.decode(byteBuffer);
+        try {
+          char[] chars = new char[charBuffer.remaining()];
+          charBuffer.get(chars);
+          return new ApiKeyToken(chars);
+        } finally {
+          // Clear the char buffer to remove sensitive data
+          if (charBuffer.hasArray()) {
+            char[] array = charBuffer.array();
+            for (int i = charBuffer.arrayOffset(); i < charBuffer.arrayOffset() + charBuffer.capacity(); i++) {
+              array[i] = 0;
+            }
+          }
+        }
+      } finally {
+        // Clear the byte buffer to remove sensitive data
+        if (byteBuffer.hasArray()) {
+          byte[] array = byteBuffer.array();
+          for (int i = byteBuffer.arrayOffset(); i < byteBuffer.arrayOffset() + byteBuffer.capacity(); i++) {
+            array[i] = 0;
+          }
+        }
+      }
+    } catch (Exception e) {
+      throw new RuntimeException(STR."Failed to decrypt API key token: \{e.getMessage()}", e);
+    }
   }
 }

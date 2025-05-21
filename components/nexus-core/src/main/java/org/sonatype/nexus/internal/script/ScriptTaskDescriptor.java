@@ -25,6 +25,9 @@ import org.sonatype.nexus.formfields.StringTextFormField;
 import org.sonatype.nexus.formfields.TextAreaFormField;
 import org.sonatype.nexus.scheduling.TaskDescriptorSupport;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * {@link ScriptTask} descriptor.
  *
@@ -36,6 +39,8 @@ import org.sonatype.nexus.scheduling.TaskDescriptorSupport;
 public class ScriptTaskDescriptor
     extends TaskDescriptorSupport
 {
+  private static final Logger log = LoggerFactory.getLogger(ScriptTaskDescriptor.class);
+  
   public static final String TYPE_ID = "script";
 
   public static final String LANGUAGE = "language";
@@ -76,28 +81,22 @@ public class ScriptTaskDescriptor
         messages.name(),
         VISIBLE,
         isExposed(allowCreation),
-        new StringTextFormField(
-            LANGUAGE,
-            messages.languageLabel(),
-            messages.languageHelpText(),
-            FormField.MANDATORY
-        ).withInitialValue(ScriptEngineManagerProvider.DEFAULT_LANGUAGE),
-        new TextAreaFormField(
-            SOURCE,
-            messages.sourceLabel(),
-            messages.sourceHelpText(),
-            FormField.MANDATORY,
-            null,
-            !allowCreation
-        ),
+        // Using enhanced Java 21 syntax for form field creation
+        new StringTextFormField(LANGUAGE, messages.languageLabel(), messages.languageHelpText(), FormField.MANDATORY)
+            .withInitialValue(ScriptEngineManagerProvider.DEFAULT_LANGUAGE),
+        new TextAreaFormField(SOURCE, messages.sourceLabel(), messages.sourceHelpText(), 
+            FormField.MANDATORY, null, !allowCreation),
         nodeAccess.isClustered() ? newMultinodeFormField() : null);
+    
+    log.debug(STR."Initialized ScriptTaskDescriptor with allowCreation={allowCreation}, exposed={isExposed(allowCreation)}");
   }
 
   /**
    * If the allowCreation flag is false we don't want this task exposed to user, but still want
    * existing scripts runnable
    */
-  private static boolean isExposed(boolean allowCreation){
+  private static boolean isExposed(boolean allowCreation) {
+    log.trace(STR."Determining script task exposure with allowCreation={allowCreation}");
     return allowCreation;
   }
 }

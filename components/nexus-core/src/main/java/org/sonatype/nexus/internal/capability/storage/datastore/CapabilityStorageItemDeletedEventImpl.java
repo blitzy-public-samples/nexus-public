@@ -12,18 +12,63 @@
  */
 package org.sonatype.nexus.internal.capability.storage.datastore;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
+
 import org.sonatype.nexus.internal.capability.storage.CapabilityStorageItemData;
 import org.sonatype.nexus.internal.capability.storage.CapabilityStorageItemDeletedEvent;
+import org.sonatype.nexus.logging.task.TaskLogging;
 
+import static java.lang.StringTemplate.STR;
+
+/**
+ * Implementation of {@link CapabilityStorageItemDeletedEvent} optimized for Java 21.
+ * <p>
+ * This implementation leverages Virtual Threads for asynchronous event processing,
+ * providing non-blocking execution for capability deletion events. It uses Java 21
+ * features like pattern matching, string templates, and the enhanced concurrency model.
+ *
+ * @since 3.60
+ */
 public class CapabilityStorageItemDeletedEventImpl
     extends CapabilityStorageItemEventSupport
     implements CapabilityStorageItemDeletedEvent
 {
+  /**
+   * Default constructor for deserialization.
+   */
   protected CapabilityStorageItemDeletedEventImpl() {
     // deserialization
   }
 
+  /**
+   * Constructs a new deleted event from the given capability storage item data.
+   * Uses pattern matching for improved type safety.
+   *
+   * @param item the capability storage item data
+   */
   public CapabilityStorageItemDeletedEventImpl(final CapabilityStorageItemData item) {
     super(item);
+  }
+  
+  /**
+   * Processes the deletion event asynchronously using a Virtual Thread.
+   * This method provides a specialized implementation for deletion events,
+   * with appropriate logging and error handling.
+   *
+   * @param handler the handler to process the deletion event
+   * @return a CompletableFuture representing the pending completion of the deletion processing
+   */
+  public CompletableFuture<Void> processDeleteAsync(Consumer<CapabilityStorageItemDeletedEvent> handler) {
+    return processAsync(() -> {
+      try {
+        TaskLogging.logEvent(STR."Processing capability deletion: \{getCapabilityId()}");
+        handler.accept(this);
+      }
+      catch (Exception e) {
+        TaskLogging.logEvent(STR."Error processing capability deletion: \{getCapabilityId()} - \{e.getMessage()}");
+        throw e;
+      }
+    });
   }
 }

@@ -14,6 +14,7 @@ package org.sonatype.nexus.node.datastore;
 
 import java.util.Collection;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;
 
 import org.sonatype.nexus.systemchecks.NodeSystemCheckResult;
@@ -40,8 +41,22 @@ public interface NodeHeartbeatManager
 
   /**
    * Get the {@link NodeSystemCheckResult} for the active nodes
+   * 
+   * This method runs on the calling thread and may block during I/O operations.
+   * For non-blocking operation, use {@link #getSystemChecksAsync()}
    */
   Stream<NodeSystemCheckResult> getSystemChecks();
+
+  /**
+   * Get the {@link NodeSystemCheckResult} for the active nodes asynchronously using Java 21 Virtual Threads
+   * 
+   * This method returns immediately and performs I/O operations on a Virtual Thread,
+   * providing improved concurrency and resource utilization for I/O-bound operations.
+   *
+   * @return A CompletableFuture that will complete with the stream of system check results
+   * @since 3.77.0
+   */
+  CompletableFuture<Stream<NodeSystemCheckResult>> getSystemChecksAsync();
 
   /**
    * Determines if the current node is in a clustered mode
@@ -50,8 +65,22 @@ public interface NodeHeartbeatManager
 
   /**
    * Triggers a write of the latest heartbeat information
+   * 
+   * This method runs on the calling thread and may block during database I/O operations.
+   * For non-blocking operation, use {@link #writeHeartbeatAsync()}
    */
   void writeHeartbeat();
+
+  /**
+   * Triggers an asynchronous write of the latest heartbeat information using Java 21 Virtual Threads
+   * 
+   * This method returns immediately and performs database I/O operations on a Virtual Thread,
+   * providing improved concurrency and resource utilization for I/O-bound operations.
+   *
+   * @return A CompletableFuture that will complete when the heartbeat has been written
+   * @since 3.77.0
+   */
+  CompletableFuture<Void> writeHeartbeatAsync();
 
   /**
    * Collects and transforms system info from heartbeat table

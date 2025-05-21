@@ -18,6 +18,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 
 import javax.annotation.Nullable;
 import javax.inject.Inject;
@@ -79,6 +82,8 @@ public class LocalFreezeService
   private final List<Freezable> freezables;
 
   private final EventManager eventManager;
+  
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   @Inject
   public LocalFreezeService(
@@ -124,7 +129,8 @@ public class LocalFreezeService
 
   @Override
   public List<FreezeRequest> cancelAllFreezeRequests() {
-    eventManager.post(new FreezeForceReleaseEvent());
+    // Use virtual thread for event posting to avoid blocking
+    virtualThreadExecutor.submit(() -> eventManager.post(new FreezeForceReleaseEvent()));
     List<FreezeRequest> canceledRequests = currentFreezeRequests();
     freezeRequests.clear();
     reverse(freezables).forEach(this::tryUnfreeze);
@@ -155,9 +161,10 @@ public class LocalFreezeService
 
   private void addRequest(@Nullable final String token, final String reason) {
     FreezeRequest request = newRequest(token, reason);
-    eventManager.post(new FreezeRequestEvent(reason));
+    // Use virtual thread for event posting to avoid blocking
+    virtualThreadExecutor.submit(() -> eventManager.post(new FreezeRequestEvent(reason)));
     synchronized (freezeRequests) {
-      checkState(!any(freezeRequests, sameToken(token)), "Freeze has already been requested");
+      checkState(!any(freezeRequests, sameToken(token)), STR."Freeze has already been requested");
       if (token == null) {
         saveUserFreezeRequest(request);
       }
@@ -169,12 +176,13 @@ public class LocalFreezeService
   }
 
   private void removeRequest(@Nullable final String token) {
-    eventManager.post(new FreezeReleaseEvent());
+    // Use virtual thread for event posting to avoid blocking
+    virtualThreadExecutor.submit(() -> eventManager.post(new FreezeReleaseEvent()));
     if (token == null) {
       deleteUserFreezeRequest();
     }
     synchronized (freezeRequests) {
-      checkState(freezeRequests.removeIf(sameToken(token)), "Cannot find freeze request to cancel");
+      checkState(freezeRequests.removeIf(sameToken(token)), STR."Cannot find freeze request to cancel");
       if (freezeRequests.size() == 0) {
         reverse(freezables).forEach(this::tryUnfreeze);
       }
@@ -198,7 +206,7 @@ public class LocalFreezeService
       freezable.freeze();
     }
     catch (Exception e) {
-      log.warn("Problem freezing {}", freezable, e);
+      log.warn(STR."Problem freezing \{freezable}", e);
     }
   }
 
@@ -207,7 +215,7 @@ public class LocalFreezeService
       freezable.unfreeze();
     }
     catch (Exception e) {
-      log.warn("Problem unfreezing {}", freezable, e);
+      log.warn(STR."Problem unfreezing \{freezable}", e);
     }
   }
 
@@ -216,54 +224,70 @@ public class LocalFreezeService
    */
   private boolean loadUserFreezeRequest() {
     if (markerFile.exists()) {
-      FreezeRequest request;
-      try {
-        JsonNode json = mapper.readTree(markerFile);
-        if (json.size() == 0) {
-          return false;
+      // Use virtual thread for file I/O operations
+      Future<FreezeRequest> future = virtualThreadExecutor.submit(() -> {
+        try {
+          JsonNode json = mapper.readTree(markerFile);
+          if (json.size() == 0) {
+            return null;
+          }
+
+          return new FreezeRequest(null,
+              json.path("reason").asText(),
+              parse(json.path("frozenAt").asText()),
+              json.path("frozenBy").asText(),
+              json.path("frozenByIp").asText());
         }
+        catch (Exception e) {
+          log.debug(STR."Problem parsing \{MARKER_FILE}, will add placeholder request", e);
+          return new FreezeRequest(null, MARKER_FILE, now(UTC), null, null);
+        }
+      });
 
-        request = new FreezeRequest(null,
-            json.path("reason").asText(),
-            parse(json.path("frozenAt").asText()),
-            json.path("frozenBy").asText(),
-            json.path("frozenByIp").asText());
+      try {
+        FreezeRequest request = future.get();
+        if (request != null) {
+          freezeRequests.add(request);
+          return freezeRequests.size() == 1;
+        }
+      } catch (Exception e) {
+        log.warn(STR."Error loading freeze request from \{MARKER_FILE}", e);
       }
-      catch (Exception e) {
-        log.debug("Problem parsing " + MARKER_FILE + ", will add placeholder request", e);
-        request = new FreezeRequest(null, MARKER_FILE, now(UTC), null, null);
-      }
-
-      freezeRequests.add(request);
-      return freezeRequests.size() == 1;
+      return false;
     }
 
     return false;
   }
 
   private void saveUserFreezeRequest(final FreezeRequest request) {
-    try {
-      Map<String, Object> json = ImmutableMap.of(
-          "reason", request.reason(),
-          "frozenAt", request.frozenAt().toString(),
-          "frozenBy", request.frozenBy().orElse(null),
-          "frozenByIp", request.frozenByIp().orElse(null));
+    // Use virtual thread for file I/O operations
+    virtualThreadExecutor.submit(() -> {
+      try {
+        Map<String, Object> json = ImmutableMap.of(
+            "reason", request.reason(),
+            "frozenAt", request.frozenAt().toString(),
+            "frozenBy", request.frozenBy().orElse(null),
+            "frozenByIp", request.frozenByIp().orElse(null));
 
-      mapper.writeValue(markerFile, json);
-    }
-    catch (Exception e) {
-      log.warn("Cannot save " + MARKER_FILE, e);
-    }
+        mapper.writeValue(markerFile, json);
+      }
+      catch (Exception e) {
+        log.warn(STR."Cannot save \{MARKER_FILE}", e);
+      }
+    });
   }
 
   private void deleteUserFreezeRequest() {
     if (markerFile.exists()) {
-      try {
-        Files.delete(markerFile.toPath());
-      }
-      catch (Exception e) {
-        log.warn("Cannot delete " + MARKER_FILE, e);
-      }
+      // Use virtual thread for file I/O operations
+      virtualThreadExecutor.submit(() -> {
+        try {
+          Files.delete(markerFile.toPath());
+        }
+        catch (Exception e) {
+          log.warn(STR."Cannot delete \{MARKER_FILE}", e);
+        }
+      });
     }
   }
 }

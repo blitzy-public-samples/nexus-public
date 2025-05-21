@@ -16,19 +16,15 @@ import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.capability.CapabilityDescriptorRegistry;
 import org.sonatype.nexus.capability.CapabilityRegistry;
 import org.sonatype.nexus.capability.Condition;
-import org.sonatype.nexus.capability.condition.internal.CapabilityConditionsImpl;
-import org.sonatype.nexus.capability.condition.internal.CapabilityOfTypeActiveCondition;
-import org.sonatype.nexus.capability.condition.internal.CapabilityOfTypeExistsCondition;
-import org.sonatype.nexus.capability.condition.internal.PassivateCapabilityDuringUpdateCondition;
 import org.sonatype.nexus.common.event.EventManager;
 
-import org.hamcrest.Matchers;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
-import static org.mockito.Mockito.mock;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.sonatype.nexus.capability.CapabilityType.capabilityType;
 
 /**
@@ -36,17 +32,23 @@ import static org.sonatype.nexus.capability.CapabilityType.capabilityType;
  *
  * @since capabilities 2.0
  */
-public class CapabilityConditionsImplTest
+@ExtendWith(MockitoExtension.class)
+class CapabilityConditionsImplTest
     extends TestSupport
 {
+  @Mock
+  private EventManager eventManager;
+  
+  @Mock
+  private CapabilityDescriptorRegistry descriptorRegistry;
+  
+  @Mock
+  private CapabilityRegistry capabilityRegistry;
 
   private CapabilityConditionsImpl underTest;
 
-  @Before
-  public final void setUpCapabilityConditions() {
-    final EventManager eventManager = mock(EventManager.class);
-    final CapabilityDescriptorRegistry descriptorRegistry = mock(CapabilityDescriptorRegistry.class);
-    final CapabilityRegistry capabilityRegistry = mock(CapabilityRegistry.class);
+  @BeforeEach
+  void setUpCapabilityConditions() {
     underTest = new CapabilityConditionsImpl(eventManager, descriptorRegistry, capabilityRegistry);
   }
 
@@ -54,10 +56,11 @@ public class CapabilityConditionsImplTest
    * capabilityOfTypeExists() factory method returns expected condition.
    */
   @Test
-  public void capabilityOfTypeExists() {
-    assertThat(
+  void capabilityOfTypeExists() {
+    assertInstanceOf(
+        CapabilityOfTypeExistsCondition.class,
         underTest.capabilityOfTypeExists(capabilityType("test")),
-        is(Matchers.<Condition>instanceOf(CapabilityOfTypeExistsCondition.class))
+        STR."Expected condition of type \{CapabilityOfTypeExistsCondition.class.getSimpleName()}"
     );
   }
 
@@ -65,10 +68,11 @@ public class CapabilityConditionsImplTest
    * capabilityOfTypeActive() factory method returns expected condition.
    */
   @Test
-  public void capabilityOfTypeActive() {
-    assertThat(
+  void capabilityOfTypeActive() {
+    assertInstanceOf(
+        CapabilityOfTypeActiveCondition.class,
         underTest.capabilityOfTypeActive(capabilityType("test")),
-        is(Matchers.<Condition>instanceOf(CapabilityOfTypeActiveCondition.class))
+        STR."Expected condition of type \{CapabilityOfTypeActiveCondition.class.getSimpleName()}"
     );
   }
 
@@ -76,11 +80,11 @@ public class CapabilityConditionsImplTest
    * reactivateCapabilityOnUpdate() factory method returns expected condition.
    */
   @Test
-  public void reactivateCapabilityOnUpdate() {
-    assertThat(
+  void reactivateCapabilityOnUpdate() {
+    assertInstanceOf(
+        PassivateCapabilityDuringUpdateCondition.class,
         underTest.passivateCapabilityDuringUpdate(),
-        is(Matchers.<Condition>instanceOf(PassivateCapabilityDuringUpdateCondition.class))
+        STR."Expected condition of type \{PassivateCapabilityDuringUpdateCondition.class.getSimpleName()}"
     );
   }
-
 }

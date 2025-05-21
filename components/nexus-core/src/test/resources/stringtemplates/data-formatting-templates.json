@@ -1,0 +1,348 @@
+{
+  "templateGroups": [
+    {
+      "groupName": "repositoryFormatting",
+      "description": "Templates for formatting repository information",
+      "templates": [
+        {
+          "name": "repositoryBasicInfo",
+          "template": "Repository: \\{repo.name} (\\{repo.type}, \\{repo.format})",
+          "testData": {
+            "repo": {
+              "name": "maven-central",
+              "type": "proxy",
+              "format": "maven2"
+            }
+          },
+          "expectedOutput": "Repository: maven-central (proxy, maven2)"
+        },
+        {
+          "name": "repositoryDetailedInfo",
+          "template": "\\{repo.name} | Type: \\{repo.type} | Format: \\{repo.format} | Created: \\{repo.created} | Status: \\{repo.online ? 'Online' : 'Offline'}",
+          "testData": {
+            "repo": {
+              "name": "npm-hosted",
+              "type": "hosted",
+              "format": "npm",
+              "created": "2023-05-15T10:30:45.123Z",
+              "online": true
+            }
+          },
+          "expectedOutput": "npm-hosted | Type: hosted | Format: npm | Created: 2023-05-15T10:30:45.123Z | Status: Online"
+        },
+        {
+          "name": "repositoryWithStatistics",
+          "template": "Repository \\{repo.name} contains \\{repo.stats.componentCount} components and \\{repo.stats.assetCount} assets (\\{repo.stats.sizeInBytes / 1024 / 1024} MB)",
+          "testData": {
+            "repo": {
+              "name": "docker-hub",
+              "stats": {
+                "componentCount": 1250,
+                "assetCount": 5432,
+                "sizeInBytes": 1073741824
+              }
+            }
+          },
+          "expectedOutput": "Repository docker-hub contains 1250 components and 5432 assets (1024.0 MB)"
+        }
+      ]
+    },
+    {
+      "groupName": "componentFormatting",
+      "description": "Templates for formatting component information",
+      "templates": [
+        {
+          "name": "mavenComponentInfo",
+          "template": "\\{component.group}:\\{component.name}:\\{component.version}",
+          "testData": {
+            "component": {
+              "group": "org.apache.commons",
+              "name": "commons-lang3",
+              "version": "3.12.0"
+            }
+          },
+          "expectedOutput": "org.apache.commons:commons-lang3:3.12.0"
+        },
+        {
+          "name": "npmComponentInfo",
+          "template": "\\{component.name}@\\{component.version} (\\{component.scope ? '@' + component.scope : 'unscoped'})",
+          "testData": {
+            "component": {
+              "name": "react",
+              "version": "18.2.0",
+              "scope": "facebook"
+            }
+          },
+          "expectedOutput": "react@18.2.0 (@facebook)"
+        },
+        {
+          "name": "componentWithAssets",
+          "template": "Component: \\{component.name} v\\{component.version}\n  Assets:\\{component.assets.map(a -> '\n    - ' + a.name + ' (' + a.size + ' bytes)')}",
+          "testData": {
+            "component": {
+              "name": "junit",
+              "version": "4.13.2",
+              "assets": [
+                {
+                  "name": "junit-4.13.2.jar",
+                  "size": 384581
+                },
+                {
+                  "name": "junit-4.13.2-sources.jar",
+                  "size": 245934
+                },
+                {
+                  "name": "junit-4.13.2-javadoc.jar",
+                  "size": 752340
+                }
+              ]
+            }
+          },
+          "expectedOutput": "Component: junit v4.13.2\n  Assets:\n    - junit-4.13.2.jar (384581 bytes)\n    - junit-4.13.2-sources.jar (245934 bytes)\n    - junit-4.13.2-javadoc.jar (752340 bytes)"
+        }
+      ]
+    },
+    {
+      "groupName": "assetFormatting",
+      "description": "Templates for formatting asset information",
+      "templates": [
+        {
+          "name": "assetBasicInfo",
+          "template": "\\{asset.path} (\\{asset.contentType}, \\{asset.size} bytes)",
+          "testData": {
+            "asset": {
+              "path": "/org/example/app/1.0.0/app-1.0.0.jar",
+              "contentType": "application/java-archive",
+              "size": 2345678
+            }
+          },
+          "expectedOutput": "/org/example/app/1.0.0/app-1.0.0.jar (application/java-archive, 2345678 bytes)"
+        },
+        {
+          "name": "assetDetailedInfo",
+          "template": "Asset: \\{asset.name}\nPath: \\{asset.path}\nSize: \\{asset.size} bytes\nContent Type: \\{asset.contentType}\nLast Modified: \\{asset.lastModified}\nDownloads: \\{asset.downloadCount}",
+          "testData": {
+            "asset": {
+              "name": "app-1.0.0.jar",
+              "path": "/org/example/app/1.0.0/app-1.0.0.jar",
+              "size": 2345678,
+              "contentType": "application/java-archive",
+              "lastModified": "2023-06-20T15:45:32.123Z",
+              "downloadCount": 1250
+            }
+          },
+          "expectedOutput": "Asset: app-1.0.0.jar\nPath: /org/example/app/1.0.0/app-1.0.0.jar\nSize: 2345678 bytes\nContent Type: application/java-archive\nLast Modified: 2023-06-20T15:45:32.123Z\nDownloads: 1250"
+        },
+        {
+          "name": "assetWithAttributes",
+          "template": "\\{asset.name} (\\{asset.size} bytes)\nAttributes:\\{asset.attributes.map((k, v) -> '\n  - ' + k + ': ' + v)}",
+          "testData": {
+            "asset": {
+              "name": "manifest.json",
+              "size": 1024,
+              "attributes": {
+                "checksum.md5": "d41d8cd98f00b204e9800998ecf8427e",
+                "checksum.sha1": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+                "checksum.sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "docker.manifest": "true"
+              }
+            }
+          },
+          "expectedOutput": "manifest.json (1024 bytes)\nAttributes:\n  - checksum.md5: d41d8cd98f00b204e9800998ecf8427e\n  - checksum.sha1: da39a3ee5e6b4b0d3255bfef95601890afd80709\n  - checksum.sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n  - docker.manifest: true"
+        }
+      ]
+    },
+    {
+      "groupName": "dateTimeFormatting",
+      "description": "Templates for formatting date and time information",
+      "templates": [
+        {
+          "name": "simpleDateTime",
+          "template": "Created on \\{dateTime.format(DateTimeFormatter.ISO_LOCAL_DATE)} at \\{dateTime.format(DateTimeFormatter.ISO_LOCAL_TIME)}",
+          "testData": {
+            "dateTime": "2023-07-15T14:30:45.123Z"
+          },
+          "expectedOutput": "Created on 2023-07-15 at 14:30:45.123"
+        },
+        {
+          "name": "relativeDateTime",
+          "template": "\\{Duration.between(dateTime, now).toDays() > 0 ? Duration.between(dateTime, now).toDays() + ' days ago' : Duration.between(dateTime, now).toHours() + ' hours ago'}",
+          "testData": {
+            "dateTime": "2023-07-14T10:30:45.123Z",
+            "now": "2023-07-15T14:30:45.123Z"
+          },
+          "expectedOutput": "1 days ago"
+        },
+        {
+          "name": "customFormattedDateTime",
+          "template": "\\{dateTime.format(DateTimeFormatter.ofPattern('EEEE, MMMM d, yyyy'))}",
+          "testData": {
+            "dateTime": "2023-07-15T14:30:45.123Z"
+          },
+          "expectedOutput": "Saturday, July 15, 2023"
+        }
+      ]
+    },
+    {
+      "groupName": "numericFormatting",
+      "description": "Templates for formatting numeric information",
+      "templates": [
+        {
+          "name": "fileSizeFormatting",
+          "template": "\\{size < 1024 ? size + ' B' : size < 1048576 ? String.format('%.2f KB', size / 1024.0) : size < 1073741824 ? String.format('%.2f MB', size / 1048576.0) : String.format('%.2f GB', size / 1073741824.0)}",
+          "testData": {
+            "size": 15728640
+          },
+          "expectedOutput": "15.00 MB"
+        },
+        {
+          "name": "percentageFormatting",
+          "template": "\\{String.format('%.1f%%', percentage)}",
+          "testData": {
+            "percentage": 75.5
+          },
+          "expectedOutput": "75.5%"
+        },
+        {
+          "name": "countFormatting",
+          "template": "\\{count} \\{count == 1 ? 'item' : 'items'}",
+          "testData": {
+            "count": 1
+          },
+          "expectedOutput": "1 item"
+        }
+      ]
+    },
+    {
+      "groupName": "complexDataFormatting",
+      "description": "Templates for formatting complex data structures",
+      "templates": [
+        {
+          "name": "repositorySummary",
+          "template": "# Repository Summary: \\{repo.name}\n\nType: \\{repo.type}\nFormat: \\{repo.format}\nStatus: \\{repo.online ? 'Online' : 'Offline'}\n\n## Statistics\n\n- Components: \\{repo.stats.componentCount}\n- Assets: \\{repo.stats.assetCount}\n- Size: \\{repo.stats.sizeInBytes < 1024 ? repo.stats.sizeInBytes + ' B' : repo.stats.sizeInBytes < 1048576 ? String.format('%.2f KB', repo.stats.sizeInBytes / 1024.0) : repo.stats.sizeInBytes < 1073741824 ? String.format('%.2f MB', repo.stats.sizeInBytes / 1048576.0) : String.format('%.2f GB', repo.stats.sizeInBytes / 1073741824.0)}\n\n## Recent Activity\n\\{repo.recentActivity.map(a -> '- ' + a.action + ' ' + a.component + ' at ' + a.timestamp).join('\n')}",
+          "testData": {
+            "repo": {
+              "name": "maven-releases",
+              "type": "hosted",
+              "format": "maven2",
+              "online": true,
+              "stats": {
+                "componentCount": 523,
+                "assetCount": 2145,
+                "sizeInBytes": 536870912
+              },
+              "recentActivity": [
+                {
+                  "action": "CREATED",
+                  "component": "org.example:app:1.0.0",
+                  "timestamp": "2023-07-15T10:30:45Z"
+                },
+                {
+                  "action": "DOWNLOADED",
+                  "component": "org.example:lib:2.1.0",
+                  "timestamp": "2023-07-15T09:45:12Z"
+                },
+                {
+                  "action": "DELETED",
+                  "component": "org.example:old-app:0.9.0",
+                  "timestamp": "2023-07-14T16:20:33Z"
+                }
+              ]
+            }
+          },
+          "expectedOutput": "# Repository Summary: maven-releases\n\nType: hosted\nFormat: maven2\nStatus: Online\n\n## Statistics\n\n- Components: 523\n- Assets: 2145\n- Size: 512.00 MB\n\n## Recent Activity\n- CREATED org.example:app:1.0.0 at 2023-07-15T10:30:45Z\n- DOWNLOADED org.example:lib:2.1.0 at 2023-07-15T09:45:12Z\n- DELETED org.example:old-app:0.9.0 at 2023-07-14T16:20:33Z"
+        },
+        {
+          "name": "securityAuditReport",
+          "template": "# Security Audit Report\n\nGenerated: \\{report.generatedAt}\nPeriod: \\{report.startDate} to \\{report.endDate}\n\n## Summary\n\n- Total Events: \\{report.totalEvents}\n- Authentication Failures: \\{report.authFailures}\n- Permission Denied: \\{report.permissionDenied}\n- Suspicious Activities: \\{report.suspiciousActivities}\n\n## Top Users\n\\{report.topUsers.map((user, count) -> '- ' + user + ': ' + count + ' events').join('\n')}\n\n## Critical Events\n\\{report.criticalEvents.map(e -> '- ' + e.timestamp + ' | ' + e.user + ' | ' + e.action + ' | ' + e.outcome).join('\n')}",
+          "testData": {
+            "report": {
+              "generatedAt": "2023-07-15T15:00:00Z",
+              "startDate": "2023-07-01",
+              "endDate": "2023-07-15",
+              "totalEvents": 12543,
+              "authFailures": 45,
+              "permissionDenied": 23,
+              "suspiciousActivities": 5,
+              "topUsers": {
+                "admin": 1250,
+                "ci-user": 8765,
+                "developer1": 1523,
+                "developer2": 1005
+              },
+              "criticalEvents": [
+                {
+                  "timestamp": "2023-07-10T08:23:45Z",
+                  "user": "admin",
+                  "action": "CHANGE_PERMISSION",
+                  "outcome": "SUCCESS"
+                },
+                {
+                  "timestamp": "2023-07-12T14:56:12Z",
+                  "user": "unknown",
+                  "action": "LOGIN_ATTEMPT",
+                  "outcome": "FAILURE"
+                },
+                {
+                  "timestamp": "2023-07-14T11:32:09Z",
+                  "user": "developer1",
+                  "action": "DELETE_REPOSITORY",
+                  "outcome": "DENIED"
+                }
+              ]
+            }
+          },
+          "expectedOutput": "# Security Audit Report\n\nGenerated: 2023-07-15T15:00:00Z\nPeriod: 2023-07-01 to 2023-07-15\n\n## Summary\n\n- Total Events: 12543\n- Authentication Failures: 45\n- Permission Denied: 23\n- Suspicious Activities: 5\n\n## Top Users\n- admin: 1250 events\n- ci-user: 8765 events\n- developer1: 1523 events\n- developer2: 1005 events\n\n## Critical Events\n- 2023-07-10T08:23:45Z | admin | CHANGE_PERMISSION | SUCCESS\n- 2023-07-12T14:56:12Z | unknown | LOGIN_ATTEMPT | FAILURE\n- 2023-07-14T11:32:09Z | developer1 | DELETE_REPOSITORY | DENIED"
+        },
+        {
+          "name": "systemHealthReport",
+          "template": "# System Health Report\n\nGenerated: \\{report.timestamp}\n\n## System Resources\n\n- CPU Usage: \\{String.format('%.1f%%', report.cpuUsage * 100)}\n- Memory Usage: \\{String.format('%.1f%%', report.memoryUsage * 100)} (\\{report.usedMemory} / \\{report.totalMemory})\n- Disk Usage: \\{String.format('%.1f%%', report.diskUsage * 100)} (\\{report.usedDiskSpace} / \\{report.totalDiskSpace})\n\n## Repository Health\n\\{report.repositories.map(r -> '- ' + r.name + ': ' + (r.healthy ? 'Healthy' : 'Issues Detected') + (r.healthy ? '' : ' (' + r.issues.join(', ') + ')')).join('\n')}\n\n## Recent Errors\n\\{report.recentErrors.isEmpty() ? 'No errors reported.' : report.recentErrors.map(e -> '- ' + e.timestamp + ' | ' + e.level + ' | ' + e.message).join('\n')}",
+          "testData": {
+            "report": {
+              "timestamp": "2023-07-15T16:30:00Z",
+              "cpuUsage": 0.45,
+              "memoryUsage": 0.72,
+              "usedMemory": "5.8 GB",
+              "totalMemory": "8.0 GB",
+              "diskUsage": 0.68,
+              "usedDiskSpace": "340 GB",
+              "totalDiskSpace": "500 GB",
+              "repositories": [
+                {
+                  "name": "maven-central",
+                  "healthy": true
+                },
+                {
+                  "name": "npm-hosted",
+                  "healthy": true
+                },
+                {
+                  "name": "docker-hub",
+                  "healthy": false,
+                  "issues": ["Connection timeout", "Proxy error"]
+                },
+                {
+                  "name": "nuget-group",
+                  "healthy": true
+                }
+              ],
+              "recentErrors": [
+                {
+                  "timestamp": "2023-07-15T15:45:23Z",
+                  "level": "ERROR",
+                  "message": "Failed to connect to remote repository docker-hub"
+                },
+                {
+                  "timestamp": "2023-07-15T14:32:11Z",
+                  "level": "WARN",
+                  "message": "Slow query detected in component search"
+                }
+              ]
+            }
+          },
+          "expectedOutput": "# System Health Report\n\nGenerated: 2023-07-15T16:30:00Z\n\n## System Resources\n\n- CPU Usage: 45.0%\n- Memory Usage: 72.0% (5.8 GB / 8.0 GB)\n- Disk Usage: 68.0% (340 GB / 500 GB)\n\n## Repository Health\n- maven-central: Healthy\n- npm-hosted: Healthy\n- docker-hub: Issues Detected (Connection timeout, Proxy error)\n- nuget-group: Healthy\n\n## Recent Errors\n- 2023-07-15T15:45:23Z | ERROR | Failed to connect to remote repository docker-hub\n- 2023-07-15T14:32:11Z | WARN | Slow query detected in component search"
+        }
+      ]
+    }
+  ]
+}

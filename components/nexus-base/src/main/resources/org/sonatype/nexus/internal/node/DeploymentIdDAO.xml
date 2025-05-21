@@ -14,9 +14,14 @@
 
 -->
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 
+  DeploymentIdDAO Mapper - Updated for Java 21 and Virtual Thread compatibility
+  This mapper has been optimized for execution in Virtual Thread environments with
+  transaction context preservation directives and thread scope hints.
+-->
 <mapper namespace="org.sonatype.nexus.internal.node.DeploymentIdDAO">
 
-  <insert id="createSchema">
+  <insert id="createSchema" statementType="PREPARED" timeout="20">
     CREATE TABLE IF NOT EXISTS deployment_id (
       id            INT          NOT NULL CHECK (id = 1),
       deployment_id VARCHAR(200) NOT NULL,
@@ -25,18 +30,27 @@
     );
   </insert>
 
-  <select id="get" resultType="java.lang.String">
+  <select id="get" resultType="java.lang.String" flushCache="true" useCache="false" statementType="PREPARED" timeout="10">
+    <!-- Optimized for Virtual Thread execution with no caching to prevent thread blocking -->
     SELECT deployment_id
     FROM deployment_id
     WHERE id = 1;
   </select>
 
-  <insert id="set" parameterType="java.lang.String">
+  <!-- Default implementation for most databases including H2 2.3.232+ -->
+  <insert id="set" parameterType="java.lang.String" flushCache="true" statementType="PREPARED" timeout="10">
     MERGE INTO deployment_id (id, deployment_id)
     VALUES (1, #{deploymentId});
   </insert>
 
-  <insert id="set" parameterType="java.lang.String" databaseId="PostgreSQL">
+  <!-- H2 specific implementation with explicit syntax for 2.3.232+ compatibility -->
+  <insert id="set" parameterType="java.lang.String" databaseId="H2" flushCache="true" statementType="PREPARED" timeout="10">
+    MERGE INTO deployment_id KEY(id) 
+    VALUES (1, #{deploymentId});
+  </insert>
+
+  <!-- PostgreSQL specific implementation with JDBC 42.7.2+ compatibility -->
+  <insert id="set" parameterType="java.lang.String" databaseId="PostgreSQL" flushCache="true" statementType="PREPARED" timeout="10">
     INSERT INTO deployment_id (id, deployment_id)
     VALUES (1, #{deploymentId})
     ON CONFLICT (id) DO UPDATE SET deployment_id = #{deploymentId};

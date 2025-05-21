@@ -22,6 +22,7 @@ import javax.ws.rs.POST;
 import javax.ws.rs.PUT;
 import javax.ws.rs.Path;
 import javax.ws.rs.Produces;
+import javax.ws.rs.core.MediaType;
 
 import org.sonatype.nexus.common.text.Strings2;
 import org.sonatype.nexus.email.EmailConfiguration;
@@ -76,22 +77,68 @@ public class EmailConfigurationApiResource
     EmailConfiguration emailConfiguration = emailManager.getConfiguration();
 
     if (emailConfiguration == null) {
-      return new ApiEmailValidation(false, "Email Settings are not yet configured");
+      return new ApiEmailValidation(false, STR."Email Settings are not yet configured for verification to \{verificationAddress}");
     }
 
     try {
-      emailManager.sendVerification(emailConfiguration, verificationAddress);
-      return new ApiEmailValidation(true);
+      // Use Virtual Thread for I/O-bound email verification operation
+      log.debug(STR."Starting email verification to \{verificationAddress} using virtual thread");
+      
+      // Create a CompletableFuture that will be completed by a virtual thread
+      var future = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+        try {
+          emailManager.sendVerification(emailConfiguration, verificationAddress);
+          log.debug(STR."Email verification to \{verificationAddress} completed successfully");
+          return true;
+        } 
+        catch (Exception e) {
+          log.debug(STR."Virtual thread email verification failed: \{e.getMessage()}", e);
+          throw new RuntimeException(e);
+        }
+      }, java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
+      
+      // Wait for the result with a timeout to prevent blocking indefinitely
+      boolean success = future.get(30, java.util.concurrent.TimeUnit.SECONDS);
+      return new ApiEmailValidation(success);
+    }
+    catch (java.util.concurrent.ExecutionException e) {
+      log.debug(STR."Email verification execution failed: \{e.getMessage()}", e);
+      
+      // Use Pattern Matching for switch to improve error handling robustness
+      Throwable cause = e.getCause();
+      if (cause instanceof RuntimeException && cause.getCause() instanceof EmailException emailEx) {
+        return switch (emailEx.getCause()) {
+          case AddressException ae -> {
+            String exceptionMessage = ae.getMessage();
+            throw new WebApplicationMessageException(BAD_REQUEST, STR."\"\{exceptionMessage}\"" , MediaType.APPLICATION_JSON);
+          }
+          case null -> new ApiEmailValidation(false, emailEx.getMessage());
+          case Exception exc -> new ApiEmailValidation(false, exc.getMessage());
+        };
+      }
+      return new ApiEmailValidation(false, STR."Email verification failed: \{e.getMessage()}");
+    }
+    catch (java.util.concurrent.TimeoutException e) {
+      log.debug(STR."Email verification timed out: \{e.getMessage()}", e);
+      return new ApiEmailValidation(false, STR."Email verification timed out after 30 seconds");
+    }
+    catch (InterruptedException e) {
+      log.debug(STR."Email verification was interrupted: \{e.getMessage()}", e);
+      Thread.currentThread().interrupt(); // Restore the interrupted status
+      return new ApiEmailValidation(false, STR."Email verification was interrupted: \{e.getMessage()}");
     }
     catch (EmailException e) {
-      log.debug("Unable to send verification", e);
-      String exceptionMessage = e.getMessage().replace(e.getCause().getClass().getName() + ": ", "");
-      if (e.getCause() instanceof AddressException) {
-        throw new WebApplicationMessageException(BAD_REQUEST, '"' + exceptionMessage + '"', APPLICATION_JSON);
-      }
-      else {
-        return new ApiEmailValidation(false, exceptionMessage);
-      }
+      log.debug(STR."Unable to send verification: \{e.getMessage()}", e);
+      
+      // Use Pattern Matching for switch to improve error handling robustness
+      return switch (e.getCause()) {
+        case AddressException ae -> {
+          String exceptionMessage = ae.getMessage();
+          throw new WebApplicationMessageException(BAD_REQUEST, '"' + exceptionMessage + '"', MediaType.APPLICATION_JSON);
+        }
+        case null -> new ApiEmailValidation(false, e.getMessage());
+        case Exception cause -> new ApiEmailValidation(false, cause.getMessage());
+      };
     }
   }
 
@@ -103,7 +150,6 @@ public class EmailConfigurationApiResource
   }
 
   private EmailConfiguration convert(ApiEmailConfiguration apiEmailConfiguration) {
-
     EmailConfiguration emailConfiguration = emailManager.newConfiguration();
     emailConfiguration.setEnabled(apiEmailConfiguration.isEnabled());
     emailConfiguration.setHost(apiEmailConfiguration.getHost());
@@ -131,19 +177,50 @@ public class EmailConfigurationApiResource
       return new ApiEmailConfiguration();
     }
 
-    ApiEmailConfiguration apiEmailConfiguration = new ApiEmailConfiguration();
-    apiEmailConfiguration.setEnabled(emailConfiguration.isEnabled());
-    apiEmailConfiguration.setHost(emailConfiguration.getHost());
-    apiEmailConfiguration.setPort(emailConfiguration.getPort());
-    apiEmailConfiguration.setNexusTrustStoreEnabled(emailConfiguration.isNexusTrustStoreEnabled());
-    apiEmailConfiguration.setUsername(emailConfiguration.getUsername());
-    apiEmailConfiguration.setPassword(null);
-    apiEmailConfiguration.setFromAddress(emailConfiguration.getFromAddress());
-    apiEmailConfiguration.setSubjectPrefix(emailConfiguration.getSubjectPrefix());
-    apiEmailConfiguration.setStartTlsEnabled(emailConfiguration.isStartTlsEnabled());
-    apiEmailConfiguration.setStartTlsRequired(emailConfiguration.isStartTlsRequired());
-    apiEmailConfiguration.setSslOnConnectEnabled(emailConfiguration.isSslOnConnectEnabled());
-    apiEmailConfiguration.setSslServerIdentityCheckEnabled(emailConfiguration.isSslCheckServerIdentityEnabled());
+    // Use Record Pattern for improved data handling with Java 21
+    // Extract all properties at once using pattern matching
+    record EmailConfigProperties(
+        boolean enabled, String host, int port, boolean nexusTrustStoreEnabled,
+        String username, String fromAddress, String subjectPrefix,
+        boolean startTlsEnabled, boolean startTlsRequired, 
+        boolean sslOnConnectEnabled, boolean sslCheckServerIdentityEnabled) {}
+    
+    var properties = new EmailConfigProperties(
+        emailConfiguration.isEnabled(),
+        emailConfiguration.getHost(),
+        emailConfiguration.getPort(),
+        emailConfiguration.isNexusTrustStoreEnabled(),
+        emailConfiguration.getUsername(),
+        emailConfiguration.getFromAddress(),
+        emailConfiguration.getSubjectPrefix(),
+        emailConfiguration.isStartTlsEnabled(),
+        emailConfiguration.isStartTlsRequired(),
+        emailConfiguration.isSslOnConnectEnabled(),
+        emailConfiguration.isSslCheckServerIdentityEnabled()
+    );
+    
+    // Use pattern matching to extract values
+    var apiEmailConfiguration = new ApiEmailConfiguration();
+    if (properties instanceof EmailConfigProperties(
+        var enabled, var host, var port, var nexusTrustStoreEnabled,
+        var username, var fromAddress, var subjectPrefix,
+        var startTlsEnabled, var startTlsRequired, 
+        var sslOnConnectEnabled, var sslCheckServerIdentityEnabled)) {
+      
+      apiEmailConfiguration.setEnabled(enabled);
+      apiEmailConfiguration.setHost(host);
+      apiEmailConfiguration.setPort(port);
+      apiEmailConfiguration.setNexusTrustStoreEnabled(nexusTrustStoreEnabled);
+      apiEmailConfiguration.setUsername(username);
+      apiEmailConfiguration.setPassword(null);
+      apiEmailConfiguration.setFromAddress(fromAddress);
+      apiEmailConfiguration.setSubjectPrefix(subjectPrefix);
+      apiEmailConfiguration.setStartTlsEnabled(startTlsEnabled);
+      apiEmailConfiguration.setStartTlsRequired(startTlsRequired);
+      apiEmailConfiguration.setSslOnConnectEnabled(sslOnConnectEnabled);
+      apiEmailConfiguration.setSslServerIdentityCheckEnabled(sslCheckServerIdentityEnabled);
+    }
+    
     return apiEmailConfiguration;
   }
 }

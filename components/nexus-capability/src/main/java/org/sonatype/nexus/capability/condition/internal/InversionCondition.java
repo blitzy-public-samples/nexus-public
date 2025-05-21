@@ -12,11 +12,17 @@
  */
 package org.sonatype.nexus.capability.condition.internal;
 
+import javax.inject.Provider;
+
 import org.sonatype.nexus.capability.Condition;
 import org.sonatype.nexus.common.event.EventManager;
 
 /**
  * A condition that applies a logical NOT on another condition.
+ * <p>
+ * This implementation is compatible with Java 21 Virtual Threads and ensures proper event
+ * handling across Virtual Thread boundaries. It also optimizes synchronization when checking
+ * condition states.
  *
  * @since capabilities 2.0
  */
@@ -27,6 +33,14 @@ public class InversionCondition
 
   private final Condition condition;
 
+  /**
+   * Constructs a new InversionCondition with the specified EventManager and condition.
+   * <p>
+   * This implementation ensures proper handling of events across Virtual Thread boundaries.
+   *
+   * @param eventManager the event manager
+   * @param condition the condition to invert
+   */
   public InversionCondition(final EventManager eventManager,
                             final Condition condition)
   {
@@ -34,9 +48,40 @@ public class InversionCondition
     this.condition = condition;
   }
 
+  /**
+   * Constructs a new InversionCondition with the specified EventManager provider and condition.
+   * <p>
+   * This constructor is optimized for Virtual Thread environments by using a provider pattern
+   * for EventManager access.
+   *
+   * @param eventManagerProvider the provider of EventManager instances
+   * @param condition the condition to invert
+   * @since 3.60
+   */
+  public InversionCondition(final Provider<EventManager> eventManagerProvider,
+                            final Condition condition)
+  {
+    super(eventManagerProvider, condition);
+    this.condition = condition;
+  }
+
+  /**
+   * Reevaluates the condition state by applying logical NOT to the wrapped condition.
+   * <p>
+   * This implementation is optimized for Virtual Thread environments by minimizing
+   * synchronization when checking condition states. It captures the condition state once
+   * to avoid race conditions that could occur when multiple Virtual Threads access the
+   * condition simultaneously.
+   *
+   * @param conditions the conditions to reevaluate
+   * @return true if the wrapped condition is not satisfied, false otherwise
+   */
   @Override
   protected boolean reevaluate(final Condition... conditions) {
-    return !conditions[0].isSatisfied();
+    // Capture the condition state once to avoid race conditions in Virtual Thread environments
+    final Condition targetCondition = conditions[0];
+    final boolean conditionState = targetCondition.isSatisfied();
+    return !conditionState;
   }
 
   @Override

@@ -1,0 +1,249 @@
+{
+  "testCases": [
+    {
+      "id": "test-basic-content-type-matching",
+      "description": "Tests basic content type pattern matching for common repository formats",
+      "input": {
+        "contentType": "application/json",
+        "repositoryFormat": "npm",
+        "filename": "package.json"
+      },
+      "expectedOutput": {
+        "handlerType": "NpmUploadHandler",
+        "validationRequired": true
+      },
+      "notes": "Basic pattern matching for npm JSON content"
+    },
+    {
+      "id": "test-maven-jar-content",
+      "description": "Tests pattern matching for Maven JAR artifacts",
+      "input": {
+        "contentType": "application/java-archive",
+        "repositoryFormat": "maven",
+        "filename": "example-1.0.0.jar",
+        "extension": "jar"
+      },
+      "expectedOutput": {
+        "handlerType": "MavenUploadHandler",
+        "validationRequired": true,
+        "checksumValidation": true
+      },
+      "notes": "Pattern matching for Maven binary content with checksum validation"
+    },
+    {
+      "id": "test-maven-pom-content",
+      "description": "Tests pattern matching for Maven POM files",
+      "input": {
+        "contentType": "application/xml",
+        "repositoryFormat": "maven",
+        "filename": "pom.xml",
+        "extension": "xml"
+      },
+      "expectedOutput": {
+        "handlerType": "MavenUploadHandler",
+        "validationRequired": true,
+        "xmlValidation": true
+      },
+      "notes": "Pattern matching for Maven POM XML content with XML schema validation"
+    },
+    {
+      "id": "test-raw-content",
+      "description": "Tests pattern matching for raw repository content",
+      "input": {
+        "contentType": "application/octet-stream",
+        "repositoryFormat": "raw",
+        "filename": "data.bin"
+      },
+      "expectedOutput": {
+        "handlerType": "RawUploadHandler",
+        "validationRequired": false
+      },
+      "notes": "Pattern matching for raw binary content without validation"
+    },
+    {
+      "id": "test-docker-layer",
+      "description": "Tests pattern matching for Docker layer uploads",
+      "input": {
+        "contentType": "application/vnd.docker.image.rootfs.diff.tar.gzip",
+        "repositoryFormat": "docker",
+        "filename": "layer.tar.gz",
+        "isChunked": true
+      },
+      "expectedOutput": {
+        "handlerType": "DockerUploadHandler",
+        "validationRequired": true,
+        "chunkedUpload": true
+      },
+      "notes": "Pattern matching for Docker layer content with chunked upload handling"
+    },
+    {
+      "id": "test-apt-package",
+      "description": "Tests pattern matching for APT package uploads",
+      "input": {
+        "contentType": "application/vnd.debian.binary-package",
+        "repositoryFormat": "apt",
+        "filename": "package.deb",
+        "extension": "deb"
+      },
+      "expectedOutput": {
+        "handlerType": "AptUploadHandler",
+        "validationRequired": true,
+        "metadataExtraction": true
+      },
+      "notes": "Pattern matching for APT package content with metadata extraction"
+    },
+    {
+      "id": "test-null-content-type",
+      "description": "Tests pattern matching with null content type",
+      "input": {
+        "contentType": null,
+        "repositoryFormat": "raw",
+        "filename": "unknown.dat"
+      },
+      "expectedOutput": {
+        "handlerType": "DefaultUploadHandler",
+        "validationRequired": false,
+        "contentTypeDetection": true
+      },
+      "notes": "Pattern matching with null content type should use content type detection"
+    },
+    {
+      "id": "test-guard-pattern-size-limit",
+      "description": "Tests guard pattern with size limit condition",
+      "input": {
+        "contentType": "application/zip",
+        "repositoryFormat": "maven",
+        "filename": "large-artifact.zip",
+        "size": 1073741824
+      },
+      "expectedOutput": {
+        "handlerType": "LargeFileUploadHandler",
+        "validationRequired": true,
+        "chunkedUpload": true
+      },
+      "notes": "Guard pattern matching for large file uploads using 'when' clause with size condition"
+    },
+    {
+      "id": "test-guard-pattern-format-version",
+      "description": "Tests guard pattern with format version condition",
+      "input": {
+        "contentType": "application/json",
+        "repositoryFormat": "npm",
+        "filename": "package.json",
+        "formatVersion": "3.0.0"
+      },
+      "expectedOutput": {
+        "handlerType": "NpmV3UploadHandler",
+        "validationRequired": true,
+        "schemaValidation": "npm-v3"
+      },
+      "notes": "Guard pattern matching for npm v3 format using 'when' clause with version condition"
+    },
+    {
+      "id": "test-multiple-matching-patterns",
+      "description": "Tests scenario where multiple patterns could match but first match is used",
+      "input": {
+        "contentType": "application/xml",
+        "repositoryFormat": "maven",
+        "filename": "metadata.xml",
+        "extension": "xml",
+        "path": "/com/example/project/maven-metadata.xml"
+      },
+      "expectedOutput": {
+        "handlerType": "MavenMetadataUploadHandler",
+        "validationRequired": true,
+        "xmlValidation": true
+      },
+      "notes": "Pattern matching order matters - more specific pattern should be checked first"
+    },
+    {
+      "id": "test-error-handling",
+      "description": "Tests error handling with invalid content",
+      "input": {
+        "contentType": "application/json",
+        "repositoryFormat": "npm",
+        "filename": "package.json",
+        "isCorrupted": true
+      },
+      "expectedOutput": {
+        "handlerType": "ErrorHandlingUploadHandler",
+        "validationRequired": true,
+        "errorHandling": true,
+        "expectedError": "CONTENT_VALIDATION_ERROR"
+      },
+      "notes": "Pattern matching with error handling for corrupted content"
+    },
+    {
+      "id": "test-sealed-type-exhaustiveness",
+      "description": "Tests exhaustive pattern matching with sealed types",
+      "input": {
+        "contentType": "application/octet-stream",
+        "repositoryFormat": "unknown",
+        "filename": "data.bin"
+      },
+      "expectedOutput": {
+        "handlerType": "FallbackUploadHandler",
+        "validationRequired": false,
+        "formatDetection": true
+      },
+      "notes": "Exhaustive pattern matching for all possible repository formats including unknown"
+    },
+    {
+      "id": "test-nested-pattern-matching",
+      "description": "Tests nested pattern matching with content metadata",
+      "input": {
+        "contentType": "application/x-gzip",
+        "repositoryFormat": "maven",
+        "filename": "sources.jar.gz",
+        "metadata": {
+          "type": "sources",
+          "compressed": true
+        }
+      },
+      "expectedOutput": {
+        "handlerType": "CompressedSourcesUploadHandler",
+        "validationRequired": true,
+        "decompressionRequired": true
+      },
+      "notes": "Nested pattern matching for content with metadata structure"
+    },
+    {
+      "id": "test-multi-format-handler",
+      "description": "Tests pattern matching for content supported by multiple formats",
+      "input": {
+        "contentType": "text/plain",
+        "repositoryFormat": ["raw", "maven", "npm"],
+        "filename": "README.md",
+        "extension": "md"
+      },
+      "expectedOutput": {
+        "handlerType": "TextFileUploadHandler",
+        "validationRequired": false,
+        "supportedFormats": ["raw", "maven", "npm"]
+      },
+      "notes": "Pattern matching for content types supported across multiple repository formats"
+    },
+    {
+      "id": "test-record-pattern-matching",
+      "description": "Tests record pattern matching with upload definition",
+      "input": {
+        "contentType": "application/json",
+        "repositoryFormat": "npm",
+        "filename": "package-lock.json",
+        "uploadDefinition": {
+          "repository": "npm-central",
+          "asset": {
+            "name": "package-lock.json",
+            "contentType": "application/json"
+          }
+        }
+      },
+      "expectedOutput": {
+        "handlerType": "NpmLockFileUploadHandler",
+        "validationRequired": true,
+        "dependencyValidation": true
+      },
+      "notes": "Record pattern matching for structured upload definition data"
+    }
+  ]
+}

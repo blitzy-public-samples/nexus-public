@@ -28,6 +28,8 @@ import org.sonatype.nexus.rest.Resource;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 
+import static java.lang.StringTemplate.STR;
+
 public class CommunityEulaApiResource
     implements Resource, CommunityEulaApiResourceDoc
 {
@@ -48,16 +50,21 @@ public class CommunityEulaApiResource
   public EulaStatus getCommunityEulaStatus() {
     Optional<NexusKeyValue> eulaStatusOptional = globalKeyValueStore.getKey(EULA_KEY);
     EulaStatus eulaStatus = new EulaStatus();
-    if (eulaStatusOptional.isPresent()) {
-      NexusKeyValue eulaStatusKeyValue = eulaStatusOptional.get();
-      Boolean accepted = (Boolean) eulaStatusKeyValue.value().get("accepted");
-      if (accepted != null) {
-        eulaStatus.setAccepted(accepted);
+    
+    // Using Pattern Matching for switch to check EULA acceptance status
+    switch (eulaStatusOptional) {
+      case Optional<NexusKeyValue> opt when opt.isPresent() -> {
+        NexusKeyValue eulaStatusKeyValue = opt.get();
+        // Using Pattern Matching for the value object
+        switch (eulaStatusKeyValue.value().get("accepted")) {
+          case Boolean accepted when accepted != null -> eulaStatus.setAccepted(accepted);
+          case null -> eulaStatus.setAccepted(false);
+          default -> eulaStatus.setAccepted(false);
+        }
       }
+      case Optional<NexusKeyValue> empty -> eulaStatus.setAccepted(false);
     }
-    else {
-      eulaStatus.setAccepted(false);
-    }
+    
     eulaStatus.setDisclaimer(EulaStatus.EXPECTED_DISCLAIMER);
     return eulaStatus;
   }
@@ -68,15 +75,19 @@ public class CommunityEulaApiResource
   @RequiresPermissions("nexus:*")
   @Consumes(MediaType.APPLICATION_JSON)
   public void setEulaAcceptedCE(EulaStatus eulaStatus) {
-    if (eulaStatus.hasExpectedDisclaimer()) {
-      NexusKeyValue kv = new NexusKeyValue();
-      kv.setKey(EULA_KEY);
-      kv.setType(ValueType.OBJECT);
-      kv.setValue(Map.of("accepted", eulaStatus.isAccepted()));
-      globalKeyValueStore.setKey(kv);
-    }
-    else {
-      throw new IllegalArgumentException("Invalid EULA disclaimer");
+    // Using Pattern Matching for improved EULA validation logic
+    switch (eulaStatus) {
+      case EulaStatus status when status.hasExpectedDisclaimer() -> {
+        NexusKeyValue kv = new NexusKeyValue();
+        kv.setKey(EULA_KEY);
+        kv.setType(ValueType.OBJECT);
+        kv.setValue(Map.of("accepted", status.isAccepted()));
+        globalKeyValueStore.setKey(kv);
+      }
+      case EulaStatus status -> {
+        // Enhanced exception handling with String Templates for improved error reporting
+        throw new IllegalArgumentException(STR."Invalid EULA disclaimer: received \{eulaStatus.getDisclaimer() != null ? eulaStatus.getDisclaimer().length() : 0} characters but expected \{EulaStatus.EXPECTED_DISCLAIMER.length()} characters");
+      }
     }
   }
 }

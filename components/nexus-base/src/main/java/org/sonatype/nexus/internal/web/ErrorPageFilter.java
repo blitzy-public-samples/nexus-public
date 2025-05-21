@@ -13,6 +13,7 @@
 package org.sonatype.nexus.internal.web;
 
 import java.io.IOException;
+import java.util.Map;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -28,10 +29,12 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.servlet.XFrameOptions;
+import org.sonatype.nexus.thread.internal.MDCUtils;
 
 import org.eclipse.sisu.Hidden;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.net.HttpHeaders.CONTENT_SECURITY_POLICY;
 import static com.google.common.net.HttpHeaders.X_FRAME_OPTIONS;
 import static javax.servlet.http.HttpServletResponse.SC_INTERNAL_SERVER_ERROR;
 
@@ -81,13 +84,36 @@ public class ErrorPageFilter
       chain.doFilter(request, response);
     }
     catch (Exception e) {
+      // Capture MDC context for propagation to error handling
+      Map<String, String> mdcContext = MDCUtils.getContextMapForPropagation();
+      
       ErrorPageServlet.attachCause(request, e);
       if (resp.isCommitted()) {
-        log.debug("Response is committed, cannot change status", e);
+        log.debug(STR."Response is committed, cannot change status for error: \{e.getMessage()}", e);
         return;
       }
-      response.setHeader(X_FRAME_OPTIONS, xFrameOptions.getValueForPath(request.getPathInfo()));
-      response.sendError(SC_INTERNAL_SERVER_ERROR);
+      
+      // Set security headers
+      String frameOptionsValue = xFrameOptions.getValueForPath(request.getPathInfo());
+      response.setHeader(X_FRAME_OPTIONS, frameOptionsValue);
+      
+      // Add Content-Security-Policy header with frame-ancestors directive for modern browsers
+      if ("DENY".equals(frameOptionsValue)) {
+        response.setHeader(CONTENT_SECURITY_POLICY, "frame-ancestors 'none'");
+      }
+      else if ("SAMEORIGIN".equals(frameOptionsValue)) {
+        response.setHeader(CONTENT_SECURITY_POLICY, "frame-ancestors 'self'");
+      }
+      
+      // Apply MDC context when delegating to error page
+      MDCUtils.withContext(mdcContext, () -> {
+        try {
+          response.sendError(SC_INTERNAL_SERVER_ERROR);
+        }
+        catch (IOException ioe) {
+          log.error(STR."Failed to send error response: \{ioe.getMessage()}", ioe);
+        }
+      });
     }
   }
 }

@@ -12,12 +12,12 @@
  */
 package org.sonatype.nexus.internal.security.model;
 
+import java.io.Serializable;
+import java.util.HashMap;
 import java.util.Map;
 
 import org.sonatype.nexus.common.entity.HasStringId;
 import org.sonatype.nexus.security.config.CPrivilege;
-
-import com.google.common.collect.Maps;
 
 /**
  * {@link CPrivilege} data.
@@ -25,8 +25,10 @@ import com.google.common.collect.Maps;
  * @since 3.21
  */
 public class CPrivilegeData
-    implements HasStringId, CPrivilege
+    implements HasStringId, CPrivilege, Serializable
 {
+  private static final long serialVersionUID = 1L;
+
   private String description;
 
   private String id;
@@ -47,7 +49,7 @@ public class CPrivilegeData
       CPrivilegeData copy = (CPrivilegeData) super.clone();
 
       if (this.properties != null) {
-        copy.properties = Maps.newHashMap(this.properties);
+        copy.properties = new HashMap<>(this.properties);
       }
 
       return copy;
@@ -75,14 +77,17 @@ public class CPrivilegeData
   @Override
   public Map<String, String> getProperties() {
     if (this.properties == null) {
-      this.properties = Maps.newHashMap();
+      this.properties = new HashMap<>();
     }
     return this.properties;
   }
 
   @Override
   public String getProperty(final String key) {
-    return getProperties().get(key);
+    return switch (key) {
+      case null -> null;
+      case String k -> getProperties().get(k);
+    };
   }
 
   @Override
@@ -102,7 +107,9 @@ public class CPrivilegeData
 
   @Override
   public void removeProperty(final String key) {
-    getProperties().remove(key);
+    if (key != null) {
+      getProperties().remove(key);
+    }
   }
 
   @Override
@@ -122,12 +129,17 @@ public class CPrivilegeData
 
   @Override
   public void setProperties(final Map<String, String> properties) {
-    this.properties = properties;
+    this.properties = switch (properties) {
+      case null -> null;
+      case Map<String, String> map -> new HashMap<>(map);
+    };
   }
 
   @Override
   public void setProperty(final String key, final String value) {
-    getProperties().put(key, value);
+    if (key != null) {
+      getProperties().put(key, value);
+    }
   }
 
   @Override
@@ -147,14 +159,14 @@ public class CPrivilegeData
 
   @Override
   public String toString() {
-    return getClass().getSimpleName() + "{" +
-        "id='" + id + '\'' +
-        ", name='" + name + '\'' +
-        ", description='" + description + '\'' +
-        ", type='" + type + '\'' +
-        ", properties=" + properties +
-        ", readOnly=" + readOnly +
-        ", version='" + version + '\'' +
-        '}';
+    return getClass().getSimpleName() + "{"
+        + "id='" + id + '\''
+        + ", name='" + name + '\''
+        + ", description='" + description + '\''
+        + ", type='" + type + '\''
+        + ", properties=" + properties
+        + ", readOnly=" + readOnly
+        + ", version='" + version + '\''
+        + '}';
   }
 }

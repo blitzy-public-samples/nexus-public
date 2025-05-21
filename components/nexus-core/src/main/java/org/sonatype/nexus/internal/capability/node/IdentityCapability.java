@@ -17,8 +17,6 @@ import java.util.Map;
 import javax.inject.Inject;
 import javax.inject.Named;
 
-import org.sonatype.goodies.i18n.I18N;
-import org.sonatype.goodies.i18n.MessageBundle;
 import org.sonatype.nexus.capability.CapabilitySupport;
 import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.common.node.NodeAccess;
@@ -37,15 +35,6 @@ import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_ENABLED;
 public class IdentityCapability
     extends CapabilitySupport<IdentityCapabilityConfiguration>
 {
-  private interface Messages
-      extends MessageBundle
-  {
-    @DefaultMessage("%s")
-    String description(String nodeId);
-  }
-
-  private static final Messages messages = I18N.create(Messages.class);
-
   private final NodeAccess nodeAccess;
 
   @Inject
@@ -67,12 +56,13 @@ public class IdentityCapability
 
   @Override
   protected String renderDescription() throws Exception {
-    return messages.description(nodeAccess.getId());
+    return STR."\{nodeAccess.getId()}";
   }
 
   @Override
   protected String renderStatus() throws Exception {
-    return render(IdentityCapabilityDescriptor.TYPE_ID + "-status.vm", new TemplateParameters()
-        .set("nodeId", nodeAccess.getId()));
+    // Using String Templates to create template parameters
+    return render(IdentityCapabilityDescriptor.TYPE_ID + "-status.vm", 
+        new TemplateParameters().set("nodeId", STR."\{nodeAccess.getId()}"));
   }
 }

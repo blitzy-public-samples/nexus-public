@@ -12,6 +12,11 @@
  */
 package org.sonatype.nexus.commands.internal;
 
+import java.util.Dictionary;
+import java.util.HashMap;
+import java.util.Hashtable;
+import java.util.Map;
+
 import javax.inject.Named;
 
 import org.sonatype.goodies.common.ComponentSupport;
@@ -20,8 +25,7 @@ import org.apache.karaf.shell.commands.info.InfoProvider;
 import org.eclipse.sisu.BeanEntry;
 import org.eclipse.sisu.Mediator;
 import org.osgi.framework.BundleContext;
-
-// FIXME: This still does not seem to do the trick, to get custom InfoProviders available in shell:info
+import org.osgi.framework.ServiceRegistration;
 
 /**
  * Manages registration of Karaf {@link InfoProvider} instances.
@@ -33,10 +37,24 @@ public class InfoProviderMediator
     extends ComponentSupport
     implements Mediator<Named, InfoProvider, BundleContext>
 {
+  // Track service registrations to enable proper cleanup in remove()
+  private final Map<BeanEntry<Named, InfoProvider>, ServiceRegistration<?>> registrations = new HashMap<>();
+
   @Override
   public void add(final BeanEntry<Named, InfoProvider> beanEntry, final BundleContext bundleContext) throws Exception {
-    log.debug("Adding: {}", beanEntry);
-    bundleContext.registerService(InfoProvider.class, beanEntry.getValue(), null);
+    log.debug(STR."Adding InfoProvider: \{beanEntry}");
+    
+    // Create service properties to ensure InfoProviders are properly discovered
+    Dictionary<String, Object> properties = new Hashtable<>();
+    properties.put("name", beanEntry.getKey().value());
+    properties.put("osgi.command.scope", "info");
+    
+    // Register the service with properties and store the registration
+    ServiceRegistration<?> registration = 
+        bundleContext.registerService(InfoProvider.class.getName(), beanEntry.getValue(), properties);
+    
+    // Store the registration for later cleanup
+    registrations.put(beanEntry, registration);
   }
 
   @Override
@@ -44,6 +62,21 @@ public class InfoProviderMediator
       final BeanEntry<Named, InfoProvider> beanEntry,
       final BundleContext bundleContext) throws Exception
   {
-    // TODO: implement remove
+    log.debug(STR."Removing InfoProvider: \{beanEntry}");
+    
+    // Get the service registration for this bean entry
+    ServiceRegistration<?> registration = registrations.remove(beanEntry);
+    
+    // Unregister the service if it exists
+    if (registration != null) {
+      try {
+        registration.unregister();
+        log.debug(STR."Successfully unregistered InfoProvider: \{beanEntry}");
+      }
+      catch (IllegalStateException e) {
+        // This can happen if the service was already unregistered
+        log.debug(STR."InfoProvider already unregistered: \{beanEntry}");
+      }
+    }
   }
 }

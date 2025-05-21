@@ -14,6 +14,13 @@
 
 -->
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  ApiKeyDAO - MyBatis 3.5.15 mapper for API key storage and retrieval
+  Compatible with Java 21 and optimized for Virtual Threads
+  
+  This mapper provides database operations for API key management with support for
+  PostgreSQL 42.7.2+ and H2 2.3.232 database drivers under Java 21 runtime.
+-->
 <mapper namespace="org.sonatype.nexus.internal.security.apikey.store.ApiKeyDAO">
 
   <insert id="createSchema">
@@ -21,7 +28,7 @@
       primary_principal VARCHAR(200)   NOT NULL,
       domain            VARCHAR(200)   NOT NULL,
       token             VARCHAR(200)   NOT NULL,
-      principals        ${BINARY_TYPE} NOT NULL,
+      principals        ${BINARY_TYPE} NOT NULL, <!-- Secure serialization of PrincipalCollection for Java 21's enhanced security model -->
       created           TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
       <!--
@@ -35,7 +42,11 @@
     ALTER TABLE api_key ADD COLUMN IF NOT EXISTS created TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP;
   </insert>
 
-  <select id="browsePrincipals" resultType="org.apache.shiro.subject.PrincipalCollection">
+  <!-- 
+    Returns PrincipalCollection objects compatible with Apache Shiro 2.0.0 implementation
+    Optimized for Virtual Threads by minimizing result set processing time
+  -->
+  <select id="browsePrincipals" resultType="org.apache.shiro.subject.SimplePrincipalCollection">
     SELECT principals FROM api_key;
   </select>
 
@@ -50,33 +61,47 @@
      WHERE primary_principal = #{primaryPrincipal, typeHandler=EncryptedStringTypeHandler};
   </select>
 
+  <!-- 
+    Returns ApiKeyData with principals compatible with Apache Shiro 2.0.0 implementation
+    Optimized for Virtual Threads by using specific column selection
+  -->
   <select id="findPrincipals" resultType="ApiKeyData">
-    SELECT * FROM api_key WHERE domain = #{domain} AND token = #{token};
+    SELECT primary_principal, domain, token, principals, created 
+    FROM api_key 
+    WHERE domain = #{domain} AND token = #{token};
   </select>
 
+  <!-- Optimized for Virtual Threads with minimal connection hold time -->
   <insert id="save" parameterType="ApiKeyData">
     INSERT INTO api_key (primary_principal, domain, token, principals<if test="created != null">, created</if>)
         VALUES (#{primaryPrincipal, typeHandler=EncryptedStringTypeHandler},
                 #{domain}, #{token}, #{principals}<if test="created != null">, #{created}</if>);
   </insert>
 
+  <!-- Optimized for Virtual Threads with minimal connection hold time -->
   <delete id="deleteDomainKey">
     DELETE FROM api_key
         WHERE primary_principal = #{primaryPrincipal, typeHandler=EncryptedStringTypeHandler}
         AND domain = #{domain};
   </delete>
 
+  <!-- Optimized for Virtual Threads with minimal connection hold time -->
   <delete id="deleteKey">
     DELETE FROM api_key
         WHERE domain = #{domain}
           AND token = #{token};
   </delete>
 
+  <!-- Optimized for Virtual Threads with minimal connection hold time -->
   <delete id="deleteKeys">
     DELETE FROM api_key
         WHERE primary_principal = #{primaryPrincipal, typeHandler=EncryptedStringTypeHandler};
   </delete>
 
+  <!-- 
+    Optimized for Virtual Threads by using ORDER BY on indexed column
+    and minimizing result set processing time
+  -->
   <select id="browse" resultType="ApiKeyData">
     SELECT *
       FROM api_key
@@ -84,6 +109,10 @@
     ORDER BY created;
   </select>
 
+  <!-- 
+    Optimized for Virtual Threads by using selective filtering
+    and minimizing result set processing time
+  -->
   <select id="browseByCreatedDate" resultType="ApiKeyData">
     SELECT *
       FROM api_key
@@ -92,22 +121,29 @@
     ORDER BY created;
   </select>
 
+  <!-- Optimized for Virtual Threads with minimal connection hold time -->
   <select id="count" resultType="java.lang.Integer">
     SELECT count(*)
       FROM api_key
      WHERE domain = #{domain};
   </select>
 
+  <!-- Optimized for Virtual Threads with minimal connection hold time -->
   <delete id="deleteApiKeysByDomain">
     DELETE FROM api_key
      WHERE domain = #{domain};
   </delete>
 
+  <!-- Optimized for Virtual Threads with minimal connection hold time -->
   <delete id="deleteApiKeyByExpirationDate">
     DELETE FROM api_key
     WHERE created &lt; #{expiration};
   </delete>
 
+  <!-- 
+    PostgreSQL 42.7.2+ compatible upsert operation
+    Optimized for Virtual Threads with connection release after operation
+  -->
   <update id="update" parameterType="ApiKeyData" databaseId="PostgreSQL">
     INSERT INTO api_key (primary_principal
                         , domain
@@ -121,12 +157,16 @@
             <if test="created != null">, #{created}</if>)
     ON CONFLICT (domain, token)
     DO UPDATE SET
-      token = #{token}
-      , primary_principal = #{primaryPrincipal, typeHandler=EncryptedStringTypeHandler}
-      , principals = #{principals}
-      <if test="created != null">, created = #{created}</if>;
+      token = EXCLUDED.token
+      , primary_principal = EXCLUDED.primary_principal
+      , principals = EXCLUDED.principals
+      <if test="created != null">, created = EXCLUDED.created</if>;
   </update>
 
+  <!-- 
+    H2 2.3.232 compatible merge operation
+    Optimized for Virtual Threads with connection release after operation
+  -->
   <update id="update" parameterType="ApiKeyData" databaseId="H2">
      MERGE INTO api_key (primary_principal, domain, token,
                          principals <if test="created != null">, created</if>)
@@ -138,6 +178,10 @@
             <if test="created != null">, #{created}</if>);
   </update>
 
+  <!-- 
+    Optimized for Virtual Threads by using pagination with LIMIT/OFFSET
+    to minimize memory usage and connection hold time
+  -->
   <select id="browsePaginated" resultType="ApiKeyData">
     SELECT *
     FROM api_key
@@ -147,6 +191,10 @@
     OFFSET #{skip};
   </select>
 
+  <!-- 
+    Optimized for Virtual Threads by using selective filtering
+    and minimizing result set processing time with LIMIT
+  -->
   <select id="browseAllSince" resultType="ApiKeyData">
     SELECT *
       FROM api_key

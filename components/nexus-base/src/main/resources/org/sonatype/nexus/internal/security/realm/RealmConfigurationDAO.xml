@@ -14,31 +14,36 @@
 
 -->
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- virtualThread-friendly=true -->
 <mapper namespace="org.sonatype.nexus.internal.security.realm.RealmConfigurationDAO">
 
   <insert id="createSchema">
     CREATE TABLE IF NOT EXISTS realm_configuration(
       id          INT          NOT NULL CHECK (id = 1),
-      realm_names ${JSON_TYPE} NOT NULL,
+      realm_names OTHER        NOT NULL,
 
       CONSTRAINT pk_realm_configuration_id PRIMARY KEY (id)
     );
   </insert>
 
   <select id="get" resultType="RealmConfigurationData">
+    <!-- @txContextPropagation -->
     SELECT * FROM realm_configuration WHERE id = 1;
   </select>
 
   <insert id="set" parameterType="RealmConfigurationData">
+    <!-- @txContextPropagation -->
     MERGE INTO realm_configuration (id, realm_names) VALUES (1, #{realmNames});
   </insert>
 
   <insert id="set" parameterType="RealmConfigurationData" databaseId="PostgreSQL">
+    <!-- @txContextPropagation -->
     INSERT INTO realm_configuration (id, realm_names) VALUES (1, #{realmNames})
-        ON CONFLICT (id) DO UPDATE SET realm_names = #{realmNames};
+        ON CONFLICT (id) DO UPDATE SET realm_names = EXCLUDED.realm_names;
   </insert>
 
   <delete id="clear">
+    <!-- @txContextPropagation -->
     DELETE FROM realm_configuration WHERE id = 1;
   </delete>
 

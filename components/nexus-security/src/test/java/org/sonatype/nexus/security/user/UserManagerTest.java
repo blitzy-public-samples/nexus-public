@@ -27,8 +27,9 @@ import org.sonatype.nexus.security.config.SecurityConfigurationManager;
 import org.sonatype.nexus.security.role.RoleIdentifier;
 
 import org.apache.shiro.authc.credential.PasswordService;
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
@@ -47,6 +48,7 @@ public class UserManagerTest
   }
 
   @Override
+  @BeforeEach
   protected void setUp() throws Exception {
     super.setUp();
     passwordService = lookup(PasswordService.class, "default");
@@ -62,18 +64,18 @@ public class UserManagerTest
 
     User user = userManager.getUser("test-user");
 
-    Assert.assertEquals(user.getUserId(), "test-user");
-    Assert.assertEquals(user.getEmailAddress(), "test-user@example.org");
-    Assert.assertEquals(user.getName(), "Test User");
+    Assertions.assertEquals("test-user", user.getUserId());
+    Assertions.assertEquals("test-user@example.org", user.getEmailAddress());
+    Assertions.assertEquals("Test User", user.getName());
     // not exposed anymore
-    // Assert.assertEquals( user.getPassword(), "b2a0e378437817cebdf753d7dff3dd75483af9e0" );
-    Assert.assertEquals(user.getStatus().name(), "active");
+    // Assertions.assertEquals("b2a0e378437817cebdf753d7dff3dd75483af9e0", user.getPassword());
+    Assertions.assertEquals("active", user.getStatus().name());
 
     List<String> roleIds = this.getRoleIds(user);
 
-    Assert.assertTrue(roleIds.contains("role1"));
-    Assert.assertTrue(roleIds.contains("role2"));
-    Assert.assertEquals(2, roleIds.size());
+    Assertions.assertTrue(roleIds.contains("role1"));
+    Assertions.assertTrue(roleIds.contains("role2"));
+    Assertions.assertEquals(2, roleIds.size());
   }
 
   @Test
@@ -94,24 +96,24 @@ public class UserManagerTest
     SecurityConfigurationManager config = this.getConfigurationManager();
 
     CUser secUser = config.readUser(user.getUserId());
-    Assert.assertEquals(secUser.getId(), user.getUserId());
-    Assert.assertEquals(secUser.getEmail(), user.getEmailAddress());
-    Assert.assertEquals(secUser.getFirstName(), user.getFirstName());
-    Assert.assertEquals(secUser.getLastName(), user.getLastName());
+    Assertions.assertEquals(user.getUserId(), secUser.getId());
+    Assertions.assertEquals(user.getEmailAddress(), secUser.getEmail());
+    Assertions.assertEquals(user.getFirstName(), secUser.getFirstName());
+    Assertions.assertEquals(user.getLastName(), secUser.getLastName());
     assertThat(this.passwordService.passwordsMatch("my-password", secUser.getPassword()), is(true));
 
-    Assert.assertEquals(secUser.getStatus(), user.getStatus().name());
+    Assertions.assertEquals(user.getStatus().name(), secUser.getStatus());
 
     CUserRoleMapping roleMapping = config.readUserRoleMapping("testCreateUser", "default");
 
-    Assert.assertTrue(roleMapping.getRoles().contains("role1"));
-    Assert.assertTrue(roleMapping.getRoles().contains("role3"));
-    Assert.assertEquals(2, roleMapping.getRoles().size());
+    Assertions.assertTrue(roleMapping.getRoles().contains("role1"));
+    Assertions.assertTrue(roleMapping.getRoles().contains("role3"));
+    Assertions.assertEquals(2, roleMapping.getRoles().size());
   }
 
   @Test
   public void testSupportsWrite() throws Exception {
-    Assert.assertTrue(this.getUserManager().supportsWrite());
+    Assertions.assertTrue(this.getUserManager().supportsWrite());
   }
 
   @Test
@@ -140,18 +142,18 @@ public class UserManagerTest
     SecurityConfigurationManager config = this.getConfigurationManager();
 
     CUser secUser = config.readUser(user.getUserId());
-    Assert.assertEquals(secUser.getId(), user.getUserId());
-    Assert.assertEquals(secUser.getEmail(), user.getEmailAddress());
-    Assert.assertEquals(secUser.getFirstName(), user.getFirstName());
-    Assert.assertEquals(secUser.getLastName(), user.getLastName());
-    Assert.assertEquals(secUser.getPassword(), "b2a0e378437817cebdf753d7dff3dd75483af9e0");
+    Assertions.assertEquals(user.getUserId(), secUser.getId());
+    Assertions.assertEquals(user.getEmailAddress(), secUser.getEmail());
+    Assertions.assertEquals(user.getFirstName(), secUser.getFirstName());
+    Assertions.assertEquals(user.getLastName(), secUser.getLastName());
+    Assertions.assertEquals("b2a0e378437817cebdf753d7dff3dd75483af9e0", secUser.getPassword());
 
-    Assert.assertEquals(secUser.getStatus(), user.getStatus().name());
+    Assertions.assertEquals(user.getStatus().name(), secUser.getStatus());
 
     CUserRoleMapping roleMapping = config.readUserRoleMapping("test-user", "default");
 
-    Assert.assertTrue(roleMapping.getRoles().contains("role3"));
-    Assert.assertEquals("roles: " + roleMapping.getRoles(), 1, roleMapping.getRoles().size());
+    Assertions.assertTrue(roleMapping.getRoles().contains("role3"));
+    Assertions.assertEquals(1, roleMapping.getRoles().size(), "roles: " + roleMapping.getRoles());
   }
 
   @Test
@@ -159,7 +161,7 @@ public class UserManagerTest
     UserManager userManager = this.getUserManager();
     try {
       userManager.deleteUser("INVALID-USERNAME");
-      Assert.fail("Expected UserNotFoundException");
+      Assertions.fail("Expected UserNotFoundException");
     }
     catch (UserNotFoundException e) {
       // expected
@@ -171,7 +173,7 @@ public class UserManagerTest
     // this one should fail
     try {
       userManager.deleteUser("test-user");
-      Assert.fail("Expected UserNotFoundException");
+      Assertions.fail("Expected UserNotFoundException");
     }
     catch (UserNotFoundException e) {
       // expected
@@ -179,7 +181,7 @@ public class UserManagerTest
 
     try {
       userManager.getUser("test-user");
-      Assert.fail("Expected UserNotFoundException");
+      Assertions.fail("Expected UserNotFoundException");
     }
     catch (UserNotFoundException e) {
       // expected
@@ -187,7 +189,7 @@ public class UserManagerTest
 
     try {
       this.getConfigurationManager().readUser("test-user");
-      Assert.fail("Expected UserNotFoundException");
+      Assertions.fail("Expected UserNotFoundException");
     }
     catch (UserNotFoundException e) {
       // expected
@@ -218,13 +220,13 @@ public class UserManagerTest
 
     for (CUser tmpUser : securityModel.getUsers()) {
       if (userId.equals(tmpUser.getId())) {
-        Assert.fail("User " + userId + " was not removed.");
+        Assertions.fail("User " + userId + " was not removed.");
       }
     }
 
     for (CUserRoleMapping userRoleMapping : securityModel.getUserRoleMappings()) {
       if (userId.equals(userRoleMapping.getUserId()) && "default".equals(userRoleMapping.getSource())) {
-        Assert.fail("User Role Mapping was not deleted when user: " + userId + " was removed.");
+        Assertions.fail("User Role Mapping was not deleted when user: " + userId + " was removed.");
       }
     }
   }
@@ -250,7 +252,7 @@ public class UserManagerTest
       }
     }
 
-    Assert.assertTrue("did not find admin user in role mapping", found);
+    Assertions.assertTrue(found, "did not find admin user in role mapping");
   }
 
   private List<String> getRoleIds(User user) {

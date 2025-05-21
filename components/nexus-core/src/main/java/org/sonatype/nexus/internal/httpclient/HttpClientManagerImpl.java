@@ -16,6 +16,8 @@ import java.net.URI;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Map.Entry;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -61,7 +63,7 @@ import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.St
 import static org.sonatype.nexus.logging.task.TaskLoggingMarkers.OUTBOUND_REQUESTS_LOG_ONLY;
 
 /**
- * Default {@link HttpClientManager}.
+ * Default {@link HttpClientManager} with Java 21 Virtual Threads support.
  *
  * @since 3.0
  */
@@ -98,6 +100,11 @@ public class HttpClientManagerImpl
   private final Mutex lock = new Mutex();
 
   private HttpClientConfiguration configuration;
+  
+  /**
+   * Virtual thread executor for I/O-bound HTTP operations
+   */
+  private ExecutorService virtualThreadExecutor;
 
   @Inject
   public HttpClientManagerImpl(final EventManager eventManager,
@@ -124,12 +131,31 @@ public class HttpClientManagerImpl
 
   @Override
   protected void doStart() throws Exception {
+    // Create a virtual thread executor for I/O-bound HTTP operations
+    virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    log.debug("Created virtual thread executor for HTTP operations");
+    
     sharedConnectionManager.start();
   }
 
   @Override
   protected void doStop() throws Exception {
     sharedConnectionManager.stop();
+    
+    // Shutdown the virtual thread executor
+    if (virtualThreadExecutor != null) {
+      virtualThreadExecutor.shutdown();
+      try {
+        if (!virtualThreadExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+          virtualThreadExecutor.shutdownNow();
+        }
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        virtualThreadExecutor.shutdownNow();
+      }
+      virtualThreadExecutor = null;
+      log.debug("Stopped virtual thread executor for HTTP operations");
+    }
   }
 
   //
@@ -232,6 +258,11 @@ public class HttpClientManagerImpl
 
     // attach connection manager early, so customizer has chance to replace it if needed
     plan.getClient().setConnectionManager(sharedConnectionManager);
+    
+    // Configure the client to use virtual threads for I/O operations
+    if (virtualThreadExecutor != null) {
+      plan.getClient().setExecutor(virtualThreadExecutor);
+    }
 
     // apply defaults
     defaultsCustomizer.customize(plan);
@@ -291,7 +322,13 @@ public class HttpClientManagerImpl
             Stopwatch stopwatch = (Stopwatch) httpContext.getAttribute(CTX_REQ_STOPWATCH);
             outboundLog.debug("{} < {} @ {}", requestURI, httpResponse.getStatusLine(), stopwatch);
           }
-          printOutboundLog(httpResponse, httpContext);
+          
+          // Use virtual threads for logging to avoid blocking I/O operations
+          if (virtualThreadExecutor != null) {
+            virtualThreadExecutor.execute(() -> printOutboundLog(httpResponse, httpContext));
+          } else {
+            printOutboundLog(httpResponse, httpContext);
+          }
         }
     );
 

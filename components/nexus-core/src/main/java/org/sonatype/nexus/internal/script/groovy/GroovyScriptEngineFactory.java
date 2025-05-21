@@ -14,7 +14,10 @@ package org.sonatype.nexus.internal.script.groovy;
 
 import java.io.File;
 import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 import java.util.stream.Stream;
 
 import javax.inject.Inject;
@@ -38,7 +41,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.lang.String.format;
 import static org.sonatype.nexus.internal.script.ScriptServiceImpl.SCRIPT_CLEANUP_HANDLER;
 
 /**
@@ -56,6 +58,8 @@ public class GroovyScriptEngineFactory
   private final ClassLoader classLoader;
 
   private final ApplicationDirectories applicationDirectories;
+  
+  private final ExecutorService virtualThreadExecutor;
 
   private GroovyScriptEngine engine;
 
@@ -66,8 +70,13 @@ public class GroovyScriptEngineFactory
   {
     this.classLoader = checkNotNull(classLoader);
     this.applicationDirectories = checkNotNull(applicationDirectories);
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
+  /**
+   * Creates a new GroovyScriptEngine with enhanced configuration for Java 21.
+   * Uses Virtual Threads for improved concurrency and performance.
+   */
   private GroovyScriptEngine create() {
     // custom the configuration of the compiler
     CompilerConfiguration cc = new CompilerConfiguration();
@@ -77,22 +86,44 @@ public class GroovyScriptEngineFactory
     cc.addCompilationCustomizers(secureASTCustomizer());
     GroovyClassLoader gcl = new GroovyClassLoader(classLoader, cc);
 
-    engine = new GroovyScriptEngine(gcl);
+    engine = new GroovyScriptEngine(gcl, virtualThreadExecutor);
 
     // HACK: For testing
-    log.info("Created engine: {}", engine);
+    log.info(STR."Created engine: \{engine}");
 
     return engine;
   }
 
   /**
    * Secure potentially dangerous calls in scripts.
+   * Enhanced for Java 21's security model and stronger encapsulation.
    */
   private CompilationCustomizer secureASTCustomizer() {
     SecureASTCustomizer secureASTCustomizer = new SecureASTCustomizer();
-    secureASTCustomizer.setImportsBlacklist(Collections.singletonList("java.lang.System"));
-    secureASTCustomizer.setReceiversBlackList(Collections.singletonList(System.class.getName()));
+    
+    // Blacklist dangerous imports
+    List<String> importsBlacklist = List.of(
+        "java.lang.System",
+        "java.lang.Runtime",
+        "java.lang.ProcessBuilder",
+        "java.lang.reflect",
+        "java.lang.invoke",
+        "java.util.concurrent.ThreadFactory",
+        "java.util.concurrent.ForkJoinPool"
+    );
+    secureASTCustomizer.setImportsBlacklist(importsBlacklist);
+    
+    // Blacklist dangerous receivers
+    List<String> receiversBlacklist = List.of(
+        System.class.getName(),
+        Runtime.class.getName(),
+        ProcessBuilder.class.getName()
+    );
+    secureASTCustomizer.setReceiversBlackList(receiversBlacklist);
+    
+    // Enable indirect import checking to prevent bypassing import restrictions
     secureASTCustomizer.setIndirectImportCheckEnabled(true);
+    
     return secureASTCustomizer;
   }
 
@@ -113,9 +144,9 @@ public class GroovyScriptEngineFactory
   @VisibleForTesting
   static String getContext(final Binding binding) {
     Optional<String> taskContext = getVariable(binding, "task", ScriptTask.class)
-        .map(ts -> format("Task '%s'", ts.getName()));
+        .map(ts -> STR."Task '\{ts.getName()}'");
     Optional<String> scriptContext = getVariable(binding, "scriptName", String.class)
-        .map(name -> format("Script '%s'", name));
+        .map(name -> STR."Script '\{name}'");
     return Stream.of(taskContext, scriptContext)
         .filter(Optional::isPresent)
         .map(Optional::get)
@@ -126,8 +157,8 @@ public class GroovyScriptEngineFactory
   private static <T> Optional<T> getVariable(final Binding binding, final String name, final Class<T> type) {
     if (binding.hasVariable(name)) {
       Object instance = binding.getVariable(name);
-      if (type.isInstance(instance)) {
-        return (Optional<T>) Optional.of(instance);
+      if (instance instanceof T value) {
+        return Optional.of(value);
       }
     }
     return Optional.empty();
@@ -136,7 +167,6 @@ public class GroovyScriptEngineFactory
   public abstract static class ScriptWithCleanup
       extends Script
   {
-
     @Override
     public Object run() {
       try {
@@ -144,8 +174,8 @@ public class GroovyScriptEngineFactory
       }
       finally {
         Object scriptCleanupHelper = this.getBinding().getVariable(SCRIPT_CLEANUP_HANDLER);
-        if (scriptCleanupHelper instanceof ScriptCleanupHandler) {
-          ((ScriptCleanupHandler) scriptCleanupHelper).cleanup(getContext(this.getBinding()));
+        if (scriptCleanupHelper instanceof ScriptCleanupHandler handler) {
+          handler.cleanup(getContext(this.getBinding()));
         }
       }
     }

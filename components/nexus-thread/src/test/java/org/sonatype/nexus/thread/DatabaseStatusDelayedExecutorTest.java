@@ -12,10 +12,8 @@
  */
 package org.sonatype.nexus.thread;
 
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
@@ -24,21 +22,16 @@ import org.sonatype.nexus.common.app.NotWritableException;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Captor;
+import org.junit.jupiter.api.Assertions;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.awaitility.Awaitility.await;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
-import static org.hamcrest.Matchers.instanceOf;
-import static org.hamcrest.core.Is.is;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
@@ -56,22 +49,13 @@ public class DatabaseStatusDelayedExecutorTest
 
   @Mock
   FreezeService freezeService;
-  
-  @Captor
-  ArgumentCaptor<String> messageCaptor;
 
   DatabaseStatusDelayedExecutor statusDelayedExecutor;
-  DatabaseStatusDelayedExecutor virtualThreadExecutor;
 
   @BeforeEach
   public void setup() throws Exception {
-    // Platform thread executor
-    statusDelayedExecutor = new DatabaseStatusDelayedExecutor(freezeService, 1, SLEEP_INTERVAL_MS, MAX_RETRIES, false);
+    statusDelayedExecutor = new DatabaseStatusDelayedExecutor(freezeService, 1, SLEEP_INTERVAL_MS, MAX_RETRIES);
     statusDelayedExecutor.start();
-    
-    // Virtual thread executor
-    virtualThreadExecutor = new DatabaseStatusDelayedExecutor(freezeService, 1, SLEEP_INTERVAL_MS, MAX_RETRIES, true);
-    virtualThreadExecutor.start();
   }
 
   @Test
@@ -105,98 +89,111 @@ public class DatabaseStatusDelayedExecutorTest
         .atMost(2 * SLEEP_INTERVAL_MS, MILLISECONDS)
         .until(callCount::get, greaterThanOrEqualTo(1));
 
-    assertThat(result.isDone(), is(false));
+    Assertions.assertFalse(result.isDone());
 
     await()
         .pollDelay(SLEEP_INTERVAL_MS / 2, MILLISECONDS)
         .atMost(10 * SLEEP_INTERVAL_MS, MILLISECONDS)
         .until(() -> result.isDone());
 
-    assertThat(callCount.get(), is(5));
+    Assertions.assertEquals(5, callCount.get());
   }
   
   @Test
-  public void virtualThreadModeIsCorrectlyReported() {
-    // Verify platform thread executor reports false
-    assertFalse(statusDelayedExecutor.isUsingVirtualThreads());
+  @Tag("VirtualThreadTestGroup")
+  public void ensureThatTaskEventuallyRunsWithVirtualThreads() {
+    doThrow(NotWritableException.class).when(freezeService).checkWritable(anyString());
     
-    // Verify virtual thread executor reports true
-    assertTrue(virtualThreadExecutor.isUsingVirtualThreads());
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    
+    // Create executor with virtual threads
+    DatabaseStatusDelayedExecutor virtualThreadExecutor = 
+        new DatabaseStatusDelayedExecutor(freezeService, 1, SLEEP_INTERVAL_MS, MAX_RETRIES, virtualThreadFactory);
+    virtualThreadExecutor.start();
+    
+    try {
+      Future<String> result = virtualThreadExecutor.submit(() -> "Done");
+
+      await()
+          .pollDelay(SLEEP_INTERVAL_MS / 2, MILLISECONDS)
+          .atMost(2 * MAX_RETRIES * SLEEP_INTERVAL_MS, MILLISECONDS)
+          .until(() -> result.isDone());
+
+      verify(freezeService, times(MAX_RETRIES * 2)).checkWritable(anyString());
+    } finally {
+      virtualThreadExecutor.shutdown();
+    }
   }
   
   @Test
-  public void virtualThreadsExecuteTasksCorrectly() {
-    final AtomicBoolean taskExecuted = new AtomicBoolean(false);
-    
-    // Submit a task to the virtual thread executor
-    Future<String> result = virtualThreadExecutor.submit(() -> {
-      taskExecuted.set(true);
-      return "Virtual Thread Task Completed";
-    });
-    
-    // Wait for the task to complete
-    await()
-        .pollDelay(SLEEP_INTERVAL_MS / 2, MILLISECONDS)
-        .atMost(SLEEP_INTERVAL_MS * 2, MILLISECONDS)
-        .until(taskExecuted::get);
-    
-    // Verify the task was executed
-    assertTrue(taskExecuted.get());
-    assertTrue(result.isDone());
-  }
-  
-  @Test
-  public void virtualThreadsHandleRetryLogicCorrectly() {
+  @Tag("VirtualThreadTestGroup")
+  public void noWritableDelaysTaskWithVirtualThreads() {
     final AtomicInteger callCount = new AtomicInteger(0);
-    
-    // Configure the freeze service to throw NotWritableException for the first 3 calls
     doAnswer(invocation -> {
-      int count = callCount.incrementAndGet();
-      if (count <= 3) {
-        throw new NotWritableException("Database not writable - attempt " + count);
+      if (callCount.incrementAndGet() <= 4) {
+        throw new NotWritableException("");
       }
       return null;
-    }).when(freezeService).checkWritable(messageCaptor.capture());
+    }).when(freezeService).checkWritable(anyString());
     
-    // Submit a task to the virtual thread executor
-    Future<String> result = virtualThreadExecutor.submit(() -> "Virtual Thread Task With Retries");
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
     
-    // Wait for the task to complete
-    await()
-        .pollDelay(SLEEP_INTERVAL_MS / 2, MILLISECONDS)
-        .atMost(SLEEP_INTERVAL_MS * 10, MILLISECONDS)
-        .until(() -> result.isDone());
+    // Create executor with virtual threads
+    DatabaseStatusDelayedExecutor virtualThreadExecutor = 
+        new DatabaseStatusDelayedExecutor(freezeService, 1, SLEEP_INTERVAL_MS, MAX_RETRIES, virtualThreadFactory);
+    virtualThreadExecutor.start();
     
-    // Verify the retry logic was executed correctly
-    assertThat(callCount.get(), is(4)); // 3 failures + 1 success
-    verify(freezeService, times(4)).checkWritable(anyString());
-    
-    // Verify the message passed to checkWritable
-    assertThat(messageCaptor.getValue(), containsString("Task needs writable database"));
+    try {
+      Future<String> result = virtualThreadExecutor.submit(() -> "Done");
+
+      await()
+          .pollDelay(SLEEP_INTERVAL_MS / 2, MILLISECONDS)
+          .atMost(2 * SLEEP_INTERVAL_MS, MILLISECONDS)
+          .until(callCount::get, greaterThanOrEqualTo(1));
+
+      Assertions.assertFalse(result.isDone());
+
+      await()
+          .pollDelay(SLEEP_INTERVAL_MS / 2, MILLISECONDS)
+          .atMost(10 * SLEEP_INTERVAL_MS, MILLISECONDS)
+          .until(() -> result.isDone());
+
+      Assertions.assertEquals(5, callCount.get());
+    } finally {
+      virtualThreadExecutor.shutdown();
+    }
   }
   
   @Test
-  public void customExecutorServiceCanBeUsed() {
-    // Create a custom executor service using virtual threads
-    ExecutorService customExecutor = Executors.newVirtualThreadPerTaskExecutor();
+  @Tag("VirtualThreadTestGroup")
+  public void concurrentTasksWithVirtualThreads() {
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
     
-    // Create a new DatabaseStatusDelayedExecutor with the custom executor
-    DatabaseStatusDelayedExecutor customDelayedExecutor = 
-        new DatabaseStatusDelayedExecutor(freezeService, 1, SLEEP_INTERVAL_MS, MAX_RETRIES, true);
-    customDelayedExecutor.setExecutor(customExecutor);
+    // Create executor with virtual threads
+    DatabaseStatusDelayedExecutor virtualThreadExecutor = 
+        new DatabaseStatusDelayedExecutor(freezeService, 5, SLEEP_INTERVAL_MS, MAX_RETRIES, virtualThreadFactory);
+    virtualThreadExecutor.start();
     
-    // Verify the executor is using virtual threads
-    assertTrue(customDelayedExecutor.isUsingVirtualThreads());
-    
-    // Submit a task and verify it executes correctly
-    Future<String> result = customDelayedExecutor.submit(() -> "Custom Executor Task");
-    
-    await()
-        .pollDelay(SLEEP_INTERVAL_MS / 2, MILLISECONDS)
-        .atMost(SLEEP_INTERVAL_MS * 2, MILLISECONDS)
-        .until(() -> result.isDone());
-    
-    // Clean up
-    customDelayedExecutor.shutdown();
+    try {
+      // Submit multiple tasks concurrently
+      Future<String> result1 = virtualThreadExecutor.submit(() -> "Task1");
+      Future<String> result2 = virtualThreadExecutor.submit(() -> "Task2");
+      Future<String> result3 = virtualThreadExecutor.submit(() -> "Task3");
+      
+      // Wait for all tasks to complete
+      await()
+          .atMost(5 * SLEEP_INTERVAL_MS, MILLISECONDS)
+          .until(() -> result1.isDone() && result2.isDone() && result3.isDone());
+      
+      // Verify all tasks completed successfully
+      Assertions.assertTrue(result1.isDone());
+      Assertions.assertTrue(result2.isDone());
+      Assertions.assertTrue(result3.isDone());
+    } finally {
+      virtualThreadExecutor.shutdown();
+    }
   }
 }

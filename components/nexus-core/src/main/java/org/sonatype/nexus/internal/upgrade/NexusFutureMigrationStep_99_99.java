@@ -14,13 +14,16 @@ package org.sonatype.nexus.internal.upgrade;
 
 import java.sql.Connection;
 import java.util.Optional;
-import javax.inject.Inject;
-import javax.inject.Named;
+import java.util.concurrent.Executors;
+
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.upgrade.datastore.DatabaseMigrationStep;
 
+import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.common.app.FeatureFlags.ZERO_DOWNTIME_FUTURE_MIGRATION_ENABLED;
 
 @Named
@@ -45,12 +48,27 @@ public class NexusFutureMigrationStep_99_99
 
   @Override
   public void migrate(final Connection connection) throws Exception {
-    log.warn("Started step 99.99 test");
-    if (shouldFail) {
-      if (log.isDebugEnabled()) {
-        log.warn("simulating migration failure due to feature flag '{}'", FAIL_MIGRATION_FLAG);
-      }
-      throw new IllegalStateException("Unable to migrate");
+    log.warn(STR."Started step \{version().orElse("unknown")} test");
+    
+    // Use Virtual Threads for database operations
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      executor.submit(() -> {
+        try {
+          // Perform database operations using the connection
+          if (shouldFail) {
+            if (log.isDebugEnabled()) {
+              log.warn(STR."simulating migration failure due to feature flag '\{FAIL_MIGRATION_FLAG}'");
+            }
+            throw new IllegalStateException("Unable to migrate");
+          }
+          log.info(STR."Successfully executed migration step \{version().orElse("unknown")} using Virtual Thread");
+        }
+        catch (Exception e) {
+          log.error(STR."Error during migration step \{version().orElse("unknown")}", e);
+          throw new RuntimeException(e);
+        }
+        return null;
+      }).get(); // Wait for the virtual thread to complete
     }
   }
 }

@@ -12,6 +12,9 @@
  */
 package org.sonatype.nexus.internal.security.apikey;
 
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 
@@ -46,9 +49,15 @@ public class PurgeApiKeysTask
 
   @Override
   protected Void execute() throws Exception {
-    int deleted = apiKeyService.purgeApiKeys();
-    if (deleted > 0) {
-      eventManager.post(new UserTokenPurgedEvent(deleted));
+    // Use Virtual Threads for the purge operation to improve performance and reduce resource consumption
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit the purge operation to run in a virtual thread
+      int deleted = executor.submit(apiKeyService::purgeApiKeys).get();
+      
+      if (deleted > 0) {
+        // Optimize event posting with Virtual Threads for asynchronous event processing
+        executor.submit(() -> eventManager.post(new UserTokenPurgedEvent(deleted)));
+      }
     }
     return null;
   }

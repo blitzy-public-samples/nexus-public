@@ -26,6 +26,9 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.zip.Deflater;
@@ -50,6 +53,7 @@ import com.google.common.io.CountingOutputStream;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
+import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.supportzip.SupportBundle.ContentSource.Type.*;
 
 /**
@@ -90,10 +94,10 @@ public class SupportZipGeneratorImpl
     this.downloadService = checkNotNull(downloadService);
 
     this.maxFileSize = maxFileSize;
-    log.info("Maximum included file size: {}", maxFileSize);
+    log.info(STR."Maximum included file size: \{maxFileSize}");
 
     this.maxZipFileSize = maxZipFileSize;
-    log.info("Maximum ZIP file size: {}", maxZipFileSize);
+    log.info(STR."Maximum ZIP file size: \{maxZipFileSize}");
   }
 
   @Override
@@ -106,14 +110,14 @@ public class SupportZipGeneratorImpl
     checkNotNull(request);
     setArchivedLogSize(request);
 
-    log.info("Generating support ZIP: {}", request);
+    log.info(STR."Generating support ZIP: \{request}");
 
     String uniquePrefix = downloadService.uniqueName(prefix);
 
     try {
       // Write zip to temporary file first;
       Path file = Files.createTempFile(uniquePrefix, "zip");
-      log.debug("Writing ZIP file: {}", file);
+      log.debug(STR."Writing ZIP file: \{file}");
 
       boolean truncated;
       try (OutputStream output = Files.newOutputStream(file, StandardOpenOption.WRITE)) {
@@ -124,7 +128,7 @@ public class SupportZipGeneratorImpl
       // move the file into place;
       String targetFileName = uniquePrefix + ".zip";
       String path = downloadService.move(file.toFile(), targetFileName);
-      log.info("Created support ZIP file: {}", path);
+      log.info(STR."Created support ZIP file: \{path}");
 
       return new Result(truncated, targetFileName, path, length);
     }
@@ -145,7 +149,7 @@ public class SupportZipGeneratorImpl
     try {
       // customize the bundle
       bundleCustomizers.forEach(customizer -> {
-        log.debug("Customizing bundle with: {}", customizer);
+        log.debug(STR."Customizing bundle with: \{customizer}");
         customizer.customize(bundle);
       });
       checkState(!bundle.getSources().isEmpty(), "At least one bundle source must be configured");
@@ -154,24 +158,37 @@ public class SupportZipGeneratorImpl
       sources = filterSources(request, bundle);
       checkState(!sources.isEmpty(), "At least one content source must be configured");
 
-      // prepare bundle sources
-      List<ContentSource> preparedSources = sources.stream()
-          .map(source -> {
-            log.debug("Preparing bundle source: {}", source);
-            try {
-              source.prepare();
-              return source;
-            }
-            catch (Exception e) {
-              log.error("Failed to prepare source {}", source.getClass(), e);
-              return null;
-            }
-          })
-          .filter(Objects::nonNull)
-          .collect(Collectors.toList());
+      // prepare bundle sources using virtual threads for parallel processing
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        List<ContentSource> preparedSources = sources.stream()
+            .map(source -> {
+              return executor.submit(() -> {
+                log.debug(STR."Preparing bundle source: \{source}");
+                try {
+                  source.prepare();
+                  return source;
+                }
+                catch (Exception e) {
+                  log.error(STR."Failed to prepare source \{source.getClass()}", e);
+                  return null;
+                }
+              });
+            })
+            .map(future -> {
+              try {
+                return future.get();
+              }
+              catch (Exception e) {
+                log.error("Failed to get prepared source", e);
+                return null;
+              }
+            })
+            .filter(Objects::nonNull)
+            .collect(Collectors.toList());
 
-      return new ZipCreator(outputStream, preparedSources, prefix, request.isLimitFileSizes(), request.isLimitZipSize())
-          .createZip();
+        return new ZipCreator(outputStream, preparedSources, prefix, request.isLimitFileSizes(), request.isLimitZipSize())
+            .createZip();
+      }
     }
     catch (Exception e) {
       log.error("Failed to create support ZIP", e);
@@ -181,7 +198,7 @@ public class SupportZipGeneratorImpl
       if (sources != null) {
         // cleanup bundle sources
         sources.forEach(source -> {
-          log.debug("Cleaning bundle source: {}", source);
+          log.debug(STR."Cleaning bundle source: \{source}");
           try {
             source.cleanup();
           }
@@ -198,37 +215,23 @@ public class SupportZipGeneratorImpl
    */
   private static Set<Type> includedTypes(final SupportZipGeneratorRequest request) {
     Set<Type> types = new HashSet<>();
-    if (request.isSystemInformation()) {
-      types.add(SYSINFO);
-      types.add(DBINFO); // including this in sys information unless we decide to make it it's own front end toggle
+    
+    switch (request) {
+      case SupportZipGeneratorRequest r when r.isSystemInformation() -> {
+        types.add(SYSINFO);
+        types.add(DBINFO); // including this in sys information unless we decide to make it it's own front end toggle
+      }
+      case SupportZipGeneratorRequest r when r.isThreadDump() -> types.add(THREAD);
+      case SupportZipGeneratorRequest r when r.isMetrics() -> types.add(METRICS);
+      case SupportZipGeneratorRequest r when r.isConfiguration() -> types.add(CONFIG);
+      case SupportZipGeneratorRequest r when r.isSecurity() -> types.add(SECURITY);
+      case SupportZipGeneratorRequest r when r.isLog() -> types.add(LOG);
+      case SupportZipGeneratorRequest r when r.isTaskLog() -> types.add(TASKLOG);
+      case SupportZipGeneratorRequest r when r.isAuditLog() -> types.add(AUDITLOG);
+      case SupportZipGeneratorRequest r when r.isJmx() -> types.add(JMX);
+      case SupportZipGeneratorRequest r when r.isReplication() -> types.add(REPLICATIONLOG);
     }
-    if (request.isThreadDump()) {
-      types.add(THREAD);
-    }
-    if (request.isMetrics()) {
-      types.add(METRICS);
-    }
-    if (request.isConfiguration()) {
-      types.add(CONFIG);
-    }
-    if (request.isSecurity()) {
-      types.add(SECURITY);
-    }
-    if (request.isLog()) {
-      types.add(LOG);
-    }
-    if (request.isTaskLog()) {
-      types.add(TASKLOG);
-    }
-    if (request.isAuditLog()) {
-      types.add(AUDITLOG);
-    }
-    if (request.isJmx()) {
-      types.add(JMX);
-    }
-    if (request.isReplication()) {
-      types.add(REPLICATIONLOG);
-    }
+    
     // included by default, if not selected it will default to 0 days of archived logs which means it includes nothing
     types.add(ARCHIVEDLOG);
     return types;
@@ -246,7 +249,7 @@ public class SupportZipGeneratorImpl
     return supportBundle.getSources()
         .stream()
         .filter(source -> include.contains(source.getType()))
-        .peek(source -> log.debug("Including content source: {}", source))
+        .peek(source -> log.debug(STR."Including content source: \{source}"))
         .collect(Collectors.toList());
   }
 
@@ -313,7 +316,8 @@ public class SupportZipGeneratorImpl
       // flag to indicate if any content was truncated
       AtomicBoolean truncated = new AtomicBoolean(false);
 
-      try (FlushableZipOutputStream zip = new FlushableZipOutputStream(stream)) {
+      try (FlushableZipOutputStream zip = new FlushableZipOutputStream(stream);
+           ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
         // setup zip too sync-flush so we can detect compressed size for partially written files
         zip.setLevel(Deflater.DEFAULT_COMPRESSION);
         zip.setSyncFlush(true);
@@ -321,56 +325,70 @@ public class SupportZipGeneratorImpl
         // add directory entries
         addDirectoryEntries(zip);
 
-        // TODO: Sort out how to deal with obfuscation, if its specific or general
-        // TODO: ... this should be a detail of the content source
-
         // add content entries, sorted so highest priority are processed first
         sources.sort(Comparator.naturalOrder());
-        sources.forEach(source -> {
-          // skipping over archived files that cause the zip to be too large or are past the file size limit
-          // TODO: figure out how to handle .gz file truncation gracefully
-          if (source.getType() == ARCHIVEDLOG
-              && (limitFileSizes && source.getSize() > maxContentSize || limitZipSize && source.getSize() +
-                  stream.getCount() > maxZipSize)) {
-            log.warn("Skipping {} due to size limit", source.getPath());
-            return;
-          }
-
-          log.debug("Adding content entry: {} {} bytes", source, source.getSize());
-          ZipEntry entry = addEntry(zip, source.getPath());
-
-          try (InputStream input = source.getContent()) {
-            // determine if the current file is a log file
-            boolean isLogFile = source.getType() == LOG || source.getType() == TASKLOG || source.getType() == AUDITLOG
-                || source.getType() == ARCHIVEDLOG;
-            // only apply truncation logic to log files
-            byte[] buff = new byte[chunkSize];
-            int len;
-            long writtenBytes = 0;
-            while ((len = input.read(buff)) != -1) {
-              // truncate content if max file size or max ZIP size reached
-              if ((isLogFile && limitFileSizes && writtenBytes + len > maxContentSize) ||
-                  (limitZipSize && stream.getCount() + len > maxZipSize)) {
-                log.warn("Truncating source contents; limit reached: {}", source.getPath());
-                zip.write(TRUNCATED_TOKEN.getBytes());
-                truncated.set(true);
-                break;
+        
+        // Process sources in parallel using virtual threads
+        List<Future<Void>> futures = sources.stream()
+            .map(source -> executor.submit(() -> {
+              // skipping over archived files that cause the zip to be too large or are past the file size limit
+              // TODO: figure out how to handle .gz file truncation gracefully
+              if (source.getType() == ARCHIVEDLOG
+                  && (limitFileSizes && source.getSize() > maxContentSize || limitZipSize && source.getSize() +
+                      stream.getCount() > maxZipSize)) {
+                log.warn(STR."Skipping \{source.getPath()} due to size limit");
+                return null;
               }
 
-              zip.write(buff, 0, len);
-              writtenBytes += len;
+              log.debug(STR."Adding content entry: \{source} \{source.getSize()} bytes");
+              ZipEntry entry = addEntry(zip, source.getPath());
 
-              // flush so we can detect compressed size for partially written files
-              zip.flush();
-            }
-          }
-          catch (Exception e) { // NOSONAR - catching all exceptions so that a bad file of any sort won't cause us to
-            // stop
-            log.warn("Unable to include {} in bundle, moving onto next file.", source.getPath(), e);
-          }
+              try (InputStream input = source.getContent()) {
+                // determine if the current file is a log file
+                boolean isLogFile = switch (source.getType()) {
+                  case LOG, TASKLOG, AUDITLOG, ARCHIVEDLOG -> true;
+                  default -> false;
+                };
+                
+                // only apply truncation logic to log files
+                byte[] buff = new byte[chunkSize];
+                int len;
+                long writtenBytes = 0;
+                while ((len = input.read(buff)) != -1) {
+                  // truncate content if max file size or max ZIP size reached
+                  if ((isLogFile && limitFileSizes && writtenBytes + len > maxContentSize) ||
+                      (limitZipSize && stream.getCount() + len > maxZipSize)) {
+                    log.warn(STR."Truncating source contents; limit reached: \{source.getPath()}");
+                    zip.write(TRUNCATED_TOKEN.getBytes());
+                    truncated.set(true);
+                    break;
+                  }
 
-          closeEntry(zip, entry);
-        });
+                  zip.write(buff, 0, len);
+                  writtenBytes += len;
+
+                  // flush so we can detect compressed size for partially written files
+                  zip.flush();
+                }
+              }
+              catch (Exception e) { // NOSONAR - catching all exceptions so that a bad file of any sort won't cause us to
+                // stop
+                log.warn(STR."Unable to include \{source.getPath()} in bundle, moving onto next file.", e);
+              }
+
+              closeEntry(zip, entry);
+              return null;
+            }))
+            .collect(Collectors.toList());
+
+        // Wait for all tasks to complete
+        for (Future<Void> future : futures) {
+          try {
+            future.get();
+          } catch (Exception e) {
+            log.error("Error processing content source", e);
+          }
+        }
 
         // add truncated marker if we truncated anything
         if (truncated.get()) {
@@ -382,10 +400,7 @@ public class SupportZipGeneratorImpl
       }
 
       if (log.isDebugEnabled()) {
-        log.debug("ZIP file (in={} out={}) bytes, compressed: {}%",
-            totalUncompressed,
-            stream.getCount(),
-            percentCompressed(stream.getCount(), totalUncompressed));
+        log.debug(STR."ZIP file (in=\{totalUncompressed} out=\{stream.getCount()}) bytes, compressed: \{percentCompressed(stream.getCount(), totalUncompressed)}%");
       }
 
       return truncated.get();
@@ -403,7 +418,7 @@ public class SupportZipGeneratorImpl
         return entry;
       }
       catch (IOException e) {
-        log.debug("Failed to create path {}", path);
+        log.debug(STR."Failed to create path \{path}");
         throw new UncheckedIOException(e);
       }
     }
@@ -416,16 +431,13 @@ public class SupportZipGeneratorImpl
         // not all entries have a size
         if (entry.getSize() > 0) {
           if (log.isDebugEnabled()) {
-            log.debug("Entry (in={} out={}) bytes, compressed: {}%",
-                entry.getSize(),
-                entry.getCompressedSize(),
-                percentCompressed(entry.getCompressedSize(), entry.getSize()));
+            log.debug(STR."Entry (in=\{entry.getSize()} out=\{entry.getCompressedSize()}) bytes, compressed: \{percentCompressed(entry.getCompressedSize(), entry.getSize())}%");
           }
           totalUncompressed += entry.getSize();
         }
       }
       catch (IOException e) {
-        log.debug("Failed to close entry {}", entry);
+        log.debug(STR."Failed to close entry \{entry}");
         throw new UncheckedIOException(e);
       }
     }
@@ -448,7 +460,7 @@ public class SupportZipGeneratorImpl
       });
 
       dirs.forEach(it -> {
-        log.debug("Adding directory entry: {}", it);
+        log.debug(STR."Adding directory entry: \{it}");
         ZipEntry entry = addEntry(zip, it + "/");
         // must end with "/"
         closeEntry(zip, entry);

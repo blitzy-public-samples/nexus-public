@@ -1,0 +1,159 @@
+{
+  "errorReportingTemplates": [
+    {
+      "id": "basic-error",
+      "description": "Basic error message with exception details",
+      "context": {
+        "errorCode": "ERR-1001",
+        "operation": "repository.create",
+        "exceptionMessage": "Repository name already exists",
+        "exceptionType": "org.sonatype.nexus.repository.InvalidNameException"
+      },
+      "template": "Error \{errorCode}: Failed to execute \{operation}. \{exceptionType}: \{exceptionMessage}",
+      "expectedResult": "Error ERR-1001: Failed to execute repository.create. org.sonatype.nexus.repository.InvalidNameException: Repository name already exists"
+    },
+    {
+      "id": "validation-error",
+      "description": "Validation error with field details",
+      "context": {
+        "errorCode": "ERR-2001",
+        "fieldName": "blobStoreName",
+        "fieldValue": null,
+        "validationMessage": "Blob store name cannot be null"
+      },
+      "template": "Validation error \{errorCode}: Field '\{fieldName}' \{validationMessage}. Provided value: \{fieldValue ?? 'none'}",
+      "expectedResult": "Validation error ERR-2001: Field 'blobStoreName' Blob store name cannot be null. Provided value: none"
+    },
+    {
+      "id": "security-error",
+      "description": "Security error with user and permission details",
+      "context": {
+        "errorCode": "ERR-3001",
+        "username": "anonymous",
+        "requiredPermission": "nexus:repository-admin:*:*",
+        "timestamp": 1621459200000
+      },
+      "template": "Security error \{errorCode}: User '\{username}' lacks required permission '\{requiredPermission}' at \{java.time.Instant.ofEpochMilli(timestamp)}",
+      "expectedResult": "Security error ERR-3001: User 'anonymous' lacks required permission 'nexus:repository-admin:*:*' at 2021-05-20T00:00:00Z"
+    },
+    {
+      "id": "network-error",
+      "description": "Network error with connection details",
+      "context": {
+        "errorCode": "ERR-4001",
+        "remoteHost": "repo.maven.apache.org",
+        "port": 443,
+        "statusCode": 503,
+        "retryCount": 3,
+        "timeoutMs": 5000
+      },
+      "template": "Network error \{errorCode}: Failed to connect to \{remoteHost}:\{port} after \{retryCount} attempts (timeout: \{timeoutMs}ms). Server responded with status \{statusCode}",
+      "expectedResult": "Network error ERR-4001: Failed to connect to repo.maven.apache.org:443 after 3 attempts (timeout: 5000ms). Server responded with status 503"
+    },
+    {
+      "id": "storage-error",
+      "description": "Storage error with blob store details",
+      "context": {
+        "errorCode": "ERR-5001",
+        "blobStoreName": "default",
+        "availableSpace": 1073741824,
+        "requiredSpace": 2147483648,
+        "path": "/nexus-data/blobs/default"
+      },
+      "template": "Storage error \{errorCode}: Insufficient space in blob store '\{blobStoreName}'. Available: \{availableSpace / 1024 / 1024}MB, Required: \{requiredSpace / 1024 / 1024}MB. Path: \{path}",
+      "expectedResult": "Storage error ERR-5001: Insufficient space in blob store 'default'. Available: 1024MB, Required: 2048MB. Path: /nexus-data/blobs/default"
+    },
+    {
+      "id": "database-error",
+      "description": "Database error with SQL details",
+      "context": {
+        "errorCode": "ERR-6001",
+        "sqlState": "23505",
+        "sqlErrorCode": 1,
+        "sqlMessage": "Duplicate key value violates unique constraint",
+        "table": "repository",
+        "column": "name",
+        "value": "maven-central"
+      },
+      "template": "Database error \{errorCode}: \{sqlMessage} (SQL state: \{sqlState}, error code: \{sqlErrorCode}). Table: \{table}, Column: \{column}, Value: '\{value}'",
+      "expectedResult": "Database error ERR-6001: Duplicate key value violates unique constraint (SQL state: 23505, error code: 1). Table: repository, Column: name, Value: 'maven-central'"
+    },
+    {
+      "id": "task-error",
+      "description": "Task execution error with stack trace",
+      "context": {
+        "errorCode": "ERR-7001",
+        "taskName": "Compact Blob Store",
+        "taskId": "compact-blob-store-1",
+        "startTime": 1621459200000,
+        "endTime": 1621459500000,
+        "exceptionType": "java.io.IOException",
+        "exceptionMessage": "Failed to read blob metadata",
+        "stackTrace": [
+          "at org.sonatype.nexus.blobstore.file.FileBlobStore.compact(FileBlobStore.java:450)",
+          "at org.sonatype.nexus.blobstore.CompactBlobStoreTask.execute(CompactBlobStoreTask.java:120)",
+          "at org.sonatype.nexus.scheduling.TaskRunner.execute(TaskRunner.java:85)"
+        ]
+      },
+      "template": "Task error \{errorCode}: Task '\{taskName}' (ID: \{taskId}) failed after running for \{(endTime - startTime) / 1000} seconds.\nException: \{exceptionType}: \{exceptionMessage}\nStack trace:\n\{String.join('\n', stackTrace)}",
+      "expectedResult": "Task error ERR-7001: Task 'Compact Blob Store' (ID: compact-blob-store-1) failed after running for 300 seconds.\nException: java.io.IOException: Failed to read blob metadata\nStack trace:\nat org.sonatype.nexus.blobstore.file.FileBlobStore.compact(FileBlobStore.java:450)\nat org.sonatype.nexus.blobstore.CompactBlobStoreTask.execute(CompactBlobStoreTask.java:120)\nat org.sonatype.nexus.scheduling.TaskRunner.execute(TaskRunner.java:85)"
+    },
+    {
+      "id": "internationalized-error",
+      "description": "Internationalized error message",
+      "context": {
+        "errorCode": "ERR-8001",
+        "locale": "fr",
+        "resourceBundle": {
+          "error.notfound": "Ressource non trouvée",
+          "error.repository": "Dépôt",
+          "error.id": "Identifiant"
+        },
+        "repositoryName": "maven-central",
+        "resourceId": "org.apache.commons:commons-lang3:3.12.0"
+      },
+      "template": "\{errorCode}: \{resourceBundle['error.notfound']}. \{resourceBundle['error.repository']}: \{repositoryName}, \{resourceBundle['error.id']}: \{resourceId}",
+      "expectedResult": "ERR-8001: Ressource non trouvée. Dépôt: maven-central, Identifiant: org.apache.commons:commons-lang3:3.12.0"
+    },
+    {
+      "id": "conditional-error",
+      "description": "Error message with conditional formatting",
+      "context": {
+        "errorCode": "ERR-9001",
+        "severity": "CRITICAL",
+        "component": "blobstore",
+        "message": "Data corruption detected",
+        "affectedItems": 157,
+        "canRecover": false
+      },
+      "template": "\{severity} error \{errorCode} in \{component}: \{message}. \{affectedItems} items affected. \{canRecover ? 'Automatic recovery possible.' : 'Manual intervention required.'}",
+      "expectedResult": "CRITICAL error ERR-9001 in blobstore: Data corruption detected. 157 items affected. Manual intervention required."
+    },
+    {
+      "id": "complex-error",
+      "description": "Complex error with nested objects and formatting",
+      "context": {
+        "errorCode": "ERR-10001",
+        "request": {
+          "method": "POST",
+          "path": "/service/rest/v1/repositories/maven/hosted",
+          "contentType": "application/json",
+          "timestamp": 1621459200000
+        },
+        "user": {
+          "id": "admin",
+          "ip": "192.168.1.100",
+          "roles": ["nx-admin", "nx-anonymous"]
+        },
+        "validation": {
+          "errors": [
+            {"field": "name", "message": "Name contains invalid characters"},
+            {"field": "blobStoreName", "message": "Referenced blob store does not exist"}
+          ]
+        }
+      },
+      "template": "Request error \{errorCode}:\n\{request.method} \{request.path} (\{request.contentType}) at \{java.time.Instant.ofEpochMilli(request.timestamp)}\nUser: \{user.id} (\{user.ip}) with roles: \{String.join(', ', user.roles)}\nValidation errors:\n\{validation.errors.stream().map(e -> '  - ' + e.field + ': ' + e.message).toList().join('\n')}",
+      "expectedResult": "Request error ERR-10001:\nPOST /service/rest/v1/repositories/maven/hosted (application/json) at 2021-05-20T00:00:00Z\nUser: admin (192.168.1.100) with roles: nx-admin, nx-anonymous\nValidation errors:\n  - name: Name contains invalid characters\n  - blobStoreName: Referenced blob store does not exist"
+    }
+  ]
+}

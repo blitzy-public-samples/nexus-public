@@ -29,9 +29,11 @@ import org.sonatype.nexus.repository.Format;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.Collections.singleton;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -43,6 +45,7 @@ import static org.hamcrest.text.IsEmptyString.isEmptyOrNullString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class CleanupPolicyResourceTest
     extends TestSupport
 {
@@ -79,7 +82,7 @@ public class CleanupPolicyResourceTest
 
   private final String repositoryName = "test-repo";
 
-  @Before
+  @BeforeEach
   public void setUp() throws Exception {
     when(cleanupFormatConfigurationMap.get("default")).thenReturn(mock(CleanupPolicyConfiguration.class));
     Repository repository = mock(Repository.class);
@@ -91,7 +94,7 @@ public class CleanupPolicyResourceTest
   }
 
   @Test
-  public void testPreviewContentCsv() {
+  public void previewContentCsvShouldReturnCorrectFileNameAndStatusCode() {
     underTest =
         new CleanupPolicyResource(
             cleanupPolicyStorage,

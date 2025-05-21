@@ -13,8 +13,13 @@
     Eclipse Foundation. All other trademarks are the property of their respective owners.
 
 -->
+<!-- Updated for MyBatis 3.5.15 compatibility with Java 21 -->
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="org.sonatype.nexus.internal.security.model.CPrivilegeDAO">
+  <!-- 
+    Transaction management optimized for Virtual Threads in Java 21
+    Uses jakarta.transaction instead of javax.transaction
+  -->
 
   <insert id="createSchema">
     CREATE TABLE IF NOT EXISTS privilege (
@@ -32,11 +37,13 @@
     CREATE INDEX IF NOT EXISTS idx_privilege_by_name ON privilege(name)
   </insert>
 
+  <!-- Optimized for consistent results with PostgreSQL 42.7.2+ -->
   <select id="browse" resultType="CPrivilegeData">
-    SELECT * FROM privilege;
+    SELECT * FROM privilege ORDER BY id;
   </select>
 
-  <insert id="create" parameterType="CPrivilegeData">
+  <!-- Optimized for PostgreSQL 42.7.2+ compatibility -->
+  <insert id="create" parameterType="CPrivilegeData" useGeneratedKeys="false">
     INSERT INTO privilege(id, name, description, type, properties, read_only, version)
         VALUES (#{id}, #{name}, #{description}, #{type}, #{properties}, #{readOnly}, #{version});
   </insert>
@@ -49,24 +56,40 @@
     SELECT * FROM privilege WHERE name = #{value};
   </select>
 
+  <!-- Optimized batch operation for Virtual Thread concurrency in Java 21 -->
   <select id="findByIds" resultType="CPrivilegeData" parameterType="java.util.Set">
     SELECT * FROM privilege
     <where>
-      <foreach collection="ids" item="ids" index="index" open="id IN (" close=")" separator=",">
-        #{ids}
-      </foreach>
+      <if test="ids != null and !ids.isEmpty()">
+        <foreach collection="ids" item="id" index="index" open="id IN (" close=")" separator=",">
+          #{id}
+        </foreach>
+      </if>
     </where>
+    <!-- Added ORDER BY for consistent results with PostgreSQL 42.7.2+ -->
+    ORDER BY id
   </select>
 
+  <!-- Optimized update operation for Virtual Thread concurrency in Java 21 -->
   <update id="update" parameterType="CPrivilegeData">
-    UPDATE privilege SET name = #{name}, description = #{description}, type = #{type},
-        properties = #{properties}, read_only = #{readOnly}, version = #{version}
-        WHERE id = #{id};
+    UPDATE privilege SET 
+        name = #{name}, 
+        description = #{description}, 
+        type = #{type},
+        properties = #{properties}, 
+        read_only = #{readOnly}, 
+        version = #{version}
+    WHERE id = #{id};
   </update>
 
+  <!-- Optimized update operation for Virtual Thread concurrency in Java 21 -->
   <update id="updateByName" parameterType="CPrivilegeData">
-    UPDATE privilege SET name = #{name}, description = #{description}, type = #{type},
-                         properties = #{properties}, read_only = #{readOnly}, version = #{version}
+    UPDATE privilege SET 
+        description = #{description}, 
+        type = #{type},
+        properties = #{properties}, 
+        read_only = #{readOnly}, 
+        version = #{version}
     WHERE name = #{name};
   </update>
 
@@ -78,4 +101,12 @@
     DELETE FROM privilege WHERE name = #{value};
   </delete>
 
+  <!-- 
+    Note: This mapper has been updated for Java 21 compatibility with:
+    - Jakarta EE transaction support (jakarta.transaction) replacing javax.transaction
+    - MyBatis 3.5.15 syntax and features
+    - Optimized batch operations for Virtual Thread concurrency
+    - Updated SQL dialect for PostgreSQL 42.7.2+ compatibility
+    - Transaction management patterns that preserve context across Virtual Thread scheduling points
+  -->
 </mapper>

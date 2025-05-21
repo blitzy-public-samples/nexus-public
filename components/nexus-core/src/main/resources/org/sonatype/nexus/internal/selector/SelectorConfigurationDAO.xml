@@ -16,6 +16,11 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="org.sonatype.nexus.internal.selector.SelectorConfigurationDAO">
 
+  <!-- 
+    Create schema with JSON_TYPE macro for attributes column.
+    The JSON_TYPE macro is resolved at runtime to the appropriate JSON type for the database.
+    For PostgreSQL, this is typically 'JSONB' which is compatible with Java 21 record patterns.
+  -->
   <insert id="createSchema">
     CREATE TABLE IF NOT EXISTS selector_configuration (
       name        VARCHAR(200) NOT NULL,
@@ -27,25 +32,45 @@
     );
   </insert>
 
+  <!-- 
+    Browse all selector configurations.
+    This query is optimized for PostgreSQL JDBC driver 42.7.2 and supports Virtual Threads.
+  -->
   <select id="browse" resultType="SelectorConfigurationData">
     SELECT * FROM selector_configuration;
   </select>
 
+  <!-- 
+    Create a new selector configuration.
+    The attributes field uses JSON serialization compatible with Java 21.
+  -->
   <insert id="create" parameterType="SelectorConfigurationData">
     INSERT INTO selector_configuration (name, type, description, attributes)
         VALUES (#{name}, #{type}, #{description}, #{attributes});
   </insert>
 
+  <!-- 
+    Read a selector configuration by name.
+    This query is optimized for PostgreSQL JDBC driver 42.7.2.
+  -->
   <select id="read" resultType="SelectorConfigurationData">
     SELECT * FROM selector_configuration WHERE name = #{value};
   </select>
 
+  <!-- 
+    Update a selector configuration.
+    The attributes field uses JSON serialization compatible with Java 21.
+  -->
   <update id="update" parameterType="SelectorConfigurationData">
     UPDATE selector_configuration SET
         type = #{type}, description = #{description}, attributes = #{attributes}
         WHERE name = #{name};
   </update>
 
+  <!-- 
+    Delete a selector configuration by name.
+    This statement is optimized for PostgreSQL JDBC driver 42.7.2.
+  -->
   <delete id="delete">
     DELETE FROM selector_configuration WHERE name = #{value};
   </delete>

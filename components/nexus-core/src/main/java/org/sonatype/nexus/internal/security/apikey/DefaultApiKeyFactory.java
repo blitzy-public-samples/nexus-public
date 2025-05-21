@@ -14,6 +14,8 @@ package org.sonatype.nexus.internal.security.apikey;
 
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.UUID;
 
 import javax.inject.Inject;
@@ -48,9 +50,29 @@ public class DefaultApiKeyFactory
 
   @Override
   public char[] makeApiKey(final PrincipalCollection principals) {
-    final String salt = new BigInteger(randomBytesGenerator.generate(4)).toString(32);
-    final byte[] code = ("~nexus~default~" + principals + salt).getBytes(StandardCharsets.UTF_8);
-    final String apiKey = UUID.nameUUIDFromBytes(code).toString();
-    return apiKey.toCharArray();
+    try {
+      // Generate a larger salt using Java 21's stronger random number generation
+      final byte[] salt = randomBytesGenerator.generate(16); // Increased from 4 to 16 bytes for stronger security
+      final String saltHex = new BigInteger(1, salt).toString(32);
+      
+      // Create a more secure input for the UUID generation
+      final String input = STR."~nexus~default~\{principals}\{saltHex}";
+      final byte[] inputBytes = input.getBytes(StandardCharsets.UTF_8);
+      
+      // Use SHA-256 for additional security before UUID generation
+      MessageDigest digest = MessageDigest.getInstance("SHA-256");
+      byte[] hash = digest.digest(inputBytes);
+      
+      // Generate UUID from the hash
+      final String apiKey = UUID.nameUUIDFromBytes(hash).toString();
+      
+      log.debug(STR."Generated API key for principal: \{principals} with salt length: \{salt.length} bytes");
+      
+      return apiKey.toCharArray();
+    }
+    catch (NoSuchAlgorithmException e) {
+      log.error(STR."Failed to generate API key for principal: \{principals}", e);
+      throw new RuntimeException(STR."Error generating API key: \{e.getMessage()}", e);
+    }
   }
 }

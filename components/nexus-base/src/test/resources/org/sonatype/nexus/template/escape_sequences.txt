@@ -1,0 +1,138 @@
+# Java 21 String Template Escape Sequence Test Patterns
+
+## Basic Escape Sequences
+
+// Standard escape sequences in string literals
+STR."Line 1\nLine 2"
+
+// Tab characters
+STR."Column 1\tColumn 2\tColumn 3"
+
+// Escaped quotes
+STR."He said, \"Hello world!\""
+
+// Escaped backslashes
+STR."File path: C:\\Program Files\\Java"
+
+// Carriage return and form feed
+STR."Carriage return: \rForm feed: \f"
+
+// Backspace and alert
+STR."Backspace: a\bc Alert: \a"
+
+## Template Processor Syntax Escapes
+
+// Escaped template expression syntax
+STR."This is not a template expression: \\{notAnExpression}"
+
+// Double escaped template expression syntax
+STR."Double escaped: \\\\{stillNotAnExpression}"
+
+// Escaped backslash before template expression
+STR."Escaped backslash before expression: \\\{expression}"
+
+// Escaped curly braces
+STR."Curly braces: \\{ and \\}"
+
+## Mixed Escapes with Expressions
+
+// Expression with internal quotes (no escaping needed inside expressions)
+STR."The message is: \{"Hello, world!"}"
+
+// Expression with escaped quotes in string literal
+STR."Quote before \"\{expression}\" quote after"
+
+// Expression with newlines and tabs
+STR."Formatted: \{"Line 1\nLine 2\tTabbed"}"
+
+// Expression with backslashes
+STR."Path: \{"C:\\Windows\\System32"}"
+
+// Expression with variable containing escape sequences
+STR."Variable with escapes: \{variableWithEscapes}"
+
+## Complex Mixed Patterns
+
+// Multiple escape types combined
+STR."\"Path: \\{"C:\\Windows"}\\" is \{"valid"}"
+
+// Escaped curly braces in expressions
+STR."JSON: \{"{ \"name\": \"value\" }"}"
+
+// Escaped template syntax within expressions
+STR."Nested: \{"This looks like \\{a template} but isn't"}"
+
+// Backslash at end of expression
+STR."Trailing backslash: \{"This ends with a backslash\\"}"
+
+// SQL query with escapes and expressions
+STR."SELECT * FROM users WHERE name = '\{userName.replace("'", "''")}'"
+
+## Edge Cases
+
+// Empty expression with escapes around it
+STR."Before \\\{} after"
+
+// Multiple adjacent expressions with escapes
+STR."\\\{first}\{second}\\\{notAnExpression}"
+
+// Unicode escape sequences
+STR."Unicode: \u0048\u0065\u006C\u006C\u006F"
+
+// Octal escape sequences
+STR."Octal: \141\142\143"
+
+// Hex escape sequences with expressions
+STR."Hex: \x41 and expression: \{"\x42"}"
+
+// Escaped backslash at end of string
+STR."Trailing backslash: \\"
+
+## Text Block Templates with Escapes
+
+// Text block with escaped template syntax
+STR."""
+<html>
+  <body>
+    <p>This is not a template: \\{notAnExpression}</p>
+    <p>This is a template: \{"expression"}</p>
+  </body>
+</html>
+"""
+
+// Text block with mixed escapes
+STR."""
+{
+  "key": "value",
+  "escaped": "\\\{notAnExpression}",
+  "template": "\{"actualExpression"}",
+  "quotes": "\"quoted text\""
+}
+"""
+
+// XML with CDATA and escapes
+STR."""
+<root>
+  <![CDATA[
+    Not a template: \\{notProcessed}
+    Is a template: \{"processed"}
+  ]]>
+</root>
+"""
+
+## Processor-Specific Escapes
+
+// Raw processor with escapes
+RAW."Raw with escapes: \n\t\"\\\{notProcessed}"
+
+// FMT processor with format specifiers and escapes
+FMT."Formatted: %s\{"text"} and escaped: \\%s"
+
+// Nested processors
+STR."Outer \{STR."Inner \{"nested"}"}"
+
+// Escaped processor syntax
+STR."This looks like a processor but isn't: STR\\."text""
+
+// Processor with conditional expression
+STR."Result: \{condition ? "\\{escaped}" : "not escaped"}"

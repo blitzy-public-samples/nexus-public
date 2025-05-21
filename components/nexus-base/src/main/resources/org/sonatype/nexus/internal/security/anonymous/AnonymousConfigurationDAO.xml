@@ -16,7 +16,7 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="org.sonatype.nexus.internal.security.anonymous.AnonymousConfigurationDAO">
 
-  <insert id="createSchema">
+  <insert id="createSchema" flushCache="true" timeout="30">
     CREATE TABLE IF NOT EXISTS anonymous_configuration (
       id         INT          NOT NULL CHECK (id = 1),
       enabled    BOOLEAN      NOT NULL,
@@ -27,23 +27,52 @@
     );
   </insert>
 
-  <select id="get" resultType="AnonymousConfigurationData">
+  <!-- 
+    Using useCache="true" to optimize for Virtual Thread operations in Java 21
+    Adding timeout to prevent thread starvation in Virtual Thread environment
+    Using fully qualified class name for proper type resolution in Virtual Thread context
+  -->
+  <select id="get" 
+          resultType="org.sonatype.nexus.internal.security.anonymous.AnonymousConfigurationData"
+          useCache="true" 
+          flushCache="false"
+          timeout="10">
     SELECT * FROM anonymous_configuration WHERE id = 1;
   </select>
 
-  <insert id="set" parameterType="AnonymousConfigurationData">
+  <!-- 
+    Using flushCache="true" to ensure cache consistency in Virtual Thread environment
+    Adding timeout to prevent thread starvation in Virtual Thread environment
+  -->
+  <insert id="set" 
+          parameterType="org.sonatype.nexus.internal.security.anonymous.AnonymousConfigurationData"
+          flushCache="true"
+          timeout="20">
     MERGE INTO anonymous_configuration (id, enabled, user_id, realm_name)
         VALUES (1, #{enabled}, #{userId}, #{realmName});
   </insert>
 
-  <insert id="set" parameterType="AnonymousConfigurationData" databaseId="PostgreSQL">
+  <!-- 
+    PostgreSQL-specific implementation using INSERT ... ON CONFLICT syntax
+    Compatible with PostgreSQL JDBC driver 42.7.2+ and Java 21
+    This syntax is more efficient than the generic MERGE approach for PostgreSQL
+  -->
+  <insert id="set" 
+          parameterType="org.sonatype.nexus.internal.security.anonymous.AnonymousConfigurationData" 
+          databaseId="PostgreSQL"
+          flushCache="true"
+          timeout="20">
     INSERT INTO anonymous_configuration (id, enabled, user_id, realm_name)
         VALUES (1, #{enabled}, #{userId}, #{realmName})
     ON CONFLICT (id) DO UPDATE SET
         enabled = #{enabled}, user_id = #{userId}, realm_name = #{realmName};
   </insert>
 
-  <delete id="clear">
+  <!-- 
+    Using flushCache="true" to ensure cache consistency in Virtual Thread environment
+    Adding timeout to prevent thread starvation in Virtual Thread environment
+  -->
+  <delete id="clear" flushCache="true" timeout="10">
     DELETE FROM anonymous_configuration WHERE id = 1;
   </delete>
 

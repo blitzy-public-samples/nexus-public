@@ -12,6 +12,9 @@
  */
 package org.sonatype.nexus.security.realm;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
+
 import javax.inject.Named;
 import javax.inject.Singleton;
 
@@ -26,38 +29,83 @@ import org.apache.shiro.realm.AuthorizingRealm;
 import org.apache.shiro.subject.PrincipalCollection;
 import org.eclipse.sisu.Description;
 
+/**
+ * Mock realm implementation for testing purposes.
+ * Updated for Java 21 and Shiro 2.0.0 compatibility with virtual thread support.
+ */
 @Singleton
 @Named("MockRealmC")
 @Description("MockRealmC")
 public class MockRealmC extends AuthorizingRealm
 {
+  /**
+   * Authentication implementation that supports virtual threads by avoiding blocking operations.
+   * Only allows goku/goku credentials for testing purposes.
+   */
   @Override
   protected AuthenticationInfo doGetAuthenticationInfo(AuthenticationToken token) throws AuthenticationException {
-    // only allow goku/goku
-    UsernamePasswordToken userpass = (UsernamePasswordToken) token;
-    if ("goku".equals(userpass.getUsername()) && "goku".equals(new String(userpass.getPassword()))) {
-      return new SimpleAuthenticationInfo(userpass.getUsername(), new String(userpass.getPassword()), this.getName());
+    // Only allow goku/goku for testing purposes
+    if (token instanceof UsernamePasswordToken userpass) {
+      if ("goku".equals(userpass.getUsername()) && "goku".equals(new String(userpass.getPassword()))) {
+        return new SimpleAuthenticationInfo(userpass.getUsername(), new String(userpass.getPassword()), getName());
+      }
     }
 
     return null;
   }
 
+  /**
+   * Authorization implementation that supports virtual threads by avoiding blocking operations.
+   * Assigns test roles and permissions for the goku user.
+   */
   @Override
   protected AuthorizationInfo doGetAuthorizationInfo(PrincipalCollection principals) {
-    // make sure the user is goku, (its just for testing)
+    // Thread-safe check for the principal
+    if (principals != null && !principals.isEmpty()) {
+      String username = principals.getPrimaryPrincipal().toString();
+      if ("goku".equals(username)) {
+        SimpleAuthorizationInfo info = new SimpleAuthorizationInfo();
 
-    if (principals.asList().get(0).toString().equals("goku")) {
-      SimpleAuthorizationInfo info = new SimpleAuthorizationInfo();
+        // Add roles in a thread-safe manner
+        info.addRole("test-role1");
+        info.addRole("test-role2");
 
-      info.addRole("test-role1");
-      info.addRole("test-role2");
+        // Add permissions in a thread-safe manner
+        info.addStringPermission("test:*");
 
-      info.addStringPermission("test:*");
-
-      return info;
+        return info;
+      }
     }
 
     return null;
+  }
+
+  /**
+   * Non-blocking asynchronous authorization check for virtual thread compatibility.
+   * This method can be used when performing authorization checks in a virtual thread context.
+   *
+   * @param principals the principals to check
+   * @return a CompletionStage with the AuthorizationInfo
+   */
+  public CompletionStage<AuthorizationInfo> getAuthorizationInfoAsync(PrincipalCollection principals) {
+    return CompletableFuture.supplyAsync(() -> doGetAuthorizationInfo(principals));
+  }
+
+  /**
+   * Non-blocking asynchronous authentication check for virtual thread compatibility.
+   * This method can be used when performing authentication in a virtual thread context.
+   *
+   * @param token the authentication token
+   * @return a CompletionStage with the AuthenticationInfo
+   */
+  public CompletionStage<AuthenticationInfo> getAuthenticationInfoAsync(AuthenticationToken token) {
+    return CompletableFuture.supplyAsync(() -> {
+      try {
+        return doGetAuthenticationInfo(token);
+      } catch (AuthenticationException e) {
+        throw new RuntimeException(e);
+      }
+    });
   }
 
   @Override

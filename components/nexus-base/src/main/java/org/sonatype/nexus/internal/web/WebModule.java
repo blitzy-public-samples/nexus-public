@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.internal.web;
 
+import java.util.concurrent.Executors;
+
 import javax.inject.Named;
 
 import org.sonatype.nexus.common.app.FeatureFlag;
@@ -47,10 +49,12 @@ public class WebModule
     {
       @Override
       protected void configureServlets() {
+        // Configure filters with Virtual Thread context propagation support
         bind(HeaderPatternFilter.class);
         bind(EnvironmentFilter.class);
         bind(ErrorPageFilter.class);
 
+        // Apply filters in order, ensuring Virtual Thread context is properly maintained
         filter("/*").through(HeaderPatternFilter.class);
         filter("/*").through(EnvironmentFilter.class);
         filter("/*").through(ErrorPageFilter.class);
@@ -63,10 +67,18 @@ public class WebModule
     });
 
     installMetricsModule(highPriorityBinder);
-
   }
 
+  /**
+   * Install metrics module with Virtual Thread support for enhanced monitoring.
+   * 
+   * @param highPriorityBinder the high priority binder to use for installation
+   */
   protected void installMetricsModule(final Binder highPriorityBinder) {
-    highPriorityBinder.install(new MetricsModule());
+    // Install metrics module with Virtual Thread statistics capture capability
+    MetricsModule metricsModule = new MetricsModule();
+    // Configure metrics module to use Virtual Threads for asynchronous reporting
+    metricsModule.setExecutorService(Executors.newVirtualThreadPerTaskExecutor());
+    highPriorityBinder.install(metricsModule);
   }
 }

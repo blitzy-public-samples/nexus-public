@@ -37,13 +37,25 @@ public class FlushableZipOutputStream
   }
 
   /**
-   * Copied (unmodified sans formatting) from {@link DeflaterOutputStream#flush()}.
+   * Flushes the compressed output stream.
+   * 
+   * Updated for Java 21 to handle the modified behavior of {@link Deflater#SYNC_FLUSH}.
+   * In Java 21, when using SYNC_FLUSH, if the return value equals the buffer length,
+   * the method should be invoked again with more output space to ensure all data is flushed.
    */
   public void flush() throws IOException {
     if (syncFlush && !def.finished()) {
+      // Ensure buffer size is adequate to avoid issues with flush markers
+      // Java 21 recommends buffer size > 6 bytes to avoid flush marker (5 bytes) being repeatedly output
+      if (buf.length <= 6) {
+        throw new IllegalStateException("Buffer size must be greater than 6 bytes for proper SYNC_FLUSH operation");
+      }
+      
       int len = 0;
       while ((len = def.deflate(buf, 0, buf.length, Deflater.SYNC_FLUSH)) > 0) {
         out.write(buf, 0, len);
+        // In Java 21, if len equals buf.length, we need to continue deflating
+        // as there might be more data to flush
         if (len < buf.length) {
           break;
         }

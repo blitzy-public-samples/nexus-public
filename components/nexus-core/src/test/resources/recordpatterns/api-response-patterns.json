@@ -1,0 +1,325 @@
+{
+  "_comment": "This file contains test data for record pattern matching with SimpleApiResponse objects in Java 21. It provides various API response scenarios to test pattern matching, destructuring, and data extraction using Java 21's record patterns feature. The examples demonstrate different response structures, nested data, and pattern matching scenarios that would be encountered in the Nexus codebase.",
+  "_usage": "This test resource is intended to be used with unit tests that verify the correct implementation of record patterns for SimpleApiResponse objects. The patterns shown in 'patternExample' fields demonstrate how record patterns can be used to extract data from API responses in a more concise and type-safe manner compared to traditional approaches.",
+  "testCases": [
+    {
+      "description": "Simple success response",
+      "response": {
+        "status": 200,
+        "message": "Operation completed successfully",
+        "data": {
+          "id": "12345",
+          "name": "Test Item"
+        }
+      }
+    },
+    {
+      "description": "Error response",
+      "response": {
+        "status": 404,
+        "message": "Resource not found",
+        "error": {
+          "code": "NOT_FOUND",
+          "details": "The requested resource could not be located"
+        }
+      }
+    },
+    {
+      "description": "Empty response",
+      "response": {
+        "status": 204,
+        "message": "No content",
+        "data": null
+      }
+    },
+    {
+      "description": "Nested data structure",
+      "response": {
+        "status": 200,
+        "message": "Repository details retrieved",
+        "data": {
+          "repository": {
+            "id": "maven-central",
+            "name": "Maven Central",
+            "type": "proxy",
+            "format": "maven2",
+            "url": "https://repo1.maven.org/maven2/",
+            "online": true,
+            "storage": {
+              "blobStoreName": "default",
+              "strictContentTypeValidation": true
+            }
+          }
+        }
+      }
+    }
+  ],
+  "advancedTestCases": [
+    {
+      "description": "Multiple nested records for pattern matching",
+      "response": {
+        "status": 200,
+        "message": "Component details retrieved",
+        "data": {
+          "component": {
+            "id": "com.example:library:1.0.0",
+            "group": "com.example",
+            "name": "library",
+            "version": "1.0.0",
+            "assets": [
+              {
+                "id": "asset-1",
+                "name": "library-1.0.0.jar",
+                "contentType": "application/java-archive",
+                "size": 1024000,
+                "checksums": {
+                  "md5": "abcdef1234567890",
+                  "sha1": "1234567890abcdef",
+                  "sha256": "abcdef1234567890abcdef1234567890"
+                }
+              },
+              {
+                "id": "asset-2",
+                "name": "library-1.0.0-sources.jar",
+                "contentType": "application/java-archive",
+                "size": 512000,
+                "checksums": {
+                  "md5": "0987654321fedcba",
+                  "sha1": "fedcba0987654321",
+                  "sha256": "fedcba0987654321fedcba0987654321"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "description": "Response with array of records",
+      "response": {
+        "status": 200,
+        "message": "Search results",
+        "data": {
+          "items": [
+            {
+              "id": "item-1",
+              "name": "First Item",
+              "metadata": {
+                "created": "2023-01-01T12:00:00Z",
+                "lastModified": "2023-01-02T14:30:00Z",
+                "owner": "admin"
+              }
+            },
+            {
+              "id": "item-2",
+              "name": "Second Item",
+              "metadata": {
+                "created": "2023-02-01T10:15:00Z",
+                "lastModified": "2023-02-03T09:45:00Z",
+                "owner": "user1"
+              }
+            },
+            {
+              "id": "item-3",
+              "name": "Third Item",
+              "metadata": {
+                "created": "2023-03-15T08:20:00Z",
+                "lastModified": "2023-03-15T08:20:00Z",
+                "owner": "user2"
+              }
+            }
+          ],
+          "totalCount": 3,
+          "continuationToken": "next-page-token"
+        }
+      }
+    }
+  ],
+  "patternMatchingScenarios": [
+    {
+      "description": "Pattern matching with conditional response",
+      "responses": [
+        {
+          "status": 200,
+          "message": "Success",
+          "data": {
+            "type": "user",
+            "user": {
+              "id": "user-123",
+              "username": "admin",
+              "email": "admin@example.com",
+              "roles": ["admin", "user"]
+            }
+          }
+        },
+        {
+          "status": 200,
+          "message": "Success",
+          "data": {
+            "type": "group",
+            "group": {
+              "id": "group-456",
+              "name": "Developers",
+              "members": ["user-123", "user-456", "user-789"]
+            }
+          }
+        },
+        {
+          "status": 200,
+          "message": "Success",
+          "data": {
+            "type": "role",
+            "role": {
+              "id": "role-789",
+              "name": "Administrator",
+              "permissions": ["read", "write", "delete", "admin"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "description": "Pattern matching with optional fields",
+      "responses": [
+        {
+          "status": 200,
+          "message": "Success",
+          "data": {
+            "id": "repo-123",
+            "name": "Maven Releases",
+            "description": "Repository for Maven release artifacts",
+            "format": "maven2",
+            "type": "hosted",
+            "url": "http://localhost:8081/repository/maven-releases/"
+          }
+        },
+        {
+          "status": 200,
+          "message": "Success",
+          "data": {
+            "id": "repo-456",
+            "name": "NPM Proxy",
+            "format": "npm",
+            "type": "proxy",
+            "url": "http://localhost:8081/repository/npm-proxy/"
+          }
+        },
+        {
+          "status": 200,
+          "message": "Success",
+          "data": {
+            "id": "repo-789",
+            "name": "Docker Group",
+            "description": null,
+            "format": "docker",
+            "type": "group",
+            "url": "http://localhost:8081/repository/docker-group/"
+          }
+        }
+      ]
+    },
+    {
+      "description": "Pattern matching with different data types",
+      "responses": [
+        {
+          "status": 200,
+          "message": "Success",
+          "data": {
+            "stringValue": "text",
+            "numberValue": 42,
+            "booleanValue": true,
+            "nullValue": null,
+            "arrayValue": [1, 2, 3],
+            "objectValue": {
+              "key": "value"
+            }
+          }
+        },
+        {
+          "status": 200,
+          "message": "Success",
+          "data": [
+            "string item",
+            123,
+            false,
+            {"nestedObject": true}
+          ]
+        }
+      ]
+    }
+  ],
+  "java21SpecificPatterns": [
+    {
+      "description": "Record pattern with type inference using var",
+      "response": {
+        "status": 200,
+        "message": "Success",
+        "data": {
+          "id": "test-id",
+          "value": 42
+        }
+      },
+      "patternExample": "if (response instanceof SimpleApiResponse(var status, var message, var data)) { ... }"
+    },
+    {
+      "description": "Nested record pattern with explicit types",
+      "response": {
+        "status": 200,
+        "message": "Success",
+        "data": {
+          "repository": {
+            "name": "maven-central",
+            "type": "proxy"
+          }
+        }
+      },
+      "patternExample": "if (response instanceof SimpleApiResponse(int status, String message, ResponseData(Repository(String name, String type)))) { ... }"
+    },
+    {
+      "description": "Pattern matching in switch expression",
+      "responses": [
+        {
+          "status": 200,
+          "message": "Success",
+          "data": {
+            "type": "success",
+            "value": "Operation completed"
+          }
+        },
+        {
+          "status": 400,
+          "message": "Bad Request",
+          "error": {
+            "type": "validation",
+            "details": "Invalid input"
+          }
+        },
+        {
+          "status": 500,
+          "message": "Internal Server Error",
+          "error": {
+            "type": "system",
+            "details": "Unexpected error occurred"
+          }
+        }
+      ],
+      "patternExample": "String result = switch(response) {\n  case SimpleApiResponse(200, var msg, var data) -> \"Success: \" + data.value();\n  case SimpleApiResponse(400, var msg, var error) -> \"Bad Request: \" + error.details();\n  case SimpleApiResponse(500, var msg, var error) -> \"Server Error: \" + error.details();\n  default -> \"Unknown response\";\n};"
+    },
+    {
+      "description": "Pattern matching with unnamed patterns using underscore",
+      "response": {
+        "status": 200,
+        "message": "Success",
+        "data": {
+          "id": "test-id",
+          "metadata": {
+            "created": "2023-01-01T12:00:00Z",
+            "lastModified": "2023-01-02T14:30:00Z"
+          }
+        }
+      },
+      "patternExample": "if (response instanceof SimpleApiResponse(200, _, var data)) {
+  "_comment": "This file contains test data for record pattern matching with SimpleApiResponse objects in Java 21. It provides various API response scenarios to test pattern matching, destructuring, and data extraction using Java 21's record patterns feature. The examples demonstrate different response structures, nested data, and pattern matching scenarios that would be encountered in the Nexus codebase.",
+  "_usage": "This test resource is intended to be used with unit tests that verify the correct implementation of record patterns for SimpleApiResponse objects. The patterns shown in 'patternExample' fields demonstrate how record patterns can be used to extract data from API responses in a more concise and type-safe manner compared to traditional approaches.", ... }\n// Only interested in status code and data, ignoring message"
+    }
+  ]}

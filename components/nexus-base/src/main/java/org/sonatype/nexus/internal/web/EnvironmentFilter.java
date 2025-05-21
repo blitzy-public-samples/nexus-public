@@ -35,6 +35,7 @@ import org.eclipse.sisu.Hidden;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.net.HttpHeaders.SERVER;
 import static com.google.common.net.HttpHeaders.X_CONTENT_TYPE_OPTIONS;
+import static java.lang.StringTemplate.STR;
 
 /**
  * Sets up the basic environment for web-requests.
@@ -62,13 +63,9 @@ public class EnvironmentFilter
     // cache "Server" header value
     checkNotNull(applicationVersion);
 
-    this.serverBanner = String.format("Sonatype Nexus %s %s",
-        applicationVersion.getEdition(),
-        applicationVersion.getVersion());
+    this.serverBanner = STR."Sonatype Nexus \{applicationVersion.getEdition()} \{applicationVersion.getVersion()}";
 
-    this.serverHeader = String.format("Nexus/%s (%s)",
-        applicationVersion.getVersion(),
-        applicationVersion.getEdition());
+    this.serverHeader = STR."Nexus/\{applicationVersion.getVersion()} (\{applicationVersion.getEdition()})";
 
     this.baseUrlManager = checkNotNull(baseUrlManager);
   }
@@ -89,16 +86,17 @@ public class EnvironmentFilter
       final ServletResponse response,
       final FilterChain chain) throws IOException, ServletException
   {
-    // start with default unknown user-id in MDC
-    UserIdMdcHelper.unknown();
-
-    // detect base-url
-    baseUrlManager.detectAndHoldUrl();
-
-    // fill in default response headers
-    defaultHeaders((HttpServletResponse) response);
-
     try {
+      // start with default unknown user-id in MDC
+      UserIdMdcHelper.unknown();
+
+      // detect base-url
+      baseUrlManager.detectAndHoldUrl();
+
+      // fill in default response headers
+      defaultHeaders((HttpServletResponse) response);
+
+      // continue filter chain
       chain.doFilter(request, response);
     }
     finally {
@@ -115,5 +113,12 @@ public class EnvironmentFilter
 
     // NEXUS-5023 disable IE for sniffing into response content
     response.setHeader(X_CONTENT_TYPE_OPTIONS, "nosniff");
+    
+    // Add modern security headers
+    response.setHeader("Content-Security-Policy", "default-src 'self'; frame-ancestors 'self'");
+    response.setHeader("X-XSS-Protection", "1; mode=block");
+    response.setHeader("X-Frame-Options", "SAMEORIGIN");
+    response.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    response.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
   }
 }

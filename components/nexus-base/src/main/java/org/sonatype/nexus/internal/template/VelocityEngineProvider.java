@@ -20,7 +20,6 @@ import javax.inject.Singleton;
 import org.sonatype.goodies.common.ComponentSupport;
 
 import com.google.common.base.Joiner;
-import com.google.common.base.Throwables;
 import org.apache.velocity.app.VelocityEngine;
 
 import static org.apache.velocity.runtime.RuntimeConstants.RESOURCE_LOADERS;
@@ -78,12 +77,17 @@ public class VelocityEngineProvider
     // to force templates having inline local scope for VM definitions
     engine.setProperty(VM_PERM_INLINE_LOCAL, "true");
 
-    log.debug("Initializing: {}", engine);
+    log.debug(STR."Initializing: \{engine}");
     try {
       engine.init();
     }
     catch (Exception e) {
-      Throwables.throwIfUnchecked(e);
+      if (e instanceof RuntimeException runtimeException) {
+        throw runtimeException;
+      }
+      if (e instanceof Error error) {
+        throw error;
+      }
       throw new RuntimeException(e);
     }
 

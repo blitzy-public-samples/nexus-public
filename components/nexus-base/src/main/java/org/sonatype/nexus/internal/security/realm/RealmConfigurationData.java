@@ -34,7 +34,14 @@ public class RealmConfigurationData
 
   @Override
   public void setRealmNames(final List<String> realmNames) {
-    this.realmNames = realmNames != null ? realmNames : new ArrayList<>();
+    // Using Pattern Matching for null check
+    if (realmNames instanceof List<String> list) {
+      // Pattern variable 'list' is only in scope if realmNames is not null
+      this.realmNames = list;
+    } else {
+      // This branch handles the null case
+      this.realmNames = new ArrayList<>();
+    }
   }
 
   @Override
@@ -43,14 +50,14 @@ public class RealmConfigurationData
       return (RealmConfiguration) clone();
     }
     catch (CloneNotSupportedException e) {
-      throw new RuntimeException(e);
+      // Improved exception handling with more descriptive message
+      throw new RuntimeException("Failed to clone RealmConfiguration: " + e.getMessage(), e);
     }
   }
 
   @Override
   public String toString() {
-    return getClass().getSimpleName() + "{" +
-        "realmNames=" + realmNames +
-        '}';
+    // Using Java 21 String Templates for more efficient string concatenation
+    return STR."\{getClass().getSimpleName()}\{realmNames=\{realmNames}\}";
   }
 }

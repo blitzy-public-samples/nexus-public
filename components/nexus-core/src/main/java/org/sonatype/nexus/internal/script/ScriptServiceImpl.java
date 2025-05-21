@@ -15,6 +15,8 @@ package org.sonatype.nexus.internal.script;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import javax.annotation.Nonnull;
 import javax.inject.Inject;
@@ -35,6 +37,7 @@ import org.sonatype.nexus.common.script.ScriptService;
 
 import org.eclipse.sisu.inject.BeanLocator;
 
+import static java.lang.StringTemplate.STR;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 
@@ -85,10 +88,10 @@ public class ScriptServiceImpl
   public ScriptEngine engineForLanguage(final String language) {
     validateLanguage(language);
 
-    log.trace("Resolving engine for language: {}", language);
+    log.trace(STR."Resolving engine for language: \{language}");
     ScriptEngine engine = engineManager.getEngineByName(language);
-    checkState(engine != null, "Missing engine for language: %s", language);
-    log.trace("Engine: {}", engine);
+    checkState(engine != null, STR."Missing engine for language: \{language}");
+    log.trace(STR."Engine: \{engine}");
     return engine;
   }
 
@@ -123,9 +126,7 @@ public class ScriptServiceImpl
   {
     Bindings bindings = context.getBindings(scope);
     applyDefaultBindings(bindings);
-    for (Entry<String, Object> entry : customizations.entrySet()) {
-      bindings.put(entry.getKey(), entry.getValue());
-    }
+    customizations.forEach(bindings::put);
   }
 
   @Override
@@ -135,7 +136,22 @@ public class ScriptServiceImpl
 
   @Override
   public Object eval(final String language, final String script, final ScriptContext context) throws ScriptException {
-    return engineForLanguage(checkNotNull(language)).eval(checkNotNull(script), checkNotNull(context));
+    checkNotNull(language);
+    checkNotNull(script);
+    checkNotNull(context);
+    
+    // Use virtual threads for script evaluation to improve performance
+    try {
+      Future<Object> result = Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
+          engineForLanguage(language).eval(script, context));
+      return result.get();
+    } 
+    catch (Exception e) {
+      if (e.getCause() instanceof ScriptException) {
+        throw (ScriptException) e.getCause();
+      }
+      throw new ScriptException(STR."Error executing script: \{e.getMessage()}");
+    }
   }
 
   @Override
@@ -150,8 +166,17 @@ public class ScriptServiceImpl
   private void validateLanguage(final String language) {
     checkNotNull(language);
 
-    if (allowOnlyGroovy && !language.equals(ScriptEngineManagerProvider.DEFAULT_LANGUAGE)) {
-      throw new IllegalScriptLanguageException("Language: " + language + " is not allowed");
+    // Use pattern matching for switch to improve readability and maintainability
+    switch (language) {
+      case ScriptEngineManagerProvider.DEFAULT_LANGUAGE -> {
+        // Groovy is always allowed
+      }
+      case String s when !allowOnlyGroovy -> {
+        // Other languages are allowed when allowOnlyGroovy is false
+      }
+      default -> {
+        throw new IllegalScriptLanguageException(STR."Language: \{language} is not allowed");
+      }
     }
   }
 }

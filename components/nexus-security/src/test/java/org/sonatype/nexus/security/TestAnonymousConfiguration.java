@@ -14,14 +14,19 @@ package org.sonatype.nexus.security;
 
 import org.sonatype.nexus.security.anonymous.AnonymousConfiguration;
 
+/**
+ * Test implementation of {@link AnonymousConfiguration} for use in unit tests.
+ * 
+ * @since 3.0
+ */
 public class TestAnonymousConfiguration
     implements AnonymousConfiguration
 {
-  boolean enabled;
+  private boolean enabled;
 
-  String realmName;
+  private String realmName;
 
-  String userId;
+  private String userId;
 
   @Override
   public String getRealmName() {
@@ -53,6 +58,10 @@ public class TestAnonymousConfiguration
     this.userId = userId;
   }
 
+  /**
+   * For testing purposes, this implementation simply returns itself instead of creating a true copy.
+   * This is sufficient for most test cases but should not be used in production code.
+   */
   @Override
   public AnonymousConfiguration copy() {
     return this;

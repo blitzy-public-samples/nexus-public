@@ -1,0 +1,237 @@
+[
+  {
+    "type": "ArtifactRecord",
+    "id": "artifact-001",
+    "name": "example-library",
+    "version": "1.0.0",
+    "groupId": "org.example",
+    "timestamp": 1642512000000,
+    "size": 1024,
+    "metadata": {
+      "description": "Example library for testing",
+      "license": "Apache-2.0"
+    },
+    "tags": ["java", "library", "test"]
+  },
+  {
+    "type": "ArtifactRecord",
+    "id": "artifact-002",
+    "name": "test-framework",
+    "version": "2.1.3",
+    "groupId": "org.example.test",
+    "timestamp": 1642598400000,
+    "size": 2048,
+    "metadata": {
+      "description": "Testing framework",
+      "license": "MIT"
+    },
+    "tags": ["java", "testing"]
+  },
+  {
+    "type": "RepositoryRecord",
+    "id": "repo-001",
+    "name": "maven-central",
+    "type": "proxy",
+    "format": "maven2",
+    "url": "https://repo.maven.apache.org/maven2/",
+    "online": true,
+    "metadata": {
+      "description": "Maven Central proxy repository"
+    }
+  },
+  {
+    "type": "RepositoryRecord",
+    "id": "repo-002",
+    "name": "npm-hosted",
+    "type": "hosted",
+    "format": "npm",
+    "url": null,
+    "online": true,
+    "metadata": {
+      "description": "Hosted NPM repository"
+    }
+  },
+  {
+    "type": "UserRecord",
+    "id": "user-001",
+    "username": "admin",
+    "firstName": "System",
+    "lastName": "Administrator",
+    "email": "admin@example.com",
+    "active": true,
+    "roles": ["nx-admin"]
+  },
+  {
+    "type": "UserRecord",
+    "id": "user-002",
+    "username": "developer",
+    "firstName": "Test",
+    "lastName": "Developer",
+    "email": "dev@example.com",
+    "active": true,
+    "roles": ["nx-developer", "nx-deployer"]
+  },
+  {
+    "type": "UserRecord",
+    "id": "user-003",
+    "username": "inactive",
+    "firstName": null,
+    "lastName": null,
+    "email": null,
+    "active": false,
+    "roles": []
+  },
+  {
+    "type": "BlobStoreRecord",
+    "id": "blob-001",
+    "name": "default",
+    "type": "file",
+    "attributes": {
+      "path": "/nexus-data/blobs/default",
+      "available": true,
+      "size": 1073741824
+    },
+    "metrics": {
+      "blobCount": 1250,
+      "totalSize": 536870912
+    }
+  },
+  {
+    "type": "BlobStoreRecord",
+    "id": "blob-002",
+    "name": "s3-store",
+    "type": "s3",
+    "attributes": {
+      "bucket": "nexus-blobs",
+      "region": "us-west-2",
+      "available": true,
+      "size": null
+    },
+    "metrics": {
+      "blobCount": 3500,
+      "totalSize": 2147483648
+    }
+  },
+  {
+    "type": "ComponentRecord",
+    "id": "component-001",
+    "name": "spring-core",
+    "group": "org.springframework",
+    "version": "5.3.15",
+    "format": "maven2",
+    "repository": {
+      "id": "repo-001",
+      "name": "maven-central",
+      "type": "proxy"
+    },
+    "assets": [
+      {
+        "id": "asset-001",
+        "name": "spring-core-5.3.15.jar",
+        "contentType": "application/java-archive",
+        "size": 1458632
+      },
+      {
+        "id": "asset-002",
+        "name": "spring-core-5.3.15.pom",
+        "contentType": "application/xml",
+        "size": 12680
+      }
+    ]
+  },
+  {
+    "type": "ComponentRecord",
+    "id": "component-002",
+    "name": "react",
+    "group": null,
+    "version": "17.0.2",
+    "format": "npm",
+    "repository": {
+      "id": "repo-002",
+      "name": "npm-hosted",
+      "type": "hosted"
+    },
+    "assets": [
+      {
+        "id": "asset-003",
+        "name": "react-17.0.2.tgz",
+        "contentType": "application/gzip",
+        "size": 128450
+      }
+    ]
+  },
+  {
+    "type": "TaskRecord",
+    "id": "task-001",
+    "name": "Cleanup repositories",
+    "type": "repository.cleanup",
+    "schedule": {
+      "type": "cron",
+      "expression": "0 0 3 * * ?"
+    },
+    "enabled": true,
+    "lastRun": 1642636800000,
+    "nextRun": 1642723200000,
+    "status": "WAITING"
+  },
+  {
+    "type": "TaskRecord",
+    "id": "task-002",
+    "name": "Compact blob store",
+    "type": "blobstore.compact",
+    "schedule": {
+      "type": "manual",
+      "expression": null
+    },
+    "enabled": true,
+    "lastRun": null,
+    "nextRun": null,
+    "status": "WAITING"
+  },
+  {
+    "type": "EventRecord",
+    "id": "event-001",
+    "timestamp": 1642512060000,
+    "type": "REPOSITORY_CREATED",
+    "user": {
+      "id": "user-001",
+      "username": "admin"
+    },
+    "attributes": {
+      "repositoryId": "repo-002",
+      "repositoryName": "npm-hosted"
+    }
+  },
+  {
+    "type": "EventRecord",
+    "id": "event-002",
+    "timestamp": 1642512120000,
+    "type": "COMPONENT_UPLOADED",
+    "user": {
+      "id": "user-002",
+      "username": "developer"
+    },
+    "attributes": {
+      "componentId": "component-002",
+      "componentName": "react",
+      "repositoryId": "repo-002"
+    }
+  },
+  {
+    "type": "NestedRecord",
+    "id": "nested-001",
+    "name": "Level 1",
+    "child": {
+      "id": "nested-002",
+      "name": "Level 2",
+      "child": {
+        "id": "nested-003",
+        "name": "Level 3",
+        "child": null,
+        "value": 42
+      },
+      "value": 21
+    },
+    "value": 10
+  }
+]

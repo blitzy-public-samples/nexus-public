@@ -13,6 +13,8 @@
 package org.sonatype.nexus.security.authz;
 
 import java.util.Collections;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
@@ -25,9 +27,12 @@ import org.apache.shiro.authz.permission.AllPermission;
 import org.apache.shiro.realm.AuthorizingRealm;
 import org.apache.shiro.realm.Realm;
 import org.apache.shiro.subject.PrincipalCollection;
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
+@ExtendWith(MockitoExtension.class)
 public class ExceptionCatchingModularRealmAuthorizerTest
   extends TestSupport
 {
@@ -45,15 +50,63 @@ public class ExceptionCatchingModularRealmAuthorizerTest
   };
 
   @Test
-  public void ignoreRuntimeException() throws Exception {
+  void shouldIgnoreRuntimeException() throws Exception {
     ExceptionCatchingModularRealmAuthorizer subject =
         new ExceptionCatchingModularRealmAuthorizer(Collections.<Realm>singleton(BROKEN_REALM));
 
     Permission permission = new AllPermission();
 
-    Assert.assertFalse(subject.isPermitted(null, ""));
-    Assert.assertFalse(subject.isPermitted(null, permission));
-    Assert.assertFalse(subject.isPermitted(null, new String[]{""})[0]);
-    Assert.assertFalse(subject.isPermitted(null, Collections.singletonList(permission))[0]);
+    Assertions.assertFalse(subject.isPermitted(null, ""));
+    Assertions.assertFalse(subject.isPermitted(null, permission));
+    Assertions.assertFalse(subject.isPermitted(null, new String[]{""})[0]);
+    Assertions.assertFalse(subject.isPermitted(null, Collections.singletonList(permission))[0]);
   }
-}
+  
+  @Test
+  void shouldHandleConcurrentExceptionsWithVirtualThreads() throws Exception {
+    ExceptionCatchingModularRealmAuthorizer subject =
+        new ExceptionCatchingModularRealmAuthorizer(Collections.<Realm>singleton(BROKEN_REALM));
+    
+    final int threadCount = 10;
+    final CountDownLatch startLatch = new CountDownLatch(1);
+    final CountDownLatch completionLatch = new CountDownLatch(threadCount);
+    final AtomicBoolean anyFailures = new AtomicBoolean(false);
+    
+    // Create multiple virtual threads to test concurrent exception handling
+    for (int i = 0; i < threadCount; i++) {
+      Thread.startVirtualThread(() -> {
+        try {
+          startLatch.await(); // Wait for all threads to be ready
+          
+          // Test all permission check methods
+          try {
+            Assertions.assertFalse(subject.isPermitted(null, ""));
+            Assertions.assertFalse(subject.isPermitted(null, new AllPermission()));
+            Assertions.assertFalse(subject.isPermitted(null, new String[]{""})[0]);
+            Assertions.assertFalse(subject.isPermitted(null, 
+                Collections.singletonList(new AllPermission()))[0]);
+          } 
+          catch (Exception e) {
+            // If any assertion fails or an unexpected exception occurs, mark as failed
+            anyFailures.set(true);
+          }
+        } 
+        catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          anyFailures.set(true);
+        }
+        finally {
+          completionLatch.countDown();
+        }
+      });
+    }
+    
+    // Start all threads simultaneously
+    startLatch.countDown();
+    
+    // Wait for all threads to complete
+    completionLatch.await();
+    
+    // Verify no failures occurred
+    Assertions.assertFalse(anyFailures.get(), "Concurrent permission checks with virtual threads failed");
+  }

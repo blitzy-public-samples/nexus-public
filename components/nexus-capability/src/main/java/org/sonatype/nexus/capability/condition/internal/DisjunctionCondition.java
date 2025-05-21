@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.capability.condition.internal;
 
+import java.util.Arrays;
+
 import org.sonatype.nexus.capability.Condition;
 import org.sonatype.nexus.common.event.EventManager;
 
@@ -35,26 +37,27 @@ public class DisjunctionCondition
 
   @Override
   protected boolean reevaluate(final Condition... conditions) {
-    for (final Condition condition : conditions) {
-      if (condition.isSatisfied()) {
-        lastSatisfied = condition;
-        return true;
+    // Using pattern matching for switch to evaluate conditions more efficiently
+    return switch (conditions) {
+      case Condition[] c when c.length == 0 -> false;
+      case Condition[] c -> {
+        for (Condition condition : c) {
+          if (condition.isSatisfied()) {
+            lastSatisfied = condition;
+            yield true;
+          }
+        }
+        lastSatisfied = null;
+        yield false;
       }
-    }
-    lastSatisfied = null;
-    return false;
+    };
   }
 
   @Override
   public String toString() {
-    final StringBuilder sb = new StringBuilder();
-    for (final Condition condition : getConditions()) {
-      if (sb.length() > 0) {
-        sb.append(" OR ");
-      }
-      sb.append(condition);
-    }
-    return sb.toString();
+    return String.join(" OR ", Arrays.stream(getConditions())
+        .map(Object::toString)
+        .toArray(String[]::new));
   }
 
   @Override
@@ -62,26 +65,17 @@ public class DisjunctionCondition
     if (lastSatisfied != null) {
       return lastSatisfied.explainSatisfied();
     }
-    final StringBuilder sb = new StringBuilder();
-    for (final Condition condition : getConditions()) {
-      if (sb.length() > 0) {
-        sb.append(" OR ");
-      }
-      sb.append(condition.explainSatisfied());
-    }
-    return sb.toString();
+    
+    return String.join(" OR ", Arrays.stream(getConditions())
+        .map(Condition::explainSatisfied)
+        .toArray(String[]::new));
   }
 
   @Override
   public String explainUnsatisfied() {
-    final StringBuilder sb = new StringBuilder();
-    for (final Condition condition : getConditions()) {
-      if (sb.length() > 0) {
-        sb.append(" AND ");
-      }
-      sb.append(condition.explainUnsatisfied());
-    }
-    return sb.toString();
+    return String.join(" AND ", Arrays.stream(getConditions())
+        .map(Condition::explainUnsatisfied)
+        .toArray(String[]::new));
   }
 
 }

@@ -1,0 +1,153 @@
+# Java 21 String Template Complex Expression Test Patterns
+
+/*
+ * This file contains test patterns for Java 21 String Templates with complex expressions.
+ * These patterns are used to validate the template processor's ability to handle sophisticated
+ * expressions in logging statements, error messages, and dynamic content generation within Nexus.
+ *
+ * The examples demonstrate various complex expression patterns including:
+ * - Method calls (simple, chained, static, with parameters)
+ * - Arithmetic operations (basic, complex, with precedence)
+ * - Logical operations (AND, OR, NOT, comparisons)
+ * - Conditional expressions (ternary operators, nested conditionals)
+ * - Nested expressions (combinations of the above)
+ */
+
+## 1. Method Calls in Template Expressions
+
+// Simple method call
+STR."User name: \{user.getName()}"
+
+// Method call with parameters
+STR."Formatted date: \{dateFormatter.format(currentDate)}"
+
+// Chained method calls
+STR."Repository path: \{repository.getStorage().getPath().toLowerCase()}"
+
+// Static method call
+STR."Random ID: \{java.util.UUID.randomUUID().toString()}"
+
+// Method call with string parameter
+STR."Found item: \{repository.findItem("maven-central").getName()}"
+
+// Method call with multiple parameters
+STR."Distance: \{Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2))}"
+
+// Method call with lambda expression
+STR."Filtered count: \{items.stream().filter(item -> item.isActive()).count()}"
+
+## 2. Arithmetic Operations
+
+// Basic arithmetic
+STR."Sum: \{a + b}, Difference: \{a - b}, Product: \{a * b}, Quotient: \{a / b}"
+
+// Complex arithmetic with precedence
+STR."Complex calculation: \{(a + b) * c / (d - e)}"
+
+// Mixed types
+STR."Mixed calculation: \{intValue + doubleValue * 2.5}"
+
+// Modulus operation
+STR."Remainder: \{totalItems % pageSize}"
+
+// Increment/decrement
+STR."Next value: \{counter + 1}, Previous value: \{counter - 1}"
+
+// Bitwise operations
+STR."Bitwise AND: \{flags & MASK_READ}, Bitwise OR: \{permissions | PERMISSION_WRITE}"
+
+// Compound arithmetic with type conversion
+STR."Compound: \{(int)(doubleValue * 100) / 100.0}"
+
+## 3. Logical Operations
+
+// Boolean operations
+STR."Logical AND: \{isEnabled && isVisible}"
+STR."Logical OR: \{isAdmin || hasPermission}"
+STR."Logical NOT: \{!isDisabled}"
+
+// Comparison operators
+STR."Equality check: \{status == StatusEnum.ACTIVE}"
+STR."Greater than: \{fileSize > maxSize}"
+STR."Less than or equal: \{currentUsers <= maxUsers}"
+
+// Combined logical expressions
+STR."Complex condition: \{(isAdmin || hasSpecialPermission) && isActive}"
+
+// Short-circuit evaluation
+STR."Safe navigation: \{user != null && user.hasProfile() && user.getProfile().isComplete()}"
+
+// Instanceof with pattern matching (Java 21 feature)
+STR."Type check: \{obj instanceof String s ? s.length() : 0}"
+
+## 4. Conditional Expressions
+
+// Simple ternary
+STR."Status: \{isActive ? "Active" : "Inactive"}"
+
+// Ternary with method calls
+STR."Permission: \{hasRole("admin") ? "Full access" : "Limited access"}"
+
+// Nested ternary
+STR."Access level: \{isAdmin ? "Admin" : (isUser ? "User" : "Guest")}"
+
+// Ternary with arithmetic
+STR."Display value: \{value < 0 ? 0 : (value > 100 ? 100 : value)}"
+
+// Ternary with complex conditions
+STR."Action required: \{(status == StatusEnum.ERROR && retryCount < maxRetries) ? "Retry" : "Abort"}"
+
+// Ternary with method calls on both sides
+STR."Result: \{condition ? processSuccess(result) : processFailure(error)}"
+
+## 5. Nested Expressions
+
+// Method call with arithmetic
+STR."Total size: \{formatSize(fileSize + attachmentSize)}"
+
+// Conditional with method call
+STR."Repository status: \{repo.isOnline() ? repo.getStatus().getName() : "Offline"}"
+
+// Complex nested expression
+STR."Access: \{user.hasRole("admin") ? "Full" : (user.getPermissionLevel() > 5 ? "Extended" : "Basic")}"
+
+// Arithmetic with method calls and conditionals
+STR."Estimated time: \{isHighPriority ? calculateTime(size) / 2 : calculateTime(size) * 1.5} seconds"
+
+// Multiple nested operations
+STR."Complex value: \{(a + b) * (isValid ? getValue() : getDefaultValue()) / (count > 0 ? count : 1)}"
+
+// Nested method calls with parameters
+STR."Processed content: \{formatter.format(parser.parse(content.trim().toLowerCase()))}"
+
+// Deeply nested conditional logic
+STR."Status: \{isEnabled ? (isAdmin ? (isSpecial ? "Special Admin" : "Regular Admin") : (isVIP ? "VIP User" : "Regular User")) : "Disabled"}"
+
+## 6. Combined Complex Expressions
+
+// Method call with conditional and arithmetic
+STR."Storage usage: \{formatPercent(used / (total > 0 ? total : 1) * 100)}"
+
+// Nested method calls with conditionals
+STR."User info: \{user != null ? user.getProfile().getDisplayName() : "Guest"}"
+
+// Complex string building with multiple expressions
+STR."\{repo.getName()}: \{repo.isEnabled() ? "Enabled" : "Disabled"} (\{repo.getItems().size()} items, \{formatSize(repo.getTotalSize())})"
+
+// Deeply nested expression with multiple operations
+STR."Calculation result: \{((a + b) * c - (d / (e > 0 ? e : 1))) * (isValid ? 1 : 0) + (hasBonus ? calculateBonus() : 0)}"
+
+// Real-world complex logging example
+STR."[\{getCurrentTimestamp()}] \{logger.getName()}: Repository '\{repo.getName()}' \{repo.isOnline() ? "processed" : "skipped"} \{repo.getItems().size()} items (\{repo.getSuccessCount()} succeeded, \{repo.getFailureCount()} failed) in \{repo.getProcessingTime()}ms"
+
+// Error message with multiple conditions and method calls
+STR."Error \{error.getCode()}: \{error.getMessage()} - \{error.isCritical() ? "CRITICAL" : "WARNING"} (\{error.getTimestamp()}) - Affected components: \{String.join(", ", error.getAffectedComponents())}"
+
+// Complex data formatting for display
+STR."\{data.getType().toUpperCase()}: \{formatValue(data.getValue(), data.getUnit())} (\{data.getTimestamp() != null ? formatDate(data.getTimestamp()) : "N/A"}) - \{data.getTags().isEmpty() ? "No tags" : String.join(", ", data.getTags())}"
+
+// Repository metrics with complex calculations and formatting
+STR."Repository metrics: \{repo.getName()} - Availability: \{formatPercent(repo.getUptime() / totalTime * 100)}%, Performance: \{repo.getAverageResponseTime() < threshold ? "Good" : "Needs optimization"} (\{formatTime(repo.getAverageResponseTime())}), Health: \{calculateHealth(repo.getErrorRate(), repo.getSuccessRate(), repo.getWarningCount())}"
+
+// Complex template with multiple nested expressions and method calls
+STR."\{user.getFullName()} (\{user.getRoles().stream().map(Role::getName).collect(Collectors.joining(", "))}) - Last login: \{user.getLastLogin() != null ? formatDate(user.getLastLogin()) : "Never"} - Status: \{user.isLocked() ? "Locked" : (user.isExpired() ? "Expired" : (user.isActive() ? "Active" : "Inactive"))} - Actions: \{generateActionLinks(user.getId(), user.getPermissions())}"

@@ -16,6 +16,7 @@ import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.System.Logger.Level;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -31,7 +32,11 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
 import java.util.stream.Stream;
+
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -51,11 +56,13 @@ import org.sonatype.nexus.internal.log.overrides.datastore.LoggerOverridesEvent;
 import org.sonatype.nexus.internal.log.overrides.datastore.LoggerOverridesEvent.Action;
 import org.sonatype.nexus.logging.task.TaskLogHome;
 
-import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.Appender;
 import ch.qos.logback.core.FileAppender;
+import ch.qos.logback.core.joran.spi.JoranException;
+import ch.qos.logback.core.util.StatusPrinter;
+
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.eventbus.Subscribe;
 import com.google.common.io.ByteStreams;
@@ -69,7 +76,9 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.impl.StaticLoggerBinder;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 import static java.util.Objects.requireNonNull;
+import static java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor;
 import static java.util.stream.Collectors.toSet;
 import static org.slf4j.Logger.ROOT_LOGGER_NAME;
 import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.KERNEL;
@@ -96,6 +105,12 @@ public class LogbackLogManager
   private final LoggerOverrides overrides;
 
   private final List<String> allowedFilePrefixes = Arrays.asList(TASKS_PREFIX, REPLICATION_PREFIX);
+  
+  // JFR event logging configuration
+  private static final String JFR_LOG_FILE = "jfr-events.log";
+  private static final String JFR_APPENDER_NAME = "JFR_EVENT_APPENDER";
+  private static final String GC_LOG_FILE = "gc.log";
+  private static final String GC_APPENDER_NAME = "GC_LOG_APPENDER";
 
   @Inject
   public LogbackLogManager(
@@ -134,10 +149,16 @@ public class LogbackLogManager
     beanLocator.watch(Key.get(LogConfigurationCustomizer.class, Named.class), new CustomizerMediator(), this);
 
     eventManager.register(this);
+    
+    // Configure JFR event logging
+    configureJfrEventLogging();
+    
+    // Configure GC logging
+    configureGcLogging();
   }
 
   private void configure() {
-    log.info("Configuring");
+    log.info(STR."Configuring Logback for Java \{System.getProperty("java.version")}");
 
     // sanity clear customizations
     customizations.clear();
@@ -145,6 +166,86 @@ public class LogbackLogManager
     // load and apply overrides
     overrides.load();
     applyOverrides();
+  }
+  
+  /**
+   * Configures Java Flight Recorder event logging.
+   */
+  private void configureJfrEventLogging() {
+    try {
+      LoggerContext context = loggerContext();
+      
+      // Check if JFR is enabled via system property
+      if (Boolean.getBoolean("java.flightrecorder") || 
+          System.getProperty("jdk.jfr.enabled", "false").equalsIgnoreCase("true")) {
+        
+        log.info(STR."Configuring Java Flight Recorder event logging to \{JFR_LOG_FILE}");
+        
+        // Create a dedicated appender for JFR events if it doesn't exist
+        if (context.getLogger("jdk.jfr").getAppender(JFR_APPENDER_NAME) == null) {
+          // Configure JFR event logger and appender
+          JfrEventAppender jfrAppender = new JfrEventAppender();
+          jfrAppender.setContext(context);
+          jfrAppender.setName(JFR_APPENDER_NAME);
+          jfrAppender.setFile(JFR_LOG_FILE);
+          jfrAppender.start();
+          
+          // Attach appender to the JFR logger
+          ch.qos.logback.classic.Logger jfrLogger = context.getLogger("jdk.jfr");
+          jfrLogger.addAppender(jfrAppender);
+          jfrLogger.setLevel(ch.qos.logback.classic.Level.INFO);
+          jfrLogger.setAdditive(false);
+        }
+      }
+    } catch (Exception e) {
+      log.warn(STR."Failed to configure JFR event logging: \{e.getMessage()}", e);
+    }
+  }
+  
+  /**
+   * Configures Garbage Collection logging based on JVM flags.
+   */
+  private void configureGcLogging() {
+    try {
+      LoggerContext context = loggerContext();
+      
+      // Check if GC logging is enabled via -Xlog:gc* flag
+      if (isGcLoggingEnabled()) {
+        log.info(STR."Configuring GC logging to \{GC_LOG_FILE}");
+        
+        // Create a dedicated appender for GC logs if it doesn't exist
+        if (context.getLogger("gc").getAppender(GC_APPENDER_NAME) == null) {
+          // Configure GC logger and appender
+          GcLogAppender gcAppender = new GcLogAppender();
+          gcAppender.setContext(context);
+          gcAppender.setName(GC_APPENDER_NAME);
+          gcAppender.setFile(GC_LOG_FILE);
+          gcAppender.start();
+          
+          // Attach appender to the GC logger
+          ch.qos.logback.classic.Logger gcLogger = context.getLogger("gc");
+          gcLogger.addAppender(gcAppender);
+          gcLogger.setLevel(ch.qos.logback.classic.Level.INFO);
+          gcLogger.setAdditive(false);
+        }
+      }
+    } catch (Exception e) {
+      log.warn(STR."Failed to configure GC logging: \{e.getMessage()}", e);
+    }
+  }
+  
+  /**
+   * Checks if GC logging is enabled via JVM flags.
+   */
+  private boolean isGcLoggingEnabled() {
+    // Check for -Xlog:gc* flags in the JVM arguments
+    String[] jvmArgs = java.lang.management.ManagementFactory.getRuntimeMXBean().getInputArguments().toArray(new String[0]);
+    for (String arg : jvmArgs) {
+      if (arg.startsWith("-Xlog:gc")) {
+        return true;
+      }
+    }
+    return false;
   }
 
   @Override
@@ -208,7 +309,7 @@ public class LogbackLogManager
 
   @VisibleForTesting
   void logFileNotFound(String fileName) {
-    log.info("Unable to find log file: {}", fileName);
+    log.info(STR."Unable to find log file: \{fileName}");
   }
 
   @Override
@@ -226,28 +327,45 @@ public class LogbackLogManager
 
     File file = getLogFile(fileName);
     if (file == null || !file.exists()) {
-      log.info("Log file does not exist: {}", fileName);
-      log.debug("Failed to find logfile: {}", fileName);
+      log.info(STR."Log file does not exist: \{fileName}");
+      log.debug(STR."Failed to find logfile: \{fileName}");
       return null;
     }
 
-    long fromByte = from;
-    long bytesCount = count;
-    if (count < 0) {
-      bytesCount = Math.abs(count);
-      fromByte = Math.max(0, file.length() - bytesCount);
-    }
+    // Use Virtual Threads for I/O operations
+    return getLogFileStreamWithVirtualThread(file, from, count);
+  }
+  
+  /**
+   * Uses Virtual Threads to efficiently read log file content.
+   */
+  private InputStream getLogFileStreamWithVirtualThread(File file, long from, long count) throws IOException {
+    try (var executor = newVirtualThreadPerTaskExecutor()) {
+      Future<InputStream> future = executor.submit(() -> {
+        long fromByte = from;
+        long bytesCount = count;
+        if (count < 0) {
+          bytesCount = Math.abs(count);
+          fromByte = Math.max(0, file.length() - bytesCount);
+        }
 
-    InputStream input = new BufferedInputStream(Files.newInputStream(file.toPath()));
-    if (fromByte == 0 && bytesCount >= file.length()) {
-      return input;
-    }
-    else {
-      long skippedBytes = 0;
-      while (skippedBytes < fromByte) {
-        skippedBytes += input.skip(fromByte - skippedBytes);
-      }
-      return ByteStreams.limit(input, bytesCount);
+        InputStream input = new BufferedInputStream(Files.newInputStream(file.toPath()));
+        if (fromByte == 0 && bytesCount >= file.length()) {
+          return input;
+        }
+        else {
+          long skippedBytes = 0;
+          while (skippedBytes < fromByte) {
+            skippedBytes += input.skip(fromByte - skippedBytes);
+          }
+          return ByteStreams.limit(input, bytesCount);
+        }
+      });
+      
+      return future.get();
+    } catch (Exception e) {
+      log.error(STR."Error reading log file with virtual thread: \{e.getMessage()}", e);
+      throw new IOException("Error reading log file", e);
     }
   }
 
@@ -267,7 +385,7 @@ public class LogbackLogManager
     LoggerContext ctx = loggerContext();
     for (ch.qos.logback.classic.Logger logger : ctx.getLoggerList()) {
       String name = logger.getName();
-      Level level = logger.getLevel();
+      ch.qos.logback.classic.Level level = logger.getLevel();
       // only include loggers which explicit levels configured
       if (level != null) {
         loggers.put(name, LogbackLevels.convert(level));
@@ -336,7 +454,7 @@ public class LogbackLogManager
       return;
     }
 
-    log.debug("Set logger level: {}={}", name, level);
+    log.debug(STR."Set logger level: \{name}=\{level}");
     LoggerLevel calculated = null;
 
     if (ROOT_LOGGER_NAME.equals(name)) {
@@ -385,14 +503,14 @@ public class LogbackLogManager
       return;
     }
 
-    log.debug("Set logger level direct: {}={}", name, level);
+    log.debug(STR."Set logger level direct: \{name}=\{level}");
     setLogbackLoggerLevel(name, LogbackLevels.convert(level));
   }
 
   @Override
   @Guarded(by = STARTED)
   public void unsetLoggerLevel(final String name) {
-    log.debug("Unset logger level: {}", name);
+    log.debug(STR."Unset logger level: \{name}");
 
     if (overrides.remove(name) != null) {
       overrides.save();
@@ -407,7 +525,7 @@ public class LogbackLogManager
   @Nullable
   @Guarded(by = STARTED)
   public LoggerLevel getLoggerLevel(final String name) {
-    Level level = loggerContext().getLogger(name).getLevel();
+    ch.qos.logback.classic.Level level = loggerContext().getLogger(name).getLevel();
     if (level != null) {
       return LogbackLevels.convert(level);
     }
@@ -417,15 +535,15 @@ public class LogbackLogManager
   @Override
   @Guarded(by = STARTED)
   public LoggerLevel getLoggerEffectiveLevel(final String name) {
-    Level level = loggerContext().getLogger(name).getEffectiveLevel();
+    ch.qos.logback.classic.Level level = loggerContext().getLogger(name).getEffectiveLevel();
     return LogbackLevels.convert(level);
   }
 
   /**
    * Helper to set a named logback logger level.
    */
-  public void setLogbackLoggerLevel(final String name, @Nullable final Level level) {
-    log.trace("Set logback logger level: {}={}", name, level);
+  public void setLogbackLoggerLevel(final String name, @Nullable final ch.qos.logback.classic.Level level) {
+    log.trace(STR."Set logback logger level: \{name}=\{level}");
     loggerContext().getLogger(name).setLevel(level);
   }
 
@@ -434,7 +552,7 @@ public class LogbackLogManager
    */
   private void unsetLogger(final String name) {
     if (ROOT_LOGGER_NAME.equals(name)) {
-      setLogbackLoggerLevel(name, Level.INFO);
+      setLogbackLoggerLevel(name, ch.qos.logback.classic.Level.INFO);
     }
     else {
       setLogbackLoggerLevel(name, null);
@@ -454,7 +572,7 @@ public class LogbackLogManager
 
   @Subscribe
   public void on(final LoggerOverridesReloadEvent event) {
-    log.debug("Received event {}. Reload logger overrides", event);
+    log.debug(STR."Received event \{event}. Reload logger overrides");
     applyOverrides();
   }
 
@@ -463,21 +581,21 @@ public class LogbackLogManager
     if (loggerOverridesEvent.isLocal()) {
       return;
     }
-    log.debug("Received event {}. Propagating logger overrides changes", loggerOverridesEvent);
+    log.debug(STR."Received event \{loggerOverridesEvent}. Propagating logger overrides changes");
     String name = loggerOverridesEvent.getName();
     String strLevel = loggerOverridesEvent.getLevel();
-    Level level = Objects.isNull(strLevel) ? null : Level.toLevel(strLevel);
+    ch.qos.logback.classic.Level level = Objects.isNull(strLevel) ? null : ch.qos.logback.classic.Level.toLevel(strLevel);
     Map<String, LoggerLevel> loggerLevels = overrides.syncWithDBAndGet();
 
     if (loggerOverridesEvent.getAction() == Action.CHANGE) {
-      log.trace("Setting log level to {} for logger named '{}' in the scope of log overrides propagation", name, level);
+      log.trace(STR."Setting log level to \{level} for logger named '\{name}' in the scope of log overrides propagation");
       LoggerLevel loggerLevel = LoggerLevel.valueOf(strLevel);
       loggerLevels.put(name, loggerLevel);
       setLogbackLoggerLevel(name, level);
       eventManager.post(new LoggerLevelChangedEvent(name, loggerLevel));
     }
     else if (loggerOverridesEvent.getAction() == Action.RESET) {
-      log.trace("Reset log level for logger named '{}' in the scope of log overrides propagation", name);
+      log.trace(STR."Reset log level for logger named '\{name}' in the scope of log overrides propagation");
       loggerLevels.remove(name);
       unsetLogger(name);
       eventManager.post(new LoggerLevelChangedEvent(name, null));
@@ -515,7 +633,7 @@ public class LogbackLogManager
    */
   @VisibleForTesting
   void registerCustomization(final LogConfigurationCustomizer customizer) {
-    log.debug("Registering customizations: {}", customizer);
+    log.debug(STR."Registering customizations: \{customizer}");
 
     customizer.customize((name, level) -> {
       checkNotNull(name);
@@ -579,7 +697,6 @@ public class LogbackLogManager
    */
   @VisibleForTesting
   Set<File> getAllLogFiles(final String fileName) {
-
     if (fileName.startsWith(TASKS_PREFIX) && fileName.endsWith(".log")) {
       try (Stream<Path> tasks = Files.list(Paths.get(requireNonNull(TaskLogHome.getTaskLogsHome())))) {
         return tasks.map(Path::toFile).collect(toSet());
@@ -606,7 +723,7 @@ public class LogbackLogManager
   public final boolean isValidLogFile(java.nio.file.Path path) {
     boolean isValid = path.getFileName().toString().toLowerCase().endsWith(".log");
     if (log.isDebugEnabled() && !isValid) {
-      log.debug("File {} skipped as not valid log file", path.getFileName().toString());
+      log.debug(STR."File \{path.getFileName().toString()} skipped as not valid log file");
     }
     return isValid;
   }
@@ -620,5 +737,29 @@ public class LogbackLogManager
 
     loggers.putAll(loggersOverrides);
     return loggers;
+  }
+  
+  /**
+   * Custom appender for Java Flight Recorder events.
+   */
+  private static class JfrEventAppender extends FileAppender<ILoggingEvent> {
+    public JfrEventAppender() {
+      setName(JFR_APPENDER_NAME);
+      setContext(loggerContext());
+      setFile(JFR_LOG_FILE);
+      setPrudent(true); // Safe mode for file appending
+    }
+  }
+  
+  /**
+   * Custom appender for Garbage Collection logs.
+   */
+  private static class GcLogAppender extends FileAppender<ILoggingEvent> {
+    public GcLogAppender() {
+      setName(GC_APPENDER_NAME);
+      setContext(loggerContext());
+      setFile(GC_LOG_FILE);
+      setPrudent(true); // Safe mode for file appending
+    }
   }
 }

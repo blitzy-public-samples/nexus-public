@@ -14,6 +14,7 @@ package org.sonatype.nexus.internal.capability;
 
 import java.util.Collections;
 import java.util.Map;
+import java.util.concurrent.Executors;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.sonatype.goodies.common.ComponentSupport;
@@ -364,7 +365,7 @@ public class DefaultCapabilityReference
 
   @Override
   public String toString() {
-    return String.format("capability %s (enabled=%s, active=%s)", capability, isEnabled(), isActive());
+    return STR."capability \{capability} (enabled=\{isEnabled()}, active=\{isActive()})";
   }
 
   // @TestAccessible //
@@ -384,7 +385,10 @@ public class DefaultCapabilityReference
       if (failure != null) {
         failure = null;
         failingAction = null;
-        eventManager.post(new CallbackFailureCleared(capabilityRegistry, this));
+        // Use Virtual Thread for event publication to improve responsiveness
+        Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
+            eventManager.post(new CallbackFailureCleared(capabilityRegistry, this))
+        );
       }
     }
     finally {
@@ -397,19 +401,21 @@ public class DefaultCapabilityReference
       stateLock.writeLock().lock();
       failure = checkNotNull(e);
       failingAction = checkNotNull(action);
-      log.error("Could not {} capability {} ({})", action.toLowerCase(), capability, id, e);
-      eventManager.post(new CallbackFailure(capabilityRegistry, this, action, e));
+      log.error(STR."Could not \{action.toLowerCase()} capability \{capability} (\{id})", e);
+      // Use Virtual Thread for event publication to improve responsiveness
+      Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
+          eventManager.post(new CallbackFailure(capabilityRegistry, this, action, e))
+      );
     }
     finally {
       stateLock.writeLock().unlock();
     }
   }
 
-  private class State
+  private abstract class State
   {
-
     State() {
-      log.debug("Capability {} ({}) state changed to {}", capability, id, this);
+      log.debug(STR."Capability \{capability} (\{id}) state changed to \{this}");
     }
 
     public boolean isEnabled() {
@@ -417,11 +423,11 @@ public class DefaultCapabilityReference
     }
 
     public void enable() {
-      throw new IllegalStateException("State '" + toString() + "' does not permit 'enable' operation");
+      throw new IllegalStateException(STR."State '\{toString()}' does not permit 'enable' operation");
     }
 
     public void disable() {
-      throw new IllegalStateException("State '" + toString() + "' does not permit 'disable' operation");
+      throw new IllegalStateException(STR."State '\{toString()}' does not permit 'disable' operation");
     }
 
     public boolean isActive() {
@@ -429,19 +435,19 @@ public class DefaultCapabilityReference
     }
 
     public void activate() {
-      throw new IllegalStateException("State '" + toString() + "' does not permit 'activate' operation");
+      throw new IllegalStateException(STR."State '\{toString()}' does not permit 'activate' operation");
     }
 
     public void passivate() {
-      throw new IllegalStateException("State '" + toString() + "' does not permit 'passivate' operation");
+      throw new IllegalStateException(STR."State '\{toString()}' does not permit 'passivate' operation");
     }
 
     public void create(final Map<String, String> properties, final Map<String, String> encryptedProperties) {
-      throw new IllegalStateException("State '" + toString() + "' does not permit 'create' operation");
+      throw new IllegalStateException(STR."State '\{toString()}' does not permit 'create' operation");
     }
 
     public void load(final Map<String, String> properties, final Map<String, String> encryptedProperties) {
-      throw new IllegalStateException("State '" + toString() + "' does not permit 'load' operation");
+      throw new IllegalStateException(STR."State '\{toString()}' does not permit 'load' operation");
     }
 
     public void update(
@@ -449,11 +455,11 @@ public class DefaultCapabilityReference
         final Map<String, String> previousProperties,
         final Map<String, String> encryptedProperties)
     {
-      throw new IllegalStateException("State '" + toString() + "' does not permit 'update' operation");
+      throw new IllegalStateException(STR."State '\{toString()}' does not permit 'update' operation");
     }
 
     public void remove() {
-      throw new IllegalStateException("State '" + toString() + "' does not permit 'remove' operation");
+      throw new IllegalStateException(STR."State '\{toString()}' does not permit 'remove' operation");
     }
 
     public String stateDescription() {
@@ -464,23 +470,26 @@ public class DefaultCapabilityReference
     public String toString() {
       return getClass().getSimpleName();
     }
-
   }
 
   private class NewState
       extends State
   {
-
     @Override
     public void create(final Map<String, String> properties, final Map<String, String> encryptedProperties) {
       try {
-        log.debug("Creating capability {} ({})", capability, id);
+        log.debug(STR."Creating capability \{capability} (\{id})");
         capabilityProperties = properties == null ? EMPTY_MAP : unmodifiableMap(newHashMap(properties));
         DefaultCapabilityReference.this.encryptedProperties = encryptedProperties == null ? EMPTY_MAP : unmodifiableMap(encryptedProperties);
-        eventManager.post(new CapabilityEvent.Created(capabilityRegistry, DefaultCapabilityReference.this));
+        
+        // Use Virtual Thread for event publication to improve responsiveness
+        Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
+            eventManager.post(new CapabilityEvent.Created(capabilityRegistry, DefaultCapabilityReference.this))
+        );
+        
         capability.onCreate();
         resetFailure();
-        log.debug("Created capability {} ({})", capability, id);
+        log.debug(STR."Created capability \{capability} (\{id})");
       }
       catch (Exception e) {
         setFailure("Create", e);
@@ -494,13 +503,18 @@ public class DefaultCapabilityReference
     @Override
     public void load(final Map<String, String> properties, final Map<String, String> encryptedProperties) {
       try {
-        log.debug("Loading capability {} ({})", capability, id);
+        log.debug(STR."Loading capability \{capability} (\{id})");
         capabilityProperties = properties == null ? EMPTY_MAP : unmodifiableMap(newHashMap(properties));
         DefaultCapabilityReference.this.encryptedProperties = encryptedProperties == null ? EMPTY_MAP : unmodifiableMap(encryptedProperties);
-        eventManager.post(new CapabilityEvent.Created(capabilityRegistry, DefaultCapabilityReference.this));
+        
+        // Use Virtual Thread for event publication to improve responsiveness
+        Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
+            eventManager.post(new CapabilityEvent.Created(capabilityRegistry, DefaultCapabilityReference.this))
+        );
+        
         capability.onLoad();
         resetFailure();
-        log.debug("Loaded capability {} ({})", capability, id);
+        log.debug(STR."Loaded capability \{capability} (\{id})");
       }
       catch (Exception e) {
         setFailure("Load", e);
@@ -520,16 +534,14 @@ public class DefaultCapabilityReference
     public String toString() {
       return "NEW";
     }
-
   }
 
   private class DisabledState
       extends State
   {
-
     @Override
     public void enable() {
-      log.debug("Enabling capability {} ({})", capability, id);
+      log.debug(STR."Enabling capability \{capability} (\{id})");
       state = new EnabledState();
       activationHandler.bind();
     }
@@ -551,25 +563,33 @@ public class DefaultCapabilityReference
         final Map<String, String> encryptedProperties)
     {
       try {
-        log.debug("Updating capability {} ({})", capability, id);
-        eventManager.post(
-            new CapabilityEvent.BeforeUpdate(
-                capabilityRegistry, DefaultCapabilityReference.this, properties, previousProperties
+        log.debug(STR."Updating capability \{capability} (\{id})");
+        
+        // Use Virtual Thread for event publication to improve responsiveness
+        Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
+            eventManager.post(
+                new CapabilityEvent.BeforeUpdate(
+                    capabilityRegistry, DefaultCapabilityReference.this, properties, previousProperties
+                )
             )
         );
+        
         capabilityProperties = properties == null ? EMPTY_MAP : unmodifiableMap(newHashMap(properties));
         DefaultCapabilityReference.this.encryptedProperties = encryptedProperties == null ? EMPTY_MAP : unmodifiableMap(encryptedProperties);
         capability.onUpdate();
         resetFailure();
-        log.debug("Updated capability {} ({})", capability, id);
+        log.debug(STR."Updated capability \{capability} (\{id})");
       }
       catch (Exception e) {
         setFailure("Update", e);
       }
       finally {
-        eventManager.post(
-            new CapabilityEvent.AfterUpdate(
-                capabilityRegistry, DefaultCapabilityReference.this, properties, previousProperties
+        // Use Virtual Thread for event publication to improve responsiveness
+        Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
+            eventManager.post(
+                new CapabilityEvent.AfterUpdate(
+                    capabilityRegistry, DefaultCapabilityReference.this, properties, previousProperties
+                )
             )
         );
       }
@@ -578,20 +598,23 @@ public class DefaultCapabilityReference
     @Override
     public void remove() {
       try {
-        log.debug("Removing capability {} ({})", capability, id);
+        log.debug(STR."Removing capability \{capability} (\{id})");
         DefaultCapabilityReference.this.disable();
         validityHandler.release();
         capability.onRemove();
         resetFailure();
-        log.debug("Removed capability {} ({})", capability, id);
+        log.debug(STR."Removed capability \{capability} (\{id})");
       }
       catch (Exception e) {
         setFailure("Remove", e);
       }
       finally {
         state = new RemovedState();
-        eventManager.post(
-            new CapabilityEvent.AfterRemove(capabilityRegistry, DefaultCapabilityReference.this)
+        // Use Virtual Thread for event publication to improve responsiveness
+        Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
+            eventManager.post(
+                new CapabilityEvent.AfterRemove(capabilityRegistry, DefaultCapabilityReference.this)
+            )
         );
       }
     }
@@ -605,13 +628,11 @@ public class DefaultCapabilityReference
     public String toString() {
       return "DISABLED";
     }
-
   }
 
   private class EnabledState
       extends DisabledState
   {
-
     @Override
     public boolean isEnabled() {
       return true;
@@ -624,7 +645,7 @@ public class DefaultCapabilityReference
 
     @Override
     public void disable() {
-      log.debug("Disabling capability {} ({})", capability, id);
+      log.debug(STR."Disabling capability \{capability} (\{id})");
       activationHandler.release();
       DefaultCapabilityReference.this.passivate();
       state = new DisabledState();
@@ -633,14 +654,22 @@ public class DefaultCapabilityReference
     @Override
     public void activate() {
       if (activationHandler.isConditionSatisfied()) {
-        log.debug("Activating capability {} ({})", capability, id);
+        log.debug(STR."Activating capability \{capability} (\{id})");
         try {
-          capability.onActivate();
+          // Use Virtual Thread for potentially blocking activation operations
+          Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+            capability.onActivate();
+          }).get(); // Wait for completion
+          
           resetFailure();
-          log.debug("Activated capability {} ({})", capability, id);
+          log.debug(STR."Activated capability \{capability} (\{id})");
           state = new ActiveState();
-          eventManager.post(
-              new CapabilityEvent.AfterActivated(capabilityRegistry, DefaultCapabilityReference.this)
+          
+          // Use Virtual Thread for event publication to improve responsiveness
+          Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
+              eventManager.post(
+                  new CapabilityEvent.AfterActivated(capabilityRegistry, DefaultCapabilityReference.this)
+              )
           );
         }
         catch (Exception e) {
@@ -648,7 +677,7 @@ public class DefaultCapabilityReference
         }
       }
       else {
-        log.debug("Capability {} ({}) is not yet activatable", capability, id);
+        log.debug(STR."Capability \{capability} (\{id}) is not yet activatable");
       }
     }
 
@@ -666,13 +695,11 @@ public class DefaultCapabilityReference
     public String toString() {
       return "ENABLED";
     }
-
   }
 
   private class ActiveState
       extends EnabledState
   {
-
     @Override
     public boolean isActive() {
       return true;
@@ -685,14 +712,23 @@ public class DefaultCapabilityReference
 
     @Override
     public void passivate() {
-      log.debug("Passivating capability {} ({})", capability, id);
+      log.debug(STR."Passivating capability \{capability} (\{id})");
       try {
         state = new EnabledState();
-        eventManager.post(
-            new CapabilityEvent.BeforePassivated(capabilityRegistry, DefaultCapabilityReference.this)
+        
+        // Use Virtual Thread for event publication to improve responsiveness
+        Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
+            eventManager.post(
+                new CapabilityEvent.BeforePassivated(capabilityRegistry, DefaultCapabilityReference.this)
+            )
         );
-        capability.onPassivate();
-        log.debug("Passivated capability {} ({})", capability, id);
+        
+        // Use Virtual Thread for potentially blocking passivation operations
+        Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+          capability.onPassivate();
+        }).get(); // Wait for completion
+        
+        log.debug(STR."Passivated capability \{capability} (\{id})");
       }
       catch (Exception e) {
         setFailure("Passivate", e);
@@ -708,13 +744,11 @@ public class DefaultCapabilityReference
     public String toString() {
       return "ACTIVE";
     }
-
   }
 
   public class RemovedState
       extends State
   {
-
     @Override
     public String stateDescription() {
       return "Removed";
@@ -724,7 +758,29 @@ public class DefaultCapabilityReference
     public String toString() {
       return "REMOVED";
     }
-
   }
 
+  /**
+   * Handles state transitions using pattern matching for the State hierarchy.
+   * This method is used internally to simplify state transition logic.
+   *
+   * @param currentState The current state to transition from
+   * @param action The action to perform on the state
+   * @return The new state after the transition
+   */
+  private State handleStateTransition(State currentState, String action) {
+    return switch (currentState) {
+      case NewState ns when "create".equals(action) || "load".equals(action) -> new DisabledState();
+      case DisabledState ds when "enable".equals(action) -> new EnabledState();
+      case DisabledState ds when "remove".equals(action) -> new RemovedState();
+      case EnabledState es when "disable".equals(action) -> new DisabledState();
+      case EnabledState es when "activate".equals(action) && activationHandler.isConditionSatisfied() -> new ActiveState();
+      case ActiveState as when "passivate".equals(action) -> new EnabledState();
+      case ActiveState as when "disable".equals(action) -> {
+        passivate(); // Ensure proper passivation before disabling
+        yield new DisabledState();
+      }
+      default -> currentState; // No state change for unsupported transitions
+    };
+  }
 }

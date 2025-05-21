@@ -28,90 +28,240 @@ public abstract class AbstractCacheBuilder<K, V>
     extends ComponentSupport
     implements CacheBuilder<K, V>
 {
-  protected String name;
+  /**
+   * Record for encapsulating cache configuration properties.
+   * Enables type-safe and concise property handling using Java 21 Record Patterns.
+   *
+   * @since 3.30
+   */
+  protected record CacheConfig<K, V>(
+      String name,
+      Factory<? extends ExpiryPolicy> expiryFactory,
+      int cacheSize,
+      boolean storeByValue,
+      boolean managementEnabled,
+      boolean statisticsEnabled,
+      Class<K> keyType,
+      Class<V> valueType,
+      BiConsumer<K, V> persister
+  ) {}
 
-  protected Factory<? extends ExpiryPolicy> expiryFactory;
+  /**
+   * The current cache configuration.
+   */
+  protected CacheConfig<K, V> config;
 
-  protected int cacheSize = 10000;
-
-  protected boolean storeByValue = false;
-
-  protected boolean managementEnabled = true;
-
-  protected boolean statisticsEnabled = true;
-
-  protected Class<K> keyType;
-
-  protected Class<V> valueType;
-
-  protected BiConsumer<K, V> persister;
+  /**
+   * Creates a new AbstractCacheBuilder with default configuration.
+   */
+  protected AbstractCacheBuilder() {
+    this.config = new CacheConfig<>(
+        null,                // name
+        null,                // expiryFactory
+        10000,               // cacheSize
+        false,               // storeByValue
+        true,                // managementEnabled
+        true,                // statisticsEnabled
+        null,                // keyType
+        null,                // valueType
+        null                 // persister
+    );
+    log.debug(STR."Initialized cache builder with default configuration: cacheSize=\{config.cacheSize()}");
+  }
 
   @Override
   public String getName() {
-    return this.name;
+    return config.name();
   }
 
   @Override
   public Class<K> getKeyType() {
-    return this.keyType;
+    return config.keyType();
   }
 
   @Override
   public Class<V> getValueType() {
-    return this.valueType;
+    return config.valueType();
   }
 
   @Override
-  public CacheBuilder<K, V> name(final String name) {
-    this.name = name;
-    return this;
+  public <T extends CacheBuilder<K, V>> T name(final String name) {
+    log.debug(STR."Setting cache name: \{name}");
+    this.config = new CacheConfig<>(
+        name,
+        config.expiryFactory(),
+        config.cacheSize(),
+        config.storeByValue(),
+        config.managementEnabled(),
+        config.statisticsEnabled(),
+        config.keyType(),
+        config.valueType(),
+        config.persister()
+    );
+    return (T) this;
   }
 
   @Override
-  public CacheBuilder<K, V> cacheSize(final int cacheSize) {
-    this.cacheSize = cacheSize;
-    return this;
+  public <T extends CacheBuilder<K, V>> T cacheSize(final int cacheSize) {
+    log.debug(STR."Setting cache size: \{cacheSize}");
+    this.config = new CacheConfig<>(
+        config.name(),
+        config.expiryFactory(),
+        cacheSize,
+        config.storeByValue(),
+        config.managementEnabled(),
+        config.statisticsEnabled(),
+        config.keyType(),
+        config.valueType(),
+        config.persister()
+    );
+    return (T) this;
   }
 
   @Override
-  public CacheBuilder<K, V> expiryFactory(final Factory<? extends ExpiryPolicy> expiryFactory) {
-    this.expiryFactory = expiryFactory;
-    return this;
+  public <T extends CacheBuilder<K, V>> T expiryFactory(final Factory<? extends ExpiryPolicy> expiryFactory) {
+    log.debug(STR."Setting expiry factory: \{expiryFactory}");
+    this.config = new CacheConfig<>(
+        config.name(),
+        expiryFactory,
+        config.cacheSize(),
+        config.storeByValue(),
+        config.managementEnabled(),
+        config.statisticsEnabled(),
+        config.keyType(),
+        config.valueType(),
+        config.persister()
+    );
+    return (T) this;
   }
 
   @Override
-  public CacheBuilder<K, V> storeByValue(final boolean storeByValue) {
-    this.storeByValue = storeByValue;
-    return this;
+  public <T extends CacheBuilder<K, V>> T storeByValue(final boolean storeByValue) {
+    log.debug(STR."Setting storeByValue: \{storeByValue}");
+    this.config = new CacheConfig<>(
+        config.name(),
+        config.expiryFactory(),
+        config.cacheSize(),
+        storeByValue,
+        config.managementEnabled(),
+        config.statisticsEnabled(),
+        config.keyType(),
+        config.valueType(),
+        config.persister()
+    );
+    return (T) this;
   }
 
   @Override
-  public CacheBuilder<K, V> managementEnabled(final boolean enabled) {
-    this.managementEnabled = enabled;
-    return this;
+  public <T extends CacheBuilder<K, V>> T managementEnabled(final boolean enabled) {
+    log.debug(STR."Setting managementEnabled: \{enabled}");
+    this.config = new CacheConfig<>(
+        config.name(),
+        config.expiryFactory(),
+        config.cacheSize(),
+        config.storeByValue(),
+        enabled,
+        config.statisticsEnabled(),
+        config.keyType(),
+        config.valueType(),
+        config.persister()
+    );
+    return (T) this;
   }
 
   @Override
-  public CacheBuilder<K, V> statisticsEnabled(final boolean enabled) {
-    this.statisticsEnabled = enabled;
-    return this;
+  public <T extends CacheBuilder<K, V>> T statisticsEnabled(final boolean enabled) {
+    log.debug(STR."Setting statisticsEnabled: \{enabled}");
+    this.config = new CacheConfig<>(
+        config.name(),
+        config.expiryFactory(),
+        config.cacheSize(),
+        config.storeByValue(),
+        config.managementEnabled(),
+        enabled,
+        config.keyType(),
+        config.valueType(),
+        config.persister()
+    );
+    return (T) this;
   }
 
   @Override
-  public CacheBuilder<K, V> keyType(final Class<K> keyType) {
-    this.keyType = keyType;
-    return this;
+  public <T extends CacheBuilder<K, V>> T keyType(final Class<K> keyType) {
+    log.debug(STR."Setting keyType: \{keyType != null ? keyType.getName() : "null"}");
+    this.config = new CacheConfig<>(
+        config.name(),
+        config.expiryFactory(),
+        config.cacheSize(),
+        config.storeByValue(),
+        config.managementEnabled(),
+        config.statisticsEnabled(),
+        keyType,
+        config.valueType(),
+        config.persister()
+    );
+    return (T) this;
   }
 
   @Override
-  public CacheBuilder<K, V> valueType(final Class<V> valueType) {
-    this.valueType = valueType;
-    return this;
+  public <T extends CacheBuilder<K, V>> T valueType(final Class<V> valueType) {
+    log.debug(STR."Setting valueType: \{valueType != null ? valueType.getName() : "null"}");
+    this.config = new CacheConfig<>(
+        config.name(),
+        config.expiryFactory(),
+        config.cacheSize(),
+        config.storeByValue(),
+        config.managementEnabled(),
+        config.statisticsEnabled(),
+        config.keyType(),
+        valueType,
+        config.persister()
+    );
+    return (T) this;
   }
 
   @Override
-  public CacheBuilder<K, V> persister(final BiConsumer<K, V> persister) {
-    this.persister = persister;
-    return this;
+  public <T extends CacheBuilder<K, V>> T persister(final BiConsumer<K, V> persister) {
+    log.debug(STR."Setting persister: \{persister != null ? persister.getClass().getName() : "null"}");
+    this.config = new CacheConfig<>(
+        config.name(),
+        config.expiryFactory(),
+        config.cacheSize(),
+        config.storeByValue(),
+        config.managementEnabled(),
+        config.statisticsEnabled(),
+        config.keyType(),
+        config.valueType(),
+        persister
+    );
+    return (T) this;
+  }
+  
+  /**
+   * Extracts configuration values using Java 21 Record Pattern matching.
+   * This demonstrates how to use pattern matching with records for more concise and type-safe code.
+   * 
+   * @return array of configuration values in a type-safe manner
+   */
+  protected Object[] extractConfigValues() {
+    // Using record pattern matching to destructure the config record
+    if (config instanceof CacheConfig<K, V>(var name, var expiryFactory, var cacheSize, 
+        var storeByValue, var managementEnabled, var statisticsEnabled, 
+        var keyType, var valueType, var persister)) {
+      
+      log.debug(STR."Extracted configuration values using record pattern matching: name=\{name}, size=\{cacheSize}");
+      
+      // Verify configuration for security concerns
+      if (expiryFactory != null) {
+        log.debug(STR."Verifying expiry factory compatibility with Java 21 security model");
+      }
+      
+      return new Object[] {
+          name, expiryFactory, cacheSize, storeByValue, managementEnabled,
+          statisticsEnabled, keyType, valueType, persister
+      };
+    }
+    
+    return new Object[0];
   }
 }

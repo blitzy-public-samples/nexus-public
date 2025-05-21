@@ -13,6 +13,10 @@
 package org.sonatype.nexus.internal.status;
 
 import java.util.SortedMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -79,7 +83,7 @@ public class StatusResource
       return ok().build();
     }
     catch (Exception e) {
-      exceptionSummarizer.log("Status health check failed, responding server is unavailable", e);
+      exceptionSummarizer.log(STR."Status health check failed, responding server is unavailable: \{e.getMessage()}", e);
       return status(SERVICE_UNAVAILABLE).build();
     }
   }
@@ -90,17 +94,20 @@ public class StatusResource
   @Override
   public Response isWritable() {
     try {
-
       if (freezeService.isFrozen()) {
-        log.info("Status health check failed because database is frozen");
+        log.info(STR."Status health check failed because database is frozen");
         return status(SERVICE_UNAVAILABLE).build();
       }
 
       freezeService.checkWritable("Write check failed");
       return ok().build();
     }
+    catch (Exception e when e instanceof IllegalStateException) {
+      exceptionSummarizer.log(STR."Status health check failed due to illegal state: \{e.getMessage()}", e);
+      return status(SERVICE_UNAVAILABLE).build();
+    }
     catch (Exception e) {
-      exceptionSummarizer.log("Status health check failed, responding server is unavailable", e);
+      exceptionSummarizer.log(STR."Status health check failed, responding server is unavailable: \{e.getMessage()}", e);
       return status(SERVICE_UNAVAILABLE).build();
     }
   }
@@ -115,6 +122,37 @@ public class StatusResource
   @RequiresPermissions("nexus:metrics:read")
   @Override
   public SortedMap<String, Result> getSystemStatusChecks() {
-    return registry.runHealthChecks();
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Create a concurrent map to store results
+      ConcurrentHashMap<String, Result> results = new ConcurrentHashMap<>();
+      
+      // Get all registered health checks
+      SortedMap<String, com.codahale.metrics.health.HealthCheck> healthChecks = registry.getHealthChecks();
+      
+      // Submit each health check to be executed by a virtual thread
+      healthChecks.forEach((name, healthCheck) -> {
+        executor.submit(() -> {
+          try {
+            Result result = healthCheck.execute();
+            results.put(name, result);
+          } 
+          catch (Exception e) {
+            log.warn(STR."Health check \{name} failed with exception: \{e.getMessage()}", e);
+            results.put(name, Result.unhealthy(STR."Exception during health check: \{e.getMessage()}"));
+          }
+        });
+      });
+      
+      // Ensure orderly shutdown and wait for all tasks to complete
+      executor.shutdown();
+      executor.awaitTermination(30, TimeUnit.SECONDS);
+      
+      return new java.util.TreeMap<>(results);
+    } 
+    catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      log.error(STR."Health check execution was interrupted: \{e.getMessage()}", e);
+      return registry.runHealthChecks(); // Fallback to synchronous execution
+    }
   }
 }

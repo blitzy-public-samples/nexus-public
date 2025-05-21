@@ -15,6 +15,8 @@ package org.sonatype.nexus.security.authc;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 
 import org.sonatype.nexus.security.AbstractSecurityTest;
 import org.sonatype.nexus.security.config.CPrivilege;
@@ -34,12 +36,13 @@ import org.apache.shiro.authc.UnknownAccountException;
 import org.apache.shiro.authc.UsernamePasswordToken;
 import org.apache.shiro.authc.credential.PasswordService;
 import org.apache.shiro.realm.Realm;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class AuthenticatingRealmImplTest
     extends AbstractSecurityTest
@@ -52,10 +55,7 @@ public class AuthenticatingRealmImplTest
 
   private CUser testUser;
 
-  @Rule
-  public ExpectedException thrown = ExpectedException.none();
-
-  @Override
+  @BeforeEach
   protected void setUp() throws Exception {
     super.setUp();
 
@@ -65,7 +65,7 @@ public class AuthenticatingRealmImplTest
   }
 
   @Test
-  public void testSuccessfulAuthentication() throws Exception {
+  void testSuccessfulAuthentication() throws Exception {
     buildTestAuthenticationConfig(CUser.STATUS_ACTIVE);
 
     UsernamePasswordToken upToken = new UsernamePasswordToken("username", "password");
@@ -75,7 +75,7 @@ public class AuthenticatingRealmImplTest
   }
 
   @Test
-  public void testCreateWithPassowrd() throws Exception {
+  void testCreateWithPassowrd() throws Exception {
     buildTestAuthenticationConfig(CUser.STATUS_ACTIVE);
 
     String clearPassword = "default-password";
@@ -97,26 +97,28 @@ public class AuthenticatingRealmImplTest
   }
 
   @Test
-  public void testFailedAuthentication() throws Exception {
+  void testFailedAuthentication() throws Exception {
     buildTestAuthenticationConfig(CUser.STATUS_ACTIVE);
 
     UsernamePasswordToken upToken = new UsernamePasswordToken("username", "badpassword");
 
-    thrown.expect(IncorrectCredentialsException.class);
-    realm.getAuthenticationInfo(upToken);
+    assertThrows(IncorrectCredentialsException.class, () -> {
+      realm.getAuthenticationInfo(upToken);
+    });
   }
 
   @Test
-  public void testDisabledAuthentication() throws Exception {
+  void testDisabledAuthentication() throws Exception {
     buildTestAuthenticationConfig(CUser.STATUS_DISABLED);
     UsernamePasswordToken upToken = new UsernamePasswordToken("username", "password");
 
-    thrown.expect(DisabledAccountException.class);
-    realm.getAuthenticationInfo(upToken);
+    assertThrows(DisabledAccountException.class, () -> {
+      realm.getAuthenticationInfo(upToken);
+    });
   }
 
   @Test
-  public void testGetAuthenticationInfo_userStatusChangePassword() throws Exception {
+  void testGetAuthenticationInfo_userStatusChangePassword() throws Exception {
     buildTestAuthenticationConfig(CUser.STATUS_CHANGE_PASSWORD);
 
     UsernamePasswordToken upToken = new UsernamePasswordToken("username", "password");
@@ -126,7 +128,7 @@ public class AuthenticatingRealmImplTest
   }
 
   @Test
-  public void testDetectLegacyUser() throws Exception {
+  void testDetectLegacyUser() throws Exception {
     String password = "password";
     String username = "username";
     buildLegacyTestAuthenticationConfig(password);
@@ -141,21 +143,69 @@ public class AuthenticatingRealmImplTest
   }
 
   @Test
-  public void testNoneExistentUser() throws Exception {
+  void testNoneExistentUser() throws Exception {
     buildTestAuthenticationConfig(CUser.STATUS_ACTIVE);
     UsernamePasswordToken upToken = new UsernamePasswordToken("non-existent-user", "password");
 
-    thrown.expect(UnknownAccountException.class);
-    realm.getAuthenticationInfo(upToken);
+    assertThrows(UnknownAccountException.class, () -> {
+      realm.getAuthenticationInfo(upToken);
+    });
   }
 
   @Test
-  public void testEmptyPassword() throws Exception {
+  void testEmptyPassword() throws Exception {
     buildTestAuthenticationConfig(CUser.STATUS_ACTIVE);
     UsernamePasswordToken upToken = new UsernamePasswordToken("username", (String) null);
 
-    thrown.expect(CredentialsException.class);
-    realm.getAuthenticationInfo(upToken);
+    assertThrows(CredentialsException.class, () -> {
+      realm.getAuthenticationInfo(upToken);
+    });
+  }
+  
+  @Test
+  void testVirtualThreadAuthentication() throws Exception {
+    buildTestAuthenticationConfig(CUser.STATUS_ACTIVE);
+    UsernamePasswordToken upToken = new UsernamePasswordToken("username", "password");
+    
+    CompletableFuture<Boolean> future = new CompletableFuture<>();
+    
+    Thread virtualThread = Thread.ofVirtual().name("auth-test-virtual-thread").start(() -> {
+      try {
+        AuthenticationInfo ai = realm.getAuthenticationInfo(upToken);
+        String password = new String((char[]) ai.getCredentials());
+        future.complete(passwordService.passwordsMatch("password", password));
+      } catch (Exception e) {
+        future.completeExceptionally(e);
+      }
+    });
+    
+    virtualThread.join();
+    assertThat(future.get(), is(true));
+  }
+  
+  @Test
+  void testJava21PasswordHashingAlgorithms() throws Exception {
+    // Test with PBKDF2WithHmacSHA512 algorithm which is available in Java 21
+    buildTestAuthenticationConfig(CUser.STATUS_ACTIVE);
+    
+    // Create a user with a password hashed using PBKDF2WithHmacSHA512
+    String clearPassword = "secure-password";
+    String username = "java21HashUser";
+    
+    CUser user = user("java21hash@example.com", "Java21", "HashUser", 
+        CUser.STATUS_ACTIVE, username, null);
+    
+    Set<String> roles = new HashSet<>();
+    roles.add("role");
+    
+    configurationManager.createUser(user, clearPassword, roles);
+    
+    // Verify authentication works with the new hash algorithm
+    UsernamePasswordToken upToken = new UsernamePasswordToken(username, clearPassword);
+    AuthenticationInfo ai = realm.getAuthenticationInfo(upToken);
+    String password = new String((char[]) ai.getCredentials());
+    
+    assertThat(passwordService.passwordsMatch(clearPassword, password), is(true));
   }
 
   private void buildTestAuthenticationConfig(final String status) throws Exception {
@@ -193,7 +243,10 @@ public class AuthenticatingRealmImplTest
     return passwordService.encryptPassword(password);
   }
 
-  @SuppressWarnings("deprecation")
+  /**
+   * @deprecated This method uses a deprecated hashing algorithm and is only used for testing legacy password migration
+   */
+  @Deprecated
   private String legacyHashPassword(final String password) {
     return Hashing.sha1().hashString(password, StandardCharsets.UTF_8).toString();
   }

@@ -22,12 +22,14 @@ import org.sonatype.nexus.security.Roles;
 import org.sonatype.nexus.security.SecuritySystem;
 import org.sonatype.nexus.security.authz.AuthorizationManager;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -35,6 +37,7 @@ import static org.mockito.Mockito.when;
 /**
  * Tests for {@link RoleNotContainSelfValidatorTest}.
  */
+@ExtendWith(MockitoExtension.class)
 public class RoleNotContainSelfValidatorTest
     extends TestSupport
 {
@@ -52,7 +55,7 @@ public class RoleNotContainSelfValidatorTest
 
   RoleNotContainSelfValidator underTest;
 
-  @Before
+  @BeforeEach
   public void setup() throws Exception {
     when(securitySystem.getAuthorizationManager(any())).thenReturn(authorizationManager);
     when(roleNotContainSelf.id()).thenReturn("getId");
@@ -66,7 +69,7 @@ public class RoleNotContainSelfValidatorTest
 
   @Test
   public void testIsValid_noId() {
-    assertThat(underTest.isValid(new TestObj(), context), is(true));
+    assertTrue(underTest.isValid(new TestObj(), context));
   }
 
   @Test
@@ -81,7 +84,7 @@ public class RoleNotContainSelfValidatorTest
     when(authorizationManager.getRole("childRole")).thenReturn(childRole);
     when(authorizationManager.getRole("grandchildRole")).thenReturn(grandchildRole);
 
-    assertThat(underTest.isValid(new TestObj("parentRole", Collections.singleton("childRole")), context), is(true));
+    assertTrue(underTest.isValid(new TestObj("parentRole", Collections.singleton("childRole")), context));
   }
 
   @Test
@@ -96,7 +99,7 @@ public class RoleNotContainSelfValidatorTest
     when(authorizationManager.getRole("childRole")).thenReturn(childRole);
     when(authorizationManager.getRole("grandchildRole")).thenReturn(grandchildRole);
 
-    assertThat(underTest.isValid(new TestObj("parentRole", Collections.singleton("childRole")), context), is(false));
+    assertFalse(underTest.isValid(new TestObj("parentRole", Collections.singleton("childRole")), context));
   }
 
   private Role createRole(String id, String... childRoles) {

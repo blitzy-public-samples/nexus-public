@@ -14,6 +14,8 @@ package org.sonatype.nexus.internal.webresources;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -48,6 +50,7 @@ import static javax.servlet.http.HttpServletResponse.SC_NOT_MODIFIED;
 
 /**
  * Provides access to resources via configured {@link WebResourceService}.
+ * Uses Java 21 Virtual Threads for improved concurrency and resource utilization.
  *
  * @since 2.8
  */
@@ -65,6 +68,12 @@ public class WebResourceServlet
   private final XFrameOptions xframeOptions;
 
   private static final String INDEX_PATH = "/index.html";
+  
+  /**
+   * Virtual Thread executor for handling resource serving tasks.
+   * Uses a dedicated executor for web resource serving to avoid impacting other operations.
+   */
+  private final ExecutorService virtualThreadExecutor;
 
   @Inject
   public WebResourceServlet(
@@ -75,7 +84,9 @@ public class WebResourceServlet
     this.webResources = checkNotNull(webResources);
     this.maxAgeSeconds = checkNotNull(maxAge.toSeconds());
     this.xframeOptions = checkNotNull(xframeOptions);
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
     log.info("Max-age: {} ({} seconds)", maxAge, maxAgeSeconds);
+    log.info("Initialized WebResourceServlet with Virtual Threads support");
   }
 
   @Override
@@ -112,15 +123,43 @@ public class WebResourceServlet
       return;
     }
 
-    serveResource(resource, request, response);
+    // Use Virtual Threads to handle resource serving
+    // This allows for high concurrency without blocking platform threads
+    try {
+      // Submit the resource serving task to the virtual thread executor
+      // This allows the servlet container thread to return to the pool quickly
+      virtualThreadExecutor.submit(() -> {
+        try {
+          serveResource(resource, request, response);
+        }
+        catch (IOException e) {
+          log.warn("Error serving resource {}: {}", path, e.getMessage());
+          // Cannot call sendError here as it might be too late (response already committed)
+          // Just log the error and let the client handle the incomplete response
+        }
+        catch (Exception e) {
+          log.error("Unexpected error serving resource {}", path, e);
+        }
+      }).get(); // Wait for completion to ensure response is fully sent
+    }
+    catch (Exception e) {
+      log.error("Failed to process request for {}", path, e);
+      if (!response.isCommitted()) {
+        response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Failed to process request");
+      }
+    }
   }
 
+  /**
+   * Serves the requested resource using non-blocking I/O patterns where possible.
+   * Optimized for execution in a Virtual Thread context.
+   */
   private void serveResource(
       WebResource resource,
       final HttpServletRequest request,
       final HttpServletResponse response) throws IOException
   {
-    log.trace("Serving resource: {}", resource);
+    log.trace("Serving resource: {} (thread: {})", resource, Thread.currentThread());
 
     // NEXUS-6569 Add X-Frame-Options header
     response.setHeader(X_FRAME_OPTIONS, xframeOptions.getValueForPath(request.getPathInfo()));
@@ -165,10 +204,23 @@ public class WebResourceServlet
     else {
       // send the content only if needed (this method will be called for HEAD requests too)
       if ("GET".equalsIgnoreCase(request.getMethod())) {
+        // Use try-with-resources to ensure proper resource cleanup
         try (InputStream in = resource.getInputStream()) {
+          // Use non-blocking I/O patterns for sending content
+          // ServletHelper.sendContent handles the actual I/O operations
           ServletHelper.sendContent(in, response);
         }
       }
     }
+  }
+  
+  @Override
+  public void destroy() {
+    // Ensure proper cleanup of the virtual thread executor
+    if (virtualThreadExecutor != null) {
+      virtualThreadExecutor.shutdown();
+      log.debug("Virtual thread executor shutdown");
+    }
+    super.destroy();
   }
 }

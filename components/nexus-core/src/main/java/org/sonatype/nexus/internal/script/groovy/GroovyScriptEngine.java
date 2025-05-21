@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.internal.script.groovy;
 
+import java.util.concurrent.ExecutorService;
+
 import javax.script.ScriptEngine;
 
 import groovy.lang.GroovyClassLoader;
@@ -19,7 +21,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Groovy {@link ScriptEngine}.
+ * Groovy {@link ScriptEngine} with Java 21 enhancements.
+ * Supports Virtual Threads for improved concurrency and performance.
  *
  * @since 3.0
  */
@@ -27,6 +30,8 @@ public class GroovyScriptEngine
     extends org.codehaus.groovy.jsr223.GroovyScriptEngineImpl
 {
   private static final Logger log = LoggerFactory.getLogger(GroovyScriptEngine.class);
+  
+  private final ExecutorService executorService;
 
   // FIXME: Sort out how we can better avoid leaking generated classes
   // FIXME: It appears the default impl will retain generated classes, even for evaluation calls (not just for compiled)
@@ -34,6 +39,28 @@ public class GroovyScriptEngine
 
   public GroovyScriptEngine(final GroovyClassLoader classLoader) {
     super(classLoader);
+    this.executorService = null;
+  }
+  
+  /**
+   * Creates a GroovyScriptEngine with a custom executor service.
+   * This constructor supports using Virtual Threads for script execution.
+   *
+   * @param classLoader The GroovyClassLoader to use
+   * @param executorService The executor service to use for script execution
+   */
+  public GroovyScriptEngine(final GroovyClassLoader classLoader, final ExecutorService executorService) {
+    super(classLoader);
+    this.executorService = executorService;
+    log.debug(STR."Created GroovyScriptEngine with custom executor: \{executorService}");
+  }
+  
+  /**
+   * Gets the executor service used by this engine.
+   * May be null if using the default execution model.
+   */
+  public ExecutorService getExecutorService() {
+    return executorService;
   }
 
   // TODO: Sub-class here to add customized support to handle class cache

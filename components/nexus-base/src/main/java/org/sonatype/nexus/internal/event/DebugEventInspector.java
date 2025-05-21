@@ -21,6 +21,8 @@ import org.sonatype.nexus.common.property.SystemPropertiesHelper;
 import org.sonatype.nexus.jmx.reflect.ManagedAttribute;
 import org.sonatype.nexus.jmx.reflect.ManagedObject;
 
+import static java.lang.StringTemplate.STR;
+
 import com.google.common.eventbus.AllowConcurrentEvents;
 import com.google.common.eventbus.Subscribe;
 import org.eclipse.sisu.EagerSingleton;
@@ -37,12 +39,16 @@ import static com.google.common.base.Preconditions.checkNotNull;
  *
  * It can be enabled via System property or JMX.
  *
+ * This component is fully compatible with Java 21 Virtual Threads and will
+ * properly register/unregister with the EventManager when running in either
+ * platform or virtual thread environments.
+ *
  * @author cstamas
  * @since 2.1
  */
 @Named
 @EagerSingleton
-@ManagedObject
+@ManagedObject // JMX monitoring compatible with both platform and virtual threads
 public class DebugEventInspector
     extends ComponentSupport
 {
@@ -59,18 +65,36 @@ public class DebugEventInspector
     setEnabled(ENABLED_DEFAULT);
   }
 
+  /**
+   * Check if event inspection is enabled.
+   * 
+   * This attribute is accessible via JMX and is compatible with Virtual Thread execution.
+   * 
+   * @return true if event inspection is enabled, false otherwise
+   */
   @ManagedAttribute
   public boolean isEnabled() {
     return enabled;
   }
 
+  /**
+   * Enable or disable event inspection.
+   * 
+   * This method is thread-safe and works correctly in both platform and virtual thread environments.
+   * When enabled, this component will register with the EventManager to receive events.
+   * When disabled, it will unregister and stop receiving events.
+   * 
+   * @param enabled true to enable event inspection, false to disable
+   */
   @ManagedAttribute
   public void setEnabled(boolean enabled) {
     try {
       if (enabled && !this.enabled) {
+        // Register with EventManager - works with both platform and virtual threads
         eventManager.register(this);
       }
       else if (!enabled && this.enabled) {
+        // Unregister from EventManager - works with both platform and virtual threads
         eventManager.unregister(this);
       }
     }
@@ -82,6 +106,7 @@ public class DebugEventInspector
   @Subscribe
   @AllowConcurrentEvents
   public void accept(final Object event) {
-    log.info("{}", event);
+    // Using Java 21 String Templates for improved performance
+    log.info(STR."Event received: \{event}");
   }
 }

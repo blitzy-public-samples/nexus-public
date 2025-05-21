@@ -20,12 +20,14 @@ import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.event.EventManager;
 import org.sonatype.nexus.crypto.CryptoHelper;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -34,6 +36,7 @@ import static org.mockito.Mockito.when;
  *
  * @since 2.7
  */
+@ExtendWith(MockitoExtension.class)
 public class CipherRequiredConditionTest
     extends TestSupport
 {
@@ -44,7 +47,7 @@ public class CipherRequiredConditionTest
   @Mock
   private CryptoHelper crypto;
 
-  @Before
+  @BeforeEach
   public void setUp() throws Exception {
     EventManager eventManager = mock(EventManager.class);
     condition = new CipherRequiredCondition(eventManager, crypto, FAKE_TRANSFORMATION);
@@ -54,13 +57,13 @@ public class CipherRequiredConditionTest
   public void unsatisfiedWhenTransformMissing() throws Exception {
     when(crypto.createCipher(FAKE_TRANSFORMATION)).thenThrow(new NoSuchAlgorithmException());
     condition.bind();
-    assertThat(condition.isSatisfied(), is(false));
+    assertFalse(condition.isSatisfied());
   }
 
   @Test
   public void satisfiedWhenTransformAvailable() throws Exception {
     when(crypto.createCipher(FAKE_TRANSFORMATION)).thenReturn(mock(Cipher.class));
     condition.bind();
-    assertThat(condition.isSatisfied(), is(true));
+    assertTrue(condition.isSatisfied());
   }
 }

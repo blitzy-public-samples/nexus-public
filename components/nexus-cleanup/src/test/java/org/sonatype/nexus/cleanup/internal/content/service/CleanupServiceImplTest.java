@@ -36,20 +36,20 @@ import org.sonatype.nexus.repository.types.GroupType;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import org.elasticsearch.search.SearchContextMissingException;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.junit.runners.Parameterized.Parameters;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static com.google.common.collect.Sets.newLinkedHashSet;
 import static java.util.Arrays.asList;
 import static java.util.Collections.emptyMap;
 import static java.util.Collections.singletonMap;
 import static java.util.stream.Stream.empty;
-import static org.junit.Assume.assumeFalse;
-import static org.junit.Assume.assumeTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -63,13 +63,12 @@ import static org.sonatype.nexus.cleanup.config.CleanupPolicyConstants.LAST_BLOB
 import static org.sonatype.nexus.cleanup.config.CleanupPolicyConstants.LAST_DOWNLOADED_KEY;
 import static org.sonatype.nexus.testcommon.matchers.NexusMatchers.streamContains;
 
-@RunWith(Parameterized.class)
-public class CleanupServiceImplTest
+@ExtendWith(MockitoExtension.class)
+class CleanupServiceImplTest
     extends TestSupport
 {
-  @Parameters
-  public static Collection<Boolean> data() {
-    return ImmutableList.of(Boolean.TRUE, Boolean.FALSE);
+  static Stream<Boolean> data() {
+    return Stream.of(Boolean.TRUE, Boolean.FALSE);
   }
 
   private static final String POLICY_1_NAME = "policy1";
@@ -121,12 +120,12 @@ public class CleanupServiceImplTest
 
   private boolean useRetainCleanup;
 
-  public CleanupServiceImplTest(Boolean useRetainCleanup) {
+  CleanupServiceImplTest(Boolean useRetainCleanup) {
     this.useRetainCleanup = useRetainCleanup;
   }
 
-  @Before
-  public void setup() throws Exception {
+  @BeforeEach
+  void setup() throws Exception {
     when(cleanupBrowseFactory.get(any())).thenReturn(browseService);
 
     underTest = new CleanupServiceImpl(repositoryManager, cleanupPolicyStorage, cleanupMethod,
@@ -160,16 +159,18 @@ public class CleanupServiceImplTest
     when(cleanupFeatureCheck.isRetainSupported(any())).thenReturn(true);
   }
 
-  @Test
-  public void fetchPolicyForEachRepositoryAndRunCleanup() throws Exception {
+  @ParameterizedTest
+  @MethodSource("data")
+  void fetchPolicyForEachRepositoryAndRunCleanup() throws Exception {
     underTest.cleanup(cancelledCheck);
 
     verify(cleanupMethod).run(eq(repository1), argThat(streamContains(component1,  component2)), eq(cancelledCheck));
     verify(cleanupMethod).run(eq(repository2), argThat(streamContains(component3)), eq(cancelledCheck));
   }
 
-  @Test
-  public void fetchMultiplePoliciesForEachRepositoryAndRunCleanup() {
+  @ParameterizedTest
+  @MethodSource("data")
+  void fetchMultiplePoliciesForEachRepositoryAndRunCleanup() {
     String[] policyNamesForRepo1 = {"abc", "def", "ghi"};
     Stream<FluentComponent> componentsForRepo1 = setupForMultiplePolicies(repository1, policyNamesForRepo1);
 
@@ -182,8 +183,9 @@ public class CleanupServiceImplTest
     verify(cleanupMethod, times(policyNamesForRepo2.length)).run(repository2, componentsForRepo2, cancelledCheck);
   }
 
-  @Test
-  public void ignoreRepositoryWhenPolicyNull() throws Exception {
+  @ParameterizedTest
+  @MethodSource("data")
+  void ignoreRepositoryWhenPolicyNull() throws Exception {
     when(cleanupPolicyStorage.get(POLICY_2_NAME)).thenReturn(null);
 
     underTest.cleanup(cancelledCheck);
@@ -191,8 +193,9 @@ public class CleanupServiceImplTest
     verify(cleanupMethod).run(eq(repository1), argThat(streamContains(component1,  component2)), eq(cancelledCheck));
   }
 
-  @Test
-  public void ignoreRepositoryWhenPolicyNameNull() throws Exception {
+  @ParameterizedTest
+  @MethodSource("data")
+  void ignoreRepositoryWhenPolicyNameNull() throws Exception {
     setupRepository(repository2, new String[]{null});
     when(cleanupPolicyStorage.get(null)).thenThrow(new NullPointerException());
 
@@ -201,8 +204,9 @@ public class CleanupServiceImplTest
     verify(cleanupMethod).run(eq(repository1), argThat(streamContains(component1,  component2)), eq(cancelledCheck));
   }
 
-  @Test
-  public void skipPolicyWithExclusionIfNonPro() {
+  @ParameterizedTest
+  @MethodSource("data")
+  void skipPolicyWithExclusionIfNonPro() {
     assumeFalse(useRetainCleanup);
     when(repositoryManager.browse()).thenReturn(ImmutableList.of(repository1));
     when(cleanupPolicy1.getCriteria()).thenReturn(
@@ -213,8 +217,9 @@ public class CleanupServiceImplTest
     verify(cleanupMethod, never()).run(repository1, Stream.of(component1, component2), cancelledCheck);
   }
 
-  @Test
-  public void skipPolicyWithExclusionIfUnsupportedFormat() {
+  @ParameterizedTest
+  @MethodSource("data")
+  void skipPolicyWithExclusionIfUnsupportedFormat() {
     assumeTrue(useRetainCleanup);
     when(cleanupFeatureCheck.isRetainSupported(any())).thenReturn(false);
     when(repositoryManager.browse()).thenReturn(ImmutableList.of(repository1));
@@ -226,8 +231,9 @@ public class CleanupServiceImplTest
     verify(cleanupMethod, never()).run(repository1, Stream.of(component1, component2), cancelledCheck);
   }
 
-  @Test
-  public void ignoreRepositoryWhenPolicyNameListIsNull() throws Exception {
+  @ParameterizedTest
+  @MethodSource("data")
+  void ignoreRepositoryWhenPolicyNameListIsNull() throws Exception {
     when(repositoryManager.browse()).thenReturn(ImmutableList.of(repository3));
 
     underTest.cleanup(cancelledCheck);
@@ -235,8 +241,9 @@ public class CleanupServiceImplTest
     verify(cleanupMethod, never()).run(eq(repository3), argThat(streamContains(component2)), eq(cancelledCheck));
   }
 
-  @Test
-  public void ignoreRepositoryWhenPolicyNameAttributeIsNotPresent() throws Exception {
+  @ParameterizedTest
+  @MethodSource("data")
+  void ignoreRepositoryWhenPolicyNameAttributeIsNotPresent() throws Exception {
     repository1.getConfiguration().setAttributes(emptyMap());
 
     underTest.cleanup(cancelledCheck);
@@ -244,8 +251,9 @@ public class CleanupServiceImplTest
     verify(cleanupMethod).run(eq(repository2), argThat(streamContains(component3)), eq(cancelledCheck));
   }
 
-  @Test
-  public void ignoreRepositoryWhenAttributesNull() throws Exception {
+  @ParameterizedTest
+  @MethodSource("data")
+  void ignoreRepositoryWhenAttributesNull() throws Exception {
     when(repository1.getConfiguration()).thenReturn(mock(Configuration.class));
 
     underTest.cleanup(cancelledCheck);
@@ -253,8 +261,9 @@ public class CleanupServiceImplTest
     verify(cleanupMethod).run(eq(repository2), argThat(streamContains(component3)), eq(cancelledCheck));
   }
 
-  @Test
-  public void ignoreRepositoryWhenCancelled() throws Exception {
+  @ParameterizedTest
+  @MethodSource("data")
+  void ignoreRepositoryWhenCancelled() throws Exception {
     doAnswer(i -> {
       when(cancelledCheck.getAsBoolean()).thenReturn(true);
       return deletionProgress;
@@ -266,8 +275,9 @@ public class CleanupServiceImplTest
     verify(cleanupMethod, never()).run(eq(repository2), argThat(streamContains(component3)), eq(cancelledCheck));
   }
 
-  @Test
-  public void doNothingWhenNoComponentsFound() throws Exception {
+  @ParameterizedTest
+  @MethodSource("data")
+  void doNothingWhenNoComponentsFound() throws Exception {
     when(browseService.browse(cleanupPolicy1, repository1)).thenReturn(empty());
     when(browseService.browse(cleanupPolicy2, repository2)).thenReturn(empty());
 
@@ -277,8 +287,9 @@ public class CleanupServiceImplTest
     verify(cleanupMethod, never()).run(eq(repository2), argThat(streamContains(component3)), eq(cancelledCheck));
   }
 
-  @Test
-  public void doNotDeleteAnythingWhenCriteriaEmpty() throws Exception {
+  @ParameterizedTest
+  @MethodSource("data")
+  void doNotDeleteAnythingWhenCriteriaEmpty() throws Exception {
     when(cleanupPolicy1.getCriteria()).thenReturn(emptyMap());
     when(cleanupPolicy2.getCriteria()).thenReturn(emptyMap());
 
@@ -288,8 +299,9 @@ public class CleanupServiceImplTest
     verify(cleanupMethod, never()).run(eq(repository2), argThat(streamContains(component3)), eq(cancelledCheck));
   }
 
-  @Test
-  public void retryDeletionIfFailure() {
+  @ParameterizedTest
+  @MethodSource("data")
+  void retryDeletionIfFailure() {
     when(deletionProgress.isFailed()).thenReturn(true).thenReturn(false);
     when(repositoryManager.browse()).thenReturn(ImmutableList.of(repository1));
     when(cleanupMethod.run(any(), any(), any())).thenReturn(deletionProgress);
@@ -299,8 +311,9 @@ public class CleanupServiceImplTest
     verify(cleanupMethod, times(2)).run(any(), any(), any());
   }
 
-  @Test
-  public void retryAttemptsExceeded() {
+  @ParameterizedTest
+  @MethodSource("data")
+  void retryAttemptsExceeded() {
     when(deletionProgress.isFailed()).thenReturn(true);
     when(repositoryManager.browse()).thenReturn(ImmutableList.of(repository1));
     when(cleanupMethod.run(any(), any(), any())).thenReturn(deletionProgress);
@@ -310,8 +323,9 @@ public class CleanupServiceImplTest
     verify(cleanupMethod, times(3)).run(any(), any(), any());
   }
 
-  @Test
-  public void cleanupRetriedOnScrollTimeout() {
+  @ParameterizedTest
+  @MethodSource("data")
+  void cleanupRetriedOnScrollTimeout() {
     when(cleanupMethod.run(any(), any(), any()))
         .thenThrow(new RuntimeException(new SearchContextMissingException(10L))).thenReturn(deletionProgress);
 
@@ -321,8 +335,9 @@ public class CleanupServiceImplTest
     verify(cleanupMethod).run(eq(repository2), argThat(streamContains(component3)), eq(cancelledCheck));
   }
 
-  @Test
-  public void cleanupFailed() {
+  @ParameterizedTest
+  @MethodSource("data")
+  void cleanupFailed() {
     when(cleanupMethod.run(any(), any(), any())).thenThrow(new RuntimeException());
 
     underTest.cleanup(cancelledCheck);
@@ -331,8 +346,9 @@ public class CleanupServiceImplTest
     verify(cleanupMethod, times(3)).run(eq(repository2), argThat(streamContains(component3)), eq(cancelledCheck));
   }
 
-  @Test
-  public void cleanupFailedSearchContextMissingException() {
+  @ParameterizedTest
+  @MethodSource("data")
+  void cleanupFailedSearchContextMissingException() {
     when(cleanupMethod.run(any(), any(), any()))
         .thenThrow(new SearchContextMissingException(10L));
     underTest.cleanup(cancelledCheck);

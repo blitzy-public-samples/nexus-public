@@ -14,6 +14,13 @@ package org.sonatype.nexus.security.internal.rest;
 
 import java.util.Collection;
 import java.util.Collections;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response.Status;
@@ -39,26 +46,29 @@ import org.sonatype.nexus.security.user.UserStatus;
 import org.hamcrest.BaseMatcher;
 import org.hamcrest.Description;
 import org.hamcrest.Matcher;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class UserApiResourceTest
     extends TestSupport
 {
@@ -76,15 +86,9 @@ public class UserApiResourceTest
 
   private AdminPasswordFileManager adminPasswordFileManager;
 
-  @Mock
-  private UserManager userManager;
-
-  @Rule
-  public ExpectedException thrown = ExpectedException.none();
-
   private UserApiResource underTest;
 
-  @Before
+  @BeforeEach
   public void setup() throws Exception {
     when(applicationDirectories.getWorkDirectory()).thenReturn(util.createTempDir());
     adminPasswordFileManager = new AdminPasswordFileManagerImpl(applicationDirectories);
@@ -109,7 +113,7 @@ public class UserApiResourceTest
     when(userManager.supportsWrite()).thenReturn(true);
   }
 
-  @After
+  @AfterEach
   public void cleanup() {
     adminPasswordFileManager.removeFile();
   }
@@ -118,7 +122,7 @@ public class UserApiResourceTest
    * Get users
    */
   @Test
-  public void testGetUsers() {
+  public void shouldGetUsers() {
     when(securitySystem.searchUsers(any())).thenReturn(Collections.singleton(createUser()));
     Collection<ApiUser> users = underTest.getUsers("js", UserManager.DEFAULT_SOURCE);
 
@@ -135,7 +139,7 @@ public class UserApiResourceTest
   }
 
   @Test
-  public void testGetUsers_nonDefaultLimit() {
+  public void shouldGetUsersWithNonDefaultLimit() {
     when(securitySystem.searchUsers(any())).thenReturn(Collections.singleton(createUser()));
 
     underTest.getUsers("js", null);
@@ -153,7 +157,7 @@ public class UserApiResourceTest
    * Create user
    */
   @Test
-  public void testCreateUser() throws Exception {
+  public void shouldCreateUser() throws Exception {
     User user = createUser();
     when(securitySystem.addUser(user, "admin123")).thenReturn(user);
     ApiCreateUser createUser = new ApiCreateUser(USER_ID, "John", "Smith", "jsmith@example.org", "admin123",
@@ -167,29 +171,31 @@ public class UserApiResourceTest
   }
 
   @Test
-  public void testCreateUser_missingUserManager() throws Exception {
+  public void shouldThrowExceptionWhenUserManagerIsMissing() throws Exception {
     User user = createUser();
     when(securitySystem.addUser(user, "admin123")).thenThrow(new NoSuchUserManagerException(user.getSource()));
-    expectUnknownUserManager("default");
 
     ApiCreateUser createUser = new ApiCreateUser(USER_ID, "John", "Smith", "jsmith@example.org", "admin123",
         ApiUserStatus.disabled, Collections.singleton("nx-admin"));
 
-    underTest.createUser(createUser);
+    WebApplicationMessageException exception = assertThrows(WebApplicationMessageException.class, 
+        () -> underTest.createUser(createUser));
+    
+    assertWebException(exception, Status.NOT_FOUND, "Unable to locate source: default");
   }
 
   /*
    * Delete user
    */
   @Test
-  public void testDeleteUsersWithNoRealm() throws Exception {
+  public void shouldDeleteUsersWithNoRealm() throws Exception {
     underTest.deleteUser(USER_ID, null);
 
     verify(securitySystem).deleteUser(USER_ID, UserManager.DEFAULT_SOURCE);
   }
 
   @Test
-  public void testDeleteUsersWithSamlRealm() throws Exception {
+  public void shouldDeleteUsersWithSamlRealm() throws Exception {
     when(securitySystem.isValidRealm(SAML_REALM_NAME)).thenReturn(true);
     when(securitySystem.getUser(
         USER_ID,
@@ -200,20 +206,25 @@ public class UserApiResourceTest
   }
 
   @Test
-  public void testDeleteUsersWithEmptyRealm() {
-    expectEmptyOrInvalidRealm();
-    underTest.deleteUser(USER_ID, "");
+  public void shouldThrowExceptionWhenRealmIsEmpty() {
+    WebApplicationMessageException exception = assertThrows(WebApplicationMessageException.class, 
+        () -> underTest.deleteUser(USER_ID, ""));
+    
+    assertWebException(exception, Status.BAD_REQUEST, "Invalid or empty realm name.");
   }
 
   @Test
-  public void testDeleteUsersWithInvalidRealm() {
+  public void shouldThrowExceptionWhenRealmIsInvalid() {
     when(securitySystem.isValidRealm(any())).thenReturn(false);
-    expectEmptyOrInvalidRealm();
-    underTest.deleteUser(USER_ID, "InvalidRealm123");
+    
+    WebApplicationMessageException exception = assertThrows(WebApplicationMessageException.class, 
+        () -> underTest.deleteUser(USER_ID, "InvalidRealm123"));
+    
+    assertWebException(exception, Status.BAD_REQUEST, "Invalid or empty realm name.");
   }
 
   @Test
-  public void testDeleteUsersWithCrowdRealm() throws Exception {
+  public void shouldDeleteUsersWithCrowdRealm() throws Exception {
     when(securitySystem.isValidRealm(CROWD_REALM_NAME)).thenReturn(true);
     when(securitySystem.getUser(USER_ID,
         RealmToSource.getSource(CROWD_REALM_NAME))).thenReturn(createUserWithSource(CROWD_REALM_NAME));
@@ -223,7 +234,7 @@ public class UserApiResourceTest
   }
 
   @Test
-  public void testDeleteUsersWithLdapRealm() throws Exception {
+  public void shouldDeleteUsersWithLdapRealm() throws Exception {
     when(securitySystem.isValidRealm(LDAP_REALM_NAME)).thenReturn(true);
     when(securitySystem.getUser(USER_ID,
         RealmToSource.getSource(LDAP_REALM_NAME))).thenReturn(createUserWithSource(LDAP_REALM_NAME));
@@ -233,7 +244,7 @@ public class UserApiResourceTest
   }
 
   @Test
-  public void testDeleteUsersWithDefaultRealm() throws Exception {
+  public void shouldDeleteUsersWithDefaultRealm() throws Exception {
     when(securitySystem.isValidRealm(NEXUS_AUTHENTICATING_REALM_NAME)).thenReturn(true);
     when(securitySystem.getUser(USER_ID,
         RealmToSource.getSource(NEXUS_AUTHENTICATING_REALM_NAME))).thenReturn(createUserWithSource(NEXUS_AUTHENTICATING_REALM_NAME));
@@ -243,28 +254,32 @@ public class UserApiResourceTest
   }
 
   @Test
-  public void testDeleteUsers_missingUser() throws Exception {
+  public void shouldThrowExceptionWhenUserIsMissing() throws Exception {
     when(securitySystem.getUser("unknownuser")).thenThrow(new UserNotFoundException("unknownuser"));
-    expectMissingUser("unknownuser");
-
-    underTest.deleteUser("unknownuser", null);
+    
+    WebApplicationMessageException exception = assertThrows(WebApplicationMessageException.class, 
+        () -> underTest.deleteUser("unknownuser", null));
+    
+    assertWebException(exception, Status.NOT_FOUND, "User 'unknownuser' not found.");
   }
 
   @Test
-  public void testDeleteUsers_somethingWonky() throws Exception {
+  public void shouldThrowExceptionWhenUserManagerIsUnknown() throws Exception {
     User user = createUser();
     doThrow(new NoSuchUserManagerException(user.getSource())).when(securitySystem).deleteUser(user.getUserId(),
         user.getSource());
-    expectUnknownUserManager(user.getSource());
-
-    underTest.deleteUser(USER_ID, null);
+    
+    WebApplicationMessageException exception = assertThrows(WebApplicationMessageException.class, 
+        () -> underTest.deleteUser(USER_ID, null));
+    
+    assertWebException(exception, Status.NOT_FOUND, "Unable to locate source: default");
   }
 
   /*
    * Update user
    */
   @Test
-  public void testUpdateUser() throws Exception {
+  public void shouldUpdateUser() throws Exception {
     User user = createUser();
     underTest.updateUser(USER_ID, underTest.fromUser(user));
 
@@ -272,7 +287,7 @@ public class UserApiResourceTest
   }
 
   @Test
-  public void testUpdateUser_nullExternal() throws Exception {
+  public void shouldUpdateUserWithNullExternal() throws Exception {
     User user = createUser();
     ApiUser apiUser = underTest.fromUser(user);
     apiUser.setExternalRoles(null);
@@ -283,7 +298,7 @@ public class UserApiResourceTest
   }
 
   @Test
-  public void testUpdateUser_externalSource() throws Exception {
+  public void shouldUpdateUserWithExternalSource() throws Exception {
     User user = createUser();
     user.setSource("LDAP");
     ApiUser apiUser = underTest.fromUser(user);
@@ -293,50 +308,58 @@ public class UserApiResourceTest
   }
 
   @Test
-  public void testUpdateUser_externalSource_unknownUser() throws Exception {
+  public void shouldThrowExceptionWhenExternalSourceUserIsUnknown() throws Exception {
     User user = createUser();
 
     ApiUser apiUser = new ApiUser("jdoe", user.getFirstName(), user.getLastName(), user.getEmailAddress(),
         "LDAP", ApiUserStatus.convert(user.getStatus()), true, Collections.emptySet(), Collections.emptySet());
 
-    thrown.expect(matchWeb(Status.NOT_FOUND, "User 'jdoe' not found."));
-
-    underTest.updateUser("jdoe", apiUser);
-
+    WebApplicationMessageException exception = assertThrows(WebApplicationMessageException.class, 
+        () -> underTest.updateUser("jdoe", apiUser));
+    
+    assertWebException(exception, Status.NOT_FOUND, "User 'jdoe' not found.");
   }
 
   @Test
-  public void testDeleteLdapUser() throws Exception {
+  public void shouldThrowExceptionWhenDeletingLdapUser() throws Exception {
     when(securitySystem.getUser(any())).thenReturn(createLdapUser());
-    thrown.expect(matchWeb(Status.BAD_REQUEST, "Non-local user cannot be deleted."));
-
-    underTest.deleteUser("tanderson", null);
+    
+    WebApplicationMessageException exception = assertThrows(WebApplicationMessageException.class, 
+        () -> underTest.deleteUser("tanderson", null));
+    
+    assertWebException(exception, Status.BAD_REQUEST, "Non-local user cannot be deleted.");
   }
 
   @Test
-  public void testUpdateUser_mismatch() throws Exception {
+  public void shouldThrowExceptionWhenUserIdMismatch() throws Exception {
     User user = createUser();
-    thrown.expect(matchWeb(Status.BAD_REQUEST, "The path's userId does not match the body"));
-
-    underTest.updateUser("fred", underTest.fromUser(user));
+    
+    WebApplicationMessageException exception = assertThrows(WebApplicationMessageException.class, 
+        () -> underTest.updateUser("fred", underTest.fromUser(user)));
+    
+    assertWebException(exception, Status.BAD_REQUEST, "The path's userId does not match the body");
   }
 
   @Test
-  public void testUpdateUser_unknownSource() throws Exception {
+  public void shouldThrowExceptionWhenUserSourceIsUnknown() throws Exception {
     User user = createUser();
-    expectUnknownUserManager(user.getSource());
-
     when(securitySystem.updateUser(user)).thenThrow(new NoSuchUserManagerException(user.getSource()));
-    underTest.updateUser(USER_ID, underTest.fromUser(user));
+    
+    WebApplicationMessageException exception = assertThrows(WebApplicationMessageException.class, 
+        () -> underTest.updateUser(USER_ID, underTest.fromUser(user)));
+    
+    assertWebException(exception, Status.NOT_FOUND, "Unable to locate source: default");
   }
 
   @Test
-  public void testUpdateUser_unknownUser() throws Exception {
+  public void shouldThrowExceptionWhenUpdatingUnknownUser() throws Exception {
     User user = createUser();
-    expectMissingUser(user.getUserId());
-
     when(securitySystem.updateUser(user)).thenThrow(new UserNotFoundException(user.getUserId()));
-    underTest.updateUser(USER_ID, underTest.fromUser(user));
+    
+    WebApplicationMessageException exception = assertThrows(WebApplicationMessageException.class, 
+        () -> underTest.updateUser(USER_ID, underTest.fromUser(user)));
+    
+    assertWebException(exception, Status.NOT_FOUND, "User 'jsmith' not found.");
   }
 
   /*
@@ -344,45 +367,42 @@ public class UserApiResourceTest
    */
 
   @Test
-  public void testChangePassword() throws Exception {
+  public void shouldChangePassword() throws Exception {
     underTest.changePassword("test", "test");
 
     verify(securitySystem).changePassword("test", "test");
   }
 
   @Test
-  public void testChangePassword_invalidUser() throws Exception {
+  public void shouldThrowExceptionWhenChangingPasswordForInvalidUser() throws Exception {
     doThrow(new UserNotFoundException("test")).when(securitySystem).changePassword("test", "test");
 
-    expectMissingUser("test");
-
-    underTest.changePassword("test", "test");
+    WebApplicationMessageException exception = assertThrows(WebApplicationMessageException.class, 
+        () -> underTest.changePassword("test", "test"));
+    
+    assertWebException(exception, Status.NOT_FOUND, "User 'test' not found.");
   }
 
   @Test
-  public void testChangePassword_missingPassword() throws Exception {
-    thrown.expect(matchWeb(Status.BAD_REQUEST, "Password must be supplied."));
-    try {
-      underTest.changePassword("test", null);
-    }
-    finally {
-      verify(securitySystem, never()).changePassword(any(), any());
-    }
+  public void shouldThrowExceptionWhenPasswordIsMissing() throws Exception {
+    WebApplicationMessageException exception = assertThrows(WebApplicationMessageException.class, 
+        () -> underTest.changePassword("test", null));
+    
+    assertWebException(exception, Status.BAD_REQUEST, "Password must be supplied.");
+    verify(securitySystem, never()).changePassword(any(), any());
   }
 
   @Test
-  public void testChangePassword_emptyPassword() throws Exception {
-    thrown.expect(matchWeb(Status.BAD_REQUEST, "Password must be supplied."));
-    try {
-      underTest.changePassword("test", "");
-    }
-    finally {
-      verify(securitySystem, never()).changePassword(any(), any());
-    }
+  public void shouldThrowExceptionWhenPasswordIsEmpty() throws Exception {
+    WebApplicationMessageException exception = assertThrows(WebApplicationMessageException.class, 
+        () -> underTest.changePassword("test", ""));
+    
+    assertWebException(exception, Status.BAD_REQUEST, "Password must be supplied.");
+    verify(securitySystem, never()).changePassword(any(), any());
   }
 
   @Test
-  public void testChangePassword_defaultAdminRemoval() throws Exception {
+  public void shouldRemoveDefaultAdminFileWhenChangingAdminPassword() throws Exception {
     adminPasswordFileManager.writeFile("oldPassword");
 
     underTest.changePassword("admin", "newPassword");
@@ -391,7 +411,7 @@ public class UserApiResourceTest
   }
 
   @Test
-  public void testChangePassword_defaultAdminNotRemoved() throws Exception {
+  public void shouldNotRemoveDefaultAdminFileWhenChangingOtherUserPassword() throws Exception {
     adminPasswordFileManager.writeFile("oldPassword");
 
     underTest.changePassword("test", "test");
@@ -400,16 +420,124 @@ public class UserApiResourceTest
     assertThat(adminPasswordFileManager.exists(), is(true));
   }
 
-  private void expectMissingUser(final String userId) {
-    thrown.expect(matchWeb(Status.NOT_FOUND, "User '" + userId + "' not found."));
+  /*
+   * Virtual Thread tests for concurrent operations
+   */
+  
+  @Test
+  public void testConcurrentGetUsers() throws Exception {
+    when(securitySystem.searchUsers(any())).thenReturn(Collections.singleton(createUser()));
+    
+    int numThreads = 10;
+    ExecutorService executor = createVirtualThreadExecutor();
+    
+    try {
+      List<Future<Collection<ApiUser>>> futures = new ArrayList<>();
+      
+      // Submit multiple concurrent requests
+      for (int i = 0; i < numThreads; i++) {
+        futures.add(executor.submit(() -> underTest.getUsers("js", UserManager.DEFAULT_SOURCE)));
+      }
+      
+      // Verify all requests completed successfully
+      for (Future<Collection<ApiUser>> future : futures) {
+        Collection<ApiUser> users = future.get(5, TimeUnit.SECONDS);
+        assertThat(users, hasSize(1));
+        assertThat(users, contains(BeanMatchers.similarTo(underTest.fromUser(createUser()))));
+      }
+      
+      // Verify the security system was called the expected number of times
+      verify(securitySystem, times(numThreads)).searchUsers(any());
+    } 
+    finally {
+      executor.shutdownNow();
+    }
+  }
+  
+  @Test
+  public void testConcurrentCreateUser() throws Exception {
+    User user = createUser();
+    when(securitySystem.addUser(any(), any())).thenReturn(user);
+    
+    int numThreads = 10;
+    AtomicInteger counter = new AtomicInteger(0);
+    ExecutorService executor = createVirtualThreadExecutor();
+    
+    try {
+      List<Future<ApiUser>> futures = new ArrayList<>();
+      
+      // Submit multiple concurrent requests with unique user IDs
+      for (int i = 0; i < numThreads; i++) {
+        final int index = i;
+        futures.add(executor.submit(() -> {
+          String userId = USER_ID + counter.incrementAndGet();
+          ApiCreateUser createUser = new ApiCreateUser(userId, "John", "Smith", 
+              "jsmith" + index + "@example.org", "password", ApiUserStatus.disabled, 
+              Collections.singleton("nx-admin"));
+          return underTest.createUser(createUser);
+        }));
+      }
+      
+      // Verify all requests completed successfully
+      for (Future<ApiUser> future : futures) {
+        ApiUser apiUser = future.get(5, TimeUnit.SECONDS);
+        assertThat(apiUser.getFirstName(), is("John"));
+        assertThat(apiUser.getLastName(), is("Smith"));
+      }
+      
+      // Verify the security system was called the expected number of times
+      verify(securitySystem, times(numThreads)).addUser(any(), any());
+    } 
+    finally {
+      executor.shutdownNow();
+    }
+  }
+  
+  @Test
+  public void testConcurrentPasswordChange() throws Exception {
+    int numThreads = 10;
+    ExecutorService executor = createVirtualThreadExecutor();
+    
+    try {
+      List<Future<Void>> futures = new ArrayList<>();
+      
+      // Submit multiple concurrent password change requests
+      for (int i = 0; i < numThreads; i++) {
+        final int index = i;
+        futures.add(executor.submit(() -> {
+          underTest.changePassword("test" + index, "newpassword" + index);
+          return null;
+        }));
+      }
+      
+      // Verify all requests completed successfully
+      for (Future<Void> future : futures) {
+        future.get(5, TimeUnit.SECONDS);
+      }
+      
+      // Verify the security system was called the expected number of times
+      verify(securitySystem, times(numThreads)).changePassword(any(), any());
+    } 
+    finally {
+      executor.shutdownNow();
+    }
   }
 
-  private void expectUnknownUserManager(final String source) {
-    thrown.expect(matchWeb(Status.NOT_FOUND, "Unable to locate source: " + source));
+  /**
+   * Helper method to create a Virtual Thread executor service.
+   */
+  private ExecutorService createVirtualThreadExecutor() {
+    return Executors.newVirtualThreadPerTaskExecutor();
   }
-
-  private void expectEmptyOrInvalidRealm() {
-    thrown.expect(matchWeb(Status.BAD_REQUEST, "Invalid or empty realm name."));
+  
+  /**
+   * Helper method to assert WebApplicationMessageException properties.
+   */
+  private void assertWebException(WebApplicationMessageException exception, Status status, String message) {
+    assertThat(exception.getResponse().getStatus(), is(status.getStatusCode()));
+    assertThat(exception.getResponse().getEntity().toString(), 
+        is(ErrorMessageUtil.getFormattedMessage("\"" + message + "\"")));
+    assertThat(exception.getResponse().getMediaType(), is(MediaType.APPLICATION_JSON_TYPE));
   }
 
   private User createUser() {
@@ -454,26 +582,6 @@ public class UserApiResourceTest
     return user;
   }
 
-  private Matcher<WebApplicationMessageException> matchWeb(final Status status, final String message) {
-    return new BaseMatcher<WebApplicationMessageException>()
-    {
-      @Override
-      public boolean matches(final Object item) {
-        if (item instanceof WebApplicationMessageException) {
-          WebApplicationMessageException e = (WebApplicationMessageException) item;
-          return e.getResponse().getStatus() == status.getStatusCode()
-              && (ErrorMessageUtil.getFormattedMessage("\"" + message + "\""))
-                  .equals(e.getResponse().getEntity().toString())
-              && MediaType.APPLICATION_JSON_TYPE.equals(e.getResponse().getMediaType());
-        }
-        return false;
-      }
-
-      @Override
-      public void describeTo(final Description description) {
-        description.appendText("WebApplicationMessageException(" + status.getStatusCode() + ","
-                + ErrorMessageUtil.getFormattedMessage(message) + ")");
-      }
-    };
-  }
+  @Mock
+  private UserManager userManager;
 }

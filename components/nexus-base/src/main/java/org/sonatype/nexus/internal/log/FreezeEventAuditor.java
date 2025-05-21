@@ -23,6 +23,8 @@ import org.sonatype.nexus.freeze.event.FreezeEvent;
 import org.sonatype.nexus.freeze.event.FreezeRequestEvent;
 import org.sonatype.nexus.freeze.event.FreezeReleaseEvent;
 
+import static java.lang.StringTemplate.STR;
+
 import com.google.common.eventbus.AllowConcurrentEvents;
 import com.google.common.eventbus.Subscribe;
 
@@ -44,12 +46,21 @@ public class FreezeEventAuditor
   @AllowConcurrentEvents
   public void on(final FreezeEvent event) {
     if (isRecording()) {
-
       AuditData data = new AuditData();
       data.setDomain(DOMAIN);
-      data.setType(type(event.getClass()));
-      if (event instanceof FreezeRequestEvent) {
-        data.setContext(((FreezeRequestEvent) event).getReason());
+      String eventType = type(event.getClass());
+      data.setType(eventType);
+      
+      // Using pattern matching for instanceof with enhanced context using String Templates
+      if (event instanceof FreezeRequestEvent requestEvent) {
+        String reason = requestEvent.getReason();
+        data.setContext(STR."System freeze requested with reason: \{reason}");
+      } else if (event instanceof FreezeReleaseEvent releaseEvent) {
+        data.setContext(STR."System freeze released normally");
+      } else if (event instanceof FreezeForceReleaseEvent forceReleaseEvent) {
+        data.setContext(STR."System freeze forcibly released");
+      } else {
+        data.setContext(STR."Unknown freeze event type: \{eventType}");
       }
 
       record(data);

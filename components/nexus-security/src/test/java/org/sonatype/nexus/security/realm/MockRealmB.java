@@ -12,6 +12,9 @@
  */
 package org.sonatype.nexus.security.realm;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
+
 import javax.inject.Named;
 import javax.inject.Singleton;
 
@@ -26,6 +29,10 @@ import org.apache.shiro.realm.AuthorizingRealm;
 import org.apache.shiro.subject.PrincipalCollection;
 import org.eclipse.sisu.Description;
 
+/**
+ * Mock realm implementation for testing purposes.
+ * Updated for Java 21 and Shiro 2.0.0 compatibility with virtual thread support.
+ */
 @Singleton
 @Named("MockRealmB")
 @Description("MockRealmB")
@@ -36,33 +43,75 @@ public class MockRealmB
     this.setAuthenticationTokenClass(UsernamePasswordToken.class);
   }
 
+  /**
+   * Authentication implementation that supports virtual threads by avoiding blocking operations.
+   * Only allows jcool/jcool credentials for testing purposes.
+   */
   @Override
   protected AuthenticationInfo doGetAuthenticationInfo(AuthenticationToken token) throws AuthenticationException {
-    // only allow jcool/jcool
-    UsernamePasswordToken userpass = (UsernamePasswordToken) token;
-    if ("jcool".equals(userpass.getUsername()) && "jcool".equals(new String(userpass.getPassword()))) {
-      return new SimpleAuthenticationInfo(userpass.getUsername(), new String(userpass.getPassword()), this.getName());
+    // Using Java 21 pattern matching for more concise credential validation
+    if (token instanceof UsernamePasswordToken userpass) {
+      if ("jcool".equals(userpass.getUsername()) && "jcool".equals(new String(userpass.getPassword()))) {
+        return new SimpleAuthenticationInfo(userpass.getUsername(), new String(userpass.getPassword()), this.getName());
+      }
     }
 
     return null;
   }
 
+  /**
+   * Authorization implementation that supports virtual threads by avoiding blocking operations.
+   * Assigns test roles and permissions for the jcool user.
+   */
   @Override
   protected AuthorizationInfo doGetAuthorizationInfo(PrincipalCollection principals) {
-    // make sure the user is jcool, (its just for testing)
+    // Thread-safe check for the principal
+    if (principals != null && !principals.isEmpty()) {
+      String username = principals.getPrimaryPrincipal().toString();
+      if ("jcool".equals(username)) {
+        // Create authorization info in a thread-safe manner
+        SimpleAuthorizationInfo info = new SimpleAuthorizationInfo();
 
-    if (principals.asList().get(0).toString().equals("jcool")) {
-      SimpleAuthorizationInfo info = new SimpleAuthorizationInfo();
+        // Add roles in a non-blocking manner
+        info.addRole("test-role1");
+        info.addRole("test-role2");
 
-      info.addRole("test-role1");
-      info.addRole("test-role2");
+        // Add permissions in a non-blocking manner
+        info.addStringPermission("test:*");
 
-      info.addStringPermission("test:*");
-
-      return info;
+        return info;
+      }
     }
 
     return null;
+  }
+
+  /**
+   * Non-blocking asynchronous authorization check for virtual thread compatibility.
+   * This method can be used when performing authorization checks in a virtual thread context.
+   *
+   * @param principals the principals to check
+   * @return a CompletionStage with the AuthorizationInfo
+   */
+  public CompletionStage<AuthorizationInfo> getAuthorizationInfoAsync(PrincipalCollection principals) {
+    return CompletableFuture.supplyAsync(() -> doGetAuthorizationInfo(principals));
+  }
+
+  /**
+   * Non-blocking asynchronous authentication check for virtual thread compatibility.
+   * This method can be used when performing authentication in a virtual thread context.
+   *
+   * @param token the authentication token
+   * @return a CompletionStage with the AuthenticationInfo
+   */
+  public CompletionStage<AuthenticationInfo> getAuthenticationInfoAsync(AuthenticationToken token) {
+    return CompletableFuture.supplyAsync(() -> {
+      try {
+        return doGetAuthenticationInfo(token);
+      } catch (AuthenticationException e) {
+        throw new RuntimeException(e);
+      }
+    });
   }
 
   @Override

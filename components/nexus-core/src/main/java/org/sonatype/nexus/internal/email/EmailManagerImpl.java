@@ -14,6 +14,8 @@ package org.sonatype.nexus.internal.email;
 
 import java.util.Objects;
 import java.util.Properties;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -23,7 +25,6 @@ import javax.mail.Session;
 import javax.net.ssl.SSLContext;
 
 import org.sonatype.goodies.common.ComponentSupport;
-import org.sonatype.goodies.common.Mutex;
 import org.sonatype.nexus.capability.CapabilityContext;
 import org.sonatype.nexus.capability.CapabilityReference;
 import org.sonatype.nexus.capability.CapabilityRegistry;
@@ -73,7 +74,7 @@ public class EmailManagerImpl
 
   private final Function<EmailConfiguration, EmailConfiguration> defaults;
 
-  private final Mutex lock = new Mutex();
+  private final ReentrantLock lock = new ReentrantLock();
 
   private final Provider<CapabilityRegistry> capabilityRegistryProvider;
 
@@ -110,10 +111,10 @@ public class EmailManagerImpl
       // default config must not be null
       checkNotNull(model);
 
-      log.info("Using default configuration: {}", model);
+      log.info(STR."Using default configuration: \{model}");
     }
     else {
-      log.info("Loaded configuration: {}", model);
+      log.info(STR."Loaded configuration: \{model}");
     }
 
     return model;
@@ -125,11 +126,14 @@ public class EmailManagerImpl
    * The result model should be considered _immutable_ unless copied.
    */
   private EmailConfiguration getConfigurationInternal() {
-    synchronized (lock) {
+    lock.lock();
+    try {
       if (configuration == null) {
         configuration = loadConfiguration();
       }
       return configuration;
+    } finally {
+      lock.unlock();
     }
   }
 
@@ -144,18 +148,22 @@ public class EmailManagerImpl
 
     EmailConfiguration model = configuration.copy();
 
-    log.info("Saving configuration: {}", model);
+    log.info(STR."Saving configuration: \{model}");
 
-    synchronized (lock) {
+    lock.lock();
+    try {
       Secret oldPass = getConfiguration().getPassword();
       Secret newPass = null;
-      if (!StringUtils.isBlank(password) && !PASSWORD_PLACEHOLDER.equals(password)) {
-        newPass = secretsService.encrypt(EMAIL_CONFIGURATION_SOURCE, password.toCharArray(), UserIdHelper.get());
-        model.setPassword(newPass);
+      
+      switch (password) {
+        case null, "" -> { /* No password provided, do nothing */ }
+        case PASSWORD_PLACEHOLDER -> model.setPassword(oldPass);
+        case String pwd -> {
+          newPass = secretsService.encrypt(EMAIL_CONFIGURATION_SOURCE, pwd.toCharArray(), UserIdHelper.get());
+          model.setPassword(newPass);
+        }
       }
-      else if (PASSWORD_PLACEHOLDER.equals(password)) {
-        model.setPassword(oldPass);
-      }
+      
       try {
         store.save(model);
       }
@@ -169,6 +177,8 @@ public class EmailManagerImpl
         secretsService.remove(oldPass);
       }
       this.configuration = model;
+    } finally {
+      lock.unlock();
     }
 
     eventManager.post(new EmailConfigurationChangedEvent(model));
@@ -177,9 +187,12 @@ public class EmailManagerImpl
   @Subscribe
   public void onStoreChanged(final EmailConfigurationChanged event) {
     if (EventHelper.isReplicating()) {
-      log.debug("Reloading configuration after change by node {}", event.getRemoteNodeId());
-      synchronized (lock) {
+      log.debug(STR."Reloading configuration after change by node \{event.getRemoteNodeId()}");
+      lock.lock();
+      try {
         configuration = loadConfiguration();
+      } finally {
+        lock.unlock();
       }
     }
   }
@@ -210,7 +223,7 @@ public class EmailManagerImpl
     String subjectPrefix = configuration.getSubjectPrefix();
     if (subjectPrefix != null) {
       String subject = mail.getSubject();
-      mail.setSubject(String.format("%s %s", subjectPrefix, subject));
+      mail.setSubject(STR."\{subjectPrefix} \{subject}");
     }
 
     // do this last (mail properties are set up from the email fields when you get the mail session)
@@ -233,7 +246,7 @@ public class EmailManagerImpl
     EmailConfiguration model = getConfigurationInternal();
     if (model.isEnabled()) {
       Email prepared = apply(model, mail, getPassword(model));
-      sendMail(prepared);
+      sendMailWithVirtualThread(prepared);
     }
     else {
       log.warn("No email enabled but asked to send anyway.");
@@ -252,7 +265,7 @@ public class EmailManagerImpl
     else {
       mail = apply(configuration, mail, password);
     }
-    sendMail(mail);
+    sendMailWithVirtualThread(mail);
   }
 
   @Override
@@ -262,7 +275,7 @@ public class EmailManagerImpl
     checkNotNull(configuration);
     Email mail = createVerificationEmail(address);
     mail = apply(configuration, mail, getPassword(configuration));
-    sendMail(mail);
+    sendMailWithVirtualThread(mail);
   }
 
   private Email createVerificationEmail(final String address) throws EmailException {
@@ -294,20 +307,45 @@ public class EmailManagerImpl
         .filter(CapabilityContext::isEnabled)
         .map(capabilityContext -> capabilityContext.properties().get("url"))
         .findFirst()
-        .map(url -> "Message from: " + url + "\n\n" + message)
+        .map(url -> STR."Message from: \{url}\n\n\{message}")
         .orElse(message);
   }
 
-  private void sendMail(final Email mail) throws EmailException {
-    ClassLoader currentClassLoader = Thread.currentThread().getContextClassLoader();
+  /**
+   * Sends an email using a virtual thread to avoid blocking the caller thread.
+   * This is especially important for SMTP operations which can be slow.
+   */
+  private void sendMailWithVirtualThread(final Email mail) throws EmailException {
+    // Create a semaphore to wait for the virtual thread to complete
+    final Semaphore semaphore = new Semaphore(0);
+    final EmailException[] exceptionHolder = new EmailException[1];
+    
+    Thread.startVirtualThread(() -> {
+      ClassLoader currentClassLoader = Thread.currentThread().getContextClassLoader();
+      try {
+        // make sure javax.mail loaded, required for java 11+
+        Thread.currentThread().setContextClassLoader(javax.mail.Session.class.getClassLoader());
+        mail.send();
+      }
+      catch (EmailException e) {
+        exceptionHolder[0] = e;
+      }
+      finally {
+        Thread.currentThread().setContextClassLoader(currentClassLoader);
+        semaphore.release();
+      }
+    });
+    
     try {
-      // make sure javax.mail loaded, required for java 11+
-      Thread.currentThread().setContextClassLoader(javax.mail.Session.class.getClassLoader());
-      mail.send();
+      // Wait for the virtual thread to complete
+      semaphore.acquire();
+      if (exceptionHolder[0] != null) {
+        throw exceptionHolder[0];
+      }
     }
-    finally {
-      Thread.currentThread().setContextClassLoader(currentClassLoader);
+    catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new EmailException("Email sending was interrupted", e);
     }
   }
-
 }

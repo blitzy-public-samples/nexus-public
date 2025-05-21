@@ -12,36 +12,75 @@
  */
 package org.sonatype.nexus.security.realm;
 
+import java.util.concurrent.ExecutionException;
+
 import org.sonatype.nexus.security.AbstractSecurityTest;
 import org.sonatype.nexus.security.SecuritySystem;
 import org.sonatype.nexus.security.user.User;
 
 import com.google.common.collect.ImmutableList;
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 public class OrderingRealmsTest
     extends AbstractSecurityTest
 {
   @Test
-  public void testOrderedGetUser() throws Exception {
+  void testOrderedGetUser() throws Exception {
     SecuritySystem securitySystem = this.lookup(SecuritySystem.class);
     RealmManager realmManager = lookup(RealmManager.class);
     realmManager.setConfiguredRealmIds(ImmutableList.of("MockRealmA", "MockRealmB"));
 
     User jcoder = securitySystem.getUser("jcoder");
-    Assert.assertNotNull(jcoder);
+    Assertions.assertNotNull(jcoder);
 
     // make sure jcoder is from MockUserManagerA
-    Assert.assertEquals("MockUserManagerA", jcoder.getSource());
+    Assertions.assertEquals("MockUserManagerA", jcoder.getSource());
 
     // now change the order
     realmManager.setConfiguredRealmIds(ImmutableList.of("MockRealmB", "MockRealmA"));
 
     jcoder = securitySystem.getUser("jcoder");
-    Assert.assertNotNull(jcoder);
+    Assertions.assertNotNull(jcoder);
 
     // make sure jcoder is from MockUserManagerA
-    Assert.assertEquals("MockUserManagerB", jcoder.getSource());
+    Assertions.assertEquals("MockUserManagerB", jcoder.getSource());
+  }
+  
+  @Test
+  void testOrderedGetUserWithVirtualThread() throws Exception {
+    // Run the same test but in a virtual thread to verify realm ordering works correctly
+    // with Apache Shiro 2.0.0 under virtual thread execution
+    Thread.startVirtualThread(() -> {
+      try {
+        SecuritySystem securitySystem = this.lookup(SecuritySystem.class);
+        RealmManager realmManager = lookup(RealmManager.class);
+        
+        // Verify we're running in a virtual thread
+        Assertions.assertTrue(Thread.currentThread().isVirtual(), 
+            "This test should run in a virtual thread");
+        
+        // Test first ordering: MockRealmA, MockRealmB
+        realmManager.setConfiguredRealmIds(ImmutableList.of("MockRealmA", "MockRealmB"));
+
+        User jcoder = securitySystem.getUser("jcoder");
+        Assertions.assertNotNull(jcoder);
+
+        // make sure jcoder is from MockUserManagerA
+        Assertions.assertEquals("MockUserManagerA", jcoder.getSource());
+
+        // now change the order
+        realmManager.setConfiguredRealmIds(ImmutableList.of("MockRealmB", "MockRealmA"));
+
+        jcoder = securitySystem.getUser("jcoder");
+        Assertions.assertNotNull(jcoder);
+
+        // make sure jcoder is from MockUserManagerB
+        Assertions.assertEquals("MockUserManagerB", jcoder.getSource());
+      }
+      catch (Exception e) {
+        throw new RuntimeException("Error in virtual thread test", e);
+      }
+    }).join(); // Wait for the virtual thread to complete
   }
 }

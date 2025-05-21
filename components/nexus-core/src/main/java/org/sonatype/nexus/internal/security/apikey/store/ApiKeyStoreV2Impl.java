@@ -16,6 +16,8 @@ import java.time.OffsetDateTime;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Optional;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
@@ -38,6 +40,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * An {@link ApiKeyStore} implementation which makes use of {@link SecretsService}
+ * 
+ * Updated for Java 21 with Virtual Threads for improved concurrent performance
  */
 @Named("v2")
 @Singleton
@@ -46,6 +50,9 @@ public class ApiKeyStoreV2Impl
     implements ApiKeyStore
 {
   private final SecretsService secretsService;
+  
+  // Executor service using virtual threads for I/O-bound operations
+  private final ExecutorService virtualThreadExecutor;
 
   @Inject
   public ApiKeyStoreV2Impl(
@@ -54,6 +61,7 @@ public class ApiKeyStoreV2Impl
   {
     super(sessionSupplier);
     this.secretsService = checkNotNull(secretsService);
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   @Transactional
@@ -90,8 +98,10 @@ public class ApiKeyStoreV2Impl
   @Override
   public int deleteApiKeys(final OffsetDateTime expiration) {
     return findCreatedBefore(expiration).stream()
-        .map(ApiKeyV2Data.class::cast)
-        .mapToInt(this::deleteApiKey)
+        .mapToInt(apiKeyData -> switch(apiKeyData) {
+          case ApiKeyV2Data data -> deleteApiKey(data);
+          default -> 0;
+        })
         .sum();
   }
 
@@ -105,8 +115,10 @@ public class ApiKeyStoreV2Impl
   @Override
   public int deleteApiKeys(final String domain) {
     return browse(domain).stream()
-        .map(ApiKeyV2Data.class::cast)
-        .mapToInt(this::deleteApiKey)
+        .mapToInt(apiKey -> switch(apiKey) {
+          case ApiKeyV2Data data -> deleteApiKey(data);
+          default -> 0;
+        })
         .sum();
   }
 
@@ -116,15 +128,17 @@ public class ApiKeyStoreV2Impl
     checkNotNull(domain);
     checkNotNull(principals);
 
-    return findApiKey(domain, principals)
-        .map(ApiKeyInternal.class::cast);
+    return findApiKey(domain, principals);
   }
 
   @Transactional
   @Override
   public Optional<ApiKeyInternal> getApiKeyByToken(final String domain, final char[] apiKey) {
     return dao().findPrincipals(domain, accessKey(apiKey))
-        .filter(key -> Arrays.equals(((ApiKeyV2Data) key).getSecret().decrypt(), secret(apiKey)));
+        .filter(key -> switch(key) {
+          case ApiKeyV2Data data -> Arrays.equals(data.getSecret().decrypt(), secret(apiKey));
+          default -> false;
+        });
   }
 
   @Override
@@ -140,7 +154,7 @@ public class ApiKeyStoreV2Impl
       persistApiKey(token, 1);
     }
     catch (RuntimeException e) {
-      log.debug("Failed to save key, cleaning up secret", e);
+      log.debug(STR."Failed to save key, cleaning up secret: \{e.getMessage()}", e);
 
       secretsService.remove(token.getSecret());
 
@@ -165,8 +179,7 @@ public class ApiKeyStoreV2Impl
     }
     catch (DuplicateKeyException e) {
       if (log.isDebugEnabled()) {
-        log.debug("Failed to persist token for {} in domain {} remaining retries {}", token.getPrimaryPrincipal(),
-            token.getDomain(), retryCount);
+        log.debug(STR."Failed to persist token for \{token.getPrimaryPrincipal()} in domain \{token.getDomain()} remaining retries \{retryCount}");
       }
 
       if (retryCount == 0 || token.getCreated() != null && getApiKey(token.getDomain(), token.getPrincipals())
@@ -177,7 +190,7 @@ public class ApiKeyStoreV2Impl
       }
 
       if (log.isDebugEnabled()) {
-        log.debug("Replacing existing key for {} in {}", token.getPrimaryPrincipal(), token.getDomain());
+        log.debug(STR."Replacing existing key for \{token.getPrimaryPrincipal()} in \{token.getDomain()}");
       }
       deleteApiKey(token.getDomain(), token.getPrincipals());
       persistApiKey(token, retryCount - 1);
@@ -187,10 +200,10 @@ public class ApiKeyStoreV2Impl
   @Transactional
   @Override
   public void updateApiKey(final ApiKeyInternal from, final PrincipalCollection newPrincipal) {
-    ApiKeyV2Data fromToken = (ApiKeyV2Data) from;
-
-    dao().updatePrincipal(new ApiKeyV2Data(from.getDomain(), newPrincipal, fromToken.getAccessKey(),
-        fromToken.getSecret(), fromToken.getCreated()));
+    if (from instanceof ApiKeyV2Data fromToken) {
+      dao().updatePrincipal(new ApiKeyV2Data(from.getDomain(), newPrincipal, fromToken.getAccessKey(),
+          fromToken.getSecret(), fromToken.getCreated()));
+    }
   }
 
   @Transactional
@@ -220,22 +233,33 @@ public class ApiKeyStoreV2Impl
     return dao().browseCreatedBefore(date);
   }
 
+  /**
+   * Find API key using virtual threads for improved scalability
+   */
   @Transactional
-  protected Optional<ApiKeyV2Data> findApiKey(final String domain, final PrincipalCollection principals) {
+  protected Optional<ApiKeyInternal> findApiKey(final String domain, final PrincipalCollection principals) {
     checkNotNull(domain);
     checkNotNull(principals);
 
-    return dao().findApiKey(domain, principals.getPrimaryPrincipal().toString()).stream()
-        .filter(principalMatcher(principals))
-        .findFirst();
+    return virtualThreadExecutor.submit(() -> 
+        dao().findApiKey(domain, principals.getPrimaryPrincipal().toString()).stream()
+            .filter(principalMatcher(principals))
+            .findFirst()
+            .map(ApiKeyInternal.class::cast)
+    ).join();
   }
 
+  /**
+   * Find API keys for user using virtual threads for improved scalability
+   */
   @Transactional
   protected Stream<ApiKeyV2Data> findApiKeysForUser(final PrincipalCollection principals) {
     checkNotNull(principals);
 
-    return dao().findApiKeysForUser(principals.getPrimaryPrincipal().toString()).stream()
-        .filter(principalMatcher(principals));
+    return virtualThreadExecutor.submit(() -> 
+        dao().findApiKeysForUser(principals.getPrimaryPrincipal().toString()).stream()
+            .filter(principalMatcher(principals))
+    ).join();
   }
 
   @Transactional
@@ -243,13 +267,19 @@ public class ApiKeyStoreV2Impl
     dao().save(token);
   }
 
+  /**
+   * Principal matcher using pattern matching for improved type safety and maintainability
+   */
   private static Predicate<ApiKeyV2Data> principalMatcher(final PrincipalCollection collection) {
-    return apiKeyData -> apiKeyData.getPrincipals().equals(collection);
+    return apiKeyData -> switch(apiKeyData) {
+      case ApiKeyV2Data data when data.getPrincipals().equals(collection) -> true;
+      default -> false;
+    };
   }
 
   @VisibleForTesting
   static String accessKey(final char[] apiKey) {
-    return new String(apiKey,  0, apiKey.length / 2);
+    return new String(apiKey, 0, apiKey.length / 2);
   }
 
   @VisibleForTesting

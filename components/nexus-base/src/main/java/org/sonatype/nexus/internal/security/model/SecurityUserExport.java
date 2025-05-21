@@ -20,6 +20,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
@@ -43,6 +46,7 @@ import static org.sonatype.nexus.security.user.UserManager.DEFAULT_SOURCE;
 
 /**
  * Write/Read {@link CRole} data to/from a JSON file.
+ * Updated for Java 21 with Virtual Threads support for I/O operations.
  *
  * @since 3.29
  */
@@ -53,10 +57,13 @@ public class SecurityUserExport
     implements ExportSecurityData, ImportData
 {
   private final SecurityConfiguration configuration;
+  private final ExecutorService virtualThreadExecutor;
 
   @Inject
   public SecurityUserExport(final SecurityConfiguration configuration) {
     this.configuration = configuration;
+    // Create a virtual thread per task executor for I/O operations
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   @Override
@@ -67,28 +74,97 @@ public class SecurityUserExport
         .collect(Collectors.toMap(CUser::getId, identity()));
     List<CUserRoleMapping> userRoleMappings = configuration.getUserRoleMappings();
     List<SecurityUserData> securityUsers = new ArrayList<>(userIdToCUser.size());
+    
+    // Process each user entry using Virtual Threads for better concurrency
+    List<Future<?>> futures = new ArrayList<>();
     for (Entry<String, CUser> userEntry : userIdToCUser.entrySet()) {
-      List<CUserRoleMapping> roleMappings = userRoleMappings.stream()
-          .filter(user -> user.getUserId().equals(userEntry.getKey()))
-          .collect(Collectors.toList());
-      SecurityUserData securityUserData = new SecurityUserData();
-      securityUserData.setUser(userEntry.getValue());
-      securityUserData.setUserRoleMappings(roleMappings);
-      securityUsers.add(securityUserData);
+      futures.add(virtualThreadExecutor.submit(() -> {
+        List<CUserRoleMapping> roleMappings = userRoleMappings.stream()
+            .filter(user -> user.getUserId().equals(userEntry.getKey()))
+            .collect(Collectors.toList());
+        SecurityUserData securityUserData = new SecurityUserData();
+        securityUserData.setUser(userEntry.getValue());
+        securityUserData.setUserRoleMappings(roleMappings);
+        synchronized (securityUsers) {
+          securityUsers.add(securityUserData);
+        }
+        return null;
+      }));
+    }
+    
+    // Wait for all processing to complete
+    for (Future<?> future : futures) {
+      try {
+        future.get();
+      } catch (Exception e) {
+        throw new IOException("Error processing user data", e);
+      }
     }
 
-    exportToJson(securityUsers, file);
+    // Use a virtual thread for the I/O-intensive JSON export operation
+    try {
+      Future<Void> exportFuture = virtualThreadExecutor.submit(() -> {
+        try {
+          exportToJson(securityUsers, file);
+        } catch (IOException e) {
+          throw new RuntimeException(e);
+        }
+        return null;
+      });
+      exportFuture.get(); // Wait for export to complete
+    } catch (Exception e) {
+      if (e.getCause() instanceof IOException) {
+        throw (IOException) e.getCause();
+      }
+      throw new IOException("Error exporting user data to JSON", e);
+    }
   }
 
   @Override
   public void restore(final File file) throws IOException {
     log.debug("Restoring CUser and CUserRoleMapping data from {}", file);
-    List<SecurityUserData> securityUsers = importFromJson(file, SecurityUserData.class);
+    
+    // Use a virtual thread for the I/O-intensive JSON import operation
+    List<SecurityUserData> securityUsers;
+    try {
+      Future<List<SecurityUserData>> importFuture = virtualThreadExecutor.submit(() -> {
+        try {
+          return importFromJson(file, SecurityUserData.class);
+        } catch (IOException e) {
+          throw new RuntimeException(e);
+        }
+      });
+      securityUsers = importFuture.get(); // Wait for import to complete
+    } catch (Exception e) {
+      if (e.getCause() instanceof IOException) {
+        throw (IOException) e.getCause();
+      }
+      throw new IOException("Error importing user data from JSON", e);
+    }
+    
+    // Process each user using Virtual Threads for better concurrency
+    List<Future<?>> futures = new ArrayList<>();
     for (SecurityUserData securityUser : securityUsers) {
-      configuration.addUser(securityUser.user, securityUser.getRoles());
+      futures.add(virtualThreadExecutor.submit(() -> {
+        configuration.addUser(securityUser.user, securityUser.getRoles());
+        return null;
+      }));
+    }
+    
+    // Wait for all processing to complete
+    for (Future<?> future : futures) {
+      try {
+        future.get();
+      } catch (Exception e) {
+        throw new IOException("Error restoring user data", e);
+      }
     }
   }
 
+  /**
+   * Data transfer object for security user information.
+   * Updated with Java 21 compatible annotations for serialization/deserialization.
+   */
   public static class SecurityUserData
   {
     @JsonProperty

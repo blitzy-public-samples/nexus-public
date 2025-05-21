@@ -19,10 +19,26 @@ import org.sonatype.nexus.security.config.memory.MemoryCUser;
 import org.sonatype.nexus.security.config.memory.MemoryCUserRoleMapping;
 
 /**
+ * Provides a test security model for use in unit tests.
+ * 
+ * <p>This class creates an immutable security configuration that is thread-safe and compatible
+ * with Java 21's threading model, including Virtual Threads. The returned configuration uses
+ * thread-safe collections internally, but the individual objects (users, roles, etc.) should
+ * be treated as immutable after creation to ensure thread safety.</p>
+ *
  * @since 3.0
  */
 public class UserManager2TestSecurity
 {
+  /**
+   * Creates a security model for testing purposes.
+   * 
+   * <p>The returned configuration is thread-safe for concurrent read operations
+   * when used with Java 21 Virtual Threads, as long as the contained objects
+   * are not modified after creation.</p>
+   * 
+   * @return A thread-safe {@link MemorySecurityConfiguration} instance
+   */
   public static MemorySecurityConfiguration securityModel() {
     return new MemorySecurityConfiguration()
         .withUsers(

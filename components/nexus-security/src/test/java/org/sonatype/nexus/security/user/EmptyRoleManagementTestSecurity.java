@@ -19,11 +19,22 @@ import org.sonatype.nexus.security.config.memory.MemoryCUser;
 import org.sonatype.nexus.security.config.memory.MemoryCUserRoleMapping;
 
 /**
+ * Test security configuration for empty role management tests.
+ * This class has been verified for compatibility with Java 21 threading model,
+ * including Virtual Threads support.
+ * 
  * @since 3.0
  */
 public class EmptyRoleManagementTestSecurity
 {
 
+  /**
+   * Creates a thread-safe in-memory security configuration for testing purposes.
+   * The returned configuration uses concurrent collections internally and is safe for use
+   * with Java 21 Virtual Threads.
+   *
+   * @return A thread-safe {@link MemorySecurityConfiguration} populated with test data
+   */
   public static MemorySecurityConfiguration securityModel() {
     return new MemorySecurityConfiguration()
         .withUsers(

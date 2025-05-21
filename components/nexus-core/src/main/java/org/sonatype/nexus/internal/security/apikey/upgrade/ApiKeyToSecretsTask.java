@@ -12,8 +12,13 @@
  */
 package org.sonatype.nexus.internal.security.apikey.upgrade;
 
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.Collection;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.StructuredTaskScope;
+import java.util.concurrent.StructuredTaskScope.ShutdownOnFailure;
+import java.util.concurrent.atomic.AtomicReference;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -74,33 +79,85 @@ public class ApiKeyToSecretsTask
   protected Object execute() throws Exception {
     final int pageSize = 100;
 
-    OffsetDateTime last = OffsetDateTime.now().withYear(2000); // 2000 for the beginning of time
-    Collection<ApiKeyData> data;
-    do {
-      data = apiKeyStoreV1.browseAllSince(last, pageSize);
-      for (ApiKeyData key : data) {
-        CancelableHelper.checkCancellation();
-        migrateRecord(key);
-        last = key.getCreated();
+    // Initial migration phase using structured concurrency for better error handling
+    try (ShutdownOnFailure scope = new StructuredTaskScope.ShutdownOnFailure()) {
+      OffsetDateTime last = OffsetDateTime.now().withYear(2000); // 2000 for the beginning of time
+      Collection<ApiKeyData> data;
+      
+      do {
+        data = apiKeyStoreV1.browseAllSince(last, pageSize);
+        
+        // Process each batch of records concurrently using virtual threads
+        AtomicReference<OffsetDateTime> latestTimestamp = new AtomicReference<>(last);
+        
+        for (ApiKeyData key : data) {
+          CancelableHelper.checkCancellation();
+          
+          // Fork a virtual thread for each record migration
+          scope.fork(() -> {
+            migrateRecord(key);
+            // Update the latest timestamp atomically if this record is newer
+            updateLatestTimestamp(latestTimestamp, key.getCreated());
+            return null;
+          });
+        }
+        
+        // Wait for all migrations in this batch to complete
+        scope.join();
+        // Check for any exceptions and propagate if needed
+        scope.throwIfFailed(e -> new RuntimeException("Migration failed", e));
+        
+        // Update the last timestamp for the next batch
+        last = latestTimestamp.get();
       }
+      while (data.size() == pageSize);
     }
-    while (data.size() == pageSize);
 
+    // Mark migration as complete
     kv.setBoolean(MIGRATION_COMPLETE, true);
 
-    // We intentionally do not check for cancellation in this section
-    final long end = System.currentTimeMillis() + synchronizationDelayMs;
-    while (end > System.currentTimeMillis()) {
-      data = apiKeyStoreV1.browseAllSince(last, pageSize);
-      for (ApiKeyData key : data) {
-        migrateRecord(key);
-        last = key.getCreated();
+    // Final synchronization phase to catch any records added during migration
+    // Using structured concurrency for better coordination
+    try (ShutdownOnFailure scope = new StructuredTaskScope.ShutdownOnFailure()) {
+      OffsetDateTime last = OffsetDateTime.now().withYear(2000);
+      Collection<ApiKeyData> data;
+      final long endTime = System.currentTimeMillis() + synchronizationDelayMs;
+      
+      while (System.currentTimeMillis() < endTime) {
+        data = apiKeyStoreV1.browseAllSince(last, pageSize);
+        AtomicReference<OffsetDateTime> latestTimestamp = new AtomicReference<>(last);
+        
+        for (ApiKeyData key : data) {
+          // Fork a virtual thread for each record
+          scope.fork(() -> {
+            migrateRecord(key);
+            updateLatestTimestamp(latestTimestamp, key.getCreated());
+            return null;
+          });
+        }
+        
+        // Wait for all migrations in this batch to complete
+        scope.join();
+        // Check for any exceptions and propagate if needed
+        scope.throwIfFailed(e -> new RuntimeException("Final synchronization failed", e));
+        
+        // Update the last timestamp for the next batch
+        last = latestTimestamp.get();
+        
+        // Use virtual thread optimized waiting instead of Thread.sleep
+        Thread.sleep(Duration.ofMillis(100));
       }
-
-      Thread.sleep(100);
     }
 
     return null;
+  }
+
+  /**
+   * Atomically updates the latest timestamp reference if the provided timestamp is newer.
+   */
+  private void updateLatestTimestamp(AtomicReference<OffsetDateTime> latestTimestamp, OffsetDateTime timestamp) {
+    latestTimestamp.accumulateAndGet(timestamp, (current, update) -> 
+        current.isBefore(update) ? update : current);
   }
 
   private void migrateRecord(final ApiKeyData key) {

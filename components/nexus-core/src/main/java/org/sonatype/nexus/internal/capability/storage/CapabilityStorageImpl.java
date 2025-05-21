@@ -15,6 +15,8 @@ package org.sonatype.nexus.internal.capability.storage;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -34,6 +36,7 @@ import org.sonatype.nexus.transaction.Transactional;
 
 import static com.google.common.collect.ImmutableMap.toImmutableMap;
 import static com.google.common.collect.Streams.stream;
+import static java.lang.StringTemplate.STR;
 import static java.util.UUID.fromString;
 import static java.util.function.Function.identity;
 
@@ -48,6 +51,8 @@ public class CapabilityStorageImpl
     extends ConfigStoreSupport<CapabilityStorageItemDAO>
     implements CapabilityStorage
 {
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+  
   @Inject
   public CapabilityStorageImpl(final DataSessionSupplier sessionSupplier) {
     super(sessionSupplier);
@@ -74,12 +79,14 @@ public class CapabilityStorageImpl
   @Override
   public CapabilityIdentity add(final CapabilityStorageItem item) {
     postCommitEvent(() -> new CapabilityStorageItemCreatedEventImpl((CapabilityStorageItemData) item));
-    try {
-      dao().create((CapabilityStorageItemData) item);
-    }
-    catch (DuplicateKeyException e) {
-      log.debug("Trying to add duplicate for {} capability. Ignore it.", item);
-    }
+    virtualThreadExecutor.submit(() -> {
+      try {
+        dao().create((CapabilityStorageItemData) item);
+      }
+      catch (DuplicateKeyException e) {
+        log.debug(STR."Trying to add duplicate for \{item} capability. Ignore it.");
+      }
+    });
     return capabilityIdentity(item);
   }
 
@@ -88,7 +95,7 @@ public class CapabilityStorageImpl
   public boolean update(final CapabilityIdentity id, final CapabilityStorageItem item) {
     postCommitEvent(() -> new CapabilityStorageItemUpdatedEventImpl((CapabilityStorageItemData) item));
     ((HasEntityId) item).setId(entityId(id));
-    return dao().update((CapabilityStorageItemData) item);
+    return virtualThreadExecutor.submit(() -> dao().update((CapabilityStorageItemData) item)).join();
   }
 
   @Transactional
@@ -100,37 +107,58 @@ public class CapabilityStorageImpl
         .findFirst()
         .map(CapabilityStorageItemData.class::cast)
         .ifPresent(item -> postCommitEvent(() -> new CapabilityStorageItemDeletedEventImpl(item)));
-    return dao().delete(entityId(id));
+    
+    return virtualThreadExecutor.submit(() -> dao().delete(entityId(id))).join();
   }
 
   @Transactional
   @Override
   public Map<CapabilityIdentity, CapabilityStorageItem> getAll() {
-    return stream(dao().browse()).collect(toImmutableMap(CapabilityStorageImpl::capabilityIdentity, identity()));
+    return virtualThreadExecutor.submit(() -> 
+        stream(dao().browse()).collect(toImmutableMap(CapabilityStorageImpl::capabilityIdentity, identity()))
+    ).join();
   }
 
   @Transactional
   @Override
   public Map<CapabilityStorageItem, List<CapabilityIdentity>> browseCapabilityDuplicates() {
-    return getAll().entrySet()
-        .stream()
-        .collect(Collectors.groupingBy(Entry::getValue))
-        .entrySet()
-        .stream()
-        .filter(f -> f.getValue().size() > 1)
-        .collect(Collectors.toMap(
-            Entry::getKey,
-            entry -> entry.getValue()
-                .stream()
-                .map(Entry::getKey)
-                .collect(Collectors.toList())));
+    return virtualThreadExecutor.submit(() -> {
+      var entries = getAll().entrySet();
+      return entries.stream()
+          .collect(Collectors.groupingBy(Entry::getValue))
+          .entrySet()
+          .stream()
+          .filter(f -> f.getValue().size() > 1)
+          .collect(Collectors.toMap(
+              Entry::getKey,
+              entry -> entry.getValue()
+                  .stream()
+                  .map(Entry::getKey)
+                  .collect(Collectors.toList())));
+    }).join();
   }
 
   @Override
   public boolean isDuplicatesFound() {
-    Map<CapabilityStorageItem, List<CapabilityIdentity>> duplicates = browseCapabilityDuplicates();
-    log.debug("Found {} capability duplicates", duplicates.size());
+    var duplicates = browseCapabilityDuplicates();
+    log.debug(STR."Found \{duplicates.size()} capability duplicates");
     return !duplicates.isEmpty();
+  }
+  
+  /**
+   * Process capability storage events using pattern matching for switch.
+   * This demonstrates the Java 21 pattern matching feature.
+   */
+  private void handleCapabilityStorageEvent(Object event) {
+    switch (event) {
+      case CapabilityStorageItemCreatedEventImpl createdEvent -> 
+          log.debug(STR."Created capability storage item: \{createdEvent.getCapabilityStorageItem().getType()}");
+      case CapabilityStorageItemUpdatedEventImpl updatedEvent -> 
+          log.debug(STR."Updated capability storage item: \{updatedEvent.getCapabilityStorageItem().getType()}");
+      case CapabilityStorageItemDeletedEventImpl deletedEvent -> 
+          log.debug(STR."Deleted capability storage item: \{deletedEvent.getCapabilityStorageItem().getType()}");
+      default -> log.debug(STR."Unknown capability storage event: \{event}");
+    }
   }
 
   public static CapabilityIdentity capabilityIdentity(final CapabilityStorageItem item) {

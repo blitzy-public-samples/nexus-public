@@ -12,6 +12,13 @@
  */
 package org.sonatype.nexus.security.authz;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import org.sonatype.nexus.security.AbstractSecurityTest;
 import org.sonatype.nexus.security.SecuritySystem;
 import org.sonatype.nexus.security.realm.MockRealmB;
@@ -19,26 +26,29 @@ import org.sonatype.nexus.security.user.User;
 
 import org.apache.shiro.realm.Realm;
 import org.apache.shiro.subject.SimplePrincipalCollection;
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
+@ExtendWith(MockitoExtension.class)
 public class CachingTest
     extends AbstractSecurityTest
 {
   @Test
-  public void testCacheClearing() throws Exception {
+  void shouldClearCacheWhenUserIsUpdated() throws Exception {
     SecuritySystem securitySystem = this.lookup(SecuritySystem.class);
 
     MockRealmB mockRealmB = (MockRealmB) this.lookup(Realm.class, "MockRealmB");
 
     // cache should be empty to start
-    Assert.assertTrue(mockRealmB.getAuthorizationCache().keys().isEmpty());
+    Assertions.assertTrue(mockRealmB.getAuthorizationCache().keys().isEmpty());
 
-    Assert.assertTrue(securitySystem.isPermitted(
+    Assertions.assertTrue(securitySystem.isPermitted(
         new SimplePrincipalCollection("jcool", mockRealmB.getName()), "test:heHasIt"));
 
     // now something will be in the cache, just make sure
-    Assert.assertFalse(mockRealmB.getAuthorizationCache().keys().isEmpty());
+    Assertions.assertFalse(mockRealmB.getAuthorizationCache().keys().isEmpty());
 
     // now if we update a user the cache should be cleared
     User user = securitySystem.getUser("bburton", "MockUserManagerB");
@@ -46,6 +56,65 @@ public class CachingTest
     securitySystem.updateUser(user);
 
     // empty again
-    Assert.assertTrue(mockRealmB.getAuthorizationCache().keys().isEmpty());
+    Assertions.assertTrue(mockRealmB.getAuthorizationCache().keys().isEmpty());
+  }
+  
+  @Test
+  void shouldClearCacheWhenUserIsUpdatedWithVirtualThreads() throws Exception {
+    SecuritySystem securitySystem = this.lookup(SecuritySystem.class);
+    MockRealmB mockRealmB = (MockRealmB) this.lookup(Realm.class, "MockRealmB");
+    
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    
+    // Create an executor service using virtual threads
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    int taskCount = 10;
+    CountDownLatch latch = new CountDownLatch(taskCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    try {
+      // Clear the cache initially
+      Assertions.assertTrue(mockRealmB.getAuthorizationCache().keys().isEmpty());
+      
+      // First populate the cache with permissions check
+      Assertions.assertTrue(securitySystem.isPermitted(
+          new SimplePrincipalCollection("jcool", mockRealmB.getName()), "test:heHasIt"));
+      
+      // Verify cache is populated
+      Assertions.assertFalse(mockRealmB.getAuthorizationCache().keys().isEmpty());
+      
+      // Submit multiple concurrent tasks using virtual threads
+      for (int i = 0; i < taskCount; i++) {
+        executor.submit(() -> {
+          try {
+            // Get user and update it to trigger cache clearing
+            User user = securitySystem.getUser("bburton", "MockUserManagerB");
+            securitySystem.updateUser(user);
+            
+            // Verify cache is cleared after update
+            if (!mockRealmB.getAuthorizationCache().keys().isEmpty()) {
+              errorCount.incrementAndGet();
+            }
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      Assertions.assertTrue(latch.await(30, TimeUnit.SECONDS), "Timed out waiting for virtual threads to complete");
+      
+      // Verify no errors occurred
+      Assertions.assertEquals(0, errorCount.get(), "Errors occurred during virtual thread execution");
+      
+      // Final verification that cache is empty
+      Assertions.assertTrue(mockRealmB.getAuthorizationCache().keys().isEmpty());
+    } finally {
+      executor.shutdown();
+    }
   }
 }

@@ -21,31 +21,32 @@ import org.apache.ibatis.annotations.Param;
 
 /**
  * {@link NexusKeyValue} access
+ *
+ * <p>This interface is optimized for Virtual Thread database operations in Java 21.</p>
  */
 public interface NexusKeyValueDAO
     extends DataAccess
 {
   /**
-   * gets a value by the given key
+   * Gets a value by the given key
    *
    * @param key a string key
-   * @return {@link Optional<NexusKeyValue>}
+   * @return {@link Optional<NexusKeyValue>} containing the value if found, empty otherwise
    */
-  Optional<NexusKeyValue> get(
-      @Param("key") final String key);
+  Optional<NexusKeyValue> get(@Param("key") String key);
 
   /**
-   * sets a key_value record
+   * Sets a key_value record
    *
    * @param record {@link NexusKeyValue} to be created/updated
    */
-  void set(final NexusKeyValue record);
+  void set(NexusKeyValue record);
 
   /**
-   * removes a value by the given key
+   * Removes a value by the given key
    *
    * @param key a string key
    * @return a primitive boolean indicating if the record was deleted successfully or not
    */
-  boolean remove(@Param("key") final String key);
+  boolean remove(@Param("key") String key);
 }

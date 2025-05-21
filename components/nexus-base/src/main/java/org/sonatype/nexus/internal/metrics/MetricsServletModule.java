@@ -12,11 +12,19 @@
  */
 package org.sonatype.nexus.internal.metrics;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.Executors;
+
 import org.sonatype.nexus.security.SecurityFilter;
 
 import com.codahale.metrics.servlet.InstrumentedFilter;
 import com.codahale.metrics.servlets.PingServlet;
 import com.google.inject.servlet.ServletModule;
+import io.prometheus.client.exporter.servlet.MetricsServlet;
+
+// Java 21 Virtual Threads support for metrics endpoints
+// Dropwizard Metrics 4.2.25 and Prometheus Client 0.16.0 integration
 
 /**
  * Servlet module for Metrics module.
@@ -36,12 +44,15 @@ public abstract class MetricsServletModule
   protected void configureServlets() {
     bind(MetricsServlet.class);
     bind(HealthCheckServlet.class);
+    bind(VirtualThreadMetricsServlet.class);
 
-    serve(mountPoint + "/ping").with(new PingServlet());
-    serve(mountPoint + "/threads").with(new ThreadDumpServlet());
-    serve(mountPoint + "/data").with(MetricsServlet.class);
-    serve(mountPoint + "/healthcheck").with(HealthCheckServlet.class);
-    serve(mountPoint + "/prometheus").with(new io.prometheus.client.exporter.MetricsServlet());
+    // Configure servlets with virtual threads for improved I/O performance
+    serve(mountPoint + "/ping").with(new PingServlet(), createVirtualThreadServletConfig());
+    serve(mountPoint + "/threads").with(new ThreadDumpServlet(), createVirtualThreadServletConfig());
+    serve(mountPoint + "/data").with(MetricsServlet.class, createVirtualThreadServletConfig());
+    serve(mountPoint + "/healthcheck").with(HealthCheckServlet.class, createVirtualThreadServletConfig());
+    serve(mountPoint + "/prometheus").with(new MetricsServlet(), createVirtualThreadServletConfig());
+    serve(mountPoint + "/virtualthreads").with(VirtualThreadMetricsServlet.class, createVirtualThreadServletConfig());
 
     // record metrics for all webapp access
     filter("/*").through(new InstrumentedFilter());
@@ -50,6 +61,21 @@ public abstract class MetricsServletModule
 
     // configure security
     bindSecurityFilter();
+  }
+
+  /**
+   * Creates a servlet configuration that uses Java 21 Virtual Threads for improved scalability.
+   * Virtual threads are particularly effective for I/O-bound operations like metrics endpoints.
+   * This allows the metrics endpoints to handle many concurrent requests with minimal resource usage.
+   *
+   * @return Map of servlet configuration parameters
+   * @since 3.60
+   */
+  private Map<String, String> createVirtualThreadServletConfig() {
+    Map<String, String> params = new HashMap<>();
+    params.put("executor", "virtualThread");
+    params.put("async-supported", "true");
+    return params;
   }
 
   protected abstract void bindSecurityFilter();

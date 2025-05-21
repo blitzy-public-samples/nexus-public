@@ -28,9 +28,11 @@ import org.sonatype.nexus.security.user.UserSearchCriteria;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import org.apache.shiro.authc.credential.PasswordService;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -39,6 +41,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.security.user.UserManager.DEFAULT_SOURCE;
 
+@ExtendWith(MockitoExtension.class)
 public class UserManagerImplTest
     extends TestSupport
 {
@@ -59,14 +62,14 @@ public class UserManagerImplTest
 
   private UserManagerImpl underTest;
 
-  @Before
-  public void setup() {
+  @BeforeEach
+  void setup() {
     underTest = new UserManagerImpl(eventManager, securityConfigurationManager, securitySystem, passwordService,
         passwordValidator);
   }
 
   @Test
-  public void testChangePassword() throws Exception {
+  void testChangePassword() throws Exception {
     CUser user = new MemoryCUser();
     user.setStatus(CUser.STATUS_CHANGE_PASSWORD);
     user.setId("test");
@@ -81,7 +84,7 @@ public class UserManagerImplTest
   }
 
   @Test
-  public void searchUsersDefaultSource() {
+  void searchUsersDefaultSource() {
     CUser user1 = new MemoryCUser();
     user1.setStatus(CUser.STATUS_CHANGE_PASSWORD);
     user1.setId("test1");
@@ -102,7 +105,7 @@ public class UserManagerImplTest
   }
 
   @Test
-  public void searchUsersNoSource() throws Exception {
+  void searchUsersNoSource() throws Exception {
     CUser user1 = new MemoryCUser();
     user1.setStatus(CUser.STATUS_CHANGE_PASSWORD);
     user1.setId("test1");
@@ -112,8 +115,8 @@ public class UserManagerImplTest
     user2.setId("test2");
 
     CUser user3 = new MemoryCUser();
-    user2.setStatus(CUser.STATUS_CHANGE_PASSWORD);
-    user2.setId("test3");
+    user3.setStatus(CUser.STATUS_CHANGE_PASSWORD);
+    user3.setId("test3");
 
     CUserRoleMapping roleMapping1 = new MemoryCUserRoleMapping();
     roleMapping1.setUserId("test1");
@@ -139,5 +142,63 @@ public class UserManagerImplTest
 
     Set<User> users = underTest.searchUsers(crit);
     assertThat(users.size(), is(3));
+  }
+
+  @Test
+  void testPatternMatchingWithUserRoles() {
+    // Test using pattern matching for instanceof with Java 21
+    CUserRoleMapping roleMapping = new MemoryCUserRoleMapping();
+    roleMapping.setUserId("test1");
+    roleMapping.setSource(DEFAULT_SOURCE);
+    roleMapping.setRoles(ImmutableSet.of("admin", "developer"));
+
+    // Using pattern matching for instanceof
+    if (roleMapping instanceof CUserRoleMapping mapping) {
+      assertThat(mapping.getUserId(), is("test1"));
+      assertThat(mapping.getSource(), is(DEFAULT_SOURCE));
+      assertThat(mapping.getRoles().contains("admin"), is(true));
+    }
+  }
+
+  @Test
+  void testVirtualThreadsForConcurrentUserOperations() throws Exception {
+    // Create users for testing
+    CUser user1 = new MemoryCUser();
+    user1.setId("vt-user1");
+    user1.setStatus(CUser.STATUS_ACTIVE);
+
+    CUser user2 = new MemoryCUser();
+    user2.setId("vt-user2");
+    user2.setStatus(CUser.STATUS_ACTIVE);
+
+    when(securityConfigurationManager.readUser("vt-user1")).thenReturn(user1);
+    when(securityConfigurationManager.readUser("vt-user2")).thenReturn(user2);
+
+    // Using virtual threads to perform concurrent password validations
+    Thread vt1 = Thread.ofVirtual().name("password-validator-1").start(() -> {
+      try {
+        underTest.changePassword("vt-user1", "securePass123!");
+      }
+      catch (Exception e) {
+        // Handle exception
+      }
+    });
+
+    Thread vt2 = Thread.ofVirtual().name("password-validator-2").start(() -> {
+      try {
+        underTest.changePassword("vt-user2", "anotherSecurePass456!");
+      }
+      catch (Exception e) {
+        // Handle exception
+      }
+    });
+
+    // Wait for both threads to complete
+    vt1.join();
+    vt2.join();
+
+    // Verify password validations were performed
+    verify(passwordValidator).validate("securePass123!");
+    verify(passwordValidator).validate("anotherSecurePass456!");
   }
 }

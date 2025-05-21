@@ -13,7 +13,7 @@
 
 package org.sonatype.nexus.audit;
 
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import javax.annotation.Nullable;
@@ -22,7 +22,6 @@ import javax.inject.Provider;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.event.EventHelper;
-import org.sonatype.nexus.common.text.Strings2;
 
 import com.google.common.base.Joiner;
 
@@ -76,7 +75,7 @@ public abstract class AuditorSupport
   /**
    * Mapping of class to simple type names for auditing.
    */
-  private Map<Class, String> typeLookup = new HashMap<>();
+  private Map<Class, String> typeLookup = new LinkedHashMap<>();
 
   @Inject
   public void setAuditRecorder(final Provider<AuditRecorder> auditRecorder) {
@@ -98,7 +97,7 @@ public abstract class AuditorSupport
   protected String type(final Class type) {
     String name = typeLookup.get(type);
     if (name == null) {
-      return Strings2.lower(type.getSimpleName());
+      return STR."\{type.getSimpleName().toLowerCase()}";
     }
     return name;
   }
@@ -109,14 +108,6 @@ public abstract class AuditorSupport
   }
 
   /**
-   * @deprecated use {@link #isRecording()} instead
-   */
-  @Deprecated
-  protected boolean isEnabled() {
-    return isRecording();
-  }
-
-  /**
    * @since 3.2
    */
   protected boolean isRecording() {
@@ -124,7 +115,7 @@ public abstract class AuditorSupport
   }
 
   protected void record(final AuditData data) {
-    recorder().record(data);
+    Thread.startVirtualThread(() -> recorder().record(data));
   }
 
   /**
@@ -135,7 +126,7 @@ public abstract class AuditorSupport
     if (value == null) {
       return null;
     }
-    return String.valueOf(value);
+    return STR."\{value}";
   }
 
   /**
@@ -145,6 +136,6 @@ public abstract class AuditorSupport
     if (value == null) {
       return null;
     }
-    return LIST_JOINER.join(value);
+    return STR."\{LIST_JOINER.join(value)}";
   }
 }

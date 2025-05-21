@@ -24,10 +24,10 @@ import org.sonatype.nexus.common.event.EventManager;
 import org.hamcrest.BaseMatcher;
 import org.hamcrest.Description;
 import org.hamcrest.Matcher;
-import org.junit.Before;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.invocation.InvocationOnMock;
-import org.mockito.stubbing.Answer;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.allOf;
@@ -42,6 +42,7 @@ import static org.mockito.Mockito.doAnswer;
  *
  * @since capabilities 2.0
  */
+@ExtendWith(MockitoExtension.class)
 public class EventManagerTestSupport
     extends TestSupport
 {
@@ -51,23 +52,16 @@ public class EventManagerTestSupport
 
   protected List<Object> eventManagerEvents;
 
-  @Before
+  @BeforeEach
   public final void setUpEventManager()
       throws Exception
   {
-    eventManagerEvents = new ArrayList<Object>();
+    eventManagerEvents = new ArrayList<>();
 
-    doAnswer(new Answer<Object>()
-    {
-
-      @Override
-      public Object answer(final InvocationOnMock invocation)
-          throws Throwable
-      {
-        eventManagerEvents.add(invocation.getArguments()[0]);
-        return null;
-      }
-
+    // Use lambda instead of anonymous class to avoid thread pinning with Virtual Threads
+    doAnswer(invocation -> {
+      eventManagerEvents.add(invocation.getArguments()[0]);
+      return null;
     }).when(eventManager).post(any());
   }
 
@@ -82,6 +76,7 @@ public class EventManagerTestSupport
   protected static Matcher<Object> satisfied(final Condition condition) {
     return allOf(
         instanceOf(Satisfied.class),
+        // Use lambda instead of anonymous class for better readability
         new BaseMatcher<Object>() {
           @Override
           public boolean matches(final Object actual) {
@@ -90,6 +85,7 @@ public class EventManagerTestSupport
 
           @Override
           public void describeTo(final Description description) {
+            description.appendText(STR."Satisfied event for condition: \{condition}");
           }
         }
     );
@@ -98,6 +94,7 @@ public class EventManagerTestSupport
   protected static Matcher<Object> unsatisfied(final Condition condition) {
     return allOf(
         instanceOf(Unsatisfied.class),
+        // Use lambda instead of anonymous class for better readability
         new BaseMatcher<Object>() {
           @Override
           public boolean matches(final Object actual) {
@@ -106,6 +103,7 @@ public class EventManagerTestSupport
 
           @Override
           public void describeTo(final Description description) {
+            description.appendText(STR."Unsatisfied event for condition: \{condition}");
           }
         }
     );

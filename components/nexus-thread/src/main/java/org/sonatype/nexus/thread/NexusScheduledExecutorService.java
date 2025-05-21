@@ -15,10 +15,8 @@ package org.sonatype.nexus.thread;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.ThreadFactory;
 import java.util.function.Supplier;
-
-import org.sonatype.nexus.thread.ScheduledExecutorServiceVirtualThreadAdapter;
 
 import org.sonatype.nexus.security.subject.CurrentSubjectSupplier;
 import org.sonatype.nexus.thread.internal.MDCAwareCallable;
@@ -33,12 +31,9 @@ import static com.google.common.base.Preconditions.checkNotNull;
  * A modification of Shiro's {@link SubjectAwareScheduledExecutorService} that in turn returns always the same, supplied
  * {@link Subject} to bind threads with.
  * <p>
- * This class provides factory methods for creating scheduled executor services using either platform threads
- * (traditional threads managed by the OS) or virtual threads (lightweight threads managed by the JVM).
- * <p>
- * Virtual threads are recommended for I/O-bound operations as they provide higher throughput with lower resource
- * consumption compared to platform threads. They are particularly well-suited for tasks that spend most of their time
- * waiting for I/O operations to complete, such as network requests or database operations.
+ * This implementation supports both platform threads and virtual threads (Java 21+) for scheduled tasks.
+ * Virtual threads are particularly beneficial for I/O-bound operations like remote repository access,
+ * database operations, and file system operations.
  *
  * @since 3.31
  */
@@ -47,6 +42,12 @@ public class NexusScheduledExecutorService
 {
   private final Supplier<Subject> subjectSupplier;
 
+  /**
+   * Creates a new {@link NexusScheduledExecutorService} with the specified target executor and subject supplier.
+   *
+   * @param target the underlying {@link ScheduledExecutorService} to delegate to
+   * @param subjectSupplier the supplier of the {@link Subject} to bind tasks with
+   */
   public NexusScheduledExecutorService(final ScheduledExecutorService target, final Supplier<Subject> subjectSupplier) {
     super(checkNotNull(target));
     this.subjectSupplier = checkNotNull(subjectSupplier);
@@ -77,10 +78,11 @@ public class NexusScheduledExecutorService
   //
 
   /**
-   * Creates a {@link NexusScheduledExecutorService} with a fixed subject using platform threads.
+   * Creates a {@link NexusScheduledExecutorService} that binds all tasks to a fixed subject.
+   * Uses platform threads for execution.
    *
-   * @param target the underlying scheduled executor service
-   * @param subject the fixed subject to use for all tasks
+   * @param target the underlying {@link ScheduledExecutorService} to delegate to
+   * @param subject the fixed {@link Subject} to bind tasks with
    * @return a new {@link NexusScheduledExecutorService} instance
    */
   public static NexusScheduledExecutorService forFixedSubject(
@@ -91,65 +93,75 @@ public class NexusScheduledExecutorService
   }
 
   /**
-   * Creates a {@link NexusScheduledExecutorService} using the current subject and platform threads.
+   * Creates a {@link NexusScheduledExecutorService} that binds all tasks to the current subject.
+   * Uses platform threads for execution.
    *
-   * @param target the underlying scheduled executor service
+   * @param target the underlying {@link ScheduledExecutorService} to delegate to
    * @return a new {@link NexusScheduledExecutorService} instance
    */
   public static NexusScheduledExecutorService forCurrentSubject(final ScheduledExecutorService target) {
     return new NexusScheduledExecutorService(target, new CurrentSubjectSupplier());
   }
-
+  
   /**
-   * Creates a {@link NexusScheduledExecutorService} with a fixed subject using virtual threads.
+   * Creates a {@link NexusScheduledExecutorService} that uses Virtual Threads for task execution
+   * and binds all tasks to a fixed subject.
    * <p>
-   * This method creates a scheduled executor service that uses virtual threads for executing tasks.
-   * Virtual threads are lightweight threads that are managed by the JVM rather than the OS, making them
-   * ideal for I/O-bound operations where tasks spend most of their time waiting.
+   * Virtual Threads are particularly well-suited for I/O-bound operations such as:
+   * <ul>
+   *   <li>Remote repository access</li>
+   *   <li>Database operations</li>
+   *   <li>File system operations</li>
+   * </ul>
    * <p>
-   * Note: The underlying implementation uses a single-threaded scheduled executor to manage the scheduling
-   * of tasks, but each task is executed on a new virtual thread. This approach provides the benefits of
-   * virtual threads while maintaining the scheduling capabilities of {@link ScheduledExecutorService}.
+   * Note: This method creates a single-threaded scheduler that delegates actual work to Virtual Threads.
+   * Do not use this for CPU-intensive tasks, as those are better served by platform threads.
    *
-   * @param corePoolSize the number of threads to keep in the scheduler pool
-   * @param subject the fixed subject to use for all tasks
-   * @return a new {@link NexusScheduledExecutorService} instance using virtual threads
+   * @param subject the fixed {@link Subject} to bind tasks with
+   * @return a new {@link NexusScheduledExecutorService} instance using Virtual Threads
    * @since 3.60
    */
-  public static NexusScheduledExecutorService forFixedSubjectWithVirtualThreads(
-      final int corePoolSize,
-      final Subject subject)
-  {
-    ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(corePoolSize);
-    scheduler.setRemoveOnCancelPolicy(true);
+  public static NexusScheduledExecutorService forFixedSubjectWithVirtualThreads(final Subject subject) {
+    // Create a single-threaded scheduler that will delegate work to virtual threads
+    ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     
-    // Wrap the scheduler to execute tasks on virtual threads
-    ScheduledExecutorService virtualThreadScheduler = new ScheduledExecutorServiceVirtualThreadAdapter(scheduler);
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("nexus-virtual-", 0).factory();
+    
+    // Create an executor service that uses virtual threads
+    ScheduledExecutorService virtualThreadScheduler = new VirtualThreadDelegatingScheduledExecutorService(
+        scheduler, virtualThreadFactory);
     
     return new NexusScheduledExecutorService(virtualThreadScheduler, () -> subject);
   }
 
   /**
-   * Creates a {@link NexusScheduledExecutorService} using the current subject and virtual threads.
+   * Creates a {@link NexusScheduledExecutorService} that uses Virtual Threads for task execution
+   * and binds all tasks to the current subject.
    * <p>
-   * This method creates a scheduled executor service that uses virtual threads for executing tasks.
-   * Virtual threads are lightweight threads that are managed by the JVM rather than the OS, making them
-   * ideal for I/O-bound operations where tasks spend most of their time waiting.
+   * Virtual Threads are particularly well-suited for I/O-bound operations such as:
+   * <ul>
+   *   <li>Remote repository access</li>
+   *   <li>Database operations</li>
+   *   <li>File system operations</li>
+   * </ul>
    * <p>
-   * Note: The underlying implementation uses a single-threaded scheduled executor to manage the scheduling
-   * of tasks, but each task is executed on a new virtual thread. This approach provides the benefits of
-   * virtual threads while maintaining the scheduling capabilities of {@link ScheduledExecutorService}.
+   * Note: This method creates a single-threaded scheduler that delegates actual work to Virtual Threads.
+   * Do not use this for CPU-intensive tasks, as those are better served by platform threads.
    *
-   * @param corePoolSize the number of threads to keep in the scheduler pool
-   * @return a new {@link NexusScheduledExecutorService} instance using virtual threads
+   * @return a new {@link NexusScheduledExecutorService} instance using Virtual Threads
    * @since 3.60
    */
-  public static NexusScheduledExecutorService forCurrentSubjectWithVirtualThreads(final int corePoolSize) {
-    ScheduledThreadPoolExecutor scheduler = new ScheduledThreadPoolExecutor(corePoolSize);
-    scheduler.setRemoveOnCancelPolicy(true);
+  public static NexusScheduledExecutorService forCurrentSubjectWithVirtualThreads() {
+    // Create a single-threaded scheduler that will delegate work to virtual threads
+    ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     
-    // Wrap the scheduler to execute tasks on virtual threads
-    ScheduledExecutorService virtualThreadScheduler = new ScheduledExecutorServiceVirtualThreadAdapter(scheduler);
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("nexus-virtual-", 0).factory();
+    
+    // Create an executor service that uses virtual threads
+    ScheduledExecutorService virtualThreadScheduler = new VirtualThreadDelegatingScheduledExecutorService(
+        scheduler, virtualThreadFactory);
     
     return new NexusScheduledExecutorService(virtualThreadScheduler, new CurrentSubjectSupplier());
   }

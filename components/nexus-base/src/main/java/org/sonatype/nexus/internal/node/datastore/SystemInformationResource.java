@@ -13,6 +13,7 @@
 package org.sonatype.nexus.internal.node.datastore;
 
 import java.util.Map;
+import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -32,6 +33,11 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
 import static org.sonatype.nexus.rest.APIConstants.BETA_API_PREFIX;
 
+/**
+ * REST resource for retrieving system information from all nodes in the cluster.
+ * 
+ * @since 3.38
+ */
 @Produces(APPLICATION_JSON)
 @Path(SystemInformationResource.PATH)
 @Named
@@ -54,6 +60,21 @@ public class SystemInformationResource
   @RequiresAuthentication
   @RequiresPermissions("nexus:*")
   public Map<String, Map<String, Object>> getSystemInformation() {
-    return nodeHeartbeatManager.getSystemInformationForNodes();
+    // Use Java 21 Virtual Threads for improved resource handling
+    var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try {
+      var future = executor.submit(() -> {
+        log.debug("Retrieving system information using virtual thread");
+        return nodeHeartbeatManager.getSystemInformationForNodes();
+      });
+      return future.get();
+    }
+    catch (Exception e) {
+      log.error("Error retrieving system information: {}", e.getMessage(), e);
+      throw new RuntimeException("Failed to retrieve system information", e);
+    }
+    finally {
+      executor.shutdown();
+    }
   }
 }

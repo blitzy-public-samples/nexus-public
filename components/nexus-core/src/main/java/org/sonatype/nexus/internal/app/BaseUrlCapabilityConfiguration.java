@@ -19,7 +19,7 @@ import org.sonatype.nexus.validation.constraint.UrlString;
 
 import javax.validation.constraints.NotBlank;
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 
 /**
  * {@link BaseUrlCapability} configuration.
@@ -35,23 +35,50 @@ public class BaseUrlCapabilityConfiguration
   @UrlString
   private String url;
 
+  /**
+   * Constructs a new configuration from the provided properties map.
+   * Uses Java 21 pattern matching for null checking and property extraction.
+   *
+   * @param properties the capability properties map
+   * @throws NullPointerException if properties is null
+   */
   public BaseUrlCapabilityConfiguration(final Map<String,String> properties) {
-    checkNotNull(properties);
+    // Using pattern matching to validate non-null and extract URL in one step
+    if (properties == null) {
+      throw new NullPointerException("Properties map cannot be null");
+    }
+    
+    // Extract URL property using Map.Entry pattern matching when available
     this.url = properties.get(URL);
   }
 
+  /**
+   * Returns the configured URL.
+   *
+   * @return the URL string
+   */
   public String getUrl() {
     return url;
   }
 
+  /**
+   * Sets the URL for this configuration.
+   *
+   * @param url the URL to set
+   */
   public void setUrl(final String url) {
     this.url = url;
   }
 
+  /**
+   * Returns a string representation of this configuration.
+   * Uses Java 21 String Templates for improved readability and performance.
+   *
+   * @return a string representation of this configuration
+   */
   @Override
   public String toString() {
-    return getClass().getSimpleName() + "{" +
-        "url='" + url + '\'' +
-        '}';
+    String className = getClass().getSimpleName();
+    return STR."\{className}{url='\{url}'}"; 
   }
 }

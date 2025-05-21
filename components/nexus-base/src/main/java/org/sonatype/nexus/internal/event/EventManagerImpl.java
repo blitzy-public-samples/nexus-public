@@ -22,7 +22,6 @@ import org.sonatype.nexus.common.event.EventAware;
 import org.sonatype.nexus.common.event.EventAware.Asynchronous;
 import org.sonatype.nexus.common.event.EventManager;
 import org.sonatype.nexus.common.event.HasAffinity;
-import org.sonatype.nexus.common.property.SystemPropertiesHelper;
 import org.sonatype.nexus.jmx.reflect.ManagedAttribute;
 import org.sonatype.nexus.jmx.reflect.ManagedObject;
 
@@ -39,7 +38,11 @@ import static org.sonatype.nexus.common.event.EventBusFactory.reentrantAsyncEven
 import static org.sonatype.nexus.common.event.EventBusFactory.reentrantEventBus;
 
 /**
- * Default {@link EventManager}.
+ * Default {@link EventManager} implementation.
+ * 
+ * Uses Java 21 Virtual Threads for asynchronous event processing, providing high-throughput
+ * event handling with minimal resource overhead. This implementation maintains event ordering
+ * through affinity-based processing while leveraging the scalability benefits of virtual threads.
  */
 @Named
 @ManagedLifecycle(phase = EVENTS)
@@ -49,9 +52,6 @@ public class EventManagerImpl
     extends LifecycleSupport
     implements EventManager
 {
-  static final int HOST_THREAD_POOL_SIZE = SystemPropertiesHelper.getInteger(
-      EventManagerImpl.class.getName() + ".poolSize", 500);
-
   private final BeanLocator beanLocator;
 
   private final EventExecutor eventExecutor;
@@ -103,7 +103,7 @@ public class EventManagerImpl
       eventBus.register(object);
     }
 
-    log.trace("Registered {}{}", async ? "ASYNC " : "", object);
+    log.trace(STR."Registered \{async ? "ASYNC " : ""}\{object}");
   }
 
   @Override
@@ -117,7 +117,7 @@ public class EventManagerImpl
       eventBus.unregister(object);
     }
 
-    log.trace("Unregistered {}{}", async ? "ASYNC " : "", object);
+    log.trace(STR."Unregistered \{async ? "ASYNC " : ""}\{object}");
   }
 
   @Override
@@ -132,7 +132,7 @@ public class EventManagerImpl
       }
       else {
         // unexpected state, fall back to previous behaviour
-        log.warn("Event {} requested 'null' affinity", event);
+        log.warn(STR."Event \{event} requested 'null' affinity");
         asyncBus.post(event);
       }
     }
@@ -141,6 +141,14 @@ public class EventManagerImpl
     }
   }
 
+  /**
+   * Checks if all asynchronous event processing has completed.
+   * 
+   * With Virtual Threads, this indicates whether all event-related virtual threads
+   * have completed their work, rather than checking a fixed-size thread pool.
+   * 
+   * @return true if there are no pending asynchronous events being processed
+   */
   @Override
   @VisibleForTesting
   @ManagedAttribute
@@ -148,6 +156,14 @@ public class EventManagerImpl
     return eventExecutor.isCalmPeriod();
   }
 
+  /**
+   * Checks if affinity-based event ordering is enabled.
+   * 
+   * When enabled, events with the same affinity value are processed sequentially
+   * even when using Virtual Threads, ensuring ordering guarantees are maintained.
+   * 
+   * @return true if affinity-based event ordering is enabled
+   */
   @Override
   public boolean isAffinityEnabled() {
     return eventExecutor.isAffinityEnabled();

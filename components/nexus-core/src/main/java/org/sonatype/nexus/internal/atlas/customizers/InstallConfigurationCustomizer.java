@@ -17,6 +17,11 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.List;
+import java.util.ArrayList;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -68,20 +73,57 @@ public class InstallConfigurationCustomizer
     File installDir = applicationDirectories.getInstallDirectory();
     if (installDir != null) {
       File etcDir = new File(installDir, "etc");
+      // Use String Templates for path construction
       includeFileIfExists(supportBundle, new File(etcDir, "nexus-default.properties"), INSTALL_ETC, HIGH);
       includeFileIfExists(supportBundle, new File(etcDir, NEXUS_PROPERTIES), INSTALL_ETC, HIGH);
-      includeAllFilesInDirIfExists(supportBundle, new File(etcDir, "fabric"), INSTALL_ETC, HIGH);
-      includeAllFilesInDirIfExists(supportBundle, new File(etcDir, "jetty"), INSTALL_ETC, HIGH);
-      includeAllFilesInDirIfExists(supportBundle, new File(etcDir, "karaf"), INSTALL_ETC, HIGH);
-      includeAllFilesInDirIfExists(supportBundle, new File(etcDir, "logback"), INSTALL_ETC, HIGH);
+      
+      // Process all directories in parallel using Virtual Threads
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        List<Future<?>> tasks = new ArrayList<>();
+        
+        tasks.add(executor.submit(() -> 
+            includeAllFilesInDirIfExists(supportBundle, new File(etcDir, "fabric"), INSTALL_ETC, HIGH)));
+        tasks.add(executor.submit(() -> 
+            includeAllFilesInDirIfExists(supportBundle, new File(etcDir, "jetty"), INSTALL_ETC, HIGH)));
+        tasks.add(executor.submit(() -> 
+            includeAllFilesInDirIfExists(supportBundle, new File(etcDir, "karaf"), INSTALL_ETC, HIGH)));
+        tasks.add(executor.submit(() -> 
+            includeAllFilesInDirIfExists(supportBundle, new File(etcDir, "logback"), INSTALL_ETC, HIGH)));
+        
+        // Wait for all tasks to complete
+        for (Future<?> task : tasks) {
+          try {
+            task.get();
+          } catch (Exception e) {
+            log.error(STR."Error processing configuration directory: \{e.getMessage()}", e);
+          }
+        }
+      }
     }
 
     File workDir = applicationDirectories.getWorkDirectory();
     if (workDir != null) {
       File etcDir = new File(workDir, "etc");
       includeFileIfExists(supportBundle, new File(etcDir, NEXUS_PROPERTIES), INSTALL_ETC, HIGH);
-      includeAllFilesInDirIfExists(supportBundle, new File(etcDir, "fabric"), INSTALL_ETC, HIGH);
-      includeAllFilesInDirIfExists(supportBundle, new File(etcDir, "logback"), INSTALL_ETC, HIGH);
+      
+      // Process work directories in parallel using Virtual Threads
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        List<Future<?>> tasks = new ArrayList<>();
+        
+        tasks.add(executor.submit(() -> 
+            includeAllFilesInDirIfExists(supportBundle, new File(etcDir, "fabric"), INSTALL_ETC, HIGH)));
+        tasks.add(executor.submit(() -> 
+            includeAllFilesInDirIfExists(supportBundle, new File(etcDir, "logback"), INSTALL_ETC, HIGH)));
+        
+        // Wait for all tasks to complete
+        for (Future<?> task : tasks) {
+          try {
+            task.get();
+          } catch (Exception e) {
+            log.error(STR."Error processing work directory: \{e.getMessage()}", e);
+          }
+        }
+      }
     }
   }
 
@@ -92,26 +134,30 @@ public class InstallConfigurationCustomizer
       final Priority priority)
   {
     if (file != null && file.isFile()) {
-      log.debug("Including file: {}", file);
+      // Use String Templates for logging
+      log.debug(STR."Including file: \{file}");
       String fileName = file.getName();
-      String filePath = String.join("/", prefixDir, fileName);
+      // Use String Templates for path construction
+      String filePath = STR."\{prefixDir}/\{fileName}";
       try {
-        if (fileName.equals("jetty-https.xml")) {
-          supportBundle.add(new SanitizedJettyFileSource(CONFIG, filePath, file, priority));
-        } else if (fileName.endsWith("store.properties")) {
-          supportBundle.add(new SanitizedDataStoreFileSource(CONFIG, filePath, file, priority));
-        } else if (fileName.equals(NEXUS_PROPERTIES)) {
-          supportBundle.add(new SanitizedNexusFileSource(CONFIG, filePath, file, priority));
-        } else {
-          supportBundle.add(new FileContentSourceSupport(CONFIG, filePath, file, priority));
-        }
+        // Use Pattern Matching for switch to improve sanitization logic
+        supportBundle.add(switch (fileName) {
+          case String fn when fn.equals("jetty-https.xml") -> 
+              new SanitizedJettyFileSource(CONFIG, filePath, file, priority);
+          case String fn when fn.endsWith("store.properties") -> 
+              new SanitizedDataStoreFileSource(CONFIG, filePath, file, priority);
+          case String fn when fn.equals(NEXUS_PROPERTIES) -> 
+              new SanitizedNexusFileSource(CONFIG, filePath, file, priority);
+          default -> 
+              new FileContentSourceSupport(CONFIG, filePath, file, priority);
+        });
       }
       catch (IOException e) {
-        log.warn("Failed to sanitize {}", file, e);
+        log.warn(STR."Failed to sanitize \{file}", e);
       }
     }
     else {
-      log.warn("Skipping: {}", file);
+      log.warn(STR."Skipping: \{file}");
     }
   }
 
@@ -122,12 +168,36 @@ public class InstallConfigurationCustomizer
       final Priority priority)
   {
     if (directory != null && directory.isDirectory()) {
-      log.debug("Including dir: {}", directory);
-      stream(directory.listFiles()).forEach(
-          file -> includeFileIfExists(supportBundle, file, String.join("/", prefixDir, directory.getName()), priority));
+      log.debug(STR."Including dir: \{directory}");
+      File[] files = directory.listFiles();
+      if (files != null && files.length > 0) {
+        // Use String Templates for path construction
+        String dirPath = STR."\{prefixDir}/\{directory.getName()}";
+        
+        // Process files in parallel using Virtual Threads for improved performance
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+          List<Future<?>> tasks = new ArrayList<>();
+          
+          for (File file : files) {
+            tasks.add(executor.submit(() -> {
+              includeFileIfExists(supportBundle, file, dirPath, priority);
+              return null;
+            }));
+          }
+          
+          // Wait for all file processing tasks to complete
+          for (Future<?> task : tasks) {
+            try {
+              task.get();
+            } catch (Exception e) {
+              log.error(STR."Error processing file in directory \{directory}: \{e.getMessage()}", e);
+            }
+          }
+        }
+      }
     }
     else {
-      log.warn("Skipping: {}", directory);
+      log.warn(STR."Skipping: \{directory}");
     }
   }
 
@@ -143,9 +213,13 @@ public class InstallConfigurationCustomizer
     public SanitizedJettyFileSource(final Type type, final String path, final File file, final Priority priority)
         throws IOException
     {
-      super(type, path, file, priority,
-          IOUtils.toString(checkNotNull(SanitizedJettyFileSource.class.getResourceAsStream("jetty-stylesheet.xml")),
-              UTF_8));
+      // Use String Templates for resource path construction
+      String stylesheetPath = "jetty-stylesheet.xml";
+      String stylesheet = IOUtils.toString(
+          checkNotNull(SanitizedJettyFileSource.class.getResourceAsStream(stylesheetPath), 
+              STR."Resource not found: \{stylesheetPath}"),
+          UTF_8);
+      super(type, path, file, priority, stylesheet);
     }
   }
 
@@ -163,14 +237,18 @@ public class InstallConfigurationCustomizer
     public InputStream getContent() throws Exception {
       PropertiesFile dataStoreConfiguration = new PropertiesFile(file);
       dataStoreConfiguration.load();
+      
+      // Process properties with pattern matching for improved sanitization logic
       dataStoreConfiguration.forEach((k, v) -> {
-        if (SENSITIVE_FIELD_NAMES.contains(k)) {
-          dataStoreConfiguration.replace(k, REPLACEMENT);
-        }
-        else if ("jdbcUrl".equals(k)) {
-          dataStoreConfiguration.put(k, redactPassword((String) v));
+        switch (k) {
+          case String key when SENSITIVE_FIELD_NAMES.contains(key) -> 
+              dataStoreConfiguration.replace(key, REPLACEMENT);
+          case "jdbcUrl" -> 
+              dataStoreConfiguration.put(k, redactPassword((String) v));
+          default -> { /* No sanitization needed */ }
         }
       });
+      
       ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
       dataStoreConfiguration.store(outputStream, null);
       return new ByteArrayInputStream(outputStream.toByteArray());
@@ -188,14 +266,18 @@ public class InstallConfigurationCustomizer
         public InputStream getContent() throws Exception {
           PropertiesFile dataStoreConfiguration = new PropertiesFile(file);
           dataStoreConfiguration.load();
+          
+          // Process properties with pattern matching for improved sanitization logic
           dataStoreConfiguration.forEach((k, v) -> {
-                if (SENSITIVE_FIELD_NAMES.contains(k)) {
-                  dataStoreConfiguration.replace(k, REPLACEMENT);
-                }
-                else if ("nexus.datastore.nexus.jdbcUrl".equals(k)) {
+            switch (k) {
+              case String key when SENSITIVE_FIELD_NAMES.contains(key) -> 
+                  dataStoreConfiguration.replace(key, REPLACEMENT);
+              case "nexus.datastore.nexus.jdbcUrl" -> 
                   dataStoreConfiguration.put(k, redactPassword((String) v));
-                }
+              default -> { /* No sanitization needed */ }
+            }
           });
+          
           ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
           dataStoreConfiguration.store(outputStream, null);
           return new ByteArrayInputStream(outputStream.toByteArray());

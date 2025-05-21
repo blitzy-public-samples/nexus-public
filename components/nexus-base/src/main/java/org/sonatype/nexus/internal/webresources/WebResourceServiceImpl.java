@@ -64,21 +64,21 @@ public class WebResourceServiceImpl
     // make it clear we have DEV mode enabled
     List<File> locations = devModeResources.getResourceLocations();
     if (locations != null) {
-      log.warn("DEV mode resources is ENABLED");
+      log.warn(STR."DEV mode resources is ENABLED");
       // spit out the locations where we will look for resources
       for (File file : locations) {
-        log.info("  {}", file);
+        log.info(STR."  \{file}");
       }
     }
   }
 
   private void addResource(final WebResource resource) {
     String path = resource.getPath();
-    log.trace("Adding resource: {} -> {}", path, resource);
+    log.trace(STR."Adding resource: \{path} -> \{resource}");
     final WebResource old = resourcePaths.put(path, resource);
     if (old != null) {
       // complain if any resources overlap
-      log.warn("Overlapping resources on path {}: old={}, new={}", path, old, resource);
+      log.warn(STR."Overlapping resources on path \{path}: old=\{old}, new=\{resource}");
     }
   }
 
@@ -94,7 +94,7 @@ public class WebResourceServiceImpl
 
   @Override
   public WebResource getResource(final String path) {
-    log.trace("Looking up resource: {}", path);
+    log.trace(STR."Looking up resource: \{path}");
 
     WebResource resource = null;
 
@@ -102,14 +102,14 @@ public class WebResourceServiceImpl
     File file = devModeResources.getFileIfOnFileSystem(path);
     if (file != null) {
       resource = new FileWebResource(file, path, mimeSupport.guessMimeTypeFromPath(file.getName()), false);
-      log.trace("Found dev-mode resource: {}", resource);
+      log.trace(STR."Found dev-mode resource: \{resource}");
     }
 
     // 2) second, look at "ordinary" resources, but only if devResource did not hit anything
     if (resource == null) {
       resource = resourcePaths.get(path);
       if (resource != null) {
-        log.trace("Found bound resource: {}", resource);
+        log.trace(STR."Found bound resource: \{resource}");
       }
     }
 

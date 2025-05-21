@@ -15,25 +15,28 @@ package org.sonatype.nexus.security.authz;
 import org.sonatype.goodies.testsupport.TestSupport;
 
 import org.apache.shiro.authz.permission.WildcardPermission;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Permission trials.
  */
+@ExtendWith(MockitoExtension.class)
 public class PermissionTrialTest
     extends TestSupport
 {
   @Test
-  public void testImpliedWildcard() {
+  void shouldImplyPermissionWithWildcard() {
     WildcardPermission perm = new WildcardPermission("nexus:something:special:read");
     WildcardPermission granted = new WildcardPermission("nexus:*");
     assertTrue(granted.implies(perm));
   }
 
   @Test
-  public void testImpliedWildcard_withoutAsterick() {
+  void shouldImplyPermissionWithoutAsterisk() {
     WildcardPermission perm = new WildcardPermission("nexus:something:special:read");
     WildcardPermission granted = new WildcardPermission("nexus");
     assertTrue(granted.implies(perm));

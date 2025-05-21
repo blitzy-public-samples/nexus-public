@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.commands.internal;
 
+import java.util.Objects;
+
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -27,8 +29,6 @@ import org.eclipse.sisu.EagerSingleton;
 import org.eclipse.sisu.Mediator;
 import org.eclipse.sisu.inject.BeanLocator;
 import org.osgi.framework.BundleContext;
-
-import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Manages registration of Karaf {@link Action} instances.
@@ -50,7 +50,7 @@ public class ActionRegistrar
       @Nullable final SessionFactory sessionFactory,
       @Nullable final BundleContext bundleContext)
   {
-    this.beanLocator = checkNotNull(beanLocator);
+    this.beanLocator = Objects.requireNonNull(beanLocator);
     this.sessionFactory = sessionFactory; // might be null during tests
 
     // HACK: BundleContext may be null in present injected-UT environment
@@ -58,7 +58,7 @@ public class ActionRegistrar
       beanLocator.watch(Key.get(Action.class, Named.class), new ActionMediator(), bundleContext);
     }
     else {
-      log.warn("BundleContext is not available, unable to watch action components for registration");
+      log.warn(STR."BundleContext is not available, unable to watch action components for registration");
     }
   }
 
@@ -69,11 +69,11 @@ public class ActionRegistrar
     public void add(final BeanEntry<Named, Action> beanEntry, final BundleContext bundleContext) throws Exception {
       Command command = beanEntry.getImplementationClass().getAnnotation(Command.class);
       if (command != null) {
-        log.debug("Registering command: {}", beanEntry);
+        log.debug(STR."Registering command: \{beanEntry}");
         sessionFactory.getRegistry().register(new BeanEntryCommand(beanLocator, beanEntry));
       }
       else {
-        log.warn("Missing @Command annotation on action: {}", beanEntry);
+        log.warn(STR."Missing @Command annotation on action: \{beanEntry}");
       }
     }
 
@@ -81,7 +81,7 @@ public class ActionRegistrar
     public void remove(final BeanEntry<Named, Action> beanEntry, final BundleContext bundleContext) throws Exception {
       Command command = beanEntry.getImplementationClass().getAnnotation(Command.class);
       if (command != null) {
-        log.debug("Unregistering command: {}", beanEntry);
+        log.debug(STR."Unregistering command: \{beanEntry}");
         sessionFactory.getRegistry().unregister(new BeanEntryCommand(beanLocator, beanEntry));
       }
     }

@@ -15,6 +15,11 @@ package org.sonatype.nexus.security.role;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.nexus.security.AbstractSecurityTest;
 import org.sonatype.nexus.security.SecuritySystem;
@@ -32,11 +37,12 @@ import org.sonatype.nexus.security.user.UserStatus;
 import com.google.common.collect.ImmutableList;
 import org.apache.shiro.authc.UsernamePasswordToken;
 import org.apache.shiro.subject.Subject;
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
  * Tests adding, updating, searching, authc, and authz a user that has an empty role (a role that does not contain any
@@ -46,7 +52,7 @@ public class EmptyRoleTest
     extends AbstractSecurityTest
 {
   @Test
-  public void testCreateEmptyRole() throws Exception {
+  void createEmptyRoleTest() throws Exception {
     SecuritySystem securitySystem = this.lookup(SecuritySystem.class);
     AuthorizationManager authManager = securitySystem.getAuthorizationManager("default");
 
@@ -76,7 +82,7 @@ public class EmptyRoleTest
    * you need to toss it away and ask another instance from Guice, we cannot reload security currently.
    */
   @Test
-  public void testReloadSecurityWithEmptyRole() throws Exception {
+  void reloadSecurityWithEmptyRoleTest() throws Exception {
     SecuritySystem securitySystem = this.lookup(SecuritySystem.class);
     AuthorizationManager authManager = securitySystem.getAuthorizationManager("default");
 
@@ -86,11 +92,11 @@ public class EmptyRoleTest
     authManager.addRole(emptyRole);
 
     // make sure the role is still there
-    Assert.assertNotNull(authManager.getRole(emptyRole.getRoleId()));
+    assertNotNull(authManager.getRole(emptyRole.getRoleId()));
   }
 
   @Test
-  public void testAuthorizeUserWithEmptyRole() throws Exception {
+  void authorizeUserWithEmptyRoleTest() throws Exception {
     SecuritySystem securitySystem = this.lookup(SecuritySystem.class);
 
     RealmManager realmManager = lookup(RealmManager.class);
@@ -126,7 +132,7 @@ public class EmptyRoleTest
   }
 
   @Test
-  public void testSearchForUserWithEmptyRole() throws Exception {
+  void searchForUserWithEmptyRoleTest() throws Exception {
     SecuritySystem securitySystem = this.lookup(SecuritySystem.class);
     AuthorizationManager authManager = securitySystem.getAuthorizationManager("default");
 
@@ -146,9 +152,154 @@ public class EmptyRoleTest
     Set<User> userSearchResult = securitySystem.searchUsers(
         new UserSearchCriteria(null, Collections.singleton(emptyRole.getRoleId()), null));
     // this should contain a single result
-    Assert.assertEquals(1, userSearchResult.size());
-    Assert.assertEquals(user.getUserId(), userSearchResult.iterator().next().getUserId());
+    assertEquals(1, userSearchResult.size());
+    assertEquals(user.getUserId(), userSearchResult.iterator().next().getUserId());
+  }
 
+  @Test
+  void concurrentRoleOperationsWithVirtualThreadsTest() throws Exception {
+    SecuritySystem securitySystem = this.lookup(SecuritySystem.class);
+    AuthorizationManager authManager = securitySystem.getAuthorizationManager("default");
+
+    // Create a virtual thread executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    int taskCount = 100;
+    CountDownLatch latch = new CountDownLatch(taskCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    try {
+      // Submit multiple concurrent tasks using virtual threads
+      for (int i = 0; i < taskCount; i++) {
+        final int index = i;
+        executor.submit(() -> {
+          try {
+            // Create a unique role for each thread
+            Role role = new Role(
+                "role-" + index, 
+                "Role " + index, 
+                "Test Role " + index, 
+                "default", 
+                false,
+                new HashSet<>(), 
+                new HashSet<>());
+            
+            // Add the role
+            authManager.addRole(role);
+            
+            // Verify the role was added correctly
+            Role retrievedRole = authManager.getRole(role.getRoleId());
+            if (retrievedRole == null || !retrievedRole.getRoleId().equals(role.getRoleId())) {
+              errorCount.incrementAndGet();
+            }
+            
+            // Delete the role
+            authManager.deleteRole(role.getRoleId());
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      latch.await(30, TimeUnit.SECONDS);
+      
+      // Verify results
+      assertEquals(0, errorCount.get(), "Some concurrent role operations failed");
+    } finally {
+      executor.shutdown();
+    }
+  }
+
+  @Test
+  void concurrentUserRoleAssignmentWithVirtualThreadsTest() throws Exception {
+    SecuritySystem securitySystem = this.lookup(SecuritySystem.class);
+    AuthorizationManager authManager = securitySystem.getAuthorizationManager("default");
+
+    // Create a shared role
+    Role sharedRole = this.buildEmptyRole();
+    authManager.addRole(sharedRole);
+
+    // Create a shared user
+    User sharedUser = this.buildTestUser();
+    securitySystem.addUser(sharedUser, "test123");
+
+    // Create a virtual thread executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    int taskCount = 50;
+    CountDownLatch latch = new CountDownLatch(taskCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    try {
+      // Submit multiple concurrent tasks using virtual threads
+      for (int i = 0; i < taskCount; i++) {
+        final int index = i;
+        executor.submit(() -> {
+          try {
+            // Create a unique role for this thread
+            Role threadRole = new Role(
+                "thread-role-" + index, 
+                "Thread Role " + index, 
+                "Thread Test Role " + index, 
+                "default", 
+                false,
+                new HashSet<>(), 
+                new HashSet<>());
+            
+            // Add the role
+            authManager.addRole(threadRole);
+            
+            // Add the role to the shared user
+            User user = securitySystem.getUser(sharedUser.getUserId());
+            user.addRole(new RoleIdentifier(threadRole.getSource(), threadRole.getRoleId()));
+            securitySystem.updateUser(user);
+            
+            // Verify the role was added to the user
+            User updatedUser = securitySystem.getUser(sharedUser.getUserId());
+            boolean roleFound = false;
+            for (RoleIdentifier role : updatedUser.getRoles()) {
+              if (role.getRoleId().equals(threadRole.getRoleId())) {
+                roleFound = true;
+                break;
+              }
+            }
+            
+            if (!roleFound) {
+              errorCount.incrementAndGet();
+            }
+            
+            // Clean up - remove the role from the user
+            user = securitySystem.getUser(sharedUser.getUserId());
+            Set<RoleIdentifier> roles = new HashSet<>(user.getRoles());
+            roles.removeIf(r -> r.getRoleId().equals(threadRole.getRoleId()));
+            user.setRoles(roles);
+            securitySystem.updateUser(user);
+            
+            // Delete the role
+            authManager.deleteRole(threadRole.getRoleId());
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      latch.await(30, TimeUnit.SECONDS);
+      
+      // Verify results
+      assertEquals(0, errorCount.get(), "Some concurrent user role operations failed");
+      
+      // Clean up the shared role and user
+      securitySystem.deleteUser(sharedUser.getUserId());
+      authManager.deleteRole(sharedRole.getRoleId());
+    } finally {
+      executor.shutdown();
+    }
   }
 
   private User buildTestUser() {

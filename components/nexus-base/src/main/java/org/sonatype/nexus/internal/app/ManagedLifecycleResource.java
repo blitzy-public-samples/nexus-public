@@ -31,6 +31,7 @@ import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 import static javax.ws.rs.core.MediaType.TEXT_PLAIN;
 import static javax.ws.rs.core.Response.Status.INTERNAL_SERVER_ERROR;
 import static org.sonatype.nexus.rest.APIConstants.V1_API_PREFIX;
@@ -75,8 +76,9 @@ public class ManagedLifecycleResource
       lifecycleManager.to(Phase.valueOf(phase));
     }
     catch (Exception e) {
-      log.warn("Problem moving to phase {}", phase, e);
-      throw new WebApplicationMessageException(INTERNAL_SERVER_ERROR, "Problem moving to phase " + phase + ": " + e);
+      log.warn(STR."Problem moving to phase \{phase}", e);
+      throw new WebApplicationMessageException(INTERNAL_SERVER_ERROR, 
+          STR."Problem moving to phase \{phase}: \{e.getMessage()}");
     }
   }
 
@@ -91,8 +93,9 @@ public class ManagedLifecycleResource
       lifecycleManager.bounce(Phase.valueOf(phase));
     }
     catch (Exception e) {
-      log.warn("Problem bouncing phase {}", phase, e);
-      throw new WebApplicationMessageException(INTERNAL_SERVER_ERROR, "Problem bouncing phase " + phase + ": " + e);
+      log.warn(STR."Problem bouncing phase \{phase}", e);
+      throw new WebApplicationMessageException(INTERNAL_SERVER_ERROR, 
+          STR."Problem bouncing phase \{phase}: \{e.getMessage()}");
     }
   }
 }

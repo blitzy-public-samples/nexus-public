@@ -23,6 +23,8 @@ import org.apache.ibatis.type.TypeHandler;
 
 /**
  * MyBatis {@link TypeHandler} that maps an {@link AuthenticationConfiguration} to/from JSON.
+ * 
+ * Updated for Java 21 with improved type handling.
  *
  * @since 3.21
  */
@@ -31,6 +33,11 @@ import org.apache.ibatis.type.TypeHandler;
 public class AuthenticationConfigurationHandler
     extends HttpClientConfigurationHandler<AuthenticationConfiguration>
 {
+  /**
+   * Creates a new AuthenticationConfigurationHandler with the given secrets factory.
+   * 
+   * @param secretsFactory the factory for creating secrets
+   */
   @Inject
   public AuthenticationConfigurationHandler(final SecretsFactory secretsFactory) {
     super(secretsFactory);

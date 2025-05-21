@@ -1,0 +1,134 @@
+# Java 21 String Template Test Examples
+
+## Basic String Templates
+
+// Basic string template with a single variable
+STR."Hello, \{name}!"
+
+// Multiple variables in a template
+STR."User \{username} (ID: \{userId}) logged in at \{loginTime}"
+
+// Arithmetic operations in templates
+STR."\{x} + \{y} = \{x + y}"
+STR."\{width} × \{height} = \{width * height} square units"
+
+// Method calls in templates
+STR."Uppercase: \{name.toUpperCase()}"
+STR."Length of name: \{name.length()}"
+
+// Conditional expressions
+STR."Status: \{isActive ? "Active" : "Inactive"}"
+
+## Text Block Templates
+
+// Multi-line text block template
+STR."""
+<user>
+    <name>\{firstName} \{lastName}</name>
+    <email>\{email}</email>
+    <roles>
+        \{roles.stream().map(role -> "<role>" + role + "</role>").collect(joining("\n        "))}
+    </roles>
+</user>
+"""
+
+## Template Processors
+
+// RAW processor (returns StringTemplate instance)
+RAW."\{x} + \{y} = \{x + y}"
+
+// FMT processor (for formatted values)
+FMT."Pi: \{Math.PI%.2f}"
+FMT."Amount: $\{amount%.2f}"
+FMT."Percentage: \{ratio%.1f}%"
+FMT."Hex value: \{value%x}"
+
+// JSON processor (for JSON formatting)
+JSON."{ \"name\": \"\{name}\", \"age\": \{age}, \"active\": \{isActive} }"
+
+## Security Examples
+
+// SQL injection prevention
+// Instead of concatenating: "SELECT * FROM users WHERE username = '" + username + "'"
+STR."SELECT * FROM users WHERE username = '\{username}'"
+
+// HTML escaping
+STR."<div>Welcome, \{userName}</div>"
+
+## Advanced Usage
+
+// Nested templates
+STR."Result: \{STR."\{x} + \{y}"}"
+
+// Using with collections
+STR."Items: \{items.stream().collect(joining(", "))}"
+
+// Template with record patterns (Java 21)
+STR."Person: \{person} with address \{switch(person) { case Person(var name, var address) -> address; }}"
+
+// Template with virtual threads context
+STR."Current thread: \{Thread.currentThread().isVirtual() ? "Virtual" : "Platform"} - \{Thread.currentThread().getName()}"
+
+## Performance Testing Templates
+
+// Templates for performance comparison
+STR."Performance test with \{count} iterations completed in \{duration}ms"
+
+// Templates for logging
+STR."[\{level}] [\{timestamp}] \{message}"
+
+// Templates for error messages
+STR."Error occurred in \{className}.\{methodName}(): \{exception.getMessage()}"
+
+## Nexus-Specific Templates
+
+// Repository templates
+STR."Repository '\{repo.getName()}' (\{repo.getFormat()}) - \{repo.getType()}"
+
+// Capability templates
+STR."Capability \{capability.id()} (\{capability.type().name()}) - \{capability.isEnabled() ? "Enabled" : "Disabled"}"
+
+// BlobStore templates
+STR."BlobStore '\{blobStore.getBlobStoreConfiguration().getName()}' - \{blobStore.getBlobStoreConfiguration().getType()}"
+
+## Comparison with Traditional String Formatting
+
+// Traditional string concatenation
+// "Hello, " + name + "!"
+// vs String Template
+STR."Hello, \{name}!"
+
+// Traditional String.format
+// String.format("User %s (ID: %d) logged in at %s", username, userId, loginTime)
+// vs String Template
+STR."User \{username} (ID: \{userId}) logged in at \{loginTime}"
+
+// Traditional MessageFormat
+// MessageFormat.format("The value of {0} is {1}", "pi", Math.PI)
+// vs String Template
+STR."The value of pi is \{Math.PI}"
+
+## String Template with Escaping
+
+// Escaping braces in templates
+STR."To include braces, use \\\{ and \\}: \\\{Not an expression\\}"
+
+// Escaping quotes in templates
+STR."He said, \"\{quote}\""
+
+## String Templates with Java 21 Features
+
+// Using with Virtual Threads
+STR."Thread info: \{Thread.currentThread().threadId()} (\{Thread.currentThread().isVirtual() ? "virtual" : "platform"})"
+
+// Using with Pattern Matching for switch
+STR."Object type: \{switch(obj) { 
+    case String s -> "String of length " + s.length(); 
+    case Integer i -> "Integer value " + i; 
+    default -> "Unknown type"
+}}"
+
+// Using with Record Patterns
+STR."\{switch(point) { 
+    case Point(var x, var y) -> "Point at (" + x + ", " + y + ")"
+}}"

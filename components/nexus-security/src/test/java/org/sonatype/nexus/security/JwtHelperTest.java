@@ -16,6 +16,9 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import javax.servlet.http.Cookie;
 
 import org.sonatype.goodies.testsupport.TestSupport;
@@ -29,19 +32,23 @@ import com.auth0.jwt.interfaces.DecodedJWT;
 import com.google.inject.Provider;
 import org.apache.shiro.subject.PrincipalCollection;
 import org.apache.shiro.subject.Subject;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.security.JwtHelper.ISSUER;
 import static org.sonatype.nexus.security.JwtHelper.REALM;
 import static org.sonatype.nexus.security.JwtHelper.USER;
 import static org.sonatype.nexus.security.JwtHelper.USER_SESSION_ID;
 
+@ExtendWith(MockitoExtension.class)
 public class JwtHelperTest
     extends TestSupport
 {
@@ -59,7 +66,7 @@ public class JwtHelperTest
 
   private JwtHelper underTest;
 
-  @Before
+  @BeforeEach
   public void setup() throws Exception {
     when(secretStore.getSecret()).thenReturn(Optional.of("secret"));
     when(storeProvider.get()).thenReturn(secretStore);
@@ -98,10 +105,10 @@ public class JwtHelperTest
     assertEquals(ISSUER, decodedJWT.getClaim("iss").asString());
   }
 
-  @Test(expected = JwtVerificationException.class)
-  public void testVerifyJwt_tokenExpired() throws Exception {
+  @Test
+  public void testVerifyJwt_tokenExpired() {
     String jwt = makeInvalidJwt();
-    underTest.verifyJwt(jwt);
+    assertThrows(JwtVerificationException.class, () -> underTest.verifyJwt(jwt));
   }
 
   @Test
@@ -158,17 +165,69 @@ public class JwtHelperTest
     assertJwt(refreshed.getValue());
   }
 
-  @Test(expected = JwtVerificationException.class)
-  public void testVerifyAndRefresh_invalidJwt() throws Exception {
+  @Test
+  public void testVerifyAndRefresh_invalidJwt() {
     String jwt = makeInvalidJwt();
-    underTest.verifyAndRefreshJwtCookie(jwt, false);
+    assertThrows(JwtVerificationException.class, () -> underTest.verifyAndRefreshJwtCookie(jwt, false));
+  }
+
+  @Test
+  public void testJwtWithVirtualThread() throws Exception {
+    // Test JWT creation and verification in a virtual thread
+    CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
+      try {
+        // Verify we're running in a virtual thread
+        Thread currentThread = Thread.currentThread();
+        assertTrue(currentThread.isVirtual(), "Test should run in a virtual thread");
+        
+        // Create and verify JWT in virtual thread
+        String jwt = makeValidJwt();
+        DecodedJWT decodedJWT = underTest.verifyJwt(jwt);
+        assertEquals(ISSUER, decodedJWT.getClaim("iss").asString());
+        return jwt;
+      } 
+      catch (Exception e) {
+        throw new RuntimeException(e);
+      }
+    }, CompletableFuture.delayedExecutor(0, TimeUnit.MILLISECONDS, Thread.ofVirtual().factory()));
+    
+    String jwt = future.get(); // Wait for the virtual thread to complete
+    assertNotNull(jwt);
+    assertJwt(jwt);
+  }
+
+  @Test
+  public void testJwtRefreshWithVirtualThread() throws Exception {
+    // Test JWT refresh in a virtual thread
+    String jwt = makeValidJwt();
+    
+    CompletableFuture<Cookie> future = CompletableFuture.supplyAsync(() -> {
+      try {
+        // Verify we're running in a virtual thread
+        Thread currentThread = Thread.currentThread();
+        assertTrue(currentThread.isVirtual(), "Test should run in a virtual thread");
+        
+        // Refresh JWT in virtual thread
+        return underTest.verifyAndRefreshJwtCookie(jwt, false);
+      } 
+      catch (Exception e) {
+        throw new RuntimeException(e);
+      }
+    }, CompletableFuture.delayedExecutor(0, TimeUnit.MILLISECONDS, Thread.ofVirtual().factory()));
+    
+    Cookie refreshed = future.get(); // Wait for the virtual thread to complete
+    assertNotNull(refreshed);
+    assertCookie(refreshed);
+    assertJwt(refreshed.getValue());
   }
 
   private String makeValidJwt() {
-    Date expiresAt = new Date(new Date().getTime() + 100000);
+    Date now = new Date();
+    Date expiresAt = new Date(now.getTime() + 100000);
     String userSessionId = UUID.randomUUID().toString();
     return JWT.create()
         .withIssuer(ISSUER)
+        .withIssuedAt(now)
         .withExpiresAt(expiresAt)
         .withClaim(USER_SESSION_ID, userSessionId)
         .withClaim(USER, "admin")
@@ -177,9 +236,11 @@ public class JwtHelperTest
   }
 
   private String makeInvalidJwt() {
-    Date expiresAt = new Date(new Date().getTime() - 100000);
+    Date now = new Date();
+    Date expiresAt = new Date(now.getTime() - 100000); // Expired token
     return JWT.create()
         .withIssuer(ISSUER)
+        .withIssuedAt(now)
         .withExpiresAt(expiresAt)
         .sign(Algorithm.HMAC256("secret"));
   }

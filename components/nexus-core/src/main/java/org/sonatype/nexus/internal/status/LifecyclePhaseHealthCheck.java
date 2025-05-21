@@ -20,7 +20,6 @@ import org.sonatype.nexus.common.app.ManagedLifecycle.Phase;
 import org.sonatype.nexus.common.app.ManagedLifecycleManager;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.lang.String.format;
 
 /**
  * Health check that indicates if Nexus is in the correct (i.e. final) phase
@@ -44,12 +43,19 @@ public class LifecyclePhaseHealthCheck
 
   @Override
   protected Result check() {
-    return finalPhase == lifecycleManager.getCurrentPhase() ? Result.healthy() : Result.unhealthy(unhealthyMsg());
+    try {
+      Phase currentPhase = lifecycleManager.getCurrentPhase();
+      return switch (currentPhase) {
+        case null -> Result.unhealthy(STR."Nexus's current lifecycle phase is null, but it should be \{finalPhase.name()}");
+        case Phase phase when phase == finalPhase -> Result.healthy();
+        default -> Result.unhealthy(STR."Nexus's current lifecycle phase is \{currentPhase.name()}, but it should be \{finalPhase.name()}");
+      };
+    } catch (Exception e) {
+      return switch (e) {
+        case IllegalStateException ise -> Result.unhealthy(STR."Lifecycle manager is in an illegal state: \{ise.getMessage()}");
+        case NullPointerException npe -> Result.unhealthy(STR."Null pointer encountered: \{npe.getMessage()}");
+        default -> Result.unhealthy(STR."Error checking lifecycle phase: \{e.getMessage()}");
+      };
+    }
   }
-
-  private String unhealthyMsg() {
-    return format("Nexus's current lifecycle phase is %s, but it should be %s",
-        lifecycleManager.getCurrentPhase().name(), finalPhase.name());
-  }
-
 }

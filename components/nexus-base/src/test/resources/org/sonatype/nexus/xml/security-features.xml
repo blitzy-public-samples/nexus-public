@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 
+  Test file for Java 21 XML security features
+  This file contains various XML constructs that test Java 21's enhanced security features
+  and Nexus's SafeXml configurations.
+-->
+
+<!-- DOCTYPE declaration with internal subset and entity declarations -->
+<!DOCTYPE test [
+  <!-- Internal entity declaration -->
+  <!ENTITY internal "This is an internal entity">
+  
+  <!-- External entity declaration - should be blocked by default in Java 21 -->
+  <!ENTITY external SYSTEM "file:///etc/passwd">
+  
+  <!-- Parameter entity declaration -->
+  <!ENTITY % param "parameter entity content">
+  
+  <!-- External parameter entity - should be blocked by default in Java 21 -->
+  <!ENTITY % extparam SYSTEM "http://example.com/malicious.dtd">
+  
+  <!-- Entity expansion for XML bomb testing -->
+  <!ENTITY % level1 "Level 1 &internal;">
+  <!ENTITY % level2 "Level 2 &level1; &level1;">
+  <!ENTITY % level3 "Level 3 &level2; &level2;">
+  <!ENTITY bomb "&level3;">
+]>
+
+<!-- Root element with XML namespace declarations -->
+<test:securityTest xmlns:test="http://sonatype.org/nexus/xml/test"
+                  xmlns:ds="http://www.w3.org/2000/09/xmldsig#"
+                  xmlns:xi="http://www.w3.org/2001/XInclude">
+
+  <!-- Basic element with internal entity reference - should be allowed -->
+  <test:basicElement>
+    <test:content>&internal;</test:content>
+  </test:basicElement>
+  
+  <!-- Element with external entity reference - should be blocked by default in Java 21 -->
+  <test:externalEntityTest>
+    <test:content>&external;</test:content>
+  </test:externalEntityTest>
+  
+  <!-- XML bomb test - should be limited by entity expansion limits -->
+  <test:entityExpansionTest>
+    <test:content>&bomb;</test:content>
+  </test:entityExpansionTest>
+  
+  <!-- Processing instruction test -->
+  <?xml-stylesheet type="text/xsl" href="http://example.com/style.xsl"?>
+  
+  <!-- XInclude test - should be blocked by default or require explicit enabling -->
+  <test:xincludeTest>
+    <xi:include href="file:///etc/passwd" parse="text"/>
+  </test:xincludeTest>
+  
+  <!-- XML Signature test with EdDSA algorithm (new in Java 21) -->
+  <test:signatureTest>
+    <ds:Signature>
+      <ds:SignedInfo>
+        <ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+        <ds:SignatureMethod Algorithm="http://www.w3.org/2021/04/xmldsig-more#eddsa-ed25519"/>
+        <ds:Reference URI="">
+          <ds:Transforms>
+            <ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>
+            <!-- XPath transform with here() function - tests jdk.xml.dsig.hereFunctionSupported property -->
+            <ds:Transform Algorithm="http://www.w3.org/TR/1999/REC-xpath-19991116">
+              <ds:XPath>here()/ancestor::test:securityTest</ds:XPath>
+            </ds:Transform>
+          </ds:Transforms>
+          <ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>
+          <ds:DigestValue>placeholder</ds:DigestValue>
+        </ds:Reference>
+      </ds:SignedInfo>
+      <ds:SignatureValue>placeholder</ds:SignatureValue>
+      <ds:KeyInfo>
+        <ds:KeyName>Test Key</ds:KeyName>
+      </ds:KeyInfo>
+    </ds:Signature>
+  </test:signatureTest>
+  
+  <!-- RSASSA-PSS signature algorithm test (enhanced in Java 17+) -->
+  <test:rsaPssTest>
+    <ds:Signature>
+      <ds:SignedInfo>
+        <ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+        <ds:SignatureMethod Algorithm="http://www.w3.org/2007/05/xmldsig-more#rsa-pss">
+          <!-- PSS parameters -->
+          <ds:HMACOutputLength>32</ds:HMACOutputLength>
+        </ds:SignatureMethod>
+        <ds:Reference URI="">
+          <ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>
+          <ds:DigestValue>placeholder</ds:DigestValue>
+        </ds:Reference>
+      </ds:SignedInfo>
+      <ds:SignatureValue>placeholder</ds:SignatureValue>
+    </ds:Signature>
+  </test:rsaPssTest>
+  
+  <!-- SHA-1 based signature - should be blocked by default in Java 21 -->
+  <test:sha1SignatureTest>
+    <ds:Signature>
+      <ds:SignedInfo>
+        <ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+        <ds:SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>
+        <ds:Reference URI="">
+          <ds:DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>
+          <ds:DigestValue>placeholder</ds:DigestValue>
+        </ds:Reference>
+      </ds:SignedInfo>
+      <ds:SignatureValue>placeholder</ds:SignatureValue>
+    </ds:Signature>
+  </test:sha1SignatureTest>
+  
+  <!-- External schema reference test -->
+  <test:schemaTest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xsi:schemaLocation="http://sonatype.org/nexus/xml/test http://example.com/schema.xsd">
+    <test:schemaContent>Test content</test:schemaContent>
+  </test:schemaTest>
+  
+  <!-- Test for secure validation mode (enabled by default in Java 21) -->
+  <test:secureValidationTest>
+    <!-- This element contains a very large number of attributes to test DoS protection -->
+    <test:largeAttributeCount
+      attr1="1" attr2="2" attr3="3" attr4="4" attr5="5" 
+      attr6="6" attr7="7" attr8="8" attr9="9" attr10="10"
+      attr11="11" attr12="12" attr13="13" attr14="14" attr15="15"
+      attr16="16" attr17="17" attr18="18" attr19="19" attr20="20"
+      attr21="21" attr22="22" attr23="23" attr24="24" attr25="25"
+      attr26="26" attr27="27" attr28="28" attr29="29" attr30="30"
+      attr31="31" attr32="32" attr33="33" attr34="34" attr35="35"
+      attr36="36" attr37="37" attr38="38" attr39="39" attr40="40"
+      attr41="41" attr42="42" attr43="43" attr44="44" attr45="45"
+      attr46="46" attr47="47" attr48="48" attr49="49" attr50="50"/>
+      
+    <!-- This element contains a very deep nesting to test DoS protection -->
+    <test:deepNesting>
+      <test:level1>
+        <test:level2>
+          <test:level3>
+            <test:level4>
+              <test:level5>
+                <test:level6>
+                  <test:level7>
+                    <test:level8>
+                      <test:level9>
+                        <test:level10>
+                          <test:level11>
+                            <test:level12>
+                              <test:level13>
+                                <test:level14>
+                                  <test:level15>
+                                    <test:level16>
+                                      <test:level17>
+                                        <test:level18>
+                                          <test:level19>
+                                            <test:level20>Deep content</test:level20>
+                                          </test:level19>
+                                        </test:level18>
+                                      </test:level17>
+                                    </test:level16>
+                                  </test:level15>
+                                </test:level14>
+                              </test:level13>
+                            </test:level12>
+                          </test:level11>
+                        </test:level10>
+                      </test:level9>
+                    </test:level8>
+                  </test:level7>
+                </test:level6>
+              </test:level5>
+            </test:level4>
+          </test:level3>
+        </test:level2>
+      </test:level1>
+    </test:deepNesting>
+  </test:secureValidationTest>
+  
+  <!-- Test for TLS restrictions in Java 21 -->
+  <test:tlsTest>
+    <!-- This would trigger a TLS connection if processed, should be blocked -->
+    <?xml-stylesheet type="text/xsl" href="https://example.com/style.xsl"?>
+  </test:tlsTest>
+  
+</test:securityTest>

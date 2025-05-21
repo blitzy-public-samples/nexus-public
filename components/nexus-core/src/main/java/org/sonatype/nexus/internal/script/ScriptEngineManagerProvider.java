@@ -14,6 +14,7 @@ package org.sonatype.nexus.internal.script;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.SequencedCollection;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -41,7 +42,7 @@ public class ScriptEngineManagerProvider
 
   // TODO: Could consider a Mediator, except the ScriptEngineManager provides no means to "unregister"
 
-  private final List<ScriptEngineFactory> factories;
+  private final SequencedCollection<ScriptEngineFactory> factories;
 
   @Inject
   public ScriptEngineManagerProvider(final List<ScriptEngineFactory> factories) {
@@ -53,44 +54,61 @@ public class ScriptEngineManagerProvider
     // limit detection of engines to the runtime's default engines, other engines should register via guice
     ScriptEngineManager engineManager = new ScriptEngineManager(ClassLoader.getSystemClassLoader());
 
-    List<ScriptEngineFactory> available = new ArrayList<>();
+    var available = new ArrayList<ScriptEngineFactory>();
     available.addAll(engineManager.getEngineFactories()); // detected by runtime
 
     // Register engine-factories detected via injection
     for (ScriptEngineFactory factory : factories) {
-      log.debug("Registering engine-factory: {}", factory);
+      log.debug(STR."Registering engine-factory: {factory}");
 
-      for (String name : factory.getNames()) {
-        engineManager.registerEngineName(name, factory);
+      // Register engine names
+      var names = factory.getNames();
+      if (names != null && !names.isEmpty()) {
+        for (String name : names) {
+          engineManager.registerEngineName(name, factory);
+        }
+      } else {
+        log.warn(STR."Engine factory {factory} has no names");
       }
 
-      for (String mimeType : factory.getMimeTypes()) {
-        engineManager.registerEngineMimeType(mimeType, factory);
+      // Register MIME types
+      var mimeTypes = factory.getMimeTypes();
+      if (mimeTypes != null && !mimeTypes.isEmpty()) {
+        for (String mimeType : mimeTypes) {
+          engineManager.registerEngineMimeType(mimeType, factory);
+        }
+      } else {
+        log.debug(STR."Engine factory {factory} has no mime types");
       }
 
-      for (String ext : factory.getExtensions()) {
-        engineManager.registerEngineExtension(ext, factory);
+      // Register extensions
+      var extensions = factory.getExtensions();
+      if (extensions != null && !extensions.isEmpty()) {
+        for (String ext : extensions) {
+          engineManager.registerEngineExtension(ext, factory);
+        }
+      } else {
+        log.debug(STR."Engine factory {factory} has no extensions");
       }
 
       available.add(factory);
     }
 
     // Dump some information about detected engine factories
-    log.info("Detected {} engine-factories", available.size());
+    log.info(STR."Detected {available.size()} engine-factories");
 
     for (ScriptEngineFactory factory : available) {
-      log.info("Engine-factory: {} v{}; language={}, version={}, names={}, mime-types={}, extensions={}",
-          factory.getEngineName(),
-          factory.getEngineVersion(),
-          factory.getLanguageName(),
-          factory.getLanguageVersion(),
-          factory.getNames(),
-          factory.getMimeTypes(),
-          factory.getExtensions()
-      );
+      log.info(STR."""
+          Engine-factory: {factory.getEngineName()} v{factory.getEngineVersion()}; 
+          language={factory.getLanguageName()}, 
+          version={factory.getLanguageVersion()}, 
+          names={factory.getNames()}, 
+          mime-types={factory.getMimeTypes()}, 
+          extensions={factory.getExtensions()}
+          """);
     }
 
-    log.info("Default language: {}", DEFAULT_LANGUAGE);
+    log.info(STR."Default language: {DEFAULT_LANGUAGE}");
 
     return engineManager;
   }

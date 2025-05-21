@@ -55,28 +55,28 @@ public class UserAgentGenerator
       // track edition for cache invalidation
       edition = applicationVersion.getEdition();
 
-      value = String.format("Nexus/%s (%s; %s; %s; %s; %s)",
-          applicationVersion.getVersion(),
-          edition,
-          System.getProperty("os.name"),
-          System.getProperty("os.version"),
-          System.getProperty("os.arch"),
-          System.getProperty("java.version"));
+      value = STR."Nexus/\{applicationVersion.getVersion()} (\{edition}; \{System.getProperty("os.name")}; \{System.getProperty("os.version")}; \{System.getProperty("os.arch")}; \{System.getProperty("java.version")})";
     }
 
     return value;
   }
 
   public String buildUserAgentForAnalytics(CapabilityReference capabilityReference) {
-    String ua = generate();
+    // Get the base user agent string (using the cached value if available)
+    String baseUserAgent = generate();
+    
+    // Use String Templates to create the appropriate analytics suffix
+    // The baseUserAgent ends with a closing parenthesis, which we need to replace
+    String baseWithoutClosingParen = baseUserAgent.substring(0, baseUserAgent.length() - 1);
+    
     if (capabilityReference == null) {
-      return ua.replace(")", PAU);
+      return STR."\{baseWithoutClosingParen}\{PAU}";
     }
     else if (capabilityReference.context().isEnabled()) {
-      return ua.replace(")", PAE);
+      return STR."\{baseWithoutClosingParen}\{PAE}";
     }
     else {
-      return ua.replace(")", PAD);
+      return STR."\{baseWithoutClosingParen}\{PAD}";
     }
   }
 }

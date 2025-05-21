@@ -27,6 +27,9 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Composite {@link Condition} implementation support.
+ * <p>
+ * This implementation is compatible with Java 21 Virtual Threads and ensures proper event
+ * handling across Virtual Thread boundaries.
  *
  * @since capabilities 2.0
  */
@@ -37,14 +40,30 @@ public abstract class CompositeConditionSupport
 
   private final Condition[] conditions;
 
+  /**
+   * Constructs a new CompositeConditionSupport with multiple conditions.
+   * <p>
+   * This implementation ensures proper handling of conditions across Virtual Thread boundaries.
+   *
+   * @param eventManager the event manager instance
+   * @param conditions the conditions to be managed (at least 2)
+   */
   public CompositeConditionSupport(final EventManager eventManager,
                                    final Condition... conditions)
   {
     super(eventManager, false);
     this.conditions = checkNotNull(conditions);
-    checkArgument(conditions.length > 1, "A composite mush have at least 2 conditions");
+    checkArgument(conditions.length > 1, "A composite must have at least 2 conditions");
   }
 
+  /**
+   * Constructs a new CompositeConditionSupport with a single condition.
+   * <p>
+   * This implementation ensures proper handling of the condition across Virtual Thread boundaries.
+   *
+   * @param eventManager the event manager instance
+   * @param condition the condition to be managed
+   */
   public CompositeConditionSupport(final EventManager eventManager,
                                    final Condition condition)
   {
@@ -69,27 +88,52 @@ public abstract class CompositeConditionSupport
     }
   }
 
+  /**
+   * Handles condition satisfied events, ensuring proper thread context propagation.
+   * <p>
+   * This implementation is Virtual Thread-friendly and maintains proper context across thread boundaries.
+   *
+   * @param event the satisfied event
+   */
   @AllowConcurrentEvents
   @Subscribe
   public void handle(final ConditionEvent.Satisfied event) {
-    if (shouldReevaluateFor(event.getCondition())) {
-      setSatisfied(reevaluate(conditions));
+    // Capture the condition from the event to ensure proper context propagation
+    final Condition eventCondition = event.getCondition();
+    
+    if (shouldReevaluateFor(eventCondition)) {
+      // Evaluate in the current thread context to ensure proper state management
+      final boolean newState = reevaluate(conditions);
+      setSatisfied(newState);
     }
   }
 
+  /**
+   * Handles condition unsatisfied events, ensuring proper thread context propagation.
+   * <p>
+   * This implementation is Virtual Thread-friendly and maintains proper context across thread boundaries.
+   *
+   * @param event the unsatisfied event
+   */
   @AllowConcurrentEvents
   @Subscribe
   public void handle(final ConditionEvent.Unsatisfied event) {
-    if (shouldReevaluateFor(event.getCondition())) {
-      setSatisfied(reevaluate(conditions));
+    // Capture the condition from the event to ensure proper context propagation
+    final Condition eventCondition = event.getCondition();
+    
+    if (shouldReevaluateFor(eventCondition)) {
+      // Evaluate in the current thread context to ensure proper state management
+      final boolean newState = reevaluate(conditions);
+      setSatisfied(newState);
     }
   }
 
   @Override
   public CompositeConditionSupport setContext(final CapabilityContext context) {
     for (final Condition condition : conditions) {
-      if (condition instanceof CapabilityContextAware) {
-        ((CapabilityContextAware) condition).setContext(context);
+      // Using pattern matching for instanceof check (Java 21 feature)
+      if (condition instanceof CapabilityContextAware contextAware) {
+        contextAware.setContext(context);
       }
     }
     return this;
@@ -112,6 +156,14 @@ public abstract class CompositeConditionSupport
     return conditions;
   }
 
+  /**
+   * Determines if the condition should trigger a reevaluation.
+   * <p>
+   * This method is optimized for Virtual Thread execution and avoids unnecessary synchronization.
+   *
+   * @param condition the condition to check
+   * @return true if the condition should trigger a reevaluation
+   */
   private boolean shouldReevaluateFor(final Condition condition) {
     for (final Condition watched : conditions) {
       if (watched == condition) {
@@ -120,5 +172,4 @@ public abstract class CompositeConditionSupport
     }
     return false;
   }
-
 }

@@ -16,6 +16,8 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 
 import org.junit.Test;
+import org.junit.experimental.categories.Category;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
@@ -31,6 +33,7 @@ import static org.sonatype.nexus.blobstore.api.BlobRef.DATE_TIME_FORMATTER;
  *
  * @since 3.0
  */
+@Category(Java21TestGroup.class)
 public class BlobRefTest
 {
   private static final String STORE_NAME = "test-store";

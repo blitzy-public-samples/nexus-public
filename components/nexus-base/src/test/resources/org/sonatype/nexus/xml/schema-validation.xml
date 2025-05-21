@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nexus:repository-config
+    xmlns:nexus="http://www.sonatype.org/nexus/schema"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.sonatype.org/nexus/schema http://www.sonatype.org/nexus/schema/repository-config.xsd"
+    version="1.0">
+
+  <!-- 
+    Test XML document for validating XML Schema processing in Java 21
+    This document exercises various schema validation features to ensure
+    proper behavior after the Java 21 upgrade.
+  -->
+  
+  <!-- Basic element with simple content -->
+  <nexus:name>Test Repository</nexus:name>
+  
+  <!-- Element with enumeration restriction -->
+  <nexus:type>hosted</nexus:type>
+  
+  <!-- Element with required attributes -->
+  <nexus:storage blobstore-name="default" strict-content-validation="true">
+    <!-- Nested element with integer type -->
+    <nexus:max-size-megabytes>1024</nexus:max-size-megabytes>
+  </nexus:storage>
+  
+  <!-- Complex element with sequence of child elements -->
+  <nexus:capabilities>
+    <nexus:capability id="cap1" enabled="true" type="blobstore.compact">
+      <nexus:properties>
+        <nexus:property key="blobstore.name" value="default"/>
+        <nexus:property key="schedule.type" value="weekly"/>
+      </nexus:properties>
+    </nexus:capability>
+    <nexus:capability id="cap2" enabled="false" type="script.groovy">
+      <nexus:properties>
+        <nexus:property key="script.name" value="cleanup"/>
+      </nexus:properties>
+    </nexus:capability>
+  </nexus:capabilities>
+  
+  <!-- Element with date/time types to test XML Schema date handling -->
+  <nexus:timestamps>
+    <nexus:created>2023-10-15T14:30:15Z</nexus:created>
+    <nexus:last-modified>2023-10-16T09:45:22+01:00</nexus:last-modified>
+  </nexus:timestamps>
+  
+  <!-- Element with pattern restriction -->
+  <nexus:email>admin@example.com</nexus:email>
+  
+  <!-- Element with numeric restrictions -->
+  <nexus:connection-limits>
+    <nexus:max-connections>100</nexus:max-connections>
+    <nexus:timeout-seconds>30</nexus:timeout-seconds>
+    <nexus:retry-interval>5.5</nexus:retry-interval>
+  </nexus:connection-limits>
+  
+  <!-- Element with boolean type -->
+  <nexus:online>true</nexus:online>
+  
+  <!-- Element with base64Binary type -->
+  <nexus:signature>VGhpcyBpcyBhIHRlc3Qgc2lnbmF0dXJl</nexus:signature>
+  
+  <!-- Element with list type (space-separated tokens) -->
+  <nexus:tags>test schema validation java21</nexus:tags>
+  
+  <!-- Element with union type (either date or string with 'unknown') -->
+  <nexus:expiration>2024-12-31</nexus:expiration>
+  
+  <!-- Element with empty content but required by schema -->
+  <nexus:description></nexus:description>
+  
+  <!-- Complex type with mixed content -->
+  <nexus:notes>
+    This repository contains <nexus:highlight>test data</nexus:highlight> for
+    schema validation in <nexus:highlight>Java 21</nexus:highlight>.
+  </nexus:notes>
+  
+  <!-- Element with anyType to test type flexibility -->
+  <nexus:custom-data>
+    <data:info xmlns:data="http://example.org/data">
+      <data:purpose>Testing</data:purpose>
+      <data:priority>High</data:priority>
+    </data:info>
+  </nexus:custom-data>
+  
+  <!-- Element with substitution group -->
+  <nexus:notification-email>admin@example.com</nexus:notification-email>
+  
+  <!-- Element with nillable attribute -->
+  <nexus:proxy-settings xsi:nil="true"/>
+  
+  <!-- Element with fixed attribute value -->
+  <nexus:format>maven2</nexus:format>
+  
+  <!-- Test for whitespace handling -->
+  <nexus:whitespace-test>  This text has   multiple   spaces  </nexus:whitespace-test>
+  
+  <!-- Test for entity references -->
+  <nexus:entity-test>This text contains &lt; and &gt; symbols</nexus:entity-test>
+  
+  <!-- Test for CDATA sections -->
+  <nexus:cdata-test><![CDATA[This <text> contains markup that shouldn't be parsed]]></nexus:cdata-test>
+  
+  <!-- Test for default attribute values -->
+  <nexus:cleanup/>
+  
+  <!-- Test for ID/IDREF constraints -->
+  <nexus:references>
+    <nexus:reference id="ref1" name="Reference 1"/>
+    <nexus:reference id="ref2" name="Reference 2"/>
+    <nexus:cross-reference ref="ref1"/>
+  </nexus:references>
+  
+</nexus:repository-config>

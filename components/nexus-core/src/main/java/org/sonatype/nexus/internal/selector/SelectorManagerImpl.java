@@ -20,6 +20,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -97,6 +99,9 @@ public class SelectorManagerImpl
   private static final SoftReference<List<SelectorConfiguration>> EMPTY_CACHE = new SoftReference<>(null);
 
   private static final String USER_CACHE_KEY = "SelectorManager";
+  
+  // Virtual thread executor for handling events and background tasks
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   private final SelectorConfigurationStore store;
 
@@ -128,11 +133,15 @@ public class SelectorManagerImpl
     this.userCacheTimeout = new Duration(userCacheTimeout.getUnit(), userCacheTimeout.getValue());
 
     checkNotNull(selectorFactory);
-    selectorCache = CacheBuilder.newBuilder().softValues().build(CacheLoader.from(config -> {
-      String type = config.getType();
-      String expression = config.getAttributes().get(SelectorConfiguration.EXPRESSION);
-      return selectorFactory.createSelector(type, expression);
-    }));
+    // Configure cache with Java 21 compatibility in mind
+    selectorCache = CacheBuilder.newBuilder()
+        .softValues()
+        .recordStats() // Enable statistics for better monitoring
+        .build(CacheLoader.from(config -> {
+          String type = config.getType();
+          String expression = config.getAttributes().get(SelectorConfiguration.EXPRESSION);
+          return selectorFactory.createSelector(type, expression);
+        }));
   }
 
   @Override
@@ -216,7 +225,7 @@ public class SelectorManagerImpl
   public void delete(final SelectorConfiguration configuration) {
     if (isInUse(configuration)) {
       throw new IllegalStateException(
-          "Content selector " + configuration.getName() + " is in use and cannot be deleted");
+          STR."Content selector \{configuration.getName()} is in use and cannot be deleted");
     }
     else {
       store.delete(configuration);
@@ -226,16 +235,23 @@ public class SelectorManagerImpl
   @Subscribe
   @AllowConcurrentEvents
   public void on(final SelectorConfigurationEvent event) {
-    cachedBrowseResult = EMPTY_CACHE;
-    rolesCache = Collections.emptyMap();
-
-    selectorCache.invalidateAll();
+    // Use virtual threads for event handling to improve concurrency
+    virtualThreadExecutor.execute(() -> {
+      log.debug(STR."Processing selector configuration event: \{event.getEventType()}");
+      cachedBrowseResult = EMPTY_CACHE;
+      rolesCache = Collections.emptyMap();
+      selectorCache.invalidateAll();
+    });
   }
 
   @Subscribe
   @AllowConcurrentEvents
   public void on(final RoleEvent event) {
-    rolesCache = Collections.emptyMap();
+    // Use virtual threads for event handling to improve concurrency
+    virtualThreadExecutor.execute(() -> {
+      log.debug(STR."Processing role event: \{event.getEventType()}");
+      rolesCache = Collections.emptyMap();
+    });
   }
 
   /**
@@ -245,10 +261,13 @@ public class SelectorManagerImpl
    */
   @Subscribe
   public void on(final SelectorConfigurationChangedEvent event) {
-    log.debug("Selector configuration has {} on a remote node. Invalidate the cache.", event.getEventType());
-    cachedBrowseResult = EMPTY_CACHE;
-    rolesCache = Collections.emptyMap();
-    selectorCache.invalidateAll();
+    // Use virtual threads for event handling to improve concurrency
+    virtualThreadExecutor.execute(() -> {
+      log.debug(STR."Selector configuration has \{event.getEventType()} on a remote node. Invalidating the cache.");
+      cachedBrowseResult = EMPTY_CACHE;
+      rolesCache = Collections.emptyMap();
+      selectorCache.invalidateAll();
+    });
   }
 
   /**
@@ -258,7 +277,11 @@ public class SelectorManagerImpl
    */
   @Subscribe
   public void on(final RoleConfigurationEvent event) {
-    rolesCache = Collections.emptyMap();
+    // Use virtual threads for event handling to improve concurrency
+    virtualThreadExecutor.execute(() -> {
+      log.debug(STR."Processing role configuration event: \{event.getEventType()}");
+      rolesCache = Collections.emptyMap();
+    });
   }
 
   @Override
@@ -272,7 +295,7 @@ public class SelectorManagerImpl
     }
     catch (Exception e) {
       throw new SelectorEvaluationException(
-          "Selector '" + selectorConfiguration.getName() + "' cannot be evaluated", e);
+          STR."Selector '\{selectorConfiguration.getName()}' cannot be evaluated", e);
     }
   }
 
@@ -286,7 +309,7 @@ public class SelectorManagerImpl
     }
     catch (Exception e) {
       throw new SelectorEvaluationException(
-          "Selector '" + selectorConfiguration.getName() + "' cannot be represented as SQL", e);
+          STR."Selector '\{selectorConfiguration.getName()}' cannot be represented as SQL", e);
     }
   }
 
@@ -301,7 +324,7 @@ public class SelectorManagerImpl
     }
     catch (Exception e) {
       throw new SelectorEvaluationException(
-          "Selector '" + selectorConfiguration.getName() + "' cannot be represented as SQL", e);
+          STR."Selector '\{selectorConfiguration.getName()}' cannot be represented as SQL", e);
     }
   }
 
@@ -372,7 +395,7 @@ public class SelectorManagerImpl
 
     if (subject.isAuthenticated() || AnonymousHelper.isAnonymous(subject)) {
       Cache<String, User> cache = getUserCache();
-      String userKey = subject.getPrincipal().toString() + subject.getPrincipals().getRealmNames().toString();
+      String userKey = STR."\{subject.getPrincipal()}\{subject.getPrincipals().getRealmNames()}";
       currentUser = cache.get(userKey);
       if (currentUser == null) {
         currentUser = securitySystem.currentUser();
@@ -396,25 +419,22 @@ public class SelectorManagerImpl
       final Collection<String> formats,
       final Privilege privilege)
   {
-    String type = privilege.getType();
-    String selector = privilege.getProperties().get(P_REPOSITORY);
-
-    if (selector == null) {
-      return false;
-    }
-
-    RepositorySelector repositorySelector = RepositorySelector.fromSelector(selector);
-
-    boolean isRepositoryContentSelector = RepositoryContentSelectorPrivilegeDescriptor.TYPE.equals(type);
-    boolean matchesFormat = formats.contains(repositorySelector.getFormat()) || repositorySelector.isAllFormats();
-    boolean matchesRepositoryName = repositoryNames.contains(repositorySelector.getName());
-
-    boolean isMatchingFormat =
-        isRepositoryContentSelector && matchesFormat && repositorySelector.isAllRepositories();
-    boolean isMatchingRepository =
-        isRepositoryContentSelector && matchesRepositoryName;
-
-    return isMatchingFormat || isMatchingRepository;
+    // Use pattern matching for switch to simplify type evaluation
+    return switch (privilege) {
+      case Privilege p when RepositoryContentSelectorPrivilegeDescriptor.TYPE.equals(p.getType()) -> {
+        String selector = p.getProperties().get(P_REPOSITORY);
+        if (selector == null) {
+          yield false;
+        }
+        
+        RepositorySelector repositorySelector = RepositorySelector.fromSelector(selector);
+        boolean matchesFormat = formats.contains(repositorySelector.getFormat()) || repositorySelector.isAllFormats();
+        boolean matchesRepositoryName = repositoryNames.contains(repositorySelector.getName());
+        
+        yield (matchesFormat && repositorySelector.isAllRepositories()) || matchesRepositoryName;
+      }
+      default -> false;
+    };
   }
 
   private List<Role> getRoles(
@@ -442,7 +462,7 @@ public class SelectorManagerImpl
     }
     catch (NoSuchAuthorizationManagerException e) {
       // This should never happen in practice
-      log.error("Missing default user manager", e);
+      log.error(STR."Missing default user manager: \{e.getMessage()}", e);
       throw new RuntimeException(e);
     }
   }
@@ -477,5 +497,11 @@ public class SelectorManagerImpl
         .stream()
         .filter(privilege -> RepositoryContentSelectorPrivilegeDescriptor.TYPE.equals(privilege.getType()))
         .anyMatch(privilege -> privilege.getPrivilegeProperty(P_CONTENT_SELECTOR).equals(configuration.getName()));
+  }
+  
+  @Override
+  protected void doStop() throws Exception {
+    virtualThreadExecutor.close();
+    super.doStop();
   }
 }

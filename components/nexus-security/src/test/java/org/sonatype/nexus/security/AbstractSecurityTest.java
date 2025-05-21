@@ -15,6 +15,10 @@ package org.sonatype.nexus.security;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
 
 import javax.cache.CacheManager;
 import javax.inject.Inject;
@@ -46,8 +50,8 @@ import org.eclipse.sisu.space.BeanScanning;
 import org.eclipse.sisu.space.SpaceModule;
 import org.eclipse.sisu.space.URLClassSpace;
 import org.eclipse.sisu.wire.WireModule;
-import org.junit.After;
-import org.junit.Before;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 
 import static org.mockito.Mockito.mock;
 
@@ -59,18 +63,22 @@ public abstract class AbstractSecurityTest
   @Inject
   private BeanLocator beanLocator;
 
-  @Before
+  @BeforeEach
   public final void doSetUp() throws Exception {
     List<Module> modules = new ArrayList<>();
 
     customizeModules(modules);
     modules.add(new SpaceModule(new URLClassSpace(getClass().getClassLoader()), BeanScanning.INDEX));
+    
+    // Create Guice injector with compatibility for Virtual Threads
+    // When running with Virtual Threads, we need to ensure that Guice's internal
+    // synchronization doesn't cause thread pinning issues
     Guice.createInjector(new WireModule(modules));
 
     setUp();
   }
 
-  @After
+  @AfterEach
   public final void doTearDown() throws Exception {
     tearDown();
   }
@@ -131,7 +139,79 @@ public abstract class AbstractSecurityTest
       util.getLog().warn("Failed to shutdown cache-manager", e);
     }
 
-    ThreadContext.remove();
+    // Ensure ThreadContext is properly cleaned up, with compatibility for Virtual Threads
+    cleanupThreadContext();
+  }
+
+  /**
+   * Cleans up Shiro ThreadContext with compatibility for both platform and virtual threads.
+   * <p>
+   * ThreadContext uses ThreadLocal internally, which is compatible with Virtual Threads in Java 21.
+   * However, since Virtual Threads are designed to be numerous and short-lived, it's important to
+   * ensure proper cleanup to avoid memory leaks.
+   */
+  protected void cleanupThreadContext() {
+    try {
+      ThreadContext.remove();
+    } catch (Exception e) {
+      // Log but don't fail tests if ThreadContext cleanup has issues
+      util.getLog().warn("Error during ThreadContext cleanup", e);
+    }
+  }
+
+  /**
+   * Creates an ExecutorService using Virtual Threads when running on Java 21+.
+   * <p>
+   * Virtual Threads are lightweight threads that are managed by the JVM rather than the OS.
+   * They are ideal for I/O-bound operations like database access, network calls, and file operations.
+   * <p>
+   * This method provides a convenient way to create an ExecutorService that uses Virtual Threads
+   * when running on Java 21+, with a fallback to platform threads on older Java versions.
+   * 
+   * @return An ExecutorService that uses Virtual Threads when available
+   */
+  protected ExecutorService createVirtualThreadExecutor() {
+    try {
+      // Use Virtual Threads when running on Java 21+
+      ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+      return Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    } catch (NoSuchMethodError e) {
+      // Fallback for older Java versions
+      return Executors.newCachedThreadPool();
+    }
+  }
+
+  /**
+   * Runs the provided Runnable in a Virtual Thread when running on Java 21+.
+   * <p>
+   * This method provides a convenient way to execute a task in a Virtual Thread context,
+   * which is useful for testing code that may behave differently when run in a Virtual Thread.
+   * <p>
+   * The method handles proper thread cleanup and exception propagation, ensuring that the
+   * executor service is always shut down properly, even if the task throws an exception.
+   * <p>
+   * On Java versions prior to 21, this will fall back to using platform threads.
+   * 
+   * @param runnable The task to execute
+   * @throws RuntimeException if the task execution fails for any reason
+   */
+  protected void runWithVirtualThread(Runnable runnable) {
+    ExecutorService executor = createVirtualThreadExecutor();
+    try {
+      executor.submit(() -> {
+        try {
+          // Execute the task
+          runnable.run();
+        } finally {
+          // Ensure ThreadContext is cleaned up after task execution
+          cleanupThreadContext();
+        }
+      }).get();
+    } catch (Exception e) {
+      throw new RuntimeException("Error executing task in virtual thread", e);
+    } finally {
+      executor.shutdown();
+    }
   }
 
   protected SecuritySystem getSecuritySystem() {

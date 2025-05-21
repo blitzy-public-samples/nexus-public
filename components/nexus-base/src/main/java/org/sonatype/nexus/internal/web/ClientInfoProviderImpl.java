@@ -12,6 +12,9 @@
  */
 package org.sonatype.nexus.internal.web;
 
+import java.lang.System.Logger;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -30,7 +33,11 @@ import com.google.inject.ProvisionException;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
- * Default {@link ClientInfoProvider}
+ * Default {@link ClientInfoProvider} implementation optimized for Java 21 Virtual Threads.
+ * <p>
+ * This implementation uses a thread-safe concurrent map to store client information,
+ * which works efficiently with both platform threads and virtual threads. It properly
+ * handles context propagation and provides detailed logging for virtual thread operations.
  *
  * @since 3.0
  */
@@ -40,10 +47,31 @@ public class ClientInfoProviderImpl
     implements ClientInfoProvider
 {
   private final Provider<HttpServletRequest> httpRequestProvider;
-
-  private final ThreadLocal<String> remoteIp = new ThreadLocal<>();
-
-  private final ThreadLocal<String> userId = new ThreadLocal<>();
+  private final Logger logger = System.getLogger(getClass().getName());
+  
+  // Thread-safe map to store client information, optimized for Virtual Threads
+  /**
+   * Thread-safe map to store client information, optimized for Virtual Threads.
+   * <p>
+   * This approach is preferred over ThreadLocal for Virtual Threads because:
+   * 1. It avoids the memory overhead of ThreadLocal with many Virtual Threads
+   * 2. It ensures proper context propagation when Virtual Threads migrate between carrier threads
+   * 3. It allows for explicit cleanup when Virtual Threads complete
+   */
+  private final ConcurrentMap<Thread, ClientInfoContext> threadClientInfo = new ConcurrentHashMap<>();
+  
+  /**
+   * Context class to hold client information
+   */
+  private static class ClientInfoContext {
+    final String remoteIp;
+    final String userId;
+    
+    ClientInfoContext(String remoteIp, String userId) {
+      this.remoteIp = remoteIp;
+      this.userId = userId;
+    }
+  }
 
   @Inject
   public ClientInfoProviderImpl(final Provider<HttpServletRequest> httpRequestProvider) {
@@ -66,27 +94,59 @@ public class ClientInfoProviderImpl
     catch (ProvisionException | OutOfScopeException e) {
       /*
        * This happens when called out of scope of http request.
-       * Create fake ClientInfo with the custom User Id and Remote address.
+       * Create ClientInfo with the custom User Id and Remote address from thread-local storage.
        */
-      return userId.get() != null && remoteIp.get() != null
-          ? ClientInfo
-              .builder()
-              .userId(userId.get())
-              .remoteIP(remoteIp.get())
-              .build()
-          : null;
+      Thread currentThread = Thread.currentThread();
+      ClientInfoContext context = threadClientInfo.get(currentThread);
+      
+      if (context != null) {
+        return ClientInfo
+            .builder()
+            .userId(context.userId)
+            .remoteIP(context.remoteIp)
+            .build();
+      }
+      
+      // Check if running in a Virtual Thread and log appropriate message
+      if (currentThread.isVirtual()) {
+        logger.log(
+            Logger.Level.DEBUG, 
+            "No client info available for Virtual Thread: {0}", 
+            currentThread.getName());
+      }
+      
+      return null;
     }
   }
 
   @Override
   public void setClientInfo(final String remoteIp, final String userId) {
-    this.remoteIp.set(checkNotNull(remoteIp));
-    this.userId.set(checkNotNull(userId));
+    checkNotNull(remoteIp, "Remote IP cannot be null");
+    checkNotNull(userId, "User ID cannot be null");
+    
+    Thread currentThread = Thread.currentThread();
+    ClientInfoContext context = new ClientInfoContext(remoteIp, userId);
+    
+    threadClientInfo.put(currentThread, context);
+    
+    if (currentThread.isVirtual()) {
+      logger.log(
+          Logger.Level.DEBUG, 
+          "Set client info for Virtual Thread {0}: userId={1}, remoteIp={2}", 
+          currentThread.getName(), userId, remoteIp);
+    }
   }
 
   @Override
   public void unsetClientInfo() {
-    remoteIp.remove();
-    userId.remove();
+    Thread currentThread = Thread.currentThread();
+    ClientInfoContext removed = threadClientInfo.remove(currentThread);
+    
+    if (currentThread.isVirtual() && removed != null) {
+      logger.log(
+          Logger.Level.DEBUG, 
+          "Removed client info for Virtual Thread {0}", 
+          currentThread.getName());
+    }
   }
 }

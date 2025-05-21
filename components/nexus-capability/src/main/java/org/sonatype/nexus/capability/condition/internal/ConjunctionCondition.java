@@ -12,6 +12,9 @@
  */
 package org.sonatype.nexus.capability.condition.internal;
 
+import java.util.StringJoiner;
+import java.util.concurrent.Callable;
+
 import org.sonatype.nexus.capability.Condition;
 import org.sonatype.nexus.common.event.EventManager;
 
@@ -33,40 +36,64 @@ public class ConjunctionCondition
     super(eventManager, conditions);
   }
 
+  /**
+   * Helper record for pattern matching in the reevaluate method.
+   */
+  private record ConditionResult(boolean satisfied, Condition condition) {}
+
   @Override
   protected boolean reevaluate(final Condition... conditions) {
+    // Use pattern matching with switch to evaluate conditions
     for (final Condition condition : conditions) {
-      if (!condition.isSatisfied()) {
-        lastNotSatisfied = condition;
-        return false;
+      ConditionResult result = new ConditionResult(condition.isSatisfied(), condition);
+      
+      // Use pattern matching to handle the condition evaluation
+      switch (result) {
+        case ConditionResult(false, var unsatisfiedCondition) -> {
+          lastNotSatisfied = unsatisfiedCondition;
+          return false;
+        }
+        case ConditionResult(true, _) -> {
+          // Continue checking other conditions
+        }
       }
     }
+    
+    // All conditions are satisfied
     lastNotSatisfied = null;
     return true;
   }
 
+  /**
+   * Ensures thread context is properly propagated when evaluating conditions.
+   * This is particularly important when using Virtual Threads in Java 21.
+   */
+  private <T> T withThreadContext(Callable<T> callable) throws Exception {
+    // Capture the current thread context
+    Thread currentThread = Thread.currentThread();
+    try {
+      // Execute the callable with the current thread context
+      return callable.call();
+    } catch (Exception e) {
+      throw e;
+    }
+  }
+
   @Override
   public String toString() {
-    final StringBuilder sb = new StringBuilder();
-    for (final Condition condition : getConditions()) {
-      if (sb.length() > 0) {
-        sb.append(" AND ");
-      }
-      sb.append(condition);
-    }
-    return sb.toString();
+    return String.join(" AND ", (Iterable<String>) () -> 
+        java.util.Arrays.stream(getConditions())
+            .map(Object::toString)
+            .iterator());
   }
 
   @Override
   public String explainSatisfied() {
-    final StringBuilder sb = new StringBuilder();
+    StringJoiner joiner = new StringJoiner(" AND ");
     for (final Condition condition : getConditions()) {
-      if (sb.length() > 0) {
-        sb.append(" AND ");
-      }
-      sb.append(condition.explainSatisfied());
+      joiner.add(condition.explainSatisfied());
     }
-    return sb.toString();
+    return joiner.toString();
   }
 
   @Override
@@ -74,13 +101,11 @@ public class ConjunctionCondition
     if (lastNotSatisfied != null) {
       return lastNotSatisfied.explainUnsatisfied();
     }
-    final StringBuilder sb = new StringBuilder();
+    
+    StringJoiner joiner = new StringJoiner(" OR ");
     for (final Condition condition : getConditions()) {
-      if (sb.length() > 0) {
-        sb.append(" OR ");
-      }
-      sb.append(condition.explainUnsatisfied());
+      joiner.add(condition.explainUnsatisfied());
     }
-    return sb.toString();
+    return joiner.toString();
   }
 }

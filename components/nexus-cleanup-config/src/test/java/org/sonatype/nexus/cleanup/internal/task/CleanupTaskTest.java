@@ -14,33 +14,44 @@ package org.sonatype.nexus.cleanup.internal.task;
 
 import java.util.function.BooleanSupplier;
 
-import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.cleanup.service.CleanupService;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Captor;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 
+@ExtendWith(MockitoExtension.class)
+@DisplayName("CleanupTask Tests")
 public class CleanupTaskTest
-    extends TestSupport
 {
   @Mock
   private CleanupService cleanupService;
+  
+  @Captor
+  private ArgumentCaptor<BooleanSupplier> booleanSupplierCaptor;
 
   private CleanupTask underTest;
 
-  @Before
-  public void setup() throws Exception {
+  @BeforeEach
+  public void setup() {
     underTest = new CleanupTask(cleanupService);
   }
 
   @Test
+  @DisplayName("Verify cleanup service is called when task executes")
   public void runCleanup() throws Exception {
     underTest.execute();
 
-    verify(cleanupService).cleanup(any(BooleanSupplier.class));
+    verify(cleanupService).cleanup(booleanSupplierCaptor.capture());
+    assertThat(booleanSupplierCaptor.getValue()).isNotNull();
   }
 }

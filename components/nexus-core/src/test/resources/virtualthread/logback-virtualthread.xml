@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+  <!-- Enhanced console appender for virtual thread testing -->
+  <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <!-- Enhanced pattern with virtual thread indicators and carrier thread info -->
+      <pattern>%d{HH:mm:ss.SSS} [%thread] [%X{vtInfo}] [%X{carrierThread}] %-5level %logger{36} - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- Virtual thread lifecycle events appender -->
+  <appender name="VIRTUAL_THREAD_EVENTS" class="ch.qos.logback.core.FileAppender">
+    <file>target/virtual-thread-events.log</file>
+    <append>false</append>
+    <encoder>
+      <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- Thread pinning detection appender -->
+  <appender name="THREAD_PINNING" class="ch.qos.logback.core.FileAppender">
+    <file>target/thread-pinning-events.log</file>
+    <append>false</append>
+    <encoder>
+      <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- Carrier thread utilization appender -->
+  <appender name="CARRIER_THREADS" class="ch.qos.logback.core.FileAppender">
+    <file>target/carrier-thread-stats.log</file>
+    <append>false</append>
+    <encoder>
+      <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- Virtual thread MDC context appender -->
+  <appender name="MDC_CONTEXT" class="ch.qos.logback.core.FileAppender">
+    <file>target/virtual-thread-mdc.log</file>
+    <append>false</append>
+    <encoder>
+      <pattern>%d{HH:mm:ss.SSS} [%thread] [%X{vtId}] [%X{vtName}] [%X{vtState}] %-5level %logger{36} - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- Configure loggers for virtual thread diagnostics -->
+  <logger name="org.sonatype.nexus.virtualthread" level="DEBUG">
+    <appender-ref ref="VIRTUAL_THREAD_EVENTS" />
+    <appender-ref ref="MDC_CONTEXT" />
+  </logger>
+
+  <logger name="org.sonatype.nexus.thread.io" level="DEBUG">
+    <appender-ref ref="VIRTUAL_THREAD_EVENTS" />
+  </logger>
+
+  <logger name="jdk.internal.vm.Continuation" level="DEBUG">
+    <appender-ref ref="VIRTUAL_THREAD_EVENTS" />
+  </logger>
+
+  <logger name="java.lang.VirtualThread" level="DEBUG">
+    <appender-ref ref="VIRTUAL_THREAD_EVENTS" />
+  </logger>
+
+  <!-- Thread pinning detection logger -->
+  <logger name="jdk.internal.misc.VirtualThreads" level="DEBUG">
+    <appender-ref ref="THREAD_PINNING" />
+  </logger>
+
+  <!-- Carrier thread monitoring logger -->
+  <logger name="java.util.concurrent.ForkJoinPool" level="DEBUG">
+    <appender-ref ref="CARRIER_THREADS" />
+  </logger>
+
+  <!-- HTTP client logging for virtual thread testing -->
+  <logger name="org.apache.http" level="DEBUG"/>
+  <logger name="org.littleshoot.proxy" level="INFO"/>
+
+  <!-- Database connection logging for virtual thread testing -->
+  <logger name="org.sonatype.nexus.datastore.jdbc" level="DEBUG">
+    <appender-ref ref="VIRTUAL_THREAD_EVENTS" />
+  </logger>
+
+  <!-- S3 BlobStore virtual thread logging -->
+  <logger name="org.sonatype.nexus.blobstore.s3.internal" level="DEBUG">
+    <appender-ref ref="VIRTUAL_THREAD_EVENTS" />
+  </logger>
+
+  <!-- Repository proxy virtual thread logging -->
+  <logger name="org.sonatype.nexus.repository.proxy" level="DEBUG">
+    <appender-ref ref="VIRTUAL_THREAD_EVENTS" />
+  </logger>
+
+  <!-- Root logger configuration -->
+  <root level="INFO">
+    <appender-ref ref="STDOUT" />
+  </root>
+
+  <!-- TurboFilter to capture thread pinning events -->
+  <turboFilter class="ch.qos.logback.classic.turbo.MarkerFilter">
+    <Name>THREAD_PINNING_FILTER</Name>
+    <Marker>THREAD_PINNING</Marker>
+    <OnMatch>ACCEPT</OnMatch>
+  </turboFilter>
+
+  <!-- MDC setup for virtual threads -->
+  <contextListener class="ch.qos.logback.classic.jul.LevelChangePropagator">
+    <resetJUL>true</resetJUL>
+  </contextListener>
+</configuration>

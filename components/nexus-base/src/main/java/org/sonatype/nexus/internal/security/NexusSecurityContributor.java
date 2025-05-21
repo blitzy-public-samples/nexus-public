@@ -18,6 +18,7 @@ import javax.inject.Singleton;
 import org.sonatype.nexus.security.config.MemorySecurityConfiguration;
 import org.sonatype.nexus.security.config.SecurityContributor;
 import org.sonatype.nexus.security.config.SecurityContributorSupport;
+import org.sonatype.nexus.security.config.memory.MemoryCPrivilege;
 
 import static org.apache.commons.lang.StringUtils.capitalize;
 import static org.sonatype.nexus.security.Roles.ADMIN_ROLE_ID;
@@ -98,6 +99,53 @@ public class NexusSecurityContributor
 
   public static final String NX_REPO_VIEW_ALL_READ_PRIV_ID = "nx-repository-view-*-*-read";
 
+  /**
+   * Determines the privilege type based on the domain and actions using pattern matching.
+   * This method uses Java 21's pattern matching for switch statements to provide a more
+   * concise and readable way to determine privilege types.
+   *
+   * @param domain The domain of the privilege
+   * @param actions The actions associated with the privilege
+   * @return The appropriate privilege type
+   */
+  protected String determinePrivilegeType(String domain, String actions) {
+    return switch (domain) {
+      case String d when d.equals("*") -> TYPE_WILDCARD;
+      case String d when d.startsWith("repository-") -> "repository";
+      case String d when d.equals(SETTINGS_DOMAIN) || 
+                       d.equals(BUNDLES_DOMAIN) || 
+                       d.equals(SEARCH_DOMAIN) || 
+                       d.equals(APIKEY_DOMAIN) || 
+                       d.equals(NX_PRIVILEGE_DOMAIN) || 
+                       d.equals(NX_ROLE_DOMAIN) || 
+                       d.equals(NX_USER_DOMAIN) || 
+                       d.equals(NX_USERCHANGEPW_DOMAIN) || 
+                       d.equals(NX_UPLOAD_DOMAIN) -> TYPE_APPLICATION;
+      default -> TYPE_APPLICATION; // Default to application type for backward compatibility
+    };
+  }
+
+  /**
+   * Creates an application privilege with compatibility for Shiro 2.0.0.
+   * This method ensures that the privilege configuration is compatible with
+   * the updated Shiro 2.0.0 permission evaluation system.
+   *
+   * @param id The ID of the privilege
+   * @param description The description of the privilege
+   * @param domain The domain of the privilege
+   * @param actions The actions associated with the privilege
+   * @return The created privilege
+   */
+  protected MemoryCPrivilege createShiroCompatiblePrivilege(String id, String description, String domain, String actions) {
+    String type = determinePrivilegeType(domain, actions);
+    
+    if (TYPE_WILDCARD.equals(type)) {
+      return createWildcardPrivilege(id, description, domain + ":" + actions);
+    } else {
+      return createApplicationPrivilege(id, description, domain, actions);
+    }
+  }
+
   @Override
   public MemorySecurityConfiguration getContribution() {
     MemorySecurityConfiguration configuration = new MemorySecurityConfiguration();
@@ -105,28 +153,28 @@ public class NexusSecurityContributor
     configuration.addPrivilege(createWildcardPrivilege(NX_ALL_PRIV_ID, NX_ALL_PRIV_DESCRIPTION, NX_ALL_PATTERN));
 
     configuration.addPrivilege(
-        createApplicationPrivilege(NX_SETTINGS_ALL_PRIV_ID, ALL_DESCRIPTION_BASE + capitalize(SETTINGS_DOMAIN),
+        createShiroCompatiblePrivilege(NX_SETTINGS_ALL_PRIV_ID, ALL_DESCRIPTION_BASE + capitalize(SETTINGS_DOMAIN),
             SETTINGS_DOMAIN, ACTION_ALL));
     configuration.addPrivilege(
-        createApplicationPrivilege(NX_SETTINGS_READ_PRIV_ID, READ_DESCRIPTION_BASE + capitalize(SETTINGS_DOMAIN),
+        createShiroCompatiblePrivilege(NX_SETTINGS_READ_PRIV_ID, READ_DESCRIPTION_BASE + capitalize(SETTINGS_DOMAIN),
             SETTINGS_DOMAIN, ACTION_READ));
     configuration.addPrivilege(
-        createApplicationPrivilege(NX_SETTINGS_UPDATE_PRIV_ID, UPDATE_DESCRIPTION_BASE + capitalize(SETTINGS_DOMAIN),
+        createShiroCompatiblePrivilege(NX_SETTINGS_UPDATE_PRIV_ID, UPDATE_DESCRIPTION_BASE + capitalize(SETTINGS_DOMAIN),
             SETTINGS_DOMAIN, ACTION_UPDATE));
 
     configuration.addPrivilege(
-        createApplicationPrivilege(NX_BUNDLES_ALL_PRIV_ID, ALL_DESCRIPTION_BASE + capitalize(BUNDLES_DOMAIN),
+        createShiroCompatiblePrivilege(NX_BUNDLES_ALL_PRIV_ID, ALL_DESCRIPTION_BASE + capitalize(BUNDLES_DOMAIN),
             BUNDLES_DOMAIN, ACTION_ALL));
     configuration.addPrivilege(
-        createApplicationPrivilege(NX_BUNDLES_READ_PRIV_ID, READ_DESCRIPTION_BASE + capitalize(BUNDLES_DOMAIN),
+        createShiroCompatiblePrivilege(NX_BUNDLES_READ_PRIV_ID, READ_DESCRIPTION_BASE + capitalize(BUNDLES_DOMAIN),
             BUNDLES_DOMAIN, ACTION_READ));
 
     configuration.addPrivilege(
-        createApplicationPrivilege(NX_SEARCH_READ_PRIV_ID, READ_DESCRIPTION_BASE + capitalize(SEARCH_DOMAIN),
+        createShiroCompatiblePrivilege(NX_SEARCH_READ_PRIV_ID, READ_DESCRIPTION_BASE + capitalize(SEARCH_DOMAIN),
             SEARCH_DOMAIN, ACTION_READ));
 
     configuration.addPrivilege(
-        createApplicationPrivilege(NX_APIKEY_ALL_PRIV_ID, NX_APIKEY_ALL_DESCRIPTION, APIKEY_DOMAIN, ACTION_ALL));
+        createShiroCompatiblePrivilege(NX_APIKEY_ALL_PRIV_ID, NX_APIKEY_ALL_DESCRIPTION, APIKEY_DOMAIN, ACTION_ALL));
 
     createCrudAndAllApplicationPrivileges(NX_PRIVILEGE_PRIV_ID_PREFIX, NX_PRIVILEGE_DOMAIN)
         .forEach(configuration::addPrivilege);
@@ -135,11 +183,11 @@ public class NexusSecurityContributor
 
     // FIXME: Sort out what the use-case is for this distinct permission, consider nexus:users:change-password?
     configuration.addPrivilege(
-        createApplicationPrivilege(NX_USERCHANGEPW_PRIV_ID, NX_USERCHANGEPW_PRIV_DESCRIPTION, NX_USERCHANGEPW_DOMAIN,
+        createShiroCompatiblePrivilege(NX_USERCHANGEPW_PRIV_ID, NX_USERCHANGEPW_PRIV_DESCRIPTION, NX_USERCHANGEPW_DOMAIN,
             ACTION_CREATE));
 
     configuration.addPrivilege(
-        createApplicationPrivilege(NX_UPLOAD_PRIV_ID, NX_UPLOAD_PRIV_DESCRIPTION, NX_UPLOAD_DOMAIN,
+        createShiroCompatiblePrivilege(NX_UPLOAD_PRIV_ID, NX_UPLOAD_PRIV_DESCRIPTION, NX_UPLOAD_DOMAIN,
             ACTION_CREATE_ONLY));
 
     configuration.addRole(createRole(ADMIN_ROLE_ID, ADMIN_ROLE_ID, NX_ADMIN_ROLE_DESCRIPTION, NX_ALL_PRIV_ID));

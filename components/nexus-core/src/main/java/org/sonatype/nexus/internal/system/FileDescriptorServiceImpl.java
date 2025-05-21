@@ -12,8 +12,6 @@
  */
 package org.sonatype.nexus.internal.system;
 
-import java.util.Optional;
-
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -26,6 +24,8 @@ import org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport;
 import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.KERNEL;
 
 /**
+ * Implementation of {@link FileDescriptorService} that checks system file descriptor limits.
+ * 
  * @since 3.5
  */
 @Named
@@ -38,30 +38,32 @@ public class FileDescriptorServiceImpl
 
   static final String WARNING_HEADER =
       "WARNING: ****************************************************************************";
-
-  static final String WARNING_VIOLATION =
-      "WARNING: The open file descriptor limit is {} which is below the minimum recommended value of {}.";
-
-  static final String WARNING_URL =
-      "WARNING: Please see: http://links.sonatype.com/products/nexus/system-reqs#filehandles";
-
+      
   static final long NOT_SUPPORTED = -1; // e.g. Windows does not have the concept of file descriptors
 
   private final long fileDescriptorCount;
 
   @Inject
   public FileDescriptorServiceImpl(@Nullable final FileDescriptorProvider fileDescriptorProvider) {
-    this.fileDescriptorCount = Optional.ofNullable(fileDescriptorProvider)
-        .orElse(new ProcessProbeFileDescriptorProvider())
-        .getFileDescriptorCount();
+    this.fileDescriptorCount = fileDescriptorProvider instanceof FileDescriptorProvider provider
+        ? provider.getFileDescriptorCount()
+        : new ProcessProbeFileDescriptorProvider().getFileDescriptorCount();
   }
 
   @Override
   public void doStart() {
+    // Launch file descriptor check in a virtual thread to minimize startup impact
+    Thread.ofVirtual().name("file-descriptor-check").start(() -> checkFileDescriptorLimit());
+  }
+  
+  /**
+   * Performs the actual file descriptor limit check in a separate thread
+   */
+  private void checkFileDescriptorLimit() {
     if (!isFileDescriptorLimitOk()) {
       log.warn(WARNING_HEADER);
-      log.warn(WARNING_VIOLATION, fileDescriptorCount, MINIMUM_FILE_DESCRIPTOR_COUNT);
-      log.warn(WARNING_URL);
+      log.warn(STR."WARNING: The open file descriptor limit is \{fileDescriptorCount} which is below the minimum recommended value of \{MINIMUM_FILE_DESCRIPTOR_COUNT}.");
+      log.warn(STR."WARNING: System may experience issues with high load. Please see: http://links.sonatype.com/products/nexus/system-reqs#filehandles");
       log.warn(WARNING_HEADER);
     }
   }

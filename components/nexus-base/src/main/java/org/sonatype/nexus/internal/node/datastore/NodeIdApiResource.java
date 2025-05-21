@@ -15,11 +15,11 @@ package org.sonatype.nexus.internal.node.datastore;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.GET;
-import javax.ws.rs.Path;
-import javax.ws.rs.Produces;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.node.NodeAccess;
@@ -29,7 +29,7 @@ import org.sonatype.nexus.rest.Resource;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 
-import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
+import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON;
 import static org.sonatype.nexus.rest.APIConstants.V1_API_PREFIX;
 
 /**
@@ -56,6 +56,7 @@ public class NodeIdApiResource
   public NodeIdApiResource(final NodeIdStore nodeIdStore, final NodeAccess nodeAccess) {
     this.nodeIdStore = nodeIdStore;
     this.nodeAccess = nodeAccess;
+    log.debug(STR."Initialized NodeIdApiResource with nodeIdStore: \{nodeIdStore} and nodeAccess: \{nodeAccess}");
   }
 
   @Override
@@ -63,8 +64,10 @@ public class NodeIdApiResource
   @RequiresAuthentication
   @RequiresPermissions("nexus:*")
   public NodeInformation getNodeId() {
+    String id = nodeAccess.getId();
+    log.debug(STR."Retrieving node ID: \{id}");
     // we return an object here to maintain an API similar to multi-node
-    return new NodeInformation(nodeAccess.getId());
+    return new NodeInformation(id);
   }
 
   @Override
@@ -72,6 +75,7 @@ public class NodeIdApiResource
   @RequiresAuthentication
   @RequiresPermissions("nexus:*")
   public void clear() {
+    log.info(STR."Clearing node ID store");
     nodeIdStore.clear();
   }
 

@@ -15,6 +15,9 @@ package org.sonatype.nexus.internal.selector;
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -28,6 +31,7 @@ import org.sonatype.nexus.supportzip.datastore.JsonExporter;
 
 /**
  * Write/Read {@link SelectorConfiguration} data to/from a JSON file.
+ * Uses Java 21 Virtual Threads for improved I/O performance during export/import operations.
  *
  * @since 3.29
  */
@@ -47,13 +51,49 @@ public class SelectorConfigurationExport
   @Override
   public void export(final File file) throws IOException {
     log.debug("Export SelectorConfiguration data to {}", file);
-    List<SelectorConfiguration> configurations = store.browse();
-    exportToJson(configurations, file);
+    
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Retrieve configurations
+      List<SelectorConfiguration> configurations = store.browse();
+      
+      // Submit export task to virtual thread executor
+      Future<?> exportTask = executor.submit(() -> {
+        try {
+          exportToJson(configurations, file);
+        } catch (IOException e) {
+          throw new RuntimeException("Failed to export selector configurations", e);
+        }
+      });
+      
+      // Wait for export to complete
+      try {
+        exportTask.get();
+      } catch (Exception e) {
+        throw new IOException("Error during selector configuration export", e);
+      }
+    }
   }
 
   @Override
   public void restore(final File file) throws IOException {
     log.debug("Restoring SelectorConfiguration data from {}", file);
-    importFromJson(file, SelectorConfigurationData.class).forEach(store::create);
+    
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit import task to virtual thread executor
+      Future<?> importTask = executor.submit(() -> {
+        try {
+          importFromJson(file, SelectorConfigurationData.class).forEach(store::create);
+        } catch (IOException e) {
+          throw new RuntimeException("Failed to import selector configurations", e);
+        }
+      });
+      
+      // Wait for import to complete
+      try {
+        importTask.get();
+      } catch (Exception e) {
+        throw new IOException("Error during selector configuration import", e);
+      }
+    }
   }
 }

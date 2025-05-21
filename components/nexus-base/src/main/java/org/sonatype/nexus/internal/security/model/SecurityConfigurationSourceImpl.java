@@ -12,9 +12,11 @@
  */
 package org.sonatype.nexus.internal.security.model;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import java.util.concurrent.CompletableFuture;
+
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.common.app.ManagedLifecycle;
@@ -58,10 +60,14 @@ public class SecurityConfigurationSourceImpl
 
   @Override
   protected void doStart() throws Exception {
-    addDefaultUsers();
-    addDefaultRoles();
-    addDefaultPrivileges();
-    addDefaultUserRoleMappings();
+    // Use CompletableFuture with Virtual Threads to parallelize initialization tasks
+    CompletableFuture<Void> usersTask = CompletableFuture.runAsync(this::addDefaultUsers, Thread.ofVirtual().factory());
+    CompletableFuture<Void> rolesTask = CompletableFuture.runAsync(this::addDefaultRoles, Thread.ofVirtual().factory());
+    CompletableFuture<Void> privilegesTask = CompletableFuture.runAsync(this::addDefaultPrivileges, Thread.ofVirtual().factory());
+    CompletableFuture<Void> mappingsTask = CompletableFuture.runAsync(this::addDefaultUserRoleMappings, Thread.ofVirtual().factory());
+    
+    // Wait for all initialization tasks to complete
+    CompletableFuture.allOf(usersTask, rolesTask, privilegesTask, mappingsTask).join();
   }
 
   private void addDefaultUsers() {

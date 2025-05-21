@@ -20,12 +20,7 @@ import com.google.common.collect.Maps;
 import org.slf4j.MDC;
 
 /**
- * Simple helper class to manipulate MDC (Mapped Diagnostic Context).
- * 
- * This class provides utilities for capturing and restoring MDC context across threads,
- * with special handling for virtual threads in Java 21+. MDC is commonly used for
- * storing diagnostic information (like user IDs, request IDs, etc.) that can be included
- * in log messages.
+ * Simple helper class to manipulate MDC.
  *
  * @since 2.6
  */
@@ -38,71 +33,119 @@ public class MDCUtils
   public static final String CONTEXT_NON_INHERITABLE_KEY = "non-inheritable";
 
   /**
-   * Gets a copy of the current thread's MDC context map.
+   * Checks if the current thread is a virtual thread.
    * 
-   * This method is optimized for both platform and virtual threads. For virtual threads,
-   * it ensures efficient context capture without excessive memory usage.
+   * @return true if the current thread is a virtual thread, false otherwise
+   * @since 3.60
+   */
+  public static boolean isVirtualThread() {
+    return Thread.currentThread().isVirtual();
+  }
+
+  /**
+   * Gets a copy of the current thread's MDC context map, filtering out non-inheritable contexts.
+   * Optimized for both platform and virtual threads.
    *
-   * @return A copy of the current MDC context map, never null
+   * @return a copy of the MDC context map with non-inheritable contexts removed
    */
   public static Map<String, String> getCopyOfContextMap() {
-    // Check if this is a virtual thread for potential optimizations
-    boolean isVirtualThread = isVirtualThread();
-    
     final boolean inheritable = MDC.get(CONTEXT_NON_INHERITABLE_KEY) == null;
     Map<String, String> result = null;
     if (inheritable) {
-      // Get a copy of the MDC context map
-      // For virtual threads, this is a lightweight operation as they don't share ThreadLocals
+      // noinspection unchecked
       result = MDC.getCopyOfContextMap();
     }
     if (result == null) {
-      // Create a new map with the expected initial capacity to avoid resizing
-      // This is more efficient, especially for virtual threads that may be numerous
-      result = isVirtualThread ? Maps.newHashMapWithExpectedSize(4) : Maps.newHashMap();
+      result = Maps.newHashMap();
     }
     result.remove(CONTEXT_NON_INHERITABLE_KEY);
     return result;
   }
 
   /**
-   * Sets the MDC context map for the current thread.
-   * 
-   * This method is optimized for both platform and virtual threads. For virtual threads,
-   * it ensures efficient context restoration without excessive memory usage.
+   * Sets the MDC context map and ensures the user ID is set.
+   * Handles both platform and virtual threads appropriately.
    *
-   * @param context The context map to set, may be null
+   * @param context the context map to set, or null to clear the context
    */
   public static void setContextMap(Map<String, String> context) {
     if (context != null) {
-      // For virtual threads, this operation is optimized to minimize memory usage
       MDC.setContextMap(context);
       UserIdMdcHelper.setIfNeeded();
     }
     else {
-      // Clear the MDC context to avoid memory leaks, especially important for virtual threads
       MDC.clear();
       UserIdMdcHelper.set();
     }
   }
-  
+
   /**
-   * Checks if the current thread is a virtual thread.
-   * 
-   * Uses Java 21's Thread.currentThread().isVirtual() method if available,
-   * otherwise returns false for Java versions prior to 21.
+   * Creates a snapshot of the current MDC context that can be used to propagate context
+   * to another thread, including virtual threads.
    *
-   * @return true if the current thread is a virtual thread, false otherwise
+   * @return a copy of the current MDC context map suitable for propagation
+   * @since 3.60
    */
-  private static boolean isVirtualThread() {
+  public static Map<String, String> getContextMapForPropagation() {
+    return getCopyOfContextMap();
+  }
+
+  /**
+   * Applies a previously captured MDC context to the current thread.
+   * Optimized for both platform and virtual threads.
+   *
+   * @param contextMap the context map to apply, or null to clear the context
+   * @since 3.60
+   */
+  public static void applyContextMap(Map<String, String> contextMap) {
+    setContextMap(contextMap);
+  }
+
+  /**
+   * Clears the MDC context for the current thread.
+   * Important for virtual threads to prevent memory leaks.
+   *
+   * @since 3.60
+   */
+  public static void clearContext() {
+    MDC.clear();
+  }
+
+  /**
+   * Captures the current MDC context, executes the provided runnable,
+   * and ensures the original context is restored afterward.
+   * This is particularly useful for virtual threads in structured concurrency.
+   *
+   * @param runnable the code to execute with preserved MDC context
+   * @since 3.60
+   */
+  public static void withContext(Runnable runnable) {
+    Map<String, String> originalContext = getCopyOfContextMap();
     try {
-      // Use reflection to avoid direct dependency on Java 21 API
-      // This allows the code to run on both Java 17 and Java 21
-      return (boolean) Thread.class.getMethod("isVirtual").invoke(Thread.currentThread());
+      runnable.run();
     }
-    catch (Exception e) {
-      // Method doesn't exist (pre-Java 21) or other reflection error
-      return false;
+    finally {
+      setContextMap(originalContext);
+    }
+  }
+
+  /**
+   * Captures the current MDC context, applies a new context, executes the provided runnable,
+   * and ensures the original context is restored afterward.
+   * This is particularly useful for virtual threads in structured concurrency.
+   *
+   * @param newContext the context to apply before executing the runnable
+   * @param runnable the code to execute with the new MDC context
+   * @since 3.60
+   */
+  public static void withContext(Map<String, String> newContext, Runnable runnable) {
+    Map<String, String> originalContext = getCopyOfContextMap();
+    try {
+      setContextMap(newContext);
+      runnable.run();
+    }
+    finally {
+      setContextMap(originalContext);
     }
   }
 }

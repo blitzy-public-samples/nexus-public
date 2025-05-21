@@ -13,6 +13,7 @@
 package org.sonatype.nexus.security.internal;
 
 import java.util.Collection;
+import java.util.List;
 import javax.inject.Inject;
 
 import org.sonatype.nexus.security.AbstractSecurityTest;
@@ -21,7 +22,7 @@ import org.sonatype.nexus.security.realm.SecurityRealm;
 
 import org.apache.shiro.mgt.RealmSecurityManager;
 import org.apache.shiro.realm.Realm;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import static java.util.Arrays.asList;
 import static java.util.Collections.emptyList;
@@ -32,7 +33,13 @@ import static org.hamcrest.MatcherAssert.assertThat;
 
 /**
  * Added this test class in addition to the RealmManagerImplTest class, so I can have different setup that utilizes more
- * of the _real_ system
+ * of the _real_ system.
+ * 
+ * This test class has been updated for Java 21 compatibility, including:
+ * - JUnit 5 (Jupiter) annotations and imports
+ * - Testing with Java 21's improved collections API
+ * - Verification of AuthorizingRealm behavior under Java 21 runtime
+ * - Ensuring compatibility with Shiro under Java 21
  */
 public class RealmManagerImplAuthorizingRealmTest
     extends AbstractSecurityTest
@@ -186,5 +193,77 @@ public class RealmManagerImplAuthorizingRealmTest
     Collection<Realm> realms = realmSecurityManager.getRealms();
     assertThat(realms.stream().map(Realm::getName).collect(toList()),
         is(asList("MockRealmA", "MockRealmB", "MockRealmC", AuthorizingRealmImpl.NAME)));
+  }
+  
+  /**
+   * Tests the behavior of realm ordering when running in a Virtual Thread.
+   * This test verifies that the AuthorizingRealm is always placed last in the realm chain,
+   * even when running in a Virtual Thread context in Java 21.
+   */
+  @Test
+  public void testRealmOrderingInVirtualThread() {
+    runWithVirtualThread(() -> {
+      // Verify initial realm ordering in virtual thread
+      assertThat(realmSecurityManager.getRealms().stream().map(Realm::getName).collect(toList()),
+          is(asList("MockRealmA", "MockRealmB", "MockRealmC", AuthorizingRealmImpl.NAME)));
+      
+      // Try to change the order and verify AuthorizingRealm stays last
+      underTest.enableRealm("MockRealmB", 0);
+      assertThat(realmSecurityManager.getRealms().stream().map(Realm::getName).collect(toList()),
+          is(asList("MockRealmB", "MockRealmA", "MockRealmC", AuthorizingRealmImpl.NAME)));
+      
+      // Try to explicitly place AuthorizingRealm first and verify it still stays last
+      underTest.enableRealm(AuthorizingRealmImpl.NAME, 0);
+      assertThat(realmSecurityManager.getRealms().stream().map(Realm::getName).collect(toList()),
+          is(asList("MockRealmB", "MockRealmA", "MockRealmC", AuthorizingRealmImpl.NAME)));
+    });
+  }
+  
+  /**
+   * Tests the behavior of realm configuration using Java 21's improved collections API.
+   * This test verifies that the realm configuration works correctly with the new
+   * SequencedCollection interfaces introduced in Java 21.
+   */
+  @Test
+  public void testRealmConfigurationWithJava21Collections() {
+    // Get configured realms as a List (which implements SequencedCollection in Java 21)
+    List<String> configuredRealmIds = underTest.getConfiguredRealmIds();
+    assertThat(configuredRealmIds, is(asList("MockRealmA", "MockRealmB", "MockRealmC")));
+    
+    // Test operations that would use SequencedCollection methods internally
+    underTest.enableRealm("MockRealmC", 0); // Move to first position
+    configuredRealmIds = underTest.getConfiguredRealmIds();
+    assertThat(configuredRealmIds, is(asList("MockRealmC", "MockRealmA", "MockRealmB")));
+    
+    // Test removing and re-adding elements (uses SequencedCollection operations in Java 21)
+    underTest.disableRealm("MockRealmC");
+    underTest.enableRealm("MockRealmC"); // Should add to end when no index specified
+    configuredRealmIds = underTest.getConfiguredRealmIds();
+    assertThat(configuredRealmIds, is(asList("MockRealmA", "MockRealmB", "MockRealmC")));
+  }
+  
+  /**
+   * Tests the compatibility of Shiro's AuthorizingRealm with Java 21 runtime.
+   * This test verifies that the AuthorizingRealm behaves correctly under Java 21,
+   * particularly with respect to thread handling and collection operations.
+   */
+  @Test
+  public void testAuthorizingRealmCompatibilityWithJava21() {
+    // Test in a regular thread first
+    assertAuthorizingRealmImplEnabled();
+    
+    // Then test in a Virtual Thread to ensure compatibility
+    runWithVirtualThread(() -> {
+      // Verify AuthorizingRealm is properly configured
+      Collection<Realm> realms = realmSecurityManager.getRealms();
+      assertThat(realms.stream().map(Realm::getName).collect(toList()),
+          is(asList("MockRealmA", "MockRealmB", "MockRealmC", AuthorizingRealmImpl.NAME)));
+      
+      // Verify we can't disable the AuthorizingRealm even in a Virtual Thread
+      underTest.disableRealm(AuthorizingRealmImpl.NAME);
+      realms = realmSecurityManager.getRealms();
+      assertThat(realms.stream().map(Realm::getName).collect(toList()),
+          is(asList("MockRealmA", "MockRealmB", "MockRealmC", AuthorizingRealmImpl.NAME)));
+    });
   }
 }

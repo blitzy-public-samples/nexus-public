@@ -19,7 +19,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.Executors;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.stream.Collectors;
+
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -62,7 +65,7 @@ import com.google.common.collect.Maps;
 import com.google.common.eventbus.Subscribe;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.lang.String.format;
+import static java.lang.StringTemplate.STR;
 import static java.util.Collections.unmodifiableCollection;
 import static org.sonatype.nexus.capability.CapabilityDescriptor.ValidationMode.CREATE;
 import static org.sonatype.nexus.capability.CapabilityDescriptor.ValidationMode.CREATE_NON_EXPOSED;
@@ -179,56 +182,13 @@ public class DefaultCapabilityRegistry
     }
   }
 
-  @Subscribe
-  public void on(final CapabilityStorageItemCreatedEvent event) {
-    if (!event.isLocal()) {
-      CapabilityIdentity id = event.getCapabilityId();
-      if (references.containsKey(id)) {
-        log.debug("Capability {} already loaded and registered. Skipping it.", id);
-        return;
-      }
-
-      CapabilityStorageItem item = capabilityStorage.getAll().get(id);
-
-      if (item == null) {
-        log.debug("Failed to locate capability with id {} in storage", id);
-        return;
-      }
-
-      if (capabilityAlreadyRegistered(item)) {
-        log.debug("Capability {}:{} already loaded and registered. Skipping it.", item.getType(), item.getProperties());
-        return;
-      }
-
-      CapabilityType type = capabilityType(item.getType());
-
-      try {
-        lock.writeLock().lock();
-
-        CapabilityDescriptor descriptor = capabilityDescriptorRegistry.get(type);
-        Map<String, String> decryptedProps = decryptValuesIfNeeded(descriptor, item.getProperties());
-        doAdd(id, type, descriptor, item, decryptedProps);
-      }
-      finally {
-        lock.writeLock().unlock();
-      }
-    }
-  }
-
-  private boolean capabilityAlreadyRegistered(final CapabilityStorageItem capability) {
-    return references.values().stream()
-        .anyMatch(f ->
-            Objects.equals(f.type().toString(), capability.getType()) &&
-            Objects.equals(f.properties(), capability.getProperties()));
-  }
-
   private CapabilityReference doAdd(final CapabilityIdentity id,
                                     final CapabilityType type,
                                     final CapabilityDescriptor descriptor,
                                     final CapabilityStorageItem item,
                                     @Nullable final Map<String, String> decryptedProps)
   {
-    log.debug("Added capability '{}' of type '{}' with properties '{}'", id, type, item.getProperties());
+    log.debug(STR."Added capability '\{id}' of type '\{type}' with properties '\{item.getProperties()}'");
 
     DefaultCapabilityReference reference = create(id, type, descriptor);
 
@@ -240,6 +200,45 @@ public class DefaultCapabilityRegistry
     }
 
     return reference;
+  }
+
+  @Subscribe
+  public void on(final CapabilityStorageItemCreatedEvent event) {
+    if (!event.isLocal()) {
+      CapabilityIdentity id = event.getCapabilityId();
+      if (references.containsKey(id)) {
+        log.debug(STR."Capability \{id} already loaded and registered. Skipping it.");
+        return;
+      }
+
+      CapabilityStorageItem item = capabilityStorage.getAll().get(id);
+
+      if (item == null) {
+        log.debug(STR."Failed to locate capability with id \{id} in storage");
+        return;
+      }
+
+      if (capabilityAlreadyRegistered(item)) {
+        log.debug(STR."Capability \{item.getType()}:\{item.getProperties()} already loaded and registered. Skipping it.");
+        return;
+      }
+
+      CapabilityType type = capabilityType(item.getType());
+
+      // Use virtual thread for processing this event
+      Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+        try {
+          lock.writeLock().lock();
+
+          CapabilityDescriptor descriptor = capabilityDescriptorRegistry.get(type);
+          Map<String, String> decryptedProps = decryptValuesIfNeeded(descriptor, item.getProperties());
+          doAdd(id, type, descriptor, item, decryptedProps);
+        }
+        finally {
+          lock.writeLock().unlock();
+        }
+      });
+    }
   }
 
   @Override
@@ -285,51 +284,31 @@ public class DefaultCapabilityRegistry
 
   @Subscribe
   public void on(final CapabilityStorageItemUpdatedEvent event) {
-    log.debug("Received {} capability updated event", event.getCapabilityId());
+    log.debug(STR."Received \{event.getCapabilityId()} capability updated event");
     if (!event.isLocal()) {
-      log.debug("capability updated event {} is not local", event.getCapabilityId());
+      log.debug(STR."capability updated event \{event.getCapabilityId()} is not local");
       CapabilityIdentity id = event.getCapabilityId();
       CapabilityStorageItem item = capabilityStorage.getAll().get(id);
 
       if (item == null) {
-        log.debug("Failed to locate capability with id {} in storage", id);
+        log.debug(STR."Failed to locate capability with id \{id} in storage");
         return;
       }
 
-      try {
-        lock.writeLock().lock();
+      // Use virtual thread for processing this event
+      Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+        try {
+          lock.writeLock().lock();
 
-        DefaultCapabilityReference reference = get(id);
-        Map<String, String> decryptedProps = decryptValuesIfNeeded(reference.descriptor(), item.getProperties());
-        doUpdate(reference, item, decryptedProps);
-      }
-      finally {
-        lock.writeLock().unlock();
-      }
+          DefaultCapabilityReference reference = get(id);
+          Map<String, String> decryptedProps = decryptValuesIfNeeded(reference.descriptor(), item.getProperties());
+          doUpdate(reference, item, decryptedProps);
+        }
+        finally {
+          lock.writeLock().unlock();
+        }
+      });
     }
-  }
-
-  private CapabilityReference doUpdate(
-      final DefaultCapabilityReference reference,
-      final CapabilityStorageItem item,
-      @Nullable final Map<String, String> decryptedProps)
-  {
-    log.debug("Updated capability '{}' of type '{}' with properties '{}'",
-        reference.id(), reference.type(), item.getProperties());
-
-    if (reference.isEnabled() && !item.isEnabled()) {
-      reference.disable();
-      log.debug("Disabled capability '{}' for type '{}'", reference.id(), reference.type());
-    }
-    reference.setNotes(item.getNotes());
-    reference.update(decryptedProps, reference.properties(), item.getProperties());
-    if (!reference.isEnabled() && item.isEnabled()) {
-      reference.enable();
-      reference.activate();
-      log.debug("Enabled and activated capability '{}' for type '{}'", reference.id(), reference.type());
-    }
-
-    return reference;
   }
 
   @Override
@@ -383,20 +362,23 @@ public class DefaultCapabilityRegistry
     if (!event.isLocal()) {
       CapabilityIdentity id = event.getCapabilityId();
 
-      try {
-        lock.writeLock().lock();
+      // Use virtual thread for processing this event
+      Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+        try {
+          lock.writeLock().lock();
 
-        doRemove(id);
-      }
-      finally {
-        lock.writeLock().unlock();
-      }
+          doRemove(id);
+        }
+        finally {
+          lock.writeLock().unlock();
+        }
+      });
     }
   }
 
   private CapabilityReference doRemove(final CapabilityIdentity id)
   {
-    log.debug("Removed capability '{}'", id);
+    log.debug(STR."Removed capability '\{id}'");
 
     DefaultCapabilityReference reference = references.remove(id);
     if (reference != null) {
@@ -467,100 +449,61 @@ public class DefaultCapabilityRegistry
 
   public void load() {
     final Map<CapabilityIdentity, CapabilityStorageItem> items = capabilityStorage.getAll();
-    for (final Map.Entry<CapabilityIdentity, CapabilityStorageItem> entry : items.entrySet()) {
-      CapabilityIdentity id = entry.getKey();
-      CapabilityStorageItem item = entry.getValue();
-
-      log.debug(
-          "Loading capability '{}' of type '{}' with properties '{}'",
-          id, item.getType(), item.getProperties()
-      );
-
-      final CapabilityDescriptor descriptor = capabilityDescriptorRegistry.get(capabilityType(item.getType()));
-
-      if (descriptor == null) {
-        log.warn(
-            "Capabilities persistent storage contains a capability of unknown type {} with"
-                + " id {}. This capability will not be loaded", item.getType(), id
-        );
-        continue;
-      }
-
-      Map<String, String> properties = decryptValuesIfNeeded(descriptor, item.getProperties());
-      if (descriptor.version() != item.getVersion()) {
-        log.debug(
-            "Converting capability '{}' properties from version '{}' to version '{}'",
-            id, item.getVersion(), descriptor.version()
-        );
-        try {
-          properties = descriptor.convert(properties, item.getVersion());
-          if (properties == null) {
-            properties = Collections.emptyMap();
-          }
-          if (log.isDebugEnabled()) {
-            log.debug(
-                "Converted capability '{}' properties '{}' (version '{}') to '{}' (version '{}')",
-                id, item.getProperties(), item.getVersion(),
-                encryptValuesIfNeeded(descriptor, properties, properties), descriptor.version()
-            );
-          }
-        }
-        catch (Exception e) {
-          log.error(
-              "Failed converting capability '{}' properties '{}' from version '{}' to version '{}'."
-                  + " Capability will not be loaded",
-              id, item.getProperties(), item.getVersion(), descriptor.version(), e
-          );
-          continue;
-        }
-        capabilityStorage.update(id, capabilityStorage.newStorageItem(
-                descriptor.version(), item.getType(), item.isEnabled(), item.getNotes(), properties)
-        );
-      }
-
-      DefaultCapabilityReference reference = references.get(id);
-      if (reference != null) {
-        // already loaded, update instead...
-        doUpdate(reference, item, properties);
-        continue;
-      }
-
-      reference = create(id, capabilityType(item.getType()), descriptor);
-
-      reference.setNotes(item.getNotes());
-      reference.load(properties, item.getProperties());
-
+    
+    // Process capabilities concurrently using Virtual Threads
+    var executor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    // Submit each capability for processing in its own virtual thread
+    var futures = items.entrySet().stream()
+        .map(entry -> executor.submit(() -> loadCapability(entry.getKey(), entry.getValue())))
+        .collect(Collectors.toList());
+    
+    // Wait for all capabilities to be loaded
+    futures.forEach(future -> {
       try {
-        // validate after initial load, so properties are filled in for fixing
-        reference.descriptor().validate(id, properties, ValidationMode.LOAD);
+        future.get();
       }
-      catch (ValidationException e) {
-        log.warn("Capability '{}' of type '{}' with properties '{}' is invalid",
-            id, item.getType(), item.getProperties(), e);
-
-        reference.setFailure("Load", e); // flag validation issues in the UI
+      catch (Exception e) {
+        log.error("Error loading capability", e);
       }
-
-      if (item.isEnabled()) {
-        reference.enable();
-        reference.activate();
-      }
-    }
+    });
+    
     eventManager.post(new AfterLoad(this));
   }
-
+  
   @Override
   public void pullAndRefreshReferencesFromDB() {
     Map<CapabilityIdentity, CapabilityStorageItem> refreshedCapabilities = capabilityStorage.getAll();
-    references.forEach((capabilityIdentity, capabilityReference) ->
-        Optional.ofNullable(refreshedCapabilities.get(capabilityIdentity)) // When working in HA mode it could be null
-            .ifPresent(value -> {
-              DefaultCapabilityReference reference = get(capabilityIdentity);
-              Map<String, String> decryptedProps = decryptValuesIfNeeded(reference.descriptor(), value.getProperties());
-              doUpdate(capabilityReference, value, decryptedProps);
-            }));
+    
+    // Use virtual threads for parallel processing of references
+    var executor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    // Submit each reference update to a virtual thread
+    var futures = references.entrySet().stream()
+        .map(entry -> executor.submit(() -> {
+          CapabilityIdentity capabilityIdentity = entry.getKey();
+          DefaultCapabilityReference capabilityReference = entry.getValue();
+          
+          Optional.ofNullable(refreshedCapabilities.get(capabilityIdentity)) // When working in HA mode it could be null
+              .ifPresent(value -> {
+                DefaultCapabilityReference reference = get(capabilityIdentity);
+                Map<String, String> decryptedProps = decryptValuesIfNeeded(reference.descriptor(), value.getProperties());
+                doUpdate(capabilityReference, value, decryptedProps);
+              });
+        }))
+        .collect(Collectors.toList());
+    
+    // Wait for all updates to complete
+    futures.forEach(future -> {
+      try {
+        future.get();
+      }
+      catch (Exception e) {
+        log.error("Error refreshing capability reference", e);
+      }
+    });
   }
-
+  
   @Override
   public void migrateSecrets(final CapabilityReference capabilityReference, final Predicate<Secret> shouldMigrate) {
     try {
@@ -601,7 +544,7 @@ public class DefaultCapabilityRegistry
   {
     final CapabilityFactory factory = capabilityFactoryRegistry.get(type);
     if (factory == null) {
-      throw new RuntimeException(format("No factory found for a capability of type %s", type));
+      throw new RuntimeException(STR."No factory found for a capability of type \{type}");
     }
 
     final Capability capability = factory.create();
@@ -612,7 +555,7 @@ public class DefaultCapabilityRegistry
 
     return reference;
   }
-
+  
   @VisibleForTesting
   DefaultCapabilityReference createReference(final CapabilityIdentity id,
                                              final CapabilityType type,
@@ -636,7 +579,7 @@ public class DefaultCapabilityRegistry
       throw new CapabilityNotFoundException(id);
     }
   }
-
+  
   /**
    * Re encrypts the secrets of the capability (executed by the migration task).
    *
@@ -659,23 +602,44 @@ public class DefaultCapabilityRegistry
     List<FormField> formFields = descriptor.formFields();
 
     if (formFields != null) {
-      for (FormField formField : formFields) {
-        if (formField instanceof Encrypted) {
-          String value = encrypted.get(formField.getId());
-          if (value != null) {
-            Secret oldSecret = secretsService.from(value);
-            if (shouldMigrate.apply(oldSecret)) {
-              encrypted.put(formField.getId(),
-                  secretsService.encryptMaven("capabilities", oldSecret.decrypt(), UserIdHelper.get()).getId());
+      // Use virtual threads for parallel processing of form fields
+      var executor = Executors.newVirtualThreadPerTaskExecutor();
+      
+      // Process each form field in parallel
+      var futures = formFields.stream()
+          .filter(formField -> formField instanceof Encrypted)
+          .map(formField -> executor.submit(() -> {
+            String value = encrypted.get(formField.getId());
+            if (value != null) {
+              Secret oldSecret = secretsService.from(value);
+              if (shouldMigrate.apply(oldSecret)) {
+                return Map.entry(
+                    formField.getId(),
+                    secretsService.encryptMaven("capabilities", oldSecret.decrypt(), UserIdHelper.get()).getId()
+                );
+              }
             }
+            return null;
+          }))
+          .collect(Collectors.toList());
+      
+      // Collect results and update the encrypted map
+      futures.forEach(future -> {
+        try {
+          Map.Entry<String, String> result = future.get();
+          if (result != null) {
+            encrypted.put(result.getKey(), result.getValue());
           }
         }
-      }
+        catch (Exception e) {
+          log.error("Error migrating secret", e);
+        }
+      });
     }
 
     return encrypted;
   }
-
+  
   /**
    * Encrypts value of properties marked to be stored encrypted.
    *
@@ -693,27 +657,48 @@ public class DefaultCapabilityRegistry
     Map<String, String> encrypted = Maps.newHashMap(props);
     List<FormField> formFields = descriptor.formFields();
     if (formFields != null) {
-      for (FormField formField : formFields) {
-        if (formField instanceof Encrypted) {
-          String value = encrypted.get(formField.getId());
-          if (value != null) {
-            String oldSecret = safelyLoadSecret(oldProperties.get(formField.getId()));
+      // Use virtual threads for parallel processing of form fields
+      var executor = Executors.newVirtualThreadPerTaskExecutor();
+      
+      // Process each form field in parallel
+      var futures = formFields.stream()
+          .filter(formField -> formField instanceof Encrypted)
+          .map(formField -> executor.submit(() -> {
+            String value = encrypted.get(formField.getId());
+            if (value != null) {
+              String oldSecret = safelyLoadSecret(oldProperties.get(formField.getId()));
 
-            if (Objects.equals(oldSecret, value)) {
-              // existing secret matches
-              encrypted.put(formField.getId(), oldProperties.get(formField.getId()));
+              if (Objects.equals(oldSecret, value)) {
+                // existing secret matches
+                return Map.entry(formField.getId(), oldProperties.get(formField.getId()));
+              }
+              else {
+                return Map.entry(
+                    formField.getId(),
+                    secretsService.encryptMaven("capabilities", value.toCharArray(), UserIdHelper.get()).getId()
+                );
+              }
             }
-            else {
-              encrypted.put(formField.getId(),
-                  secretsService.encryptMaven("capabilities", value.toCharArray(), UserIdHelper.get()).getId());
-            }
+            return null;
+          }))
+          .collect(Collectors.toList());
+      
+      // Collect results and update the encrypted map
+      futures.forEach(future -> {
+        try {
+          Map.Entry<String, String> result = future.get();
+          if (result != null) {
+            encrypted.put(result.getKey(), result.getValue());
           }
         }
-      }
+        catch (Exception e) {
+          log.error("Error encrypting value", e);
+        }
+      });
     }
     return encrypted;
   }
-
+  
   /*
    * Attempts to remove secrets which are not used by the persisted capability
    */
@@ -724,39 +709,41 @@ public class DefaultCapabilityRegistry
   {
     List<FormField> formFields = descriptor.formFields();
     if (formFields != null) {
-      for (FormField formField : formFields) {
-        if (formField instanceof Encrypted) {
-          String pruneCandidate = toBePruned.get(formField.getId());
-          String persistedSecret = Optional.ofNullable(persisted)
-              .map(m -> m.get(formField.getId()))
-              .orElse(null);
+      // Use virtual threads for parallel processing of form fields
+      var executor = Executors.newVirtualThreadPerTaskExecutor();
+      
+      // Process each form field in parallel
+      var futures = formFields.stream()
+          .filter(formField -> formField instanceof Encrypted)
+          .map(formField -> executor.submit(() -> {
+            String pruneCandidate = toBePruned.get(formField.getId());
+            String persistedSecret = Optional.ofNullable(persisted)
+                .map(m -> m.get(formField.getId()))
+                .orElse(null);
 
-          if (pruneCandidate != null && !pruneCandidate.equals(persistedSecret)) {
-            try {
-              secretsService.remove(secretsService.from(pruneCandidate));
+            if (pruneCandidate != null && !pruneCandidate.equals(persistedSecret)) {
+              try {
+                secretsService.remove(secretsService.from(pruneCandidate));
+              }
+              catch (Exception e) {
+                log.warn(STR."Failed to cleanup secret for \{descriptor.type()} field \{formField.getId()}.", e);
+              }
             }
-            catch (Exception e) {
-              log.warn("Failed to cleanup secret for {} field {}.", descriptor.type(), formField.getId(), e);
-            }
-          }
+          }))
+          .collect(Collectors.toList());
+      
+      // Wait for all pruning operations to complete
+      futures.forEach(future -> {
+        try {
+          future.get();
         }
-      }
+        catch (Exception e) {
+          log.error("Error pruning secret", e);
+        }
+      });
     }
   }
-
-  private String safelyLoadSecret(@Nullable final String secret) {
-    try {
-      return Optional.ofNullable(secret)
-          .map(secretsService::from)
-          .map(Secret::decrypt)
-          .map(String::valueOf)
-          .orElse(null);
-    }
-    catch (Exception e) {
-      return null;
-    }
-  }
-
+  
   /**
    * Decrypts value of properties marked to be stored encrypted.
    *
@@ -771,23 +758,140 @@ public class DefaultCapabilityRegistry
     Map<String, String> decrypted = Maps.newHashMap(props);
     List<FormField> formFields = descriptor.formFields();
     if (formFields != null) {
-      for (FormField formField : formFields) {
-        if (formField instanceof Encrypted) {
-          String value = decrypted.get(formField.getId());
-          if (value != null) {
-            try {
-              decrypted.put(formField.getId(), String.valueOf(secretsService.from(value).decrypt()));
+      // Use virtual threads for parallel processing of form fields
+      var executor = Executors.newVirtualThreadPerTaskExecutor();
+      
+      // Process each form field in parallel
+      var futures = formFields.stream()
+          .filter(formField -> formField instanceof Encrypted)
+          .map(formField -> executor.submit(() -> {
+            String value = decrypted.get(formField.getId());
+            if (value != null) {
+              try {
+                return Map.entry(
+                    formField.getId(), 
+                    String.valueOf(secretsService.from(value).decrypt())
+                );
+              }
+              catch (Exception e) {
+                throw new RuntimeException(
+                    STR."Could not decrypt value of '\{formField.getType()}' due to \{e.getMessage()}", e
+                );
+              }
             }
-            catch (Exception e) {
-              throw new RuntimeException(
-                  "Could not decrypt value of '" + formField.getType() + "' due to " + e.getMessage(), e
-              );
-            }
+            return null;
+          }))
+          .collect(Collectors.toList());
+      
+      // Collect results and update the decrypted map
+      futures.forEach(future -> {
+        try {
+          Map.Entry<String, String> result = future.get();
+          if (result != null) {
+            decrypted.put(result.getKey(), result.getValue());
           }
         }
-      }
+        catch (Exception e) {
+          if (e.getCause() instanceof RuntimeException) {
+            throw (RuntimeException) e.getCause();
+          }
+          throw new RuntimeException("Error decrypting value", e);
+        }
+      });
     }
     return decrypted;
   }
+  
+  private void loadCapability(CapabilityIdentity id, CapabilityStorageItem item) {
+    log.debug(STR."Loading capability '\{id}' of type '\{item.getType()}' with properties '\{item.getProperties()}'");
 
-}
+    final CapabilityDescriptor descriptor = capabilityDescriptorRegistry.get(capabilityType(item.getType()));
+
+    if (descriptor == null) {
+      log.warn(STR."Capabilities persistent storage contains a capability of unknown type \{item.getType()} with id \{id}. This capability will not be loaded");
+      return;
+    }
+
+    Map<String, String> properties = decryptValuesIfNeeded(descriptor, item.getProperties());
+    if (descriptor.version() != item.getVersion()) {
+      log.debug(STR."Converting capability '\{id}' properties from version '\{item.getVersion()}' to version '\{descriptor.version()}'");
+      try {
+        properties = descriptor.convert(properties, item.getVersion());
+        if (properties == null) {
+          properties = Collections.emptyMap();
+        }
+        if (log.isDebugEnabled()) {
+          log.debug(STR."Converted capability '\{id}' properties '\{item.getProperties()}' (version '\{item.getVersion()}') to '\{encryptValuesIfNeeded(descriptor, properties, properties)}' (version '\{descriptor.version()}')");
+        }
+      }
+      catch (Exception e) {
+        log.error(STR."Failed converting capability '\{id}' properties '\{item.getProperties()}' from version '\{item.getVersion()}' to version '\{descriptor.version()}'. Capability will not be loaded", e);
+        return;
+      }
+      capabilityStorage.update(id, capabilityStorage.newStorageItem(
+              descriptor.version(), item.getType(), item.isEnabled(), item.getNotes(), properties)
+      );
+    }
+
+    try {
+      lock.writeLock().lock();
+      DefaultCapabilityReference reference = references.get(id);
+      if (reference != null) {
+        // already loaded, update instead...
+        doUpdate(reference, item, properties);
+        return;
+      }
+
+      reference = create(id, capabilityType(item.getType()), descriptor);
+
+      reference.setNotes(item.getNotes());
+      reference.load(properties, item.getProperties());
+
+      try {
+        // validate after initial load, so properties are filled in for fixing
+        reference.descriptor().validate(id, properties, ValidationMode.LOAD);
+      }
+      catch (ValidationException e) {
+        log.warn(STR."Capability '\{id}' of type '\{item.getType()}' with properties '\{item.getProperties()}' is invalid", e);
+
+        reference.setFailure("Load", e); // flag validation issues in the UI
+      }
+
+      if (item.isEnabled()) {
+        reference.enable();
+        reference.activate();
+      }
+    }
+    finally {
+      lock.writeLock().unlock();
+    }
+  }
+
+  private CapabilityReference doUpdate(
+      final DefaultCapabilityReference reference,
+      final CapabilityStorageItem item,
+      @Nullable final Map<String, String> decryptedProps)
+  {
+    log.debug(STR."Updated capability '\{reference.id()}' of type '\{reference.type()}' with properties '\{item.getProperties()}'");
+
+    if (reference.isEnabled() && !item.isEnabled()) {
+      reference.disable();
+      log.debug(STR."Disabled capability '\{reference.id()}' for type '\{reference.type()}'");
+    }
+    reference.setNotes(item.getNotes());
+    reference.update(decryptedProps, reference.properties(), item.getProperties());
+    if (!reference.isEnabled() && item.isEnabled()) {
+      reference.enable();
+      reference.activate();
+      log.debug(STR."Enabled and activated capability '\{reference.id()}' for type '\{reference.type()}'");
+    }
+
+    return reference;
+  }
+
+  private boolean capabilityAlreadyRegistered(final CapabilityStorageItem capability) {
+    return references.values().stream()
+        .anyMatch(f ->
+            Objects.equals(f.type().toString(), capability.getType()) &&
+            Objects.equals(f.properties(), capability.getProperties()));
+  }

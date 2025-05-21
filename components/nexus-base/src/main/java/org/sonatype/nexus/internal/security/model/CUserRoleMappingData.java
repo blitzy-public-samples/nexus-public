@@ -12,6 +12,7 @@
  */
 package org.sonatype.nexus.internal.security.model;
 
+import java.io.Serializable;
 import java.util.Set;
 
 import javax.annotation.Nullable;
@@ -19,8 +20,11 @@ import javax.annotation.Nullable;
 import org.sonatype.nexus.security.config.CUserRoleMapping;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import static com.google.common.collect.Sets.newHashSet;
+import static java.util.Objects.isNull;
 import static org.sonatype.nexus.common.text.Strings2.lower;
 import static org.sonatype.nexus.security.config.SecuritySourceUtil.isCaseInsensitiveSource;
 
@@ -30,8 +34,10 @@ import static org.sonatype.nexus.security.config.SecuritySourceUtil.isCaseInsens
  * @since 3.21
  */
 public class CUserRoleMappingData
-    implements CUserRoleMapping
+    implements CUserRoleMapping, Serializable
 {
+  private static final long serialVersionUID = 1L;
+  
   private Set<String> roles;
 
   private String source;
@@ -62,8 +68,11 @@ public class CUserRoleMappingData
   }
 
   @Override
+  @JsonProperty
+  @JsonInclude(JsonInclude.Include.NON_NULL)
   public Set<String> getRoles() {
-    if (this.roles == null) {
+    // Optimized lazy initialization for Java 21
+    if (isNull(this.roles)) {
       this.roles = newHashSet();
     }
     return this.roles;
@@ -115,7 +124,11 @@ public class CUserRoleMappingData
   @JsonIgnore
   @Nullable
   public String getUserLo() {
-    return isCaseInsensitiveSource(source) ? lower(this.userId) : null;
+    // Using pattern matching for instanceof in Java 21
+    if (source instanceof String s && isCaseInsensitiveSource(s)) {
+      return lower(this.userId);
+    }
+    return null;
   }
 
   @Override

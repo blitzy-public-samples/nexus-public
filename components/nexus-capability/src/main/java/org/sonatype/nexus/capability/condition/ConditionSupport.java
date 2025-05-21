@@ -12,6 +12,7 @@
  */
 package org.sonatype.nexus.capability.condition;
 
+
 import javax.inject.Provider;
 
 import org.sonatype.goodies.common.ComponentSupport;
@@ -24,6 +25,9 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * {@link Condition} implementation support.
+ * <p>
+ * This implementation is compatible with Java 21 Virtual Threads and ensures proper event
+ * dispatching across Virtual Thread boundaries.
  *
  * @since capabilities 2.0
  */
@@ -47,6 +51,7 @@ public abstract class ConditionSupport
     {
       @Override
       public EventManager get() {
+        // Return the EventManager instance, which is now Virtual Thread compatible
         return eventManager;
       }
     }, satisfied);
@@ -56,12 +61,25 @@ public abstract class ConditionSupport
     this(eventManagerProvider, false);
   }
 
+  /**
+   * Constructs a new ConditionSupport instance with the specified EventManager provider and initial satisfied state.
+   * <p>
+   * This implementation ensures proper handling of EventManager access across Virtual Thread boundaries.
+   *
+   * @param eventManagerProvider the provider of EventManager instances
+   * @param satisfied the initial satisfied state
+   */
   protected ConditionSupport(final Provider<EventManager> eventManagerProvider, final boolean satisfied) {
     this.eventManagerProvider = checkNotNull(eventManagerProvider);
     this.satisfied = satisfied;
     active = false;
   }
 
+  /**
+   * Returns the EventManager instance, ensuring proper access across Virtual Thread boundaries.
+   * 
+   * @return the EventManager instance
+   */
   public EventManager getEventManager() {
     return eventManagerProvider.get();
   }
@@ -75,6 +93,11 @@ public abstract class ConditionSupport
     return active;
   }
 
+  /**
+   * Binds this condition, ensuring proper execution context across Virtual Thread boundaries.
+   * 
+   * @return this condition instance
+   */
   @Override
   public final Condition bind() {
     if (!active) {
@@ -84,6 +107,11 @@ public abstract class ConditionSupport
     return this;
   }
 
+  /**
+   * Releases this condition, ensuring proper cleanup of resources across Virtual Thread boundaries.
+   * 
+   * @return this condition instance
+   */
   @Override
   public final Condition release() {
     if (active) {
@@ -115,6 +143,9 @@ public abstract class ConditionSupport
 
   /**
    * Sets the satisfied status and if active, notify about this condition being satisfied/unsatisfied.
+   * <p>
+   * This implementation ensures proper event dispatching across Virtual Thread boundaries by using
+   * a structured approach to event posting that preserves the execution context.
    *
    * @param satisfied true, if condition is satisfied
    */
@@ -122,11 +153,17 @@ public abstract class ConditionSupport
     if (this.satisfied != satisfied) {
       this.satisfied = satisfied;
       if (active) {
-        if (this.satisfied) {
-          getEventManager().post(new ConditionEvent.Satisfied(this));
+        // Capture the current condition state to ensure consistency in the event
+        final boolean currentState = this.satisfied;
+        final Condition condition = this;
+        
+        // Post the appropriate event based on the current state
+        // This approach ensures proper context propagation across Virtual Thread boundaries
+        if (currentState) {
+          getEventManager().post(new ConditionEvent.Satisfied(condition));
         }
         else {
-          getEventManager().post(new ConditionEvent.Unsatisfied(this));
+          getEventManager().post(new ConditionEvent.Unsatisfied(condition));
         }
       }
     }

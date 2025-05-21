@@ -19,28 +19,49 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Annotation indicating that a method is safe to be called from a Virtual Thread.
+ * Marker annotation indicating that a method or class is designed to be safely executed
+ * within Java 21 Virtual Threads.
  * <p>
- * Methods annotated with {@code @VirtualThreadFriendly} are designed to work efficiently with
- * Java 21 Virtual Threads by avoiding operations that would cause thread pinning. This includes:
+ * Virtual Threads (JEP 444) are lightweight threads that significantly reduce the overhead of
+ * managing millions of concurrent operations, particularly for I/O-bound workloads. Methods
+ * marked with this annotation are guaranteed not to perform operations that would cause
+ * "thread pinning" or use thread-local storage in ways that would degrade Virtual Thread performance.
+ * <p>
+ * Methods and classes marked with this annotation should adhere to the following guidelines:
  * <ul>
- *   <li>Avoiding synchronized blocks or methods for I/O operations</li>
- *   <li>Using non-blocking I/O where possible</li>
- *   <li>Properly handling thread mounting/unmounting during blocking operations</li>
+ *   <li>Avoid synchronized blocks or methods on objects that might be contended</li>
+ *   <li>Avoid native methods that might block the carrier thread</li>
+ *   <li>Avoid operations that pin the thread for extended periods</li>
+ *   <li>Use non-blocking I/O operations where possible</li>
+ *   <li>Avoid ThreadLocal usage that assumes a long-lived thread identity</li>
+ *   <li>Prefer java.util.concurrent non-blocking APIs over blocking alternatives</li>
  * </ul>
  * <p>
- * Implementations of methods marked with this annotation should ensure they don't perform
- * operations that would cause a Virtual Thread to be pinned to its carrier thread, such as:
+ * This annotation serves both as documentation and as a potential hook for static analysis tools
+ * to verify virtual thread compatibility. It is particularly useful for I/O-bound operations such as:
  * <ul>
- *   <li>Using synchronized blocks around I/O operations</li>
- *   <li>Calling native methods that block</li>
- *   <li>Using third-party libraries that aren't Virtual Thread aware</li>
+ *   <li>Network operations (HTTP requests, remote repository access)</li>
+ *   <li>File system operations (blob storage, file reading/writing)</li>
+ *   <li>Database access (JDBC operations with proper configuration)</li>
+ *   <li>Any operation that might otherwise block a platform thread</li>
  * </ul>
+ * <p>
+ * Example usage:
+ * <pre>
+ * {@code
+ * @VirtualThreadFriendly
+ * public InputStream getBlobData(BlobId blobId) {
+ *     // Implementation uses non-blocking I/O or properly configured
+ *     // operations that work well with Virtual Threads
+ *     ...
+ * }
+ * }
+ * </pre>
  *
  * @since 3.60
  */
 @Documented
-@Target({ElementType.METHOD})
 @Retention(RetentionPolicy.RUNTIME)
+@Target({ElementType.METHOD, ElementType.TYPE})
 public @interface VirtualThreadFriendly {
 }

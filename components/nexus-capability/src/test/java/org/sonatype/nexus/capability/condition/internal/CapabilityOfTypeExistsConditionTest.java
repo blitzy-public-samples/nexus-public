@@ -12,8 +12,7 @@
  */
 package org.sonatype.nexus.capability.condition.internal;
 
-import java.util.Arrays;
-import java.util.Collections;
+import java.util.List;
 
 import org.sonatype.nexus.capability.CapabilityContext;
 import org.sonatype.nexus.capability.CapabilityDescriptor;
@@ -24,12 +23,14 @@ import org.sonatype.nexus.capability.CapabilityRegistry;
 import org.sonatype.nexus.capability.CapabilityType;
 import org.sonatype.nexus.capability.condition.EventManagerTestSupport;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -41,6 +42,7 @@ import static org.sonatype.nexus.capability.CapabilityType.capabilityType;
  *
  * @since capabilities 2.0
  */
+@ExtendWith(MockitoExtension.class)
 public class CapabilityOfTypeExistsConditionTest
     extends EventManagerTestSupport
 {
@@ -56,7 +58,7 @@ public class CapabilityOfTypeExistsConditionTest
 
   private CapabilityOfTypeExistsCondition underTest;
 
-  @Before
+  @BeforeEach
   public final void setUpCapabilityOfTypeExistsCondition()
       throws Exception
   {
@@ -87,7 +89,7 @@ public class CapabilityOfTypeExistsConditionTest
    */
   @Test
   public void initiallyNotSatisfied() {
-    assertThat(underTest.isSatisfied(), is(false));
+    assertFalse(underTest.isSatisfied(), STR."Condition should initially be unsatisfied for type \{underTest}");
   }
 
   /**
@@ -95,10 +97,10 @@ public class CapabilityOfTypeExistsConditionTest
    */
   @Test
   public void capabilityOfTypeExists01() {
-    doReturn(Arrays.asList(ref1)).when(capabilityRegistry).getAll();
+    doReturn(List.of(ref1)).when(capabilityRegistry).getAll();
     when(ref1.context().isActive()).thenReturn(true);
     underTest.handle(new CapabilityEvent.Created(capabilityRegistry, ref1));
-    assertThat(underTest.isSatisfied(), is(true));
+    assertTrue(underTest.isSatisfied(), STR."Condition should be satisfied after adding active capability \{ref1}");
 
     verifyEventManagerEvents(satisfied(underTest));
   }
@@ -108,10 +110,10 @@ public class CapabilityOfTypeExistsConditionTest
    */
   @Test
   public void capabilityOfTypeExists02() {
-    doReturn(Arrays.asList(ref1)).when(capabilityRegistry).getAll();
+    doReturn(List.of(ref1)).when(capabilityRegistry).getAll();
     when(ref1.context().isActive()).thenReturn(false);
     underTest.handle(new CapabilityEvent.Created(capabilityRegistry, ref1));
-    assertThat(underTest.isSatisfied(), is(true));
+    assertTrue(underTest.isSatisfied(), STR."Condition should be satisfied after adding non-active capability \{ref1}");
 
     verifyEventManagerEvents(satisfied(underTest));
   }
@@ -121,13 +123,13 @@ public class CapabilityOfTypeExistsConditionTest
    */
   @Test
   public void capabilityOfTypeExists03() {
-    doReturn(Arrays.asList(ref1)).when(capabilityRegistry).getAll();
+    doReturn(List.of(ref1)).when(capabilityRegistry).getAll();
     underTest.handle(new CapabilityEvent.Created(capabilityRegistry, ref1));
-    assertThat(underTest.isSatisfied(), is(true));
+    assertTrue(underTest.isSatisfied(), STR."Condition should be satisfied after adding first capability \{ref1}");
 
-    doReturn(Arrays.asList(ref1, ref2)).when(capabilityRegistry).getAll();
+    doReturn(List.of(ref1, ref2)).when(capabilityRegistry).getAll();
     underTest.handle(new CapabilityEvent.Created(capabilityRegistry, ref2));
-    assertThat(underTest.isSatisfied(), is(true));
+    assertTrue(underTest.isSatisfied(), STR."Condition should remain satisfied after adding second capability \{ref2}");
 
     verifyEventManagerEvents(satisfied(underTest));
   }
@@ -137,17 +139,17 @@ public class CapabilityOfTypeExistsConditionTest
    */
   @Test
   public void capabilityOfTypeExists04() {
-    doReturn(Arrays.asList(ref1)).when(capabilityRegistry).getAll();
+    doReturn(List.of(ref1)).when(capabilityRegistry).getAll();
     underTest.handle(new CapabilityEvent.Created(capabilityRegistry, ref1));
-    assertThat(underTest.isSatisfied(), is(true));
+    assertTrue(underTest.isSatisfied(), STR."Condition should be satisfied after adding first capability \{ref1}");
 
-    doReturn(Arrays.asList(ref1, ref2)).when(capabilityRegistry).getAll();
+    doReturn(List.of(ref1, ref2)).when(capabilityRegistry).getAll();
     underTest.handle(new CapabilityEvent.Created(capabilityRegistry, ref2));
-    assertThat(underTest.isSatisfied(), is(true));
+    assertTrue(underTest.isSatisfied(), STR."Condition should remain satisfied after adding second capability \{ref2}");
 
-    doReturn(Arrays.asList(ref2)).when(capabilityRegistry).getAll();
+    doReturn(List.of(ref2)).when(capabilityRegistry).getAll();
     underTest.handle(new CapabilityEvent.AfterRemove(capabilityRegistry, ref1));
-    assertThat(underTest.isSatisfied(), is(true));
+    assertTrue(underTest.isSatisfied(), STR."Condition should remain satisfied after removing one capability \{ref1}");
 
     verifyEventManagerEvents(satisfied(underTest));
   }
@@ -157,13 +159,13 @@ public class CapabilityOfTypeExistsConditionTest
    */
   @Test
   public void capabilityOfTypeExists05() {
-    doReturn(Arrays.asList(ref1)).when(capabilityRegistry).getAll();
+    doReturn(List.of(ref1)).when(capabilityRegistry).getAll();
     underTest.handle(new CapabilityEvent.Created(capabilityRegistry, ref1));
-    assertThat(underTest.isSatisfied(), is(true));
+    assertTrue(underTest.isSatisfied(), STR."Condition should be satisfied after adding capability \{ref1}");
 
-    doReturn(Collections.emptyList()).when(capabilityRegistry).getAll();
+    doReturn(List.of()).when(capabilityRegistry).getAll();
     underTest.handle(new CapabilityEvent.AfterRemove(capabilityRegistry, ref1));
-    assertThat(underTest.isSatisfied(), is(false));
+    assertFalse(underTest.isSatisfied(), STR."Condition should be unsatisfied after removing all capabilities");
 
     verifyEventManagerEvents(satisfied(underTest), unsatisfied(underTest));
   }

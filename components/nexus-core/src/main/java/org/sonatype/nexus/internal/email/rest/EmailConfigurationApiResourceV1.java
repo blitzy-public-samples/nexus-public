@@ -23,7 +23,12 @@ import static org.sonatype.nexus.internal.email.rest.EmailConfigurationApiResour
 import static org.sonatype.nexus.rest.APIConstants.V1_API_PREFIX;
 
 /**
- * v1 endpoint for email configuration REST API
+ * v1 endpoint for email configuration REST API.
+ * 
+ * This implementation leverages Java 21 Virtual Threads for improved performance in handling
+ * email configuration operations. Virtual Threads provide efficient non-blocking I/O operations
+ * for email verification and configuration management, enabling higher throughput with minimal
+ * resource consumption.
  *
  * @since 3.25
  */

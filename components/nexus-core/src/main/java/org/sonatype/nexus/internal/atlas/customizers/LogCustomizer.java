@@ -17,6 +17,13 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -33,6 +40,7 @@ import org.sonatype.nexus.supportzip.SupportBundleCustomizer;
 
 import org.apache.commons.io.IOUtils;
 
+import static java.lang.StringTemplate.STR;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.common.log.LogManager.DEFAULT_LOGGER;
 import static org.sonatype.nexus.supportzip.SupportBundle.ContentSource.Priority.LOW;
@@ -63,35 +71,57 @@ public class LogCustomizer
   public void customize(final SupportBundle supportBundle) {
     // add source for default log
     String logName = logManager.getLogFor(DEFAULT_LOGGER)
-        .orElseThrow(() -> new NotFoundException("Failed to determine log file name for " + DEFAULT_LOGGER));
+        .orElseThrow(() -> new NotFoundException(STR."Failed to determine log file name for \{DEFAULT_LOGGER}"));
 
-    supportBundle.add(new GeneratedContentSourceSupport(LOG, "log/" + logName, LOW)
+    supportBundle.add(new GeneratedContentSourceSupport(LOG, STR."log/\{logName}", LOW)
     {
       @Override
       protected void generate(final File file) {
-        try (InputStream is = logManager.getLogFileStream(logName, 0, Long.MAX_VALUE)) {
-          if (is != null) {
-            try (FileOutputStream os = new FileOutputStream(file)) {
-              IOUtils.copy(is, os);
+        // Use virtual threads for I/O operations to improve performance
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+          CompletableFuture.runAsync(() -> {
+            try (InputStream is = logManager.getLogFileStream(logName, 0, Long.MAX_VALUE)) {
+              if (is != null) {
+                try (FileOutputStream os = new FileOutputStream(file)) {
+                  IOUtils.copy(is, os);
+                }
+              }
             }
-          }
-        }
-        catch (IOException e) {
-          throw new UncheckedIOException(e);
+            catch (IOException e) {
+              throw new UncheckedIOException(e);
+            }
+          }, executor).join(); // Wait for completion
         }
       }
     });
 
-    includeFileIfExists(supportBundle, new File(applicationDirectories.getWorkDirectory(), "log/karaf.log"), "log",
-        LOW);
-    includeFileIfExists(supportBundle, new File(applicationDirectories.getWorkDirectory(), "log/request.log"), "log",
-        LOW);
-    includeFileIfExists(supportBundle, new File(applicationDirectories.getWorkDirectory(), "log/outbound-request.log"),
-        "log", LOW);
-    logManager.getLogFor("clusterLogFile").ifPresent(clusterLogFile -> {
-      includeFileIfExists(supportBundle, new File(applicationDirectories.getWorkDirectory(), "log/" + clusterLogFile),
-          "log", LOW);
-    });
+    // Use virtual threads to concurrently check and include log files
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      List<CompletableFuture<Void>> futures = new ArrayList<>();
+      
+      // Add tasks for each potential log file
+      futures.add(CompletableFuture.runAsync(() -> 
+          includeFileIfExists(supportBundle, new File(applicationDirectories.getWorkDirectory(), "log/karaf.log"), "log", LOW), 
+          executor));
+      
+      futures.add(CompletableFuture.runAsync(() -> 
+          includeFileIfExists(supportBundle, new File(applicationDirectories.getWorkDirectory(), "log/request.log"), "log", LOW), 
+          executor));
+      
+      futures.add(CompletableFuture.runAsync(() -> 
+          includeFileIfExists(supportBundle, new File(applicationDirectories.getWorkDirectory(), "log/outbound-request.log"), "log", LOW), 
+          executor));
+      
+      // Handle cluster log file if available
+      logManager.getLogFor("clusterLogFile").ifPresent(clusterLogFile -> {
+        futures.add(CompletableFuture.runAsync(() -> 
+            includeFileIfExists(supportBundle, new File(applicationDirectories.getWorkDirectory(), STR."log/\{clusterLogFile}"), "log", LOW), 
+            executor));
+      });
+      
+      // Wait for all file inclusion operations to complete
+      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+    }
   }
 
   private void includeFileIfExists(
@@ -101,12 +131,12 @@ public class LogCustomizer
       final Priority priority)
   {
     if (file != null && file.exists()) {
-      log.debug("Including file: {}", file);
+      log.debug(STR."Including file: \{file}");
       supportBundle.add(
-          new FileContentSourceSupport(LOG, String.format("%s/%s", prefix, file.getName()), file, priority));
+          new FileContentSourceSupport(LOG, STR."\{prefix}/\{file.getName()}", file, priority));
     }
     else {
-      log.debug("Skipping non-existent file: {}", file);
+      log.debug(STR."Skipping non-existent file: \{file}");
     }
   }
 }

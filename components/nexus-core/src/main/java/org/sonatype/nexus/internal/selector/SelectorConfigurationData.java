@@ -20,6 +20,7 @@ import org.sonatype.nexus.common.entity.HasName;
 import org.sonatype.nexus.selector.Selector;
 import org.sonatype.nexus.selector.SelectorConfiguration;
 
+import static java.lang.StringTemplate.STR;
 import static java.util.stream.Collectors.toMap;
 
 /**
@@ -75,7 +76,16 @@ public class SelectorConfigurationData
 
   @Override
   public void setAttributes(final Map<String, ?> attributes) {
-    this.attributes = attributes.entrySet().stream().collect(toMap(Entry::getKey, e -> e.getValue().toString()));
+    this.attributes = attributes.entrySet().stream()
+        .collect(toMap(
+            Entry::getKey,
+            entry -> {
+              if (entry instanceof Entry(String key, var value)) {
+                return value != null ? value.toString() : null;
+              }
+              return entry.getValue() != null ? entry.getValue().toString() : null;
+            }
+        ));
   }
 
   @Override
@@ -97,11 +107,12 @@ public class SelectorConfigurationData
 
   @Override
   public String toString() {
-    return getClass().getSimpleName() + "{" +
-        "name='" + name + '\'' +
-        ", type='" + type + '\'' +
-        ", description='" + description + '\'' +
-        ", attributes='" + attributes + '\'' +
-        '}';
+    return STR."""
+        {getClass().getSimpleName()}{
+        name='{name}',
+        type='{type}',
+        description='{description}',
+        attributes='{attributes}'
+        }""";
   }
 }

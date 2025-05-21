@@ -15,6 +15,10 @@ package org.sonatype.nexus.internal.email;
 import java.io.File;
 import java.io.IOException;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.StructuredTaskScope;
+import java.util.concurrent.StructuredTaskScope.ShutdownOnFailure;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -26,7 +30,7 @@ import org.sonatype.nexus.supportzip.ImportData;
 import org.sonatype.nexus.supportzip.datastore.JsonExporter;
 
 /**
- * Write/Read {@link EmailConfiguration} data to/from a JSON file.
+ * Write/Read {@link EmailConfiguration} data to/from a JSON file using Virtual Threads for I/O operations.
  *
  * @since 3.29
  */
@@ -45,15 +49,58 @@ public class EmailConfigurationExport
 
   @Override
   public void export(final File file) throws IOException {
-    log.debug("Export EmailConfiguration data to {}", file);
-    EmailConfiguration configuration = store.load();
-    exportObjectToJson(configuration, file);
+    log.debug(STR."Exporting EmailConfiguration data to \{file}");
+    
+    try (var scope = new ShutdownOnFailure()) {
+      var exportTask = scope.fork(() -> {
+        EmailConfiguration configuration = store.load();
+        exportObjectToJson(configuration, file);
+        return true;
+      });
+      
+      scope.join();           // Wait for the virtual thread to complete
+      scope.throwIfFailed(); // Propagate any exceptions
+      
+      log.debug(STR."Successfully exported EmailConfiguration to \{file}");
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IOException(STR."Export operation was interrupted for \{file}", e);
+    } catch (ExecutionException e) {
+      throw new IOException(STR."Failed to export EmailConfiguration to \{file}", e.getCause());
+    }
   }
 
   @Override
   public void restore(final File file) throws IOException {
-    log.debug("Restoring EmailConfiguration data from {}", file);
-    Optional<EmailConfigurationData> configuration = importObjectFromJson(file, EmailConfigurationData.class);
-    configuration.ifPresent(store::save);
+    log.debug(STR."Restoring EmailConfiguration data from \{file}");
+    
+    try (var scope = new ShutdownOnFailure()) {
+      var importTask = scope.fork(() -> {
+        Optional<Object> importedConfig = importObjectFromJson(file, EmailConfigurationData.class);
+        
+        // Use pattern matching to handle the imported configuration
+        if (importedConfig.isPresent()) {
+          switch (importedConfig.get()) {
+            case EmailConfigurationData config -> {
+              store.save(config);
+              log.debug(STR."Successfully restored EmailConfiguration from \{file}");
+            }
+            case null -> log.warn(STR."Null configuration found in \{file}");
+            default -> log.warn(STR."Unexpected configuration type: \{importedConfig.get().getClass().getName()}");
+          }
+        } else {
+          log.debug(STR."No EmailConfiguration found in \{file}");
+        }
+        return true;
+      });
+      
+      scope.join();           // Wait for the virtual thread to complete
+      scope.throwIfFailed(); // Propagate any exceptions
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IOException(STR."Restore operation was interrupted for \{file}", e);
+    } catch (ExecutionException e) {
+      throw new IOException(STR."Failed to restore EmailConfiguration from \{file}", e.getCause());
+    }
   }
 }

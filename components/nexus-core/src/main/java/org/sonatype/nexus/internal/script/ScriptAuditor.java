@@ -20,6 +20,8 @@ import javax.inject.Singleton;
 import org.sonatype.nexus.audit.AuditData;
 import org.sonatype.nexus.audit.AuditorSupport;
 import org.sonatype.nexus.common.event.EventAware;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.nexus.script.Script;
 import org.sonatype.nexus.script.ScriptCreatedEvent;
 import org.sonatype.nexus.script.ScriptDeletedEvent;
@@ -40,6 +42,7 @@ public class ScriptAuditor
     extends AuditorSupport
     implements EventAware
 {
+  private static final Logger log = LoggerFactory.getLogger(ScriptAuditor.class);
   public static final String DOMAIN = "script";
 
   public ScriptAuditor() {
@@ -52,18 +55,40 @@ public class ScriptAuditor
   @AllowConcurrentEvents
   public void on(final ScriptEvent event) {
     if (isRecording()) {
-      Script script = event.getScript();
-
-      AuditData data = new AuditData();
-      data.setDomain(DOMAIN);
-      data.setType(type(event.getClass()));
-      data.setContext(script.getName());
-
-      Map<String, Object> attributes = data.getAttributes();
-      attributes.put("name", script.getName());
-      attributes.put("type", script.getType());
-
-      record(data);
+      // Using pattern matching for switch with ScriptEvent types
+      switch (event) {
+        case ScriptCreatedEvent e -> processEvent(e.getScript(), type(ScriptCreatedEvent.class));
+        case ScriptUpdatedEvent e -> processEvent(e.getScript(), type(ScriptUpdatedEvent.class));
+        case ScriptDeletedEvent e -> processEvent(e.getScript(), type(ScriptDeletedEvent.class));
+        default -> processEvent(event.getScript(), type(event.getClass()));
+      }
     }
+  }
+  
+  /**
+   * Process a script event and record audit data.
+   * Optimized for Virtual Threads by keeping operations lightweight.
+   */
+  private void processEvent(final Script script, final String eventType) {
+    // Using Java 21 String Templates for enhanced logging
+    String scriptName = script.getName();
+    String scriptType = script.getType();
+    String auditContext = STR."Script '{scriptName}' of type '{scriptType}'";
+    
+    AuditData data = new AuditData();
+    data.setDomain(DOMAIN);
+    data.setType(eventType);
+    data.setContext(scriptName);
+
+    Map<String, Object> attributes = data.getAttributes();
+    attributes.put("name", scriptName);
+    attributes.put("type", scriptType);
+
+    // Log using String Templates before recording
+    if (log.isDebugEnabled()) {
+      log.debug(STR."Recording audit event: {eventType} for {auditContext}");
+    }
+
+    record(data);
   }
 }

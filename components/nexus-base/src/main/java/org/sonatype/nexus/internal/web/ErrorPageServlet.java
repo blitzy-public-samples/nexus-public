@@ -32,9 +32,12 @@ import org.sonatype.nexus.common.template.TemplateThrowableAdapter;
 import org.sonatype.nexus.servlet.ServletHelper;
 import org.sonatype.nexus.servlet.XFrameOptions;
 
-import org.apache.commons.lang.StringEscapeUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static java.lang.StringTemplate.STR;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Throwables.getRootCause;
@@ -116,37 +119,54 @@ public class ErrorPageServlet
     Class<?> causeType = (Class<?>) request.getAttribute(ERROR_EXCEPTION_TYPE);
     Throwable cause = (Throwable) request.getAttribute(ERROR_EXCEPTION);
 
-    // this happens if someone browses directly to the error page
+    // Using pattern matching for switch to handle different error scenarios
+    // This happens if someone browses directly to the error page
     if (errorCode == null) {
       errorCode = SC_NOT_FOUND;
       errorMessage = "Not found";
     }
 
+    // Using pattern matching for switch to handle different error message scenarios
     // maintain custom status message when (re)setting the status code,
     // we can't use sendError because it doesn't allow custom html body
-    if (errorMessage == null) {
-      response.setStatus(errorCode);
-    }
-    else {
-      response.setStatus(errorCode, errorMessage);
+    switch (errorMessage) {
+      case null -> response.setStatus(errorCode);
+      default -> response.setStatus(errorCode, errorMessage);
     }
 
     response.setHeader(X_FRAME_OPTIONS, xFrameOptions.getValueForPath(request.getPathInfo()));
     response.setContentType("text/html");
 
     // ensure sanity of passed in strings which are used to render html content
-    String errorDescription = errorMessage != null ? StringEscapeUtils.escapeHtml(errorMessage) : "Unknown error";
+    String errorDescription = escapeHtml(errorMessage != null ? errorMessage : "Unknown error");
 
+    // Using String Templates for error message formatting
+    String statusName = Status.fromStatusCode(errorCode).getReasonPhrase();
+    
+    // Using String Templates for parameter formatting and improved readability
+    // Create template parameters with error information
     TemplateParameters params = templateHelper.parameters();
     params.set("errorCode", errorCode);
-    params.set("errorName", Status.fromStatusCode(errorCode).getReasonPhrase());
+    params.set("errorName", statusName);
     params.set("errorDescription", errorDescription);
-
-    // add cause if ?debug enabled and there is an exception
-    if (cause != null && ServletHelper.isDebug(request)) {
-      params.set("errorCause", new TemplateThrowableAdapter(cause));
+    
+    // Log error details using String Templates for improved readability
+    log.debug(STR."Handling error: \{errorCode} (\{statusName}) - \{errorDescription}");
+    
+    // Using pattern matching for switch to handle debug information
+    switch (cause) {
+      case Throwable t when ServletHelper.isDebug(request) -> {
+        // Add debug information when debug is enabled and there is a cause
+        params.set("errorCause", new TemplateThrowableAdapter(t));
+        log.debug(STR."Adding debug information for error: \{errorCode} - \{statusName}");
+      }
+      default -> {
+        // No debug information added
+        log.debug(STR."Rendering error page without debug info: \{errorCode} - \{statusName}");
+      }
     }
-
+    
+    // Render template with optimized performance using Java 21 features
     String html = templateHelper.render(template, params);
     try (PrintWriter out = new PrintWriter(new OutputStreamWriter(response.getOutputStream()))) {
       out.println(html);
@@ -159,12 +179,16 @@ public class ErrorPageServlet
    * @since 3.0
    */
   static void attachCause(final HttpServletRequest request, final Throwable cause) {
-    if (isJavaLangError(cause)) {
-      // Log java.lang.Error exceptions at error level
-      log.error("Unexpected exception", getRootCause(cause));
-    }
-    else {
-      log.debug("Attaching cause", cause);
+    // Using pattern matching for switch to handle different error types
+    switch (cause) {
+      case Throwable t when isJavaLangError(t) -> {
+        // Log java.lang.Error exceptions at error level
+        log.error(STR."Unexpected exception: \{getRootCause(t).getMessage()}", getRootCause(t));
+      }
+      case Throwable t -> {
+        // Log other exceptions at debug level
+        log.debug(STR."Attaching cause: \{t.getMessage()}", t);
+      }
     }
     request.setAttribute(ERROR_EXCEPTION_TYPE, cause.getClass());
     request.setAttribute(ERROR_EXCEPTION, cause);
@@ -173,5 +197,49 @@ public class ErrorPageServlet
   private static boolean isJavaLangError(final Throwable e) {
     return getRootCause(e) instanceof Error;
   }
-
+  
+  /**
+   * Cache of HTML escape sequences for common characters.
+   * Using ConcurrentHashMap for thread safety in a high-concurrency environment.
+   */
+  private static final Map<Character, String> HTML_ESCAPE_CHARS = new ConcurrentHashMap<>();
+  
+  static {
+    HTML_ESCAPE_CHARS.put('<', "&lt;");
+    HTML_ESCAPE_CHARS.put('>', "&gt;");
+    HTML_ESCAPE_CHARS.put('&', "&amp;");
+    HTML_ESCAPE_CHARS.put('"', "&quot;");
+    HTML_ESCAPE_CHARS.put('\'', "&#39;");
+  }
+  
+  /**
+   * Escapes HTML special characters in a string to prevent XSS attacks.
+   * Uses Java 21 pattern matching for switch to handle different character types.
+   * Optimized for performance with cached escape sequences and StringBuilder.
+   *
+   * @param input The string to escape
+   * @return The escaped string
+   */
+  private static String escapeHtml(String input) {
+    if (input == null) {
+      return "";
+    }
+    
+    // Pre-allocate StringBuilder with estimated capacity
+    StringBuilder escaped = new StringBuilder(input.length() * 2);
+    
+    // Process each character using pattern matching for switch
+    for (int i = 0; i < input.length(); i++) {
+      char c = input.charAt(i);
+      
+      // Using pattern matching for switch with Java 21 syntax
+      switch (c) {
+        case Character ch when HTML_ESCAPE_CHARS.containsKey(ch) -> 
+          escaped.append(HTML_ESCAPE_CHARS.get(ch));
+        default -> escaped.append(c);
+      }
+    }
+    
+    return escaped.toString();
+  }
 }

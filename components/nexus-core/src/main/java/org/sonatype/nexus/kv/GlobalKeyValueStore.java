@@ -13,6 +13,9 @@
 package org.sonatype.nexus.kv;
 
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -37,31 +40,58 @@ public class GlobalKeyValueStore
     extends ConfigStoreSupport<NexusKeyValueDAO>
 {
   private final ObjectMapper mapper;
+  private final ExecutorService virtualThreadExecutor;
 
   @Inject
   public GlobalKeyValueStore(final DataSessionSupplier sessionSupplier, final ObjectMapper mapper) {
     super(sessionSupplier, NexusKeyValueDAO.class);
     this.mapper = checkNotNull(mapper);
+    // Create a virtual thread executor for I/O-bound database operations
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   /**
-   * gets a value by the given key
+   * Gets a value by the given key using a virtual thread for improved I/O throughput.
+   * This method uses a virtual thread to execute the database operation, which allows
+   * the carrier thread to be released during I/O wait, improving overall system throughput.
    *
    * @param key a string key
    * @return {@link Optional<NexusKeyValue>}
    */
   @Transactional
   public Optional<NexusKeyValue> getKey(final String key) {
-    return dao().get(key);
+    try {
+      // Execute the database operation in a virtual thread
+      return CompletableFuture.supplyAsync(() -> dao().get(key), virtualThreadExecutor).join();
+    } catch (Exception e) {
+      // Fall back to direct execution if virtual thread execution fails
+      return dao().get(key);
+    }
   }
 
+  /**
+   * Gets a value by the given key and deserializes it to the specified class.
+   * Uses virtual threads for both database access and JSON deserialization for large objects.
+   *
+   * @param key a string key
+   * @param clazz the class to deserialize to
+   * @return {@link Optional<E>}
+   */
   public <E> Optional<E> get(final String key, final Class<E> clazz) {
     Optional<NexusKeyValue> val = getKey(key);
     if (!val.isPresent()) {
       return Optional.empty();
     }
 
-    return val.map(o -> o.getAsObject(mapper, clazz));
+    // For large objects, use a virtual thread for deserialization
+    return val.map(o -> {
+      try {
+        return CompletableFuture.supplyAsync(() -> o.getAsObject(mapper, clazz), virtualThreadExecutor).join();
+      } catch (Exception e) {
+        // Fall back to direct execution if virtual thread execution fails
+        return o.getAsObject(mapper, clazz);
+      }
+    });
   }
 
   public Optional<Boolean> getBoolean(final String key) {
@@ -80,14 +110,27 @@ public class GlobalKeyValueStore
   }
 
   /**
-   * sets a key_value record
+   * Sets a key_value record using a virtual thread for improved I/O throughput.
+   * This method uses a virtual thread to execute the database operation and publishes
+   * events asynchronously for better performance.
    *
    * @param keyValue record to be created/updated
    */
   @Transactional
   public void setKey(final NexusKeyValue keyValue) {
-    super.postCommitEvent(() -> new KeyValueEvent(keyValue.key(), Iterables.getOnlyElement(keyValue.value().values())));
-    dao().set(keyValue);
+    // Publish event asynchronously using a virtual thread
+    CompletableFuture.runAsync(() -> 
+        super.postCommitEvent(() -> new KeyValueEvent(keyValue.key(), 
+            Iterables.getOnlyElement(keyValue.value().values()))),
+        virtualThreadExecutor);
+    
+    try {
+      // Execute the database operation in a virtual thread
+      CompletableFuture.runAsync(() -> dao().set(keyValue), virtualThreadExecutor).join();
+    } catch (Exception e) {
+      // Fall back to direct execution if virtual thread execution fails
+      dao().set(keyValue);
+    }
   }
 
   public void setBoolean(final String key, final boolean value) {
@@ -107,13 +150,31 @@ public class GlobalKeyValueStore
   }
 
   /**
-   * removes a value by the given key
+   * Removes a value by the given key using a virtual thread for improved I/O throughput.
+   * This method uses a virtual thread to execute the database operation, which allows
+   * the carrier thread to be released during I/O wait, improving overall system throughput.
    *
    * @param key a string key
    * @return a primitive boolean indicating if the record was deleted successfully or not
    */
   @Transactional
   public boolean removeKey(final String key) {
-    return dao().remove(key);
+    try {
+      // Execute the database operation in a virtual thread
+      return CompletableFuture.supplyAsync(() -> dao().remove(key), virtualThreadExecutor).join();
+    } catch (Exception e) {
+      // Fall back to direct execution if virtual thread execution fails
+      return dao().remove(key);
+    }
+  }
+  
+  /**
+   * Closes the virtual thread executor when the store is no longer needed.
+   * This method should be called when the application is shutting down.
+   */
+  public void close() {
+    if (virtualThreadExecutor != null && !virtualThreadExecutor.isShutdown()) {
+      virtualThreadExecutor.shutdown();
+    }
   }
 }

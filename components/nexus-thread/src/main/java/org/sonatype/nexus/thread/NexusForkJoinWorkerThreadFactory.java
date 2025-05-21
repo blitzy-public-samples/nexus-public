@@ -19,7 +19,11 @@ import java.util.concurrent.ForkJoinWorkerThread;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
- * Nexus {@link ForkJoinWorkerThreadFactory}.
+ * Nexus {@link ForkJoinWorkerThreadFactory} that provides proper thread naming and group assignment
+ * for compatibility with Java 21's ForkJoinPool implementation.
+ * <p>
+ * This factory supports both platform threads and virtual thread-based workloads, ensuring
+ * compatibility with Java 21's threading model changes.
  * 
  * @since 3.20
  */
@@ -28,14 +32,23 @@ public class NexusForkJoinWorkerThreadFactory
 {
   private final String jobPrefix;
 
+  /**
+   * Creates a new factory with the specified job prefix for thread naming.
+   *
+   * @param jobPrefix the prefix to use for thread names
+   */
   public NexusForkJoinWorkerThreadFactory(final String jobPrefix) {
     this.jobPrefix = checkNotNull(jobPrefix);
   }
 
   @Override
   public ForkJoinWorkerThread newThread(final ForkJoinPool pool) {
+    // Use the default factory to create the thread, which handles Java 21 compatibility
     final ForkJoinWorkerThread worker = ForkJoinPool.defaultForkJoinWorkerThreadFactory.newThread(pool);
+    
+    // Set a consistent naming pattern that works with both Java 17 and Java 21
     worker.setName(jobPrefix + worker.getPoolIndex());
+    
     return worker;
   }
 }

@@ -1,0 +1,377 @@
+{
+  "testCases": [
+    {
+      "name": "Hosted Maven Repository",
+      "description": "Test pattern matching for a hosted Maven repository",
+      "input": {
+        "type": "hosted",
+        "format": "maven",
+        "attributes": {
+          "storage": {
+            "blobStoreName": "default",
+            "strictContentTypeValidation": true,
+            "writePolicy": "ALLOW"
+          }
+        }
+      },
+      "expectedOutput": {
+        "result": "HOSTED_MAVEN_REPOSITORY",
+        "operations": ["read", "write", "search", "browse"]
+      }
+    },
+    {
+      "name": "Proxy Maven Repository",
+      "description": "Test pattern matching for a proxy Maven repository",
+      "input": {
+        "type": "proxy",
+        "format": "maven",
+        "attributes": {
+          "storage": {
+            "blobStoreName": "default",
+            "strictContentTypeValidation": true
+          },
+          "proxy": {
+            "remoteUrl": "https://repo.maven.apache.org/maven2/",
+            "contentMaxAge": 1440,
+            "metadataMaxAge": 1440
+          },
+          "httpclient": {
+            "blocked": false,
+            "autoBlock": true
+          },
+          "negativeCache": {
+            "enabled": true,
+            "timeToLive": 1440
+          }
+        }
+      },
+      "expectedOutput": {
+        "result": "PROXY_MAVEN_REPOSITORY",
+        "operations": ["read", "search", "browse", "proxy"]
+      }
+    },
+    {
+      "name": "Group Maven Repository",
+      "description": "Test pattern matching for a group Maven repository",
+      "input": {
+        "type": "group",
+        "format": "maven",
+        "attributes": {
+          "storage": {
+            "blobStoreName": "default",
+            "strictContentTypeValidation": true
+          },
+          "group": {
+            "memberNames": ["maven-central", "maven-releases", "maven-snapshots"]
+          }
+        }
+      },
+      "expectedOutput": {
+        "result": "GROUP_MAVEN_REPOSITORY",
+        "operations": ["read", "search", "browse", "aggregate"]
+      }
+    },
+    {
+      "name": "Hosted NPM Repository",
+      "description": "Test pattern matching for a hosted NPM repository",
+      "input": {
+        "type": "hosted",
+        "format": "npm",
+        "attributes": {
+          "storage": {
+            "blobStoreName": "default",
+            "strictContentTypeValidation": true,
+            "writePolicy": "ALLOW_ONCE"
+          }
+        }
+      },
+      "expectedOutput": {
+        "result": "HOSTED_NPM_REPOSITORY",
+        "operations": ["read", "write", "search", "browse"]
+      }
+    },
+    {
+      "name": "Proxy NPM Repository",
+      "description": "Test pattern matching for a proxy NPM repository",
+      "input": {
+        "type": "proxy",
+        "format": "npm",
+        "attributes": {
+          "storage": {
+            "blobStoreName": "default",
+            "strictContentTypeValidation": true
+          },
+          "proxy": {
+            "remoteUrl": "https://registry.npmjs.org",
+            "contentMaxAge": 1440,
+            "metadataMaxAge": 1440
+          },
+          "httpclient": {
+            "blocked": false,
+            "autoBlock": true
+          },
+          "negativeCache": {
+            "enabled": true,
+            "timeToLive": 1440
+          }
+        }
+      },
+      "expectedOutput": {
+        "result": "PROXY_NPM_REPOSITORY",
+        "operations": ["read", "search", "browse", "proxy"]
+      }
+    },
+    {
+      "name": "Group NPM Repository",
+      "description": "Test pattern matching for a group NPM repository",
+      "input": {
+        "type": "group",
+        "format": "npm",
+        "attributes": {
+          "storage": {
+            "blobStoreName": "default",
+            "strictContentTypeValidation": true
+          },
+          "group": {
+            "memberNames": ["npm-public", "npm-internal"]
+          }
+        }
+      },
+      "expectedOutput": {
+        "result": "GROUP_NPM_REPOSITORY",
+        "operations": ["read", "search", "browse", "aggregate"]
+      }
+    },
+    {
+      "name": "Hosted Raw Repository",
+      "description": "Test pattern matching for a hosted Raw repository",
+      "input": {
+        "type": "hosted",
+        "format": "raw",
+        "attributes": {
+          "storage": {
+            "blobStoreName": "default",
+            "strictContentTypeValidation": false,
+            "writePolicy": "ALLOW"
+          }
+        }
+      },
+      "expectedOutput": {
+        "result": "HOSTED_RAW_REPOSITORY",
+        "operations": ["read", "write", "browse"]
+      }
+    },
+    {
+      "name": "Hosted Maven Repository with Read-Only Policy",
+      "description": "Test guard pattern matching for a hosted Maven repository with read-only policy",
+      "input": {
+        "type": "hosted",
+        "format": "maven",
+        "attributes": {
+          "storage": {
+            "blobStoreName": "default",
+            "strictContentTypeValidation": true,
+            "writePolicy": "DENY"
+          }
+        }
+      },
+      "expectedOutput": {
+        "result": "HOSTED_MAVEN_READONLY_REPOSITORY",
+        "operations": ["read", "search", "browse"]
+      }
+    },
+    {
+      "name": "Proxy Maven Repository with Authentication",
+      "description": "Test guard pattern matching for a proxy Maven repository with authentication",
+      "input": {
+        "type": "proxy",
+        "format": "maven",
+        "attributes": {
+          "storage": {
+            "blobStoreName": "default",
+            "strictContentTypeValidation": true
+          },
+          "proxy": {
+            "remoteUrl": "https://repo.maven.apache.org/maven2/",
+            "contentMaxAge": 1440,
+            "metadataMaxAge": 1440
+          },
+          "httpclient": {
+            "blocked": false,
+            "autoBlock": true,
+            "authentication": {
+              "type": "username",
+              "username": "user",
+              "password": "password"
+            }
+          },
+          "negativeCache": {
+            "enabled": true,
+            "timeToLive": 1440
+          }
+        }
+      },
+      "expectedOutput": {
+        "result": "PROXY_MAVEN_AUTHENTICATED_REPOSITORY",
+        "operations": ["read", "search", "browse", "proxy"]
+      }
+    },
+    {
+      "name": "Group Maven Repository with Mixed Members",
+      "description": "Test guard pattern matching for a group Maven repository with mixed member types",
+      "input": {
+        "type": "group",
+        "format": "maven",
+        "attributes": {
+          "storage": {
+            "blobStoreName": "default",
+            "strictContentTypeValidation": true
+          },
+          "group": {
+            "memberNames": ["maven-central", "maven-releases", "maven-snapshots"],
+            "memberTypes": ["proxy", "hosted", "hosted"]
+          }
+        }
+      },
+      "expectedOutput": {
+        "result": "GROUP_MAVEN_MIXED_REPOSITORY",
+        "operations": ["read", "search", "browse", "aggregate"]
+      }
+    },
+    {
+      "name": "Proxy Maven Repository with Content Validation",
+      "description": "Test nested pattern matching for a proxy Maven repository with content validation",
+      "input": {
+        "type": "proxy",
+        "format": "maven",
+        "attributes": {
+          "storage": {
+            "blobStoreName": "default",
+            "strictContentTypeValidation": true
+          },
+          "proxy": {
+            "remoteUrl": "https://repo.maven.apache.org/maven2/",
+            "contentMaxAge": 1440,
+            "metadataMaxAge": 1440
+          },
+          "httpclient": {
+            "blocked": false,
+            "autoBlock": true
+          },
+          "negativeCache": {
+            "enabled": true,
+            "timeToLive": 1440
+          },
+          "maven": {
+            "contentDisposition": "ATTACHMENT",
+            "layoutPolicy": "STRICT",
+            "contentValidation": {
+              "enabled": true,
+              "checksumPolicy": "STRICT"
+            }
+          }
+        }
+      },
+      "expectedOutput": {
+        "result": "PROXY_MAVEN_VALIDATED_REPOSITORY",
+        "operations": ["read", "search", "browse", "proxy", "validate"]
+      }
+    },
+    {
+      "name": "Unknown Repository Type",
+      "description": "Test default case in pattern matching for unknown repository type",
+      "input": {
+        "type": "unknown",
+        "format": "custom",
+        "attributes": {}
+      },
+      "expectedOutput": {
+        "result": "UNKNOWN_REPOSITORY_TYPE",
+        "operations": ["read"]
+      }
+    },
+    {
+      "name": "Null Repository",
+      "description": "Test null handling in pattern matching",
+      "input": null,
+      "expectedOutput": {
+        "result": "NULL_REPOSITORY",
+        "operations": []
+      }
+    },
+    {
+      "name": "Hosted Maven Repository with S3 BlobStore",
+      "description": "Test pattern matching with guard for a hosted Maven repository using S3 storage",
+      "input": {
+        "type": "hosted",
+        "format": "maven",
+        "attributes": {
+          "storage": {
+            "blobStoreName": "s3-storage",
+            "blobStoreType": "S3",
+            "strictContentTypeValidation": true,
+            "writePolicy": "ALLOW"
+          }
+        }
+      },
+      "expectedOutput": {
+        "result": "HOSTED_MAVEN_S3_REPOSITORY",
+        "operations": ["read", "write", "search", "browse"]
+      }
+    },
+    {
+      "name": "Proxy Maven Repository with Virtual Thread Support",
+      "description": "Test pattern matching for a proxy Maven repository with virtual thread support",
+      "input": {
+        "type": "proxy",
+        "format": "maven",
+        "attributes": {
+          "storage": {
+            "blobStoreName": "default",
+            "strictContentTypeValidation": true
+          },
+          "proxy": {
+            "remoteUrl": "https://repo.maven.apache.org/maven2/",
+            "contentMaxAge": 1440,
+            "metadataMaxAge": 1440,
+            "useVirtualThreads": true
+          },
+          "httpclient": {
+            "blocked": false,
+            "autoBlock": true
+          },
+          "negativeCache": {
+            "enabled": true,
+            "timeToLive": 1440
+          }
+        }
+      },
+      "expectedOutput": {
+        "result": "PROXY_MAVEN_VIRTUAL_THREAD_REPOSITORY",
+        "operations": ["read", "search", "browse", "proxy"]
+      }
+    },
+    {
+      "name": "Group Maven Repository with Virtual Thread Support",
+      "description": "Test pattern matching for a group Maven repository with virtual thread support",
+      "input": {
+        "type": "group",
+        "format": "maven",
+        "attributes": {
+          "storage": {
+            "blobStoreName": "default",
+            "strictContentTypeValidation": true
+          },
+          "group": {
+            "memberNames": ["maven-central", "maven-releases", "maven-snapshots"],
+            "useVirtualThreads": true
+          }
+        }
+      },
+      "expectedOutput": {
+        "result": "GROUP_MAVEN_VIRTUAL_THREAD_REPOSITORY",
+        "operations": ["read", "search", "browse", "aggregate"]
+      }
+    }
+  ]
+}

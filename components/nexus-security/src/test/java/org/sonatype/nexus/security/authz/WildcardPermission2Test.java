@@ -19,11 +19,10 @@ import java.util.Set;
 import org.sonatype.goodies.testsupport.TestSupport;
 
 import com.google.common.collect.ImmutableSet;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import static java.util.Arrays.asList;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class WildcardPermission2Test
     extends TestSupport
@@ -37,7 +36,7 @@ public class WildcardPermission2Test
   private static final boolean CASE_SENSITIVE = true;
 
   @Test
-  public void testSetPartsNotCaseSensitive() {
+  public void should_set_parts_not_case_sensitive() {
     List<Set<String>> expectedParts = new ArrayList<>();
     expectedParts.add(ImmutableSet.of("subpart1"));
     expectedParts.add(ImmutableSet.of("subpart2"));
@@ -47,7 +46,7 @@ public class WildcardPermission2Test
   }
 
   @Test
-  public void testSetPartsCaseSensitive() {
+  public void should_set_parts_case_sensitive() {
     List<Set<String>> expectedParts = new ArrayList<>();
     expectedParts.add(ImmutableSet.of("subPart1"));
     expectedParts.add(ImmutableSet.of("subPart2"));
@@ -57,7 +56,7 @@ public class WildcardPermission2Test
   }
 
   @Test
-  public void setPartsSingleAction() {
+  public void should_set_parts_with_single_action() {
     List<Set<String>> expectedParts = new ArrayList<>();
     expectedParts.add(ImmutableSet.of("subpart1"));
     expectedParts.add(ImmutableSet.of("subpart2"));
@@ -73,6 +72,6 @@ public class WildcardPermission2Test
   {
     WildcardPermission2 underTest = new WildcardPermission2();
     underTest.setParts(subParts, actions, caseSensitive);
-    assertThat(underTest.getParts(), is(expectedParts));
+    assertEquals(expectedParts, underTest.getParts());
   }
 }

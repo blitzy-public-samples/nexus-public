@@ -14,6 +14,8 @@ package org.sonatype.nexus.internal.script;
 
 import javax.inject.Inject;
 import javax.inject.Named;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import org.sonatype.goodies.i18n.I18N;
 import org.sonatype.goodies.i18n.MessageBundle;
@@ -21,7 +23,6 @@ import org.sonatype.nexus.common.script.ScriptService;
 import org.sonatype.nexus.scheduling.TaskConfiguration;
 import org.sonatype.nexus.scheduling.TaskSupport;
 
-import com.google.common.collect.ImmutableMap;
 import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -66,18 +67,31 @@ public class ScriptTask
 
   @Override
   protected Object execute() throws Exception {
-    log.debug("Executing script");
+    log.debug(STR."Executing script");
 
-    ImmutableMap<String, Object> customBindings = ImmutableMap.<String, Object>builder()
-        .put("log", LoggerFactory.getLogger(ScriptTask.class))
-        .put("task", this)
-        .build();
+    // Create custom bindings with enhanced Map creation syntax
+    Map<String, Object> customBindings = Map.of(
+        "log", LoggerFactory.getLogger(ScriptTask.class),
+        "task", this
+    );
     
-    // execution script
-    log.debug("Evaluating source: {}", source);
-    Object result = scripts.eval(getConfiguration().getString(ScriptTaskDescriptor.LANGUAGE), source, customBindings);
-    log.trace("Result: {}", result);
-
-    return result;
+    // Use a virtual thread for script execution to improve performance for I/O-bound operations
+    CompletableFuture<Object> future = new CompletableFuture<>();
+    
+    Thread.startVirtualThread(() -> {
+      try {
+        // Evaluate script using the script service
+        String language = getConfiguration().getString(ScriptTaskDescriptor.LANGUAGE);
+        log.debug(STR."Evaluating source: \{source}");
+        Object result = scripts.eval(language, source, customBindings);
+        log.trace(STR."Result: \{result}");
+        future.complete(result);
+      } catch (Exception e) {
+        log.error(STR."Error executing script: \{e.getMessage()}", e);
+        future.completeExceptionally(e);
+      }
+    });
+    
+    return future.join(); // Wait for the virtual thread to complete and return the result
   }
 }

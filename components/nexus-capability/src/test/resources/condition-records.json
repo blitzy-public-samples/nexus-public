@@ -1,0 +1,147 @@
+[
+  {
+    "type": "CapabilityOfTypeExistsCondition",
+    "data": {
+      "capabilityType": "org.sonatype.nexus.capability.sample.SampleCapability",
+      "active": true,
+      "metadata": {
+        "name": "Sample Capability",
+        "version": "1.0.0",
+        "description": "A sample capability for testing record patterns"
+      }
+    }
+  },
+  {
+    "type": "CapabilityActiveCondition",
+    "data": {
+      "capabilityId": "sample-capability-1",
+      "active": true,
+      "reference": {
+        "id": "sample-capability-1",
+        "notes": "Active capability reference",
+        "created": "2025-05-21T10:15:30Z"
+      }
+    }
+  },
+  {
+    "type": "LogicalCondition",
+    "data": {
+      "operator": "AND",
+      "conditions": [
+        {
+          "type": "CapabilityOfTypeExistsCondition",
+          "data": {
+            "capabilityType": "org.sonatype.nexus.capability.sample.AnotherCapability",
+            "active": false,
+            "metadata": {
+              "name": "Another Capability",
+              "version": "2.0.0",
+              "description": "Another capability for testing nested record patterns"
+            }
+          }
+        },
+        {
+          "type": "CapabilityActiveCondition",
+          "data": {
+            "capabilityId": "sample-capability-2",
+            "active": false,
+            "reference": {
+              "id": "sample-capability-2",
+              "notes": "Inactive capability reference",
+              "created": "2025-05-20T14:30:45Z"
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "type": "RepositoryCondition",
+    "data": {
+      "repositoryId": "maven-central",
+      "online": true,
+      "format": "maven2",
+      "type": "proxy",
+      "attributes": {
+        "proxy": {
+          "remoteUrl": "https://repo1.maven.org/maven2/",
+          "contentMaxAge": 1440,
+          "metadataMaxAge": 1440
+        },
+        "storage": {
+          "blobStoreName": "default",
+          "strictContentTypeValidation": true
+        },
+        "cleanup": {
+          "policyName": "cleanup-weekly"
+        }
+      }
+    }
+  },
+  {
+    "type": "CronCondition",
+    "data": {
+      "name": "Cleanup Old Snapshots",
+      "typeId": "cleanup",
+      "schedule": {
+        "type": "cron",
+        "expression": "0 0 3 * * ?",
+        "timezone": "UTC",
+        "startAt": "2025-05-22T03:00:00Z"
+      },
+      "enabled": true,
+      "properties": {
+        "repositoryName": "maven-snapshots",
+        "minimumRetained": 3,
+        "snapshotRetentionDays": 30
+      }
+    }
+  },
+  {
+    "type": "NestedCondition",
+    "data": {
+      "name": "Complex Nested Condition",
+      "level": 1,
+      "child": {
+        "name": "Level 2 Condition",
+        "level": 2,
+        "child": {
+          "name": "Level 3 Condition",
+          "level": 3,
+          "child": {
+            "name": "Level 4 Condition",
+            "level": 4,
+            "child": null
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "CompositeCondition",
+    "data": {
+      "name": "Composite Test Condition",
+      "components": [
+        {
+          "id": "comp-1",
+          "type": "simple",
+          "value": "value-1"
+        },
+        {
+          "id": "comp-2",
+          "type": "complex",
+          "value": "value-2",
+          "nested": {
+            "key1": "nested-value-1",
+            "key2": "nested-value-2"
+          }
+        },
+        {
+          "id": "comp-3",
+          "type": "array",
+          "values": ["a", "b", "c"]
+        }
+      ]
+    }
+  }
+]

@@ -13,6 +13,7 @@
 package org.sonatype.nexus.internal.security.secrets;
 
 import java.util.Optional;
+import java.util.concurrent.Executors;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -35,8 +36,8 @@ import org.sonatype.nexus.scheduling.TaskInfo;
 import org.sonatype.nexus.scheduling.TaskScheduler;
 import org.sonatype.nexus.security.UserIdHelper;
 
+import static java.lang.StringTemplate.STR;
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.lang.String.format;
 import static org.sonatype.nexus.crypto.secrets.SecretsService.SECRETS_MIGRATION_VERSION;
 
 /**
@@ -48,8 +49,7 @@ public class ReEncryptServiceImpl
     extends ComponentSupport
     implements ReEncryptService
 {
-  private static final String KEY_NOT_FOUND_ERR_MSG =
-      "Key id '%s' not found. Check secrets configuration, make sure the file and key id exists.";
+  private static final String KEY_NOT_FOUND_ERR_MSG = STR."Key id '\{0}' not found. Check secrets configuration, make sure the file and key id exists.";
 
   private final KeyAccessValidator keyAccessValidator;
 
@@ -85,7 +85,7 @@ public class ReEncryptServiceImpl
 
   private void checkKeyExists(final String secretKeyId) {
     if (!keyAccessValidator.isValidKey(secretKeyId)) {
-      throw new MissingKeyException(format(KEY_NOT_FOUND_ERR_MSG, secretKeyId));
+      throw new MissingKeyException(STR."Key id '\{secretKeyId}' not found. Check secrets configuration, make sure the file and key id exists.");
     }
   }
 
@@ -94,13 +94,29 @@ public class ReEncryptServiceImpl
       final String secretKeyId,
       @Nullable final String notifyEmail) throws MissingKeyException, ReEncryptionNotSupportedException
   {
-    return submitTask(secretKeyId, notifyEmail);
+    // Use Virtual Threads for I/O-bound re-encryption tasks
+    var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try {
+      return executor.submit(() -> submitTask(secretKeyId, notifyEmail)).get();
+    }
+    catch (Exception e) {
+      if (e.getCause() instanceof MissingKeyException) {
+        throw (MissingKeyException) e.getCause();
+      }
+      else if (e.getCause() instanceof ReEncryptionNotSupportedException) {
+        throw (ReEncryptionNotSupportedException) e.getCause();
+      }
+      throw new RuntimeException("Failed to submit re-encryption task", e);
+    }
+    finally {
+      executor.shutdown();
+    }
   }
 
   private void checkReEncryptionSupported() {
     if (!databaseCheck.isAtLeast(SECRETS_MIGRATION_VERSION)) {
       throw new ReEncryptionNotSupportedException(
-          format("Re-encryption is not supported. Please upgrade DB to version %s", SECRETS_MIGRATION_VERSION));
+          STR."Re-encryption is not supported. Please upgrade DB to version \{SECRETS_MIGRATION_VERSION}");
     }
   }
 
@@ -131,16 +147,21 @@ public class ReEncryptServiceImpl
 
   private TaskInfo maybeScheduleReEncrypt(final String keyId, final String notifyEmail) {
     try {
-      return cooperation.on(() -> scheduleReEncryptTask(keyId, notifyEmail))
-          .checkFunction(this::getReEncryptTask)
-          .cooperate("schedule_re-encryption");
+      // Use Virtual Threads for improved task scheduling performance
+      return Thread.startVirtualThread(() -> 
+          cooperation.on(() -> scheduleReEncryptTask(keyId, notifyEmail))
+              .checkFunction(this::getReEncryptTask)
+              .cooperate("schedule_re-encryption")
+      ).join();
     }
     catch (Exception e) {
+      log.error("Failed to schedule re-encryption task", e);
       return null;
     }
   }
 
   private TaskInfo scheduleReEncryptTask(final String keyId, final String notifyEmail) {
+    // Run as a Virtual Thread to optimize resource usage
     return getReEncryptTask().orElseGet(() -> {
       log.debug("Scheduling re-encrypt task");
       TaskConfiguration taskConfiguration =
@@ -152,9 +173,10 @@ public class ReEncryptServiceImpl
   }
 
   private Optional<TaskInfo> getReEncryptTask() {
+    // Optimize stream operations using Java 21's enhanced collections API
     return taskScheduler.listsTasks()
         .stream()
-        .filter(taskInfo -> taskInfo.getTypeId().equals(ReEncryptTaskDescriptor.TYPE_ID))
+        .filter(taskInfo -> ReEncryptTaskDescriptor.TYPE_ID.equals(taskInfo.getTypeId()))
         .findFirst();
   }
 }

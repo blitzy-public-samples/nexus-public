@@ -14,10 +14,11 @@ package org.sonatype.nexus.security.token;
 
 import java.security.Principal;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import javax.inject.Provider;
 import javax.servlet.http.HttpServletRequest;
 
-import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.security.UserPrincipalsHelper;
 import org.sonatype.nexus.security.authc.NexusApiKeyAuthenticationToken;
 import org.sonatype.nexus.security.authc.apikey.ApiKey;
@@ -29,17 +30,17 @@ import org.apache.shiro.authc.AuthenticationInfo;
 import org.apache.shiro.authc.AuthenticationToken;
 import org.apache.shiro.authc.credential.CredentialsMatcher;
 import org.apache.shiro.subject.PrincipalCollection;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.core.Is.is;
-import static org.hamcrest.core.IsEqual.equalTo;
-import static org.hamcrest.core.IsNull.notNullValue;
-import static org.hamcrest.core.IsNull.nullValue;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -47,8 +48,8 @@ import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.security.token.BearerTokenRealm.ANONYMOUS_USER;
 import static org.sonatype.nexus.security.token.BearerTokenRealm.IS_TOKEN_AUTH_KEY;
 
-public class BearerTokenRealmTest
-    extends TestSupport
+@ExtendWith(MockitoExtension.class)
+class BearerTokenRealmTest
 {
   private static final String FORMAT = "format";
 
@@ -81,8 +82,8 @@ public class BearerTokenRealmTest
 
   BearerTokenRealm underTest;
 
-  @Before
-  public void setup() throws Exception {
+  @BeforeEach
+  void setup() throws Exception {
     when(token.getPrincipal()).thenReturn(FORMAT);
     when(unsupportedToken.getPrincipal()).thenReturn(FORMAT);
     when(principalCollection.getPrimaryPrincipal()).thenReturn(principal);
@@ -98,29 +99,29 @@ public class BearerTokenRealmTest
   }
 
   @Test
-  public void supportedWhenCorrectTypeAndFormat() throws Exception {
+  void should_support_when_correct_type_and_format() throws Exception {
     assertTrue(underTest.supports(token));
   }
 
   @Test
-  public void notSupportedWhenWrongType() throws Exception {
+  void should_not_support_when_wrong_type() throws Exception {
     assertFalse(underTest.supports(unsupportedToken));
   }
 
   @Test
-  public void notSupportedWhenWrongFormat() throws Exception {
+  void should_not_support_when_wrong_format() throws Exception {
     when(token.getPrincipal()).thenReturn("UnsupportedFormat");
     assertFalse(underTest.supports(token));
   }
 
   @Test
-  public void getAuthInfoWhenActive() throws Exception {
+  void should_get_auth_info_when_active() throws Exception {
     AuthenticationInfo authenticationInfo = underTest.doGetAuthenticationInfo(token);
-    assertThat(authenticationInfo.getPrincipals(), is(notNullValue()));
+    assertNotNull(authenticationInfo.getPrincipals());
   }
 
   @Test
-  public void getAuthInfoWhenAnonymousAndSupported() throws Exception {
+  void should_get_auth_info_when_anonymous_and_supported() throws Exception {
     when(principalCollection.getPrimaryPrincipal()).thenReturn(ANONYMOUS_USER);
     when(principalsHelper.getUserStatus(principalCollection)).thenReturn(UserStatus.disabled);
     underTest = new BearerTokenRealm(keyStore, principalsHelper, FORMAT)
@@ -131,64 +132,101 @@ public class BearerTokenRealmTest
       }
     };
     AuthenticationInfo authenticationInfo = underTest.doGetAuthenticationInfo(token);
-    assertThat(authenticationInfo.getPrincipals(), is(notNullValue()));
+    assertNotNull(authenticationInfo.getPrincipals());
   }
 
   @Test
-  public void nullWhenAnonymousButNotSupported() throws Exception {
+  void should_return_null_when_anonymous_but_not_supported() throws Exception {
     when(principalsHelper.getUserStatus(principalCollection)).thenReturn(UserStatus.disabled);
     when(principalCollection.getPrimaryPrincipal()).thenReturn(ANONYMOUS_USER);
-    assertThat(underTest.doGetAuthenticationInfo(token), is(nullValue()));
+    assertNull(underTest.doGetAuthenticationInfo(token));
   }
 
   @Test
-  public void deleteKeysOnUserNotFoundException() throws Exception {
+  void should_delete_keys_on_user_not_found_exception() throws Exception {
     when(principalsHelper.getUserStatus(principalCollection)).thenThrow(new UserNotFoundException("userid"));
-    assertThat(underTest.doGetAuthenticationInfo(token), is(nullValue()));
+    assertNull(underTest.doGetAuthenticationInfo(token));
     verify(keyStore).deleteApiKeys(principalCollection);
   }
 
   @Test
-  public void nullAuthInfoWhenPrincipalsNull() throws Exception {
+  void should_return_null_auth_info_when_principals_null() throws Exception {
     when(keyStore.getApiKeyByToken(any(), any())).thenReturn(Optional.empty());
-    assertThat(underTest.doGetAuthenticationInfo(token), is(nullValue()));
+    assertNull(underTest.doGetAuthenticationInfo(token));
   }
 
   @Test
-  public void nullAuthInfoWhenUserNotActive() throws Exception {
+  void should_return_null_auth_info_when_user_not_active() throws Exception {
     when(principalsHelper.getUserStatus(principalCollection)).thenReturn(UserStatus.disabled);
-    assertThat(underTest.doGetAuthenticationInfo(token), is(nullValue()));
+    assertNull(underTest.doGetAuthenticationInfo(token));
   }
 
   @Test
-  public void primaryPrincipalWhenGetCacheKey() throws Exception {
-    assertThat(underTest.getAuthenticationCacheKey(token), is(equalTo(principal)));
+  void should_return_primary_principal_when_get_cache_key() throws Exception {
+    assertEquals(principal, underTest.getAuthenticationCacheKey(token));
   }
 
   @Test
-  public void nullWhenTokenNull() throws Exception {
-    assertThat(underTest.getAuthenticationCacheKey(null), is(nullValue()));
+  void should_return_null_when_token_null() throws Exception {
+    assertNull(underTest.getAuthenticationCacheKey(null));
   }
 
   @Test
-  public void nullWhenPrincipalsNull() throws Exception {
+  void should_return_null_when_principals_null() throws Exception {
     when(keyStore.getApiKeyByToken(any(), any())).thenReturn(Optional.empty());
-    assertThat(underTest.getAuthenticationCacheKey(token), is(nullValue()));
+    assertNull(underTest.getAuthenticationCacheKey(token));
   }
 
   @Test
-  public void anonymousAccessNotSupportedByDefault() throws Exception {
-    assertThat(underTest.isAnonymousSupported(), is(equalTo(false)));
+  void should_not_support_anonymous_access_by_default() throws Exception {
+    assertFalse(underTest.isAnonymousSupported());
   }
 
   @Test
-  public void cachingEnabled() {
-    assertThat(underTest.isAuthenticationCachingEnabled(), is(true));
+  void should_enable_caching() {
+    assertTrue(underTest.isAuthenticationCachingEnabled());
   }
 
   @Test
-  public void verifyAssertCredentialsMatchSetsAttributes() {
+  void should_verify_assert_credentials_match_sets_attributes() {
     underTest.assertCredentialsMatch(token, underTest.doGetAuthenticationInfo(token));
+    verify(request).setAttribute(IS_TOKEN_AUTH_KEY, Boolean.TRUE);
+    verify(token).setPrincipal(principal);
+  }
+  
+  @Test
+  void should_authenticate_in_virtual_thread() throws Exception {
+    CompletableFuture<Boolean> future = new CompletableFuture<>();
+    Thread virtualThread = Thread.ofVirtual().name("virtual-auth-test").start(() -> {
+      try {
+        AuthenticationInfo authInfo = underTest.doGetAuthenticationInfo(token);
+        future.complete(authInfo != null && authInfo.getPrincipals() != null);
+      } 
+      catch (Exception e) {
+        future.completeExceptionally(e);
+      }
+    });
+    
+    virtualThread.join();
+    assertTrue(future.get());
+  }
+  
+  @Test
+  void should_verify_credentials_in_virtual_thread() throws Exception {
+    CompletableFuture<Boolean> future = new CompletableFuture<>();
+    Thread virtualThread = Thread.ofVirtual().name("virtual-cred-test").start(() -> {
+      try {
+        AuthenticationInfo authInfo = underTest.doGetAuthenticationInfo(token);
+        underTest.assertCredentialsMatch(token, authInfo);
+        future.complete(true);
+      } 
+      catch (Exception e) {
+        future.completeExceptionally(e);
+      }
+    });
+    
+    virtualThread.join();
+    assertTrue(future.get());
     verify(request).setAttribute(IS_TOKEN_AUTH_KEY, Boolean.TRUE);
     verify(token).setPrincipal(principal);
   }

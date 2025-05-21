@@ -13,6 +13,7 @@
 package org.sonatype.nexus.internal.app;
 
 import java.util.Map;
+import java.util.Objects;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -20,12 +21,17 @@ import javax.inject.Named;
 import org.sonatype.nexus.capability.CapabilitySupport;
 import org.sonatype.nexus.common.app.BaseUrlManager;
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 
 /**
  * Base-URL capability.
+ * 
+ * Manages the configuration of the base URL for the Nexus Repository instance,
+ * particularly when running behind a reverse proxy.
  *
  * @since 3.0
+ * @see BaseUrlManager
+ * @see BaseUrlCapabilityConfiguration
  */
 @Named(BaseUrlCapabilityDescriptor.TYPE_ID)
 public class BaseUrlCapability
@@ -33,9 +39,15 @@ public class BaseUrlCapability
 {
   private final BaseUrlManager baseUrlManager;
 
+  /**
+   * Creates a new BaseUrlCapability with the specified BaseUrlManager.
+   * 
+   * @param baseUrlManager the manager responsible for handling base URL operations
+   * @throws NullPointerException if baseUrlManager is null
+   */
   @Inject
   public BaseUrlCapability(final BaseUrlManager baseUrlManager) {
-    this.baseUrlManager = checkNotNull(baseUrlManager);
+    this.baseUrlManager = Objects.requireNonNull(baseUrlManager, "BaseUrlManager cannot be null");
   }
 
   @Override
@@ -45,11 +57,15 @@ public class BaseUrlCapability
 
   @Override
   protected void onActivate(final BaseUrlCapabilityConfiguration config) throws Exception {
-    baseUrlManager.setUrl(config.getUrl());
+    String url = config.getUrl();
+    baseUrlManager.setUrl(url);
+    log.info(STR"Base URL activated: \{url}");
   }
 
   @Override
   protected void onPassivate(final BaseUrlCapabilityConfiguration config) throws Exception {
+    String previousUrl = baseUrlManager.getUrl();
     baseUrlManager.setUrl(null);
+    log.info(STR"Base URL deactivated (was: \{previousUrl})");
   }
 }

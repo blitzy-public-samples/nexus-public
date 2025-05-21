@@ -12,38 +12,37 @@
  */
 package org.sonatype.nexus.internal.security.secrets.rest;
 
-import javax.annotation.Nullable;
-import javax.validation.constraints.NotBlank;
+import jakarta.annotation.Nullable;
+import jakarta.validation.constraints.NotBlank;
 
 import com.google.common.annotations.VisibleForTesting;
-import io.swagger.annotations.ApiModelProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 
-public class ReEncryptionRequestApiXO
-{
-  @ApiModelProperty("Key identifier that will be used to re-encrypt secrets")
-  @NotBlank
-  private String secretKeyId;
-
-  @ApiModelProperty("Optional - Email to notify when task finishes")
-  @Nullable
-  private String notifyEmail;
-
-  public ReEncryptionRequestApiXO() {
-    // serialization
+/**
+ * API model for re-encryption requests.
+ */
+public record ReEncryptionRequestApiXO(
+    @Schema(description = "Key identifier that will be used to re-encrypt secrets", required = true)
+    @NotBlank
+    String secretKeyId,
+    
+    @Schema(description = "Optional - Email to notify when task finishes")
+    @Nullable
+    String notifyEmail
+) {
+  /**
+   * Default constructor for serialization.
+   */
+  public ReEncryptionRequestApiXO {
+    // validation happens via annotations
   }
-
+  
+  /**
+   * Constructor for testing.
+   */
   @VisibleForTesting
-  protected ReEncryptionRequestApiXO(final String secretKeyId, final String notifyEmail) {
+  public ReEncryptionRequestApiXO(final String secretKeyId, final String notifyEmail) {
     this.secretKeyId = secretKeyId;
     this.notifyEmail = notifyEmail;
-  }
-
-  public String getSecretKeyId() {
-    return secretKeyId;
-  }
-
-  @Nullable
-  public String getNotifyEmail() {
-    return notifyEmail;
   }
 }

@@ -12,27 +12,26 @@
  */
 package org.sonatype.nexus.internal.scheduling;
 
-import java.net.URL;
+import java.time.Duration;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 
-import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
-import org.sonatype.nexus.common.template.TemplateHelper;
-import org.sonatype.nexus.common.template.TemplateParameters;
+import org.sonatype.nexus.scheduling.LastRunState;
 import org.sonatype.nexus.scheduling.TaskInfo;
 import org.sonatype.nexus.scheduling.TaskNotificationMessageGenerator;
+import org.sonatype.nexus.scheduling.TaskState;
 
 import org.apache.commons.lang3.exception.ExceptionUtils;
 
 import static java.time.temporal.ChronoUnit.MILLIS;
-import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Generates notification messages for tasks with no class specific generator.
+ * Uses Java 21 String Templates for efficient message formatting.
  *
  * @since 3.22
  */
@@ -44,30 +43,71 @@ public class DefaultTaskNotificationMessageGenerator
 {
   public static final String ID = "DEFAULT";
 
-  private final TemplateHelper templateHelper;
-
-  @Inject
-  public DefaultTaskNotificationMessageGenerator(final TemplateHelper templateHelper) {
-    this.templateHelper = checkNotNull(templateHelper);
-  }
-
+  /**
+   * Generates a completion notification message using String Templates.
+   * 
+   * @param taskInfo The task information
+   * @return Formatted completion message
+   */
   public String completed(final TaskInfo taskInfo) {
-    URL template = DefaultTaskNotificationMessageGenerator.class.getResource("task-completed.vm");
-    TemplateParameters params = new TemplateParameters();
-    String formattedDuration = DateTimeFormatter.ISO_LOCAL_TIME
-        .format(LocalTime.MIDNIGHT.plus(taskInfo.getLastRunState().getRunDuration(), MILLIS));
-    params.set("formattedDuration", formattedDuration);
-    params.set("taskInfo", taskInfo);
-    return templateHelper.render(template, params);
+    LastRunState lastRunState = taskInfo.getLastRunState();
+    if (lastRunState == null) {
+      return STR."Task \{taskInfo.getName()} with ID \{taskInfo.getId()} has completed with no run state information.";
+    }
+    
+    String formattedDuration = formatDuration(lastRunState.getRunDuration());
+    TaskState endState = lastRunState.getEndState();
+    
+    return STR."Task \{taskInfo.getName()} with ID \{taskInfo.getId()} has completed.\n\n"
+        + STR."Started: \{lastRunState.getRunStarted()}\n"
+        + STR."Duration: \{formattedDuration}\n"
+        + STR."End State: \{formatEndState(endState)}";
   }
 
+  /**
+   * Generates a failure notification message using String Templates.
+   * 
+   * @param taskInfo The task information
+   * @param cause The exception that caused the failure
+   * @return Formatted failure message
+   */
   public String failed(final TaskInfo taskInfo, final Throwable cause) {
-    URL template = DefaultTaskNotificationMessageGenerator.class.getResource("task-failed.vm");
-    TemplateParameters params = new TemplateParameters();
-    params.set("taskInfo", taskInfo);
-    if (cause != null) {
-      params.set("stackTrace", ExceptionUtils.getStackTrace(cause));
+    String stackTrace = cause != null ? ExceptionUtils.getStackTrace(cause) : "No stack trace available";
+    
+    return STR."Task ID: \{taskInfo.getId()}\n"
+        + STR."Task Name: \{taskInfo.getName()}\n"
+        + STR."Stack-trace:\n\{stackTrace}";
+  }
+  
+  /**
+   * Formats the duration in a human-readable format.
+   * 
+   * @param durationMillis Duration in milliseconds
+   * @return Formatted duration string
+   */
+  private String formatDuration(final long durationMillis) {
+    return DateTimeFormatter.ISO_LOCAL_TIME
+        .format(LocalTime.MIDNIGHT.plus(durationMillis, MILLIS));
+  }
+  
+  /**
+   * Formats the end state with pattern matching for better readability.
+   * 
+   * @param endState The task end state
+   * @return Formatted end state description
+   */
+  private String formatEndState(final TaskState endState) {
+    if (endState == null) {
+      return "Unknown";
     }
-    return templateHelper.render(template, params);
+    
+    return switch (endState) {
+      case OK -> "Completed successfully";
+      case FAILED -> "Failed";
+      case CANCELED -> "Canceled by user";
+      case INTERRUPTED -> "Interrupted";
+      case null -> "Unknown";
+      default -> endState.getDescription();
+    };
   }
 }

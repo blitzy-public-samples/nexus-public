@@ -1,0 +1,325 @@
+{
+  "version": "1.0",
+  "description": "Test scenarios for validating nexus-core component functionality with Java 21 Virtual Threads",
+  "scenarios": [
+    {
+      "id": "concurrent-repository-operations",
+      "name": "Concurrent Repository Operations",
+      "description": "Validates repository operations under high concurrent load using Virtual Threads",
+      "category": "repository",
+      "parameters": {
+        "virtualThreadCount": 10000,
+        "platformThreadCount": 200,
+        "operationsPerThread": 10,
+        "operationTypes": ["browse", "search", "read", "write"],
+        "repositoryTypes": ["maven", "npm", "docker", "raw"],
+        "durationSeconds": 60
+      },
+      "expectations": {
+        "successRate": 99.9,
+        "maxResponseTimeMs": 500,
+        "p95ResponseTimeMs": 250,
+        "throughputFactor": 5.0,
+        "memoryOverheadMb": 300
+      },
+      "validationCriteria": [
+        "All repository operations complete successfully",
+        "Response times remain within expected thresholds",
+        "Memory consumption remains stable throughout test",
+        "No thread pinning occurs during repository operations",
+        "Virtual Thread implementation outperforms platform threads by at least 5x in throughput"
+      ]
+    },
+    {
+      "id": "blobstore-io-operations",
+      "name": "BlobStore I/O Operations",
+      "description": "Tests BlobStore read/write operations with Virtual Threads to validate I/O performance",
+      "category": "blobstore",
+      "parameters": {
+        "virtualThreadCount": 5000,
+        "platformThreadCount": 100,
+        "blobSizeRangeKb": [10, 1024],
+        "operationRatio": {
+          "read": 80,
+          "write": 15,
+          "delete": 5
+        },
+        "blobStoreTypes": ["file", "s3"],
+        "durationSeconds": 120
+      },
+      "expectations": {
+        "successRate": 99.9,
+        "maxResponseTimeMs": 1000,
+        "p95ResponseTimeMs": 500,
+        "throughputFactor": 10.0,
+        "memoryOverheadMb": 200
+      },
+      "validationCriteria": [
+        "All blob operations complete successfully",
+        "Virtual Threads properly unmount during I/O operations",
+        "No thread pinning occurs during blob store operations",
+        "Memory consumption remains stable throughout test",
+        "Virtual Thread implementation outperforms platform threads by at least 10x for I/O-bound operations"
+      ]
+    },
+    {
+      "id": "security-authentication",
+      "name": "Security Authentication Concurrency",
+      "description": "Tests authentication and authorization operations under high concurrent load",
+      "category": "security",
+      "parameters": {
+        "virtualThreadCount": 8000,
+        "platformThreadCount": 150,
+        "userCount": 1000,
+        "roleCount": 50,
+        "permissionCount": 200,
+        "operationTypes": ["authenticate", "authorize", "validate"],
+        "durationSeconds": 90
+      },
+      "expectations": {
+        "successRate": 100.0,
+        "maxResponseTimeMs": 300,
+        "p95ResponseTimeMs": 100,
+        "throughputFactor": 4.0,
+        "memoryOverheadMb": 150
+      },
+      "validationCriteria": [
+        "All security operations complete successfully",
+        "No security vulnerabilities introduced by Virtual Thread implementation",
+        "Thread-local security context properly maintained in Virtual Threads",
+        "No thread pinning occurs during security operations",
+        "Virtual Thread implementation maintains security integrity while improving throughput"
+      ]
+    },
+    {
+      "id": "configuration-management",
+      "name": "Configuration Management Operations",
+      "description": "Tests configuration read/write operations with Virtual Threads",
+      "category": "configuration",
+      "parameters": {
+        "virtualThreadCount": 2000,
+        "platformThreadCount": 50,
+        "configTypes": ["system", "repository", "security", "network", "cleanup"],
+        "operationRatio": {
+          "read": 90,
+          "write": 10
+        },
+        "durationSeconds": 60
+      },
+      "expectations": {
+        "successRate": 100.0,
+        "maxResponseTimeMs": 200,
+        "p95ResponseTimeMs": 50,
+        "throughputFactor": 3.0,
+        "memoryOverheadMb": 100
+      },
+      "validationCriteria": [
+        "All configuration operations complete successfully",
+        "Configuration integrity maintained throughout test",
+        "No thread pinning occurs during configuration operations",
+        "Virtual Thread implementation maintains configuration consistency"
+      ]
+    },
+    {
+      "id": "thread-pinning-detection",
+      "name": "Thread Pinning Detection",
+      "description": "Tests detection and monitoring of thread pinning scenarios in core components",
+      "category": "monitoring",
+      "parameters": {
+        "virtualThreadCount": 1000,
+        "monitoringIntervalMs": 100,
+        "inducedPinningScenarios": [
+          "synchronizedBlock",
+          "nativeMethodCall",
+          "legacyLibraryCall"
+        ],
+        "durationSeconds": 30
+      },
+      "expectations": {
+        "pinningDetectionRate": 100.0,
+        "maxPinningDurationMs": 500,
+        "pinningEventLogged": true,
+        "stackTraceAvailable": true
+      },
+      "validationCriteria": [
+        "All thread pinning scenarios correctly detected",
+        "Pinning events properly logged with stack traces",
+        "Monitoring does not significantly impact system performance",
+        "Pinning detection works with JFR and jdk.tracePinnedThreads"
+      ]
+    },
+    {
+      "id": "search-operations",
+      "name": "Repository Search Operations",
+      "description": "Tests search functionality across repositories with Virtual Threads",
+      "category": "search",
+      "parameters": {
+        "virtualThreadCount": 5000,
+        "platformThreadCount": 100,
+        "searchQueries": ["simple", "wildcard", "complex", "regex"],
+        "repositoryCount": 20,
+        "resultsPerPage": 100,
+        "durationSeconds": 60
+      },
+      "expectations": {
+        "successRate": 99.5,
+        "maxResponseTimeMs": 800,
+        "p95ResponseTimeMs": 400,
+        "throughputFactor": 6.0,
+        "memoryOverheadMb": 250
+      },
+      "validationCriteria": [
+        "All search operations complete successfully",
+        "Search results are accurate and complete",
+        "No thread pinning occurs during search operations",
+        "Virtual Thread implementation significantly improves search throughput"
+      ]
+    },
+    {
+      "id": "mixed-workload",
+      "name": "Mixed Repository Workload",
+      "description": "Tests realistic mixed workload scenarios with Virtual Threads",
+      "category": "mixed",
+      "parameters": {
+        "virtualThreadCount": 15000,
+        "platformThreadCount": 250,
+        "operationMix": {
+          "repository": 40,
+          "blobstore": 30,
+          "security": 15,
+          "search": 10,
+          "configuration": 5
+        },
+        "durationSeconds": 180
+      },
+      "expectations": {
+        "successRate": 99.5,
+        "maxResponseTimeMs": 1000,
+        "p95ResponseTimeMs": 500,
+        "throughputFactor": 8.0,
+        "memoryOverheadMb": 400
+      },
+      "validationCriteria": [
+        "All operations complete successfully",
+        "System remains stable under mixed workload",
+        "Thread pinning is minimized across all operations",
+        "Virtual Thread implementation maintains data integrity while improving throughput",
+        "Memory consumption remains stable throughout test"
+      ]
+    },
+    {
+      "id": "thread-local-variables",
+      "name": "Thread Local Variable Management",
+      "description": "Tests proper handling of thread-local variables in Virtual Threads",
+      "category": "threading",
+      "parameters": {
+        "virtualThreadCount": 10000,
+        "threadLocalVariableCount": 10,
+        "threadLocalVariableSizeBytes": 1024,
+        "operationsPerThread": 100,
+        "durationSeconds": 60
+      },
+      "expectations": {
+        "successRate": 100.0,
+        "threadLocalIntegrity": 100.0,
+        "memoryOverheadFactor": 1.5
+      },
+      "validationCriteria": [
+        "Thread-local variables maintain integrity throughout thread lifecycle",
+        "Memory consumption remains reasonable despite thread-local usage",
+        "No data leakage between Virtual Threads",
+        "Thread-local cleanup occurs properly when Virtual Threads terminate"
+      ]
+    },
+    {
+      "id": "error-handling",
+      "name": "Error Handling and Recovery",
+      "description": "Tests error handling and recovery scenarios with Virtual Threads",
+      "category": "resilience",
+      "parameters": {
+        "virtualThreadCount": 5000,
+        "errorScenarios": [
+          "timeouts",
+          "connectionFailures",
+          "resourceExhaustion",
+          "invalidInput",
+          "concurrencyConflicts"
+        ],
+        "errorRate": 10,
+        "durationSeconds": 120
+      },
+      "expectations": {
+        "errorRecoveryRate": 99.0,
+        "maxRecoveryTimeMs": 2000,
+        "resourceLeakRate": 0.0,
+        "systemStability": 100.0
+      },
+      "validationCriteria": [
+        "All error scenarios properly handled and recovered",
+        "No resource leaks occur during error handling",
+        "System remains stable during and after error scenarios",
+        "Error handling in Virtual Threads matches platform thread behavior",
+        "Proper error information propagated to monitoring systems"
+      ]
+    },
+    {
+      "id": "long-running-operations",
+      "name": "Long-Running Operations",
+      "description": "Tests behavior of long-running operations with Virtual Threads",
+      "category": "durability",
+      "parameters": {
+        "virtualThreadCount": 1000,
+        "operationDurationSeconds": 300,
+        "operationTypes": [
+          "repositoryRebuild",
+          "blobstoreCompaction",
+          "securitySync",
+          "searchReindex"
+        ],
+        "totalDurationMinutes": 10
+      },
+      "expectations": {
+        "successRate": 100.0,
+        "resourceUtilizationStability": 95.0,
+        "memoryLeakRate": 0.0
+      },
+      "validationCriteria": [
+        "All long-running operations complete successfully",
+        "No resource leaks occur during long-running operations",
+        "System remains responsive to other requests during long-running operations",
+        "Virtual Threads properly handle long-duration tasks without degradation"
+      ]
+    }
+  ],
+  "globalSettings": {
+    "jvmOptions": [
+      "-Djdk.virtualThreadScheduler.parallelism=16",
+      "-Djdk.virtualThreadScheduler.maxPoolSize=256",
+      "-Djdk.tracePinnedThreads=full",
+      "-XX:+UseZGC",
+      "-XX:+ZGenerational"
+    ],
+    "monitoringMetrics": [
+      "threadCreationRate",
+      "threadTerminationRate",
+      "threadPinningEvents",
+      "threadMountingRate",
+      "threadUnmountingRate",
+      "carrierThreadUtilization",
+      "heapMemoryUsage",
+      "gcPauseTime"
+    ],
+    "testCategories": [
+      "repository",
+      "blobstore",
+      "security",
+      "configuration",
+      "monitoring",
+      "search",
+      "mixed",
+      "threading",
+      "resilience",
+      "durability"
+    ]
+  }
+}

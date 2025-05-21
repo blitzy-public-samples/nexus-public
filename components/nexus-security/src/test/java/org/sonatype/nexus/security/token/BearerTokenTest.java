@@ -14,11 +14,11 @@ package org.sonatype.nexus.security.token;
 
 import javax.servlet.http.HttpServletRequest;
 
-import org.sonatype.goodies.testsupport.TestSupport;
-
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static com.google.common.net.HttpHeaders.AUTHORIZATION;
 import static java.util.UUID.randomUUID;
@@ -28,8 +28,8 @@ import static org.hamcrest.core.IsEqual.equalTo;
 import static org.hamcrest.core.IsNull.nullValue;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class BearerTokenTest
-    extends TestSupport
 {
   private static final String TOKEN = randomUUID().toString();
 
@@ -42,39 +42,48 @@ public class BearerTokenTest
 
   private BearerToken underTest;
 
-  @Before
-  public void setup() throws Exception {
+  @BeforeEach
+  public void setup() {
     when(request.getHeader(AUTHORIZATION)).thenReturn(BEARER_TOKEN);
     underTest = new BearerToken(FORMAT);
   }
 
   @Test
-  public void extractToken() throws Exception {
+  public void extractToken() {
     String token = underTest.extract(request);
     assertThat(token, is(equalTo(TOKEN)));
   }
 
   @Test
-  public void nullIfNotBearer() throws Exception {
+  public void nullIfNotBearer() {
     when(request.getHeader(AUTHORIZATION)).thenReturn("Basic " + TOKEN);
     assertThat(underTest.extract(request), is(nullValue()));
   }
 
   @Test
-  public void nullIfTokenNotPresent() throws Exception {
+  public void nullIfTokenNotPresent() {
     when(request.getHeader(AUTHORIZATION)).thenReturn("Bearer ");
     assertThat(underTest.extract(request), is(nullValue()));
   }
 
   @Test
-  public void nullIfHeaderNotPresent() throws Exception {
+  public void nullIfHeaderNotPresent() {
     when(request.getHeader(AUTHORIZATION)).thenReturn(null);
     assertThat(underTest.extract(request), is(nullValue()));
   }
 
   @Test
-  public void nullIfFormatDoesNotMatch() throws Exception {
+  public void nullIfFormatDoesNotMatch() {
     when(request.getHeader(AUTHORIZATION)).thenReturn("Bearer NotFormat." + TOKEN);
     assertThat(underTest.extract(request), is(nullValue()));
+  }
+  
+  @Test
+  public void extractTokenInVirtualThread() throws Exception {
+    Thread virtualThread = Thread.startVirtualThread(() -> {
+      String token = underTest.extract(request);
+      assertThat(token, is(equalTo(TOKEN)));
+    });
+    virtualThread.join();
   }
 }

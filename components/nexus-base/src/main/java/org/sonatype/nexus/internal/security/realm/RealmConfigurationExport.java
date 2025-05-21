@@ -15,6 +15,7 @@ package org.sonatype.nexus.internal.security.realm;
 import java.io.File;
 import java.io.IOException;
 import java.util.Optional;
+import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -27,6 +28,7 @@ import org.sonatype.nexus.supportzip.datastore.JsonExporter;
 
 /**
  * Write/Read {@link RealmConfiguration} data to/from a JSON file.
+ * Uses Virtual Threads for I/O operations to improve performance.
  *
  * @since 3.29
  */
@@ -45,14 +47,43 @@ public class RealmConfigurationExport
 
   @Override
   public void export(final File file) throws IOException {
-    log.debug("Export RealmConfiguration data to {}", file);
-    exportObjectToJson(configuration.load(), file);
+    log.debug(STR."Export RealmConfiguration data to \{file}");
+    
+    // Use Virtual Thread for I/O operation
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      executor.submit(() -> {
+        try {
+          exportObjectToJson(configuration.load(), file);
+        } 
+        catch (IOException e) {
+          log.error(STR."Failed to export RealmConfiguration data to \{file}", e);
+          throw new RuntimeException(e);
+        }
+      }).join(); // Wait for completion
+    }
   }
 
   @Override
   public void restore(final File file) throws IOException {
-    log.debug("Restoring RealmConfiguration data from {}", file);
-    Optional<RealmConfigurationData> realmConfiguration = importObjectFromJson(file, RealmConfigurationData.class);
-    realmConfiguration.ifPresent(configuration::save);
+    log.debug(STR."Restoring RealmConfiguration data from \{file}");
+    
+    // Use Virtual Thread for I/O operation
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      executor.submit(() -> {
+        try {
+          Optional<RealmConfigurationData> realmConfiguration = importObjectFromJson(file, RealmConfigurationData.class);
+          
+          // Use pattern matching for switch with Optional handling
+          switch (realmConfiguration) {
+            case Optional.of(RealmConfigurationData data) -> configuration.save(data);
+            case Optional.empty() -> log.warn(STR."No RealmConfiguration data found in \{file}");
+          }
+        } 
+        catch (IOException e) {
+          log.error(STR."Failed to restore RealmConfiguration data from \{file}", e);
+          throw new RuntimeException(e);
+        }
+      }).join(); // Wait for completion
+    }
   }
 }

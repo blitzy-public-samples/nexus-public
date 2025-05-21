@@ -1,0 +1,332 @@
+{
+  "testCases": [
+    {
+      "name": "basic_variable_interpolation",
+      "description": "Simple string template with a single variable",
+      "inputs": {
+        "variables": {
+          "name": "John"
+        },
+        "template": "Hello \\{name}!"
+      },
+      "expectedOutput": "Hello John!",
+      "processor": "STR"
+    },
+    {
+      "name": "multiple_variables",
+      "description": "String template with multiple variables",
+      "inputs": {
+        "variables": {
+          "firstName": "Jane",
+          "lastName": "Doe"
+        },
+        "template": "Welcome, \\{firstName} \\{lastName}!"
+      },
+      "expectedOutput": "Welcome, Jane Doe!",
+      "processor": "STR"
+    },
+    {
+      "name": "expression_evaluation",
+      "description": "String template with expression evaluation",
+      "inputs": {
+        "variables": {
+          "x": 10,
+          "y": 20
+        },
+        "template": "\\{x} + \\{y} = \\{x + y}"
+      },
+      "expectedOutput": "10 + 20 = 30",
+      "processor": "STR"
+    },
+    {
+      "name": "nested_property_access",
+      "description": "String template with nested property access",
+      "inputs": {
+        "variables": {
+          "user": {
+            "profile": {
+              "name": "Alice",
+              "age": 30
+            }
+          }
+        },
+        "template": "User: \\{user.profile.name}, Age: \\{user.profile.age}"
+      },
+      "expectedOutput": "User: Alice, Age: 30",
+      "processor": "STR"
+    },
+    {
+      "name": "method_call",
+      "description": "String template with method call",
+      "inputs": {
+        "variables": {
+          "text": "hello world"
+        },
+        "template": "Original: \\{text}, Uppercase: \\{text.toUpperCase()}"
+      },
+      "expectedOutput": "Original: hello world, Uppercase: HELLO WORLD",
+      "processor": "STR"
+    },
+    {
+      "name": "conditional_expression",
+      "description": "String template with conditional expression",
+      "inputs": {
+        "variables": {
+          "age": 17
+        },
+        "template": "Status: \\{age >= 18 ? \"Adult\" : \"Minor\"}"
+      },
+      "expectedOutput": "Status: Minor",
+      "processor": "STR"
+    },
+    {
+      "name": "multiline_template",
+      "description": "Multi-line string template",
+      "inputs": {
+        "variables": {
+          "name": "Bob",
+          "email": "bob@example.com"
+        },
+        "template": "User Information:\n- Name: \\{name}\n- Email: \\{email}"
+      },
+      "expectedOutput": "User Information:\n- Name: Bob\n- Email: bob@example.com",
+      "processor": "STR"
+    },
+    {
+      "name": "raw_template_processor",
+      "description": "Using the RAW template processor",
+      "inputs": {
+        "variables": {
+          "x": 5,
+          "y": 10
+        },
+        "template": "\\{x} * \\{y} = \\{x * y}"
+      },
+      "expectedFragments": ["", " * ", " = ", ""],
+      "expectedValues": [5, 10, 50],
+      "processor": "RAW"
+    },
+    {
+      "name": "different_data_types",
+      "description": "String template with different data types",
+      "inputs": {
+        "variables": {
+          "name": "Charlie",
+          "age": 25,
+          "isActive": true,
+          "height": 1.85
+        },
+        "template": "Name: \\{name}, Age: \\{age}, Active: \\{isActive}, Height: \\{height}m"
+      },
+      "expectedOutput": "Name: Charlie, Age: 25, Active: true, Height: 1.85m",
+      "processor": "STR"
+    },
+    {
+      "name": "empty_fragments",
+      "description": "String template with empty fragments",
+      "inputs": {
+        "variables": {
+          "a": "start",
+          "b": "middle",
+          "c": "end"
+        },
+        "template": "\\{a}-\\{b}-\\{c}"
+      },
+      "expectedOutput": "start-middle-end",
+      "processor": "STR"
+    },
+    {
+      "name": "adjacent_expressions",
+      "description": "String template with adjacent expressions",
+      "inputs": {
+        "variables": {
+          "prefix": "Hello",
+          "suffix": "World"
+        },
+        "template": "\\{prefix}\\{suffix}"
+      },
+      "expectedOutput": "HelloWorld",
+      "processor": "STR"
+    },
+    {
+      "name": "json_structure",
+      "description": "String template generating JSON structure",
+      "inputs": {
+        "variables": {
+          "id": 123,
+          "name": "Product",
+          "price": 99.99
+        },
+        "template": "{\"id\": \\{id}, \"name\": \"\\{name}\", \"price\": \\{price}}"
+      },
+      "expectedOutput": "{\"id\": 123, \"name\": \"Product\", \"price\": 99.99}",
+      "processor": "STR"
+    },
+    {
+      "name": "complex_expression",
+      "description": "String template with complex expression",
+      "inputs": {
+        "variables": {
+          "numbers": [1, 2, 3, 4, 5]
+        },
+        "template": "Sum: \\{numbers.stream().mapToInt(Integer::intValue).sum()}"
+      },
+      "expectedOutput": "Sum: 15",
+      "processor": "STR"
+    },
+    {
+      "name": "string_escaping",
+      "description": "String template with escaped characters",
+      "inputs": {
+        "variables": {
+          "text": "quotes: \"quoted\""
+        },
+        "template": "Escaped text: \\{text}"
+      },
+      "expectedOutput": "Escaped text: quotes: \"quoted\"",
+      "processor": "STR"
+    },
+    {
+      "name": "null_handling",
+      "description": "String template with null value",
+      "inputs": {
+        "variables": {
+          "value": null
+        },
+        "template": "Value: \\{value}"
+      },
+      "expectedOutput": "Value: null",
+      "processor": "STR"
+    },
+    {
+      "name": "multiline_text_block",
+      "description": "String template with multi-line text block",
+      "inputs": {
+        "variables": {
+          "title": "Report",
+          "date": "2023-09-15"
+        },
+        "template": """
+            \\{title}
+            Generated on: \\{date}
+            -----------------
+            """
+      },
+      "expectedOutput": "
+            Report
+            Generated on: 2023-09-15
+            -----------------
+            ",
+      "processor": "STR"
+    },
+    {
+      "name": "string_template_with_comments",
+      "description": "String template with embedded comments in expressions",
+      "inputs": {
+        "variables": {
+          "currentTime": "10:30"
+        },
+        "template": "The current time is \\{ // This is a comment\ncurrentTime }"
+      },
+      "expectedOutput": "The current time is 10:30",
+      "processor": "STR"
+    },
+    {
+      "name": "raw_processor_with_fragments",
+      "description": "Using RAW processor to access fragments and values",
+      "inputs": {
+        "variables": {
+          "firstName": "David",
+          "lastName": "Smith"
+        },
+        "template": "Name: \\{firstName} \\{lastName}"
+      },
+      "expectedFragments": ["Name: ", " ", ""],
+      "expectedValues": ["David", "Smith"],
+      "processor": "RAW"
+    },
+    {
+      "name": "string_template_with_special_chars",
+      "description": "String template with special characters",
+      "inputs": {
+        "variables": {
+          "symbol": "€",
+          "amount": 100
+        },
+        "template": "Price: \\{symbol}\\{amount}"
+      },
+      "expectedOutput": "Price: €100",
+      "processor": "STR"
+    },
+    {
+      "name": "logging_example",
+      "description": "String template for logging messages",
+      "inputs": {
+        "variables": {
+          "level": "INFO",
+          "message": "Operation completed",
+          "timestamp": "2023-09-15T14:30:45Z"
+        },
+        "template": "[\\{level}] [\\{timestamp}] \\{message}"
+      },
+      "expectedOutput": "[INFO] [2023-09-15T14:30:45Z] Operation completed",
+      "processor": "STR"
+    },
+    {
+      "name": "nested_expressions",
+      "description": "String template with nested expressions",
+      "inputs": {
+        "variables": {
+          "values": [10, 20, 30, 40, 50]
+        },
+        "template": "Average: \\{values.stream().mapToInt(v -> v).average().orElse(0)}, Count: \\{values.size()}"
+      },
+      "expectedOutput": "Average: 30.0, Count: 5",
+      "processor": "STR"
+    },
+    {
+      "name": "template_with_lambda",
+      "description": "String template with lambda expression",
+      "inputs": {
+        "variables": {
+          "numbers": [1, 2, 3, 4, 5, 6]
+        },
+        "template": "Even numbers: \\{numbers.stream().filter(n -> n % 2 == 0).toList()}"
+      },
+      "expectedOutput": "Even numbers: [2, 4, 6]",
+      "processor": "STR"
+    },
+    {
+      "name": "nexus_specific_example",
+      "description": "String template example specific to Nexus Repository",
+      "inputs": {
+        "variables": {
+          "repositoryName": "maven-central",
+          "blobstoreType": "S3",
+          "status": "ONLINE"
+        },
+        "template": "Repository \\{repositoryName} using \\{blobstoreType} blobstore is \\{status}"
+      },
+      "expectedOutput": "Repository maven-central using S3 blobstore is ONLINE",
+      "processor": "STR"
+    }
+  ],
+  "metaData": {
+    "description": "Test cases for Java 21 String Template feature",
+    "version": "1.0",
+    "javaVersion": "21",
+    "featureStatus": "preview",
+    "processors": [
+      {
+        "name": "STR",
+        "description": "Standard string interpolation processor",
+        "importStatement": "import static java.lang.StringTemplate.STR;"
+      },
+      {
+        "name": "RAW",
+        "description": "Raw template processor that returns the StringTemplate object",
+        "importStatement": "import static java.lang.StringTemplate.RAW;"
+      }
+    ]
+  }
+}

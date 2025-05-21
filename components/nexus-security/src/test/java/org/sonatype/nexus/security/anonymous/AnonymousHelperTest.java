@@ -20,9 +20,11 @@ import org.sonatype.nexus.security.internal.AuthorizingRealmImpl;
 import org.sonatype.nexus.security.internal.DefaultRealmConstants;
 import org.sonatype.nexus.security.user.UserManager;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.hasItem;
@@ -32,6 +34,7 @@ import static org.mockito.Mockito.when;
 /**
  * Tests for {@link AnonymousHelper}.
  */
+@ExtendWith(MockitoExtension.class)
 public class AnonymousHelperTest
     extends TestSupport
 {
@@ -43,14 +46,14 @@ public class AnonymousHelperTest
   @Mock
   private UserManager userManagerAuth;
 
-  @Before
+  @BeforeEach
   public void setup() {
     when(userManager1.getAuthenticationRealmName()).thenReturn(TEST_REALM);
     when(userManagerAuth.getAuthenticationRealmName()).thenReturn(DefaultRealmConstants.DEFAULT_REALM_NAME);
   }
 
   @Test
-  public void testGetAuthenticationRealms() {
+  public void getAuthenticationRealmsReturnsCorrectRealms() {
     List<UserManager> userManagers = Arrays.asList(userManager1, userManagerAuth);
 
     List<String> realms = AnonymousHelper.getAuthenticationRealms(userManagers);

@@ -24,15 +24,19 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.Lists;
 import org.apache.shiro.mgt.RealmSecurityManager;
 import org.apache.shiro.realm.Realm;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class AnonymousAccessApiResourceTest
     extends TestSupport
 {
@@ -46,7 +50,7 @@ public class AnonymousAccessApiResourceTest
 
   private AnonymousConfiguration initialAnonymousConfiguration = new TestAnonymousConfiguration();
 
-  @Before
+  @BeforeEach
   public void setup() {
     initialAnonymousConfiguration.setEnabled(true);
     initialAnonymousConfiguration.setUserId(AnonymousConfiguration.DEFAULT_USER_ID);
@@ -63,12 +67,12 @@ public class AnonymousAccessApiResourceTest
   }
 
   @Test
-  public void testGet() {
+  public void shouldReturnCurrentConfiguration() {
     assertThat(underTest.read(), is(new AnonymousAccessSettingsXO(initialAnonymousConfiguration)));
   }
 
   @Test
-  public void testUpdate() {
+  public void shouldUpdateConfiguration() {
     AnonymousConfiguration newConfiguration = new TestAnonymousConfiguration();
     newConfiguration.setRealmName(AnonymousConfiguration.DEFAULT_REALM_NAME);
     newConfiguration.setUserId(AnonymousConfiguration.DEFAULT_USER_ID);
@@ -79,21 +83,34 @@ public class AnonymousAccessApiResourceTest
     assertThat(underTest.update(xo), is(new AnonymousAccessSettingsXO(newConfiguration)));
   }
 
-  @Test(expected = ValidationErrorsException.class)
-  public void testInvalidRealm() {
+  @Test
+  public void shouldThrowExceptionWhenRealmIsInvalid() {
     AnonymousConfiguration newConfiguration = new TestAnonymousConfiguration();
     newConfiguration.setRealmName("invalidRealmName");
     newConfiguration.setUserId(AnonymousConfiguration.DEFAULT_USER_ID);
     newConfiguration.setEnabled(false);
 
-    underTest.update(new AnonymousAccessSettingsXO(newConfiguration));
+    AnonymousAccessSettingsXO xo = new AnonymousAccessSettingsXO(newConfiguration);
+    
+    assertThrows(ValidationErrorsException.class, () -> {
+      underTest.update(xo);
+    });
   }
 
   @Test
-  public void testDeserialize() throws IOException {
+  public void shouldDeserializeJsonToSettings() throws IOException {
     ObjectMapper mapper = new ObjectMapper();
-    String value = "{\"enabled\": true }";
+    String value = "{\"enabled\": true, \"userId\": \"anonymous\", \"realmName\": \"NexusAuthorizingRealm\"}";
     AnonymousAccessSettingsXO settings = mapper.readValue(value.getBytes(), AnonymousAccessSettingsXO.class);
+    
+    // Basic assertion
     assertThat(settings.isEnabled(), is(true));
+    
+    // Using Java 21 record pattern matching for enhanced validation
+    if (settings instanceof AnonymousAccessSettingsXO(boolean enabled, String userId, String realmName)) {
+      assertThat(enabled, is(true));
+      assertThat(userId, is("anonymous"));
+      assertThat(realmName, is("NexusAuthorizingRealm"));
+    }
   }
 }

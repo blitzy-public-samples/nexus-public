@@ -20,7 +20,6 @@ import org.sonatype.nexus.common.log.LogManager;
 import org.apache.karaf.shell.api.action.Action;
 import org.apache.karaf.shell.api.action.Command;
 import org.apache.karaf.shell.api.action.Option;
-import org.apache.karaf.shell.support.table.ShellTable;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.lang.Boolean.TRUE;
@@ -47,23 +46,43 @@ public class LoggersAction
 
   @Override
   public Object execute() throws Exception {
-    if (TRUE.equals(reset)) {
-      logManager.resetLoggers();
-    }
-    else {
-      final ShellTable table = new ShellTable();
-      table.column("Name");
-      table.column("Level").alignRight();
-
-      logManager.getLoggers()
-          .keySet()
-          .stream()
-          .sorted()
-          .forEach(key -> table.addRow().addContent(key, logManager.getLoggers().get(key)));
-
-      table.print(System.out);
-    }
-
-    return null;
+    return switch (reset) {
+      case TRUE -> {
+        logManager.resetLoggers();
+        yield null;
+      }
+      case null, default -> {
+        printLoggers();
+        yield null;
+      }
+    };
+  }
+  
+  /**
+   * Prints the loggers in a formatted table using String Templates.
+   */
+  private void printLoggers() {
+    // Find the maximum length of logger names for proper alignment
+    int maxNameLength = logManager.getLoggers().keySet().stream()
+        .mapToInt(String::length)
+        .max()
+        .orElse(10);
+    
+    // Ensure minimum column width
+    maxNameLength = Math.max(maxNameLength, 4); // "Name" header length
+    
+    // Print header with proper alignment
+    System.out.println(STR."\{String.format("%-" + maxNameLength + "s", "Name")} Level");
+    System.out.println(STR."\{"-".repeat(maxNameLength)} -----");
+    
+    // Print each logger with proper alignment
+    logManager.getLoggers()
+        .keySet()
+        .stream()
+        .sorted()
+        .forEach(key -> {
+          String level = logManager.getLoggers().get(key);
+          System.out.println(STR."\{String.format("%-" + maxNameLength + "s", key)} \{level}");
+        });
   }
 }

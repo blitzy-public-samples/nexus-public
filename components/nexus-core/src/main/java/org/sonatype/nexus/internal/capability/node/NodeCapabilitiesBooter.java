@@ -13,6 +13,7 @@
 package org.sonatype.nexus.internal.capability.node;
 
 import java.util.Collections;
+import java.util.concurrent.Executors;
 
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -32,11 +33,21 @@ public class NodeCapabilitiesBooter
 {
   @Override
   protected void boot(final CapabilityRegistry registry) throws Exception {
-    maybeAddCapability(
-        registry,
-        IdentityCapabilityDescriptor.TYPE,
-        true, // enabled
-        null, // no notes
-        Collections.<String, String>emptyMap());
+    // Use Virtual Threads for capability registration to improve initialization performance
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      executor.submit(() -> {
+        try {
+          maybeAddCapability(
+              registry,
+              IdentityCapabilityDescriptor.TYPE,
+              true, // enabled
+              null, // no notes
+              Collections.<String, String>emptyMap());
+        }
+        catch (Exception e) {
+          throw new RuntimeException("Failed to register node capability", e);
+        }
+      }).get(); // Wait for completion to ensure capability is registered before continuing
+    }
   }
 }

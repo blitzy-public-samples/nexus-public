@@ -12,8 +12,11 @@
  */
 package org.sonatype.nexus.internal.metrics;
 
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import javax.inject.Named;
 
+import com.google.inject.name.Names;
 import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.security.FilterChainModule;
 import org.sonatype.nexus.security.SecurityFilter;
@@ -22,10 +25,13 @@ import org.sonatype.nexus.security.authc.AntiCsrfFilter;
 import org.sonatype.nexus.security.authc.NexusAuthenticationFilter;
 import org.sonatype.nexus.security.authz.PermissionsFilter;
 
-import com.codahale.metrics.Clock;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.inject.AbstractModule;
+import io.dropwizard.metrics.Clock;
+import io.dropwizard.metrics.MetricRegistry;
+import io.prometheus.client.CollectorRegistry;
+import io.prometheus.client.dropwizard.DropwizardExports;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -66,6 +72,24 @@ public class MetricsModule
 
     final JsonFactory jsonFactory = new JsonFactory(new ObjectMapper());
     bind(JsonFactory.class).toInstance(jsonFactory);
+    
+    // Create a virtual thread-based executor for metrics processing
+    final Executor virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    bind(Executor.class).annotatedWith(Names.named("metricsExecutor")).toInstance(virtualThreadExecutor);
+    
+    // Register the main metrics registry
+    final MetricRegistry metricRegistry = new MetricRegistry();
+    bind(MetricRegistry.class).toInstance(metricRegistry);
+    
+    // Register Java 21 specific metrics registry
+    final MetricRegistry java21Registry = new MetricRegistry().register("jvm.21", new VirtualThreadMetrics());
+    bind(MetricRegistry.class).annotatedWith(Names.named("java21Registry")).toInstance(java21Registry);
+    
+    // Configure Prometheus integration
+    final CollectorRegistry collectorRegistry = CollectorRegistry.defaultRegistry;
+    collectorRegistry.register(new DropwizardExports(metricRegistry));
+    collectorRegistry.register(new DropwizardExports(java21Registry));
+    bind(CollectorRegistry.class).toInstance(collectorRegistry);
 
     install(new MetricsServletModule(MOUNT_POINT)
     {
@@ -88,6 +112,6 @@ public class MetricsModule
       }
     });
 
-    log.info("Metrics support configured");
+    log.info("Metrics support configured with Java 21 virtual thread capabilities");
   }
 }

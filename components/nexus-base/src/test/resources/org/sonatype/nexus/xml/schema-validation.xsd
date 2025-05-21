@@ -1,0 +1,484 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:tns="http://sonatype.org/nexus/xml/schema-validation"
+           targetNamespace="http://sonatype.org/nexus/xml/schema-validation"
+           elementFormDefault="qualified"
+           attributeFormDefault="unqualified"
+           version="1.0">
+
+  <!-- Root element definition -->
+  <xs:element name="configuration" type="tns:ConfigurationType">
+    <xs:annotation>
+      <xs:documentation>
+        Root element for schema validation testing in Java 21.
+        This schema defines various elements and types to test Java 21's JAXP implementation.
+      </xs:documentation>
+    </xs:annotation>
+  </xs:element>
+
+  <!-- Complex type for the root element -->
+  <xs:complexType name="ConfigurationType">
+    <xs:sequence>
+      <xs:element name="metadata" type="tns:MetadataType" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="repositories" type="tns:RepositoriesType" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="security" type="tns:SecurityType" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="tasks" type="tns:TasksType" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="blobstores" type="tns:BlobStoresType" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="capabilities" type="tns:CapabilitiesType" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="customElements" type="tns:CustomElementsType" minOccurs="0" maxOccurs="1"/>
+    </xs:sequence>
+    <xs:attribute name="version" type="tns:VersionType" use="required"/>
+    <xs:attribute name="id" type="xs:ID" use="required"/>
+    <xs:attribute name="timestamp" type="xs:dateTime" use="optional"/>
+  </xs:complexType>
+
+  <!-- Metadata type definition -->
+  <xs:complexType name="MetadataType">
+    <xs:sequence>
+      <xs:element name="title" type="xs:string" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="description" type="xs:string" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="author" type="xs:string" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="created" type="xs:dateTime" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="modified" type="xs:dateTime" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="tags" minOccurs="0" maxOccurs="1">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="tag" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Repositories type definition -->
+  <xs:complexType name="RepositoriesType">
+    <xs:sequence>
+      <xs:element name="repository" type="tns:RepositoryType" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="group" type="tns:RepositoryGroupType" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Repository type definition -->
+  <xs:complexType name="RepositoryType">
+    <xs:sequence>
+      <xs:element name="name" type="xs:string" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="format" type="tns:RepositoryFormatType" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="type" type="tns:RepositoryTypeEnum" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="url" type="xs:anyURI" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="blobstore" type="xs:string" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="properties" type="tns:PropertiesType" minOccurs="0" maxOccurs="1"/>
+    </xs:sequence>
+    <xs:attribute name="id" type="xs:ID" use="required"/>
+    <xs:attribute name="online" type="xs:boolean" use="optional" default="true"/>
+  </xs:complexType>
+
+  <!-- Repository Group type definition -->
+  <xs:complexType name="RepositoryGroupType">
+    <xs:sequence>
+      <xs:element name="name" type="xs:string" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="format" type="tns:RepositoryFormatType" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="members" minOccurs="1" maxOccurs="1">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="member" type="xs:IDREF" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+    <xs:attribute name="id" type="xs:ID" use="required"/>
+    <xs:attribute name="online" type="xs:boolean" use="optional" default="true"/>
+  </xs:complexType>
+
+  <!-- Security type definition -->
+  <xs:complexType name="SecurityType">
+    <xs:sequence>
+      <xs:element name="realm" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="roles" minOccurs="0" maxOccurs="1">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="role" type="tns:RoleType" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="users" minOccurs="0" maxOccurs="1">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="user" type="tns:UserType" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="privileges" minOccurs="0" maxOccurs="1">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="privilege" type="tns:PrivilegeType" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+    <xs:attribute name="anonymousAccess" type="xs:boolean" use="optional" default="false"/>
+  </xs:complexType>
+
+  <!-- Role type definition -->
+  <xs:complexType name="RoleType">
+    <xs:sequence>
+      <xs:element name="name" type="xs:string" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="description" type="xs:string" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="privileges" minOccurs="0" maxOccurs="1">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="privilege" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="roles" minOccurs="0" maxOccurs="1">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="role" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+    <xs:attribute name="id" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <!-- User type definition -->
+  <xs:complexType name="UserType">
+    <xs:sequence>
+      <xs:element name="firstName" type="xs:string" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="lastName" type="xs:string" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="email" type="tns:EmailType" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="password" type="xs:string" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="status" type="tns:UserStatusEnum" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="roles" minOccurs="0" maxOccurs="1">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="role" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+    <xs:attribute name="id" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <!-- Privilege type definition -->
+  <xs:complexType name="PrivilegeType">
+    <xs:sequence>
+      <xs:element name="name" type="xs:string" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="description" type="xs:string" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="type" type="xs:string" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="properties" type="tns:PropertiesType" minOccurs="0" maxOccurs="1"/>
+    </xs:sequence>
+    <xs:attribute name="id" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <!-- Tasks type definition -->
+  <xs:complexType name="TasksType">
+    <xs:sequence>
+      <xs:element name="task" type="tns:TaskType" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Task type definition -->
+  <xs:complexType name="TaskType">
+    <xs:sequence>
+      <xs:element name="name" type="xs:string" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="type" type="xs:string" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="schedule" type="tns:ScheduleType" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="properties" type="tns:PropertiesType" minOccurs="0" maxOccurs="1"/>
+    </xs:sequence>
+    <xs:attribute name="id" type="xs:string" use="required"/>
+    <xs:attribute name="enabled" type="xs:boolean" use="optional" default="true"/>
+  </xs:complexType>
+
+  <!-- Schedule type definition -->
+  <xs:complexType name="ScheduleType">
+    <xs:choice>
+      <xs:element name="manual" type="tns:EmptyType"/>
+      <xs:element name="once" type="tns:OnceScheduleType"/>
+      <xs:element name="hourly" type="tns:HourlyScheduleType"/>
+      <xs:element name="daily" type="tns:DailyScheduleType"/>
+      <xs:element name="weekly" type="tns:WeeklyScheduleType"/>
+      <xs:element name="monthly" type="tns:MonthlyScheduleType"/>
+      <xs:element name="advanced" type="tns:AdvancedScheduleType"/>
+    </xs:choice>
+  </xs:complexType>
+
+  <!-- Empty type for elements with no content -->
+  <xs:complexType name="EmptyType"/>
+
+  <!-- Once schedule type definition -->
+  <xs:complexType name="OnceScheduleType">
+    <xs:sequence>
+      <xs:element name="startDate" type="xs:dateTime" minOccurs="1" maxOccurs="1"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Hourly schedule type definition -->
+  <xs:complexType name="HourlyScheduleType">
+    <xs:sequence>
+      <xs:element name="startDate" type="xs:dateTime" minOccurs="0" maxOccurs="1"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Daily schedule type definition -->
+  <xs:complexType name="DailyScheduleType">
+    <xs:sequence>
+      <xs:element name="startDate" type="xs:dateTime" minOccurs="0" maxOccurs="1"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Weekly schedule type definition -->
+  <xs:complexType name="WeeklyScheduleType">
+    <xs:sequence>
+      <xs:element name="startDate" type="xs:dateTime" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="days" minOccurs="1" maxOccurs="1">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="day" type="tns:DayOfWeekEnum" minOccurs="1" maxOccurs="7"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Monthly schedule type definition -->
+  <xs:complexType name="MonthlyScheduleType">
+    <xs:sequence>
+      <xs:element name="startDate" type="xs:dateTime" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="days" minOccurs="1" maxOccurs="1">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="day" type="tns:DayOfMonthType" minOccurs="1" maxOccurs="31"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Advanced schedule type definition (cron expression) -->
+  <xs:complexType name="AdvancedScheduleType">
+    <xs:sequence>
+      <xs:element name="cronExpression" type="tns:CronExpressionType" minOccurs="1" maxOccurs="1"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- BlobStores type definition -->
+  <xs:complexType name="BlobStoresType">
+    <xs:sequence>
+      <xs:element name="blobstore" type="tns:BlobStoreType" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="blobstoreGroup" type="tns:BlobStoreGroupType" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- BlobStore type definition -->
+  <xs:complexType name="BlobStoreType">
+    <xs:sequence>
+      <xs:element name="name" type="xs:string" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="type" type="tns:BlobStoreTypeEnum" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="path" type="xs:string" minOccurs="0" maxOccurs="1"/>
+      <xs:element name="properties" type="tns:PropertiesType" minOccurs="0" maxOccurs="1"/>
+    </xs:sequence>
+    <xs:attribute name="id" type="xs:ID" use="required"/>
+  </xs:complexType>
+
+  <!-- BlobStore Group type definition -->
+  <xs:complexType name="BlobStoreGroupType">
+    <xs:sequence>
+      <xs:element name="name" type="xs:string" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="members" minOccurs="1" maxOccurs="1">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="member" type="xs:IDREF" minOccurs="1" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+    <xs:attribute name="id" type="xs:ID" use="required"/>
+  </xs:complexType>
+
+  <!-- Capabilities type definition -->
+  <xs:complexType name="CapabilitiesType">
+    <xs:sequence>
+      <xs:element name="capability" type="tns:CapabilityType" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Capability type definition -->
+  <xs:complexType name="CapabilityType">
+    <xs:sequence>
+      <xs:element name="type" type="xs:string" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="properties" type="tns:PropertiesType" minOccurs="0" maxOccurs="1"/>
+    </xs:sequence>
+    <xs:attribute name="id" type="xs:string" use="required"/>
+    <xs:attribute name="enabled" type="xs:boolean" use="optional" default="true"/>
+    <xs:attribute name="notes" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <!-- Properties type definition -->
+  <xs:complexType name="PropertiesType">
+    <xs:sequence>
+      <xs:element name="property" type="tns:PropertyType" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Property type definition -->
+  <xs:complexType name="PropertyType">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute name="name" type="xs:string" use="required"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <!-- Custom Elements type definition for testing complex structures -->
+  <xs:complexType name="CustomElementsType">
+    <xs:sequence>
+      <xs:element name="element" type="tns:CustomElementType" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="nestedElements" minOccurs="0" maxOccurs="1">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="level1" minOccurs="0" maxOccurs="unbounded">
+              <xs:complexType>
+                <xs:sequence>
+                  <xs:element name="level2" minOccurs="0" maxOccurs="unbounded">
+                    <xs:complexType>
+                      <xs:sequence>
+                        <xs:element name="level3" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+                      </xs:sequence>
+                      <xs:attribute name="id" type="xs:string" use="required"/>
+                    </xs:complexType>
+                  </xs:element>
+                </xs:sequence>
+                <xs:attribute name="id" type="xs:string" use="required"/>
+              </xs:complexType>
+            </xs:element>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="mixedContent" minOccurs="0" maxOccurs="1">
+        <xs:complexType mixed="true">
+          <xs:sequence>
+            <xs:element name="inline" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="anyElement" minOccurs="0" maxOccurs="1">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:any namespace="##any" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Custom Element type definition -->
+  <xs:complexType name="CustomElementType">
+    <xs:sequence>
+      <xs:element name="name" type="xs:string" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="value" type="xs:string" minOccurs="1" maxOccurs="1"/>
+      <xs:element name="attributes" minOccurs="0" maxOccurs="1">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="attribute" type="tns:PropertyType" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+    <xs:attribute name="id" type="xs:string" use="required"/>
+    <xs:attribute name="type" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <!-- Simple type definitions with restrictions -->
+
+  <!-- Version type with pattern restriction -->
+  <xs:simpleType name="VersionType">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="\d+\.\d+\.\d+(-SNAPSHOT)?" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Email type with pattern restriction -->
+  <xs:simpleType name="EmailType">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[^@]+@[^.]+\..+" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Repository format type with enumeration restriction -->
+  <xs:simpleType name="RepositoryFormatType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="maven2"/>
+      <xs:enumeration value="npm"/>
+      <xs:enumeration value="nuget"/>
+      <xs:enumeration value="docker"/>
+      <xs:enumeration value="raw"/>
+      <xs:enumeration value="pypi"/>
+      <xs:enumeration value="rubygems"/>
+      <xs:enumeration value="apt"/>
+      <xs:enumeration value="yum"/>
+      <xs:enumeration value="helm"/>
+      <xs:enumeration value="r"/>
+      <xs:enumeration value="p2"/>
+      <xs:enumeration value="conda"/>
+      <xs:enumeration value="go"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Repository type enumeration -->
+  <xs:simpleType name="RepositoryTypeEnum">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="hosted"/>
+      <xs:enumeration value="proxy"/>
+      <xs:enumeration value="group"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- User status enumeration -->
+  <xs:simpleType name="UserStatusEnum">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="active"/>
+      <xs:enumeration value="disabled"/>
+      <xs:enumeration value="locked"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Day of week enumeration -->
+  <xs:simpleType name="DayOfWeekEnum">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="sunday"/>
+      <xs:enumeration value="monday"/>
+      <xs:enumeration value="tuesday"/>
+      <xs:enumeration value="wednesday"/>
+      <xs:enumeration value="thursday"/>
+      <xs:enumeration value="friday"/>
+      <xs:enumeration value="saturday"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Day of month type with range restriction -->
+  <xs:simpleType name="DayOfMonthType">
+    <xs:restriction base="xs:int">
+      <xs:minInclusive value="1"/>
+      <xs:maxInclusive value="31"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Cron expression type with pattern restriction -->
+  <xs:simpleType name="CronExpressionType">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="(\S+ ){5}\S+"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- BlobStore type enumeration -->
+  <xs:simpleType name="BlobStoreTypeEnum">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="file"/>
+      <xs:enumeration value="s3"/>
+      <xs:enumeration value="azure"/>
+      <xs:enumeration value="group"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+</xs:schema>

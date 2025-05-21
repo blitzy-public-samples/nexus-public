@@ -17,10 +17,9 @@ import javax.inject.Provider;
 import javax.inject.Singleton;
 
 import com.codahale.metrics.health.HealthCheck;
-import com.codahale.metrics.health.jvm.ThreadDeadlockHealthCheck;
 
 /**
- * {@link ThreadDeadlockHealthCheck} provider.
+ * Thread deadlock health check provider that detects deadlocks in both platform and virtual threads.
  *
  * @since 2.8
  */
@@ -30,6 +29,6 @@ public class DeadlockHealthCheckProvider
     implements Provider<HealthCheck>
 {
   public HealthCheck get() {
-    return new ThreadDeadlockHealthCheck();
+    return new EnhancedThreadDeadlockHealthCheck();
   }
 }

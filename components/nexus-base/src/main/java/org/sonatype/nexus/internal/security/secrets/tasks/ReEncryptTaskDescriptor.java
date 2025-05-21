@@ -12,15 +12,25 @@
  */
 package org.sonatype.nexus.internal.security.secrets.tasks;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.common.upgrade.AvailabilityVersion;
 import org.sonatype.nexus.scheduling.TaskDescriptorSupport;
 
 import static org.sonatype.nexus.crypto.secrets.SecretsService.SECRETS_MIGRATION_VERSION;
 
+/**
+ * Task descriptor for re-encrypting secrets with a specified key.
+ * <p>
+ * This task supports Java 21 Virtual Thread optimization for improved performance
+ * when executing I/O-bound operations during the re-encryption process. The task
+ * automatically leverages Virtual Threads when running under Java 21, providing
+ * better scalability and resource utilization during secret re-encryption operations.
+ *
+ * @since 3.0
+ */
 @AvailabilityVersion(from = SECRETS_MIGRATION_VERSION)
 @Named(ReEncryptTaskDescriptor.TYPE_ID)
 @Singleton

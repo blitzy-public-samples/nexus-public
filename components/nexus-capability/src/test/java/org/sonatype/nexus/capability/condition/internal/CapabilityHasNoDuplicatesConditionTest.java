@@ -21,17 +21,20 @@ import org.sonatype.nexus.capability.CapabilityReference;
 import org.sonatype.nexus.capability.CapabilityRegistry;
 import org.sonatype.nexus.capability.condition.EventManagerTestSupport;
 
-import com.google.common.collect.ImmutableMap;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
+import static java.lang.StringTemplate.STR;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.Mockito;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
@@ -41,12 +44,10 @@ import static org.sonatype.nexus.capability.CapabilityType.capabilityType;
 /**
  * {@link CapabilityHasNoDuplicatesCondition} UTs.
  */
+@ExtendWith(MockitoExtension.class)
 public class CapabilityHasNoDuplicatesConditionTest
     extends EventManagerTestSupport
 {
-
-  @Rule
-  public ExpectedException thrown = ExpectedException.none();
 
   @Mock
   private CapabilityRegistry capabilityRegistry;
@@ -59,8 +60,8 @@ public class CapabilityHasNoDuplicatesConditionTest
 
   private CapabilityDescriptor descriptor;
 
-  @Before
-  public void setUpCondition() throws Exception {
+  @BeforeEach
+  void setUpCondition() throws Exception {
     reference = createReference("testRef1", "testType");
 
     context = reference.context();
@@ -70,16 +71,16 @@ public class CapabilityHasNoDuplicatesConditionTest
   }
 
   @Test
-  public void standardLifecycle() {
-    assertThat(underTest.isSatisfied(), is(false));
+  void standardLifecycle() {
+    assertFalse(underTest.isSatisfied());
 
     underTest.setContext(reference.context());
 
-    assertThat(underTest.isSatisfied(), is(false));
+    assertFalse(underTest.isSatisfied());
 
     underTest.bind();
 
-    assertThat(underTest.isSatisfied(), is(true));
+    assertTrue(underTest.isSatisfied());
 
     underTest.release();
 
@@ -90,20 +91,20 @@ public class CapabilityHasNoDuplicatesConditionTest
   }
 
   @Test
-  public void duplicatesDetectedDuringBind() {
+  void duplicatesDetectedDuringBind() {
     underTest.setContext(reference.context());
 
     when(descriptor.isDuplicated(context.id(), context.properties())).thenReturn(true);
 
     underTest.bind();
 
-    assertThat(underTest.isSatisfied(), is(false));
+    assertFalse(underTest.isSatisfied());
 
     underTest.release();
   }
 
   @Test
-  public void duplicatesDetectedDuringEvents() {
+  void duplicatesDetectedDuringEvents() {
     CapabilityReference unrelatedRef = createReference("testRef2", "anotherType");
     CapabilityReference duplicateRef = createReference("testRef3", "testType");
 
@@ -112,27 +113,27 @@ public class CapabilityHasNoDuplicatesConditionTest
 
     // only checked after matching event
     when(descriptor.isDuplicated(context.id(), context.properties())).thenReturn(true);
-    assertThat(underTest.isSatisfied(), is(true));
+    assertTrue(underTest.isSatisfied());
     // different type, shouldn't trigger change
     underTest.handle(new CapabilityEvent.Created(capabilityRegistry, unrelatedRef));
-    assertThat(underTest.isSatisfied(), is(true));
+    assertTrue(underTest.isSatisfied());
 
     // same type, condition should check for dups
     underTest.handle(new CapabilityEvent.Created(capabilityRegistry, duplicateRef));
 
-    assertThat(underTest.isSatisfied(), is(false));
+    assertFalse(underTest.isSatisfied());
 
     // only checked after matching event
     when(descriptor.isDuplicated(context.id(), context.properties())).thenReturn(false);
-    assertThat(underTest.isSatisfied(), is(false));
+    assertFalse(underTest.isSatisfied());
     // different type, shouldn't trigger change
     underTest.handle(new CapabilityEvent.AfterRemove(capabilityRegistry, unrelatedRef));
-    assertThat(underTest.isSatisfied(), is(false));
+    assertFalse(underTest.isSatisfied());
 
     // same type, condition should check for dups
     underTest.handle(new CapabilityEvent.AfterRemove(capabilityRegistry, duplicateRef));
 
-    assertThat(underTest.isSatisfied(), is(true));
+    assertTrue(underTest.isSatisfied());
 
     underTest.release();
 
@@ -146,23 +147,25 @@ public class CapabilityHasNoDuplicatesConditionTest
    * Verify that contextualization fails if already bound.
    */
   @Test
-  public void contextualizationFailsWhenAlreadyBounded() {
-    thrown.expect(IllegalStateException.class);
-    thrown.expectMessage("Cannot contextualize when already bound");
-    underTest.setContext(reference.context());
-    underTest.bind();
-    underTest.setContext(reference.context());
+  void contextualizationFailsWhenAlreadyBounded() {
+    IllegalStateException exception = assertThrows(IllegalStateException.class, () -> {
+      underTest.setContext(reference.context());
+      underTest.bind();
+      underTest.setContext(reference.context());
+    });
+    assertEquals(STR."Cannot contextualize when already bound", exception.getMessage());
   }
 
   /**
    * Verify that contextualization fails if already contextualized.
    */
   @Test
-  public void contextualizationFailsWhenAlreadyContextualized() {
-    thrown.expect(IllegalStateException.class);
-    thrown.expectMessage("Already contextualized");
-    underTest.setContext(reference.context());
-    underTest.setContext(reference.context());
+  void contextualizationFailsWhenAlreadyContextualized() {
+    IllegalStateException exception = assertThrows(IllegalStateException.class, () -> {
+      underTest.setContext(reference.context());
+      underTest.setContext(reference.context());
+    });
+    assertEquals(STR."Already contextualized", exception.getMessage());
   }
 
   private static CapabilityReference createReference(final String id, final String type) {
@@ -170,7 +173,7 @@ public class CapabilityHasNoDuplicatesConditionTest
 
     CapabilityContext context = mock(CapabilityContext.class);
     when(context.id()).thenReturn(capabilityIdentity(id));
-    Map<String, String> testProperties = ImmutableMap.of("testKey", "testValue");
+    Map<String, String> testProperties = Map.of("testKey", "testValue");
     when(context.properties()).thenReturn(testProperties);
     when(context.descriptor()).thenReturn(descriptor);
     when(context.type()).thenReturn(capabilityType(type));

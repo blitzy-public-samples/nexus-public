@@ -44,11 +44,16 @@ public class LoggingAuditor
   @AllowConcurrentEvents
   public void on(final LoggersResetEvent event) {
     if (isRecording()) {
+      // Log using String Templates for improved readability and performance
+      if (log.isDebugEnabled()) {
+        log.debug(STR."Processing loggers reset event");
+      }
+      
       AuditData data = new AuditData();
       data.setDomain(DOMAIN);
       data.setType("reset");
       data.setContext(SYSTEM_CONTEXT);
-      record(data);
+      record(data); // AuditorSupport.record() already uses virtual threads
     }
   }
 
@@ -58,6 +63,11 @@ public class LoggingAuditor
     if (isRecording()) {
       String logger = event.getLogger();
       LoggerLevel level = event.getLevel();
+      
+      // Log using String Templates for improved readability and performance
+      if (log.isDebugEnabled()) {
+        log.debug(STR."Processing logger level changed event: logger=\{logger}, level=\{level}");
+      }
 
       AuditData data = new AuditData();
       data.setDomain(DOMAIN);
@@ -67,7 +77,7 @@ public class LoggingAuditor
       Map<String, Object> attributes = data.getAttributes();
       attributes.put("logger", logger);
       attributes.put("level", string(level));
-      record(data);
+      record(data); // AuditorSupport.record() already uses virtual threads
     }
   }
 }

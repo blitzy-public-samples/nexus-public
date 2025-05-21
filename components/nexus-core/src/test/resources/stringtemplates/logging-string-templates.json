@@ -1,0 +1,272 @@
+{
+  "description": "Test scenarios for Java 21 string templates in logging contexts",
+  "version": "1.0",
+  "testScenarios": [
+    {
+      "name": "Basic Logging",
+      "description": "Simple logging statements with string templates",
+      "cases": [
+        {
+          "id": "info-basic",
+          "level": "INFO",
+          "traditional": "logger.info(\"User \" + username + \" logged in from \" + ipAddress)",
+          "template": "logger.info(STR.\"User \\{username} logged in from \\{ipAddress}\")",
+          "variables": {
+            "username": "admin",
+            "ipAddress": "192.168.1.1"
+          },
+          "expected": "User admin logged in from 192.168.1.1"
+        },
+        {
+          "id": "debug-basic",
+          "level": "DEBUG",
+          "traditional": "logger.debug(\"Processing request #\" + requestId + \" with parameters: \" + params)",
+          "template": "logger.debug(STR.\"Processing request #\\{requestId} with parameters: \\{params}\")",
+          "variables": {
+            "requestId": "REQ-12345",
+            "params": "{sort: 'name', order: 'asc'}"
+          },
+          "expected": "Processing request #REQ-12345 with parameters: {sort: 'name', order: 'asc'}"
+        },
+        {
+          "id": "warn-basic",
+          "level": "WARN",
+          "traditional": "logger.warn(\"Slow response time detected: \" + responseTime + \"ms for endpoint \" + endpoint)",
+          "template": "logger.warn(STR.\"Slow response time detected: \\{responseTime}ms for endpoint \\{endpoint}\")",
+          "variables": {
+            "responseTime": 5000,
+            "endpoint": "/api/repositories"
+          },
+          "expected": "Slow response time detected: 5000ms for endpoint /api/repositories"
+        },
+        {
+          "id": "error-basic",
+          "level": "ERROR",
+          "traditional": "logger.error(\"Failed to process request: \" + errorMessage + \" (code: \" + errorCode + \")\")",
+          "template": "logger.error(STR.\"Failed to process request: \\{errorMessage} (code: \\{errorCode})\")",
+          "variables": {
+            "errorMessage": "Connection timeout",
+            "errorCode": "ERR-5001"
+          },
+          "expected": "Failed to process request: Connection timeout (code: ERR-5001)"
+        }
+      ]
+    },
+    {
+      "name": "Conditional Logging",
+      "description": "Logging with conditional expressions in templates",
+      "cases": [
+        {
+          "id": "conditional-ternary",
+          "level": "INFO",
+          "traditional": "logger.info(\"Repository \" + repoName + \" is \" + (isOnline ? \"online\" : \"offline\"))",
+          "template": "logger.info(STR.\"Repository \\{repoName} is \\{isOnline ? \\"online\\" : \\"offline\\"}\")",
+          "variables": {
+            "repoName": "maven-central",
+            "isOnline": true
+          },
+          "expected": "Repository maven-central is online"
+        },
+        {
+          "id": "conditional-method",
+          "level": "DEBUG",
+          "traditional": "logger.debug(\"User permissions: \" + (hasAdminAccess() ? \"Admin\" : \"Regular\") + \" for user \" + userId)",
+          "template": "logger.debug(STR.\"User permissions: \\{hasAdminAccess() ? \\"Admin\\" : \\"Regular\\"} for user \\{userId}\")",
+          "variables": {
+            "userId": "user123",
+            "hasAdminAccess()": false
+          },
+          "expected": "User permissions: Regular for user user123"
+        }
+      ]
+    },
+    {
+      "name": "Complex Expressions",
+      "description": "Logging with complex expressions and calculations",
+      "cases": [
+        {
+          "id": "expression-calculation",
+          "level": "INFO",
+          "traditional": "logger.info(\"Storage usage: \" + (usedSpace / totalSpace * 100) + \"% (\" + usedSpace + \"/\" + totalSpace + \" MB)\")",
+          "template": "logger.info(STR.\"Storage usage: \\{usedSpace / totalSpace * 100}% (\\{usedSpace}/\\{totalSpace} MB)\")",
+          "variables": {
+            "usedSpace": 750,
+            "totalSpace": 1000
+          },
+          "expected": "Storage usage: 75.0% (750/1000 MB)"
+        },
+        {
+          "id": "expression-method-chain",
+          "level": "DEBUG",
+          "traditional": "logger.debug(\"Normalized repository name: \" + repoName.toLowerCase().trim().replace(' ', '-'))",
+          "template": "logger.debug(STR.\"Normalized repository name: \\{repoName.toLowerCase().trim().replace(' ', '-')}\")",
+          "variables": {
+            "repoName": " Maven Central "
+          },
+          "expected": "Normalized repository name: maven-central"
+        }
+      ]
+    },
+    {
+      "name": "Formatted Output",
+      "description": "Logging with formatted values using FMT processor",
+      "cases": [
+        {
+          "id": "fmt-decimal",
+          "level": "INFO",
+          "traditional": "logger.info(\"Download progress: \" + String.format(\"%.2f\", progress * 100) + \"%\")",
+          "template": "logger.info(FMT.\"Download progress: %.2f\\{progress * 100}%\")",
+          "variables": {
+            "progress": 0.7523
+          },
+          "expected": "Download progress: 75.23%"
+        },
+        {
+          "id": "fmt-padding",
+          "level": "DEBUG",
+          "traditional": "logger.debug(\"Task ID: \" + String.format(\"%08d\", taskId) + \" | Status: \" + status)",
+          "template": "logger.debug(FMT.\"Task ID: %08d\\{taskId} | Status: \\{status}\")",
+          "variables": {
+            "taskId": 42,
+            "status": "RUNNING"
+          },
+          "expected": "Task ID: 00000042 | Status: RUNNING"
+        }
+      ]
+    },
+    {
+      "name": "MDC Integration",
+      "description": "Logging with MDC (Mapped Diagnostic Context) values",
+      "cases": [
+        {
+          "id": "mdc-basic",
+          "level": "INFO",
+          "traditional": "MDC.put(\"userId\", userId); MDC.put(\"sessionId\", sessionId); logger.info(\"User action: \" + action)",
+          "template": "MDC.put(\"userId\", userId); MDC.put(\"sessionId\", sessionId); logger.info(STR.\"User action: \\{action}\")",
+          "variables": {
+            "userId": "admin",
+            "sessionId": "SESSION-12345",
+            "action": "REPOSITORY_CREATE"
+          },
+          "expected": "User action: REPOSITORY_CREATE",
+          "mdcValues": {
+            "userId": "admin",
+            "sessionId": "SESSION-12345"
+          }
+        },
+        {
+          "id": "mdc-template",
+          "level": "DEBUG",
+          "traditional": "String mdcInfo = \"[userId=\" + MDC.get(\"userId\") + \", sessionId=\" + MDC.get(\"sessionId\") + \"]\"; logger.debug(mdcInfo + \" Processing action: \" + action)",
+          "template": "logger.debug(STR.\"[userId=\\{MDC.get(\\"userId\\")}, sessionId=\\{MDC.get(\\"sessionId\\")}] Processing action: \\{action}\")",
+          "variables": {
+            "action": "REPOSITORY_UPDATE",
+            "MDC.get(\"userId\")": "admin",
+            "MDC.get(\"sessionId\")": "SESSION-12345"
+          },
+          "expected": "[userId=admin, sessionId=SESSION-12345] Processing action: REPOSITORY_UPDATE"
+        }
+      ]
+    },
+    {
+      "name": "Multiline Logging",
+      "description": "Logging with multiline text blocks",
+      "cases": [
+        {
+          "id": "multiline-basic",
+          "level": "INFO",
+          "traditional": "logger.info(\"Configuration loaded:\\n\" + \"- Repository: \" + repoName + \"\\n\" + \"- Type: \" + repoType + \"\\n\" + \"- URL: \" + repoUrl)",
+          "template": "logger.info(STR.\"\"\"
+            Configuration loaded:
+            - Repository: \\{repoName}
+            - Type: \\{repoType}
+            - URL: \\{repoUrl}
+            \"\"\")",
+          "variables": {
+            "repoName": "maven-central",
+            "repoType": "proxy",
+            "repoUrl": "https://repo.maven.apache.org/maven2/"
+          },
+          "expected": "Configuration loaded:\n- Repository: maven-central\n- Type: proxy\n- URL: https://repo.maven.apache.org/maven2/"
+        },
+        {
+          "id": "multiline-json",
+          "level": "DEBUG",
+          "traditional": "logger.debug(\"Request payload:\\n\" + \"{\\n\" + \"  \\\"name\\\": \\\"\" + repoName + \"\\\",\\n\" + \"  \\\"type\\\": \\\"\" + repoType + \"\\\",\\n\" + \"  \\\"url\\\": \\\"\" + repoUrl + \"\\\"\\n\" + \"}\")",
+          "template": "logger.debug(STR.\"\"\"
+            Request payload:
+            {
+              \"name\": \"\\{repoName}\",
+              \"type\": \"\\{repoType}\",
+              \"url\": \"\\{repoUrl}\"
+            }
+            \"\"\")",
+          "variables": {
+            "repoName": "maven-central",
+            "repoType": "proxy",
+            "repoUrl": "https://repo.maven.apache.org/maven2/"
+          },
+          "expected": "Request payload:\n{\n  \"name\": \"maven-central\",\n  \"type\": \"proxy\",\n  \"url\": \"https://repo.maven.apache.org/maven2/\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "Performance Sensitive",
+      "description": "Logging scenarios where performance is critical",
+      "cases": [
+        {
+          "id": "perf-guard-traditional",
+          "level": "TRACE",
+          "traditional": "if (logger.isTraceEnabled()) { logger.trace(\"Detailed metrics: \" + calculateDetailedMetrics()) }",
+          "template": "if (logger.isTraceEnabled()) { logger.trace(STR.\"Detailed metrics: \\{calculateDetailedMetrics()}\") }",
+          "variables": {
+            "calculateDetailedMetrics()": "CPU: 45%, Memory: 1.2GB, Disk I/O: 25MB/s"
+          },
+          "expected": "Detailed metrics: CPU: 45%, Memory: 1.2GB, Disk I/O: 25MB/s",
+          "notes": "Both approaches avoid calculating metrics when trace is disabled"
+        },
+        {
+          "id": "perf-lambda-vs-template",
+          "level": "DEBUG",
+          "traditional": "logger.debug(() -> \"Complex calculation result: \" + performExpensiveCalculation())",
+          "template": "logger.debug(STR.\"Complex calculation result: \\{performExpensiveCalculation()}\")",
+          "variables": {
+            "performExpensiveCalculation()": "42.1234567890"
+          },
+          "expected": "Complex calculation result: 42.1234567890",
+          "notes": "Template approach evaluates eagerly, lambda approach is lazy"
+        }
+      ]
+    },
+    {
+      "name": "Exception Handling",
+      "description": "Logging with exception information",
+      "cases": [
+        {
+          "id": "exception-basic",
+          "level": "ERROR",
+          "traditional": "logger.error(\"Failed to process request: \" + e.getMessage(), e)",
+          "template": "logger.error(STR.\"Failed to process request: \\{e.getMessage()}\", e)",
+          "variables": {
+            "e.getMessage()": "Connection refused"
+          },
+          "expected": "Failed to process request: Connection refused",
+          "notes": "Both approaches pass the exception object as second parameter"
+        },
+        {
+          "id": "exception-details",
+          "level": "ERROR",
+          "traditional": "logger.error(\"Error in \" + className + \".\" + methodName + \": \" + e.getMessage() + \" (line \" + lineNumber + \")\")",
+          "template": "logger.error(STR.\"Error in \\{className}.\\{methodName}: \\{e.getMessage()} (line \\{lineNumber})\")",
+          "variables": {
+            "className": "RepositoryManager",
+            "methodName": "createRepository",
+            "e.getMessage()": "Invalid repository configuration",
+            "lineNumber": 142
+          },
+          "expected": "Error in RepositoryManager.createRepository: Invalid repository configuration (line 142)"
+        }
+      ]
+    }
+  ]
+}

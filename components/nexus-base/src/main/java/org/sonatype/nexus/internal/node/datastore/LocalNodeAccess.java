@@ -28,6 +28,7 @@ import org.sonatype.nexus.node.datastore.NodeIdStore;
 import com.google.common.collect.ImmutableMap;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.State.STARTED;
 
 /**
@@ -55,7 +56,7 @@ public class LocalNodeAccess
   protected void doStart() throws Exception {
     this.id = nodeIdStore.getOrCreate();
 
-    log.info("ID: {}", id);
+    log.info(STR."ID: \{id}");
 
     memberAliases = ImmutableMap.of(id, id);
   }
@@ -99,8 +100,6 @@ public class LocalNodeAccess
 
   @Override
   public String toString() {
-    return getClass().getSimpleName() + "{" +
-        "id='" + id + '\'' +
-        '}';
+    return STR."\{getClass().getSimpleName()}\{id='\{id}'\}";
   }
 }

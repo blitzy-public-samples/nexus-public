@@ -14,8 +14,12 @@ package org.sonatype.nexus.internal.security.secrets.tasks;
 
 import java.time.Duration;
 import java.util.List;
-import javax.inject.Inject;
-import javax.inject.Named;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
 
 import org.sonatype.nexus.common.entity.Continuations;
 import org.sonatype.nexus.crypto.secrets.SecretData;
@@ -40,7 +44,7 @@ public class ReEncryptTask
 
   private final SecretsStore secretsStore;
 
-  private final long delayTimeMs;
+  private final Duration delayTime;
 
   @Inject
   public ReEncryptTask(
@@ -50,7 +54,7 @@ public class ReEncryptTask
   {
     this.secretsService = checkNotNull(secretsService);
     this.secretsStore = checkNotNull(secretsStore);
-    this.delayTimeMs = Duration.ofSeconds(pollInterval).toMillis() * 2;
+    this.delayTime = Duration.ofSeconds(pollInterval).multiply(2);
   }
 
   @Override
@@ -61,28 +65,65 @@ public class ReEncryptTask
   @Override
   protected Object execute() throws Exception {
     waitActiveKeyProcessing();
-    log.info("Started re-encrypting secrets with provided keyId");
+    log.info(STR."Started re-encrypting secrets with provided keyId");
     String secretKeyId = taskConfiguration().getString("keyId");
     int processed = reEncrypt(secretKeyId);
-    log.info("Completed re-encryption of secrets with keyId '{}'. Processed {} secrets", secretKeyId, processed);
+    log.info(STR."Completed re-encryption of secrets with keyId '\{secretKeyId}'. Processed \{processed} secrets");
     return processed;
   }
 
   private int reEncrypt(String keyId) {
-    int processedCount = 0;
+    AtomicInteger processedCount = new AtomicInteger(0);
     List<SecretData> page = secretsStore.fetchWithDifferentKeyId(keyId, Continuations.BROWSE_LIMIT);
+    
     try (ProgressLogIntervalHelper progress = new ProgressLogIntervalHelper(log, 60)) {
       while (!page.isEmpty()) {
-        page.forEach(secret -> {
-          checkCancellation();
-          secretsService.reEncrypt(secret, keyId);
-        });
-        processedCount += page.size();
-        progress.info("Processed {} secrets.", processedCount);
+        checkCancellation();
+        
+        // Process batch of secrets in parallel using virtual threads
+        CountDownLatch latch = new CountDownLatch(page.size());
+        ConcurrentLinkedQueue<Exception> exceptions = new ConcurrentLinkedQueue<>();
+        
+        for (SecretData secret : page) {
+          Thread.startVirtualThread(() -> {
+            try {
+              // Use pattern matching for SecretData
+              if (secret instanceof SecretData data) {
+                secretsService.reEncrypt(data, keyId);
+              }
+              processedCount.incrementAndGet();
+            } 
+            catch (Exception e) {
+              exceptions.add(e);
+            }
+            finally {
+              latch.countDown();
+            }
+          });
+        }
+        
+        // Wait for all virtual threads to complete
+        latch.await();
+        
+        // Check if any exceptions occurred during processing
+        if (!exceptions.isEmpty()) {
+          Exception firstException = exceptions.poll();
+          throw new RuntimeException(STR."Error during secret re-encryption: \{firstException.getMessage()}", firstException);
+        }
+        
+        int currentCount = processedCount.get();
+        progress.info(STR."Processed \{currentCount} secrets.");
+        
+        // Get next batch of secrets
         page = secretsStore.fetchWithDifferentKeyId(keyId, Continuations.BROWSE_LIMIT);
       }
     }
-    return processedCount;
+    catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      log.warn(STR."Re-encryption task was interrupted after processing \{processedCount.get()} secrets");
+    }
+    
+    return processedCount.get();
   }
 
   /**
@@ -90,11 +131,12 @@ public class ReEncryptTask
    */
   private void waitActiveKeyProcessing() {
     try {
-      Thread.sleep(delayTimeMs);
+      // Use Java 21's more efficient time handling for sleep
+      Thread.sleep(delayTime);
     }
     catch (InterruptedException e) {
-      // ignore
+      Thread.currentThread().interrupt();
+      log.debug(STR."Wait for active key processing was interrupted after \{delayTime}");
     }
   }
-
 }

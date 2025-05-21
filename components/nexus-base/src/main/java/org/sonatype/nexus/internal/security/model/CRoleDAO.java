@@ -12,13 +12,16 @@
  */
 package org.sonatype.nexus.internal.security.model;
 
+import org.apache.ibatis.annotations.Param;
 import org.sonatype.nexus.datastore.api.IdentifiedDataAccess;
+import org.sonatype.nexus.datastore.api.VirtualThreadSupport;
 
 /**
  * {@link CRoleData} access.
  *
  * @since 3.21
  */
+@VirtualThreadSupport
 public interface CRoleDAO
     extends IdentifiedDataAccess<CRoleData>
 {

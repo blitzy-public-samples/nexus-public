@@ -21,7 +21,6 @@ import org.sonatype.nexus.audit.AuditData;
 import org.sonatype.nexus.audit.AuditorSupport;
 import org.sonatype.nexus.common.event.EventAware;
 
-import com.google.common.eventbus.AllowConcurrentEvents;
 import com.google.common.eventbus.Subscribe;
 
 /**
@@ -46,40 +45,46 @@ public class UserTokenAuditor
   }
 
   @Subscribe
-  @AllowConcurrentEvents
   public void on(final UserTokenEvent event) {
     if (isRecording()) {
-      AuditData data = getAuditData(event.getEventType().toString());
-      if (event instanceof UserTokenConfigChangedEvent) {
-        Map<String, Object> attributes = data.getAttributes();
-        UserTokenConfigChangedEvent configChangedEvent = (UserTokenConfigChangedEvent) event;
-        attributes.put("Enabled", configChangedEvent.isEnabled());
-        attributes.put("Protect", configChangedEvent.isProtectContent());
-        if (configChangedEvent.isExpirationEnabled()) {
-          attributes.put("Expiration Days", configChangedEvent.getExpirationDays());
-        }
-      }
-      else if (event instanceof UserTokenDeletedEvent) {
-        UserTokenDeletedEvent deletedEvent = (UserTokenDeletedEvent) event;
-        int deleted = deletedEvent.getDeleted();
-        String username = deletedEvent.getUsername();
-        Map<String, Object> attributes = data.getAttributes();
-        attributes.put("Deleted", deleted);
-        if (null != username) {
-          attributes.put("username", username);
-        }
-      }
-      data.setType(type(event.getClass()));
+      // Process event in a virtual thread for better concurrency and resource utilization
+      Thread.startVirtualThread(() -> {
+        try {
+          AuditData data = getAuditData(event.getEventType().toString());
+          if (event instanceof UserTokenConfigChangedEvent) {
+            Map<String, Object> attributes = data.getAttributes();
+            UserTokenConfigChangedEvent configChangedEvent = (UserTokenConfigChangedEvent) event;
+            attributes.put("Enabled", configChangedEvent.isEnabled());
+            attributes.put("Protect", configChangedEvent.isProtectContent());
+            if (configChangedEvent.isExpirationEnabled()) {
+              attributes.put("Expiration Days", configChangedEvent.getExpirationDays());
+            }
+          }
+          else if (event instanceof UserTokenDeletedEvent) {
+            UserTokenDeletedEvent deletedEvent = (UserTokenDeletedEvent) event;
+            int deleted = deletedEvent.getDeleted();
+            String username = deletedEvent.getUsername();
+            Map<String, Object> attributes = data.getAttributes();
+            attributes.put("Deleted", deleted);
+            if (null != username) {
+              attributes.put("username", username);
+            }
+          }
+          data.setType(type(event.getClass()));
 
-      record(data);
+          record(data);
+        }
+        catch (Exception e) {
+          log.error(STR."Error processing user token event: \{e.getMessage()}", e);
+        }
+      });
     }
   }
 
   private AuditData getAuditData(final String eventType) {
     AuditData data = new AuditData();
     data.setDomain(DOMAIN);
-    data.setContext(eventType);
+    data.setContext(STR."\{eventType}");
     return data;
   }
-
 }

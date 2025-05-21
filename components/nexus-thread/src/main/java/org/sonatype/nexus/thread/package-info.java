@@ -12,41 +12,104 @@
  */
 
 /**
- * Threading helpers and components for Nexus Repository Manager.
- * <p>
- * This package provides a comprehensive threading framework that includes:
+ * Threading helpers and components.
+ *
+ * <h2>Virtual Threads in Java 21</h2>
+ * 
+ * <p>Starting with Java 21, this package supports Virtual Threads, a lightweight threading implementation
+ * that significantly improves scalability for I/O-bound operations. Virtual Threads are managed by the JVM rather
+ * than the operating system, allowing for millions of concurrent threads with minimal overhead.</p>
+ *
+ * <h3>Virtual Threads vs Platform Threads</h3>
+ * 
+ * <p>The Nexus Repository Manager uses two types of threads:</p>
  * <ul>
- *   <li>Thread factories and executors with consistent naming, lifecycle management, and security context propagation</li>
- *   <li>MDC-aware task wrappers to ensure logging context is maintained across thread boundaries</li>
- *   <li>Database-aware execution services that respect system writability state</li>
- *   <li>I/O utilities for asynchronous stream operations</li>
- *   <li>Virtual thread support for improved scalability of I/O-bound operations</li>
+ *   <li><b>Platform Threads</b>: Traditional OS-backed threads with a 1:1 mapping to OS threads. These are suitable for
+ *       CPU-intensive operations but have higher memory overhead (~2MB per thread).</li>
+ *   <li><b>Virtual Threads</b>: Lightweight JVM-managed threads with a many-to-few mapping to OS threads (carrier threads).
+ *       These are ideal for I/O-bound operations and have minimal memory overhead.</li>
  * </ul>
- * <p>
- * With Java 21 virtual threads integration, this package enables highly scalable concurrent processing
- * for I/O-bound operations such as repository access, blob storage, and network communications. Virtual threads
- * provide significant advantages over traditional platform threads:
+ *
+ * <h3>Usage Patterns and Best Practices</h3>
+ * 
+ * <p>When to use each thread type:</p>
  * <ul>
- *   <li>Lightweight resource usage allowing millions of concurrent threads</li>
- *   <li>Automatic unmounting from carrier threads during blocking I/O operations</li>
- *   <li>Simplified programming model compared to reactive approaches</li>
- *   <li>Improved throughput for I/O-intensive workloads</li>
- *   <li>Better resource utilization across the system</li>
+ *   <li>Use <b>Virtual Threads</b> for I/O-bound operations such as:</li>
+ *   <ul>
+ *     <li>Network operations (HTTP requests, remote repository access)</li>
+ *     <li>File system operations (BlobStore access)</li>
+ *     <li>Database operations (JDBC queries)</li>
+ *   </ul>
+ *   <li>Use <b>Platform Threads</b> for CPU-intensive operations such as:</li>
+ *   <ul>
+ *     <li>Computation-heavy tasks</li>
+ *     <li>Data processing</li>
+ *     <li>Operations using synchronized blocks extensively</li>
+ *   </ul>
  * </ul>
- * <p>
- * Key components for virtual thread support include:
+ *
+ * <p>Creating Virtual Threads:</p>
+ * <pre>
+ * // Using Thread.Builder API
+ * Thread vThread = Thread.ofVirtual()
+ *     .name("task-", 1)
+ *     .start(() -> performTask());
+ *
+ * // Using ExecutorService
+ * try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+ *     executor.submit(() -> performTask());
+ * }
+ * </pre>
+ *
+ * <h3>Performance Characteristics</h3>
+ * 
+ * <p>Virtual Threads provide several performance benefits:</p>
  * <ul>
- *   <li>Thread factories that can create either platform or virtual threads based on workload characteristics</li>
- *   <li>ExecutorService implementations optimized for virtual threads</li>
- *   <li>I/O utilities that leverage virtual threads for non-blocking behavior while maintaining synchronous APIs</li>
+ *   <li>Significantly higher throughput for I/O-bound operations</li>
+ *   <li>Reduced memory footprint compared to platform threads</li>
+ *   <li>Automatic yielding during blocking operations</li>
+ *   <li>No need for thread pooling or complex executor configurations</li>
  * </ul>
- * <p>
- * For optimal performance with virtual threads, prefer using them for I/O-bound operations (network calls,
- * file system access, database queries) rather than CPU-intensive tasks. Also avoid using synchronized blocks
- * around I/O operations as this can cause thread pinning, which prevents virtual threads from unmounting.
+ *
+ * <p><b>Important:</b> Virtual Threads can be "pinned" to their carrier thread in certain situations, preventing
+ * the carrier from being used by other virtual threads:</p>
+ * <ul>
+ *   <li>When executing code inside synchronized blocks or methods</li>
+ *   <li>When executing native methods or foreign functions</li>
+ * </ul>
+ *
+ * <h3>Resource Management</h3>
+ * 
+ * <p>Unlike platform threads, Virtual Threads are cheap to create and don't require pooling. However, they still
+ * consume other resources:</p>
+ * <ul>
+ *   <li>Use explicit throttling mechanisms (e.g., Semaphore) to limit concurrent resource usage</li>
+ *   <li>Monitor Virtual Thread creation and completion rates</li>
+ *   <li>Be aware of downstream resource constraints (database connections, network sockets)</li>
+ * </ul>
+ *
+ * <h3>Monitoring Virtual Threads</h3>
+ * 
+ * <p>Virtual Threads can be monitored using:</p>
+ * <ul>
+ *   <li>JDK Flight Recorder (JFR) events</li>
+ *   <li>JMX metrics</li>
+ *   <li>Thread dumps (jcmd &lt;pid&gt; Thread.dump_to_file -format=json)</li>
+ *   <li>Java Mission Control (JMC)</li>
+ * </ul>
+ *
+ * <h3>Migration Guidelines</h3>
+ * 
+ * <p>When migrating from platform threads to Virtual Threads:</p>
+ * <ul>
+ *   <li>Replace thread pools with virtual thread per task executors</li>
+ *   <li>Minimize use of synchronized blocks in favor of java.util.concurrent locks</li>
+ *   <li>Add explicit resource throttling where needed</li>
+ *   <li>Test thoroughly under load to identify potential pinning issues</li>
+ *   <li>Verify compatibility with third-party libraries</li>
+ * </ul>
  *
  * @since 3.0
- * @see java.lang.Thread#startVirtualThread(Runnable)
- * @see java.lang.Thread#ofVirtual()
+ * @since 3.60 Added support for Java 21 Virtual Threads
  */
 package org.sonatype.nexus.thread;

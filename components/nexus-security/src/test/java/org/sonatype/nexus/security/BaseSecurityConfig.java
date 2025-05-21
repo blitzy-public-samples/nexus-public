@@ -17,10 +17,17 @@ import org.sonatype.nexus.security.config.memory.MemoryCUser;
 import org.sonatype.nexus.security.config.memory.MemoryCUserRoleMapping;
 
 /**
+ * Provides a base security configuration for testing purposes.
+ * 
  * @since 3.0
  */
 public class BaseSecurityConfig
 {
+  /**
+   * Returns a memory security configuration with predefined users and role mappings.
+   * 
+   * @return a configured {@link MemorySecurityConfiguration} instance
+   */
   public static MemorySecurityConfiguration get() {
     return new MemorySecurityConfiguration().withUsers(
         new MemoryCUser().withId("admin")
@@ -37,17 +44,16 @@ public class BaseSecurityConfig
         new MemoryCUser().withId("anonymous")
             .withPassword("0a92fab3230134cca6eadd9898325b9b2ae67998")
             .withFirstName("Nexus")
-            .withLastName("Anonynmous User")
+            .withLastName("Anonymous User") // Fixed typo in "Anonymous"
             .withStatus("active")
             .withEmail("anonymous@example.org"))
-        .withUserRoleMappings(new MemoryCUserRoleMapping().withUserId("admin").withSource("default").withRoles("admin"),
+        .withUserRoleMappings(
+            new MemoryCUserRoleMapping().withUserId("admin").withSource("default").withRoles("admin"),
             new MemoryCUserRoleMapping().withUserId("deployment")
                 .withSource("default")
-                .withRoles("deployment",
-                    "repo-all-full"),
+                .withRoles("deployment", "repo-all-full"),
             new MemoryCUserRoleMapping().withUserId("anonymous")
                 .withSource("default")
-                .withRoles("anonymous",
-                    "repo-all-read"));
+                .withRoles("anonymous", "repo-all-read"));
   }
 }

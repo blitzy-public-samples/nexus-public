@@ -12,16 +12,22 @@
  */
 package org.sonatype.nexus.kv;
 
-import org.sonatype.nexus.common.event.EventWithSource;
+import java.io.Serializable;
+import java.util.Objects;
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import org.sonatype.nexus.common.event.EventWithSource;
 
 /**
  * An event fired when a value is set via {@link GlobalKeyValueStore}
+ * <p>
+ * Optimized for Virtual Thread execution and cluster-wide event propagation.
  */
 public class KeyValueEvent
     extends EventWithSource
+    implements Serializable
 {
+  private static final long serialVersionUID = 1L;
+  
   private String key;
 
   private Object value;
@@ -30,8 +36,15 @@ public class KeyValueEvent
     // deserialization
   }
 
+  /**
+   * Creates a new event with the specified key and value.
+   *
+   * @param key the key that was set (must not be null)
+   * @param value the value that was set (may be null)
+   * @throws NullPointerException if key is null
+   */
   public KeyValueEvent(final String key, final Object value) {
-    this.key = checkNotNull(key);
+    this.key = Objects.requireNonNull(key, "Key cannot be null");
     this.value = value;
   }
 
@@ -52,11 +65,28 @@ public class KeyValueEvent
     return value;
   }
 
+  /**
+   * Sets the key for this event.
+   * Used during deserialization.
+   *
+   * @param key the key to set
+   */
   public void setKey(final String key) {
     this.key = key;
   }
 
+  /**
+   * Sets the value for this event.
+   * Used during deserialization.
+   *
+   * @param value the value to set
+   */
   public void setValue(final Object value) {
     this.value = value;
+  }
+  
+  @Override
+  public String toString() {
+    return "KeyValueEvent{key='" + key + "', value=" + (value == null ? "null" : value.getClass().getSimpleName()) + "}";
   }
 }

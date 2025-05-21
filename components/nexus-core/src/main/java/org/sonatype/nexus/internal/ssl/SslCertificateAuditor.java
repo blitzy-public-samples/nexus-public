@@ -29,10 +29,6 @@ import org.sonatype.nexus.ssl.CertificateCreatedEvent;
 import org.sonatype.nexus.ssl.CertificateDeletedEvent;
 import org.sonatype.nexus.ssl.CertificateEvent;
 
-import com.google.common.base.Throwables;
-import com.google.common.eventbus.AllowConcurrentEvents;
-import com.google.common.eventbus.Subscribe;
-
 /**
  * SSL certificate auditor.
  *
@@ -51,34 +47,58 @@ public class SslCertificateAuditor
     registerType(CertificateDeletedEvent.class, DELETED_TYPE);
   }
 
-  @Subscribe
-  @AllowConcurrentEvents
+  /**
+   * Handles certificate events asynchronously using virtual threads.
+   * 
+   * @param event The certificate event to process
+   */
   public void on(final CertificateEvent event) {
     if (isRecording()) {
-      Certificate certificate = event.getCertificate();
-
-      AuditData data = new AuditData();
-      data.setDomain(DOMAIN);
-      data.setType(type(event.getClass()));
-
-      Map<String, Object> attributes = data.getAttributes();
-      attributes.put("alias", event.getAlias());
-      attributes.put("type", certificate.getType());
-
-      if (certificate instanceof X509Certificate) {
-        X509Certificate x509 = (X509Certificate) certificate;
-        Map<String, String> rdns = parseLdapName(x509.getSubjectX500Principal().getName());
-        data.setContext(rdns.get("CN"));
-        attributes.putAll(rdns);
-      }
-      else {
-        data.setContext(event.getAlias());
-      }
-
-      record(data);
+      // Process certificate events asynchronously using virtual threads
+      Thread.startVirtualThread(() -> processEvent(event));
     }
   }
+  
+  /**
+   * Processes the certificate event and records audit data.
+   * 
+   * @param event The certificate event to process
+   */
+  private void processEvent(final CertificateEvent event) {
+    Certificate certificate = event.getCertificate();
 
+    AuditData data = new AuditData();
+    data.setDomain(DOMAIN);
+    data.setType(type(event.getClass()));
+
+    Map<String, Object> attributes = data.getAttributes();
+    attributes.put("alias", event.getAlias());
+    attributes.put("type", certificate.getType());
+
+    if (certificate instanceof X509Certificate) {
+      X509Certificate x509 = (X509Certificate) certificate;
+      Map<String, String> rdns = parseLdapName(x509.getSubjectX500Principal().getName());
+      data.setContext(rdns.get("CN"));
+      attributes.putAll(rdns);
+      
+      // Add structured logging with String Templates for improved diagnostics
+      log.debug(STR."Processing X509 certificate with subject: \{x509.getSubjectX500Principal().getName()} and alias: \{event.getAlias()}");
+    }
+    else {
+      data.setContext(event.getAlias());
+      log.debug(STR."Processing non-X509 certificate with alias: \{event.getAlias()} and type: \{certificate.getType()}");
+    }
+
+    record(data);
+    log.debug(STR."Recorded audit event for certificate: \{event.getAlias()} with type: \{type(event.getClass())}");
+  }
+
+  /**
+   * Parses an LDAP distinguished name into a map of attribute types and values.
+   * 
+   * @param dn The distinguished name to parse
+   * @return A map of attribute types to values
+   */
   private static Map<String, String> parseLdapName(final String dn) {
     try {
       Map<String, String> result = new HashMap<>();
@@ -89,8 +109,11 @@ public class SslCertificateAuditor
       return result;
     }
     catch (Exception e) {
-      Throwables.throwIfUnchecked(e);
-      throw new RuntimeException(e);
+      // Modern Java exception handling instead of Guava Throwables
+      if (e instanceof RuntimeException) {
+        throw (RuntimeException) e;
+      }
+      throw new RuntimeException(STR."Failed to parse LDAP name: \{dn}", e);
     }
   }
 }

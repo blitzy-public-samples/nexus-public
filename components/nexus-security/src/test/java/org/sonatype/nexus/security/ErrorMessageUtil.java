@@ -12,11 +12,19 @@
  */
 package org.sonatype.nexus.security;
 
+/**
+ * Utility class for formatting error messages in a consistent way.
+ * Updated to use Java 21 String templates for improved readability.
+ */
 public class ErrorMessageUtil {
 
-  private static final String ERROR_MESSAGE_TEMPLATE = "ValidationErrorXO{id='*', message='%s'}";
-
+  /**
+   * Returns a formatted error message using Java 21 String templates.
+   * 
+   * @param message the error message to format
+   * @return the formatted error message
+   */
   public static String getFormattedMessage(String message) {
-    return String.format(ERROR_MESSAGE_TEMPLATE, message);
+    return STR."ValidationErrorXO{id='*', message='\{message}'}";
   }
 }

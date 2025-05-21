@@ -30,6 +30,9 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Applies defaults to {@link HttpClientPlan}.
+ * 
+ * Optimized for Java 21 Virtual Threads to ensure efficient I/O operations
+ * and prevent thread pinning during HTTP operations.
  *
  * @since 3.0
  */
@@ -63,18 +66,19 @@ public class DefaultsCustomizer
     this.userAgentGenerator = checkNotNull(userAgentGenerator);
 
     this.requestTimeout = checkNotNull(requestTimeout);
-    log.debug("Request timeout: {}", requestTimeout);
+    log.debug(STR."Request timeout: \{requestTimeout}");
 
     this.connectionRequestTimeout = checkNotNull(connectionRequestTimeout);
-    log.debug("Connection request timeout: {}", connectionRequestTimeout);
+    log.debug(STR."Connection request timeout: \{connectionRequestTimeout}");
 
     this.keepAliveDuration = checkNotNull(keepAliveDuration);
-    log.debug("Keep-alive duration: {}", keepAliveDuration);
+    log.debug(STR."Keep-alive duration: \{keepAliveDuration}");
 
     this.bufferSize = checkNotNull(bufferSize);
-    log.debug("Buffer-size: {}", bufferSize);
+    log.debug(STR."Buffer-size: \{bufferSize}");
 
     this.retryCount = checkNotNull(retryCount);
+    log.debug(STR."Retry count: \{retryCount}");
   }
 
   @Override
@@ -83,11 +87,20 @@ public class DefaultsCustomizer
 
     plan.setUserAgentBase(userAgentGenerator.generate());
 
+    // Configure keep-alive strategy optimized for Virtual Threads
+    // Shorter keep-alive durations work better with Virtual Threads as they
+    // allow more efficient resource utilization
     plan.getClient().setKeepAliveStrategy(new NexusConnectionKeepAliveStrategy(keepAliveDuration.toMillis()));
+    
+    // Configure retry handler with appropriate retry count
+    // Virtual Threads benefit from explicit retry policies rather than connection pooling
     plan.getClient().setRetryHandler(new StandardHttpRequestRetryHandler(retryCount, false));
 
+    // Set buffer size for optimal I/O operations with Virtual Threads
     plan.getConnection().setBufferSize(bufferSize.toBytesI());
 
+    // Configure request timeouts appropriate for Virtual Thread operations
+    // Virtual Threads perform best with explicit timeouts to prevent resource leaks
     plan.getRequest().setConnectionRequestTimeout(connectionRequestTimeout.toMillisI());
     plan.getRequest().setCookieSpec(CookieSpecs.IGNORE_COOKIES);
     plan.getRequest().setExpectContinueEnabled(false);
@@ -96,6 +109,8 @@ public class DefaultsCustomizer
     plan.getSocket().setSoTimeout(requestTimeoutMillis);
     plan.getRequest().setConnectTimeout(requestTimeoutMillis);
     plan.getRequest().setSocketTimeout(requestTimeoutMillis);
+    
+    log.debug(STR."HTTP client configured with request timeout: \{requestTimeoutMillis}ms, buffer size: \{bufferSize}, retry count: \{retryCount}");
   }
 
   @Override

@@ -15,6 +15,7 @@ package org.sonatype.nexus.internal.security.anonymous;
 import java.io.File;
 import java.io.IOException;
 import java.util.Optional;
+import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -27,6 +28,7 @@ import org.sonatype.nexus.supportzip.datastore.JsonExporter;
 
 /**
  * Write/Read {@link AnonymousConfiguration} data to/from a JSON file.
+ * Utilizes Java 21 Virtual Threads for improved I/O performance.
  *
  * @since 3.29
  */
@@ -45,15 +47,55 @@ public class AnonymousConfigurationExport
 
   @Override
   public void export(final File file) throws IOException {
-    log.debug("Export AnonymousConfiguration data to {}", file);
-    AnonymousConfiguration configuration = anonymousConfigurationStore.load();
-    exportObjectToJson(configuration, file);
+    log.debug(STR."Export AnonymousConfiguration data to \{file}");
+    
+    // Use Virtual Thread for I/O operation to improve performance
+    var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try {
+      executor.submit(() -> {
+        try {
+          AnonymousConfiguration configuration = anonymousConfigurationStore.load();
+          exportObjectToJson(configuration, file);
+        }
+        catch (IOException e) {
+          log.error(STR."Failed to export AnonymousConfiguration data to \{file}", e);
+          throw new RuntimeException(e);
+        }
+        return null;
+      }).get(); // Wait for completion
+    }
+    catch (Exception e) {
+      throw new IOException(STR."Error during export of AnonymousConfiguration to \{file}", e);
+    }
+    finally {
+      executor.close();
+    }
   }
 
   @Override
   public void restore(final File file) throws IOException {
-    log.debug("Restoring AnonymousConfiguration data from {}", file);
-    Optional<AnonymousConfigurationData> configuration = importObjectFromJson(file, AnonymousConfigurationData.class);
-    configuration.ifPresent(anonymousConfigurationStore::save);
+    log.debug(STR."Restoring AnonymousConfiguration data from \{file}");
+    
+    // Use Virtual Thread for I/O operation to improve performance
+    var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try {
+      executor.submit(() -> {
+        try {
+          Optional<AnonymousConfigurationData> configuration = importObjectFromJson(file, AnonymousConfigurationData.class);
+          configuration.ifPresent(anonymousConfigurationStore::save);
+        }
+        catch (IOException e) {
+          log.error(STR."Failed to restore AnonymousConfiguration data from \{file}", e);
+          throw new RuntimeException(e);
+        }
+        return null;
+      }).get(); // Wait for completion
+    }
+    catch (Exception e) {
+      throw new IOException(STR."Error during restoration of AnonymousConfiguration from \{file}", e);
+    }
+    finally {
+      executor.close();
+    }
   }
 }

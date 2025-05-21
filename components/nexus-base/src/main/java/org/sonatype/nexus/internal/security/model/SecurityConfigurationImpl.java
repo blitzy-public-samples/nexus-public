@@ -16,6 +16,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.Executors;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -103,7 +104,14 @@ public class SecurityConfigurationImpl
   @Transactional
   @Override
   public List<CPrivilege> getPrivileges() {
-    return ImmutableList.copyOf(privilegeDAO().browse());
+    // Use virtual threads for I/O-bound operations
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var future = executor.submit(privilegeDAO()::browse);
+      return ImmutableList.copyOf(future.get());
+    } catch (Exception e) {
+      log.error("Error retrieving privileges", e);
+      return Collections.emptyList();
+    }
   }
 
   @Transactional
@@ -147,8 +155,12 @@ public class SecurityConfigurationImpl
       privilegeDAO().create(convert(privilege));
       return privilege;
     }
-    catch (DuplicateKeyException e) {
-      throw new DuplicatePrivilegeException(privilege.getId());
+    catch (Exception e) {
+      // Using pattern matching for exception handling
+      switch (e) {
+        case DuplicateKeyException dke -> throw new DuplicatePrivilegeException(privilege.getId());
+        default -> throw e;
+      }
     }
   }
 
@@ -200,7 +212,14 @@ public class SecurityConfigurationImpl
   @Transactional
   @Override
   public List<CRole> getRoles() {
-    return ImmutableList.copyOf(roleDAO().browse());
+    // Use virtual threads for I/O-bound operations
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var future = executor.submit(roleDAO()::browse);
+      return ImmutableList.copyOf(future.get());
+    } catch (Exception e) {
+      log.error("Error retrieving roles", e);
+      return Collections.emptyList();
+    }
   }
 
   @Transactional
@@ -223,8 +242,12 @@ public class SecurityConfigurationImpl
     try {
       roleDAO().create(convert(role));
     }
-    catch (DuplicateKeyException e) {
-      throw new DuplicateRoleException(role.getId());
+    catch (Exception e) {
+      // Using pattern matching for exception handling
+      switch (e) {
+        case DuplicateKeyException dke -> throw new DuplicateRoleException(role.getId());
+        default -> throw e;
+      }
     }
   }
 
@@ -255,7 +278,14 @@ public class SecurityConfigurationImpl
   @Transactional
   @Override
   public List<CUser> getUsers() {
-    return ImmutableList.copyOf(userDAO().browse());
+    // Use virtual threads for I/O-bound operations
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var future = executor.submit(userDAO()::browse);
+      return ImmutableList.copyOf(future.get());
+    } catch (Exception e) {
+      log.error("Error retrieving users", e);
+      return Collections.emptyList();
+    }
   }
 
   @Transactional
@@ -278,8 +308,12 @@ public class SecurityConfigurationImpl
     try {
       userDAO().create(convert(user));
     }
-    catch (DuplicateKeyException e) {
-      throw new DuplicateUserException(user.getId());
+    catch (Exception e) {
+      // Using pattern matching for exception handling
+      switch (e) {
+        case DuplicateKeyException dke -> throw new DuplicateUserException(user.getId());
+        default -> throw e;
+      }
     }
   }
 
@@ -353,7 +387,14 @@ public class SecurityConfigurationImpl
   @Transactional
   @Override
   public List<CUserRoleMapping> getUserRoleMappings() {
-    return ImmutableList.copyOf(userRoleMappingDAO().browse());
+    // Use virtual threads for I/O-bound operations
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var future = executor.submit(userRoleMappingDAO()::browse);
+      return ImmutableList.copyOf(future.get());
+    } catch (Exception e) {
+      log.error("Error retrieving user role mappings", e);
+      return Collections.emptyList();
+    }
   }
 
   @Transactional
@@ -399,8 +440,8 @@ public class SecurityConfigurationImpl
   }
 
   private CPrivilegeData convert(final CPrivilege privilege) {
-    if (privilege instanceof CPrivilegeData) {
-      return (CPrivilegeData) privilege;
+    if (privilege instanceof CPrivilegeData privilegeData) {
+      return privilegeData;
     }
     CPrivilegeData privilegeData = new CPrivilegeData();
     privilegeData.setId(privilege.getId());
@@ -414,8 +455,8 @@ public class SecurityConfigurationImpl
   }
 
   private CRoleData convert(final CRole role) {
-    if (role instanceof CRoleData) {
-      return (CRoleData) role;
+    if (role instanceof CRoleData roleData) {
+      return roleData;
     }
     CRoleData roleData = new CRoleData();
     roleData.setId(role.getId());
@@ -429,8 +470,8 @@ public class SecurityConfigurationImpl
   }
 
   private CUserData convert(final CUser user) {
-    if (user instanceof CUserData) {
-      return (CUserData) user;
+    if (user instanceof CUserData userData) {
+      return userData;
     }
     CUserData userData = new CUserData();
     userData.setId(user.getId());
@@ -444,8 +485,8 @@ public class SecurityConfigurationImpl
   }
 
   private CUserRoleMappingData convert(final CUserRoleMapping mapping) {
-    if (mapping instanceof CUserRoleMappingData) {
-      return (CUserRoleMappingData) mapping;
+    if (mapping instanceof CUserRoleMappingData mappingData) {
+      return mappingData;
     }
     CUserRoleMappingData mappingData = new CUserRoleMappingData();
     mappingData.setUserId(mapping.getUserId());

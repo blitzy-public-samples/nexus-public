@@ -13,8 +13,12 @@
 package org.sonatype.nexus.security.token;
 
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
-import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.security.SecurityHelper;
 import org.sonatype.nexus.security.authc.apikey.ApiKey;
 import org.sonatype.nexus.security.authc.apikey.ApiKeyService;
@@ -23,23 +27,24 @@ import org.apache.shiro.authc.AuthenticationInfo;
 import org.apache.shiro.mgt.SecurityManager;
 import org.apache.shiro.subject.PrincipalCollection;
 import org.apache.shiro.subject.Subject;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.core.Is.is;
-import static org.hamcrest.core.IsEqual.equalTo;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-public class BearerTokenManagerTest
-    extends TestSupport
+@ExtendWith(MockitoExtension.class)
+class BearerTokenManagerTest
 {
   private static final String FORMAT = "format";
 
@@ -63,10 +68,10 @@ public class BearerTokenManagerTest
   @Mock
   private Subject subject;
 
-  BearerTokenManager underTest;
+  private BearerTokenManager underTest;
 
-  @Before
-  public void setup() throws Exception {
+  @BeforeEach
+  void setup() {
     when(securityHelper.getSecurityManager()).thenReturn(securityManager);
     when(securityManager.authenticate(any())).thenReturn(authenticationInfo);
     when(authenticationInfo.getPrincipals()).thenReturn(principalCollection);
@@ -75,44 +80,52 @@ public class BearerTokenManagerTest
     underTest = new BearerTokenManager(apiKeyService, securityHelper, FORMAT) { };
   }
 
-  @Test(expected = NullPointerException.class)
-  public void failFastWhenApiKeyStoreIsNull() throws Exception {
-    new BearerTokenManager(null, securityHelper, FORMAT) { };
-  }
-
-  @Test(expected = NullPointerException.class)
-  public void failFastWhenSecurityHelperIsNull() throws Exception {
-    new BearerTokenManager(apiKeyService, null, FORMAT) { };
-  }
-
-  @Test(expected = NullPointerException.class)
-  public void failFastWhenFormatIsNull() throws Exception {
-    new BearerTokenManager(apiKeyService, securityHelper, null) { };
-  }
-
-  @Test(expected = NullPointerException.class)
-  public void createTokenFailFastWhenPrincipalsNull() throws Exception {
-    underTest.createToken(principalCollection);
+  @Test
+  void failFastWhenApiKeyStoreIsNull() {
+    assertThrows(NullPointerException.class, () -> {
+      new BearerTokenManager(null, securityHelper, FORMAT) { };
+    });
   }
 
   @Test
-  public void createNewKeyWhenOneDoesNotAlreadyExist() throws Exception {
+  void failFastWhenSecurityHelperIsNull() {
+    assertThrows(NullPointerException.class, () -> {
+      new BearerTokenManager(apiKeyService, null, FORMAT) { };
+    });
+  }
+
+  @Test
+  void failFastWhenFormatIsNull() {
+    assertThrows(NullPointerException.class, () -> {
+      new BearerTokenManager(apiKeyService, securityHelper, null) { };
+    });
+  }
+
+  @Test
+  void failFastWhenPrincipalsNull() {
+    assertThrows(NullPointerException.class, () -> {
+      underTest.createToken(null);
+    });
+  }
+
+  @Test
+  void createNewKeyWhenOneDoesNotAlreadyExist() {
     when(apiKeyService.getApiKey(any(), any())).thenReturn(Optional.empty());
     when(apiKeyService.createApiKey(FORMAT, principalCollection)).thenReturn(TOKEN.toCharArray());
-    assertThat(underTest.createToken(principalCollection), is(equalTo(FORMAT + "." + TOKEN)));
+    assertEquals(FORMAT + "." + TOKEN, underTest.createToken(principalCollection));
     verify(apiKeyService).createApiKey(FORMAT, principalCollection);
   }
 
   @Test
-  public void reuseTokenWhenExists() throws Exception {
+  void reuseTokenWhenExists() {
     Optional<ApiKey> apiKey = Optional.of(mockApiKey(TOKEN.toCharArray()));
     when(apiKeyService.getApiKey(any(), any())).thenReturn(apiKey);
-    assertThat(underTest.createToken(principalCollection), is(equalTo(FORMAT + "." + TOKEN)));
+    assertEquals(FORMAT + "." + TOKEN, underTest.createToken(principalCollection));
     verify(apiKeyService, never()).createApiKey(any(), any());
   }
 
   @Test
-  public void deleteKey() throws Exception {
+  void deleteKey() {
     Optional<ApiKey> apiKey = Optional.of(mockApiKey(TOKEN.toCharArray()));
     when(apiKeyService.getApiKey(any(), any())).thenReturn(apiKey);
     assertTrue(underTest.deleteToken());
@@ -120,10 +133,51 @@ public class BearerTokenManagerTest
   }
 
   @Test
-  public void doNotDeleteKeyWhenNoKeyExists() throws Exception {
+  void doNotDeleteKeyWhenNoKeyExists() {
     when(apiKeyService.getApiKey(any(), any())).thenReturn(Optional.empty());
     assertFalse(underTest.deleteToken());
     verify(apiKeyService, never()).deleteApiKey(FORMAT, principalCollection);
+  }
+  
+  @Test
+  void virtualThreadCompatibilityForTokenOperations() throws Exception {
+    // Setup for virtual thread test
+    int taskCount = 100;
+    CountDownLatch latch = new CountDownLatch(taskCount);
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    // Create a virtual thread executor
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Setup mock responses for all threads
+      when(apiKeyService.getApiKey(any(), any())).thenReturn(Optional.empty());
+      when(apiKeyService.createApiKey(FORMAT, principalCollection)).thenReturn(TOKEN.toCharArray());
+      
+      // Submit tasks to create and delete tokens using virtual threads
+      for (int i = 0; i < taskCount; i++) {
+        executor.submit(() -> {
+          try {
+            // Create a token
+            String token = underTest.createToken(principalCollection);
+            if ((FORMAT + "." + TOKEN).equals(token)) {
+              // Token created successfully, now delete it
+              when(apiKeyService.getApiKey(any(), any())).thenReturn(
+                  Optional.of(mockApiKey(TOKEN.toCharArray())));
+              if (underTest.deleteToken()) {
+                successCount.incrementAndGet();
+              }
+            }
+          } catch (Exception e) {
+            // Exception during token operations
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete or timeout after 5 seconds
+      assertTrue(latch.await(5, TimeUnit.SECONDS), "Not all virtual thread tasks completed in time");
+      assertEquals(taskCount, successCount.get(), "Not all token operations were successful");
+    }
   }
 
   private ApiKey mockApiKey(final char[] token) {

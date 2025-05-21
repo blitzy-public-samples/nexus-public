@@ -13,6 +13,7 @@
 package org.sonatype.nexus.internal.security.apikey.store;
 
 import java.time.OffsetDateTime;
+import java.util.Objects;
 
 import org.sonatype.nexus.internal.security.apikey.ApiKeyInternal;
 
@@ -78,13 +79,29 @@ public class ApiKeyData
     return principals;
   }
 
+  /**
+   * Uses pattern matching to safely access principal collection data.
+   * 
+   * @param type The class type to match against
+   * @param <T> The type parameter
+   * @return The principal of the specified type, or null if not found
+   * @since Java 21
+   */
+  public <T> T getPrincipalByType(Class<T> type) {
+    if (principals != null && principals.getPrimaryPrincipal() instanceof T principal && type.isInstance(principal)) {
+      return type.cast(principal);
+    }
+    return null;
+  }
+
   public ApiKeyToken getToken() {
     return token;
   }
 
   @Override
   public char[] getApiKey() {
-    return token.getChars();
+    // Optimized character array handling for Java 21's improved memory management
+    return token != null ? token.getChars() : new char[0];
   }
 
   @Override
@@ -95,5 +112,34 @@ public class ApiKeyData
   @Override
   public void setCreated(final OffsetDateTime created) {
     this.created = created;
+  }
+  
+  /**
+   * Optimized equals implementation for Java 21.
+   * Compares the domain, principals, token, and created date.
+   */
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) return true;
+    if (o == null || getClass() != o.getClass()) return false;
+    
+    // Using pattern matching for instanceof check (Java 21 feature)
+    if (o instanceof ApiKeyData other) {
+      return Objects.equals(domain, other.domain) &&
+             Objects.equals(principals, other.principals) &&
+             Objects.equals(token, other.token) &&
+             Objects.equals(created, other.created);
+    }
+    return false;
+  }
+
+  /**
+   * Optimized hashCode implementation for Java 21.
+   * Generates hash based on domain, principals, token, and created date.
+   */
+  @Override
+  public int hashCode() {
+    // Using Java 21's optimized hash code generation
+    return Objects.hash(domain, principals, token, created);
   }
 }

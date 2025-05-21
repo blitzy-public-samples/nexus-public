@@ -27,6 +27,10 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.TimeZone;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
@@ -48,6 +52,7 @@ import org.sonatype.nexus.common.node.NodeAccess;
 import org.sonatype.nexus.common.text.Strings2;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.common.text.Strings2.MASK;
 
 /**
@@ -85,6 +90,16 @@ public class SystemInformationGeneratorImpl
   private static final List<String> SENSITIVE_CREDENTIALS_KEYS =
       List.of("sun.java.command", "INSTALL4J_ADD_VM_PARAMS");
 
+  // Records for structured data
+  record TimeInfo(String timezone, long current, String iso8601) {}
+  record RuntimeInfo(int availableProcessors, long freeMemory, long totalMemory, long maxMemory, int threads) {}
+  record FileStoreInfo(String description, String type, long totalSpace, long usableSpace, long unallocatedSpace, boolean readOnly) {}
+  record NetworkInterfaceInfo(String displayName, boolean up, boolean virtual, boolean multicast, boolean loopback, boolean ptp, int mtu, String addresses) {}
+  record NexusStatusInfo(String version, String edition, String buildRevision, String buildTimestamp) {}
+  record NexusNodeInfo(String nodeId, String deploymentId) {}
+  record NexusConfigInfo(String installDirectory, String workingDirectory, String temporaryDirectory) {}
+  record BundleData(long bundleId, String name, String symbolicName, String location, String version, String state, int startLevel, boolean fragment) {}
+
   @Inject
   public SystemInformationGeneratorImpl(
       ApplicationDirectories applicationDirectories,
@@ -108,115 +123,228 @@ public class SystemInformationGeneratorImpl
 
   @Override
   public Map<String, Object> report() {
-    log.info("Generating system information report");
+    log.info(STR."Generating system information report");
 
-    Map<String, Object> sections = new HashMap<>();
-    sections.put("system-time", reportTime());
-    sections.put("system-properties", reportObfuscatedProperties(System.getProperties()));
-    sections.put("system-environment", reportObfuscatedProperties(System.getenv()));
-    sections.put("system-runtime", reportRuntime());
-    sections.put("system-network", reportNetwork());
-    sections.put("system-filestores", reportFileStores());
-    sections.put("nexus-status", reportNexusStatus());
-    sections.put("nexus-node", reportNexusNode());
-    sections.put("nexus-properties", reportObfuscatedProperties(parameters));
-    sections.put("nexus-configuration", reportNexusConfiguration());
-    sections.put("nexus-bundles", reportNexusBundles());
-
-    // Merge additional system information helpers
-    sections.putAll(systemInformationHelpers);
+    Map<String, Object> sections = new ConcurrentHashMap<>();
+    
+    // Use virtual threads for parallel collection of system information
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit tasks to collect information in parallel
+      Future<?> timeTask = executor.submit(() -> sections.put("system-time", reportTime()));
+      Future<?> propertiesTask = executor.submit(() -> sections.put("system-properties", reportObfuscatedProperties(System.getProperties())));
+      Future<?> envTask = executor.submit(() -> sections.put("system-environment", reportObfuscatedProperties(System.getenv())));
+      Future<?> runtimeTask = executor.submit(() -> sections.put("system-runtime", reportRuntime()));
+      Future<?> networkTask = executor.submit(() -> sections.put("system-network", reportNetwork()));
+      Future<?> fileStoresTask = executor.submit(() -> sections.put("system-filestores", reportFileStores()));
+      Future<?> nexusStatusTask = executor.submit(() -> sections.put("nexus-status", reportNexusStatus()));
+      Future<?> nexusNodeTask = executor.submit(() -> sections.put("nexus-node", reportNexusNode()));
+      Future<?> nexusPropertiesTask = executor.submit(() -> sections.put("nexus-properties", reportObfuscatedProperties(parameters)));
+      Future<?> nexusConfigTask = executor.submit(() -> sections.put("nexus-configuration", reportNexusConfiguration()));
+      Future<?> nexusBundlesTask = executor.submit(() -> sections.put("nexus-bundles", reportNexusBundles()));
+      
+      // Wait for all tasks to complete
+      List<Future<?>> tasks = List.of(
+          timeTask, propertiesTask, envTask, runtimeTask, networkTask, fileStoresTask,
+          nexusStatusTask, nexusNodeTask, nexusPropertiesTask, nexusConfigTask, nexusBundlesTask
+      );
+      
+      for (Future<?> task : tasks) {
+        try {
+          task.get();
+        } catch (Exception e) {
+          log.error(STR."Error collecting system information: \{e.getMessage()}", e);
+        }
+      }
+      
+      // Merge additional system information helpers
+      sections.putAll(systemInformationHelpers);
+    }
 
     return sections;
   }
 
   private Map<String, Object> reportTime() {
     Date now = new Date();
+    TimeInfo timeInfo = new TimeInfo(
+        TimeZone.getDefault().getID(),
+        now.getTime(),
+        Iso8601Date.format(now)
+    );
+    
+    // Convert record to map for backward compatibility
     Map<String, Object> data = new HashMap<>();
-    data.put("timezone", TimeZone.getDefault().getID());
-    data.put("current", now.getTime());
-    data.put("iso8601", Iso8601Date.format(now));
+    data.put("timezone", timeInfo.timezone());
+    data.put("current", timeInfo.current());
+    data.put("iso8601", timeInfo.iso8601());
     return data;
   }
 
   private Map<String, Object> reportRuntime() {
     Runtime runtime = Runtime.getRuntime();
+    RuntimeInfo runtimeInfo = new RuntimeInfo(
+        runtime.availableProcessors(),
+        runtime.freeMemory(),
+        runtime.totalMemory(),
+        runtime.maxMemory(),
+        Thread.activeCount()
+    );
+    
+    // Convert record to map for backward compatibility
     Map<String, Object> data = new HashMap<>();
-    data.put("availableProcessors", runtime.availableProcessors());
-    data.put("freeMemory", runtime.freeMemory());
-    data.put("totalMemory", runtime.totalMemory());
-    data.put("maxMemory", runtime.maxMemory());
-    data.put("threads", Thread.activeCount());
+    data.put("availableProcessors", runtimeInfo.availableProcessors());
+    data.put("freeMemory", runtimeInfo.freeMemory());
+    data.put("totalMemory", runtimeInfo.totalMemory());
+    data.put("maxMemory", runtimeInfo.maxMemory());
+    data.put("threads", runtimeInfo.threads());
     return data;
   }
 
   private Map<String, Object> reportFileStores() {
     Map<String, Object> fileStores = new HashMap<>();
     int counter = 1;
-    for (FileStore store : FileSystems.getDefault().getFileStores()) {
-      String key = store.name();
-      while (fileStores.containsKey(key)) {
-        key = store.name() + "-" + counter++;
+    
+    // Use virtual threads to scan file stores in parallel
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      List<Future<Map.Entry<String, Map<String, Object>>>> futures = Collections.list(FileSystems.getDefault().getFileStores().iterator())
+          .stream()
+          .map(store -> executor.submit(() -> {
+            String key = store.name();
+            // Ensure unique keys
+            synchronized (fileStores) {
+              while (fileStores.containsKey(key)) {
+                key = store.name() + "-" + counter++;
+              }
+            }
+            return Map.entry(key, reportFileStore(store));
+          }))
+          .collect(Collectors.toList());
+      
+      // Collect results
+      for (Future<Map.Entry<String, Map<String, Object>>> future : futures) {
+        try {
+          Map.Entry<String, Map<String, Object>> entry = future.get();
+          fileStores.put(entry.getKey(), entry.getValue());
+        } catch (Exception e) {
+          log.error(STR."Error collecting file store information: \{e.getMessage()}", e);
+        }
       }
-      fileStores.put(key, reportFileStore(store));
     }
+    
     return fileStores;
   }
 
   private Map<String, Object> reportNetwork() {
     try {
-      return Collections.list(NetworkInterface.getNetworkInterfaces())
-          .stream()
-          .collect(Collectors.toMap(NetworkInterface::getName, this::reportNetworkInterface));
-    }
-    catch (SocketException e) {
-      log.error("Could not add report to support zip for network interfaces", e);
+      // Use virtual threads to scan network interfaces in parallel
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        return Collections.list(NetworkInterface.getNetworkInterfaces())
+            .stream()
+            .collect(Collectors.toConcurrentMap(
+                NetworkInterface::getName,
+                intf -> {
+                  try {
+                    return executor.submit(() -> reportNetworkInterface(intf)).get();
+                  } catch (Exception e) {
+                    log.error(STR."Error collecting network interface information for \{intf.getName()}: \{e.getMessage()}", e);
+                    return UNAVAILABLE;
+                  }
+                }
+            ));
+      }
+    } catch (SocketException e) {
+      log.error(STR."Could not add report to support zip for network interfaces: \{e.getMessage()}", e);
       return UNAVAILABLE;
     }
   }
 
   private Map<String, Object> reportNexusStatus() {
+    NexusStatusInfo statusInfo = new NexusStatusInfo(
+        applicationVersion.getVersion(),
+        applicationVersion.getEdition(),
+        applicationVersion.getBuildRevision(),
+        applicationVersion.getBuildTimestamp()
+    );
+    
+    // Convert record to map for backward compatibility
     Map<String, Object> data = new HashMap<>();
-    data.put("version", applicationVersion.getVersion());
-    data.put("edition", applicationVersion.getEdition());
-    data.put("buildRevision", applicationVersion.getBuildRevision());
-    data.put("buildTimestamp", applicationVersion.getBuildTimestamp());
+    data.put("version", statusInfo.version());
+    data.put("edition", statusInfo.edition());
+    data.put("buildRevision", statusInfo.buildRevision());
+    data.put("buildTimestamp", statusInfo.buildTimestamp());
     return data;
   }
 
   private Map<String, Object> reportNexusNode() {
+    NexusNodeInfo nodeInfo = new NexusNodeInfo(
+        nodeAccess.getId(),
+        deploymentAccess.getId()
+    );
+    
+    // Convert record to map for backward compatibility
     Map<String, Object> data = new HashMap<>();
-    data.put("node-id", nodeAccess.getId());
-    data.put("deployment-id", deploymentAccess.getId());
+    data.put("node-id", nodeInfo.nodeId());
+    data.put("deployment-id", nodeInfo.deploymentId());
     return data;
   }
 
   private Map<String, Object> reportNexusConfiguration() {
+    NexusConfigInfo configInfo = new NexusConfigInfo(
+        fileref(applicationDirectories.getInstallDirectory()),
+        fileref(applicationDirectories.getWorkDirectory()),
+        fileref(applicationDirectories.getTemporaryDirectory())
+    );
+    
+    // Convert record to map for backward compatibility
     Map<String, Object> data = new HashMap<>();
-    data.put("installDirectory", fileref(applicationDirectories.getInstallDirectory()));
-    data.put("workingDirectory", fileref(applicationDirectories.getWorkDirectory()));
-    data.put("temporaryDirectory", fileref(applicationDirectories.getTemporaryDirectory()));
+    data.put("installDirectory", configInfo.installDirectory());
+    data.put("workingDirectory", configInfo.workingDirectory());
+    data.put("temporaryDirectory", configInfo.temporaryDirectory());
     return data;
   }
 
   private Map<String, Object> reportNexusBundles() {
-    return Arrays.stream(bundleContext.getBundles())
-        .collect(Collectors.toMap(
-            bundle -> Long.toString(bundleService.getInfo(bundle).getBundleId()),
-            bundle -> {
-              BundleInfo info = bundleService.getInfo(bundle);
-              // name is not set for groovy bundles
-              String name = info.getName() == null ? "" : info.getName();
-              Map<String, Object> bundleData = new HashMap<>();
-              bundleData.put("bundleId", info.getBundleId());
-              bundleData.put("name", name);
-              bundleData.put("symbolicName", info.getSymbolicName());
-              bundleData.put("location", info.getUpdateLocation());
-              bundleData.put("version", info.getVersion());
-              bundleData.put("state", info.getState().name());
-              bundleData.put("startLevel", info.getStartLevel());
-              bundleData.put("fragment", info.isFragment());
-              return bundleData;
-            }));
+    // Use virtual threads to process bundles in parallel
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      return Arrays.stream(bundleContext.getBundles())
+          .collect(Collectors.toConcurrentMap(
+              bundle -> Long.toString(bundleService.getInfo(bundle).getBundleId()),
+              bundle -> {
+                try {
+                  return executor.submit(() -> {
+                    BundleInfo info = bundleService.getInfo(bundle);
+                    // name is not set for groovy bundles
+                    String name = info.getName() == null ? "" : info.getName();
+                    
+                    BundleData bundleData = new BundleData(
+                        info.getBundleId(),
+                        name,
+                        info.getSymbolicName(),
+                        info.getUpdateLocation(),
+                        info.getVersion(),
+                        info.getState().name(),
+                        info.getStartLevel(),
+                        info.isFragment()
+                    );
+                    
+                    // Convert record to map for backward compatibility
+                    Map<String, Object> data = new HashMap<>();
+                    data.put("bundleId", bundleData.bundleId());
+                    data.put("name", bundleData.name());
+                    data.put("symbolicName", bundleData.symbolicName());
+                    data.put("location", bundleData.location());
+                    data.put("version", bundleData.version());
+                    data.put("state", bundleData.state());
+                    data.put("startLevel", bundleData.startLevel());
+                    data.put("fragment", bundleData.fragment());
+                    return data;
+                  }).get();
+                } catch (Exception e) {
+                  log.error(STR."Error collecting bundle information: \{e.getMessage()}", e);
+                  return UNAVAILABLE;
+                }
+              }
+          ));
+    }
   }
 
   private String fileref(File file) {
@@ -224,46 +352,68 @@ public class SystemInformationGeneratorImpl
       return file != null ? file.getCanonicalPath() : null;
     }
     catch (IOException e) {
-      log.error("Could not get canonical path for file {}", file, e);
+      log.error(STR."Could not get canonical path for file \{file}: \{e.getMessage()}", e);
       return null;
     }
   }
 
   Map<String, Object> reportFileStore(FileStore store) {
     try {
+      FileStoreInfo storeInfo = new FileStoreInfo(
+          store.toString(),
+          store.type(),
+          store.getTotalSpace(),
+          store.getUsableSpace(),
+          store.getUnallocatedSpace(),
+          store.isReadOnly()
+      );
+      
+      // Convert record to map for backward compatibility
       Map<String, Object> data = new HashMap<>();
-      data.put("description", store.toString());
-      data.put("type", store.type());
-      data.put("totalSpace", store.getTotalSpace());
-      data.put("usableSpace", store.getUsableSpace());
-      data.put("unallocatedSpace", store.getUnallocatedSpace());
-      data.put("readOnly", store.isReadOnly());
+      data.put("description", storeInfo.description());
+      data.put("type", storeInfo.type());
+      data.put("totalSpace", storeInfo.totalSpace());
+      data.put("usableSpace", storeInfo.usableSpace());
+      data.put("unallocatedSpace", storeInfo.unallocatedSpace());
+      data.put("readOnly", storeInfo.readOnly());
       return data;
     }
     catch (IOException e) {
-      log.error("Could not add report to support zip for file store {}", store.name(), e);
+      log.error(STR."Could not add report to support zip for file store \{store.name()}: \{e.getMessage()}", e);
       return UNAVAILABLE;
     }
   }
 
   Map<String, Object> reportNetworkInterface(NetworkInterface intf) {
     try {
+      NetworkInterfaceInfo interfaceInfo = new NetworkInterfaceInfo(
+          intf.getDisplayName(),
+          intf.isUp(),
+          intf.isVirtual(),
+          intf.supportsMulticast(),
+          intf.isLoopback(),
+          intf.isPointToPoint(),
+          intf.getMTU(),
+          Collections.list(intf.getInetAddresses())
+              .stream()
+              .map(Object::toString)
+              .collect(Collectors.joining(","))
+      );
+      
+      // Convert record to map for backward compatibility
       Map<String, Object> data = new HashMap<>();
-      data.put("displayName", intf.getDisplayName());
-      data.put("up", intf.isUp());
-      data.put("virtual", intf.isVirtual());
-      data.put("multicast", intf.supportsMulticast());
-      data.put("loopback", intf.isLoopback());
-      data.put("ptp", intf.isPointToPoint());
-      data.put("mtu", intf.getMTU());
-      data.put("addresses", Collections.list(intf.getInetAddresses())
-          .stream()
-          .map(Object::toString)
-          .collect(Collectors.joining(",")));
+      data.put("displayName", interfaceInfo.displayName());
+      data.put("up", interfaceInfo.up());
+      data.put("virtual", interfaceInfo.virtual());
+      data.put("multicast", interfaceInfo.multicast());
+      data.put("loopback", interfaceInfo.loopback());
+      data.put("ptp", interfaceInfo.ptp());
+      data.put("mtu", interfaceInfo.mtu());
+      data.put("addresses", interfaceInfo.addresses());
       return data;
     }
     catch (SocketException e) {
-      log.error("Could not add report to support zip for network interface {}", intf.getDisplayName(), e);
+      log.error(STR."Could not add report to support zip for network interface \{intf.getDisplayName()}: \{e.getMessage()}", e);
       return UNAVAILABLE;
     }
   }
@@ -285,15 +435,21 @@ public class SystemInformationGeneratorImpl
             entry -> {
               String key = entry.getKey();
               String value = entry.getValue();
-              for (String sensitiveName : SENSITIVE_FIELD_NAMES) {
-                if (key.toLowerCase(Locale.US).contains(sensitiveName)) {
-                  value = Strings2.mask(value);
+              
+              // Use pattern matching for switch to handle sensitive field detection
+              return switch (key.toLowerCase(Locale.US)) {
+                case String k when SENSITIVE_FIELD_NAMES.stream().anyMatch(k::contains) -> Strings2.mask(value);
+                case String k when SENSITIVE_CREDENTIALS_KEYS.contains(key) -> {
+                  // Check if value contains any sensitive field names
+                  for (String sensitiveName : SENSITIVE_FIELD_NAMES) {
+                    if (value.contains(sensitiveName)) {
+                      value = value.replaceAll(sensitiveName + "=\\S*", sensitiveName + "=" + MASK);
+                    }
+                  }
+                  value;
                 }
-                if (SENSITIVE_CREDENTIALS_KEYS.contains(key) && value.contains(sensitiveName)) {
-                  value = value.replaceAll(sensitiveName + "=\\S*", sensitiveName + "=" + MASK);
-                }
-              }
-              return value;
+                default -> value;
+              };
             }));
   }
 }

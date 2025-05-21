@@ -19,21 +19,23 @@ import javax.validation.ConstraintValidatorContext;
 import org.sonatype.nexus.security.SecuritySystem;
 import org.sonatype.nexus.security.authz.AuthorizationManager;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.CoreMatchers.is;
-import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class RolesExistValidatorTest
 {
   private RolesExistValidator underTest;
 
-  @Before
+  @BeforeEach
   public void setup() throws Exception {
     SecuritySystem securitySystem = mock(SecuritySystem.class);
     AuthorizationManager authorizationManager = mock(AuthorizationManager.class);
@@ -47,9 +49,13 @@ public class RolesExistValidatorTest
     ConstraintValidatorContext context = mock(ConstraintValidatorContext.class);
     when(context.buildConstraintViolationWithTemplate(any()))
         .thenReturn(mock(ConstraintValidatorContext.ConstraintViolationBuilder.class));
-    assertThat(underTest.isValid(Collections
+    
+    boolean result = underTest.isValid(Collections
             .singleton("dx27e${\"gggggggggggggggggggggggggggggggggggggggggggz\".toString().replace(\"g\", \"q\")}yv5rm"),
-        context), is(false));
+        context);
+    
+    assertFalse(result, "Should return false for invalid roles");
+    
     //note the missing $
     verify(context).buildConstraintViolationWithTemplate(
         "Missing roles: [dx27e{\"gggggggggggggggggggggggggggggggggggggggggggz\".toString().replace(\"g\", \"q\")}yv5rm]");

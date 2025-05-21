@@ -1,0 +1,630 @@
+# VIRTUAL THREAD TEST DATA
+# This file contains test data for evaluating Java 21 Virtual Thread performance with I/O operations
+# Created as part of the Java 17 to Java 21 migration project
+
+## SECTION 1: SEQUENTIAL READ TEST DATA
+# This section contains data for testing sequential read operations
+# Virtual Threads should show significant performance improvements for I/O-bound operations
+
+1.1 SMALL CONTENT BLOCK (1KB)
+================================================================================
+This is a small content block that simulates metadata or small artifact content.
+The data in this block is designed to be read in a single operation to test basic
+I/O performance differences between platform threads and virtual threads. While
+the performance difference may not be significant for small reads, the cumulative
+effect across many operations should demonstrate the benefits of Virtual Threads.
+
+Java 21 Virtual Threads are designed to be lightweight and efficient for I/O-bound
+operations. Unlike platform threads, virtual threads don't have a one-to-one mapping
+with OS threads, allowing for much higher concurrency with minimal overhead.
+
+This test data helps validate that the migration from Java 17 to Java 21 provides
+the expected performance improvements for I/O operations in the Nexus Repository.
+================================================================================
+
+1.2 MEDIUM CONTENT BLOCK (10KB)
+================================================================================
+This medium content block simulates typical artifact content that might be stored
+in a repository. The size is chosen to represent common library JAR files, small
+packages, or documentation files that would be frequently accessed in a repository.
+
+Virtual Threads in Java 21 are particularly beneficial for I/O-bound operations
+like reading from files or network sockets. When a Virtual Thread performs a
+blocking I/O operation, it doesn't block the underlying OS thread, allowing that
+OS thread to be used by other Virtual Threads. This is in contrast to platform
+threads, where a blocking I/O operation ties up the entire OS thread.
+
+The following paragraphs contain repeated text to reach the desired block size.
+This allows for testing read operations on content of various sizes to measure
+the performance characteristics of Virtual Threads vs platform threads.
+
+Virtual Threads are implemented using a technique called "continuation", which
+allows the JVM to suspend and resume thread execution at well-defined points,
+such as when performing blocking I/O operations. This enables efficient
+multiplexing of many Virtual Threads onto a smaller number of OS threads.
+
+One of the key benefits of Virtual Threads is that they eliminate the need for
+complex thread pool management. With platform threads, developers need to
+carefully tune thread pool sizes to balance resource usage with throughput.
+Virtual Threads, on the other hand, can be created on-demand without worrying
+about resource exhaustion, as they have minimal overhead.
+
+In the context of Nexus Repository, Virtual Threads can significantly improve
+the performance of operations like proxy repository fetches, file system
+operations in the BlobStore, and database interactions. These operations are
+typically I/O-bound and can benefit from the increased concurrency provided
+by Virtual Threads.
+
+The migration from Java 17 to Java 21 involves updating various components to
+take advantage of Virtual Threads. This includes modifying executor services
+to use Executors.newVirtualThreadPerTaskExecutor() instead of traditional
+thread pools, and ensuring that I/O operations are performed in a way that
+allows Virtual Threads to yield efficiently.
+
+Testing with this data file helps validate that the migration has been
+successful and that the expected performance improvements are realized.
+By comparing the performance of the same operations using platform threads
+and Virtual Threads, we can quantify the benefits of the migration.
+
+Virtual Threads also simplify the code by eliminating the need for complex
+asynchronous programming patterns. With platform threads, developers often
+resort to callbacks, CompletableFuture, or reactive programming to achieve
+high concurrency. Virtual Threads allow for simple, synchronous code that
+is easier to write, read, and maintain, while still achieving high concurrency.
+
+This test data file includes various patterns and sizes of content to simulate
+real-world repository data. By testing with this file, we can ensure that
+Virtual Threads perform well across a range of scenarios that Nexus Repository
+might encounter in production environments.
+================================================================================
+
+1.3 LARGE CONTENT BLOCK (100KB)
+================================================================================
+This large content block simulates larger artifacts such as application packages,
+documentation bundles, or container images. The size is chosen to represent content
+that would require multiple read operations or buffering when processed by the
+repository system.
+
+[LARGE BINARY DATA SIMULATION - REPEATED 100 TIMES]
+Virtual Threads in Java 21 provide significant performance improvements for I/O-bound
+operations like reading large files or streaming data from network connections. When
+processing large content like this block, traditional platform threads would block
+while waiting for I/O operations to complete, limiting the overall throughput of the
+system. Virtual Threads, on the other hand, can yield the underlying OS thread during
+I/O operations, allowing other Virtual Threads to make progress.
+
+In the context of Nexus Repository, this means that more concurrent downloads, uploads,
+and repository operations can be handled with the same hardware resources. This is
+particularly important for proxy repositories that need to fetch content from remote
+sources, as these operations are typically I/O-bound and can benefit greatly from
+the increased concurrency provided by Virtual Threads.
+
+The migration from Java 17 to Java 21 involves updating various components to take
+advantage of Virtual Threads. This includes modifying executor services to use
+Executors.newVirtualThreadPerTaskExecutor() instead of traditional thread pools,
+and ensuring that I/O operations are performed in a way that allows Virtual Threads
+to yield efficiently.
+
+Testing with this data file helps validate that the migration has been successful
+and that the expected performance improvements are realized. By comparing the
+performance of the same operations using platform threads and Virtual Threads,
+we can quantify the benefits of the migration.
+
+Virtual Threads also simplify the code by eliminating the need for complex
+asynchronous programming patterns. With platform threads, developers often resort
+to callbacks, CompletableFuture, or reactive programming to achieve high concurrency.
+Virtual Threads allow for simple, synchronous code that is easier to write, read,
+and maintain, while still achieving high concurrency.
+
+This test data file includes various patterns and sizes of content to simulate
+real-world repository data. By testing with this file, we can ensure that Virtual
+Threads perform well across a range of scenarios that Nexus Repository might
+encounter in production environments.
+
+The following text is repeated to reach the desired block size for testing large
+content handling with Virtual Threads vs platform threads.
+
+Virtual Threads are implemented using a technique called "continuation", which
+allows the JVM to suspend and resume thread execution at well-defined points,
+such as when performing blocking I/O operations. This enables efficient
+multiplexing of many Virtual Threads onto a smaller number of OS threads.
+
+One of the key benefits of Virtual Threads is that they eliminate the need for
+complex thread pool management. With platform threads, developers need to carefully
+tune thread pool sizes to balance resource usage with throughput. Virtual Threads,
+on the other hand, can be created on-demand without worrying about resource
+exhaustion, as they have minimal overhead.
+
+In the context of Nexus Repository, Virtual Threads can significantly improve the
+performance of operations like proxy repository fetches, file system operations
+in the BlobStore, and database interactions. These operations are typically I/O-bound
+and can benefit from the increased concurrency provided by Virtual Threads.
+
+The migration from Java 17 to Java 21 involves updating various components to take
+advantage of Virtual Threads. This includes modifying executor services to use
+Executors.newVirtualThreadPerTaskExecutor() instead of traditional thread pools,
+and ensuring that I/O operations are performed in a way that allows Virtual Threads
+to yield efficiently.
+
+Testing with this data file helps validate that the migration has been successful
+and that the expected performance improvements are realized. By comparing the
+performance of the same operations using platform threads and Virtual Threads,
+we can quantify the benefits of the migration.
+
+Virtual Threads also simplify the code by eliminating the need for complex
+asynchronous programming patterns. With platform threads, developers often resort
+to callbacks, CompletableFuture, or reactive programming to achieve high concurrency.
+Virtual Threads allow for simple, synchronous code that is easier to write, read,
+and maintain, while still achieving high concurrency.
+
+This test data file includes various patterns and sizes of content to simulate
+real-world repository data. By testing with this file, we can ensure that Virtual
+Threads perform well across a range of scenarios that Nexus Repository might
+encounter in production environments.
+
+Virtual Threads in Java 21 provide significant performance improvements for I/O-bound
+operations like reading large files or streaming data from network connections. When
+processing large content like this block, traditional platform threads would block
+while waiting for I/O operations to complete, limiting the overall throughput of the
+system. Virtual Threads, on the other hand, can yield the underlying OS thread during
+I/O operations, allowing other Virtual Threads to make progress.
+
+In the context of Nexus Repository, this means that more concurrent downloads, uploads,
+and repository operations can be handled with the same hardware resources. This is
+particularly important for proxy repositories that need to fetch content from remote
+sources, as these operations are typically I/O-bound and can benefit greatly from
+the increased concurrency provided by Virtual Threads.
+[END OF LARGE BINARY DATA SIMULATION]
+================================================================================
+
+## SECTION 2: RANDOM ACCESS TEST DATA
+# This section contains data for testing random access read operations
+# Each entry has a unique ID that can be used to simulate random access patterns
+
+2.1 REPOSITORY METADATA ENTRIES
+================================================================================
+[ENTRY-001] Component: org.example:example-lib:1.0.0
+Format: maven
+Size: 24680 bytes
+SHA1: a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
+Path: /org/example/example-lib/1.0.0/example-lib-1.0.0.jar
+
+[ENTRY-002] Component: org.example:example-lib:1.0.1
+Format: maven
+Size: 25720 bytes
+SHA1: b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3
+Path: /org/example/example-lib/1.0.1/example-lib-1.0.1.jar
+
+[ENTRY-003] Component: org.example:example-api:2.0.0
+Format: maven
+Size: 12340 bytes
+SHA1: c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4
+Path: /org/example/example-api/2.0.0/example-api-2.0.0.jar
+
+[ENTRY-004] Component: com.example:example-tool:3.2.1
+Format: maven
+Size: 45678 bytes
+SHA1: d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5
+Path: /com/example/example-tool/3.2.1/example-tool-3.2.1.jar
+
+[ENTRY-005] Component: com.example:example-util:1.5.0
+Format: maven
+Size: 34567 bytes
+SHA1: e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6
+Path: /com/example/example-util/1.5.0/example-util-1.5.0.jar
+
+[ENTRY-006] Component: io.example:example-core:4.0.0
+Format: maven
+Size: 56789 bytes
+SHA1: f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1
+Path: /io/example/example-core/4.0.0/example-core-4.0.0.jar
+
+[ENTRY-007] Component: io.example:example-common:2.2.0
+Format: maven
+Size: 23456 bytes
+SHA1: a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
+Path: /io/example/example-common/2.2.0/example-common-2.2.0.jar
+
+[ENTRY-008] Component: org.sample:sample-lib:1.0.0
+Format: maven
+Size: 12345 bytes
+SHA1: b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3
+Path: /org/sample/sample-lib/1.0.0/sample-lib-1.0.0.jar
+
+[ENTRY-009] Component: org.sample:sample-api:2.0.0
+Format: maven
+Size: 23456 bytes
+SHA1: c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4
+Path: /org/sample/sample-api/2.0.0/sample-api-2.0.0.jar
+
+[ENTRY-010] Component: com.sample:sample-tool:3.0.0
+Format: maven
+Size: 34567 bytes
+SHA1: d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5
+Path: /com/sample/sample-tool/3.0.0/sample-tool-3.0.0.jar
+================================================================================
+
+2.2 DOCKER MANIFEST ENTRIES
+================================================================================
+[ENTRY-101] Image: example/webapp:latest
+Format: docker
+Size: 256000000 bytes
+Digest: sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
+Layers: 5
+
+[ENTRY-102] Image: example/webapp:1.0.0
+Format: docker
+Size: 255000000 bytes
+Digest: sha256:b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3
+Layers: 5
+
+[ENTRY-103] Image: example/database:latest
+Format: docker
+Size: 512000000 bytes
+Digest: sha256:c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4
+Layers: 8
+
+[ENTRY-104] Image: example/database:2.1.0
+Format: docker
+Size: 510000000 bytes
+Digest: sha256:d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5
+Layers: 8
+
+[ENTRY-105] Image: example/cache:latest
+Format: docker
+Size: 128000000 bytes
+Digest: sha256:e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6
+Layers: 3
+================================================================================
+
+2.3 NPM PACKAGE ENTRIES
+================================================================================
+[ENTRY-201] Package: example-ui
+Version: 1.0.0
+Format: npm
+Size: 1500000 bytes
+SHA1: a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
+Dependencies: 15
+
+[ENTRY-202] Package: example-ui
+Version: 1.1.0
+Format: npm
+Size: 1600000 bytes
+SHA1: b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3
+Dependencies: 16
+
+[ENTRY-203] Package: example-components
+Version: 2.0.0
+Format: npm
+Size: 2500000 bytes
+SHA1: c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4
+Dependencies: 20
+
+[ENTRY-204] Package: example-utils
+Version: 0.5.0
+Format: npm
+Size: 500000 bytes
+SHA1: d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5
+Dependencies: 5
+
+[ENTRY-205] Package: example-core
+Version: 3.0.0
+Format: npm
+Size: 3000000 bytes
+SHA1: e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6
+Dependencies: 25
+================================================================================
+
+## SECTION 3: CONCURRENT ACCESS TEST DATA
+# This section contains data designed for testing concurrent access patterns
+# Each block can be read independently to simulate multiple concurrent operations
+
+3.1 CONCURRENT READ BLOCKS
+================================================================================
+[BLOCK-001]
+This block simulates content that would be read concurrently by multiple threads.
+Virtual Threads in Java 21 should show significant performance improvements when
+many concurrent I/O operations are performed. This test data helps validate that
+the migration from Java 17 to Java 21 provides the expected benefits for concurrent
+operations in the Nexus Repository.
+
+[BLOCK-002]
+When multiple clients access the repository simultaneously, the system needs to
+handle many concurrent I/O operations efficiently. With platform threads, this
+requires careful tuning of thread pools to balance resource usage with throughput.
+Virtual Threads eliminate this complexity by allowing thousands of concurrent
+operations with minimal overhead.
+
+[BLOCK-003]
+Proxy repositories in Nexus need to fetch content from remote sources when it's
+not available locally. These operations are typically I/O-bound and can benefit
+greatly from the increased concurrency provided by Virtual Threads. This test
+data helps validate that proxy repository operations perform well under load.
+
+[BLOCK-004]
+BlobStore operations involve reading and writing binary content to storage backends
+like the filesystem or S3. These operations are I/O-bound and can benefit from
+Virtual Threads. This test data helps validate that BlobStore operations perform
+well with Virtual Threads under concurrent access patterns.
+
+[BLOCK-005]
+Database operations in Nexus involve reading and writing metadata to the underlying
+database. These operations are I/O-bound and can benefit from Virtual Threads. This
+test data helps validate that database operations perform well with Virtual Threads
+under concurrent access patterns.
+
+[BLOCK-006]
+Search operations in Nexus involve querying the search index and retrieving matching
+results. These operations can be I/O-bound, especially when the index is large, and
+can benefit from Virtual Threads. This test data helps validate that search operations
+perform well with Virtual Threads under concurrent access patterns.
+
+[BLOCK-007]
+Repository browsing operations involve traversing the repository structure and
+retrieving metadata for components and assets. These operations can be I/O-bound,
+especially for large repositories, and can benefit from Virtual Threads. This test
+data helps validate that browse operations perform well with Virtual Threads.
+
+[BLOCK-008]
+Webhook delivery involves sending HTTP requests to external systems when events
+occur in the repository. These operations are I/O-bound and can benefit from
+Virtual Threads. This test data helps validate that webhook delivery performs
+well with Virtual Threads under concurrent operation.
+
+[BLOCK-009]
+Task execution in Nexus involves running scheduled tasks like cleanup, integrity
+checks, and maintenance operations. These tasks often involve I/O operations and
+can benefit from Virtual Threads. This test data helps validate that task execution
+performs well with Virtual Threads.
+
+[BLOCK-010]
+API requests to Nexus involve handling HTTP requests, processing them, and returning
+responses. These operations can be I/O-bound, especially when they involve database
+or BlobStore access, and can benefit from Virtual Threads. This test data helps
+validate that API request handling performs well with Virtual Threads.
+================================================================================
+
+3.2 MIXED WORKLOAD SIMULATION
+================================================================================
+[WORKLOAD-001] Repository: maven-central
+Operation: Download
+Component: org.apache.maven:maven-core:3.8.6
+Size: 2500000 bytes
+Concurrent Operations: 100
+
+[WORKLOAD-002] Repository: npm-proxy
+Operation: Download
+Component: react:18.2.0
+Size: 1200000 bytes
+Concurrent Operations: 50
+
+[WORKLOAD-003] Repository: docker-hub
+Operation: Download
+Component: nginx:latest
+Size: 150000000 bytes
+Concurrent Operations: 10
+
+[WORKLOAD-004] Repository: maven-hosted
+Operation: Upload
+Component: com.example:example-app:1.0.0
+Size: 5000000 bytes
+Concurrent Operations: 5
+
+[WORKLOAD-005] Repository: raw-hosted
+Operation: Download
+Component: documentation/user-guide.pdf
+Size: 10000000 bytes
+Concurrent Operations: 20
+
+[WORKLOAD-006] Repository: maven-group
+Operation: Search
+Query: "org.springframework"
+Results: 500
+Concurrent Operations: 30
+
+[WORKLOAD-007] Repository: npm-group
+Operation: Browse
+Path: /@angular
+Entries: 100
+Concurrent Operations: 15
+
+[WORKLOAD-008] Repository: docker-group
+Operation: List Tags
+Image: ubuntu
+Tags: 50
+Concurrent Operations: 25
+
+[WORKLOAD-009] Repository: maven-central
+Operation: Check Existence
+Component: org.apache.commons:commons-lang3:3.12.0
+Concurrent Operations: 200
+
+[WORKLOAD-010] Repository: system
+Operation: Health Check
+Components: All
+Concurrent Operations: 1
+================================================================================
+
+## SECTION 4: ERROR HANDLING TEST DATA
+# This section contains data for testing error handling with Virtual Threads
+# Each entry simulates a different error condition that might occur during I/O operations
+
+4.1 SIMULATED ERROR CONDITIONS
+================================================================================
+[ERROR-001] Type: IOException
+Message: Connection reset
+Operation: Remote repository fetch
+Retry Strategy: Exponential backoff, max 3 attempts
+
+[ERROR-002] Type: SocketTimeoutException
+Message: Read timed out
+Operation: S3 BlobStore upload
+Retry Strategy: Fixed delay, max 5 attempts
+
+[ERROR-003] Type: FileNotFoundException
+Message: File not found: /path/to/artifact.jar
+Operation: File BlobStore read
+Retry Strategy: None, fail fast
+
+[ERROR-004] Type: SQLException
+Message: Connection refused
+Operation: Database query
+Retry Strategy: Exponential backoff, max 3 attempts
+
+[ERROR-005] Type: SSLException
+Message: Certificate validation failed
+Operation: HTTPS repository connection
+Retry Strategy: None, fail fast
+
+[ERROR-006] Type: OutOfMemoryError
+Message: Java heap space
+Operation: Large artifact processing
+Retry Strategy: None, fail fast
+
+[ERROR-007] Type: InterruptedException
+Message: Thread interrupted during I/O operation
+Operation: Async file read
+Retry Strategy: None, propagate interruption
+
+[ERROR-008] Type: ClosedChannelException
+Message: Channel closed
+Operation: NIO file operation
+Retry Strategy: None, fail fast
+
+[ERROR-009] Type: AccessDeniedException
+Message: Permission denied: /path/to/blob
+Operation: File BlobStore write
+Retry Strategy: None, fail fast
+
+[ERROR-010] Type: ConnectException
+Message: Connection refused: connect
+Operation: Remote repository connection
+Retry Strategy: Exponential backoff, max 3 attempts
+================================================================================
+
+## SECTION 5: PERFORMANCE BENCHMARK DATA
+# This section contains structured data for performance benchmarking
+# Each entry represents a specific operation that can be timed with both platform and virtual threads
+
+5.1 I/O OPERATION BENCHMARKS
+================================================================================
+[BENCHMARK-001] Name: Sequential File Read
+Description: Read a file sequentially from start to finish
+File Size: 10MB
+Buffer Size: 8KB
+Iterations: 1000
+
+[BENCHMARK-002] Name: Random File Access
+Description: Read random 4KB blocks from a file
+File Size: 100MB
+Access Count: 10000
+Iterations: 100
+
+[BENCHMARK-003] Name: HTTP GET Request
+Description: Fetch content from a remote HTTP server
+URL Pattern: http://example.com/artifacts/{0}/{1}/{2}.jar
+Parameters: [org, example, lib-{0}]
+Parameter Range: 1-1000
+Iterations: 500
+
+[BENCHMARK-004] Name: Database Query
+Description: Execute a query against the database
+SQL: SELECT * FROM assets WHERE path LIKE ? ORDER BY last_accessed DESC LIMIT 100
+Parameters: ["%/org/example/%"]
+Iterations: 1000
+
+[BENCHMARK-005] Name: S3 Object Retrieval
+Description: Fetch objects from an S3 bucket
+Bucket: example-bucket
+Key Pattern: artifacts/{0}/{1}/{2}.jar
+Parameters: [org, example, lib-{0}]
+Parameter Range: 1-1000
+Iterations: 200
+
+[BENCHMARK-006] Name: File Write Operation
+Description: Write data to a file
+File Size: 5MB
+Buffer Size: 16KB
+Iterations: 500
+
+[BENCHMARK-007] Name: ZIP File Extraction
+Description: Extract contents from a ZIP file
+ZIP Size: 50MB
+Entry Count: 1000
+Iterations: 100
+
+[BENCHMARK-008] Name: JSON Parsing
+Description: Parse JSON data from a file
+JSON Size: 1MB
+Iterations: 2000
+
+[BENCHMARK-009] Name: XML Parsing
+Description: Parse XML data from a file
+XML Size: 2MB
+Iterations: 1000
+
+[BENCHMARK-010] Name: Concurrent Mixed I/O
+Description: Perform a mix of I/O operations concurrently
+Operation Mix: [File Read: 40%, HTTP Request: 30%, Database Query: 20%, File Write: 10%]
+Concurrency Level: 100
+Iterations: 50
+================================================================================
+
+## SECTION 6: VIRTUAL THREAD MIGRATION VALIDATION
+# This section contains specific test cases for validating the Java 21 Virtual Thread migration
+# Each test case focuses on a specific component or operation that has been updated to use Virtual Threads
+
+6.1 COMPONENT VALIDATION TESTS
+================================================================================
+[TEST-001] Component: BlobStore File Implementation
+Class: org.sonatype.nexus.blobstore.file.FileBlobStore
+Methods: [getBlobData, putBlobData, createTempFile]
+Validation: Verify I/O operations use Virtual Threads and show performance improvement
+
+[TEST-002] Component: S3 BlobStore Implementation
+Class: org.sonatype.nexus.blobstore.s3.internal.S3BlobStore
+Methods: [getBlobData, putBlobData, deleteHard]
+Validation: Verify AWS SDK operations use Virtual Threads and show performance improvement
+
+[TEST-003] Component: Repository Proxy Facet
+Class: org.sonatype.nexus.repository.proxy.ProxyFacetSupport
+Methods: [getCachedContent, fetch, store]
+Validation: Verify remote fetch operations use Virtual Threads and show performance improvement
+
+[TEST-004] Component: DataStore Operations
+Class: org.sonatype.nexus.datastore.mybatis.MyBatisDataStore
+Methods: [connect, execute, beginTransaction]
+Validation: Verify database operations use Virtual Threads and show performance improvement
+
+[TEST-005] Component: HTTP Client
+Class: org.sonatype.nexus.httpclient.HttpClientManager
+Methods: [execute, prepareRequest]
+Validation: Verify HTTP operations use Virtual Threads and show performance improvement
+
+[TEST-006] Component: Event Bus
+Class: org.sonatype.nexus.common.event.EventManager
+Methods: [post, register, unregister]
+Validation: Verify event handling uses Virtual Threads and shows performance improvement
+
+[TEST-007] Component: Task Scheduler
+Class: org.sonatype.nexus.scheduling.TaskScheduler
+Methods: [submit, schedule, getRunningTasks]
+Validation: Verify task execution uses Virtual Threads and shows performance improvement
+
+[TEST-008] Component: Repository Manager
+Class: org.sonatype.nexus.repository.manager.RepositoryManager
+Methods: [browse, facet, findContainingGroups]
+Validation: Verify repository operations use Virtual Threads and show performance improvement
+
+[TEST-009] Component: Search Service
+Class: org.sonatype.nexus.repository.search.SearchService
+Methods: [search, searchByProperty, count]
+Validation: Verify search operations use Virtual Threads and show performance improvement
+
+[TEST-010] Component: REST API
+Class: Various JAX-RS resources
+Methods: [Various HTTP endpoint methods]
+Validation: Verify REST API request handling uses Virtual Threads and shows performance improvement
+================================================================================
+
+# END OF VIRTUAL THREAD TEST DATA FILE

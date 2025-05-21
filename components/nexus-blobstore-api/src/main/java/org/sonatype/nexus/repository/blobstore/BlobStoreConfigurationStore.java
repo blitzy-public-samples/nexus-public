@@ -21,23 +21,40 @@ import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 /**
  * {@link BlobStoreConfiguration} store.
  *
+ * Implementations of this interface should leverage Java 21 Virtual Threads for I/O-bound operations
+ * to improve scalability and performance. Virtual Threads are particularly well-suited for database
+ * operations, file system access, and other persistence-related tasks that are common in BlobStore
+ * configuration management.
+ *
  * since 3.0
  */
 public interface BlobStoreConfigurationStore
     extends Lifecycle
 {
   /**
+   * Retrieves all BlobStoreConfigurations.
+   * 
+   * Implementations should leverage Virtual Threads for this potentially I/O-intensive operation
+   * to improve performance under high concurrency scenarios.
+   *
    * @return all BlobStoreConfigurations
    */
   List<BlobStoreConfiguration> list();
 
   /**
    * Persist a new BlobStoreConfiguration.
+   * 
+   * Implementations should use Virtual Threads for this I/O-bound operation to ensure
+   * efficient resource utilization and improved throughput, especially when handling
+   * multiple concurrent configuration creations.
    */
   void create(BlobStoreConfiguration configuration);
 
   /**
    * Update an existing BlobStoreConfiguration.
+   * 
+   * Implementations should leverage Virtual Threads for this persistence operation
+   * to optimize performance while maintaining backward compatibility with existing code.
    *
    * @since 3.14
    */
@@ -45,11 +62,17 @@ public interface BlobStoreConfigurationStore
 
   /**
    * Delete an existing BlobStoreConfiguration.
+   * 
+   * Implementations should utilize Virtual Threads for this I/O-bound operation
+   * to improve system responsiveness during configuration cleanup operations.
    */
   void delete(BlobStoreConfiguration configuration);
 
   /**
    * Find a BlobStoreConfiguration by name.
+   * 
+   * Implementations should leverage Virtual Threads for this potentially I/O-intensive lookup
+   * to ensure efficient resource utilization, especially under high concurrency scenarios.
    *
    * @since 3.14
    */
@@ -57,6 +80,9 @@ public interface BlobStoreConfigurationStore
 
   /**
    * Find the parent group of a blob store
+   * 
+   * Implementations should use Virtual Threads for this query operation to optimize
+   * performance while maintaining backward compatibility with existing code.
    *
    * @param name of the child to search on
    * @return the {@link Optional<BlobStoreConfiguration>} for the parent group if it exists
@@ -67,6 +93,9 @@ public interface BlobStoreConfigurationStore
 
   /**
    * Create a new empty {@link BlobStoreConfiguration} suitable for use with this store
+   * 
+   * This method typically doesn't involve I/O operations but is included for interface completeness.
+   * Implementations should ensure this method remains lightweight and efficient.
    *
    * @since 3.20
    */

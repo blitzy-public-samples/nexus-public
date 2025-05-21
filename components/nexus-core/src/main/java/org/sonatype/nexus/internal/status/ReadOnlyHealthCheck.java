@@ -41,19 +41,27 @@ public class ReadOnlyHealthCheck
 
   @Override
   protected Result check() {
-    return freezeService.currentFreezeRequests()
-        .stream()
-        .findFirst()
-        .map(this::describe)
-        .map(Result::unhealthy)
-        .orElse(Result.healthy());
+    try {
+      var freezeRequest = freezeService.currentFreezeRequests()
+          .stream()
+          .findFirst()
+          .orElse(null);
+      
+      return switch (freezeRequest) {
+        case null -> Result.healthy();
+        case FreezeRequest request -> Result.unhealthy(describe(request));
+      };
+    }
+    catch (Exception e) {
+      return switch (e) {
+        case IllegalStateException ise -> Result.unhealthy("Error checking freeze status: " + ise.getMessage());
+        case NullPointerException npe -> Result.unhealthy("Freeze service returned null: " + npe.getMessage());
+        default -> Result.unhealthy("Unexpected error: " + e.getMessage());
+      };
+    }
   }
 
   private String describe(final FreezeRequest request) {
-    String description = "Made read-only by: " + request.frozenBy().orElse("SYSTEM");
-    if (!isBlank(request.reason())) {
-      description += ", reason: " + request.reason();
-    }
-    return description;
+    return STR."Made read-only by: \{request.frozenBy().orElse("SYSTEM")}\{!isBlank(request.reason()) ? ", reason: " + request.reason() : ""}";
   }
 }

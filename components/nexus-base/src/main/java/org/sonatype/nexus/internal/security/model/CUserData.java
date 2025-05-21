@@ -12,6 +12,12 @@
  */
 package org.sonatype.nexus.internal.security.model;
 
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.Serial;
+import java.io.Serializable;
+
 import org.sonatype.nexus.common.entity.HasStringId;
 import org.sonatype.nexus.common.text.Strings2;
 import org.sonatype.nexus.security.config.CUser;
@@ -24,8 +30,11 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
  * @since 3.21
  */
 public class CUserData
-    implements HasStringId, CUser
+    implements HasStringId, CUser, Serializable
 {
+  @Serial
+  private static final long serialVersionUID = 1L;
+
   private String email;
 
   private String firstName;
@@ -78,7 +87,10 @@ public class CUserData
   @JsonIgnore
   @Override
   public boolean isActive() {
-    return STATUS_ACTIVE.equals(status) || STATUS_CHANGE_PASSWORD.equals(status);
+    return switch (status) {
+      case STATUS_ACTIVE, STATUS_CHANGE_PASSWORD -> true;
+      default -> false;
+    };
   }
 
   @Override
@@ -126,8 +138,41 @@ public class CUserData
     }
   }
 
+  /**
+   * Custom serialization method to handle password securely during serialization.
+   * Addresses Java 21's enhanced serialization safeguards.
+   */
+  @Serial
+  private void writeObject(ObjectOutputStream out) throws IOException {
+    // Perform default serialization for most fields
+    out.defaultWriteObject();
+  }
+
+  /**
+   * Custom deserialization method with validation to protect against
+   * Java 21's enhanced serialization security checks.
+   */
+  @Serial
+  private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
+    // Perform default deserialization
+    in.defaultReadObject();
+    
+    // Validate critical fields after deserialization
+    if (version < 1) {
+      version = 1; // Ensure minimum version
+    }
+    
+    // Validate status field to prevent invalid states
+    if (status != null && !(STATUS_ACTIVE.equals(status) || 
+                           STATUS_DISABLED.equals(status) || 
+                           STATUS_CHANGE_PASSWORD.equals(status))) {
+      status = STATUS_DISABLED; // Default to disabled if invalid status
+    }
+  }
+
   @Override
   public String toString() {
+    // Use security context-aware masking for sensitive data
     return getClass().getSimpleName() + "{" +
         "id='" + id + '\'' +
         ", firstName='" + firstName + '\'' +

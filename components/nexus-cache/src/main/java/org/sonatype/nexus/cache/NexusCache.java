@@ -17,13 +17,21 @@ import java.util.Optional;
 /**
  * The lightweight version of the {@link javax.cache.Cache}.
  *
+ * <p>This interface is compatible with Java 21 and supports execution in Virtual Thread contexts.
+ * Implementations should ensure non-blocking operations where possible to avoid Virtual Thread pinning.
+ * Pattern Matching can be used in implementations for type-safe handling of cache entries.</p>
+ *
  * @param <K> the type of key
  * @param <V> the type of value
+ * @since 1.0
  */
 public interface NexusCache<K, V>
 {
   /**
    * Gets an entry from the cache.
+   * 
+   * <p>This operation is designed to be compatible with Virtual Thread execution context
+   * and should not block the carrier thread when implemented properly.</p>
    *
    * @param key the key whose associated value is to be returned.
    * @return the element, or {@code Optional.empty()}, if it does not exist.
@@ -33,6 +41,9 @@ public interface NexusCache<K, V>
   /**
    * Associates the specified value with the specified key in the cache. If the {@link NexusCache} previously
    * contained a mapping for the key, the old value is replaced by the specified value.
+   * 
+   * <p>This operation is designed to be compatible with Virtual Thread execution context
+   * and should not block the carrier thread when implemented properly.</p>
    *
    * @param key key with which the specified value is to be associated
    * @param value value to be associated with the specified key
@@ -41,6 +52,9 @@ public interface NexusCache<K, V>
 
   /**
    * Removes the mapping for a key from this cache if it is present.
+   * 
+   * <p>This operation is designed to be compatible with Virtual Thread execution context
+   * and should not block the carrier thread when implemented properly.</p>
    *
    * @param key key whose mapping is to be removed from the cache
    */
@@ -48,6 +62,9 @@ public interface NexusCache<K, V>
 
   /**
    * Removes all the mappings from this cache.
+   * 
+   * <p>This operation is designed to be compatible with Virtual Thread execution context
+   * and should not block the carrier thread when implemented properly.</p>
    */
   void removeAll();
 }

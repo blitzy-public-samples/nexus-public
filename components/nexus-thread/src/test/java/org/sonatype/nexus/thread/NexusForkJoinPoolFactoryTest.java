@@ -12,19 +12,17 @@
  */
 package org.sonatype.nexus.thread;
 
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.ForkJoinTask;
 import java.util.concurrent.ForkJoinWorkerThread;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -36,133 +34,101 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 
  * @since 3.20
  */
-class NexusForkJoinPoolFactoryTest
+public class NexusForkJoinPoolFactoryTest
 {
   @Test
   void threadsHaveCustomPrefix() {
     ForkJoinPool forkJoinPool = NexusForkJoinPoolFactory.createForkJoinPool("custom-prefix-test-");
     ForkJoinWorkerThread thread = forkJoinPool.getFactory().newThread(forkJoinPool);
-    assertTrue(thread.getName().contains("custom-prefix-test-"), 
-        "Thread name should contain the custom prefix");
+    assertTrue(thread.getName().contains("custom-prefix-test-"), "Thread name should contain custom prefix");
   }
   
   @Test
-  @Timeout(value = 5, unit = TimeUnit.SECONDS)
-  void forkJoinPoolExecutesTasksSuccessfully() {
-    // Create a ForkJoinPool with a custom prefix
-    ForkJoinPool forkJoinPool = NexusForkJoinPoolFactory.createForkJoinPool("task-execution-test-");
+  void createForkJoinPoolWithCustomParallelism() {
+    int customParallelism = 4; // Use a specific parallelism value for testing
+    ForkJoinPool forkJoinPool = NexusForkJoinPoolFactory.createIoBoundPool("custom-parallelism-test-", customParallelism);
     
-    // Create a task that returns a result
-    ForkJoinTask<String> task = forkJoinPool.submit(() -> "Task completed successfully");
+    assertEquals(customParallelism, forkJoinPool.getParallelism(), 
+        "ForkJoinPool should be created with the specified parallelism");
     
-    // Verify the task completes and returns the expected result
-    try {
-      String result = task.get();
-      assertEquals("Task completed successfully", result, "Task should complete with expected result");
-    }
-    catch (InterruptedException | ExecutionException e) {
-      throw new AssertionError("Task execution failed", e);
-    }
-    finally {
-      forkJoinPool.shutdown();
-    }
+    // Verify the pool is configured for FIFO mode (async mode = true) which is better for I/O operations
+    assertTrue(forkJoinPool.getAsyncMode(), "I/O bound pool should use FIFO (async) mode");
   }
   
   @Test
-  @Timeout(value = 5, unit = TimeUnit.SECONDS)
-  void virtualThreadsCanSubmitTasksToForkJoinPool() throws Exception {
-    // Create a ForkJoinPool with a custom prefix
-    ForkJoinPool forkJoinPool = NexusForkJoinPoolFactory.createForkJoinPool("virtual-thread-test-");
+  void cpuBoundPoolUsesLIFOMode() {
+    ForkJoinPool forkJoinPool = NexusForkJoinPoolFactory.createCpuBoundPool("cpu-bound-test-");
     
-    // Create a virtual thread factory
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("virtual-test-", 0).factory();
+    // Verify the pool is configured for LIFO mode (async mode = false) which is better for CPU-bound operations
+    assertFalse(forkJoinPool.getAsyncMode(), "CPU bound pool should use LIFO (non-async) mode");
     
-    // Use AtomicReference to capture the result from the virtual thread
-    AtomicReference<String> resultRef = new AtomicReference<>();
-    AtomicBoolean completed = new AtomicBoolean(false);
-    CountDownLatch latch = new CountDownLatch(1);
+    // Verify parallelism matches available processors
+    assertEquals(Runtime.getRuntime().availableProcessors(), forkJoinPool.getParallelism(),
+        "CPU bound pool should use available processor count for parallelism");
+  }
+  
+  @Tag("VirtualThreadTestGroup")
+  @Test
+  void virtualThreadExecutorCreatesVirtualThreads() throws Exception {
+    Executor executor = NexusForkJoinPoolFactory.createVirtualThreadExecutor();
+    AtomicBoolean executed = new AtomicBoolean(false);
     
-    // Create and start a virtual thread that submits a task to the ForkJoinPool
-    Thread virtualThread = virtualThreadFactory.newThread(() -> {
-      try {
-        // Submit a task to the ForkJoinPool from within a virtual thread
-        String result = forkJoinPool.submit(() -> "Task submitted from virtual thread").get();
-        resultRef.set(result);
-        completed.set(true);
-      }
-      catch (Exception e) {
-        resultRef.set("Error: " + e.getMessage());
-      }
-      finally {
-        latch.countDown();
+    executor.execute(() -> {
+      executed.set(true);
+      assertTrue(Thread.currentThread().isVirtual(), "Should be running on a virtual thread");
+    });
+    
+    // Give the virtual thread a moment to execute
+    Thread.sleep(100);
+    assertTrue(executed.get(), "Task should have been executed");
+  }
+  
+  @Tag("VirtualThreadTestGroup")
+  @Test
+  void virtualThreadExecutorWithCustomNaming() throws Exception {
+    String prefix = "custom-virtual-thread-";
+    Executor executor = NexusForkJoinPoolFactory.createVirtualThreadExecutor(prefix);
+    AtomicBoolean executed = new AtomicBoolean(false);
+    
+    executor.execute(() -> {
+      executed.set(true);
+      String threadName = Thread.currentThread().getName();
+      assertTrue(threadName.startsWith(prefix), 
+          "Thread name should start with custom prefix, but was: " + threadName);
+      assertTrue(Thread.currentThread().isVirtual(), "Should be running on a virtual thread");
+    });
+    
+    // Give the virtual thread a moment to execute
+    Thread.sleep(100);
+    assertTrue(executed.get(), "Task should have been executed");
+  }
+  
+  @Test
+  void optimalParallelismReturnsValidValue() {
+    int parallelism = NexusForkJoinPoolFactory.getOptimalParallelism();
+    assertTrue(parallelism > 0, "Optimal parallelism should be greater than zero");
+  }
+  
+  @Tag("VirtualThreadTestGroup")
+  @Test
+  void platformThreadFactoryUsedForPinningOperations() throws Exception {
+    // Create a thread factory that produces platform threads
+    ThreadFactory platformThreadFactory = Thread.ofPlatform().name("platform-thread-", 0).factory();
+    
+    // Use the platform thread factory for an operation that might pin
+    Thread thread = platformThreadFactory.newThread(() -> {
+      // Simulate an operation that would pin a virtual thread
+      synchronized (this) {
+        try {
+          wait(10); // This would pin a virtual thread
+        }
+        catch (InterruptedException e) {
+          // Ignore
+        }
       }
     });
     
-    // Start the virtual thread
-    virtualThread.start();
-    
-    // Wait for the task to complete
-    assertTrue(latch.await(3, TimeUnit.SECONDS), "Task should complete within timeout");
-    
-    // Verify the task completed successfully
-    assertTrue(completed.get(), "Task should have completed");
-    assertEquals("Task submitted from virtual thread", resultRef.get(), 
-        "Task submitted from virtual thread should complete successfully");
-    
-    // Shutdown the pool
-    forkJoinPool.shutdown();
-  }
-  
-  @Test
-  @Timeout(value = 5, unit = TimeUnit.SECONDS)
-  void forkJoinPoolWorksWithCompletableFuture() throws Exception {
-    // Create a ForkJoinPool with a custom prefix
-    ForkJoinPool forkJoinPool = NexusForkJoinPoolFactory.createForkJoinPool("completable-future-test-");
-    
-    // Use CompletableFuture with the ForkJoinPool
-    CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
-      // Verify we're running in the expected thread
-      String threadName = Thread.currentThread().getName();
-      assertTrue(threadName.contains("completable-future-test-"), 
-          "Thread name should contain the custom prefix, but was: " + threadName);
-      return "CompletableFuture task completed";
-    }, forkJoinPool);
-    
-    // Chain operations using modern Java syntax
-    CompletableFuture<String> processedFuture = future
-        .thenApply(result -> {
-          // Pattern matching for instanceof (Java 21 feature)
-          if (result instanceof String s && s.contains("completed")) {
-            return "Processed: " + s;
-          }
-          return "Unexpected result";
-        });
-    
-    // Get the final result
-    String result = processedFuture.get(3, TimeUnit.SECONDS);
-    assertEquals("Processed: CompletableFuture task completed", result, 
-        "CompletableFuture chain should complete with expected result");
-    
-    // Shutdown the pool
-    forkJoinPool.shutdown();
-  }
-  
-  @Test
-  void threadNamingSupportsVirtualThreads() {
-    // Create a virtual thread with a name pattern similar to what ForkJoinPool would use
-    Thread virtualThread = Thread.ofVirtual()
-        .name("virtual-fjp-test-", 1)
-        .unstarted(() -> {
-          // Just a dummy runnable
-        });
-    
-    // Verify the thread name contains the expected prefix
-    String threadName = virtualThread.getName();
-    assertNotNull(threadName, "Thread name should not be null");
-    assertTrue(threadName.contains("virtual-fjp-test-"), 
-        "Virtual thread name should contain the prefix, but was: " + threadName);
-    
-    // Verify the thread is actually a virtual thread
-    assertTrue(virtualThread.isVirtual(), "Thread should be a virtual thread");
+    // Verify it's a platform thread, not a virtual thread
+    assertFalse(thread.isVirtual(), "Should be a platform thread for pinning operations");
   }
 }

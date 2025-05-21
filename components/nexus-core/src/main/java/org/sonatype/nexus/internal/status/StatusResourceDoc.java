@@ -18,27 +18,30 @@ import javax.ws.rs.GET;
 import javax.ws.rs.core.Response;
 
 import com.codahale.metrics.health.HealthCheck.Result;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
-import io.swagger.annotations.ApiResponse;
-import io.swagger.annotations.ApiResponses;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
  * REST API for status operations
  *
  * @since 3.15
  */
-@Api("Status")
+@Tag(name = "Status")
 public interface StatusResourceDoc
 {
   /**
    * @return 200 if the server is available to serve read requests, 503 otherwise
    */
   @GET
-  @ApiOperation("Health check endpoint that validates server can respond to read requests")
+  @Operation(summary = "Health check endpoint that validates server can respond to read requests",
+      description = "Executes using Java 21 Virtual Threads for improved concurrency and performance")
   @ApiResponses({
-      @ApiResponse(code = 200, message = "Available to service requests"),
-      @ApiResponse(code = 503, message = "Unavailable to service requests")
+      @ApiResponse(responseCode = "200", description = "Available to service requests"),
+      @ApiResponse(responseCode = "503", description = "Unavailable to service requests")
   })
   Response isAvailable();
 
@@ -48,10 +51,11 @@ public interface StatusResourceDoc
    * @since 3.16
    */
   @GET
-  @ApiOperation("Health check endpoint that validates server can respond to read and write requests")
+  @Operation(summary = "Health check endpoint that validates server can respond to read and write requests",
+      description = "Executes using Java 21 Virtual Threads for improved concurrency and performance")
   @ApiResponses({
-      @ApiResponse(code = 200, message = "Available to service requests"),
-      @ApiResponse(code = 503, message = "Unavailable to service requests")
+      @ApiResponse(responseCode = "200", description = "Available to service requests"),
+      @ApiResponse(responseCode = "503", description = "Unavailable to service requests")
   })
   Response isWritable();
 
@@ -59,10 +63,11 @@ public interface StatusResourceDoc
    * @since 3.20
    */
   @GET
-  @ApiOperation("Health check endpoint that returns the results of the system status checks")
+  @Operation(summary = "Health check endpoint that returns the results of the system status checks",
+      description = "Executes using Java 21 Virtual Threads for improved concurrency and performance")
   @ApiResponses({
-      @ApiResponse(code = 200, message = "The system status check results", response = Result.class,
-          responseContainer = "Map")
+      @ApiResponse(responseCode = "200", description = "The system status check results", 
+          content = @Content(schema = @Schema(implementation = Result.class, type = "object", additionalProperties = @Schema(implementation = Result.class))))
   })
   SortedMap<String, Result> getSystemStatusChecks();
 

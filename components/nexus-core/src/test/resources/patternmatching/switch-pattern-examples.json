@@ -1,0 +1,499 @@
+{
+  "typePatterns": [
+    {
+      "description": "Basic type pattern matching with primitive wrapper types",
+      "input": {
+        "type": "java.lang.Object",
+        "value": "Integer.valueOf(42)"
+      },
+      "patterns": [
+        {
+          "pattern": "case Integer i",
+          "action": "String.format(\"Integer: %d\", i)",
+          "expected": "Integer: 42"
+        },
+        {
+          "pattern": "case Long l",
+          "action": "String.format(\"Long: %d\", l)",
+          "expected": "Long: 42"
+        },
+        {
+          "pattern": "case Double d",
+          "action": "String.format(\"Double: %f\", d)",
+          "expected": "Double: 42.0"
+        },
+        {
+          "pattern": "case String s",
+          "action": "String.format(\"String: %s\", s)",
+          "expected": "String: 42"
+        },
+        {
+          "pattern": "default",
+          "action": "\"Unknown type\"",
+          "expected": "Unknown type"
+        }
+      ]
+    },
+    {
+      "description": "Type pattern matching with null handling",
+      "input": {
+        "type": "java.lang.Object",
+        "value": "null"
+      },
+      "patterns": [
+        {
+          "pattern": "case null",
+          "action": "\"It's null\"",
+          "expected": "It's null"
+        },
+        {
+          "pattern": "case String s",
+          "action": "String.format(\"String: %s\", s)",
+          "expected": "String: null"
+        },
+        {
+          "pattern": "default",
+          "action": "\"Not a String or null\"",
+          "expected": "Not a String or null"
+        }
+      ]
+    },
+    {
+      "description": "Type pattern matching with interfaces and inheritance",
+      "input": {
+        "type": "java.util.Collection",
+        "value": "new java.util.ArrayList<String>()"
+      },
+      "patterns": [
+        {
+          "pattern": "case ArrayList<?> list",
+          "action": "\"ArrayList with \" + list.size() + \" elements\"",
+          "expected": "ArrayList with 0 elements"
+        },
+        {
+          "pattern": "case LinkedList<?> list",
+          "action": "\"LinkedList with \" + list.size() + \" elements\"",
+          "expected": "LinkedList with 0 elements"
+        },
+        {
+          "pattern": "case List<?> list",
+          "action": "\"List with \" + list.size() + \" elements\"",
+          "expected": "List with 0 elements"
+        },
+        {
+          "pattern": "case Collection<?> coll",
+          "action": "\"Collection with \" + coll.size() + \" elements\"",
+          "expected": "Collection with 0 elements"
+        },
+        {
+          "pattern": "default",
+          "action": "\"Not a recognized collection\"",
+          "expected": "Not a recognized collection"
+        }
+      ]
+    }
+  ],
+  "guardedPatterns": [
+    {
+      "description": "Guarded pattern with numeric comparison",
+      "input": {
+        "type": "java.lang.Integer",
+        "value": "Integer.valueOf(42)"
+      },
+      "patterns": [
+        {
+          "pattern": "case Integer i when i < 0",
+          "action": "\"Negative: \" + i",
+          "expected": "Negative: -42"
+        },
+        {
+          "pattern": "case Integer i when i == 0",
+          "action": "\"Zero\"",
+          "expected": "Zero"
+        },
+        {
+          "pattern": "case Integer i when i > 0 && i <= 10",
+          "action": "\"Small positive: \" + i",
+          "expected": "Small positive: 5"
+        },
+        {
+          "pattern": "case Integer i when i > 10 && i <= 100",
+          "action": "\"Medium positive: \" + i",
+          "expected": "Medium positive: 42"
+        },
+        {
+          "pattern": "case Integer i",
+          "action": "\"Large positive: \" + i",
+          "expected": "Large positive: 101"
+        },
+        {
+          "pattern": "default",
+          "action": "\"Not an integer\"",
+          "expected": "Not an integer"
+        }
+      ]
+    },
+    {
+      "description": "Guarded pattern with string operations",
+      "input": {
+        "type": "java.lang.String",
+        "value": "\"Hello, World!\""
+      },
+      "patterns": [
+        {
+          "pattern": "case String s when s.isEmpty()",
+          "action": "\"Empty string\"",
+          "expected": "Empty string"
+        },
+        {
+          "pattern": "case String s when s.length() < 5",
+          "action": "\"Short string: \" + s",
+          "expected": "Short string: Hi"
+        },
+        {
+          "pattern": "case String s when s.startsWith(\"Hello\")",
+          "action": "\"Greeting: \" + s",
+          "expected": "Greeting: Hello, World!"
+        },
+        {
+          "pattern": "case String s",
+          "action": "\"Other string: \" + s",
+          "expected": "Other string: Java 21"
+        },
+        {
+          "pattern": "default",
+          "action": "\"Not a string\"",
+          "expected": "Not a string"
+        }
+      ]
+    },
+    {
+      "description": "Guarded pattern with collection operations",
+      "input": {
+        "type": "java.util.List",
+        "value": "java.util.List.of(1, 2, 3, 4, 5)"
+      },
+      "patterns": [
+        {
+          "pattern": "case List<?> list when list.isEmpty()",
+          "action": "\"Empty list\"",
+          "expected": "Empty list"
+        },
+        {
+          "pattern": "case List<?> list when list.size() == 1",
+          "action": "\"Singleton list: \" + list.get(0)",
+          "expected": "Singleton list: 42"
+        },
+        {
+          "pattern": "case List<?> list when list.size() < 10",
+          "action": "\"Small list with \" + list.size() + \" elements\"",
+          "expected": "Small list with 5 elements"
+        },
+        {
+          "pattern": "case List<?> list",
+          "action": "\"Large list with \" + list.size() + \" elements\"",
+          "expected": "Large list with 100 elements"
+        },
+        {
+          "pattern": "default",
+          "action": "\"Not a list\"",
+          "expected": "Not a list"
+        }
+      ]
+    }
+  ],
+  "recordPatterns": [
+    {
+      "description": "Basic record pattern matching",
+      "recordDefinition": "record Point(int x, int y) {}",
+      "input": {
+        "type": "Point",
+        "value": "new Point(10, 20)"
+      },
+      "patterns": [
+        {
+          "pattern": "case Point(int x, int y)",
+          "action": "String.format(\"Point at (%d, %d)\", x, y)",
+          "expected": "Point at (10, 20)"
+        },
+        {
+          "pattern": "case Point(var x, var y)",
+          "action": "String.format(\"Point with coordinates: x=%d, y=%d\", x, y)",
+          "expected": "Point with coordinates: x=10, y=20"
+        },
+        {
+          "pattern": "default",
+          "action": "\"Not a Point\"",
+          "expected": "Not a Point"
+        }
+      ]
+    },
+    {
+      "description": "Record pattern with guarded patterns",
+      "recordDefinition": "record Rectangle(int width, int height) {}",
+      "input": {
+        "type": "Rectangle",
+        "value": "new Rectangle(30, 40)"
+      },
+      "patterns": [
+        {
+          "pattern": "case Rectangle(var w, var h) when w == h",
+          "action": "String.format(\"Square with side %d\", w)",
+          "expected": "Square with side 30"
+        },
+        {
+          "pattern": "case Rectangle(var w, var h) when w > h",
+          "action": "String.format(\"Landscape rectangle: %d × %d\", w, h)",
+          "expected": "Landscape rectangle: 30 × 20"
+        },
+        {
+          "pattern": "case Rectangle(var w, var h) when w < h",
+          "action": "String.format(\"Portrait rectangle: %d × %d\", w, h)",
+          "expected": "Portrait rectangle: 30 × 40"
+        },
+        {
+          "pattern": "case Rectangle(var w, var h)",
+          "action": "String.format(\"Rectangle: %d × %d\", w, h)",
+          "expected": "Rectangle: 30 × 40"
+        },
+        {
+          "pattern": "default",
+          "action": "\"Not a Rectangle\"",
+          "expected": "Not a Rectangle"
+        }
+      ]
+    }
+  ],
+  "nestedPatterns": [
+    {
+      "description": "Nested record patterns",
+      "recordDefinitions": [
+        "record Point(int x, int y) {}",
+        "record Rectangle(Point topLeft, Point bottomRight) {}"
+      ],
+      "input": {
+        "type": "Rectangle",
+        "value": "new Rectangle(new Point(10, 10), new Point(20, 20))"
+      },
+      "patterns": [
+        {
+          "pattern": "case Rectangle(Point(var x1, var y1), Point(var x2, var y2))",
+          "action": "String.format(\"Rectangle from (%d, %d) to (%d, %d)\", x1, y1, x2, y2)",
+          "expected": "Rectangle from (10, 10) to (20, 20)"
+        },
+        {
+          "pattern": "case Rectangle(Point(var x1, var y1), Point(var x2, var y2)) when x1 == y1 && x2 == y2",
+          "action": "String.format(\"Square from (%d, %d) to (%d, %d)\", x1, y1, x2, y2)",
+          "expected": "Square from (10, 10) to (20, 20)"
+        },
+        {
+          "pattern": "case Rectangle(var topLeft, var bottomRight)",
+          "action": "String.format(\"Rectangle with points: %s and %s\", topLeft, bottomRight)",
+          "expected": "Rectangle with points: Point[x=10, y=10] and Point[x=20, y=20]"
+        },
+        {
+          "pattern": "default",
+          "action": "\"Not a Rectangle\"",
+          "expected": "Not a Rectangle"
+        }
+      ]
+    },
+    {
+      "description": "Complex nested record patterns with generics",
+      "recordDefinitions": [
+        "record Box<T>(T value) {}",
+        "record Pair<T, U>(T first, U second) {}"
+      ],
+      "input": {
+        "type": "Box",
+        "value": "new Box<>(new Pair<>(\"key\", 42))"
+      },
+      "patterns": [
+        {
+          "pattern": "case Box<Pair<String, Integer>>(Pair<String, Integer>(var k, var v))",
+          "action": "String.format(\"Box containing pair with key '%s' and value %d\", k, v)",
+          "expected": "Box containing pair with key 'key' and value 42"
+        },
+        {
+          "pattern": "case Box<Pair<?, ?>>(Pair<?, ?>(var k, var v))",
+          "action": "String.format(\"Box containing pair with first '%s' and second %s\", k, v)",
+          "expected": "Box containing pair with first 'key' and second 42"
+        },
+        {
+          "pattern": "case Box<Pair<?, ?>>(var pair)",
+          "action": "String.format(\"Box containing: %s\", pair)",
+          "expected": "Box containing: Pair[first=key, second=42]"
+        },
+        {
+          "pattern": "case Box<?>(var value)",
+          "action": "String.format(\"Box with value: %s\", value)",
+          "expected": "Box with value: Pair[first=key, second=42]"
+        },
+        {
+          "pattern": "default",
+          "action": "\"Not a recognized Box pattern\"",
+          "expected": "Not a recognized Box pattern"
+        }
+      ]
+    }
+  ],
+  "exhaustivenessExamples": [
+    {
+      "description": "Exhaustive enum pattern matching",
+      "enumDefinition": "enum Day { MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY }",
+      "input": {
+        "type": "Day",
+        "value": "Day.WEDNESDAY"
+      },
+      "patterns": [
+        {
+          "pattern": "case MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY",
+          "action": "\"Weekday\"",
+          "expected": "Weekday"
+        },
+        {
+          "pattern": "case SATURDAY, SUNDAY",
+          "action": "\"Weekend\"",
+          "expected": "Weekend"
+        }
+      ],
+      "isExhaustive": true,
+      "notes": "This switch is exhaustive because all enum constants are covered"
+    },
+    {
+      "description": "Non-exhaustive enum pattern matching",
+      "enumDefinition": "enum Day { MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY }",
+      "input": {
+        "type": "Day",
+        "value": "Day.WEDNESDAY"
+      },
+      "patterns": [
+        {
+          "pattern": "case MONDAY, TUESDAY",
+          "action": "\"Start of week\"",
+          "expected": "Start of week"
+        },
+        {
+          "pattern": "case WEDNESDAY, THURSDAY, FRIDAY",
+          "action": "\"Middle of week\"",
+          "expected": "Middle of week"
+        }
+      ],
+      "isExhaustive": false,
+      "notes": "This switch is not exhaustive because SATURDAY and SUNDAY are not covered"
+    },
+    {
+      "description": "Exhaustive sealed type pattern matching",
+      "sealedTypeDefinitions": [
+        "sealed interface Shape permits Circle, Rectangle, Triangle {}",
+        "record Circle(double radius) implements Shape {}",
+        "record Rectangle(double width, double height) implements Shape {}",
+        "record Triangle(double base, double height) implements Shape {}"
+      ],
+      "input": {
+        "type": "Shape",
+        "value": "new Circle(10.0)"
+      },
+      "patterns": [
+        {
+          "pattern": "case Circle(var radius)",
+          "action": "String.format(\"Circle with radius %.1f\", radius)",
+          "expected": "Circle with radius 10.0"
+        },
+        {
+          "pattern": "case Rectangle(var width, var height)",
+          "action": "String.format(\"Rectangle %.1f × %.1f\", width, height)",
+          "expected": "Rectangle 20.0 × 30.0"
+        },
+        {
+          "pattern": "case Triangle(var base, var height)",
+          "action": "String.format(\"Triangle with base %.1f and height %.1f\", base, height)",
+          "expected": "Triangle with base 15.0 and height 25.0"
+        }
+      ],
+      "isExhaustive": true,
+      "notes": "This switch is exhaustive because all permitted types of the sealed interface are covered"
+    },
+    {
+      "description": "Non-exhaustive sealed type pattern matching",
+      "sealedTypeDefinitions": [
+        "sealed interface Shape permits Circle, Rectangle, Triangle {}",
+        "record Circle(double radius) implements Shape {}",
+        "record Rectangle(double width, double height) implements Shape {}",
+        "record Triangle(double base, double height) implements Shape {}"
+      ],
+      "input": {
+        "type": "Shape",
+        "value": "new Circle(10.0)"
+      },
+      "patterns": [
+        {
+          "pattern": "case Circle(var radius)",
+          "action": "String.format(\"Circle with radius %.1f\", radius)",
+          "expected": "Circle with radius 10.0"
+        },
+        {
+          "pattern": "case Rectangle(var width, var height)",
+          "action": "String.format(\"Rectangle %.1f × %.1f\", width, height)",
+          "expected": "Rectangle 20.0 × 30.0"
+        }
+      ],
+      "isExhaustive": false,
+      "notes": "This switch is not exhaustive because Triangle is not covered"
+    }
+  ],
+  "dominanceExamples": [
+    {
+      "description": "Pattern dominance with type hierarchy",
+      "input": {
+        "type": "java.lang.Object",
+        "value": "\"Hello\""
+      },
+      "patterns": [
+        {
+          "pattern": "case CharSequence cs",
+          "action": "String.format(\"CharSequence with length %d\", cs.length())",
+          "expected": "CharSequence with length 5"
+        },
+        {
+          "pattern": "case String s",
+          "action": "String.format(\"String: %s\", s)",
+          "expected": "String: Hello"
+        },
+        {
+          "pattern": "default",
+          "action": "\"Not a string or sequence\"",
+          "expected": "Not a string or sequence"
+        }
+      ],
+      "compilationError": true,
+      "notes": "This switch has a compilation error because the String pattern is dominated by the CharSequence pattern. The String case will never be reached because every String is also a CharSequence."
+    },
+    {
+      "description": "Correct pattern ordering with type hierarchy",
+      "input": {
+        "type": "java.lang.Object",
+        "value": "\"Hello\""
+      },
+      "patterns": [
+        {
+          "pattern": "case String s",
+          "action": "String.format(\"String: %s\", s)",
+          "expected": "String: Hello"
+        },
+        {
+          "pattern": "case CharSequence cs",
+          "action": "String.format(\"CharSequence with length %d\", cs.length())",
+          "expected": "CharSequence with length 5"
+        },
+        {
+          "pattern": "default",
+          "action": "\"Not a string or sequence\"",
+          "expected": "Not a string or sequence"
+        }
+      ],
+      "compilationError": false,
+      "notes": "This switch compiles correctly because the more specific String pattern comes before the more general CharSequence pattern."
+    }
+  ]
+}

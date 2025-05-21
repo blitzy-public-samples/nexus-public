@@ -12,9 +12,40 @@
  */
 package org.sonatype.nexus.freeze.event;
 
-public class FreezeReleaseEvent
+/**
+ * Event fired to signal that the system should exit a frozen state.
+ * <p>
+ * This event is part of the system freeze mechanism that manages the lifecycle of freeze operations.
+ * When this event is published, listeners will release locks and allow normal operations to resume.
+ * <p>
+ * This class is designed to work with Java 21's sealed class pattern when the base {@link FreezeEvent}
+ * class is updated to use this feature. It represents one of the permitted subclasses in the
+ * freeze event hierarchy, specifically handling normal (non-forced) release operations.
+ * <p>
+ * In Java 21 environments, this event can be efficiently pattern-matched in switch expressions:
+ * <pre>
+ * {@code
+ * switch (event) {
+ *   case FreezeReleaseEvent e -> handleNormalRelease();
+ *   case FreezeForceReleaseEvent e -> handleForcedRelease();
+ *   case FreezeRequestEvent e -> handleFreezeRequest(e.getReason());
+ *   default -> throw new IllegalStateException("Unknown freeze event type");
+ * }
+ * }</pre>
+ *
+ * @since 3.0
+ */
+public final class FreezeReleaseEvent
     extends FreezeEvent
 {
+  /**
+   * Creates a new freeze release event.
+   * <p>
+   * This constructor initializes the event with the {@link FreezeEventTypes#RELEASE} type,
+   * indicating a normal (non-forced) release of a system freeze.
+   * <p>
+   * When published, this event signals to all listeners that normal operations should resume.
+   */
   public FreezeReleaseEvent() {
     super(FreezeEventTypes.RELEASE);
   }

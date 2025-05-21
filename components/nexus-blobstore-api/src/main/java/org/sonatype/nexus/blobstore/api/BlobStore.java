@@ -19,6 +19,7 @@ import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.stream.Stream;
 import javax.annotation.Nullable;
@@ -36,6 +37,17 @@ import org.slf4j.Logger;
  * <p>
  * In general, most methods can throw {@link BlobStoreException} for conditions such as network connectivity problems,
  * or file IO issues, blob store misconfiguration, or internal corruption.
+ * <p>
+ * <strong>Virtual Thread Considerations:</strong> Many operations in this interface involve I/O operations that
+ * can benefit from Java 21's Virtual Threads. Methods annotated with {@link VirtualThreadFriendly} are designed
+ * to work efficiently with Virtual Threads by avoiding operations that would cause thread pinning.
+ * Implementations should be careful to:
+ * <ul>
+ *   <li>Avoid using synchronized blocks around I/O operations</li>
+ *   <li>Prefer java.util.concurrent locks (like ReentrantLock) over synchronized when locking is needed</li>
+ *   <li>Be aware of third-party libraries that might cause Virtual Thread pinning</li>
+ *   <li>Consider using Executors.newVirtualThreadPerTaskExecutor() for asynchronous operations</li>
+ * </ul>
  *
  * @since 3.0
  */
@@ -121,17 +133,27 @@ public interface BlobStore
    * <p>
    * Note: if headers contains an entry with key {@link #DIRECT_PATH_BLOB_HEADER} and value true, and the
    * {@link #BLOB_NAME_HEADER} matches a direct-path blob that already exists, the blob will be overwritten.
+   * <p>
+   * <strong>Virtual Thread Considerations:</strong> This method involves I/O operations and should be
+   * implemented to avoid thread pinning when called from a Virtual Thread. Implementations should avoid
+   * using synchronized blocks around I/O operations and prefer non-blocking approaches where possible.
    *
    * @throws BlobStoreException (or a subclass) if the input stream can't be read correctly
    * @throws IllegalArgumentException if mandatory headers are missing
    */
+  @VirtualThreadFriendly
   Blob create(InputStream blobData, Map<String, String> headers);
 
   /**
    * Creates a new blob with the provided {@link BlobId}.
+   * <p>
+   * <strong>Virtual Thread Considerations:</strong> This method involves I/O operations and should be
+   * implemented to avoid thread pinning when called from a Virtual Thread. Implementations should avoid
+   * using synchronized blocks around I/O operations and prefer non-blocking approaches where possible.
    *
    * @since 3.15
    */
+  @VirtualThreadFriendly
   Blob create(InputStream blobData, Map<String, String> headers, @Nullable BlobId blobId);
 
   /**
@@ -140,9 +162,14 @@ public interface BlobStore
    * <p>
    * Otherwise similar to {@link #create(InputStream, Map)} with the difference that a known file size and sha1 are
    * already provided.
+   * <p>
+   * <strong>Virtual Thread Considerations:</strong> This method involves file system operations and should be
+   * implemented to avoid thread pinning when called from a Virtual Thread. Implementations should avoid
+   * using synchronized blocks around file operations and prefer non-blocking approaches where possible.
    *
    * @since 3.1
    */
+  @VirtualThreadFriendly
   Blob create(Path sourceFile, Map<String, String> headers, long size, HashCode sha1);
 
   /**
@@ -167,16 +194,26 @@ public interface BlobStore
   /**
    * Duplicates a blob within the blob store by copying the temp blob but with the provided headers. The blob must be in
    * this blob store; moving blobs between blob stores is not supported.
+   * <p>
+   * <strong>Virtual Thread Considerations:</strong> This method involves I/O operations and should be
+   * implemented to avoid thread pinning when called from a Virtual Thread. Implementations should avoid
+   * using synchronized blocks around I/O operations and prefer non-blocking approaches where possible.
    *
    * @since 3.1
    */
+  @VirtualThreadFriendly
   Blob copy(BlobId blobId, Map<String, String> headers);
 
   /**
    * Makes a blob permanent by writing the specified permanent blob headers into the blob's properties file.
+   * <p>
+   * <strong>Virtual Thread Considerations:</strong> This method involves I/O operations and should be
+   * implemented to avoid thread pinning when called from a Virtual Thread. Implementations should avoid
+   * using synchronized blocks around I/O operations and prefer non-blocking approaches where possible.
    *
    * @since 3.37
    */
+  @VirtualThreadFriendly
   default Blob makeBlobPermanent(final BlobId blobId, final Map<String, String> headers) {
     return copy(blobId, headers); // default to copy for non-cloud blob stores
   }
@@ -184,15 +221,25 @@ public interface BlobStore
   /**
    * Returns the corresponding {@link Blob}, or {@code null} if the blob does not exist or has been
    * {@link #delete deleted}.
+   * <p>
+   * <strong>Virtual Thread Considerations:</strong> This method involves I/O operations and should be
+   * implemented to avoid thread pinning when called from a Virtual Thread. Implementations should avoid
+   * using synchronized blocks around I/O operations and prefer non-blocking approaches where possible.
    */
   @Nullable
+  @VirtualThreadFriendly
   Blob get(BlobId blobId);
 
   /**
    * Returns the corresponding {@link Blob}, or {@code null} if the blob does not exist, or has been
    * {@link #delete deleted} and {@code includeDeleted} is {@code false}).
+   * <p>
+   * <strong>Virtual Thread Considerations:</strong> This method involves I/O operations and should be
+   * implemented to avoid thread pinning when called from a Virtual Thread. Implementations should avoid
+   * using synchronized blocks around I/O operations and prefer non-blocking approaches where possible.
    */
   @Nullable
+  @VirtualThreadFriendly
   Blob get(BlobId blobId, boolean includeDeleted);
 
   /**
@@ -200,37 +247,62 @@ public interface BlobStore
    * if it does not.
    * <p>
    * This was introduced to allow existence checking of direct-path blobs in support of edge cases such as RHC.
+   * <p>
+   * <strong>Virtual Thread Considerations:</strong> This method involves file system operations and should be
+   * implemented to avoid thread pinning when called from a Virtual Thread. Implementations should avoid
+   * using synchronized blocks around file operations and prefer non-blocking approaches where possible.
    */
+  @VirtualThreadFriendly
   boolean exists(BlobId blobId);
 
   /**
    * Performs a simple existence check for {@code .bytes} for given {@code blobId}.
+   * <p>
+   * <strong>Virtual Thread Considerations:</strong> This method involves file system operations and should be
+   * implemented to avoid thread pinning when called from a Virtual Thread. Implementations should avoid
+   * using synchronized blocks around file operations and prefer non-blocking approaches where possible.
    *
    * @return {@code true} if it exists and {@code false} if it does not.
    */
+  @VirtualThreadFriendly
   boolean bytesExists(BlobId blobId);
 
   /**
    * Performs a simple existence and empty size check for {@code .bytes} for given {@code blobId}.
+   * <p>
+   * <strong>Virtual Thread Considerations:</strong> This method involves file system operations and should be
+   * implemented to avoid thread pinning when called from a Virtual Thread. Implementations should avoid
+   * using synchronized blocks around file operations and prefer non-blocking approaches where possible.
    *
    * @return {@code true} if the blobstore is exists and empty {@code false} if it does not.
    */
+  @VirtualThreadFriendly
   boolean isBlobEmpty(BlobId blobId);
 
   /**
    * Removes a blob from the blob store. This may not immediately delete the blob from the underlying storage
    * mechanism, but will make it immediately unavailable to future calls to {@link BlobStore#get(BlobId)}.
+   * <p>
+   * <strong>Virtual Thread Considerations:</strong> This method involves I/O operations and should be
+   * implemented to avoid thread pinning when called from a Virtual Thread. Implementations should avoid
+   * using synchronized blocks around I/O operations and prefer non-blocking approaches where possible.
    *
    * @return {@code true} if the blob has been deleted, {@code false} if no blob was found by that ID.
    */
+  @VirtualThreadFriendly
   boolean delete(BlobId blobId, String reason);
 
   /**
    * Removes a blob from the blob store immediately, disregarding any locking or concurrent access by other threads.
    * This should be considered exceptional (e.g. administrative) usage.
+   * <p>
+   * <strong>Virtual Thread Considerations:</strong> This method involves I/O operations and should be
+   * implemented to avoid thread pinning when called from a Virtual Thread. Implementations should avoid
+   * using synchronized blocks around I/O operations and prefer non-blocking approaches where possible.
    *
    * @return {@code true} if the blob has been deleted, {@code false} if no blob was found by that ID.
    */
+  @VirtualThreadFriendly
   boolean deleteHard(BlobId blobId);
 
   /**
@@ -265,14 +337,24 @@ public interface BlobStore
   /**
    * Perform garbage collection, purging blobs marked for deletion or whatever other periodic, implementation-specific
    * tasks need doing. Takes an optional {@link BlobStoreUsageChecker} and an optional {@link Logger} from the caller.
+   * <p>
+   * <strong>Virtual Thread Considerations:</strong> This method involves I/O operations and should be
+   * implemented to avoid thread pinning when called from a Virtual Thread. Implementations should avoid
+   * using synchronized blocks around I/O operations and prefer non-blocking approaches where possible.
    *
    * @since 3.5
    */
+  @VirtualThreadFriendly
   void compact(@Nullable BlobStoreUsageChecker inUseChecker);
 
   /**
    * Delete blob temporary files
+   * <p>
+   * <strong>Virtual Thread Considerations:</strong> This method involves I/O operations and should be
+   * implemented to avoid thread pinning when called from a Virtual Thread. Implementations should avoid
+   * using synchronized blocks around I/O operations and prefer non-blocking approaches where possible.
    */
+  @VirtualThreadFriendly
   void deleteTempFiles(Integer daysOlderThan);
 
   /**
@@ -292,19 +374,34 @@ public interface BlobStore
 
   /**
    * Get a {@link Stream} of {@link BlobId} for blobs contained in this blob store.
+   * <p>
+   * <strong>Virtual Thread Considerations:</strong> This method involves I/O operations and should be
+   * implemented to avoid thread pinning when called from a Virtual Thread. Implementations should avoid
+   * using synchronized blocks around I/O operations and prefer non-blocking approaches where possible.
    */
+  @VirtualThreadFriendly
   Stream<BlobId> getBlobIdStream();
 
   /**
    * Get a {@link Stream} of {@link BlobId} for blobs contained in this blob store that have been updated within the
    * provided duration.
+   * <p>
+   * <strong>Virtual Thread Considerations:</strong> This method involves I/O operations and should be
+   * implemented to avoid thread pinning when called from a Virtual Thread. Implementations should avoid
+   * using synchronized blocks around I/O operations and prefer non-blocking approaches where possible.
    */
+  @VirtualThreadFriendly
   Stream<BlobId> getBlobIdUpdatedSinceStream(Duration duration);
 
   /**
    * Get a {@link Stream} of {@link BlobId} for blobs contained in this blob store that have been updated within the
    * provided date range and under the specified path prefix.
+   * <p>
+   * <strong>Virtual Thread Considerations:</strong> This method involves I/O operations and should be
+   * implemented to avoid thread pinning when called from a Virtual Thread. Implementations should avoid
+   * using synchronized blocks around I/O operations and prefer non-blocking approaches where possible.
    */
+  @VirtualThreadFriendly
   PaginatedResult<BlobId> getBlobIdUpdatedSinceStream(
       String prefix,
       OffsetDateTime fromDateTime,
@@ -314,28 +411,48 @@ public interface BlobStore
 
   /**
    * Get a {@link Stream} of direct-path {@link BlobId}s under the specified path prefix.
+   * <p>
+   * <strong>Virtual Thread Considerations:</strong> This method involves I/O operations and should be
+   * implemented to avoid thread pinning when called from a Virtual Thread. Implementations should avoid
+   * using synchronized blocks around I/O operations and prefer non-blocking approaches where possible.
    */
+  @VirtualThreadFriendly
   Stream<BlobId> getDirectPathBlobIdStream(String prefix);
 
   /**
    * Get {@link BlobAttributes} for the {@link BlobId} provided.
+   * <p>
+   * <strong>Virtual Thread Considerations:</strong> This method involves I/O operations and should be
+   * implemented to avoid thread pinning when called from a Virtual Thread. Implementations should avoid
+   * using synchronized blocks around I/O operations and prefer non-blocking approaches where possible.
    */
   @Nullable
+  @VirtualThreadFriendly
   BlobAttributes getBlobAttributes(BlobId blobId);
 
   /**
    * Set {@link BlobAttributes} for the {@link BlobId} provided.
+   * <p>
+   * <strong>Virtual Thread Considerations:</strong> This method involves I/O operations and should be
+   * implemented to avoid thread pinning when called from a Virtual Thread. Implementations should avoid
+   * using synchronized blocks around I/O operations and prefer non-blocking approaches where possible.
    *
    * @since 3.7
    */
+  @VirtualThreadFriendly
   void setBlobAttributes(BlobId blobId, BlobAttributes blobAttributes);
 
   /**
    * Undeletes a soft deleted blob, if possible.
+   * <p>
+   * <strong>Virtual Thread Considerations:</strong> This method involves I/O operations and should be
+   * implemented to avoid thread pinning when called from a Virtual Thread. Implementations should avoid
+   * using synchronized blocks around I/O operations and prefer non-blocking approaches where possible.
    *
    * @return {@code true} if the blob has been successfully undeleted.
    * @since 3.12
    */
+  @VirtualThreadFriendly
   boolean undelete(
       @Nullable BlobStoreUsageChecker inUseChecker,
       BlobId blobId,
@@ -397,19 +514,31 @@ public interface BlobStore
 
   /**
    * Acts as a {@code BlobStore::hardDelete}, except it may be executed asynchronously.
+   * <p>
+   * <strong>Virtual Thread Considerations:</strong> This method involves I/O operations and should be
+   * implemented to use Virtual Threads for asynchronous execution. The default implementation uses
+   * CompletableFuture.completedFuture() but implementations should consider using
+   * Executors.newVirtualThreadPerTaskExecutor() for better scalability with Java 21.
    *
    * @since 3.29
    */
+  @VirtualThreadFriendly
   default Future<Boolean> asyncDelete(BlobId blobId) {
-    return CompletableFuture.completedFuture(deleteHard(blobId));
+    // Use Virtual Thread per task executor for better scalability with Java 21
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> deleteHard(blobId));
   }
 
   /**
    * Deletes the blob if it is indeed a Temporary blob Note: This method should only called with a BlobId known to have
    * been created as a TempBlob, implementations may perform no checks if they provide no special handling.
+   * <p>
+   * <strong>Virtual Thread Considerations:</strong> This method involves I/O operations and should be
+   * implemented to avoid thread pinning when called from a Virtual Thread. Implementations should avoid
+   * using synchronized blocks around I/O operations and prefer non-blocking approaches where possible.
    *
    * @since 3.37
    */
+  @VirtualThreadFriendly
   default boolean deleteIfTemp(BlobId blobId) {
     return deleteHard(blobId);
   }

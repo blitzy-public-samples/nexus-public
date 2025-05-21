@@ -18,7 +18,7 @@ import javax.inject.Singleton;
 
 import org.sonatype.nexus.common.system.FileDescriptorService;
 
-import static java.lang.String.format;
+import static java.lang.StringTemplate.STR;
 
 /**
  * Health check that indicates if the file descriptor limit is below the recommended threshold
@@ -30,21 +30,32 @@ import static java.lang.String.format;
 public class FileDescriptorHealthCheck
     extends HealthCheckComponentSupport
 {
-  private FileDescriptorService fileDescriptorService;
+  private final FileDescriptorService fileDescriptorService;
 
   @Inject
   public FileDescriptorHealthCheck(final FileDescriptorService fileDescriptorService) {
     this.fileDescriptorService = fileDescriptorService;
   }
 
+  /**
+   * Checks if the file descriptor limit is adequate.
+   * 
+   * Uses pattern matching to evaluate the current file descriptor count
+   * against the recommended threshold.
+   *
+   * @return healthy result if count meets or exceeds the recommended limit, unhealthy otherwise
+   */
   @Override
   protected Result check() {
-    return fileDescriptorService.isFileDescriptorLimitOk() ? Result.healthy() : Result.unhealthy(reason());
+    long recommended = fileDescriptorService.getFileDescriptorRecommended();
+    long current = fileDescriptorService.getFileDescriptorCount();
+    
+    return switch (current) {
+      case long count when count >= recommended -> Result.healthy();
+      case long count when count < recommended -> {
+        String message = STR."Recommended file descriptor limit is \{recommended} but count is \{count}";
+        yield Result.unhealthy(message);
+      }
+    };
   }
-
-  private String reason() {
-    return format("Recommended file descriptor limit is %d but count is %d",
-        fileDescriptorService.getFileDescriptorRecommended(), fileDescriptorService.getFileDescriptorCount());
-  }
-
 }

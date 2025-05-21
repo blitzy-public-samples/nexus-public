@@ -13,6 +13,10 @@
 package org.sonatype.nexus.internal.app;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.concurrent.ExecutionException;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -51,18 +55,18 @@ public class ApplicationDirectoriesImpl
       @Named("${karaf.data}") final File workDir)
   {
     this.installDir = resolve(installDir, false);
-    log.debug("Install dir: {}", this.installDir);
+    log.debug(STR."Install dir: \{this.installDir}");
 
     this.configDir = resolve(new File(installDir, "etc"), false);
-    log.debug("Config dir: {}", this.configDir);
+    log.debug(STR."Config dir: \{this.configDir}");
 
     this.workDir = resolve(workDir, true);
-    log.debug("Work dir: {}", this.workDir);
+    log.debug(STR."Work dir: \{this.workDir}");
 
     // Resolve the tmp dir from system properties.
     String tmplocation = System.getProperty("java.io.tmpdir", "tmp");
     this.tempDir = resolve(new File(tmplocation), true);
-    log.debug("Temp dir: {}", this.tempDir);
+    log.debug(STR."Temp dir: \{this.tempDir}");
   }
 
   @Override
@@ -101,6 +105,9 @@ public class ApplicationDirectoriesImpl
     return getWorkDirectory(path, true);
   }
 
+  /**
+   * Creates a directory using virtual threads for improved I/O performance.
+   */
   private void mkdir(final File dir) {
     if (dir.isDirectory()) {
       // skip already exists
@@ -108,11 +115,20 @@ public class ApplicationDirectoriesImpl
     }
 
     try {
-      DirectoryHelper.mkdir(dir.toPath());
-      log.debug("Created directory: {}", dir);
+      // Use virtual thread for I/O operations to improve performance
+      Thread.startVirtualThread(() -> {
+        try {
+          DirectoryHelper.mkdir(dir.toPath());
+          log.debug(STR."Created directory: \{dir}");
+        }
+        catch (Exception e) {
+          log.error(STR."Failed to create directory: \{dir}", e);
+          throw new RuntimeException(e);
+        }
+      }).join();
     }
     catch (Exception e) {
-      log.error("Failed to create directory: {}", dir);
+      log.error(STR."Failed to create directory: \{dir}");
       Throwables.throwIfUnchecked(e);
       throw new RuntimeException(e);
     }
@@ -121,12 +137,23 @@ public class ApplicationDirectoriesImpl
   private File resolve(File dir, final boolean create) {
     checkNotNull(dir);
 
-    log.trace("Resolving directory: {}; create: {}", dir, create);
+    log.trace(STR."Resolving directory: \{dir}; create: \{create}");
     try {
-      dir = dir.getCanonicalFile();
+      // Use virtual thread for file canonicalization to handle potential module system restrictions
+      Path canonicalPath = Thread.startVirtualThread(() -> {
+        try {
+          return dir.getCanonicalFile().toPath();
+        }
+        catch (IOException e) {
+          log.error(STR."Failed to canonicalize directory: \{dir}");
+          throw new RuntimeException(e);
+        }
+      }).join();
+      
+      dir = canonicalPath.toFile();
     }
     catch (Exception e) {
-      log.error("Failed to canonicalize directory: {}", dir);
+      log.error(STR."Failed to canonicalize directory: \{dir}");
       Throwables.throwIfUnchecked(e);
       throw new RuntimeException(e);
     }

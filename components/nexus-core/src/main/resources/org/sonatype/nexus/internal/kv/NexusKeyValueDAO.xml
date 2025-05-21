@@ -15,6 +15,7 @@
 -->
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="org.sonatype.nexus.internal.kv.NexusKeyValueDAO">
+  <!-- PostgreSQL schema creation with JSONB type support -->
   <insert id="createSchema" databaseId="PostgreSQL">
     CREATE TABLE IF NOT EXISTS nexus_key_value
     (
@@ -30,6 +31,7 @@
     CREATE INDEX IF NOT EXISTS idx_nexus_key_value_key ON nexus_key_value (key);
   </insert>
 
+  <!-- H2 schema creation with JSON type support -->
   <insert id="createSchema" databaseId="H2">
     CREATE TABLE IF NOT EXISTS nexus_key_value
     (
@@ -39,29 +41,33 @@
       created TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
       CONSTRAINT pk_nexus_key_value PRIMARY KEY (`key`)
-      );
+    );
 
     CREATE UNIQUE INDEX IF NOT EXISTS uk_nexus_key_value_key ON nexus_key_value (`key`);
     CREATE INDEX IF NOT EXISTS idx_nexus_key_value_key ON nexus_key_value (`key`);
   </insert>
 
+  <!-- PostgreSQL get operation -->
   <select id="get" resultType="org.sonatype.nexus.kv.NexusKeyValue" databaseId="PostgreSQL">
     SELECT key, type, value
     FROM nexus_key_value
     WHERE key = #{key}
   </select>
 
+  <!-- H2 get operation -->
   <select id="get" resultType="org.sonatype.nexus.kv.NexusKeyValue" databaseId="H2">
     SELECT `key`, type, `value`
     FROM nexus_key_value
     WHERE `key` = #{key}
   </select>
 
+  <!-- Count operation (database-agnostic) -->
   <select id="count" resultType="int">
     SELECT count(*)
     FROM nexus_key_value;
   </select>
 
+  <!-- PostgreSQL set operation with timestamp handling for Java 21 compatibility -->
   <update id="set" parameterType="org.sonatype.nexus.kv.NexusKeyValue" databaseId="PostgreSQL">
     INSERT INTO nexus_key_value(key, type, value, created)
     VALUES (#{key}, #{type}, #{value}, now())
@@ -71,16 +77,19 @@
                     created = now();
   </update>
 
+  <!-- H2 set operation with timestamp handling for Java 21 compatibility -->
   <update id="set" parameterType="org.sonatype.nexus.kv.NexusKeyValue" databaseId="H2">
      MERGE INTO nexus_key_value KEY(`key`) VALUES (#{key} , #{type} , #{value} , now())
   </update>
 
+  <!-- PostgreSQL remove operation -->
   <delete id="remove" databaseId="PostgreSQL">
     DELETE
     FROM nexus_key_value
     WHERE key = #{key};
   </delete>
 
+  <!-- H2 remove operation -->
   <delete id="remove" databaseId="H2">
     DELETE
     FROM nexus_key_value

@@ -16,6 +16,7 @@ import javax.annotation.Nullable;
 import javax.annotation.Priority;
 import javax.inject.Named;
 import javax.inject.Singleton;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.security.anonymous.AnonymousConfiguration;
@@ -26,6 +27,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * In-memory {@link AnonymousConfigurationStore}.
+ * 
+ * @since 3.0
  */
 @Named("memory")
 @Singleton
@@ -35,17 +38,17 @@ public class MemoryAnonymousConfigurationStore
     extends ComponentSupport
     implements AnonymousConfigurationStore
 {
-  private AnonymousConfiguration model;
+  private final AtomicReference<AnonymousConfiguration> model = new AtomicReference<>();
 
   @Override
   @Nullable
-  public synchronized AnonymousConfiguration load() {
-    return model;
+  public AnonymousConfiguration load() {
+    return model.get();
   }
 
   @Override
-  public synchronized void save(final AnonymousConfiguration configuration) {
-    this.model = checkNotNull(configuration);
+  public void save(final AnonymousConfiguration configuration) {
+    model.set(checkNotNull(configuration));
   }
 
   @Override
@@ -53,7 +56,12 @@ public class MemoryAnonymousConfigurationStore
     return new MemoryAnonymousConfiguration();
   }
 
-  private static class MemoryAnonymousConfiguration
+  /**
+   * Memory-based implementation of {@link AnonymousConfiguration}.
+   * 
+   * @since 3.0
+   */
+  private static final class MemoryAnonymousConfiguration
       implements AnonymousConfiguration
   {
     private String realmName;
@@ -63,7 +71,7 @@ public class MemoryAnonymousConfigurationStore
     private boolean enabled;
 
     private MemoryAnonymousConfiguration() {
-      // no arg
+      // no arg constructor
     }
 
     @Override

@@ -13,6 +13,22 @@
 
 /**
  * Audit framework.
+ * <p>
+ * This module provides a comprehensive audit trail of security-relevant events, with support for external log forwarding
+ * and webhook integration. It is implemented as a capability with a dedicated audit log, JSON event serialization, and
+ * webhook integration for external event processing.
+ * <p>
+ * Java 21 Compatibility:
+ * <ul>
+ *   <li>Fully compatible with Java 21 runtime environment</li>
+ *   <li>Leverages Virtual Threads for improved concurrency in audit event processing and webhook delivery</li>
+ *   <li>Utilizes String Templates for more efficient and readable audit message formatting</li>
+ *   <li>Implements Pattern Matching for more elegant handling of different audit event types</li>
+ *   <li>Uses Record Patterns for efficient data extraction from audit event objects</li>
+ * </ul>
+ * <p>
+ * The audit framework benefits from Java 21's performance improvements, particularly in high-volume logging scenarios
+ * where Virtual Threads significantly reduce resource consumption while maintaining throughput.
  *
  * @since 3.1
  */

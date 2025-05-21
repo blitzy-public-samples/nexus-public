@@ -14,7 +14,9 @@ package org.sonatype.nexus.internal.upgrade;
 
 import java.sql.Connection;
 import java.util.Optional;
-import javax.inject.Named;
+import java.util.concurrent.Executors;
+
+import jakarta.inject.Named;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.upgrade.datastore.DatabaseMigrationStep;
@@ -34,6 +36,17 @@ public class NexusBaselineMigrationStep_2_0
 
   @Override
   public void migrate(final Connection connection) throws Exception {
-    // no-op
+    // Using Java 21 Virtual Threads for database operations
+    // This is a no-op migration, but we'll demonstrate the use of Virtual Threads
+    // for any potential future database operations
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      executor.submit(() -> {
+        log.debug("Executing baseline migration step 2.0 using Virtual Thread: {}", Thread.currentThread());
+        // No actual database operations needed for this baseline migration
+        // But if needed, database operations would be performed here using the connection parameter
+        // Virtual Threads are particularly efficient for I/O-bound operations like database access
+        return null;
+      }).get(); // Wait for completion
+    }
   }
 }

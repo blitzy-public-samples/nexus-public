@@ -22,7 +22,6 @@ import java.util.Map;
 
 import javax.ws.rs.core.MediaType;
 
-import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.rest.WebApplicationMessageException;
 import org.sonatype.nexus.security.ErrorMessageUtil;
 import org.sonatype.nexus.security.SecuritySystem;
@@ -35,16 +34,18 @@ import org.sonatype.nexus.security.privilege.PrivilegeDescriptor;
 import org.sonatype.nexus.security.privilege.ReadonlyPrivilegeException;
 import org.sonatype.nexus.security.privilege.WildcardPrivilegeDescriptor;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
@@ -53,8 +54,8 @@ import static org.sonatype.nexus.security.privilege.rest.ApiPrivilegeApplication
 import static org.sonatype.nexus.security.privilege.rest.ApiPrivilegeWildcard.PATTERN_KEY;
 import static org.sonatype.nexus.security.privilege.rest.ApiPrivilegeWithActions.ACTIONS_KEY;
 
+@ExtendWith(MockitoExtension.class)
 public class PrivilegeApiResourceTest
-    extends TestSupport
 {
   @Mock
   private SecuritySystem securitySystem;
@@ -64,7 +65,7 @@ public class PrivilegeApiResourceTest
 
   private PrivilegeApiResource underTest;
 
-  @Before
+  @BeforeEach
   public void setup() throws Exception {
     when(securitySystem.getAuthorizationManager("default")).thenReturn(authorizationManager);
 
@@ -76,7 +77,7 @@ public class PrivilegeApiResourceTest
   }
 
   @Test
-  public void testGetPrivileges_eachPrivilegeType_HappyPath() {
+  public void testGetPrivilegesEachPrivilegeTypeHappyPath() {
     Privilege priv1 = createPrivilege("application", "priv1", "priv1desc", false, DOMAIN_KEY, "testDomain", ACTIONS_KEY,
         "create,read,update,delete");
     Privilege priv2 = createPrivilege("wildcard", "priv2", "priv2desc", true, PATTERN_KEY, "a:pattern");
@@ -93,7 +94,7 @@ public class PrivilegeApiResourceTest
   }
 
   @Test
-  public void testGetPrivileges_noPrivileges() {
+  public void testGetPrivilegesNoPrivileges() {
     when(securitySystem.listPrivileges()).thenReturn(Collections.emptySet());
 
     List<ApiPrivilege> apiPrivileges = new ArrayList<>(underTest.getPrivileges());
@@ -102,7 +103,7 @@ public class PrivilegeApiResourceTest
   }
 
   @Test
-  public void testGetPrivilege_application() {
+  public void testGetPrivilegeApplication() {
     Privilege priv = createPrivilege("application", "priv", "privdesc", true, DOMAIN_KEY, "testDomain", ACTIONS_KEY,
         "create,update");
 
@@ -115,7 +116,7 @@ public class PrivilegeApiResourceTest
   }
 
   @Test
-  public void testGetPrivilege_wildcard() {
+  public void testGetPrivilegeWildcard() {
     Privilege priv = createPrivilege("wildcard", "priv", "privdesc", false, PATTERN_KEY, "a:pattern");
 
     when(authorizationManager.getPrivilegeByName("priv")).thenReturn(priv);
@@ -126,7 +127,7 @@ public class PrivilegeApiResourceTest
   }
 
   @Test
-  public void testGetPrivilege_notFound() {
+  public void testGetPrivilegeNotFound() {
     when(authorizationManager.getPrivilegeByName("priv")).thenThrow(new NoSuchPrivilegeException("priv"));
 
     try {
@@ -152,7 +153,7 @@ public class PrivilegeApiResourceTest
   }
 
   @Test
-  public void testDeletePrivilege_readOnly() {
+  public void testDeletePrivilegeReadOnly() {
     doThrow(new ReadonlyPrivilegeException("priv")).when(authorizationManager).deletePrivilegeByName("priv");
 
     try {
@@ -169,7 +170,7 @@ public class PrivilegeApiResourceTest
   }
 
   @Test
-  public void testDeletePrivilege_notFound() {
+  public void testDeletePrivilegeNotFound() {
     doThrow(new NoSuchPrivilegeException("priv")).when(authorizationManager).deletePrivilegeByName("priv");
 
     try {
@@ -185,7 +186,7 @@ public class PrivilegeApiResourceTest
   }
 
   @Test
-  public void testCreatePrivilege_application() {
+  public void testCreatePrivilegeApplication() {
     when(authorizationManager.getPrivilege("name")).thenThrow(new NoSuchPrivilegeException("name"));
 
     ApiPrivilegeApplicationRequest apiPrivilege = new ApiPrivilegeApplicationRequest("name", "description", "domain",
@@ -201,7 +202,7 @@ public class PrivilegeApiResourceTest
   }
 
   @Test
-  public void testCreatePrivilege_applicationWithAllAction() {
+  public void testCreatePrivilegeApplicationWithAllAction() {
     when(authorizationManager.getPrivilege("name")).thenThrow(new NoSuchPrivilegeException("name"));
 
     ApiPrivilegeApplicationRequest apiPrivilege = new ApiPrivilegeApplicationRequest("name", "description", "domain",
@@ -215,7 +216,7 @@ public class PrivilegeApiResourceTest
   }
 
   @Test
-  public void testCreatePrivilege_wildcard() {
+  public void testCreatePrivilegeWildcard() {
     when(authorizationManager.getPrivilege("name")).thenThrow(new NoSuchPrivilegeException("name"));
 
     ApiPrivilegeWildcardRequest apiPrivilege = new ApiPrivilegeWildcardRequest("name", "description", "pattern");
@@ -228,7 +229,7 @@ public class PrivilegeApiResourceTest
   }
 
   @Test
-  public void testCreatePrivilege_alreadyExists() {
+  public void testCreatePrivilegeAlreadyExists() {
     when(authorizationManager.addPrivilege(any())).thenThrow(new DuplicatePrivilegeException("name"));
 
     ApiPrivilegeWildcardRequest apiPrivilege = new ApiPrivilegeWildcardRequest("name", "description", "pattern");
@@ -246,7 +247,7 @@ public class PrivilegeApiResourceTest
   }
 
   @Test
-  public void testCreatePrivilege_runActionWithNonScriptPrivilege() {
+  public void testCreatePrivilegeRunActionWithNonScriptPrivilege() {
     when(authorizationManager.getPrivilege("name")).thenThrow(new NoSuchPrivilegeException("name"));
 
     ApiPrivilegeApplicationRequest apiPrivilege = new ApiPrivilegeApplicationRequest("name", "description", "domain",
@@ -266,7 +267,7 @@ public class PrivilegeApiResourceTest
   }
 
   @Test
-  public void testUpdatePrivilege_application() {
+  public void testUpdatePrivilegeApplication() {
     Privilege priv = createPrivilege("application", "priv", "privdesc", false, DOMAIN_KEY, "testDomain", ACTIONS_KEY,
         "*");
     when(authorizationManager.getPrivilegeByName("priv")).thenReturn(priv);
@@ -285,7 +286,7 @@ public class PrivilegeApiResourceTest
   }
 
   @Test
-  public void testUpdatePrivilege_wildcard() {
+  public void testUpdatePrivilegeWildcard() {
     Privilege priv = createPrivilege("wildcard", "priv", "privdesc", false, PATTERN_KEY, "a:pattern");
     when(authorizationManager.getPrivilegeByName("priv")).thenReturn(priv);
 
@@ -299,7 +300,7 @@ public class PrivilegeApiResourceTest
   }
 
   @Test
-  public void testUpdatePrivilege_notFound() {
+  public void testUpdatePrivilegeNotFound() {
     when(authorizationManager.getPrivilegeByName("priv")).thenThrow(new NoSuchPrivilegeException("priv"));
 
     ApiPrivilegeWildcardRequest apiPrivilege = new ApiPrivilegeWildcardRequest("priv", "description", "pattern");
@@ -317,7 +318,7 @@ public class PrivilegeApiResourceTest
   }
 
   @Test
-  public void testUpdatePrivilege_readOnly() {
+  public void testUpdatePrivilegeReadOnly() {
     Privilege priv = createPrivilege("wildcard", "priv", "privdesc", true, PATTERN_KEY, "a:pattern");
     when(authorizationManager.getPrivilegeByName("priv")).thenReturn(priv);
 
@@ -339,7 +340,7 @@ public class PrivilegeApiResourceTest
   }
 
   @Test
-  public void testUpdatePrivilege_nameConflict() {
+  public void testUpdatePrivilegeNameConflict() {
     Privilege priv = createPrivilege("wildcard", "priv", "privdesc", true, PATTERN_KEY, "a:pattern");
     when(authorizationManager.getPrivilege("priv")).thenReturn(priv);
 

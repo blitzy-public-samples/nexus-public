@@ -15,6 +15,7 @@ package org.sonatype.nexus.internal.security.secrets;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
+import java.util.concurrent.CompletableFuture;
 
 import org.sonatype.nexus.crypto.secrets.SecretsService;
 import org.sonatype.nexus.internal.security.secrets.tasks.ReEncryptTaskDescriptor;
@@ -22,6 +23,8 @@ import org.sonatype.nexus.scheduling.TaskScheduler;
 
 import com.codahale.metrics.health.HealthCheck;
 
+import static java.lang.StringTemplate.STR;
+import static java.util.concurrent.CompletableFuture.supplyAsync;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
@@ -32,14 +35,6 @@ import static com.google.common.base.Preconditions.checkNotNull;
 public class ReEncryptionRequiredHealthCheck
     extends HealthCheck
 {
-  private static final String HEALTHY_MESSAGE = "All secrets using same encryption key. Re-encryption is not required.";
-
-  private static final String RE_ENCRYPTION_IN_PROGRESS_MESSAGE =
-      "Re-encryption in progress. Check task logs for more information.";
-
-  private static final String UNHEALTHY_MESSAGE = "Detected more than one encryption key in use. " +
-      "Re-encryption is required. See help documentation for information on how to start re-encryption.";
-
   private final SecretsService secretsService;
 
   private final TaskScheduler taskScheduler;
@@ -52,13 +47,16 @@ public class ReEncryptionRequiredHealthCheck
 
   @Override
   protected Result check() throws Exception {
-    if (isReEncryptTaskRunning()) {
-      return Result.healthy(RE_ENCRYPTION_IN_PROGRESS_MESSAGE);
-    }
-    else if (secretsService.isReEncryptRequired()) {
-      return Result.unhealthy(UNHEALTHY_MESSAGE);
-    }
-    return Result.healthy(HEALTHY_MESSAGE);
+    // Use CompletableFuture with Virtual Threads to check task status asynchronously
+    CompletableFuture<Boolean> taskRunningFuture = supplyAsync(this::isReEncryptTaskRunning, Thread.ofVirtual().factory());
+    
+    // Use pattern matching to determine the health status
+    return switch (taskRunningFuture.get()) {
+      case true -> Result.healthy(STR."Re-encryption in progress. Check task logs for more information.");
+      case false when secretsService.isReEncryptRequired() -> 
+          Result.unhealthy(STR."Detected more than one encryption key in use. Re-encryption is required. See help documentation for information on how to start re-encryption.");
+      default -> Result.healthy(STR."All secrets using same encryption key. Re-encryption is not required.");
+    };
   }
 
   private boolean isReEncryptTaskRunning() {

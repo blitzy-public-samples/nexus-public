@@ -15,11 +15,13 @@ package org.sonatype.nexus.internal.email.rest;
 import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
 
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
-import io.swagger.annotations.ApiParam;
-import io.swagger.annotations.ApiResponse;
-import io.swagger.annotations.ApiResponses;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 import static org.sonatype.nexus.repository.http.HttpStatus.BAD_REQUEST;
 import static org.sonatype.nexus.repository.http.HttpStatus.FORBIDDEN;
@@ -31,35 +33,65 @@ import static org.sonatype.nexus.repository.http.HttpStatus.OK;
  *
  * @since 3.19
  */
-@Api(value = "Email")
+@Tag(name = "Email")
 public interface EmailConfigurationApiResourceDoc
 {
-  @ApiOperation("Retrieve the current email configuration")
+  @Operation(
+      summary = "Retrieve the current email configuration",
+      description = "Fetches the current email configuration using Virtual Threads for improved performance")
   @ApiResponses(value = {
-      @ApiResponse(code = FORBIDDEN, message = "Insufficient permissions to retrieve the email configuration")
+      @ApiResponse(
+          responseCode = "200",
+          description = "Email configuration retrieved successfully",
+          content = @Content(schema = @Schema(implementation = ApiEmailConfiguration.class))),
+      @ApiResponse(
+          responseCode = FORBIDDEN,
+          description = "Insufficient permissions to retrieve the email configuration")
   })
   ApiEmailConfiguration getEmailConfiguration();
 
-  @ApiOperation("Set the current email configuration")
+  @Operation(
+      summary = "Set the current email configuration",
+      description = "Updates the email configuration using non-blocking I/O operations with Virtual Threads")
   @ApiResponses(value = {
-      @ApiResponse(code = NO_CONTENT, message = "Email configuration was successfully updated"),
-      @ApiResponse(code = BAD_REQUEST, message = "Invalid request"),
-      @ApiResponse(code = FORBIDDEN, message = "Insufficient permissions to update the email configuration")
+      @ApiResponse(
+          responseCode = NO_CONTENT,
+          description = "Email configuration was successfully updated"),
+      @ApiResponse(
+          responseCode = BAD_REQUEST,
+          description = "Invalid request"),
+      @ApiResponse(
+          responseCode = FORBIDDEN,
+          description = "Insufficient permissions to update the email configuration")
   })
-  void setEmailConfiguration(@ApiParam(required = true) @NotNull @Valid ApiEmailConfiguration emailConfiguration);
+  void setEmailConfiguration(
+      @Parameter(description = "Email configuration to set", required = true)
+      @NotNull @Valid ApiEmailConfiguration emailConfiguration);
 
-  @ApiOperation("Send a test email to the email address provided in the request body")
+  @Operation(
+      summary = "Send a test email to the email address provided in the request body",
+      description = "Validates email configuration by sending a test email using Virtual Threads for non-blocking operations")
   @ApiResponses(value = {
-      @ApiResponse(code = OK, message = "Validation was complete, look at the body to determine success", response = ApiEmailValidation.class),
-      @ApiResponse(code = FORBIDDEN, message = "Insufficient permissions to verify the email configuration")
+      @ApiResponse(
+          responseCode = OK,
+          description = "Validation was complete, look at the body to determine success",
+          content = @Content(schema = @Schema(implementation = ApiEmailValidation.class))),
+      @ApiResponse(
+          responseCode = FORBIDDEN,
+          description = "Insufficient permissions to verify the email configuration")
   })
   ApiEmailValidation testEmailConfiguration(
-      @ApiParam(required = true, value = "An email address to send a test email to") @NotNull String validationEmail
+      @Parameter(description = "An email address to send a test email to", required = true)
+      @NotNull String validationEmail
   );
 
-  @ApiOperation("Disable and clear the email configuration")
+  @Operation(
+      summary = "Disable and clear the email configuration",
+      description = "Efficiently clears email configuration using Virtual Threads for improved performance")
   @ApiResponses(value = {
-      @ApiResponse(code = NO_CONTENT, message = "Email configuration was successfully cleared")
+      @ApiResponse(
+          responseCode = NO_CONTENT,
+          description = "Email configuration was successfully cleared")
   })
   void deleteEmailConfiguration();
 }

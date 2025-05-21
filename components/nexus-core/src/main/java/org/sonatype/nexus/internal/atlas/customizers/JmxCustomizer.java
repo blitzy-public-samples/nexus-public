@@ -21,6 +21,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.stream.Collectors;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -81,6 +87,11 @@ public class JmxCustomizer
     this.objectMapper = new ObjectMapper();
   }
 
+  /**
+   * Record to represent MBean attribute data
+   */
+  private record MBeanAttribute(String name, Object value) {}
+
   @Override
   public void customize(final SupportBundle supportBundle) {
     supportBundle.add(new GeneratedContentSourceSupport(JMX, "info/jmx.json", OPTIONAL)
@@ -88,43 +99,66 @@ public class JmxCustomizer
       @Override
       protected void generate(final File file) {
         try {
-          log.debug("Querying mbeans");
+          log.debug(STR."Querying mbeans");
           Set<ObjectName> objectNames = server.queryNames(new ObjectName("*:*"), null);
 
-          log.debug("Building model");
-          Map<String, Object> model = new HashMap<>();
-          for (ObjectName objectName : objectNames) {
-            // normalize names, strip out quotes
-            String name = objectName.getCanonicalName().replace("\"", "").replace("\'", "");
-            log.debug("Processing MBean: {}", name);
-
-            MBeanInfo info = server.getMBeanInfo(objectName);
-            Map<String, Object> attrs = new HashMap<>();
-            stream(info.getAttributes()).forEach(attr -> {
-              log.debug("Processing MBean attribute: {}", attr);
-              if (attr.isReadable() && !"ObjectName".equals(attr.getName())) {
-                try {
-                  Object value = server.getAttribute(objectName, attr.getName());
-                  attrs.put(attr.getName(), render(value));
-                }
-                catch (ReflectionException | AttributeNotFoundException | InstanceNotFoundException |
-                       MBeanException | RuntimeMBeanException e) {
-                  log.trace("Unable to fetch attribute: {}; ignoring", attr.getName(), e);
-                }
-              }
-            });
-            model.put(name, attrs);
+          log.debug(STR."Building model");
+          Map<String, Object> model = new ConcurrentHashMap<>();
+          
+          // Create a virtual thread per task executor
+          try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            // Process each MBean in parallel using virtual threads
+            List<Future<?>> futures = objectNames.stream()
+                .map(objectName -> executor.submit(() -> processMBean(objectName, model)))
+                .collect(Collectors.toList());
+            
+            // Wait for all tasks to complete
+            for (Future<?> future : futures) {
+              future.get();
+            }
           }
+          
           try (FileWriter writer = new FileWriter(file)) {
             objectMapper.writerWithDefaultPrettyPrinter().writeValue(writer, model);
           }
         }
         catch (MalformedObjectNameException | InstanceNotFoundException | IntrospectionException | ReflectionException |
-               IOException e) {
+               IOException | InterruptedException | java.util.concurrent.ExecutionException e) {
           throw new RuntimeException(e);
         }
       }
     });
+  }
+
+  /**
+   * Process a single MBean and add its attributes to the model
+   */
+  private void processMBean(ObjectName objectName, Map<String, Object> model) {
+    try {
+      // normalize names, strip out quotes
+      String name = objectName.getCanonicalName().replace("\"", "").replace("\'", "");
+      log.debug(STR."Processing MBean: \{name}");
+
+      MBeanInfo info = server.getMBeanInfo(objectName);
+      Map<String, Object> attrs = new HashMap<>();
+      
+      stream(info.getAttributes()).forEach(attr -> {
+        log.debug(STR."Processing MBean attribute: \{attr}");
+        if (attr.isReadable() && !"ObjectName".equals(attr.getName())) {
+          try {
+            Object value = server.getAttribute(objectName, attr.getName());
+            attrs.put(attr.getName(), render(value));
+          }
+          catch (ReflectionException | AttributeNotFoundException | InstanceNotFoundException |
+                 MBeanException | RuntimeMBeanException e) {
+            log.trace(STR."Unable to fetch attribute: \{attr.getName()}; ignoring", e);
+          }
+        }
+      });
+      model.put(name, attrs);
+    } catch (InstanceNotFoundException | IntrospectionException | ReflectionException e) {
+      log.warn(STR."Error processing MBean \{objectName}", e);
+    }
   }
 
   @VisibleForTesting
@@ -133,49 +167,29 @@ public class JmxCustomizer
       return null;
     }
 
-    // TODO: Cope with password-like fields where we can detect .*password.* or something?
-
     Class<?> type = value.getClass();
-    log.trace("Rendering type: {}", type);
+    log.trace(STR."Rendering type: \{type}");
 
-    if (String.class.isAssignableFrom(type)) {
-      return render((String) value);
-    }
-    if (TabularData.class.isAssignableFrom(type)) {
-      return render((TabularData) value);
-    }
-    if (CompositeData.class.isAssignableFrom(type)) {
-      return render((CompositeData) value);
-    }
-    if (ObjectName.class.isAssignableFrom(type)) {
-      return render((ObjectName) value);
-    }
-    if (Collection.class.isAssignableFrom(type)) {
-      return render((Collection<?>) value);
-    }
-    if (Object[].class.isAssignableFrom(type)) {
-      return render((Object[]) value);
-    }
-    if (Map.class.isAssignableFrom(type)) {
-      return render((Map<?, ?>) value);
-    }
-    if (Double.class.isAssignableFrom(type)) {
-      return render((Double) value);
-    }
-    if (Float.class.isAssignableFrom(type)) {
-      return render((Float) value);
-    }
-    if (Enum.class.isAssignableFrom(type)) {
-      return render((Enum<?>) value);
-    }
-    if (isAssignableFrom(type, asList(CharSequence.class, Number.class, Boolean.class))) {
-      return value;
-    }
-    log.trace("Coercing to String: {} -> {}", type, value);
-    return String.valueOf(value);
+    return switch (value) {
+      case String s -> renderString(s);
+      case TabularData td -> render(td);
+      case CompositeData cd -> render(cd);
+      case ObjectName on -> render(on);
+      case Collection<?> c -> render(c);
+      case Object[] arr -> render(arr);
+      case Map<?, ?> m -> render(m);
+      case Double d -> render(d);
+      case Float f -> render(f);
+      case Enum<?> e -> render(e);
+      case CharSequence _, Number _, Boolean _ -> value;
+      default -> {
+        log.trace(STR."Coercing to String: \{type} -> \{value}");
+        yield String.valueOf(value);
+      }
+    };
   }
 
-  private Object render(final String string) {
+  private Object renderString(final String string) {
     for (String sensitiveName : SENSITIVE_FIELD_NAMES) {
       if (string.contains(sensitiveName)) {
         return string.replaceAll(sensitiveName + "=\\S*", sensitiveName + "=" + MASK);
@@ -195,7 +209,7 @@ public class JmxCustomizer
 
   private Object render(final CompositeData compositeData) {
     Map<String, Object> result = new HashMap<>();
-    compositeData.getCompositeType().keySet().forEach(key -> result.put(key, compositeData.get(key)));
+    compositeData.getCompositeType().keySet().forEach(key -> result.put(key, render(compositeData.get(key))));
     return result;
   }
 

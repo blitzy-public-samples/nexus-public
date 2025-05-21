@@ -24,17 +24,21 @@ import org.sonatype.nexus.repository.content.maintenance.ContentMaintenanceFacet
 import org.sonatype.nexus.repository.task.DeletionProgress;
 import org.sonatype.nexus.scheduling.TaskInterruptedException;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class DeleteCleanupMethodTest
     extends TestSupport
 {
@@ -51,21 +55,22 @@ public class DeleteCleanupMethodTest
 
   private DeleteCleanupMethod underTest;
 
-  @Before
+  @BeforeEach
   public void setUp() {
     System.setProperty("nexus.continuation.browse.limit", String.valueOf(BATCH_SIZE));
     underTest = new DeleteCleanupMethod();
     when(repository.facet(ContentMaintenanceFacet.class)).thenReturn(contentMaintenanceFacet);
   }
 
-  @Test(expected = TaskInterruptedException.class)
-  public void testRunFailsIfTaskIsCancelled() {
+  @Test
+  public void shouldFailIfTaskIsCancelled() {
     when(cancelledCheck.getAsBoolean()).thenReturn(true);
-    underTest.run(repository, getRandomStream(1000), cancelledCheck);
+    assertThrows(TaskInterruptedException.class, () -> 
+        underTest.run(repository, getRandomStream(1000), cancelledCheck));
   }
 
   @Test
-  public void testRunReBatchStream() {
+  public void shouldReBatchStream() {
     when(cancelledCheck.getAsBoolean()).thenReturn(false);
     when(contentMaintenanceFacet.deleteComponents(any(Stream.class)))
         .thenAnswer(invocation -> {

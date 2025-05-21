@@ -57,19 +57,16 @@ public class AuthenticationConfigurationSerializer
       throws IOException
   {
     serialize(value, jgen);
-    if (value instanceof UsernameAuthenticationConfiguration) {
-      jgen.writeStringField(typeSer.getPropertyName(), UsernameAuthenticationConfiguration.TYPE);
-    }
-    else if (value instanceof NtlmAuthenticationConfiguration) {
-      jgen.writeStringField(typeSer.getPropertyName(), NtlmAuthenticationConfiguration.TYPE);
-    }
-    else if (value instanceof BearerTokenAuthenticationConfiguration) {
-      jgen.writeStringField(typeSer.getPropertyName(), BearerTokenAuthenticationConfiguration.TYPE);
-    }
-    else {
-      // be foolproof, if new type added but this class is not updated
-      throw new JsonGenerationException("Unsupported type:" + value.getClass().getName(), jgen);
-    }
+    
+    // Use pattern matching with switch expression to determine the type
+    String typeValue = switch (value) {
+      case UsernameAuthenticationConfiguration ignored -> UsernameAuthenticationConfiguration.TYPE;
+      case NtlmAuthenticationConfiguration ignored -> NtlmAuthenticationConfiguration.TYPE;
+      case BearerTokenAuthenticationConfiguration ignored -> BearerTokenAuthenticationConfiguration.TYPE;
+      case default -> throw new JsonGenerationException("Unsupported type: " + value.getClass().getName(), jgen);
+    };
+    
+    jgen.writeStringField(typeSer.getPropertyName(), typeValue);
     jgen.writeEndObject();
   }
 
@@ -77,29 +74,27 @@ public class AuthenticationConfigurationSerializer
     jgen.writeStartObject();
     jgen.writeStringField("type", value.getType());
     jgen.writeBooleanField("preemptive", value.isPreemptive());
-    if (value instanceof UsernameAuthenticationConfiguration) {
-      UsernameAuthenticationConfiguration upc = (UsernameAuthenticationConfiguration) value;
-      jgen.writeStringField("username", upc.getUsername());
-      if (upc.getPassword() != null) {
-        jgen.writeStringField("password", upc.getPassword().getId());
+    
+    // Use pattern matching with switch expression to handle different authentication types
+    switch (value) {
+      case UsernameAuthenticationConfiguration upc -> {
+        jgen.writeStringField("username", upc.getUsername());
+        if (upc.getPassword() != null) {
+          jgen.writeStringField("password", upc.getPassword().getId());
+        }
       }
-    }
-    else if (value instanceof NtlmAuthenticationConfiguration) {
-      NtlmAuthenticationConfiguration ntc = (NtlmAuthenticationConfiguration) value;
-      jgen.writeStringField("username", ntc.getUsername());
-      if (ntc.getPassword() != null) {
-        jgen.writeStringField("password", ntc.getPassword().getId());
+      case NtlmAuthenticationConfiguration ntc -> {
+        jgen.writeStringField("username", ntc.getUsername());
+        if (ntc.getPassword() != null) {
+          jgen.writeStringField("password", ntc.getPassword().getId());
+        }
+        jgen.writeStringField("domain", ntc.getDomain());
+        jgen.writeStringField("host", ntc.getHost());
       }
-      jgen.writeStringField("domain", ntc.getDomain());
-      jgen.writeStringField("host", ntc.getHost());
-    }
-    else if (value instanceof BearerTokenAuthenticationConfiguration) {
-      BearerTokenAuthenticationConfiguration btac = (BearerTokenAuthenticationConfiguration) value;
-      jgen.writeStringField(BearerTokenAuthenticationConfiguration.TYPE, btac.getBearerToken());
-    }
-    else {
-      // be foolproof, if new type added but this class is not updated
-      throw new JsonGenerationException("Unsupported type:" + value.getClass().getName());
+      case BearerTokenAuthenticationConfiguration btac -> {
+        jgen.writeStringField(BearerTokenAuthenticationConfiguration.TYPE, btac.getBearerToken());
+      }
+      case default -> throw new JsonGenerationException("Unsupported type: " + value.getClass().getName(), jgen);
     }
   }
 }

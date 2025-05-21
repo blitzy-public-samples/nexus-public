@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <target>System.out</target>
+    <encoder>
+      <!-- Enhanced pattern with support for Java 21 Virtual Thread naming patterns -->
+      <pattern>%date %level [%thread%X{DC}%X{virtualThread}] %logger - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- Configure package logger for nexus-base component -->
+  <logger name="org.sonatype.nexus.base" level="DEBUG"/>
+
+  <!-- Add support for Virtual Thread diagnostic logging -->
+  <logger name="jdk.internal.vm.virtualthread" level="DEBUG"/>
+  
+  <!-- Configure MDC pattern recognition for virtual thread names -->
+  <turboFilter class="ch.qos.logback.classic.turbo.MDCFilter">
+    <MDCKey>virtualThread</MDCKey>
+    <Value>true</Value>
+    <OnMatch>ACCEPT</OnMatch>
+  </turboFilter>
+  
+  <!-- Add specific configuration for virtual thread testing -->
+  <logger name="org.sonatype.nexus.virtualthread" level="DEBUG"/>
+
+  <!-- Add thread context tracking for virtual threads -->
+  <contextListener class="ch.qos.logback.classic.jul.LevelChangePropagator">
+    <resetJUL>true</resetJUL>
+  </contextListener>
+
+  <root level="${test.log.level:-INFO}">
+    <appender-ref ref="CONSOLE"/>
+  </root>
+
+</configuration>

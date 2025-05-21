@@ -1,0 +1,339 @@
+{
+  "description": "Test scenarios for Java 21 Record Pattern features",
+  "version": "1.0",
+  "testCases": [
+    {
+      "name": "Simple Record Pattern",
+      "description": "Basic record pattern matching with direct component extraction",
+      "records": [
+        {
+          "type": "Point",
+          "components": {
+            "x": 10,
+            "y": 20
+          }
+        }
+      ],
+      "expectedMatches": [
+        {
+          "pattern": "Point(int x, int y)",
+          "result": true,
+          "extractedValues": {
+            "x": 10,
+            "y": 20
+          }
+        },
+        {
+          "pattern": "Point(var x, var y)",
+          "result": true,
+          "extractedValues": {
+            "x": 10,
+            "y": 20
+          }
+        },
+        {
+          "pattern": "Point(int x, double y)",
+          "result": false,
+          "reason": "Type mismatch in component pattern"
+        }
+      ]
+    },
+    {
+      "name": "Nested Record Pattern",
+      "description": "Record pattern matching with nested records",
+      "records": [
+        {
+          "type": "Rectangle",
+          "components": {
+            "topLeft": {
+              "type": "Point",
+              "components": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            "bottomRight": {
+              "type": "Point",
+              "components": {
+                "x": 100,
+                "y": 100
+              }
+            }
+          }
+        }
+      ],
+      "expectedMatches": [
+        {
+          "pattern": "Rectangle(Point topLeft, Point bottomRight)",
+          "result": true,
+          "extractedValues": {
+            "topLeft": "Point(0, 0)",
+            "bottomRight": "Point(100, 100)"
+          }
+        },
+        {
+          "pattern": "Rectangle(Point(int x1, int y1), Point(int x2, int y2))",
+          "result": true,
+          "extractedValues": {
+            "x1": 0,
+            "y1": 0,
+            "x2": 100,
+            "y2": 100
+          }
+        },
+        {
+          "pattern": "Rectangle(var topLeft, var bottomRight)",
+          "result": true,
+          "extractedValues": {
+            "topLeft": "Point(0, 0)",
+            "bottomRight": "Point(100, 100)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Conditional Record Pattern",
+      "description": "Record pattern matching with conditional guards",
+      "records": [
+        {
+          "type": "Employee",
+          "components": {
+            "name": "John Doe",
+            "salary": 75000,
+            "department": "Engineering"
+          }
+        },
+        {
+          "type": "Employee",
+          "components": {
+            "name": "Jane Smith",
+            "salary": 120000,
+            "department": "Management"
+          }
+        }
+      ],
+      "expectedMatches": [
+        {
+          "pattern": "Employee(String name, int salary, String department) when salary > 100000",
+          "result": [false, true],
+          "extractedValues": [
+            null,
+            {
+              "name": "Jane Smith",
+              "salary": 120000,
+              "department": "Management"
+            }
+          ]
+        },
+        {
+          "pattern": "Employee(var name, var salary, var department) when department.equals(\"Engineering\")",
+          "result": [true, false],
+          "extractedValues": [
+            {
+              "name": "John Doe",
+              "salary": 75000,
+              "department": "Engineering"
+            },
+            null
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Generic Record Pattern",
+      "description": "Record pattern matching with generic records",
+      "records": [
+        {
+          "type": "Box<String>",
+          "components": {
+            "value": "Hello World"
+          }
+        },
+        {
+          "type": "Box<Integer>",
+          "components": {
+            "value": 42
+          }
+        }
+      ],
+      "expectedMatches": [
+        {
+          "pattern": "Box<String>(String value)",
+          "result": [true, false],
+          "extractedValues": [
+            {
+              "value": "Hello World"
+            },
+            null
+          ]
+        },
+        {
+          "pattern": "Box<Integer>(Integer value)",
+          "result": [false, true],
+          "extractedValues": [
+            null,
+            {
+              "value": 42
+            }
+          ]
+        },
+        {
+          "pattern": "Box(var value)",
+          "result": [true, true],
+          "extractedValues": [
+            {
+              "value": "Hello World"
+            },
+            {
+              "value": 42
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Complex Nested Record Pattern",
+      "description": "Complex record pattern matching with multiple levels of nesting",
+      "records": [
+        {
+          "type": "Shape",
+          "variant": "Circle",
+          "components": {
+            "center": {
+              "type": "Point",
+              "components": {
+                "x": 50,
+                "y": 50
+              }
+            },
+            "radius": 25
+          }
+        },
+        {
+          "type": "Shape",
+          "variant": "Rectangle",
+          "components": {
+            "topLeft": {
+              "type": "Point",
+              "components": {
+                "x": 10,
+                "y": 10
+              }
+            },
+            "bottomRight": {
+              "type": "Point",
+              "components": {
+                "x": 60,
+                "y": 60
+              }
+            }
+          }
+        }
+      ],
+      "expectedMatches": [
+        {
+          "pattern": "Circle(Point center, double radius)",
+          "result": [true, false],
+          "extractedValues": [
+            {
+              "center": "Point(50, 50)",
+              "radius": 25
+            },
+            null
+          ]
+        },
+        {
+          "pattern": "Rectangle(Point(int x1, int y1), Point(int x2, int y2))",
+          "result": [false, true],
+          "extractedValues": [
+            null,
+            {
+              "x1": 10,
+              "y1": 10,
+              "x2": 60,
+              "y2": 60
+            }
+          ]
+        },
+        {
+          "pattern": "Circle(Point(var x, var y), var radius)",
+          "result": [true, false],
+          "extractedValues": [
+            {
+              "x": 50,
+              "y": 50,
+              "radius": 25
+            },
+            null
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Null Handling",
+      "description": "Record pattern matching with null values",
+      "records": [
+        null,
+        {
+          "type": "Point",
+          "components": {
+            "x": 5,
+            "y": 10
+          }
+        }
+      ],
+      "expectedMatches": [
+        {
+          "pattern": "Point(int x, int y)",
+          "result": [false, true],
+          "extractedValues": [
+            null,
+            {
+              "x": 5,
+              "y": 10
+            }
+          ]
+        },
+        {
+          "pattern": "null",
+          "result": [true, false],
+          "extractedValues": [
+            null,
+            null
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Unnamed Pattern Variables",
+      "description": "Record pattern matching with unnamed pattern variables (using underscore)",
+      "records": [
+        {
+          "type": "Person",
+          "components": {
+            "firstName": "John",
+            "lastName": "Doe",
+            "age": 30
+          }
+        }
+      ],
+      "expectedMatches": [
+        {
+          "pattern": "Person(String firstName, String _, int age)",
+          "result": true,
+          "extractedValues": {
+            "firstName": "John",
+            "age": 30
+          }
+        },
+        {
+          "pattern": "Person(var firstName, var _, var _)",
+          "result": true,
+          "extractedValues": {
+            "firstName": "John"
+          }
+        }
+      ]
+    }
+  ]
+}

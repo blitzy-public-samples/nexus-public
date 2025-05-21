@@ -12,9 +12,19 @@
  */
 package org.sonatype.nexus.internal.capability.storage.datastore;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.function.Consumer;
+
 import org.sonatype.nexus.internal.capability.storage.CapabilityStorageItemCreatedEvent;
 import org.sonatype.nexus.internal.capability.storage.CapabilityStorageItemData;
 
+/**
+ * Implementation of {@link CapabilityStorageItemCreatedEvent} that supports asynchronous processing
+ * using Java 21 Virtual Threads for improved concurrency and performance.
+ *
+ * @since 3.60
+ */
 public class CapabilityStorageItemCreatedEventImpl
     extends CapabilityStorageItemEventSupport
     implements CapabilityStorageItemCreatedEvent
@@ -25,5 +35,44 @@ public class CapabilityStorageItemCreatedEventImpl
 
   public CapabilityStorageItemCreatedEventImpl(final CapabilityStorageItemData item) {
     super(item);
+  }
+  
+  /**
+   * Processes this event asynchronously using a Java 21 Virtual Thread.
+   * Virtual Threads provide lightweight concurrency with minimal overhead,
+   * allowing for efficient handling of many concurrent events.
+   *
+   * @param handler the consumer that will process this event
+   * @return a CompletableFuture that completes when the event processing is done
+   */
+  public CompletableFuture<Void> processAsync(final Consumer<CapabilityStorageItemCreatedEvent> handler) {
+    return CompletableFuture.runAsync(
+        () -> handler.accept(this),
+        Executors.newVirtualThreadPerTaskExecutor());
+  }
+  
+  /**
+   * Processes this event asynchronously using a Java 21 Virtual Thread,
+   * preserving the current thread context (like MDC logging context).
+   *
+   * @param handler the consumer that will process this event
+   * @param contextPreserver a runnable that sets up the thread context before processing
+   * @return a CompletableFuture that completes when the event processing is done
+   */
+  public CompletableFuture<Void> processAsyncWithContext(
+      final Consumer<CapabilityStorageItemCreatedEvent> handler,
+      final Runnable contextPreserver) {
+    return CompletableFuture.runAsync(
+        () -> {
+          try {
+            // Set up thread context (MDC, etc.)
+            contextPreserver.run();
+            // Process the event
+            handler.accept(this);
+          } finally {
+            // Any cleanup can be done here if needed
+          }
+        },
+        Executors.newVirtualThreadPerTaskExecutor());
   }
 }

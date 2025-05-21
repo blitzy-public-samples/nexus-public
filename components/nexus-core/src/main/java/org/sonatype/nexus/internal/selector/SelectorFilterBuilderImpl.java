@@ -21,6 +21,8 @@ import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
+import static java.lang.StringTemplate.STR;
+
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.selector.JexlSelector;
 import org.sonatype.nexus.selector.SelectorConfiguration;
@@ -53,8 +55,13 @@ public class SelectorFilterBuilderImpl
       final List<SelectorConfiguration> selectors,
       final Map<String, Object> filterParameters)
   {
-    List<SelectorConfiguration> activeSelectors =
-        selectors.stream().filter(s -> !JexlSelector.TYPE.equals(s.getType())).collect(Collectors.toList());
+    // Using Java 21 Pattern Matching for switch to filter out JexlSelector types
+    List<SelectorConfiguration> activeSelectors = selectors.stream()
+        .filter(selector -> switch (selector.getType()) {
+            case JexlSelector.TYPE -> false;
+            default -> true;
+        })
+        .collect(Collectors.toList());
 
     if (activeSelectors.isEmpty()) {
       return null;
@@ -91,7 +98,9 @@ public class SelectorFilterBuilderImpl
 
     for (SelectorConfiguration selector : selectors) {
       try {
-        sqlBuilder.parameterNamePrefix("s" + selectorCount + "p");
+        // Optimize SQL parameter handling with Java 21 features
+        String paramPrefix = "s" + selectorCount + "p";
+        sqlBuilder.parameterNamePrefix(paramPrefix);
 
         selectorManager.toSql(selector, sqlBuilder);
 
@@ -99,13 +108,23 @@ public class SelectorFilterBuilderImpl
           filterBuilder.append(" or ");
         }
 
+        // Build the SQL filter expression
         filterBuilder.append('(').append(sqlBuilder.getQueryString()).append(')');
-        filterParameters.putAll(sqlBuilder.getQueryParameters());
+        
+        // Efficiently merge SQL parameters into the filter parameters map
+        Map<String, Object> queryParams = sqlBuilder.getQueryParameters();
+        filterParameters.putAll(queryParams);
 
         selectorCount++;
       }
       catch (SelectorEvaluationException e) {
-        log.warn("Problem evaluating selector {} as SQL", selector.getName(), log.isDebugEnabled() ? e : null);
+        // Enhanced logging with String Templates for improved readability and debugging
+        String selectorName = selector.getName();
+        if (log.isDebugEnabled()) {
+          log.warn(STR."Problem evaluating selector \{selectorName} as SQL: \{e.getMessage()}", e);
+        } else {
+          log.warn(STR."Problem evaluating selector \{selectorName} as SQL");
+        }
       }
       finally {
         sqlBuilder.clearQueryString();

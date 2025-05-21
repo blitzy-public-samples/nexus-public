@@ -26,6 +26,8 @@ import org.sonatype.nexus.email.EmailConfigurationChangedEvent;
 import com.google.common.eventbus.AllowConcurrentEvents;
 import com.google.common.eventbus.Subscribe;
 
+import static java.lang.StringTemplate.STR;
+
 /**
  * Email auditor.
  *
@@ -39,17 +41,23 @@ public class EmailAuditor
 {
   public static final String DOMAIN = "email";
 
+  /**
+   * Event subscriber method for email configuration changes.
+   * Uses Java 21 compatible event handling.
+   */
   @Subscribe
   @AllowConcurrentEvents
   public void on(final EmailConfigurationChangedEvent event) {
     if (isRecording()) {
       EmailConfiguration configuration = event.getConfiguration();
 
-      AuditData data = new AuditData();
-      data.setDomain(DOMAIN);
-      data.setType(CHANGED_TYPE);
-      data.setContext(SYSTEM_CONTEXT);
+      // Create audit data using modern Java patterns
+      AuditData data = new AuditData()
+          .setDomain(DOMAIN)
+          .setType(CHANGED_TYPE)
+          .setContext(SYSTEM_CONTEXT);
 
+      // Populate attributes using String Templates for better readability
       Map<String, Object> attributes = data.getAttributes();
       attributes.put("enabled", string(configuration.isEnabled()));
       attributes.put("host", configuration.getHost());
@@ -57,6 +65,11 @@ public class EmailAuditor
       attributes.put("username", configuration.getUsername());
       attributes.put("fromAddress", configuration.getFromAddress());
       attributes.put("subjectPrefix", configuration.getSubjectPrefix());
+      
+      // Log audit data with configuration details using String Templates
+      if (log.isDebugEnabled()) {
+        log.debug(STR."Recording email configuration change: host=\{configuration.getHost()}, port=\{configuration.getPort()}");
+      }
       
       record(data);
     }

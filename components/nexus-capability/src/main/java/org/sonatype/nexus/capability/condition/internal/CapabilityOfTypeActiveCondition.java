@@ -41,22 +41,42 @@ public class CapabilityOfTypeActiveCondition
 
   @Override
   boolean isSatisfiedBy(final CapabilityReference reference) {
-    return super.isSatisfiedBy(reference) && reference.context().isActive();
+    if (!super.isSatisfiedBy(reference)) {
+      return false;
+    }
+    
+    // Apply Pattern Matching for switch to check capability state
+    return switch (reference.context()) {
+      case var context when context.isActive() -> true;
+      default -> false;
+    };
   }
 
   @AllowConcurrentEvents
   @Subscribe
   public void handle(final CapabilityEvent.AfterActivated event) {
-    if (!isSatisfied() && type.equals(event.getReference().context().type())) {
-      checkAllCapabilities();
+    try {
+      bindLock.readLock().lock();
+      if (!isSatisfied() && type.equals(event.getReference().context().type())) {
+        checkAllCapabilities();
+      }
+    }
+    finally {
+      bindLock.readLock().unlock();
     }
   }
 
   @AllowConcurrentEvents
   @Subscribe
   public void handle(final CapabilityEvent.BeforePassivated event) {
-    if (isSatisfied() && type.equals(event.getReference().context().type())) {
-      checkAllCapabilities();
+    try {
+      bindLock.readLock().lock();
+      if (isSatisfied() && type.equals(event.getReference().context().type())) {
+        checkAllCapabilities();
+      }
+    }
+    finally {
+      bindLock.readLock().unlock();
     }
   }
 

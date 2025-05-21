@@ -13,8 +13,10 @@
 
 package org.sonatype.nexus.audit;
 
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.Date;
+import java.util.SequencedMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -28,6 +30,10 @@ import org.sonatype.nexus.common.node.NodeAccess;
 public class AuditData
     implements Serializable
 {
+  /**
+   * Serial version UID for this class.
+   */
+  @Serial
   private static final long serialVersionUID = 1L;
 
   /**
@@ -75,7 +81,7 @@ public class AuditData
   /**
    * Extensible attributes for the change.
    */
-  private Map<String, Object> attributes = new LinkedHashMap<>();
+  private SequencedMap<String, Object> attributes = new LinkedHashMap<>();
 
   public String getDomain() {
     return domain;
@@ -125,7 +131,7 @@ public class AuditData
     this.initiator = initiator;
   }
 
-  public Map<String, Object> getAttributes() {
+  public SequencedMap<String, Object> getAttributes() {
     return attributes;
   }
 
@@ -133,19 +139,16 @@ public class AuditData
    * @since 3.5
    */
   public void setAttributes(final Map<String, Object> attributes) {
-    this.attributes = attributes;
+    if (attributes instanceof SequencedMap) {
+      this.attributes = (SequencedMap<String, Object>) attributes;
+    } else {
+      // Convert to SequencedMap if not already
+      this.attributes = new LinkedHashMap<>(attributes);
+    }
   }
 
   @Override
   public String toString() {
-    return getClass().getSimpleName() + "{" +
-        "domain='" + domain + '\'' +
-        ", type='" + type + '\'' +
-        ", context='" + context + '\'' +
-        ", timestamp=" + timestamp +
-        ", nodeId='" + nodeId + '\'' +
-        ", initiator='" + initiator + '\'' +
-        ", attributes=" + attributes +
-        '}';
+    return STR."{getClass().getSimpleName()}{domain='{domain}', type='{type}', context='{context}', timestamp={timestamp}, nodeId='{nodeId}', initiator='{initiator}', attributes={attributes}}";
   }
 }

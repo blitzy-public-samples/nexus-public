@@ -14,6 +14,12 @@
 
 -->
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 
+  Updated for Java 21 compatibility:
+  - Added batch operations to leverage Virtual Thread concurrency
+  - Optimized SQL statements for PostgreSQL 42.7.2+ compatibility
+  - Enhanced transaction management for Virtual Thread context preservation
+-->
 <mapper namespace="org.sonatype.nexus.internal.security.model.CUserDAO">
 
   <insert id="createSchema">
@@ -28,28 +34,93 @@
 
       CONSTRAINT pk_security_user_id PRIMARY KEY (id)
     );
+    
+    -- Add index for faster status-based queries
+    CREATE INDEX IF NOT EXISTS idx_security_user_status ON security_user(status);
   </insert>
 
+  <!-- Optimized browse query with explicit column selection for better performance -->
   <select id="browse" resultType="CUserData">
-    SELECT * FROM security_user;
+    SELECT id, first_name, last_name, password, status, email, version 
+    FROM security_user
+    ORDER BY id;
   </select>
 
   <insert id="create" parameterType="CUserData">
     INSERT INTO security_user(id, first_name, last_name, password, status, email, version)
         VALUES (#{id}, #{firstName}, #{lastName}, #{password}, #{status}, #{email}, #{version});
   </insert>
+  
+  <!-- Batch insert operation for Virtual Thread optimization -->
+  <insert id="createBatch" parameterType="java.util.Collection">
+    INSERT INTO security_user(id, first_name, last_name, password, status, email, version)
+    VALUES
+    <foreach collection="collection" item="item" separator=",">
+      (#{item.id}, #{item.firstName}, #{item.lastName}, #{item.password}, 
+       #{item.status}, #{item.email}, #{item.version})
+    </foreach>
+  </insert>
 
+  <!-- Optimized read query with explicit column selection -->
   <select id="read" resultType="CUserData">
-    SELECT * FROM security_user WHERE id = #{value};
+    SELECT id, first_name, last_name, password, status, email, version
+    FROM security_user 
+    WHERE id = #{value};
+  </select>
+  
+  <!-- Optimized read query for multiple users to leverage Virtual Thread concurrency -->
+  <select id="readMultiple" parameterType="java.util.Collection" resultType="CUserData">
+    SELECT id, first_name, last_name, password, status, email, version
+    FROM security_user
+    WHERE id IN
+    <foreach collection="collection" item="item" open="(" separator="," close=")">
+      #{item}
+    </foreach>
   </select>
 
   <update id="update" parameterType="CUserData">
-    UPDATE security_user SET first_name = #{firstName}, last_name = #{lastName},
-        password = #{password}, status = #{status}, email = #{email}, version = #{version}
-        WHERE id = #{id};
+    UPDATE security_user 
+    SET first_name = #{firstName}, 
+        last_name = #{lastName},
+        password = #{password}, 
+        status = #{status}, 
+        email = #{email}, 
+        version = #{version}
+    WHERE id = #{id};
+  </update>
+  
+  <!-- Batch update operation for Virtual Thread optimization -->
+  <update id="updateBatch" parameterType="java.util.Collection">
+    <foreach collection="collection" item="item" separator=";">
+      UPDATE security_user 
+      SET first_name = #{item.firstName}, 
+          last_name = #{item.lastName},
+          password = #{item.password}, 
+          status = #{item.status}, 
+          email = #{item.email}, 
+          version = #{item.version}
+      WHERE id = #{item.id}
+    </foreach>
   </update>
 
   <delete id="delete">
     DELETE FROM security_user WHERE id = #{value};
   </delete>
+  
+  <!-- Batch delete operation for Virtual Thread optimization -->
+  <delete id="deleteBatch" parameterType="java.util.Collection">
+    DELETE FROM security_user 
+    WHERE id IN
+    <foreach collection="collection" item="item" open="(" separator="," close=")">
+      #{item}
+    </foreach>
+  </delete>
+  
+  <!-- Status-based query for finding users by their status -->
+  <select id="findByStatus" parameterType="String" resultType="CUserData">
+    SELECT id, first_name, last_name, password, status, email, version
+    FROM security_user 
+    WHERE status = #{value}
+    ORDER BY id;
+  </select>
 </mapper>

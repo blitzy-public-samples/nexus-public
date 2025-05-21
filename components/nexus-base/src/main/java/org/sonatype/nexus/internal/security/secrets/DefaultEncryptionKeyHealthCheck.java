@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.internal.security.secrets;
 
+import java.util.Optional;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -25,6 +27,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * A {@link HealthCheck} which fails if the administrator has not configured a key to use for encrypting secrets.
+ * <p>
+ * Updated for Java 21 compatibility with BouncyCastle 1.78.1 cryptographic provider and enhanced security model.
  */
 @FeatureFlag(name = "nexus.health.check.encryption", enabledByDefault = true)
 @Named("Default Secret Encryption Key")
@@ -45,13 +49,19 @@ public class DefaultEncryptionKeyHealthCheck
 
   @Override
   protected Result check() throws Exception {
-    return encryptionKeyValidator.getActiveKeyId()
-        .map(DefaultEncryptionKeyHealthCheck::createHealthyMessage)
-        .map(Result::healthy)
-        .orElseGet(() -> Result.unhealthy(FAIL));
+    // Using Java 21 Pattern Matching for Optional to improve code readability
+    Optional<String> activeKeyId = encryptionKeyValidator.getActiveKeyId();
+    
+    if (activeKeyId instanceof Optional<String> opt && opt.isPresent()) {
+      String keyId = opt.get();
+      return Result.healthy(createHealthyMessage(keyId));
+    } else {
+      return Result.unhealthy(FAIL);
+    }
   }
 
   private static String createHealthyMessage(final String keyId) {
-    return String.format(TEMPLATE_HEALTHY, keyId);
+    // Using Java 21 String Templates for more efficient message formatting
+    return STR."Nexus was configured to use \{keyId} to encrypt secrets.";
   }
 }

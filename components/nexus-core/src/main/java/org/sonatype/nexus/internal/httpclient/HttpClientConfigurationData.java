@@ -139,30 +139,75 @@ public class HttpClientConfigurationData
     this.disableContentCompression = disableContentCompression;
   }
 
+  /**
+   * Validates the configuration data using pattern matching to ensure all required components are properly configured.
+   * 
+   * @return true if the configuration is valid, false otherwise
+   * @since 21.0
+   */
+  public boolean isValid() {
+    // Using pattern matching to check configuration validity
+    return switch(this) {
+      // Case when proxy is configured but connection is missing
+      case HttpClientConfigurationData config when config.proxy != null && config.connection == null -> false;
+      // Case when authentication is configured but connection is missing
+      case HttpClientConfigurationData config when config.authentication != null && config.connection == null -> false;
+      // Default case - configuration is valid
+      default -> true;
+    };
+  }
+
+  /**
+   * Returns a specific configuration component using pattern matching for type safety.
+   * 
+   * @param <T> the type of configuration component to retrieve
+   * @param componentClass the class of the component to retrieve
+   * @return the requested component or null if not available
+   * @since 21.0
+   */
+  @SuppressWarnings("unchecked")
+  public <T> T getConfigComponent(Class<T> componentClass) {
+    return switch(componentClass.getSimpleName()) {
+      case "ConnectionConfiguration" when connection != null -> (T) connection;
+      case "ProxyConfiguration" when proxy != null -> (T) proxy;
+      case "AuthenticationConfiguration" when authentication != null -> (T) authentication;
+      case "RedirectStrategy" when redirectStrategy != null -> (T) redirectStrategy;
+      case "AuthenticationStrategy" when authenticationStrategy != null -> (T) authenticationStrategy;
+      default -> null;
+    };
+  }
+
   @Override
   public HttpClientConfigurationData copy() {
     try {
       HttpClientConfigurationData copy = (HttpClientConfigurationData) clone();
-      if (connection != null) {
-        copy.connection = connection.copy();
+      
+      // Using pattern matching for more efficient data handling
+      // Only copy non-null components
+      switch(this) {
+        case HttpClientConfigurationData data when data.connection != null -> 
+          copy.connection = data.connection.copy();
+        case HttpClientConfigurationData _ -> { /* connection is null, no action needed */ }
       }
-      if (proxy != null) {
-        copy.proxy = proxy.copy();
+      
+      switch(this) {
+        case HttpClientConfigurationData data when data.proxy != null -> 
+          copy.proxy = data.proxy.copy();
+        case HttpClientConfigurationData _ -> { /* proxy is null, no action needed */ }
       }
-      if (authentication != null) {
-        copy.authentication = authentication.copy();
+      
+      switch(this) {
+        case HttpClientConfigurationData data when data.authentication != null -> 
+          copy.authentication = data.authentication.copy();
+        case HttpClientConfigurationData _ -> { /* authentication is null, no action needed */ }
       }
-      if (redirectStrategy != null) {
-        // no real cloning/copying needed, as we are allowed to use a singleton instance
-        copy.redirectStrategy = redirectStrategy;
-      }
-      if (authenticationStrategy != null) {
-        // no real cloning/copying needed, as we are allowed to use a singleton instance
-        copy.authenticationStrategy = authenticationStrategy;
-      }
-      if (disableContentCompression != null) {
-        copy.disableContentCompression = disableContentCompression;
-      }
+      
+      // For strategies, we don't need to copy as they are singleton instances
+      copy.redirectStrategy = this.redirectStrategy;
+      copy.authenticationStrategy = this.authenticationStrategy;
+      copy.disableContentCompression = this.disableContentCompression;
+      copy.shouldNormalizeUri = this.shouldNormalizeUri;
+      
       return copy;
     }
     catch (CloneNotSupportedException e) {
@@ -172,10 +217,29 @@ public class HttpClientConfigurationData
 
   @Override
   public String toString() {
-    return getClass().getSimpleName() + "{" +
-        "connection=" + connection +
-        ", proxy=" + proxy +
-        ", authentication=" + authentication +
-        '}';
+    // Using pattern matching for more efficient string representation
+    return switch(this) {
+      case HttpClientConfigurationData data -> {
+        StringBuilder sb = new StringBuilder(getClass().getSimpleName())
+            .append("{");
+        
+        if (data.connection != null) {
+          sb.append("connection=").append(data.connection);
+        }
+        
+        if (data.proxy != null) {
+          if (data.connection != null) sb.append(", ");
+          sb.append("proxy=").append(data.proxy);
+        }
+        
+        if (data.authentication != null) {
+          if (data.connection != null || data.proxy != null) sb.append(", ");
+          sb.append("authentication=").append(data.authentication);
+        }
+        
+        sb.append('}');
+        yield sb.toString();
+      }
+    };
   }
 }

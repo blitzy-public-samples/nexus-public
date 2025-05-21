@@ -20,8 +20,8 @@ import org.sonatype.nexus.security.SecuritySystem;
 import org.sonatype.nexus.security.config.MemorySecurityConfiguration;
 import org.sonatype.nexus.security.role.RoleIdentifier;
 
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 public class MissingRoleUserManagerTest
     extends AbstractSecurityTest
@@ -36,13 +36,13 @@ public class MissingRoleUserManagerTest
     SecuritySystem userManager = getSecuritySystem();
 
     User user = userManager.getUser("jcoder");
-    Assert.assertNotNull(user);
+    Assertions.assertNotNull(user);
 
     Set<String> roleIds = new HashSet<String>();
     for (RoleIdentifier role : user.getRoles()) {
-      Assert.assertNotNull("User has null role.", role);
+      Assertions.assertNotNull(role, "User has null role.");
       roleIds.add(role.getRoleId());
     }
-    Assert.assertFalse(roleIds.contains("INVALID-ROLE-BLA-BLA"));
+    Assertions.assertFalse(roleIds.contains("INVALID-ROLE-BLA-BLA"));
   }
 }

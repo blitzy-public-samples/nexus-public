@@ -1,0 +1,282 @@
+{
+  "primitiveTypes": {
+    "stringValue": "test string",
+    "integerValue": 42,
+    "doubleValue": 3.14159,
+    "booleanValue": true,
+    "nullValue": null,
+    "emptyString": ""
+  },
+  "collections": {
+    "emptyArray": [],
+    "stringArray": ["one", "two", "three"],
+    "numberArray": [1, 2, 3, 4, 5],
+    "mixedArray": ["string", 42, true, null, {"key": "value"}],
+    "emptyObject": {},
+    "nestedArrays": [[1, 2], [3, 4], [5, 6]]
+  },
+  "repositoryTypes": {
+    "hosted": {
+      "type": "hosted",
+      "name": "maven-releases",
+      "format": "maven2",
+      "online": true,
+      "attributes": {
+        "storage": {
+          "blobStoreName": "default",
+          "strictContentTypeValidation": true,
+          "writePolicy": "ALLOW_ONCE"
+        },
+        "maven": {
+          "versionPolicy": "RELEASE",
+          "layoutPolicy": "STRICT"
+        }
+      }
+    },
+    "proxy": {
+      "type": "proxy",
+      "name": "maven-central",
+      "format": "maven2",
+      "online": true,
+      "attributes": {
+        "proxy": {
+          "remoteUrl": "https://repo1.maven.org/maven2/",
+          "contentMaxAge": 1440,
+          "metadataMaxAge": 1440
+        },
+        "httpclient": {
+          "blocked": false,
+          "autoBlock": true
+        },
+        "storage": {
+          "blobStoreName": "default",
+          "strictContentTypeValidation": true
+        },
+        "maven": {
+          "versionPolicy": "RELEASE",
+          "layoutPolicy": "STRICT"
+        }
+      }
+    },
+    "group": {
+      "type": "group",
+      "name": "maven-public",
+      "format": "maven2",
+      "online": true,
+      "attributes": {
+        "group": {
+          "memberNames": ["maven-releases", "maven-central"]
+        },
+        "storage": {
+          "blobStoreName": "default",
+          "strictContentTypeValidation": true
+        }
+      }
+    }
+  },
+  "blobStoreTypes": {
+    "file": {
+      "type": "file",
+      "name": "default",
+      "attributes": {
+        "file": {
+          "path": "${karaf.data}/blobs/default"
+        }
+      }
+    },
+    "s3": {
+      "type": "s3",
+      "name": "s3-store",
+      "attributes": {
+        "s3": {
+          "bucket": "my-bucket",
+          "region": "us-west-1",
+          "prefix": "nexus-data",
+          "expiration": 3
+        }
+      }
+    },
+    "group": {
+      "type": "group",
+      "name": "blob-group",
+      "attributes": {
+        "group": {
+          "members": ["default", "s3-store"]
+        }
+      }
+    }
+  },
+  "components": {
+    "maven": {
+      "format": "maven2",
+      "group": "org.sonatype.nexus",
+      "name": "nexus-core",
+      "version": "3.42.0",
+      "assets": [
+        {
+          "name": "nexus-core-3.42.0.jar",
+          "contentType": "application/java-archive",
+          "size": 1048576,
+          "checksums": {
+            "sha1": "abcdef1234567890",
+            "md5": "1234567890abcdef"
+          }
+        },
+        {
+          "name": "nexus-core-3.42.0.pom",
+          "contentType": "application/xml",
+          "size": 4096,
+          "checksums": {
+            "sha1": "1234567890abcdef",
+            "md5": "abcdef1234567890"
+          }
+        }
+      ]
+    },
+    "npm": {
+      "format": "npm",
+      "name": "@nexus/ui",
+      "version": "1.0.0",
+      "assets": [
+        {
+          "name": "@nexus/ui-1.0.0.tgz",
+          "contentType": "application/gzip",
+          "size": 524288,
+          "checksums": {
+            "sha1": "0987654321fedcba",
+            "md5": "fedcba0987654321"
+          }
+        }
+      ]
+    },
+    "raw": {
+      "format": "raw",
+      "name": "config.json",
+      "assets": [
+        {
+          "name": "config.json",
+          "contentType": "application/json",
+          "size": 2048,
+          "checksums": {
+            "sha1": "fedcba0987654321",
+            "md5": "0987654321fedcba"
+          }
+        }
+      ]
+    }
+  },
+  "securityTypes": {
+    "user": {
+      "userId": "admin",
+      "firstName": "Administrator",
+      "lastName": "User",
+      "emailAddress": "admin@example.com",
+      "status": "active",
+      "roles": ["nx-admin"]
+    },
+    "role": {
+      "id": "nx-admin",
+      "name": "Administrator",
+      "description": "Administrator role",
+      "privileges": ["*"]
+    },
+    "privilege": {
+      "id": "nx-repository-view-maven2-*-*",
+      "name": "Maven - All permissions",
+      "description": "All permissions for Maven repositories",
+      "type": "repository-view",
+      "properties": {
+        "format": "maven2",
+        "repository": "*",
+        "actions": "*"
+      }
+    }
+  },
+  "nestedPatterns": {
+    "simpleRecord": {
+      "x": 10,
+      "y": 20
+    },
+    "nestedRecord": {
+      "point": {
+        "x": 5,
+        "y": 15
+      },
+      "color": "RED"
+    },
+    "deeplyNestedRecord": {
+      "outer": {
+        "middle": {
+          "inner": {
+            "value": 42,
+            "name": "deep"
+          }
+        }
+      }
+    },
+    "recordWithArray": {
+      "name": "coordinates",
+      "points": [
+        {"x": 1, "y": 2},
+        {"x": 3, "y": 4},
+        {"x": 5, "y": 6}
+      ]
+    },
+    "recordWithVariants": {
+      "shape": {
+        "type": "circle",
+        "radius": 10
+      }
+    },
+    "anotherRecordWithVariants": {
+      "shape": {
+        "type": "rectangle",
+        "width": 20,
+        "height": 30
+      }
+    }
+  },
+  "virtualThreadTestCases": {
+    "ioOperation": {
+      "type": "file",
+      "path": "/path/to/file.txt",
+      "operation": "read",
+      "bufferSize": 8192,
+      "async": true
+    },
+    "networkOperation": {
+      "type": "http",
+      "url": "https://repo1.maven.org/maven2/",
+      "method": "GET",
+      "timeout": 30000,
+      "async": true
+    },
+    "databaseOperation": {
+      "type": "query",
+      "sql": "SELECT * FROM assets WHERE component_id = ?",
+      "parameters": ["12345"],
+      "async": true
+    }
+  },
+  "patternMatchingExamples": {
+    "typePatterns": [
+      "String",
+      42,
+      3.14,
+      true,
+      null,
+      [],
+      {}
+    ],
+    "guardedPatterns": [
+      {"value": 10, "condition": "value > 5"},
+      {"value": "test", "condition": "value.length() > 2"},
+      {"value": [1, 2, 3], "condition": "value.length > 0"}
+    ],
+    "recordPatterns": [
+      {"point": {"x": 10, "y": 20}},
+      {"rectangle": {"width": 30, "height": 40}},
+      {"circle": {"radius": 15}}
+    ]
+  }
+}

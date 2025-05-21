@@ -14,12 +14,12 @@ package org.sonatype.nexus.capability.condition;
 
 import org.sonatype.nexus.common.event.EventManager;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * {@link ConditionSupport} UTs.
@@ -32,7 +32,7 @@ public class ConditionTestSupport
 
   private TestCondition underTest;
 
-  @Before
+  @BeforeEach
   public final void setUpTestCondition()
       throws Exception
   {
@@ -45,7 +45,7 @@ public class ConditionTestSupport
    */
   @Test
   public void notSatisfiedInitially() {
-    assertThat(underTest.isSatisfied(), is(false));
+    assertFalse(underTest.isSatisfied(), STR."Condition should not be satisfied initially: \{underTest}");
   }
 
   /**
@@ -54,7 +54,7 @@ public class ConditionTestSupport
   @Test
   public void satisfied() {
     underTest.setSatisfied(true);
-    assertThat(underTest.isSatisfied(), is(true));
+    assertTrue(underTest.isSatisfied(), STR."Condition should be satisfied after setting to true: \{underTest}");
 
     verifyEventManagerEvents(satisfied(underTest));
   }
@@ -66,9 +66,9 @@ public class ConditionTestSupport
   @Test
   public void satisfiedOnAlreadySatisfied() {
     underTest.setSatisfied(true);
-    assertThat(underTest.isSatisfied(), is(true));
+    assertTrue(underTest.isSatisfied(), STR."Condition should be satisfied after first setting to true: \{underTest}");
     underTest.setSatisfied(true);
-    assertThat(underTest.isSatisfied(), is(true));
+    assertTrue(underTest.isSatisfied(), STR."Condition should remain satisfied after second setting to true: \{underTest}");
 
     verifyEventManagerEvents(satisfied(underTest));
   }
@@ -80,11 +80,11 @@ public class ConditionTestSupport
   @Test
   public void unsatisfiedOnAlreadyUnsatisfied() {
     underTest.setSatisfied(true);
-    assertThat(underTest.isSatisfied(), is(true));
+    assertTrue(underTest.isSatisfied(), STR."Condition should be satisfied after setting to true: \{underTest}");
     underTest.setSatisfied(false);
-    assertThat(underTest.isSatisfied(), is(false));
+    assertFalse(underTest.isSatisfied(), STR."Condition should be unsatisfied after first setting to false: \{underTest}");
     underTest.setSatisfied(false);
-    assertThat(underTest.isSatisfied(), is(false));
+    assertFalse(underTest.isSatisfied(), STR."Condition should remain unsatisfied after second setting to false: \{underTest}");
 
     verifyEventManagerEvents(satisfied(underTest), unsatisfied(underTest));
   }
@@ -95,11 +95,11 @@ public class ConditionTestSupport
   @Test
   public void satisfiedOnUnsatisfied() {
     underTest.setSatisfied(true);
-    assertThat(underTest.isSatisfied(), is(true));
+    assertTrue(underTest.isSatisfied(), STR."Condition should be satisfied after first setting to true: \{underTest}");
     underTest.setSatisfied(false);
-    assertThat(underTest.isSatisfied(), is(false));
+    assertFalse(underTest.isSatisfied(), STR."Condition should be unsatisfied after setting to false: \{underTest}");
     underTest.setSatisfied(true);
-    assertThat(underTest.isSatisfied(), is(true));
+    assertTrue(underTest.isSatisfied(), STR."Condition should be satisfied after second setting to true: \{underTest}");
 
     verifyEventManagerEvents(satisfied(underTest), unsatisfied(underTest), satisfied(underTest));
   }
@@ -111,7 +111,7 @@ public class ConditionTestSupport
   public void setSatisfiedAfterRelease() {
     underTest.release();
     underTest.setSatisfied(false);
-    assertThat(underTest.isSatisfied(), is(false));
+    assertFalse(underTest.isSatisfied(), STR."Condition should be unsatisfied after release and setting to false: \{underTest}");
 
     verifyNoEventManagerEvents();
   }
@@ -121,7 +121,7 @@ public class ConditionTestSupport
    */
   @Test
   public void getActivationContext() {
-    assertThat(underTest.getEventManager(), is(equalTo(eventManager)));
+    assertEquals(eventManager, underTest.getEventManager(), STR."Event manager should match the one provided: \{eventManager}");
   }
 
   private static class TestCondition

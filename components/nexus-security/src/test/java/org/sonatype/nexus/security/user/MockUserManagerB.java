@@ -17,66 +17,83 @@ import javax.inject.Singleton;
 
 import org.sonatype.nexus.security.role.RoleIdentifier;
 
+/**
+ * Mock implementation of a UserManager for testing purposes.
+ * <p>
+ * This implementation is optimized for Java 21 virtual threads by leveraging the thread-safe
+ * implementation of its parent class {@link MockUserManagerSupport}. It initializes a set of
+ * test users in its constructor using the thread-safe {@code addUser} method from the parent class.
+ * </p>
+ * <p>
+ * The JSR-330 annotations (@Named, @Singleton) ensure proper dependency injection in the Java 21
+ * environment, allowing this mock to be properly discovered and instantiated as a singleton.
+ * </p>
+ */
 @Singleton
 @Named("MockUserManagerB")
 public class MockUserManagerB
     extends MockUserManagerSupport
 {
+  /**
+   * Constructs a new instance with a predefined set of users.
+   * <p>
+   * This constructor is thread-safe because it uses the thread-safe {@code addUser} method
+   * from the parent class, which uses ConcurrentHashMap's non-blocking operations.
+   * </p>
+   */
   public MockUserManagerB() {
-    User a = new User();
-    a.setName("Brenda D. Burton");
-    a.setEmailAddress("bburton@sonatype.org");
-    a.setSource(this.getSource());
-    a.setUserId("bburton");
-    a.setStatus(UserStatus.active);
-    a.addRole(new RoleIdentifier(this.getSource(), "RoleA"));
-    a.addRole(new RoleIdentifier(this.getSource(), "RoleB"));
-    a.addRole(new RoleIdentifier(this.getSource(), "RoleC"));
+    // Create and initialize user objects
+    // Each user is created independently and then added to the thread-safe storage
+    User a = createUser(
+        "bburton",
+        "Brenda D. Burton",
+        "bburton@sonatype.org",
+        UserStatus.active,
+        new String[]{"RoleA", "RoleB", "RoleC"}
+    );
 
-    User b = new User();
-    b.setName("Julian R. Blevins");
-    b.setEmailAddress("jblevins@sonatype.org");
-    b.setSource(this.getSource());
-    b.setUserId("jblevins");
-    b.setStatus(UserStatus.active);
-    b.addRole(new RoleIdentifier(this.getSource(), "RoleA"));
-    b.addRole(new RoleIdentifier(this.getSource(), "RoleB"));
+    User b = createUser(
+        "jblevins",
+        "Julian R. Blevins",
+        "jblevins@sonatype.org",
+        UserStatus.active,
+        new String[]{"RoleA", "RoleB"}
+    );
 
-    User c = new User();
-    c.setName("Kathryn J. Simmons");
-    c.setEmailAddress("ksimmons@sonatype.org");
-    c.setSource(this.getSource());
-    c.setUserId("ksimmons");
-    c.setStatus(UserStatus.active);
-    c.addRole(new RoleIdentifier(this.getSource(), "RoleA"));
-    c.addRole(new RoleIdentifier(this.getSource(), "RoleB"));
+    User c = createUser(
+        "ksimmons",
+        "Kathryn J. Simmons",
+        "ksimmons@sonatype.org",
+        UserStatus.active,
+        new String[]{"RoleA", "RoleB"}
+    );
 
-    User d = new User();
-    d.setName("Florence T. Dahmen");
-    d.setEmailAddress("fdahmen@sonatype.org");
-    d.setSource(this.getSource());
-    d.setUserId("fdahmen");
-    d.setStatus(UserStatus.active);
-    d.addRole(new RoleIdentifier(this.getSource(), "RoleA"));
-    d.addRole(new RoleIdentifier(this.getSource(), "RoleB"));
+    User d = createUser(
+        "fdahmen",
+        "Florence T. Dahmen",
+        "fdahmen@sonatype.org",
+        UserStatus.active,
+        new String[]{"RoleA", "RoleB"}
+    );
 
-    User e = new User();
-    e.setName("Jill  Codar");
-    e.setEmailAddress("jcodar@sonatype.org");
-    e.setSource(this.getSource());
-    e.setUserId("jcodar");
-    e.setStatus(UserStatus.active);
+    User e = createUser(
+        "jcodar",
+        "Jill Codar",
+        "jcodar@sonatype.org",
+        UserStatus.active,
+        new String[]{}
+    );
 
-    User f = new User();
-    f.setName("Joe Coder");
-    f.setEmailAddress("jcoder@sonatype.org");
-    f.setSource(this.getSource());
-    f.setUserId("jcoder");
-    f.setStatus(UserStatus.active);
-    f.addRole(new RoleIdentifier(this.getSource(), "Role1"));
-    f.addRole(new RoleIdentifier(this.getSource(), "Role2"));
-    f.addRole(new RoleIdentifier(this.getSource(), "Role3"));
+    User f = createUser(
+        "jcoder",
+        "Joe Coder",
+        "jcoder@sonatype.org",
+        UserStatus.active,
+        new String[]{"Role1", "Role2", "Role3"}
+    );
 
+    // Add users to the thread-safe storage using the parent class's addUser method
+    // which uses ConcurrentHashMap's putIfAbsent for thread-safety
     this.addUser(a, a.getUserId());
     this.addUser(b, b.getUserId());
     this.addUser(c, c.getUserId());
@@ -85,10 +102,52 @@ public class MockUserManagerB
     this.addUser(f, f.getUserId());
   }
 
+  /**
+   * Helper method to create a user with the specified properties.
+   * <p>
+   * This method encapsulates the user creation logic to improve readability and maintainability.
+   * Each user is created independently, making this process thread-safe.
+   * </p>
+   *
+   * @param userId the user ID
+   * @param name the user's name
+   * @param email the user's email address
+   * @param status the user's status
+   * @param roleIds the role IDs to assign to the user
+   * @return the created user
+   */
+  private User createUser(String userId, String name, String email, UserStatus status, String[] roleIds) {
+    User user = new User();
+    user.setName(name);
+    user.setEmailAddress(email);
+    user.setSource(this.getSource());
+    user.setUserId(userId);
+    user.setStatus(status);
+    
+    // Add roles if specified
+    for (String roleId : roleIds) {
+      user.addRole(new RoleIdentifier(this.getSource(), roleId));
+    }
+    
+    return user;
+  }
+
+  /**
+   * Gets the source identifier for this user manager.
+   *
+   * @return the source identifier
+   */
+  @Override
   public String getSource() {
     return "MockUserManagerB";
   }
 
+  /**
+   * Gets the authentication realm name for this user manager.
+   *
+   * @return the authentication realm name
+   */
+  @Override
   public String getAuthenticationRealmName() {
     return "MockRealmB";
   }

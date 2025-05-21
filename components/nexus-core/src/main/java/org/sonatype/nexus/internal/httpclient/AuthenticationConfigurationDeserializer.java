@@ -66,20 +66,20 @@ public class AuthenticationConfigurationDeserializer
     checkState(type != null, "Unknown %s type: %s", AuthenticationConfiguration.class.getSimpleName(), typeName);
     AuthenticationConfiguration configuration = parser.getCodec().treeToValue(node, type);
     configuration.setPreemptive(configuration.isPreemptive());
-    if (UsernameAuthenticationConfiguration.class.equals(type)) {
-      UsernameAuthenticationConfiguration upc = (UsernameAuthenticationConfiguration) configuration;
-      upc.setUsername(upc.getUsername());
+    
+    // Use Java 21 Pattern Matching for switch to simplify authentication type resolution
+    switch (configuration) {
+      case UsernameAuthenticationConfiguration upc -> upc.setUsername(upc.getUsername());
+      case NtlmAuthenticationConfiguration ntc -> {
+        ntc.setUsername(ntc.getUsername());
+        ntc.setDomain(ntc.getDomain());
+        ntc.setHost(ntc.getHost());
+      }
+      case BearerTokenAuthenticationConfiguration btac -> btac.setBearerToken(btac.getBearerToken());
+      case null -> throw new IllegalStateException("Configuration cannot be null");
+      default -> { /* No additional processing needed for other authentication types */ }
     }
-    else if (NtlmAuthenticationConfiguration.class.equals(type)) {
-      NtlmAuthenticationConfiguration ntc = (NtlmAuthenticationConfiguration) configuration;
-      ntc.setUsername(ntc.getUsername());
-      ntc.setDomain(ntc.getDomain());
-      ntc.setHost(ntc.getHost());
-    }
-    else if (BearerTokenAuthenticationConfiguration.class.equals(type)) {
-      BearerTokenAuthenticationConfiguration btac = (BearerTokenAuthenticationConfiguration) configuration;
-      btac.setBearerToken(btac.getBearerToken());
-    }
+    
     return configuration;
   }
 }

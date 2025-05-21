@@ -20,7 +20,49 @@ package org.sonatype.nexus.internal.script;
 public class IllegalScriptLanguageException
     extends RuntimeException
 {
+  /**
+   * Constructs a new exception with the specified detail message.
+   *
+   * @param message the detail message
+   */
   public IllegalScriptLanguageException(final String message) {
     super(message);
+  }
+
+  /**
+   * Constructs a new exception with a detail message created using String Templates.
+   *
+   * @param language the unsupported script language
+   * @param supportedLanguages the list of supported languages
+   * @return the exception with formatted message
+   */
+  public static IllegalScriptLanguageException unsupportedLanguage(final String language, final String... supportedLanguages) {
+    return new IllegalScriptLanguageException(
+        STR."Unsupported script language: \{language}. Supported languages: \{String.join(", ", supportedLanguages)}");
+  }
+
+  /**
+   * Constructs a new exception with the specified detail message and cause.
+   *
+   * @param message the detail message
+   * @param cause the cause of the exception
+   */
+  public IllegalScriptLanguageException(final String message, final Throwable cause) {
+    super(message, cause);
+  }
+
+  /**
+   * Constructs a new exception with a detail message created using String Templates and the specified cause.
+   *
+   * @param cause the cause of the exception
+   * @param language the unsupported script language
+   * @param supportedLanguages the list of supported languages
+   * @return the exception with formatted message and cause
+   */
+  public static IllegalScriptLanguageException unsupportedLanguage(final Throwable cause, 
+      final String language, final String... supportedLanguages) {
+    return new IllegalScriptLanguageException(
+        STR."Unsupported script language: \{language}. Supported languages: \{String.join(", ", supportedLanguages)}",
+        cause);
   }
 }

@@ -13,14 +13,14 @@
 package org.sonatype.nexus.internal.security.model;
 
 import java.util.Set;
+import java.util.HashSet;
 
 import org.sonatype.nexus.common.entity.HasStringId;
 import org.sonatype.nexus.security.config.CRole;
 
-import com.google.common.collect.Sets;
-
 /**
- * {@link CRole} data.
+ * {@link CRole} data implementation that provides data storage and manipulation.
+ * Updated for Java 21 with enhanced pattern matching and collection handling.
  *
  * @since 3.21
  */
@@ -43,12 +43,18 @@ public class CRoleData
 
   @Override
   public void addPrivilege(final String string) {
-    getPrivileges().add(string);
+    switch (string) {
+      case null -> { /* Do nothing for null values */ }
+      case String s -> getPrivileges().add(s);
+    }
   }
 
   @Override
   public void addRole(final String string) {
-    getRoles().add(string);
+    switch (string) {
+      case null -> { /* Do nothing for null values */ }
+      case String s -> getRoles().add(s);
+    }
   }
 
   @Override
@@ -69,7 +75,7 @@ public class CRoleData
   @Override
   public Set<String> getPrivileges() {
     if (this.privileges == null) {
-      this.privileges = Sets.newHashSet();
+      this.privileges = new HashSet<>();
     }
 
     return this.privileges;
@@ -78,7 +84,7 @@ public class CRoleData
   @Override
   public Set<String> getRoles() {
     if (this.roles == null) {
-      this.roles = Sets.newHashSet();
+      this.roles = new HashSet<>();
     }
 
     return this.roles;
@@ -96,12 +102,18 @@ public class CRoleData
 
   @Override
   public void removePrivilege(final String string) {
-    getPrivileges().remove(string);
+    switch (string) {
+      case null -> { /* Do nothing for null values */ }
+      case String s -> getPrivileges().remove(s);
+    }
   }
 
   @Override
   public void removeRole(final String string) {
-    getRoles().remove(string);
+    switch (string) {
+      case null -> { /* Do nothing for null values */ }
+      case String s -> getRoles().remove(s);
+    }
   }
 
   @Override
@@ -143,32 +155,28 @@ public class CRoleData
   public CRoleData clone() {
     try {
       CRoleData copy = (CRoleData) super.clone();
-
-      if (this.privileges != null) {
-        copy.privileges = Sets.newHashSet(this.privileges);
-      }
-
-      if (this.roles != null) {
-        copy.roles = Sets.newHashSet(this.roles);
-      }
-
+      
+      // Create defensive copies of mutable fields using Java 21 features
+      copy.privileges = (this.privileges != null) ? new HashSet<>(this.privileges) : null;
+      copy.roles = (this.roles != null) ? new HashSet<>(this.roles) : null;
+      
       return copy;
     }
     catch (CloneNotSupportedException e) {
-      throw new RuntimeException(e);
+      throw new RuntimeException("Failed to clone CRoleData", e);
     }
   }
 
   @Override
   public String toString() {
-    return getClass().getSimpleName() + "{" +
-        "id='" + id + '\'' +
-        ", name='" + name + '\'' +
-        ", description='" + description + '\'' +
-        ", privileges=" + privileges +
-        ", roles=" + roles +
-        ", readOnly=" + readOnly +
-        ", version='" + version + '\'' +
-        '}';
+    return getClass().getSimpleName() + "{"
+        + "id='" + id + '\''
+        + ", name='" + name + '\''
+        + ", description='" + description + '\''
+        + ", privileges=" + privileges
+        + ", roles=" + roles
+        + ", readOnly=" + readOnly
+        + ", version='" + version + '\''
+        + '}';
   }
 }

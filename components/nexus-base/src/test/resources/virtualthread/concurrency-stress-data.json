@@ -1,0 +1,467 @@
+{
+  "metadata": {
+    "description": "Test data for virtual thread concurrency stress testing in nexus-base module",
+    "version": "1.0.0",
+    "targetJavaVersion": "21",
+    "created": "2025-05-21"
+  },
+  "testConfiguration": {
+    "defaultConcurrencyLevels": [10, 100, 1000, 10000],
+    "defaultIterationsPerThread": 100,
+    "defaultWarmupIterations": 10,
+    "defaultTimeoutSeconds": 60,
+    "threadPinningThresholdMs": 50,
+    "scalingEfficiencyThreshold": 0.9,
+    "testDurationSeconds": 30
+  },
+  "eventProcessingTests": [
+    {
+      "name": "HighVolumeEventProcessing",
+      "description": "Tests the system's ability to handle a high volume of events using virtual threads",
+      "eventTypes": ["NODE_STARTED", "NODE_STOPPED", "REPOSITORY_CREATED", "REPOSITORY_UPDATED", "REPOSITORY_DELETED"],
+      "concurrencyLevels": [100, 1000, 5000, 10000],
+      "eventDistribution": {
+        "NODE_STARTED": 0.1,
+        "NODE_STOPPED": 0.1,
+        "REPOSITORY_CREATED": 0.2,
+        "REPOSITORY_UPDATED": 0.5,
+        "REPOSITORY_DELETED": 0.1
+      },
+      "validationCriteria": {
+        "maxLatencyMs": 500,
+        "throughputEventsPerSecond": 5000,
+        "maxErrorRate": 0.001
+      }
+    },
+    {
+      "name": "ComplexEventChainProcessing",
+      "description": "Tests processing of complex event chains where one event triggers multiple subsequent events",
+      "eventChains": [
+        {
+          "triggerEvent": "REPOSITORY_CREATED",
+          "subsequentEvents": ["CONTENT_FACET_CREATED", "SEARCH_INDEX_UPDATED", "SECURITY_FACET_CREATED", "BROWSE_NODE_CREATED"]
+        },
+        {
+          "triggerEvent": "REPOSITORY_DELETED",
+          "subsequentEvents": ["CONTENT_FACET_DELETED", "SEARCH_INDEX_UPDATED", "SECURITY_FACET_DELETED", "BROWSE_NODE_DELETED"]
+        }
+      ],
+      "concurrencyLevels": [50, 500, 2000],
+      "validationCriteria": {
+        "maxChainCompletionTimeMs": 1000,
+        "maxIncompleteChains": 0,
+        "eventOrderingPreserved": true
+      }
+    },
+    {
+      "name": "MixedPriorityEventProcessing",
+      "description": "Tests handling of mixed priority events to ensure high-priority events are processed promptly",
+      "eventPriorities": {
+        "HIGH": ["SECURITY_BREACH", "NODE_FAILURE", "BLOBSTORE_ERROR"],
+        "MEDIUM": ["REPOSITORY_UPDATED", "USER_CREATED", "TASK_STARTED"],
+        "LOW": ["METRICS_COLLECTED", "CACHE_UPDATED", "LOG_ROTATED"]
+      },
+      "concurrencyLevels": [100, 1000],
+      "priorityDistribution": {
+        "HIGH": 0.1,
+        "MEDIUM": 0.3,
+        "LOW": 0.6
+      },
+      "validationCriteria": {
+        "highPriorityMaxLatencyMs": 100,
+        "mediumPriorityMaxLatencyMs": 300,
+        "lowPriorityMaxLatencyMs": 1000,
+        "priorityInversionCount": 0
+      }
+    }
+  ],
+  "nodeOperationTests": [
+    {
+      "name": "ConcurrentNodeRegistration",
+      "description": "Tests concurrent registration of nodes in a cluster",
+      "operations": ["REGISTER", "HEARTBEAT", "UPDATE_STATUS", "UPDATE_ATTRIBUTES", "DEREGISTER"],
+      "concurrencyLevels": [10, 50, 100],
+      "operationDistribution": {
+        "REGISTER": 0.2,
+        "HEARTBEAT": 0.5,
+        "UPDATE_STATUS": 0.1,
+        "UPDATE_ATTRIBUTES": 0.1,
+        "DEREGISTER": 0.1
+      },
+      "validationCriteria": {
+        "maxLatencyMs": 200,
+        "operationsPerSecond": 1000,
+        "maxErrorRate": 0.001,
+        "dataConsistencyErrors": 0
+      }
+    },
+    {
+      "name": "NodeAttributeBulkUpdate",
+      "description": "Tests bulk updates of node attributes",
+      "attributeCounts": [10, 100, 1000],
+      "attributeSizes": ["SMALL", "MEDIUM", "LARGE"],
+      "attributeSizeDefinitions": {
+        "SMALL": {
+          "minBytes": 10,
+          "maxBytes": 100
+        },
+        "MEDIUM": {
+          "minBytes": 1000,
+          "maxBytes": 10000
+        },
+        "LARGE": {
+          "minBytes": 100000,
+          "maxBytes": 1000000
+        }
+      },
+      "concurrencyLevels": [10, 50, 100],
+      "validationCriteria": {
+        "maxLatencyMs": 500,
+        "attributeUpdatesPerSecond": 10000,
+        "maxErrorRate": 0.001,
+        "dataConsistencyErrors": 0
+      }
+    },
+    {
+      "name": "NodeSynchronization",
+      "description": "Tests synchronization of node state across a cluster",
+      "nodeCount": [2, 5, 10],
+      "stateSize": ["SMALL", "MEDIUM", "LARGE"],
+      "stateSizeDefinitions": {
+        "SMALL": {
+          "minBytes": 1000,
+          "maxBytes": 10000
+        },
+        "MEDIUM": {
+          "minBytes": 100000,
+          "maxBytes": 1000000
+        },
+        "LARGE": {
+          "minBytes": 10000000,
+          "maxBytes": 100000000
+        }
+      },
+      "concurrencyLevels": [5, 10, 20],
+      "validationCriteria": {
+        "maxSyncTimeMs": 2000,
+        "syncOperationsPerSecond": 100,
+        "maxErrorRate": 0.001,
+        "stateConsistencyErrors": 0
+      }
+    }
+  ],
+  "webResourceTests": [
+    {
+      "name": "ConcurrentStaticResourceAccess",
+      "description": "Tests concurrent access to static web resources",
+      "resourceTypes": ["CSS", "JavaScript", "Images", "HTML", "Fonts"],
+      "resourceCounts": {
+        "CSS": 20,
+        "JavaScript": 50,
+        "Images": 100,
+        "HTML": 30,
+        "Fonts": 10
+      },
+      "resourceSizes": {
+        "CSS": {
+          "minBytes": 1000,
+          "maxBytes": 50000
+        },
+        "JavaScript": {
+          "minBytes": 5000,
+          "maxBytes": 500000
+        },
+        "Images": {
+          "minBytes": 10000,
+          "maxBytes": 2000000
+        },
+        "HTML": {
+          "minBytes": 1000,
+          "maxBytes": 100000
+        },
+        "Fonts": {
+          "minBytes": 20000,
+          "maxBytes": 200000
+        }
+      },
+      "concurrencyLevels": [100, 500, 1000, 5000],
+      "accessPatterns": ["RANDOM", "SEQUENTIAL", "HOTSPOT"],
+      "validationCriteria": {
+        "maxLatencyMs": 100,
+        "resourcesPerSecond": 10000,
+        "maxErrorRate": 0.001
+      }
+    },
+    {
+      "name": "DynamicResourceGeneration",
+      "description": "Tests concurrent generation of dynamic web resources",
+      "resourceTypes": ["JSON", "XML", "HTML", "CSV", "PDF"],
+      "complexityLevels": ["SIMPLE", "MODERATE", "COMPLEX"],
+      "complexityDefinitions": {
+        "SIMPLE": {
+          "nodeCount": 10,
+          "depth": 2,
+          "computeTimeMs": 5
+        },
+        "MODERATE": {
+          "nodeCount": 100,
+          "depth": 5,
+          "computeTimeMs": 20
+        },
+        "COMPLEX": {
+          "nodeCount": 1000,
+          "depth": 10,
+          "computeTimeMs": 50
+        }
+      },
+      "concurrencyLevels": [50, 200, 1000],
+      "validationCriteria": {
+        "maxLatencyMs": 200,
+        "resourcesPerSecond": 5000,
+        "maxErrorRate": 0.001,
+        "resourceIntegrityErrors": 0
+      }
+    },
+    {
+      "name": "MixedResourceAccess",
+      "description": "Tests mixed access patterns to both static and dynamic resources",
+      "staticRatio": 0.7,
+      "dynamicRatio": 0.3,
+      "resourceMix": {
+        "CSS": 0.1,
+        "JavaScript": 0.2,
+        "Images": 0.3,
+        "HTML": 0.1,
+        "JSON": 0.2,
+        "XML": 0.1
+      },
+      "concurrencyLevels": [100, 500, 2000],
+      "validationCriteria": {
+        "maxLatencyMs": 150,
+        "resourcesPerSecond": 8000,
+        "maxErrorRate": 0.001
+      }
+    }
+  ],
+  "referencePayloads": {
+    "small": {
+      "description": "Small payload for testing small data transfers",
+      "sizeBytes": 1024,
+      "structure": "simple",
+      "contentType": "application/json",
+      "template": {
+        "id": "${uuid}",
+        "timestamp": "${timestamp}",
+        "name": "${randomString(10)}",
+        "value": "${randomString(100)}",
+        "attributes": {
+          "attr1": "${randomString(20)}",
+          "attr2": "${randomString(20)}",
+          "attr3": "${randomString(20)}"
+        }
+      }
+    },
+    "medium": {
+      "description": "Medium payload for testing moderate data transfers",
+      "sizeBytes": 102400,
+      "structure": "nested",
+      "contentType": "application/json",
+      "template": {
+        "id": "${uuid}",
+        "timestamp": "${timestamp}",
+        "name": "${randomString(50)}",
+        "description": "${randomString(500)}",
+        "metadata": {
+          "created": "${timestamp}",
+          "createdBy": "${randomString(20)}",
+          "modified": "${timestamp}",
+          "modifiedBy": "${randomString(20)}",
+          "version": "${randomInt(1, 100)}",
+          "tags": ["${randomString(10)}", "${randomString(10)}", "${randomString(10)}"]
+        },
+        "data": {
+          "field1": "${randomString(1000)}",
+          "field2": "${randomString(1000)}",
+          "field3": "${randomString(1000)}",
+          "nested": {
+            "nestedField1": "${randomString(1000)}",
+            "nestedField2": "${randomString(1000)}",
+            "nestedArray": ["${randomString(100)}", "${randomString(100)}", "${randomString(100)}"]
+          }
+        },
+        "attributes": ${generateAttributes(50, 100)}
+      }
+    },
+    "large": {
+      "description": "Large payload for testing large data transfers",
+      "sizeBytes": 10485760,
+      "structure": "complex",
+      "contentType": "application/json",
+      "template": {
+        "id": "${uuid}",
+        "timestamp": "${timestamp}",
+        "name": "${randomString(100)}",
+        "description": "${randomString(1000)}",
+        "metadata": {
+          "created": "${timestamp}",
+          "createdBy": "${randomString(50)}",
+          "modified": "${timestamp}",
+          "modifiedBy": "${randomString(50)}",
+          "version": "${randomInt(1, 1000)}",
+          "tags": ["${randomString(20)}", "${randomString(20)}", "${randomString(20)}", "${randomString(20)}", "${randomString(20)}"]
+        },
+        "configuration": {
+          "setting1": "${randomString(100)}",
+          "setting2": "${randomString(100)}",
+          "setting3": "${randomString(100)}",
+          "complexSetting": {
+            "subSetting1": "${randomString(100)}",
+            "subSetting2": "${randomString(100)}",
+            "subSetting3": "${randomString(100)}"
+          },
+          "arraySettings": ["${randomString(100)}", "${randomString(100)}", "${randomString(100)}"]
+        },
+        "data": ${generateNestedData(5, 1000)},
+        "attributes": ${generateAttributes(500, 200)},
+        "binaryData": "${randomBase64(5000000)}"
+      }
+    },
+    "blobTransfer": {
+      "description": "Binary blob for testing binary data transfers",
+      "sizes": [1048576, 10485760, 104857600],
+      "contentTypes": ["application/octet-stream", "application/zip", "image/jpeg", "video/mp4"],
+      "transferModes": ["CHUNKED", "SINGLE_PART"],
+      "validationCriteria": {
+        "maxTransferTimeMs": {
+          "1048576": 500,
+          "10485760": 2000,
+          "104857600": 10000
+        },
+        "minThroughputMBps": {
+          "1048576": 50,
+          "10485760": 100,
+          "104857600": 200
+        },
+        "integrityCheckMethod": "SHA-256"
+      }
+    }
+  },
+  "threadPinningTests": [
+    {
+      "name": "BlockingOperationDetection",
+      "description": "Tests to detect thread pinning during operations that might block",
+      "operations": [
+        {
+          "name": "DatabaseQuery",
+          "type": "IO_BOUND",
+          "expectedVirtualThreadBehavior": "NON_BLOCKING",
+          "simulatedDurationMs": 50,
+          "concurrencyLevels": [100, 1000, 10000]
+        },
+        {
+          "name": "FileRead",
+          "type": "IO_BOUND",
+          "expectedVirtualThreadBehavior": "NON_BLOCKING",
+          "simulatedDurationMs": 20,
+          "concurrencyLevels": [100, 1000, 10000]
+        },
+        {
+          "name": "NetworkRequest",
+          "type": "IO_BOUND",
+          "expectedVirtualThreadBehavior": "NON_BLOCKING",
+          "simulatedDurationMs": 100,
+          "concurrencyLevels": [100, 1000, 5000]
+        },
+        {
+          "name": "Computation",
+          "type": "CPU_BOUND",
+          "expectedVirtualThreadBehavior": "CARRIER_THREAD_UTILIZATION",
+          "simulatedDurationMs": 10,
+          "concurrencyLevels": [10, 100, 1000]
+        },
+        {
+          "name": "SynchronizedBlock",
+          "type": "SYNCHRONIZATION",
+          "expectedVirtualThreadBehavior": "POTENTIAL_PINNING",
+          "simulatedDurationMs": 5,
+          "concurrencyLevels": [100, 1000, 5000]
+        },
+        {
+          "name": "NativeMethodCall",
+          "type": "NATIVE",
+          "expectedVirtualThreadBehavior": "POTENTIAL_PINNING",
+          "simulatedDurationMs": 5,
+          "concurrencyLevels": [100, 1000, 5000]
+        }
+      ],
+      "validationCriteria": {
+        "maxPinningRatio": 0.01,
+        "maxPinningDurationMs": 10,
+        "pinningDetectionThresholdMs": 5
+      }
+    }
+  ],
+  "scalingEfficiencyTests": [
+    {
+      "name": "LinearScalingValidation",
+      "description": "Tests to validate that virtual threads scale linearly with increased load",
+      "testScenarios": [
+        {
+          "name": "EventProcessing",
+          "baselineConcurrency": 100,
+          "scalingLevels": [500, 1000, 5000, 10000],
+          "operationType": "IO_BOUND",
+          "operationDurationMs": 10
+        },
+        {
+          "name": "RepositoryAccess",
+          "baselineConcurrency": 50,
+          "scalingLevels": [200, 500, 1000, 2000],
+          "operationType": "IO_BOUND",
+          "operationDurationMs": 20
+        },
+        {
+          "name": "BlobTransfer",
+          "baselineConcurrency": 20,
+          "scalingLevels": [50, 100, 200, 500],
+          "operationType": "IO_BOUND",
+          "operationDurationMs": 50
+        }
+      ],
+      "validationCriteria": {
+        "minScalingEfficiency": 0.9,
+        "maxEfficiencyDropPercentage": 10,
+        "throughputMeasurementMethod": "OPERATIONS_PER_SECOND",
+        "minMeasurementDurationSeconds": 30
+      }
+    }
+  ],
+  "mixedWorkloadTests": [
+    {
+      "name": "ProductionWorkloadSimulation",
+      "description": "Simulates a realistic production workload with mixed operations",
+      "workloadMix": {
+        "repositoryReads": 0.7,
+        "repositoryWrites": 0.1,
+        "searchOperations": 0.1,
+        "administrativeOperations": 0.05,
+        "backgroundTasks": 0.05
+      },
+      "concurrencyLevels": [100, 500, 1000],
+      "durationSeconds": 300,
+      "rampUpSeconds": 60,
+      "validationCriteria": {
+        "maxP95LatencyMs": 200,
+        "maxP99LatencyMs": 500,
+        "minThroughputOpsPerSecond": 5000,
+        "maxErrorRate": 0.001,
+        "maxResourceUtilization": {
+          "cpu": 0.8,
+          "memory": 0.8,
+          "diskIO": 0.7,
+          "networkIO": 0.7
+        }
+      }
+    }
+  ]
+}

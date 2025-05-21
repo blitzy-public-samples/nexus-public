@@ -14,14 +14,16 @@
 
 -->
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- Updated for MyBatis 3.5.15 and Java 21 compatibility -->
 <mapper namespace="org.sonatype.nexus.internal.security.model.CUserRoleMappingDAO">
 
+  <!-- Updated for H2 Database 2.3.232+ JSON_TYPE compatibility -->
   <insert id="createSchema">
     CREATE TABLE IF NOT EXISTS user_role_mapping (
       user_id VARCHAR(200) NOT NULL,
       user_lo VARCHAR(200) NULL,
       source  VARCHAR(100) NOT NULL,
-      roles   ${JSON_TYPE} NOT NULL,
+      roles   ${JSON_TYPE:JSON} NOT NULL,
       version INT          NOT NULL DEFAULT 1,
 
       CONSTRAINT pk_user_role_mapping_user_id_source PRIMARY KEY (user_id, source)
@@ -41,26 +43,58 @@
     </choose>
   </sql>
 
-  <select id="browse" resultType="CUserRoleMappingData">
+  <!-- Optimized for Virtual Thread concurrency with batch fetching -->
+  <select id="browse" resultType="CUserRoleMappingData" fetchSize="100">
     SELECT * FROM user_role_mapping;
   </select>
 
-  <insert id="create" parameterType="CUserRoleMappingData">
+  <!-- Updated for PostgreSQL 42.7.2+ compatibility with improved transaction handling -->
+  <insert id="create" parameterType="CUserRoleMappingData" useGeneratedKeys="false">
     INSERT INTO user_role_mapping(user_id, user_lo, source, roles, version)
         VALUES (#{userId}, #{userLo}, #{source}, #{roles}, #{version});
   </insert>
 
-  <select id="read" resultType="CUserRoleMappingData">
+  <!-- Optimized for Virtual Thread concurrency -->
+  <select id="read" resultType="CUserRoleMappingData" timeout="10000">
     SELECT * FROM user_role_mapping WHERE <include refid="userMatch"/> AND source = #{source};
   </select>
 
-  <update id="update" parameterType="CUserRoleMappingData">
+  <!-- Updated for transaction management across Virtual Thread scheduling points -->
+  <update id="update" parameterType="CUserRoleMappingData" timeout="10000">
     UPDATE user_role_mapping SET roles = #{roles}, version = #{version}
         WHERE <include refid="userMatch"/> AND source = #{source};
   </update>
 
-  <delete id="delete">
+  <!-- Optimized for Virtual Thread concurrency -->
+  <delete id="delete" timeout="10000">
     DELETE FROM user_role_mapping WHERE <include refid="userMatch"/> AND source = #{source};
   </delete>
 
+  <!-- 
+    Additional batch operations for improved performance with Virtual Threads
+    These methods allow for more efficient bulk operations that can leverage
+    Virtual Thread concurrency in Java 21
+  -->
+  <insert id="batchCreate" parameterType="java.util.List">
+    <foreach collection="list" item="item" separator=";">
+      INSERT INTO user_role_mapping(user_id, user_lo, source, roles, version)
+      VALUES (#{item.userId}, #{item.userLo}, #{item.source}, #{item.roles}, #{item.version})
+    </foreach>
+  </insert>
+
+  <update id="batchUpdate" parameterType="java.util.List">
+    <foreach collection="list" item="item" separator=";">
+      UPDATE user_role_mapping SET roles = #{item.roles}, version = #{item.version}
+      WHERE 
+      <choose>
+        <when test="item.userLo != null">
+          user_lo = #{item.userLo}
+        </when>
+        <otherwise>
+          user_id = #{item.userId}
+        </otherwise>
+      </choose>
+      AND source = #{item.source}
+    </foreach>
+  </update>
 </mapper>

@@ -20,6 +20,11 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.stream.Collectors;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
@@ -31,12 +36,15 @@ import org.sonatype.nexus.supportzip.SupportBundleCustomizer;
 
 import com.google.common.annotations.VisibleForTesting;
 
+import static java.lang.StringTemplate.STR;
 import static java.time.Instant.ofEpochMilli;
 import static org.sonatype.nexus.supportzip.SupportBundle.ContentSource.Priority.DEFAULT;
 import static org.sonatype.nexus.supportzip.SupportBundle.ContentSource.Type.REPLICATIONLOG;
 
 /**
  * Class to add replication v2 logs to support bundle
+ * 
+ * Uses Java 21 Virtual Threads for improved performance when scanning and processing log files
  */
 @Named
 @Singleton
@@ -51,28 +59,64 @@ public class ReplicationLogCustomizer
     getReplicationLogsHome()
         .map(File::new)
         .map(f -> getChildren(f, Collections.singletonList("log"), false))
-        .ifPresent(
-            iterator -> iterator.forEachRemaining(file -> this.updateSupportBundle(file, supportBundle, cutOff)));
+        .ifPresent(files -> processFilesWithVirtualThreads(files, supportBundle, cutOff));
   }
 
-  private Iterator<File> getChildren(final File folder, final List<String> extensions, final boolean recursive) {
-    List<File> validFiles = new ArrayList<>();
+  /**
+   * Process files in parallel using Virtual Threads for improved performance
+   */
+  private void processFilesWithVirtualThreads(final List<File> files, final SupportBundle supportBundle, final Instant cutOff) {
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      List<Future<?>> futures = files.stream()
+          .map(file -> executor.submit(() -> updateSupportBundle(file, supportBundle, cutOff)))
+          .collect(Collectors.toList());
+      
+      // Wait for all tasks to complete
+      for (Future<?> future : futures) {
+        future.get();
+      }
+    } catch (Exception e) {
+      log.error(STR."Error processing replication log files with virtual threads: \{e.getMessage()}", e);
+    }
+  }
+
+  /**
+   * Get children files using Virtual Threads for parallel file scanning
+   */
+  private List<File> getChildren(final File folder, final List<String> extensions, final boolean recursive) {
+    ConcurrentLinkedQueue<File> validFiles = new ConcurrentLinkedQueue<>();
 
     if (folder.exists()) {
       File[] children = folder.listFiles();
+      if (children == null || children.length == 0) {
+        return Collections.emptyList();
+      }
 
-      for (File child : children) {
-        if (child.isDirectory() && recursive) {
-          Iterator<File> childrenResults = getChildren(child, extensions, recursive);
-          childrenResults.forEachRemaining(validFiles::add);
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        List<Future<?>> futures = new ArrayList<>();
+        
+        for (File child : children) {
+          futures.add(executor.submit(() -> {
+            if (child.isDirectory() && recursive) {
+              List<File> childrenResults = getChildren(child, extensions, recursive);
+              validFiles.addAll(childrenResults);
+            }
+            else if (isValidFileExtension(child, extensions)) {
+              validFiles.add(child);
+            }
+          }));
         }
-        else if (isValidFileExtension(child, extensions)) {
-          validFiles.add(child);
+        
+        // Wait for all tasks to complete
+        for (Future<?> future : futures) {
+          future.get();
         }
+      } catch (Exception e) {
+        log.error(STR."Error scanning for replication log files with virtual threads: \{e.getMessage()}", e);
       }
     }
 
-    return validFiles.iterator();
+    return new ArrayList<>(validFiles);
   }
 
   private boolean isValidFileExtension(final File child, final List<String> extensions) {
@@ -88,14 +132,15 @@ public class ReplicationLogCustomizer
   }
 
   private void updateSupportBundle(final File file, final SupportBundle supportBundle, final Instant cutOff) {
-    if (ofEpochMilli(file.lastModified()).isAfter(cutOff)) {
-      log.debug("adding replication log file '{}'", file);
+    // Improved timestamp comparison using Java 21 date/time handling
+    Instant fileTimestamp = ofEpochMilli(file.lastModified());
+    if (fileTimestamp.isAfter(cutOff)) {
+      log.debug(STR."Adding replication log file '\{file}'.");
       supportBundle.add(
-          new FileContentSourceSupport(REPLICATIONLOG, String.format("log/replication/%s", file.getName()), file,
-              DEFAULT));
+          new FileContentSourceSupport(REPLICATIONLOG, STR."log/replication/\{file.getName()}", file, DEFAULT));
     }
     else {
-      log.debug("Skipping replication log file [past 24 hours]: {}", file);
+      log.debug(STR."Skipping replication log file [past 24 hours]: \{file}");
     }
   }
 

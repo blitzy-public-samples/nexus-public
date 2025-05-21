@@ -15,34 +15,36 @@ package org.sonatype.nexus.capability.condition.internal;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.capability.Condition;
 
-import org.hamcrest.Matchers;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
-import static org.mockito.Mockito.mock;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 /**
  * {@link NexusConditionsImpl} UTs.
  *
  * @since capabilities 2.0
  */
+@ExtendWith(MockitoExtension.class)
 public class NexusConditionsImplTest
     extends TestSupport
 {
+  @Mock
+  private NexusIsActiveCondition nexusIsActiveCondition;
 
   /**
    * active() factory method returns expected condition.
    */
   @Test
   public void active() {
-    final NexusIsActiveCondition nexusIsActiveCondition = mock(NexusIsActiveCondition.class);
     final NexusConditionsImpl underTest = new NexusConditionsImpl(nexusIsActiveCondition);
-
-    assertThat(
-        underTest.active(),
-        is(Matchers.<Condition>instanceOf(NexusIsActiveCondition.class))
-    );
+    
+    // Using String Template for improved test logging
+    String message = STR."Testing if \{underTest.getClass().getSimpleName()} returns expected condition type";
+    System.out.println(message);
+    
+    assertInstanceOf(NexusIsActiveCondition.class, underTest.active());
   }
-
 }

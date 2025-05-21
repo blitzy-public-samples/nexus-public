@@ -17,58 +17,19 @@ package org.sonatype.nexus.internal.support;
  *
  * @since 3.0
  */
-public class SupportZipXO
+public record SupportZipXO(String file, String name, long size, Boolean truncated)
 {
-  private String file;
-
-  private String name;
-
-  private long size;
-
-  private Boolean truncated;
-
+  /**
+   * Default constructor for serialization frameworks.
+   */
   public SupportZipXO() {
+    this(null, null, 0L, null);
   }
 
-  public SupportZipXO(String file, String name, long size, Boolean truncated) {
-    this.file = file;
-    this.name = name;
-    this.size = size;
-    this.truncated = truncated;
-  }
-
-  public String getFile() {
-    return file;
-  }
-
-  public void setFile(String file) {
-    this.file = file;
-  }
-
-  public String getName() {
-    return name;
-  }
-
-  public void setName(String name) {
-    this.name = name;
-  }
-
-  public long getSize() {
-    return size;
-  }
-
-  public void setSize(long size) {
-    this.size = size;
-  }
-
-  public Boolean getTruncated() {
-    return truncated;
-  }
-
-  public void setTruncated(Boolean truncated) {
-    this.truncated = truncated;
-  }
-
+  /**
+   * Returns a string representation of this record.
+   * Overridden to provide backward compatibility with the previous toString format.
+   */
   @Override
   public String toString() {
     return "SupportZipXO{" +

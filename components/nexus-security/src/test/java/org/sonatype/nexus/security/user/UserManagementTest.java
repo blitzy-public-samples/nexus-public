@@ -26,15 +26,16 @@ import com.google.inject.AbstractModule;
 import com.google.inject.Module;
 import com.google.inject.Singleton;
 import com.google.inject.name.Names;
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 public class UserManagementTest
     extends AbstractSecurityTest
 {
   private SecuritySystem securitySystem;
 
-  @Override
+  @BeforeEach
   protected void setUp() throws Exception {
     super.setUp();
 
@@ -62,26 +63,26 @@ public class UserManagementTest
   @Test
   public void testAllUsers() throws Exception {
     Set<User> users = securitySystem.listUsers();
-    Assert.assertFalse(users.isEmpty());
+    Assertions.assertFalse(users.isEmpty());
 
     // put users in map for easy search
     Map<String, User> userMap = this.getMapFromSet(users);
 
     // now check all of the users
-    Assert.assertTrue(userMap.containsKey("jcoder"));
-    Assert.assertTrue(userMap.containsKey("cdugas"));
-    Assert.assertTrue(userMap.containsKey("pperalez"));
-    Assert.assertTrue(userMap.containsKey("dknudsen"));
-    Assert.assertTrue(userMap.containsKey("anonymous-user"));
+    Assertions.assertTrue(userMap.containsKey("jcoder"));
+    Assertions.assertTrue(userMap.containsKey("cdugas"));
+    Assertions.assertTrue(userMap.containsKey("pperalez"));
+    Assertions.assertTrue(userMap.containsKey("dknudsen"));
+    Assertions.assertTrue(userMap.containsKey("anonymous-user"));
 
-    Assert.assertTrue(userMap.containsKey("bburton"));
-    Assert.assertTrue(userMap.containsKey("jblevins"));
-    Assert.assertTrue(userMap.containsKey("ksimmons"));
-    Assert.assertTrue(userMap.containsKey("fdahmen"));
-    Assert.assertTrue(userMap.containsKey("jcodar"));
+    Assertions.assertTrue(userMap.containsKey("bburton"));
+    Assertions.assertTrue(userMap.containsKey("jblevins"));
+    Assertions.assertTrue(userMap.containsKey("ksimmons"));
+    Assertions.assertTrue(userMap.containsKey("fdahmen"));
+    Assertions.assertTrue(userMap.containsKey("jcodar"));
 
     // FIXME: This is a pretty fragile assertion
-    Assert.assertEquals(15, users.size());
+    Assertions.assertEquals(15, users.size());
 
     // we just need to check to make sure there are 2 jcoders with the correct source
     this.verify2Jcoders(users);
@@ -93,33 +94,33 @@ public class UserManagementTest
 
     criteria.setUserId("pperalez");
     Set<User> users = securitySystem.searchUsers(criteria);
-    Assert.assertEquals(1, users.size());
-    Assert.assertEquals("pperalez", users.iterator().next().getUserId());
+    Assertions.assertEquals(1, users.size());
+    Assertions.assertEquals("pperalez", users.iterator().next().getUserId());
 
     criteria.setUserId("ppera");
     users = securitySystem.searchUsers(criteria);
-    Assert.assertEquals(1, users.size());
-    Assert.assertEquals("pperalez", users.iterator().next().getUserId());
+    Assertions.assertEquals(1, users.size());
+    Assertions.assertEquals("pperalez", users.iterator().next().getUserId());
 
     criteria.setUserId("ppera");
     criteria.setSource("MockUserManagerB");
     users = securitySystem.searchUsers(criteria);
-    Assert.assertEquals(0, users.size());
+    Assertions.assertEquals(0, users.size());
 
     criteria.setUserId("ksim");
     users = securitySystem.searchUsers(criteria);
-    Assert.assertEquals(1, users.size());
-    Assert.assertEquals("ksimmons", users.iterator().next().getUserId());
+    Assertions.assertEquals(1, users.size());
+    Assertions.assertEquals("ksimmons", users.iterator().next().getUserId());
 
     criteria.setUserId("jcod");
     criteria.setSource(null);
     users = securitySystem.searchUsers(criteria);
-    Assert.assertEquals(3, users.size());
+    Assertions.assertEquals(3, users.size());
 
     // put users in map for easy search
     Map<String, User> userMap = this.getMapFromSet(users);
 
-    Assert.assertTrue(userMap.containsKey("jcodar"));
+    Assertions.assertTrue(userMap.containsKey("jcodar"));
 
     // we just need to check to make sure there are 2 jcoders with the correct source (the counts are already
     // checked above)
@@ -142,8 +143,8 @@ public class UserManagementTest
         jcoders.put(user.getSource(), user);
       }
     }
-    Assert.assertEquals(2, jcoders.size());
-    Assert.assertTrue(jcoders.containsKey("MockUserManagerA"));
-    Assert.assertTrue(jcoders.containsKey("MockUserManagerB"));
+    Assertions.assertEquals(2, jcoders.size());
+    Assertions.assertTrue(jcoders.containsKey("MockUserManagerA"));
+    Assertions.assertTrue(jcoders.containsKey("MockUserManagerB"));
   }
 }

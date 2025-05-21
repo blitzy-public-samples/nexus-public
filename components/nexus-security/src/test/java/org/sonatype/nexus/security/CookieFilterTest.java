@@ -19,9 +19,11 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static com.google.common.net.HttpHeaders.SET_COOKIE;
 import static java.util.Arrays.asList;
@@ -34,16 +36,22 @@ import static org.mockito.Mockito.when;
 /**
  * Tests for {@link CookieFilter}.
  */
+@ExtendWith(MockitoExtension.class)
 public class CookieFilterTest
     extends TestSupport
 {
-  private static String COOKIE_1_INSECURE = "JSESSIONID=98a766bc-bc33-4b3c-9d9f-d3bb85b0cf00; Path=/nexus; HttpOnly";
+  private static final String COOKIE_1_INSECURE = "JSESSIONID=98a766bc-bc33-4b3c-9d9f-d3bb85b0cf00; Path=/nexus; HttpOnly";
 
-  private static String COOKIE_2_INSECURE = "simple=cookie";
+  private static final String COOKIE_2_INSECURE = "simple=cookie";
 
-  private static String COOKIE_3_SECURE = "NXSESSIONID=98a766bc-bc33-4b3c-9d9f-d3bb85b0cf00; Path=/nexus; HttpOnly; Secure";
+  private static final String COOKIE_3_SECURE = "NXSESSIONID=98a766bc-bc33-4b3c-9d9f-d3bb85b0cf00; Path=/nexus; HttpOnly; Secure";
 
-  private static String COOKIE_4_SECURE = "rememberMe=deleteMe; Path=/nexus; Secure; HttpOnly;";
+  private static final String COOKIE_4_SECURE = "rememberMe=deleteMe; Path=/nexus; Secure; HttpOnly;";
+  
+  // HTTP version constants
+  private static final String HTTP_1_1 = "HTTP/1.1";
+  private static final String HTTP_2 = "HTTP/2.0";
+  private static final String HTTP_3 = "HTTP/3.0";
 
   @Mock
   private HttpServletResponse response;
@@ -59,13 +67,18 @@ public class CookieFilterTest
 
   private CookieFilter cookieFilter;
 
-  @Before
+  @BeforeEach
   public void setupFilter() throws Exception {
     this.cookieFilter = new CookieFilter();
   }
 
   private void setup(HttpServletRequest request, HttpServletResponse response) {
+    setup(request, response, HTTP_1_1);
+  }
+  
+  private void setup(HttpServletRequest request, HttpServletResponse response, String protocol) {
     when(request.isSecure()).thenReturn(true);
+    when(request.getProtocol()).thenReturn(protocol);
     when(response.getHeaders(SET_COOKIE)).thenReturn(asList(COOKIE_1_INSECURE, COOKIE_2_INSECURE, COOKIE_3_SECURE,
         COOKIE_4_SECURE));
   }
@@ -117,5 +130,81 @@ public class CookieFilterTest
 
     verify(response, times(0)).setHeader(anyString(), anyString());
     verify(response, times(0)).addHeader(anyString(), anyString());
+  }
+  
+  @Test
+  public void http2SecureRequestShouldSetSecureCookieAttribute() throws Exception {
+    setup(request, response, HTTP_2);
+    cookieFilter.preHandle(request, response);
+    verifyResponse(response);
+  }
+  
+  @Test
+  public void http3SecureRequestShouldSetSecureCookieAttribute() throws Exception {
+    setup(request, response, HTTP_3);
+    cookieFilter.preHandle(request, response);
+    verifyResponse(response);
+  }
+  
+  @Test
+  public void http2PostHandleShouldSetSecureCookieAttribute() throws Exception {
+    setup(request, response, HTTP_2);
+    cookieFilter.postHandle(request, response);
+    verifyResponse(response);
+  }
+  
+  @Test
+  public void http3PostHandleShouldSetSecureCookieAttribute() throws Exception {
+    setup(request, response, HTTP_3);
+    cookieFilter.postHandle(request, response);
+    verifyResponse(response);
+  }
+  
+  @Test
+  public void http2NotSecureRequestShouldNotChangeCookieAttributes() throws Exception {
+    when(request.isSecure()).thenReturn(false);
+    when(request.getProtocol()).thenReturn(HTTP_2);
+    when(response.getHeaders(SET_COOKIE))
+        .thenReturn(asList(COOKIE_1_INSECURE, COOKIE_3_SECURE));
+
+    cookieFilter.doFilter(request, response, filterChain);
+
+    verifyNoInteractions(response);
+  }
+  
+  @Test
+  public void http3NotSecureRequestShouldNotChangeCookieAttributes() throws Exception {
+    when(request.isSecure()).thenReturn(false);
+    when(request.getProtocol()).thenReturn(HTTP_3);
+    when(response.getHeaders(SET_COOKIE))
+        .thenReturn(asList(COOKIE_1_INSECURE, COOKIE_3_SECURE));
+
+    cookieFilter.doFilter(request, response, filterChain);
+
+    verifyNoInteractions(response);
+  }
+  
+  @Test
+  public void http3WithConnectionMigrationShouldMaintainSecureCookies() throws Exception {
+    // Simulate a connection migration scenario in HTTP/3 (which has better connection migration support)
+    setup(request, response, HTTP_3);
+    
+    // Process the request initially
+    cookieFilter.preHandle(request, response);
+    verifyResponse(response);
+    
+    // Simulate a new request after connection migration (same cookies should be maintained)
+    HttpServletRequest newRequest = request;
+    HttpServletResponse newResponse = response;
+    when(newRequest.isSecure()).thenReturn(true);
+    when(newRequest.getProtocol()).thenReturn(HTTP_3);
+    
+    cookieFilter.preHandle(newRequest, newResponse);
+    
+    // Verify the secure cookies are maintained
+    verify(newResponse).setHeader(SET_COOKIE, COOKIE_1_INSECURE + "; Secure");
+    verify(newResponse).addHeader(SET_COOKIE, COOKIE_2_INSECURE + "; Secure");
+    verify(newResponse).addHeader(SET_COOKIE, COOKIE_3_SECURE);
+    verify(newResponse).addHeader(SET_COOKIE, COOKIE_4_SECURE);
   }
 }

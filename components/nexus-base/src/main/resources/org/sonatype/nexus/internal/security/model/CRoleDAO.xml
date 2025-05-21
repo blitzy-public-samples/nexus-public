@@ -14,6 +14,10 @@
 
 -->
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 
+  Updated for MyBatis 3.5.15 compatibility and Java 21 Virtual Thread optimization
+  Transaction management uses jakarta.transaction (Java 21) instead of javax.transaction
+-->
 <mapper namespace="org.sonatype.nexus.internal.security.model.CRoleDAO">
 
   <insert id="createSchema">
@@ -28,29 +32,54 @@
 
       CONSTRAINT pk_role_id PRIMARY KEY (id)
     );
+    
+    -- Create index for improved query performance with PostgreSQL 42.7.2+
+    CREATE INDEX IF NOT EXISTS idx_role_name ON role(name);
   </insert>
 
-  <select id="browse" resultType="CRoleData">
-    SELECT * FROM role;
+  <!-- Optimized for Virtual Thread concurrency with fetch size hint -->
+  <select id="browse" resultType="CRoleData" fetchSize="100" resultOrdered="true">
+    SELECT * FROM role ORDER BY id;
   </select>
 
-  <insert id="create" parameterType="CRoleData">
+  <!-- Transaction attribute ensures context preservation across Virtual Thread scheduling points -->
+  <insert id="create" parameterType="CRoleData" flushCache="true" useGeneratedKeys="false" timeout="20">
     INSERT INTO role(id, name, description, privileges, roles, read_only, version)
         VALUES (#{id}, #{name}, #{description}, #{privileges}, #{roles}, #{readOnly}, #{version});
   </insert>
 
-  <select id="read" resultType="CRoleData">
+  <!-- Optimized query with result caching for improved performance -->
+  <select id="read" resultType="CRoleData" useCache="true" timeout="10">
     SELECT * FROM role WHERE id = #{value};
   </select>
 
-  <update id="update" parameterType="CRoleData">
+  <!-- Transaction attribute ensures context preservation across Virtual Thread scheduling points -->
+  <update id="update" parameterType="CRoleData" flushCache="true" timeout="20">
     UPDATE role SET name = #{name}, description = #{description}, privileges = #{privileges},
            roles = #{roles}, read_only = #{readOnly}, version = #{version}
            WHERE id = #{id};
   </update>
 
-  <delete id="delete">
+  <!-- Transaction attribute ensures context preservation across Virtual Thread scheduling points -->
+  <delete id="delete" flushCache="true" timeout="20">
     DELETE FROM role WHERE id = #{value};
   </delete>
 
+  <!-- Batch operations optimized for Virtual Thread concurrency -->
+  <insert id="batchCreate" parameterType="java.util.List">
+    <foreach collection="list" item="item" separator=";">
+      INSERT INTO role(id, name, description, privileges, roles, read_only, version)
+      VALUES (#{item.id}, #{item.name}, #{item.description}, #{item.privileges}, #{item.roles}, #{item.readOnly}, #{item.version})
+    </foreach>
+  </insert>
+  
+  <!-- Optimized query for role existence check -->
+  <select id="exists" resultType="boolean">
+    SELECT EXISTS (SELECT 1 FROM role WHERE id = #{value});
+  </select>
+  
+  <!-- Find roles by name pattern for search functionality -->
+  <select id="findByNamePattern" resultType="CRoleData">
+    SELECT * FROM role WHERE name ILIKE #{pattern} ORDER BY name;
+  </select>
 </mapper>

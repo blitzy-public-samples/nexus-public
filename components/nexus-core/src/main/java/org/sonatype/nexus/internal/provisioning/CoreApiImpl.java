@@ -12,6 +12,10 @@
  */
 package org.sonatype.nexus.internal.provisioning;
 
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.CompletableFuture;
+
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -40,6 +44,7 @@ import com.google.common.collect.ImmutableMap;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.httpclient.config.AuthenticationConfiguration.AUTHENTICATION_CONFIGURATION;
 
 /**
@@ -56,6 +61,8 @@ public class CoreApiImpl
   private final HttpClientManager httpClientManager;
 
   private final SecretsService secretsService;
+  
+  private final ExecutorService virtualThreadExecutor;
 
   @Inject
   public CoreApiImpl(
@@ -66,6 +73,7 @@ public class CoreApiImpl
     this.capabilityRegistry = checkNotNull(capabilityRegistry);
     this.httpClientManager = checkNotNull(httpClientManager);
     this.secretsService = checkNotNull(secretsService);
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   @Override
@@ -80,13 +88,13 @@ public class CoreApiImpl
         .orElse(null);
 
     if (existing != null) {
-      log.info("BaseUrl capability updated to: {}",
-          capabilityRegistry.update(existing.id(), existing.isActive(), existing.notes(), ImmutableMap.of("url", url)));
+      var result = capabilityRegistry.update(existing.id(), existing.isActive(), existing.notes(), ImmutableMap.of("url", url));
+      log.info(STR."BaseUrl capability updated to: \{result}");
     }
     else {
-      log.info("BaseUrl capability created as: {}",
-          capabilityRegistry.add(BaseUrlCapabilityDescriptor.TYPE, true, "configured through api",
-              ImmutableMap.of("url", url)));
+      var result = capabilityRegistry.add(BaseUrlCapabilityDescriptor.TYPE, true, "configured through api",
+              ImmutableMap.of("url", url));
+      log.info(STR."BaseUrl capability created as: \{result}");
     }
   }
 
@@ -101,11 +109,11 @@ public class CoreApiImpl
         .orElse(null);
 
     if (existing != null) {
-      log.info("Deleting BaseUrl capability");
+      log.info(STR."Deleting BaseUrl capability");
       capabilityRegistry.remove(existing.id());
     }
     else {
-      log.info("No BaseUrl capability configured to remove");
+      log.info(STR."No BaseUrl capability configured to remove");
     }
   }
 
@@ -274,28 +282,37 @@ public class CoreApiImpl
       @Nullable final AuthenticationConfiguration auth,
       @Nullable final Secret secret)
   {
-    HttpClientConfiguration configuration = detachedConfiguration();
-    if (https && (configuration.getProxy() == null || configuration.getProxy().getHttp() == null)) {
-      throw new IllegalStateException("Cannot configure https proxy without http proxy");
-    }
-    ProxyServerConfiguration proxyServerConfiguration = new ProxyServerConfiguration();
-    proxyServerConfiguration.setEnabled(true);
-    proxyServerConfiguration.setHost(host);
-    proxyServerConfiguration.setPort(port);
-    proxyServerConfiguration.setAuthentication(auth);
-    if (https) {
-      proxy(configuration).setHttps(proxyServerConfiguration);
-    }
-    else {
-      proxy(configuration).setHttp(proxyServerConfiguration);
-    }
-    try {
-      httpClientManager.setConfiguration(configuration);
-    }
-    catch (Exception e) {
-      secretsService.remove(secret);
-      throw e;
-    }
+    CompletableFuture.runAsync(() -> {
+      try {
+        HttpClientConfiguration configuration = detachedConfiguration();
+        if (https && (configuration.getProxy() == null || configuration.getProxy().getHttp() == null)) {
+          throw new IllegalStateException("Cannot configure https proxy without http proxy");
+        }
+        
+        ProxyServerConfiguration proxyServerConfiguration = new ProxyServerConfiguration();
+        proxyServerConfiguration.setEnabled(true);
+        proxyServerConfiguration.setHost(host);
+        proxyServerConfiguration.setPort(port);
+        proxyServerConfiguration.setAuthentication(auth);
+        
+        if (https) {
+          proxy(configuration).setHttps(proxyServerConfiguration);
+        }
+        else {
+          proxy(configuration).setHttp(proxyServerConfiguration);
+        }
+        
+        httpClientManager.setConfiguration(configuration);
+        log.info(STR."Proxy configuration completed successfully for \{https ? "HTTPS" : "HTTP"} proxy at \{host}:\{port}");
+      }
+      catch (Exception e) {
+        if (secret != null) {
+          secretsService.remove(secret);
+        }
+        log.error(STR."Failed to configure \{https ? "HTTPS" : "HTTP"} proxy: \{e.getMessage()}", e);
+        throw e;
+      }
+    }, virtualThreadExecutor);
   }
 
   /**

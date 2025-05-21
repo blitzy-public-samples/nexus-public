@@ -13,10 +13,10 @@
     Eclipse Foundation. All other trademarks are the property of their respective owners.
 
 -->
-<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="org.sonatype.nexus.internal.node.datastore.NodeIdDAO">
 
-  <insert id="createSchema">
+  <insert id="createSchema" flushCache="true" useCache="false" statementType="PREPARED" timeout="30">
     CREATE TABLE IF NOT EXISTS node_id (
       id         INT          NOT NULL CHECK (id = 1),
       node_id    VARCHAR(200) NOT NULL,
@@ -25,28 +25,28 @@
     );
   </insert>
 
-  <select id="get" resultType="java.lang.String">
+  <select id="get" resultType="java.lang.String" statementType="PREPARED" timeout="10" useCache="true">
     SELECT node_id FROM node_id WHERE id = 1;
   </select>
 
-  <insert id="set" parameterType="java.lang.String">
+  <insert id="set" parameterType="java.lang.String" flushCache="true" useCache="false" statementType="PREPARED" timeout="10">
     MERGE INTO node_id (id, node_id)
         VALUES (1, #{nodeId});
   </insert>
 
-  <insert id="set" parameterType="java.lang.String" databaseId="PostgreSQL">
+  <insert id="set" parameterType="java.lang.String" databaseId="PostgreSQL" flushCache="true" useCache="false" statementType="PREPARED" timeout="10">
     INSERT INTO node_id (id, node_id)
         VALUES (1, #{nodeId})
     ON CONFLICT (id) DO UPDATE SET
         node_id = #{nodeId};
   </insert>
   
-  <insert id="create" parameterType="java.lang.String">
+  <insert id="create" parameterType="java.lang.String" flushCache="true" useCache="false" statementType="PREPARED" timeout="10" fetchSize="1">
     INSERT INTO node_id (id, node_id)
         VALUES (1, #{nodeId});
   </insert>
 
-  <delete id="clear">
+  <delete id="clear" flushCache="true" useCache="false" statementType="PREPARED" timeout="10" fetchSize="1">
     DELETE FROM node_id WHERE id = 1;
   </delete>
 

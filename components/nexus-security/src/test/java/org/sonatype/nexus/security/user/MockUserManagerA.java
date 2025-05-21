@@ -17,11 +17,32 @@ import javax.inject.Singleton;
 
 import org.sonatype.nexus.security.role.RoleIdentifier;
 
+/**
+ * Mock implementation of UserManager for testing purposes.
+ * <p>
+ * This implementation is compatible with Java 21 and optimized for virtual threads.
+ * It leverages the thread-safe implementation provided by {@link MockUserManagerSupport}
+ * which uses non-blocking concurrent collections and operations.
+ * </p>
+ * <p>
+ * The JSR-330 annotations (@Named, @Singleton) ensure proper dependency injection
+ * in the Java 21 environment. The singleton scope guarantees that the constructor
+ * is called only once during application initialization, making the user setup
+ * thread-safe by design.
+ * </p>
+ */
 @Singleton
 @Named("MockUserManagerA")
 public class MockUserManagerA
     extends MockUserManagerSupport
 {
+  /**
+   * Constructs a new instance with predefined test users.
+   * <p>
+   * This constructor is called only once during application initialization due to
+   * the @Singleton annotation, making the user setup thread-safe by design.
+   * </p>
+   */
   public MockUserManagerA() {
     User a = new User();
     a.setName("Joe Coder");
@@ -59,6 +80,7 @@ public class MockUserManagerA
     e.setSource(this.getSource());
     e.setUserId("anonymous-user");
 
+    // Thread-safe operations inherited from MockUserManagerSupport
     this.addUser(a, a.getUserId());
     this.addUser(b, b.getUserId());
     this.addUser(c, c.getUserId());
@@ -66,10 +88,22 @@ public class MockUserManagerA
     this.addUser(e, e.getUserId());
   }
 
+  /**
+   * Returns the source identifier for this user manager.
+   *
+   * @return the source identifier string
+   */
+  @Override
   public String getSource() {
     return "MockUserManagerA";
   }
 
+  /**
+   * Returns the authentication realm name for this user manager.
+   *
+   * @return the realm name string
+   */
+  @Override
   public String getAuthenticationRealmName() {
     return "MockRealmA";
   }

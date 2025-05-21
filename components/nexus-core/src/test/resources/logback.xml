@@ -1,13 +1,27 @@
 <configuration>
+  <!-- Main console appender with virtual thread identification (%vt) -->
   <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
     <encoder>
-      <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+      <!-- Updated pattern to include virtual thread identification and thread pinning MDC info -->
+      <pattern>%d{HH:mm:ss.SSS} [%thread%vt] %-5level %logger{36} - %msg%X{thread.pinned, ' - pinned='}%X{thread.carrier, ' - carrier='}%n</pattern>
     </encoder>
   </appender>
 
+  <!-- Standard loggers -->
   <logger name="org.apache.http" level="DEBUG"/>
   <logger name="org.littleshoot.proxy" level="INFO"/>
 
+  <!-- Configure specific logging levels for classes that use Virtual Threads -->
+  <logger name="org.sonatype.nexus.thread.io" level="DEBUG"/>
+  <logger name="org.sonatype.nexus.common.thread" level="DEBUG"/>
+  <logger name="org.sonatype.nexus.virtualthread" level="DEBUG"/>
+  <logger name="org.sonatype.nexus.blobstore.virtualthread" level="DEBUG"/>
+  <logger name="org.sonatype.nexus.datastore.virtualthread" level="DEBUG"/>
+  <logger name="org.sonatype.nexus.repository.virtualthread" level="DEBUG"/>
+  <logger name="org.sonatype.nexus.thread.internal" level="DEBUG"/>
+  <logger name="org.sonatype.nexus.pattern" level="DEBUG"/>
+  
+  <!-- Root logger configuration -->
   <root level="INFO">
     <appender-ref ref="STDOUT" />
   </root>

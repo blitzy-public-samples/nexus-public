@@ -18,6 +18,8 @@ import java.util.Map;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
+import static java.lang.StringTemplate.STR;
+
 import org.sonatype.nexus.audit.AuditData;
 import org.sonatype.nexus.audit.AuditorSupport;
 import org.sonatype.nexus.common.event.EventAware;
@@ -35,6 +37,11 @@ import com.google.common.eventbus.Subscribe;
 
 /**
  * HttpClient auditor.
+ * <p>
+ * Enhanced with Java 21 features:
+ * - Pattern Matching for instanceof to simplify type checking
+ * - String Templates for improved message formatting
+ * - Switch expressions with pattern matching for cleaner code
  *
  * @since 3.1
  */
@@ -59,16 +66,16 @@ public class HttpClientAuditor
 
       Map<String, Object> attributes = data.getAttributes();
 
-      ConnectionConfiguration connection = configuration.getConnection();
-      if (connection != null) {
+      // Use pattern matching to handle connection configuration
+      if (configuration.getConnection() instanceof ConnectionConfiguration connection) {
         attributes.put("connection.timeout", string(connection.getTimeout()));
         attributes.put("connection.retries", string(connection.getRetries()));
         attributes.put("connection.userAgentSuffix", string(connection.getUserAgentSuffix()));
         attributes.put("connection.useTrustStore", string(connection.getUseTrustStore()));
       }
 
-      ProxyConfiguration proxy = configuration.getProxy();
-      if (proxy != null) {
+      // Use pattern matching to handle proxy configuration
+      if (configuration.getProxy() instanceof ProxyConfiguration proxy) {
         proxy(attributes, "proxy.http", proxy.getHttp());
         proxy(attributes, "proxy.https", proxy.getHttps());
         if (proxy.getNonProxyHosts() != null) {
@@ -81,7 +88,7 @@ public class HttpClientAuditor
   }
 
   private static String key(final String prefix, final String suffix) {
-    return prefix + "." + suffix;
+    return STR."{prefix}.{suffix}";
   }
 
   private static void proxy(
@@ -93,26 +100,29 @@ public class HttpClientAuditor
       return;
     }
 
-    attributes.put(key(prefix, "enabled"), string(server.isEnabled()));
-    attributes.put(key(prefix, "host"), server.getHost());
-    attributes.put(key(prefix, "port"), string(server.getPort()));
+    // Use String Templates for more readable attribute keys
+    attributes.put(STR."{prefix}.enabled", string(server.isEnabled()));
+    attributes.put(STR."{prefix}.host", server.getHost());
+    attributes.put(STR."{prefix}.port", string(server.getPort()));
 
     AuthenticationConfiguration auth = server.getAuthentication();
     if (auth != null) {
-      attributes.put(key(prefix, "authentication.type"), auth.getType());
-      if (auth instanceof UsernameAuthenticationConfiguration) {
-        UsernameAuthenticationConfiguration username = (UsernameAuthenticationConfiguration)auth;
-        attributes.put(key(prefix, "authentication.username"), username.getUsername());
-        // omit password
+      // Use String Templates for more readable attribute keys
+      attributes.put(STR."{prefix}.authentication.type", auth.getType());
+      switch (auth) {
+        case UsernameAuthenticationConfiguration username -> {
+          attributes.put(STR."{prefix}.authentication.username", username.getUsername());
+          // omit password
+        }
+        case NtlmAuthenticationConfiguration ntlm -> {
+          attributes.put(STR."{prefix}.authentication.username", ntlm.getUsername());
+          attributes.put(STR."{prefix}.authentication.host", ntlm.getHost());
+          attributes.put(STR."{prefix}.authentication.domain", ntlm.getDomain());
+          // omit password
+        }
+        default -> { /* No additional attributes for other auth types */ }
       }
-      else if (auth instanceof NtlmAuthenticationConfiguration) {
-        NtlmAuthenticationConfiguration nrlm = (NtlmAuthenticationConfiguration)auth;
-        attributes.put(key(prefix, "authentication.username"), nrlm.getUsername());
-        attributes.put(key(prefix, "authentication.host"), nrlm.getHost());
-        attributes.put(key(prefix, "authentication.domain"), nrlm.getDomain());
-        // omit password
-      }
-      attributes.put(key(prefix, "authentication.preemptive"), auth.isPreemptive());
+      attributes.put(STR."{prefix}.authentication.preemptive", auth.isPreemptive());
     }
   }
 }

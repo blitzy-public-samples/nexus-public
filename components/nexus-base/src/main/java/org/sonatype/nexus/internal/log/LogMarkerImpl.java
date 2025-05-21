@@ -26,6 +26,7 @@ import org.sonatype.nexus.common.log.LoggerLevel;
 import com.google.common.base.Strings;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 
 /**
  * Default implementation of {@link LogMarker}.
@@ -57,7 +58,7 @@ public class LogMarkerImpl
     }
 
     String asterixes = Strings.repeat("*", message.length() + 4);
-    log.info("\n{}\n* {} *\n{}", asterixes, message, asterixes);
+    log.info(STR."\n\{asterixes}\n* \{message} *\n\{asterixes}");
 
     eventManager.post(new LogMarkInsertedEvent(message));
   }

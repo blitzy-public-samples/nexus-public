@@ -1,0 +1,138 @@
+# Java 21 String Template Patterns for Logging
+
+This file provides standardized String Template patterns for logging in Nexus Repository Manager.
+These patterns leverage Java 21's String Templates feature to create more readable, maintainable,
+and structured log messages.
+
+## Basic Log Level Patterns
+
+### Debug Level
+```java
+// Simple debug message with context
+STR."DEBUG: \{operation} completed in \{duration}ms"
+
+// Debug with multiple context values
+STR."DEBUG: Processing \{itemType} \{itemId} with parameters \{params}"
+
+// Debug with conditional information
+STR."DEBUG: \{operation} \{success ? "succeeded" : "failed"} with status \{status}"
+```
+
+### Info Level
+```java
+// Simple info message
+STR."INFO: \{component} started successfully"
+
+// Info with system state
+STR."INFO: System \{systemName} is \{isActive ? "active" : "inactive"} with \{resourceCount} resources"
+
+// Info with user context
+STR."INFO: User \{username} performed \{action} on \{resourceType} \{resourceId}"
+```
+
+### Warn Level
+```java
+// Simple warning
+STR."WARN: \{operation} took longer than expected: \{duration}ms (threshold: \{threshold}ms)"
+
+// Warning with potential issue
+STR."WARN: \{component} approaching resource limit: \{currentUsage}/\{maxLimit} (\{percentage}%)"
+
+// Warning with recommendation
+STR."WARN: \{component} configuration may be suboptimal. Consider setting \{parameter} to \{recommendedValue}"
+```
+
+### Error Level
+```java
+// Simple error message
+STR."ERROR: Failed to \{operation} due to \{errorMessage}"
+
+// Error with exception details
+STR."ERROR: Exception during \{operation}: \{exception.getMessage()} [\{exception.getClass().getSimpleName()}]"
+
+// Error with system impact
+STR."ERROR: \{component} failure affects \{impactedServices.size()} services: \{String.join(", ", impactedServices)}"
+```
+
+## Structured Logging Patterns
+
+### With Correlation IDs
+```java
+// Request tracing
+STR."\{logLevel}: [\{correlationId}] \{operation} - \{message}"
+
+// Cross-service tracing
+STR."\{logLevel}: [\{traceId}::\{spanId}] \{serviceName}.\{operation} - \{message}"
+```
+
+### With Context Data
+```java
+// User operation context
+STR."\{logLevel}: User[\{userId}] Repository[\{repoId}] Operation[\{operation}] - \{message}"
+
+// System operation context
+STR."\{logLevel}: Component[\{component}] Thread[\{Thread.currentThread().getName()}] - \{message}"
+```
+
+## Exception Handling Patterns
+
+```java
+// Detailed exception with stack trace reference
+STR."ERROR: \{operation} failed: \{e.getMessage()} | Stack trace logged with ID: \{traceId}"
+
+// Exception chain summary
+STR."ERROR: \{primaryException.getMessage()} caused by \{primaryException.getCause().getMessage()}"
+
+// Exception with context data
+STR."ERROR: Exception in \{component}.\{method}(\{String.join(", ", params)}): \{e.getMessage()}"
+```
+
+## Performance Logging Patterns
+
+```java
+// Operation timing
+STR."DEBUG: \{operation} completed in \{duration}ms (\{itemCount} items, \{String.format("%.2f", itemCount/(duration/1000.0))} items/sec)"
+
+// Resource usage
+STR."INFO: \{resource} usage: \{used}/\{total} (\{String.format("%.1f", (used*100.0)/total)}%)"
+
+// Performance threshold checking
+STR."\{duration > threshold ? "WARN" : "INFO"}: \{operation} took \{duration}ms (threshold: \{threshold}ms)"
+```
+
+## Security Logging Patterns
+
+```java
+// Authentication events
+STR."INFO: User \{username} \{success ? "successfully authenticated" : "failed authentication"} from \{ipAddress}"
+
+// Authorization events
+STR."\{granted ? "INFO" : "WARN"}: User \{username} \{granted ? "granted" : "denied"} access to \{resource}"
+
+// Security audit
+STR."INFO: AUDIT: User[\{username}] Action[\{action}] Resource[\{resource}] Result[\{result}] IP[\{ipAddress}]"
+```
+
+## System Event Patterns
+
+```java
+// Lifecycle events
+STR."INFO: System \{event}: \{component} is now \{status}"
+
+// Configuration changes
+STR."INFO: Configuration \{configName} changed by \{username}: \{changedProperties.size()} properties modified"
+
+// Resource state changes
+STR."INFO: Resource \{resourceId} state changed from \{oldState} to \{newState}"
+```
+
+## Best Practices
+
+1. Use descriptive variable names in templates to improve readability
+2. Include relevant context data for easier troubleshooting
+3. Use consistent formatting patterns across similar log types
+4. Consider log parsing requirements when designing templates
+5. Include correlation IDs for distributed tracing
+6. Use conditional expressions for dynamic log content
+7. Format numeric values appropriately for readability
+8. Structure logs to facilitate automated analysis

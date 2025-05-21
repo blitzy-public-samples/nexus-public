@@ -17,6 +17,13 @@ import org.sonatype.nexus.datastore.api.IterableDataAccess;
 /**
  * {@link CapabilityStorageItemData} access.
  *
+ * <p>
+ * This interface is compatible with Java 21 Virtual Threads for high-throughput concurrent database operations.
+ * Implementations should ensure that database operations can be executed efficiently in Virtual Thread contexts
+ * without thread pinning. This requires JDBC drivers that are compatible with Java 21 Virtual Threads, such as
+ * PostgreSQL JDBC 42.7.2 or newer.
+ * </p>
+ *
  * @since 3.21
  */
 public interface CapabilityStorageItemDAO

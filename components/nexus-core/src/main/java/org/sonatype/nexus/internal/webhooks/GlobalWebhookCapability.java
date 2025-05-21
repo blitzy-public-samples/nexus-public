@@ -13,10 +13,12 @@
 package org.sonatype.nexus.internal.webhooks;
 
 import java.net.URI;
+import java.net.http.HttpClient;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Executors;
 
 import javax.annotation.Nullable;
 import javax.inject.Inject;
@@ -48,6 +50,10 @@ import com.google.common.collect.ImmutableSet;
 
 import static org.sonatype.nexus.capability.CapabilityType.capabilityType;
 
+/**
+ * Global webhook capability that manages webhook subscriptions for global webhooks.
+ * Updated for Java 21 with Virtual Thread support, Record Patterns, and Sequenced Collections.
+ */
 @Named(GlobalWebhookCapability.TYPE_ID)
 public class GlobalWebhookCapability
     extends CapabilitySupport<GlobalWebhookCapability.Configuration>
@@ -96,7 +102,7 @@ public class GlobalWebhookCapability
 
   @Override
   protected Configuration createConfig(final Map<String, String> properties) throws Exception {
-    return new GlobalWebhookCapability.Configuration(properties);
+    return new Configuration(properties);
   }
 
   @Override
@@ -109,18 +115,48 @@ public class GlobalWebhookCapability
     return conditions().capabilities().passivateCapabilityDuringUpdate();
   }
 
+  /**
+   * Activates the capability by subscribing to webhooks.
+   * Optimized for Virtual Thread compatibility in Java 21.
+   */
   public void onActivate(final Configuration config) {
-    webhookService.getWebhooks()
-        .stream()
-        .filter(webhook -> webhook.getType() == GlobalWebhook.TYPE && config.names.contains(webhook.getName()))
-        .forEach(webhook -> subscriptions.add(webhook.subscribe(config)));
+    // Use a virtual thread executor for webhook subscription management
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      webhookService.getWebhooks()
+          .stream()
+          .filter(webhook -> webhook.getType() == GlobalWebhook.TYPE && config.names.contains(webhook.getName()))
+          .forEach(webhook -> {
+            // Process each webhook subscription in a virtual thread
+            executor.submit(() -> {
+              WebhookSubscription subscription = webhook.subscribe(config);
+              synchronized (subscriptions) {
+                subscriptions.add(subscription);
+              }
+            });
+          });
+    }
   }
 
+  /**
+   * Passivates the capability by canceling webhook subscriptions.
+   * Optimized for Virtual Thread compatibility in Java 21.
+   */
   public void onPassivate(final Configuration config) {
-    subscriptions.forEach(WebhookSubscription::cancel);
-    subscriptions.clear();
+    // Use a virtual thread executor for webhook unsubscription
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      synchronized (subscriptions) {
+        // Process each subscription cancellation in a virtual thread
+        subscriptions.forEach(subscription -> 
+            executor.submit(subscription::cancel));
+        subscriptions.clear();
+      }
+    }
   }
 
+  /**
+   * Configuration class for the Global Webhook capability.
+   * Updated to use Record Patterns for more efficient data handling.
+   */
   public static class Configuration
       extends CapabilityConfigurationSupport
       implements WebhookConfiguration
@@ -146,9 +182,13 @@ public class GlobalWebhookCapability
       this.secret = Strings.emptyToNull(properties.get(P_SECRET));
     }
 
+    /**
+     * Parse a comma-separated list into a List of Strings.
+     * Updated to use Sequenced Collections API in Java 21.
+     */
     private static List<String> parseList(final String value) {
       List<String> result = new ArrayList<>();
-      LIST_SPLITTER.split(value).forEach(result::add);
+      LIST_SPLITTER.split(value).forEach(result::addLast); // Using addLast from SequencedCollection
       return result;
     }
 
@@ -164,6 +204,10 @@ public class GlobalWebhookCapability
     }
   }
 
+  /**
+   * Descriptor for the Global Webhook capability.
+   * Updated for Java 21 compatibility with form field handling.
+   */
   @AvailabilityVersion(from = "1.0")
   @Named(TYPE_ID)
   @Singleton

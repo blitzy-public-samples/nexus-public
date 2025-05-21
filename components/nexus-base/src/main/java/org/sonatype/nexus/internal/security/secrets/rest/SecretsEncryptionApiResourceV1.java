@@ -12,10 +12,10 @@
  */
 package org.sonatype.nexus.internal.security.secrets.rest;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.Path;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.Path;
 
 import org.sonatype.nexus.crypto.secrets.ReEncryptService;
 

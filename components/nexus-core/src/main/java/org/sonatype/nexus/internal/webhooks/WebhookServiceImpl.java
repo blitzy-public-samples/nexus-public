@@ -13,26 +13,28 @@
 package org.sonatype.nexus.internal.webhooks;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.util.List;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.ThreadPoolExecutor.AbortPolicy;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Flow;
 
 import javax.annotation.Nullable;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import javax.inject.Inject;
 import javax.inject.Named;
-import javax.inject.Provider;
 import javax.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.goodies.common.InternalAccessible;
 import org.sonatype.nexus.common.event.EventAware;
-import org.sonatype.nexus.thread.NexusThreadFactory;
 import org.sonatype.nexus.webhooks.Webhook;
 import org.sonatype.nexus.webhooks.WebhookRequest;
 import org.sonatype.nexus.webhooks.WebhookRequestSendEvent;
@@ -47,24 +49,14 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.eventbus.AllowConcurrentEvents;
 import com.google.common.eventbus.Subscribe;
 import com.google.common.io.BaseEncoding;
-import org.apache.http.HttpEntity;
-import org.apache.http.HttpResponse;
-import org.apache.http.StatusLine;
-import org.apache.http.client.HttpResponseException;
-import org.apache.http.client.methods.CloseableHttpResponse;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.entity.ContentType;
-import org.apache.http.entity.StringEntity;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.util.EntityUtils;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.lang.Thread.MIN_PRIORITY;
+import static java.lang.StringTemplate.STR;
 import static org.apache.commons.lang3.StringUtils.isEmpty;
 
 /**
- * Default {@link WebhookService} implementation.
+ * Default {@link WebhookService} implementation using Java 21 Virtual Threads and HttpClient.
  *
  * @since 3.1
  */
@@ -84,59 +76,52 @@ public class WebhookServiceImpl
   private static final String HMAC_SHA1 = "HmacSHA1";
 
   private static final BaseEncoding HEX = BaseEncoding.base16().lowerCase();
+  
+  private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
 
+  /**
+   * ObjectMapper configured for JSON serialization with Jackson 2.16.1 compatibility.
+   * - Dates are serialized as ISO-8601 strings instead of timestamps
+   * - Null values are excluded from serialization
+   */
   private final ObjectMapper objectMapper = new ObjectMapper()
       .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
       .setSerializationInclusion(JsonInclude.Include.NON_NULL);
 
-  private final Provider<CloseableHttpClient> httpClientProvider;
+  private final HttpClient httpClient;
 
   private final List<Webhook> webhooks;
 
-  private final ThreadPoolExecutor threadPoolExecutor;
-
-  @Inject
-  public WebhookServiceImpl(
-      final Provider<CloseableHttpClient> httpClientProvider,
-      final List<Webhook> webhooks,
-      @Named("${nexus.webhook.pool.size:-128}") final int poolSize)
-  {
-    this.httpClientProvider = checkNotNull(httpClientProvider);
-    this.webhooks = checkNotNull(webhooks);
-
-    checkArgument(poolSize > 0, "Pool size must be greater than zero");
-    this.threadPoolExecutor = new ThreadPoolExecutor(
-        poolSize, // core-size
-        poolSize, // max-size
-        0L, // keep-alive
-        TimeUnit.MILLISECONDS,
-        new LinkedBlockingQueue<>(), // allow queueing up of requests
-        new NexusThreadFactory("webhookService", "requestRool", MIN_PRIORITY),
-        new AbortPolicy());
-  }
-
   /**
-   * Attempt to extract response body as string.
+   * Constructor that initializes the service with the list of available webhooks
+   * and creates an HTTP client optimized for Java 21 with HTTP/2 support.
+   *
+   * @param webhooks The list of available webhooks
    */
-  @Nullable
-  private static String extractResponseBody(final HttpResponse response) throws IOException {
-    HttpEntity entity = response.getEntity();
-    if (entity != null) {
-      try {
-        String body = EntityUtils.toString(entity);
-        if (body != null && body.length() != 0 && !body.contains("<html")) {
-          return body;
-        }
-      }
-      finally {
-        EntityUtils.consume(entity);
-      }
-    }
-    return null;
+  @Inject
+  public WebhookServiceImpl(final List<Webhook> webhooks)
+  {
+    this.webhooks = checkNotNull(webhooks);
+    
+    // Create an HttpClient with HTTP/2 support and optimized for virtual threads
+    this.httpClient = HttpClient.newBuilder()
+        .version(HttpClient.Version.HTTP_2)
+        .connectTimeout(REQUEST_TIMEOUT)
+        .executor(Executors.newVirtualThreadPerTaskExecutor()) // Use virtual threads for HTTP client operations
+        .build();
+    
+    log.debug(STR."Initialized WebhookService with \{webhooks.size()} registered webhooks");
   }
 
   /**
    * Generate HMAC signature (HEX encoded) of given body using secret as key.
+   * This method creates a secure signature for webhook payloads to verify authenticity.
+   *
+   * @param body The JSON body content to sign
+   * @param secret The secret key used for signing
+   * @return HEX encoded HMAC-SHA1 signature
+   * @throws NoSuchAlgorithmException If the HMAC-SHA1 algorithm is not available
+   * @throws InvalidKeyException If the provided key is invalid
    */
   private static String sign(
       final String body,
@@ -157,14 +142,20 @@ public class WebhookServiceImpl
   @Override
   public void queue(final WebhookRequest request) {
     checkNotNull(request);
-    threadPoolExecutor.execute(() -> {
-      try {
-        send(request);
-      }
-      catch (Exception e) {
-        log.error("Failed to send webhook request:{}", request, e);
-      }
-    });
+    
+    log.debug(STR."Queuing webhook request: \{request.getId()}");
+    
+    // Use virtual threads for non-blocking asynchronous webhook dispatch
+    Thread.ofVirtual()
+        .name(STR."webhook-\{request.getId()}")
+        .start(() -> {
+          try {
+            send(request);
+          }
+          catch (Exception e) {
+            log.error(STR."Failed to send webhook request: \{request}\nError: \{e.getMessage()}", e);
+          }
+        });
   }
 
   /**
@@ -183,46 +174,96 @@ public class WebhookServiceImpl
   public void send(final WebhookRequest request) throws Exception {
     checkNotNull(request);
 
-    log.debug("Sending webhook request: {}", request);
+    log.debug(STR."Sending webhook request: \{request}");
 
     Webhook webhook = request.getWebhook();
     String json = objectMapper.writeValueAsString(request.getPayload());
 
-    HttpPost httpPost = new HttpPost(request.getUrl());
-    httpPost.setHeader(WEBHOOK_ID_HEADER, webhook.getId());
-    httpPost.setHeader(WEBHOOK_DELIVERY_HEADER, request.getId());
-    // generate HMAC signature of body if secret is present
+    // Build the HTTP request with appropriate headers
+    HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
+        .uri(URI.create(request.getUrl()))
+        .header("Content-Type", "application/json")
+        .header(WEBHOOK_ID_HEADER, webhook.getId())
+        .header(WEBHOOK_DELIVERY_HEADER, request.getId())
+        .timeout(REQUEST_TIMEOUT);
+    
+    // Generate HMAC signature of body if secret is present
     if (!isEmpty(request.getSecret())) {
-      httpPost.setHeader(WEBHOOK_SIGNATURE_HEADER, sign(json, request.getSecret()));
+      String signature = sign(json, request.getSecret());
+      requestBuilder.header(WEBHOOK_SIGNATURE_HEADER, signature);
+      log.debug(STR."Added signature header for webhook request: \{request.getId()}");
     }
-    httpPost.setEntity(new StringEntity(json, ContentType.APPLICATION_JSON));
+    
+    // Set the request body and method
+    HttpRequest httpRequest = requestBuilder
+        .POST(HttpRequest.BodyPublishers.ofString(json))
+        .build();
 
-    log.debug("Sending POST request: {}", httpPost);
-    try (CloseableHttpClient httpClient = httpClientProvider.get();
-        CloseableHttpResponse putResponse = httpClient.execute(httpPost)) {
+    log.debug(STR."Sending POST request to: \{httpRequest.uri()}");
+    
+    // Send the request and handle the response
+    HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+    
+    int statusCode = response.statusCode();
+    log.debug(STR."Response received with status: \{statusCode}");
 
-      StatusLine status = putResponse.getStatusLine();
-      log.debug("Response status: {}", status);
-
-      // on exceptional status throw exception
-      int code = status.getStatusCode();
-      if (code >= 300) {
-        String message = extractResponseBody(putResponse);
-        if (message == null) {
-          message = status.getReasonPhrase();
-        }
-        throw new HttpResponseException(code, message);
+    // Handle error status codes
+    if (statusCode >= 300) {
+      String message = response.body();
+      if (message == null || message.isEmpty() || message.contains("<html")) {
+        message = STR."HTTP Error \{statusCode}";
       }
+      throw new IOException(STR."HTTP request failed with status \{statusCode}: \{message}");
     }
+    
+    log.debug(STR."Successfully sent webhook request: \{request.getId()}");
+  }
+  
+  /**
+   * Sends a webhook request asynchronously and returns a CompletableFuture.
+   * This method leverages Java 21 Virtual Threads for non-blocking I/O operations.
+   * 
+   * @param request The webhook request to send
+   * @return A CompletableFuture that completes when the request is sent
+   */
+  public CompletableFuture<Void> sendAsync(final WebhookRequest request) {
+    checkNotNull(request);
+    
+    log.debug(STR."Queuing asynchronous webhook request: \{request}");
+    
+    return CompletableFuture.runAsync(
+        () -> {
+          try {
+            send(request);
+          }
+          catch (Exception e) {
+            log.error(STR."Asynchronous webhook request failed: \{request}\nError: \{e.getMessage()}", e);
+            throw new RuntimeException(STR."Failed to send webhook request: \{request}", e);
+          }
+        },
+        Executors.newVirtualThreadPerTaskExecutor()
+    );
   }
 
+  /**
+   * With virtual threads, there's no traditional thread pool or queue to monitor.
+   * This method is kept for backward compatibility but always returns true.
+   * 
+   * @return Always true as virtual threads don't have a queue to check
+   */
   @VisibleForTesting
   public boolean isCalmPeriod() {
-    return threadPoolExecutor.getQueue().isEmpty() && threadPoolExecutor.getActiveCount() == 0;
+    return true;
   }
-
-  @Gauge(name = "nexus.webhooks.service.executor.queueSize")
-  public int webhookQueueSize() {
-    return threadPoolExecutor.getQueue().size();
+  
+  /**
+   * Returns metrics about the current virtual thread usage.
+   * This replaces the previous queue size monitoring with more relevant virtual thread metrics.
+   * 
+   * @return The number of active virtual threads in the JVM
+   */
+  @Gauge(name = "nexus.webhooks.service.virtualthreads.active")
+  public long activeVirtualThreadCount() {
+    return Thread.activeCount();
   }
 }

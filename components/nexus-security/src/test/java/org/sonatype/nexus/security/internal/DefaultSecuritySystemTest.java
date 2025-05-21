@@ -16,6 +16,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import org.sonatype.nexus.common.event.EventManager;
 import org.sonatype.nexus.security.AbstractSecurityTest;
@@ -40,17 +43,21 @@ import org.apache.shiro.authz.AuthorizationException;
 import org.apache.shiro.subject.PrincipalCollection;
 import org.apache.shiro.subject.SimplePrincipalCollection;
 import org.apache.shiro.subject.Subject;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -58,14 +65,12 @@ import static org.mockito.Mockito.verify;
 /**
  * Tests for {@link DefaultSecuritySystem}.
  */
+@ExtendWith(MockitoExtension.class)
 public class DefaultSecuritySystemTest
     extends AbstractSecurityTest
 {
   @Mock
   EventManager eventManager;
-
-  @Rule
-  public ExpectedException expectedException = ExpectedException.none();
 
   @Override
   protected void customizeModules(List<Module> modules) {
@@ -82,7 +87,7 @@ public class DefaultSecuritySystemTest
     });
   }
 
-  @Before
+  @BeforeEach
   public void setup() throws Exception {
     reset(eventManager);
   }
@@ -106,16 +111,12 @@ public class DefaultSecuritySystemTest
     // login
     UsernamePasswordToken token = new UsernamePasswordToken("jcoder", "jcoder");
     Subject subject = securitySystem.getSubject();
-    Assert.assertNotNull(subject);
+    assertNotNull(subject);
     subject.login(token);
 
-    try {
+    assertThrows(AuthenticationException.class, () -> {
       subject.login(new UsernamePasswordToken("jcoder", "INVALID"));
-      fail("expected AuthenticationException");
-    }
-    catch (AuthenticationException e) {
-      // expected
-    }
+    }, "expected AuthenticationException");
   }
 
   @Test
@@ -128,36 +129,35 @@ public class DefaultSecuritySystemTest
     // login
     UsernamePasswordToken token = new UsernamePasswordToken("jcoder", "jcoder");
     Subject subject = securitySystem.getSubject();
-    Assert.assertNotNull(subject);
+    assertNotNull(subject);
     subject.login(token);
 
     // check the logged in user
     Subject loggedinSubject = securitySystem.getSubject();
-    // Assert.assertEquals( subject.getSession().getId(), loggedinSubject.getSession().getId() );
-    Assert.assertTrue(subject.isAuthenticated());
-    Assert.assertTrue("Subject principal: " + loggedinSubject.getPrincipal() + " is not logged in",
-        loggedinSubject.isAuthenticated());
+    // assertEquals( subject.getSession().getId(), loggedinSubject.getSession().getId() );
+    assertTrue(subject.isAuthenticated());
+    assertTrue(loggedinSubject.isAuthenticated(), 
+        "Subject principal: " + loggedinSubject.getPrincipal() + " is not logged in");
     loggedinSubject.logout();
 
     // the current user should be null
     subject = securitySystem.getSubject();
-    Assert.assertFalse(subject.isAuthenticated());
-    Assert.assertFalse(loggedinSubject.isAuthenticated());
+    assertFalse(subject.isAuthenticated());
+    assertFalse(loggedinSubject.isAuthenticated());
   }
 
   @Test
   public void testAuthorization() throws Exception {
     SecuritySystem securitySystem = this.getSecuritySystem();
     PrincipalCollection principal = new SimplePrincipalCollection("jcool", "ANYTHING");
-    try {
+    
+    assertThrows(AuthorizationException.class, () -> {
       securitySystem.checkPermission(principal, "INVALID-ROLE:*");
-      fail("expected: AuthorizationException");
-    }
-    catch (AuthorizationException e) {
-      // expected
-    }
+    }, "expected: AuthorizationException");
 
-    securitySystem.checkPermission(principal, "test:read");
+    assertDoesNotThrow(() -> {
+      securitySystem.checkPermission(principal, "test:read");
+    });
   }
 
   /*
@@ -175,7 +175,7 @@ public class DefaultSecuritySystemTest
     SecuritySystem securitySystem = this.getSecuritySystem();
     User jcoder = securitySystem.getUser("jcoder", "MockUserManagerA");
 
-    Assert.assertNotNull(jcoder);
+    assertNotNull(jcoder);
   }
 
   @Test
@@ -183,21 +183,21 @@ public class DefaultSecuritySystemTest
     SecuritySystem securitySystem = this.getSecuritySystem();
 
     Set<Role> roles = securitySystem.listRoles("sourceB");
-    Assert.assertEquals(2, roles.size());
+    assertThat(roles.size(), is(2));
 
     Map<String, Role> roleMap = new HashMap<String, Role>();
     for (Role role : roles) {
       roleMap.put(role.getRoleId(), role);
     }
 
-    Assert.assertTrue(roleMap.containsKey("test-role1"));
-    Assert.assertTrue(roleMap.containsKey("test-role2"));
+    assertTrue(roleMap.containsKey("test-role1"));
+    assertTrue(roleMap.containsKey("test-role2"));
 
     Role role1 = roleMap.get("test-role1");
-    Assert.assertEquals("Role 1", role1.getName());
+    assertThat(role1.getName(), is("Role 1"));
 
-    Assert.assertTrue(role1.getPrivileges().contains("from-role1:read"));
-    Assert.assertTrue(role1.getPrivileges().contains("from-role1:delete"));
+    assertTrue(role1.getPrivileges().contains("from-role1:read"));
+    assertTrue(role1.getPrivileges().contains("from-role1:delete"));
   }
 
   @Test
@@ -206,7 +206,7 @@ public class DefaultSecuritySystemTest
 
     Set<Role> roles = securitySystem.searchRoles("sourceB", "query");
     // Search is equal to listRoles for not LDAP sources
-    Assert.assertEquals(securitySystem.listRoles(), roles);
+    assertThat(roles, is(securitySystem.listRoles()));
   }
 
   @Test
@@ -222,7 +222,7 @@ public class DefaultSecuritySystemTest
 
     user.addRole(new RoleIdentifier("default", "test-role1"));
 
-    Assert.assertNotNull(securitySystem.addUser(user, "test123"));
+    assertNotNull(securitySystem.addUser(user, "test123"));
   }
 
   @Test
@@ -251,18 +251,21 @@ public class DefaultSecuritySystemTest
 
   @Test
   public void testChangePassword_AfterUserLogin() throws UserNotFoundException, NoSuchUserManagerException {
-    expectedException.expect(AuthorizationException.class);
-    expectedException.expectMessage("jcoder is not permitted to change the password for fakeuser");
-
     SecuritySystem securitySystem = this.getSecuritySystem();
     Subject subject = securitySystem.getSubject();
     subject.login(new UsernamePasswordToken("jcoder", "jcoder"));
 
     // change my own
-    securitySystem.changePassword("jcoder", "newpassword");
+    assertDoesNotThrow(() -> {
+      securitySystem.changePassword("jcoder", "newpassword");
+    });
 
     // change another user's password
-    securitySystem.changePassword("fakeuser", "newpassword");
+    AuthorizationException exception = assertThrows(AuthorizationException.class, () -> {
+      securitySystem.changePassword("fakeuser", "newpassword");
+    });
+    
+    assertThat(exception.getMessage(), is("jcoder is not permitted to change the password for fakeuser"));
   }
 
   private User createUser(String name, UserStatus status) {
@@ -276,5 +279,58 @@ public class DefaultSecuritySystemTest
     user.addRole(new RoleIdentifier("default", "test-role1"));
 
     return user;
+  }
+  
+  @Test
+  public void testSecuritySystemWithVirtualThreads() throws Exception {
+    SecuritySystem securitySystem = this.getSecuritySystem();
+    int threadCount = 10;
+    
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit multiple tasks to be executed by virtual threads
+      Future<?>[] futures = new Future<?>[threadCount];
+      
+      for (int i = 0; i < threadCount; i++) {
+        final int threadId = i;
+        futures[i] = executor.submit(() -> {
+          try {
+            // Test subject creation in virtual threads
+            Subject subject = securitySystem.getSubject();
+            assertNotNull(subject, "Subject should not be null in virtual thread " + threadId);
+            
+            // Test login in virtual threads (only for the first thread to avoid too many logins)
+            if (threadId == 0) {
+              UsernamePasswordToken token = new UsernamePasswordToken("jcoder", "jcoder");
+              subject.login(token);
+              assertTrue(subject.isAuthenticated(), "Subject should be authenticated in virtual thread");
+              
+              // Test permission check in virtual thread
+              assertTrue(subject.isPermitted("test:read"), "Subject should have test:read permission");
+              
+              // Test logout in virtual thread
+              subject.logout();
+              assertFalse(subject.isAuthenticated(), "Subject should be logged out in virtual thread");
+            }
+            
+            // Test permission checks with principal collection in all threads
+            PrincipalCollection principal = new SimplePrincipalCollection("jcool", "ANYTHING");
+            securitySystem.checkPermission(principal, "test:read");
+            
+            return null;
+          } catch (Exception e) {
+            throw new RuntimeException("Error in virtual thread " + threadId, e);
+          }
+        });
+      }
+      
+      // Wait for all threads to complete and check for exceptions
+      for (int i = 0; i < threadCount; i++) {
+        try {
+          futures[i].get();
+        } catch (Exception e) {
+          fail("Virtual thread execution failed: " + e.getMessage());
+        }
+      }
+    }
   }
 }

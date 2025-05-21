@@ -35,6 +35,8 @@ import org.sonatype.nexus.cache.CacheHelper;
 import org.sonatype.nexus.common.app.ManagedLifecycle;
 import org.sonatype.nexus.common.atlas.SystemInformationGenerator;
 
+import static java.lang.StringTemplate.STR;
+
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.SERVICES;
@@ -52,6 +54,11 @@ public class SystemInformationManagerImpl
   private static final String CACHE_NAME = "SYSTEM_INFORMATION";
 
   private static final String SYSTEM_INFO_KEY = "systemInfo";
+  
+  /**
+   * Record for structured system information data caching
+   */
+  private record SystemInfoData(Map<String, Object> data) {}
 
   private final SystemInformationGenerator systemInformationGenerator;
 
@@ -59,7 +66,7 @@ public class SystemInformationManagerImpl
 
   private final int cacheDurationSec;
 
-  private Cache<String, Map<String, Object>> localCache;
+  private Cache<String, SystemInfoData> localCache;
 
   @Inject
   public SystemInformationManagerImpl(
@@ -81,20 +88,29 @@ public class SystemInformationManagerImpl
 
   @Override
   public Map<String, Object> getSystemInfo() {
-    Map<String, Object> systemInfo = localCache.get(SYSTEM_INFO_KEY);
-    if (Objects.isNull(systemInfo)) {
+    var cacheEntry = localCache.get(SYSTEM_INFO_KEY);
+    
+    // Using record pattern to extract data from the cache entry
+    if (cacheEntry instanceof SystemInfoData(var data)) {
+      log.debug(STR."Getting system information report from \{CACHE_NAME} cache.");
+      return Collections.unmodifiableMap(data);
+    } else {
       Map<String, Object> report = generateReport();
-      log.debug("Caching system information report into {} cache.", CACHE_NAME);
-      localCache.put(SYSTEM_INFO_KEY, report);
+      log.debug(STR."Caching system information report into \{CACHE_NAME} cache.");
+      localCache.put(SYSTEM_INFO_KEY, new SystemInfoData(report));
       return Collections.unmodifiableMap(report);
     }
-    log.debug("Getting system information report from {} cache.", CACHE_NAME);
-    return Collections.unmodifiableMap(systemInfo);
   }
 
   private Map<String, Object> generateReport() {
     Map<String, Object> report = systemInformationGenerator.report();
-    return report.entrySet().stream().filter(e -> !"nexus-bundles".equals(e.getKey()))
+    
+    // Using pattern matching for improved type handling and filtering
+    return report.entrySet().stream()
+        .filter(entry -> switch(entry) {
+            case Entry<String, ?> e when "nexus-bundles".equals(e.getKey()) -> false;
+            default -> true;
+        })
         .collect(Collectors.toMap(Entry::getKey, Entry::getValue));
   }
   @Override
@@ -104,17 +120,20 @@ public class SystemInformationManagerImpl
 
   private void maybeCreateCache() {
     if (Objects.isNull(localCache)) {
-      log.debug("Creating {} for system information.", CACHE_NAME);
-      Duration duration = new Duration(TimeUnit.SECONDS, cacheDurationSec);
-      Factory<ExpiryPolicy> expiryPolicyFactory = CreatedExpiryPolicy.factoryOf(duration);
-      MutableConfiguration<String, Map<String, Object>> config =
-          new MutableConfiguration<String, Map<String, Object>>()
-              .setStoreByValue(false)
-              .setExpiryPolicyFactory(expiryPolicyFactory)
-              .setManagementEnabled(true)
-              .setStatisticsEnabled(true);
+      log.debug(STR."Creating \{CACHE_NAME} for system information.");
+      
+      // Optimized cache configuration for Java 21
+      var duration = new Duration(TimeUnit.SECONDS, cacheDurationSec);
+      var expiryPolicyFactory = CreatedExpiryPolicy.factoryOf(duration);
+      
+      var config = new MutableConfiguration<String, SystemInfoData>()
+          .setStoreByValue(false)
+          .setExpiryPolicyFactory(expiryPolicyFactory)
+          .setManagementEnabled(true)
+          .setStatisticsEnabled(true);
+          
       localCache = cacheHelper.maybeCreateCache(CACHE_NAME, config);
-      log.debug("Created {} cache for system information", CACHE_NAME);
+      log.debug(STR."Created \{CACHE_NAME} cache for system information");
     }
   }
 

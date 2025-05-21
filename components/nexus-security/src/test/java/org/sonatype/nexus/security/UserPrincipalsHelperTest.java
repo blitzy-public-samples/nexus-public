@@ -13,6 +13,10 @@
 package org.sonatype.nexus.security;
 
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.security.user.NoSuchUserManagerException;
@@ -26,17 +30,21 @@ import com.google.common.collect.ImmutableSet;
 import org.apache.shiro.subject.PrincipalCollection;
 import org.apache.shiro.subject.SimplePrincipalCollection;
 import org.hamcrest.CoreMatchers;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.when;
 
 /**
  * Tests for {@link UserPrincipalsHelper}.
  */
+@ExtendWith(MockitoExtension.class)
 public class UserPrincipalsHelperTest
     extends TestSupport
 {
@@ -61,7 +69,7 @@ public class UserPrincipalsHelperTest
 
   private final Set<String> USER_IDS = ImmutableSet.of(PRIMARY_PRINCIPAL);
 
-  @Before
+  @BeforeEach
   public void setup() {
     when(userManagerAlpha.getAuthenticationRealmName()).thenReturn(ALPHA_REALM);
     when(userManagerAlpha.listUserIds()).thenReturn(USER_IDS);
@@ -76,7 +84,6 @@ public class UserPrincipalsHelperTest
   public void testFindUserManagerWhenPrimaryPrincipal()
       throws NoSuchUserManagerException
   {
-
       final PrincipalCollection principals = getPrincipals();
       UserManager userManager = underTest.findUserManager(principals);
       assertThat(userManager, is(userManagerAlpha));
@@ -96,38 +103,38 @@ public class UserPrincipalsHelperTest
 
   @Test
   public void testFindUserManagerForPrincipals_NotFound() {
-
     final SimplePrincipalCollection principals = new SimplePrincipalCollection();
     principals.add(PRIMARY_PRINCIPAL, "foo");
-    try {
+    
+    NoSuchUserManagerException exception = assertThrows(NoSuchUserManagerException.class, () -> {
       underTest.findUserManager(principals);
-    } catch (NoSuchUserManagerException noSuchUserEx) {
-      assertThat(noSuchUserEx.getMessage(), CoreMatchers.is("User-manager not found for realm(s): [foo]"));
-    }
+    });
+    
+    assertThat(exception.getMessage(), CoreMatchers.is("User-manager not found for realm(s): [foo]"));
   }
 
   @Test
   public void testFindUserManagerWithNoPrincipals_Missing() {
-    try {
+    NoSuchUserManagerException exception = assertThrows(NoSuchUserManagerException.class, () -> {
       underTest.findUserManager(null);
-    } catch (NoSuchUserManagerException noSuchUserEx) {
-      assertThat(noSuchUserEx.getMessage(), CoreMatchers.is("User-manager not found: Missing principals"));
-    }
+    });
+    
+    assertThat(exception.getMessage(), CoreMatchers.is("User-manager not found: Missing principals"));
   }
 
   @Test
   public void testGetUserStatus_NoUserManagerFound() {
-
     final SimplePrincipalCollection principals = new SimplePrincipalCollection();
     principals.add(PRIMARY_PRINCIPAL, "foo");
     principals.add(PRIMARY_PRINCIPAL, "boo");
     principals.add(PRIMARY_PRINCIPAL, "hoo");
-    try {
+    
+    UserNotFoundException exception = assertThrows(UserNotFoundException.class, () -> {
       underTest.getUserStatus(principals);
-    } catch (UserNotFoundException userNotFoundEx) {
-      assertThat(userNotFoundEx.getMessage(),
-          CoreMatchers.is("User not found: JoeUser; User-manager not found for realm(s): [foo, boo, hoo]"));
-    }
+    });
+    
+    assertThat(exception.getMessage(),
+        CoreMatchers.is("User not found: JoeUser; User-manager not found for realm(s): [foo, boo, hoo]"));
   }
 
   @Test
@@ -146,6 +153,74 @@ public class UserPrincipalsHelperTest
 
     final PrincipalCollection principals = getPrincipalsWithNoUsrMgrPrimary();
     assertThat(underTest.getUserStatus(principals), is(UserStatus.active));
+  }
+  
+  @Test
+  public void testPrincipalPropagationAcrossVirtualThreads() throws ExecutionException, InterruptedException {
+    // Setup user and principals
+    when(user.getStatus()).thenReturn(UserStatus.active);
+    when(userManagerAlpha.getUser(PRIMARY_PRINCIPAL)).thenReturn(user);
+    final PrincipalCollection principals = getPrincipals();
+    
+    // Create a virtual thread executor
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Execute a task in a virtual thread that accesses the principals
+      CompletableFuture<UserStatus> future = CompletableFuture.supplyAsync(() -> {
+        try {
+          // Verify we can find the user manager with the principals in a virtual thread
+          UserManager manager = underTest.findUserManager(principals);
+          assertThat(manager, is(userManagerAlpha));
+          
+          // Verify we can get the user status with the principals in a virtual thread
+          return underTest.getUserStatus(principals);
+        } 
+        catch (Exception e) {
+          throw new RuntimeException("Failed to access principals in virtual thread", e);
+        }
+      }, executor);
+      
+      // Verify the result from the virtual thread
+      UserStatus status = future.get();
+      assertThat(status, is(UserStatus.active));
+    }
+  }
+  
+  @Test
+  public void testMultipleConcurrentVirtualThreadsWithPrincipals() throws ExecutionException, InterruptedException {
+    // Setup user and principals
+    when(user.getStatus()).thenReturn(UserStatus.active);
+    when(userManagerAlpha.getUser(PRIMARY_PRINCIPAL)).thenReturn(user);
+    final PrincipalCollection principals = getPrincipals();
+    
+    // Number of concurrent virtual threads to test with
+    int threadCount = 10;
+    
+    // Create a virtual thread executor
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Create multiple concurrent tasks
+      CompletableFuture<?>[] futures = new CompletableFuture[threadCount];
+      
+      for (int i = 0; i < threadCount; i++) {
+        futures[i] = CompletableFuture.supplyAsync(() -> {
+          try {
+            // Verify we can find the user manager with the principals in a virtual thread
+            UserManager manager = underTest.findUserManager(principals);
+            assertThat(manager, is(userManagerAlpha));
+            
+            // Verify we can get the user status with the principals in a virtual thread
+            UserStatus status = underTest.getUserStatus(principals);
+            assertThat(status, is(UserStatus.active));
+            return true;
+          } 
+          catch (Exception e) {
+            throw new RuntimeException("Failed to access principals in virtual thread", e);
+          }
+        }, executor);
+      }
+      
+      // Wait for all futures to complete and verify results
+      CompletableFuture.allOf(futures).join();
+    }
   }
 
   //Returns a collection of principals with the primary (first) having

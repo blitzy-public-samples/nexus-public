@@ -16,6 +16,10 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import org.sonatype.nexus.security.AbstractSecurityTest;
 import org.sonatype.nexus.security.SecuritySystem;
@@ -36,10 +40,10 @@ import org.apache.shiro.authz.AuthorizationException;
 import org.apache.shiro.realm.Realm;
 import org.apache.shiro.subject.PrincipalCollection;
 import org.apache.shiro.subject.SimplePrincipalCollection;
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
-public class ExternalRoleMappedTest
+class ExternalRoleMappedTest
     extends AbstractSecurityTest
 {
   @Override
@@ -63,7 +67,7 @@ public class ExternalRoleMappedTest
   }
 
   @Test
-  public void testUserHasPermissionFromExternalRole() throws Exception {
+  void testUserHasPermissionFromExternalRole() throws Exception {
     SecuritySystem securitySystem = this.lookup(SecuritySystem.class);
 
     Map<String, String> properties = new HashMap<String, String>();
@@ -92,12 +96,134 @@ public class ExternalRoleMappedTest
 
     try {
       securitySystem.checkPermission(jcohen, "permissionOne:invalid");
-      Assert.fail("Expected AuthorizationException");
+      Assertions.fail("Expected AuthorizationException");
     }
     catch (AuthorizationException e) {
       // expected
     }
 
     securitySystem.checkPermission(jcohen, "permissionOne:read"); // throws on error, so this is all we need to do
+  }
+
+  @Test
+  void testConcurrentUserPermissionChecksWithVirtualThreads() throws Exception {
+    SecuritySystem securitySystem = this.lookup(SecuritySystem.class);
+
+    Map<String, String> properties = new HashMap<String, String>();
+    properties.put(WildcardPrivilegeDescriptor.P_PATTERN, "permissionOne:read");
+
+    securitySystem.getAuthorizationManager("default").addPrivilege(new Privilege(
+        "randomId",
+        "permissionOne",
+        "permissionOne",
+        WildcardPrivilegeDescriptor.TYPE,
+        properties,
+        false));
+
+    securitySystem.getAuthorizationManager("default").addRole(new Role("mockrole1", "mockrole1", "mockrole1",
+        "default", false, null,
+        Collections.singleton("randomId")));
+
+    // add MockRealm to config
+    RealmManager realmManager = lookup(RealmManager.class);
+    realmManager.setConfiguredRealmIds(ImmutableList.of("Mock", AuthorizingRealmImpl.NAME));
+
+    // Create multiple principal collections for testing
+    PrincipalCollection jcohen = new SimplePrincipalCollection("jcohen", MockRealm.NAME);
+    PrincipalCollection anotherUser = new SimplePrincipalCollection("anotherUser", MockRealm.NAME);
+
+    // Number of concurrent checks to perform
+    int concurrentChecks = 100;
+    CountDownLatch latch = new CountDownLatch(concurrentChecks * 2); // For both users
+
+    // Create a virtual thread per task executor
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit permission checks for jcohen
+      for (int i = 0; i < concurrentChecks; i++) {
+        executor.submit(() -> {
+          try {
+            securitySystem.checkPermission(jcohen, "permissionOne:read");
+            latch.countDown();
+          }
+          catch (Exception e) {
+            Assertions.fail("Unexpected exception: " + e.getMessage());
+          }
+        });
+      }
+
+      // Submit permission checks for anotherUser (should fail)
+      for (int i = 0; i < concurrentChecks; i++) {
+        executor.submit(() -> {
+          try {
+            securitySystem.checkPermission(anotherUser, "permissionOne:read");
+            Assertions.fail("Expected AuthorizationException for anotherUser");
+          }
+          catch (AuthorizationException e) {
+            // expected
+            latch.countDown();
+          }
+          catch (Exception e) {
+            Assertions.fail("Unexpected exception: " + e.getMessage());
+          }
+        });
+      }
+    }
+
+    // Wait for all tasks to complete
+    Assertions.assertTrue(latch.await(10, TimeUnit.SECONDS), "Timed out waiting for permission checks");
+  }
+
+  @Test
+  void testVirtualThreadRoleMapping() throws Exception {
+    SecuritySystem securitySystem = this.lookup(SecuritySystem.class);
+
+    // Create a privilege and role
+    Map<String, String> properties = new HashMap<String, String>();
+    properties.put(WildcardPrivilegeDescriptor.P_PATTERN, "virtualThread:access");
+
+    securitySystem.getAuthorizationManager("default").addPrivilege(new Privilege(
+        "virtualThreadId",
+        "virtualThreadAccess",
+        "Virtual Thread Access",
+        WildcardPrivilegeDescriptor.TYPE,
+        properties,
+        false));
+
+    securitySystem.getAuthorizationManager("default").addRole(new Role(
+        "virtualThreadRole", 
+        "virtualThreadRole", 
+        "Virtual Thread Role",
+        "default", 
+        false, 
+        null,
+        Collections.singleton("virtualThreadId")));
+
+    // Add MockRealm to config
+    RealmManager realmManager = lookup(RealmManager.class);
+    realmManager.setConfiguredRealmIds(ImmutableList.of("Mock", AuthorizingRealmImpl.NAME));
+
+    // Create a thread that will run using a virtual thread
+    Thread virtualThread = Thread.ofVirtual().name("virtual-test-thread").start(() -> {
+      try {
+        // Create a principal with the role
+        PrincipalCollection principal = new SimplePrincipalCollection("virtualUser", MockRealm.NAME);
+        
+        // Check permission
+        securitySystem.checkPermission(principal, "virtualThread:access");
+        
+        // If we get here, no exception was thrown, which means the permission check passed
+        // This is expected to fail since virtualUser doesn't have the role
+        Assertions.fail("Expected AuthorizationException for virtualUser");
+      }
+      catch (AuthorizationException e) {
+        // This is expected
+      }
+      catch (Exception e) {
+        Assertions.fail("Unexpected exception: " + e.getMessage());
+      }
+    });
+
+    // Wait for the virtual thread to complete
+    virtualThread.join();
   }
 }

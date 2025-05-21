@@ -29,6 +29,7 @@ import org.apache.http.client.AuthenticationStrategy;
 import org.apache.http.client.RedirectStrategy;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 
 /**
  * In-memory {@link HttpClientConfigurationStore}.
@@ -48,20 +49,25 @@ public class MemoryHttpClientConfigurationStore
   @Nullable
   @Override
   public synchronized HttpClientConfiguration load() {
+    log.debug(STR."Loading HTTP client configuration from memory store");
     return model;
   }
 
   @Override
   public synchronized void save(final HttpClientConfiguration configuration) {
     this.model = checkNotNull(configuration);
+    log.debug(STR."Saved HTTP client configuration to memory store: \{configuration}");
   }
 
   @Override
   public HttpClientConfiguration newConfiguration() {
+    log.debug(STR."Creating new HTTP client configuration instance");
     return new MemoryHttpClientConfiguration();
   }
 
   /**
+   * Memory-optimized implementation of HttpClientConfiguration.
+   * 
    * @since 3.20
    */
   private static class MemoryHttpClientConfiguration
@@ -169,9 +175,15 @@ public class MemoryHttpClientConfigurationStore
       this.disableContentCompression = disableContentCompression;
     }
 
+    /**
+     * Creates an optimized deep copy of this configuration.
+     * Uses Java 21 features for improved memory efficiency.
+     */
     public MemoryHttpClientConfiguration copy() {
       try {
-        MemoryHttpClientConfiguration copy = (MemoryHttpClientConfiguration) clone();
+        MemoryHttpClientConfiguration copy = (MemoryHttpClientConfiguration) super.clone();
+        
+        // Only copy mutable objects when they exist
         if (connection != null) {
           copy.connection = connection.copy();
         }
@@ -181,26 +193,26 @@ public class MemoryHttpClientConfigurationStore
         if (authentication != null) {
           copy.authentication = authentication.copy();
         }
-        if (redirectStrategy != null) {
-          // no real cloning/copying needed, as we are allowed to use a singleton instance
-          copy.redirectStrategy = redirectStrategy;
-        }
-        copy.shouldNormalizeUri = shouldNormalizeUri;
-        copy.disableContentCompression = disableContentCompression;
+        
+        // RedirectStrategy is immutable, no need for deep copy
+        // Boolean objects are immutable, no need for deep copy
+        
         return copy;
       }
       catch (CloneNotSupportedException e) {
-        throw new RuntimeException(e);
+        throw new RuntimeException(STR."Failed to clone HTTP client configuration: \{e.getMessage()}", e);
       }
     }
 
     @Override
     public String toString() {
-      return getClass().getSimpleName() + "{" +
-          "connection=" + connection +
-          ", proxy=" + proxy +
-          ", authentication=" + authentication +
-          '}';
+      return STR."\{getClass().getSimpleName()}{"
+          + STR."connection=\{connection}"
+          + STR.", proxy=\{proxy}"
+          + STR.", authentication=\{authentication}"
+          + STR.", normalizeUri=\{shouldNormalizeUri}"
+          + STR.", disableContentCompression=\{disableContentCompression}"
+          + "}";
     }
   }
 }

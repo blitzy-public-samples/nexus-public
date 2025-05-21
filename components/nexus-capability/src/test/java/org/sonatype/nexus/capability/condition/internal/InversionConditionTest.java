@@ -16,9 +16,11 @@ import org.sonatype.nexus.capability.Condition;
 import org.sonatype.nexus.capability.ConditionEvent;
 import org.sonatype.nexus.capability.condition.EventManagerTestSupport;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -30,6 +32,7 @@ import static org.mockito.Mockito.when;
  *
  * @since capabilities 2.0
  */
+@ExtendWith(MockitoExtension.class)
 public class InversionConditionTest
     extends EventManagerTestSupport
 {
@@ -39,7 +42,7 @@ public class InversionConditionTest
 
   private InversionCondition underTest;
 
-  @Before
+  @BeforeEach
   public final void setUpInversionCondition()
       throws Exception
   {
@@ -54,7 +57,7 @@ public class InversionConditionTest
    */
   @Test
   public void not01() {
-    assertThat(underTest.isSatisfied(), is(true));
+    assertThat(STR."InversionCondition should be satisfied when condition is not", underTest.isSatisfied(), is(true));
   }
 
   /**
@@ -64,7 +67,7 @@ public class InversionConditionTest
   public void not02() {
     when(condition.isSatisfied()).thenReturn(true);
     underTest.handle(new ConditionEvent.Satisfied(condition));
-    assertThat(underTest.isSatisfied(), is(false));
+    assertThat(STR."InversionCondition should not be satisfied when condition is", underTest.isSatisfied(), is(false));
 
     verifyEventManagerEvents(satisfied(underTest), unsatisfied(underTest));
   }
@@ -76,7 +79,7 @@ public class InversionConditionTest
   public void not03() {
     when(condition.isSatisfied()).thenReturn(false);
     underTest.handle(new ConditionEvent.Unsatisfied(condition));
-    assertThat(underTest.isSatisfied(), is(true));
+    assertThat(STR."InversionCondition should be satisfied when condition is not", underTest.isSatisfied(), is(true));
 
     verifyEventManagerEvents(satisfied(underTest));
   }

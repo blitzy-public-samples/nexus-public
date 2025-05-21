@@ -15,6 +15,10 @@ package org.sonatype.nexus.thread;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * A thread factory that sets an uncaught exception handler for all threads it creates.
+ * Supports both platform threads and virtual threads (Java 21+).
+ */
 public class ExceptionAwareThreadFactory
     extends NexusThreadFactory
 {
@@ -42,8 +46,48 @@ public class ExceptionAwareThreadFactory
   public Thread newThread(final Runnable r) {
     Thread tr = super.newThread(r);
     tr.setUncaughtExceptionHandler((t, e) -> {
-      log.error("Uncaught Exception occurred on thread: {}, Exception message: {}", t.getName(), e.getMessage());
+      if (t.isVirtual()) {
+        // Enhanced logging for virtual threads with additional diagnostic information
+        logVirtualThreadException(t, e);
+      } else {
+        // Standard logging for platform threads
+        log.error("Uncaught Exception occurred on platform thread: {}, Exception message: {}", 
+            t.getName(), e.getMessage(), e);
+      }
     });
     return tr;
+  }
+  
+  /**
+   * Logs enhanced diagnostic information for uncaught exceptions in virtual threads.
+   * Captures virtual thread specific context and state information to aid in debugging.
+   *
+   * @param thread the virtual thread where the exception occurred
+   * @param exception the uncaught exception
+   */
+  private void logVirtualThreadException(Thread thread, Throwable exception) {
+    StringBuilder diagnostics = new StringBuilder();
+    
+    // Capture basic thread information
+    diagnostics.append("Thread ID: ").append(thread.threadId())
+              .append(", Name: ").append(thread.getName())
+              .append(", State: ").append(thread.getState());
+    
+    // Capture stack trace information
+    StackTraceElement[] stackTrace = thread.getStackTrace();
+    if (stackTrace != null && stackTrace.length > 0) {
+      diagnostics.append(", Last execution point: ")
+                .append(stackTrace[0].getClassName())
+                .append(".").append(stackTrace[0].getMethodName())
+                .append(" (line ").append(stackTrace[0].getLineNumber()).append(")");
+    }
+    
+    // Log the enhanced information with the full exception
+    log.error("Uncaught Exception in virtual thread - Diagnostics: {}, Exception message: {}", 
+        diagnostics.toString(), exception.getMessage(), exception);
+    
+    // Additional logging for monitoring virtual thread issues
+    log.debug("Virtual thread diagnostic details - Thread: {}, Exception type: {}", 
+        thread, exception.getClass().getName());
   }
 }

@@ -14,6 +14,7 @@ package org.sonatype.nexus.internal.node.datastore;
 
 import java.security.cert.Certificate;
 import java.security.cert.CertificateEncodingException;
+import java.security.cert.CertPathValidatorException;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -28,11 +29,14 @@ import org.sonatype.nexus.node.datastore.NodeIdStore;
 import org.sonatype.nexus.ssl.KeyStoreManager;
 import org.sonatype.nexus.ssl.KeystoreException;
 
+import static java.lang.StringTemplate.STR;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Migrates the legacy on disk node identifier to the database where it may be used to identify a single node, or a
  * cluster.
+ * 
+ * Updated for Java 21 compatibility with improved certificate handling and String Templates for logging.
  */
 @Named
 @Singleton
@@ -60,7 +64,7 @@ public class NodeIdInitializerImpl
   }
 
   private void migrateNodeId() {
-    log.info("No node-id found. Attempting to migrate from KeyStore");
+    log.info(STR."No node-id found. Attempting to migrate from KeyStore");
     KeyStoreManager keyStoreManager = keyStoreProvider.get();
 
     if (!keyStoreManager.isKeyPairInitialized()) {
@@ -69,23 +73,38 @@ public class NodeIdInitializerImpl
     }
 
     // Migrating an existing key
-    log.info("Migrating node-id to database");
+    log.info(STR."Migrating node-id to database");
 
     try {
       Certificate certificate = keyStoreManager.getCertificate();
-      log.trace("Certificate:\n{}", certificate);
+      log.trace(STR."Certificate:\n\{certificate}");
 
       String id = NodeIdEncoding.nodeIdForCertificate(certificate);
 
       nodeIdStore.set(id);
     }
-    catch (KeystoreException | CertificateEncodingException e) {
+    catch (KeystoreException e) {
+      log.warn(STR."KeystoreException while migrating node-id: \{e.getMessage()}");
+      generateNodeId();
+    }
+    catch (CertificateEncodingException e) {
+      log.warn(STR."CertificateEncodingException while migrating node-id: \{e.getMessage()}");
+      generateNodeId();
+    }
+    catch (CertPathValidatorException e) {
+      // Java 21 may throw this exception when certificate algorithm constraints are violated
+      log.warn(STR."Certificate validation failed due to algorithm constraints: \{e.getMessage()}");
+      generateNodeId();
+    }
+    catch (Exception e) {
+      // Catch any other certificate-related exceptions that might be thrown in Java 21
+      log.warn(STR."Unexpected exception while processing certificate: \{e.getMessage()}");
       generateNodeId();
     }
   }
 
   private void generateNodeId() {
-    log.info("Unable to get node-id from KeyStore - Generating a new node-id");
+    log.info(STR."Unable to get node-id from KeyStore - Generating a new node-id");
     nodeIdStore.getOrCreate();
   }
 }

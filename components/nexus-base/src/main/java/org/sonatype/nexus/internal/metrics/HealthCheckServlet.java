@@ -15,10 +15,10 @@ package org.sonatype.nexus.internal.metrics;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 
-import com.codahale.metrics.health.HealthCheckRegistry;
+import io.dropwizard.metrics.health.HealthCheckRegistry;
 
 /**
- * Customized {@link com.codahale.metrics.servlets.HealthCheckServlet} to support injection.
+ * Customized {@link io.dropwizard.metrics.servlets.HealthCheckServlet} to support injection.
  *
  * @see HealthCheckMediator
  * @since 3.0
@@ -27,7 +27,7 @@ import com.codahale.metrics.health.HealthCheckRegistry;
 @Deprecated
 @Singleton
 public class HealthCheckServlet
-    extends com.codahale.metrics.servlets.HealthCheckServlet
+    extends io.dropwizard.metrics.servlets.HealthCheckServlet
 {
   @Inject
   public HealthCheckServlet(final HealthCheckRegistry registry) {

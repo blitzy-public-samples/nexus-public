@@ -15,6 +15,8 @@ package org.sonatype.nexus.internal.atlas.customizers;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -52,23 +54,45 @@ public class AuditLogCustomizer
 
   @Override
   public void customize(final SupportBundle supportBundle) {
-    // add source for nexus.log
+    // add source for audit.log
     supportBundle.add(new GeneratedContentSourceSupport(AUDITLOG, "log/audit.log", LOW)
     {
       @Override
       protected void generate(final File file) {
         try {
-          //didn't bother with try-with-resources as FileUtils.copyInputStreamToFile handles closing the input stream
-          InputStream is = logManager.getLogFileStream("audit.log", 0, Long.MAX_VALUE);
-          if (is != null) {
-            FileUtils.copyInputStreamToFile(is, file);
+          // Use Virtual Threads for I/O operations to improve performance
+          Future<?> task = Thread.ofVirtual().name("audit-log-reader").start(() -> {
+            try {
+              InputStream is = logManager.getLogFileStream("audit.log", 0, Long.MAX_VALUE);
+              if (is != null) {
+                FileUtils.copyInputStreamToFile(is, file);
+              }
+              else {
+                log.debug(STR."Not including missing audit.log file");
+              }
+            }
+            catch (IOException e) {
+              // Enhanced error handling with improved context
+              log.debug(STR."Unable to include audit.log file: \{e.getMessage()}", e);
+            }
+            return null;
+          });
+          
+          // Wait for the virtual thread to complete
+          try {
+            task.get();
+          } 
+          catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.debug(STR."Interrupted while processing audit.log file", e);
           }
-          else {
-            log.debug("Not including missing audit.log file");
+          catch (ExecutionException e) {
+            log.debug(STR."Error executing audit log processing: \{e.getCause().getMessage()}", e.getCause());
           }
         }
-        catch (IOException e) {
-          log.debug("Unable to include audit.log file", e);
+        catch (Exception e) {
+          // Fault barrier pattern - centralized error handling
+          log.debug(STR."Failed to process audit.log file: \{e.getMessage()}", e);
         }
       }
     });

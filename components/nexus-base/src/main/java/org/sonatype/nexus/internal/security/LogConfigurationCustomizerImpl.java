@@ -30,9 +30,17 @@ public class LogConfigurationCustomizerImpl
 {
   @Override
   public void customize(final Configuration configuration) {
+    // Configure Shiro filter classes
     configuration.setLoggerLevel("org.apache.shiro.web.filter.authc.BasicHttpAuthenticationFilter", LoggerLevel.INFO);
     configuration.setLoggerLevel("org.apache.shiro.web.filter.mgt.DefaultFilterChainManager", LoggerLevel.INFO);
+    
+    // Configure Shiro security packages
     configuration.setLoggerLevel("org.sonatype.nexus.security", LoggerLevel.DEFAULT);
     configuration.setLoggerLevel("org.sonatype.nexus.internal.security", LoggerLevel.DEFAULT);
+    
+    // Additional Shiro 2.0.0 filter classes
+    configuration.setLoggerLevel("org.apache.shiro.web.filter.authc.PassThruAuthenticationFilter", LoggerLevel.INFO);
+    configuration.setLoggerLevel("org.apache.shiro.web.filter.authz.AuthorizationFilter", LoggerLevel.INFO);
+    configuration.setLoggerLevel("org.apache.shiro.web.filter.InvalidRequestFilter", LoggerLevel.INFO);
   }
 }

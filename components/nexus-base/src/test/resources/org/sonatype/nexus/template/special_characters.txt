@@ -1,0 +1,153 @@
+# Java 21 String Templates with Special Characters
+
+## Basic String Template Examples with Special Characters
+
+// Basic template with special characters
+String name = "John";
+String message = STR."Hello \{name}! Welcome to Java's String Templates feature.";
+
+// Template with HTML special characters
+String html = STR."<div class=\"container\">\{name}'s profile</div>";
+
+// Template with escaped backslashes
+String path = STR."C:\\Users\\\{name}\\Documents\\file.txt";
+
+// Template with quotes and apostrophes
+String quote = STR."\{name} said, \"I can't believe how easy this is!\"";
+
+
+## Unicode Symbols and Emojis in Templates
+
+// Template with Unicode symbols
+String math = STR."The value of π (pi) is approximately \{Math.PI}";
+String degree = STR."The temperature is \{temperature}°C";
+
+// Template with emoji symbols
+String stars = 5;
+String review = STR."Rating: \{stars} ⭐ - Excellent!";
+String celebration = STR."Congratulations \{name}! 🎉 🎊 🎈";
+
+// Template with various Unicode symbols
+String symbols = STR."Special symbols: ♠ ♥ ♦ ♣ ♪ ♫ ☀ ☁ ☂ ☃";
+String arrows = STR."Arrows: ← ↑ → ↓ ↔ ↕ ⇒ ⇔";
+
+
+## International Text in Templates
+
+// Russian text
+String russian = STR."Привет, \{name}! Добро пожаловать.";
+
+// Chinese text
+String chinese = STR."你好，\{name}！欢迎。";
+
+// Arabic text (right-to-left)
+String arabic = STR."مرحبا \{name}! أهلا وسهلا.";
+
+// Japanese text
+String japanese = STR."こんにちは、\{name}さん！ようこそ。";
+
+// Korean text
+String korean = STR."안녕하세요, \{name}님! 환영합니다.";
+
+// Hindi text
+String hindi = STR."नमस्ते \{name}! आपका स्वागत है।";
+
+// Thai text
+String thai = STR."สวัสดี \{name}! ยินดีต้อนรับ";
+
+// Greek text
+String greek = STR."Γεια σου \{name}! Καλώς ήρθες.";
+
+
+## Mixed Examples with Variables and Special Characters
+
+// Template with variables and special characters
+int items = 10;
+double price = 25.99;
+String currency = "€";
+String order = STR."Order: \{items} items × \{price} \{currency} = \{items * price} \{currency}";
+
+// Date formatting with special characters
+String date = STR."Today's date: \{LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))}";
+
+// Template with HTML entities and variables
+String username = "user<script>";
+String safeHtml = STR."Welcome, \{username.replace("<", "&lt;").replace(">", "&gt;")}!";
+
+
+## Multi-line Text Block Templates with Special Characters
+
+// Multi-line template with special characters
+String userId = "12345";
+String userInfo = STR."""
+    User Information:
+    ----------------
+    ID: \{userId}
+    Name: \{name}
+    Status: ✓ Active
+    Last Login: \{LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))}
+    Notes: User has access to all modules.
+""";
+
+// HTML template with special characters
+String title = "My Page";
+String content = "Hello, World!";
+String htmlTemplate = STR."""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>\{title}</title>
+</head>
+<body>
+    <h1>\{title}</h1>
+    <p>\{content}</p>
+    <footer>© \{LocalDate.now().getYear()} Example Corp.</footer>
+</body>
+</html>
+""";
+
+
+## Complex Examples with Mixed Character Sets
+
+// Mixed language template
+String multilingual = STR."English: Hello, Chinese: 你好, Arabic: مرحبا, Russian: Привет, \{name}!";
+
+// Template with mathematical notation
+String equation = STR."The quadratic formula: x = (-b ± √(b² - 4ac)) ÷ 2a where a=\{a}, b=\{b}, c=\{c}";
+
+// Template with currency symbols
+String currencies = STR."Supported currencies: $ (USD), € (EUR), £ (GBP), ¥ (JPY), ₹ (INR), ₽ (RUB), ₩ (KRW)";
+
+// Template with phonetic symbols
+String phonetic = STR."Phonetic: /həˈloʊ/ - Hello \{name}";
+
+
+## Testing Proper UTF-8 Rendering
+
+// Supplementary characters (outside BMP)
+String supplementary = STR."Supplementary characters: 𐐷 𐐸 𐐹 (U+10437-U+10439)";
+
+// Surrogate pairs for emoji
+String emoji = STR."Emoji using surrogate pairs: 😀 😁 😂 😃 😄 😅";
+
+// Combining characters
+String combining = STR."Combining characters: e\u0301 (é), n\u0303 (ñ), u\u0308 (ü)";
+
+// Bidirectional text mixing
+String bidi = STR."Mixed direction: English and العربية in the same \{"string"}";
+
+
+## Edge Cases and Special Handling
+
+// Zero-width characters
+String zeroWidth = STR."Zero-width space between 'A\u200BB': A\u200BB";
+
+// Control characters (should be handled properly)
+String control = STR."Bell sound: \u0007, Tab: \t, Newline: \n";
+
+// Very long Unicode character sequences
+String longUnicode = STR."Long sequence: \{"★".repeat(100)}";
+
+// Template with unusual Unicode blocks
+String unusual = STR."Unusual Unicode: ꧁꧂ ꩜ ꯍ ꯣ ꯤ ꯥ ꯦ ꯧ ꯨ";

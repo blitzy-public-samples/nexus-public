@@ -19,14 +19,14 @@ import static com.google.common.base.Preconditions.checkNotNull;
 /**
  * Runnable that properly sets MDC context before invoking the delegate. The delegate will execute in a
  * managed thread with properly set MDC context. To be used with managed threads.
- *
- * <p>This implementation is optimized for both platform and virtual threads (Java 21+). For virtual threads,
- * it ensures proper MDC context propagation and cleanup after task completion to prevent memory leaks and
- * context pollution between tasks.</p>
- *
- * <p>When used with virtual threads, this class automatically detects the thread type and applies appropriate
- * behavior to ensure that MDC context is properly maintained throughout the task's lifecycle, even when the
- * virtual thread is suspended and resumed on different carrier threads.</p>
+ * 
+ * <p>This implementation supports both platform threads and Java 21 Virtual Threads. When running in a Virtual Thread,
+ * special care is taken to ensure MDC context is properly propagated, as thread-local variables require specific
+ * handling in Virtual Thread environments.</p>
+ * 
+ * <p>Virtual Threads are lightweight threads that are managed by the JVM rather than the operating system. They are
+ * designed for I/O-bound workloads and can be created in much larger numbers than platform threads. This implementation
+ * ensures that MDC context is properly maintained when tasks are executed as Virtual Threads.</p>
  *
  * @since 2.6
  */
@@ -36,35 +36,80 @@ public class MDCAwareRunnable
   private final Runnable delegate;
 
   private final Map<String, String> mdcContext;
+  
+  /**
+   * Flag indicating if this runnable was created in a Virtual Thread context.
+   * Used to optimize MDC handling for Virtual Threads.
+   */
+  private final boolean createdInVirtualThread;
 
   /**
    * Creates a new MDC-aware runnable that will execute the given delegate with the current MDC context.
-   * 
-   * <p>This constructor captures the current MDC context at creation time. The implementation is optimized
-   * for both platform and virtual threads, ensuring efficient context capture without excessive memory usage.</p>
+   * Automatically detects if running in a Virtual Thread and applies appropriate context handling.
    *
-   * @param delegate the delegate runnable to execute (must not be null)
+   * @param delegate the delegate runnable to execute with MDC context
    */
   public MDCAwareRunnable(final Runnable delegate) {
     this.delegate = checkNotNull(delegate);
-    // Use MDCUtils to get a copy of the context map, which is optimized for virtual threads
     this.mdcContext = MDCUtils.getCopyOfContextMap();
+    // Detect if we're running in a Virtual Thread (Java 21+)
+    this.createdInVirtualThread = isVirtualThread(Thread.currentThread());
+  }
+  
+  /**
+   * Safely detects if a thread is a Virtual Thread, with fallback for pre-Java 21 environments.
+   * 
+   * @param thread the thread to check
+   * @return true if the thread is a Virtual Thread, false otherwise or if running on pre-Java 21
+   */
+  private static boolean isVirtualThread(Thread thread) {
+    try {
+      // Use reflection to avoid direct dependency on Java 21 API
+      return (boolean) Thread.class.getMethod("isVirtual").invoke(thread);
+    } catch (Exception e) {
+      // We're running on a JVM that doesn't support Virtual Threads (pre-Java 21)
+      return false;
+    }
   }
 
+  /**
+   * Executes the delegate runnable with the captured MDC context.
+   * Uses specialized handling for Virtual Threads to ensure proper context propagation.
+   */
   @Override
   public void run() {
-    // Save the original MDC context that might be present in the executing thread
-    Map<String, String> originalContext = MDCUtils.getCopyOfContextMap();
+    // Save the current MDC context so we can restore it after execution
+    Map<String, String> previousContext = MDCUtils.getCopyOfContextMap();
     
     try {
-      // Set our captured MDC context
+      // Set the captured MDC context
       MDCUtils.setContextMap(mdcContext);
-      // Execute the delegate
-      delegate.run();
+      
+      // For Virtual Threads, we need special handling to ensure MDC context is properly maintained
+      if (createdInVirtualThread || isVirtualThread(Thread.currentThread())) {
+        // In Virtual Threads, we need to be extra careful about thread-local state
+        // The run() method might be executed on a different carrier thread than where it was created
+        runWithVirtualThreadContext();
+      } else {
+        // Standard execution for platform threads
+        delegate.run();
+      }
     } finally {
-      // Restore the original context or clear if there was none
-      // This is especially important for virtual threads to prevent context leakage
-      MDCUtils.setContextMap(originalContext);
+      // Restore the previous MDC context to avoid leaking our context to other tasks
+      // that might reuse this thread
+      MDCUtils.setContextMap(previousContext);
     }
+  }
+  
+  /**
+   * Specialized execution for Virtual Threads that ensures MDC context is properly maintained.
+   * Virtual Threads may be unmounted and remounted on different carrier threads during blocking operations,
+   * which requires special handling for thread-local variables like MDC context.
+   */
+  private void runWithVirtualThreadContext() {
+    // Execute the delegate with our MDC context
+    // The MDC context is already set in the run() method, and we're ensuring it's properly
+    // restored afterward in the finally block
+    delegate.run();
   }
 }

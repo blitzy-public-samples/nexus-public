@@ -12,8 +12,8 @@
  */
 package org.sonatype.nexus.siesta.internal;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.common.log.LogConfigurationCustomizer;
 
@@ -31,8 +31,14 @@ public class LogConfigurationCustomizerImpl
 {
   @Override
   public void customize(final Configuration configuration) {
+    // Configure logger levels for Nexus REST components
     configuration.setLoggerLevel("org.sonatype.nexus.rest", DEFAULT);
     configuration.setLoggerLevel("org.sonatype.nexus.plugins.siesta", DEFAULT);
+    
+    // Configure logger levels for RESTEasy 6.2.7.Final packages
     configuration.setLoggerLevel("org.jboss.resteasy", DEFAULT);
+    configuration.setLoggerLevel("org.jboss.resteasy.core", DEFAULT);
+    configuration.setLoggerLevel("org.jboss.resteasy.client", DEFAULT);
+    configuration.setLoggerLevel("org.jboss.resteasy.plugins", DEFAULT);
   }
 }

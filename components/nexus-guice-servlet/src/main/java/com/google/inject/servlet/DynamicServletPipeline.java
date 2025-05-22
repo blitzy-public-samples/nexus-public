@@ -16,15 +16,17 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
-import javax.servlet.RequestDispatcher;
-import javax.servlet.ServletException;
-import javax.servlet.ServletRequest;
-import javax.servlet.ServletResponse;
-import javax.servlet.http.HttpServlet;
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.RequestDispatcher;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletRequest;
+import jakarta.servlet.ServletResponse;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
 
 import com.google.common.collect.Sets;
 import com.google.inject.Guice;
@@ -49,16 +51,27 @@ final class DynamicServletPipeline
   // dynamic list of definitions
   private final List<ServletDefinition> servletDefinitions;
 
-  // stable cache of definitions
+  // stable cache of definitions - using volatile for thread-safe reads across virtual threads
   private volatile ServletDefinition[] servletDefinitionCache = {};
+  
+  // Virtual Thread executor for service operations
+  private final ExecutorService virtualThreadExecutor;
 
   @Inject
   DynamicServletPipeline(final BeanLocator locator) {
     super(DUMMY_INJECTOR);
 
+    // Use EntryListAdapter with BeanLocator for Eclipse Sisu 0.10.0 compatibility
     servletDefinitions = new EntryListAdapter<>(locator.locate(Key.get(ServletDefinition.class)));
+    // Create a virtual thread per task executor for optimal I/O-bound operations
+    virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
+  /**
+   * Refreshes the servlet definition cache in a thread-safe manner.  
+   * This method is synchronized to ensure thread safety during updates,
+   * while the volatile field ensures visibility across threads (including virtual threads).
+   */
   public synchronized void refreshCache() {
     final Object[] snapshot = servletDefinitions.toArray();
     servletDefinitionCache = Arrays.copyOf(snapshot, snapshot.length, ServletDefinition[].class);
@@ -67,12 +80,26 @@ final class DynamicServletPipeline
 
   @Override
   public boolean service(ServletRequest request, ServletResponse response) throws IOException, ServletException {
-    for (ServletDefinition servletDefinition : servletDefinitions()) {
-      if (servletDefinition.service(request, response)) {
-        return true;
+    // Use virtual threads for service operations to improve concurrency
+    try {
+      return virtualThreadExecutor.submit(() -> {
+        for (ServletDefinition servletDefinition : servletDefinitions()) {
+          if (servletDefinition.service(request, response)) {
+            return true;
+          }
+        }
+        return false;
+      }).get();
+    } catch (Exception e) {
+      // Use pattern matching for switch to handle different exception types
+      Throwable cause = e.getCause();
+      switch (cause) {
+        case IOException ioe -> throw ioe;
+        case ServletException se -> throw se;
+        case null -> throw new ServletException("Error processing request", e);
+        default -> throw new ServletException("Error processing request", cause);
       }
     }
-    return false;
   }
 
   @Override
@@ -81,6 +108,7 @@ final class DynamicServletPipeline
     for (ServletDefinition servletDefinition : servletDefinitions()) {
       servletDefinition.destroy(destroyedSoFar);
     }
+    virtualThreadExecutor.shutdown();
   }
 
   @Override
@@ -117,12 +145,41 @@ final class DynamicServletPipeline
               ServletRequest servletRequest,
               ServletResponse servletResponse) throws ServletException, IOException
           {
-            servletRequest.setAttribute(REQUEST_DISPATCHER_REQUEST, Boolean.TRUE);
+            // Use virtual threads for request dispatching
             try {
-              servletDefinition.doService(servletRequest, servletResponse);
-            }
-            finally {
-              servletRequest.removeAttribute(REQUEST_DISPATCHER_REQUEST);
+              virtualThreadExecutor.submit(() -> {
+                servletRequest.setAttribute(REQUEST_DISPATCHER_REQUEST, Boolean.TRUE);
+                try {
+                  servletDefinition.doService(servletRequest, servletResponse);
+                }
+                catch (ServletException | IOException e) {
+                  throw new RuntimeException(e);
+                }
+                finally {
+                  servletRequest.removeAttribute(REQUEST_DISPATCHER_REQUEST);
+                }
+                return null;
+              }).get();
+            } catch (Exception e) {
+              // Use pattern matching for switch to handle different exception types
+              Throwable cause = e.getCause();
+              
+              // Handle nested exceptions with pattern matching
+              if (cause instanceof RuntimeException re && re.getCause() != null) {
+                switch (re.getCause()) {
+                  case ServletException se -> throw se;
+                  case IOException ioe -> throw ioe;
+                  default -> throw new ServletException("Error dispatching request", re.getCause());
+                }
+              }
+              
+              // Handle direct exceptions with pattern matching
+              switch (cause) {
+                case ServletException se -> throw se;
+                case IOException ioe -> throw ioe;
+                case null -> throw new ServletException("Error dispatching request", e);
+                default -> throw new ServletException("Error dispatching request", cause);
+              }
             }
           }
         };

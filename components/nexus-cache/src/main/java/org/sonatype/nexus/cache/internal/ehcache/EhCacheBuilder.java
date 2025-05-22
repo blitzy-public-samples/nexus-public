@@ -14,6 +14,8 @@ package org.sonatype.nexus.cache.internal.ehcache;
 
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 import java.util.function.Supplier;
 
 import javax.cache.Cache;
@@ -59,18 +61,41 @@ public class EhCacheBuilder<K, V>
 
     builder.withExpiry(mapToEhCacheExpiry(expiryFactory.create()));
 
+    log.debug(STR."Creating cache \{name} with key type \{keyType.getSimpleName()} and value type \{valueType.getSimpleName()}");
     Cache<K, V> cache = manager.createCache(name, Eh107Configuration.fromEhcacheCacheConfiguration(builder));
 
     manager.enableStatistics(name, statisticsEnabled);
     manager.enableManagement(name, managementEnabled);
 
     if (persister != null) {
-      CacheEventListener<K, V> listener = cacheEvent -> persister.accept(cacheEvent.getKey(), cacheEvent.getOldValue());
+      log.debug(STR."Registering event listener for cache \{name} with persister");
+      
+      // Create a virtual thread executor for asynchronous event processing
+      ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+      
+      CacheEventListener<K, V> listener = cacheEvent -> {
+        try {
+          executor.submit(() -> persister.accept(cacheEvent.getKey(), cacheEvent.getOldValue()));
+        } 
+        catch (Exception e) {
+          // Use pattern matching to handle different types of exceptions
+          switch (e) {
+            case RuntimeException re -> log.error(STR."Runtime error in cache event listener for \{name}: \{re.getMessage()}", re);
+            case InterruptedException ie -> {
+              log.warn(STR."Cache event listener for \{name} was interrupted", ie);
+              Thread.currentThread().interrupt();
+            }
+            default -> log.error(STR."Error in cache event listener for \{name}: \{e.getMessage()}", e);
+          }
+        }
+      };
 
       Eh107Configuration<K, V> configuration = cache.getConfiguration(Eh107Configuration.class);
       configuration.unwrap(CacheRuntimeConfiguration.class)
           .registerCacheEventListener(listener, EventOrdering.UNORDERED, EventFiring.ASYNCHRONOUS,
               EventType.EVICTED, EventType.REMOVED, EventType.EXPIRED);
+      
+      log.debug(STR."Event listener registered for cache \{name} for events: EVICTED, REMOVED, EXPIRED");
     }
 
     return cache;
@@ -95,34 +120,28 @@ public class EhCacheBuilder<K, V>
       }
 
       private Duration toJavaDuration(final javax.cache.expiry.Duration duration) {
+        if (duration == null) {
+          return null;
+        }
+        
         if (duration.isEternal()) {
           return Duration.of(1, ChronoUnit.FOREVER);
         }
-        ChronoUnit chronoUnit = null;
-        switch (duration.getTimeUnit()) {
-          case DAYS:
-            chronoUnit = ChronoUnit.DAYS;
-            break;
-          case HOURS:
-            chronoUnit = ChronoUnit.HOURS;
-            break;
-          case MICROSECONDS:
-            chronoUnit = ChronoUnit.MICROS;
-            break;
-          case MILLISECONDS:
-            chronoUnit = ChronoUnit.MILLIS;
-            break;
-          case MINUTES:
-            chronoUnit = ChronoUnit.MINUTES;
-            break;
-          case NANOSECONDS:
-            chronoUnit = ChronoUnit.NANOS;
-            break;
-          case SECONDS:
-            chronoUnit = ChronoUnit.SECONDS;
-            break;
-        }
-        return Duration.of(duration.getDurationAmount(), chronoUnit);
+        
+        // Use switch expression with pattern matching for more concise code
+        return switch (duration.getTimeUnit()) {
+          case DAYS -> Duration.of(duration.getDurationAmount(), ChronoUnit.DAYS);
+          case HOURS -> Duration.of(duration.getDurationAmount(), ChronoUnit.HOURS);
+          case MICROSECONDS -> Duration.of(duration.getDurationAmount(), ChronoUnit.MICROS);
+          case MILLISECONDS -> Duration.of(duration.getDurationAmount(), ChronoUnit.MILLIS);
+          case MINUTES -> Duration.of(duration.getDurationAmount(), ChronoUnit.MINUTES);
+          case NANOSECONDS -> Duration.of(duration.getDurationAmount(), ChronoUnit.NANOS);
+          case SECONDS -> Duration.of(duration.getDurationAmount(), ChronoUnit.SECONDS);
+          default -> {
+            log.warn(STR."Unknown time unit \{duration.getTimeUnit()}, defaulting to SECONDS");
+            yield Duration.of(duration.getDurationAmount(), ChronoUnit.SECONDS);
+          }
+        };
       }
     };
   }

@@ -12,18 +12,28 @@
  */
 package org.sonatype.nexus.script.plugin.internal.rest;
 
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotNull;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.NotFoundException;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.PathParam;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.WebApplicationException;
-import jakarta.ws.rs.core.Response;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+
+import javax.inject.Inject;
+import javax.inject.Named;
+import javax.inject.Singleton;
+import javax.validation.Valid;
+import javax.validation.constraints.NotNull;
+import javax.ws.rs.Consumes;
+import javax.ws.rs.NotFoundException;
+import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
+import javax.ws.rs.Produces;
+import javax.ws.rs.WebApplicationException;
+import javax.ws.rs.core.Response;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.event.EventManager;
@@ -42,24 +52,17 @@ import org.sonatype.nexus.security.SecurityHelper;
 
 import com.codahale.metrics.annotation.ExceptionMetered;
 import com.codahale.metrics.annotation.Timed;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
-import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.annotations.Api;
+import io.swagger.annotations.ApiOperation;
+import io.swagger.annotations.ApiResponse;
+import io.swagger.annotations.ApiResponses;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
-import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON;
 import static java.lang.StringTemplate.STR;
+import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
 
 /**
  * BREAD resource for managing {@link Script} instances.
@@ -71,7 +74,7 @@ import static java.lang.StringTemplate.STR;
 @Path(ScriptResource.RESOURCE_URI)
 @Produces(APPLICATION_JSON)
 @Consumes(APPLICATION_JSON)
-@Tag(name = "Script")
+@Api("Script")
 public class ScriptResource
     extends ComponentSupport
     implements ScriptClient, Resource
@@ -102,7 +105,7 @@ public class ScriptResource
   @Override
   @Timed
   @ExceptionMetered
-  @Operation(summary = "List all stored scripts")
+  @ApiOperation("List all stored scripts")
   @RequiresPermissions("nexus:script:*:browse")
   public List<ScriptXO> browse() {
     List<ScriptXO> storedScripts = new ArrayList<>();
@@ -114,8 +117,8 @@ public class ScriptResource
   @Override
   @Timed
   @ExceptionMetered
-  @Operation(summary = "Read stored script by name")
-  @ApiResponses(@ApiResponse(responseCode = "404", description = "No script with the specified name"))
+  @ApiOperation("Read stored script by name")
+  @ApiResponses(@ApiResponse(code = 404, message = "No script with the specified name"))
   public ScriptXO read(@PathParam("name") final String name) {
     securityHelper.ensurePermitted(scriptPermission(name, BreadActions.READ));
     return convert(findOr404(name));
@@ -124,11 +127,11 @@ public class ScriptResource
   @Override
   @Timed
   @ExceptionMetered
-  @Operation(summary = "Update stored script by name")
+  @ApiOperation("Update stored script by name")
   @ApiResponses({
-      @ApiResponse(responseCode = "204", description = "Script was updated"),
-      @ApiResponse(responseCode = "404", description = "No script with the specified name"),
-      @ApiResponse(responseCode = "410", description = "Script updating is disabled")
+      @ApiResponse(code = 204, message = "Script was updated"),
+      @ApiResponse(code = 404, message = "No script with the specified name"),
+      @ApiResponse(code = 410, message = "Script updating is disabled")
   })
   public void edit(@PathParam("name") final String name, @NotNull @Valid final ScriptXO scriptXO) {
     securityHelper.ensurePermitted(scriptPermission(name, BreadActions.EDIT));
@@ -136,84 +139,127 @@ public class ScriptResource
         STR."Path parameter: \{name} does not match data name: \{scriptXO.getName()}");
     findOr404(name);
     log.debug(STR."Updating Script named: \{name}");
+    
     try {
       scriptManager.update(name, scriptXO.getContent());
     }
-    catch (ScriptingDisabledException e) { // NOSONAR
-      log.debug(STR."Failed to update script \{name}, creating and updating scripts is disabled", e);
-      throw new WebApplicationException(
-          Response.status(Response.Status.GONE).entity(new ScriptResultXO(name, e.getMessage())).build());
+    catch (Exception e) {
+      switch (e) {
+        case ScriptingDisabledException sde -> {
+          log.debug(STR."Failed to update script \{name}, creating and updating scripts is disabled", sde);
+          throw new WebApplicationException(
+              Response.status(Response.Status.GONE).entity(new ScriptResultXO(name, sde.getMessage())).build());
+        }
+        default -> throw e;
+      }
     }
   }
 
   @Override
   @Timed
   @ExceptionMetered
-  @Operation(summary = "Add a new script")
+  @ApiOperation("Add a new script")
   @ApiResponses({
-      @ApiResponse(responseCode = "204", description = "Script was added"),
-      @ApiResponse(responseCode = "410", description = "Script creation is disabled")
+      @ApiResponse(code = 204, message = "Script was added"),
+      @ApiResponse(code = 410, message = "Script creation is disabled")
   })
   @RequiresPermissions("nexus:script:*:add")
   public void add(@NotNull @Valid final ScriptXO scriptXO) {
     log.debug(STR."Adding Script named: \{scriptXO.getName()}");
+    
     try {
       scriptManager.create(scriptXO.getName(), scriptXO.getContent(), scriptXO.getType());
     }
-    catch (ScriptingDisabledException e) { // NOSONAR
-      log.debug(STR."Failed to create script \{scriptXO.getName()}, creating and updating scripts is disabled", e);
-      throw new WebApplicationException(
-          Response.status(Response.Status.GONE).entity(new ScriptResultXO(scriptXO.getName(), e.getMessage())).build());
+    catch (Exception e) {
+      switch (e) {
+        case ScriptingDisabledException sde -> {
+          log.debug(STR."Failed to create script \{scriptXO.getName()}, creating and updating scripts is disabled", sde);
+          throw new WebApplicationException(
+              Response.status(Response.Status.GONE).entity(new ScriptResultXO(scriptXO.getName(), sde.getMessage())).build());
+        }
+        default -> throw e;
+      }
     }
   }
 
   @Override
   @Timed
   @ExceptionMetered
-  @Operation(summary = "Delete stored script by name")
+  @ApiOperation("Delete stored script by name")
   @ApiResponses({
-      @ApiResponse(responseCode = "204", description = "Script was deleted"),
-      @ApiResponse(responseCode = "404", description = "No script with the specified name")
+      @ApiResponse(code = 204, message = "Script was deleted"),
+      @ApiResponse(code = 404, message = "No script with the specified name")
   })
   public void delete(@PathParam("name") final String name) {
     securityHelper.ensurePermitted(scriptPermission(name, BreadActions.DELETE));
-    log.debug(STR."Deleting Script named: \{name}"); // NOSONAR
+    log.debug(STR."Deleting Script named: \{name}");
     scriptManager.delete(findOr404(name).getName());
   }
 
   @Override
   @Timed
   @ExceptionMetered
-  @Operation(summary = "Run stored script by name")
+  @ApiOperation("Run stored script by name")
   @ApiResponses({
-      @ApiResponse(responseCode = "404", description = "No script with the specified name"),
-      @ApiResponse(responseCode = "500", description = "Script execution failed with exception")
+      @ApiResponse(code = 404, message = "No script with the specified name"),
+      @ApiResponse(code = 500, message = "Script execution failed with exception")
   })
   public ScriptResultXO run(@PathParam("name") final String name, final String args) {
     securityHelper.ensurePermitted(scriptPermission(name, RUN_ACTION));
-    log.debug(STR."Running Script named: \{name}"); // NOSONAR
+    log.debug(STR."Running Script named: \{name}");
     Script script = findOr404(name);
 
-    // execute, capturing any possible errors
-    Object result;
-    try {
-      Map<String, Object> customBindings = new HashMap<>();
-      customBindings.put("log", LoggerFactory.getLogger(this.getClass()));
-      customBindings.put("args", args != null ? args.trim() : null);
-      customBindings.put("scriptName", script.getName());
-      result = scriptService.eval(script.getType(), script.getContent(), customBindings);
-      eventManager.post(new ScriptRunEvent(script));
+    // Use virtual threads for script execution to improve throughput for I/O-bound operations
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      Future<Object> future = executor.submit(() -> {
+        Map<String, Object> customBindings = new HashMap<>();
+        customBindings.put("log", LoggerFactory.getLogger(this.getClass()));
+        customBindings.put("args", args != null ? args.trim() : null);
+        customBindings.put("scriptName", script.getName());
+        Object result = scriptService.eval(script.getType(), script.getContent(), customBindings);
+        eventManager.post(new ScriptRunEvent(script));
+        return result;
+      });
+      
+      try {
+        Object result = future.get();
+        log.trace(STR."Result: \{result}");
+        String resultString = Optional.ofNullable(result).map(Object::toString).orElse("");
+        return new ScriptResultXO(name, resultString);
+      } 
+      catch (Exception e) {
+        Throwable cause = e.getCause();
+        log.error(STR."Exception in script execution for script named: \{name}", cause != null ? cause : e);
+        
+        // Use pattern matching for switch to handle different exception types
+        switch (cause != null ? cause : e) {
+          case SecurityException se -> {
+            throw new WebApplicationException(
+                Response.status(Response.Status.FORBIDDEN)
+                    .entity(new ScriptResultXO(script.getName(), se.getMessage()))
+                    .build());
+          }
+          case IllegalArgumentException iae -> {
+            throw new WebApplicationException(
+                Response.status(Response.Status.BAD_REQUEST)
+                    .entity(new ScriptResultXO(script.getName(), iae.getMessage()))
+                    .build());
+          }
+          case Exception ex -> {
+            throw new WebApplicationException(
+                Response.status(Response.Status.BAD_REQUEST)
+                    .entity(new ScriptResultXO(script.getName(), ex.getMessage()))
+                    .build());
+          }
+          default -> {
+            throw new WebApplicationException(
+                Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(new ScriptResultXO(script.getName(), "Unknown error during script execution"))
+                    .build());
+          }
+        }
+      }
     }
-    catch (Exception e) { // NOSONAR
-      log.error(STR."Exception in script execution for script named: \{name}", e);
-      throw new WebApplicationException(
-          Response.status(Response.Status.BAD_REQUEST)
-              .entity(new ScriptResultXO(script.getName(), e.getMessage()))
-              .build());
-    }
-    log.trace(STR."Result: \{result}");
-    String resultString = Optional.ofNullable(result).map(Object::toString).orElse("");
-    return new ScriptResultXO(name, resultString);
   }
 
   private Script findOr404(String name) {

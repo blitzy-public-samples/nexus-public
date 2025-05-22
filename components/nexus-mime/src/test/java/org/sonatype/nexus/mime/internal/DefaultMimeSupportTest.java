@@ -22,8 +22,10 @@ import org.sonatype.nexus.mime.MimeRule;
 import org.sonatype.nexus.mime.MimeRulesSource;
 
 import com.google.common.collect.Lists;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
@@ -34,6 +36,7 @@ import static org.mockito.Mockito.when;
 /**
  * Tests for {@link DefaultMimeSupport}.
  */
+@ExtendWith(MockitoExtension.class)
 public class DefaultMimeSupportTest
     extends TestSupport
 {
@@ -49,7 +52,7 @@ public class DefaultMimeSupportTest
    * Tests the simple "guessing" against some known paths.
    */
   @Test
-  public void testGuessMimeTypeFromPath() {
+  public void guessMimeTypeFromPathTest() {
     assertThat(underTest.guessMimeTypeFromPath("/some/path/artifact.pom"), equalTo("application/xml"));
     assertThat(underTest.guessMimeTypeFromPath("/some/path/artifact.jar"), equalTo("application/java-archive"));
     assertThat(underTest.guessMimeTypeFromPath("/some/path/artifact-sources.jar"), equalTo("application/java-archive"));
@@ -66,10 +69,10 @@ public class DefaultMimeSupportTest
 
   /**
    * Tests that repo with diverting MimeRulesSupport actually works. If both tests, this one and
-   * {@link #testGuessMimeTypeFromPath()} passes, their conjunction proves it works.
+   * {@link #guessMimeTypeFromPathTest()} passes, their conjunction proves it works.
    */
   @Test
-  public void testGuessfakeMimeRulesSourceMimeTypeFromPath() {
+  public void guessfakeMimeRulesSourceMimeTypeFromPathTest() {
     MimeRulesSource source = new MimeRulesSource()
     {
       @Override
@@ -81,12 +84,12 @@ public class DefaultMimeSupportTest
   }
 
   @Test
-  public void testGuessWithoutMimeRulesSourceMimeTypeFromPath() {
+  public void guessWithoutMimeRulesSourceMimeTypeFromPathTest() {
     assertThat(underTest.guessMimeTypeFromPath("/some/path/artifact.pom"), equalTo("application/xml"));
   }
 
   @Test
-  public void useNexusMimeTypes() {
+  public void useNexusMimeTypesTest() {
     this.underTest = new DefaultMimeSupport(mimeTypes);
     when(mimeTypes.getMimeRuleForExtension("test")).thenReturn(mimeType);
     when(mimeType.getMimetypes()).thenReturn(Lists.newArrayList("fake/mimetype"));
@@ -95,14 +98,14 @@ public class DefaultMimeSupportTest
   }
 
   @Test
-  public void retainDefaultMimeTypes() {
+  public void retainDefaultMimeTypesTest() {
     this.underTest = new DefaultMimeSupport(mimeTypes);
 
     assertThat(underTest.guessMimeTypeFromPath("foo.doc"), is("application/msword"));
   }
 
   @Test
-  public void preferDefaultMimeType() {
+  public void preferDefaultMimeTypeTest() {
     this.underTest = new DefaultMimeSupport(mimeTypes);
 
     when(mimeTypes.getMimeRuleForExtension("zip")).thenReturn(mimeType);
@@ -115,7 +118,7 @@ public class DefaultMimeSupportTest
   }
 
   @Test
-  public void overrideDefaultMimeType() {
+  public void overrideDefaultMimeTypeTest() {
     this.underTest = new DefaultMimeSupport(mimeTypes);
 
     when(mimeTypes.getMimeRuleForExtension("zip")).thenReturn(mimeType);
@@ -132,7 +135,7 @@ public class DefaultMimeSupportTest
   }
 
   @Test
-  public void verifyBasicFileMimeTypeMatching() throws Exception {
+  public void basicFileMimeTypeMatchingTest() throws Exception {
     assertFileMimeType(util.resolveFile("src/test/resources/mime/file.gif"), "image/gif");
     assertFileMimeType(util.resolveFile("src/test/resources/mime/file.zip"), "application/zip");
     assertFileMimeType(util.resolveFile("src/test/resources/mime/empty.zip"), "application/zip");

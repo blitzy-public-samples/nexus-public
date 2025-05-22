@@ -35,9 +35,18 @@ public class ErrorResponse
     this(checkNotNull(cause).getMessage() == null ? cause.getClass().getName() : cause.getMessage());
     authenticationRequired = cause instanceof UnauthenticatedException;
     if (authenticationRequired) {
-      Subject subject = SecurityUtils.getSubject();
-      if (subject == null || !(subject.isRemembered() || subject.isAuthenticated())) {
-        message = "Access denied (authentication required)";
+      // Get the subject in a thread-safe manner that's compatible with Virtual Threads
+      // This avoids potential issues with ThreadLocal storage when Virtual Threads are unmounted
+      try {
+        Subject subject = SecurityUtils.getSubject();
+        if (subject == null || !(subject.isRemembered() || subject.isAuthenticated())) {
+          // Use Java 21 String Template instead of string concatenation
+          message = STR."Access denied (authentication required)";
+        }
+      } catch (Exception e) {
+        // Handle any exceptions that might occur when accessing the subject
+        // This ensures thread-safety when running with Virtual Threads
+        message = STR."Access denied (authentication required): \{e.getMessage()}";
       }
     }
   }

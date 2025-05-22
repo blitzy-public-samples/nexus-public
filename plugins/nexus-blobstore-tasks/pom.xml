@@ -27,6 +27,13 @@
   <name>${project.groupId}:${project.artifactId}</name>
   <packaging>bundle</packaging>
 
+  <properties>
+    <!-- Specify Java 21 for this module -->
+    <maven.compiler.release>21</maven.compiler.release>
+    <maven.compiler.source>21</maven.compiler.source>
+    <maven.compiler.target>21</maven.compiler.target>
+  </properties>
+
   <dependencies>
     <dependency>
       <groupId>org.sonatype.nexus</groupId>
@@ -87,13 +94,32 @@
 
   <build>
     <plugins>
+      <!-- Configure maven-compiler-plugin for Java 21 -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
         <configuration>
-          <source>21</source>
-          <target>21</target>
           <release>21</release>
+        </configuration>
+      </plugin>
+      
+      <!-- Configure maven-bundle-plugin for Java 21 compatibility -->
+      <plugin>
+        <groupId>org.apache.felix</groupId>
+        <artifactId>maven-bundle-plugin</artifactId>
+        <configuration>
+          <instructions>
+            <!-- Specify OSGi execution environment for Java 21 -->
+            <Bundle-RequiredExecutionEnvironment>JavaSE-21</Bundle-RequiredExecutionEnvironment>
+            <!-- Ensure compatibility with Java 21 features -->
+            <_consumer-policy>$(version;==)</_consumer-policy>
+            <!-- Include all content in the output directory -->
+            <Include-Resource>
+              /=${project.build.outputDirectory},{maven-resources}
+            </Include-Resource>
+            <!-- Clear default to avoid spurious !* warnings -->
+            <Private-Package/>
+          </instructions>
         </configuration>
       </plugin>
       
@@ -101,113 +127,7 @@
         <groupId>org.apache.karaf.tooling</groupId>
         <artifactId>karaf-maven-plugin</artifactId>
       </plugin>
-      
-      <plugin>
-        <groupId>org.apache.felix</groupId>
-        <artifactId>maven-bundle-plugin</artifactId>
-        <configuration>
-          <instructions>
-            <Bundle-SymbolicName>${project.groupId}.${project.artifactId}</Bundle-SymbolicName>
-            <Bundle-Version>${project.version}</Bundle-Version>
-            <Import-Package>
-              org.sonatype.nexus.common*,
-              org.sonatype.nexus.blobstore*,
-              org.sonatype.nexus.scheduling*,
-              org.sonatype.nexus.repository.content*;resolution:=optional,
-              *
-            </Import-Package>
-            <Require-Capability>
-              osgi.ee;filter:="(&amp;(osgi.ee=JavaSE)(version=21))"
-            </Require-Capability>
-          </instructions>
-        </configuration>
-      </plugin>
-      
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-surefire-plugin</artifactId>
-        <version>3.2.5</version>
-        <configuration>
-          <argLine>-Djava.version=21 ${test.additional.args}</argLine>
-          <systemPropertyVariables>
-            <test.virtual.threads>${virtual.threads}</test.virtual.threads>
-          </systemPropertyVariables>
-        </configuration>
-      </plugin>
-      
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-failsafe-plugin</artifactId>
-        <version>3.2.5</version>
-        <configuration>
-          <argLine>-Djava.version=21 ${test.additional.args}</argLine>
-          <systemPropertyVariables>
-            <test.virtual.threads>${virtual.threads}</test.virtual.threads>
-          </systemPropertyVariables>
-        </configuration>
-      </plugin>
     </plugins>
   </build>
-  
-  <profiles>
-    <profile>
-      <id>java21-tests</id>
-      <activation>
-        <property>
-          <name>java21-tests</name>
-          <value>true</value>
-        </property>
-      </activation>
-      <build>
-        <plugins>
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-surefire-plugin</artifactId>
-            <configuration>
-              <groups>org.sonatype.goodies.testsupport.group.Java21TestGroup</groups>
-            </configuration>
-          </plugin>
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-failsafe-plugin</artifactId>
-            <configuration>
-              <groups>org.sonatype.goodies.testsupport.group.Java21TestGroup</groups>
-            </configuration>
-          </plugin>
-        </plugins>
-      </build>
-    </profile>
-    
-    <profile>
-      <id>virtual-threads</id>
-      <activation>
-        <property>
-          <name>virtual-threads</name>
-          <value>true</value>
-        </property>
-      </activation>
-      <properties>
-        <virtual.threads>true</virtual.threads>
-      </properties>
-      <build>
-        <plugins>
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-surefire-plugin</artifactId>
-            <configuration>
-              <groups>org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup</groups>
-            </configuration>
-          </plugin>
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-failsafe-plugin</artifactId>
-            <configuration>
-              <groups>org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup</groups>
-            </configuration>
-          </plugin>
-        </plugins>
-      </build>
-    </profile>
-  </profiles>
 
 </project>

@@ -19,6 +19,9 @@ import java.util.List;
  *
  * Using component priority to determine inclusion order. Ordering is important to properly load the UI.
  *
+ * This interface is compatible with Java 21 and OSGi/Karaf 4.3.9 runtime environment.
+ * Implementations should ensure proper module resolution and service registration under Java 21.
+ *
  * @since 3.20
  */
 public interface UiPluginDescriptor

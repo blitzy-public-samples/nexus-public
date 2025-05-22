@@ -12,8 +12,8 @@
  */
 package org.sonatype.nexus.features.internal;
 
-import java.util.HashMap;
-import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
@@ -25,6 +25,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static java.lang.System.getProperty;
+import static java.lang.StringTemplate.STR;
 import static java.util.Arrays.asList;
 import static java.util.Collections.synchronizedSet;
 
@@ -42,9 +43,9 @@ public class FeaturesResolver
 
   private static final String VERSION_WILDCARD = "/0.0.0";
 
-  private final Map<String, Feature> featuresById = new HashMap<>();
+  private final Map<String, Feature> featuresById = new LinkedHashMap<>();
 
-  private final Set<String> installedFeatures = synchronizedSet(new HashSet<>());
+  private final Set<String> installedFeatures = synchronizedSet(new LinkedHashSet<>());
 
   private final Set<String> excludedFeatures = findExcludedFeatures();
 
@@ -73,7 +74,7 @@ public class FeaturesResolver
       return resolve(feature);
     }
     else {
-      log.warn("Missing feature {}", id);
+      log.warn(STR."Missing feature \{id}");
       return Stream.of();
     }
   }
@@ -81,17 +82,23 @@ public class FeaturesResolver
   public Stream<BundleInfo> resolve(final Feature feature) {
     if (feature != null) {
       String id = feature.getId();
-      if (excludedFeatures.contains(id) || excludedFeatures.contains(feature.getName())) {
-        log.info("Excluding feature {}", id);
-      }
-      else if (installedFeatures.add(id)) {
-        log.debug("Resolving feature {}", id);
-        return Stream.concat(
-            feature.getDependencies()
-                .stream()
-                .flatMap(d -> resolve(d.getName() + '/' + d.getVersion())),
-            feature.getBundles().stream());
-      }
+      String name = feature.getName();
+      
+      return switch (feature) {
+        case Feature f when excludedFeatures.contains(id) || excludedFeatures.contains(name) -> {
+          log.info(STR."Excluding feature \{id}");
+          yield Stream.of();
+        }
+        case Feature f when installedFeatures.add(id) -> {
+          log.debug(STR."Resolving feature \{id}");
+          yield Stream.concat(
+              f.getDependencies()
+                  .stream()
+                  .flatMap(d -> resolve(d.getName() + '/' + d.getVersion())),
+              f.getBundles().stream());
+        }
+        default -> Stream.of();
+      };
     }
     return Stream.of();
   }
@@ -106,6 +113,6 @@ public class FeaturesResolver
 
   private static Set<String> findExcludedFeatures() {
     String excludedFeatures = getProperty("nexus-exclude-features", "");
-    return new HashSet<>(asList(excludedFeatures.split("[\\s,]+")));
+    return new LinkedHashSet<>(asList(excludedFeatures.split("[\\s,]+")));
   }
 }

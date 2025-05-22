@@ -16,8 +16,8 @@ import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.rapture.internal.logging.LogEventComponent;
 import org.sonatype.nexus.rapture.internal.logging.LogEventXO;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.slf4j.Logger;
@@ -26,45 +26,60 @@ import org.slf4j.LoggerFactory;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.mockStatic;
 
 public class LogEventComponentTest
     extends TestSupport
 {
   @Mock
-  private MockedStatic<LoggerFactory> loggerFactory;
-
-  @Mock
   private Logger log;
 
   private LogEventComponent underTest;
 
-  @Before
+  @BeforeEach
   public void setup() {
-    // Required for class setup
-    loggerFactory.when(() -> LoggerFactory.getLogger(LogEventComponent.class))
-        .thenReturn(mock(Logger.class));
-
-    // The logger we care about
-    loggerFactory.when(() -> LoggerFactory.getLogger("org.something"))
-        .thenReturn(log);
+    // Initialize the logger we care about
+    // Note: Static mocking is now done in each test method
   }
 
   @Test
   public void testEnabledLogging() {
-    underTest = new LogEventComponent(true);
+    // Use try-with-resources for MockedStatic to ensure proper cleanup
+    try (MockedStatic<LoggerFactory> loggerFactory = mockStatic(LoggerFactory.class)) {
+      // Required for class setup
+      loggerFactory.when(() -> LoggerFactory.getLogger(LogEventComponent.class))
+          .thenReturn(mock(Logger.class));
 
-    underTest.recordEvent(createLogEvent());
+      // The logger we care about
+      loggerFactory.when(() -> LoggerFactory.getLogger("org.something"))
+          .thenReturn(log);
+      
+      underTest = new LogEventComponent(true);
 
-    loggerFactory.verify(() -> LoggerFactory.getLogger("org.something"));
+      underTest.recordEvent(createLogEvent());
+
+      loggerFactory.verify(() -> LoggerFactory.getLogger("org.something"));
+    }
   }
 
   @Test
   public void testDisabledLogging() {
-    underTest = new LogEventComponent(false);
+    // Use try-with-resources for MockedStatic to ensure proper cleanup
+    try (MockedStatic<LoggerFactory> loggerFactory = mockStatic(LoggerFactory.class)) {
+      // Required for class setup
+      loggerFactory.when(() -> LoggerFactory.getLogger(LogEventComponent.class))
+          .thenReturn(mock(Logger.class));
 
-    underTest.recordEvent(createLogEvent());
+      // The logger we care about
+      loggerFactory.when(() -> LoggerFactory.getLogger("org.something"))
+          .thenReturn(log);
+      
+      underTest = new LogEventComponent(false);
 
-    loggerFactory.verify(() -> LoggerFactory.getLogger(any(String.class)), times(0));
+      underTest.recordEvent(createLogEvent());
+
+      loggerFactory.verify(() -> LoggerFactory.getLogger(any(String.class)), times(0));
+    }
   }
 
   private LogEventXO createLogEvent() {

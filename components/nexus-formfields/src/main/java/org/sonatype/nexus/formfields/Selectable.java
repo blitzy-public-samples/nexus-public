@@ -21,6 +21,20 @@ import javax.annotation.Nullable;
  *
  * The data store should return collections of records that have "id" and "name" fields.
  *
+ * <p>
+ * Implementation considerations for Java 21:
+ * <ul>
+ *   <li>Implementations should leverage Virtual Threads for remote data fetching operations to improve
+ *       scalability and responsiveness. Use {@code Executors.newVirtualThreadPerTaskExecutor()} for
+ *       I/O-bound operations instead of traditional thread pools.</li>
+ *   <li>When fetching data from remote sources, prefer non-blocking I/O approaches to maximize the
+ *       benefits of Virtual Threads. This allows thousands of concurrent operations with minimal
+ *       resource overhead.</li>
+ *   <li>Consider using structured concurrency patterns when implementing complex data fetching
+ *       operations that require multiple steps or sources.</li>
+ * </ul>
+ * </p>
+ *
  * @since 2.7
  */
 public interface Selectable
@@ -30,11 +44,25 @@ public interface Selectable
    *
    * E.g. "coreui_RepositoryTarget.read"
    *
+   * <p>
+   * When implementing store API endpoints, consider using Virtual Threads for handling
+   * concurrent requests, especially for I/O-bound operations like database queries or
+   * remote service calls. This improves scalability without increasing resource consumption.
+   * </p>
+   *
    * @since 3.0
    */
   String getStoreApi();
 
   /**
+   * Returns filters to be applied to store.
+   * 
+   * <p>
+   * When processing filters in implementations, consider using Java 21 Pattern Matching
+   * for more concise and type-safe filter handling. For complex filter processing that involves
+   * I/O operations, leverage Virtual Threads to maintain responsiveness.
+   * </p>
+   *
    * @return Filters to be applied to store
    * @since 3.0
    */
@@ -42,12 +70,22 @@ public interface Selectable
   Map<String, String> getStoreFilters();
 
   /**
-   * Returns the name of the property that should be considered as an record id. Defaults to "id";
+   * Returns the name of the property that should be considered as a record id. Defaults to "id".
+   * 
+   * <p>
+   * When implementing record mapping logic, consider using Java 21 Record Patterns for
+   * more concise and type-safe data extraction from structured records.
+   * </p>
    */
   String getIdMapping();
 
   /**
-   * Returns the name of the property that should be considered as an record description. Defaults to "name";
+   * Returns the name of the property that should be considered as a record description. Defaults to "name".
+   * 
+   * <p>
+   * When implementing record mapping logic, consider using Java 21 Record Patterns for
+   * more concise and type-safe data extraction from structured records.
+   * </p>
    */
   String getNameMapping();
 

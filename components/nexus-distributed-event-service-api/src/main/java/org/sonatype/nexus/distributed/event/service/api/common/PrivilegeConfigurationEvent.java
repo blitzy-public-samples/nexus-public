@@ -33,7 +33,7 @@ public class PrivilegeConfigurationEvent
 
   @JsonCreator
   public PrivilegeConfigurationEvent(
-      @JsonProperty("privilegeId") String privilegeId,
+      @JsonProperty("privilegeId") final String privilegeId,
       @JsonProperty("eventType") final EventType eventType)
   {
     super(eventType);
@@ -46,8 +46,6 @@ public class PrivilegeConfigurationEvent
 
   @Override
   public String toString() {
-    return "PrivilegeConfigurationEvent{" +
-        "privilegeId='" + privilegeId + '\'' +
-        '}';
+    return STR."PrivilegeConfigurationEvent{privilegeId='\{privilegeId}'}";
   }
 }

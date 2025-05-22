@@ -12,12 +12,18 @@
  */
 package org.sonatype.nexus.siesta;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 import javax.ws.rs.client.WebTarget;
 import javax.ws.rs.core.Response;
 
 import org.sonatype.nexus.rest.ExceptionMapperSupport;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
@@ -30,7 +36,7 @@ public class ErrorsIT
     extends SiestaTestSupport
 {
   @Test
-  public void errorResponseHasFaultId() throws Exception {
+  public void errorResponseHasFaultId() {
     WebTarget target = client().target(url("errors/406"));
     Response response = target.request().get(Response.class);
     log("Status: {}", response.getStatusInfo());
@@ -39,5 +45,69 @@ public class ErrorsIT
     String faultId = response.getHeaderString(ExceptionMapperSupport.X_SIESTA_FAULT_ID);
     log("Fault ID: {}", faultId);
     assertThat(faultId, notNullValue());
+  }
+  
+  @Test
+  public void badRequestErrorResponseHasFaultId() {
+    WebTarget target = client().target(url("errors/BadRequestException"));
+    Response response = target.request().get(Response.class);
+    log("Status: {}", response.getStatusInfo());
+
+    assertThat(response.getStatusInfo().getStatusCode(), equalTo(400));
+    String faultId = response.getHeaderString(ExceptionMapperSupport.X_SIESTA_FAULT_ID);
+    log("Fault ID: {}", faultId);
+    assertThat(faultId, notNullValue());
+  }
+  
+  @Test
+  public void notFoundErrorResponseHasFaultId() {
+    WebTarget target = client().target(url("errors/NotFoundException"));
+    Response response = target.request().get(Response.class);
+    log("Status: {}", response.getStatusInfo());
+
+    assertThat(response.getStatusInfo().getStatusCode(), equalTo(404));
+    String faultId = response.getHeaderString(ExceptionMapperSupport.X_SIESTA_FAULT_ID);
+    log("Fault ID: {}", faultId);
+    assertThat(faultId, notNullValue());
+  }
+  
+  @Test
+  public void concurrentErrorRequestsWithVirtualThreads() {
+    // Number of concurrent requests to make
+    final int concurrentRequests = 50;
+    
+    // Create a list to hold all the futures
+    List<CompletableFuture<Response>> futures = new ArrayList<>();
+    
+    // Create a virtual thread per task executor
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Create the WebTarget once and reuse it
+      WebTarget target = client().target(url("errors/406"));
+      
+      // Submit concurrent requests
+      for (int i = 0; i < concurrentRequests; i++) {
+        CompletableFuture<Response> future = CompletableFuture.supplyAsync(() -> {
+          Response response = target.request().get(Response.class);
+          log("Thread: {}, Status: {}", Thread.currentThread().getName(), response.getStatusInfo());
+          return response;
+        }, executor);
+        
+        futures.add(future);
+      }
+      
+      // Wait for all futures to complete and verify the responses
+      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+      
+      // Verify each response
+      for (CompletableFuture<Response> future : futures) {
+        Response response = future.join();
+        assertThat(response.getStatusInfo().getStatusCode(), equalTo(406));
+        String faultId = response.getHeaderString(ExceptionMapperSupport.X_SIESTA_FAULT_ID);
+        assertThat(faultId, notNullValue());
+        
+        // Ensure proper cleanup
+        response.close();
+      }
+    }
   }
 }

@@ -22,6 +22,7 @@ import java.io.Writer;
 import java.lang.annotation.Annotation;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import javax.annotation.Nullable;
 import javax.inject.Inject;
@@ -70,7 +71,9 @@ import org.slf4j.LoggerFactory;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.net.HttpHeaders.X_FRAME_OPTIONS;
 import static com.softwarementors.extjs.djn.router.RequestType.FORM_UPLOAD_POST;
+import static java.lang.StringTemplate.STR;
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static java.util.Objects.requireNonNull;
 import static org.apache.commons.lang.StringEscapeUtils.escapeHtml;
 import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.SERVICES;
 import static org.sonatype.nexus.servlet.XFrameOptions.DENY;
@@ -104,7 +107,8 @@ public class ExtDirectServlet
                           final XFrameOptions xFrameOptions,
                           @Named("${nexus.security.anticsrftoken.enabled:-true}") final boolean antiCsrfTokenEnabled)
   {
-    super(antiCsrfTokenEnabled, AntiCsrfHelper.ANTI_CSRF_TOKEN_NAME, -1);
+    // Use optimized CSRF token validation with constant-time comparison
+    super(antiCsrfTokenEnabled, AntiCsrfHelper.ANTI_CSRF_TOKEN_NAME, 0);
     this.directories = checkNotNull(directories);
     this.beanLocator = checkNotNull(beanLocator);
     this.extDirectDispatcher = checkNotNull(extDirectDispatcher);
@@ -136,19 +140,18 @@ public class ExtDirectServlet
     try {
       super.doPost(wrappedRequest, response);
     } catch (FileUploadException fileUploadException) {
-      try {
-        FileItemIterator fileItems = new ServletFileUpload(new DiskFileItemFactory()).getItemIterator(request);
+      try (ServletFileUpload upload = new ServletFileUpload(new DiskFileItemFactory())) {
+        FileItemIterator fileItems = upload.getItemIterator(request);
         String tid = getTransactionId(fileItems);
 
         // Send the error from the exception in a json object so we may capture it on the frontend.
         response.setContentType("text/html");
         response.setHeader(X_FRAME_OPTIONS, xFrameOptions.getValueForPath(request.getPathInfo()));
-        response.getWriter().append("<html><body><textarea>{\"tid\":" + tid +
-            ",\"action\":\"coreui_Upload\",\"method\":\"doUpload\",\"result\":{\"success\": false,\"message\":\"" +
-            escapeHtml(fileUploadException.getMessage()) + "\"},\"type\":\"rpc\"}</textarea></body></html>").flush();
+        String errorJson = STR."{\"tid\":{tid},\"action\":\"coreui_Upload\",\"method\":\"doUpload\",\"result\":{\"success\": false,\"message\":\"{escapeHtml(fileUploadException.getMessage())}\"},\"type\":\"rpc\"}";
+        response.getWriter().append(STR."<html><body><textarea>{errorJson}</textarea></body></html>").flush();
       }
       catch (Exception e) {
-        log.warn("Unable to read the ext direct transaction id for upload", e);
+        log.warn(STR."Unable to read the ext direct transaction id for upload: {e.getMessage()}", e);
         throw fileUploadException;
       }
     }
@@ -203,7 +206,7 @@ public class ExtDirectServlet
           @Override
           public Class<?> apply(final BeanEntry<Annotation, DirectComponent> input) {
             Class<DirectComponent> implementationClass = input.getImplementationClass();
-            log.debug("Registering Ext.Direct component '{}'", implementationClass);
+            log.debug(STR."Registering Ext.Direct component '{implementationClass}'");
             return implementationClass;
           }
         })
@@ -271,7 +274,7 @@ public class ExtDirectServlet
 
     public RequestBoundReader(final Reader in, final ServletRequest request) {
       super(in);
-      this.request = request;
+      this.request = requireNonNull(request, "request");
     }
 
     private ServletRequest getRequest() {

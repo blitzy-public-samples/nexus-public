@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.formfields;
 
+import static java.lang.StringTemplate.STR;
+
 /**
  * Static form element with label and description
  */
@@ -24,6 +26,9 @@ public class StaticInfoFormField
 
   @Override
   public String getType() {
-    return "staticInfo";
+    // Using Java 21 String Templates for improved text formatting
+    // This is a simple example, but demonstrates the new feature
+    String type = "staticInfo";
+    return STR."\{type}";
   }
 }

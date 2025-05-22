@@ -22,13 +22,22 @@ import java.util.Collection;
 public class PagedResponse<T>
     extends Response<Collection<T>>
 {
-  private long total;
+  private final long total;
 
+  /**
+   * Constructor for a paged response.
+   *
+   * @param total the total number of results
+   * @param data the collection of data to include in the response
+   */
   public PagedResponse(long total, Collection<T> data) {
     super(true, data);
     this.total = total;
   }
 
+  /**
+   * @return the total number of results
+   */
   public long getTotal() {
     return total;
   }

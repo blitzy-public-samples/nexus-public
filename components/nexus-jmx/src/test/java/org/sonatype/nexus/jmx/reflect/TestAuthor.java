@@ -21,11 +21,26 @@ import javax.management.DescriptorKey;
 
 /**
  * Helper to test {@link DescriptorKey}.
+ * <p>
+ * This annotation is designed to work with Java 21's enhanced reflection system and
+ * stronger encapsulation rules. The {@link DescriptorKey} annotation is used to map
+ * the annotation element to a descriptor field in JMX.
+ * </p>
  */
 @Target({ElementType.TYPE, ElementType.METHOD})
 @Retention(RetentionPolicy.RUNTIME)
 @interface TestAuthor
 {
+  /**
+   * Returns the author name.
+   * <p>
+   * This value will be mapped to the "author" descriptor field in JMX.
+   * Java 21's reflection system will properly handle this mapping even with
+   * stronger encapsulation rules.
+   * </p>
+   *
+   * @return the author name
+   */
   @DescriptorKey("author")
   String value();
 }

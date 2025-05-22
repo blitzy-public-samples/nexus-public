@@ -1,4 +1,29 @@
 [
+    /* Java 21 Pattern Matching examples */
+    
+    /* Type Pattern Matching examples */
+    "format instanceof String && format == \"maven2\" && path =~ \".*\"",
+    "format instanceof String && format == \"npm\" && path =~ \".*\"",
+    "format instanceof String && format =~ \"maven2|npm|raw\" && path =~ \".*\"",
+    
+    /* Switch Expression Pattern Matching examples (conceptual) */
+    "format =~ \"maven2|npm|raw\" ? path =~ \".*\" : false",
+    "format == \"maven2\" ? path =~ \".*pom.xml\" : format == \"npm\" ? path =~ \".*package.json\" : path =~ \".*\"",
+    "format =~ \"(maven2|npm|raw)\" && path =~ \".*\"",
+    
+    /* Guarded Pattern examples */
+    "format == \"maven2\" && (path =~ \".*\" && !path.contains(\"-sources\"))",
+    "format == \"npm\" && (path =~ \".*\" && path.startsWith(\"/org/\"))",
+    "format == \"maven2\" && (path.endsWith(\".jar\") ? !path.contains(\"-sources\") : path.endsWith(\".pom\"))",
+    "format == \"maven2\" && (path =~ \".*\" && path.length() > 10 && path.contains(\"/release/\"))",
+    
+    /* Record Pattern examples (conceptual) */
+    "asset.format == \"maven2\" && asset.path =~ \".*\" && asset.size > 1024",
+    "asset instanceof AssetRecord && asset.format == \"maven2\" && asset.path =~ \".*\"",
+    "asset instanceof AssetRecord(String format, String path) && format == \"maven2\" && path =~ \".*\"",
+    "asset instanceof AssetRecord(\"maven2\", String path) && path =~ \".*\"",
+    
+    /* Original expressions */
     "format == \"maven2\" && path =~ \".*\"",
     "format == \"maven2\" && path =~ \"(?!.*-sources.*).*\"",
     "format == \"npm\" && path =~ \".*\"",

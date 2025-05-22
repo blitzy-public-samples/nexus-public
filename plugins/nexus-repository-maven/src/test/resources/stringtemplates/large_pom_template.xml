@@ -1,0 +1,428 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 
+  This is a template file for testing Java 21's String Templates feature with complex XML documents.
+  It contains various template expressions (\{expression}) that would be processed by a StringTemplate processor.
+  
+  Example usage in Java 21:
+  String groupId = "org.example";
+  String artifactId = "test-project";
+  String version = "1.0.0";
+  String repoUrl = "http://localhost:8081/repository/maven-releases/";
+  
+  String pomContent = STR."""
+    <?xml version="1.0" encoding="UTF-8"?>
+    <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+      <modelVersion>4.0.0</modelVersion>
+      <groupId>\{groupId}</groupId>
+      <artifactId>\{artifactId}</artifactId>
+      <version>\{version}</version>
+    </project>
+  """;
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<groupId>\{groupId}</groupId>
+	<artifactId>\{artifactId}</artifactId>
+	<version>\{version}</version>
+	<packaging>\{packaging}</packaging>
+
+	<distributionManagement>
+    	<repository>
+      		<id>\{repoId}</id>
+      		<name>\{repoName}</name>
+      		<url>\{repoUrl}</url>
+    	</repository>
+  	</distributionManagement>
+
+	<properties>
+		<!-- Maven specific -->
+		<maven.compiler.source>\{javaVersion}</maven.compiler.source>
+		<maven.compiler.target>\{javaVersion}</maven.compiler.target>
+		<project.build.sourceEncoding>\{encoding}</project.build.sourceEncoding>
+		<m2e.apt.activation>\{m2eAptActivation}</m2e.apt.activation>
+
+		<!-- Dynamic properties using template expressions with index-based generation -->
+		<!-- Example of a loop-generated property in Java 21:
+		     for (int i = 0; i < 152; i++) {
+		         String propName = "fake.property." + i;
+		         String propValue = generateValue(i);
+		         properties.put(propName, propValue);
+		     }
+		-->
+		<fake.property.0>\{fakeProperties.get("fake.property.0")}</fake.property.0>
+		<fake.property.1>\{fakeProperties.get("fake.property.1")}</fake.property.1>
+		<fake.property.2>\{fakeProperties.get("fake.property.2")}</fake.property.2>
+		<fake.property.3>\{fakeProperties.get("fake.property.3")}</fake.property.3>
+		<fake.property.4>\{fakeProperties.get("fake.property.4")}</fake.property.4>
+		<fake.property.5>\{fakeProperties.get("fake.property.5")}</fake.property.5>
+		<fake.property.6>\{fakeProperties.get("fake.property.6")}</fake.property.6>
+		<fake.property.7>\{fakeProperties.get("fake.property.7")}</fake.property.7>
+		<fake.property.8>\{fakeProperties.get("fake.property.8")}</fake.property.8>
+		<fake.property.9>\{fakeProperties.get("fake.property.9")}</fake.property.9>
+		<fake.property.10>\{fakeProperties.get("fake.property.10")}</fake.property.10>
+		<fake.property.11>\{fakeProperties.get("fake.property.11")}</fake.property.11>
+		<fake.property.12>\{fakeProperties.get("fake.property.12")}</fake.property.12>
+		<fake.property.13>\{fakeProperties.get("fake.property.13")}</fake.property.13>
+		<fake.property.14>\{fakeProperties.get("fake.property.14")}</fake.property.14>
+		<fake.property.15>\{fakeProperties.get("fake.property.15")}</fake.property.15>
+		<fake.property.16>\{fakeProperties.get("fake.property.16")}</fake.property.16>
+		<fake.property.17>\{fakeProperties.get("fake.property.17")}</fake.property.17>
+		<fake.property.18>\{fakeProperties.get("fake.property.18")}</fake.property.18>
+		<fake.property.19>\{fakeProperties.get("fake.property.19")}</fake.property.19>
+		<fake.property.20>\{fakeProperties.get("fake.property.20")}</fake.property.20>
+		<fake.property.21>\{fakeProperties.get("fake.property.21")}</fake.property.21>
+		<fake.property.22>\{fakeProperties.get("fake.property.22")}</fake.property.22>
+		<fake.property.23>\{fakeProperties.get("fake.property.23")}</fake.property.23>
+		<fake.property.24>\{fakeProperties.get("fake.property.24")}</fake.property.24>
+		<fake.property.25>\{fakeProperties.get("fake.property.25")}</fake.property.25>
+		<fake.property.26>\{fakeProperties.get("fake.property.26")}</fake.property.26>
+		<fake.property.27>\{fakeProperties.get("fake.property.27")}</fake.property.27>
+		<fake.property.28>\{fakeProperties.get("fake.property.28")}</fake.property.28>
+		<fake.property.29>\{fakeProperties.get("fake.property.29")}</fake.property.29>
+		<fake.property.30>\{fakeProperties.get("fake.property.30")}</fake.property.30>
+		<fake.property.31>\{fakeProperties.get("fake.property.31")}</fake.property.31>
+		<fake.property.32>\{fakeProperties.get("fake.property.32")}</fake.property.32>
+		<fake.property.33>\{fakeProperties.get("fake.property.33")}</fake.property.33>
+		<fake.property.34>\{fakeProperties.get("fake.property.34")}</fake.property.34>
+		<fake.property.35>\{fakeProperties.get("fake.property.35")}</fake.property.35>
+		<fake.property.36>\{fakeProperties.get("fake.property.36")}</fake.property.36>
+		<fake.property.37>\{fakeProperties.get("fake.property.37")}</fake.property.37>
+		<fake.property.38>\{fakeProperties.get("fake.property.38")}</fake.property.38>
+		<fake.property.39>\{fakeProperties.get("fake.property.39")}</fake.property.39>
+		<fake.property.40>\{fakeProperties.get("fake.property.40")}</fake.property.40>
+		<fake.property.41>\{fakeProperties.get("fake.property.41")}</fake.property.41>
+		<fake.property.42>\{fakeProperties.get("fake.property.42")}</fake.property.42>
+		<fake.property.43>\{fakeProperties.get("fake.property.43")}</fake.property.43>
+		<fake.property.44>\{fakeProperties.get("fake.property.44")}</fake.property.44>
+		<fake.property.45>\{fakeProperties.get("fake.property.45")}</fake.property.45>
+		<fake.property.46>\{fakeProperties.get("fake.property.46")}</fake.property.46>
+		<fake.property.47>\{fakeProperties.get("fake.property.47")}</fake.property.47>
+		<fake.property.48>\{fakeProperties.get("fake.property.48")}</fake.property.48>
+		<fake.property.49>\{fakeProperties.get("fake.property.49")}</fake.property.49>
+		<fake.property.50>\{fakeProperties.get("fake.property.50")}</fake.property.50>
+		<fake.property.51>\{fakeProperties.get("fake.property.51")}</fake.property.51>
+		<fake.property.52>\{fakeProperties.get("fake.property.52")}</fake.property.52>
+		<fake.property.53>\{fakeProperties.get("fake.property.53")}</fake.property.53>
+		<fake.property.54>\{fakeProperties.get("fake.property.54")}</fake.property.54>
+		<fake.property.55>\{fakeProperties.get("fake.property.55")}</fake.property.55>
+		<fake.property.56>\{fakeProperties.get("fake.property.56")}</fake.property.56>
+		<fake.property.57>\{fakeProperties.get("fake.property.57")}</fake.property.57>
+		<fake.property.58>\{fakeProperties.get("fake.property.58")}</fake.property.58>
+		<fake.property.59>\{fakeProperties.get("fake.property.59")}</fake.property.59>
+		<fake.property.60>\{fakeProperties.get("fake.property.60")}</fake.property.60>
+		<fake.property.61>\{fakeProperties.get("fake.property.61")}</fake.property.61>
+		<fake.property.62>\{fakeProperties.get("fake.property.62")}</fake.property.62>
+		<fake.property.63>\{fakeProperties.get("fake.property.63")}</fake.property.63>
+		<fake.property.64>\{fakeProperties.get("fake.property.64")}</fake.property.64>
+		<fake.property.65>\{fakeProperties.get("fake.property.65")}</fake.property.65>
+		<fake.property.66>\{fakeProperties.get("fake.property.66")}</fake.property.66>
+		<fake.property.67>\{fakeProperties.get("fake.property.67")}</fake.property.67>
+		<fake.property.68>\{fakeProperties.get("fake.property.68")}</fake.property.68>
+		<fake.property.69>\{fakeProperties.get("fake.property.69")}</fake.property.69>
+		<fake.property.70>\{fakeProperties.get("fake.property.70")}</fake.property.70>
+		<fake.property.71>\{fakeProperties.get("fake.property.71")}</fake.property.71>
+		<fake.property.72>\{fakeProperties.get("fake.property.72")}</fake.property.72>
+		<fake.property.73>\{fakeProperties.get("fake.property.73")}</fake.property.73>
+		<fake.property.74>\{fakeProperties.get("fake.property.74")}</fake.property.74>
+		<fake.property.75>\{fakeProperties.get("fake.property.75")}</fake.property.75>
+		<fake.property.76>\{fakeProperties.get("fake.property.76")}</fake.property.76>
+		<fake.property.77>\{fakeProperties.get("fake.property.77")}</fake.property.77>
+		<fake.property.78>\{fakeProperties.get("fake.property.78")}</fake.property.78>
+		<fake.property.79>\{fakeProperties.get("fake.property.79")}</fake.property.79>
+		<fake.property.80>\{fakeProperties.get("fake.property.80")}</fake.property.80>
+		<fake.property.81>\{fakeProperties.get("fake.property.81")}</fake.property.81>
+		<fake.property.82>\{fakeProperties.get("fake.property.82")}</fake.property.82>
+		<fake.property.83>\{fakeProperties.get("fake.property.83")}</fake.property.83>
+		<fake.property.84>\{fakeProperties.get("fake.property.84")}</fake.property.84>
+		<fake.property.85>\{fakeProperties.get("fake.property.85")}</fake.property.85>
+		<fake.property.86>\{fakeProperties.get("fake.property.86")}</fake.property.86>
+		<fake.property.87>\{fakeProperties.get("fake.property.87")}</fake.property.87>
+		<fake.property.88>\{fakeProperties.get("fake.property.88")}</fake.property.88>
+		<fake.property.89>\{fakeProperties.get("fake.property.89")}</fake.property.89>
+		<fake.property.90>\{fakeProperties.get("fake.property.90")}</fake.property.90>
+		<fake.property.91>\{fakeProperties.get("fake.property.91")}</fake.property.91>
+		<fake.property.92>\{fakeProperties.get("fake.property.92")}</fake.property.92>
+		<fake.property.93>\{fakeProperties.get("fake.property.93")}</fake.property.93>
+		<fake.property.94>\{fakeProperties.get("fake.property.94")}</fake.property.94>
+		<fake.property.95>\{fakeProperties.get("fake.property.95")}</fake.property.95>
+		<fake.property.96>\{fakeProperties.get("fake.property.96")}</fake.property.96>
+		<fake.property.97>\{fakeProperties.get("fake.property.97")}</fake.property.97>
+		<fake.property.98>\{fakeProperties.get("fake.property.98")}</fake.property.98>
+		<fake.property.99>\{fakeProperties.get("fake.property.99")}</fake.property.99>
+		<fake.property.100>\{fakeProperties.get("fake.property.100")}</fake.property.100>
+		<fake.property.101>\{fakeProperties.get("fake.property.101")}</fake.property.101>
+		<fake.property.102>\{fakeProperties.get("fake.property.102")}</fake.property.102>
+		<fake.property.103>\{fakeProperties.get("fake.property.103")}</fake.property.103>
+		<fake.property.104>\{fakeProperties.get("fake.property.104")}</fake.property.104>
+		<fake.property.105>\{fakeProperties.get("fake.property.105")}</fake.property.105>
+		<fake.property.106>\{fakeProperties.get("fake.property.106")}</fake.property.106>
+		<fake.property.107>\{fakeProperties.get("fake.property.107")}</fake.property.107>
+		<fake.property.108>\{fakeProperties.get("fake.property.108")}</fake.property.108>
+		<fake.property.109>\{fakeProperties.get("fake.property.109")}</fake.property.109>
+		<fake.property.110>\{fakeProperties.get("fake.property.110")}</fake.property.110>
+		<fake.property.111>\{fakeProperties.get("fake.property.111")}</fake.property.111>
+		<fake.property.112>\{fakeProperties.get("fake.property.112")}</fake.property.112>
+		<fake.property.113>\{fakeProperties.get("fake.property.113")}</fake.property.113>
+		<fake.property.114>\{fakeProperties.get("fake.property.114")}</fake.property.114>
+		<fake.property.115>\{fakeProperties.get("fake.property.115")}</fake.property.115>
+		<fake.property.116>\{fakeProperties.get("fake.property.116")}</fake.property.116>
+		<fake.property.117>\{fakeProperties.get("fake.property.117")}</fake.property.117>
+		<fake.property.118>\{fakeProperties.get("fake.property.118")}</fake.property.118>
+		<fake.property.119>\{fakeProperties.get("fake.property.119")}</fake.property.119>
+		<fake.property.120>\{fakeProperties.get("fake.property.120")}</fake.property.120>
+		<fake.property.121>\{fakeProperties.get("fake.property.121")}</fake.property.121>
+		<fake.property.122>\{fakeProperties.get("fake.property.122")}</fake.property.122>
+		<fake.property.123>\{fakeProperties.get("fake.property.123")}</fake.property.123>
+		<fake.property.124>\{fakeProperties.get("fake.property.124")}</fake.property.124>
+		<fake.property.125>\{fakeProperties.get("fake.property.125")}</fake.property.125>
+		<fake.property.126>\{fakeProperties.get("fake.property.126")}</fake.property.126>
+		<fake.property.127>\{fakeProperties.get("fake.property.127")}</fake.property.127>
+		<fake.property.128>\{fakeProperties.get("fake.property.128")}</fake.property.128>
+		<fake.property.129>\{fakeProperties.get("fake.property.129")}</fake.property.129>
+		<fake.property.130>\{fakeProperties.get("fake.property.130")}</fake.property.130>
+		<fake.property.131>\{fakeProperties.get("fake.property.131")}</fake.property.131>
+		<fake.property.132>\{fakeProperties.get("fake.property.132")}</fake.property.132>
+		<fake.property.133>\{fakeProperties.get("fake.property.133")}</fake.property.133>
+		<fake.property.134>\{fakeProperties.get("fake.property.134")}</fake.property.134>
+		<fake.property.135>\{fakeProperties.get("fake.property.135")}</fake.property.135>
+		<fake.property.136>\{fakeProperties.get("fake.property.136")}</fake.property.136>
+		<fake.property.137>\{fakeProperties.get("fake.property.137")}</fake.property.137>
+		<fake.property.138>\{fakeProperties.get("fake.property.138")}</fake.property.138>
+		<fake.property.139>\{fakeProperties.get("fake.property.139")}</fake.property.139>
+		<fake.property.140>\{fakeProperties.get("fake.property.140")}</fake.property.140>
+		<fake.property.141>\{fakeProperties.get("fake.property.141")}</fake.property.141>
+		<fake.property.142>\{fakeProperties.get("fake.property.142")}</fake.property.142>
+		<fake.property.143>\{fakeProperties.get("fake.property.143")}</fake.property.143>
+		<fake.property.144>\{fakeProperties.get("fake.property.144")}</fake.property.144>
+		<fake.property.145>\{fakeProperties.get("fake.property.145")}</fake.property.145>
+		<fake.property.146>\{fakeProperties.get("fake.property.146")}</fake.property.146>
+		<fake.property.147>\{fakeProperties.get("fake.property.147")}</fake.property.147>
+		<fake.property.148>\{fakeProperties.get("fake.property.148")}</fake.property.148>
+		<fake.property.149>\{fakeProperties.get("fake.property.149")}</fake.property.149>
+		<fake.property.150>\{fakeProperties.get("fake.property.150")}</fake.property.150>
+		<fake.property.151>\{fakeProperties.get("fake.property.151")}</fake.property.151>
+		
+		<!-- Example of complex nested template expressions -->
+		<test.property.1>\{testData.get("prefix") + "-" + testData.get("suffix")}</test.property.1>
+		<test.property.2>\{testData.get("value") != null ? testData.get("value") : "default"}</test.property.2>
+		<test.property.3>\{testData.get("numbers").stream().map(n -> n.toString()).collect(java.util.stream.Collectors.joining(","))}</test.property.3>
+		<test.property.4>\{java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ISO_DATE)}</test.property.4>
+		<test.property.5>\{String.format("%s-%d", testData.get("name"), testData.get("id"))}</test.property.5>
+	</properties>
+
+	<!-- Build section with template expressions for plugin configurations -->
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>\{plugins.get("maven-compiler-plugin").groupId}</groupId>
+				<artifactId>\{plugins.get("maven-compiler-plugin").artifactId}</artifactId>
+				<version>\{plugins.get("maven-compiler-plugin").version}</version>
+				<configuration>
+					<source>\{javaVersion}</source>
+					<target>\{javaVersion}</target>
+					<encoding>\{encoding}</encoding>
+					<!-- Complex nested expression for compiler arguments -->
+					<compilerArgs>
+						\{plugins.get("maven-compiler-plugin").args.stream()
+							.map(arg -> "<arg>" + arg + "</arg>")
+							.collect(java.util.stream.Collectors.joining("\n\t\t\t\t\t\t"))}
+					</compilerArgs>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>\{plugins.get("maven-surefire-plugin").groupId}</groupId>
+				<artifactId>\{plugins.get("maven-surefire-plugin").artifactId}</artifactId>
+				<version>\{plugins.get("maven-surefire-plugin").version}</version>
+				<configuration>
+					<argLine>\{plugins.get("maven-surefire-plugin").argLine}</argLine>
+					<includes>
+						\{plugins.get("maven-surefire-plugin").includes.stream()
+							.map(include -> "<include>" + include + "</include>")
+							.collect(java.util.stream.Collectors.joining("\n\t\t\t\t\t\t"))}
+					</includes>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
+
+	<profiles>
+		<!-- Profile with template expressions -->
+		<profile>
+			<id>\{profiles.get(0).id}</id>
+			<properties>
+				<validation.root>\{profiles.get(0).properties.get("validation.root")}</validation.root>
+				<!-- Additional dynamic properties using template expressions -->
+				\{profiles.get(0).properties.entrySet().stream()
+					.filter(entry -> !entry.getKey().equals("validation.root"))
+					.map(entry -> "<" + entry.getKey() + ">" + entry.getValue() + "</" + entry.getKey() + ">")
+					.collect(java.util.stream.Collectors.joining("\n\t\t\t\t"))}
+			</properties>
+			<build>
+				<plugins>
+					<plugin>
+						<artifactId>\{profiles.get(0).plugins.get(0).artifactId}</artifactId>
+						<executions>
+							<execution>
+								<?m2e execute onConfiguration?>
+								<id>\{profiles.get(0).plugins.get(0).executions.get(0).id}</id>
+								<phase>\{profiles.get(0).plugins.get(0).executions.get(0).phase}</phase>
+								<goals>
+									\{profiles.get(0).plugins.get(0).executions.get(0).goals.stream()
+										.map(goal -> "<goal>" + goal + "</goal>")
+										.collect(java.util.stream.Collectors.joining("\n\t\t\t\t\t\t\t\t\t"))}
+								</goals>
+								<configuration>
+									<artifactItems>
+										\{profiles.get(0).plugins.get(0).executions.get(0).configuration.artifactItems.stream()
+											.map(item -> 
+												"<artifactItem>\n" +
+												"\t\t\t\t\t\t\t\t\t\t\t<groupId>" + item.groupId + "</groupId>\n" +
+												"\t\t\t\t\t\t\t\t\t\t\t<artifactId>" + item.artifactId + "</artifactId>\n" +
+												"\t\t\t\t\t\t\t\t\t\t\t<version>" + item.version + "</version>\n" +
+												"\t\t\t\t\t\t\t\t\t\t</artifactItem>")
+											.collect(java.util.stream.Collectors.joining("\n\t\t\t\t\t\t\t\t\t\t"))}
+									</artifactItems>
+								</configuration>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+		
+		<!-- Additional profiles using template expressions with conditional logic -->
+		\{profiles.stream().skip(1)
+			.map(profile -> 
+				"<profile>\n" +
+				"\t\t\t<id>" + profile.id + "</id>\n" +
+				(profile.activation != null ? 
+					"\t\t\t<activation>\n" +
+					"\t\t\t\t<activeByDefault>" + profile.activation.activeByDefault + "</activeByDefault>\n" +
+					"\t\t\t</activation>\n" : "") +
+				"\t\t\t<properties>\n" +
+				profile.properties.entrySet().stream()
+					.map(entry -> "\t\t\t\t<" + entry.getKey() + ">" + entry.getValue() + "</" + entry.getKey() + ">")
+					.collect(java.util.stream.Collectors.joining("\n")) +
+				"\n\t\t\t</properties>\n" +
+				"\t\t</profile>")
+			.collect(java.util.stream.Collectors.joining("\n\t\t"))}
+	</profiles>
+
+	<!-- Dependencies section with template expressions -->
+	<dependencies>
+		<!-- Generate dependencies using stream operations on a collection -->
+		\{dependencies.stream()
+			.map(dep -> 
+				"<dependency>\n" +
+				"\t\t\t<groupId>" + dep.groupId + "</groupId>\n" +
+				"\t\t\t<artifactId>" + dep.artifactId + "</artifactId>\n" +
+				"\t\t\t<version>" + dep.version + "</version>\n" +
+				(dep.scope != null ? "\t\t\t<scope>" + dep.scope + "</scope>\n" : "") +
+				(dep.optional != null ? "\t\t\t<optional>" + dep.optional + "</optional>\n" : "") +
+				(dep.exclusions != null && !dep.exclusions.isEmpty() ?
+					"\t\t\t<exclusions>\n" +
+					dep.exclusions.stream()
+						.map(excl -> 
+							"\t\t\t\t<exclusion>\n" +
+							"\t\t\t\t\t<groupId>" + excl.groupId + "</groupId>\n" +
+							"\t\t\t\t\t<artifactId>" + excl.artifactId + "</artifactId>\n" +
+							"\t\t\t\t</exclusion>")
+						.collect(java.util.stream.Collectors.joining("\n")) +
+					"\n\t\t\t</exclusions>\n" : "") +
+				"\t\t</dependency>")
+			.collect(java.util.stream.Collectors.joining("\n\t\t"))}
+	</dependencies>
+
+	<!-- Repositories section with template expressions -->
+	<repositories>
+		\{repositories.stream()
+			.map(repo -> 
+				"<repository>\n" +
+				"\t\t\t<id>" + repo.id + "</id>\n" +
+				"\t\t\t<name>" + repo.name + "</name>\n" +
+				"\t\t\t<url>" + repo.url + "</url>\n" +
+				(repo.releases != null ? 
+					"\t\t\t<releases>\n" +
+					"\t\t\t\t<enabled>" + repo.releases.enabled + "</enabled>\n" +
+					"\t\t\t</releases>\n" : "") +
+				(repo.snapshots != null ? 
+					"\t\t\t<snapshots>\n" +
+					"\t\t\t\t<enabled>" + repo.snapshots.enabled + "</enabled>\n" +
+					"\t\t\t</snapshots>\n" : "") +
+				"\t\t</repository>")
+			.collect(java.util.stream.Collectors.joining("\n\t\t"))}
+	</repositories>
+
+	<!-- Example of complex conditional template expressions for reporting section -->
+	\{generateReporting ? 
+		"<reporting>\n" +
+		"\t\t<plugins>\n" +
+		reportingPlugins.stream()
+			.map(plugin -> 
+				"\t\t\t<plugin>\n" +
+				"\t\t\t\t<groupId>" + plugin.groupId + "</groupId>\n" +
+				"\t\t\t\t<artifactId>" + plugin.artifactId + "</artifactId>\n" +
+				"\t\t\t\t<version>" + plugin.version + "</version>\n" +
+				"\t\t\t</plugin>")
+			.collect(java.util.stream.Collectors.joining("\n")) +
+		"\n\t\t</plugins>\n" +
+		"\t</reporting>" : ""}
+
+	<!-- Example of complex nested template expressions for project information -->
+	<organization>
+		<name>\{organization.name}</name>
+		<url>\{organization.url}</url>
+	</organization>
+
+	<developers>
+		\{developers.stream()
+			.map(dev -> 
+				"<developer>\n" +
+				"\t\t\t<id>" + dev.id + "</id>\n" +
+				"\t\t\t<name>" + dev.name + "</name>\n" +
+				"\t\t\t<email>" + dev.email + "</email>\n" +
+				"\t\t\t<roles>\n" +
+				dev.roles.stream()
+					.map(role -> "\t\t\t\t\t<role>" + role + "</role>")
+					.collect(java.util.stream.Collectors.joining("\n")) +
+				"\n\t\t\t\t</roles>\n" +
+				"\t\t\t</developer>")
+			.collect(java.util.stream.Collectors.joining("\n\t\t"))}
+	</developers>
+
+	<!-- Example of template expressions with complex string formatting and date handling -->
+	<issueManagement>
+		<system>\{issueManagement.system}</system>
+		<url>\{issueManagement.url}</url>
+	</issueManagement>
+
+	<ciManagement>
+		<system>\{ciManagement.system}</system>
+		<url>\{ciManagement.url}</url>
+		<notifiers>
+			\{ciManagement.notifiers.stream()
+				.map(notifier -> 
+					"<notifier>\n" +
+					"\t\t\t\t<type>" + notifier.type + "</type>\n" +
+					"\t\t\t\t<sendOnError>" + notifier.sendOnError + "</sendOnError>\n" +
+					"\t\t\t\t<sendOnFailure>" + notifier.sendOnFailure + "</sendOnFailure>\n" +
+					"\t\t\t\t<sendOnSuccess>" + notifier.sendOnSuccess + "</sendOnSuccess>\n" +
+					"\t\t\t\t<address>" + notifier.address + "</address>\n" +
+					"\t\t\t</notifier>")
+				.collect(java.util.stream.Collectors.joining("\n\t\t\t"))}
+		</notifiers>
+	</ciManagement>
+
+	<!-- Example of template expressions with conditional logic and date formatting -->
+	<scm>
+		<connection>\{scm.connection}</connection>
+		<developerConnection>\{scm.developerConnection}</developerConnection>
+		<url>\{scm.url}</url>
+		<tag>\{scm.tag != null ? scm.tag : "HEAD"}</tag>
+	</scm>
+
+	<!-- Example of template expressions with complex string manipulation -->
+	<description>\{description != null ? description : "Generated POM for " + artifactId + " on " + java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ISO_DATE)}</description>
+</project>

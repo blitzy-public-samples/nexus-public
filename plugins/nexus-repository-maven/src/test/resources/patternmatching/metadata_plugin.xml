@@ -1,0 +1,202 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata>
+  <plugins>
+    <!-- Standard plugin with basic elements -->
+    <plugin>
+      <n>Repository Indexer Plugin</n>
+      <prefix>index</prefix>
+      <artifactId>nexus-repository-indexer-plugin</artifactId>
+      <goals>
+        <goal>
+          <n>update</n>
+          <description>Updates the repository index</description>
+          <requiresProject>false</requiresProject>
+          <parameters>
+            <parameter>
+              <n>repositoryId</n>
+              <type>String</type>
+              <required>true</required>
+              <description>The ID of the repository to index</description>
+            </parameter>
+            <parameter>
+              <n>force</n>
+              <type>boolean</type>
+              <required>false</required>
+              <defaultValue>false</defaultValue>
+              <description>Force a full reindex</description>
+            </parameter>
+          </parameters>
+        </goal>
+      </goals>
+    </plugin>
+    
+    <!-- Plugin with multiple goals and complex parameter types -->
+    <plugin>
+      <n>Maven Repository Validator</n>
+      <prefix>validate</prefix>
+      <artifactId>nexus-repository-validator-plugin</artifactId>
+      <goals>
+        <goal>
+          <n>checksum</n>
+          <description>Validates checksums for artifacts</description>
+          <requiresProject>false</requiresProject>
+          <parameters>
+            <parameter>
+              <n>algorithms</n>
+              <type>List&lt;String&gt;</type>
+              <required>false</required>
+              <defaultValue>SHA-1,MD5</defaultValue>
+              <description>Checksum algorithms to validate</description>
+            </parameter>
+            <parameter>
+              <n>failOnError</n>
+              <type>boolean</type>
+              <required>false</required>
+              <defaultValue>true</defaultValue>
+              <description>Whether to fail on checksum errors</description>
+            </parameter>
+          </parameters>
+        </goal>
+        <goal>
+          <n>metadata</n>
+          <description>Validates metadata files</description>
+          <requiresProject>false</requiresProject>
+          <parameters>
+            <parameter>
+              <n>metadataTypes</n>
+              <type>Set&lt;String&gt;</type>
+              <required>false</required>
+              <defaultValue>maven-metadata.xml</defaultValue>
+              <description>Types of metadata files to validate</description>
+            </parameter>
+            <parameter>
+              <n>repair</n>
+              <type>boolean</type>
+              <required>false</required>
+              <defaultValue>false</defaultValue>
+              <description>Whether to repair invalid metadata</description>
+            </parameter>
+          </parameters>
+        </goal>
+      </goals>
+    </plugin>
+    
+    <!-- Plugin with nested complex configuration -->
+    <plugin>
+      <n>Repository Migration Tool</n>
+      <prefix>migrate</prefix>
+      <artifactId>nexus-repository-migration-plugin</artifactId>
+      <goals>
+        <goal>
+          <n>transfer</n>
+          <description>Transfers content between repositories</description>
+          <requiresProject>false</requiresProject>
+          <parameters>
+            <parameter>
+              <n>source</n>
+              <type>RepositoryReference</type>
+              <required>true</required>
+              <description>Source repository configuration</description>
+              <fields>
+                <field>
+                  <n>id</n>
+                  <type>String</type>
+                  <required>true</required>
+                </field>
+                <field>
+                  <n>type</n>
+                  <type>String</type>
+                  <required>true</required>
+                  <validValues>hosted,proxy,group</validValues>
+                </field>
+                <field>
+                  <n>format</n>
+                  <type>String</type>
+                  <required>true</required>
+                  <defaultValue>maven2</defaultValue>
+                </field>
+              </fields>
+            </parameter>
+            <parameter>
+              <n>target</n>
+              <type>RepositoryReference</type>
+              <required>true</required>
+              <description>Target repository configuration</description>
+              <fields>
+                <field>
+                  <n>id</n>
+                  <type>String</type>
+                  <required>true</required>
+                </field>
+                <field>
+                  <n>type</n>
+                  <type>String</type>
+                  <required>true</required>
+                  <validValues>hosted,proxy,group</validValues>
+                </field>
+                <field>
+                  <n>format</n>
+                  <type>String</type>
+                  <required>true</required>
+                  <defaultValue>maven2</defaultValue>
+                </field>
+              </fields>
+            </parameter>
+            <parameter>
+              <n>options</n>
+              <type>Map&lt;String,String&gt;</type>
+              <required>false</required>
+              <description>Additional migration options</description>
+            </parameter>
+          </parameters>
+        </goal>
+      </goals>
+    </plugin>
+    
+    <!-- Plugin with unusual structure to test pattern matching edge cases -->
+    <plugin>
+      <n>Repository Cleanup Tool</n>
+      <prefix>cleanup</prefix>
+      <artifactId>nexus-repository-cleanup-plugin</artifactId>
+      <goals>
+        <goal>
+          <n>purge</n>
+          <description>Purges unused artifacts</description>
+          <requiresProject>false</requiresProject>
+          <parameters>
+            <parameter>
+              <n>criteria</n>
+              <type>Object</type>
+              <required>true</required>
+              <description>Criteria for purging artifacts</description>
+              <options>
+                <option>
+                  <n>lastDownloaded</n>
+                  <type>Duration</type>
+                  <description>Time since last download</description>
+                </option>
+                <option>
+                  <n>lastUpdated</n>
+                  <type>Duration</type>
+                  <description>Time since last update</description>
+                </option>
+                <option>
+                  <n>regex</n>
+                  <type>String</type>
+                  <description>Regular expression pattern</description>
+                </option>
+              </options>
+            </parameter>
+            <parameter>
+              <n>dryRun</n>
+              <type>boolean</type>
+              <required>false</required>
+              <defaultValue>true</defaultValue>
+              <description>Whether to perform a dry run</description>
+            </parameter>
+          </parameters>
+        </goal>
+      </goals>
+    </plugin>
+  </plugins>
+</metadata>

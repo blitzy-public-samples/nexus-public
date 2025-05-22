@@ -13,7 +13,6 @@
 package org.sonatype.nexus.script.plugin;
 
 import java.util.List;
-import java.util.SequencedCollection;
 
 import org.sonatype.nexus.common.script.ScriptApi;
 import org.sonatype.nexus.repository.Repository;
@@ -24,11 +23,6 @@ import org.sonatype.nexus.repository.config.WritePolicy;
 
 /**
  * Repository provisioning capabilities of the repository manager.
- * 
- * <p>This interface is compatible with Java 21 and leverages modern language features
- * where appropriate. Implementations may utilize Java 21 features such as Virtual Threads
- * for improved performance when handling repository operations, especially for I/O-bound
- * tasks like remote repository access.</p>
  * 
  * @since 3.0
  */
@@ -134,24 +128,9 @@ public interface RepositoryApi
    * 
    * @param name The name of the new Repository
    * @param blobStoreName The BlobStore the Repository should use
-   * @param members The names of the Repositories in the group, as a SequencedCollection for ordered access
-   * @return the newly created Repository
-   */
-  Repository createMavenGroup(
-      final String name,
-      final SequencedCollection<String> members,
-      final String blobStoreName) throws Exception;
-      
-  /**
-   * Create a Maven group repository.
-   * 
-   * @param name The name of the new Repository
-   * @param blobStoreName The BlobStore the Repository should use
    * @param members The names of the Repositories in the group
    * @return the newly created Repository
-   * @deprecated As of Java 21, replaced by {@link #createMavenGroup(String, SequencedCollection, String)}
    */
-  @Deprecated(since = "Java 21", forRemoval = false)
   Repository createMavenGroup(
       final String name,
       final List<String> members,
@@ -192,24 +171,9 @@ public interface RepositoryApi
    * 
    * @param name The name of the new Repository
    * @param blobStoreName The BlobStore the Repository should use
-   * @param members The names of the Repositories in the group, as a SequencedCollection for ordered access
-   * @return the newly created Repository
-   */
-  Repository createNpmGroup(
-      final String name,
-      final SequencedCollection<String> members,
-      final String blobStoreName) throws Exception;
-      
-  /**
-   * Create an Npm group repository.
-   * 
-   * @param name The name of the new Repository
-   * @param blobStoreName The BlobStore the Repository should use
    * @param members The names of the Repositories in the group
    * @return the newly created Repository
-   * @deprecated As of Java 21, replaced by {@link #createNpmGroup(String, SequencedCollection, String)}
    */
-  @Deprecated(since = "Java 21", forRemoval = false)
   Repository createNpmGroup(
       final String name,
       final List<String> members,
@@ -250,24 +214,9 @@ public interface RepositoryApi
    * 
    * @param name The name of the new Repository
    * @param blobStoreName The BlobStore the Repository should use
-   * @param members The names of the Repositories in the group, as a SequencedCollection for ordered access
-   * @return the newly created Repository
-   */
-  Repository createNugetGroup(
-      final String name,
-      final SequencedCollection<String> members,
-      final String blobStoreName) throws Exception;
-      
-  /**
-   * Create a Nuget group repository.
-   * 
-   * @param name The name of the new Repository
-   * @param blobStoreName The BlobStore the Repository should use
    * @param members The names of the Repositories in the group
    * @return the newly created Repository
-   * @deprecated As of Java 21, replaced by {@link #createNugetGroup(String, SequencedCollection, String)}
    */
-  @Deprecated(since = "Java 21", forRemoval = false)
   Repository createNugetGroup(
       final String name,
       final List<String> members,
@@ -295,7 +244,7 @@ public interface RepositoryApi
    * @param remoteUrl The url of the external proxy for this Repository
    * @param blobStoreName The BlobStore the Repository should use
    * @param strictContentTypeValidation Whether or not the Repository should enforce strict content types
-   * @return the newly created Repository
+   * @return
    */
   Repository createRawProxy(
       final String name,
@@ -308,24 +257,9 @@ public interface RepositoryApi
    * 
    * @param name The name of the new Repository
    * @param blobStoreName The BlobStore the Repository should use
-   * @param members The names of the Repositories in the group, as a SequencedCollection for ordered access
-   * @return the newly created Repository
-   */
-  Repository createRawGroup(
-      final String name,
-      final SequencedCollection<String> members,
-      final String blobStoreName) throws Exception;
-      
-  /**
-   * Create a Raw group repository.
-   * 
-   * @param name The name of the new Repository
-   * @param blobStoreName The BlobStore the Repository should use
    * @param members The names of the Repositories in the group
    * @return the newly created Repository
-   * @deprecated As of Java 21, replaced by {@link #createRawGroup(String, SequencedCollection, String)}
    */
-  @Deprecated(since = "Java 21", forRemoval = false)
   Repository createRawGroup(
       final String name,
       final List<String> members,
@@ -413,30 +347,9 @@ public interface RepositoryApi
    * @param httpsPort The https port to accept traffic for this Repository on (optional)
    * @param v1Enabled Whether or not this Repository supports Docker V1 format
    * @param blobStoreName The BlobStore the Repository should use
-   * @param members The names of the Repositories in the group, as a SequencedCollection for ordered access
-   * @return the newly created Repository
-   */
-  Repository createDockerGroup(
-      final String name,
-      Integer httpPort,
-      Integer httpsPort,
-      final SequencedCollection<String> members,
-      final boolean v1Enabled,
-      final String blobStoreName) throws Exception;
-      
-  /**
-   * Create a Docker group repository.
-   * 
-   * @param name The name of the new Repository
-   * @param httpPort The http port to accept traffic for this Repository on (optional)
-   * @param httpsPort The https port to accept traffic for this Repository on (optional)
-   * @param v1Enabled Whether or not this Repository supports Docker V1 format
-   * @param blobStoreName The BlobStore the Repository should use
    * @param members The names of the Repositories in the group
    * @return the newly created Repository
-   * @deprecated As of Java 21, replaced by {@link #createDockerGroup(String, Integer, Integer, SequencedCollection, boolean, String)}
    */
-  @Deprecated(since = "Java 21", forRemoval = false)
   Repository createDockerGroup(
       final String name,
       Integer httpPort,
@@ -479,24 +392,9 @@ public interface RepositoryApi
    *
    * @param name The name of the new Repository
    * @param blobStoreName The BlobStore the Repository should use
-   * @param members The names of the Repositories in the group, as a SequencedCollection for ordered access
-   * @return the newly created Repository
-   */
-  Repository createRubygemsGroup(
-      final String name,
-      final SequencedCollection<String> members,
-      final String blobStoreName) throws Exception;
-      
-  /**
-   * Create a Rubygems group repository.
-   *
-   * @param name The name of the new Repository
-   * @param blobStoreName The BlobStore the Repository should use
    * @param members The names of the Repositories in the group
    * @return the newly created Repository
-   * @deprecated As of Java 21, replaced by {@link #createRubygemsGroup(String, SequencedCollection, String)}
    */
-  @Deprecated(since = "Java 21", forRemoval = false)
   Repository createRubygemsGroup(
       final String name,
       final List<String> members,
@@ -537,24 +435,9 @@ public interface RepositoryApi
    * 
    * @param name The name of the new Repository
    * @param blobStoreName The BlobStore the Repository should use
-   * @param members The names of the Repositories in the group, as a SequencedCollection for ordered access
-   * @return the newly created Repository
-   */
-  Repository createPyPiGroup(
-      final String name,
-      final SequencedCollection<String> members,
-      final String blobStoreName) throws Exception;
-      
-  /**
-   * Create a PyPi group repository.
-   * 
-   * @param name The name of the new Repository
-   * @param blobStoreName The BlobStore the Repository should use
    * @param members The names of the Repositories in the group
    * @return the newly created Repository
-   * @deprecated As of Java 21, replaced by {@link #createPyPiGroup(String, SequencedCollection, String)}
    */
-  @Deprecated(since = "Java 21", forRemoval = false)
   Repository createPyPiGroup(
       final String name,
       final List<String> members,
@@ -627,24 +510,9 @@ public interface RepositoryApi
    * 
    * @param name The name of the new Repository
    * @param blobStoreName The BlobStore the Repository should use
-   * @param members The names of the Repositories in the group, as a SequencedCollection for ordered access
-   * @return the newly created Repository
-   */
-  Repository createGolangGroup(
-      final String name,
-      final SequencedCollection<String> members,
-      final String blobStoreName) throws Exception;
-      
-  /**
-   * Create a Go group repository.
-   * 
-   * @param name The name of the new Repository
-   * @param blobStoreName The BlobStore the Repository should use
    * @param members The names of the Repositories in the group
    * @return the newly created Repository
-   * @deprecated As of Java 21, replaced by {@link #createGolangGroup(String, SequencedCollection, String)}
    */
-  @Deprecated(since = "Java 21", forRemoval = false)
   Repository createGolangGroup(
       final String name,
       final List<String> members,
@@ -667,13 +535,6 @@ public interface RepositoryApi
 
   /**
    * Create a hosted configuration for the given recipeName.
-   * 
-   * @param name The name of the new Repository
-   * @param recipeName The recipe name for the Repository
-   * @param blobStoreName The BlobStore the Repository should use
-   * @param writePolicy The {@link WritePolicy} for the Repository
-   * @param strictContentTypeValidation Whether or not the Repository should enforce strict content types
-   * @return the configuration for the new Repository
    */
   Configuration createHosted(
       final String name,
@@ -684,13 +545,6 @@ public interface RepositoryApi
 
   /**
    * Create a proxy configuration for the given recipeName.
-   * 
-   * @param name The name of the new Repository
-   * @param recipeName The recipe name for the Repository
-   * @param remoteUrl The url of the external proxy for this Repository
-   * @param blobStoreName The BlobStore the Repository should use
-   * @param strictContentTypeValidation Whether or not the Repository should enforce strict content types
-   * @return the configuration for the new Repository
    */
   Configuration createProxy(
       final String name,
@@ -701,31 +555,10 @@ public interface RepositoryApi
 
   /**
    * Create a group configuration for the given recipeName.
-   * 
-   * @param name The name of the new Repository
-   * @param recipeName The recipe name for the Repository
-   * @param blobStoreName The BlobStore the Repository should use
-   * @param members The names of the Repositories in the group
-   * @return the configuration for the new Repository
    */
   Configuration createGroup(
       final String name,
       final String recipeName,
       final String blobStoreName,
       final String... members);
-      
-  /**
-   * Create a group configuration for the given recipeName using a SequencedCollection.
-   * 
-   * @param name The name of the new Repository
-   * @param recipeName The recipe name for the Repository
-   * @param blobStoreName The BlobStore the Repository should use
-   * @param members The names of the Repositories in the group, as a SequencedCollection for ordered access
-   * @return the configuration for the new Repository
-   */
-  Configuration createGroup(
-      final String name,
-      final String recipeName,
-      final String blobStoreName,
-      final SequencedCollection<String> members);
 }

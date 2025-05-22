@@ -19,6 +19,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import javax.annotation.Nullable;
 
@@ -31,6 +37,8 @@ import com.google.common.collect.Maps;
 import com.google.common.io.Files;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static java.lang.StringTemplate.STR;
 
 /**
  * Parse mime type extensions and overrides from classpath.
@@ -56,66 +64,97 @@ import org.slf4j.LoggerFactory;
 public class NexusMimeTypes
 {
 
-  private static Logger log = LoggerFactory.getLogger(NexusMimeTypes.class);
+  private static final Logger log = LoggerFactory.getLogger(NexusMimeTypes.class);
 
   public static final String BUILTIN_MIMETYPES_FILENAME = "builtin-mimetypes.properties";
 
   public static final String MIMETYPES_FILENAME = "nexus.mimetypes";
 
-  private Map<String, MimeRule> extensions = Maps.newHashMap();
+  private final Map<String, MimeRule> extensions = new ConcurrentHashMap<>();
+  
+  private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
   public NexusMimeTypes() {
-    load(BUILTIN_MIMETYPES_FILENAME);
-    load(MIMETYPES_FILENAME);
+    loadMimeTypes();
+  }
+  
+  private void loadMimeTypes() {
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Load both property files concurrently using virtual threads
+      Future<Properties> builtinFuture = executor.submit(() -> loadProperties(BUILTIN_MIMETYPES_FILENAME));
+      Future<Properties> nexusFuture = executor.submit(() -> loadProperties(MIMETYPES_FILENAME));
+      
+      // Get the results and initialize mime types
+      Properties builtinProperties = builtinFuture.get();
+      if (builtinProperties != null) {
+        initMimeTypes(builtinProperties);
+      }
+      
+      Properties nexusProperties = nexusFuture.get();
+      if (nexusProperties != null) {
+        initMimeTypes(nexusProperties);
+      }
+    } catch (Exception e) {
+      log.error(STR."Failed to load mime type definitions: \{e.getMessage()}", e);
+    }
   }
 
-  private void load(final String filename) {
-    final InputStream stream = this.getClass().getResourceAsStream("/" + filename);
-    if (stream != null) {
-      final Properties properties = new Properties();
-      try {
+  private Properties loadProperties(final String filename) {
+    Properties properties = new Properties();
+    String resourcePath = STR."/\{filename}";
+    
+    try (InputStream stream = this.getClass().getResourceAsStream(resourcePath)) {
+      if (stream != null) {
         properties.load(stream);
-        initMimeTypes(properties);
+        log.debug(STR."Successfully loaded mime type definitions from \{filename}");
+        return properties;
+      } else {
+        log.debug(STR."No mime type definitions found at \{resourcePath}");
+        return null;
       }
-      catch (IOException e) {
-        if (log.isDebugEnabled()) {
-          log.warn("Could not load " + MIMETYPES_FILENAME, e);
-        }
-        else {
-          log.warn("Could not load " + MIMETYPES_FILENAME + ": {}", e.getMessage());
-        }
+    } catch (IOException e) {
+      if (log.isDebugEnabled()) {
+        log.warn(STR."Could not load \{filename}: \{e}", e);
+      } else {
+        log.warn(STR."Could not load \{filename}: \{e.getMessage()}");
       }
+      return null;
     }
   }
 
   @VisibleForTesting
   void initMimeTypes(final Properties properties) {
-    final Set<String> keys = properties.stringPropertyNames();
-    final Map<String, List<String>> overrides = Maps.newHashMap();
-    final Map<String, List<String>> additional = Maps.newHashMap();
+    try {
+      lock.writeLock().lock();
+      final Set<String> keys = properties.stringPropertyNames();
+      final Map<String, List<String>> overrides = Maps.newHashMap();
+      final Map<String, List<String>> additional = Maps.newHashMap();
 
-    for (String key : keys) {
-      if (key.startsWith("override.")) {
-        overrides.put(key.substring("override.".length()), types(properties.getProperty(key, null)));
+      for (String key : keys) {
+        if (key.startsWith("override.")) {
+          overrides.put(key.substring("override.".length()), types(properties.getProperty(key, null)));
+        }
+        else {
+          additional.put(key, types(properties.getProperty(key, null)));
+        }
       }
-      else {
-        additional.put(key, types(properties.getProperty(key, null)));
+
+      for (String extension : overrides.keySet()) {
+        final List<String> mimetypes = overrides.get(extension);
+
+        if (additional.containsKey(extension)) {
+          mimetypes.addAll(additional.get(extension));
+          additional.remove(extension);
+        }
+        this.extensions.put(extension, new MimeRule(true, mimetypes));
       }
-    }
 
-    for (String extension : overrides.keySet()) {
-      final List<String> mimetypes = overrides.get(extension);
-
-      if (additional.containsKey(extension)) {
-        mimetypes.addAll(additional.get(extension));
-        additional.remove(extension);
+      for (String extension : additional.keySet()) {
+        final List<String> mimetypes = additional.get(extension);
+        this.extensions.put(extension, new MimeRule(false, mimetypes));
       }
-      this.extensions.put(extension, new MimeRule(true, mimetypes));
-    }
-
-    for (String extension : additional.keySet()) {
-      final List<String> mimetypes = additional.get(extension);
-      this.extensions.put(extension, new MimeRule(false, mimetypes));
+    } finally {
+      lock.writeLock().unlock();
     }
   }
 
@@ -134,12 +173,17 @@ public class NexusMimeTypes
    */
   @Nullable
   public MimeRule getMimeRuleForExtension(String extension) {
-    while (!extension.isEmpty()) {
-      if (extensions.containsKey(extension)) {
-        return extensions.get(extension);
+    try {
+      lock.readLock().lock();
+      while (!extension.isEmpty()) {
+        if (extensions.containsKey(extension)) {
+          return extensions.get(extension);
+        }
+        extension = Files.getFileExtension(extension);
       }
-      extension = Files.getFileExtension(extension);
+      return null;
+    } finally {
+      lock.readLock().unlock();
     }
-    return null;
   }
 }

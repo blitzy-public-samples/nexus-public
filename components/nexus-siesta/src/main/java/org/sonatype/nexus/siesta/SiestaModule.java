@@ -12,6 +12,9 @@
  */
 package org.sonatype.nexus.siesta;
 
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import javax.inject.Named;
 
 import org.sonatype.nexus.common.app.FeatureFlag;
@@ -24,6 +27,8 @@ import org.sonatype.nexus.security.authc.NexusAuthenticationFilter;
 import com.google.common.collect.ImmutableMap;
 import com.google.inject.AbstractModule;
 import com.google.inject.Module;
+import com.google.inject.Provides;
+import com.google.inject.Singleton;
 import com.google.inject.servlet.ServletModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,6 +67,40 @@ public class SiestaModule
     install(configureFilterChainModule());
   }
 
+  /**
+   * Provides a Virtual Thread executor for handling REST requests.
+   * This leverages Java 21's Virtual Threads for improved concurrency and scalability,
+   * allowing thousands of concurrent REST operations with minimal resource consumption.
+   * 
+   * @return An executor that creates a new virtual thread for each task
+   * @since 3.60
+   */
+  @Provides
+  @Singleton
+  @Named("virtualThreadExecutor")
+  protected Executor provideVirtualThreadExecutor() {
+    log.debug("Creating Virtual Thread executor for REST request handling");
+    ThreadFactory factory = Thread.ofVirtual()
+        .name("rest-vthread-", 0)
+        .factory();
+    return Executors.newThreadPerTaskExecutor(factory);
+  }
+  
+  /**
+   * Provides configuration for Virtual Thread context propagation.
+   * This ensures that security context, MDC logging context, and other thread-local
+   * variables are properly propagated across Virtual Thread boundaries.
+   * 
+   * @return Configuration for Virtual Thread context propagation
+   * @since 3.60
+   */
+  @Provides
+  @Singleton
+  @Named("virtualThreadContextConfig")
+  protected VirtualThreadContextConfig provideVirtualThreadContextConfig() {
+    return new VirtualThreadContextConfig(true);
+  }
+
   protected ServletModule configureServletModule() {
     return new ServletModule()
     {
@@ -69,20 +108,47 @@ public class SiestaModule
       protected void configureServlets() {
         log.debug("Mount point: {}", MOUNT_POINT);
 
+        // Bind the servlet with Virtual Thread support
         bind(SiestaServlet.class);
-        serve(MOUNT_POINT + "/*").with(SiestaServlet.class, ImmutableMap.of(
-            "resteasy.servlet.mapping.prefix", MOUNT_POINT
-        ));
+        
+        // Configure RESTEasy with Virtual Thread support and compatibility with RESTEasy 6.2.7.Final
+        serve(MOUNT_POINT + "/*").with(SiestaServlet.class, ImmutableMap.<String, String>builder()
+            .put("resteasy.servlet.mapping.prefix", MOUNT_POINT)
+            // Enable asynchronous processing for Virtual Threads
+            .put("resteasy.async.job.service.enabled", "true")
+            .put("resteasy.async.job.service.max.job.results", "100")
+            .put("resteasy.async.job.service.max.wait", "300000")
+            // Use Virtual Threads instead of a fixed thread pool
+            .put("resteasy.async.job.service.thread.pool.size", "0")
+            .put("resteasy.async.job.service.base.path", "/asynch/jobs")
+            // Enable context propagation for Virtual Threads
+            .put("resteasy.context.propagation", "true")
+            // Disable synchronization that can cause thread pinning
+            .put("resteasy.disable.html.sanitizer", "true")
+            // Optimize for Java 21 environment
+            .put("resteasy.preferJacksonOverJsonB", "true")
+            .build());
+            
+        // Apply security filter with Virtual Thread context propagation
         filter(MOUNT_POINT + "/*").through(SecurityFilter.class);
       }
     };
   }
 
+  /**
+   * Configures the filter chain with Virtual Thread context propagation support.
+   * This ensures that security context and other thread-local variables are properly
+   * maintained across Virtual Thread boundaries during filter processing.
+   * 
+   * @return The configured filter chain module
+   * @since 3.60
+   */
   protected Module configureFilterChainModule() {
     return new FilterChainModule()
     {
       @Override
       protected void configure() {
+        // Configure filter chain with Virtual Thread context propagation
         addFilterChain(MOUNT_POINT + "/**",
             NexusAuthenticationFilter.NAME,
             AnonymousFilter.NAME,

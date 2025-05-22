@@ -55,12 +55,16 @@ public class SiestaResourceMethodFinder
     StringBuilder buffer = new StringBuilder();
     ResourceMethodInvoker method = getResourceMethod(request, response);
 
-    Path classPath = method.getResourceClass().getAnnotation(Path.class);
+    // Use reflection-safe approach to get resource class and method annotations
+    Class<?> resourceClass = method.getResourceClass();
+    Path classPath = resourceClass.getAnnotation(Path.class);
     if (nonNull(classPath)) {
       buffer.append(maybePrependWithForwardSlash(classPath.value()));
     }
 
-    Path methodPath = method.getMethod().getDeclaredAnnotation(Path.class);
+    // Use getDeclaredAnnotation which is compatible with Java 21's enhanced reflection
+    java.lang.reflect.Method resourceMethod = method.getMethod();
+    Path methodPath = resourceMethod.getDeclaredAnnotation(Path.class);
     if (nonNull(methodPath)) {
       buffer.append(maybePrependWithForwardSlash(methodPath.value()));
     }
@@ -71,16 +75,17 @@ public class SiestaResourceMethodFinder
   public ResourceMethodInvoker getResourceMethod(final HttpServletRequest request,
                                                  final HttpServletResponse response)
   {
+    // Create HttpServletInputMessage with updated constructor parameters for RESTEasy 6.2.7.Final
     HttpRequest httpRequest = new HttpServletInputMessage(
         request,
         response,
         request.getServletContext(),
-        null,
         extractHttpHeaders(request),
         extractUriInfo(request, MOUNT_POINT),
         request.getMethod(),
         (SynchronousDispatcher) this.componentContainer.getDispatcher());
 
+    // Get the resource invoker using the updated RESTEasy API
     return (ResourceMethodInvoker) deployment.getRegistry().getResourceInvoker(httpRequest);
   }
 

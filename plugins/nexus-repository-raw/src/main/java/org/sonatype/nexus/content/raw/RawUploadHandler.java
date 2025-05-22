@@ -15,12 +15,14 @@ package org.sonatype.nexus.content.raw;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -37,7 +39,6 @@ import org.sonatype.nexus.repository.view.Content;
 import org.sonatype.nexus.repository.view.PartPayload;
 import org.sonatype.nexus.repository.view.payloads.TempBlob;
 import org.sonatype.nexus.repository.view.payloads.TempBlobPayload;
-import org.sonatype.nexus.thread.io.VirtualThreads;
 
 import com.google.common.collect.Lists;
 
@@ -64,30 +65,42 @@ public class RawUploadHandler
       throws IOException
   {
     RawContentFacet facet = repository.facet(RawContentFacet.class);
-
-    // Process uploads in parallel using Virtual Threads for improved I/O throughput
-    List<CompletableFuture<Content>> futures = pathToPayload.entrySet().stream()
-        .map(entry -> CompletableFuture.supplyAsync(() -> {
-          // Using pattern matching for switch with Map.Entry (Java 21 feature)
-          if (entry instanceof Map.Entry<String, PartPayload> pathEntry) {
-            String path = pathEntry.getKey();
-            PartPayload payload = pathEntry.getValue();
-            try {
-              // Execute I/O-bound operation on a virtual thread
-              return VirtualThreads.execute(() -> facet.put(path, payload));
-            }
-            catch (IOException e) {
-              throw new RuntimeException("Failed to upload content for path: " + path, e);
-            }
+    
+    // Use a list to store the Future objects for each upload task
+    List<Future<Content>> futures = new ArrayList<>(pathToPayload.size());
+    List<Content> responseContents = new ArrayList<>(pathToPayload.size());
+    
+    // Create a virtual thread executor for parallel processing
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit each upload task to the executor
+      for (Entry<String, PartPayload> entry : pathToPayload.entrySet()) {
+        String path = entry.getKey();
+        PartPayload payload = entry.getValue();
+        
+        // Submit the task and store the Future
+        futures.add(executor.submit(() -> facet.put(path, payload)));
+      }
+      
+      // Collect results from all futures
+      for (Future<Content> future : futures) {
+        try {
+          Content content = future.get();
+          responseContents.add(content);
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          throw new IOException("Upload processing was interrupted", e);
+        } catch (ExecutionException e) {
+          Throwable cause = e.getCause();
+          if (cause instanceof IOException) {
+            throw (IOException) cause;
+          } else {
+            throw new IOException("Error during parallel upload processing", cause);
           }
-          return null;
-        }))
-        .collect(Collectors.toList());
-
-    // Wait for all uploads to complete
-    return futures.stream()
-        .map(CompletableFuture::join)
-        .collect(Collectors.toList());
+        }
+      }
+    }
+    
+    return responseContents;
   }
 
   @Override
@@ -96,15 +109,12 @@ public class RawUploadHandler
     String path = configuration.getAssetName();
     Path contentPath = configuration.getFile().toPath();
 
-    // Execute I/O-bound operations on virtual threads for improved throughput
-    return VirtualThreads.execute(() -> {
-      RawContentFacet contentFacet = repository.facet(RawContentFacet.class);
-      String contentType = Files.probeContentType(contentPath);
-      try (TempBlob blob = contentFacet.blobs().ingest(contentPath, contentType, RawContentFacet.HASHING,
-          configuration.isHardLinkingEnabled())) {
-        return contentFacet.put(path, new TempBlobPayload(blob, contentType));
-      }
-    });
+    RawContentFacet contentFacet = repository.facet(RawContentFacet.class);
+    String contentType = Files.probeContentType(contentPath);
+    try (TempBlob blob = contentFacet.blobs().ingest(contentPath, contentType, RawContentFacet.HASHING,
+        configuration.isHardLinkingEnabled())) {
+      return contentFacet.put(path, new TempBlobPayload(blob, contentType));
+    }
   }
 
   @Override

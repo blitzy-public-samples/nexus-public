@@ -13,20 +13,10 @@
     Eclipse Foundation. All other trademarks are the property of their respective owners.
 
 -->
-<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<!--
-    Java 21 Compatible MyBatis Mapper
-    - Compatible with MyBatis 3.5.15 and Java 21
-    - Tested with PostgreSQL JDBC 42.7.2 and H2 2.3.232 drivers
-    - Optimized for OSGi/Karaf 4.3.9+ environment
--->
+<!-- Verified compatible with MyBatis 3.5.15 for Java 21 -->
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="${namespace}">
 
-  <!-- 
-    Finds Maven plugin assets for a specific namespace
-    - Uses standard SQL compatible with both PostgreSQL and H2
-    - Pagination supported via continuationToken
-  -->
   <select id="findMavenPluginAssetsForNamespace" resultMap="assetResult">
     SELECT a.*
       FROM maven2_asset a
@@ -38,7 +28,7 @@
        AND a.path LIKE '%.jar'
        <if test="continuationToken != null"> AND asset_id > #{continuationToken}</if>
   ORDER BY asset_id
-     LIMIT #{limit}
+     LIMIT #{limit};
   </select>
 
 </mapper>

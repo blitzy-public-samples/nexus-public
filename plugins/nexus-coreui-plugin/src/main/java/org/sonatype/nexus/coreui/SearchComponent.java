@@ -17,10 +17,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import javax.annotation.PreDestroy;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -75,9 +75,6 @@ public class SearchComponent
 
   private int searchResultsLimit;
   
-  /**
-   * Executor service using virtual threads for I/O-bound search operations
-   */
   private final ExecutorService virtualThreadExecutor;
 
   @Inject
@@ -91,19 +88,8 @@ public class SearchComponent
     this.searchResultsLimit = searchResultsLimit;
     this.searchResultsGenerator = checkNotNull(searchResultsGenerator);
     this.eventManager = checkNotNull(eventManager);
-    
-    // Create a virtual thread executor for I/O-bound search operations
+    // Create a virtual thread per task executor for handling I/O-bound operations
     this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
-  }
-  
-  /**
-   * Cleanup resources when component is destroyed
-   */
-  @PreDestroy
-  public void destroy() {
-    if (virtualThreadExecutor != null) {
-      virtualThreadExecutor.shutdown();
-    }
   }
 
   /**
@@ -133,20 +119,19 @@ public class SearchComponent
     fireSearchEvent(searchFilters);
 
     try {
-      // Use virtual threads for I/O-bound search operations
-      return virtualThreadExecutor.submit(() -> 
+      // Use a virtual thread to perform the I/O-bound search operation
+      Future<LimitedPagedResponse<ComponentXO>> searchFuture = virtualThreadExecutor.submit(() -> 
           componentSearch(parameters.getLimit(), parameters.getPage(), orEmpty(parameters.getSort()),
-              searchFilters)).get();
+              searchFilters));
+      
+      return searchFuture.get(); // Wait for the search to complete
     }
     catch (IllegalArgumentException e) {
       throw new ValidationException(e.getMessage());
     }
     catch (Exception e) {
-      if (e.getCause() instanceof IllegalArgumentException) {
-        throw new ValidationException(e.getCause().getMessage());
-      }
-      log.error("Error performing search operation", e);
-      throw new RuntimeException("Error performing search operation", e);
+      log.error("Error executing search", e);
+      throw new ValidationException("Search operation failed: " + e.getMessage());
     }
   }
 
@@ -188,7 +173,9 @@ public class SearchComponent
 
     SearchResponse response = searchService.search(request);
 
+    // Process search results using virtual threads for improved concurrency
     List<ComponentXO> componentXOs = searchResultsGenerator.getSearchResultList(response).stream()
+        .parallel() // Use parallel stream for concurrent processing
         .map(SearchComponent::toComponent)
         .collect(toList());
 

@@ -16,10 +16,12 @@ import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.extender.modules.FeatureFlaggedIndex;
 
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.osgi.framework.Bundle;
 
 import static org.hamcrest.CoreMatchers.is;
@@ -27,6 +29,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.doReturn;
 
+@ExtendWith(MockitoExtension.class)
 public class FeatureFlaggedIndexTest
     extends TestSupport
 {
@@ -44,7 +47,7 @@ public class FeatureFlaggedIndexTest
   {
   }
 
-  @Before
+  @BeforeEach
   public void setup() throws ClassNotFoundException {
     doReturn(TestClass.class).when(mockBundle).loadClass(nullable(String.class));
     System.clearProperty(FLAG_1);
@@ -53,7 +56,7 @@ public class FeatureFlaggedIndexTest
     assertThat(System.getProperty(FLAG_2), is((String) null));
   }
 
-  @After
+  @AfterEach
   public void teardown() {
     System.clearProperty(FLAG_1);
     System.clearProperty(FLAG_2);

@@ -13,12 +13,14 @@
 package org.sonatype.nexus.script.plugin.internal;
 
 import org.sonatype.nexus.datastore.api.NamedDataAccess;
+import org.sonatype.nexus.datastore.api.VirtualThreadSupport;
 
 /**
  * {@link ScriptData} access.
  *
  * @since 3.21
  */
+@VirtualThreadSupport
 public interface ScriptDAO
     extends NamedDataAccess<ScriptData>
 {

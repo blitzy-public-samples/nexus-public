@@ -13,10 +13,12 @@
 package org.sonatype.nexus.siesta;
 
 import java.util.EnumSet;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 
 import javax.servlet.DispatcherType;
 import javax.ws.rs.client.Client;
-import javax.ws.rs.client.ClientBuilder;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
@@ -25,10 +27,9 @@ import com.google.inject.Injector;
 import com.google.inject.servlet.GuiceFilter;
 import com.google.inject.servlet.GuiceServletContextListener;
 import org.eclipse.jetty.servlet.ServletTester;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.rules.ExpectedException;
+import org.jboss.resteasy.client.jaxrs.ResteasyClientBuilder;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 
 /**
  * Support for Siesta tests.
@@ -41,11 +42,10 @@ public class SiestaTestSupport
   private String url;
 
   private Client client;
+  
+  private ExecutorService virtualThreadExecutor;
 
-  @Rule
-  public ExpectedException thrown = ExpectedException.none();
-
-  @Before
+  @BeforeEach
   public void startJetty() throws Exception {
     servletTester = new ServletTester();
     servletTester.getContext().addEventListener(new GuiceServletContextListener()
@@ -58,18 +58,65 @@ public class SiestaTestSupport
       }
     });
 
+    // Configure ServletTester for Java 21 compatibility
     url = servletTester.createConnector(true) + TestModule.MOUNT_POINT;
     servletTester.addFilter(GuiceFilter.class, "/*", EnumSet.of(DispatcherType.REQUEST));
     servletTester.addServlet(DummyServlet.class, "/*");
+    
+    // Configure virtual threads if running on Java 21 or newer
+    configureVirtualThreads();
+    
     servletTester.start();
 
-    client = ClientBuilder.newClient();
+    // Use RESTEasy client builder for compatibility with RESTEasy 6.2.7.Final
+    client = ResteasyClientBuilder.newClient();
   }
 
-  @After
+  @AfterEach
   public void stopJetty() throws Exception {
-    if (servletTester != null) {
-      servletTester.stop();
+    try {
+      if (client != null) {
+        client.close();
+      }
+    } finally {
+      if (servletTester != null) {
+        servletTester.stop();
+      }
+      
+      if (virtualThreadExecutor != null) {
+        virtualThreadExecutor.shutdown();
+      }
+    }
+  }
+  
+  /**
+   * Configure virtual threads if running on Java 21 or newer.
+   */
+  private void configureVirtualThreads() {
+    try {
+      // Check if we're running on Java 21 or newer with virtual threads support
+      Class<?> virtualThreadBuilderClass = Class.forName("java.lang.Thread$Builder$OfVirtual");
+      if (virtualThreadBuilderClass != null) {
+        // Create a virtual thread executor
+        virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+        
+        // Configure ServletTester to use virtual threads if possible
+        // This is a best-effort approach as the exact API might vary by Jetty version
+        try {
+          // Try to set virtual thread executor on the ServletTester if the method exists
+          java.lang.reflect.Method setVirtualThreadsExecutorMethod = 
+              servletTester.getClass().getMethod("setVirtualThreadsExecutor", ExecutorService.class);
+          if (setVirtualThreadsExecutorMethod != null) {
+            setVirtualThreadsExecutorMethod.invoke(servletTester, virtualThreadExecutor);
+          }
+        } catch (Exception e) {
+          // Virtual thread configuration not supported in this Jetty version, continue with platform threads
+          log.debug("Virtual thread configuration not supported in this Jetty version", e);
+        }
+      }
+    } catch (ClassNotFoundException e) {
+      // Running on Java version prior to 21, virtual threads not available
+      log.debug("Virtual threads not available in this Java version");
     }
   }
 

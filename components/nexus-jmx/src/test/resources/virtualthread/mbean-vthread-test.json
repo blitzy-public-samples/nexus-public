@@ -1,0 +1,245 @@
+{
+  "metadata": {
+    "domain": "org.sonatype.nexus.jmx",
+    "objectNameEntries": [
+      {
+        "name": "foo",
+        "value": "bar"
+      }
+    ],
+    "description": "Example managed object for virtual thread testing"
+  },
+  "attributes": [
+    {
+      "name": "Name",
+      "type": "java.lang.String",
+      "readable": true,
+      "writable": true,
+      "description": "Name attribute",
+      "testValues": [
+        "test1",
+        "test2",
+        "test3"
+      ]
+    },
+    {
+      "name": "Password",
+      "type": "java.lang.String",
+      "readable": false,
+      "writable": true,
+      "description": "Set password",
+      "testValues": [
+        "password1",
+        "password2",
+        "password3"
+      ]
+    }
+  ],
+  "operations": [
+    {
+      "name": "resetName",
+      "description": "Reset name",
+      "returnType": "void",
+      "parameters": []
+    }
+  ],
+  "virtualThreadTests": [
+    {
+      "name": "concurrentAttributeAccess",
+      "description": "Test concurrent attribute access from multiple virtual threads",
+      "threadCount": 100,
+      "iterations": 1000,
+      "operations": [
+        {
+          "type": "getAttribute",
+          "attribute": "Name",
+          "expectedResult": {
+            "type": "success",
+            "valueType": "java.lang.String"
+          }
+        },
+        {
+          "type": "setAttribute",
+          "attribute": "Name",
+          "value": "vThreadTest-${threadId}-${iteration}",
+          "expectedResult": {
+            "type": "success"
+          }
+        }
+      ]
+    },
+    {
+      "name": "concurrentOperationInvocation",
+      "description": "Test concurrent operation invocation from multiple virtual threads",
+      "threadCount": 50,
+      "iterations": 500,
+      "operations": [
+        {
+          "type": "setAttribute",
+          "attribute": "Name",
+          "value": "beforeReset-${threadId}",
+          "expectedResult": {
+            "type": "success"
+          }
+        },
+        {
+          "type": "invokeOperation",
+          "operation": "resetName",
+          "parameters": [],
+          "expectedResult": {
+            "type": "success"
+          }
+        },
+        {
+          "type": "getAttribute",
+          "attribute": "Name",
+          "expectedResult": {
+            "type": "success",
+            "value": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "writeOnlyAttributeAccess",
+      "description": "Test write-only attribute access from multiple virtual threads",
+      "threadCount": 20,
+      "iterations": 100,
+      "operations": [
+        {
+          "type": "setAttribute",
+          "attribute": "Password",
+          "value": "securePassword-${threadId}-${iteration}",
+          "expectedResult": {
+            "type": "success"
+          }
+        },
+        {
+          "type": "getAttribute",
+          "attribute": "Password",
+          "expectedResult": {
+            "type": "error",
+            "errorType": "javax.management.AttributeNotFoundException"
+          }
+        }
+      ]
+    },
+    {
+      "name": "mixedOperationsUnderLoad",
+      "description": "Test mixed operations under high virtual thread load",
+      "threadCount": 1000,
+      "iterations": 10,
+      "operations": [
+        {
+          "type": "getAttribute",
+          "attribute": "Name",
+          "expectedResult": {
+            "type": "success",
+            "valueType": "java.lang.String"
+          }
+        },
+        {
+          "type": "setAttribute",
+          "attribute": "Name",
+          "value": "loadTest-${threadId}",
+          "expectedResult": {
+            "type": "success"
+          }
+        },
+        {
+          "type": "invokeOperation",
+          "operation": "resetName",
+          "parameters": [],
+          "expectedResult": {
+            "type": "success"
+          }
+        }
+      ]
+    }
+  ],
+  "threadPinningTests": [
+    {
+      "name": "synchronizedBlockPinningTest",
+      "description": "Test thread pinning behavior with synchronized blocks",
+      "threadCount": 10,
+      "iterations": 5,
+      "synchronizedAccess": true,
+      "expectedPinning": true,
+      "operations": [
+        {
+          "type": "getAttribute",
+          "attribute": "Name",
+          "expectedResult": {
+            "type": "success",
+            "valueType": "java.lang.String"
+          }
+        },
+        {
+          "type": "setAttribute",
+          "attribute": "Name",
+          "value": "pinnedThread-${threadId}",
+          "expectedResult": {
+            "type": "success"
+          }
+        }
+      ]
+    }
+  ],
+  "performanceTests": [
+    {
+      "name": "platformVsVirtualThreadComparison",
+      "description": "Compare performance between platform and virtual threads",
+      "scenarios": [
+        {
+          "name": "platformThreads",
+          "threadType": "platform",
+          "threadCount": 200,
+          "iterations": 1000,
+          "operations": [
+            {
+              "type": "getAttribute",
+              "attribute": "Name"
+            },
+            {
+              "type": "setAttribute",
+              "attribute": "Name",
+              "value": "platformTest-${threadId}"
+            },
+            {
+              "type": "invokeOperation",
+              "operation": "resetName",
+              "parameters": []
+            }
+          ]
+        },
+        {
+          "name": "virtualThreads",
+          "threadType": "virtual",
+          "threadCount": 10000,
+          "iterations": 1000,
+          "operations": [
+            {
+              "type": "getAttribute",
+              "attribute": "Name"
+            },
+            {
+              "type": "setAttribute",
+              "attribute": "Name",
+              "value": "virtualTest-${threadId}"
+            },
+            {
+              "type": "invokeOperation",
+              "operation": "resetName",
+              "parameters": []
+            }
+          ]
+        }
+      ],
+      "expectedResults": {
+        "throughputImprovement": "significant",
+        "latencyImprovement": "minimal",
+        "resourceUsage": "lower"
+      }
+    }
+  ]
+}

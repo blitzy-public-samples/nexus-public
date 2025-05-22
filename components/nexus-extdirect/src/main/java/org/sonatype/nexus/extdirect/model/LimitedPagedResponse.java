@@ -28,25 +28,49 @@ public class LimitedPagedResponse<T>
 
   private boolean timedOut;
 
+  /**
+   * Constructor for a limited paged response.
+   *
+   * @param limit the maximum number of results to return
+   * @param total the actual total number of results
+   * @param data the collection of data to include in the response
+   */
   public LimitedPagedResponse(long limit, long total, Collection<T> data) {
     super(Math.min(limit, total), data);
     this.unlimitedTotal = total;
     this.limited = total != getTotal();
   }
 
+  /**
+   * Constructor for a limited paged response with timeout information.
+   *
+   * @param limit the maximum number of results to return
+   * @param total the actual total number of results
+   * @param data the collection of data to include in the response
+   * @param timedOut whether the operation timed out
+   */
   public LimitedPagedResponse(long limit, long total, Collection<T> data, boolean timedOut) {
     this(limit, total, data);
     this.timedOut = timedOut;
   }
 
+  /**
+   * @return the actual total number of results (unlimited)
+   */
   public long getUnlimitedTotal() {
     return unlimitedTotal;
   }
 
+  /**
+   * @return whether the results were limited
+   */
   public boolean isLimited() {
     return limited;
   }
 
+  /**
+   * @return whether the operation timed out
+   */
   public boolean isTimedOut() {
     return timedOut;
   }

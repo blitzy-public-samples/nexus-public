@@ -51,17 +51,16 @@ public class ExtDirectDispatcher
   private final ExtDirectExceptionHandler exceptionHandler;
 
   @Inject
-  public ExtDirectDispatcher(final BeanLocator beanLocator, final ExtDirectExceptionHandler exceptionHandler)
+  public ExtDirectDispatcher(BeanLocator beanLocator, ExtDirectExceptionHandler exceptionHandler)
   {
     this.beanLocator = checkNotNull(beanLocator);
     this.exceptionHandler = checkNotNull(exceptionHandler);
   }
 
   @Override
-  protected Object createInvokeInstanceForMethodWithDefaultConstructor(final RegisteredMethod method)
+  protected Object createInvokeInstanceForMethodWithDefaultConstructor(RegisteredMethod method)
   {
-    log.debug("Creating instance of action class '{}' mapped to '{}", method.getActionClass().getName(),
-        method.getActionName());
+    log.debug(STR."Creating instance of action class '\{method.getActionClass().getName()}' mapped to '\{method.getActionName()}'" );
 
     @SuppressWarnings("unchecked")
     Iterable<BeanEntry<Annotation, Object>> actionInstance = beanLocator.locate(
@@ -71,9 +70,9 @@ public class ExtDirectDispatcher
   }
 
   @Override
-  protected Object invokeMethod(final RegisteredMethod method, final Object actionInstance, final Object[] parameters)
+  protected Object invokeMethod(RegisteredMethod method, Object actionInstance, Object[] parameters)
   {
-    log.debug("Invoking action method: {}, java-method: {}", method.getFullName(), method.getFullJavaMethodName());
+    log.debug(STR."Invoking action method: \{method.getFullName()}, java-method: \{method.getFullJavaMethodName()}");
 
     Response response = null;
 
@@ -81,8 +80,8 @@ public class ExtDirectDispatcher
     try {
       response = asResponse(super.invokeMethod(method, actionInstance, parameters));
     }
-    catch (InvocationTargetException e) { // NOSONAR
-      response = asResponse(exceptionHandler.handleException(method, e.getTargetException()));
+    catch (Exception e) when (e instanceof InvocationTargetException ite) {
+      response = asResponse(exceptionHandler.handleException(method, ite.getTargetException()));
     }
     catch (Exception e) {
       response = asResponse(exceptionHandler.handleException(method, e));
@@ -94,19 +93,11 @@ public class ExtDirectDispatcher
     return response;
   }
 
-  private Response asResponse(final Object result) {
-    Response response;
-    if (result == null) {
-      response = success();
-    }
-    else {
-      if (result instanceof Response) {
-        response = (Response) result;
-      }
-      else {
-        response = success(result);
-      }
-    }
-    return response;
+  private Response asResponse(Object result) {
+    return switch (result) {
+      case null -> success();
+      case Response r -> r;
+      default -> success(result);
+    };
   }
 }

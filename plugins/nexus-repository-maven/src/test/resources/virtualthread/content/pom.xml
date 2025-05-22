@@ -1,0 +1,45 @@
+<!--
+
+    Sonatype Nexus (TM) Open Source Version
+    Copyright (c) 2008-present Sonatype, Inc.
+    All rights reserved. Includes the third-party code listed at http://links.sonatype.com/products/nexus/oss/attributions.
+
+    This program and the accompanying materials are made available under the terms of the Eclipse Public License Version 1.0,
+    which accompanies this distribution and is available at http://www.eclipse.org/legal/epl-v10.html.
+
+    Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
+    of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
+    Eclipse Foundation. All other trademarks are the property of their respective owners.
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+  <modelVersion>4.0.0</modelVersion>
+
+  <!-- 
+    This POM is a test fixture for Virtual Thread testing with Java 21.
+    It provides a minimal project structure to validate Maven repository operations
+    with Virtual Threads for improved performance and concurrency.
+  -->
+
+  <parent>
+    <groupId>aParentGroupId</groupId>
+    <artifactId>aParentArtifactId</artifactId>
+    <version>2.0</version>
+  </parent>
+
+  <artifactId>anArtifactId</artifactId>
+  
+  <properties>
+    <!-- Java 21 Virtual Thread configuration for testing -->
+    <maven.compiler.release>21</maven.compiler.release>
+    <!-- Enable Virtual Threads for concurrent repository operations testing -->
+    <jdk.virtualThreadScheduler.enabled>true</jdk.virtualThreadScheduler.enabled>
+    <!-- Configure thread pool size for optimal concurrent testing -->
+    <jdk.virtualThreadScheduler.parallelism>16</jdk.virtualThreadScheduler.parallelism>
+    <jdk.virtualThreadScheduler.maxPoolSize>256</jdk.virtualThreadScheduler.maxPoolSize>
+    <!-- Thread monitoring for test diagnostics -->
+    <jdk.tracePinnedThreads>true</jdk.tracePinnedThreads>
+  </properties>
+</project>

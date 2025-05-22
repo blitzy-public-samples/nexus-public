@@ -12,29 +12,31 @@
  */
 package org.sonatype.nexus.datastore.mybatis;
 
-import org.sonatype.goodies.testsupport.TestSupport;
+import java.io.File;
+import java.util.Optional;
+
 import org.sonatype.nexus.common.app.ApplicationDirectories;
 import org.sonatype.nexus.common.app.ManagedLifecycleManager;
 import org.sonatype.nexus.common.io.FileFinder;
 
 import com.zaxxer.hikari.HikariConfig;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
-import org.mockito.MockitoAnnotations;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.io.File;
-import java.util.Optional;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
-import static org.mockito.Mockito.*;
-
-public class H2VersionUpgraderTest
-    extends TestSupport
+@ExtendWith(MockitoExtension.class)
+class H2VersionUpgraderTest
 {
-
   @Mock
   private ApplicationDirectories directories;
 
@@ -47,14 +49,13 @@ public class H2VersionUpgraderTest
   @Mock
   private HikariConfig hikariConfig;
 
-  @Before
-  public void setUp() {
-    MockitoAnnotations.initMocks(this);
-    underTest = new H2VersionUpgrader(directories, managedLifecycleManager);
+  @BeforeEach
+  void setUp() {
+    // No need to manually initialize mocks or create underTest as MockitoExtension handles this
   }
 
   @Test
-  public void testUpgradeH2DatabaseWhenSqlFileNotPresent() throws Exception {
+  void upgradeH2DatabaseWhenSqlFileNotPresent() throws Exception {
     when(directories.getWorkDirectory(any(String.class))).thenReturn(new File("/"));
     try (MockedStatic<FileFinder> utilities = Mockito.mockStatic(FileFinder.class)) {
       utilities.when(() -> FileFinder.findLatestTimestampedFile(any(), any(), any())).thenReturn(Optional.empty());

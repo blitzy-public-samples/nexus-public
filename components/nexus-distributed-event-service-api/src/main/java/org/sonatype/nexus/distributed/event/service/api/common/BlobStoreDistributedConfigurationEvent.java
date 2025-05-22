@@ -46,8 +46,6 @@ public class BlobStoreDistributedConfigurationEvent
 
   @Override
   public String toString() {
-    return "BlobStoreConfigurationEvent{" +
-        "blobStoreName='" + blobStoreName + '\'' +
-        '}';
+    return STR."BlobStoreConfigurationEvent{blobStoreName='\{blobStoreName}'}";
   }
 }

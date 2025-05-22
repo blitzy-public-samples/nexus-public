@@ -457,5 +457,410 @@ public abstract class ParserVisitorSupport
     return doVisit(node, data);
   }
 
+  /**
+   * Abstract method to be implemented by subclasses to handle visiting a node.
+   * 
+   * @param node the node to visit
+   * @param data the data to pass to the visitor
+   * @return the result of visiting the node
+   */
   protected abstract Object doVisit(final JexlNode node, final Object data);
+
+  /**
+   * Helper method that uses Java 21 pattern matching for instanceof to handle different node types.
+   * Subclasses can override this method to provide custom handling for specific node types.
+   * 
+   * @param node the node to visit
+   * @param data the data to pass to the visitor
+   * @return the result of visiting the node
+   * @since 3.60
+   */
+  protected Object doVisitWithPatternMatching(final JexlNode node, final Object data) {
+    // Use pattern matching for instanceof to handle different node types
+    if (node instanceof ASTJexlScript script) {
+      return handleJexlScript(script, data);
+    }
+    else if (node instanceof ASTBlock block) {
+      return handleBlock(block, data);
+    }
+    else if (node instanceof ASTIfStatement ifStatement) {
+      return handleIfStatement(ifStatement, data);
+    }
+    else if (node instanceof ASTWhileStatement whileStatement) {
+      return handleWhileStatement(whileStatement, data);
+    }
+    else if (node instanceof ASTForeachStatement foreachStatement) {
+      return handleForeachStatement(foreachStatement, data);
+    }
+    else if (node instanceof ASTReturnStatement returnStatement) {
+      return handleReturnStatement(returnStatement, data);
+    }
+    else if (node instanceof ASTAssignment assignment) {
+      return handleAssignment(assignment, data);
+    }
+    else if (node instanceof ASTVar var) {
+      return handleVar(var, data);
+    }
+    else if (node instanceof ASTReference reference) {
+      return handleReference(reference, data);
+    }
+    else if (node instanceof ASTTernaryNode ternary) {
+      return handleTernary(ternary, data);
+    }
+    else if (node instanceof ASTBinaryOperator binaryOp) {
+      return handleBinaryOperator(binaryOp, data);
+    }
+    else if (node instanceof ASTUnaryOperator unaryOp) {
+      return handleUnaryOperator(unaryOp, data);
+    }
+    else if (node instanceof ASTLiteral literal) {
+      return handleLiteral(literal, data);
+    }
+    else if (node instanceof ASTIdentifier identifier) {
+      return handleIdentifier(identifier, data);
+    }
+    else if (node instanceof ASTFunction function) {
+      return handleFunction(function, data);
+    }
+    else if (node instanceof ASTMethod method) {
+      return handleMethod(method, data);
+    }
+    else {
+      // Default handling for other node types
+      log.debug("Unhandled node type: {}", node.getClass().getSimpleName());
+      return null;
+    }
+  }
+
+  /**
+   * Helper method that uses Java 21 switch pattern matching to handle different node types.
+   * This provides a more concise and expressive way to handle different node types compared to
+   * the traditional if-else approach.
+   * 
+   * @param node the node to visit
+   * @param data the data to pass to the visitor
+   * @return the result of visiting the node
+   * @since 3.60
+   */
+  protected Object doVisitWithSwitchPatternMatching(final JexlNode node, final Object data) {
+    return switch (node) {
+      case ASTJexlScript script -> handleJexlScript(script, data);
+      case ASTBlock block -> handleBlock(block, data);
+      case ASTIfStatement ifStatement -> handleIfStatement(ifStatement, data);
+      case ASTWhileStatement whileStatement -> handleWhileStatement(whileStatement, data);
+      case ASTForeachStatement foreachStatement -> handleForeachStatement(foreachStatement, data);
+      case ASTReturnStatement returnStatement -> handleReturnStatement(returnStatement, data);
+      case ASTAssignment assignment -> handleAssignment(assignment, data);
+      case ASTVar var -> handleVar(var, data);
+      case ASTReference reference -> handleReference(reference, data);
+      case ASTTernaryNode ternary -> handleTernary(ternary, data);
+      case ASTBinaryOperator binaryOp -> handleBinaryOperator(binaryOp, data);
+      case ASTUnaryOperator unaryOp -> handleUnaryOperator(unaryOp, data);
+      case ASTLiteral literal -> handleLiteral(literal, data);
+      case ASTIdentifier identifier -> handleIdentifier(identifier, data);
+      case ASTFunction function -> handleFunction(function, data);
+      case ASTMethod method -> handleMethod(method, data);
+      case null -> {
+        log.warn("Null node encountered");
+        yield null;
+      }
+      default -> {
+        log.debug("Unhandled node type: {}", node.getClass().getSimpleName());
+        yield null;
+      }
+    };
+  }
+
+  /**
+   * Interface for binary operators to simplify pattern matching.
+   * @since 3.60
+   */
+  protected interface ASTBinaryOperator extends JexlNode {
+  }
+
+  /**
+   * Interface for unary operators to simplify pattern matching.
+   * @since 3.60
+   */
+  protected interface ASTUnaryOperator extends JexlNode {
+  }
+
+  /**
+   * Interface for literals to simplify pattern matching.
+   * @since 3.60
+   */
+  protected interface ASTLiteral extends JexlNode {
+  }
+
+  /**
+   * Interface for functions to simplify pattern matching.
+   * @since 3.60
+   */
+  protected interface ASTFunction extends JexlNode {
+  }
+
+  /**
+   * Interface for methods to simplify pattern matching.
+   * @since 3.60
+   */
+  protected interface ASTMethod extends JexlNode {
+  }
+
+  // Implement these interfaces for the relevant node types
+  static {
+    // Binary operators
+    ASTOrNode.class.asSubclass(ASTBinaryOperator.class);
+    ASTAndNode.class.asSubclass(ASTBinaryOperator.class);
+    ASTBitwiseOrNode.class.asSubclass(ASTBinaryOperator.class);
+    ASTBitwiseXorNode.class.asSubclass(ASTBinaryOperator.class);
+    ASTBitwiseAndNode.class.asSubclass(ASTBinaryOperator.class);
+    ASTEQNode.class.asSubclass(ASTBinaryOperator.class);
+    ASTNENode.class.asSubclass(ASTBinaryOperator.class);
+    ASTLTNode.class.asSubclass(ASTBinaryOperator.class);
+    ASTGTNode.class.asSubclass(ASTBinaryOperator.class);
+    ASTLENode.class.asSubclass(ASTBinaryOperator.class);
+    ASTGENode.class.asSubclass(ASTBinaryOperator.class);
+    ASTERNode.class.asSubclass(ASTBinaryOperator.class);
+    ASTNRNode.class.asSubclass(ASTBinaryOperator.class);
+    ASTSWNode.class.asSubclass(ASTBinaryOperator.class);
+    ASTNSWNode.class.asSubclass(ASTBinaryOperator.class);
+    ASTEWNode.class.asSubclass(ASTBinaryOperator.class);
+    ASTNEWNode.class.asSubclass(ASTBinaryOperator.class);
+    ASTAddNode.class.asSubclass(ASTBinaryOperator.class);
+    ASTSubNode.class.asSubclass(ASTBinaryOperator.class);
+    ASTMulNode.class.asSubclass(ASTBinaryOperator.class);
+    ASTDivNode.class.asSubclass(ASTBinaryOperator.class);
+    ASTModNode.class.asSubclass(ASTBinaryOperator.class);
+    ASTSetAddNode.class.asSubclass(ASTBinaryOperator.class);
+    ASTSetSubNode.class.asSubclass(ASTBinaryOperator.class);
+    ASTSetMultNode.class.asSubclass(ASTBinaryOperator.class);
+    ASTSetDivNode.class.asSubclass(ASTBinaryOperator.class);
+    ASTSetModNode.class.asSubclass(ASTBinaryOperator.class);
+    ASTSetAndNode.class.asSubclass(ASTBinaryOperator.class);
+    ASTSetOrNode.class.asSubclass(ASTBinaryOperator.class);
+    ASTSetXorNode.class.asSubclass(ASTBinaryOperator.class);
+
+    // Unary operators
+    ASTUnaryMinusNode.class.asSubclass(ASTUnaryOperator.class);
+    ASTBitwiseComplNode.class.asSubclass(ASTUnaryOperator.class);
+    ASTNotNode.class.asSubclass(ASTUnaryOperator.class);
+
+    // Literals
+    ASTNullLiteral.class.asSubclass(ASTLiteral.class);
+    ASTTrueNode.class.asSubclass(ASTLiteral.class);
+    ASTFalseNode.class.asSubclass(ASTLiteral.class);
+    ASTNumberLiteral.class.asSubclass(ASTLiteral.class);
+    ASTStringLiteral.class.asSubclass(ASTLiteral.class);
+    ASTSetLiteral.class.asSubclass(ASTLiteral.class);
+    ASTExtendedLiteral.class.asSubclass(ASTLiteral.class);
+    ASTArrayLiteral.class.asSubclass(ASTLiteral.class);
+    ASTRangeNode.class.asSubclass(ASTLiteral.class);
+    ASTMapLiteral.class.asSubclass(ASTLiteral.class);
+    ASTMapEntry.class.asSubclass(ASTLiteral.class);
+    ASTJxltLiteral.class.asSubclass(ASTLiteral.class);
+
+    // Functions
+    ASTEmptyFunction.class.asSubclass(ASTFunction.class);
+    ASTSizeFunction.class.asSubclass(ASTFunction.class);
+    ASTFunctionNode.class.asSubclass(ASTFunction.class);
+
+    // Methods
+    ASTEmptyMethod.class.asSubclass(ASTMethod.class);
+    ASTSizeMethod.class.asSubclass(ASTMethod.class);
+    ASTMethodNode.class.asSubclass(ASTMethod.class);
+  }
+
+  // Handler methods for different node types
+
+  /**
+   * Handle a JexlScript node.
+   * @param script the script node
+   * @param data the data to pass to the visitor
+   * @return the result of visiting the node
+   * @since 3.60
+   */
+  protected Object handleJexlScript(final ASTJexlScript script, final Object data) {
+    log.debug("Handling JexlScript");
+    return null;
+  }
+
+  /**
+   * Handle a Block node.
+   * @param block the block node
+   * @param data the data to pass to the visitor
+   * @return the result of visiting the node
+   * @since 3.60
+   */
+  protected Object handleBlock(final ASTBlock block, final Object data) {
+    log.debug("Handling Block");
+    return null;
+  }
+
+  /**
+   * Handle an IfStatement node.
+   * @param ifStatement the if statement node
+   * @param data the data to pass to the visitor
+   * @return the result of visiting the node
+   * @since 3.60
+   */
+  protected Object handleIfStatement(final ASTIfStatement ifStatement, final Object data) {
+    log.debug("Handling IfStatement");
+    return null;
+  }
+
+  /**
+   * Handle a WhileStatement node.
+   * @param whileStatement the while statement node
+   * @param data the data to pass to the visitor
+   * @return the result of visiting the node
+   * @since 3.60
+   */
+  protected Object handleWhileStatement(final ASTWhileStatement whileStatement, final Object data) {
+    log.debug("Handling WhileStatement");
+    return null;
+  }
+
+  /**
+   * Handle a ForeachStatement node.
+   * @param foreachStatement the foreach statement node
+   * @param data the data to pass to the visitor
+   * @return the result of visiting the node
+   * @since 3.60
+   */
+  protected Object handleForeachStatement(final ASTForeachStatement foreachStatement, final Object data) {
+    log.debug("Handling ForeachStatement");
+    return null;
+  }
+
+  /**
+   * Handle a ReturnStatement node.
+   * @param returnStatement the return statement node
+   * @param data the data to pass to the visitor
+   * @return the result of visiting the node
+   * @since 3.60
+   */
+  protected Object handleReturnStatement(final ASTReturnStatement returnStatement, final Object data) {
+    log.debug("Handling ReturnStatement");
+    return null;
+  }
+
+  /**
+   * Handle an Assignment node.
+   * @param assignment the assignment node
+   * @param data the data to pass to the visitor
+   * @return the result of visiting the node
+   * @since 3.60
+   */
+  protected Object handleAssignment(final ASTAssignment assignment, final Object data) {
+    log.debug("Handling Assignment");
+    return null;
+  }
+
+  /**
+   * Handle a Var node.
+   * @param var the var node
+   * @param data the data to pass to the visitor
+   * @return the result of visiting the node
+   * @since 3.60
+   */
+  protected Object handleVar(final ASTVar var, final Object data) {
+    log.debug("Handling Var");
+    return null;
+  }
+
+  /**
+   * Handle a Reference node.
+   * @param reference the reference node
+   * @param data the data to pass to the visitor
+   * @return the result of visiting the node
+   * @since 3.60
+   */
+  protected Object handleReference(final ASTReference reference, final Object data) {
+    log.debug("Handling Reference");
+    return null;
+  }
+
+  /**
+   * Handle a Ternary node.
+   * @param ternary the ternary node
+   * @param data the data to pass to the visitor
+   * @return the result of visiting the node
+   * @since 3.60
+   */
+  protected Object handleTernary(final ASTTernaryNode ternary, final Object data) {
+    log.debug("Handling Ternary");
+    return null;
+  }
+
+  /**
+   * Handle a BinaryOperator node.
+   * @param binaryOp the binary operator node
+   * @param data the data to pass to the visitor
+   * @return the result of visiting the node
+   * @since 3.60
+   */
+  protected Object handleBinaryOperator(final ASTBinaryOperator binaryOp, final Object data) {
+    log.debug("Handling BinaryOperator: {}", binaryOp.getClass().getSimpleName());
+    return null;
+  }
+
+  /**
+   * Handle a UnaryOperator node.
+   * @param unaryOp the unary operator node
+   * @param data the data to pass to the visitor
+   * @return the result of visiting the node
+   * @since 3.60
+   */
+  protected Object handleUnaryOperator(final ASTUnaryOperator unaryOp, final Object data) {
+    log.debug("Handling UnaryOperator: {}", unaryOp.getClass().getSimpleName());
+    return null;
+  }
+
+  /**
+   * Handle a Literal node.
+   * @param literal the literal node
+   * @param data the data to pass to the visitor
+   * @return the result of visiting the node
+   * @since 3.60
+   */
+  protected Object handleLiteral(final ASTLiteral literal, final Object data) {
+    log.debug("Handling Literal: {}", literal.getClass().getSimpleName());
+    return null;
+  }
+
+  /**
+   * Handle an Identifier node.
+   * @param identifier the identifier node
+   * @param data the data to pass to the visitor
+   * @return the result of visiting the node
+   * @since 3.60
+   */
+  protected Object handleIdentifier(final ASTIdentifier identifier, final Object data) {
+    log.debug("Handling Identifier");
+    return null;
+  }
+
+  /**
+   * Handle a Function node.
+   * @param function the function node
+   * @param data the data to pass to the visitor
+   * @return the result of visiting the node
+   * @since 3.60
+   */
+  protected Object handleFunction(final ASTFunction function, final Object data) {
+    log.debug("Handling Function: {}", function.getClass().getSimpleName());
+    return null;
+  }
+
+  /**
+   * Handle a Method node.
+   * @param method the method node
+   * @param data the data to pass to the visitor
+   * @return the result of visiting the node
+   * @since 3.60
+   */
+  protected Object handleMethod(final ASTMethod method, final Object data) {
+    log.debug("Handling Method: {}", method.getClass().getSimpleName());
+    return null;
+  }
 }

@@ -12,8 +12,8 @@
  */
 package org.sonatype.nexus.script.plugin.internal.security;
 
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
+import javax.inject.Named;
+import javax.inject.Singleton;
 
 import org.sonatype.nexus.security.config.MemorySecurityConfiguration;
 import org.sonatype.nexus.security.config.SecurityConfiguration;
@@ -22,8 +22,8 @@ import org.sonatype.nexus.security.config.SecurityContributorSupport;
 import org.sonatype.nexus.security.config.memory.MemoryCPrivilege;
 import org.sonatype.nexus.security.config.memory.MemoryCPrivilege.MemoryCPrivilegeBuilder;
 
-import static java.util.Objects.requireNonNull;
-import static org.apache.commons.lang3.StringUtils.capitalize;
+import static java.lang.StringTemplate.STR;
+import static org.apache.commons.lang.StringUtils.capitalize;
 import static org.sonatype.nexus.script.plugin.internal.security.ScriptPrivilegeDescriptor.P_ACTIONS;
 import static org.sonatype.nexus.script.plugin.internal.security.ScriptPrivilegeDescriptor.P_NAME;
 import static org.sonatype.nexus.script.plugin.internal.security.ScriptPrivilegeDescriptor.TYPE;
@@ -56,66 +56,35 @@ public class ScriptSecurityContributor
 
   public static final String ACTION_RUN = "run";
 
-  /**
-   * Defines the set of standard script actions.
-   * @since 3.45
-   */
-  private static final record ScriptAction(String name, boolean requiresRead) {}
-  
-  /**
-   * Standard script actions with their read requirements.
-   * @since 3.45
-   */
-  private static final ScriptAction[] SCRIPT_ACTIONS = {
-      new ScriptAction(ALL, false),
-      new ScriptAction(ACTION_BROWSE, true),
-      new ScriptAction(ACTION_READ, false),
-      new ScriptAction(ACTION_EDIT, true),
-      new ScriptAction(ACTION_ADD, true),
-      new ScriptAction(ACTION_DELETE, true),
-      new ScriptAction(ACTION_RUN, false)
-  };
-
   @Override
   public SecurityConfiguration getContribution() {
     MemorySecurityConfiguration config = new MemorySecurityConfiguration();
 
-    // Add all standard script privileges
-    for (ScriptAction action : SCRIPT_ACTIONS) {
-      config.addPrivilege(createScriptPrivilege(action));
-    }
+    config.addPrivilege(createScriptPrivilege(ALL));
+    config.addPrivilege(createScriptPrivilege(ACTION_BROWSE));
+    config.addPrivilege(createScriptPrivilege(ACTION_READ));
+    config.addPrivilege(createScriptPrivilege(ACTION_EDIT));
+    config.addPrivilege(createScriptPrivilege(ACTION_ADD));
+    config.addPrivilege(createScriptPrivilege(ACTION_DELETE));
+    config.addPrivilege(createScriptPrivilege(ACTION_RUN));
 
     return config;
   }
 
-  /**
-   * Creates a script privilege for the given action.
-   *
-   * @param action the script action
-   * @return the memory privilege
-   * @since 3.45
-   */
-  private MemoryCPrivilege createScriptPrivilege(final ScriptAction action) {
-    requireNonNull(action, "Script action cannot be null");
-    return createScriptPrivilege(action.name());
-  }
-
-  /**
-   * Creates a script privilege for the given action name.
-   *
-   * @param action the action name
-   * @return the memory privilege
-   */
-  private MemoryCPrivilege createScriptPrivilege(final String action) {
-    requireNonNull(action, "Action cannot be null");
+  private MemoryCPrivilege createScriptPrivilege(final String action)
+  {
+    final String id = STR."{SCRIPT_ALL_PREFIX}{action}";
     
-    final String id = SCRIPT_ALL_PREFIX + action;
-    final String description = (ALL.equals(action) ? "All" : capitalize(action)) + SCRIPT_ALL_DESCRIPTION_SUFFIX;
+    // Use String Templates for more efficient description construction
+    final String description = switch (action) {
+      case ALL -> STR."All{SCRIPT_ALL_DESCRIPTION_SUFFIX}";
+      default -> STR."{capitalize(action)}{SCRIPT_ALL_DESCRIPTION_SUFFIX}";
+    };
     
-    // Determine if this action requires read permission to be included
+    // Use Pattern Matching for more concise action handling
     final String actions = switch (action) {
       case ALL, ACTION_READ, ACTION_RUN -> action;
-      default -> String.join(",", action, ACTION_READ);
+      default -> STR."{action},{ACTION_READ}";
     };
 
     return new MemoryCPrivilegeBuilder(id)
@@ -124,7 +93,6 @@ public class ScriptSecurityContributor
         .name(id)
         .description(description)
         .property(P_NAME, ALL)
-        .property(P_ACTIONS, actions)
-        .build();
+        .property(P_ACTIONS, actions).build();
   }
 }

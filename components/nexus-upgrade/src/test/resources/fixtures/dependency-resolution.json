@@ -1,0 +1,274 @@
+{
+  "testScenarios": [
+    {
+      "name": "simpleChain",
+      "description": "Simple dependency chain A → B → C",
+      "things": [
+        {
+          "id": "a",
+          "dependencies": [
+            { "type": "exact", "value": "b" }
+          ]
+        },
+        {
+          "id": "b",
+          "dependencies": [
+            { "type": "exact", "value": "c" }
+          ]
+        },
+        {
+          "id": "c",
+          "dependencies": []
+        }
+      ],
+      "expectedOrder": ["c", "b", "a"],
+      "expectsError": false
+    },
+    {
+      "name": "complexGraph",
+      "description": "Complex dependency graph with multiple dependencies",
+      "things": [
+        {
+          "id": "structure.house",
+          "dependencies": [
+            { "type": "pattern", "value": "room\\..*" },
+            { "type": "exact", "value": "structure.garage" }
+          ]
+        },
+        {
+          "id": "structure.garage",
+          "dependencies": []
+        },
+        {
+          "id": "room.kitchen",
+          "dependencies": []
+        },
+        {
+          "id": "room.bathroom",
+          "dependencies": []
+        },
+        {
+          "id": "room.bedroom",
+          "dependencies": [
+            { "type": "exact", "value": "room.bathroom" }
+          ]
+        },
+        {
+          "id": "room.living",
+          "dependencies": [
+            { "type": "pattern", "value": "room\\..*" }
+          ]
+        },
+        {
+          "id": "car.toyota",
+          "dependencies": [
+            { "type": "exact", "value": "structure.garage" }
+          ]
+        },
+        {
+          "id": "structure.gazebo",
+          "dependencies": []
+        }
+      ],
+      "expectedConstraints": [
+        { "before": "room.bathroom", "after": "room.bedroom" },
+        { "before": "structure.garage", "after": "structure.house" },
+        { "before": "room.kitchen", "after": "structure.house" },
+        { "before": "room.bathroom", "after": "structure.house" },
+        { "before": "room.bedroom", "after": "structure.house" },
+        { "before": "room.living", "after": "structure.house" },
+        { "before": "structure.garage", "after": "car.toyota" }
+      ],
+      "expectsError": false
+    },
+    {
+      "name": "patternDependencies",
+      "description": "Testing pattern-based dependencies",
+      "things": [
+        {
+          "id": "controller",
+          "dependencies": [
+            { "type": "pattern", "value": "service\\..*" }
+          ]
+        },
+        {
+          "id": "service.users",
+          "dependencies": [
+            { "type": "pattern", "value": "repository\\..*" }
+          ]
+        },
+        {
+          "id": "service.products",
+          "dependencies": [
+            { "type": "pattern", "value": "repository\\..*" }
+          ]
+        },
+        {
+          "id": "repository.users",
+          "dependencies": [
+            { "type": "exact", "value": "database" }
+          ]
+        },
+        {
+          "id": "repository.products",
+          "dependencies": [
+            { "type": "exact", "value": "database" }
+          ]
+        },
+        {
+          "id": "database",
+          "dependencies": []
+        }
+      ],
+      "expectedConstraints": [
+        { "before": "database", "after": "repository.users" },
+        { "before": "database", "after": "repository.products" },
+        { "before": "repository.users", "after": "service.users" },
+        { "before": "repository.products", "after": "service.products" },
+        { "before": "service.users", "after": "controller" },
+        { "before": "service.products", "after": "controller" }
+      ],
+      "expectsError": false
+    },
+    {
+      "name": "cyclicDependency",
+      "description": "Cyclic dependency that should cause an error",
+      "things": [
+        {
+          "id": "a",
+          "dependencies": [
+            { "type": "exact", "value": "b" }
+          ]
+        },
+        {
+          "id": "b",
+          "dependencies": [
+            { "type": "exact", "value": "a" }
+          ]
+        }
+      ],
+      "expectsError": true,
+      "errorType": "CyclicDependencyException"
+    },
+    {
+      "name": "unresolvedDependency",
+      "description": "Unresolved dependency that should cause an error",
+      "things": [
+        {
+          "id": "a",
+          "dependencies": [
+            { "type": "exact", "value": "b" }
+          ]
+        }
+      ],
+      "expectsError": true,
+      "errorType": "UnresolvedDependencyException"
+    },
+    {
+      "name": "java21Features",
+      "description": "Testing with Java 21 specific features like record patterns",
+      "things": [
+        {
+          "id": "app",
+          "dependencies": [
+            { "type": "pattern", "value": "module\\..*" }
+          ]
+        },
+        {
+          "id": "module.core",
+          "dependencies": [
+            { "type": "exact", "value": "module.common" },
+            { "type": "exact", "value": "module.config" }
+          ]
+        },
+        {
+          "id": "module.api",
+          "dependencies": [
+            { "type": "exact", "value": "module.core" },
+            { "type": "exact", "value": "module.common" }
+          ]
+        },
+        {
+          "id": "module.web",
+          "dependencies": [
+            { "type": "exact", "value": "module.api" },
+            { "type": "exact", "value": "module.security" }
+          ]
+        },
+        {
+          "id": "module.security",
+          "dependencies": [
+            { "type": "exact", "value": "module.common" },
+            { "type": "exact", "value": "module.config" }
+          ]
+        },
+        {
+          "id": "module.common",
+          "dependencies": []
+        },
+        {
+          "id": "module.config",
+          "dependencies": []
+        }
+      ],
+      "expectedConstraints": [
+        { "before": "module.common", "after": "module.core" },
+        { "before": "module.config", "after": "module.core" },
+        { "before": "module.core", "after": "module.api" },
+        { "before": "module.common", "after": "module.api" },
+        { "before": "module.api", "after": "module.web" },
+        { "before": "module.security", "after": "module.web" },
+        { "before": "module.common", "after": "module.security" },
+        { "before": "module.config", "after": "module.security" },
+        { "before": "module.web", "after": "app" }
+      ],
+      "expectsError": false
+    },
+    {
+      "name": "virtualThreads",
+      "description": "Testing with Java 21 Virtual Threads related dependencies",
+      "things": [
+        {
+          "id": "threadpool.executor",
+          "dependencies": [
+            { "type": "exact", "value": "threadpool.factory" }
+          ]
+        },
+        {
+          "id": "threadpool.factory",
+          "dependencies": [
+            { "type": "exact", "value": "threadpool.config" }
+          ]
+        },
+        {
+          "id": "threadpool.config",
+          "dependencies": []
+        },
+        {
+          "id": "virtualthread.executor",
+          "dependencies": [
+            { "type": "exact", "value": "virtualthread.factory" }
+          ]
+        },
+        {
+          "id": "virtualthread.factory",
+          "dependencies": []
+        },
+        {
+          "id": "task.scheduler",
+          "dependencies": [
+            { "type": "pattern", "value": ".*\\.executor" }
+          ]
+        }
+      ],
+      "expectedConstraints": [
+        { "before": "threadpool.config", "after": "threadpool.factory" },
+        { "before": "threadpool.factory", "after": "threadpool.executor" },
+        { "before": "virtualthread.factory", "after": "virtualthread.executor" },
+        { "before": "threadpool.executor", "after": "task.scheduler" },
+        { "before": "virtualthread.executor", "after": "task.scheduler" }
+      ],
+      "expectsError": false
+    }
+  ]
+}

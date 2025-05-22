@@ -13,7 +13,9 @@
 package org.sonatype.nexus.jmx;
 
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.SequencedMap;
 
 import javax.annotation.Nullable;
 import javax.management.Attribute;
@@ -29,7 +31,6 @@ import javax.management.ServiceNotFoundException;
 import org.sonatype.goodies.common.ComponentSupport;
 
 import com.google.common.base.Throwables;
-import com.google.common.collect.ImmutableMap;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -46,9 +47,9 @@ public class MBean
 {
   private final MBeanInfo info;
 
-  private final Map<String,MBeanAttribute> attributes;
+  private final SequencedMap<String,MBeanAttribute> attributes;
 
-  private final Map<OperationKey,MBeanOperation> operations;
+  private final SequencedMap<OperationKey,MBeanOperation> operations;
 
   public MBean(final MBeanInfo info,
                final Collection<MBeanAttribute> attributes,
@@ -57,18 +58,18 @@ public class MBean
     this.info = checkNotNull(info);
 
     // build attributes lookup map
-    ImmutableMap.Builder<String,MBeanAttribute> attrs = ImmutableMap.builder();
+    SequencedMap<String,MBeanAttribute> attrs = new LinkedHashMap<>();
     for (MBeanAttribute attribute : attributes) {
       attrs.put(attribute.getName(), attribute);
     }
-    this.attributes = attrs.build();
+    this.attributes = attrs;
 
     // build operations lookup map
-    ImmutableMap.Builder<OperationKey,MBeanOperation> ops = ImmutableMap.builder();
+    SequencedMap<OperationKey,MBeanOperation> ops = new LinkedHashMap<>();
     for (MBeanOperation operation : operations) {
       ops.put(operation.getKey(), operation);
     }
-    this.operations = ops.build();
+    this.operations = ops;
   }
 
   @Override
@@ -103,7 +104,7 @@ public class MBean
     checkNotNull(key);
     MBeanOperation operation = operations.get(key);
     if (operation == null) {
-      throw new ServiceNotFoundException("Missing operation: " + key);
+      throw new ServiceNotFoundException(STR."Missing operation: \{key}");
     }
     return operation;
   }
@@ -116,7 +117,7 @@ public class MBean
       return attribute(name).getValue();
     }
     catch (Exception e) {
-      log.warn("Failed to get attribute: {}", name, e);
+      log.warn(STR."Failed to get attribute: \{name}", e);
 
       // TODO: Sort out the proper exception handling/wrapping
       Throwables.propagateIfPossible(e, AttributeNotFoundException.class);
@@ -136,7 +137,7 @@ public class MBean
       attribute(name).setValue(value);
     }
     catch (Exception e) {
-      log.warn("Failed to set attribute: {}", attribute, e);
+      log.warn(STR."Failed to set attribute: \{attribute}", e);
 
       // TODO: Sort out the proper exception handling/wrapping
       Throwables.propagateIfPossible(e, AttributeNotFoundException.class);
@@ -159,7 +160,7 @@ public class MBean
           result.add(attribute);
         }
         catch (Exception e) {
-          log.warn("Failed to get attribute: {}", name, e);
+          log.warn(STR."Failed to get attribute: \{name}", e);
         }
       }
     }
@@ -178,7 +179,7 @@ public class MBean
           result.add(attribute);
         }
         catch (Exception e) {
-          log.warn("Failed to set attribute: {}", attribute.getName(), e);
+          log.warn(STR."Failed to set attribute: \{attribute.getName()}", e);
         }
       }
     }
@@ -205,7 +206,7 @@ public class MBean
       return operation(key).invoke(params);
     }
     catch (Exception e) {
-      log.warn("Failed to invoke operation: {}", key, e);
+      log.warn(STR."Failed to invoke operation: \{key}", e);
 
       // TODO: Sort out the proper exception handling/wrapping
       Throwables.propagateIfPossible(e, MBeanException.class);

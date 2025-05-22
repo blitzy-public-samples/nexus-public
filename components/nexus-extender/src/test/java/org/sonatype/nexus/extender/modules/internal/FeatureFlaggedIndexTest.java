@@ -18,10 +18,11 @@ import org.sonatype.nexus.extender.modules.FeatureFlaggedIndex;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.Mock;
 import org.osgi.framework.Bundle;
 
 import static org.hamcrest.CoreMatchers.is;
@@ -63,12 +64,14 @@ public class FeatureFlaggedIndexTest
   }
 
   @Test
-  public void testNoFlagsEnabled() {
+  @DisplayName("Verify feature is disabled when no flags are enabled")
+  public void noFlagsEnabled() {
     assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, ""), is(true));
   }
 
   @Test
-  public void testPartialFlagsEnabled() {
+  @DisplayName("Verify feature is disabled when only some flags are enabled")
+  public void partialFlagsEnabled() {
     System.setProperty(FLAG_1, Boolean.toString(true));
     assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, ""), is(true));
 
@@ -78,7 +81,8 @@ public class FeatureFlaggedIndexTest
   }
 
   @Test
-  public void testAllFlagsEnabled() {
+  @DisplayName("Verify feature is enabled when all flags are enabled")
+  public void allFlagsEnabled() {
     System.setProperty(FLAG_1, Boolean.toString(true));
     System.setProperty(FLAG_2, Boolean.toString(true));
     assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, ""), is(false));
@@ -91,7 +95,8 @@ public class FeatureFlaggedIndexTest
   }
 
   @Test
-  public void testInvertedFlag() throws ClassNotFoundException {
+  @DisplayName("Verify behavior of inverted feature flags")
+  public void invertedFlag() throws ClassNotFoundException {
     doReturn(TestInvertedClass.class).when(mockBundle).loadClass(nullable(String.class));
 
     // no value set
@@ -113,7 +118,8 @@ public class FeatureFlaggedIndexTest
   }
 
   @Test
-  public void testInvertedFlagEnabledByDefault() throws ClassNotFoundException {
+  @DisplayName("Verify behavior of inverted feature flags that are enabled by default")
+  public void invertedFlagEnabledByDefault() throws ClassNotFoundException {
     doReturn(TestInvertedEnabledByDefaultClass.class).when(mockBundle).loadClass(nullable(String.class));
 
     // no value set

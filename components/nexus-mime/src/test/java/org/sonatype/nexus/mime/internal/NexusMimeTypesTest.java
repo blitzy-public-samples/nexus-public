@@ -18,7 +18,9 @@ import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.mime.MimeRule;
 
 import com.google.common.base.Joiner;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
@@ -30,6 +32,7 @@ import static org.hamcrest.Matchers.nullValue;
 /**
  * Tests for {@link NexusMimeTypes}.
  */
+@ExtendWith(MockitoExtension.class)
 public class NexusMimeTypesTest
     extends TestSupport
 {
@@ -41,12 +44,12 @@ public class NexusMimeTypesTest
   }
 
   @Test
-  public void unconfigured() {
+  public void unconfiguredTest() {
     assertThat(underTest.getMimeRuleForExtension("test"), is(nullValue()));
   }
 
   @Test
-  public void addMimeType() {
+  public void addMimeTypeTest() {
     underTest.initMimeTypes(addMimeType(new Properties(), "test", "application/octet-stream"));
     final MimeRule mimeRule = underTest.getMimeRuleForExtension("test");
     assertThat(mimeRule, is(notNullValue()));
@@ -55,7 +58,7 @@ public class NexusMimeTypesTest
   }
 
   @Test
-  public void overrideMimeType() {
+  public void overrideMimeTypeTest() {
     Properties properties = new Properties();
     underTest.initMimeTypes(addMimeType(properties, "override.test", "application/octet-stream"));
     final MimeRule mimeRule = underTest.getMimeRuleForExtension("test");
@@ -65,7 +68,7 @@ public class NexusMimeTypesTest
   }
 
   @Test
-  public void mergeOverrideAndAdditional() {
+  public void mergeOverrideAndAdditionalTest() {
     Properties types = new Properties();
 
     addMimeType(types, "override.test", "application/octet-stream");

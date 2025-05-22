@@ -12,11 +12,11 @@
  */
 package org.sonatype.nexus.siesta.internal;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Provider;
-import javax.inject.Singleton;
-import javax.servlet.http.HttpServletRequest;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Provider;
+import jakarta.inject.Singleton;
+import jakarta.servlet.http.HttpServletRequest;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
@@ -62,7 +62,7 @@ public class AuthorizationExceptionMapper
       String realm = (String) httpRequest.getAttribute(AUTH_REALM_KEY);
 
       return Response.status(Status.UNAUTHORIZED)
-          .header(AUTHENTICATE_HEADER, String.format("%s realm=\"%s\"", scheme, realm))
+          .header(AUTHENTICATE_HEADER, "%s realm=\"%s\"".formatted(scheme, realm))
           .build();
     }
 

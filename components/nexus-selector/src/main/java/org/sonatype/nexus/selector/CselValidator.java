@@ -61,98 +61,66 @@ class CselValidator
     // utility class
   }
 
+  /**
+   * Uses pattern matching for switch to validate different AST node types.
+   * Only specific node types are allowed in CSEL expressions.
+   *
+   * @param node the node to visit
+   * @param data the data to pass to the visitor
+   * @return the result of visiting the node
+   */
   @Override
   protected Object doVisit(final JexlNode node, final Object data) {
-    throw new JexlException(node, "Expression not supported in CSEL selector");
-  }
-
-  /**
-   * Accept `a || b`
-   */
-  @Override
-  protected Object visit(final ASTOrNode node, final Object data) {
-    return node.childrenAccept(this, data);
-  }
-
-  /**
-   * Accept `a && b`
-   */
-  @Override
-  protected Object visit(final ASTAndNode node, final Object data) {
-    return node.childrenAccept(this, data);
-  }
-
-  /**
-   * Accept `a == b`
-   */
-  @Override
-  protected Object visit(final ASTEQNode node, final Object data) {
-    return node.childrenAccept(this, data);
-  }
-
-  /**
-   * Accept `a != b`
-   */
-  @Override
-  protected Object visit(final ASTNENode node, final Object data) {
-    return node.childrenAccept(this, data);
-  }
-
-  /**
-   * Accept `a =~ "regex"`
-   */
-  @Override
-  protected Object visit(final ASTERNode node, final Object data) {
-    try {
-      Pattern.compile(node.jjtGetChild(1).toString());
-      return node.childrenAccept(this, data);
-    }
-    catch (PatternSyntaxException e) {
-      throw new JexlException(node, e.getDescription());
-    }
-  }
-
-  /**
-   * Accept `a =^ "something"`
-   */
-  @Override
-  protected Object visit(final ASTSWNode node, final Object data) {
-    return node.childrenAccept(this, data);
-  }
-
-  /**
-   * Accept `( expression )`
-   */
-  @Override
-  protected Object visit(final ASTReferenceExpression node, final Object data) {
-    return node.childrenAccept(this, data);
-  }
-
-  /**
-   * Accept string literals without embedded strings.
-   */
-  @Override
-  protected Object visit(final ASTStringLiteral node, final Object data) {
-    String literal = node.getLiteral();
-    if (!literal.contains("\"") && !literal.contains("'")) {
-      return node.childrenAccept(this, data);
-    }
-    else {
-      throw new JexlException(node, format(EMBEDDED_STRING_MESSAGE, literal));
-    }
-  }
-
-  /**
-   * Accept white-listed identifiers.
-   */
-  @Override
-  protected Object visit(final ASTIdentifier node, final Object data) {
-    String id = node.getName();
-    if (VALID_IDENTIFIERS.contains(id)) {
-      return node.childrenAccept(this, data);
-    }
-    else {
-      throw new JexlException(node, format(BAD_IDENTIFIER_MESSAGE, id));
-    }
+    return switch (node) {
+      // Logical operators
+      case ASTOrNode orNode -> orNode.childrenAccept(this, data);
+      case ASTAndNode andNode -> andNode.childrenAccept(this, data);
+      
+      // Comparison operators
+      case ASTEQNode eqNode -> eqNode.childrenAccept(this, data);
+      case ASTNENode neNode -> neNode.childrenAccept(this, data);
+      
+      // Regex matching
+      case ASTERNode erNode -> {
+        try {
+          Pattern.compile(erNode.jjtGetChild(1).toString());
+          yield erNode.childrenAccept(this, data);
+        }
+        catch (PatternSyntaxException e) {
+          throw new JexlException(erNode, e.getDescription());
+        }
+      }
+      
+      // Starts with operator
+      case ASTSWNode swNode -> swNode.childrenAccept(this, data);
+      
+      // Parenthesized expressions
+      case ASTReferenceExpression refExpr -> refExpr.childrenAccept(this, data);
+      
+      // String literals
+      case ASTStringLiteral strLiteral -> {
+        String literal = strLiteral.getLiteral();
+        if (!literal.contains("\"") && !literal.contains("'")) {
+          yield strLiteral.childrenAccept(this, data);
+        }
+        else {
+          throw new JexlException(strLiteral, format(EMBEDDED_STRING_MESSAGE, literal));
+        }
+      }
+      
+      // Identifiers
+      case ASTIdentifier identifier -> {
+        String id = identifier.getName();
+        if (VALID_IDENTIFIERS.contains(id)) {
+          yield identifier.childrenAccept(this, data);
+        }
+        else {
+          throw new JexlException(identifier, format(BAD_IDENTIFIER_MESSAGE, id));
+        }
+      }
+      
+      // Any other node type is not supported
+      default -> throw new JexlException(node, "Expression not supported in CSEL selector");
+    };
   }
 }

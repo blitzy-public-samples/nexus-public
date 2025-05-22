@@ -12,6 +12,7 @@
  */
 package org.sonatype.nexus.email.internal;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 
 import javax.inject.Named;
@@ -23,6 +24,13 @@ import org.sonatype.nexus.email.EmailConfiguration;
  * Initial {@link EmailConfiguration} populator.
  * Fills in the object with defaults
  *
+ * <p>This implementation is compatible with Java 21 and supports execution in both platform and
+ * virtual thread contexts. It can be safely used in asynchronous operations, including those leveraging
+ * Java 21's Virtual Threads for high-concurrency scenarios.</p>
+ *
+ * <p>The implementation is stateless and thread-safe, making it suitable for concurrent access
+ * patterns in both synchronous and asynchronous execution environments.</p>
+ *
  * @since 3.0
  */
 @Named("initial")
@@ -30,6 +38,13 @@ import org.sonatype.nexus.email.EmailConfiguration;
 public class InitialEmailConfigurationPopulator
     implements Function<EmailConfiguration, EmailConfiguration>
 {
+  /**
+   * Applies default configuration values to the provided {@link EmailConfiguration} instance.
+   * This method is thread-safe and can be executed in both platform and virtual thread contexts.
+   *
+   * @param configuration the email configuration to populate with defaults
+   * @return the populated configuration instance (same instance as the input parameter)
+   */
   @Override
   public EmailConfiguration apply(final EmailConfiguration configuration) {
     configuration.setEnabled(false);
@@ -37,5 +52,16 @@ public class InitialEmailConfigurationPopulator
     configuration.setPort(25);
     configuration.setFromAddress("nexus@example.org");
     return configuration;
+  }
+  
+  /**
+   * Asynchronously applies default configuration values to the provided {@link EmailConfiguration} instance.
+   * This method is designed for use with Java 21 Virtual Threads and asynchronous processing patterns.
+   *
+   * @param configuration the email configuration to populate with defaults
+   * @return a CompletableFuture containing the populated configuration instance
+   */
+  public CompletableFuture<EmailConfiguration> applyAsync(final EmailConfiguration configuration) {
+    return CompletableFuture.supplyAsync(() -> apply(configuration));
   }
 }

@@ -24,25 +24,18 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.is;
 
-/**
- * Tests for {@link SslSecurityContributor} to verify security configuration contributions.
- */
-public class SslSecurityContributorTest
+class SslSecurityContributorTest
     extends TestSupport
 {
   private SslSecurityContributor underTest;
 
   @BeforeEach
-  public void setup() {
+  void setup() {
     underTest = new SslSecurityContributor();
   }
 
-  /**
-   * Verifies that the security configuration contains the expected SSL truststore privileges
-   * and no users, roles, or user role mappings.
-   */
   @Test
-  public void getContributionReturnsExpectedPrivileges() {
+  void testGetContribution() {
     SecurityConfiguration config = underTest.getContribution();
     assertThat(config.getUsers().size(), is(0));
     assertThat(config.getUserRoleMappings().size(), is(0));

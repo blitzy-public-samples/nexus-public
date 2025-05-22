@@ -12,14 +12,14 @@
  */
 package org.sonatype.nexus.extender;
 
-import java.util.Arrays;
-import java.util.Collection;
+import java.util.stream.Stream;
 
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.junit.runners.Parameterized.Parameters;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.osgi.framework.BundleContext;
 
 import static org.hamcrest.CoreMatchers.is;
@@ -27,7 +27,6 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-@RunWith(Parameterized.class)
 public class NexusContextListenerTest
 {
   final boolean isFeatureFlagEnabled;
@@ -60,80 +59,7 @@ public class NexusContextListenerTest
     underTest = new NexusContextListener(bundleExtender);
   }
 
-  @Parameters(name = "{index}: installMode: {0}, flag: {1}, flagValue: {2}, edition: {3}, isFeatureFlagEnabled: {4}")
-  public static Collection<Object[]> data() {
-    return Arrays.asList(new Object[][]{
-        {"oss,pro,community:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "COMMUNITY", true},
-        {"oss,pro,community:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "OSS", true},
-        {"oss,pro,community:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "PRO", true},
-        {"oss,community:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "PRO", false},
-        {"oss,community:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "OSS", true},
-        {"pro,community:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "OSS", false},
-        {"pro,community:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "PRO", true},
-        {"pro,community:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "COMMUNITY", true},
-        {"community:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "OSS", false},
-        {"community:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "COMMUNITY", true},
-        {"featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "COMMUNITY", true},
-
-        {"oss:featureFlag:foo.enabled", "foo.enabled", true, "OSS", true},
-        {"oss:featureFlag:foo.enabled", "foo.enabled", true, "PRO", false},
-        {"oss:featureFlag:foo.enabled", "foo.enabled", false, "OSS", false},
-        {"oss:featureFlag:foo.enabled", "foo.enabled", false, "PRO", false},
-        {"oss:featureFlag:foo.enabled", "foo.enabled", null, "OSS", false},
-        {"oss:featureFlag:foo.enabled", "foo.enabled", null, "PRO", false},
-        {"oss:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "OSS", true},
-        {"oss:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "PRO", false},
-        {"oss:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", false, "OSS", false},
-        {"oss:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", false, "PRO", false},
-        {"oss:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", null, "OSS", true},
-        {"oss:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", null, "PRO", false},
-        // pro-only feature flag
-        {"pro:featureFlag:foo.enabled", "foo.enabled", true, "OSS", false},
-        {"pro:featureFlag:foo.enabled", "foo.enabled", true, "PRO", true},
-        {"pro:featureFlag:foo.enabled", "foo.enabled", false, "OSS", false},
-        {"pro:featureFlag:foo.enabled", "foo.enabled", false, "PRO", false},
-        {"pro:featureFlag:foo.enabled", "foo.enabled", null, "OSS", false},
-        {"pro:featureFlag:foo.enabled", "foo.enabled", null, "PRO", false},
-        {"pro:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "OSS", false},
-        {"pro:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "PRO", true},
-        {"pro:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", false, "OSS", false},
-        {"pro:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", false, "PRO", false},
-        {"pro:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", null, "OSS", false},
-        {"pro:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", null, "PRO", true},
-        // common feature flag
-        {"featureFlag:foo.enabled", "foo.enabled", true, "OSS", true},
-        {"featureFlag:foo.enabled", "foo.enabled", true, "PRO", true},
-        {"featureFlag:foo.enabled", "foo.enabled", false, "OSS", false},
-        {"featureFlag:foo.enabled", "foo.enabled", false, "PRO", false},
-        {"featureFlag:foo.enabled", "foo.enabled", null, "OSS", false},
-        {"featureFlag:foo.enabled", "foo.enabled", null, "PRO", false},
-        {"featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "OSS", true},
-        {"featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "PRO", true},
-        {"featureFlag:enabledByDefault:foo.enabled", "foo.enabled", false, "OSS", false},
-        {"featureFlag:enabledByDefault:foo.enabled", "foo.enabled", false, "PRO", false},
-        {"featureFlag:enabledByDefault:foo.enabled", "foo.enabled", null, "OSS", true},
-        {"featureFlag:enabledByDefault:foo.enabled", "foo.enabled", null, "PRO", true},
-        // malformed feature flag strings
-        {"featureFlag:", "foo.enabled", null, "OSS", false},
-        {"featureFlag:", "foo.enabled", null, "PRO", false},
-        {"featureFlag:enabledByDefault:", "foo.enabled", null, "OSS", false},
-        {"foo:featureFlag:enabledByDefault:", "foo.enabled", null, "OSS", false},
-        {"fooFlag:enabledByDefault:foo.enabled", "foo.enabled", null, "OSS", false},
-        {"featureFlag:", "foo.enabled", true, "OSS", false},
-        {"featureFlag:", "foo.enabled", true, "PRO", false},
-        {"featureFlag:enabledByDefault:", "foo.enabled", true, "OSS", false},
-        {"foo:featureFlag:enabledByDefault:", "foo.enabled", true, "OSS", false},
-        {"fooFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "OSS", false},
-        {"featureFlag:", "foo.enabled", false, "OSS", false},
-        {"featureFlag:", "foo.enabled", false, "PRO", false},
-        {"featureFlag:enabledByDefault:", "foo.enabled", false, "OSS", false},
-        {"foo:featureFlag:enabledByDefault:", "foo.enabled", false, "OSS", false},
-        {"fooFlag:enabledByDefault:foo.enabled", "foo.enabled", false, "OSS", false},
-        {"", "foo.enabled", null, "OSS", false}
-    });
-  }
-
-  @Before
+  @BeforeEach
   public void setup() {
     System.clearProperty(flag);
     if (flagValue != null) {
@@ -141,9 +67,82 @@ public class NexusContextListenerTest
     }
   }
 
-  @Test
-  public void isFeatureFlagEnabledTest() {
+  @ParameterizedTest
+  @MethodSource("provideTestData")
+  void isFeatureFlagEnabled() {
     boolean enabled = underTest.isFeatureFlagEnabled(edition, installMode);
     assertThat(enabled, is(isFeatureFlagEnabled));
+  }
+
+  static Stream<Arguments> provideTestData() {
+    return Stream.of(
+        Arguments.of("oss,pro,community:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "COMMUNITY", true),
+        Arguments.of("oss,pro,community:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "OSS", true),
+        Arguments.of("oss,pro,community:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "PRO", true),
+        Arguments.of("oss,community:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "PRO", false),
+        Arguments.of("oss,community:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "OSS", true),
+        Arguments.of("pro,community:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "OSS", false),
+        Arguments.of("pro,community:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "PRO", true),
+        Arguments.of("pro,community:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "COMMUNITY", true),
+        Arguments.of("community:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "OSS", false),
+        Arguments.of("community:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "COMMUNITY", true),
+        Arguments.of("featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "COMMUNITY", true),
+
+        Arguments.of("oss:featureFlag:foo.enabled", "foo.enabled", true, "OSS", true),
+        Arguments.of("oss:featureFlag:foo.enabled", "foo.enabled", true, "PRO", false),
+        Arguments.of("oss:featureFlag:foo.enabled", "foo.enabled", false, "OSS", false),
+        Arguments.of("oss:featureFlag:foo.enabled", "foo.enabled", false, "PRO", false),
+        Arguments.of("oss:featureFlag:foo.enabled", "foo.enabled", null, "OSS", false),
+        Arguments.of("oss:featureFlag:foo.enabled", "foo.enabled", null, "PRO", false),
+        Arguments.of("oss:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "OSS", true),
+        Arguments.of("oss:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "PRO", false),
+        Arguments.of("oss:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", false, "OSS", false),
+        Arguments.of("oss:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", false, "PRO", false),
+        Arguments.of("oss:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", null, "OSS", true),
+        Arguments.of("oss:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", null, "PRO", false),
+        // pro-only feature flag
+        Arguments.of("pro:featureFlag:foo.enabled", "foo.enabled", true, "OSS", false),
+        Arguments.of("pro:featureFlag:foo.enabled", "foo.enabled", true, "PRO", true),
+        Arguments.of("pro:featureFlag:foo.enabled", "foo.enabled", false, "OSS", false),
+        Arguments.of("pro:featureFlag:foo.enabled", "foo.enabled", false, "PRO", false),
+        Arguments.of("pro:featureFlag:foo.enabled", "foo.enabled", null, "OSS", false),
+        Arguments.of("pro:featureFlag:foo.enabled", "foo.enabled", null, "PRO", false),
+        Arguments.of("pro:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "OSS", false),
+        Arguments.of("pro:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "PRO", true),
+        Arguments.of("pro:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", false, "OSS", false),
+        Arguments.of("pro:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", false, "PRO", false),
+        Arguments.of("pro:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", null, "OSS", false),
+        Arguments.of("pro:featureFlag:enabledByDefault:foo.enabled", "foo.enabled", null, "PRO", true),
+        // common feature flag
+        Arguments.of("featureFlag:foo.enabled", "foo.enabled", true, "OSS", true),
+        Arguments.of("featureFlag:foo.enabled", "foo.enabled", true, "PRO", true),
+        Arguments.of("featureFlag:foo.enabled", "foo.enabled", false, "OSS", false),
+        Arguments.of("featureFlag:foo.enabled", "foo.enabled", false, "PRO", false),
+        Arguments.of("featureFlag:foo.enabled", "foo.enabled", null, "OSS", false),
+        Arguments.of("featureFlag:foo.enabled", "foo.enabled", null, "PRO", false),
+        Arguments.of("featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "OSS", true),
+        Arguments.of("featureFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "PRO", true),
+        Arguments.of("featureFlag:enabledByDefault:foo.enabled", "foo.enabled", false, "OSS", false),
+        Arguments.of("featureFlag:enabledByDefault:foo.enabled", "foo.enabled", false, "PRO", false),
+        Arguments.of("featureFlag:enabledByDefault:foo.enabled", "foo.enabled", null, "OSS", true),
+        Arguments.of("featureFlag:enabledByDefault:foo.enabled", "foo.enabled", null, "PRO", true),
+        // malformed feature flag strings
+        Arguments.of("featureFlag:", "foo.enabled", null, "OSS", false),
+        Arguments.of("featureFlag:", "foo.enabled", null, "PRO", false),
+        Arguments.of("featureFlag:enabledByDefault:", "foo.enabled", null, "OSS", false),
+        Arguments.of("foo:featureFlag:enabledByDefault:", "foo.enabled", null, "OSS", false),
+        Arguments.of("fooFlag:enabledByDefault:foo.enabled", "foo.enabled", null, "OSS", false),
+        Arguments.of("featureFlag:", "foo.enabled", true, "OSS", false),
+        Arguments.of("featureFlag:", "foo.enabled", true, "PRO", false),
+        Arguments.of("featureFlag:enabledByDefault:", "foo.enabled", true, "OSS", false),
+        Arguments.of("foo:featureFlag:enabledByDefault:", "foo.enabled", true, "OSS", false),
+        Arguments.of("fooFlag:enabledByDefault:foo.enabled", "foo.enabled", true, "OSS", false),
+        Arguments.of("featureFlag:", "foo.enabled", false, "OSS", false),
+        Arguments.of("featureFlag:", "foo.enabled", false, "PRO", false),
+        Arguments.of("featureFlag:enabledByDefault:", "foo.enabled", false, "OSS", false),
+        Arguments.of("foo:featureFlag:enabledByDefault:", "foo.enabled", false, "OSS", false),
+        Arguments.of("fooFlag:enabledByDefault:foo.enabled", "foo.enabled", false, "OSS", false),
+        Arguments.of("", "foo.enabled", null, "OSS", false)
+    );
   }
 }

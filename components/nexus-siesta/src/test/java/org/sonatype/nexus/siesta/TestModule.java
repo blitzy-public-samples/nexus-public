@@ -12,6 +12,10 @@
  */
 package org.sonatype.nexus.siesta;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.Executors;
+
 import org.sonatype.nexus.siesta.internal.ValidationErrorsExceptionMapper;
 import org.sonatype.nexus.siesta.internal.WebappExceptionMapper;
 import org.sonatype.nexus.validation.ValidationModule;
@@ -23,6 +27,8 @@ import com.google.inject.servlet.ServletModule;
 
 /**
  * Test module.
+ * 
+ * Updated for RESTEasy 6.2.7.Final and Java 21 compatibility.
  */
 public class TestModule
     extends AbstractModule
@@ -31,6 +37,7 @@ public class TestModule
 
   @Override
   protected void configure() {
+    // Install RESTEasy module with Java 21 compatibility
     install(new ResteasyModule());
     install(new ValidationModule());
 
@@ -38,11 +45,25 @@ public class TestModule
     {
       @Override
       protected void configureServlets() {
-        serve(MOUNT_POINT + "/*").with(SiestaServlet.class, ImmutableMap.of(
-            "resteasy.servlet.mapping.prefix", MOUNT_POINT
-        ));
+        // Configure servlet with RESTEasy 6.2.7.Final parameters and Java 21 compatibility
+        Map<String, String> params = new HashMap<>();
+        params.put("resteasy.servlet.mapping.prefix", MOUNT_POINT);
+        
+        // Configure for Jakarta REST 3.1 compatibility
+        params.put("resteasy.use.jakarta.xml.bind.api", "true");
+        
+        // Enable Virtual Thread support for Java 21
+        params.put("resteasy.async.executor", "java.util.concurrent.Executors#newVirtualThreadPerTaskExecutor");
+        params.put("resteasy.preferVirtualThreads", "true");
+        
+        serve(MOUNT_POINT + "/*").with(SiestaServlet.class, params);
       }
     });
+
+    // Register Virtual Thread executor for test execution
+    bind(java.util.concurrent.ExecutorService.class)
+        .annotatedWith(Names.named("virtualThreadExecutor"))
+        .toInstance(Executors.newVirtualThreadPerTaskExecutor());
 
     // register exception mappers required by tests
     register(ValidationErrorsExceptionMapper.class);

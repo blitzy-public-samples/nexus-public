@@ -14,7 +14,9 @@ package org.sonatype.nexus.blobstore.s3.internal;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Callable;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
@@ -39,17 +41,8 @@ import static java.util.stream.Collectors.toList;
 import static com.google.common.base.Preconditions.checkState;
 
 /**
- * Copies a file, using multipart copy if the file is larger or equal to the chunk size. A normal copyObject request is
+ * Copies a file, using multipart copy if the file is larger or equal to the chunk size.  A normal copyObject request is
  * used instead if only a single chunk would be copied.
- *
- * This implementation is optimized for Java 21 and leverages Virtual Threads for I/O-bound operations to improve
- * throughput and concurrency. Virtual Threads provide lightweight concurrency for I/O-bound operations without the
- * overhead of traditional platform threads, allowing for higher throughput when performing S3 operations.
- *
- * The implementation uses Java 21 features:
- * - Virtual Threads for non-blocking I/O operations
- * - String templates for more readable logging statements
- * - Parallel execution of copy part operations using a Virtual Thread per task executor
  *
  * @since 3.15
  */
@@ -88,10 +81,7 @@ public class MultipartCopier
                               final String bucket,
                               final String sourcePath,
                               final String destinationPath) {
-    // Use a Virtual Thread for this I/O-bound operation
-    Thread.startVirtualThread(() -> {
-      s3.copyObject(bucket, sourcePath, bucket, destinationPath);
-    }).join();
+    s3.copyObject(bucket, sourcePath, bucket, destinationPath);
   }
 
   private void copyMultiPart(final AmazonS3 s3,
@@ -108,72 +98,107 @@ public class MultipartCopier
       InitiateMultipartUploadRequest initiateRequest = new InitiateMultipartUploadRequest(bucket, destinationPath);
       uploadId = s3.initiateMultipartUpload(initiateRequest).getUploadId();
 
-      log.debug(STR."Starting multipart copy \{uploadId} to key \{destinationPath} from key \{sourcePath}");
+      log.debug("Starting multipart copy {} to key {} from key {}", uploadId, destinationPath, sourcePath);
 
-      List<CopyPartResult> results = new ArrayList<>();
+      // Use a thread-safe list to collect results from multiple virtual threads
+      List<CopyPartResult> results = new CopyOnWriteArrayList<>();
+      List<Future<?>> futures = new ArrayList<>();
       
-      // Use a Virtual Thread per task executor for parallel part copying
-      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-        List<Callable<CopyPartResult>> tasks = new ArrayList<>();
-        
-        for (int partNumber = 1; remaining > 0; partNumber++) {
+      // Calculate the number of parts needed
+      int partCount = (int) Math.ceil((double) length / chunkSize);
+      
+      // Create a virtual thread per task executor
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        for (int partNumber = 1; partNumber <= partCount; partNumber++) {
           long partSize = min(remaining, chunkSize);
-          log.trace(STR."Preparing chunk \{partNumber} for \{uploadId} from byte \{offset} to \{offset + partSize - 1}, size \{partSize}");
+          long partOffset = offset;
+          int currentPartNumber = partNumber;
           
-          CopyPartRequest part = new CopyPartRequest()
-              .withSourceBucketName(bucket)
-              .withSourceKey(sourcePath)
-              .withDestinationBucketName(bucket)
-              .withDestinationKey(destinationPath)
-              .withUploadId(uploadId)
-              .withPartNumber(partNumber)
-              .withFirstByte(offset)
-              .withLastByte(offset + partSize - 1);
+          log.trace("Submitting copy task for chunk {} for {} from byte {} to {}, size {}", 
+              currentPartNumber, uploadId, partOffset, partOffset + partSize - 1, partSize);
           
-          final int currentPartNumber = partNumber;
-          tasks.add(() -> {
-            CopyPartResult result = s3.copyPart(part);
-            log.trace(STR."Completed chunk \{currentPartNumber} for \{uploadId}");
-            return result;
+          // Submit the copy task to a virtual thread
+          Future<?> future = executor.submit(() -> {
+            try {
+              log.trace("Copying chunk {} for {} from byte {} to {}, size {}", 
+                  currentPartNumber, uploadId, partOffset, partOffset + partSize - 1, partSize);
+              
+              CopyPartRequest part = new CopyPartRequest()
+                  .withSourceBucketName(bucket)
+                  .withSourceKey(sourcePath)
+                  .withDestinationBucketName(bucket)
+                  .withDestinationKey(destinationPath)
+                  .withUploadId(uploadId)
+                  .withPartNumber(currentPartNumber)
+                  .withFirstByte(partOffset)
+                  .withLastByte(partOffset + partSize - 1);
+              
+              CopyPartResult result = s3.copyPart(part);
+              results.add(result);
+              return result;
+            } 
+            catch (Exception e) {
+              log.error("Error copying part {} for upload {}", currentPartNumber, uploadId, e);
+              throw e;
+            }
           });
           
+          futures.add(future);
           offset += partSize;
           remaining -= partSize;
         }
         
-        // Execute all copy part tasks in parallel using Virtual Threads
-        List<Future<CopyPartResult>> futures = executor.invokeAll(tasks);
-        results = futures.stream()
-            .map(future -> {
-              try {
-                return future.get();
-              }
-              catch (Exception e) {
-                throw new RuntimeException("Error during parallel part copy", e);
-              }
-            })
-            .collect(toList());
+        // Wait for all copy tasks to complete
+        for (Future<?> future : futures) {
+          try {
+            future.get();
+          } 
+          catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new SdkClientException("Copy operation interrupted", e);
+          } 
+          catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof SdkClientException) {
+              throw (SdkClientException) cause;
+            } 
+            else {
+              throw new SdkClientException("Error during multipart copy", cause);
+            }
+          }
+        }
       }
+      
+      // Sort results by part number to ensure correct order
+      List<PartETag> partETags = results.stream()
+          .sorted((r1, r2) -> Integer.compare(r1.getPartNumber(), r2.getPartNumber()))
+          .map(r -> new PartETag(r.getPartNumber(), r.getETag()))
+          .collect(toList());
       
       CompleteMultipartUploadRequest compRequest = new CompleteMultipartUploadRequest()
           .withBucketName(bucket)
           .withKey(destinationPath)
           .withUploadId(uploadId)
-          .withPartETags(results.stream().map(r -> new PartETag(r.getPartNumber(), r.getETag())).collect(toList()));
+          .withPartETags(partETags);
+      
       s3.completeMultipartUpload(compRequest);
-      log.debug(STR."Copy \{uploadId} complete");
+      log.debug("Copy {} complete", uploadId);
     }
-    catch(SdkClientException e) {
+    catch(SdkClientException | RuntimeException e) {
       if (uploadId != null) {
         try {
           s3.abortMultipartUpload(new AbortMultipartUploadRequest(bucket, destinationPath, uploadId));
         }
         catch(Exception inner) {
-          log.error(STR."Error aborting S3 multipart copy to bucket \{bucket} with key \{destinationPath}",
+          log.error("Error aborting S3 multipart copy to bucket {} with key {}", bucket, destinationPath,
               log.isDebugEnabled() ? inner : null);
         }
       }
-      throw e;
+      if (e instanceof SdkClientException) {
+        throw (SdkClientException) e;
+      } else {
+        throw new SdkClientException("Error during multipart copy", e);
+      }
     }
   }
 }

@@ -14,6 +14,20 @@ package org.sonatype.nexus.formfields;
 
 /**
  * Marker interface for form fields whose value should be stored encrypted.
+ * 
+ * <p>
+ * When a form field implements this interface, the system will use the configured
+ * cryptographic providers in Java 21 to securely encrypt the field's value before storage.
+ * Java 21 includes enhanced security features and updated cryptographic providers that
+ * ensure robust encryption of sensitive data.
+ * </p>
+ * 
+ * <p>
+ * The actual encryption implementation is handled by the Nexus security subsystem,
+ * which leverages Java 21's Java Cryptography Architecture (JCA) and its provider
+ * framework for cryptographic operations. This ensures compatibility with the latest
+ * security standards and algorithms available in Java 21.
+ * </p>
  *
  * @since 2.7
  */

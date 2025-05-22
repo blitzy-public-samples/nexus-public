@@ -12,12 +12,12 @@
  */
 package org.sonatype.nexus.selector;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import static com.google.common.collect.ImmutableMap.of;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class VariableSourceTest
 {
@@ -29,7 +29,7 @@ public class VariableSourceTest
   static final String BAR = "bar";
 
   @Test
-  public void test3ResolversFirstWins() {
+  public void threeResolversFirstWins() {
     {
       VariableSource source = new VariableSourceBuilder()
           .addResolver(new ConstantVariableResolver(MOO, FOO_BAR))
@@ -63,7 +63,7 @@ public class VariableSourceTest
   }
 
   @Test
-  public void testNoResolvers() {
+  public void noResolvers() {
     VariableSource source = new VariableSourceBuilder().build();
     assertEquals(0, source.getVariableSet().size());
     assertFalse(source.getVariableSet().contains(FOO_BAR));

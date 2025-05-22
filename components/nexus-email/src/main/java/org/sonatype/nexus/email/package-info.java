@@ -13,7 +13,27 @@
 
 /**
  * Email services.
+ * <p>
+ * Provides functionality for sending emails from Nexus Repository, including configuration
+ * management, templating, and delivery services. The email system supports both synchronous
+ * and asynchronous delivery modes.
+ * <p>
+ * With Java 21 support, this package leverages Virtual Threads for highly concurrent, non-blocking
+ * email operations. Virtual Threads provide significant performance improvements for I/O-bound
+ * operations like email sending, allowing thousands of concurrent email operations with minimal
+ * resource overhead.
+ * <p>
+ * Thread safety considerations when using Virtual Threads with email operations:
+ * <ul>
+ *   <li>Email service implementations are thread-safe and can be safely called from both platform
+ *       and virtual threads</li>
+ *   <li>Asynchronous email operations automatically use Virtual Threads when available</li>
+ *   <li>Email templates should be designed as immutable or thread-safe to prevent concurrency issues</li>
+ *   <li>Email configuration access is synchronized to ensure consistent configuration state</li>
+ * </ul>
  *
  * @since 3.0
+ * @see org.sonatype.nexus.email.EmailService
+ * @see org.sonatype.nexus.email.EmailManager
  */
 package org.sonatype.nexus.email;

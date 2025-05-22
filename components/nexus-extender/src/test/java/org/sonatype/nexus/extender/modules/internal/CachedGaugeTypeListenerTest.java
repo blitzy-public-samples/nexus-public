@@ -27,8 +27,10 @@ import com.google.inject.spi.TypeEncounter;
 import com.palominolabs.metrics.guice.DefaultMetricNamer;
 import com.palominolabs.metrics.guice.GaugeInjectionListener;
 import com.palominolabs.metrics.guice.annotation.MethodAnnotationResolver;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
@@ -41,6 +43,7 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+@ExtendWith(MockitoExtension.class)
 public class CachedGaugeTypeListenerTest
     extends TestSupport
 {
@@ -59,7 +62,7 @@ public class CachedGaugeTypeListenerTest
 
   private CachedGaugeTypeListener undertest;
 
-  @Before
+  @BeforeEach
   public void setup() {
     undertest =
         spy(new CachedGaugeTypeListener(mockMetricRegistry, new DefaultMetricNamer(), new MethodAnnotationResolver(),

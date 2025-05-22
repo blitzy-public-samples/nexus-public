@@ -34,6 +34,12 @@ public class ExtDirectLogConfigurationCustomizer
     // Useful loggers (level will be calculated as effective level)
     configuration.setLoggerLevel("org.sonatype.nexus.extdirect", LoggerLevel.DEFAULT);
     configuration.setLoggerLevel("com.softwarementors.extjs.djn", LoggerLevel.DEFAULT);
+    
+    // Configure virtual thread logging for Ext.Direct operations
+    configuration.setLoggerLevel("org.sonatype.nexus.extdirect.virtualthread", LoggerLevel.DEFAULT);
+    
+    // Ensure compatibility with Java 21 string template logging
+    configuration.setLoggerLevel("org.sonatype.nexus.extdirect.stringtemplate", LoggerLevel.DEFAULT);
   }
 
 }

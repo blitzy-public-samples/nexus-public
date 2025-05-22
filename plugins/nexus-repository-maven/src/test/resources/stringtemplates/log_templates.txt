@@ -1,0 +1,81 @@
+# Maven Repository Log Templates using Java 21 String Templates
+# This file contains test templates for different logging scenarios in Maven repository operations
+
+# ===== INFO LEVEL TEMPLATES =====
+
+# Artifact resolution templates
+STR."Successfully resolved artifact: \{groupId}:\{artifactId}:\{version} from repository \{repoName}"
+STR."Downloaded artifact \{artifactId}-\{version}.\{extension} (\{size} bytes) in \{duration}ms"
+STR."Cached Maven metadata for \{groupId}:\{artifactId} in local storage at \{path}"
+STR."Repository \{repoName} synchronized \{count} artifacts in \{duration}ms"
+STR."Maven proxy repository \{repoName} refreshed metadata for \{groupId}:\{artifactId}"
+
+# Repository maintenance templates
+STR."Scheduled Maven metadata rebuild for repository \{repoName}, estimated artifacts: \{count}"
+STR."Maven repository \{repoName} maintenance completed: processed \{processed} artifacts, skipped \{skipped}"
+STR."Virtual thread pool processed \{taskCount} Maven repository tasks with \{threadCount} threads"
+STR."Maven repository group \{groupName} updated with members: \{membersList}"
+
+# ===== WARN LEVEL TEMPLATES =====
+
+# Metadata warning templates
+STR."Metadata parsing warning for \{groupId}:\{artifactId}: \{message} at line \{lineNumber}"
+STR."Checksum mismatch for \{path}: expected=\{expected}, actual=\{actual}"
+STR."Repository \{repoName} contains \{count} potentially invalid Maven artifacts"
+STR."Slow metadata processing detected for \{groupId}:\{artifactId} (\{duration}ms > threshold \{threshold}ms)"
+STR."Maven repository \{repoName} approaching storage limit: \{used}/\{total} (\{percentage}%)"
+
+# Proxy warning templates
+STR."Remote repository \{remoteUrl} responded slowly: \{duration}ms > threshold \{threshold}ms"
+STR."Retrying failed request to \{remoteUrl} (attempt \{attempt}/\{maxAttempts}): \{errorMessage}"
+STR."Maven proxy repository \{repoName} has \{failureCount} consecutive remote failures"
+
+# ===== ERROR LEVEL TEMPLATES =====
+
+# Artifact error templates
+STR."Failed to resolve Maven artifact \{groupId}:\{artifactId}:\{version}: \{errorMessage}"
+STR."Maven metadata parsing error for \{path}: \{errorType} - \{errorMessage}"
+STR."Repository storage error in \{repoName}: \{errorType} at path \{path}"
+STR."Unrecoverable Maven repository error: \{errorMessage} (correlation ID: \{correlationId})"
+
+# Connection error templates
+STR."Connection to remote repository \{remoteUrl} failed: \{statusCode} \{statusMessage}"
+STR."Maven proxy repository \{repoName} cannot connect to \{remoteUrl}: \{errorMessage}"
+STR."SSL handshake failed with remote Maven repository \{remoteUrl}: \{sslError}"
+
+# ===== DEBUG LEVEL TEMPLATES =====
+
+# Detailed operation templates
+STR."Maven artifact resolution path: \{resolutionPath}"
+STR."Processing POM dependencies for \{groupId}:\{artifactId}:\{version}: found \{dependencyCount} dependencies"
+STR."Maven HTTP request: \{method} \{url} (headers: \{headers})"
+STR."Maven HTTP response: \{statusCode} \{reasonPhrase} (content-length: \{contentLength})"
+STR."Maven metadata cache statistics: hits=\{hits}, misses=\{misses}, ratio=\{ratio}%"
+
+# Performance debugging templates
+STR."Maven repository operation timing: \{operation} took \{duration}ms (breakdown: \{timingMap})"
+STR."Artifact content validation: \{artifactPath} passed \{validationCount} validators in \{duration}ms"
+STR."Maven repository index update: added=\{added}, updated=\{updated}, removed=\{removed}, duration=\{duration}ms"
+STR."Virtual thread execution details for Maven task \{taskId}: thread=\{threadName}, duration=\{duration}ms, state=\{threadState}"
+
+# ===== COMPLEX FORMATTING TEMPLATES =====
+
+# Templates with conditional formatting
+STR."Maven repository \{repoName} health: \{status == "OK" ? "healthy" : "unhealthy"} (status: \{status})"
+STR."Artifact \{artifactId} version \{version} is \{isSnapshot ? "a SNAPSHOT" : "a release"} version"
+STR."Maven proxy request \{requestId} \{isFromCache ? "served from cache" : "forwarded to remote"} in \{duration}ms"
+
+# Templates with numeric formatting
+STR."Repository storage usage: \{String.format("%.2f", usedPercentage)}% (\{String.format("%.2f", usedGB)} GB/\{String.format("%.2f", totalGB)} GB)"
+STR."Maven download performance: \{String.format("%.2f", bytesPerSecond / 1024 / 1024)} MB/s (\{totalBytes} bytes in \{durationMs}ms)"
+
+# Templates with list formatting
+STR."Maven repository group members: \{members.stream().collect(java.util.stream.Collectors.joining(", "))}"
+STR."Failed validation checks: \{failures.stream().map(f -> f.getName() + ": " + f.getReason()).collect(java.util.stream.Collectors.joining("; "))}"
+
+# Templates with map formatting
+STR."Maven repository metrics: \{metrics.entrySet().stream().map(e -> e.getKey() + "=" + e.getValue()).collect(java.util.stream.Collectors.joining(", "))}"
+STR."HTTP request headers: \{headers.entrySet().stream().map(e -> e.getKey() + ": " + e.getValue()).collect(java.util.stream.Collectors.joining("\n"))}"
+
+# Templates with exception formatting
+STR."Maven repository exception: \{exception.getClass().getSimpleName()}: \{exception.getMessage()}\n\{java.util.Arrays.stream(exception.getStackTrace()).limit(5).map(ste -> "  at " + ste).collect(java.util.stream.Collectors.joining("\n"))}"

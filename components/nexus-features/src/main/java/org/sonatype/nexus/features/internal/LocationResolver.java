@@ -18,6 +18,10 @@ import java.net.MalformedURLException;
 import java.net.URI;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,11 +51,11 @@ public class LocationResolver
     this.systemDir = new File("system");
 
     // add local Maven repository for testing snapshots?
-    if (!"false".equalsIgnoreCase(System.getProperty("nexus.testLocalSnapshots", "false"))) {
-      this.mavenDir = mavenDir(systemDir);
+    if (!Boolean.parseBoolean(System.getProperty("nexus.testLocalSnapshots", "false"))) {
+      this.mavenDir = null;
     }
     else {
-      this.mavenDir = null;
+      this.mavenDir = mavenDir(systemDir);
     }
   }
 
@@ -78,13 +82,13 @@ public class LocationResolver
       }
     }
     catch (MalformedURLException e) {
-      log.warn("Malformed location {}", location, e);
+      log.warn(STR."Malformed location \{location}", e);
     }
     // add 'reference:' to undecorated file links to avoid any copying of the bundle
     if (result.startsWith("file:")) {
       result = "reference:" + result;
     }
-    log.debug("Resolved {} to {}", location, result);
+    log.debug(STR."Resolved \{location} to \{result}");
     return result;
   }
 
@@ -92,16 +96,29 @@ public class LocationResolver
    * Prefer a direct 'file:' link under the system directory if the file exists and can be read.
    */
   private String resolveMavenPath(final String mvnPath) throws MalformedURLException {
-    String repositoryPath = pathFromMaven(mvnPath);
-    // Pax-Exam: check local Maven repository (if configured) for snapshots _before_ NXRM's system repository
-    if (mavenDir != null && repositoryPath.contains("SNAPSHOT") && new File(mavenDir, repositoryPath).canRead()) {
-      return mavenDir.toURI() + repositoryPath;
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      Future<String> repositoryPathFuture = executor.submit(() -> pathFromMaven(mvnPath));
+      String repositoryPath = repositoryPathFuture.get(5, TimeUnit.SECONDS);
+      
+      // Pax-Exam: check local Maven repository (if configured) for snapshots _before_ NXRM's system repository
+      if (mavenDir != null && repositoryPath.contains("SNAPSHOT")) {
+        Future<Boolean> canReadFuture = executor.submit(() -> new File(mavenDir, repositoryPath).canRead());
+        if (canReadFuture.get(5, TimeUnit.SECONDS)) {
+          return mavenDir.toURI() + repositoryPath;
+        }
+      }
+      
+      Future<Boolean> systemCanReadFuture = executor.submit(() -> new File(systemDir, repositoryPath).canRead());
+      if (systemCanReadFuture.get(5, TimeUnit.SECONDS)) {
+        return STR."file:system/\{repositoryPath}";
+      }
+      else {
+        return mvnPath;
+      }
     }
-    else if (new File(systemDir, repositoryPath).canRead()) {
-      return "file:system/" + repositoryPath;
-    }
-    else {
-      return mvnPath;
+    catch (Exception e) {
+      log.warn(STR."Error resolving Maven path \{mvnPath}", e);
+      return mvnPath; // fallback to original path in case of any error
     }
   }
 
@@ -109,19 +126,26 @@ public class LocationResolver
    * Attempts to locate the configured local Maven repository for testing snapshots.
    */
   private static File mavenDir(final File systemDir) {
-    try {
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       // NexusPaxExamSupport will propagate any explicit setting from CI
-      String localRepository = System.getProperty("maven.repo.local", System.getProperty("localRepository", ""));
+      String localRepository = System.getProperty("maven.repo.local", 
+          System.getProperty("localRepository", ""));
 
       // fall back to check user's home for their local repository
       if (localRepository.isEmpty()) {
-        Path userHome = Paths.get(System.getProperty("user.home"));
-        if (userHome.isAbsolute() && isDirectory(userHome)) {
-          localRepository = userHome.resolve(".m2").resolve("repository").toString();
-        }
-        else {
+        Future<Path> userHomeFuture = executor.submit(() -> {
+          Path userHome = Paths.get(System.getProperty("user.home"));
+          if (userHome.isAbsolute() && isDirectory(userHome)) {
+            return userHome.resolve(".m2").resolve("repository");
+          }
+          return null;
+        });
+        
+        Path userHomeRepo = userHomeFuture.get(5, TimeUnit.SECONDS);
+        if (userHomeRepo == null) {
           return null; // still not found
         }
+        localRepository = userHomeRepo.toString();
       }
 
       // accept both URIs and paths
@@ -134,12 +158,16 @@ public class LocationResolver
       }
 
       // final check that the directory exists and is different to NXRM's system repository
-      if (mavenDir.isDirectory() && !isSameFile(mavenDir.toPath(), systemDir.toPath())) {
-        log.info("Using local maven repository '{}' for testing snapshots", mavenDir);
+      Future<Boolean> dirCheckFuture = executor.submit(() -> {
+        return mavenDir.isDirectory() && !isSameFile(mavenDir.toPath(), systemDir.toPath());
+      });
+      
+      if (dirCheckFuture.get(5, TimeUnit.SECONDS)) {
+        log.info(STR."Using local maven repository '\{mavenDir}' for testing snapshots");
         return mavenDir;
       }
     }
-    catch (RuntimeException | IOException e) {
+    catch (Exception e) {
       log.debug("Cannot locate local maven repository for testing snapshots", e);
     }
     return null;

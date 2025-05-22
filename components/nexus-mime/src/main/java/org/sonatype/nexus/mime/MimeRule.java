@@ -21,6 +21,7 @@ import com.google.common.collect.ImmutableList;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 
 /**
  * Nexus MIME type rule.
@@ -42,8 +43,8 @@ public class MimeRule
   public MimeRule(final boolean override,
                   final List<String> mimetypes)
   {
-    checkNotNull(mimetypes, "mimetypes");
-    checkArgument(!mimetypes.isEmpty(), "mimetypes");
+    checkNotNull(mimetypes, STR."mimetypes parameter cannot be null");
+    checkArgument(!mimetypes.isEmpty(), STR."mimetypes parameter cannot be empty");
     this.override = override;
     this.mimetypes = ImmutableList.copyOf(mimetypes);
   }

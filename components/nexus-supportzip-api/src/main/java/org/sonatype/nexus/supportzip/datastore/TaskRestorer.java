@@ -17,6 +17,9 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import javax.annotation.Priority;
 import javax.inject.Inject;
@@ -34,7 +37,7 @@ import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.TASKS;
 import static org.sonatype.nexus.supportzip.datastore.RestoreHelper.FILE_SUFFIX;
 
 /**
- * Restore Task's related data from JSON file(s).
+ * Restore Task's related data from JSON file(s) using Virtual Threads for improved concurrency.
  *
  * @since 3.30
  */
@@ -65,17 +68,43 @@ public class TaskRestorer
 
   private void maybeRestore() throws IOException {
     Path dbDir = restoreHelper.getDbPath();
-    for (Entry<String, ImportTaskData> exporterEntry : importTaskByName.entrySet()) {
-      String fileName = exporterEntry.getKey() + FILE_SUFFIX;
-      File file = dbDir.resolve(fileName).toFile();
-      ImportTaskData importTask = exporterEntry.getValue();
-      if (file.exists()) {
-        importTask.restore(file);
-        FileUtils.deleteQuietly(file);
+    
+    // Create a virtual thread executor for concurrent processing
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit each task restoration as a separate virtual thread
+      for (Entry<String, ImportTaskData> exporterEntry : importTaskByName.entrySet()) {
+        String fileName = exporterEntry.getKey() + FILE_SUFFIX;
+        File file = dbDir.resolve(fileName).toFile();
+        ImportTaskData importTask = exporterEntry.getValue();
+        
+        if (file.exists()) {
+          executor.submit(() -> {
+            try {
+              log.debug("Restoring task data from {} using virtual thread", file);
+              importTask.restore(file);
+              FileUtils.deleteQuietly(file);
+            } 
+            catch (Exception e) {
+              log.error("Failed to restore task data from {}", file, e);
+            }
+            return null; // Explicit return for void callable
+          });
+        }
+        else {
+          log.debug("Can't find {} file to restore data", file);
+        }
       }
-      else {
-        log.debug("Can't find {} file to restore data", file);
+      
+      // Orderly shutdown - wait for all tasks to complete
+      executor.shutdown();
+      if (!executor.awaitTermination(5, TimeUnit.MINUTES)) {
+        log.warn("Task restoration did not complete within the timeout period");
+        executor.shutdownNow();
       }
+    } 
+    catch (InterruptedException e) {
+      log.warn("Task restoration was interrupted", e);
+      Thread.currentThread().interrupt(); // Preserve interrupt status
     }
   }
 }

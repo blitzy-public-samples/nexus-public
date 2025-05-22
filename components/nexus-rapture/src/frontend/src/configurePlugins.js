@@ -16,6 +16,14 @@
  */
 import {inspect} from '@xstate/inspect';
 
+/**
+ * Configures the plugin system for the Nexus UI.
+ * This function initializes the plugin registry and sets up the onStart handler
+ * that will be called by the ExtJS codebase to register React plugins.
+ * 
+ * Compatible with Java 21 backend services, ensuring proper interaction with
+ * the updated security framework and state management.
+ */
 export default function configurePlugins() {
   // Declare an initial (empty) array for plugin configurations
   window.plugins = [];
@@ -24,15 +32,24 @@ export default function configurePlugins() {
 
   // A function for the ExtJS codebase to call to register React plugins
   window.onStart = function() {
-    window.plugins.forEach((plugin) => {
-      if (plugin.features) {
-        plugin.features.forEach(registerFeature);
-      }
-    })
+    try {
+      window.plugins.forEach((plugin) => {
+        if (plugin.features) {
+          plugin.features.forEach(registerFeature);
+        }
+      });
+      console.debug('Plugin registration completed successfully');
+    } catch (error) {
+      console.error('Error during plugin registration:', error);
+    }
   };
-}
+};
 
 /**
+ * Registers a feature with the Nexus UI.
+ * This function handles the registration of features with the ExtJS framework,
+ * including visibility conditions that interact with the Java 21 backend services.
+ * 
  * @param feature - {
  *   mode: 'browse' || 'admin',
  *   path: '/somepath',
@@ -60,76 +77,118 @@ export default function configurePlugins() {
  * }
  */
 function registerFeature(feature) {
-  console.log(`Register feature`, feature);
-  const reactViewController = Ext.getApplication().getController('NX.coreui.controller.react.ReactViewController');
-  Ext.getApplication().getFeaturesController().registerFeature({
-    mode: feature.mode,
-    path: feature.path,
-    text: feature.text,
-    textComplement: feature.textComplement,
-    description: feature.description,
-    weight: feature.weight,
-    view: {
-      xtype: 'nx-coreui-react-main-container',
-      itemId: 'react-view',
-      reactView: feature.view
-    },
-    iconCls: feature.iconCls,
-    visible: function () {
-      var isVisible = true;
-      const visibility = feature.visibility;
+  try {
+    console.log(`Register feature`, feature);
+    const reactViewController = Ext.getApplication().getController('NX.coreui.controller.react.ReactViewController');
+    Ext.getApplication().getFeaturesController().registerFeature({
+      mode: feature.mode,
+      path: feature.path,
+      text: feature.text,
+      textComplement: feature.textComplement,
+      description: feature.description,
+      weight: feature.weight,
+      view: {
+        xtype: 'nx-coreui-react-main-container',
+        itemId: 'react-view',
+        reactView: feature.view
+      },
+      iconCls: feature.iconCls,
+      visible: function () {
+        var isVisible = true;
+        const visibility = feature.visibility;
 
-      if (!visibility) {
-        console.warn('feature is active due to no visibility configuration defined', feature);
+        if (!visibility) {
+          console.warn('feature is active due to no visibility configuration defined', feature);
+          return isVisible;
+        }
+
+        // Check bundle availability
+        if (visibility.bundle) {
+          isVisible = NX.app.Application.bundleActive(visibility.bundle)
+          console.debug("bundleActive="+isVisible, visibility.bundle);
+        }
+
+        // Check license validity - compatible with Java 21 state management
+        if (isVisible && visibility.licenseValid) {
+          try {
+            isVisible = visibility.licenseValid.every(licenseValid => {
+              const stateValue = NX.State.getValue(licenseValid.key, licenseValid.defaultValue);
+              return stateValue && stateValue['licenseValid'];
+            });
+            console.debug("licenseValid="+isVisible, visibility.licenseValid);
+          } catch (error) {
+            console.error('Error checking license validity:', error);
+            isVisible = false;
+          }
+        }
+
+        // Check feature flags - compatible with Java 21 state management
+        if (isVisible && visibility.featureFlags) {
+          try {
+            isVisible = visibility.featureFlags.every(featureFlag => {
+              return NX.State.getValue(featureFlag.key, featureFlag.defaultValue);
+            });
+            console.debug("featureFlagsActive="+isVisible, visibility.featureFlags);
+          } catch (error) {
+            console.error('Error checking feature flags:', error);
+            isVisible = false;
+          }
+        }
+
+        // Check state enablement - compatible with Java 21 state management
+        if (isVisible && visibility.statesEnabled) {
+          try {
+            isVisible = visibility.statesEnabled.every(state => {
+              const stateValue = NX.State.getValue(state.key, state.defaultValue);
+              if (typeof stateValue === "boolean") {
+                return stateValue;
+              }
+              else if (Array.isArray(stateValue)) {
+                return stateValue.length > 0;
+              }
+              else if (stateValue && typeof stateValue === 'object') {
+                return stateValue.enabled;
+              }
+              return false; // Default to false if state value is undefined or null
+            });
+            console.debug("statesEnabled="+isVisible, visibility.statesEnabled);
+          } catch (error) {
+            console.error('Error checking state enablement:', error);
+            isVisible = false;
+          }
+        }
+
+        // Check permissions - compatible with Java 21 security framework
+        if (isVisible && visibility.permissions) {
+          try {
+            isVisible = visibility.permissions.every((permission) => NX.Permissions.check(permission));
+            console.debug("permissionCheck="+isVisible, visibility.permissions);
+          } catch (error) {
+            console.error('Error checking permissions:', error);
+            isVisible = false;
+          }
+        }
+
+        // Check editions
+        if (isVisible && visibility.editions) {
+          try {
+            isVisible = visibility.editions.some((edition) => NX.State.getEdition() === edition);
+            console.debug("editionCheck="+isVisible, visibility.editions);
+          } catch (error) {
+            console.error('Error checking editions:', error);
+            isVisible = false;
+          }
+        }
+
+        // Check if user is required
+        if (isVisible && visibility.requiresUser) {
+          isVisible = NX.Security.hasUser();
+        }
+
         return isVisible;
       }
-
-      if (visibility.bundle) {
-        isVisible = NX.app.Application.bundleActive(visibility.bundle)
-        console.debug("bundleActive="+isVisible, visibility.bundle);
-      }
-
-      if (isVisible && visibility.licenseValid) {
-        isVisible = visibility.licenseValid.every(licenseValid => NX.State.getValue(licenseValid.key, licenseValid.defaultValue)['licenseValid']);
-        console.debug("licenseValid="+isVisible, visibility.licenseValid);
-      }
-
-      if (isVisible && visibility.featureFlags) {
-        isVisible = visibility.featureFlags.every(featureFlag => NX.State.getValue(featureFlag.key, featureFlag.defaultValue));
-        console.debug("featureFlagsActive="+isVisible, visibility.featureFlags);
-      }
-
-      if (isVisible && visibility.statesEnabled) {
-        isVisible = visibility.statesEnabled.every(state => {
-          const stateValue = NX.State.getValue(state.key, state.defaultValue);
-          if (typeof stateValue === "boolean") {
-            return stateValue;
-          }
-          else if (Array.isArray(stateValue)) {
-            return stateValue.length > 0;
-          }
-          else {
-            return stateValue.enabled;
-          }
-        });
-        console.debug("statesEnabled="+isVisible, visibility.statesEnabled);
-      }
-
-      if (isVisible && visibility.permissions) {
-        isVisible = visibility.permissions.every((permission) => NX.Permissions.check(permission));
-        console.debug("permissionCheck="+isVisible, visibility.permissions);
-      }
-
-      if (isVisible && visibility.editions) {
-        isVisible = visibility.editions.some((edition) =>  NX.State.getEdition() === edition);
-        console.debug("editionCheck="+isVisible, visibility.editions);
-      }
-
-      if (isVisible && visibility.requiresUser) {
-        isVisible = NX.Security.hasUser();
-      }
-
-      return isVisible;
-    }
-  }, reactViewController);
+    }, reactViewController);
+  } catch (error) {
+    console.error(`Failed to register feature ${feature.path}:`, error);
+  }
 }

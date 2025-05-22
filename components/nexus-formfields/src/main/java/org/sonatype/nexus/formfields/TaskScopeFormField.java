@@ -14,10 +14,18 @@ package org.sonatype.nexus.formfields;
 
 /**
  * Task scope field.
+ * 
+ * @since 3.0
+ * @see AbstractFormField
  */
 public class TaskScopeFormField
     extends AbstractFormField<Void>
 {
+  /**
+   * Creates a new task scope form field.
+   *
+   * @param id the field identifier
+   */
   public TaskScopeFormField(final String id) {
     super(id, "", "", false);
   }

@@ -21,6 +21,8 @@ import java.security.cert.CertificateEncodingException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.Collection;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -46,10 +48,12 @@ import org.sonatype.nexus.ssl.KeyStoreManager;
 import org.sonatype.nexus.ssl.KeystoreException;
 import org.sonatype.nexus.ssl.TrustStore;
 
+import com.google.common.base.Throwables;
 import com.google.common.eventbus.Subscribe;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.Arrays.stream;
+import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.ssl.CertificateUtil.calculateSha1;
 import static org.sonatype.nexus.ssl.CertificateUtil.decodePEMFormattedCertificate;
 
@@ -64,11 +68,11 @@ public class TrustStoreImpl
     extends ComponentSupport
     implements EventAware, TrustStore
 {
-  // Using explicit SecureRandom with null value for compatibility with Java 21 security providers
   public static final SecureRandom DEFAULT_RANDOM = null;
-
-  // Default TLS protocol version for Java 21 compatibility
+  
+  // TLS protocol versions
   private static final String TLS_PROTOCOL = "TLSv1.3";
+  private static final String TLS_FALLBACK_PROTOCOL = "TLSv1.2";
 
   private final FreezeService freezeService;
 
@@ -83,6 +87,9 @@ public class TrustStoreImpl
   private final KeyStoreManager keyStoreManager;
 
   private volatile SSLContext sslcontext;
+  
+  // Executor service for virtual threads
+  private final ExecutorService virtualThreadExecutor;
 
   @Inject
   public TrustStoreImpl(
@@ -95,6 +102,7 @@ public class TrustStoreImpl
     this.freezeService = checkNotNull(freezeService);
     this.keyManagers = getSystemKeyManagers();
     this.trustManagers = getTrustManagers();
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   @Override
@@ -161,7 +169,8 @@ public class TrustStoreImpl
         this.sslcontext = _sslcontext;
       }
       catch (Exception e) {
-        log.debug("Could not create SSL context", e);
+        log.debug(STR."Could not create SSL context: \{e.getMessage()}", e);
+        Throwables.throwIfUnchecked(e);
         throw new RuntimeException(e);
       }
     }
@@ -194,8 +203,8 @@ public class TrustStoreImpl
     if (systemTrustManagers != null) {
       return stream(systemTrustManagers)
           .map(tm -> {
-            if (tm instanceof X509TrustManager x509TrustManager) {
-              return new FallbackOnManagedX509TrustManager(x509TrustManager);
+            if (tm instanceof X509TrustManager) {
+              return new FallbackOnManagedX509TrustManager((X509TrustManager) tm);
             }
             else {
               return tm;
@@ -212,111 +221,118 @@ public class TrustStoreImpl
     final TrustManager[] managedTrustManagers = keyStoreManager.getTrustManagers();
     if (managedTrustManagers != null) {
       for (TrustManager tm : managedTrustManagers) {
-        if (tm instanceof X509TrustManager x509TrustManager) {
-          return x509TrustManager;
+        if (tm instanceof X509TrustManager) {
+          return (X509TrustManager) tm;
         }
       }
     }
     return null;
   }
 
-  private static KeyManager[] getSystemKeyManagers() throws Exception {
-    KeyManagerFactory keyManagerFactory;
+  private KeyManager[] getSystemKeyManagers() throws Exception {
+    // Use virtual threads for I/O-bound operations
+    return virtualThreadExecutor.submit(() -> {
+      KeyManagerFactory keyManagerFactory;
 
-    String keyAlgorithm = System.getProperty("ssl.KeyManagerFactory.algorithm");
-    if (keyAlgorithm == null) {
-      keyAlgorithm = KeyManagerFactory.getDefaultAlgorithm();
-    }
-    String keyStoreType = System.getProperty("javax.net.ssl.keyStoreType");
-    if (keyStoreType == null) {
-      keyStoreType = KeyStore.getDefaultType();
-    }
-    if ("none".equalsIgnoreCase(keyStoreType)) {
-      keyManagerFactory = KeyManagerFactory.getInstance(keyAlgorithm);
-    }
-    else {
-      final String keyStoreFileName = System.getProperty("javax.net.ssl.keyStore");
-      if (keyStoreFileName != null) {
-        File keyStoreFile = new File(keyStoreFileName);
+      String keyAlgorithm = System.getProperty("ssl.KeyManagerFactory.algorithm");
+      if (keyAlgorithm == null) {
+        keyAlgorithm = KeyManagerFactory.getDefaultAlgorithm();
+      }
+      String keyStoreType = System.getProperty("javax.net.ssl.keyStoreType");
+      if (keyStoreType == null) {
+        keyStoreType = KeyStore.getDefaultType();
+      }
+      if ("none".equalsIgnoreCase(keyStoreType)) {
         keyManagerFactory = KeyManagerFactory.getInstance(keyAlgorithm);
-        String keyStoreProvider = System.getProperty("javax.net.ssl.keyStoreProvider");
-        KeyStore keyStore;
-        if (keyStoreProvider != null) {
-          keyStore = KeyStore.getInstance(keyStoreType, keyStoreProvider);
-        }
-        else {
-          keyStore = KeyStore.getInstance(keyStoreType);
-        }
-        String password = System.getProperty("javax.net.ssl.keyStorePassword");
-        try (FileInputStream in = new FileInputStream(keyStoreFile)) {
-          keyStore.load(in, password != null ? password.toCharArray() : null);
-        }
-        keyManagerFactory.init(keyStore, password != null ? password.toCharArray() : null);
       }
       else {
-        return null;
+        final String keyStoreFileName = System.getProperty("javax.net.ssl.keyStore");
+        if (keyStoreFileName != null) {
+          File keyStoreFile = new File(keyStoreFileName);
+          keyManagerFactory = KeyManagerFactory.getInstance(keyAlgorithm);
+          String keyStoreProvider = System.getProperty("javax.net.ssl.keyStoreProvider");
+          KeyStore keyStore;
+          if (keyStoreProvider != null) {
+            keyStore = KeyStore.getInstance(keyStoreType, keyStoreProvider);
+          }
+          else {
+            keyStore = KeyStore.getInstance(keyStoreType);
+          }
+          String password = System.getProperty("javax.net.ssl.keyStorePassword");
+          try (FileInputStream in = new FileInputStream(keyStoreFile)) {
+            keyStore.load(in, password != null ? password.toCharArray() : null);
+          }
+          keyManagerFactory.init(keyStore, password != null ? password.toCharArray() : null);
+        }
+        else {
+          return null;
+        }
       }
-    }
 
-    return keyManagerFactory.getKeyManagers();
+      return keyManagerFactory.getKeyManagers();
+    }).get();
   }
 
-  private static TrustManager[] getSystemTrustManagers() throws Exception {
-    TrustManagerFactory trustManagerFactory;
+  private TrustManager[] getSystemTrustManagers() throws Exception {
+    // Use virtual threads for I/O-bound operations
+    return virtualThreadExecutor.submit(() -> {
+      TrustManagerFactory trustManagerFactory;
 
-    String trustAlgorithm = System.getProperty("ssl.TrustManagerFactory.algorithm");
-    if (trustAlgorithm == null) {
-      trustAlgorithm = TrustManagerFactory.getDefaultAlgorithm();
-    }
-    String trustStoreType = System.getProperty("javax.net.ssl.trustStoreType");
-    if (trustStoreType == null) {
-      trustStoreType = KeyStore.getDefaultType();
-    }
-    if ("none".equalsIgnoreCase(trustStoreType)) {
-      trustManagerFactory = TrustManagerFactory.getInstance(trustAlgorithm);
-    }
-    else {
-      File trustStoreFile;
-      KeyStore trustStore;
-
-      String trustStoreFileName = System.getProperty("javax.net.ssl.trustStore");
-      if (trustStoreFileName != null) {
-        trustStoreFile = new File(trustStoreFileName);
+      String trustAlgorithm = System.getProperty("ssl.TrustManagerFactory.algorithm");
+      if (trustAlgorithm == null) {
+        trustAlgorithm = TrustManagerFactory.getDefaultAlgorithm();
+      }
+      String trustStoreType = System.getProperty("javax.net.ssl.trustStoreType");
+      if (trustStoreType == null) {
+        trustStoreType = KeyStore.getDefaultType();
+      }
+      if ("none".equalsIgnoreCase(trustStoreType)) {
         trustManagerFactory = TrustManagerFactory.getInstance(trustAlgorithm);
-        final String trustStoreProvider = System.getProperty("javax.net.ssl.trustStoreProvider");
-        if (trustStoreProvider != null) {
-          trustStore = KeyStore.getInstance(trustStoreType, trustStoreProvider);
-        }
-        else {
-          trustStore = KeyStore.getInstance(trustStoreType);
-        }
       }
       else {
-        File javaHome = new File(System.getProperty("java.home"));
-        File file = new File(javaHome, "lib/security/jssecacerts");
-        if (!file.exists()) {
-          file = new File(javaHome, "lib/security/cacerts");
-          trustStoreFile = file;
+        File trustStoreFile;
+        KeyStore trustStore;
+
+        String trustStoreFileName = System.getProperty("javax.net.ssl.trustStore");
+        if (trustStoreFileName != null) {
+          trustStoreFile = new File(trustStoreFileName);
+          trustManagerFactory = TrustManagerFactory.getInstance(trustAlgorithm);
+          final String trustStoreProvider = System.getProperty("javax.net.ssl.trustStoreProvider");
+          if (trustStoreProvider != null) {
+            trustStore = KeyStore.getInstance(trustStoreType, trustStoreProvider);
+          }
+          else {
+            trustStore = KeyStore.getInstance(trustStoreType);
+          }
         }
         else {
-          trustStoreFile = file;
-        }
+          File javaHome = new File(System.getProperty("java.home"));
+          File file = new File(javaHome, "lib/security/jssecacerts");
+          if (!file.exists()) {
+            file = new File(javaHome, "lib/security/cacerts");
+            trustStoreFile = file;
+          }
+          else {
+            trustStoreFile = file;
+          }
 
-        trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-        trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
+          trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+          trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
+        }
+        final String password = System.getProperty("javax.net.ssl.trustStorePassword");
+        try (FileInputStream in = new FileInputStream(trustStoreFile)) {
+          trustStore.load(in, password != null ? password.toCharArray() : null);
+        }
+        trustManagerFactory.init(trustStore);
       }
-      final String password = System.getProperty("javax.net.ssl.trustStorePassword");
-      try (FileInputStream in = new FileInputStream(trustStoreFile)) {
-        trustStore.load(in, password != null ? password.toCharArray() : null);
-      }
-      trustManagerFactory.init(trustStore);
-    }
-    return trustManagerFactory.getTrustManagers();
+      return trustManagerFactory.getTrustManagers();
+    }).get();
   }
 
   private String getCertificateName(final Certificate certificate) {
-    if (certificate instanceof X509Certificate x509Certificate) {
-      return x509Certificate.getSubjectDN().getName();
+    if (certificate instanceof X509Certificate) {
+      X509Certificate cert = (X509Certificate) certificate;
+      return cert.getSubjectDN().getName();
     }
     else {
       log.warn("Unknown certificate found, hence can't get the name.");

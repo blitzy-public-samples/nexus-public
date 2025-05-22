@@ -21,11 +21,20 @@ import javax.management.DescriptorKey;
 
 /**
  * Helper to test {@link DescriptorKey}.
+ * 
+ * <p>This annotation is designed to be compatible with Java 21's enhanced reflection system
+ * and stronger encapsulation rules. The {@link DescriptorKey} annotation is used to add
+ * information to Descriptors for MBeans through annotations in the MBean interface.</p>
  */
 @Target({ElementType.TYPE, ElementType.METHOD})
 @Retention(RetentionPolicy.RUNTIME)
 @interface TestComments
 {
+  /**
+   * Returns the comments value to be used in the descriptor.
+   * 
+   * @return The comments value
+   */
   @DescriptorKey("comments")
   String value();
 }

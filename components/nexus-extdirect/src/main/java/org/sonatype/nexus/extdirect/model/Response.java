@@ -14,6 +14,10 @@ package org.sonatype.nexus.extdirect.model;
 
 /**
  * Ext.Direct response.
+ * 
+ * This class is designed to be compatible with Java 21 features including pattern matching
+ * and virtual threads. It maintains backward compatibility with existing code while
+ * supporting modern Java features.
  *
  * @since 3.0
  */

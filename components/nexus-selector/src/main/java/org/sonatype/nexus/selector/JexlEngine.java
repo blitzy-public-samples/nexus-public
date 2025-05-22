@@ -25,7 +25,7 @@ import org.apache.commons.jexl3.internal.Engine;
 import org.apache.commons.jexl3.parser.ASTJexlScript;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.lang.String.format;
+import static java.lang.StringTemplate.STR;
 import static java.util.Optional.ofNullable;
 import static java.util.regex.Pattern.compile;
 import static org.sonatype.nexus.selector.LeadingSlashScriptTransformer.trimLeadingSlashes;
@@ -83,11 +83,11 @@ public class JexlEngine
       // add more detail if we have it and it's not already part of the message
       Optional<String> detail = ofNullable(info.getDetail()).map(Object::toString);
       if (detail.isPresent() && detailBuilder.indexOf(detail.get()) < 0) {
-        addContext(detailBuilder, format("in '%s'", detail.get()));
+        addContext(detailBuilder, STR."in '\{detail.get()}'");
       }
 
       // finally add the location in a more readable form
-      addContext(detailBuilder, format("at line %d column %d", info.getLine(), info.getColumn()));
+      addContext(detailBuilder, STR."at line \{info.getLine()} column \{info.getColumn()}");
     }
 
     return detailBuilder.toString();

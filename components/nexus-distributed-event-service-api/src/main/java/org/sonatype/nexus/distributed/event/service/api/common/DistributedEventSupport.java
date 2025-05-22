@@ -17,6 +17,11 @@ import org.sonatype.nexus.distributed.event.service.api.EventType;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
+/**
+ * Base class for distributed events that carry event type information.
+ *
+ * @since 3.38
+ */
 public abstract class DistributedEventSupport
     extends EventWithSource
 {

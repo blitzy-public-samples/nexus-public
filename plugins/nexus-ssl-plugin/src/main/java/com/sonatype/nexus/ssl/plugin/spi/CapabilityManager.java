@@ -12,66 +12,51 @@
  */
 package com.sonatype.nexus.ssl.plugin.spi;
 
-import java.util.concurrent.CompletableFuture;
-
 import org.sonatype.nexus.capability.CapabilityReference;
 
 /**
  * Manages retrieve / update of TrustStore capabilities / type.
  * <p>
- * This interface provides methods to retrieve and manage TrustStore capabilities.
- * Implementations should leverage Java 21 features such as Virtual Threads for
- * I/O-bound operations to improve performance and scalability.
+ * This interface is compatible with Java 21's enhanced security model and default strong encapsulation.
+ * Implementations should ensure proper handling of security-sensitive operations when accessing
+ * TrustStore capabilities.
+ * <p>
+ * When used with Apache Shiro 2.0.0, implementations must respect updated security constraints
+ * and permission checks for TrustStore operations.
+ * <p>
+ * This interface works with updated cryptography providers in Java 21 for TrustStore operations.
+ * Implementations should use modern cryptographic algorithms and practices.
  *
  * @since ssl 1.0
  */
 public interface CapabilityManager
 {
+
   /**
-   * Retrieves a capability reference by its ID.
+   * Retrieves a capability reference by its identifier.
+   * <p>
+   * Implementations should ensure proper access control checks are performed
+   * in accordance with Apache Shiro 2.0.0 security model.
    *
-   * @param id The unique identifier of the capability to retrieve
+   * @param id The capability identifier
    * @return The capability reference, or null if not found
    */
   CapabilityReference get(String id);
 
   /**
-   * Enables or disables a capability by its ID.
+   * Enables or disables a capability by its identifier.
    * <p>
-   * This operation may involve I/O and should be implemented using Virtual Threads
-   * when running in a Java 21 environment for improved scalability.
+   * Implementations should ensure proper access control checks are performed
+   * in accordance with Apache Shiro 2.0.0 security model.
+   * <p>
+   * When working with TrustStore capabilities, implementations must use cryptography
+   * providers compatible with Java 21's security model.
    *
-   * @param id The unique identifier of the capability to enable/disable
+   * @param id The capability identifier
    * @param enabled True to enable the capability, false to disable it
    * @return The updated capability reference
    * @throws Exception If an error occurs during the operation
    */
   CapabilityReference enable(String id, boolean enabled) throws Exception;
-  
-  /**
-   * Asynchronously enables or disables a capability by its ID.
-   * <p>
-   * This method leverages Java 21 Virtual Threads for non-blocking I/O operations,
-   * providing better scalability for concurrent operations. Implementations should
-   * use {@code Executors.newVirtualThreadPerTaskExecutor()} for executing the operation.
-   *
-   * @param id The unique identifier of the capability to enable/disable
-   * @param enabled True to enable the capability, false to disable it
-   * @return A CompletableFuture that will complete with the updated capability reference
-   *         or complete exceptionally if an error occurs
-   * @since 3.60.0
-   */
-  default CompletableFuture<CapabilityReference> enableAsync(String id, boolean enabled) {
-    CompletableFuture<CapabilityReference> future = new CompletableFuture<>();
-    try {
-      // Default implementation calls the synchronous method
-      // Implementations should override this with a proper Virtual Thread implementation
-      CapabilityReference result = enable(id, enabled);
-      future.complete(result);
-    } 
-    catch (Exception e) {
-      future.completeExceptionally(e);
-    }
-    return future;
-  }
+
 }

@@ -12,7 +12,9 @@
  */
 package org.sonatype.nexus.extdirect.internal;
 
-import javax.inject.Named;
+import java.util.Map;
+
+import jakarta.inject.Named;
 
 import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.security.FilterChainModule;
@@ -21,6 +23,9 @@ import org.sonatype.nexus.security.anonymous.AnonymousFilter;
 import org.sonatype.nexus.security.authc.AntiCsrfFilter;
 import org.sonatype.nexus.security.authc.NexusAuthenticationFilter;
 
+import com.google.common.collect.ImmutableMap;
+
+import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.common.app.FeatureFlags.JWT_ENABLED;
 
 /**
@@ -35,10 +40,14 @@ public class JwtExtDirectModule
 {
   @Override
   protected void configure() {
+    // Configure for Java 21 compatibility with Virtual Threads
+    Map<String, String> filterConfig = ImmutableMap.of("supportVirtualThreads", "true");
+    
     install(new ExtDirectServletModule(MOUNT_POINT) {
       @Override
       protected void bindSecurityFilter() {
-        filter(MOUNT_POINT + "*").through(JwtSecurityFilter.class);
+        // Use String Template for path pattern and configure for Java 21 compatibility
+        filter(STR."{MOUNT_POINT}*").through(JwtSecurityFilter.class, filterConfig);
       }
     });
 
@@ -46,7 +55,8 @@ public class JwtExtDirectModule
     {
       @Override
       protected void configure() {
-        addFilterChain(MOUNT_POINT + "/**",
+        // Use String Template for path pattern
+        addFilterChain(STR."{MOUNT_POINT}/**",
             NexusAuthenticationFilter.NAME,
             AnonymousFilter.NAME,
             AntiCsrfFilter.NAME);

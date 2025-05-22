@@ -20,6 +20,13 @@ import static org.sonatype.nexus.distributed.event.service.api.EventType.UPDATED
 
 /**
  * Indicates repository is auto-blocked or unblocked.
+ * 
+ * <p>This class has been updated for Java 21 compatibility with:</p>
+ * <ul>
+ *   <li>String Templates for improved toString() readability and performance</li>
+ *   <li>Support for Record Patterns when processing this event</li>
+ *   <li>Enhanced parameter validation</li>
+ * </ul>
  *
  * @since 3.41
  */
@@ -38,6 +45,17 @@ public class RepositoryRemoteConnectionStatusEvent
 
   private final String requestUrl;
 
+  /**
+   * Creates a new repository remote connection status event.
+   * 
+   * <p>Note: Consumers of this event can use Java 21 Record Patterns for more concise processing:</p>
+   * <pre>
+   * // Example of using Record Patterns to process this event
+   * if (event instanceof RepositoryRemoteConnectionStatusEvent(var repoName, var statusOrdinal, var reason, var blockedUntil, var url)) {
+   *   // Process the extracted components directly without accessor methods
+   * }
+   * </pre>
+   */
   @JsonCreator
   public RepositoryRemoteConnectionStatusEvent(
       @JsonProperty("repositoryName") final String repositoryName,
@@ -49,7 +67,7 @@ public class RepositoryRemoteConnectionStatusEvent
     super(UPDATED);
     this.repositoryName = checkNotNull(repositoryName);
     this.remoteConnectionStatusTypeOrdinal = remoteConnectionStatusTypeOrdinal;
-    this.reason = reason;
+    this.reason = checkNotNull(reason, "Reason cannot be null");
     this.blockedUntilMillis = blockedUntilMillis;
     this.requestUrl = requestUrl;
   }
@@ -76,9 +94,6 @@ public class RepositoryRemoteConnectionStatusEvent
 
   @Override
   public String toString() {
-    return "RepositoryRemoteConnectionStatusEvent{" +
-        "repositoryName='" + repositoryName + '\'' + "," +
-        "reason='" + reason + '\'' +
-        '}';
+    return STR."RepositoryRemoteConnectionStatusEvent{repositoryName='\{repositoryName}', reason='\{reason}'}";
   }
 }

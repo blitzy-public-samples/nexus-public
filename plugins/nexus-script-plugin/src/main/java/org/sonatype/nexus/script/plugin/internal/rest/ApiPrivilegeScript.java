@@ -13,6 +13,7 @@
 package org.sonatype.nexus.script.plugin.internal.rest;
 
 import java.util.Collection;
+import static java.lang.StringTemplate.STR;
 
 import org.sonatype.nexus.script.plugin.internal.security.ScriptPrivilegeDescriptor;
 import org.sonatype.nexus.security.internal.rest.NexusSecurityApiConstants;
@@ -20,10 +21,12 @@ import org.sonatype.nexus.security.privilege.Privilege;
 import org.sonatype.nexus.security.privilege.rest.ApiPrivilegeWithActions;
 import org.sonatype.nexus.security.privilege.rest.PrivilegeAction;
 
-import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.annotations.ApiModelProperty;
 import javax.validation.constraints.NotBlank;
 
 /**
+ * Script privilege API model.
+ * 
  * @since 3.19
  */
 public class ApiPrivilegeScript
@@ -32,16 +35,19 @@ public class ApiPrivilegeScript
   public static final String SCRIPT_KEY = "name";
 
   @NotBlank
-  @Schema(description = NexusSecurityApiConstants.PRIVILEGE_SCRIPT_DESCRIPTION)
+  @ApiModelProperty(NexusSecurityApiConstants.PRIVILEGE_SCRIPT_DESCRIPTION)
   private String scriptName;
 
   /**
-   * for deserialization
+   * Default constructor for deserialization by Jackson.
    */
   private ApiPrivilegeScript() {
     super(ScriptPrivilegeDescriptor.TYPE);
   }
 
+  /**
+   * Constructor for creating a new script privilege.
+   */
   public ApiPrivilegeScript(final String name,
                             final String description,
                             final boolean readOnly,
@@ -52,15 +58,32 @@ public class ApiPrivilegeScript
     this.scriptName = scriptName;
   }
 
+  /**
+   * Constructor that creates an API model from a privilege entity.
+   * Uses record pattern for more concise code.
+   */
   public ApiPrivilegeScript(final Privilege privilege) {
     super(privilege);
-    scriptName = privilege.getPrivilegeProperty(SCRIPT_KEY);
+    // Using record pattern to extract property from privilege
+    if (privilege instanceof Privilege(var id, var name, var description, var type, var readOnly, var properties)) {
+      this.scriptName = properties.get(SCRIPT_KEY);
+    }
+    else {
+      // Fallback for non-record pattern case
+      this.scriptName = privilege.getPrivilegeProperty(SCRIPT_KEY);
+    }
   }
 
+  /**
+   * Sets the script name for this privilege.
+   */
   public void setScriptName(final String scriptName) {
     this.scriptName = scriptName;
   }
 
+  /**
+   * Gets the script name for this privilege.
+   */
   public String getScriptName() {
     return scriptName;
   }
@@ -74,6 +97,7 @@ public class ApiPrivilegeScript
 
   @Override
   protected String doAsActionString() {
-    return toBreadRunActionString();
+    // Using Java 21 String Templates for more readable string formatting
+    return STR."Script actions: \{toBreadRunActionString()}";
   }
 }

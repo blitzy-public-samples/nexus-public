@@ -54,41 +54,44 @@ public class ExtDirectExceptionHandler
 
   public Response handleException(final RegisteredMethod method, final Throwable e) {
     // debug logging for sanity (without stacktrace for suppressed exception)
-    log.debug("Failed to invoke action method: {}, java-method: {}, exception message: {}",
-        method.getFullName(), method.getFullJavaMethodName(), e.getMessage(),
+    log.debug(STR."Failed to invoke action method: \{method.getFullName()}, java-method: \{method.getFullJavaMethodName()}, exception message: \{e.getMessage()}",
         isSuppressedException(e) ? null : e);
 
-    // handle validation message responses which have contents
-    if (e instanceof ConstraintViolationException) {
-      ConstraintViolationException cause = (ConstraintViolationException) e;
-      Set<ConstraintViolation<?>> violations = cause.getConstraintViolations();
-      if (violations != null && !violations.isEmpty()) {
-        return invalid(cause);
+    // handle exception using pattern matching with switch
+    return switch (e) {
+      case ConstraintViolationException cve when cve.getConstraintViolations() != null && !cve.getConstraintViolations().isEmpty() -> {
+        // handle validation message responses which have contents
+        yield invalid(cve);
       }
-    }
-
-    if (e instanceof FrozenException || e.getCause() instanceof FrozenException) {
-      return error(new Exception("Nexus Repository Manager is in read-only mode"));
-    }
-
-    // exception logging for all non-suppressed exceptions
-    if (!isSuppressedException(e)) {
-      log.error("Failed to invoke action method: {}, java-method: {}",
-          method.getFullName(), method.getFullJavaMethodName(), e);
-    }
-
-    String exceptionName = e.getClass().getName();
-    if (e instanceof SQLException
-        || exceptionName.contains("org.apache.ibatis")
-        || exceptionName.contains("org.sonatype.nexus.datastore")) {
-      return error(new Exception("A database error occurred"));
-    }
-
-    if (e instanceof HttpHostConnectException || exceptionName.contains("com.sonatype.insight.rm.rest.HttpException")) {
-      return error(new Exception("Connection unsuccessful."));
-    }
-
-    return error(e);
+      case FrozenException fe, Throwable t when t.getCause() instanceof FrozenException -> {
+        // handle frozen exception or exception with frozen exception cause
+        yield error(new Exception("Nexus Repository Manager is in read-only mode"));
+      }
+      case SQLException sqlEx, 
+           Throwable t when t.getClass().getName().contains("org.apache.ibatis") || 
+                         t.getClass().getName().contains("org.sonatype.nexus.datastore") -> {
+        // handle database-related exceptions
+        if (!isSuppressedException(e)) {
+          log.error(STR."Failed to invoke action method: \{method.getFullName()}, java-method: \{method.getFullJavaMethodName()}", e);
+        }
+        yield error(new Exception("A database error occurred"));
+      }
+      case HttpHostConnectException httpEx, 
+           Throwable t when t.getClass().getName().contains("com.sonatype.insight.rm.rest.HttpException") -> {
+        // handle connection-related exceptions
+        if (!isSuppressedException(e)) {
+          log.error(STR."Failed to invoke action method: \{method.getFullName()}, java-method: \{method.getFullJavaMethodName()}", e);
+        }
+        yield error(new Exception("Connection unsuccessful."));
+      }
+      default -> {
+        // handle all other exceptions
+        if (!isSuppressedException(e)) {
+          log.error(STR."Failed to invoke action method: \{method.getFullName()}, java-method: \{method.getFullJavaMethodName()}", e);
+        }
+        yield error(e);
+      }
+    };
   }
 
   private boolean isSuppressedException(final Throwable e) {

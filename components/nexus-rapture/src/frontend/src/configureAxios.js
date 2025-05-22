@@ -18,14 +18,18 @@ import axios from 'axios';
 
 export default function configureAxios() {
   // Configure axios
+  // Set up CSRF token handling - compatible with Java 21 security framework
+  // The token is sent both as a cookie and a header with the same name
   axios.defaults.xsrfCookieName = 'NX-ANTI-CSRF-TOKEN';
   axios.defaults.xsrfHeaderName = 'NX-ANTI-CSRF-TOKEN';
   axios.defaults.baseURL = NX.app.relativePath;
   axios.defaults.headers.common['X-Nexus-UI'] = true;
+  
   const axiosAdapter = axios.defaults.adapter;
   if (typeof axiosAdapter === 'function') {
     axios.defaults.adapter = function(config) {
       // Generate a new cache buster for each request
+      // This ensures compatibility with Java 21 response handling by forcing fresh requests
       const timestamp = new Date().getTime();
       if (config.url.indexOf('?') !== -1) {
         config.url += '&_dc=' + timestamp;

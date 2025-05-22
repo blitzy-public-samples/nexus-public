@@ -12,13 +12,13 @@
  */
 package com.google.inject.servlet;
 
-import com.google.common.base.Strings;
 import com.google.inject.spi.DefaultBindingTargetVisitor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Logs pipeline definitions, using padding to align them into columns.
+ * Logs pipeline definitions, using Java 21 String Templates to align them into columns.
+ * Compatible with Google Guice 7.0.0 and Jakarta EE.
  */
 final class PipelineLogger
     extends DefaultBindingTargetVisitor<Object, String>
@@ -32,6 +32,11 @@ final class PipelineLogger
 
   private static final PipelineLogger THIS = new PipelineLogger();
 
+  /**
+   * Dumps filter definitions to the debug log.
+   * 
+   * @param filterDefinitions the filter definitions to log
+   */
   public static void dump(FilterDefinition[] filterDefinitions) {
     if (log.isDebugEnabled()) {
       final StringBuilder buf = new StringBuilder("Updated filter definitions:");
@@ -42,6 +47,11 @@ final class PipelineLogger
     }
   }
 
+  /**
+   * Dumps servlet definitions to the debug log.
+   * 
+   * @param servletDefinitions the servlet definitions to log
+   */
   public static void dump(ServletDefinition[] servletDefinitions) {
     if (log.isDebugEnabled()) {
       final StringBuilder buf = new StringBuilder("Updated servlet definitions:");
@@ -52,23 +62,45 @@ final class PipelineLogger
     }
   }
 
+  @Override
   public String visit(LinkedFilterBinding binding) {
     return format(binding.getPattern(), binding.getLinkedKey().getTypeLiteral());
   }
 
+  @Override
   public String visit(InstanceFilterBinding binding) {
     return format(binding.getPattern(), binding.getFilterInstance().getClass());
   }
 
+  @Override
   public String visit(LinkedServletBinding binding) {
     return format(binding.getPattern(), binding.getLinkedKey().getTypeLiteral());
   }
 
+  @Override
   public String visit(InstanceServletBinding binding) {
     return format(binding.getPattern(), binding.getServletInstance().getClass());
   }
 
+  /**
+   * Formats the pattern and element using Java 21 String Templates for improved readability and performance.
+   * Creates a padded output with the pattern aligned to the left and the element to the right.
+   * 
+   * @param pattern the URL pattern to format
+   * @param element the binding element to format
+   * @return a formatted string with proper padding between pattern and element
+   */
   private static String format(String pattern, Object element) {
-    return Strings.padEnd(pattern, PADDING, ' ') + ' ' + element;
+    // If pattern is longer than PADDING, we'll just add one space before the element
+    if (pattern.length() >= PADDING) {
+      return STR."\{pattern} \{element}";
+    }
+    
+    // Calculate the number of spaces needed for padding
+    int spacesToAdd = PADDING - pattern.length();
+    String spaces = " ".repeat(spacesToAdd);
+    
+    // Use String Template for formatting with proper padding
+    return STR."\{pattern}\{spaces}\{element}";
   }
 }

@@ -17,6 +17,11 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.ArrayList;
+import java.util.List;
 
 import javax.annotation.Priority;
 import javax.inject.Inject;
@@ -67,16 +72,49 @@ public class SupportRestorer
 
   private void maybeRestore() throws IOException {
     Path dbDir = restoreHelper.getDbPath();
-    for (Entry<String, ImportData> importerEntry : importDataByName.entrySet()) {
-      String fileName = importerEntry.getKey() + FILE_SUFFIX;
-      File file = dbDir.resolve(fileName).toFile();
-      ImportData importer = importerEntry.getValue();
-      if (file.exists()) {
-        importer.restore(file);
-        FileUtils.deleteQuietly(file);
+    
+    // Use Virtual Threads for concurrent file processing
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      List<Future<?>> futures = new ArrayList<>();
+      
+      // Submit each file restoration task to the virtual thread executor
+      for (Entry<String, ImportData> importerEntry : importDataByName.entrySet()) {
+        String fileName = importerEntry.getKey() + FILE_SUFFIX;
+        File file = dbDir.resolve(fileName).toFile();
+        ImportData importer = importerEntry.getValue();
+        
+        if (file.exists()) {
+          log.debug("Submitting restoration task for {} using virtual thread", file);
+          
+          futures.add(executor.submit(() -> {
+            try {
+              log.debug("Restoring data from {} using virtual thread", file);
+              importer.restore(file);
+              FileUtils.deleteQuietly(file);
+              log.debug("Successfully restored and deleted {}", file);
+              return null;
+            } 
+            catch (Exception e) {
+              log.error("Failed to restore data from {}", file, e);
+              throw new RuntimeException("Failed to restore data from " + file, e);
+            }
+          }));
+        }
+        else {
+          log.debug("Can't find {} file to restore data", file);
+        }
       }
-      else {
-        log.debug("Can't find {} file to restore data", file);
+      
+      // Wait for all restoration tasks to complete
+      for (Future<?> future : futures) {
+        try {
+          future.get(); // This will throw an exception if the task failed
+        } 
+        catch (Exception e) {
+          log.error("Error during support data restoration", e);
+          // Convert to IOException to match the method signature
+          throw new IOException("Error during support data restoration", e);
+        }
       }
     }
   }

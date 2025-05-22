@@ -17,7 +17,7 @@ import java.util.List;
 import javax.ws.rs.client.WebTarget;
 
 import org.jboss.resteasy.client.jaxrs.ResteasyWebTarget;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.hasItem;
@@ -36,5 +36,25 @@ public class EchoIT
     List<String> result = echo.get("hi");
     assertThat(result, notNullValue());
     assertThat(result, hasItem("foo=hi"));
+  }
+  
+  @Test
+  public void basicWithVirtualThread() throws Exception {
+    // Create a virtual thread to execute the test
+    Thread.startVirtualThread(() -> {
+      try {
+        WebTarget target = client().target(url());
+        Echo echo = ((ResteasyWebTarget)target).proxy(Echo.class);
+        List<String> result = echo.get("virtual");
+        assertThat(result, notNullValue());
+        assertThat(result, hasItem("foo=virtual"));
+        
+        // Verify we're running in a virtual thread
+        assertThat(Thread.currentThread().isVirtual(), org.hamcrest.Matchers.is(true));
+      }
+      catch (Exception e) {
+        throw new RuntimeException(e);
+      }
+    }).join(); // Wait for the virtual thread to complete
   }
 }

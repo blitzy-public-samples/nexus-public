@@ -13,6 +13,9 @@
 package org.sonatype.nexus.script.plugin.internal.rest;
 
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
@@ -35,6 +38,9 @@ import org.apache.shiro.authz.annotation.RequiresPermissions;
 import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON;
 
 /**
+ * Script privilege API resource with Java 21 Virtual Threads support for I/O-bound operations.
+ * Updated for compatibility with RESTEasy 6.2.7.Final.
+ *
  * @since 3.19
  */
 @Consumes(APPLICATION_JSON)
@@ -43,11 +49,27 @@ public class ScriptPrivilegeApiResource
     extends PrivilegeApiResourceSupport
     implements Resource, ScriptPrivilegeApiResourceDoc
 {
+  /**
+   * Default executor service for virtual threads if not overridden by subclasses.
+   */
+  private final ExecutorService defaultExecutorService;
+
   @Inject
   public ScriptPrivilegeApiResource(final SecuritySystem securitySystem,
                                     final Map<String, PrivilegeDescriptor> privilegeDescriptors)
   {
     super(securitySystem, privilegeDescriptors);
+    this.defaultExecutorService = Executors.newVirtualThreadPerTaskExecutor();
+  }
+
+  /**
+   * Get the executor service to use for privilege operations.
+   * Can be overridden by subclasses to provide a different executor.
+   *
+   * @return the executor service to use
+   */
+  protected ExecutorService getExecutorService() {
+    return defaultExecutorService;
   }
 
   @Override
@@ -56,10 +78,12 @@ public class ScriptPrivilegeApiResource
   @RequiresPermissions("nexus:privileges:create")
   @Path("script")
   public Response createPrivilege(final ApiPrivilegeScriptRequest privilege) {
-    return switch (privilege) {
-      case null -> Response.status(Response.Status.BAD_REQUEST).build();
-      default -> doCreate(ScriptPrivilegeDescriptor.TYPE, privilege);
-    };
+    // Use virtual threads for I/O-bound privilege creation
+    CompletableFuture<Response> future = CompletableFuture.supplyAsync(
+        () -> doCreate(ScriptPrivilegeDescriptor.TYPE, privilege),
+        getExecutorService());
+    
+    return future.join(); // Wait for the operation to complete
   }
 
   @Override
@@ -70,8 +94,11 @@ public class ScriptPrivilegeApiResource
   public void updatePrivilege(@PathParam("privilegeName") final String privilegeName,
                               final ApiPrivilegeScriptRequest privilege)
   {
-    if (privilegeName != null && privilege != null) {
-      doUpdate(privilegeName, ScriptPrivilegeDescriptor.TYPE, privilege);
-    }
+    // Use virtual threads for I/O-bound privilege update
+    CompletableFuture<Void> future = CompletableFuture.runAsync(
+        () -> doUpdate(privilegeName, ScriptPrivilegeDescriptor.TYPE, privilege),
+        getExecutorService());
+    
+    future.join(); // Wait for the operation to complete
   }
 }

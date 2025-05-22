@@ -57,6 +57,7 @@
     <dependency>
       <groupId>io.swagger</groupId>
       <artifactId>swagger-annotations</artifactId>
+      <version>2.2.21</version>
     </dependency>
 
     <dependency>
@@ -77,14 +78,15 @@
       <scope>test</scope>
     </dependency>
     
-    <!-- Java 21 Virtual Thread testing support -->
+    <!-- Java 21 Virtual Thread testing support
     <dependency>
       <groupId>org.sonatype.nexus</groupId>
       <artifactId>nexus-virtual-thread-testsupport</artifactId>
       <scope>test</scope>
     </dependency>
+    -->
   </dependencies>
-
+   
   <build>
     <plugins>
       <!-- Configure Maven compiler plugin for Java 21 -->

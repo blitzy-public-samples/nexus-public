@@ -51,6 +51,7 @@
     <dependency>
       <groupId>org.jboss.resteasy</groupId>
       <artifactId>resteasy-jaxrs</artifactId>
+      <version>6.2.0.Final</version>
       <exclusions>
         <exclusion>
           <groupId>org.jboss.resteasy</groupId>
@@ -62,6 +63,7 @@
     <dependency>
       <groupId>org.jboss.resteasy</groupId>
       <artifactId>resteasy-validator-provider</artifactId>
+      <version>3.15.6.Final</version>
     </dependency>
 
     <dependency>
@@ -115,6 +117,7 @@
     <dependency>
       <groupId>javax.activation</groupId>
       <artifactId>activation</artifactId>
+      <version>1.1</version>
       <scope>test</scope>
     </dependency>
   </dependencies>

@@ -39,6 +39,7 @@
     <dependency>
       <groupId>org.elasticsearch</groupId>
       <artifactId>elasticsearch</artifactId>
+      <version>2.4.3</version>
       <optional>true</optional>
     </dependency>
 
@@ -64,10 +65,12 @@
     <dependency>
       <groupId>org.hdrhistogram</groupId>
       <artifactId>HdrHistogram</artifactId>
+       <version>2.2.1</version>
     </dependency>
     <dependency>
       <groupId>com.vividsolutions</groupId>
       <artifactId>jts</artifactId>
+      <version>1.13</version>
     </dependency>
     <dependency>
       <groupId>com.ning</groupId>

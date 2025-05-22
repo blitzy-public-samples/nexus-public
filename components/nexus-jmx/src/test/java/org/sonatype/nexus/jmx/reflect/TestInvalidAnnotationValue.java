@@ -20,13 +20,27 @@ import java.lang.annotation.Target;
 import javax.management.DescriptorKey;
 
 /**
- * Helper to test {@link DescriptorKey}.
+ * Helper to test {@link DescriptorKey} validation behavior with Java 21.
+ * 
+ * <p>
+ * This annotation is intentionally invalid to test the negative path in
+ * {@link DescriptorHelper#build(java.lang.reflect.Method)} when it encounters an
+ * annotation type as a value for a DescriptorKey, which is not allowed according to
+ * the DescriptorKey specification.
+ * </p>
+ * 
+ * <p>
+ * Java 21's enhanced reflection system and stronger encapsulation rules should still
+ * correctly identify this as an invalid descriptor key and throw an
+ * {@link DescriptorHelper.InvalidDescriptorKeyException}.
+ * </p>
  */
 @Target({ElementType.TYPE, ElementType.METHOD})
 @Retention(RetentionPolicy.RUNTIME)
 @interface TestInvalidAnnotationValue
 {
   // DescriptorKey value is not allowed to be an annotation
+  // This is intentionally invalid to test error handling in DescriptorHelper
   @DescriptorKey("invalid")
   TestComments value();
 }

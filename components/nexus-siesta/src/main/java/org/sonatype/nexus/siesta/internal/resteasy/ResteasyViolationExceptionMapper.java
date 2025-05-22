@@ -16,10 +16,10 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.core.Response.Status;
-import javax.ws.rs.ext.Provider;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.core.Response.Status;
+import jakarta.ws.rs.ext.Provider;
 
 import org.sonatype.nexus.rest.ValidationErrorXO;
 import org.sonatype.nexus.siesta.ValidationExceptionMapperSupport;
@@ -81,8 +81,16 @@ public class ResteasyViolationExceptionMapper
 
   private String getPath(final ResteasyConstraintViolation violation) {
     final String propertyPath = violation.getPath();
-    final String propertyName = propertyPath.substring(propertyPath.lastIndexOf('.') + 1);
+    // Use Java 21 String methods for better null handling
+    final String propertyName = propertyPath != null && propertyPath.contains(".") ?
+        propertyPath.substring(propertyPath.lastIndexOf('.') + 1) : propertyPath;
 
-    return violation.type() + (!"".equals(propertyPath) ? ' ' + propertyName : "");
+    // Handle null or empty propertyPath safely
+    String type = violation.type();
+    if (propertyPath == null || propertyPath.isEmpty()) {
+      return type;
+    } else {
+      return type + " " + propertyName;
+    }
   }
 }

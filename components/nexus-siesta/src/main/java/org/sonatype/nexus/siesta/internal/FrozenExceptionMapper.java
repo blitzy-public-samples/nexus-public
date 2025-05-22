@@ -12,16 +12,16 @@
  */
 package org.sonatype.nexus.siesta.internal;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.core.Response;
-import javax.ws.rs.ext.Provider;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.ext.Provider;
 
 import org.sonatype.nexus.common.app.FrozenException;
 import org.sonatype.nexus.rest.ExceptionMapperSupport;
 
-import static javax.ws.rs.core.MediaType.TEXT_PLAIN;
-import static javax.ws.rs.core.Response.Status.SERVICE_UNAVAILABLE;
+import static jakarta.ws.rs.core.MediaType.TEXT_PLAIN;
+import static jakarta.ws.rs.core.Response.Status.SERVICE_UNAVAILABLE;
 
 /**
  * {@link FrozenException} mapper.

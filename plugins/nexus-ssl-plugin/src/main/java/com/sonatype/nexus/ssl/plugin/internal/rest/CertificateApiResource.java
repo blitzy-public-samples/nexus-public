@@ -19,6 +19,7 @@ import java.security.cert.CertificateEncodingException;
 import java.security.cert.CertificateException;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 import jakarta.inject.Inject;
@@ -58,7 +59,6 @@ import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 
 import static java.lang.StringTemplate.STR;
-
 import static org.sonatype.nexus.ssl.TrustStore.KEY_STORE_ERROR_MESSAGE;
 
 /**
@@ -69,13 +69,13 @@ public class CertificateApiResource
     extends ComponentSupport
     implements Resource, CertificateApiResourceDoc
 {
-  // Removed static message format in favor of string templates
+  private static final String CERTIFICATE_MISSING_MESSAGE = "No certificate with alias '%s' in trust store.";
 
-  private final TrustStore trustStore;
+  private TrustStore trustStore;
 
-  private final CertificateRetriever certificateRetriever;
+  private CertificateRetriever certificateRetriever;
 
-  private final ObjectWriter stringWriter = new ObjectMapper().writerFor(String.class);
+  private ObjectWriter stringWriter = new ObjectMapper().writerFor(String.class);
 
   @Inject
   public CertificateApiResource(final TrustStore trustStore, final CertificateRetriever certificateRetriever) {
@@ -93,25 +93,26 @@ public class CertificateApiResource
       @QueryParam("protocolHint") final String protocolHint)
   {
     try {
-      Certificate[] certificates = certificateRetriever.retrieveCertificates(host, port, protocolHint);
+      // Use Virtual Thread for I/O-bound certificate retrieval operation
+      var executor = Executors.newVirtualThreadPerTaskExecutor();
+      try (executor) {
+        Certificate[] certificates = executor.submit(() -> 
+            certificateRetriever.retrieveCertificates(host, port, protocolHint)).get();
 
-      if (certificates == null || certificates.length == 0) {
-        throw createWebException(Status.BAD_REQUEST, STR."Unable to retrieve certificate from host: \{host}");
+        if (certificates == null || certificates.length == 0) {
+          throw createWebException(Status.BAD_REQUEST, STR."Unable to retrieve certificate from host: \{host}");
+        }
+
+        return ApiCertificate.convert(certificates[0]);
       }
-
-      return ApiCertificate.convert(certificates[0]);
+    }
+    catch (UnknownHostException e) { // NOSONAR
+      throw createWebException(Status.BAD_REQUEST, STR."Unknown host \{host}");
     }
     catch (Exception e) {
-      return switch (e) {
-        case UnknownHostException uhe -> {
-          // NOSONAR
-          throw createWebException(Status.BAD_REQUEST, STR."Unknown host \{host}");
-        }
-        default -> {
-          log.debug(STR."Failed to retrieve certificate from host:\{host} on port:\{port} with protocolHint:\{protocolHint}", e);
-          throw createWebException(Status.BAD_REQUEST, e.getMessage());
-        }
-      };
+      log.debug("Failed to retrieve certificate from host:{} on port:{} with protocolHint:{}", host, port, protocolHint,
+          e);
+      throw createWebException(Status.BAD_REQUEST, e.getMessage());
     }
   }
 
@@ -122,15 +123,23 @@ public class CertificateApiResource
   @RequiresPermissions("nexus:ssl-truststore:read")
   public List<ApiCertificate> getTrustStoreCertificates() {
     try {
-      return trustStore.getTrustedCertificates()
-          .stream()
-          .map(this::convertOrNull)
-          .filter(Objects::nonNull)
-          .collect(Collectors.toList());
+      // Use Virtual Thread for I/O-bound certificate retrieval operation
+      var executor = Executors.newVirtualThreadPerTaskExecutor();
+      try (executor) {
+        return executor.submit(() -> trustStore.getTrustedCertificates()
+            .stream()
+            .map(this::convertOrNull)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toList())).get();
+      }
     }
     catch (KeystoreException e) {
       log.error("An error occurred accessing the internal trust store.", e);
       throw createWebException(Status.INTERNAL_SERVER_ERROR, KEY_STORE_ERROR_MESSAGE);
+    }
+    catch (Exception e) {
+      log.error("An error occurred retrieving certificates", e);
+      throw createWebException(Status.INTERNAL_SERVER_ERROR, STR."Error retrieving certificates: \{e.getMessage()}");
     }
   }
 
@@ -149,27 +158,21 @@ public class CertificateApiResource
       trustStore.getTrustedCertificate(fingerprint);
       throw createWebException(Status.CONFLICT, STR."A certificate already exists with the id: '\{fingerprint}'.");
     }
-    catch (Exception e) {
-      switch (e) {
-        case KeyNotFoundException knfe -> {
-          // Great, it doesn't exist - continue processing
-        }
-        case KeystoreException kse -> {
-          log.error(STR."An error occurred accessing the internal trust store.", kse);
-          throw createWebException(Status.INTERNAL_SERVER_ERROR, KEY_STORE_ERROR_MESSAGE);
-        }
-        case CertificateException ce -> {
-          log.debug(STR."A certificate error occurred during import", ce);
-          throw createWebException(Status.BAD_REQUEST, STR."The certificate is invalid. \{ce.getMessage()}");
-        }
-        default -> throw e; // Rethrow any unexpected exceptions
-      }
+    catch (KeyNotFoundException e) { // NOSONAR
+      // Great, it doesn't exist
+    }
+    catch (KeystoreException e) {
+      log.error("An error occurred accessing the internal trust store.", e);
+      throw createWebException(Status.INTERNAL_SERVER_ERROR, KEY_STORE_ERROR_MESSAGE);
+    }
+    catch (CertificateException e) {
+      log.debug("A certificate error occurred during import", e);
+      throw createWebException(Status.BAD_REQUEST, STR."The certificate is invalid. \{e.getMessage()}");
     }
 
-    // If we get here, the certificate doesn't exist yet
-    Certificate importedCertificate = importCertificate(certificate);
+    importCertificate(certificate);
 
-    return Response.status(Status.CREATED).entity(convert(fingerprint, importedCertificate)).build();
+    return Response.status(Status.CREATED).entity(convert(fingerprint, certificate)).build();
   }
 
   @Override
@@ -181,26 +184,42 @@ public class CertificateApiResource
     try {
       // check that the certificate exists
       getTrustedCertificate(id);
-
-      trustStore.removeTrustCertificate(id);
+      
+      // Use Virtual Thread for I/O-bound certificate removal operation
+      var executor = Executors.newVirtualThreadPerTaskExecutor();
+      try (executor) {
+        executor.submit(() -> trustStore.removeTrustCertificate(id)).get();
+      }
     }
     catch (KeystoreException e) {
-      log.error(STR."An error occurred accessing the internal trust store.", e);
+      log.error("An error occurred accessing the internal trust store.", e);
       throw createWebException(Status.INTERNAL_SERVER_ERROR, KEY_STORE_ERROR_MESSAGE);
+    }
+    catch (Exception e) {
+      log.error("An error occurred removing certificate", e);
+      throw createWebException(Status.INTERNAL_SERVER_ERROR, STR."Error removing certificate: \{e.getMessage()}");
     }
   }
 
   private Certificate getTrustedCertificate(final String id) {
     try {
-      return trustStore.getTrustedCertificate(id);
+      // Use Virtual Thread for I/O-bound certificate retrieval operation
+      var executor = Executors.newVirtualThreadPerTaskExecutor();
+      try (executor) {
+        return executor.submit(() -> trustStore.getTrustedCertificate(id)).get();
+      }
     }
     catch (KeyNotFoundException e) {
-      log.debug(STR."No existing certificate with id \{id}", e);
+      log.debug("No existing certificate with id {}", id, e);
       throw createWebException(Status.NOT_FOUND, STR."No certificate with alias '\{id}' in trust store.");
     }
     catch (KeystoreException e) {
-      log.error(STR."An error occurred accessing the internal trust store.", e);
+      log.error("An error occurred accessing the internal trust store.", e);
       throw createWebException(Status.INTERNAL_SERVER_ERROR, KEY_STORE_ERROR_MESSAGE);
+    }
+    catch (Exception e) {
+      log.error("An error occurred retrieving certificate", e);
+      throw createWebException(Status.INTERNAL_SERVER_ERROR, STR."Error retrieving certificate: \{e.getMessage()}");
     }
   }
 
@@ -208,16 +227,24 @@ public class CertificateApiResource
     String id = null;
     try {
       id = CertificateUtil.calculateFingerprint(certificate);
-      return trustStore.importTrustCertificate(certificate, id);
+      // Use Virtual Thread for I/O-bound certificate import operation
+      var executor = Executors.newVirtualThreadPerTaskExecutor();
+      try (executor) {
+        return executor.submit(() -> trustStore.importTrustCertificate(certificate, id)).get();
+      }
     }
     catch (CertificateException e) {
       // Validation should have caught this but....
-      log.info(STR."Unable to import certificate \{id}", e);
+      log.info("Unable to import certificate {}", id, e);
       throw createWebException(Status.BAD_REQUEST, STR."Invalid certificate: \{e.getMessage()}");
     }
     catch (KeystoreException e) {
-      log.error(STR."An error occurred accessing the internal trust store.", e);
+      log.error("An error occurred accessing the internal trust store.", e);
       throw createWebException(Status.INTERNAL_SERVER_ERROR, KEY_STORE_ERROR_MESSAGE);
+    }
+    catch (Exception e) {
+      log.error("An error occurred importing certificate", e);
+      throw createWebException(Status.INTERNAL_SERVER_ERROR, STR."Error importing certificate: \{e.getMessage()}");
     }
   }
 
@@ -226,7 +253,7 @@ public class CertificateApiResource
       return ApiCertificate.convert(certificate);
     }
     catch (CertificateEncodingException | InvalidNameException | IOException e) {
-      log.info(STR."An error occurred serializing certificate '\{id}'", e);
+      log.info("An error occurred serializing certificate '{}'", id, e);
       throw createWebException(Status.INTERNAL_SERVER_ERROR,
           STR."An error occurred serializing the certificate after it was updated.");
     }
@@ -237,7 +264,7 @@ public class CertificateApiResource
       return ApiCertificate.convert(certificate);
     }
     catch (CertificateEncodingException | InvalidNameException | IOException e) {
-      log.info(STR."Failed to convert certificate \{certificate}", e);
+      log.info("Failed to convert certificate {}", certificate, e);
       return null;
     }
   }
@@ -248,7 +275,7 @@ public class CertificateApiResource
           MediaType.APPLICATION_JSON);
     }
     catch (JsonProcessingException e) {
-      log.warn(STR."An error occurred serializing an error message", e);
+      log.warn("An error occurred serializing an error message", e);
       return new WebApplicationMessageException(status,
           STR."\"An error occurred serializing the error message. See nexus log.\"", MediaType.APPLICATION_JSON);
     }

@@ -12,12 +12,17 @@
  */
 package org.sonatype.nexus.formfields;
 
+import java.io.Serializable;
+import java.util.Map;
+import javax.annotation.Nullable;
+
 /**
  * Combo-box {@link FormField} support.
  *
+ * @param <V> The value type for the combobox, must be serializable for proper data transfer
  * @since 2.7
  */
-public abstract class Combobox<V>
+public abstract class Combobox<V extends Serializable>
     extends AbstractFormField<V>
     implements Selectable
 {
@@ -56,15 +61,36 @@ public abstract class Combobox<V>
   public String getType() {
     return "combobox";
   }
-
+  
+  /**
+   * Returns the store API for this combobox.
+   * Must be implemented by concrete subclasses to specify the data source.
+   *
+   * @return the Ext.Direct API name used to configure Ext proxy
+   */
   @Override
-  public String getIdMapping() {
+  public abstract String getStoreApi();
+
+  /**
+   * Returns filters to be applied to the store.
+   * Can be overridden by subclasses to provide specific filtering.
+   *
+   * @return filters to be applied to the store or null if no filtering is needed
+   */
+  @Override
+  @Nullable
+  public Map<String, String> getStoreFilters() {
     return null;
   }
 
   @Override
+  public String getIdMapping() {
+    return "id";
+  }
+
+  @Override
   public String getNameMapping() {
-    return null;
+    return "name";
   }
 
   public Combobox<V> withId(final String id) {
@@ -72,12 +98,12 @@ public abstract class Combobox<V>
     return this;
   }
 
-  public Combobox<V> witLabel(final String label) {
+  public Combobox<V> withLabel(final String label) {
     setLabel(label);
     return this;
   }
 
-  public Combobox<V> witHelpText(final String helpText) {
+  public Combobox<V> withHelpText(final String helpText) {
     setHelpText(helpText);
     return this;
   }
@@ -104,5 +130,15 @@ public abstract class Combobox<V>
     setInitialValue(value);
     return this;
   }
-
+  
+  /**
+   * Adds a custom attribute to this combobox.
+   *
+   * @param key the attribute key
+   * @param value the attribute value
+   * @return this combobox instance for method chaining
+   */
+  public Combobox<V> withAttribute(String key, Object value) {
+    return (Combobox<V>) super.withAttribute(key, value);
+  }
 }

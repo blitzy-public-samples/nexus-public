@@ -17,14 +17,15 @@ import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
-import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.jupiter.TestSupport;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.commons.jexl3.JexlException;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import static com.google.common.collect.Streams.stream;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.sonatype.nexus.selector.CselValidator.validateCselExpression;
 
 public class CselValidatorTest
@@ -37,40 +38,52 @@ public class CselValidatorTest
   private ObjectMapper mapper = new ObjectMapper();
 
   @Test
-  public void parsesAllValidContentSelectors() throws Exception {
+  void parsesAllValidContentSelectors() throws Exception {
     URL jsonFile = this.getClass().getResource("/validJexlContentSelectors.json");
     JsonNode contentSelectors = mapper.readTree(jsonFile);
     stream(contentSelectors).map(JsonNode::asText).forEach(this::validateExpression);
   }
 
-  @Test(expected = JexlException.Parsing.class)
-  public void failsToParseInvalidContentSelectors() throws Exception {
-    validateExpression("invalid content selector");
+  @Test
+  void failsToParseInvalidContentSelectors() {
+    assertThrows(JexlException.Parsing.class, () -> validateExpression("invalid content selector"));
   }
 
-  @Test(expected = JexlException.class)
-  public void failsToParseCoordinateContentSelectors() throws Exception {
-    validateExpression("coordinate.groupId == \"com.sonatype\"");
+  @Test
+  void failsToParseCoordinateContentSelectors() {
+    assertThrows(JexlException.class, () -> validateExpression("coordinate.groupId == \"com.sonatype\""));
   }
 
-  @Test(expected = JexlException.class)
-  public void failsToValidateInvalidContentSelectors() throws Exception {
-    validateExpression("a.b.c = false");
+  @Test
+  void failsToValidateInvalidContentSelectors() {
+    assertThrows(JexlException.class, () -> validateExpression("a.b.c = false"));
   }
 
-  @Test(expected = JexlException.class)
-  public void failsToValidateEmbeddedSingleQuoteInStrings() throws Exception {
-    validateExpression("format == \"'\"");
+  @Test
+  void failsToValidateEmbeddedSingleQuoteInStrings() {
+    assertThrows(JexlException.class, () -> validateExpression("format == \"'\""));
   }
 
-  @Test(expected = JexlException.class)
-  public void failsToValidateEmbeddedDoubleQuoteInStrings() throws Exception {
-    validateExpression("format == '\"'");
+  @Test
+  void failsToValidateEmbeddedDoubleQuoteInStrings() {
+    assertThrows(JexlException.class, () -> validateExpression("format == '\"'"));
   }
 
-  @Test(expected = JexlException.class)
-  public void failsToValidateInvalidRegex() throws Exception {
-    validateExpression("path =~ '*foo*'");
+  @Test
+  void failsToValidateInvalidRegex() {
+    assertThrows(JexlException.class, () -> validateExpression("path =~ '*foo*'"));
+  }
+
+  @Test
+  void validatesPatternMatchingExpressions() {
+    validateExpression("path instanceof String");
+    validateExpression("format instanceof String format && format.length() > 0");
+  }
+
+  @Test
+  void validatesRecordPatternMatchingExpressions() {
+    validateExpression("asset instanceof AssetInfo(String path, String format) && path.startsWith('/libs/')");
+    validateExpression("component instanceof ComponentInfo(String group, String name, String version) && version == '1.0.0'");
   }
 
   public static File resolveBaseFile(final String path) {

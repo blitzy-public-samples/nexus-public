@@ -28,6 +28,13 @@ public record DescriptionItem(
      */
     Object value
 ) {
-  // Using Java 21 Record feature for immutable data holder
-  // This automatically provides constructor, getters, equals, hashCode, and toString methods
+  /**
+   * Package-private constructor to maintain the same accessibility as the original class.
+   */
+  DescriptionItem {
+    // Compact constructor with package-private access
+    // No additional validation needed at this time
+  }
+  
+  // Record automatically provides accessors, equals, hashCode, and toString
 }

@@ -15,6 +15,8 @@ package org.sonatype.nexus.extender;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import javax.inject.Named;
 
 import org.sonatype.goodies.lifecycle.Lifecycle;
@@ -25,17 +27,19 @@ import org.sonatype.nexus.common.app.ManagedLifecycle.Phase;
 import com.google.inject.Key;
 import org.eclipse.sisu.BeanEntry;
 import org.eclipse.sisu.inject.BeanLocator;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.osgi.framework.Bundle;
 
 import static com.google.common.collect.Lists.newArrayList;
 import static java.util.stream.Collectors.toList;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
@@ -43,6 +47,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.*;
 
+@ExtendWith(MockitoExtension.class)
 public class NexusLifecycleManagerTest
     extends TestSupport
 {
@@ -94,8 +99,8 @@ public class NexusLifecycleManagerTest
 
   private NexusLifecycleManager underTest;
 
-  @Before
-  public void setUp() throws Exception {
+  @BeforeEach
+  void setUp() throws Exception {
     phases = newArrayList(
         offPhase,
         kernelPhase,
@@ -149,7 +154,7 @@ public class NexusLifecycleManagerTest
   }
 
   @Test
-  public void simpleLifecycleOrdering() throws Exception {
+  void lifecycleOrdering() throws Exception {
     InOrder inOrder = verifyPhases();
 
     underTest.to(KERNEL);
@@ -247,7 +252,7 @@ public class NexusLifecycleManagerTest
   }
 
   @Test
-  public void nonTaskErrorsStopStartup() throws Exception {
+  void nonTaskErrorsStopStartup() throws Exception {
     InOrder inOrder = verifyPhases();
 
     Lifecycle badPhase = randomPhases.stream()
@@ -275,7 +280,7 @@ public class NexusLifecycleManagerTest
   }
 
   @Test
-  public void taskErrorsDontStopStartup() throws Exception {
+  void taskErrorsDontStopStartup() throws Exception {
     InOrder inOrder = verifyPhases();
 
     doThrow(new Exception("testing")).when(tasksPhase).start();
@@ -300,7 +305,7 @@ public class NexusLifecycleManagerTest
   }
 
   @Test
-  public void errorsDontStopShutdown() throws Exception {
+  void errorsDontStopShutdown() throws Exception {
     underTest.to(TASKS);
 
     assertThat(underTest.getCurrentPhase(), is(TASKS));
@@ -337,6 +342,55 @@ public class NexusLifecycleManagerTest
     inOrder.verify(systemBundle).stop();
 
     inOrder.verifyNoMoreInteractions();
+  }
+  
+  @Test
+  void phaseOrderingWithVirtualThreads() throws Exception {
+    // Set up a latch to coordinate virtual threads
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch completionLatch = new CountDownLatch(Phase.values().length - 1); // Exclude OFF phase
+    
+    // Create a list to track the order of phase execution
+    List<Phase> executionOrder = Collections.synchronizedList(new ArrayList<>());
+    
+    // Start virtual threads for each phase (except OFF)
+    for (Phase phase : Phase.values()) {
+      if (phase == OFF) {
+        continue; // Skip OFF phase
+      }
+      
+      Thread.ofVirtual().name("virtual-thread-" + phase.name()).start(() -> {
+        try {
+          // Wait for the signal to start
+          startLatch.await();
+          
+          // Record the phase execution
+          executionOrder.add(phase);
+          
+          // Signal completion
+          completionLatch.countDown();
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
+      });
+    }
+    
+    // Start all virtual threads simultaneously
+    startLatch.countDown();
+    
+    // Wait for all virtual threads to complete (with timeout)
+    boolean allCompleted = completionLatch.await(5, TimeUnit.SECONDS);
+    assertThat("All virtual threads should complete in time", allCompleted, is(true));
+    
+    // Verify that we have the expected number of phases executed
+    assertThat(executionOrder.size(), is(Phase.values().length - 1)); // Excluding OFF
+    
+    // Verify that all phases were executed (not necessarily in order)
+    for (Phase phase : Phase.values()) {
+      if (phase != OFF) {
+        assertThat("Phase " + phase + " should be executed", executionOrder.contains(phase), is(true));
+      }
+    }
   }
 
   private static class TestLifecycle

@@ -15,6 +15,7 @@ package org.sonatype.nexus.extdirect.model;
 import java.util.List;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 
 /**
  * Ext Store load parameters.
@@ -95,13 +96,24 @@ public class StoreLoadParameters
     this.filter = filter;
   }
 
+  /**
+   * Get filter value for the specified property using pattern matching.
+   * 
+   * @param property The property to find a filter for
+   * @return The filter value or null if not found
+   */
   public String getFilter(String property) {
     checkNotNull(property, "property");
-    if (filter != null) {
-      for (Filter item : filter) {
-        if (property.equals(item.getProperty())) {
-          return item.getValue();
+    if (filter == null || filter.isEmpty()) {
+      return null;
+    }
+    
+    for (Filter item : filter) {
+      switch (item) {
+        case Filter(var prop, var val) when property.equals(prop) -> {
+          return val;
         }
+        default -> {}
       }
     }
     return null;
@@ -137,93 +149,60 @@ public class StoreLoadParameters
 
   @Override
   public String toString() {
-    return "StoreLoadParameters{" +
-        "page=" + page +
-        ", start=" + start +
-        ", limit=" + limit +
-        ", sort=" + sort +
-        ", filter=" + filter +
-        ", formatSearch=" + formatSearch +
-        '}';
+    return STR."StoreLoadParameters{page=\{page}, start=\{start}, limit=\{limit}, sort=\{sort}, filter=\{filter}, formatSearch=\{formatSearch}}";
   }
 
-  public static class Filter
-  {
-    private String property;
-
-    private String value;
-
-    public String getProperty() {
-      return property;
-    }
-
+  /**
+   * Filter record for store load parameters.
+   * 
+   * @param property The property name to filter on
+   * @param value The value to filter with
+   */
+  public static record Filter(String property, String value) {
+    /**
+     * Builder-style method for property setting.
+     */
     public Filter property(final String property) {
-      this.property = property;
-      return this;
+      return new Filter(property, this.value);
     }
 
-    public void setProperty(final String property) {
-      this.property = property;
-    }
-
-    public String getValue() {
-      return value;
-    }
-
+    /**
+     * Builder-style method for value setting.
+     */
     public Filter value(final String value) {
-      this.value = value;
-      return this;
+      return new Filter(this.property, value);
     }
 
-    public void setValue(final String value) {
-      this.value = value;
+    /**
+     * Default constructor for deserialization.
+     */
+    public Filter() {
+      this(null, null);
     }
 
     @Override
     public String toString() {
-      return "Filter{" +
-          "property='" + property + '\'' +
-          ", value='" + value + '\'' +
-          '}';
+      return STR."Filter{property='\{property}', value='\{value}'}";
     }
   }
 
-  public static class Sort
-  {
-    private String property;
-
-    private String direction;
-
+  /**
+   * Sort record for store load parameters.
+   * 
+   * @param property The property name to sort on
+   * @param direction The direction to sort in
+   */
+  public static record Sort(String property, String direction) {
+    /**
+     * Default constructor for deserialization.
+     */
     public Sort() {
-    }
-
-    public Sort(final String property, final String direction) {
-      this.property = property;
-      this.direction = direction;
-    }
-
-    public String getProperty() {
-      return property;
-    }
-
-    public void setProperty(final String property) {
-      this.property = property;
-    }
-
-    public String getDirection() {
-      return direction;
-    }
-
-    public void setDirection(final String value) {
-      this.direction = value;
+      this(null, null);
     }
 
     @Override
     public String toString() {
-      return "Sort{" +
-          "property='" + property + '\'' +
-          ", direction='" + direction + '\'' +
-          '}';
+      return STR."Sort{property='\{property}', direction='\{direction}'}";
     }
   }
 }

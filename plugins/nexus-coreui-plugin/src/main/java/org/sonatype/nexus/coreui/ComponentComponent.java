@@ -98,9 +98,11 @@ public class ComponentComponent
     }
 
     ComponentXO componentXO = readComponent(parameters.getFilter("componentModel"));
-    // Use virtual thread for I/O-bound operation
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
-        componentHelper.readComponentAssets(repository, componentXO)).join();
+    
+    // Use virtual threads for I/O-bound operations
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      return executor.submit(() -> componentHelper.readComponentAssets(repository, componentXO)).join();
+    }
   }
 
   @DirectMethod
@@ -123,16 +125,16 @@ public class ComponentComponent
       return null;
     }
 
-    // Use virtual thread for I/O-bound operation
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-      PageResult<AssetXO> result = componentHelper.previewAssets(
+    // Use virtual threads for I/O-bound operations
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      PageResult<AssetXO> result = executor.submit(() -> componentHelper.previewAssets(
           repositorySelector,
           selectedRepositories,
           expression,
-          toQueryOptions(parameters));
+          toQueryOptions(parameters))).join();
 
       return new PagedResponse<>(result.getTotal(), result.getResults());
-    }).join();
+    }
   }
 
   @DirectMethod
@@ -154,9 +156,11 @@ public class ComponentComponent
   public Set<String> deleteComponent(@NotEmpty final String componentModelString) {
     ComponentXO componentXO = readComponent(componentModelString);
     Repository repository = repositoryManager.get(componentXO.getRepositoryName());
-    // Use virtual thread for I/O-bound operation
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
-        componentHelper.deleteComponent(repository, componentXO)).join();
+    
+    // Use virtual threads for I/O-bound operations
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      return executor.submit(() -> componentHelper.deleteComponent(repository, componentXO)).join();
+    }
   }
 
   @DirectMethod
@@ -176,11 +180,13 @@ public class ComponentComponent
   @Validate
   public Set<String> deleteAsset(@NotEmpty final String assetId, @NotEmpty final String repositoryName) {
     Repository repository = repositoryManager.get(repositoryName);
-    // Use virtual thread for I/O-bound operation
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+    
+    // Use virtual threads for I/O-bound operations
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       // GSON used by DirectJNgine can exclude some of the Guava collection types
-      return new HashSet<>(componentHelper.deleteAsset(repository, new DetachedEntityId(assetId)));
-    }).join();
+      return new HashSet<>(executor.submit(() -> 
+          componentHelper.deleteAsset(repository, new DetachedEntityId(assetId))).join());
+    }
   }
 
   /**
@@ -195,9 +201,7 @@ public class ComponentComponent
   @Nullable
   public ComponentXO readComponent(@NotEmpty final String componentId, @NotEmpty final String repositoryName) {
     Repository repository = repositoryManager.get(repositoryName);
-    // Use virtual thread for I/O-bound operation
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
-        componentHelper.readComponent(repository, new DetachedEntityId(componentId))).join();
+    return componentHelper.readComponent(repository, new DetachedEntityId(componentId));
   }
 
   @DirectMethod
@@ -207,13 +211,18 @@ public class ComponentComponent
   @Nullable
   public AssetXO readAsset(@NotEmpty final String assetId, @NotEmpty final String repositoryName) {
     Repository repository = repositoryManager.get(repositoryName);
-    // Use virtual thread for I/O-bound operation
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-      AssetXO assetXO = componentHelper.readAsset(repository, new DetachedEntityId(assetId));
-      Optional.ofNullable(formatTransformations.get(assetXO.getFormat()))
-          .ifPresent(transformation -> transformation.transform(assetXO));
-      return assetXO;
-    }).join();
+    AssetXO assetXO = componentHelper.readAsset(repository, new DetachedEntityId(assetId));
+    
+    // Use pattern matching for switch to improve readability when handling format transformations
+    if (assetXO != null && assetXO.getFormat() != null) {
+      switch (assetXO.getFormat()) {
+        case String format when formatTransformations.containsKey(format) -> 
+          formatTransformations.get(format).transform(assetXO);
+        default -> { /* No transformation needed */ }
+      }
+    }
+    
+    return assetXO;
   }
 
   @DirectMethod
@@ -233,46 +242,33 @@ public class ComponentComponent
   @Validate
   public void deleteFolder(@NotEmpty final String path, @NotEmpty final String repositoryName) {
     Repository repository = repositoryManager.get(repositoryName);
-    // Use virtual thread for I/O-bound operation
-    Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
-        componentHelper.deleteFolder(repository, path)).join();
+    
+    // Use virtual threads for I/O-bound operations
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      executor.submit(() -> componentHelper.deleteFolder(repository, path)).join();
+    }
   }
 
   private QueryOptions toQueryOptions(StoreLoadParameters storeLoadParameters) {
-    // Using pattern matching for type check and conditional extraction
-    if (storeLoadParameters.getSort() instanceof List<?> sortList && !sortList.isEmpty()) {
-      var sort = sortList.get(0);
-      if (sort instanceof StoreLoadParameters.Sort sortItem) {
-        return new QueryOptions(
-            storeLoadParameters.getFilter("filter"),
-            sortItem.getProperty(),
-            sortItem.getDirection(),
-            storeLoadParameters.getStart(),
-            storeLoadParameters.getLimit());
-      }
-    }
-    
-    // Default case when sort is null or empty
+    StoreLoadParameters.Sort sort = storeLoadParameters.getSort() != null ? storeLoadParameters.getSort().get(0) : null;
     return new QueryOptions(
         storeLoadParameters.getFilter("filter"),
-        null,
-        null,
+        sort != null ? sort.getProperty() : null,
+        sort != null ? sort.getDirection() : null,
         storeLoadParameters.getStart(),
         storeLoadParameters.getLimit());
   }
 
   private List<Repository> getPreviewRepositories(final RepositorySelector repositorySelector) {
-    // Using pattern matching for more concise conditional logic
+    // Use pattern matching for switch to improve readability
     return switch (repositorySelector) {
       case RepositorySelector selector when !selector.isAllRepositories() -> 
         Collections.singletonList(repositoryManager.get(selector.getName()));
-      
       case RepositorySelector selector when !selector.isAllFormats() -> 
         stream(repositoryManager.browse())
             .filter(repository -> repository.getFormat().getValue().equals(selector.getFormat()))
-            .collect(Collectors.toList()); // NOSONAR
-      
-      default -> stream(repositoryManager.browse()).collect(Collectors.toList()); // NOSONAR
+            .collect(Collectors.toList());
+      default -> stream(repositoryManager.browse()).collect(Collectors.toList());
     };
   }
 

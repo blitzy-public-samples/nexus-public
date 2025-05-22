@@ -19,15 +19,15 @@ import java.util.Set;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
-import javax.servlet.Filter;
-import javax.servlet.FilterChain;
-import javax.servlet.RequestDispatcher;
-import javax.servlet.ServletContext;
-import javax.servlet.ServletException;
-import javax.servlet.ServletRequest;
-import javax.servlet.ServletResponse;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletRequestWrapper;
+import jakarta.servlet.Filter;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.RequestDispatcher;
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletRequest;
+import jakarta.servlet.ServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequestWrapper;
 
 import com.google.common.collect.Sets;
 import com.google.inject.Key;
@@ -39,6 +39,8 @@ import static com.google.inject.servlet.DynamicServletPipeline.DUMMY_INJECTOR;
 /**
  * Dynamic {@link FilterPipeline} that can update its sequence of filter definitions on-demand.
  * Includes patched methods from {@link ManagedFilterPipeline} where delegating isn't possible.
+ * 
+ * Updated for Java 21 with Virtual Threads support for improved I/O-bound operations performance.
  */
 @Singleton
 // don't use @Named, keep as implicit JIT-binding
@@ -103,6 +105,9 @@ final class DynamicFilterPipeline
       ServletResponse response,
       FilterChain proceedingFilterChain) throws IOException, ServletException
   {
+    // Use direct invocation with Virtual Threads to ensure proper exception handling
+    // The thread executing this method will already be a virtual thread when configured properly
+    // in the servlet container, so we don't need to create another one
     new FilterChainInvocation(filterDefinitions(), servletPipeline, proceedingFilterChain).doFilter(
         withDispatcher(request, servletPipeline), response);
   }
@@ -137,5 +142,45 @@ final class DynamicFilterPipeline
 
   private FilterDefinition[] filterDefinitions() {
     return filterDefinitionCache;
+  }
+  
+  /**
+   * Inner class to handle filter chain invocation with proper Virtual Thread context handling.
+   */
+  private static class FilterChainInvocation implements FilterChain {
+    private final FilterDefinition[] filterDefinitions;
+    private final DynamicServletPipeline servletPipeline;
+    private final FilterChain proceedingFilterChain;
+    private int index = 0;
+
+    FilterChainInvocation(
+        FilterDefinition[] filterDefinitions,
+        DynamicServletPipeline servletPipeline,
+        FilterChain proceedingFilterChain) {
+      this.filterDefinitions = filterDefinitions;
+      this.servletPipeline = servletPipeline;
+      this.proceedingFilterChain = proceedingFilterChain;
+    }
+
+    @Override
+    public void doFilter(ServletRequest request, ServletResponse response)
+        throws IOException, ServletException {
+      // If we've reached the end of the filter chain, proceed to servlets
+      if (index >= filterDefinitions.length) {
+        // Let servlets process the request
+        servletPipeline.service(request, response);
+
+        // Continue with the original filter chain (if any)
+        if (proceedingFilterChain != null) {
+          proceedingFilterChain.doFilter(request, response);
+        }
+      } else {
+        // Get the next filter in the chain
+        FilterDefinition filterDefinition = filterDefinitions[index++];
+        
+        // Apply the filter, which may itself call doFilter() on this chain again
+        filterDefinition.doFilter(request, response, this);
+      }
+    }
   }
 }

@@ -1,0 +1,259 @@
+[
+  {
+    "description": "Simple GET request for a Maven artifact",
+    "action": "GET",
+    "path": "/repository/maven-central/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.jar",
+    "headers": {
+      "Accept": ["application/octet-stream"],
+      "User-Agent": ["Virtual-Thread-Test-Client/1.0"]
+    },
+    "parameters": {}
+  },
+  {
+    "description": "HEAD request to check if a Maven artifact exists",
+    "action": "HEAD",
+    "path": "/repository/maven-central/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.jar",
+    "headers": {
+      "User-Agent": ["Virtual-Thread-Test-Client/1.0"]
+    },
+    "parameters": {}
+  },
+  {
+    "description": "GET request with conditional headers",
+    "action": "GET",
+    "path": "/repository/maven-central/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.jar",
+    "headers": {
+      "Accept": ["application/octet-stream"],
+      "User-Agent": ["Virtual-Thread-Test-Client/1.0"],
+      "If-Modified-Since": ["Wed, 21 Oct 2021 07:28:00 GMT"],
+      "If-None-Match": ["\"abcdef1234567890\""]
+    },
+    "parameters": {}
+  },
+  {
+    "description": "GET request with Range header for partial content",
+    "action": "GET",
+    "path": "/repository/maven-central/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.jar",
+    "headers": {
+      "Accept": ["application/octet-stream"],
+      "User-Agent": ["Virtual-Thread-Test-Client/1.0"],
+      "Range": ["bytes=0-1023"]
+    },
+    "parameters": {}
+  },
+  {
+    "description": "PUT request to upload a Maven artifact",
+    "action": "PUT",
+    "path": "/repository/maven-hosted/org/example/test-artifact/1.0.0/test-artifact-1.0.0.jar",
+    "headers": {
+      "Content-Type": ["application/octet-stream"],
+      "User-Agent": ["Virtual-Thread-Test-Client/1.0"],
+      "Content-Length": ["1048576"]
+    },
+    "parameters": {},
+    "payload": {
+      "contentType": "application/octet-stream",
+      "size": 1048576,
+      "generateRandomContent": true
+    }
+  },
+  {
+    "description": "POST request to deploy a Maven artifact with metadata",
+    "action": "POST",
+    "path": "/service/rest/v1/components?repository=maven-hosted",
+    "headers": {
+      "Content-Type": ["multipart/form-data; boundary=---------------------------12345"],
+      "User-Agent": ["Virtual-Thread-Test-Client/1.0"]
+    },
+    "parameters": {
+      "repository": ["maven-hosted"]
+    },
+    "multipart": true,
+    "multiparts": [
+      {
+        "name": "maven2.groupId",
+        "contentType": "text/plain",
+        "payload": "org.example"
+      },
+      {
+        "name": "maven2.artifactId",
+        "contentType": "text/plain",
+        "payload": "test-multipart-artifact"
+      },
+      {
+        "name": "maven2.version",
+        "contentType": "text/plain",
+        "payload": "1.0.0"
+      },
+      {
+        "name": "maven2.asset1",
+        "contentType": "application/octet-stream",
+        "payload": "test-multipart-artifact-1.0.0.jar",
+        "size": 524288,
+        "generateRandomContent": true
+      },
+      {
+        "name": "maven2.asset1.extension",
+        "contentType": "text/plain",
+        "payload": "jar"
+      }
+    ]
+  },
+  {
+    "description": "DELETE request to remove a Maven artifact",
+    "action": "DELETE",
+    "path": "/repository/maven-hosted/org/example/test-artifact/1.0.0/test-artifact-1.0.0.jar",
+    "headers": {
+      "User-Agent": ["Virtual-Thread-Test-Client/1.0"]
+    },
+    "parameters": {}
+  },
+  {
+    "description": "GET request for a large Docker image layer",
+    "action": "GET",
+    "path": "/repository/docker-proxy/v2/library/ubuntu/blobs/sha256:a9c28c813336ece5bb98b36af5b66209ed51ee39d1c0d4b3dec8b9c0c0508333",
+    "headers": {
+      "Accept": ["application/octet-stream"],
+      "User-Agent": ["Virtual-Thread-Test-Client/1.0"]
+    },
+    "parameters": {}
+  },
+  {
+    "description": "GET request for a Docker image manifest",
+    "action": "GET",
+    "path": "/repository/docker-proxy/v2/library/ubuntu/manifests/latest",
+    "headers": {
+      "Accept": ["application/vnd.docker.distribution.manifest.v2+json"],
+      "User-Agent": ["Virtual-Thread-Test-Client/1.0"]
+    },
+    "parameters": {}
+  },
+  {
+    "description": "GET request for a npm package",
+    "action": "GET",
+    "path": "/repository/npm-proxy/lodash/-/lodash-4.17.21.tgz",
+    "headers": {
+      "Accept": ["application/octet-stream"],
+      "User-Agent": ["Virtual-Thread-Test-Client/1.0"]
+    },
+    "parameters": {}
+  },
+  {
+    "description": "GET request for a npm package metadata",
+    "action": "GET",
+    "path": "/repository/npm-proxy/lodash",
+    "headers": {
+      "Accept": ["application/json"],
+      "User-Agent": ["Virtual-Thread-Test-Client/1.0"]
+    },
+    "parameters": {}
+  },
+  {
+    "description": "GET request for a PyPI package",
+    "action": "GET",
+    "path": "/repository/pypi-proxy/packages/requests/2.28.1/requests-2.28.1-py3-none-any.whl",
+    "headers": {
+      "Accept": ["application/octet-stream"],
+      "User-Agent": ["Virtual-Thread-Test-Client/1.0"]
+    },
+    "parameters": {}
+  },
+  {
+    "description": "GET request for a Raw repository file",
+    "action": "GET",
+    "path": "/repository/raw-hosted/documents/example.pdf",
+    "headers": {
+      "Accept": ["application/pdf"],
+      "User-Agent": ["Virtual-Thread-Test-Client/1.0"]
+    },
+    "parameters": {}
+  },
+  {
+    "description": "PUT request to upload a file to Raw repository",
+    "action": "PUT",
+    "path": "/repository/raw-hosted/documents/large-document.pdf",
+    "headers": {
+      "Content-Type": ["application/pdf"],
+      "User-Agent": ["Virtual-Thread-Test-Client/1.0"],
+      "Content-Length": ["5242880"]
+    },
+    "parameters": {},
+    "payload": {
+      "contentType": "application/pdf",
+      "size": 5242880,
+      "generateRandomContent": true
+    }
+  },
+  {
+    "description": "GET request for a Maven repository index",
+    "action": "GET",
+    "path": "/repository/maven-central/.index/nexus-maven-repository-index.gz",
+    "headers": {
+      "Accept": ["application/x-gzip"],
+      "User-Agent": ["Virtual-Thread-Test-Client/1.0"]
+    },
+    "parameters": {}
+  },
+  {
+    "description": "GET request for repository browsing",
+    "action": "GET",
+    "path": "/service/rest/v1/assets",
+    "headers": {
+      "Accept": ["application/json"],
+      "User-Agent": ["Virtual-Thread-Test-Client/1.0"]
+    },
+    "parameters": {
+      "repository": ["maven-central"],
+      "continuationToken": ["abcdef1234567890"],
+      "limit": ["50"]
+    }
+  },
+  {
+    "description": "GET request for repository search",
+    "action": "GET",
+    "path": "/service/rest/v1/search",
+    "headers": {
+      "Accept": ["application/json"],
+      "User-Agent": ["Virtual-Thread-Test-Client/1.0"]
+    },
+    "parameters": {
+      "q": ["commons-lang"],
+      "repository": ["maven-central"],
+      "format": ["maven2"],
+      "limit": ["20"]
+    }
+  },
+  {
+    "description": "GET request for a very large file to test streaming",
+    "action": "GET",
+    "path": "/repository/raw-proxy/large-files/huge-dataset.zip",
+    "headers": {
+      "Accept": ["application/zip"],
+      "User-Agent": ["Virtual-Thread-Test-Client/1.0"]
+    },
+    "parameters": {}
+  },
+  {
+    "description": "GET request with multiple Range headers",
+    "action": "GET",
+    "path": "/repository/maven-central/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.jar",
+    "headers": {
+      "Accept": ["application/octet-stream"],
+      "User-Agent": ["Virtual-Thread-Test-Client/1.0"],
+      "Range": ["bytes=0-1023,2048-3071,4096-5119"]
+    },
+    "parameters": {}
+  },
+  {
+    "description": "GET request with If-Range header",
+    "action": "GET",
+    "path": "/repository/maven-central/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.jar",
+    "headers": {
+      "Accept": ["application/octet-stream"],
+      "User-Agent": ["Virtual-Thread-Test-Client/1.0"],
+      "Range": ["bytes=0-1023"],
+      "If-Range": ["\"abcdef1234567890\""]
+    },
+    "parameters": {}
+  }
+]

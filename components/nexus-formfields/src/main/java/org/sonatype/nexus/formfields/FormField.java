@@ -13,13 +13,20 @@
 package org.sonatype.nexus.formfields;
 
 import java.util.Map;
+import java.util.Optional;
 
 import javax.annotation.Nullable;
 
 /**
- * Form field.
+ * Form field interface defining the contract for form field implementations.
+ * 
+ * This interface is designed to be compatible with Java 21's stricter class-loading semantics
+ * and leverages modern Java features for improved type safety and performance.
  *
- * @param <T> The data type of the field.
+ * @param <T> The data type of the field. Implementations should specify concrete types
+ *            to ensure proper type checking under Java 21's enhanced type system.
+ * 
+ * @since 3.0
  */
 public interface FormField<T>
 {
@@ -95,12 +102,71 @@ public interface FormField<T>
    *
    * Care must be used to ensure that values are transferable, and likely should remain simple values,
    * collections of simple values or simple transfer objects.
+   * 
+   * With Java 21's enhanced type checking, implementations should ensure proper type safety
+   * when adding values to this map. Consider using {@link #getAttribute(String, Class)} for
+   * type-safe attribute retrieval.
    *
    * @since 3.1
    */
   Map<String,Object> getAttributes();
 
+  /**
+   * Determines if the field allows browser autocomplete functionality.
+   * 
+   * @return {@code true} if autocomplete is allowed, {@code false} otherwise
+   */
   default boolean getAllowAutocomplete() {
     return false;
+  }
+  
+  /**
+   * Type-safe accessor for retrieving attributes with the expected type.
+   * 
+   * This method leverages Java 21's enhanced type checking to provide safer attribute access.
+   * It returns an Optional to handle the case where the attribute doesn't exist or is of the wrong type.
+   *
+   * @param <V> The expected type of the attribute value
+   * @param key The attribute key
+   * @param type The class representing the expected type
+   * @return An Optional containing the attribute value if it exists and matches the expected type,
+   *         or an empty Optional otherwise
+   * @since 3.60
+   */
+  @SuppressWarnings("unchecked")
+  default <V> Optional<V> getAttribute(String key, Class<V> type) {
+    Object value = getAttributes().get(key);
+    if (value != null && type.isInstance(value)) {
+      return Optional.of((V) value);
+    }
+    return Optional.empty();
+  }
+  
+  /**
+   * Type-safe accessor for retrieving string attributes.
+   * 
+   * This is a convenience method for the common case of string attributes.
+   *
+   * @param key The attribute key
+   * @return An Optional containing the string value if it exists,
+   *         or an empty Optional otherwise
+   * @since 3.60
+   */
+  default Optional<String> getStringAttribute(String key) {
+    return getAttribute(key, String.class);
+  }
+  
+  /**
+   * Type-safe accessor for retrieving boolean attributes.
+   * 
+   * This is a convenience method for the common case of boolean attributes.
+   *
+   * @param key The attribute key
+   * @return An Optional containing the boolean value if it exists,
+   *         or an empty Optional otherwise
+   * @since 3.60
+   */
+  default Optional<Boolean> getBooleanAttribute(String key) {
+    return getAttribute(key, Boolean.class);
   }
 }

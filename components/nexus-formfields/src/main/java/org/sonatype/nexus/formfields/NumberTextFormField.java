@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.formfields;
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import java.util.Objects;
 
 /**
  * Number field.
@@ -46,12 +46,12 @@ public class NumberTextFormField
   }
   
   public NumberTextFormField withMinimumValue(final Number minimumValue) {
-    this.minimumValue = checkNotNull(minimumValue);
+    this.minimumValue = Objects.requireNonNull(minimumValue, STR."Minimum value cannot be null for field \{getId()}");
     return this;
   }
 
   public NumberTextFormField withMaximumValue(final Number maximumValue) {
-    this.maximumValue = checkNotNull(maximumValue);
+    this.maximumValue = Objects.requireNonNull(maximumValue, STR."Maximum value cannot be null for field \{getId()}");
     return this;
   }
 

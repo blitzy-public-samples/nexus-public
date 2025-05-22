@@ -15,45 +15,34 @@ package org.sonatype.nexus.repository.httpbridge.internal;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.annotation.Nullable;
 import javax.servlet.http.HttpServletRequest;
 
 import org.sonatype.nexus.repository.view.Payload;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * HTTP request payload adapts {@link HttpServletRequest} body-content to {@link Payload}.
- * <p>
- * This implementation is compatible with Java 21 and leverages Virtual Threads for streaming
- * request body content when applicable.
  *
  * @since 3.0
  */
 class HttpRequestPayloadAdapter
     implements Payload
 {
+  private static final Logger log = LoggerFactory.getLogger(HttpRequestPayloadAdapter.class);
   private final HttpServletRequest request;
 
   private final String contentType;
 
   private final long size;
 
-  /**
-   * Creates a new adapter for the given HTTP request.
-   * <p>
-   * This constructor captures content metadata but defers actual stream access until
-   * {@link #openInputStream()} is called, allowing for efficient Virtual Thread handling
-   * of I/O operations in Java 21.
-   *
-   * @param request the HTTP request containing the payload
-   */
   public HttpRequestPayloadAdapter(final HttpServletRequest request) {
     this.request = request;
-    // Use pattern matching for instanceof when checking request type for specialized handling
-    this.contentType = switch (request) {
-      case HttpServletRequest r when r.getContentType() != null -> r.getContentType();
-      default -> null;
-    };
+    this.contentType = request.getContentType();
     this.size = request.getContentLength();
   }
 
@@ -69,63 +58,120 @@ class HttpRequestPayloadAdapter
   }
 
   /**
-   * Opens an input stream to read the request body content.
-   * <p>
-   * When running on Java 21, this method leverages Virtual Threads for efficient I/O operations,
-   * allowing for high concurrency with minimal resource usage. The actual I/O operation is
-   * performed on a Virtual Thread, which is automatically managed by the JVM.
-   *
-   * @return an input stream for reading the request body
+   * Opens an input stream from the HTTP request, optimized for Virtual Thread execution.
+   * This implementation ensures proper resource handling when running in a Virtual Thread context.
+   * 
+   * When executed in a Virtual Thread, this method returns a wrapper around the original input stream
+   * that will automatically clean up resources when the Virtual Thread completes, even if the caller
+   * forgets to close the stream explicitly.
+   * 
+   * @return An input stream for reading the request body
    * @throws IOException if an I/O error occurs
+   * @since 3.0 (Virtual Thread optimization added in Java 21 upgrade)
    */
   @Override
   public InputStream openInputStream() throws IOException {
-    // Check if we're running on Java 21+ with Virtual Threads support
-    if (isVirtualThreadsSupported()) {
-      try {
-        // Use Virtual Threads for I/O operations to improve scalability
-        // This allows the servlet container thread to handle other requests while
-        // this I/O operation is in progress
-        return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-          try {
-            return request.getInputStream();
-          }
-          catch (IOException e) {
-            throw new RuntimeException("Error opening input stream in virtual thread", e);
-          }
-        }).get();
-      }
-      catch (Exception e) {
-        // Fall back to synchronous I/O if Virtual Thread execution fails
-        if (e.getCause() instanceof IOException) {
-          throw (IOException) e.getCause();
-        }
-        throw new IOException("Failed to open input stream using virtual thread", e);
-      }
-    }
-    else {
-      // Fall back to traditional synchronous I/O for Java versions before 21
-      return request.getInputStream();
-    }
+    // Get the raw input stream from the request
+    InputStream inputStream = request.getInputStream();
+    
+    // Create a wrapper that ensures proper cleanup in Virtual Thread context
+    return new VirtualThreadAwareInputStream(inputStream);
   }
-
+  
   /**
-   * Determines if Virtual Threads are supported in the current Java runtime.
-   * <p>
-   * This method checks if the current Java version supports Virtual Threads by attempting
-   * to access the Thread.ofVirtual() method, which was introduced in Java 21.
-   *
-   * @return true if Virtual Threads are supported, false otherwise
+   * An InputStream wrapper that is optimized for Virtual Thread execution.
+   * It ensures proper resource cleanup when the Virtual Thread completes or is interrupted.
    */
-  private boolean isVirtualThreadsSupported() {
-    try {
-      // Check if Thread.ofVirtual() method exists (Java 21+)
-      Thread.class.getMethod("ofVirtual");
-      return true;
+  private static class VirtualThreadAwareInputStream extends InputStream {
+    private final InputStream delegate;
+    private final AtomicBoolean closed = new AtomicBoolean(false);
+    
+    VirtualThreadAwareInputStream(InputStream delegate) {
+      this.delegate = delegate;
+      
+      // Register a cleanup hook for when the current thread (potentially a Virtual Thread) completes
+      if (Thread.currentThread().isVirtual()) {
+        // Use a cleanup action that will be executed when the Virtual Thread completes
+        Thread currentThread = Thread.currentThread();
+        ThreadFactory daemonThreadFactory = r -> {
+          Thread t = new Thread(r, "virtual-thread-cleanup-monitor");
+          t.setDaemon(true);
+          return t;
+        };
+        // We need to shut down the executor after use to prevent resource leaks
+        var executor = Executors.newSingleThreadExecutor(daemonThreadFactory);
+        executor.submit(() -> {
+          try {
+            // Wait for the virtual thread to complete
+            currentThread.join();
+          } catch (InterruptedException e) {
+            // Ignore interruption
+          } finally {
+            // Ensure stream is closed when the Virtual Thread completes
+            closeQuietly();
+            // Shut down the executor to prevent resource leaks
+            executor.shutdown();
+          }
+        });
+      }
     }
-    catch (NoSuchMethodException e) {
-      // Virtual Threads not supported in this Java version
-      return false;
+    
+    @Override
+    public int read() throws IOException {
+      return delegate.read();
+    }
+    
+    @Override
+    public int read(byte[] b) throws IOException {
+      return delegate.read(b);
+    }
+    
+    @Override
+    public int read(byte[] b, int off, int len) throws IOException {
+      return delegate.read(b, off, len);
+    }
+    
+    @Override
+    public long skip(long n) throws IOException {
+      return delegate.skip(n);
+    }
+    
+    @Override
+    public int available() throws IOException {
+      return delegate.available();
+    }
+    
+    @Override
+    public void close() throws IOException {
+      if (closed.compareAndSet(false, true)) {
+        delegate.close();
+      }
+    }
+    
+    @Override
+    public synchronized void mark(int readlimit) {
+      delegate.mark(readlimit);
+    }
+    
+    @Override
+    public synchronized void reset() throws IOException {
+      delegate.reset();
+    }
+    
+    @Override
+    public boolean markSupported() {
+      return delegate.markSupported();
+    }
+    
+    /**
+     * Closes the stream quietly without throwing exceptions.
+     */
+    private void closeQuietly() {
+      try {
+        close();
+      } catch (IOException e) {
+        log.debug("Error closing input stream in Virtual Thread context", e);
+      }
     }
   }
 

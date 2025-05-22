@@ -83,7 +83,7 @@ public class ReflectionMBeanAttribute
 
   private Object target() {
     Object result = target.get();
-    checkState(result != null);
+    checkState(result != null, "Target supplier returned null");
     return result;
   }
 
@@ -92,25 +92,33 @@ public class ReflectionMBeanAttribute
   @Override
   @Nullable
   public Object getValue() throws Exception {
-    checkState(getter != null);
-    log.trace("Get value: {}", getter);
-    //noinspection ConstantConditions
-    return getter.invoke(target());
+    checkState(getter != null, "Getter method is not available");
+    log.trace(STR."Get value: \{getter}");
+    try {
+      return getter.invoke(target());
+    }
+    catch (Exception e) {
+      log.error(STR."Failed to get value for attribute \{name}", e);
+      throw e;
+    }
   }
 
   @Override
   public void setValue(@Nullable final Object value) throws Exception {
-    checkState(setter != null);
-    log.trace("Set value: {} -> {}", value, setter);
-    //noinspection ConstantConditions
-    setter.invoke(target(), value);
+    checkState(setter != null, "Setter method is not available");
+    log.trace(STR."Set value: \{value} -> \{setter}");
+    try {
+      setter.invoke(target(), value);
+    }
+    catch (Exception e) {
+      log.error(STR."Failed to set value \{value} for attribute \{name}", e);
+      throw e;
+    }
   }
 
   @Override
   public String toString() {
-    return getClass().getSimpleName() + "{" +
-        "name='" + name + '\'' +
-        '}';
+    return STR."\{getClass().getSimpleName()}{name='\{name}'}"; 
   }
 
   //
@@ -159,9 +167,9 @@ public class ReflectionMBeanAttribute
     }
 
     public ReflectionMBeanAttribute build() {
-      checkState(name != null);
-      checkState(target != null);
-      checkState(getter != null || setter != null);
+      checkState(name != null, "Name is required");
+      checkState(target != null, "Target is required");
+      checkState(getter != null || setter != null, "Either getter or setter is required");
 
       Descriptor getterDescriptor = null;
       if (getter != null) {
@@ -182,7 +190,7 @@ public class ReflectionMBeanAttribute
           ImmutableDescriptor.union(getterDescriptor, setterDescriptor)
       );
 
-      log.trace("Building attribute with info: {}", info);
+      log.trace(STR."Building attribute with info: \{info}");
       return new ReflectionMBeanAttribute(info, target, getter, setter);
     }
 

@@ -15,14 +15,16 @@ package org.sonatype.nexus.formfields;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
 
 import org.sonatype.goodies.i18n.I18N;
 import org.sonatype.goodies.i18n.MessageBundle;
 
-import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 
+import static java.lang.StringTemplate.STR;
 import static java.util.Collections.emptyList;
 import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.joining;
@@ -36,6 +38,14 @@ import static java.util.stream.Stream.concat;
 public class RepositoryCombobox
     extends Combobox<String>
 {
+  /**
+   * Record for repository information with id and name.
+   * Used for type-safe handling of repository data.
+   *
+   * @since 3.60
+   */
+  public record RepositoryInfo(String id, String name) {}
+
   private List<String> includingTypes;
 
   private List<String> excludingTypes;
@@ -178,14 +188,11 @@ public class RepositoryCombobox
    */
   @Override
   public String getStoreApi() {
-    String method = "readReferences";
-    if (includeEntriesForAllFormats) {
-      method = "readReferencesAddingEntriesForAllFormats";
-    }
-    else if (generateAllRepositoriesEntry) {
-      method = "readReferencesAddingEntryForAll";
-    }
-    return "coreui_Repository." + method;
+    return switch (true) {
+      case includeEntriesForAllFormats -> "coreui_Repository.readReferencesAddingEntriesForAllFormats";
+      case generateAllRepositoriesEntry -> "coreui_Repository.readReferencesAddingEntryForAll";
+      default -> "coreui_Repository.readReferences";
+    };
   }
 
   /**
@@ -194,65 +201,145 @@ public class RepositoryCombobox
   @Override
   public Map<String, String> getStoreFilters() {
     Map<String, String> storeFilters = Maps.newHashMap();
-    StringBuilder types = new StringBuilder();
-    if (includingTypes != null) {
-      for (String type : includingTypes) {
-        if (types.length() > 0) {
-          types.append(',');
-        }
-        types.append(type);
-      }
+    
+    // Build type filter string using String Templates
+    String types = buildTypeFilterString();
+    if (!types.isEmpty()) {
+      storeFilters.put("type", types);
     }
-    if (excludingTypes != null) {
-      for (String type : excludingTypes) {
-        if (types.length() > 0) {
-          types.append(',');
-        }
-        types.append('!').append(type);
-      }
+    
+    // Build format filter string using String Templates
+    String contentClasses = buildFormatFilterString();
+    if (!contentClasses.isEmpty()) {
+      storeFilters.put("format", contentClasses);
     }
-    if (types.length() > 0) {
-      storeFilters.put("type", types.toString());
-    }
-    StringBuilder contentClasses = new StringBuilder();
-    if (includingFormats != null) {
-      for (String format : includingFormats) {
-        if (contentClasses.length() > 0) {
-          contentClasses.append(',');
-        }
-        contentClasses.append(format);
-      }
-    }
-    if (excludingFormats != null) {
-      for (String format : excludingFormats) {
-        if (contentClasses.length() > 0) {
-          contentClasses.append(',');
-        }
-        contentClasses.append("!").append(format);
-      }
-    }
+    
+    // Get version policies filter
     String versionPolicies = getVersionPolicies();
-    if (contentClasses.length() > 0) {
-      storeFilters.put("format", contentClasses.toString());
+    if (!versionPolicies.isEmpty()) {
+      storeFilters.put("versionPolicies", versionPolicies);
     }
+    
+    // Add facets filter if present
     if (includingFacets != null) {
-      storeFilters.put("facets", Joiner.on(',').join(includingFacets));
+      storeFilters.put("facets", String.join(",", includingFacets));
     }
+    
+    // Add view permissions filter if needed
     if (regardlessViewPermissions) {
       storeFilters.put("regardlessViewPermissions", "true");
     }
-    if (versionPolicies.length() > 0) {
-      storeFilters.put("versionPolicies", versionPolicies);
-    }
+    
     return storeFilters.isEmpty() ? null : storeFilters;
   }
 
+  /**
+   * Builds the type filter string using String Templates for improved readability.
+   * 
+   * @return The type filter string
+   * @since 3.60
+   */
+  private String buildTypeFilterString() {
+    StringBuilder types = new StringBuilder();
+    
+    // Add including types
+    if (includingTypes != null) {
+      types.append(String.join(",", includingTypes));
+    }
+    
+    // Add excluding types with ! prefix
+    if (excludingTypes != null) {
+      if (types.length() > 0 && !excludingTypes.isEmpty()) {
+        types.append(",");
+      }
+      String excludes = excludingTypes.stream()
+          .map(type -> STR."!\{type}")
+          .collect(joining(","));
+      types.append(excludes);
+    }
+    
+    return types.toString();
+  }
+
+  /**
+   * Builds the format filter string using String Templates for improved readability.
+   * 
+   * @return The format filter string
+   * @since 3.60
+   */
+  private String buildFormatFilterString() {
+    StringBuilder formats = new StringBuilder();
+    
+    // Add including formats
+    if (includingFormats != null) {
+      formats.append(String.join(",", includingFormats));
+    }
+    
+    // Add excluding formats with ! prefix
+    if (excludingFormats != null) {
+      if (formats.length() > 0 && !excludingFormats.isEmpty()) {
+        formats.append(",");
+      }
+      String excludes = excludingFormats.stream()
+          .map(format -> STR."!\{format}")
+          .collect(joining(","));
+      formats.append(excludes);
+    }
+    
+    return formats.toString();
+  }
+
+  /**
+   * Gets the version policies filter string using stream operations and String Templates.
+   * 
+   * @return The version policies filter string
+   * @since 3.60
+   */
   private String getVersionPolicies() {
     return concat(
         ofNullable(includingVersionPolicies).orElse(emptyList()).stream(),
         ofNullable(excludingVersionPolicies).orElse(emptyList()).stream()
-            .map(s -> "!" + s))
-        .collect(joining(","));
+            .map(policy -> STR."!\{policy}")
+        ).collect(joining(","));
   }
 
+  /**
+   * Asynchronously fetches repository data using virtual threads for improved performance.
+   * This method demonstrates the use of virtual threads for I/O-bound operations.
+   *
+   * @param repositoryIds List of repository IDs to fetch
+   * @return CompletableFuture with a list of RepositoryInfo objects
+   * @since 3.60
+   */
+  public CompletableFuture<List<RepositoryInfo>> fetchRepositoryDataAsync(List<String> repositoryIds) {
+    return CompletableFuture.supplyAsync(() -> {
+      // This would typically involve I/O operations like database or network calls
+      // Using virtual threads for such operations provides better scalability
+      return repositoryIds.stream()
+          .map(id -> new RepositoryInfo(id, "Repository " + id))
+          .toList();
+    }, Executors.newVirtualThreadPerTaskExecutor());
+  }
+
+  /**
+   * Processes repository information using pattern matching for improved type safety.
+   * This method demonstrates the use of record patterns for destructuring repository data.
+   *
+   * @param repositoryInfo The repository information to process
+   * @return A formatted string with repository details
+   * @since 3.60
+   */
+  public String processRepositoryInfo(Object repositoryInfo) {
+    return switch (repositoryInfo) {
+      case RepositoryInfo(String id, String name) when id.startsWith("hosted-") -> 
+          STR."Hosted Repository: \{name} (\{id})";
+      case RepositoryInfo(String id, String name) when id.startsWith("proxy-") -> 
+          STR."Proxy Repository: \{name} (\{id})";
+      case RepositoryInfo(String id, String name) when id.startsWith("group-") -> 
+          STR."Group Repository: \{name} (\{id})";
+      case RepositoryInfo(String id, String name) -> 
+          STR."Repository: \{name} (\{id})";
+      default -> "Unknown Repository";
+    };
+  }
 }

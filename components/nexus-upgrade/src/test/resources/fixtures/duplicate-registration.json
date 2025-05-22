@@ -1,0 +1,114 @@
+{
+  "_comment": "Test fixture for validating duplicate upgrade registration detection under Java 21",
+  "models": [
+    {
+      "name": "foo",
+      "currentVersion": "1.0",
+      "targetVersion": "1.2",
+      "upgradePaths": [
+        {
+          "from": "1.0",
+          "to": "1.1",
+          "upgradeClass": "org.sonatype.nexus.upgrade.example.UpgradeFoo_1_1"
+        },
+        {
+          "from": "1.1",
+          "to": "1.2",
+          "upgradeClass": "org.sonatype.nexus.upgrade.duplicate.UpgradeFoo_1_2"
+        },
+        {
+          "from": "1.1",
+          "to": "1.2",
+          "upgradeClass": "org.sonatype.nexus.upgrade.duplicate.UpgradeFoo_1_2_Duplicate"
+        }
+      ],
+      "metadata": {
+        "description": "Model with duplicate upgrade registrations",
+        "priority": "high"
+      }
+    }
+  ],
+  "upgradeConfiguration": {
+    "executionMode": "sequential",
+    "failFast": true,
+    "maxRetries": 0,
+    "retryDelayMillis": 0,
+    "logLevel": "INFO",
+    "java21Features": {
+      "useVirtualThreads": true,
+      "usePatternMatching": true,
+      "useStringTemplates": true,
+      "useRecordPatterns": true
+    }
+  },
+  "testScenarios": [
+    {
+      "name": "Duplicate upgrade registration detection",
+      "description": "Tests that duplicate upgrade registrations are correctly identified and reported",
+      "expectedError": {
+        "type": "org.sonatype.nexus.common.upgrade.DuplicateUpgradeRegistrationException",
+        "message": "Duplicate upgrade registration for model 'foo' from '1.1' to '1.2'",
+        "containsClasses": [
+          "org.sonatype.nexus.upgrade.duplicate.UpgradeFoo_1_2",
+          "org.sonatype.nexus.upgrade.duplicate.UpgradeFoo_1_2_Duplicate"
+        ]
+      }
+    }
+  ],
+  "java21Compatibility": {
+    "serializationTests": [
+      {
+        "name": "Error serialization",
+        "description": "Tests serialization of upgrade errors with Java 21"
+      }
+    ],
+    "concurrencyTests": [
+      {
+        "name": "Concurrent registration validation",
+        "description": "Tests concurrent validation of upgrade registrations using virtual threads",
+        "threadCount": 10,
+        "useVirtualThreads": true
+      }
+    ]
+  },
+  "errorHandlingTests": [
+    {
+      "name": "Duplicate registration reporting",
+      "description": "Tests that duplicate registrations are properly reported with detailed information",
+      "expectedErrorDetails": {
+        "shouldContainClassNames": true,
+        "shouldContainModelInfo": true,
+        "shouldContainVersionInfo": true
+      }
+    },
+    {
+      "name": "Pattern matching in error handling",
+      "description": "Tests that Java 21 pattern matching is used in error handling for improved diagnostics",
+      "patternMatchingTest": {
+        "errorType": "org.sonatype.nexus.common.upgrade.DuplicateUpgradeRegistrationException",
+        "expectedPatterns": [
+          "case DuplicateUpgradeRegistrationException dup when (dup.getModel().equals(\"foo\") && dup.getFromVersion().equals(\"1.1\") && dup.getToVersion().equals(\"1.2\"))"
+        ]
+      }
+    },
+    {
+      "name": "String template error messages",
+      "description": "Tests that Java 21 string templates are used for improved error messages",
+      "stringTemplateTest": {
+        "errorType": "org.sonatype.nexus.common.upgrade.DuplicateUpgradeRegistrationException",
+        "expectedTemplates": [
+          "String message = STR.\"Duplicate upgrade registration for model '\"{model}\"' from '\"{fromVersion}\"' to '\"{toVersion}\"'\";"
+        ]
+      }
+    }
+  ],
+  "extensionPoints": {
+    "errorHandlers": [
+      {
+        "name": "DuplicateRegistrationHandler",
+        "description": "Handles duplicate registration errors",
+        "handlerClass": "org.sonatype.nexus.upgrade.example.DuplicateRegistrationHandler"
+      }
+    ]
+  }
+}

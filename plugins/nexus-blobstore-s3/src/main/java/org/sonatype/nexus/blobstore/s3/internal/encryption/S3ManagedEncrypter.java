@@ -12,24 +12,17 @@
  */
 package org.sonatype.nexus.blobstore.s3.internal.encryption;
 
-import java.util.function.Consumer;
-import java.util.function.Supplier;
-
 import javax.inject.Named;
 
-import com.amazonaws.services.s3.model.AbstractPutObjectRequest;
-import com.amazonaws.services.s3.model.CopyObjectRequest;
-import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
-import com.amazonaws.services.s3.model.ObjectMetadata;
-
-import static java.util.Optional.ofNullable;
+import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
+import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.ServerSideEncryption;
 
 /**
  * Adds S3 managed encryption to S3 requests.
  * 
- * This implementation is compatible with Java 21 and uses the AWS SDK for Java to apply
- * server-side encryption to S3 objects. The encryption is managed by AWS S3 using the
- * AES-256 algorithm.
+ * Updated for AWS SDK v2.x and Java 21 Virtual Threads.
  *
  * @since 3.19
  */
@@ -40,55 +33,24 @@ public class S3ManagedEncrypter
   public static final String ID = "s3ManagedEncryption";
   public static final String NAME = "S3 Managed Encryption";
 
-  /**
-   * Adds server-side encryption to a multipart upload request.
-   *
-   * @param request the multipart upload request to modify
-   * @param <T> the type of request
-   * @return the modified request with encryption added
-   */
   @Override
-  public <T extends InitiateMultipartUploadRequest> T addEncryption(final T request) {
-    setEncryption(request::getObjectMetadata, request::setObjectMetadata);
-    return request;
+  public <T extends CreateMultipartUploadRequest> T addEncryption(final T request) {
+    return (T) request.toBuilder()
+        .serverSideEncryption(ServerSideEncryption.AES256)
+        .build();
   }
 
-  /**
-   * Adds server-side encryption to a put object request.
-   *
-   * @param request the put object request to modify
-   * @param <T> the type of request
-   * @return the modified request with encryption added
-   */
   @Override
-  public <T extends AbstractPutObjectRequest> T addEncryption(final T request) {
-    setEncryption(request::getMetadata, request::setMetadata);
-    return request;
+  public <T extends PutObjectRequest> T addEncryption(final T request) {
+    return (T) request.toBuilder()
+        .serverSideEncryption(ServerSideEncryption.AES256)
+        .build();
   }
 
-  /**
-   * Adds server-side encryption to a copy object request.
-   *
-   * @param request the copy object request to modify
-   * @param <T> the type of request
-   * @return the modified request with encryption added
-   */
   @Override
   public <T extends CopyObjectRequest> T addEncryption(final T request) {
-    setEncryption(request::getNewObjectMetadata, request::setNewObjectMetadata);
-    return request;
-  }
-
-  /**
-   * Sets the SSE algorithm to AES-256 on the object metadata.
-   * Uses functional interfaces for flexibility across different request types.
-   *
-   * @param getter supplier function to get the current metadata
-   * @param setter consumer function to set the updated metadata
-   */
-  private void setEncryption(final Supplier<ObjectMetadata> getter, final Consumer<ObjectMetadata> setter) {
-    ObjectMetadata objectMetadata = ofNullable(getter.get()).orElse(new ObjectMetadata());
-    objectMetadata.setSSEAlgorithm(ObjectMetadata.AES_256_SERVER_SIDE_ENCRYPTION);
-    setter.accept(objectMetadata);
+    return (T) request.toBuilder()
+        .serverSideEncryption(ServerSideEncryption.AES256)
+        .build();
   }
 }

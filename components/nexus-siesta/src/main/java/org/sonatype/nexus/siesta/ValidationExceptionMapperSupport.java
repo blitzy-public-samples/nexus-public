@@ -14,19 +14,20 @@ package org.sonatype.nexus.siesta;
 
 import java.util.List;
 
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.GenericEntity;
-import javax.ws.rs.core.Request;
-import javax.ws.rs.core.Response;
-import javax.ws.rs.core.Response.Status;
-import javax.ws.rs.core.Variant;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.GenericEntity;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Request;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response.Status;
+import jakarta.ws.rs.core.Variant;
 
 import org.sonatype.nexus.rest.ExceptionMapperSupport;
 import org.sonatype.nexus.rest.ValidationErrorXO;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
-import static javax.ws.rs.core.MediaType.APPLICATION_JSON_TYPE;
+import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON_TYPE;
 import static org.sonatype.nexus.rest.MediaTypes.VND_VALIDATION_ERRORS_V1_JSON_TYPE;
 import static org.sonatype.nexus.rest.MediaTypes.VND_VALIDATION_ERRORS_V1_XML_TYPE;
 
@@ -54,18 +55,24 @@ public abstract class ValidationExceptionMapperSupport<E extends Throwable>
 
     final List<ValidationErrorXO> errors = getValidationErrors(exception);
     if (errors != null && !errors.isEmpty()) {
+      // Enhanced content negotiation for RESTEasy 6.2.7.Final
       final Variant variant = getRequest().selectVariant(variants);
       if (variant != null) {
-        builder.type(variant.getMediaType())
+        MediaType selectedType = variant.getMediaType();
+        builder.type(selectedType)
             .entity(
                 new GenericEntity<List<ValidationErrorXO>>(errors)
                 {
                   @Override
                   public String toString() {
-                    return getEntity().toString();
+                    // Using Java 21 String Templates for better error message formatting
+                    return STR."ValidationErrors: \{errors.size()} error(s) found";
                   }
                 }
             );
+        
+        // Add Vary header to indicate content negotiation was performed
+        builder.header("Vary", "Accept");
       }
     }
 
@@ -76,6 +83,12 @@ public abstract class ValidationExceptionMapperSupport<E extends Throwable>
     return Status.BAD_REQUEST;
   }
 
+  /**
+   * Extract validation errors from the exception.
+   * 
+   * @param exception the exception to extract validation errors from
+   * @return a list of validation errors
+   */
   protected abstract List<ValidationErrorXO> getValidationErrors(final E exception);
 
   //
@@ -90,7 +103,7 @@ public abstract class ValidationExceptionMapperSupport<E extends Throwable>
   }
 
   protected Request getRequest() {
-    checkState(request != null);
+    checkState(request != null, "Request has not been set");
     return request;
   }
 }

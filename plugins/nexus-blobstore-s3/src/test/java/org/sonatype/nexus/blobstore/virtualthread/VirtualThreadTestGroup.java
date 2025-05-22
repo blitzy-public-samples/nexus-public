@@ -13,16 +13,12 @@
 package org.sonatype.nexus.blobstore.virtualthread;
 
 /**
- * Marker interface for tests that specifically validate Virtual Thread behavior.
- * <p>
- * Tests in this category are designed to validate that components work correctly with
- * Java 21's Virtual Threads, including detecting and preventing thread pinning issues.
- * <p>
- * These tests should be run with the JVM flag: -Djdk.tracePinnedThreads=full
- *
- * @since 3.60
+ * Marker interface for tests that specifically validate Virtual Thread functionality.
+ * 
+ * Tests marked with this category are focused on validating that components work correctly
+ * with Java 21 Virtual Threads, particularly for I/O-bound operations.
  */
 public interface VirtualThreadTestGroup
 {
-  // Marker interface
+  // Marker interface - no methods
 }

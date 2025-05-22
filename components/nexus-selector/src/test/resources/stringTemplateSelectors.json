@@ -1,0 +1,17 @@
+[
+  "format == STR.\"maven2\" && path =~ \".*\"",
+  "format == STR.\"\{getFormat()}\" && path =~ \".*\"",
+  "STR.\"Format is: \{format}\" && path =~ \".*\"",
+  "format == \"maven2\" && path =~ STR.\"\{getPathPattern()}\"",
+  "format == \"maven2\" && STR.\"path value \{path} matches pattern\" && path =~ \".*\"",
+  "STR.\"\{format} repository contains \{path}\" && path.length() > 0",
+  "format == \"maven2\" && path =~ STR.\"^/\{getGroupId()}/\{getArtifactId()}/.*\"",
+  "STR.\"Repository format: \{format}\nPath: \{path}\" && path.length() > 0",
+  "format == STR.\"\{isRaw() ? 'raw' : 'maven2'}\" && path =~ \".*\"",
+  "format == \"maven2\" && STR.\"path \{path} contains \{getSearchTerm()}\" && path.contains(getSearchTerm())",
+  "STR.\"Format [\{format}] with path [\{path}]\" && path.startsWith('/com/example')",
+  "format == \"maven2\" && STR.\"Path \{path} has extension \{getExtension(path)}\" && getExtension(path) == 'jar'",
+  "STR.\"\{format == 'maven2' ? 'Maven' : 'Other'} repository with path \{path}\" && path.length() > 0",
+  "format == \"maven2\" && STR.\"Path segments: \{path.split('/').length}\" && path.split('/').length > 3",
+  "STR.\"\{format} \{path} \{path.length()}\" && path.length() > 10"
+]

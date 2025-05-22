@@ -20,13 +20,55 @@ package org.sonatype.nexus.datastore.api;
 public class DataAccessException
     extends RuntimeException
 {
-  private static final long serialVersionUID = 8359662557565269872L;
+  // Updated serialVersionUID for Java 21 compatibility
+  private static final long serialVersionUID = 8359662557565269873L;
 
+  /**
+   * Constructs a new exception with the specified detail message.
+   *
+   * @param message the detail message
+   */
   public DataAccessException(final String message) {
     super(message);
   }
 
+  /**
+   * Constructs a new exception with the specified detail message and cause.
+   * This constructor captures and preserves the complete stack trace across Virtual Thread handoffs.
+   *
+   * @param message the detail message
+   * @param cause the cause of this exception
+   */
   public DataAccessException(final String message, final Throwable cause) {
     super(message, cause);
+    // Ensure complete stack trace is captured for Virtual Thread environments
+    this.setStackTrace(Thread.currentThread().getStackTrace());
+  }
+
+  /**
+   * Constructs a new exception with a formatted detail message using the provided template and arguments.
+   * This method provides better diagnostics in Virtual Thread environments.
+   *
+   * @param messageTemplate the message template
+   * @param args the arguments to be formatted into the message template
+   * @return a new exception with the formatted message
+   * @since 3.60
+   */
+  public static DataAccessException withFormattedMessage(String messageTemplate, Object... args) {
+    return new DataAccessException(String.format(messageTemplate, args));
+  }
+
+  /**
+   * Constructs a new exception with a formatted detail message and cause.
+   * This method provides better diagnostics in Virtual Thread environments.
+   *
+   * @param cause the cause of this exception
+   * @param messageTemplate the message template
+   * @param args the arguments to be formatted into the message template
+   * @return a new exception with the formatted message and cause
+   * @since 3.60
+   */
+  public static DataAccessException withFormattedMessage(Throwable cause, String messageTemplate, Object... args) {
+    return new DataAccessException(String.format(messageTemplate, args), cause);
   }
 }

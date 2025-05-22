@@ -96,14 +96,13 @@ public class DatastoreCselToSql
   protected Object visit(final ASTSWNode node, final Object data) {
     JexlNode leftChild = node.jjtGetChild(LEFT);
     JexlNode rightChild = node.jjtGetChild(RIGHT);
-    if (rightChild instanceof ASTStringLiteral) {
-      transformStartsWithOperator(leftChild, (ASTStringLiteral) rightChild, (SelectorSqlBuilder) data);
-    }
-    else if (leftChild instanceof ASTStringLiteral) {
-      transformStartsWithOperator(rightChild, (ASTStringLiteral) leftChild, (SelectorSqlBuilder) data);
-    }
-    else {
-      throw new JexlException(node, EXPECTED_STRING_LITERAL);
+    SelectorSqlBuilder builder = (SelectorSqlBuilder) data;
+    
+    switch (rightChild) {
+      case ASTStringLiteral stringLiteral -> transformStartsWithOperator(leftChild, stringLiteral, builder);
+      case JexlNode _ when leftChild instanceof ASTStringLiteral stringLiteral -> 
+          transformStartsWithOperator(rightChild, stringLiteral, builder);
+      default -> throw new JexlException(node, EXPECTED_STRING_LITERAL);
     }
     return data;
   }
@@ -115,14 +114,13 @@ public class DatastoreCselToSql
   protected Object visit(final ASTNENode node, final Object data) {
     JexlNode leftChild = node.jjtGetChild(LEFT);
     JexlNode rightChild = node.jjtGetChild(RIGHT);
-    if (rightChild instanceof ASTStringLiteral) {
-      transformNotEqualsOperator(leftChild, (ASTStringLiteral) rightChild, (SelectorSqlBuilder) data);
-    }
-    else if (leftChild instanceof ASTStringLiteral) {
-      transformNotEqualsOperator(rightChild, (ASTStringLiteral) leftChild, (SelectorSqlBuilder) data);
-    }
-    else {
-      throw new JexlException(node, EXPECTED_STRING_LITERAL);
+    SelectorSqlBuilder builder = (SelectorSqlBuilder) data;
+    
+    switch (rightChild) {
+      case ASTStringLiteral stringLiteral -> transformNotEqualsOperator(leftChild, stringLiteral, builder);
+      case JexlNode _ when leftChild instanceof ASTStringLiteral stringLiteral -> 
+          transformNotEqualsOperator(rightChild, stringLiteral, builder);
+      default -> throw new JexlException(node, EXPECTED_STRING_LITERAL);
     }
     return data;
   }
@@ -186,15 +184,16 @@ public class DatastoreCselToSql
     JexlNode rightChild = node.jjtGetChild(RIGHT);
     leftChild.jjtAccept(this, builder);
     builder.appendOperator(operator);
-    if (rightChild instanceof ASTStringLiteral) {
-      String pattern = ((ASTStringLiteral) rightChild).getLiteral();
-      if (pattern.charAt(0) != '^') {
-        pattern = "^(" + pattern + ")$"; // match entire string
+    
+    switch (rightChild) {
+      case ASTStringLiteral stringLiteral -> {
+        String pattern = stringLiteral.getLiteral();
+        if (pattern.charAt(0) != '^') {
+          pattern = "^(" + pattern + ")$"; // match entire string
+        }
+        builder.appendLiteral(pattern);
       }
-      builder.appendLiteral(pattern);
-    }
-    else {
-      throw new JexlException(node, EXPECTED_STRING_LITERAL);
+      default -> throw new JexlException(node, EXPECTED_STRING_LITERAL);
     }
     return builder;
   }

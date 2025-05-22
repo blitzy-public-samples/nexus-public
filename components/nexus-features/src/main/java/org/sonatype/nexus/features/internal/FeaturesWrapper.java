@@ -36,6 +36,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static java.lang.Integer.MAX_VALUE;
+import static java.lang.StringTemplate.STR;
 import static java.lang.reflect.Proxy.newProxyInstance;
 import static java.util.Arrays.stream;
 import static java.util.Collections.singletonMap;
@@ -88,7 +89,7 @@ public class FeaturesWrapper
     if (delegate == null) {
       synchronized (wrapper) {
         if (delegate == null) {
-          log.info("Fast FeaturesService starting");
+          log.info(STR."Fast FeaturesService starting");
           delegate = super.addingService(reference);
           // maximum ranking to make sure our wrapper is seen before the standard service
           trampoline = context.registerService(FeaturesService.class, wrapper, MAX_RANKING);
@@ -108,7 +109,7 @@ public class FeaturesWrapper
     if (delegate == service) { // NOSONAR: we want to check exact instance
       synchronized (wrapper) {
         if (delegate == service) { // NOSONAR: we want to check exact instance
-          log.info("Fast FeaturesService stopping");
+          log.info(STR."Fast FeaturesService stopping");
           trampoline.unregister();
           super.removedService(reference, service);
           locationResolver = null;
@@ -124,29 +125,24 @@ public class FeaturesWrapper
    */
   @Override
   public Object invoke(final Object proxy, final Method method, final Object[] args) throws Throwable {
-    String methodName = method.getName();
-    if (methodName.startsWith("installFeature")) {
-      return fastInstallFeature(method, args);
-    }
-    else if (methodName.startsWith("uninstallFeature")) {
-      log.info("uninstalling is not supported in 'fastFeatures' mode");
-      return null;
-    }
-    else if ("listInstalledFeatures".equals(methodName)) {
-      return listInstalledFeatures();
-    }
-    else if ("isInstalled".equals(methodName)) {
-      return isInstalled((Feature) args[0]);
-    }
-    else if ("getState".equals(methodName)) {
-      return getState((String) args[0]);
-    }
-    try {
-      return method.invoke(delegate, args);
-    }
-    catch (InvocationTargetException e) {
-      throw e.getCause() != null ? e.getCause() : e;
-    }
+    return switch (method.getName()) {
+      case String s when s.startsWith("installFeature") -> fastInstallFeature(method, args);
+      case String s when s.startsWith("uninstallFeature") -> {
+        log.info(STR."uninstalling is not supported in 'fastFeatures' mode");
+        yield null;
+      }
+      case "listInstalledFeatures" -> listInstalledFeatures();
+      case "isInstalled" -> isInstalled((Feature) args[0]);
+      case "getState" -> getState((String) args[0]);
+      default -> {
+        try {
+          yield method.invoke(delegate, args);
+        }
+        catch (InvocationTargetException e) {
+          throw e.getCause() != null ? e.getCause() : e;
+        }
+      }
+    };
   }
 
   /**
@@ -158,25 +154,15 @@ public class FeaturesWrapper
 
     // resolve the given feature and any dependencies
     String signature = stream(method.getParameterTypes()).map(Class::getName).collect(joining(", "));
-    switch (signature) {
-      case "java.lang.String":
-      case "java.lang.String, java.util.EnumSet":
-        bundles = featuresResolver().resolve((String) args[0]);
-        break;
-      case "java.lang.String, java.lang.String":
-      case "java.lang.String, java.lang.String, java.util.EnumSet":
-        bundles = featuresResolver().resolve(args[0] + "/" + args[1]);
-        break;
-      case "org.apache.karaf.features.Feature, java.util.EnumSet":
-        bundles = featuresResolver().resolve((Feature) args[0]);
-        break;
-      case "java.util.Set, java.util.EnumSet":
-      case "java.util.Set, java.lang.String, java.util.EnumSet":
-        bundles = featuresResolver().resolve((Set<String>) args[0]);
-        break;
-      default:
-        throw new IllegalArgumentException("Unexpected method: " + method);
-    }
+    bundles = switch (signature) {
+      case "java.lang.String", "java.lang.String, java.util.EnumSet" -> featuresResolver().resolve((String) args[0]);
+      case "java.lang.String, java.lang.String", "java.lang.String, java.lang.String, java.util.EnumSet" -> 
+          featuresResolver().resolve(args[0] + "/" + args[1]);
+      case "org.apache.karaf.features.Feature, java.util.EnumSet" -> featuresResolver().resolve((Feature) args[0]);
+      case "java.util.Set, java.util.EnumSet", "java.util.Set, java.lang.String, java.util.EnumSet" -> 
+          featuresResolver().resolve((Set<String>) args[0]);
+      default -> throw new IllegalArgumentException(STR."Unexpected method: \{method}");
+    };
 
     // install all the bundles in a single sweep and then start them
     bundles.map(this::installBundle)
@@ -230,9 +216,9 @@ public class FeaturesWrapper
       String location = locationResolver.resolve(info.getLocation());
       if (context.getBundle(location) == null) {
         // not yet installed, go ahead and install it
-        log.debug("Installing {}", location);
+        log.debug(STR."Installing \{location}");
         Bundle bundle = context.installBundle(location);
-        log.debug("Installed {}/{} from {}", bundle.getSymbolicName(), bundle.getVersion(), location);
+        log.debug(STR."Installed \{bundle.getSymbolicName()}/\{bundle.getVersion()} from \{location}");
         if (info.getStartLevel() > 0) {
           bundle.adapt(BundleStartLevel.class).setStartLevel(info.getStartLevel());
         }
@@ -245,7 +231,7 @@ public class FeaturesWrapper
     catch (BundleException e) {
       // ignore duplicates with different locations
       if (e.getType() != DUPLICATE_BUNDLE_ERROR) {
-        log.warn("Problem installing {}", info.getLocation(), e);
+        log.warn(STR."Problem installing \{info.getLocation()}", e);
       }
     }
     return null; // we only return bundles that need to be started
@@ -258,12 +244,12 @@ public class FeaturesWrapper
     // ignore if bundle is already in the starting state or later
     if ((bundle.getState() & (Bundle.INSTALLED | Bundle.RESOLVED)) != 0) {
       try {
-        log.debug("Starting {}/{}", bundle.getSymbolicName(), bundle.getVersion());
+        log.debug(STR."Starting \{bundle.getSymbolicName()}/\{bundle.getVersion()}");
         bundle.start();
-        log.debug("Started {}/{}", bundle.getSymbolicName(), bundle.getVersion());
+        log.debug(STR."Started \{bundle.getSymbolicName()}/\{bundle.getVersion()}");
       }
       catch (BundleException e) {
-        log.warn("Problem starting {}", bundle.getLocation(), e);
+        log.warn(STR."Problem starting \{bundle.getLocation()}", e);
       }
     }
   }

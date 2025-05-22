@@ -13,15 +13,18 @@
 package org.sonatype.nexus.supportzip.datastore;
 
 import java.io.IOException;
+import java.util.Objects;
 
 import org.sonatype.goodies.common.Time;
 
 import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.deser.std.StdDeserializer;
 
 /**
  * {@link Time} in seconds deserializer.
+ * Updated for compatibility with Jackson 2.16.1 and Java 21.
  *
  * @since 3.29
  */
@@ -36,6 +39,28 @@ public class SecondsDeserializer
 
   @Override
   public Time deserialize(final JsonParser parser, final DeserializationContext context) throws IOException {
-    return Time.seconds(parser.readValueAs(Long.class));
+    if (parser == null) {
+      return null;
+    }
+    
+    // Handle case where token is explicitly null or if we're at the end of input
+    JsonToken token = parser.getCurrentToken();
+    if (token == JsonToken.VALUE_NULL || token == null) {
+      return null;
+    }
+    
+    try {
+      Long seconds = parser.readValueAs(Long.class);
+      if (seconds == null) {
+        return null;
+      }
+      
+      return Time.seconds(seconds);
+    } catch (Exception e) {
+      // Improved error handling for Java 21's enhanced type checking
+      context.reportInputMismatch(Time.class, 
+          "Cannot deserialize value of type 'Time' from token " + token + ": expected numeric value");
+      return null;
+    }
   }
 }

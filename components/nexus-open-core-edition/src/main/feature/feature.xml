@@ -13,8 +13,9 @@
     Eclipse Foundation. All other trademarks are the property of their respective owners.
 
 -->
-<features xmlns="http://karaf.apache.org/xmlns/features/v1.2.1" name="${project.artifactId}">
+<features xmlns="http://karaf.apache.org/xmlns/features/v1.4.0" name="${project.artifactId}">
   <feature name="${project.artifactId}">
+    <requirement>osgi.ee;filter:="(&(osgi.ee=JavaSE)(version=21))"</requirement>
     <bundle>mvn:${project.groupId}/${project.artifactId}/${project.version}</bundle>
     <feature>nexus-base-feature</feature>
   </feature>

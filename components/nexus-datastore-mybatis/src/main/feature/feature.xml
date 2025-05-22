@@ -14,5 +14,17 @@
 
 -->
 <features xmlns="http://karaf.apache.org/xmlns/features/v1.2.1" name="${project.artifactId}">
-  <feature name="${project.artifactId}" install="featureFlag:nexus.datastore.enabled" />
+  <feature name="${project.artifactId}" install="featureFlag:nexus.datastore.enabled">
+    <!-- JDBC drivers for Java 21 compatibility -->
+    <!-- PostgreSQL JDBC driver for Java 21 compatibility -->
+    <bundle start-level="80">mvn:org.postgresql/postgresql/42.7.2</bundle>
+    
+    <!-- H2 Database for Java 21 compatibility -->
+    <bundle start-level="80">mvn:com.h2database/h2/2.3.232</bundle>
+    
+    <!-- Required OSGi bundles for database connections -->
+    <bundle start-level="80">mvn:org.apache.commons/commons-dbcp2/2.9.0</bundle>
+    <bundle start-level="80">mvn:org.apache.commons/commons-pool2/2.11.1</bundle>
+    <bundle start-level="80">mvn:org.apache.servicemix.bundles/org.apache.servicemix.bundles.cglib/3.3.0_1</bundle>
+  </feature>
 </features>

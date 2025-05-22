@@ -16,27 +16,27 @@ import java.sql.CallableStatement;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 
-import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.crypto.LegacyCipherFactory.PbeCipher;
 import org.sonatype.nexus.datastore.mybatis.handlers.PrincipalCollectionTypeHandler;
 
 import org.apache.shiro.subject.PrincipalCollection;
 import org.apache.shiro.subject.SimplePrincipalCollection;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.apache.commons.lang.SerializationUtils.serialize;
-import static org.hamcrest.core.Is.is;
-import static org.junit.Assert.assertNull;
-import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-public class PrincipalCollectionTypeHandlerTest
-    extends TestSupport
+@ExtendWith(MockitoExtension.class)
+class PrincipalCollectionTypeHandlerTest
 {
   private static final byte[] PRINCIPAL_COLLECTION_BYTES = {8, 5, 11, 110};
 
@@ -62,21 +62,21 @@ public class PrincipalCollectionTypeHandlerTest
 
   private PrincipalCollectionTypeHandler principalCollectionTypeHandler;
 
-  @BeforeClass
-  public static void setupClass() {
+  @BeforeAll
+  static void setupClass() {
     principalCollection = new SimplePrincipalCollection("p1", "r1");
     principalCollectionBytes = serialize(principalCollection);
   }
 
-  @Before
-  public void setup() {
+  @BeforeEach
+  void setup() {
     principalCollectionTypeHandler = new PrincipalCollectionTypeHandler();
     when(databaseCipher.decrypt(principalCollectionBytes)).thenReturn(principalCollectionBytes);
     ((CipherAwareTypeHandler<?>) principalCollectionTypeHandler).setCipher(databaseCipher);
   }
 
   @Test
-  public void shouldSetEncryptedPrincipalCollectionBytes() throws Exception {
+  void shouldSetEncryptedPrincipalCollectionBytes() throws Exception {
     when(databaseCipher.encrypt(any(byte[].class))).thenReturn(PRINCIPAL_COLLECTION_BYTES);
 
     principalCollectionTypeHandler.setNonNullParameter(preparedStatement,
@@ -87,7 +87,7 @@ public class PrincipalCollectionTypeHandlerTest
   }
 
   @Test
-  public void shouldBeNullWhenResultSetReturnsNullForColumnIndex() throws Exception {
+  void shouldBeNullWhenResultSetReturnsNullForColumnIndex() throws Exception {
 
     final PrincipalCollection result = principalCollectionTypeHandler.getNullableResult(resultSet, AN_INDEX);
 
@@ -95,16 +95,16 @@ public class PrincipalCollectionTypeHandlerTest
   }
 
   @Test
-  public void shouldBePrincipalCollectionWhenResultSetReturnsBytesForColumnIndex() throws Exception {
+  void shouldBePrincipalCollectionWhenResultSetReturnsBytesForColumnIndex() throws Exception {
     when(resultSet.getBytes(AN_INDEX)).thenReturn(principalCollectionBytes);
 
     final PrincipalCollection result = principalCollectionTypeHandler.getNullableResult(resultSet, AN_INDEX);
 
-    assertThat(result, is(principalCollection));
+    assertEquals(principalCollection, result);
   }
 
   @Test
-  public void shouldBeNullWhenResultSetReturnsNullForColumnName() throws Exception {
+  void shouldBeNullWhenResultSetReturnsNullForColumnName() throws Exception {
 
     final PrincipalCollection result = principalCollectionTypeHandler.getNullableResult(resultSet, COLUMN);
 
@@ -112,16 +112,16 @@ public class PrincipalCollectionTypeHandlerTest
   }
 
   @Test
-  public void shouldBeNullWhenResultSetReturnsBytesForColumnName() throws Exception {
+  void shouldBeNullWhenResultSetReturnsBytesForColumnName() throws Exception {
     when(resultSet.getBytes(COLUMN)).thenReturn(principalCollectionBytes);
 
     final PrincipalCollection result = principalCollectionTypeHandler.getNullableResult(resultSet, COLUMN);
 
-    assertThat(result, is(principalCollection));
+    assertEquals(principalCollection, result);
   }
 
   @Test
-  public void shouldBeNullWhenCallableStatementReturnsNull() throws Exception {
+  void shouldBeNullWhenCallableStatementReturnsNull() throws Exception {
 
     final PrincipalCollection result = principalCollectionTypeHandler.getNullableResult(callableStatement, AN_INDEX);
 
@@ -129,11 +129,11 @@ public class PrincipalCollectionTypeHandlerTest
   }
 
   @Test
-  public void shouldBePrincipalCollectionWhenCallableStatementReturnsBytes() throws Exception {
+  void shouldBePrincipalCollectionWhenCallableStatementReturnsBytes() throws Exception {
     when(callableStatement.getBytes(AN_INDEX)).thenReturn(principalCollectionBytes);
 
     final PrincipalCollection result = principalCollectionTypeHandler.getNullableResult(callableStatement, AN_INDEX);
 
-    assertThat(result, is(principalCollection));
+    assertEquals(principalCollection, result);
   }
 }

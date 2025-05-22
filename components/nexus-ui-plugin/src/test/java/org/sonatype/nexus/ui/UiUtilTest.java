@@ -18,8 +18,10 @@ import java.util.Enumeration;
 import org.sonatype.goodies.testsupport.TestSupport;
 
 import org.eclipse.sisu.space.ClassSpace;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.Collections.enumeration;
 import static java.util.Collections.singletonList;
@@ -27,6 +29,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class UiUtilTest
     extends TestSupport
 {

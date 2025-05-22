@@ -33,26 +33,30 @@ public class RestClientConfiguration
     void apply(Configurable<?> builder);
   }
 
-  public static final RestClientConfiguration DEFAULTS = new RestClientConfiguration(null, null, false);
+  public static final RestClientConfiguration DEFAULTS = new RestClientConfiguration(null, null, false, false);
 
   private final Supplier<HttpClient> httpClient;
 
   private final Customizer customizer;
 
   private final boolean useTrustStore;
+  
+  private final boolean useVirtualThreads;
 
   private RestClientConfiguration(
       @Nullable final Supplier<HttpClient> httpClient,
       @Nullable final Customizer customizer,
-      final boolean useTrustStore)
+      final boolean useTrustStore,
+      final boolean useVirtualThreads)
   {
     this.httpClient = httpClient;
     this.customizer = customizer;
     this.useTrustStore = useTrustStore;
+    this.useVirtualThreads = useVirtualThreads;
   }
 
   public RestClientConfiguration withHttpClient(@Nullable final Supplier<HttpClient> httpClient) {
-    return new RestClientConfiguration(httpClient, customizer, useTrustStore);
+    return new RestClientConfiguration(httpClient, customizer, useTrustStore, useVirtualThreads);
   }
 
   @Nullable
@@ -61,7 +65,7 @@ public class RestClientConfiguration
   }
 
   public RestClientConfiguration withCustomizer(@Nullable final Customizer customizer) {
-    return new RestClientConfiguration(httpClient, customizer, useTrustStore);
+    return new RestClientConfiguration(httpClient, customizer, useTrustStore, useVirtualThreads);
   }
 
   @Nullable
@@ -70,10 +74,31 @@ public class RestClientConfiguration
   }
 
   public RestClientConfiguration withUseTrustStore(final boolean useTrustStore) {
-    return new RestClientConfiguration(httpClient, customizer, useTrustStore);
+    return new RestClientConfiguration(httpClient, customizer, useTrustStore, useVirtualThreads);
   }
 
   public boolean getUseTrustStore() {
     return useTrustStore;
+  }
+  
+  /**
+   * Creates a new configuration with Virtual Threads enabled or disabled.
+   * 
+   * @param useVirtualThreads true to enable Java 21 Virtual Threads for I/O-bound operations, false otherwise
+   * @return a new configuration with the specified Virtual Threads setting
+   * @since 3.60
+   */
+  public RestClientConfiguration withUseVirtualThreads(final boolean useVirtualThreads) {
+    return new RestClientConfiguration(httpClient, customizer, useTrustStore, useVirtualThreads);
+  }
+
+  /**
+   * Returns whether Virtual Threads are enabled for this configuration.
+   * 
+   * @return true if Java 21 Virtual Threads are enabled for I/O-bound operations, false otherwise
+   * @since 3.60
+   */
+  public boolean getUseVirtualThreads() {
+    return useVirtualThreads;
   }
 }

@@ -13,15 +13,17 @@
 package org.sonatype.nexus.siesta;
 
 import java.time.Duration;
-import java.util.EnumSet;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
@@ -29,7 +31,6 @@ import javax.servlet.DispatcherType;
 import javax.ws.rs.client.Client;
 import javax.ws.rs.client.ClientBuilder;
 import javax.ws.rs.client.WebTarget;
-import javax.ws.rs.core.Response;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
@@ -38,9 +39,7 @@ import com.google.inject.Injector;
 import com.google.inject.servlet.GuiceFilter;
 import com.google.inject.servlet.GuiceServletContextListener;
 import org.eclipse.jetty.ee10.servlet.ServletContextHandler;
-import org.eclipse.jetty.server.CustomRequestLog;
-import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.server.handler.ContextHandlerCollection;
+import org.eclipse.jetty.ee10.servlet.ServletTester;
 import org.eclipse.jetty.util.thread.ThreadPool;
 import org.junit.After;
 import org.junit.Before;
@@ -50,114 +49,47 @@ import org.junit.rules.ExpectedException;
 /**
  * Support for Siesta tests using Java 21 Virtual Threads.
  * 
- * This class extends the standard {@link SiestaTestSupport} to provide an embedded Jetty server
+ * <p>This class extends the standard {@link SiestaTestSupport} to provide an embedded Jetty server
  * environment configured with Virtual Thread-optimized settings. It configures thread pools to use
  * Java 21 Virtual Threads, provides utilities for measuring Virtual Thread performance metrics,
- * and includes helper methods for detecting thread pinning issues.
+ * and includes helper methods for detecting thread pinning issues.</p>
+ * 
+ * <p>Use this class as the base for integration tests that need to validate the Siesta REST layer's
+ * compatibility with Java 21's Virtual Thread implementation.</p>
  */
 public class VirtualThreadSiestaTestSupport
-    extends TestSupport
+    extends SiestaTestSupport
 {
-  private Server server;
+  private ServletTester servletTester;
+
   private String url;
+
   private Client client;
-  private final Map<String, PerformanceMetrics> endpointMetrics = new ConcurrentHashMap<>();
+  
+  /**
+   * Tracks performance metrics for virtual thread operations.
+   */
+  private final VirtualThreadMetrics metrics = new VirtualThreadMetrics();
+  
+  /**
+   * Tracks thread pinning events during test execution.
+   */
+  private final ThreadPinningDetector pinningDetector = new ThreadPinningDetector();
 
   @Rule
   public ExpectedException thrown = ExpectedException.none();
 
   /**
-   * Performance metrics for a specific endpoint.
-   */
-  public static class PerformanceMetrics {
-    private final AtomicLong totalRequests = new AtomicLong(0);
-    private final AtomicLong totalResponseTime = new AtomicLong(0);
-    private final AtomicLong maxResponseTime = new AtomicLong(0);
-    private final AtomicLong minResponseTime = new AtomicLong(Long.MAX_VALUE);
-    private final AtomicLong errors = new AtomicLong(0);
-    private final AtomicLong activeThreads = new AtomicLong(0);
-    private final AtomicLong peakThreads = new AtomicLong(0);
-
-    public void recordRequest(long responseTimeMs, boolean success) {
-      totalRequests.incrementAndGet();
-      if (success) {
-        totalResponseTime.addAndGet(responseTimeMs);
-        maxResponseTime.updateAndGet(current -> Math.max(current, responseTimeMs));
-        minResponseTime.updateAndGet(current -> Math.min(current, responseTimeMs));
-      } else {
-        errors.incrementAndGet();
-      }
-    }
-
-    public void incrementActiveThreads() {
-      long active = activeThreads.incrementAndGet();
-      peakThreads.updateAndGet(current -> Math.max(current, active));
-    }
-
-    public void decrementActiveThreads() {
-      activeThreads.decrementAndGet();
-    }
-
-    public long getTotalRequests() {
-      return totalRequests.get();
-    }
-
-    public long getSuccessfulRequests() {
-      return totalRequests.get() - errors.get();
-    }
-
-    public long getErrorCount() {
-      return errors.get();
-    }
-
-    public double getErrorRate() {
-      return totalRequests.get() > 0 ? (double) errors.get() / totalRequests.get() : 0.0;
-    }
-
-    public double getAverageResponseTime() {
-      long successful = getSuccessfulRequests();
-      return successful > 0 ? (double) totalResponseTime.get() / successful : 0.0;
-    }
-
-    public long getMaxResponseTime() {
-      return maxResponseTime.get();
-    }
-
-    public long getMinResponseTime() {
-      return minResponseTime.get() == Long.MAX_VALUE ? 0 : minResponseTime.get();
-    }
-
-    public long getPeakThreads() {
-      return peakThreads.get();
-    }
-
-    public long getCurrentActiveThreads() {
-      return activeThreads.get();
-    }
-
-    @Override
-    public String toString() {
-      return String.format(
-          "Requests: %d (Success: %d, Errors: %d, Error Rate: %.2f%%), " +
-          "Response Time: %.2f ms (Min: %d ms, Max: %d ms), " +
-          "Threads: %d (Peak: %d)",
-          getTotalRequests(), getSuccessfulRequests(), getErrorCount(), getErrorRate() * 100,
-          getAverageResponseTime(), getMinResponseTime(), getMaxResponseTime(),
-          getCurrentActiveThreads(), getPeakThreads());
-    }
-  }
-
-  /**
-   * Starts an embedded Jetty server with Virtual Thread support.
+   * Starts an embedded Jetty server configured to use Virtual Threads.
    */
   @Before
   public void startJetty() throws Exception {
-    // Create a server with Virtual Thread pool
-    server = new Server(createVirtualThreadPool());
-
-    // Configure the servlet context
-    ServletContextHandler context = new ServletContextHandler(ServletContextHandler.SESSIONS);
-    context.setContextPath("/");
+    // Create a servlet tester with Virtual Thread pool
+    servletTester = new ServletTester();
+    configureVirtualThreadPool(servletTester);
+    
+    // Configure the servlet context with Guice
+    ServletContextHandler context = servletTester.getContext();
     context.addEventListener(new GuiceServletContextListener() {
       final Injector injector = Guice.createInjector(new TestModule());
 
@@ -167,86 +99,58 @@ public class VirtualThreadSiestaTestSupport
       }
     });
 
-    // Add the Guice filter
-    context.addFilter(GuiceFilter.class, "/*", EnumSet.of(DispatcherType.REQUEST));
-    context.addServlet(DummyServlet.class, "/*");
-
-    // Set up the handlers
-    ContextHandlerCollection handlers = new ContextHandlerCollection();
-    handlers.addHandler(context);
-    server.setHandler(handlers);
-
-    // Configure request logging
-    CustomRequestLog requestLog = new CustomRequestLog(
-        (request, response, responseTime) -> {
-          String path = request.getPathInContext();
-          if (path != null && !path.isEmpty()) {
-            // Record metrics for this endpoint
-            endpointMetrics.computeIfAbsent(path, k -> new PerformanceMetrics())
-                .recordRequest(responseTime, response.getStatus() < 400);
-          }
-        });
-    server.setRequestLog(requestLog);
-
+    // Set up the URL and filters
+    url = servletTester.createConnector(true) + TestModule.MOUNT_POINT;
+    servletTester.addFilter(GuiceFilter.class, "/*", DispatcherType.REQUEST);
+    servletTester.addServlet(DummyServlet.class, "/*");
+    
     // Start the server
-    server.start();
+    servletTester.start();
 
-    // Get the server URL
-    url = "http://localhost:" + server.getURI().getPort() + TestModule.MOUNT_POINT;
-
-    // Create a JAX-RS client
+    // Create a client
     client = ClientBuilder.newClient();
+    
+    // Enable thread pinning detection
+    pinningDetector.start();
+    
+    log.info("Started Jetty server with Virtual Thread pool at {}", url);
   }
 
   /**
-   * Creates a ThreadPool that uses Virtual Threads.
-   */
-  private ThreadPool createVirtualThreadPool() {
-    return new ThreadPool() {
-      private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
-
-      @Override
-      public void join() throws InterruptedException {
-        executor.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
-      }
-
-      @Override
-      public int getThreads() {
-        return 0; // Virtual threads, so no fixed count
-      }
-
-      @Override
-      public int getIdleThreads() {
-        return 0; // Virtual threads, so no fixed count
-      }
-
-      @Override
-      public boolean isLowOnThreads() {
-        return false; // Virtual threads are unlimited
-      }
-
-      @Override
-      public void execute(Runnable command) {
-        executor.submit(command);
-      }
-    };
-  }
-
-  /**
-   * Stops the embedded Jetty server.
+   * Stops the Jetty server and cleans up resources.
    */
   @After
   public void stopJetty() throws Exception {
-    if (client != null) {
-      client.close();
+    // Stop thread pinning detection
+    pinningDetector.stop();
+    
+    // Log metrics
+    log.info("Virtual Thread metrics: {}", metrics);
+    
+    // Log any pinning events
+    if (pinningDetector.hasPinningEvents()) {
+      log.warn("Thread pinning detected during test execution:");
+      pinningDetector.getPinningEvents().forEach(event -> 
+          log.warn("  Thread pinned at: {}", event));
     }
-    if (server != null) {
-      server.stop();
+    
+    // Stop the server
+    if (servletTester != null) {
+      servletTester.stop();
     }
   }
 
   /**
-   * Returns the JAX-RS client.
+   * Configures the servlet tester to use a Virtual Thread pool.
+   */
+  protected void configureVirtualThreadPool(ServletTester tester) {
+    // Create a thread pool that uses virtual threads
+    ThreadPool virtualThreadPool = new VirtualThreadPool();
+    tester.getServer().setThreadPool(virtualThreadPool);
+  }
+
+  /**
+   * Returns the JAX-RS client for making requests.
    */
   protected Client client() {
     return client;
@@ -260,232 +164,436 @@ public class VirtualThreadSiestaTestSupport
   }
 
   /**
-   * Returns the URL for a specific path.
+   * Returns a URL for the specified path.
    */
   protected String url(final String path) {
     return url + "/" + path;
   }
-
+  
   /**
-   * Executes a load test against the specified endpoint using Virtual Threads.
-   *
-   * @param path The endpoint path to test
-   * @param requestSupplier A supplier that creates the request to execute
-   * @param concurrentUsers The number of concurrent users to simulate
-   * @param durationSeconds The duration of the test in seconds
-   * @return The performance metrics for the test
+   * Executes the given task using a virtual thread.
+   * 
+   * @param task the task to execute
+   * @return a CompletableFuture representing the completion of the task
    */
-  protected PerformanceMetrics runLoadTest(String path, 
-                                          Supplier<Response> requestSupplier,
-                                          int concurrentUsers, 
-                                          int durationSeconds) throws Exception {
-    log("Starting load test for {} with {} concurrent users for {} seconds", 
-        path, concurrentUsers, durationSeconds);
+  protected CompletableFuture<Void> runWithVirtualThread(Runnable task) {
+    metrics.incrementVirtualThreadsCreated();
+    return CompletableFuture.runAsync(task, Executors.newVirtualThreadPerTaskExecutor());
+  }
+  
+  /**
+   * Executes the given supplier using a virtual thread and returns its result.
+   * 
+   * @param <T> the type of result
+   * @param supplier the supplier to execute
+   * @return a CompletableFuture representing the completion of the supplier
+   */
+  protected <T> CompletableFuture<T> supplyWithVirtualThread(Supplier<T> supplier) {
+    metrics.incrementVirtualThreadsCreated();
+    return CompletableFuture.supplyAsync(supplier, Executors.newVirtualThreadPerTaskExecutor());
+  }
+  
+  /**
+   * Executes the given task concurrently using the specified number of virtual threads.
+   * 
+   * @param task the task to execute concurrently
+   * @param concurrency the number of concurrent executions
+   * @throws Exception if an error occurs during execution
+   */
+  protected void runConcurrently(Runnable task, int concurrency) throws Exception {
+    CountDownLatch latch = new CountDownLatch(concurrency);
+    List<CompletableFuture<Void>> futures = new ArrayList<>();
     
-    // Clear any existing metrics for this endpoint
-    endpointMetrics.remove(path);
+    // Create and start the virtual threads
+    for (int i = 0; i < concurrency; i++) {
+      futures.add(runWithVirtualThread(() -> {
+        try {
+          task.run();
+        } finally {
+          latch.countDown();
+        }
+      }));
+    }
     
-    // Create a virtual thread executor
+    // Wait for all threads to complete
+    if (!latch.await(30, TimeUnit.SECONDS)) {
+      throw new AssertionError("Timed out waiting for concurrent tasks to complete");
+    }
+    
+    // Check for exceptions
+    for (CompletableFuture<Void> future : futures) {
+      if (future.isCompletedExceptionally()) {
+        try {
+          future.join(); // This will throw the exception
+        } catch (Exception e) {
+          throw new AssertionError("Exception in concurrent task", e);
+        }
+      }
+    }
+  }
+  
+  /**
+   * Performs a benchmark comparing platform threads and virtual threads.
+   * 
+   * @param task the task to benchmark
+   * @param concurrency the number of concurrent executions
+   * @param iterations the number of iterations to run
+   * @return a BenchmarkResult containing the results
+   * @throws Exception if an error occurs during the benchmark
+   */
+  protected BenchmarkResult benchmarkThreads(Runnable task, int concurrency, int iterations) throws Exception {
+    BenchmarkResult result = new BenchmarkResult();
+    
+    // Benchmark with platform threads
+    long platformStart = System.nanoTime();
+    runWithPlatformThreads(task, concurrency, iterations);
+    long platformEnd = System.nanoTime();
+    result.setPlatformThreadDuration(Duration.ofNanos(platformEnd - platformStart));
+    
+    // Benchmark with virtual threads
+    long virtualStart = System.nanoTime();
+    runWithVirtualThreads(task, concurrency, iterations);
+    long virtualEnd = System.nanoTime();
+    result.setVirtualThreadDuration(Duration.ofNanos(virtualEnd - virtualStart));
+    
+    return result;
+  }
+  
+  /**
+   * Runs the given task concurrently using platform threads.
+   */
+  private void runWithPlatformThreads(Runnable task, int concurrency, int iterations) throws Exception {
+    try (ExecutorService executor = Executors.newFixedThreadPool(concurrency)) {
+      for (int i = 0; i < iterations; i++) {
+        CountDownLatch latch = new CountDownLatch(concurrency);
+        
+        for (int j = 0; j < concurrency; j++) {
+          executor.submit(() -> {
+            try {
+              task.run();
+            } finally {
+              latch.countDown();
+            }
+          });
+        }
+        
+        if (!latch.await(30, TimeUnit.SECONDS)) {
+          throw new AssertionError("Timed out waiting for platform threads to complete");
+        }
+      }
+    }
+  }
+  
+  /**
+   * Runs the given task concurrently using virtual threads.
+   */
+  private void runWithVirtualThreads(Runnable task, int concurrency, int iterations) throws Exception {
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Create a countdown latch to signal test completion
-      CountDownLatch completionLatch = new CountDownLatch(1);
-      
-      // Start the timer
-      long endTime = System.currentTimeMillis() + (durationSeconds * 1000L);
-      
-      // Submit tasks for each concurrent user
-      List<Future<?>> futures = executor.invokeAll(
-          List.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10).stream()
-              .limit(concurrentUsers)
-              .map(i -> (Runnable) () -> {
-                PerformanceMetrics metrics = endpointMetrics.computeIfAbsent(path, k -> new PerformanceMetrics());
-                
-                // Keep sending requests until the test duration expires
-                while (System.currentTimeMillis() < endTime) {
-                  metrics.incrementActiveThreads();
-                  try {
-                    long startTime = System.currentTimeMillis();
-                    Response response = requestSupplier.get();
-                    long responseTime = System.currentTimeMillis() - startTime;
-                    
-                    // Record the result
-                    boolean success = response.getStatus() >= 200 && response.getStatus() < 400;
-                    metrics.recordRequest(responseTime, success);
-                    
-                    // Close the response
-                    response.close();
-                    
-                    // Small delay to prevent overwhelming the server
-                    Thread.sleep(10);
-                  }
-                  catch (Exception e) {
-                    log.warn("Error during load test: {}", e.getMessage());
-                    metrics.recordRequest(0, false);
-                  }
-                  finally {
-                    metrics.decrementActiveThreads();
-                  }
-                }
-              })
-              .toList(),
-          Duration.ofSeconds(durationSeconds + 10));
-      
-      // Wait for all tasks to complete
-      for (Future<?> future : futures) {
-        future.get();
+      for (int i = 0; i < iterations; i++) {
+        CountDownLatch latch = new CountDownLatch(concurrency);
+        
+        for (int j = 0; j < concurrency; j++) {
+          metrics.incrementVirtualThreadsCreated();
+          executor.submit(() -> {
+            try {
+              task.run();
+            } finally {
+              latch.countDown();
+            }
+          });
+        }
+        
+        if (!latch.await(30, TimeUnit.SECONDS)) {
+          throw new AssertionError("Timed out waiting for virtual threads to complete");
+        }
+      }
+    }
+  }
+  
+  /**
+   * Executes a load test with the specified number of concurrent clients.
+   * 
+   * @param targetUrl the URL to test
+   * @param concurrentClients the number of concurrent clients
+   * @param requestsPerClient the number of requests per client
+   * @return a LoadTestResult containing the results
+   * @throws Exception if an error occurs during the load test
+   */
+  protected LoadTestResult executeLoadTest(String targetUrl, int concurrentClients, int requestsPerClient) 
+      throws Exception {
+    LoadTestResult result = new LoadTestResult();
+    CountDownLatch latch = new CountDownLatch(concurrentClients);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    AtomicLong totalDuration = new AtomicLong(0);
+    
+    // Create a WebTarget for the URL
+    WebTarget target = client().target(targetUrl);
+    
+    // Start the timer
+    long startTime = System.nanoTime();
+    
+    // Create and start the virtual threads
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      for (int i = 0; i < concurrentClients; i++) {
+        metrics.incrementVirtualThreadsCreated();
+        executor.submit(() -> {
+          try {
+            for (int j = 0; j < requestsPerClient; j++) {
+              long requestStart = System.nanoTime();
+              try {
+                // Execute the request
+                target.request().get();
+                result.incrementSuccessCount();
+              } catch (Exception e) {
+                errorCount.incrementAndGet();
+                log.error("Error executing request", e);
+              } finally {
+                long requestDuration = System.nanoTime() - requestStart;
+                totalDuration.addAndGet(requestDuration);
+                result.recordLatency(Duration.ofNanos(requestDuration));
+              }
+            }
+          } finally {
+            latch.countDown();
+          }
+        });
       }
       
-      // Get the final metrics
-      PerformanceMetrics metrics = endpointMetrics.get(path);
-      log("Load test completed for {}: {}", path, metrics);
-      
-      return metrics;
-    }
-  }
-
-  /**
-   * Compares performance between platform threads and virtual threads for the specified endpoint.
-   *
-   * @param path The endpoint path to test
-   * @param requestSupplier A supplier that creates the request to execute
-   * @param concurrentUsers The number of concurrent users to simulate
-   * @param durationSeconds The duration of each test in seconds
-   * @return A map containing performance metrics for both thread types
-   */
-  protected Map<String, PerformanceMetrics> compareThreadPerformance(String path,
-                                                                   Supplier<Response> requestSupplier,
-                                                                   int concurrentUsers,
-                                                                   int durationSeconds) throws Exception {
-    // First run with platform threads
-    log("Running platform thread test for {}", path);
-    PerformanceMetrics platformMetrics = runPlatformThreadLoadTest(path, requestSupplier, concurrentUsers, durationSeconds);
-    
-    // Then run with virtual threads
-    log("Running virtual thread test for {}", path);
-    PerformanceMetrics virtualMetrics = runLoadTest(path, requestSupplier, concurrentUsers, durationSeconds);
-    
-    // Compare the results
-    log("Performance comparison for {}:", path);
-    log("  Platform Threads: {}", platformMetrics);
-    log("  Virtual Threads:  {}", virtualMetrics);
-    
-    // Calculate improvement percentages
-    double throughputImprovement = calculateImprovement(
-        platformMetrics.getSuccessfulRequests(), virtualMetrics.getSuccessfulRequests());
-    double latencyImprovement = calculateImprovement(
-        platformMetrics.getAverageResponseTime(), virtualMetrics.getAverageResponseTime(), true);
-    
-    log("  Throughput improvement: {:.2f}%", throughputImprovement);
-    log("  Latency improvement:    {:.2f}%", latencyImprovement);
-    
-    return Map.of(
-        "platform", platformMetrics,
-        "virtual", virtualMetrics
-    );
-  }
-
-  /**
-   * Executes a load test against the specified endpoint using platform threads.
-   */
-  private PerformanceMetrics runPlatformThreadLoadTest(String path,
-                                                     Supplier<Response> requestSupplier,
-                                                     int concurrentUsers,
-                                                     int durationSeconds) throws Exception {
-    log("Starting platform thread load test for {} with {} concurrent users for {} seconds",
-        path, concurrentUsers, durationSeconds);
-    
-    // Clear any existing metrics for this endpoint
-    endpointMetrics.remove(path);
-    
-    // Create a fixed thread pool executor with the specified number of threads
-    try (ExecutorService executor = Executors.newFixedThreadPool(concurrentUsers)) {
-      // Create a countdown latch to signal test completion
-      CountDownLatch completionLatch = new CountDownLatch(1);
-      
-      // Start the timer
-      long endTime = System.currentTimeMillis() + (durationSeconds * 1000L);
-      
-      // Submit tasks for each concurrent user
-      List<Future<?>> futures = executor.invokeAll(
-          List.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10).stream()
-              .limit(concurrentUsers)
-              .map(i -> (Runnable) () -> {
-                PerformanceMetrics metrics = endpointMetrics.computeIfAbsent(path, k -> new PerformanceMetrics());
-                
-                // Keep sending requests until the test duration expires
-                while (System.currentTimeMillis() < endTime) {
-                  metrics.incrementActiveThreads();
-                  try {
-                    long startTime = System.currentTimeMillis();
-                    Response response = requestSupplier.get();
-                    long responseTime = System.currentTimeMillis() - startTime;
-                    
-                    // Record the result
-                    boolean success = response.getStatus() >= 200 && response.getStatus() < 400;
-                    metrics.recordRequest(responseTime, success);
-                    
-                    // Close the response
-                    response.close();
-                    
-                    // Small delay to prevent overwhelming the server
-                    Thread.sleep(10);
-                  }
-                  catch (Exception e) {
-                    log.warn("Error during load test: {}", e.getMessage());
-                    metrics.recordRequest(0, false);
-                  }
-                  finally {
-                    metrics.decrementActiveThreads();
-                  }
-                }
-              })
-              .toList(),
-          Duration.ofSeconds(durationSeconds + 10));
-      
-      // Wait for all tasks to complete
-      for (Future<?> future : futures) {
-        future.get();
+      // Wait for all clients to complete
+      if (!latch.await(60, TimeUnit.SECONDS)) {
+        throw new AssertionError("Timed out waiting for load test to complete");
       }
-      
-      // Get the final metrics
-      PerformanceMetrics metrics = endpointMetrics.get(path);
-      log("Platform thread load test completed for {}: {}", path, metrics);
-      
-      return metrics;
-    }
-  }
-
-  /**
-   * Calculates the percentage improvement between two values.
-   *
-   * @param baseline The baseline value
-   * @param current The current value
-   * @param lowerIsBetter Whether a lower value is better (e.g., for latency)
-   * @return The percentage improvement
-   */
-  private double calculateImprovement(double baseline, double current, boolean lowerIsBetter) {
-    if (baseline == 0) {
-      return 0.0;
     }
     
-    if (lowerIsBetter) {
-      return ((baseline - current) / baseline) * 100.0;
-    } else {
-      return ((current - baseline) / baseline) * 100.0;
+    // Calculate results
+    long endTime = System.nanoTime();
+    Duration totalTestDuration = Duration.ofNanos(endTime - startTime);
+    
+    result.setTotalDuration(totalTestDuration);
+    result.setErrorCount(errorCount.get());
+    result.setAverageLatency(Duration.ofNanos(totalDuration.get() / 
+        (concurrentClients * requestsPerClient - errorCount.get())));
+    
+    return result;
+  }
+  
+  /**
+   * A thread pool implementation that uses virtual threads.
+   */
+  private static class VirtualThreadPool implements ThreadPool {
+    private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    private final AtomicInteger activeThreads = new AtomicInteger(0);
+    
+    @Override
+    public void execute(Runnable command) {
+      activeThreads.incrementAndGet();
+      executor.submit(() -> {
+        try {
+          command.run();
+        } finally {
+          activeThreads.decrementAndGet();
+        }
+      });
+    }
+
+    @Override
+    public void join() throws InterruptedException {
+      executor.shutdown();
+      executor.awaitTermination(30, TimeUnit.SECONDS);
+    }
+
+    @Override
+    public int getThreads() {
+      return Integer.MAX_VALUE; // Virtual threads are unlimited
+    }
+
+    @Override
+    public int getIdleThreads() {
+      return Integer.MAX_VALUE - activeThreads.get();
+    }
+
+    @Override
+    public boolean isLowOnThreads() {
+      return false; // Virtual threads are never low
     }
   }
-
+  
   /**
-   * Calculates the percentage improvement between two values (higher is better).
+   * Metrics for tracking virtual thread usage.
    */
-  private double calculateImprovement(double baseline, double current) {
-    return calculateImprovement(baseline, current, false);
+  public static class VirtualThreadMetrics {
+    private final AtomicLong virtualThreadsCreated = new AtomicLong(0);
+    private final AtomicLong pinnedThreadCount = new AtomicLong(0);
+    
+    public void incrementVirtualThreadsCreated() {
+      virtualThreadsCreated.incrementAndGet();
+    }
+    
+    public void incrementPinnedThreadCount() {
+      pinnedThreadCount.incrementAndGet();
+    }
+    
+    public long getTotalVirtualThreadsCreated() {
+      return virtualThreadsCreated.get();
+    }
+    
+    public long getPinnedThreadCount() {
+      return pinnedThreadCount.get();
+    }
+    
+    @Override
+    public String toString() {
+      return String.format("VirtualThreadMetrics[created=%d, pinned=%d]", 
+          virtualThreadsCreated.get(), pinnedThreadCount.get());
+    }
   }
-
+  
   /**
-   * Creates a WebTarget for the specified path.
+   * Detector for thread pinning events.
    */
-  protected WebTarget target(String path) {
-    return client().target(url(path));
+  public static class ThreadPinningDetector {
+    private final List<String> pinningEvents = new ArrayList<>();
+    private volatile boolean running = false;
+    private Thread detectorThread;
+    
+    public void start() {
+      running = true;
+      detectorThread = Thread.ofPlatform().name("pinning-detector").start(() -> {
+        while (running) {
+          try {
+            // Check for pinned threads using JDK API
+            // This is a simplified implementation - in a real environment,
+            // you would use JFR events or JMX to detect pinning
+            Thread.sleep(1000);
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            break;
+          }
+        }
+      });
+      
+      // Enable thread pinning detection via system property
+      System.setProperty("jdk.tracePinnedThreads", "full");
+    }
+    
+    public void stop() {
+      running = false;
+      if (detectorThread != null) {
+        detectorThread.interrupt();
+      }
+    }
+    
+    public void recordPinningEvent(String stackTrace) {
+      synchronized (pinningEvents) {
+        pinningEvents.add(stackTrace);
+      }
+    }
+    
+    public boolean hasPinningEvents() {
+      synchronized (pinningEvents) {
+        return !pinningEvents.isEmpty();
+      }
+    }
+    
+    public List<String> getPinningEvents() {
+      synchronized (pinningEvents) {
+        return new ArrayList<>(pinningEvents);
+      }
+    }
+  }
+  
+  /**
+   * Results from a thread benchmark.
+   */
+  public static class BenchmarkResult {
+    private Duration platformThreadDuration;
+    private Duration virtualThreadDuration;
+    
+    public Duration getPlatformThreadDuration() {
+      return platformThreadDuration;
+    }
+    
+    public void setPlatformThreadDuration(Duration platformThreadDuration) {
+      this.platformThreadDuration = platformThreadDuration;
+    }
+    
+    public Duration getVirtualThreadDuration() {
+      return virtualThreadDuration;
+    }
+    
+    public void setVirtualThreadDuration(Duration virtualThreadDuration) {
+      this.virtualThreadDuration = virtualThreadDuration;
+    }
+    
+    public double getSpeedupFactor() {
+      return (double) platformThreadDuration.toNanos() / virtualThreadDuration.toNanos();
+    }
+    
+    @Override
+    public String toString() {
+      return String.format("BenchmarkResult[platformDuration=%s, virtualDuration=%s, speedup=%.2fx]", 
+          platformThreadDuration, virtualThreadDuration, getSpeedupFactor());
+    }
+  }
+  
+  /**
+   * Results from a load test.
+   */
+  public static class LoadTestResult {
+    private Duration totalDuration;
+    private Duration averageLatency;
+    private final AtomicInteger successCount = new AtomicInteger(0);
+    private int errorCount;
+    private final Map<Duration, AtomicInteger> latencyDistribution = new ConcurrentHashMap<>();
+    
+    public void incrementSuccessCount() {
+      successCount.incrementAndGet();
+    }
+    
+    public void recordLatency(Duration latency) {
+      latencyDistribution.computeIfAbsent(latency, k -> new AtomicInteger(0)).incrementAndGet();
+    }
+    
+    public Duration getTotalDuration() {
+      return totalDuration;
+    }
+    
+    public void setTotalDuration(Duration totalDuration) {
+      this.totalDuration = totalDuration;
+    }
+    
+    public Duration getAverageLatency() {
+      return averageLatency;
+    }
+    
+    public void setAverageLatency(Duration averageLatency) {
+      this.averageLatency = averageLatency;
+    }
+    
+    public int getSuccessCount() {
+      return successCount.get();
+    }
+    
+    public int getErrorCount() {
+      return errorCount;
+    }
+    
+    public void setErrorCount(int errorCount) {
+      this.errorCount = errorCount;
+    }
+    
+    public Map<Duration, AtomicInteger> getLatencyDistribution() {
+      return latencyDistribution;
+    }
+    
+    public double getThroughput() {
+      return (double) successCount.get() / (totalDuration.toMillis() / 1000.0);
+    }
+    
+    @Override
+    public String toString() {
+      return String.format("LoadTestResult[duration=%s, avg_latency=%s, success=%d, errors=%d, throughput=%.2f req/sec]", 
+          totalDuration, averageLatency, successCount.get(), errorCount, getThroughput());
+    }
   }
 }

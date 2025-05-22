@@ -23,6 +23,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Sisu {@link ResourceFactory}.
+ * <p>
+ * Updated for compatibility with RESTEasy 6.2.7.Final and Jakarta EE.
  *
  * @since 3.0
  */

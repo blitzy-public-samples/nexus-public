@@ -13,12 +13,16 @@
 package org.sonatype.nexus.extdirect.internal;
 
 import java.util.Map;
+import java.util.concurrent.Executors;
 
 import com.google.common.collect.Maps;
 import com.google.inject.servlet.ServletModule;
 import com.softwarementors.extjs.djn.servlet.DirectJNgineServlet.GlobalParameters;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+// Import for Java 21 String Templates
+import static java.lang.StringTemplate.STR;
 
 /**
  * Servlet module for Ext.Direct Guice module.
@@ -39,15 +43,19 @@ public abstract class ExtDirectServletModule
   @Override
   protected void configureServlets() {
     Map<String, String> config = Maps.newHashMap();
-    config.put(GlobalParameters.PROVIDERS_URL, mountPoint.substring(1));
+    // Use String Template for string concatenation
+    config.put(GlobalParameters.PROVIDERS_URL, STR."{mountPoint.substring(1)}");
     config.put("minify", Boolean.FALSE.toString());
     config.put(GlobalParameters.DEBUG, Boolean.toString(log.isDebugEnabled()));
     config.put(GlobalParameters.JSON_REQUEST_PROCESSOR_THREAD_CLASS,
         ExtDirectJsonRequestProcessorThread.class.getName());
     config.put(GlobalParameters.GSON_BUILDER_CONFIGURATOR_CLASS,
         ExtDirectGsonBuilderConfigurator.class.getName());
+    // Configure for virtual thread compatibility
+    config.put("useVirtualThreads", Boolean.TRUE.toString());
 
-    serve(mountPoint + "*").with(ExtDirectServlet.class, config);
+    // Use String Template for path pattern
+    serve(STR."{mountPoint}*").with(ExtDirectServlet.class, config);
     bindSecurityFilter();
   }
 

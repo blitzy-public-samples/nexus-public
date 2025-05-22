@@ -13,6 +13,10 @@
 package org.sonatype.nexus.repository.httpbridge.internal.describe;
 
 import java.net.URL;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.ExecutionException;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -25,8 +29,9 @@ import org.sonatype.nexus.common.template.TemplateParameters;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 
-import static java.util.Objects.requireNonNull;
+import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Default {@link DescriptionRenderer}.
@@ -39,6 +44,9 @@ public class DescriptionRendererImpl
     implements DescriptionRenderer
 {
   private static final String TEMPLATE_RESOURCE = "describeHtml.vm";
+  
+  // Threshold for description size to use virtual threads (number of items)
+  private static final int LARGE_DESCRIPTION_THRESHOLD = 100;
 
   private final TemplateHelper templateHelper;
 
@@ -48,11 +56,13 @@ public class DescriptionRendererImpl
 
   @Inject
   public DescriptionRendererImpl(final TemplateHelper templateHelper) {
-    this.templateHelper = requireNonNull(templateHelper, "templateHelper");
-    objectMapper = new ObjectMapper();
-    objectMapper.enable(SerializationFeature.INDENT_OUTPUT);
+    this.templateHelper = checkNotNull(templateHelper);
+    // Use JsonMapper.builder() for Java 21 compatibility
+    objectMapper = JsonMapper.builder()
+        .enable(SerializationFeature.INDENT_OUTPUT)
+        .build();
     template = getClass().getResource(TEMPLATE_RESOURCE);
-    requireNonNull(template, "template resource not found: " + TEMPLATE_RESOURCE);
+    checkNotNull(template);
   }
 
   @Override
@@ -66,11 +76,64 @@ public class DescriptionRendererImpl
 
   @Override
   public String renderJson(final Description description) {
+    // For large descriptions, use virtual threads to avoid blocking platform threads
+    if (description.getItems().size() > LARGE_DESCRIPTION_THRESHOLD) {
+      return renderJsonWithVirtualThread(description);
+    } else {
+      return renderJsonDirectly(description);
+    }
+  }
+  
+  /**
+   * Renders JSON directly on the current thread for smaller descriptions.
+   *
+   * @param description the description to render
+   * @return the JSON string representation
+   */
+  private String renderJsonDirectly(final Description description) {
     try {
       return objectMapper.writeValueAsString(description);
+    } catch (Exception e) {
+      // Using Java 21 pattern matching for exceptions
+      switch (e) {
+        case JsonProcessingException jpe -> {
+          throw new RuntimeException("Error processing JSON: " + jpe.getMessage(), jpe);
+        }
+        case IllegalArgumentException iae -> {
+          throw new RuntimeException("Invalid argument for JSON serialization: " + iae.getMessage(), iae);
+        }
+        default -> {
+          throw new RuntimeException("Unexpected error during JSON serialization", e);
+        }
+      }
     }
-    catch (JsonProcessingException e) {
-      throw new RuntimeException(STR."Error processing JSON: \{e.getMessage()}", e);
+  }
+  
+  /**
+   * Renders JSON using a virtual thread for larger descriptions to avoid blocking platform threads.
+   * This is particularly useful for I/O-bound operations with large data structures.
+   *
+   * @param description the description to render
+   * @return the JSON string representation
+   */
+  private String renderJsonWithVirtualThread(final Description description) {
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      Future<String> future = executor.submit(() -> objectMapper.writeValueAsString(description));
+      return future.get();
+    } catch (Exception e) {
+      // Using Java 21 pattern matching for exceptions
+      switch (e) {
+        case ExecutionException ee when ee.getCause() instanceof JsonProcessingException -> {
+          throw new RuntimeException("Error processing JSON in virtual thread: " + ee.getCause().getMessage(), ee.getCause());
+        }
+        case InterruptedException ie -> {
+          Thread.currentThread().interrupt(); // Preserve interrupt status
+          throw new RuntimeException("JSON rendering interrupted", ie);
+        }
+        default -> {
+          throw new RuntimeException("Unexpected error during JSON serialization in virtual thread", e);
+        }
+      }
     }
   }
 }

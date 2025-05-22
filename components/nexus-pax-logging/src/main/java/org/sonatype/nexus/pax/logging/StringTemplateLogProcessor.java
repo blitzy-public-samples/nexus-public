@@ -12,194 +12,231 @@
  */
 package org.sonatype.nexus.pax.logging;
 
-import java.util.ArrayList;
+import java.lang.StringTemplate;
+import java.lang.StringTemplate.Processor;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
-
-import ch.qos.logback.core.Context;
-import ch.qos.logback.core.spi.ContextAwareBase;
-import ch.qos.logback.core.spi.LifeCycle;
+import java.util.Map;
 
 /**
- * Processor for Java 21 String Templates in log messages.
+ * A processor for Java 21 String Templates (JEP 430) that transforms template expressions
+ * into structured log fields while maintaining human-readable formatting.
  * <p>
- * This class enhances logging by detecting and properly formatting String Template
- * expressions in log messages. It works with both traditional string formatting and
- * the new Java 21 String Template format.
- *
- * @since 3.60.0
+ * This processor extracts template fragments and expressions, produces a formatted message
+ * string for traditional log displays, and builds a structured data map for consumption by
+ * JSON log processors.
+ * <p>
+ * Example usage:
+ * <pre>
+ * // Define the processor
+ * var LOG_STRUCT = StringTemplateLogProcessor.INSTANCE;
+ * 
+ * // Use in logging statements
+ * logger.info(LOG_STRUCT."User \{user.id} performed action \{action} on resource \{resource.id}");
+ * 
+ * // Produces both a human-readable message and structured data with fields:
+ * // - user.id
+ * // - action
+ * // - resource.id
+ * </pre>
+ * 
+ * @since 3.60
  */
-public class StringTemplateLogProcessor
-    extends ContextAwareBase
-    implements LifeCycle
-{
-  private boolean started = false;
-  
+public final class StringTemplateLogProcessor implements Processor<LogTemplateResult, RuntimeException> {
+
   /**
-   * List of registered template processors for different template formats.
+   * Singleton instance of the processor.
    */
-  private final List<TemplateProcessor> templateProcessors = new ArrayList<>();
-  
-  /**
-   * Processes a log message, applying String Template formatting if applicable.
-   *
-   * @param message the original log message
-   * @param args the arguments for the message (if any)
-   * @return the processed message
-   */
-  public String processLogMessage(String message, Object... args) {
-    if (message == null || message.isEmpty()) {
-      return message;
-    }
-    
-    // First check if this is a traditional format string with arguments
-    if (args != null && args.length > 0) {
-      // Handle traditional format string
-      return formatTraditionalMessage(message, args);
-    }
-    
-    // Check if this might be a String Template expression
-    if (message.contains("\\{") || message.contains("STR.")) {
-      // Process as potential String Template
-      return processStringTemplate(message);
-    }
-    
-    // Return original message if no processing needed
-    return message;
+  public static final StringTemplateLogProcessor INSTANCE = new StringTemplateLogProcessor();
+
+  private StringTemplateLogProcessor() {
+    // Singleton
   }
-  
+
   /**
-   * Formats a message using traditional String.format style.
+   * Processes a StringTemplate into a structured log result containing both a formatted message
+   * and a map of extracted fields.
    *
-   * @param message the format string
-   * @param args the arguments
-   * @return the formatted message
+   * @param template the string template to process
+   * @return a LogTemplateResult containing the formatted message and structured data
    */
-  private String formatTraditionalMessage(String message, Object... args) {
-    try {
-      return String.format(message, args);
-    }
-    catch (Exception e) {
-      addWarn("Error formatting log message: " + e.getMessage());
-      return message;
-    }
-  }
-  
-  /**
-   * Processes a potential String Template expression.
-   *
-   * @param message the message potentially containing String Template syntax
-   * @return the processed message
-   */
-  private String processStringTemplate(String message) {
-    // This is a simplified implementation
-    // In a real implementation, we would use Java 21's StringTemplate API
-    // to properly process the template
+  @Override
+  public LogTemplateResult process(StringTemplate template) {
+    StringBuilder message = new StringBuilder();
+    Map<String, Object> structuredData = new LinkedHashMap<>();
     
-    try {
-      // Simple processing of \{...} syntax for Java versions prior to 21
-      StringBuilder result = new StringBuilder();
-      int pos = 0;
-      while (pos < message.length()) {
-        int startIdx = message.indexOf("\\{", pos);
-        if (startIdx == -1) {
-          result.append(message.substring(pos));
-          break;
-        }
-        
-        result.append(message.substring(pos, startIdx));
-        int endIdx = findClosingBrace(message, startIdx + 2);
-        
-        if (endIdx == -1) {
-          // No closing brace found, treat as literal
-          result.append("\\{");
-          pos = startIdx + 2;
-        }
-        else {
-          // Extract expression and evaluate (simplified)
-          String expr = message.substring(startIdx + 2, endIdx).trim();
-          result.append("[" + expr + "]"); // Placeholder for actual evaluation
-          pos = endIdx + 1;
-        }
+    List<String> fragments = template.fragments();
+    List<Object> values = template.values();
+    
+    // Process the template fragments and values
+    Iterator<String> fragmentIterator = fragments.iterator();
+    int valueIndex = 0;
+    
+    // Always start with the first fragment
+    message.append(escapeFragment(fragmentIterator.next()));
+    
+    // Process each value and its corresponding fragment
+    for (Object value : values) {
+      // Extract field name from the template fragment
+      String fieldName = extractFieldName(template, valueIndex);
+      
+      // Add the value to the structured data
+      addToStructuredData(structuredData, fieldName, value);
+      
+      // Append the value to the message
+      message.append(formatValue(value));
+      
+      // Append the next fragment if available
+      if (fragmentIterator.hasNext()) {
+        message.append(escapeFragment(fragmentIterator.next()));
       }
       
-      return result.toString();
+      valueIndex++;
     }
-    catch (Exception e) {
-      addWarn("Error processing String Template: " + e.getMessage());
+    
+    return new LogTemplateResult(message.toString(), structuredData);
+  }
+
+  /**
+   * Extracts the field name from a template expression.
+   * <p>
+   * This attempts to determine the field name by analyzing the template expression.
+   * If the expression is a simple variable reference, that name is used.
+   * For more complex expressions, a best-effort approach is used to extract a meaningful name.
+   *
+   * @param template the string template
+   * @param valueIndex the index of the value in the template
+   * @return the extracted field name
+   */
+  private String extractFieldName(StringTemplate template, int valueIndex) {
+    // Get the fragments surrounding the value
+    List<String> fragments = template.fragments();
+    if (valueIndex >= fragments.size() - 1) {
+      return "field" + valueIndex; // Fallback if we can't determine the name
+    }
+    
+    // Look for the expression in the previous fragment
+    String prevFragment = fragments.get(valueIndex);
+    int exprStart = prevFragment.lastIndexOf("\\{");
+    if (exprStart >= 0) {
+      // Extract the expression name from the fragment
+      String expr = prevFragment.substring(exprStart + 2).trim();
+      
+      // Handle common expression patterns
+      if (expr.contains(".")) {
+        // For expressions like "user.name", use the full path
+        return expr;
+      } else if (expr.contains("[")) {
+        // For array/map access like "users[0]", use the variable name
+        return expr.substring(0, expr.indexOf('['));
+      } else {
+        // For simple variables, use the variable name
+        return expr;
+      }
+    }
+    
+    // Fallback to a generic field name
+    return "field" + valueIndex;
+  }
+
+  /**
+   * Adds a value to the structured data map, handling nested structures.
+   *
+   * @param data the structured data map
+   * @param fieldName the field name
+   * @param value the value to add
+   */
+  @SuppressWarnings("unchecked")
+  private void addToStructuredData(Map<String, Object> data, String fieldName, Object value) {
+    if (fieldName.contains(".")) {
+      // Handle nested fields (e.g., "user.name")
+      String[] parts = fieldName.split("\\.", 2);
+      String rootField = parts[0];
+      String nestedField = parts[1];
+      
+      // Create or get the nested map
+      Map<String, Object> nestedMap = (Map<String, Object>) data.computeIfAbsent(
+          rootField, k -> new LinkedHashMap<String, Object>());
+      
+      // Recursively add to the nested map
+      addToStructuredData(nestedMap, nestedField, value);
+    } else {
+      // Simple field
+      data.put(fieldName, value);
+    }
+  }
+
+  /**
+   * Formats a value for inclusion in the log message.
+   *
+   * @param value the value to format
+   * @return the formatted string representation
+   */
+  private String formatValue(Object value) {
+    if (value == null) {
+      return "null";
+    } else if (value instanceof String) {
+      return (String) value;
+    } else if (value instanceof LogTemplateResult) {
+      // Handle nested template results
+      return ((LogTemplateResult) value).getMessage();
+    } else {
+      return String.valueOf(value);
+    }
+  }
+
+  /**
+   * Escapes special characters in template fragments for safe logging.
+   *
+   * @param fragment the template fragment
+   * @return the escaped fragment
+   */
+  private String escapeFragment(String fragment) {
+    // Replace any remaining template expression markers
+    return fragment.replace("\\{", "{");
+  }
+
+  /**
+   * Result class that holds both the formatted message and structured data.
+   */
+  public static final class LogTemplateResult {
+    private final String message;
+    private final Map<String, Object> data;
+
+    /**
+     * Creates a new log template result.
+     *
+     * @param message the formatted message
+     * @param data the structured data
+     */
+    public LogTemplateResult(String message, Map<String, Object> data) {
+      this.message = message;
+      this.data = new HashMap<>(data);
+    }
+
+    /**
+     * Gets the formatted message.
+     *
+     * @return the message
+     */
+    public String getMessage() {
       return message;
     }
-  }
-  
-  /**
-   * Finds the matching closing brace for a template expression.
-   *
-   * @param message the message containing the expression
-   * @param startPos the position after the opening brace
-   * @return the position of the closing brace or -1 if not found
-   */
-  private int findClosingBrace(String message, int startPos) {
-    int braceCount = 1;
-    for (int i = startPos; i < message.length(); i++) {
-      char c = message.charAt(i);
-      if (c == '{') {
-        braceCount++;
-      }
-      else if (c == '}') {
-        braceCount--;
-        if (braceCount == 0) {
-          return i;
-        }
-      }
-    }
-    return -1; // No matching closing brace
-  }
-  
-  /**
-   * Interface for template processors that handle different template formats.
-   */
-  private interface TemplateProcessor {
+
     /**
-     * Checks if this processor can handle the given message.
+     * Gets the structured data.
      *
-     * @param message the message to check
-     * @return true if this processor can handle the message
+     * @return the data
      */
-    boolean canProcess(String message);
-    
-    /**
-     * Processes the template message.
-     *
-     * @param message the template message
-     * @return the processed message
-     */
-    String process(String message);
-  }
-  
-  @Override
-  public void start() {
-    if (started) {
-      return;
+    public Map<String, Object> getData() {
+      return data;
     }
-    
-    // Initialize template processors
-    // In a real implementation, we would add processors for different template formats
-    
-    started = true;
-  }
-  
-  @Override
-  public void stop() {
-    started = false;
-    templateProcessors.clear();
-  }
-  
-  @Override
-  public boolean isStarted() {
-    return started;
-  }
-  
-  @Override
-  public void setContext(Context context) {
-    super.setContext(context);
+
+    @Override
+    public String toString() {
+      return message;
+    }
   }
 }

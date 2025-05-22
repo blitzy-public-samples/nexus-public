@@ -13,6 +13,8 @@
 package org.sonatype.nexus.script.plugin.internal.rest;
 
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
@@ -24,6 +26,8 @@ import org.sonatype.nexus.security.internal.rest.SecurityApiResourceV1;
 import org.sonatype.nexus.security.privilege.PrivilegeDescriptor;
 
 /**
+ * Script privilege API resource for RESTEasy 6.2.7.Final with Java 21 Virtual Threads support.
+ * 
  * @since 3.26
  */
 @Named
@@ -33,6 +37,11 @@ public class ScriptPrivilegeApiResourceV1
     extends ScriptPrivilegeApiResource
 {
   static final String RESOURCE_URI = SecurityApiResourceV1.V1_RESOURCE_URI + "privileges";
+  
+  /**
+   * Virtual thread executor for handling I/O-bound privilege operations.
+   */
+  private final ExecutorService virtualThreadExecutor;
 
   @Inject
   public ScriptPrivilegeApiResourceV1(
@@ -40,5 +49,16 @@ public class ScriptPrivilegeApiResourceV1
       final Map<String, PrivilegeDescriptor> privilegeDescriptors)
   {
     super(securitySystem, privilegeDescriptors);
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+  }
+  
+  /**
+   * Get the virtual thread executor for privilege operations.
+   * 
+   * @return the virtual thread executor
+   */
+  @Override
+  protected ExecutorService getExecutorService() {
+    return virtualThreadExecutor;
   }
 }

@@ -14,26 +14,32 @@ package org.sonatype.nexus.datastore.mybatis;
 
 import java.sql.SQLException;
 
-import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.app.FrozenException;
 import org.sonatype.nexus.datastore.api.DuplicateKeyException;
 import org.sonatype.nexus.datastore.api.SerializedAccessException;
+import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
 
 import org.apache.ibatis.executor.Executor;
 import org.apache.ibatis.mapping.MappedStatement;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.Assert.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * Tests for {@link EntityExecutor}.
+ */
+@ExtendWith(MockitoExtension.class)
+@VirtualThreadTestGroup
 public class EntityExecutorTest
-    extends TestSupport
 {
   @Mock
   private Executor delegate;
@@ -43,13 +49,13 @@ public class EntityExecutorTest
 
   private EntityExecutor underTest;
 
-  @Before
-  public void setup() {
+  @BeforeEach
+  void setup() {
     underTest = new EntityExecutor(delegate, frozenChecker);
   }
 
   @Test
-  public void testCommit() throws SQLException {
+  void shouldCommitSuccessfully() throws SQLException {
     underTest.commit(true);
     verify(delegate).commit(true);
 
@@ -60,7 +66,7 @@ public class EntityExecutorTest
   }
 
   @Test
-  public void testFlushStatements() throws SQLException {
+  void shouldFlushStatementsSuccessfully() throws SQLException {
     underTest.flushStatements();
     verify(delegate).flushStatements();
 
@@ -71,7 +77,7 @@ public class EntityExecutorTest
   }
 
   @Test
-  public void testQuery_4arg() throws SQLException {
+  void shouldQueryWith4ArgsSuccessfully() throws SQLException {
     underTest.query(null, null, null, null);
     verify(delegate).query(null, null, null, null);
 
@@ -82,7 +88,7 @@ public class EntityExecutorTest
   }
 
   @Test
-  public void testQuery_6arg() throws SQLException {
+  void shouldQueryWith6ArgsSuccessfully() throws SQLException {
     underTest.query(null, null, null, null, null, null);
     verify(delegate).query(null, null, null, null, null, null);
 
@@ -93,7 +99,7 @@ public class EntityExecutorTest
   }
 
   @Test
-  public void testQueryCursor() throws SQLException {
+  void shouldQueryCursorSuccessfully() throws SQLException {
     underTest.queryCursor(null, null, null);
     verify(delegate).queryCursor(null, null, null);
 
@@ -104,7 +110,7 @@ public class EntityExecutorTest
   }
 
   @Test
-  public void testRollback() throws SQLException {
+  void shouldRollbackSuccessfully() throws SQLException {
     underTest.rollback(true);
     verify(delegate).rollback(true);
 
@@ -115,7 +121,7 @@ public class EntityExecutorTest
   }
 
   @Test
-  public void testUpdate() throws SQLException {
+  void shouldUpdateSuccessfully() throws SQLException {
     MappedStatement ms = mock(MappedStatement.class);
     underTest.update(ms, null);
     verify(delegate).update(ms, null);
@@ -127,12 +133,31 @@ public class EntityExecutorTest
   }
 
   @Test
-  public void testUpdate_frozen() throws SQLException {
+  void shouldNotUpdateWhenFrozen() throws SQLException {
     MappedStatement ms = mock(MappedStatement.class);
     doThrow(new FrozenException("Frozen")).when(frozenChecker).checkFrozen(ms);
 
     assertThrows(FrozenException.class, () -> underTest.update(ms, null));
     verify(delegate, never()).update(ms, null);
+  }
+  
+  @Test
+  void shouldWorkWithVirtualThreads() throws SQLException {
+    // Create a virtual thread to test EntityExecutor behavior
+    Thread.ofVirtual().name("virtual-thread-test").start(() -> {
+      try {
+        // Verify that operations work correctly in a virtual thread
+        underTest.commit(true);
+        verify(delegate).commit(true);
+        
+        // Test exception handling in virtual threads
+        doThrow(duplicateKeyException()).when(delegate).commit(true);
+        assertThrows(DuplicateKeyException.class, () -> underTest.commit(true));
+      }
+      catch (SQLException e) {
+        throw new RuntimeException(e);
+      }
+    }).join();
   }
 
   private static SQLException duplicateKeyException() {

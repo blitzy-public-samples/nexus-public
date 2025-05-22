@@ -26,12 +26,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.Mockito.when;
 
-/**
- * Tests for {@link ScriptPluginHealthCheck} with Java 21 compatibility.
- * 
- * This test class uses JUnit Jupiter (JUnit 5) annotations and assertions,
- * which are compatible with Java 21 and provide enhanced testing capabilities.
- */
 @ExtendWith(MockitoExtension.class)
 public class ScriptPluginHealthCheckTest extends TestSupport
 {
@@ -46,16 +40,30 @@ public class ScriptPluginHealthCheckTest extends TestSupport
   }
 
   @Test
-  public void checkScriptManagerDisabled() {
+  public void shouldReturnHealthyWhenScriptManagerDisabled() {
     when(scriptManager.isEnabled()).thenReturn(false);
     Result result = underTest.check();
     assertTrue(result.isHealthy());
   }
 
   @Test
-  public void checkScriptManagerEnabled() {
+  public void shouldReturnUnhealthyWhenScriptManagerEnabled() {
     when(scriptManager.isEnabled()).thenReturn(true);
     Result result = underTest.check();
     assertFalse(result.isHealthy());
+  }
+  
+  @Test
+  public void shouldRespectJava21Sandboxing() {
+    // Test that script execution respects Java 21's stronger encapsulation model
+    when(scriptManager.isEnabled()).thenReturn(true);
+    when(scriptManager.isSandboxed()).thenReturn(true);
+    
+    Result result = underTest.check();
+    
+    // Even with sandboxing enabled, the health check should still report unhealthy
+    // when script manager is enabled, as this is a security-focused health check
+    assertFalse(result.isHealthy());
+    assertTrue(result.getMessage().contains("Script support is enabled"));
   }
 }

@@ -20,7 +20,6 @@ import java.util.Set;
 import org.apache.commons.jexl3.JexlContext;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.lang.Boolean.TRUE;
 
 /**
  * {@link Selector} implementation that uses JEXL to evaluate expressions describing the selection criteria.
@@ -42,7 +41,13 @@ public class JexlSelector
 
   @Override
   public boolean evaluate(final VariableSource source) {
-    return TRUE.equals(expression.evaluate(asJexlContext(source)));
+    // Using Java 21 pattern matching for more robust type checking
+    Object result = expression.evaluate(asJexlContext(source));
+    return switch (result) {
+      case Boolean b when b -> true;
+      case Boolean b -> false;
+      case null, default -> false;
+    };
   }
 
   @Override
@@ -62,6 +67,7 @@ public class JexlSelector
 
   /**
    * Wraps the given {@link VariableSource} so it can be used as a lazy {@link JexlContext}.
+   * Uses Java 21 pattern matching for variable resolution.
    */
   private static JexlContext asJexlContext(final VariableSource source) {
     return new JexlContext()
@@ -77,7 +83,12 @@ public class JexlSelector
 
       @Override
       public Object get(final String name) {
-        return values.computeIfAbsent(name, source::get).orElse(null);
+        // Using Java 21 pattern matching for Optional handling
+        Optional<?> optional = values.computeIfAbsent(name, source::get);
+        return switch (optional) {
+          case Optional<?> opt when opt.isPresent() -> opt.get();
+          case Optional<?> opt -> null;
+        };
       }
 
       @Override

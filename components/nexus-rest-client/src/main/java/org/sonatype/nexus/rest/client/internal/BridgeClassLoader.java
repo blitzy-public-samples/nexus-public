@@ -16,6 +16,9 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * ClassLoader which bridges two classloaders into a single classloader view.
+ * 
+ * This implementation follows the recommended ClassLoader delegation pattern by overriding
+ * findClass rather than loadClass, ensuring compatibility with Java 21 class loading mechanisms.
  *
  * @since 3.2.1
  */

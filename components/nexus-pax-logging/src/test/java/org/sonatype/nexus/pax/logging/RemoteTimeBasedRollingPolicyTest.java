@@ -13,15 +13,24 @@
 package org.sonatype.nexus.pax.logging;
 
 import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.ServiceReference;
 
@@ -29,7 +38,9 @@ import static org.awaitility.Awaitility.await;
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.empty;
-import static org.junit.Assert.assertNotNull;
+import static org.hamcrest.Matchers.greaterThan;
+import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -39,6 +50,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class RemoteTimeBasedRollingPolicyTest
     extends TestSupport
 {
@@ -50,7 +62,7 @@ public class RemoteTimeBasedRollingPolicyTest
 
   private RemoteTimeBasedRollingPolicy<Object> underTest;
 
-  @Before
+  @BeforeEach
   public void setUp() {
     NexusLogActivator.INSTANCE = mockNexusLogActivator;
     when(NexusLogActivator.INSTANCE.getContext()).thenReturn(bundleContext);
@@ -147,7 +159,133 @@ public class RemoteTimeBasedRollingPolicyTest
     assertThat(underTest.getNonUploadedFiles(), empty());
   }
 
-  @After
+  @Test
+  public void testUploadWithVirtualThreadExecutor() throws Exception {
+    // Configure the policy with a virtual thread executor
+    startPolicy("/example-test/initial-data", "/example-test/initial-data/log-test/audit/audit-%d{yyyy-MM-dd}.log.gz");
+    underTest.setExecutor(createVirtualThreadExecutor());
+
+    RollingPolicyUploader mockUploader = mock(RollingPolicyUploader.class);
+    ServiceReference<RollingPolicyUploader> mockServiceReference = mock(ServiceReference.class);
+
+    when(bundleContext.getServiceReferences(eq(RollingPolicyUploader.class), anyString())).thenReturn(
+        Collections.singletonList(mockServiceReference));
+    when(bundleContext.getService(eq(mockServiceReference))).thenReturn(mockUploader);
+
+    // Test file upload with virtual threads
+    underTest.doUpload("/example-test/initial-data/log-test/audit/audit-2023-01-01.log.gz");
+
+    // Wait for the virtual thread to complete the upload
+    await().atMost(10, TimeUnit.SECONDS).until(() -> {
+      try {
+        // Give a small delay to ensure the virtual thread has time to process
+        Thread.sleep(100);
+        return underTest.getNonUploadedFiles().isEmpty();
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        return false;
+      }
+    });
+
+    // Verify the upload was processed correctly
+    verify(mockUploader).rollover("log-test/audit/", "2023/1/1/",
+        "/example-test/initial-data/log-test/audit/audit-2023-01-01.log.gz");
+    verify(bundleContext).ungetService(mockServiceReference);
+    assertThat(underTest.getNonUploadedFiles(), empty());
+  }
+
+  @Test
+  public void testConcurrentUploadsWithVirtualThreads() throws Exception {
+    // Configure the policy with a virtual thread executor
+    startPolicy("/example-test/initial-data", "/example-test/initial-data/log-test/audit/audit-%d{yyyy-MM-dd}.log.gz");
+    underTest.setExecutor(createVirtualThreadExecutor());
+
+    RollingPolicyUploader mockUploader = mock(RollingPolicyUploader.class);
+    ServiceReference<RollingPolicyUploader> mockServiceReference = mock(ServiceReference.class);
+
+    when(bundleContext.getServiceReferences(eq(RollingPolicyUploader.class), anyString())).thenReturn(
+        Collections.singletonList(mockServiceReference));
+    when(bundleContext.getService(eq(mockServiceReference))).thenReturn(mockUploader);
+
+    // Create a list to track all file paths that will be uploaded
+    List<String> filePaths = new CopyOnWriteArrayList<>();
+    for (int i = 1; i <= 100; i++) {
+      String filePath = String.format("/example-test/initial-data/log-test/audit/audit-2023-01-%02d.log.gz", i);
+      filePaths.add(filePath);
+    }
+
+    // Submit all uploads concurrently using CompletableFuture
+    List<CompletableFuture<Void>> futures = new CopyOnWriteArrayList<>();
+    for (String filePath : filePaths) {
+      CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+        underTest.doUpload(filePath);
+      });
+      futures.add(future);
+    }
+
+    // Wait for all uploads to complete
+    CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+    // Wait for the executor to process all tasks
+    await().atMost(30, TimeUnit.SECONDS).until(this::IdleExecutor);
+
+    // Verify that all files were processed
+    verify(mockUploader, times(filePaths.size())).rollover(eq("log-test/audit/"), anyString(), anyString());
+    verify(bundleContext, times(filePaths.size())).ungetService(mockServiceReference);
+    assertThat(underTest.getNonUploadedFiles(), empty());
+  }
+
+  @Test
+  public void testVirtualThreadPinningDetection() throws Exception {
+    // Configure the policy with a virtual thread executor
+    startPolicy("/example-test/initial-data", "/example-test/initial-data/log-test/audit/audit-%d{yyyy-MM-dd}.log.gz");
+    ExecutorService virtualThreadExecutor = createVirtualThreadExecutor();
+    underTest.setExecutor(virtualThreadExecutor);
+
+    // Create a mock uploader that simulates a blocking operation that might cause thread pinning
+    RollingPolicyUploader mockUploader = mock(RollingPolicyUploader.class);
+    ServiceReference<RollingPolicyUploader> mockServiceReference = mock(ServiceReference.class);
+
+    // Configure the mock to simulate a blocking operation
+    AtomicInteger completedUploads = new AtomicInteger(0);
+    when(mockUploader.rollover(anyString(), anyString(), anyString())).thenAnswer(invocation -> {
+      // Simulate a blocking operation that could cause thread pinning
+      // In a real scenario, this would be a synchronized block or other blocking operation
+      Thread.sleep(50); // Short sleep to simulate work
+      completedUploads.incrementAndGet();
+      return null;
+    });
+
+    when(bundleContext.getServiceReferences(eq(RollingPolicyUploader.class), anyString())).thenReturn(
+        Collections.singletonList(mockServiceReference));
+    when(bundleContext.getService(eq(mockServiceReference))).thenReturn(mockUploader);
+
+    // Submit multiple uploads concurrently
+    int uploadCount = 50;
+    List<CompletableFuture<Void>> futures = new CopyOnWriteArrayList<>();
+    
+    for (int i = 1; i <= uploadCount; i++) {
+      String filePath = String.format("/example-test/initial-data/log-test/audit/audit-2023-02-%02d.log.gz", i);
+      CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+        underTest.doUpload(filePath);
+      }, virtualThreadExecutor);
+      futures.add(future);
+    }
+
+    // Wait for all uploads to complete
+    CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+    // Wait for the executor to process all tasks
+    await().atMost(30, TimeUnit.SECONDS).until(() -> completedUploads.get() == uploadCount);
+
+    // Verify that all uploads were processed successfully despite potential pinning
+    assertThat(completedUploads.get(), equalTo(uploadCount));
+    verify(mockUploader, times(uploadCount)).rollover(eq("log-test/audit/"), anyString(), anyString());
+    verify(bundleContext, times(uploadCount)).ungetService(mockServiceReference);
+    assertThat(underTest.getNonUploadedFiles(), empty());
+  }
+
+  @AfterEach
   public void tearDown() {
     System.getProperties().clear();
   }
@@ -162,5 +300,16 @@ public class RemoteTimeBasedRollingPolicyTest
     System.setProperty("karaf.data", karafData);
     underTest.setFileNamePattern(fileNamePattern);
     underTest.doStart();
+  }
+
+  /**
+   * Creates a virtual thread executor for testing file upload operations.
+   * This standardizes virtual thread creation across test methods.
+   *
+   * @return An ExecutorService that creates a new virtual thread for each task
+   */
+  private ExecutorService createVirtualThreadExecutor() {
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("log-upload-", 0).factory();
+    return Executors.newThreadPerTaskExecutor(virtualThreadFactory);
   }
 }

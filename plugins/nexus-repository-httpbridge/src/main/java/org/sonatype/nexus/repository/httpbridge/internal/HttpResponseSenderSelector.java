@@ -14,19 +14,24 @@ package org.sonatype.nexus.repository.httpbridge.internal;
 
 import java.util.Map;
 
-import jakarta.annotation.Nonnull;
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
+import javax.annotation.Nonnull;
+import javax.inject.Inject;
+import javax.inject.Named;
+import javax.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.httpbridge.HttpResponseSender;
 
-import static java.util.Objects.requireNonNull;
+import static com.google.common.base.Preconditions.checkNotNull;
+import static java.util.Map.copyOf;
 
 /**
  * Response sender selector.
+ * <p>
+ * This class is thread-safe and optimized for use in a Java 21 Virtual Thread environment.
+ * It uses an immutable map for response senders to ensure thread safety without synchronization
+ * overhead, making it suitable for high-concurrency scenarios with Virtual Threads.
  *
  * @since 3.0
  */
@@ -35,6 +40,11 @@ import static java.util.Objects.requireNonNull;
 class HttpResponseSenderSelector
     extends ComponentSupport
 {
+  /**
+   * Immutable map of format-specific response senders.
+   * Using an immutable copy ensures thread safety in a Virtual Thread environment
+   * without requiring explicit synchronization during read operations.
+   */
   private final Map<String, HttpResponseSender> responseSenders;
 
   private final DefaultHttpResponseSender defaultHttpResponseSender;
@@ -43,12 +53,19 @@ class HttpResponseSenderSelector
   public HttpResponseSenderSelector(final Map<String, HttpResponseSender> responseSenders,
                                     final DefaultHttpResponseSender defaultHttpResponseSender)
   {
-    this.responseSenders = requireNonNull(responseSenders, "responseSenders");
-    this.defaultHttpResponseSender = requireNonNull(defaultHttpResponseSender, "defaultHttpResponseSender");
+    checkNotNull(responseSenders);
+    checkNotNull(defaultHttpResponseSender);
+    
+    // Create an immutable copy of the map to ensure thread safety
+    this.responseSenders = copyOf(responseSenders);
+    this.defaultHttpResponseSender = defaultHttpResponseSender;
+    
+    log.debug("Initialized HttpResponseSenderSelector with {} format-specific senders", this.responseSenders.size());
   }
 
   /**
    * Returns the default sender.
+   * This method is thread-safe and can be called from multiple Virtual Threads concurrently.
    */
   @Nonnull
   public HttpResponseSender defaultSender() {
@@ -57,24 +74,41 @@ class HttpResponseSenderSelector
 
   /**
    * Find sender for repository format.
-   *
+   * <p>
    * If no format-specific sender is configured, the default is used.
+   * <p>
+   * This method is thread-safe and optimized for concurrent access from Virtual Threads.
+   * It uses an immutable map to avoid synchronization overhead during lookups.
+   *
+   * @param repository The repository to find a sender for
+   * @return The appropriate HttpResponseSender for the repository format
    */
   @Nonnull
   public HttpResponseSender sender(final Repository repository) {
     String format = repository.getFormat().getValue();
-    log.debug("Looking for HTTP response sender: {}", format);
+    boolean isVirtualThread = Thread.currentThread().isVirtual();
     
-    // Using pattern matching with switch expression for cleaner code
-    return switch (responseSenders.get(format)) {
-      case HttpResponseSender sender when sender != null -> {
-        log.trace("Found format-specific sender for: {}", format);
-        yield sender;
+    if (isVirtualThread) {
+      log.debug("Virtual Thread [{}] looking for HTTP response sender: {}", 
+          Thread.currentThread().threadId(), format);
+    } else {
+      log.debug("Platform Thread [{}] looking for HTTP response sender: {}", 
+          Thread.currentThread().threadId(), format);
+    }
+    
+    HttpResponseSender sender = responseSenders.get(format);
+    if (sender == null) {
+      if (isVirtualThread) {
+        log.debug("Virtual Thread [{}] using default HTTP response sender for format: {}", 
+            Thread.currentThread().threadId(), format);
       }
-      case null -> {
-        log.trace("No format-specific sender found for: {}, using default", format);
-        yield defaultHttpResponseSender;
-      }
-    };
+      return defaultHttpResponseSender;
+    }
+    
+    if (isVirtualThread) {
+      log.debug("Virtual Thread [{}] using format-specific HTTP response sender: {}", 
+          Thread.currentThread().threadId(), format);
+    }
+    return sender;
   }
 }

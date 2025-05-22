@@ -1,0 +1,80 @@
+<!-- 
+  Test resource for Java 21 pattern matching with Maven profiles
+  This file contains various profile types to test Java 21's pattern matching capabilities
+  when processing Maven POM profiles. Each profile has a different structure to exercise
+  different pattern matching scenarios.
+-->
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>org.sonatype.nexus.test</groupId>
+  <artifactId>pattern-matching-test</artifactId>
+  <version>1.0.0-SNAPSHOT</version>
+  
+  <profiles>
+    <!-- OS activation profile -->
+    <profile>
+      <id>os-profile</id>
+      <activation>
+        <os>
+          <family>unix</family>
+        </os>
+      </activation>
+      <properties>
+        <os.detected>unix</os.detected>
+      </properties>
+    </profile>
+    
+    <!-- JDK activation profile -->
+    <profile>
+      <id>jdk-profile</id>
+      <activation>
+        <jdk>21</jdk>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-compiler-plugin</artifactId>
+            <version>3.11.0</version>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+    
+    <!-- Property activation profile -->
+    <profile>
+      <id>property-profile</id>
+      <activation>
+        <property>
+          <name>test.property</name>
+        </property>
+      </activation>
+      <dependencies>
+        <dependency>
+          <groupId>junit</groupId>
+          <artifactId>junit</artifactId>
+          <version>4.13.2</version>
+        </dependency>
+      </dependencies>
+    </profile>
+    
+    <!-- Repository profile -->
+    <profile>
+      <id>repo-profile</id>
+      <repositories>
+        <repository>
+          <id>central</id>
+          <url>https://repo.maven.apache.org/maven2</url>
+        </repository>
+      </repositories>
+    </profile>
+    
+    <!-- Module profile -->
+    <profile>
+      <id>module-profile</id>
+      <modules>
+        <module>module-a</module>
+      </modules>
+    </profile>
+  </profiles>
+</project>

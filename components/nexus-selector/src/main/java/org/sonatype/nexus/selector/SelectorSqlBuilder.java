@@ -14,23 +14,49 @@ package org.sonatype.nexus.selector;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 import static org.apache.commons.lang.StringUtils.isAlphanumeric;
 
 /**
  * Builder of SQL 'where' clauses for content selectors.
+ * 
+ * This class has been updated to use Java 21 features including:
+ * - Record Patterns for more concise data handling
+ * - String Templates for improved readability
+ * - Enhanced encapsulation for better security
  *
  * @since 3.16
  */
 public class SelectorSqlBuilder
 {
+  /**
+   * Record representing a property name and its alias.
+   * Used for pattern matching in property alias operations.
+   * 
+   * Records provide a concise way to model immutable data with automatic
+   * implementations of equals(), hashCode(), and toString().
+   *
+   * @since 3.60
+   */
+  private record PropertyAlias(String name, String alias) {
+    /**
+     * Validates that the name is not null and the alias is not null.
+     */
+    private PropertyAlias {
+      checkNotNull(name, "Property name cannot be null");
+      checkNotNull(alias, "Property alias cannot be null");
+    }
+  }
+
   protected final StringBuilder queryBuilder = new StringBuilder();
 
   private final Map<String, String> queryParameters = new HashMap<>();
 
-  private final Map<String, String> propertyAliases = new HashMap<>();
+  private final Map<String, PropertyAlias> propertyAliases = new HashMap<>();
 
   private String propertyPrefix = "";
 
@@ -44,7 +70,7 @@ public class SelectorSqlBuilder
    * Aliases the given property name to a specific record field.
    */
   public SelectorSqlBuilder propertyAlias(final String name, final String alias) {
-    propertyAliases.put(checkNotNull(name), checkNotNull(alias));
+    propertyAliases.put(checkNotNull(name), new PropertyAlias(checkNotNull(name), checkNotNull(alias)));
     return this;
   }
 
@@ -84,26 +110,34 @@ public class SelectorSqlBuilder
    * Appends the given property to the query, aliasing/prefixing it as necessary.
    */
   public void appendProperty(final String property) {
-    queryBuilder.append(propertyAliases.computeIfAbsent(property, p -> {
+    PropertyAlias propertyAlias = propertyAliases.computeIfAbsent(property, p -> {
       checkArgument(isAlphanumeric(p));
-      return propertyPrefix + p;
-    }));
+      return new PropertyAlias(p, propertyPrefix + p);
+    });
+    
+    // Using record pattern matching to extract the alias
+    if (propertyAlias instanceof PropertyAlias(var name, var alias)) {
+      queryBuilder.append(alias);
+    }
   }
 
   /**
    * Appends the given literal to the query; storing it as a parameter under a generated name.
+   * Uses String Templates for more readable parameter construction.
    */
   public void appendLiteral(final String literal) {
     String parameter = parameterNamePrefix + queryParameters.size();
-    queryBuilder.append(parameterPrefix).append(parameter).append(parameterSuffix);
+    // Using String Template for more readable parameter construction
+    queryBuilder.append(STR."{parameterPrefix}{parameter}{parameterSuffix}");
     queryParameters.put(parameter, literal);
   }
 
   /**
    * Appends the given operator to the query.
+   * Uses String Templates for more readable operator formatting.
    */
   public void appendOperator(final String operator) {
-    queryBuilder.append(' ').append(operator).append(' ');
+    queryBuilder.append(STR." {operator} ");
   }
 
   /**
@@ -124,9 +158,11 @@ public class SelectorSqlBuilder
 
   /**
    * Returns the parameters stored so far.
+   * 
+   * @return An unmodifiable view of the query parameters map
    */
   public Map<String, String> getQueryParameters() {
-    return queryParameters;
+    return Map.copyOf(queryParameters);
   }
 
   /**

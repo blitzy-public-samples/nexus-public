@@ -13,6 +13,10 @@
 package com.sonatype.nexus.ssl.plugin.validator;
 
 import java.security.cert.CertificateException;
+import java.security.cert.CertificateParsingException;
+import java.security.cert.CertificateExpiredException;
+import java.security.cert.CertificateNotYetValidException;
+import java.security.cert.CertificateEncodingException;
 
 import javax.validation.ConstraintValidatorContext;
 
@@ -21,42 +25,51 @@ import org.sonatype.nexus.validation.ConstraintValidatorSupport;
 
 /**
  * {@link PemCertificate} validator.
- * 
- * This validator checks if a string contains a valid PEM-formatted certificate
- * by attempting to decode it using {@link CertificateUtil#decodePEMFormattedCertificate}.
  *
  * @since 3.0
- * @see CertificateUtil#decodePEMFormattedCertificate(String)
  */
 public class PemCertificateValidator
     extends ConstraintValidatorSupport<PemCertificate, String>
 {
-  /**
-   * Validates if the provided string value is a valid PEM-formatted certificate.
-   *
-   * @param value   the string to validate as a PEM certificate
-   * @param context the constraint validator context
-   * @return true if the string is a valid PEM certificate, false otherwise
-   */
   @Override
   public boolean isValid(final String value, final ConstraintValidatorContext context) {
-    if (value == null || value.isBlank()) {
-      return false;
-    }
-    
     try {
       CertificateUtil.decodePEMFormattedCertificate(value);
       return true;
     }
     catch (CertificateException e) {
-      // Using Java 21 pattern matching for exception handling
-      return switch (e) {
-        case java.security.cert.CertificateParsingException cpe -> {
-          // Log more specific information about parsing failures if needed
-          yield false;
+      // Disable the default constraint violation message
+      context.disableDefaultConstraintViolation();
+      
+      // Use pattern matching for switch to handle different types of certificate exceptions
+      switch (e) {
+        case CertificateParsingException pe -> {
+          String message = "Invalid certificate format: The certificate could not be parsed correctly. " + 
+                          "Please ensure it is a valid X.509 certificate in PEM format. Details: " + pe.getMessage();
+          context.buildConstraintViolationWithTemplate(message).addConstraintViolation();
         }
-        default -> false;
-      };
+        case CertificateExpiredException ee -> {
+          String message = "Certificate has expired: The certificate is no longer valid as its expiration date has passed. " + 
+                          "Please provide a certificate with a valid date range. Details: " + ee.getMessage();
+          context.buildConstraintViolationWithTemplate(message).addConstraintViolation();
+        }
+        case CertificateNotYetValidException nve -> {
+          String message = "Certificate is not yet valid: The certificate's validity period has not started. " + 
+                          "Please check the 'Not Before' date of the certificate. Details: " + nve.getMessage();
+          context.buildConstraintViolationWithTemplate(message).addConstraintViolation();
+        }
+        case CertificateEncodingException cee -> {
+          String message = "Certificate encoding error: There was a problem with the certificate's encoding. " + 
+                          "This may indicate corruption or an unsupported format. Details: " + cee.getMessage();
+          context.buildConstraintViolationWithTemplate(message).addConstraintViolation();
+        }
+        default -> {
+          String message = "Invalid certificate: The certificate could not be validated. " + 
+                          "Please ensure you are providing a valid X.509 certificate in PEM format. Details: " + e.getMessage();
+          context.buildConstraintViolationWithTemplate(message).addConstraintViolation();
+        }
+      }
+      return false;
     }
   }
 }

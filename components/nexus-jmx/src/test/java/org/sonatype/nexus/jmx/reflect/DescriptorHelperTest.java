@@ -18,15 +18,20 @@ import java.util.List;
 import javax.management.Descriptor;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
 import org.hamcrest.CustomTypeSafeMatcher;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.hasItem;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
+@ExtendWith(MockitoExtension.class)
+@org.junit.experimental.categories.Category(Java21TestGroup.class)
 public class DescriptorHelperTest
     extends TestSupport
 {
@@ -47,7 +52,7 @@ public class DescriptorHelperTest
   }
 
   @Test
-  public void findsAnnotations() {
+  void findsAnnotations() {
     TestBean bean = new TestBean();
     List<Annotation> annotations = DescriptorHelper.findAllAnnotations(bean.getClass().getAnnotations());
 
@@ -56,7 +61,7 @@ public class DescriptorHelperTest
   }
 
   @Test
-  public void buildDescriptorFromType() {
+  void buildDescriptorFromType() {
     TestBean bean = new TestBean();
     Descriptor descriptor = DescriptorHelper.build(bean.getClass());
 
@@ -66,7 +71,7 @@ public class DescriptorHelperTest
   }
 
   @Test
-  public void buildDescriptorFromMethod() throws NoSuchMethodException {
+  void buildDescriptorFromMethod() throws NoSuchMethodException {
     Method method = TestBean.class.getMethod("foo");
     Descriptor descriptor = DescriptorHelper.build(method);
 
@@ -76,7 +81,7 @@ public class DescriptorHelperTest
   }
 
   @Test
-  public void buildDescriptorFailsDueToInvalid() throws NoSuchMethodException {
+  void buildDescriptorFailsDueToInvalid() throws NoSuchMethodException {
     Method method = TestBean.class.getMethod("invalid1");
     assertThrows(DescriptorHelper.InvalidDescriptorKeyException.class, () -> DescriptorHelper.build(method));
   }

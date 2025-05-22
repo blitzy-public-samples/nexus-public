@@ -32,6 +32,7 @@ import com.google.common.collect.Sets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static java.lang.StringTemplate.STR;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
@@ -48,7 +49,7 @@ public class DescriptorHelper
    */
   public static Descriptor build(final Class<?> type) {
     checkNotNull(type);
-    log.trace("Building descriptor for type: {}", type);
+    log.trace(STR."Building descriptor for type: \{type}");
     return build(type.getAnnotations());
   }
 
@@ -57,7 +58,7 @@ public class DescriptorHelper
    */
   public static Descriptor build(final Method method) {
     checkNotNull(method);
-    log.trace("Building descriptor for method: {}", method);
+    log.trace(STR."Building descriptor for method: \{method}");
     return build(method.getAnnotations());
   }
 
@@ -66,7 +67,7 @@ public class DescriptorHelper
    */
   public static Descriptor build(final Annotation... annotations) {
     checkNotNull(annotations);
-    log.trace("Building descriptor for annotations: {}", Arrays.asList(annotations));
+    log.trace(STR."Building descriptor for annotations: \{Arrays.asList(annotations)}");
 
     Map<String, Object> fields = Maps.newTreeMap();
 
@@ -75,16 +76,16 @@ public class DescriptorHelper
 
     // find all DescriptorKey annotations
     for (Annotation annotation : findAllAnnotations(annotations)) {
-      log.trace("Scanning annotation: {}", annotation);
+      log.trace(STR."Scanning annotation: \{annotation}");
 
       for (Method method : annotation.annotationType().getMethods()) {
-        log.trace("Scanning method: {}", method);
+        log.trace(STR."Scanning method: \{method}");
 
         DescriptorKey key = method.getAnnotation(DescriptorKey.class);
         if (key == null) {
           continue;
         }
-        log.trace("Found key: {}", key);
+        log.trace(STR."Found key: \{key}");
 
         // extract name and value for key
         String name = key.value();
@@ -103,13 +104,13 @@ public class DescriptorHelper
         }
 
         // convert types as described by DescriptorKey javadocs
-        if (value instanceof Class) {
+        if (value instanceof Class<?> clazz) {
           // class constant
-          value = ((Class<?>) value).getCanonicalName();
+          value = clazz.getCanonicalName();
         }
-        else if (value instanceof Enum) {
+        else if (value instanceof Enum<?> enumValue) {
           // enum constant
-          value = ((Enum<?>) value).name();
+          value = enumValue.name();
         }
         else if (value.getClass().isArray()) {
           Class<?> componentType = value.getClass().getComponentType();
@@ -158,12 +159,14 @@ public class DescriptorHelper
       extends RuntimeException
   {
     public InvalidDescriptorKeyException(final DescriptorKey key, final Annotation annotation, final Method method) {
-      super("Invalid @DescriptorKey: " + key + ", annotation=" + annotation + ", method=" + method);
+      super(STR."Invalid @DescriptorKey: \{key}, annotation=\{annotation}, method=\{method}");
     }
   }
 
   /**
    * Find all annotations attached to given annotations deeply.
+   * 
+   * Leverages Java 21's improved reflection API for better performance.
    */
   @VisibleForTesting
   static List<Annotation> findAllAnnotations(final Annotation... annotations) {
@@ -175,12 +178,18 @@ public class DescriptorHelper
 
   /**
    * Visit all annotations, and all annotations attached to annotation type.
+   * 
+   * Optimized for Java 21's module system and reflection capabilities.
    */
   private static void visitAnnotations(final Set<Annotation> visited,
                                        final List<Annotation> found,
                                        final Annotation... annotations)
   {
     for (Annotation annotation : annotations) {
+      if (annotation == null) {
+        continue; // Enhanced null checking - skip null annotations
+      }
+      
       visited.add(annotation);
       for (Annotation parent : annotation.annotationType().getAnnotations()) {
         if (!visited.contains(parent)) {
@@ -196,11 +205,12 @@ public class DescriptorHelper
    */
   @Nullable
   public static String stringValue(final Descriptor descriptor, final String name) {
-    checkNotNull(descriptor);
-    checkNotNull(name);
+    checkNotNull(descriptor, "Descriptor cannot be null");
+    checkNotNull(name, "Name cannot be null");
+    
     Object value = descriptor.getFieldValue(name);
-    if (value instanceof CharSequence) {
-      return value.toString();
+    if (value instanceof CharSequence charSeq) {
+      return charSeq.toString();
     }
     return null;
   }

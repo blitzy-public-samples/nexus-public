@@ -15,7 +15,7 @@ package org.sonatype.nexus.mime;
 import org.sonatype.goodies.testsupport.TestSupport;
 
 import org.hamcrest.Matcher;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
@@ -24,13 +24,13 @@ import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 
 /**
- * Tests for {@link RegexpMimeRulesSource}.
+ * Tests for {@link RegexpMimeRulesSource} using JUnit Jupiter.
  */
 public class RegexpMimeRulesSourceTest
     extends TestSupport
 {
   @Test
-  public void testRegectMimeRulesSourceTest() {
+  public void regexpMimeRulesSourcePatternsTest() {
     final RegexpMimeRulesSource underTest = new RegexpMimeRulesSource();
 
     underTest.addRule(".*\\.foo\\z", "foo/bar");

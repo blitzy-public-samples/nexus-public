@@ -12,13 +12,13 @@
  */
 package org.sonatype.nexus.selector.internal;
 
-import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.jupiter.TestSupport;
 import org.sonatype.nexus.selector.JexlEngine;
 import org.sonatype.nexus.selector.SelectorSqlBuilder;
 
 import org.apache.commons.jexl3.parser.ASTJexlScript;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -32,12 +32,12 @@ public class DatastoreCselToSqlTest
 
   private DatastoreCselToSql underTest;
 
-  @Before
+  @BeforeEach
   public void setup() {
     underTest = new DatastoreCselToSql();
   }
 
-  @Before
+  @BeforeEach
   public void createSqlBuilder() {
     builder = new SelectorSqlBuilder();
 
@@ -50,7 +50,7 @@ public class DatastoreCselToSqlTest
   }
 
   @Test
-  public void andTest() {
+  public void and() {
     final ASTJexlScript script = jexlEngine.parseExpression("a==\"woof\" && b==\"meow\"");
 
     script.childrenAccept(underTest, builder);
@@ -62,7 +62,7 @@ public class DatastoreCselToSqlTest
   }
 
   @Test
-  public void orTest() {
+  public void or() {
     final ASTJexlScript script = jexlEngine.parseExpression("a==\"woof\" || b==\"meow\"");
 
     script.childrenAccept(underTest, builder);
@@ -74,7 +74,7 @@ public class DatastoreCselToSqlTest
   }
 
   @Test
-  public void likeTest() {
+  public void like() {
     final ASTJexlScript script = jexlEngine.parseExpression("a =^ \"woof\"");
 
     script.childrenAccept(underTest, builder);
@@ -85,7 +85,7 @@ public class DatastoreCselToSqlTest
   }
 
   @Test
-  public void notEqualTest() {
+  public void notEqual() {
     final ASTJexlScript script = jexlEngine.parseExpression("a != \"woof\"");
 
     script.childrenAccept(underTest, builder);
@@ -96,7 +96,7 @@ public class DatastoreCselToSqlTest
   }
 
   @Test
-  public void parensTest() {
+  public void parens() {
     final ASTJexlScript script = jexlEngine.parseExpression("a==\"woof\" && (b==\"meow\" || b==\"purr\")");
 
     script.childrenAccept(underTest, builder);
@@ -109,7 +109,7 @@ public class DatastoreCselToSqlTest
   }
 
   @Test
-  public void refTest() {
+  public void ref() {
     final ASTJexlScript script = jexlEngine.parseExpression("a == dog.name");
 
     script.childrenAccept(underTest, builder);
@@ -119,7 +119,7 @@ public class DatastoreCselToSqlTest
   }
 
   @Test
-  public void regexpTest() {
+  public void regexp() {
     ASTJexlScript script = jexlEngine.parseExpression("a =~ \"woof\"");
 
     script.childrenAccept(underTest, builder);
@@ -151,6 +151,45 @@ public class DatastoreCselToSqlTest
     script.childrenAccept(underTest, builder);
 
     assertThat(builder.getQueryParameters().get("param_0"), is("^/woof|/woof/foo"));
+  }
+
+  @Test
+  public void recordPatternMatchingGeneratesCorrectSql() {
+    // Define a simple record for testing pattern matching
+    record QueryCondition(String field, String operator, String value) {}
+    
+    // Create a condition using the record
+    QueryCondition condition = new QueryCondition("a", "=", "woof");
+    
+    // Use pattern matching to extract components
+    if (condition instanceof QueryCondition(String field, String operator, String value)) {
+      // Build expression based on extracted components
+      final ASTJexlScript script = jexlEngine.parseExpression(field + operator + "\"" + value + "\"");
+      
+      script.childrenAccept(underTest, builder);
+      
+      assertThat(builder.getQueryString(), is("a_alias = :param_0"));
+      assertThat(builder.getQueryParameters().size(), is(1));
+      assertThat(builder.getQueryParameters().get("param_0"), is("woof"));
+    }
+  }
+
+  @Test
+  public void stringTemplateGeneratesCorrectSql() {
+    // Define variables for the template
+    String field = "a";
+    String value = "woof";
+    
+    // Use String Template to create the expression
+    String expression = STR."\{field}==\"\{value}\"";
+    
+    final ASTJexlScript script = jexlEngine.parseExpression(expression);
+    
+    script.childrenAccept(underTest, builder);
+    
+    assertThat(builder.getQueryString(), is("a_alias = :param_0"));
+    assertThat(builder.getQueryParameters().size(), is(1));
+    assertThat(builder.getQueryParameters().get("param_0"), is("woof"));
   }
 
   private void reset() {

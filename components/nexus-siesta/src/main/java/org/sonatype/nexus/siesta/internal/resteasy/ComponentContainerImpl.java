@@ -13,14 +13,15 @@
 package org.sonatype.nexus.siesta.internal.resteasy;
 
 import java.io.IOException;
+import java.util.concurrent.Executors;
 
-import javax.annotation.Nullable;
-import javax.servlet.ServletConfig;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.ws.rs.Path;
-import javax.ws.rs.ext.RuntimeDelegate;
+import jakarta.annotation.Nullable;
+import jakarta.servlet.ServletConfig;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.ext.RuntimeDelegate;
 
 import org.sonatype.nexus.rest.Resource;
 import org.sonatype.nexus.siesta.ComponentContainer;
@@ -34,6 +35,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 
 /**
  * RESTEasy {@link ComponentContainer}.
@@ -78,19 +80,19 @@ public class ComponentContainerImpl
     providerFactory.getContainerResponseFilterRegistry().registerClass(NotCacheableResponseFilter.class);
 
     if (log.isDebugEnabled()) {
-      log.debug("Provider factory: {}", providerFactory);
-      log.debug("Configuration: {}", providerFactory.getConfiguration());
-      log.debug("Runtime type: {}", providerFactory.getRuntimeType());
-      log.debug("Built-ins registered: {}", providerFactory.isBuiltinsRegistered());
-      log.debug("Properties: {}", providerFactory.getProperties());
-      log.debug("Dynamic features: {}", providerFactory.getServerDynamicFeatures());
-      log.debug("Enabled features: {}", providerFactory.getEnabledFeatures());
-      log.debug("Class contracts: {}", providerFactory.getClassContracts());
-      log.debug("Reader interceptor registry: {}", providerFactory.getServerReaderInterceptorRegistry());
-      log.debug("Writer interceptor registry: {}", providerFactory.getServerWriterInterceptorRegistry());
-      log.debug("Injector factory: {}", providerFactory.getInjectorFactory());
-      log.debug("Instances: {}", providerFactory.getInstances());
-      log.debug("Exception mappers: {}", providerFactory.getExceptionMappers());
+      log.debug(STR."Provider factory: \{providerFactory}");
+      log.debug(STR."Configuration: \{providerFactory.getConfiguration()}");
+      log.debug(STR."Runtime type: \{providerFactory.getRuntimeType()}");
+      log.debug(STR."Built-ins registered: \{providerFactory.isBuiltinsRegistered()}");
+      log.debug(STR."Properties: \{providerFactory.getProperties()}");
+      log.debug(STR."Dynamic features: \{providerFactory.getServerDynamicFeatures()}");
+      log.debug(STR."Enabled features: \{providerFactory.getEnabledFeatures()}");
+      log.debug(STR."Class contracts: \{providerFactory.getClassContracts()}");
+      log.debug(STR."Reader interceptor registry: \{providerFactory.getServerReaderInterceptorRegistry()}");
+      log.debug(STR."Writer interceptor registry: \{providerFactory.getServerWriterInterceptorRegistry()}");
+      log.debug(STR."Injector factory: \{providerFactory.getInjectorFactory()}");
+      log.debug(STR."Instances: \{providerFactory.getInstances()}");
+      log.debug(STR."Exception mappers: \{providerFactory.getExceptionMappers()}");
     }
   }
 
@@ -103,12 +105,35 @@ public class ComponentContainerImpl
 
   /**
    * Promotes {@link HttpServletDispatcher#service(HttpServletRequest, HttpServletResponse)} to public access.
+   * Uses Virtual Threads for improved concurrency and performance.
    */
   @Override
   public void service(final HttpServletRequest request, final HttpServletResponse response)
       throws ServletException, IOException
   {
-    super.service(request, response);
+    // Use Virtual Threads for request processing
+    var executor = Executors.newVirtualThreadPerTaskExecutor();
+    try {
+      executor.submit(() -> {
+        try {
+          // Propagate context to virtual thread
+          final ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+          Thread.currentThread().setContextClassLoader(contextClassLoader);
+          
+          // Process the request in the virtual thread
+          super.service(request, response);
+        } catch (ServletException | IOException e) {
+          log.error(STR."Error processing request in virtual thread: \{e.getMessage()}", e);
+          throw new RuntimeException(e);
+        }
+        return null;
+      }).get(); // Wait for completion to ensure response is fully processed
+    } catch (Exception e) {
+      log.error(STR."Failed to process request with virtual thread: \{e.getMessage()}", e);
+      throw new ServletException("Virtual thread request processing failed", e);
+    } finally {
+      executor.close();
+    }
   }
 
   private static boolean isResource(final Class<?> type) {
@@ -131,16 +156,16 @@ public class ComponentContainerImpl
       getDispatcher().getRegistry().addResourceFactory(new SisuResourceFactory(entry));
       String path = resourcePath(type);
       if (path == null) {
-        log.warn("Found resource implementation missing @Path: {}", type.getName());
+        log.warn(STR."Found resource implementation missing @Path: \{type.getName()}");
       }
       else {
-        log.debug("Added resource: {} with path: {}", type.getName(), path);
+        log.debug(STR."Added resource: \{type.getName()} with path: \{path}");
       }
     }
     else {
       // TODO: Doesn't seem to be a late-biding/factory here so we create the object early
       getDispatcher().getProviderFactory().register(entry.getValue());
-      log.debug("Added component: {}", type.getName());
+      log.debug(STR."Added component: \{type.getName()}");
     }
   }
 
@@ -150,16 +175,16 @@ public class ComponentContainerImpl
     if (isResource(type)) {
       getDispatcher().getRegistry().removeRegistrations(type);
       String path = resourcePath(type);
-      log.debug("Removed resource: {} with path: {}", type.getName(), path);
+      log.debug(STR."Removed resource: \{type.getName()} with path: \{path}");
     }
     else {
       ResteasyProviderFactory providerFactory = getDispatcher().getProviderFactory();
       if (providerFactory instanceof SisuResteasyProviderFactory) {
         ((SisuResteasyProviderFactory) providerFactory).removeRegistrations(type);
-        log.debug("Removed component: {}", type.getName());
+        log.debug(STR."Removed component: \{type.getName()}");
       }
       else {
-        log.warn("Component removal not supported; Unable to remove component: {}", type.getName());
+        log.warn(STR."Component removal not supported; Unable to remove component: \{type.getName()}");
       }
     }
   }

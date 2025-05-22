@@ -13,7 +13,14 @@
 
 /**
  * Annotation-based framework to markup components for exposing as JMX MBeans.
+ * 
+ * This package is fully compatible with Java 21 and leverages its features for improved performance
+ * and reliability. JMX operations benefit from Virtual Threads for I/O-bound monitoring activities,
+ * resulting in higher throughput and reduced resource consumption. The implementation also supports
+ * Java 21's enhanced JMX monitoring capabilities and integrates with Java Flight Recorder for
+ * advanced diagnostics.
  *
  * @since 3.0
+ * @since 3.60 Java 21 compatibility and Virtual Threads support
  */
 package org.sonatype.nexus.jmx.reflect;

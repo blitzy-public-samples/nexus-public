@@ -15,18 +15,20 @@ package org.sonatype.nexus.datastore.api;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.sonatype.goodies.testsupport.TestSupport;
 
-import org.junit.Before;
-import org.junit.Test;
-
-import static java.lang.String.format;
+import static java.lang.StringTemplate.STR;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.sonatype.nexus.datastore.api.DataStoreConfiguration.REDACTED;
 
+@ExtendWith(MockitoExtension.class)
 public class DataStoreConfigurationTest
     extends TestSupport
 {
@@ -36,7 +38,7 @@ public class DataStoreConfigurationTest
 
   private DataStoreConfiguration configurationC;
 
-  @Before
+  @BeforeEach
   public void setup() {
     Map<String, String> configA = new HashMap<>();
     configA.put("entry-1", "value1");
@@ -116,7 +118,7 @@ public class DataStoreConfigurationTest
     assertThat(diffMap.get("source").values(), containsInAnyOrder("sourceA", "sourceB"));
     assertThat(diffMap.get("attributes->key-2").values(), containsInAnyOrder(REDACTED, REDACTED));
     assertThat(diffMap.get("attributes->jdbcUrl").values(), containsInAnyOrder(
-        format("localhost:5432/nexus?username=user&password=%s", REDACTED),
-        format("localhost:5432/nexus?password=%s&username=user", REDACTED)));
+        STR."localhost:5432/nexus?username=user&password=\{REDACTED}",
+        STR."localhost:5432/nexus?password=\{REDACTED}&username=user"));
   }
 }

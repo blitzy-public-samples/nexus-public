@@ -13,6 +13,7 @@
 package org.sonatype.nexus.script.plugin.internal.rest;
 
 import java.util.Collection;
+import static java.lang.StringTemplate.STR;
 
 import org.sonatype.nexus.script.plugin.internal.security.ScriptPrivilegeDescriptor;
 import org.sonatype.nexus.security.internal.rest.NexusSecurityApiConstants;
@@ -20,13 +21,10 @@ import org.sonatype.nexus.security.privilege.Privilege;
 import org.sonatype.nexus.security.privilege.rest.ApiPrivilegeWithActionsRequest;
 import org.sonatype.nexus.security.privilege.rest.PrivilegeAction;
 
-import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.NotBlank;
+import io.swagger.annotations.ApiModelProperty;
+import javax.validation.constraints.NotBlank;
 
 /**
- * API request for script privileges.
- * Updated for compatibility with RESTEasy 6.2.7.Final and Swagger 2.2.20.
- *
  * @since 3.19
  */
 public class ApiPrivilegeScriptRequest
@@ -35,19 +33,16 @@ public class ApiPrivilegeScriptRequest
   public static final String SCRIPT_KEY = "name";
 
   @NotBlank
-  @Schema(description = NexusSecurityApiConstants.PRIVILEGE_SCRIPT_DESCRIPTION)
+  @ApiModelProperty(NexusSecurityApiConstants.PRIVILEGE_SCRIPT_DESCRIPTION)
   private String scriptName;
 
   /**
-   * Default constructor for deserialization
+   * for deserialization
    */
   private ApiPrivilegeScriptRequest() {
     super();
   }
 
-  /**
-   * Constructor for creating a new script privilege request
-   */
   public ApiPrivilegeScriptRequest(final String name,
                                    final String description,
                                    final String scriptName,
@@ -57,24 +52,16 @@ public class ApiPrivilegeScriptRequest
     this.scriptName = scriptName;
   }
 
-  /**
-   * Constructor from an existing privilege
-   */
   public ApiPrivilegeScriptRequest(final Privilege privilege) {
     super(privilege);
+    // Direct property access with the privilege object
     scriptName = privilege.getPrivilegeProperty(SCRIPT_KEY);
   }
 
-  /**
-   * Set the script name for this privilege
-   */
   public void setScriptName(final String scriptName) {
     this.scriptName = scriptName;
   }
 
-  /**
-   * Get the script name for this privilege
-   */
   public String getScriptName() {
     return scriptName;
   }
@@ -82,6 +69,7 @@ public class ApiPrivilegeScriptRequest
   @Override
   protected Privilege doAsPrivilege(final Privilege privilege) {
     super.doAsPrivilege(privilege);
+    // Direct property setting on the privilege object
     privilege.addProperty(SCRIPT_KEY, scriptName);
     privilege.setType(ScriptPrivilegeDescriptor.TYPE);
     return privilege;
@@ -89,6 +77,7 @@ public class ApiPrivilegeScriptRequest
 
   @Override
   protected String doAsActionString() {
-    return toBreadRunActionString();
+    // Using Java 21 String Templates for more readable string formatting
+    return STR."Script action: \{toBreadRunActionString()}";
   }
 }

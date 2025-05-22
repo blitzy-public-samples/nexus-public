@@ -1,0 +1,302 @@
+{
+  "patternMatchingTests": [
+    {
+      "testName": "basicTypePatternMatching",
+      "description": "Tests basic type pattern matching with instanceof",
+      "testData": {
+        "upgradeSteps": [
+          {
+            "id": "step1",
+            "type": "StringUpgrade",
+            "value": "Hello World"
+          },
+          {
+            "id": "step2",
+            "type": "IntegerUpgrade",
+            "value": 42
+          },
+          {
+            "id": "step3",
+            "type": "BooleanUpgrade",
+            "value": true
+          }
+        ],
+        "dependencies": [
+          {
+            "from": "step1",
+            "to": "step2"
+          }
+        ]
+      },
+      "expectedResults": {
+        "orderedSteps": ["step1", "step2", "step3"]
+      }
+    },
+    {
+      "testName": "recordPatternMatching",
+      "description": "Tests record pattern matching with nested records",
+      "testData": {
+        "upgradeSteps": [
+          {
+            "id": "config1",
+            "type": "ConfigRecord",
+            "data": {
+              "name": "database",
+              "settings": {
+                "host": "localhost",
+                "port": 5432,
+                "credentials": {
+                  "username": "admin",
+                  "password": "secure123"
+                }
+              }
+            }
+          },
+          {
+            "id": "config2",
+            "type": "ConfigRecord",
+            "data": {
+              "name": "elasticsearch",
+              "settings": {
+                "host": "es-cluster",
+                "port": 9200,
+                "credentials": {
+                  "username": "elastic",
+                  "password": "changeme"
+                }
+              }
+            }
+          }
+        ],
+        "dependencies": [
+          {
+            "from": "config1",
+            "to": "config2"
+          }
+        ]
+      },
+      "expectedResults": {
+        "orderedSteps": ["config1", "config2"]
+      }
+    },
+    {
+      "testName": "switchPatternMatching",
+      "description": "Tests pattern matching in switch expressions",
+      "testData": {
+        "upgradeSteps": [
+          {
+            "id": "repository1",
+            "type": "RepositoryUpgrade",
+            "repositoryType": "maven",
+            "format": "maven2",
+            "blobstore": "default"
+          },
+          {
+            "id": "repository2",
+            "type": "RepositoryUpgrade",
+            "repositoryType": "npm",
+            "format": "npm",
+            "blobstore": "default"
+          },
+          {
+            "id": "repository3",
+            "type": "RepositoryUpgrade",
+            "repositoryType": "raw",
+            "format": "raw",
+            "blobstore": "s3"
+          }
+        ],
+        "dependencies": []
+      },
+      "expectedResults": {
+        "orderedSteps": ["repository1", "repository2", "repository3"]
+      }
+    },
+    {
+      "testName": "guardedPatternMatching",
+      "description": "Tests guarded patterns with conditional logic",
+      "testData": {
+        "upgradeSteps": [
+          {
+            "id": "task1",
+            "type": "TaskUpgrade",
+            "taskType": "rebuild-index",
+            "enabled": true,
+            "frequency": "daily"
+          },
+          {
+            "id": "task2",
+            "type": "TaskUpgrade",
+            "taskType": "compact-blobstore",
+            "enabled": false,
+            "frequency": "weekly"
+          },
+          {
+            "id": "task3",
+            "type": "TaskUpgrade",
+            "taskType": "purge-audit-logs",
+            "enabled": true,
+            "frequency": "monthly"
+          }
+        ],
+        "dependencies": [
+          {
+            "from": "task1",
+            "to": "task3",
+            "condition": "enabled == true && frequency != 'weekly'"
+          }
+        ]
+      },
+      "expectedResults": {
+        "orderedSteps": ["task1", "task3", "task2"]
+      }
+    },
+    {
+      "testName": "exhaustivePatternMatching",
+      "description": "Tests exhaustiveness checking in pattern matching",
+      "testData": {
+        "upgradeSteps": [
+          {
+            "id": "security1",
+            "type": "SecurityUpgrade",
+            "securityType": "user",
+            "action": "create"
+          },
+          {
+            "id": "security2",
+            "type": "SecurityUpgrade",
+            "securityType": "role",
+            "action": "update"
+          },
+          {
+            "id": "security3",
+            "type": "SecurityUpgrade",
+            "securityType": "privilege",
+            "action": "delete"
+          },
+          {
+            "id": "security4",
+            "type": "SecurityUpgrade",
+            "securityType": "anonymous",
+            "action": "update"
+          }
+        ],
+        "dependencies": [
+          {
+            "from": "security1",
+            "to": "security2"
+          },
+          {
+            "from": "security2",
+            "to": "security3"
+          }
+        ]
+      },
+      "expectedResults": {
+        "orderedSteps": ["security1", "security2", "security3", "security4"]
+      }
+    },
+    {
+      "testName": "nestedRecordPatterns",
+      "description": "Tests deeply nested record patterns with complex structures",
+      "testData": {
+        "upgradeSteps": [
+          {
+            "id": "blobstore1",
+            "type": "BlobStoreUpgrade",
+            "storeType": "file",
+            "configuration": {
+              "path": "/data/nexus/blobs",
+              "metrics": {
+                "enabled": true,
+                "collection": {
+                  "interval": 60,
+                  "unit": "seconds"
+                }
+              },
+              "quota": {
+                "enabled": true,
+                "limit": {
+                  "size": 1024,
+                  "unit": "GB"
+                }
+              }
+            }
+          },
+          {
+            "id": "blobstore2",
+            "type": "BlobStoreUpgrade",
+            "storeType": "s3",
+            "configuration": {
+              "bucket": "nexus-blobs",
+              "region": "us-west-2",
+              "metrics": {
+                "enabled": true,
+                "collection": {
+                  "interval": 300,
+                  "unit": "seconds"
+                }
+              },
+              "encryption": {
+                "enabled": true,
+                "keyType": "kms",
+                "keyId": "arn:aws:kms:us-west-2:123456789012:key/abcd-1234"
+              }
+            }
+          }
+        ],
+        "dependencies": [
+          {
+            "from": "blobstore1",
+            "to": "blobstore2"
+          }
+        ]
+      },
+      "expectedResults": {
+        "orderedSteps": ["blobstore1", "blobstore2"]
+      }
+    },
+    {
+      "testName": "virtualThreadCompatibility",
+      "description": "Tests pattern matching with Virtual Threads for I/O operations",
+      "testData": {
+        "upgradeSteps": [
+          {
+            "id": "io1",
+            "type": "IOUpgrade",
+            "operation": "read",
+            "path": "/data/nexus/config.json",
+            "useVirtualThread": true
+          },
+          {
+            "id": "io2",
+            "type": "IOUpgrade",
+            "operation": "write",
+            "path": "/data/nexus/config.new.json",
+            "useVirtualThread": true
+          },
+          {
+            "id": "io3",
+            "type": "IOUpgrade",
+            "operation": "delete",
+            "path": "/data/nexus/config.old.json",
+            "useVirtualThread": false
+          }
+        ],
+        "dependencies": [
+          {
+            "from": "io1",
+            "to": "io2"
+          },
+          {
+            "from": "io2",
+            "to": "io3"
+          }
+        ]
+      },
+      "expectedResults": {
+        "orderedSteps": ["io1", "io2", "io3"]
+      }
+    }
+  ]
+}

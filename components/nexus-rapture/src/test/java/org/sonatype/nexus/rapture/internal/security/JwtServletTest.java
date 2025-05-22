@@ -24,10 +24,12 @@ import org.sonatype.nexus.common.event.EventManager;
 import org.apache.shiro.subject.PrincipalCollection;
 import org.apache.shiro.subject.Subject;
 import org.apache.shiro.util.ThreadContext;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static com.google.common.net.HttpHeaders.X_FRAME_OPTIONS;
 import static org.mockito.ArgumentMatchers.any;
@@ -36,6 +38,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.security.JwtHelper.JWT_COOKIE_NAME;
 
+@ExtendWith(MockitoExtension.class)
 public class JwtServletTest
     extends TestSupport
 {
@@ -53,7 +56,7 @@ public class JwtServletTest
 
   private JwtServlet underTest;
 
-  @Before
+  @BeforeEach
   public void setup() {
     underTest = new JwtServlet("/", eventManager);
     PrincipalCollection principalCollection = mock(PrincipalCollection.class);
@@ -65,7 +68,7 @@ public class JwtServletTest
     ThreadContext.bind(subject);
   }
 
-  @After
+  @AfterEach
   public void cleanup() {
     ThreadContext.unbindSubject();
   }

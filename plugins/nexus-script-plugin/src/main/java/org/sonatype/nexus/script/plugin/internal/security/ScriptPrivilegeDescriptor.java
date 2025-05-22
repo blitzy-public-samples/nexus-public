@@ -12,6 +12,7 @@
  */
 package org.sonatype.nexus.script.plugin.internal.security;
 
+import com.google.common.base.Joiner;
 import org.apache.shiro.authz.Permission;
 import org.sonatype.goodies.i18n.I18N;
 import org.sonatype.goodies.i18n.MessageBundle;
@@ -34,9 +35,10 @@ import javax.inject.Singleton;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import java.util.List;
-import java.util.Objects;
 
-import static java.util.Objects.requireNonNull;
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.common.app.FeatureFlags.REACT_PRIVILEGES_NAMED;
 
 /**
@@ -49,8 +51,6 @@ import static org.sonatype.nexus.common.app.FeatureFlags.REACT_PRIVILEGES_NAMED;
 public class ScriptPrivilegeDescriptor
     extends PrivilegeDescriptorSupport<ApiPrivilegeScript, ApiPrivilegeScriptRequest>
 {
-  public static final String INVALID_SCRIPT = """Invalid script '%s' supplied.""";
-
   public static final String TYPE = ScriptPermission.DOMAIN;
 
   public static final String P_NAME = "name";
@@ -111,12 +111,14 @@ public class ScriptPrivilegeDescriptor
                 messages.actionsHelp(),
                 FormField.MANDATORY,
                 "(^(browse|read|edit|add|delete|run)(,(browse|read|edit|add|delete|run)){0,5}$)|(^\\*$)"));
-    this.scriptManager = requireNonNull(scriptManager, "Script manager cannot be null");
+    this.scriptManager = checkNotNull(scriptManager);
   }
 
   @Override
   public Permission createPermission(final CPrivilege privilege) {
-    Objects.requireNonNull(privilege, "Privilege cannot be null");
+    if (privilege == null) {
+      throw new IllegalArgumentException("Privilege cannot be null");
+    }
     return new ScriptPermission(readProperty(privilege, P_NAME, ALL), readListProperty(privilege, P_ACTIONS, ALL));
   }
 
@@ -131,12 +133,6 @@ public class ScriptPrivilegeDescriptor
   }
 
   public static CPrivilege privilege(final String name, final String... actions) {
-    Objects.requireNonNull(name, "Name cannot be null");
-    Objects.requireNonNull(actions, "Actions cannot be null");
-    if (actions.length == 0) {
-      throw new IllegalArgumentException("At least one action must be specified");
-    }
-    
     return new CPrivilegeBuilder()
         .type(TYPE)
         .id(id(name, actions))
@@ -147,30 +143,30 @@ public class ScriptPrivilegeDescriptor
   }
 
   public static String id(final String name, final String... actions) {
-    if (actions.length == 0) {
-      throw new IllegalArgumentException("At least one action must be specified");
-    }
-    return "nx-" + TYPE + "-" + name + "-" + String.join(",", actions);
+    checkArgument(actions.length > 0);
+    return STR."nx-\{TYPE}-\{name}-\{Joiner.on(',').join(actions)}";
   }
 
   @Override
   public ApiPrivilegeScript createApiPrivilegeImpl(final Privilege privilege) {
-    Objects.requireNonNull(privilege, "Privilege cannot be null");
     return new ApiPrivilegeScript(privilege);
   }
 
   @Override
   public void validate(final ApiPrivilegeScriptRequest apiPrivilege) {
-    Objects.requireNonNull(apiPrivilege, "API privilege request cannot be null");
-    validateActions(apiPrivilege, PrivilegeAction.getBreadRunActions());
-    validateScript(apiPrivilege.getScriptName());
+    switch (apiPrivilege) {
+      case ApiPrivilegeScriptRequest request when request != null -> {
+        validateActions(request, PrivilegeAction.getBreadRunActions());
+        validateScript(request.getScriptName());
+      }
+      case null -> throw new IllegalArgumentException("ApiPrivilegeScriptRequest cannot be null");
+    }
   }
 
   private void validateScript(final String scriptName) {
-    Objects.requireNonNull(scriptName, "Script name cannot be null");
     if (scriptManager.get(scriptName) == null) {
       throw new WebApplicationMessageException(Response.Status.BAD_REQUEST,
-          String.format(INVALID_SCRIPT, scriptName), MediaType.APPLICATION_JSON);
+          STR."Invalid script '\{scriptName}' supplied.", MediaType.APPLICATION_JSON);
     }
   }
 }

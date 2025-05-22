@@ -13,12 +13,18 @@
 package org.sonatype.nexus.jmx.internal;
 
 import java.lang.annotation.Annotation;
+import java.security.AccessController;
+import java.security.PrivilegedActionException;
+import java.security.PrivilegedExceptionAction;
 import java.util.Hashtable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.Supplier;
 
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
+import javax.management.JMException;
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
 
@@ -47,12 +53,17 @@ import static com.google.common.base.Preconditions.checkNotNull;
 public class ManagedObjectRegistrar
     extends ComponentSupport
 {
+  private final ExecutorService jmxExecutor;
+
   @Inject
   public ManagedObjectRegistrar(final BeanLocator beanLocator,
                                 final MBeanServer server)
   {
     checkNotNull(beanLocator);
     checkNotNull(server);
+
+    // Create a virtual thread executor for JMX operations
+    this.jmxExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     beanLocator.watch(Key.get(Object.class), new ManageObjectMediator(), server);
   }
@@ -67,15 +78,29 @@ public class ManagedObjectRegistrar
         return;
       }
 
-      try {
-        ObjectName name = objectName(descriptor, entry);
-        log.debug("Registering: {} -> {}", name, entry);
-        MBean mbean = mbean(descriptor, entry);
-        server.registerMBean(mbean, name);
-      }
-      catch (Exception e) {
-        log.warn("Failed to export: {}; ignoring", entry, e);
-      }
+      // Submit MBean registration to virtual thread executor
+      jmxExecutor.submit(() -> {
+        try {
+          ObjectName name = objectName(descriptor, entry);
+          log.debug(STR."Registering: \{name} -> \{entry}");
+          MBean mbean = mbean(descriptor, entry);
+          
+          // Use try-with-resources for enhanced error handling
+          try {
+            // Perform registration with proper access controls for Java 21
+            AccessController.doPrivileged((PrivilegedExceptionAction<Void>) () -> {
+              server.registerMBean(mbean, name);
+              return null;
+            });
+          } catch (PrivilegedActionException e) {
+            throw e.getException();
+          }
+        }
+        catch (Exception e) {
+          log.warn(STR."Failed to export: \{entry}; ignoring", e);
+        }
+        return null;
+      });
     }
 
     @Override
@@ -85,14 +110,28 @@ public class ManagedObjectRegistrar
         return;
       }
 
-      try {
-        ObjectName name = objectName(descriptor, entry);
-        log.debug("Un-registering: {} -> {}", name, entry);
-        server.unregisterMBean(name);
-      }
-      catch (Exception e) {
-        log.warn("Failed to un-export: {}; ignoring", entry, e);
-      }
+      // Submit MBean unregistration to virtual thread executor
+      jmxExecutor.submit(() -> {
+        try {
+          ObjectName name = objectName(descriptor, entry);
+          log.debug(STR."Un-registering: \{name} -> \{entry}");
+          
+          // Use try-with-resources for enhanced error handling
+          try {
+            // Perform unregistration with proper access controls for Java 21
+            AccessController.doPrivileged((PrivilegedExceptionAction<Void>) () -> {
+              server.unregisterMBean(name);
+              return null;
+            });
+          } catch (PrivilegedActionException e) {
+            throw e.getException();
+          }
+        }
+        catch (Exception e) {
+          log.warn(STR."Failed to un-export: \{entry}; ignoring", e);
+        }
+        return null;
+      });
     }
   }
 
@@ -193,14 +232,8 @@ public class ManagedObjectRegistrar
 
     ReflectionMBeanBuilder builder = new ReflectionMBeanBuilder(type);
 
-    // attach manged target
-    builder.target(new Supplier<Object>()
-    {
-      @Override
-      public Object get() {
-        return entry.getProvider().get();
-      }
-    });
+    // attach managed target using lambda expression instead of anonymous inner class
+    builder.target(() -> entry.getProvider().get());
 
     // allow custom description, or expose what sisu tells us
     String description = Strings.emptyToNull(descriptor.description());

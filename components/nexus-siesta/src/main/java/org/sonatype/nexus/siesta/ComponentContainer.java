@@ -27,20 +27,45 @@ import org.jboss.resteasy.core.Dispatcher;
 
 /**
  * Siesta {@link Component} (and {@link Resource} container abstraction.
+ * <p>
+ * Compatible with Java 21 and RESTEasy 6.2.7.Final, with support for Virtual Thread
+ * context propagation to ensure thread-local variables and other context information
+ * are properly maintained when using virtual threads for request handling.
  *
  * @since 3.0
  */
 public interface ComponentContainer
 {
+  /**
+   * Initialize the component container.
+   */
   void init(final ServletConfig config) throws ServletException;
 
+  /**
+   * Service an HTTP request.
+   * <p>
+   * When running on Java 21 with Virtual Threads, this method ensures proper context
+   * propagation between the calling thread and any virtual threads used for request handling.
+   */
   void service(final HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException;
 
+  /**
+   * Destroy the component container.
+   */
   void destroy();
 
+  /**
+   * Add a component to the container.
+   */
   void addComponent(BeanEntry<?,?> entry) throws Exception;
 
+  /**
+   * Remove a component from the container.
+   */
   void removeComponent(BeanEntry<?,?> entry) throws Exception;
 
+  /**
+   * Get the RESTEasy dispatcher.
+   */
   Dispatcher getDispatcher();
 }

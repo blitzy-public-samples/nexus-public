@@ -9,8 +9,6 @@
  * Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
- *
- * This file has been updated for Java 21 compatibility.
  */
 package org.sonatype.nexus.blobstore.s3.internal.capability;
 
@@ -19,9 +17,6 @@ import java.util.Map;
 import java.util.Set;
 import javax.inject.Named;
 import javax.inject.Singleton;
-
-// Import for Java 21 string templates
-import static java.lang.StringTemplate.STR;
 
 import org.sonatype.goodies.i18n.I18N;
 import org.sonatype.goodies.i18n.MessageBundle;
@@ -39,11 +34,8 @@ import static org.sonatype.nexus.capability.Tag.categoryTag;
 import static org.sonatype.nexus.capability.Tag.tags;
 
 /**
- * Capability descriptor for custom S3 regions.
- * 
- * @since 3.0
- * @see CustomS3RegionCapability
- * @see CustomS3RegionCapabilityConfiguration
+ * Capability descriptor for custom S3 regions configuration.
+ * Compatible with Java 21 runtime environment.
  */
 @Named(CustomS3RegionCapabilityDescriptor.TYPE_ID)
 @Singleton
@@ -71,7 +63,8 @@ public class CustomS3RegionCapabilityDescriptor
 
   private static final Messages messages = I18N.create(Messages.class);
 
-  private final List<FormField<?>> formFields;
+  @SuppressWarnings("rawtypes")
+  private final List<FormField> formFields;
 
   public CustomS3RegionCapabilityDescriptor()
   {
@@ -92,24 +85,18 @@ public class CustomS3RegionCapabilityDescriptor
   public String name() { return messages.name(); }
 
   @Override
-  public List<FormField<?>> formFields() { return formFields; }
+  public List<FormField> formFields() { return formFields; }
 
   @Override
   public Set<Tag> getTags() { return tags(categoryTag("S3")); }
 
   @Override
   protected CustomS3RegionCapabilityConfiguration createConfig(final Map<String, String> properties) {
-    // Using pattern matching to ensure properties is not null before creating configuration
-    if (properties instanceof Map<String, String> map) {
-      return new CustomS3RegionCapabilityConfiguration(map);
-    }
-    throw new IllegalArgumentException("Properties map cannot be null");
+    return new CustomS3RegionCapabilityConfiguration(properties);
   }
 
   @Override
   protected String renderAbout() throws Exception {
-    // Using Java 21 string template for improved readability
-    String templateName = STR."{TYPE_ID}-about.vm";
-    return render(templateName);
+    return render(TYPE_ID + "-about.vm");
   }
 }

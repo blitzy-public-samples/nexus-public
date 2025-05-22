@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata modelVersion="1.1.0">
+  <groupId>org.sonatype.nexus</groupId>
+  <artifactId>nexus-pattern-matching-test</artifactId>
+  <version>3.42.0-SNAPSHOT</version>
+  <versioning>
+    <snapshot>
+      <timestamp>20230921.134502</timestamp>
+      <buildNumber>217</buildNumber>
+    </snapshot>
+    <lastUpdated>20230921134502</lastUpdated>
+    <snapshotVersions>
+      <!-- Standard JAR without classifier -->
+      <snapshotVersion>
+        <extension>jar</extension>
+        <value>3.42.0-20230921.134502-217</value>
+        <updated>20230921134502</updated>
+      </snapshotVersion>
+      
+      <!-- POM file -->
+      <snapshotVersion>
+        <extension>pom</extension>
+        <value>3.42.0-20230921.134502-217</value>
+        <updated>20230921134502</updated>
+      </snapshotVersion>
+      
+      <!-- Sources JAR -->
+      <snapshotVersion>
+        <classifier>sources</classifier>
+        <extension>jar</extension>
+        <value>3.42.0-20230921.134502-217</value>
+        <updated>20230921134502</updated>
+      </snapshotVersion>
+      
+      <!-- JavaDoc JAR -->
+      <snapshotVersion>
+        <classifier>javadoc</classifier>
+        <extension>jar</extension>
+        <value>3.42.0-20230921.134502-217</value>
+        <updated>20230921134502</updated>
+      </snapshotVersion>
+      
+      <!-- Tests JAR -->
+      <snapshotVersion>
+        <classifier>tests</classifier>
+        <extension>jar</extension>
+        <value>3.42.0-20230921.134502-217</value>
+        <updated>20230921134502</updated>
+      </snapshotVersion>
+      
+      <!-- Test sources JAR -->
+      <snapshotVersion>
+        <classifier>test-sources</classifier>
+        <extension>jar</extension>
+        <value>3.42.0-20230921.134502-217</value>
+        <updated>20230921134502</updated>
+      </snapshotVersion>
+      
+      <!-- WAR file -->
+      <snapshotVersion>
+        <extension>war</extension>
+        <value>3.42.0-20230921.134502-217</value>
+        <updated>20230921134502</updated>
+      </snapshotVersion>
+      
+      <!-- ZIP distribution -->
+      <snapshotVersion>
+        <classifier>distribution</classifier>
+        <extension>zip</extension>
+        <value>3.42.0-20230921.134502-217</value>
+        <updated>20230921134502</updated>
+      </snapshotVersion>
+      
+      <!-- TAR.GZ distribution -->
+      <snapshotVersion>
+        <classifier>distribution</classifier>
+        <extension>tar.gz</extension>
+        <value>3.42.0-20230921.134502-217</value>
+        <updated>20230921134502</updated>
+      </snapshotVersion>
+      
+      <!-- Module descriptor -->
+      <snapshotVersion>
+        <classifier>module</classifier>
+        <extension>xml</extension>
+        <value>3.42.0-20230921.134502-217</value>
+        <updated>20230921134502</updated>
+      </snapshotVersion>
+      
+      <!-- Native library for Linux -->
+      <snapshotVersion>
+        <classifier>linux-x86_64</classifier>
+        <extension>so</extension>
+        <value>3.42.0-20230921.134502-217</value>
+        <updated>20230921134502</updated>
+      </snapshotVersion>
+      
+      <!-- Native library for Windows -->
+      <snapshotVersion>
+        <classifier>windows-x86_64</classifier>
+        <extension>dll</extension>
+        <value>3.42.0-20230921.134502-217</value>
+        <updated>20230921134502</updated>
+      </snapshotVersion>
+      
+      <!-- Native library for macOS -->
+      <snapshotVersion>
+        <classifier>macos-x86_64</classifier>
+        <extension>dylib</extension>
+        <value>3.42.0-20230921.134502-217</value>
+        <updated>20230921134502</updated>
+      </snapshotVersion>
+      
+      <!-- SHA-256 checksum file -->
+      <snapshotVersion>
+        <extension>jar.sha256</extension>
+        <value>3.42.0-20230921.134502-217</value>
+        <updated>20230921134502</updated>
+      </snapshotVersion>
+      
+      <!-- MD5 checksum file -->
+      <snapshotVersion>
+        <extension>jar.md5</extension>
+        <value>3.42.0-20230921.134502-217</value>
+        <updated>20230921134502</updated>
+      </snapshotVersion>
+      
+      <!-- Signature file -->
+      <snapshotVersion>
+        <extension>jar.asc</extension>
+        <value>3.42.0-20230921.134502-217</value>
+        <updated>20230921134502</updated>
+      </snapshotVersion>
+    </snapshotVersions>
+  </versioning>
+</metadata>

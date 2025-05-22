@@ -13,6 +13,8 @@
 package org.sonatype.nexus.repository.httpclient.internal;
 
 import java.io.IOException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 
 import javax.annotation.Nullable;
 import javax.net.ssl.SSLPeerUnverifiedException;
@@ -41,7 +43,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.lang.String.format;
 import static java.lang.Thread.currentThread;
 import static java.util.Locale.ENGLISH;
 import static org.apache.http.HttpStatus.SC_UNAUTHORIZED;
@@ -115,33 +116,36 @@ public class BlockingHttpClient
       return filterable.call();
     }
     if (blocked) {
-      throw new RemoteBlockedIOException("Remote Manually Blocked");
+      throw new RemoteBlockedIOException(STR."Remote Manually Blocked");
     }
     DateTime blockedUntilCopy = this.blockedUntil;
     if (autoBlock && blockedUntilCopy != null && blockedUntilCopy.isAfterNow()) {
-      throw new RemoteBlockedIOException("Remote Auto Blocked until " + blockedUntilCopy);
+      throw new RemoteBlockedIOException(STR."Remote Auto Blocked until \{blockedUntilCopy}");
     }
 
     try {
       CloseableHttpResponse response = filterable.call();
       int statusCode = response.getStatusLine().getStatusCode();
 
-      if (autoBlockConfiguration.shouldBlock(statusCode)) {
-        if (!autoBlock && statusCode == SC_UNAUTHORIZED) {
+      switch (statusCode) {
+        case SC_UNAUTHORIZED when !autoBlock -> {
           updateStatusToAvailableWithParams(getReason(statusCode), statusCode, target);
         }
-        else {
+        case Integer i when autoBlockConfiguration.shouldBlock(i) -> {
           updateStatusToUnavailable(getReason(statusCode), statusCode, target);
         }
-      }
-      else {
-        updateStatusToAvailable();
+        default -> {
+          updateStatusToAvailable();
+        }
       }
       return response;
     }
     catch (IOException e) {
-      if (isRemoteUnavailable(e)) {
-        updateStatusToUnavailable(getReason(e), null, target);
+      switch (e) {
+        case ConnectionPoolTimeoutException _ -> {}
+        case IOException _ -> {
+          updateStatusToUnavailable(getReason(e), null, target);
+        }
       }
       throw e;
     }
@@ -162,7 +166,7 @@ public class BlockingHttpClient
       interruptCheckStatusThread();
       autoBlockSequence.reset();
     }
-    updateStatus(AVAILABLE, format("(Last Request %s)" , reason), statusCode, target.toURI(), false);
+    updateStatus(AVAILABLE, STR."(Last Request \{reason})" , statusCode, target.toURI(), false);
   }
 
   private synchronized void updateStatusToUnavailable(final String reason, @Nullable final Integer statusCode,
@@ -185,9 +189,9 @@ public class BlockingHttpClient
 
   @VisibleForTesting
   void scheduleCheckStatus(final String uri, final DateTime until) {
-    checkStatusThread = new Thread(new CheckStatus(uri, until), "Check Status " + uri);
-    checkStatusThread.setDaemon(true);
-    checkStatusThread.start();
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    executor.execute(new CheckStatus(uri, until));
+    executor.close();
   }
 
   private void updateStatus(final RemoteConnectionStatusType type,
@@ -218,23 +222,16 @@ public class BlockingHttpClient
     this.status = status;
   }
 
-  private boolean isRemoteUnavailable(final Exception e) {
-    if (e instanceof ConnectionPoolTimeoutException) {
-      return false;
-    }
-    return true;
-  }
-
   private String getReason(final Exception e) {
     if (e instanceof SSLPeerUnverifiedException) {
       return "Untrusted Remote";
     }
-    return e.getClass().getName() + ": " + e.getMessage();
+    return STR."\{e.getClass().getName()}: \{e.getMessage()}";
   }
 
   private String getReason(final int statusCode) {
     String reason = EnglishReasonPhraseCatalog.INSTANCE.getReason(statusCode, ENGLISH);
-    return reason == null ? "Unrecognized HTTP error, code " + statusCode : reason;
+    return reason == null ? STR."Unrecognized HTTP error, code \{statusCode}" : reason;
   }
 
   @Override
@@ -271,14 +268,14 @@ public class BlockingHttpClient
         try {
           long durationTillFire = new Duration(DateTime.now(), fireAt).getMillis();
           if (durationTillFire > 0) {
-            log.debug("Wait until {} to check status of {}", fireAt, uri);
+            log.debug(STR."Wait until \{fireAt} to check status of \{uri}");
             Thread.sleep(durationTillFire);
-            log.debug("Time is up. Checking status of {}", uri);
+            log.debug(STR."Time is up. Checking status of \{uri}");
             execute(new HttpHead(uri));
           }
         }
         catch (InterruptedException e) {
-          log.debug("Stopped checking status of {}", uri);
+          log.debug(STR."Stopped checking status of \{uri}");
         }
         catch (IOException e) {
           // ignore as we just want to access the host

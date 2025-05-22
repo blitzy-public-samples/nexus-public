@@ -12,8 +12,6 @@
  */
 package org.sonatype.nexus.coreui;
 
-import java.util.concurrent.Executors;
-
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -38,9 +36,9 @@ import org.apache.shiro.authz.annotation.RequiresPermissions;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
 
+import java.util.concurrent.Executors;
+
 /**
- * REST resource for managing anonymous access settings.
- * 
  * @since 3.19
  */
 @Named
@@ -55,79 +53,47 @@ public class AnonymousSettingsResource
   static final String RESOURCE_PATH = "internal/ui/anonymous-settings";
 
   private final AnonymousManager anonymousManager;
-  
-  /**
-   * Virtual thread executor for handling I/O operations asynchronously.
-   * Java 21 Virtual Threads provide lightweight concurrency with minimal overhead,
-   * allowing for efficient handling of many concurrent requests.
-   */
-  private final var virtualExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   @Inject
   public AnonymousSettingsResource(final AnonymousManager anonymousManager) {
     this.anonymousManager = checkNotNull(anonymousManager);
   }
 
-  /**
-   * Retrieves the current anonymous access configuration.
-   * 
-   * @return The anonymous settings data transfer object
-   */
   @GET
   @RequiresPermissions("nexus:settings:read")
   public void read(@Suspended final AsyncResponse response) {
-    // Use virtual threads for I/O operations to improve scalability
-    virtualExecutor.submit(() -> {
+    // Use Virtual Thread for I/O operations to improve efficiency
+    Thread.startVirtualThread(() -> {
       try {
         AnonymousConfiguration config = anonymousManager.getConfiguration();
-        log.debug(STR."Retrieved anonymous configuration: enabled=\{config.isEnabled()}, userId=\{config.getUserId()}, realm=\{config.getRealmName()}");
-        
-        // Create AnonymousSettingsXO record with values from configuration
-        var result = new AnonymousSettingsXO(
-            config.isEnabled(),
-            config.getUserId(),
-            config.getRealmName()
-        );
-        
-        response.resume(result);
+        AnonymousSettingsXO xo = new AnonymousSettingsXO();
+
+        xo.setEnabled(config.isEnabled());
+        xo.setUserId(config.getUserId());
+        xo.setRealmName(config.getRealmName());
+
+        response.resume(xo);
       } catch (Exception e) {
-        log.error(STR."Error retrieving anonymous settings: \{e.getMessage()}", e);
         response.resume(e);
       }
     });
   }
 
-  /**
-   * Updates the anonymous access configuration.
-   * 
-   * @param anonymousXO The anonymous settings to apply
-   */
   @PUT
   @RequiresAuthentication
   @RequiresPermissions("nexus:settings:update")
   public void update(@NotNull @Valid final AnonymousSettingsXO anonymousXO, @Suspended final AsyncResponse response) {
-    // Use virtual threads for I/O operations to improve scalability
-    virtualExecutor.submit(() -> {
+    // Use Virtual Thread for I/O operations to improve efficiency
+    Thread.startVirtualThread(() -> {
       try {
-        // Use record pattern matching to extract fields from the record
-        if (anonymousXO instanceof AnonymousSettingsXO(var enabled, var userId, var realmName)) {
-          log.debug(STR."Updating anonymous configuration: enabled=\{enabled}, userId=\{userId}, realm=\{realmName}");
-          
-          AnonymousConfiguration configuration = anonymousManager.newConfiguration();
-          configuration.setEnabled(enabled);
-          configuration.setRealmName(realmName);
-          configuration.setUserId(userId);
-          
-          anonymousManager.setConfiguration(configuration);
-          log.info(STR."Anonymous access settings updated: enabled=\{enabled}");
-          
-          response.resume("OK");
-        } else {
-          // This should never happen with record pattern matching, but included for completeness
-          throw new IllegalArgumentException("Invalid anonymous settings format");
-        }
+        AnonymousConfiguration configuration = anonymousManager.newConfiguration();
+        configuration.setEnabled(anonymousXO.getEnabled());
+        configuration.setRealmName(anonymousXO.getRealmName());
+        configuration.setUserId(anonymousXO.getUserId());
+        anonymousManager.setConfiguration(configuration);
+        
+        response.resume("OK");
       } catch (Exception e) {
-        log.error(STR."Error updating anonymous settings: \{e.getMessage()}", e);
         response.resume(e);
       }
     });

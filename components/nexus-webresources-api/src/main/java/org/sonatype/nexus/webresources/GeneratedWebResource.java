@@ -62,7 +62,7 @@ public abstract class GeneratedWebResource
       {
         content = generate();
         checkState(content != null);
-        log.trace("Generated: {}, {} bytes", getPath(), content.length);
+        log.trace(STR."Generated: \{getPath()}, \{content.length} bytes");
       }
 
       @Override

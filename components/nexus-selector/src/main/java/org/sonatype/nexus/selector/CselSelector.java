@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.selector;
 
+import org.apache.commons.jexl3.parser.ASTJexlScript;
+
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
@@ -29,16 +31,25 @@ public class CselSelector
   public CselSelector(final CselToSql cselToSql, final JexlExpression expression) {
     super(expression);
     this.cselToSql = checkNotNull(cselToSql);
-
   }
 
   @Override
   public void toSql(final SelectorSqlBuilder sqlBuilder) {
-    cselToSql.transformCselToSql(expression.getSyntaxTree(), sqlBuilder);
+    // Get the syntax tree and transform it to SQL using pattern matching
+    ASTJexlScript syntaxTree = expression.getSyntaxTree();
+    if (syntaxTree != null) {
+      cselToSql.transformCselToSql(syntaxTree, sqlBuilder);
+    }
   }
 
   @Override
-  public <T> void toSql(final T sqlBuilder, final CselToSql<T> cselToSql) {
-    cselToSql.transformCselToSql(expression.getSyntaxTree(), sqlBuilder);
+  public <T> void toSql(final T sqlBuilder, final CselToSql<T> cselToSqlTransformer) {
+    // Use pattern matching to handle the transformation
+    switch (sqlBuilder) {
+      case SelectorSqlBuilder builder when cselToSqlTransformer != null -> 
+          cselToSqlTransformer.transformCselToSql(expression.getSyntaxTree(), sqlBuilder);
+      case null -> throw new IllegalArgumentException("SQL builder cannot be null");
+      default -> cselToSqlTransformer.transformCselToSql(expression.getSyntaxTree(), sqlBuilder);
+    }
   }
 }

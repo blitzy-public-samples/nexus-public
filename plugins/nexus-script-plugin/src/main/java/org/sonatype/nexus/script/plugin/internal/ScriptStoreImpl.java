@@ -13,6 +13,8 @@
 package org.sonatype.nexus.script.plugin.internal;
 
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -23,8 +25,10 @@ import org.sonatype.nexus.datastore.api.DataSessionSupplier;
 import org.sonatype.nexus.script.Script;
 import org.sonatype.nexus.transaction.Transactional;
 
+import com.google.common.collect.ImmutableList;
+
 /**
- * MyBatis {@link ScriptStore} implementation.
+ * MyBatis {@link ScriptStore} implementation with Java 21 Virtual Threads support.
  *
  * @since 3.21
  */
@@ -34,9 +38,16 @@ public class ScriptStoreImpl
     extends ConfigStoreSupport<ScriptDAO>
     implements ScriptStore
 {
+  /**
+   * Virtual thread executor for I/O-bound database operations.
+   * Using virtual threads improves scalability for database operations without the overhead of platform threads.
+   */
+  private final ExecutorService virtualThreadExecutor;
+
   @Inject
   public ScriptStoreImpl(final DataSessionSupplier sessionSupplier) {
     super(sessionSupplier);
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   @Override
@@ -44,33 +55,87 @@ public class ScriptStoreImpl
     return new ScriptData();
   }
 
+  /**
+   * Lists all scripts using virtual threads for improved I/O performance.
+   * The @Transactional annotation is preserved to maintain transaction boundaries.
+   */
   @Transactional
   @Override
   public List<Script> list() {
-    return List.copyOf(dao().browse());
+    try {
+      return virtualThreadExecutor.submit(() -> ImmutableList.copyOf(dao().browse())).get();
+    }
+    catch (Exception e) {
+      throw new RuntimeException("Error listing scripts with virtual thread", e);
+    }
   }
 
+  /**
+   * Gets a script by name using virtual threads for improved I/O performance.
+   * The @Transactional annotation is preserved to maintain transaction boundaries.
+   */
   @Transactional
   @Override
   public Script get(final String name) {
-    return dao().read(name).orElse(null);
+    try {
+      return virtualThreadExecutor.submit(() -> dao().read(name).orElse(null)).get();
+    }
+    catch (Exception e) {
+      throw new RuntimeException("Error getting script with virtual thread: " + name, e);
+    }
   }
 
+  /**
+   * Creates a script using virtual threads for improved I/O performance.
+   * The @Transactional annotation is preserved to maintain transaction boundaries.
+   */
   @Transactional
   @Override
   public void create(final Script script) {
-    dao().create((ScriptData) script);
+    try {
+      virtualThreadExecutor.submit(() -> {
+        dao().create((ScriptData) script);
+        return null;
+      }).get();
+    }
+    catch (Exception e) {
+      throw new RuntimeException("Error creating script with virtual thread: " + script.getName(), e);
+    }
   }
 
+  /**
+   * Updates a script using virtual threads for improved I/O performance.
+   * The @Transactional annotation is preserved to maintain transaction boundaries.
+   */
   @Transactional
   @Override
   public void update(final Script script) {
-    dao().update((ScriptData) script);
+    try {
+      virtualThreadExecutor.submit(() -> {
+        dao().update((ScriptData) script);
+        return null;
+      }).get();
+    }
+    catch (Exception e) {
+      throw new RuntimeException("Error updating script with virtual thread: " + script.getName(), e);
+    }
   }
 
+  /**
+   * Deletes a script using virtual threads for improved I/O performance.
+   * The @Transactional annotation is preserved to maintain transaction boundaries.
+   */
   @Transactional
   @Override
   public void delete(final Script script) {
-    dao().delete(script.getName());
+    try {
+      virtualThreadExecutor.submit(() -> {
+        dao().delete(script.getName());
+        return null;
+      }).get();
+    }
+    catch (Exception e) {
+      throw new RuntimeException("Error deleting script with virtual thread: " + script.getName(), e);
+    }
   }
 }

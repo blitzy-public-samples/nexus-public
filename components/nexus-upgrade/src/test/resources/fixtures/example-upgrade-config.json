@@ -1,0 +1,175 @@
+{
+  "_comment": "Test fixture for end-to-end validation of the upgrade framework under Java 21",
+  "models": [
+    {
+      "name": "foo",
+      "currentVersion": "1.0",
+      "targetVersion": "1.2",
+      "upgradePaths": [
+        {
+          "from": "1.0",
+          "to": "1.1",
+          "upgradeClass": "org.sonatype.nexus.upgrade.example.UpgradeFoo_1_1"
+        },
+        {
+          "from": "1.1",
+          "to": "1.2",
+          "upgradeClass": "org.sonatype.nexus.upgrade.example.UpgradeFoo_1_2"
+        }
+      ],
+      "metadata": {
+        "description": "Base model for testing upgrade sequencing",
+        "priority": "high"
+      }
+    },
+    {
+      "name": "bar",
+      "currentVersion": "1.0",
+      "targetVersion": "1.1",
+      "upgradePaths": [
+        {
+          "from": "1.0",
+          "to": "1.1",
+          "upgradeClass": "org.sonatype.nexus.upgrade.example.UpgradeBar_1_1",
+          "dependencies": [
+            {
+              "model": "foo",
+              "version": "1.1"
+            }
+          ]
+        }
+      ],
+      "metadata": {
+        "description": "Model for testing simple dependency resolution",
+        "priority": "medium"
+      }
+    },
+    {
+      "name": "wibble",
+      "currentVersion": "1.0",
+      "targetVersion": "2.0",
+      "upgradePaths": [
+        {
+          "from": "1.0",
+          "to": "2.0",
+          "upgradeClass": "org.sonatype.nexus.upgrade.example.UpgradeWibble_2_0",
+          "dependencies": [
+            {
+              "model": "foo",
+              "version": "1.2"
+            },
+            {
+              "model": "bar",
+              "version": "1.1"
+            }
+          ]
+        }
+      ],
+      "metadata": {
+        "description": "Model for testing complex dependency resolution",
+        "priority": "low"
+      }
+    }
+  ],
+  "upgradeConfiguration": {
+    "executionMode": "sequential",
+    "failFast": true,
+    "maxRetries": 3,
+    "retryDelayMillis": 1000,
+    "logLevel": "INFO",
+    "java21Features": {
+      "useVirtualThreads": true,
+      "usePatternMatching": true,
+      "useStringTemplates": true,
+      "useRecordPatterns": true
+    }
+  },
+  "testScenarios": [
+    {
+      "name": "Complete upgrade sequence",
+      "description": "Tests the full upgrade sequence with all dependencies",
+      "expectedExecutionOrder": [
+        "org.sonatype.nexus.upgrade.example.UpgradeFoo_1_1",
+        "org.sonatype.nexus.upgrade.example.UpgradeBar_1_1",
+        "org.sonatype.nexus.upgrade.example.UpgradeFoo_1_2",
+        "org.sonatype.nexus.upgrade.example.UpgradeWibble_2_0"
+      ]
+    },
+    {
+      "name": "Partial upgrade - foo only",
+      "description": "Tests upgrading only the foo model",
+      "modelsToUpgrade": ["foo"],
+      "expectedExecutionOrder": [
+        "org.sonatype.nexus.upgrade.example.UpgradeFoo_1_1",
+        "org.sonatype.nexus.upgrade.example.UpgradeFoo_1_2"
+      ]
+    },
+    {
+      "name": "Dependency resolution test",
+      "description": "Tests that dependencies are correctly resolved and sequenced",
+      "modelsToUpgrade": ["wibble"],
+      "expectedExecutionOrder": [
+        "org.sonatype.nexus.upgrade.example.UpgradeFoo_1_1",
+        "org.sonatype.nexus.upgrade.example.UpgradeBar_1_1",
+        "org.sonatype.nexus.upgrade.example.UpgradeFoo_1_2",
+        "org.sonatype.nexus.upgrade.example.UpgradeWibble_2_0"
+      ]
+    }
+  ],
+  "java21Compatibility": {
+    "serializationTests": [
+      {
+        "name": "Basic serialization",
+        "description": "Tests basic JSON serialization/deserialization"
+      },
+      {
+        "name": "Record pattern serialization",
+        "description": "Tests serialization with Java 21 record patterns",
+        "testClass": "org.sonatype.nexus.upgrade.serialization.RecordPatternSerializationTest"
+      },
+      {
+        "name": "Virtual thread context serialization",
+        "description": "Tests serialization within virtual thread contexts",
+        "testClass": "org.sonatype.nexus.upgrade.serialization.VirtualThreadSerializationTest"
+      }
+    ],
+    "concurrencyTests": [
+      {
+        "name": "Parallel upgrade execution",
+        "description": "Tests parallel execution of independent upgrades using virtual threads",
+        "threadCount": 10,
+        "useVirtualThreads": true
+      },
+      {
+        "name": "High concurrency stress test",
+        "description": "Tests the upgrade framework under high concurrency with virtual threads",
+        "threadCount": 1000,
+        "useVirtualThreads": true,
+        "operations": ["read", "write", "upgrade"]
+      }
+    ]
+  },
+  "extensionPoints": {
+    "preUpgradeHooks": [
+      {
+        "name": "Backup",
+        "description": "Creates a backup before upgrade",
+        "hookClass": "org.sonatype.nexus.upgrade.example.BackupHook"
+      }
+    ],
+    "postUpgradeHooks": [
+      {
+        "name": "Verification",
+        "description": "Verifies the upgrade was successful",
+        "hookClass": "org.sonatype.nexus.upgrade.example.VerificationHook"
+      }
+    ],
+    "errorHandlers": [
+      {
+        "name": "Rollback",
+        "description": "Rolls back changes if an upgrade fails",
+        "handlerClass": "org.sonatype.nexus.upgrade.example.RollbackHandler"
+      }
+    ]
+  }
+}

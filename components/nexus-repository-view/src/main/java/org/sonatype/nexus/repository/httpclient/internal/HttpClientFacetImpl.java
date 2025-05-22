@@ -15,6 +15,7 @@ package org.sonatype.nexus.repository.httpclient.internal;
 import java.io.IOException;
 import java.util.Base64;
 import java.util.Map;
+import java.util.concurrent.Executors;
 
 import javax.annotation.Nullable;
 import javax.inject.Inject;
@@ -54,7 +55,7 @@ import org.apache.http.message.BasicHeader;
 import org.joda.time.DateTime;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.lang.String.format;
+import static java.lang.StringTemplate.STR;
 import static java.nio.charset.StandardCharsets.ISO_8859_1;
 import static java.util.Optional.ofNullable;
 import static org.apache.http.HttpHeaders.AUTHORIZATION;
@@ -180,14 +181,12 @@ public class HttpClientFacetImpl
   @Override
   @Guarded(by = STARTED)
   public Header createBasicAuthHeader() {
-    if (config.authentication instanceof UsernameAuthenticationConfiguration) {
-      UsernameAuthenticationConfiguration userAuth = (UsernameAuthenticationConfiguration) config.authentication;
-
+    if (config.authentication instanceof UsernameAuthenticationConfiguration userAuth) {
       if (unencryptedPassword == null) {
         unencryptedPassword = new String(userAuth.getPassword().decrypt());
       }
 
-      String auth = format("%1$s:%2$s", userAuth.getUsername(), unencryptedPassword);
+      String auth = STR."\{userAuth.getUsername()}:\{unencryptedPassword}";
 
       byte[] encodedAuth = Base64.getEncoder().encode(auth.getBytes(ISO_8859_1));
 
@@ -203,9 +202,8 @@ public class HttpClientFacetImpl
 
   @Override
   public String getBearerToken() {
-    if (config.authentication != null &&
-        BearerTokenAuthenticationConfiguration.TYPE.equals(config.authentication.getType())) {
-      return ((BearerTokenAuthenticationConfiguration) config.authentication).getBearerToken();
+    if (config.authentication instanceof BearerTokenAuthenticationConfiguration bearerAuth) {
+      return bearerAuth.getBearerToken();
     }
     return null;
   }
@@ -242,8 +240,7 @@ public class HttpClientFacetImpl
         logAutoBlockTimeIncreased(oldStatus, newStatus);
       }
       else if (oldStatus.getType() == UNINITIALISED) {
-        log.info("Remote connection status of repository {} set to {}.", getRepository().getName(),
-            newStatus.getDescription());
+        log.info(STR."Remote connection status of repository \{getRepository().getName()} set to \{newStatus.getDescription()}.");
       }
       else {
         logStatusUpdated(oldStatus, newStatus);
@@ -255,36 +252,22 @@ public class HttpClientFacetImpl
       final RemoteConnectionStatus oldStatus,
       final RemoteConnectionStatus newStatus)
   {
-    String message = "Repository status for {} continued as {} until {} - reason {} (previous reason was {})";
-    log.info(message,
-        getRepository().getName(),
-        newStatus.getType(),
-        newStatus.getBlockedUntil(),
-        statusReason(newStatus),
-        statusReason(oldStatus));
+    log.info(STR."Repository status for \{getRepository().getName()} continued as \{newStatus.getType()} until \{newStatus.getBlockedUntil()} - reason \{statusReason(newStatus)} (previous reason was \{statusReason(oldStatus)})");
   }
 
   private void logStatusUpdated(final RemoteConnectionStatus oldStatus, final RemoteConnectionStatus newStatus) {
-    String message = "Repository status for {} changed from {} to {}{} - reason {}";
-    log.info(message,
-        getRepository().getName(),
-        oldStatus.getType(),
-        newStatus.getType(),
-        statusBlockedUntil(newStatus),
-        statusReason(newStatus));
+    log.info(STR."Repository status for \{getRepository().getName()} changed from \{oldStatus.getType()} to \{newStatus.getType()}\{statusBlockedUntil(newStatus)} - reason \{statusReason(newStatus)}");
   }
 
   private static String statusBlockedUntil(final RemoteConnectionStatus status) {
     if (status.getBlockedUntil() != null) {
-      return format(" until %s", status.getBlockedUntil());
+      return STR." until \{status.getBlockedUntil()}";
     }
     return "";
   }
 
   private static String statusReason(final RemoteConnectionStatus status) {
-    return format("%s for %s",
-        status.getReason() != null ? status.getReason() : "n/a",
-        status.getRequestUrl() != null ? status.getRequestUrl() : "n/a");
+    return STR."\{status.getReason() != null ? status.getReason() : "n/a"} for \{status.getRequestUrl() != null ? status.getRequestUrl() : "n/a"}";
   }
 
   private void createHttpClient() {
@@ -309,6 +292,10 @@ public class HttpClientFacetImpl
     setNormalizationStrategy(delegateConfig);
     setContentCompressionStrategy(delegateConfig);
     setAuthenticationStrategy(delegateConfig);
+    
+    // Configure to use Virtual Threads for HTTP operations
+    delegateConfig.setExecutorService(Executors.newVirtualThreadPerTaskExecutor());
+    
     return delegateConfig;
   }
 
@@ -370,6 +357,9 @@ public class HttpClientFacetImpl
         blockUntilMillis,
         status.getRequestUrl());
 
-    getEventManager().post(event);
+    // Use Virtual Threads for event distribution to improve performance
+    Executors.newVirtualThreadPerTaskExecutor().execute(() -> {
+      getEventManager().post(event);
+    });
   }
 }

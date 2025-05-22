@@ -16,11 +16,10 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CancellationException;
-import java.util.concurrent.CompletionService;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.function.Supplier;
 
 import org.sonatype.nexus.blobstore.api.BlobStoreException;
@@ -37,7 +36,6 @@ import static java.lang.String.format;
 
 /**
  * Common class to execute parallel requests to S3 for a MultipartUpload operation
- * using Java 21 Virtual Threads for optimal I/O-bound performance.
  *
  * @since 3.19
  */
@@ -50,14 +48,15 @@ public abstract class ParallelRequester
 
   /**
    * @param chunkSize       - the number of bytes to be processed in one parallel request
+   * @param numberOfThreads - ignored parameter, kept for backward compatibility
    * @param threadGroupName - a human readable name for the threads
    */
-  public ParallelRequester(final int chunkSize, final String threadGroupName)
+  public ParallelRequester(final int chunkSize, final int numberOfThreads, final String threadGroupName)
   {
     checkArgument(chunkSize >= 0, "Must use a non-negative chunkSize");
     this.chunkSize = chunkSize;
 
-    // Use Virtual Threads for optimal I/O-bound performance with minimal resource consumption
+    // Use virtual threads instead of a fixed thread pool
     this.executorService = Executors.newVirtualThreadPerTaskExecutor();
   }
 
@@ -65,6 +64,7 @@ public abstract class ParallelRequester
   protected void doStop() {
     executorService.shutdownNow();
   }
+
 
   @FunctionalInterface
   protected interface IOFunction<T, R>
@@ -76,58 +76,51 @@ public abstract class ParallelRequester
                                   final String bucket,
                                   final String key,
                                   final Supplier<IOFunction<String, List<PartETag>>> operations)
-      throws InterruptedException
   {
     InitiateMultipartUploadRequest initiateRequest = new InitiateMultipartUploadRequest(bucket, key);
     String uploadId = s3.initiateMultipartUpload(initiateRequest).getUploadId();
 
-    CompletionService<List<PartETag>> completionService = new ExecutorCompletionService<>(executorService);
+    List<Future<List<PartETag>>> futures = new ArrayList<>();
     try {
-      // Submit tasks to be executed by virtual threads
-      // The number of tasks is determined by the number of chunks to be processed
-      // Each virtual thread will process one chunk
-      int taskCount = Runtime.getRuntime().availableProcessors() * 4; // Optimal multiplier for I/O-bound tasks
-      for (int i = 0; i < taskCount; i++) {
-        completionService.submit(() -> operations.get().apply(uploadId));
+      // Submit tasks - with virtual threads we can create as many as needed
+      // Keep submitting tasks as long as the operations supplier provides them
+      IOFunction<String, List<PartETag>> operation;
+      while ((operation = operations.get()) != null) {
+        IOFunction<String, List<PartETag>> currentOperation = operation;
+        futures.add(executorService.submit(() -> currentOperation.apply(uploadId)));
       }
 
       List<PartETag> partETags = new ArrayList<>();
-      for (int i = 0; i < taskCount; i++) {
-        try {
-          List<PartETag> tags = completionService.take().get();
-          if (tags != null && !tags.isEmpty()) {
-            partETags.addAll(tags);
-          }
-        }
-        catch (ExecutionException ex) {
-          // If any task fails, abort the upload and propagate the exception
-          s3.abortMultipartUpload(new AbortMultipartUploadRequest(bucket, key, uploadId));
-          throw new BlobStoreException(
-              format("Error executing parallel requests for bucket:%s key:%s with uploadId:%s", bucket, key, uploadId),
-              ex.getCause(), null);
-        }
+      for (Future<List<PartETag>> future : futures) {
+        partETags.addAll(future.get());
       }
 
-      if (!partETags.isEmpty()) {
-        s3.completeMultipartUpload(new CompleteMultipartUploadRequest()
-            .withBucketName(bucket)
-            .withKey(key)
-            .withUploadId(uploadId)
-            .withPartETags(partETags));
-      }
-      else {
-        // No parts were uploaded, abort the multipart upload
-        s3.abortMultipartUpload(new AbortMultipartUploadRequest(bucket, key, uploadId));
-      }
+      s3.completeMultipartUpload(new CompleteMultipartUploadRequest()
+          .withBucketName(bucket)
+          .withKey(key)
+          .withUploadId(uploadId)
+          .withPartETags(partETags));
     }
     catch (InterruptedException interrupted) {
+      // Cancel all pending tasks
+      for (Future<List<PartETag>> future : futures) {
+        future.cancel(true);
+      }
       s3.abortMultipartUpload(new AbortMultipartUploadRequest(bucket, key, uploadId));
-      throw interrupted; // Re-throw to allow proper handling by the caller
+      // Preserve interrupt status
+      Thread.currentThread().interrupt();
     }
-    catch (CancellationException ex) {
+    catch (CancellationException | ExecutionException ex) {
+      // Cancel all pending tasks
+      for (Future<List<PartETag>> future : futures) {
+        if (!future.isDone()) {
+          future.cancel(true);
+        }
+      }
       s3.abortMultipartUpload(new AbortMultipartUploadRequest(bucket, key, uploadId));
       throw new BlobStoreException(
-          format("Upload cancelled for bucket:%s key:%s with uploadId:%s", bucket, key, uploadId), ex, null);
+          format("Error executing parallel requests for bucket:%s key:%s with uploadId:%s", bucket, key, uploadId), ex,
+          null);
     }
   }
 }

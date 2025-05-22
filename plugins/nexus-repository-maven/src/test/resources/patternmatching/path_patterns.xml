@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  This file contains various Maven repository path patterns for testing Java 21's record pattern matching.
+  These patterns represent different types of artifacts, metadata, and checksums commonly found in Maven repositories.
+  The structure is designed to test Java 21's enhanced pattern matching capabilities for repository path handling.
+-->
+<mavenPathPatterns>
+  <!-- Standard artifact paths -->
+  <artifactPaths>
+    <path type="jar">/org/sonatype/nexus/nexus-core/3.42.0/nexus-core-3.42.0.jar</path>
+    <path type="pom">/org/sonatype/nexus/nexus-core/3.42.0/nexus-core-3.42.0.pom</path>
+    <path type="war">/org/sonatype/nexus/nexus-webapp/3.42.0/nexus-webapp-3.42.0.war</path>
+    <path type="ear">/org/sonatype/nexus/nexus-app/3.42.0/nexus-app-3.42.0.ear</path>
+  </artifactPaths>
+  
+  <!-- Artifact paths with classifiers -->
+  <classifierPaths>
+    <path type="sources">/org/sonatype/nexus/nexus-core/3.42.0/nexus-core-3.42.0-sources.jar</path>
+    <path type="javadoc">/org/sonatype/nexus/nexus-core/3.42.0/nexus-core-3.42.0-javadoc.jar</path>
+    <path type="tests">/org/sonatype/nexus/nexus-core/3.42.0/nexus-core-3.42.0-tests.jar</path>
+    <path type="native">/org/sonatype/nexus/nexus-native/3.42.0/nexus-native-3.42.0-linux-x86_64.jar</path>
+  </classifierPaths>
+  
+  <!-- SNAPSHOT artifact paths -->
+  <snapshotPaths>
+    <path type="jar">/org/sonatype/nexus/nexus-core/3.43.0-SNAPSHOT/nexus-core-3.43.0-20230915.172202-42.jar</path>
+    <path type="pom">/org/sonatype/nexus/nexus-core/3.43.0-SNAPSHOT/nexus-core-3.43.0-20230915.172202-42.pom</path>
+    <path type="sources">/org/sonatype/nexus/nexus-core/3.43.0-SNAPSHOT/nexus-core-3.43.0-20230915.172202-42-sources.jar</path>
+    <path type="metadata">/org/sonatype/nexus/nexus-core/3.43.0-SNAPSHOT/maven-metadata.xml</path>
+  </snapshotPaths>
+  
+  <!-- Metadata paths -->
+  <metadataPaths>
+    <path type="project">/org/sonatype/nexus/nexus-core/maven-metadata.xml</path>
+    <path type="group">/org/sonatype/nexus/maven-metadata.xml</path>
+    <path type="root">/org/sonatype/maven-metadata.xml</path>
+  </metadataPaths>
+  
+  <!-- Checksum paths -->
+  <checksumPaths>
+    <path type="md5">/org/sonatype/nexus/nexus-core/3.42.0/nexus-core-3.42.0.jar.md5</path>
+    <path type="sha1">/org/sonatype/nexus/nexus-core/3.42.0/nexus-core-3.42.0.jar.sha1</path>
+    <path type="sha256">/org/sonatype/nexus/nexus-core/3.42.0/nexus-core-3.42.0.jar.sha256</path>
+    <path type="sha512">/org/sonatype/nexus/nexus-core/3.42.0/nexus-core-3.42.0.jar.sha512</path>
+    <path type="md5-metadata">/org/sonatype/nexus/nexus-core/maven-metadata.xml.md5</path>
+    <path type="sha1-metadata">/org/sonatype/nexus/nexus-core/maven-metadata.xml.sha1</path>
+  </checksumPaths>
+  
+  <!-- Complex nested paths for testing nested record patterns -->
+  <nestedPaths>
+    <path type="plugin">/org/apache/maven/plugins/maven-compiler-plugin/3.10.1/maven-compiler-plugin-3.10.1.jar</path>
+    <path type="plugin-metadata">/org/apache/maven/plugins/maven-compiler-plugin/maven-metadata.xml</path>
+    <path type="bom">/org/springframework/boot/spring-boot-dependencies/2.7.3/spring-boot-dependencies-2.7.3.pom</path>
+    <path type="parent">/org/springframework/boot/spring-boot-parent/2.7.3/spring-boot-parent-2.7.3.pom</path>
+  </nestedPaths>
+  
+  <!-- Special case paths for testing pattern matching edge cases -->
+  <specialPaths>
+    <path type="empty-version">/org/sonatype/nexus/nexus-core//nexus-core.jar</path>
+    <path type="no-extension">/org/sonatype/nexus/nexus-core/3.42.0/nexus-core-3.42.0</path>
+    <path type="dots-in-artifactId">/org/sonatype/nexus.core/nexus.core/3.42.0/nexus.core-3.42.0.jar</path>
+    <path type="dots-in-groupId">/org/sonatype.nexus/nexus-core/3.42.0/nexus-core-3.42.0.jar</path>
+    <path type="numeric-groupId">/org/sonatype/123/artifact/1.0.0/artifact-1.0.0.jar</path>
+    <path type="numeric-artifactId">/org/sonatype/nexus/456/1.0.0/456-1.0.0.jar</path>
+  </specialPaths>
+  
+  <!-- Path patterns for testing switch expressions with pattern matching -->
+  <switchPatternPaths>
+    <path type="jar-release">/com/example/project/1.0.0/project-1.0.0.jar</path>
+    <path type="jar-snapshot">/com/example/project/1.0.0-SNAPSHOT/project-1.0.0-20230915.172202-1.jar</path>
+    <path type="pom-release">/com/example/project/1.0.0/project-1.0.0.pom</path>
+    <path type="pom-snapshot">/com/example/project/1.0.0-SNAPSHOT/project-1.0.0-20230915.172202-1.pom</path>
+    <path type="metadata-release">/com/example/project/maven-metadata.xml</path>
+    <path type="metadata-snapshot">/com/example/project/1.0.0-SNAPSHOT/maven-metadata.xml</path>
+  </switchPatternPaths>
+  
+  <!-- Path patterns with varying depth for testing pattern variable extraction -->
+  <depthPatterns>
+    <path type="depth-2">/org/apache</path>
+    <path type="depth-3">/org/apache/maven</path>
+    <path type="depth-4">/org/apache/maven/plugins</path>
+    <path type="depth-5">/org/apache/maven/plugins/maven-compiler-plugin</path>
+    <path type="depth-6">/org/apache/maven/plugins/maven-compiler-plugin/3.10.1</path>
+    <path type="depth-7">/org/apache/maven/plugins/maven-compiler-plugin/3.10.1/maven-compiler-plugin-3.10.1.jar</path>
+  </depthPatterns>
+  
+  <!-- Path patterns for testing guarded pattern matching -->
+  <guardedPatterns>
+    <path type="version-major-1">/com/example/project/1.0.0/project-1.0.0.jar</path>
+    <path type="version-major-2">/com/example/project/2.0.0/project-2.0.0.jar</path>
+    <path type="version-major-3">/com/example/project/3.0.0/project-3.0.0.jar</path>
+    <path type="version-dev">/com/example/project/1.0.0-dev/project-1.0.0-dev.jar</path>
+    <path type="version-alpha">/com/example/project/1.0.0-alpha/project-1.0.0-alpha.jar</path>
+    <path type="version-beta">/com/example/project/1.0.0-beta/project-1.0.0-beta.jar</path>
+    <path type="version-rc">/com/example/project/1.0.0-rc/project-1.0.0-rc.jar</path>
+  </guardedPatterns>
+</mavenPathPatterns>

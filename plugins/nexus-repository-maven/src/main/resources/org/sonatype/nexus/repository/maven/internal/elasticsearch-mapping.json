@@ -1,16 +1,10 @@
-/*
- * Elasticsearch mapping for Maven repository components
- * Updated for Java 21 compatibility:
- * - Replaced deprecated "type": "string" with "type": "keyword" for non-analyzed fields
- * - Replaced deprecated "type": "string" with "type": "text" for analyzed fields
- * - Removed deprecated "index": "not_analyzed" setting (keyword type implies not_analyzed)
- */
 {
   "settings": {
     "analysis": {
       "analyzer": {
         "paths": {
-          "tokenizer": "path_hierarchy"
+          "tokenizer": "path_hierarchy",
+          "type": "custom"
         }
       }
     }
@@ -22,7 +16,8 @@
           "dates": {
             "match_mapping_type": "date",
             "mapping": {
-              "type": "keyword"
+              "type": "string",
+              "index": "not_analyzed"
             }
           }
         },
@@ -31,7 +26,8 @@
             "path_match": "attributes.maven2.*",
             "match_mapping_type": "string",
             "mapping": {
-              "type": "keyword"
+              "type": "string",
+              "index": "not_analyzed"
             }
           }
         },
@@ -40,23 +36,28 @@
             "path_match": "assets.attributes.maven2.*",
             "match_mapping_type": "string",
             "mapping": {
-              "type": "keyword"
+              "type": "string",
+              "index": "not_analyzed"
             }
           }
         }
       ],
       "properties": {
         "assets": {
+          "type": "object",
           "properties": {
             "attributes": {
+              "type": "object",
               "properties": {
                 "maven2": {
+                  "type": "object",
                   "properties": {
                     "path": {
-                      "type": "keyword",
+                      "type": "string",
+                      "index": "not_analyzed",
                       "fields": {
                         "tree": {
-                          "type": "text",
+                          "type": "string",
                           "analyzer": "paths"
                         }
                       }

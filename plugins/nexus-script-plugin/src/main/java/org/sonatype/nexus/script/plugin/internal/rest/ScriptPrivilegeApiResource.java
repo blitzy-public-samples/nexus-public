@@ -13,9 +13,8 @@
 package org.sonatype.nexus.script.plugin.internal.rest;
 
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
@@ -38,8 +37,8 @@ import org.apache.shiro.authz.annotation.RequiresPermissions;
 import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON;
 
 /**
- * Script privilege API resource with Java 21 Virtual Threads support for I/O-bound operations.
- * Updated for compatibility with RESTEasy 6.2.7.Final.
+ * REST resource for script privilege management.
+ * Updated for Java 21 with Virtual Threads support for I/O-bound operations.
  *
  * @since 3.19
  */
@@ -50,26 +49,16 @@ public class ScriptPrivilegeApiResource
     implements Resource, ScriptPrivilegeApiResourceDoc
 {
   /**
-   * Default executor service for virtual threads if not overridden by subclasses.
+   * Virtual thread executor for handling I/O-bound privilege operations.
+   * Uses Java 21's Virtual Threads to optimize concurrent privilege management operations.
    */
-  private final ExecutorService defaultExecutorService;
-
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+  
   @Inject
   public ScriptPrivilegeApiResource(final SecuritySystem securitySystem,
                                     final Map<String, PrivilegeDescriptor> privilegeDescriptors)
   {
     super(securitySystem, privilegeDescriptors);
-    this.defaultExecutorService = Executors.newVirtualThreadPerTaskExecutor();
-  }
-
-  /**
-   * Get the executor service to use for privilege operations.
-   * Can be overridden by subclasses to provide a different executor.
-   *
-   * @return the executor service to use
-   */
-  protected ExecutorService getExecutorService() {
-    return defaultExecutorService;
   }
 
   @Override
@@ -78,12 +67,17 @@ public class ScriptPrivilegeApiResource
   @RequiresPermissions("nexus:privileges:create")
   @Path("script")
   public Response createPrivilege(final ApiPrivilegeScriptRequest privilege) {
-    // Use virtual threads for I/O-bound privilege creation
-    CompletableFuture<Response> future = CompletableFuture.supplyAsync(
-        () -> doCreate(ScriptPrivilegeDescriptor.TYPE, privilege),
-        getExecutorService());
-    
-    return future.join(); // Wait for the operation to complete
+    try {
+      // Use Virtual Thread to handle the I/O-bound privilege creation operation
+      return virtualThreadExecutor.submit(() -> doCreate(ScriptPrivilegeDescriptor.TYPE, privilege)).get();
+    }
+    catch (Exception e) {
+      log.error("Error creating script privilege with Virtual Thread", e);
+      if (e.getCause() != null) {
+        throw new RuntimeException("Failed to create privilege: " + e.getCause().getMessage(), e.getCause());
+      }
+      throw new RuntimeException("Failed to create privilege", e);
+    }
   }
 
   @Override
@@ -94,11 +88,19 @@ public class ScriptPrivilegeApiResource
   public void updatePrivilege(@PathParam("privilegeName") final String privilegeName,
                               final ApiPrivilegeScriptRequest privilege)
   {
-    // Use virtual threads for I/O-bound privilege update
-    CompletableFuture<Void> future = CompletableFuture.runAsync(
-        () -> doUpdate(privilegeName, ScriptPrivilegeDescriptor.TYPE, privilege),
-        getExecutorService());
-    
-    future.join(); // Wait for the operation to complete
+    try {
+      // Use Virtual Thread to handle the I/O-bound privilege update operation
+      virtualThreadExecutor.submit(() -> {
+        doUpdate(privilegeName, ScriptPrivilegeDescriptor.TYPE, privilege);
+        return null;
+      }).get();
+    }
+    catch (Exception e) {
+      log.error("Error updating script privilege with Virtual Thread", e);
+      if (e.getCause() != null) {
+        throw new RuntimeException("Failed to update privilege: " + e.getCause().getMessage(), e.getCause());
+      }
+      throw new RuntimeException("Failed to update privilege", e);
+    }
   }
 }

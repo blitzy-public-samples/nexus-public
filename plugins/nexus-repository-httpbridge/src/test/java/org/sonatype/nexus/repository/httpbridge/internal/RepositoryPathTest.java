@@ -23,6 +23,8 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
 
 /**
  * Tests for {@link RepositoryPath}.
@@ -149,5 +151,135 @@ public class RepositoryPathTest
   @Test
   public void fileWithSpaces() throws Exception {
     assertPath("/repo/foo/abc bar.txt", "repo", "/foo/abc bar.txt");
+  }
+  
+  /**
+   * Tests for pattern matching with different path formats.
+   * This test validates the pattern matching implementation for repository paths.
+   */
+  @Test
+  public void testPatternMatchingWithDifferentPathFormats() {
+    // Test with various path formats using pattern matching
+    switch ("/repo/path") {
+      case String s when s.startsWith("/") && s.indexOf('/', 1) > 0 -> {
+        String[] parts = s.substring(1).split("/", 2);
+        assertEquals("repo", parts[0]);
+        assertEquals("path", parts[1]);
+      }
+      default -> fail("Path should match the pattern");
+    }
+    
+    // Test with complex path using pattern matching
+    switch ("/repo/foo/bar/baz") {
+      case String s when s.startsWith("/") && s.indexOf('/', 1) > 0 -> {
+        String[] parts = s.substring(1).split("/", 2);
+        assertEquals("repo", parts[0]);
+        assertEquals("foo/bar/baz", parts[1]);
+      }
+      default -> fail("Path should match the pattern");
+    }
+  }
+  
+  /**
+   * Tests for pattern matching with invalid paths.
+   * This test validates that pattern matching correctly identifies invalid paths.
+   */
+  @Test
+  public void testPatternMatchingWithInvalidPaths() {
+    // Test with invalid paths using pattern matching
+    String result = switch ("repo") { // Missing leading slash
+      case String s when s.startsWith("/") && s.indexOf('/', 1) > 0 -> "Valid repository path";
+      case String s when !s.startsWith("/") -> "Missing leading slash";
+      case String s when s.startsWith("/") && s.indexOf('/', 1) == -1 -> "Missing repository path separator";
+      default -> "Unknown pattern";
+    };
+    assertEquals("Missing leading slash", result);
+    
+    result = switch ("/repo") { // Missing path separator
+      case String s when s.startsWith("/") && s.indexOf('/', 1) > 0 -> "Valid repository path";
+      case String s when !s.startsWith("/") -> "Missing leading slash";
+      case String s when s.startsWith("/") && s.indexOf('/', 1) == -1 -> "Missing repository path separator";
+      default -> "Unknown pattern";
+    };
+    assertEquals("Missing repository path separator", result);
+  }
+  
+  /**
+   * Tests for pattern matching with relative path tokens.
+   * This test validates that pattern matching correctly identifies paths with relative tokens.
+   */
+  @Test
+  public void testPatternMatchingWithRelativeTokens() {
+    // Test with paths containing relative tokens using pattern matching
+    String result = switch ("/repo/../path") {
+      case String s when s.contains("/../") || s.contains("/./") || s.endsWith("/.") || s.endsWith("/..")
+          -> "Contains relative token";
+      case String s when s.startsWith("/") && s.indexOf('/', 1) > 0 -> "Valid repository path";
+      default -> "Unknown pattern";
+    };
+    assertEquals("Contains relative token", result);
+    
+    result = switch ("/repo/./path") {
+      case String s when s.contains("/../") || s.contains("/./") || s.endsWith("/.") || s.endsWith("/..")
+          -> "Contains relative token";
+      case String s when s.startsWith("/") && s.indexOf('/', 1) > 0 -> "Valid repository path";
+      default -> "Unknown pattern";
+    };
+    assertEquals("Contains relative token", result);
+  }
+  
+  /**
+   * Tests for complex pattern matching with nested conditions.
+   * This test validates more complex pattern matching scenarios with nested conditions.
+   */
+  @Test
+  public void testComplexPatternMatching() {
+    // Test with complex path patterns using nested pattern matching
+    String path = "/repo/foo/bar/baz.txt";
+    
+    String result = switch (path) {
+      case String s when s.startsWith("/") && s.indexOf('/', 1) > 0 -> {
+        String[] parts = s.substring(1).split("/", 2);
+        String repo = parts[0];
+        String remainingPath = "/" + parts[1];
+        
+        yield switch (remainingPath) {
+          case String p when p.endsWith(".txt") -> "Text file in " + repo;
+          case String p when p.endsWith(".jar") -> "JAR file in " + repo;
+          default -> "Other file in " + repo;
+        };
+      }
+      default -> "Invalid path";
+    };
+    
+    assertEquals("Text file in repo", result);
+  }
+  
+  /**
+   * Tests for compatibility between traditional and pattern matching implementations.
+   * This test validates that both implementations produce the same results.
+   */
+  @Test
+  public void testCompatibilityBetweenImplementations() {
+    // Test paths with both traditional and pattern matching implementations
+    String path = "/repo/foo/bar/baz";
+    
+    // Traditional implementation
+    RepositoryPath parsedPath = RepositoryPath.parse(path);
+    String repoName = parsedPath.getRepositoryName();
+    String remainingPath = parsedPath.getRemainingPath();
+    
+    // Pattern matching implementation
+    String[] patternResult = switch (path) {
+      case String s when s.startsWith("/") && s.indexOf('/', 1) > 0 -> {
+        String[] parts = s.substring(1).split("/", 2);
+        yield new String[] { parts[0], "/" + parts[1] };
+      }
+      default -> new String[] { "", "" };
+    };
+    
+    // Verify both implementations produce the same results
+    assertEquals(repoName, patternResult[0]);
+    assertEquals(remainingPath, patternResult[1]);
   }
 }

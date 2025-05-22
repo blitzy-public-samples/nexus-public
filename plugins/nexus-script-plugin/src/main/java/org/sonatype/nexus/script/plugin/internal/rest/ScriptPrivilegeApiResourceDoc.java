@@ -20,31 +20,31 @@ import org.sonatype.nexus.security.internal.rest.NexusSecurityApiConstants;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
+ * Documentation interface for Script Privilege API Resource.
+ * Updated for compatibility with RESTEasy 6.2.7.Final and Swagger 2.2.20.
+ *
  * @since 3.19
  */
 @Tag(name = "Security management: privileges")
 public interface ScriptPrivilegeApiResourceDoc
 {
   @Operation(summary = "Create a script type privilege.")
-  @ApiResponses(value = { 
-      @ApiResponse(responseCode = "400", description = NexusSecurityApiConstants.PRIVILEGE_MISCONFIGURED),
-      @ApiResponse(responseCode = "403", description = NexusSecurityApiConstants.INVALID_PERMISSIONS) 
-  })
+  @ApiResponse(responseCode = "400", description = NexusSecurityApiConstants.PRIVILEGE_MISCONFIGURED)
+  @ApiResponse(responseCode = "403", description = NexusSecurityApiConstants.INVALID_PERMISSIONS)
   Response createPrivilege(
       @Parameter(description = "The privilege to create.") 
       @NotNull @Valid final ApiPrivilegeScriptRequest privilege);
 
   @Operation(summary = "Update a script type privilege.")
-  @ApiResponses(value = { 
-      @ApiResponse(responseCode = "400", description = NexusSecurityApiConstants.PRIVILEGE_MISCONFIGURED),
-      @ApiResponse(responseCode = "403", description = NexusSecurityApiConstants.INVALID_PERMISSIONS),
-      @ApiResponse(responseCode = "404", description = NexusSecurityApiConstants.PRIVILEGE_NOT_FOUND) 
-  })
+  @ApiResponse(responseCode = "400", description = NexusSecurityApiConstants.PRIVILEGE_MISCONFIGURED)
+  @ApiResponse(responseCode = "403", description = NexusSecurityApiConstants.INVALID_PERMISSIONS)
+  @ApiResponse(responseCode = "404", description = NexusSecurityApiConstants.PRIVILEGE_NOT_FOUND)
   void updatePrivilege(
       @Parameter(description = "The name of the privilege to update.") 
       @NotNull final String privilegeName,

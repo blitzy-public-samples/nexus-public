@@ -25,7 +25,6 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
-import java.util.concurrent.Executors;
 import java.util.concurrent.locks.Lock;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -59,16 +58,21 @@ import org.sonatype.nexus.blobstore.s3.S3BlobStoreConfigurationHelper;
 import org.sonatype.nexus.common.log.DryRunPrefix;
 import org.sonatype.nexus.common.stateguard.Guarded;
 import org.sonatype.nexus.common.time.UTC;
-import org.sonatype.nexus.thread.NexusThreadFactory;
 
-// AWS SDK for Java 2.x imports
-import software.amazon.awssdk.core.sync.RequestBody;
-import software.amazon.awssdk.core.sync.ResponseTransformer;
-import software.amazon.awssdk.regions.Region;
-import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.*;
-import software.amazon.awssdk.services.s3.paginators.ListObjectsV2Iterable;
-
+import com.amazonaws.SdkBaseException;
+import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.iterable.S3Objects;
+import com.amazonaws.services.s3.model.AmazonS3Exception;
+import com.amazonaws.services.s3.model.DeleteObjectsRequest;
+import com.amazonaws.services.s3.model.GetObjectMetadataRequest;
+import com.amazonaws.services.s3.model.ListObjectsV2Request;
+import com.amazonaws.services.s3.model.ListObjectsV2Result;
+import com.amazonaws.services.s3.model.ObjectMetadata;
+import com.amazonaws.services.s3.model.ObjectTagging;
+import com.amazonaws.services.s3.model.S3Object;
+import com.amazonaws.services.s3.model.S3ObjectSummary;
+import com.amazonaws.services.s3.model.SetObjectTaggingRequest;
+import com.amazonaws.services.s3.model.Tag;
 import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.SharedMetricRegistries;
 import com.codahale.metrics.Timer;
@@ -89,6 +93,7 @@ import static java.lang.String.format;
 import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
 import static java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor;
+import static java.util.stream.StreamSupport.stream;
 import static org.sonatype.nexus.blobstore.DirectPathLocationStrategy.DIRECT_PATH_ROOT;
 import static org.sonatype.nexus.blobstore.api.OperationType.DOWNLOAD;
 import static org.sonatype.nexus.blobstore.api.OperationType.UPLOAD;
@@ -150,7 +155,7 @@ public class S3BlobStore
 
   public static final String DIRECT_PATH_PREFIX = CONTENT_PREFIX + "/" + DIRECT_PATH_ROOT;
 
-  public static final Tag DELETED_TAG = Tag.builder().key("deleted").value("true").build();
+  public static final Tag DELETED_TAG = new Tag("deleted", "true");
 
   private static final String FILE_V1 = "file/1";
 
@@ -174,7 +179,7 @@ public class S3BlobStore
 
   private LoadingCache<BlobId, S3Blob> liveBlobs;
 
-  private S3Client s3;
+  private AmazonS3 s3;
 
   private ExecutorService executorService;
 
@@ -243,7 +248,7 @@ public class S3BlobStore
     blobStoreQuotaUsageChecker.start();
 
     if (this.preferAsyncCleanup && executorService == null) {
-      // Use Java 21 Virtual Threads for async operations
+      // Use Virtual Threads for I/O-bound operations
       this.executorService = newVirtualThreadPerTaskExecutor();
     }
   }
@@ -300,12 +305,8 @@ public class S3BlobStore
     return create(headers, destination -> {
       try (InputStream data = blobData) {
         MetricsInputStream input = new MetricsInputStream(data);
-        // Use Virtual Thread for upload operation
-        CompletableFuture<StreamMetrics> future = CompletableFuture.supplyAsync(() -> {
-          uploader.upload(s3, getConfiguredBucket(), destination, input);
-          return input.getMetrics();
-        }, executorService);
-        return future.join(); // Wait for the upload to complete
+        uploader.upload(s3, getConfiguredBucket(), destination, input);
+        return input.getMetrics();
       }
     }, blobId);
   }
@@ -397,13 +398,9 @@ public class S3BlobStore
     Blob sourceBlob = checkNotNull(get(blobId));
     String sourcePath = contentPath(sourceBlob.getId());
     return create(headers, destination -> {
-      // Use Virtual Thread for copy operation
-      CompletableFuture<StreamMetrics> future = CompletableFuture.supplyAsync(() -> {
-        copier.copy(s3, getConfiguredBucket(), sourcePath, destination);
-        BlobMetrics metrics = sourceBlob.getMetrics();
-        return new StreamMetrics(metrics.getContentSize(), metrics.getSha1Hash());
-      }, executorService);
-      return future.join(); // Wait for the copy to complete
+      copier.copy(s3, getConfiguredBucket(), sourcePath, destination);
+      BlobMetrics metrics = sourceBlob.getMetrics();
+      return new StreamMetrics(metrics.getContentSize(), metrics.getSha1Hash());
     }, null);
   }
 
@@ -553,9 +550,9 @@ public class S3BlobStore
       }
       // soft delete is implemented using an S3 lifecycle that sets expiration on objects with DELETED_TAG
       // tag the bytes
-      s3.putObjectTagging(tagAsDeleted(contentPath(blobId)));
+      s3.setObjectTagging(tagAsDeleted(contentPath(blobId)));
       // tag the attributes
-      s3.putObjectTagging(tagAsDeleted(attributePath));
+      s3.setObjectTagging(tagAsDeleted(attributePath));
       blob.markStale();
 
       Long contentSize = getContentSizeForDeletion(blobAttributes);
@@ -573,20 +570,18 @@ public class S3BlobStore
     }
   }
 
-  private PutObjectTaggingRequest tagAsDeleted(final String key) {
-    return PutObjectTaggingRequest.builder()
-        .bucket(getConfiguredBucket())
-        .key(key)
-        .tagging(Tagging.builder().tagSet(List.of(DELETED_TAG)).build())
-        .build();
+  private SetObjectTaggingRequest tagAsDeleted(final String key) {
+    return new SetObjectTaggingRequest(
+        getConfiguredBucket(),
+        key,
+        new ObjectTagging(singletonList(DELETED_TAG)));
   }
 
-  private PutObjectTaggingRequest untagAsDeleted(final String key) {
-    return PutObjectTaggingRequest.builder()
-        .bucket(getConfiguredBucket())
-        .key(key)
-        .tagging(Tagging.builder().tagSet(emptyList()).build())
-        .build();
+  private SetObjectTaggingRequest untagAsDeleted(final String key) {
+    return new SetObjectTaggingRequest(
+        getConfiguredBucket(),
+        key,
+        new ObjectTagging(emptyList()));
   }
 
   @Override
@@ -683,7 +678,7 @@ public class S3BlobStore
       rawObjectAccess =
           new S3RawObjectAccess(getConfiguredBucket(), getBucketPrefix(), s3, performanceLogger, uploader);
     }
-    catch (S3Exception e) {
+    catch (AmazonS3Exception e) {
       throw buildException(e);
     }
     catch (S3BlobStoreException e) {
@@ -695,40 +690,13 @@ public class S3BlobStore
   }
 
   private boolean batchDelete(final String... paths) {
-    // Use Virtual Thread for batch delete operation
-    CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> {
-      try {
-        DeleteObjectsRequest request = DeleteObjectsRequest.builder()
-            .bucket(getConfiguredBucket())
-            .delete(Delete.builder().objects(
-                Stream.of(paths)
-                    .map(path -> ObjectIdentifier.builder().key(path).build())
-                    .collect(Collectors.toList()))
-                .build())
-            .build();
-        DeleteObjectsResponse response = s3.deleteObjects(request);
-        return response.deleted().size() == paths.length;
-      } catch (Exception e) {
-        log.warn("Error during batch delete", e);
-        return false;
-      }
-    }, executorService);
-    return future.join(); // Wait for the delete to complete
+    DeleteObjectsRequest request = new DeleteObjectsRequest(getConfiguredBucket())
+        .withKeys(paths);
+    return s3.deleteObjects(request).getDeletedObjects().size() == paths.length;
   }
 
   private void deleteQuietly(final String path) {
-    try {
-      // Use Virtual Thread for delete operation
-      CompletableFuture.runAsync(() -> {
-        try {
-          s3.deleteObject(DeleteObjectRequest.builder().bucket(getConfiguredBucket()).key(path).build());
-        } catch (Exception e) {
-          log.warn("Error deleting {}", path, e);
-        }
-      }, executorService).join(); // Wait for the delete to complete
-    } catch (Exception e) {
-      log.warn("Error scheduling delete for {}", path, e);
-    }
+    s3.deleteObject(getConfiguredBucket(), path);
   }
 
   String getConfiguredBucket() {
@@ -739,7 +707,7 @@ public class S3BlobStore
     return S3BlobStoreConfigurationHelper.getBucketPrefix(blobStoreConfiguration);
   }
 
-  S3Client getS3() {
+  AmazonS3 getS3() {
     return s3;
   }
 
@@ -770,22 +738,7 @@ public class S3BlobStore
     try {
       metricsService.remove();
 
-      // Use Virtual Thread for checking if content is empty
-      CompletableFuture<Boolean> contentEmptyFuture = CompletableFuture.supplyAsync(() -> {
-        try {
-          ListObjectsV2Request request = ListObjectsV2Request.builder()
-              .bucket(getConfiguredBucket())
-              .prefix(getContentPrefix())
-              .build();
-          ListObjectsV2Response response = s3.listObjectsV2(request);
-          return response.contents().isEmpty();
-        } catch (Exception e) {
-          log.warn("Error checking if content is empty", e);
-          return false;
-        }
-      }, executorService);
-
-      boolean contentEmpty = contentEmptyFuture.join(); // Wait for the check to complete
+      boolean contentEmpty = s3.listObjects(getConfiguredBucket(), getContentPrefix()).getObjectSummaries().isEmpty();
       if (contentEmpty) {
         S3PropertiesFile metadata = new S3PropertiesFile(s3, getConfiguredBucket(), metadataFilePath());
         metadata.remove();
@@ -794,13 +747,11 @@ public class S3BlobStore
       }
       else {
         log.warn("Unable to delete non-empty blob store content directory in bucket {}", getConfiguredBucket());
-        s3.deleteBucketLifecycleConfiguration(DeleteBucketLifecycleConfigurationRequest.builder()
-            .bucket(getConfiguredBucket())
-            .build());
+        s3.deleteBucketLifecycleConfiguration(getConfiguredBucket());
       }
     }
-    catch (S3Exception s3Exception) {
-      if ("BucketNotEmpty".equals(s3Exception.awsErrorDetails().errorCode())) {
+    catch (AmazonS3Exception s3Exception) {
+      if ("BucketNotEmpty".equals(s3Exception.getErrorCode())) {
         log.warn("Unable to delete non-empty blob store bucket {}", getConfiguredBucket());
       }
       else {
@@ -821,84 +772,8 @@ public class S3BlobStore
 
     @Override
     protected InputStream doGetInputStream() {
-      // Use Virtual Thread for getting object content
-      CompletableFuture<InputStream> future = CompletableFuture.supplyAsync(() -> {
-        try {
-          GetObjectRequest request = GetObjectRequest.builder()
-              .bucket(getConfiguredBucket())
-              .key(contentPath(getId()))
-              .build();
-          
-          // Create a temporary file to store the content
-          Path tempFile = java.nio.file.Files.createTempFile("s3-blob-", ".tmp");
-          s3.getObject(request, ResponseTransformer.toFile(tempFile));
-          
-          // Return an input stream from the temporary file
-          InputStream stream = java.nio.file.Files.newInputStream(tempFile);
-          
-          // Delete the temporary file when the stream is closed
-          return new InputStream() {
-            private final InputStream delegate = stream;
-            
-            @Override
-            public int read() throws IOException {
-              return delegate.read();
-            }
-            
-            @Override
-            public int read(byte[] b) throws IOException {
-              return delegate.read(b);
-            }
-            
-            @Override
-            public int read(byte[] b, int off, int len) throws IOException {
-              return delegate.read(b, off, len);
-            }
-            
-            @Override
-            public long skip(long n) throws IOException {
-              return delegate.skip(n);
-            }
-            
-            @Override
-            public int available() throws IOException {
-              return delegate.available();
-            }
-            
-            @Override
-            public void close() throws IOException {
-              try {
-                delegate.close();
-              } finally {
-                java.nio.file.Files.deleteIfExists(tempFile);
-              }
-            }
-            
-            @Override
-            public synchronized void mark(int readlimit) {
-              delegate.mark(readlimit);
-            }
-            
-            @Override
-            public synchronized void reset() throws IOException {
-              delegate.reset();
-            }
-            
-            @Override
-            public boolean markSupported() {
-              return delegate.markSupported();
-            }
-          };
-        } catch (Exception e) {
-          throw new BlobStoreException("Error getting blob content", e, getId());
-        }
-      }, executorService);
-      
-      try {
-        return performanceLogger.maybeWrapForPerformanceLogging(future.join()); // Wait for the operation to complete
-      } catch (Exception e) {
-        throw new BlobStoreException("Error getting blob content", e, getId());
-      }
+      S3Object object = s3.getObject(getConfiguredBucket(), contentPath(getId()));
+      return performanceLogger.maybeWrapForPerformanceLogging(object.getObjectContent());
     }
   }
 
@@ -910,32 +785,8 @@ public class S3BlobStore
   @Override
   @Timed
   public Stream<BlobId> getBlobIdStream() {
-    // Use Virtual Thread for listing objects
-    CompletableFuture<Stream<BlobId>> future = CompletableFuture.supplyAsync(() -> {
-      try {
-        ListObjectsV2Request request = ListObjectsV2Request.builder()
-            .bucket(getConfiguredBucket())
-            .prefix(getContentPrefix())
-            .build();
-        
-        ListObjectsV2Iterable responses = s3.listObjectsV2Paginator(request);
-        
-        return blobIdStream(responses.contents().stream()
-            .filter(o -> o.key().endsWith(BLOB_FILE_ATTRIBUTES_SUFFIX) || o.key().endsWith(BLOB_FILE_CONTENT_SUFFIX))
-            .filter(this::isNotTempBlob)
-            .map(S3AttributesLocation::new));
-      } catch (Exception e) {
-        log.warn("Error getting blob ID stream", e);
-        return Stream.empty();
-      }
-    }, executorService);
-    
-    try {
-      return future.join(); // Wait for the operation to complete
-    } catch (Exception e) {
-      log.warn("Error getting blob ID stream", e);
-      return Stream.empty();
-    }
+    Iterable<S3ObjectSummary> summaries = S3Objects.withPrefix(s3, getConfiguredBucket(), getContentPrefix());
+    return blobIdStream(stream(summaries.spliterator(), false));
   }
 
   @Override
@@ -970,123 +821,60 @@ public class S3BlobStore
       @Nullable final String continuationToken,
       final int pageSize)
   {
-    // Use Virtual Thread for listing objects
-    CompletableFuture<PaginatedResult<BlobId>> future = CompletableFuture.supplyAsync(() -> {
-      try {
-        String fullPrefix = getContentPrefix() + prefix;
-        ListObjectsV2Request request = ListObjectsV2Request.builder()
-            .bucket(getConfiguredBucket())
-            .prefix(fullPrefix)
-            .maxKeys(pageSize)
-            .continuationToken(continuationToken)
-            .build();
-        
-        ListObjectsV2Response result = s3.listObjectsV2(request);
-        List<BlobId> blobIds = result.contents().stream()
-            .filter(o -> o.key().endsWith(BLOB_FILE_ATTRIBUTES_SUFFIX) || o.key().endsWith(BLOB_FILE_CONTENT_SUFFIX))
-            .filter(this::isNotTempBlob)
-            .filter(s3Obj -> s3Obj.lastModified().toInstant().atOffset(ZoneOffset.UTC).isAfter(fromDateTime) &&
-                s3Obj.lastModified().toInstant().atOffset(ZoneOffset.UTC).isBefore(toDateTime))
-            .map(S3AttributesLocation::new)
-            .map(this::getBlobIdFromAttributeFilePath)
-            .filter(Objects::nonNull)
-            .distinct()
-            .collect(Collectors.toList());
-        
-        String nextContinuationToken = result.isTruncated() ? result.nextContinuationToken() : null;
-        return new PaginatedResult<>(blobIds, nextContinuationToken);
-      } catch (Exception e) {
-        log.warn("Error getting paginated blob ID stream", e);
-        return new PaginatedResult<>(List.of(), null);
-      }
-    }, executorService);
-    
-    try {
-      return future.join(); // Wait for the operation to complete
-    } catch (Exception e) {
-      log.warn("Error getting paginated blob ID stream", e);
-      return new PaginatedResult<>(List.of(), null);
-    }
+    String fullPrefix = getContentPrefix() + prefix;
+    ListObjectsV2Request request = new ListObjectsV2Request()
+        .withBucketName(getConfiguredBucket())
+        .withPrefix(fullPrefix)
+        .withMaxKeys(pageSize)
+        .withContinuationToken(continuationToken);
+    ListObjectsV2Result result = s3.listObjectsV2(request);
+    List<BlobId> blobIds = result.getObjectSummaries()
+        .stream()
+        .filter(o -> o.getKey().endsWith(BLOB_FILE_ATTRIBUTES_SUFFIX) || o.getKey().endsWith(BLOB_FILE_CONTENT_SUFFIX))
+        .filter(this::isNotTempBlob)
+        .filter(s3Obj -> s3Obj.getLastModified().toInstant().atOffset(ZoneOffset.UTC).isAfter(fromDateTime) &&
+            s3Obj.getLastModified().toInstant().atOffset(ZoneOffset.UTC).isBefore(toDateTime))
+        .map(S3AttributesLocation::new)
+        .map(this::getBlobIdFromAttributeFilePath)
+        .filter(Objects::nonNull)
+        .distinct()
+        .collect(Collectors.toList());
+    String nextContinuationToken = result.isTruncated() ? result.getNextContinuationToken() : null;
+    return new PaginatedResult<>(blobIds, nextContinuationToken);
   }
 
   private Stream<BlobId> getBlobIdStream(final String prefix, OffsetDateTime fromDateTime) {
-    // Use Virtual Thread for listing objects
-    CompletableFuture<Stream<BlobId>> future = CompletableFuture.supplyAsync(() -> {
-      try {
-        ListObjectsV2Request request = ListObjectsV2Request.builder()
-            .bucket(getConfiguredBucket())
-            .prefix(prefix)
-            .build();
-        
-        ListObjectsV2Iterable responses = s3.listObjectsV2Paginator(request);
-        
-        return responses.contents().stream()
-            .filter(o -> o.key().endsWith(BLOB_FILE_ATTRIBUTES_SUFFIX) || o.key().endsWith(BLOB_FILE_CONTENT_SUFFIX))
-            .filter(this::isNotTempBlob)
-            .filter(s3Obj -> s3Obj.lastModified().toInstant().atOffset(ZoneOffset.UTC).isAfter(fromDateTime))
-            .map(S3AttributesLocation::new)
-            .map(this::getBlobIdFromAttributeFilePath)
-            .filter(Objects::nonNull);
-      } catch (Exception e) {
-        log.warn("Error getting blob ID stream with prefix", e);
-        return Stream.empty();
-      }
-    }, executorService);
-    
-    try {
-      return future.join(); // Wait for the operation to complete
-    } catch (Exception e) {
-      log.warn("Error getting blob ID stream with prefix", e);
-      return Stream.empty();
-    }
+    Iterable<S3ObjectSummary> summaries = S3Objects.withPrefix(s3, getConfiguredBucket(), prefix);
+    return stream(summaries.spliterator(), false)
+        .filter(o -> o.getKey().endsWith(BLOB_FILE_ATTRIBUTES_SUFFIX) || o.getKey().endsWith(BLOB_FILE_CONTENT_SUFFIX))
+        .filter(this::isNotTempBlob)
+        .filter(s3Obj -> s3Obj.getLastModified().toInstant().atOffset(ZoneOffset.UTC).isAfter(fromDateTime))
+        .map(S3AttributesLocation::new)
+        .map(this::getBlobIdFromAttributeFilePath)
+        .filter(Objects::nonNull);
   }
 
   @Override
   @Timed
   public Stream<BlobId> getDirectPathBlobIdStream(final String prefix) {
-    // Use Virtual Thread for listing objects
-    CompletableFuture<Stream<BlobId>> future = CompletableFuture.supplyAsync(() -> {
-      try {
-        String subpath = getBucketPrefix() + format("%s/%s", DIRECT_PATH_PREFIX, prefix);
-        ListObjectsV2Request request = ListObjectsV2Request.builder()
-            .bucket(getConfiguredBucket())
-            .prefix(subpath)
-            .build();
-        
-        ListObjectsV2Iterable responses = s3.listObjectsV2Paginator(request);
-        
-        return responses.contents().stream()
-            .map(S3Object::key)
-            .filter(key -> key.endsWith(BLOB_FILE_ATTRIBUTES_SUFFIX))
-            .map(this::attributePathToDirectPathBlobId);
-      } catch (Exception e) {
-        log.warn("Error getting direct path blob ID stream", e);
-        return Stream.empty();
-      }
-    }, executorService);
-    
-    try {
-      return future.join(); // Wait for the operation to complete
-    } catch (Exception e) {
-      log.warn("Error getting direct path blob ID stream", e);
-      return Stream.empty();
-    }
+    String subpath = getBucketPrefix() + format("%s/%s", DIRECT_PATH_PREFIX, prefix);
+    Iterable<S3ObjectSummary> summaries = S3Objects.withPrefix(s3, getConfiguredBucket(), subpath);
+    return stream(summaries.spliterator(), false)
+        .map(S3ObjectSummary::getKey)
+        .filter(key -> key.endsWith(BLOB_FILE_ATTRIBUTES_SUFFIX))
+        .map(this::attributePathToDirectPathBlobId);
   }
 
-  private Stream<S3Object> nonTempBlobPropertiesFileStream(final Stream<S3Object> summaries) {
+  private Stream<S3ObjectSummary> nonTempBlobPropertiesFileStream(final Stream<S3ObjectSummary> summaries) {
     return summaries
-        .filter(o -> o.key().endsWith(BLOB_FILE_ATTRIBUTES_SUFFIX))
+        .filter(o -> o.getKey().endsWith(BLOB_FILE_ATTRIBUTES_SUFFIX))
         .filter(this::isNotTempBlob);
   }
 
-  private boolean isNotTempBlob(final S3Object object) {
+  private boolean isNotTempBlob(final S3ObjectSummary object) {
     try {
-      HeadObjectRequest request = HeadObjectRequest.builder()
-          .bucket(getConfiguredBucket())
-          .key(object.key())
-          .build();
-      HeadObjectResponse response = s3.headObject(request);
-      Map<String, String> userMetadata = response.metadata();
+      ObjectMetadata objectMetadata = s3.getObjectMetadata(getConfiguredBucket(), object.getKey());
+      Map<String, String> userMetadata = objectMetadata.getUserMetadata();
       return !userMetadata.containsKey(TEMPORARY_BLOB_HEADER);
     }
     catch (Exception e) {
@@ -1096,7 +884,7 @@ public class S3BlobStore
     }
   }
 
-  private Stream<BlobId> blobIdStream(final Stream<S3Object> summaries) {
+  private Stream<BlobId> blobIdStream(final Stream<S3ObjectSummary> summaries) {
     return nonTempBlobPropertiesFileStream(summaries)
         .map(S3AttributesLocation::new)
         .map(this::getBlobIdFromAttributeFilePath)
@@ -1148,8 +936,8 @@ public class S3BlobStore
   @Override
   @Timed
   protected void doUndelete(final BlobId blobId, final BlobAttributes attributes) {
-    s3.putObjectTagging(untagAsDeleted(contentPath(blobId)));
-    s3.putObjectTagging(untagAsDeleted(attributePath(blobId)));
+    s3.setObjectTagging(untagAsDeleted(contentPath(blobId)));
+    s3.setObjectTagging(untagAsDeleted(attributePath(blobId)));
     metricsService.recordAddition(attributes.getMetrics().getContentSize());
   }
 
@@ -1162,23 +950,10 @@ public class S3BlobStore
   @Timed
   public boolean isStorageAvailable() {
     try {
-      // Use Virtual Thread for checking bucket existence
-      CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> {
-        try {
-          HeadBucketRequest request = HeadBucketRequest.builder()
-              .bucket(getConfiguredBucket())
-              .build();
-          s3.headBucket(request);
-          return true;
-        } catch (Exception e) {
-          log.warn("S3 bucket '{}' is not writable.", getConfiguredBucket(), e);
-          return false;
-        }
-      }, executorService);
-      
-      return future.join(); // Wait for the check to complete
-    } catch (Exception e) {
-      log.warn("Error checking if storage is available", e);
+      return s3.doesBucketExistV2(getConfiguredBucket());
+    }
+    catch (SdkBaseException e) {
+      log.warn("S3 bucket '{}' is not writable.", getConfiguredBucket(), e);
       return false;
     }
   }
@@ -1206,22 +981,7 @@ public class S3BlobStore
   public boolean bytesExists(final BlobId blobId) {
     checkNotNull(blobId);
     try (final Timer.Context existsContext = existsTimer.time()) {
-      // Use Virtual Thread for checking object existence
-      CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> {
-        try {
-          HeadObjectRequest request = HeadObjectRequest.builder()
-              .bucket(getConfiguredBucket())
-              .key(contentPath(blobId))
-              .build();
-          s3.headObject(request);
-          return true;
-        } catch (Exception e) {
-          log.debug("Unable to check existence of {}", contentPath(blobId));
-          return false;
-        }
-      }, executorService);
-      
-      return future.join(); // Wait for the check to complete
+      return s3.doesObjectExist(getConfiguredBucket(), contentPath(blobId));
     }
     catch (Exception e) {
       log.debug("Unable to check existence of {}", contentPath(blobId));
@@ -1243,34 +1003,23 @@ public class S3BlobStore
   }
 
   private boolean isBlobZeroLength(final BlobId blobId) {
-    // Use Virtual Thread for checking object size
-    CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> {
-      try {
-        HeadObjectRequest request = HeadObjectRequest.builder()
-            .bucket(getConfiguredBucket())
-            .key(contentPath(blobId))
-            .build();
-        HeadObjectResponse response = s3.headObject(request);
-        return response.contentLength() == 0;
-      } catch (Exception e) {
-        log.debug("Unable to check size of {}", contentPath(blobId));
-        return false;
-      }
-    }, executorService);
-    
-    try {
-      return future.join(); // Wait for the check to complete
-    } catch (Exception e) {
-      log.debug("Error checking if blob is empty", e);
-      return false;
-    }
+    ObjectMetadata metadata =
+        s3.getObjectMetadata(new GetObjectMetadataRequest(getConfiguredBucket(), contentPath(blobId)));
+    return s3.doesObjectExist(getConfiguredBucket(), contentPath(blobId)) && metadata.getContentLength() == 0;
   }
 
   @Override
   @Timed
   public Future<Boolean> asyncDelete(final BlobId blobId) {
     if (preferAsyncCleanup) {
-      return executorService.submit(() -> this.deleteHard(blobId));
+      try {
+        return executorService.submit(() -> this.deleteHard(blobId));
+      }
+      catch (Exception e) {
+        // Handle potential interruption or other Virtual Thread exceptions
+        log.warn("Error submitting async delete task for blob {}: {}", blobId, e.getMessage());
+        return CompletableFuture.completedFuture(false);
+      }
     }
     else {
       return CompletableFuture.completedFuture(this.deleteHard(blobId));

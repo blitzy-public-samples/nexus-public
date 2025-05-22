@@ -21,8 +21,7 @@ import org.sonatype.nexus.ssl.KeyStoreManagerConfigurationSupport;
 
 /**
  * SSL plugin specific key-store manager configuration.
- * 
- * Compatible with Java 21 and Guice 7.0.0.
+ * Updated for Java 21 compatibility with enhanced security providers.
  *
  * @since ssl 1.0
  */
@@ -48,23 +47,23 @@ public class KeyStoreManagerConfigurationImpl
   // "Xw5JCuS5aDZ14oZG" */
 
   /**
-   * Constructor with dependency injection compatible with Guice 7.0.0.
+   * Creates a new KeyStoreManagerConfigurationImpl with Java 21 compatible security settings.
    * 
-   * @param keyStoreType The key store type (default: JKS)
+   * @param keyStoreType The keystore type (default: PKCS12, which is the Java 21 recommended type)
    * @param keyAlgorithm The key algorithm (default: RSA)
-   * @param keyAlgorithmSize The key algorithm size (default: 2048)
+   * @param keyAlgorithmSize The key algorithm size (default: 2048 bits)
    * @param certificateValidity The certificate validity period (default: 36500 days)
-   * @param signatureAlgorithm The signature algorithm (default: SHA1WITHRSA)
+   * @param signatureAlgorithm The signature algorithm (default: SHA256WITHRSA for enhanced security)
    * @param keyManagerAlgorithm The key manager algorithm (default: DEFAULT)
    * @param trustManagerAlgorithm The trust manager algorithm (default: DEFAULT)
    */
   @Inject
   public KeyStoreManagerConfigurationImpl(
-      @Named(CPREFIX + ".keyStoreType:-JKS}") final String keyStoreType,
+      @Named(CPREFIX + ".keyStoreType:-PKCS12}") final String keyStoreType,
       @Named(CPREFIX + ".keyAlgorithm:-RSA}") final String keyAlgorithm,
       @Named(CPREFIX + ".keyAlgorithmSize:-2048}") final int keyAlgorithmSize,
       @Named(CPREFIX + ".certificateValidity:-36500d}") final Time certificateValidity,
-      @Named(CPREFIX + ".signatureAlgorithm:-SHA1WITHRSA}") final String signatureAlgorithm,
+      @Named(CPREFIX + ".signatureAlgorithm:-SHA256WITHRSA}") final String signatureAlgorithm,
       @Named(CPREFIX + ".keyManagerAlgorithm:-DEFAULT}") final String keyManagerAlgorithm,
       @Named(CPREFIX + ".trustManagerAlgorithm:-DEFAULT}") final String trustManagerAlgorithm)
   {

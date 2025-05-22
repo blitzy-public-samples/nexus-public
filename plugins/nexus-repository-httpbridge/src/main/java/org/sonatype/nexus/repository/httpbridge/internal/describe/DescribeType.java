@@ -28,12 +28,13 @@ public enum DescribeType
 
   /**
    * Parse type from flags.  Either explicit HTML or JSON, or anything else will default to HTML.
+   * 
+   * Uses Java 21 Pattern Matching for switch to handle different input cases.
    */
   public static DescribeType parse(String flags) {
     checkNotNull(flags);
     String normalizedFlags = Strings2.upper(flags).trim();
     
-    // Using Java 21 pattern matching with switch expression for cleaner code
     return switch (normalizedFlags) {
       case "" -> HTML;
       case "HTML" -> HTML;
@@ -41,7 +42,8 @@ public enum DescribeType
       default -> {
         try {
           yield valueOf(normalizedFlags);
-        } catch (IllegalArgumentException e) {
+        }
+        catch (IllegalArgumentException e) {
           yield HTML;
         }
       }

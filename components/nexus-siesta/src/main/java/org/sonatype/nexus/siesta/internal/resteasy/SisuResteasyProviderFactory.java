@@ -18,15 +18,15 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.Type;
 import java.util.Collection;
 
-import javax.ws.rs.container.DynamicFeature;
-import javax.ws.rs.core.Feature;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.MultivaluedMap;
-import javax.ws.rs.ext.ContextResolver;
-import javax.ws.rs.ext.ExceptionMapper;
-import javax.ws.rs.ext.MessageBodyReader;
-import javax.ws.rs.ext.MessageBodyWriter;
-import javax.ws.rs.ext.ParamConverterProvider;
+import jakarta.ws.rs.container.DynamicFeature;
+import jakarta.ws.rs.core.Feature;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.MultivaluedMap;
+import jakarta.ws.rs.ext.ContextResolver;
+import jakarta.ws.rs.ext.ExceptionMapper;
+import jakarta.ws.rs.ext.MessageBodyReader;
+import jakarta.ws.rs.ext.MessageBodyWriter;
+import jakarta.ws.rs.ext.ParamConverterProvider;
 
 import org.jboss.resteasy.core.MediaTypeMap;
 import org.jboss.resteasy.spi.ResteasyProviderFactory;
@@ -54,7 +54,7 @@ public class SisuResteasyProviderFactory
   public void removeRegistrations(final Class<?> type) {
     checkNotNull(type);
 
-    log.debug("Removing registrations for: {}", type.getName());
+    log.debug(STR."Removing registrations for: \{type.getName()}");
 
     classContracts.remove(type);
 
@@ -95,7 +95,7 @@ public class SisuResteasyProviderFactory
       stringParameterUnmarshallers.values().remove(type);
     }
     else {
-      log.warn("Unable to remove registrations for: {}", type.getName());
+      log.warn(STR."Unable to remove registrations for: \{type.getName()}");
     }
   }
 

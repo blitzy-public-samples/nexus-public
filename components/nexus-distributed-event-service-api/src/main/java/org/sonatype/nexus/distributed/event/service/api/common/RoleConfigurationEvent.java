@@ -33,7 +33,7 @@ public class RoleConfigurationEvent
 
   @JsonCreator
   public RoleConfigurationEvent(
-      @JsonProperty("roleId") String roleId,
+      @JsonProperty("roleId") final String roleId,
       @JsonProperty("eventType") final EventType eventType)
   {
     super(eventType);
@@ -46,8 +46,6 @@ public class RoleConfigurationEvent
 
   @Override
   public String toString() {
-    return "RoleConfigurationEvent{" +
-        "roleId='" + roleId + '\'' +
-        '}';
+    return STR."RoleConfigurationEvent{roleId='\{roleId}'}";
   }
 }

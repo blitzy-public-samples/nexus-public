@@ -1,0 +1,209 @@
+{
+  "upgradeScenarios": [
+    {
+      "name": "Simple Record Pattern Test",
+      "description": "Tests basic record pattern matching for upgrade model",
+      "upgradeModel": {
+        "modelType": "SimpleUpgradeModel",
+        "version": "1.0",
+        "components": [
+          {
+            "id": "component-1",
+            "name": "Basic Component",
+            "properties": {
+              "key1": "value1",
+              "key2": "value2"
+            }
+          }
+        ]
+      },
+      "expectedResults": {
+        "success": true,
+        "message": "Simple record pattern matching successful"
+      }
+    },
+    {
+      "name": "Nested Record Pattern Test",
+      "description": "Tests nested record pattern matching for complex upgrade structures",
+      "upgradeModel": {
+        "modelType": "NestedUpgradeModel",
+        "version": "2.0",
+        "metadata": {
+          "createdBy": "system",
+          "createdAt": "2023-09-15T10:30:00Z"
+        },
+        "components": [
+          {
+            "id": "component-2",
+            "name": "Nested Component",
+            "type": "container",
+            "children": [
+              {
+                "id": "child-1",
+                "name": "Child Component",
+                "type": "leaf",
+                "properties": {
+                  "key1": "child-value1",
+                  "key2": "child-value2"
+                }
+              }
+            ],
+            "properties": {
+              "key1": "parent-value1",
+              "key2": "parent-value2"
+            }
+          }
+        ]
+      },
+      "expectedResults": {
+        "success": true,
+        "message": "Nested record pattern matching successful"
+      }
+    },
+    {
+      "name": "Pattern Matching Switch Test",
+      "description": "Tests record pattern matching in switch expressions for upgrade type selection",
+      "upgradeModels": [
+        {
+          "modelType": "DatabaseUpgradeModel",
+          "version": "3.0",
+          "databaseType": "postgresql",
+          "schemaVersion": "1.5",
+          "operations": [
+            {
+              "type": "addColumn",
+              "table": "users",
+              "column": {
+                "name": "last_login",
+                "dataType": "timestamp"
+              }
+            }
+          ]
+        },
+        {
+          "modelType": "ConfigUpgradeModel",
+          "version": "2.5",
+          "configType": "system",
+          "operations": [
+            {
+              "type": "updateProperty",
+              "property": "nexus.security.enabled",
+              "value": "true"
+            }
+          ]
+        },
+        {
+          "modelType": "BlobStoreUpgradeModel",
+          "version": "1.2",
+          "storeType": "file",
+          "operations": [
+            {
+              "type": "migrateData",
+              "source": "/old/path",
+              "target": "/new/path"
+            }
+          ]
+        }
+      ],
+      "expectedResults": {
+        "success": true,
+        "message": "Pattern matching switch successful",
+        "upgradePaths": [
+          "DatabaseUpgrade",
+          "ConfigUpgrade",
+          "BlobStoreUpgrade"
+        ]
+      }
+    },
+    {
+      "name": "Record Pattern With Var Test",
+      "description": "Tests record pattern matching with var for type inference",
+      "upgradeModel": {
+        "modelType": "GenericUpgradeModel",
+        "version": "4.0",
+        "data": {
+          "numericValue": 42,
+          "stringValue": "test-string",
+          "booleanValue": true,
+          "nestedData": {
+            "coordinates": {
+              "x": 10.5,
+              "y": 20.7,
+              "z": 30.9
+            }
+          }
+        }
+      },
+      "expectedResults": {
+        "success": true,
+        "message": "Record pattern with var successful"
+      }
+    },
+    {
+      "name": "Deep Nested Record Pattern Test",
+      "description": "Tests deeply nested record pattern matching for complex hierarchical structures",
+      "upgradeModel": {
+        "modelType": "HierarchicalUpgradeModel",
+        "version": "5.0",
+        "repository": {
+          "name": "maven-central",
+          "type": "proxy",
+          "format": {
+            "id": "maven2",
+            "version": "2.0"
+          },
+          "storage": {
+            "blobStore": {
+              "name": "default",
+              "type": "file",
+              "attributes": {
+                "path": "/nexus-data/blobs",
+                "metrics": {
+                  "totalSize": 1073741824,
+                  "availableSpace": 536870912
+                }
+              }
+            }
+          }
+        }
+      },
+      "expectedResults": {
+        "success": true,
+        "message": "Deep nested record pattern matching successful"
+      }
+    },
+    {
+      "name": "Record Pattern With Unnamed Variables Test",
+      "description": "Tests record pattern matching with unnamed variables (using underscore)",
+      "upgradeModel": {
+        "modelType": "PartialUpgradeModel",
+        "version": "6.0",
+        "components": [
+          {
+            "id": "component-3",
+            "name": "Partial Component",
+            "metadata": {
+              "createdAt": "2023-10-01T14:30:00Z",
+              "modifiedAt": "2023-10-02T09:15:00Z",
+              "createdBy": "system",
+              "modifiedBy": "admin"
+            },
+            "properties": {
+              "key1": "important-value",
+              "key2": "ignore-this-value",
+              "key3": "another-important-value"
+            }
+          }
+        ]
+      },
+      "expectedResults": {
+        "success": true,
+        "message": "Record pattern with unnamed variables successful",
+        "extractedValues": [
+          "important-value",
+          "another-important-value"
+        ]
+      }
+    }
+  ]
+}

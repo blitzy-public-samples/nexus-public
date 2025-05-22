@@ -12,9 +12,14 @@
  */
 package org.sonatype.nexus.testcommon.matchers;
 
+import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.SequencedCollection;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -24,8 +29,12 @@ import org.hamcrest.TypeSafeDiagnosingMatcher;
 import org.hamcrest.TypeSafeMatcher;
 import org.joda.time.DateTime;
 
+import static java.lang.StringTemplate.STR;
 import static org.hamcrest.Matchers.contains;
 
+/**
+ * Custom Hamcrest matchers for Nexus testing.
+ */
 public class NexusMatchers
 {
   /**
@@ -36,7 +45,7 @@ public class NexusMatchers
     {
       @Override
       public void describeTo(final Description description) {
-        description.appendText("a DateTime ").appendText(" ").appendValue(dateTime.toString());
+        description.appendText(STR."a DateTime \{dateTime}");
       }
 
       @Override
@@ -54,7 +63,7 @@ public class NexusMatchers
     {
       @Override
       public void describeTo(final Description description) {
-        description.appendText("an OffsetDateTime ").appendText(" ").appendValue(dateTime.toString());
+        description.appendText(STR."an OffsetDateTime \{dateTime}");
       }
 
       @Override
@@ -64,9 +73,65 @@ public class NexusMatchers
     };
   }
 
-  /*
+  /**
+   * Matches the Instant specified
+   */
+  public static Matcher<Instant> time(final Instant instant) {
+    return new TypeSafeMatcher<Instant>()
+    {
+      @Override
+      public void describeTo(final Description description) {
+        description.appendText(STR."an Instant \{instant}");
+      }
+
+      @Override
+      protected boolean matchesSafely(final Instant item) {
+        return instant.equals(item);
+      }
+    };
+  }
+
+  /**
+   * Matches the LocalDateTime specified
+   */
+  public static Matcher<LocalDateTime> time(final LocalDateTime dateTime) {
+    return new TypeSafeMatcher<LocalDateTime>()
+    {
+      @Override
+      public void describeTo(final Description description) {
+        description.appendText(STR."a LocalDateTime \{dateTime}");
+      }
+
+      @Override
+      protected boolean matchesSafely(final LocalDateTime item) {
+        return dateTime.isEqual(item);
+      }
+    };
+  }
+
+  /**
+   * Matches the ZonedDateTime specified ignoring chronology
+   */
+  public static Matcher<ZonedDateTime> time(final ZonedDateTime dateTime) {
+    return new TypeSafeMatcher<ZonedDateTime>()
+    {
+      @Override
+      public void describeTo(final Description description) {
+        description.appendText(STR."a ZonedDateTime \{dateTime}");
+      }
+
+      @Override
+      protected boolean matchesSafely(final ZonedDateTime item) {
+        return dateTime.isEqual(item);
+      }
+    };
+  }
+
+  /**
    * Creates a {@link Matcher} for {@link Stream}. Note that the stream cannot have been consumed,
-   * and that the matcher is a termainl operation for the Stream.
+   * and that the matcher is a terminal operation for the Stream.
+   * 
+   * This matcher also supports Java 21's {@link SequencedCollection}.
    */
   @SafeVarargs
   public static <E> Matcher<Stream<E>> streamContains(final E... items) {
@@ -75,7 +140,6 @@ public class NexusMatchers
 
     return new TypeSafeDiagnosingMatcher<Stream<E>>(Stream.class)
     {
-
       @Override
       public void describeTo(final Description description) {
         iterableMatcher.describeTo(description);
@@ -88,6 +152,85 @@ public class NexusMatchers
         }
 
         return iterableMatcher.matches(actual);
+      }
+    };
+  }
+
+  /**
+   * Creates a {@link Matcher} for {@link SequencedCollection} or {@link Stream}.
+   * This matcher works with both Java 21's Sequenced Collections and Streams.
+   */
+  @SafeVarargs
+  public static <E> Matcher<Object> sequenceContains(final E... items) {
+    Matcher<Iterable<? extends E>> iterableMatcher = contains(items);
+
+    return new TypeSafeDiagnosingMatcher<Object>(Object.class)
+    {
+      @Override
+      public void describeTo(final Description description) {
+        iterableMatcher.describeTo(description);
+      }
+
+      @Override
+      protected boolean matchesSafely(final Object item, final Description mismatchDescription) {
+        if (item instanceof Stream<?> stream) {
+          List<E> actual = new ArrayList<>();
+          stream.forEach(e -> actual.add((E) e));
+          return iterableMatcher.matches(actual);
+        }
+        else if (item instanceof SequencedCollection<?> collection) {
+          return iterableMatcher.matches(collection);
+        }
+        else {
+          mismatchDescription.appendText(STR."expected a Stream or SequencedCollection but got \{item.getClass().getName()}");
+          return false;
+        }
+      }
+    };
+  }
+
+  /**
+   * Creates a {@link Matcher} for record types using Record Patterns.
+   * 
+   * @param recordClass the class of the record to match
+   * @param componentMatchers matchers for each component of the record
+   * @return a matcher that matches records of the specified type with components matching the provided matchers
+   */
+  @SafeVarargs
+  public static <R extends Record> Matcher<R> recordMatches(Class<R> recordClass, Matcher<?>... componentMatchers) {
+    return new TypeSafeDiagnosingMatcher<R>(recordClass) {
+      @Override
+      protected boolean matchesSafely(R item, Description mismatchDescription) {
+        Object[] components = item.getClass().getRecordComponents();
+        if (components.length != componentMatchers.length) {
+          mismatchDescription.appendText(STR."Record has \{components.length} components but \{componentMatchers.length} matchers were provided");
+          return false;
+        }
+        
+        try {
+          for (int i = 0; i < componentMatchers.length; i++) {
+            String componentName = item.getClass().getRecordComponents()[i].getName();
+            Object componentValue = item.getClass().getMethod(componentName).invoke(item);
+            Matcher<?> matcher = componentMatchers[i];
+            
+            if (!matcher.matches(componentValue)) {
+              mismatchDescription.appendText(STR."Component '\{componentName}' ");
+              matcher.describeMismatch(componentValue, mismatchDescription);
+              return false;
+            }
+          }
+          return true;
+        }
+        catch (Exception e) {
+          mismatchDescription.appendText(STR."Error accessing record components: \{e.getMessage()}");
+          return false;
+        }
+      }
+
+      @Override
+      public void describeTo(Description description) {
+        description.appendText(STR."a record of type \{recordClass.getSimpleName()} with components matching ");
+        description.appendList("[", ", ", "]", List.of(componentMatchers));
       }
     };
   }

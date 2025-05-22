@@ -16,6 +16,7 @@ import org.sonatype.nexus.distributed.event.service.api.EventType;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.google.common.base.Preconditions;
 
 /**
  * Indicates that a ssl certificate has been created or deleted.
@@ -27,13 +28,11 @@ public class CertificateDistributedEvent
 
   @JsonCreator
   public CertificateDistributedEvent(@JsonProperty("eventType") final EventType eventType) {
-    super(eventType);
+    super(Preconditions.checkNotNull(eventType, "eventType cannot be null"));
   }
 
   @Override
   public String toString() {
-    return NAME + "{" +
-        "eventType='" + getEventType() + '\'' +
-        "}";
+    return STR."\{NAME}{eventType='\{getEventType()}'}";
   }
 }

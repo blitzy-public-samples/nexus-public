@@ -13,17 +13,14 @@
 package org.sonatype.nexus.repository.apt.virtualthread;
 
 /**
- * Marker interface for tests that specifically validate Virtual Thread functionality in the APT repository plugin.
- * <p>
- * Tests annotated with {@code @Category(VirtualThreadTestGroup.class)} will be executed only when the
- * {@code virtual-threads} Maven profile is activated with {@code -Dvirtual-threads=true}.
- * <p>
- * This allows selective execution of tests that verify the correct behavior and performance improvements
- * of APT repository operations when using Java 21's Virtual Threads.
- *
- * @since 3.60
+ * Marker interface to categorize tests that specifically validate Virtual Thread functionality
+ * in the APT repository plugin. This interface allows the test framework to identify and selectively
+ * execute tests that verify the correct behavior and performance improvements of APT repository
+ * operations when using Java 21's Virtual Threads.
+ * 
+ * Tests implementing this interface can be selectively executed using the Maven profile with
+ * -Dvirtual-threads=true flag.
  */
 public interface VirtualThreadTestGroup
 {
-  // Marker interface - no methods
 }

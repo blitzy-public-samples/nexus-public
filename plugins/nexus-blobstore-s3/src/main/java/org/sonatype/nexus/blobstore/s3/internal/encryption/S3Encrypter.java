@@ -12,45 +12,43 @@
  */
 package org.sonatype.nexus.blobstore.s3.internal.encryption;
 
-import com.amazonaws.services.s3.model.AbstractPutObjectRequest;
-import com.amazonaws.services.s3.model.CopyObjectRequest;
-import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
+import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 /**
  * Adds any encryption necessary to S3 requests.
  *
- * <p>This interface uses AWS SDK for Java 1.x which is compatible with Java 21 but
- * is in maintenance mode (as of July 31, 2024) with end-of-support on December 31, 2025.
- * Future implementations should consider migrating to AWS SDK for Java 2.x.</p>
+ * Updated for AWS SDK v2.x and Java 21 Virtual Threads.
  *
  * @since 3.19
  */
 public interface S3Encrypter
 {
   /**
-   * Adds encryption to a multipart upload initiation request.
+   * Adds encryption to a CreateMultipartUploadRequest.
    *
-   * @param <T> the type of request
-   * @param request the request to add encryption to
-   * @return the modified request with encryption added
+   * @param request The request to add encryption to
+   * @param <T> The type of request
+   * @return The request with encryption added
    */
-  <T extends InitiateMultipartUploadRequest> T addEncryption(T request);
-  
+  <T extends CreateMultipartUploadRequest> T addEncryption(T request);
+
   /**
-   * Adds encryption to a put object request.
+   * Adds encryption to a PutObjectRequest.
    *
-   * @param <T> the type of request
-   * @param request the request to add encryption to
-   * @return the modified request with encryption added
+   * @param request The request to add encryption to
+   * @param <T> The type of request
+   * @return The request with encryption added
    */
-  <T extends AbstractPutObjectRequest> T addEncryption(T request);
-  
+  <T extends PutObjectRequest> T addEncryption(T request);
+
   /**
-   * Adds encryption to a copy object request.
+   * Adds encryption to a CopyObjectRequest.
    *
-   * @param <T> the type of request
-   * @param request the request to add encryption to
-   * @return the modified request with encryption added
+   * @param request The request to add encryption to
+   * @param <T> The type of request
+   * @return The request with encryption added
    */
   <T extends CopyObjectRequest> T addEncryption(T request);
 }

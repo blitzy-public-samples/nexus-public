@@ -51,7 +51,7 @@
       <scope>test</scope>
     </dependency>
 
-    <!-- Groovy dependencies for testing - updated for Java 21 compatibility -->
+
     <dependency>
       <groupId>org.codehaus.groovy</groupId>
       <artifactId>groovy</artifactId>
@@ -107,6 +107,7 @@
       <artifactId>groovy-xml</artifactId>
       <scope>test</scope>
     </dependency>
+
     <dependency>
       <groupId>org.codehaus.groovy</groupId>
       <artifactId>groovy-test</artifactId>
@@ -116,39 +117,21 @@
 
   <build>
     <plugins>
-      <!-- Explicitly configure compiler plugin for Java 21 -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
         <configuration>
+          <release>21</release>
           <source>21</source>
           <target>21</target>
-          <release>21</release>
         </configuration>
       </plugin>
       
-      <!-- Configure OSGi bundle plugin for Java 21 compatibility -->
-      <plugin>
-        <groupId>org.apache.felix</groupId>
-        <artifactId>maven-bundle-plugin</artifactId>
-        <configuration>
-          <instructions>
-            <Bundle-RequiredExecutionEnvironment>JavaSE-21</Bundle-RequiredExecutionEnvironment>
-            <!-- Ensure OSGi metadata is compatible with Java 21 -->
-            <_removeheaders>Import-Package,Private-Package,Require-Capability</_removeheaders>
-            <Import-Package>
-              *
-            </Import-Package>
-          </instructions>
-        </configuration>
-      </plugin>
-      
-      <!-- Karaf plugin updated for Java 21 compatibility -->
       <plugin>
         <groupId>org.apache.karaf.tooling</groupId>
         <artifactId>karaf-maven-plugin</artifactId>
         <configuration>
-          <!-- Ensure Karaf features are compatible with Java 21 -->
+          <enableGeneration>true</enableGeneration>
           <javase>21</javase>
         </configuration>
       </plugin>

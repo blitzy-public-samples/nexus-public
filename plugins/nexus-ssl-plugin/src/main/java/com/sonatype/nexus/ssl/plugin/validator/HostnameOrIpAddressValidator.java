@@ -21,36 +21,76 @@ import com.google.common.net.InternetDomainName;
 
 /**
  * Hostname or IP address validator.
- * 
- * This validator checks if a string is either a valid hostname or a valid IP address.
- * Compatible with Java 21.
+ * <p>
+ * Validates that a string is either a valid Internet domain name or a valid IP address.
+ * Provides detailed error messages using Java 21 Pattern Matching for switch and String Templates.
  *
  * @since 3.36
  */
 public class HostnameOrIpAddressValidator
     extends ConstraintValidatorSupport<HostnameOrIpAddress, String>
 {
-  /**
-   * Validates if the provided value is either a valid hostname or IP address.
-   *
-   * @param value   The string to validate, can be null or empty (which will be considered invalid).
-   * @param context The constraint validator context.
-   * @return true if the value is a valid hostname or IP address, false otherwise.
-   */
   @Override
   public boolean isValid(final String value, final ConstraintValidatorContext context) {
-    if (value == null || value.isEmpty()) {
-      return false;
+    // If the value is valid, return true immediately (maintaining backward compatibility)
+    if (InternetDomainName.isValid(value) || InetAddresses.isInetAddress(value)) {
+      return true;
     }
     
-    // Using pattern matching to determine validation approach
+    // If validation fails, provide a detailed error message using pattern matching
+    String errorMessage = getValidationErrorMessage(value);
+    
+    // Disable the default error message
+    context.disableDefaultConstraintViolation();
+    
+    // Add a custom error message
+    context.buildConstraintViolationWithTemplate(errorMessage)
+           .addConstraintViolation();
+    
+    return false;
+  }
+  
+  /**
+   * Determines the specific validation error using Pattern Matching for switch.
+   * 
+   * @param value The value to validate
+   * @return A detailed error message
+   */
+  private String getValidationErrorMessage(final String value) {
     return switch (value) {
-      // First check if it's a valid IP address (faster check)
-      case String s when InetAddresses.isInetAddress(s) -> true;
-      // Then check if it's a valid hostname
-      case String s when InternetDomainName.isValid(s) -> true;
-      // If neither, it's invalid
-      default -> false;
+      case null -> "Hostname or IP address cannot be null";
+      case "" -> "Hostname or IP address cannot be empty";
+      case String s when s.contains(" ") -> STR."\{s} is invalid: Hostname or IP address cannot contain spaces";
+      case String s when s.startsWith("-") || s.endsWith("-") -> 
+          STR."\{s} is invalid: Hostname cannot start or end with a hyphen";
+      case String s when s.contains(":") && !isValidIpv6Format(s) -> 
+          STR."\{s} is invalid: Not a valid IPv6 address format";
+      case String s when containsIpv4Characters(s) && !InetAddresses.isInetAddress(s) -> 
+          STR."\{s} is invalid: Not a valid IPv4 address format";
+      case String s when !InternetDomainName.isValid(s) -> 
+          STR."\{s} is invalid: Not a valid hostname format";
+      default -> "Invalid hostname or IP address format";
     };
+  }
+  
+  /**
+   * Checks if a string contains only characters valid in an IPv4 address.
+   * 
+   * @param value The string to check
+   * @return true if the string contains only digits and dots
+   */
+  private boolean containsIpv4Characters(final String value) {
+    return value.matches("^[0-9.]+$");
+  }
+  
+  /**
+   * Performs basic validation of IPv6 format.
+   * 
+   * @param value The string to check
+   * @return true if the string has a potentially valid IPv6 format
+   */
+  private boolean isValidIpv6Format(final String value) {
+    // Basic check for IPv6 format - at least has colons and valid hex characters
+    return value.contains(":") && value.matches("^[0-9a-fA-F:]+$");
   }
 }

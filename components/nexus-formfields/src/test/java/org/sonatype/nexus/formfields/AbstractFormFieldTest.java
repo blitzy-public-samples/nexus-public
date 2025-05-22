@@ -12,16 +12,18 @@
  */
 package org.sonatype.nexus.formfields;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.sonatype.nexus.common.testgroup.Java21TestGroup;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.hamcrest.Matchers.equalTo;
 
 /**
  * {@link AbstractFormField} tests.
  */
+@org.junit.Category(Java21TestGroup.class)
 public class AbstractFormFieldTest
 {
   private static final String ID = "testId";
@@ -30,8 +32,8 @@ public class AbstractFormFieldTest
 
   private AbstractFormField<String> formField;
 
-  @Before
-  public void setUp() {
+  @BeforeEach
+  void setUp() {
     formField = new AbstractFormField<String>(ID)
     {
       @Override
@@ -42,27 +44,27 @@ public class AbstractFormFieldTest
   }
 
   @Test
-  public void when_CreatingNew_WithId_Expect_CorrectId() {
+  void shouldHaveCorrectIdWhenCreated() {
     assertThat(formField.getId(), equalTo(ID));
   }
 
   @Test
-  public void when_CreatingNew_WithId_Expect_CorrectType() {
+  void shouldHaveCorrectTypeWhenCreated() {
     assertThat(formField.getType(), equalTo(TYPE));
   }
 
   @Test
-  public void when_CreatingNew_WithId_Expect_RequiredIsFalse() {
+  void shouldNotBeRequiredByDefault() {
     assertFalse(formField.isRequired());
   }
 
   @Test
-  public void when_CreatingNew_WithId_Expect_DisabledIsFalse() {
+  void shouldNotBeDisabledByDefault() {
     assertFalse(formField.isDisabled());
   }
 
   @Test
-  public void when_CreatingNew_WithId_Expect_IsReadOnlyIsFalse() {
+  void shouldNotBeReadOnlyByDefault() {
     assertFalse(formField.isReadOnly());
   }
 }

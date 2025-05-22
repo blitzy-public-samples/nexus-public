@@ -37,14 +37,22 @@ import java.lang.annotation.Target;
  * }
  * </pre>
  *
+ * This annotation is retained at runtime to enable dynamic schema template processing
+ * and is designed to work with Java 21's enhanced annotation reflection capabilities.
+ *
  * @since 3.20
  */
-@Retention(RetentionPolicy.RUNTIME)
+@Retention(RetentionPolicy.RUNTIME) // Explicitly retained at runtime for reflection access
 @Target(ElementType.TYPE)
 public @interface SchemaTemplate
 {
   /**
    * The name of the placeholder variable in the schema.
+   * 
+   * This value is used at runtime to identify the placeholder pattern (${name})
+   * that will be replaced in the schema template.
+   *
+   * @return the placeholder variable name (without the ${} delimiters)
    */
   String value();
 }

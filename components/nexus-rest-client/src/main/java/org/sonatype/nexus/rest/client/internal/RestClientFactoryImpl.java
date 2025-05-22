@@ -13,6 +13,8 @@
 package org.sonatype.nexus.rest.client.internal;
 
 import java.net.URI;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -41,7 +43,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.cache.CacheLoader.from;
 
 /**
- * REST client factory.
+ * REST client factory with Java 21 Virtual Threads support.
  *
  * @since 3.0
  */
@@ -57,10 +59,17 @@ public class RestClientFactoryImpl
               (loader) -> new BridgeClassLoader(loader, ProxyBuilder.class.getClassLoader())));
 
   private final Provider<HttpClient> httpClient;
+  
+  /**
+   * Virtual Thread executor for HTTP operations.
+   * Uses Java 21's Virtual Threads for high-throughput, non-blocking I/O operations.
+   */
+  private final Executor virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   @Inject
   public RestClientFactoryImpl(final Provider<HttpClient> httpClient) {
     this.httpClient = checkNotNull(httpClient);
+    log.info("Initialized REST client factory with Java 21 Virtual Threads support");
   }
 
   @Override
@@ -72,6 +81,7 @@ public class RestClientFactoryImpl
       if (configuration.getUseTrustStore()) {
         httpContext.setAttribute(SSLContextSelector.USE_TRUST_STORE, true);
       }
+      
       HttpClient client;
       if (configuration.getHttpClient() != null) {
         client = checkNotNull(configuration.getHttpClient().get());
@@ -79,10 +89,20 @@ public class RestClientFactoryImpl
       else {
         client = httpClient.get();
       }
-      ClientHttpEngine httpEngine = new ApacheHttpClient4Engine(client, httpContext);
+      
+      // Configure ApacheHttpClient4Engine with Virtual Threads for asynchronous operations
+      ApacheHttpClient4Engine httpEngine = new ApacheHttpClient4Engine(client, httpContext);
+      httpEngine.setExecutor(virtualThreadExecutor); // Use Virtual Threads for HTTP operations
+      
+      if (log.isDebugEnabled()) {
+        log.debug("Created ApacheHttpClient4Engine with Virtual Threads executor");
+      }
 
-      ResteasyClientBuilder builder = new ResteasyClientBuilder().httpEngine(httpEngine);
-
+      // Configure ResteasyClientBuilder with updated API for 6.2.7.Final compatibility
+      ResteasyClientBuilder builder = new ResteasyClientBuilder();
+      builder.httpEngine(httpEngine);
+      
+      // Apply custom configuration if provided
       if (configuration.getCustomizer() != null) {
         configuration.getCustomizer().apply(builder);
       }
@@ -94,9 +114,15 @@ public class RestClientFactoryImpl
   @Override
   public <T> T proxy(final Class<T> api, final Client client, final URI baseUri) {
     WebTarget target = client.target(baseUri);
-
+    
+    if (log.isDebugEnabled()) {
+      log.debug("Creating proxy for {} with Virtual Threads support", api.getName());
+    }
+    
+    // Configure proxy builder with optimized classloader handling for Virtual Threads
     return ProxyBuilder.builder(api, target)
         .classloader(bridgeClassLoaderCache.getUnchecked(api.getClassLoader()))
+        .executor(virtualThreadExecutor) // Use Virtual Threads for proxy method invocations
         .build();
   }
 }

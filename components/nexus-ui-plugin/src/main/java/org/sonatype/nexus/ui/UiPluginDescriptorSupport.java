@@ -21,6 +21,9 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Support for {@link UiPluginDescriptor} implementations.
+ * <p>
+ * Compatible with Java 21, Guice 7.0.0, and Eclipse Sisu 0.10.0.
+ * Collections.emptyList() returns a list that implements Java 21's SequencedList interface.
  *
  * @since 3.20
  */
@@ -41,11 +44,13 @@ public abstract class UiPluginDescriptorSupport
 
   @Override
   public List<String> getScripts(final boolean isDebug) {
+    // Returns an immutable empty list that implements Java 21's SequencedList interface
     return Collections.emptyList();
   }
 
   @Override
   public List<String> getStyles() {
+    // Returns an immutable empty list that implements Java 21's SequencedList interface
     return Collections.emptyList();
   }
 }

@@ -1,0 +1,58 @@
+{
+  "models": [
+    {
+      "name": "foo",
+      "versions": [
+        {
+          "version": "1.0",
+          "dependencies": []
+        },
+        {
+          "version": "1.1",
+          "dependencies": [
+            {
+              "model": "wibble",
+              "version": "1.1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "bar",
+      "versions": [
+        {
+          "version": "1.0",
+          "dependencies": []
+        },
+        {
+          "version": "1.1",
+          "dependencies": [
+            {
+              "model": "foo",
+              "version": "1.1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wibble",
+      "versions": [
+        {
+          "version": "1.0",
+          "dependencies": []
+        },
+        {
+          "version": "1.1",
+          "dependencies": [
+            {
+              "model": "bar",
+              "version": "1.1"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

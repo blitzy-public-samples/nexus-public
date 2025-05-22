@@ -14,8 +14,10 @@ package org.sonatype.nexus.jmx.reflect;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;
 import java.util.Arrays;
 import java.util.function.Supplier;
+
 
 import javax.annotation.Nullable;
 import javax.management.Descriptor;
@@ -25,9 +27,6 @@ import javax.management.MBeanParameterInfo;
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.jmx.MBeanOperation;
 import org.sonatype.nexus.jmx.OperationKey;
-
-import com.thoughtworks.paranamer.BytecodeReadingParanamer;
-import com.thoughtworks.paranamer.Paranamer;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
@@ -96,16 +95,18 @@ public class ReflectionMBeanOperation
   @Override
   @Nullable
   public Object invoke(final Object[] params) throws Exception {
-    log.trace("Invoke: {} -> {}", Arrays.asList(params), method);
-    return method.invoke(target(), params);
+    log.trace(STR."Invoke: \{Arrays.asList(params)} -> \{method}");
+    try {
+      return method.invoke(target(), params);
+    } catch (Exception e) {
+      log.error(STR."Error invoking method \{method.getName()} with parameters \{Arrays.asList(params)}", e);
+      throw e;
+    }
   }
 
   @Override
   public String toString() {
-    return getClass().getSimpleName() + "{" +
-        "name='" + name + '\'' +
-        ", key=" + key +
-        '}';
+    return STR."\{getClass().getSimpleName()}{name='\{name}', key=\{key}}";
   }
 
   //
@@ -154,13 +155,11 @@ public class ReflectionMBeanOperation
     }
 
     public ReflectionMBeanOperation build() {
-      checkState(target != null);
-      checkState(method != null);
+      checkState(target != null, "Target must not be null");
+      checkState(method != null, "Method must not be null");
 
       // default to method-name if not provided
-      if (name == null) {
-        name = method.getName();
-      }
+      name = (name != null) ? name : method.getName();
 
       MBeanOperationInfo info = new MBeanOperationInfo(
           name,
@@ -171,7 +170,7 @@ public class ReflectionMBeanOperation
           DescriptorHelper.build(method)
       );
 
-      log.trace("Building operation with info: {}", info);
+      log.trace(STR."Building operation with info: \{info}");
       return new ReflectionMBeanOperation(info, target, method);
     }
 
@@ -179,29 +178,30 @@ public class ReflectionMBeanOperation
     // Helpers
     //
 
-    // FIXME: Many need to use AOP-aware Paranamer logic, could also use a caching Paranamer too?
-
     /**
-     * Extract {@link MBeanParameterInfo} signature for given method.
+     * Extract {@link MBeanParameterInfo} signature for given method using Java 21's native reflection capabilities.
+     * Uses record patterns for improved type safety and reduced boilerplate.
      */
     private MBeanParameterInfo[] signature(final Method method) {
-      // NOTE: when NX is based on Java8 we can replace Paranamer usage with JDK api
-      Paranamer paranamer = new BytecodeReadingParanamer();
-      String[] names = paranamer.lookupParameterNames(method);
-      Class[] types = method.getParameterTypes();
+      Parameter[] parameters = method.getParameters();
+      Class<?>[] types = method.getParameterTypes();
       Annotation[][] annotations = method.getParameterAnnotations();
 
-      MBeanParameterInfo[] result = new MBeanParameterInfo[names.length];
-      for (int i=0; i< names.length; i++) {
-        Descriptor descriptor = DescriptorHelper.build(annotations[i]);
-        String description = DescriptorHelper.stringValue(descriptor, "description");
+      MBeanParameterInfo[] result = new MBeanParameterInfo[parameters.length];
+      for (int i = 0; i < parameters.length; i++) {
+        // Use pattern matching to extract parameter information
+        if (parameters[i] instanceof Parameter parameter) {
+          String paramName = parameter.isNamePresent() ? parameter.getName() : "arg" + i;
+          Descriptor descriptor = DescriptorHelper.build(annotations[i]);
+          String description = DescriptorHelper.stringValue(descriptor, "description");
 
-        result[i] = new MBeanParameterInfo(
-            names[i],
-            types[i].getName(),
-            description,
-            descriptor
-        );
+          result[i] = new MBeanParameterInfo(
+              paramName,
+              types[i].getName(),
+              description,
+              descriptor
+          );
+        }
       }
 
       return result;

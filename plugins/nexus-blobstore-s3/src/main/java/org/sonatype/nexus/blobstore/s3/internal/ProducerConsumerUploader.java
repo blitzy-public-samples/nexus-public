@@ -21,7 +21,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -56,13 +58,12 @@ import static java.lang.Integer.MIN_VALUE;
 import static java.lang.String.format;
 import static java.util.Optional.empty;
 import static java.util.Optional.of;
-import static java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor;
 import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.STORAGE;
 import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.State.STARTED;
 
 /**
- * Uploads are published to a queue via the calling thread.
- * A pool of virtual threads consumes the upload requests and returns the {@link PartETag}
+ * Uploads are processed using Virtual Threads for optimal I/O performance.
+ * Each upload task is executed in its own Virtual Thread.
  *
  * @since 3.28
  */
@@ -82,29 +83,21 @@ public class ProducerConsumerUploader
 
   private final int chunkSize;
 
-  private final int threadCount;
-
   private final Timer readChunk;
 
   private final Timer uploadChunk;
 
   private final Timer multipartUpload;
 
-  private final BlockingQueue<UploadBundle> waitingRequests;
-
   private ExecutorService executorService;
 
   @Inject
   public ProducerConsumerUploader(
       @Named("${nexus.s3.producerConsumerUploader.chunksize:-10485760}") final int chunkSize,
-      @Named("${nexus.s3.producerConsumerUploader.parallelism:-0}") final int numberOfThreads,
       final MetricRegistry registry)
   {
-    checkArgument(numberOfThreads >= 0, "Must use a non-negative parallelism");
     checkArgument(chunkSize >= 0, "Must use a non-negative chunkSize");
     this.chunkSize = chunkSize;
-    this.threadCount = (numberOfThreads > 0) ? numberOfThreads : Runtime.getRuntime().availableProcessors();
-    this.waitingRequests = new LinkedBlockingQueue<>(threadCount);
 
     readChunk = registry.timer(MetricRegistry.name(S3BlobStore.class, METRIC_NAME, "readChunk"));
     uploadChunk = registry.timer(MetricRegistry.name(S3BlobStore.class, METRIC_NAME, "uploadChunk"));
@@ -113,11 +106,7 @@ public class ProducerConsumerUploader
 
   @Override
   protected void doStart() {
-    // Use Java 21 Virtual Threads for I/O-bound operations
-    executorService = newVirtualThreadPerTaskExecutor();
-    for (int workerCount = 0; workerCount < threadCount; workerCount++) {
-      executorService.submit(new ChunkUploader(waitingRequests));
-    }
+    executorService = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   @Override
@@ -128,7 +117,7 @@ public class ProducerConsumerUploader
     }
   }
 
-  @ManagedOperation(description = "Restarts the uploader with a new threadpool")
+  @ManagedOperation(description = "Restarts the uploader with a new virtual thread executor")
   public void bounce() throws Exception {
     log.debug("Bouncing ProducerConsumerUploader");
     this.stop();
@@ -171,7 +160,8 @@ public class ProducerConsumerUploader
           catch (CancellationException | SdkBaseException ex) {
             s3.abortMultipartUpload(new AbortMultipartUploadRequest(bucket, key, uploadId));
             throw new BlobStoreException(
-                STR."Error executing parallel requests for bucket:\{bucket} key:\{key} with uploadId:\{uploadId}",
+                format("Error executing parallel requests for bucket:%s key:%s with uploadId:%s", bucket, key,
+                    uploadId),
                 ex,
                 null);
           }
@@ -179,7 +169,7 @@ public class ProducerConsumerUploader
         log.debug("Finished upload to key {} in bucket {}", key, bucket);
       }
       catch (IOException | SdkClientException e) { // NOSONAR
-        throw new BlobStoreException(STR."Error uploading blob to bucket:\{bucket} key:\{key}", e, null);
+        throw new BlobStoreException(format("Error uploading blob to bucket:%s key:%s", bucket, key), e, null);
       }
   }
 
@@ -195,12 +185,33 @@ public class ProducerConsumerUploader
 
     Optional<Chunk> optionalChunk;
     int chunkCount = 0;
-      while ((optionalChunk = parallelReader.readChunk(chunkSize)).isPresent()) {
-        Chunk chunk = optionalChunk.get();
-        chunkCount++;
-        UploadPartRequest request = buildRequest(bucket, key, uploadId, chunk);
-        waitingRequests.put(new UploadBundle(s3, request, tags));
-      }
+    List<CompletableFuture<Void>> futures = new ArrayList<>();
+
+    while ((optionalChunk = parallelReader.readChunk(chunkSize)).isPresent()) {
+      Chunk chunk = optionalChunk.get();
+      chunkCount++;
+      UploadPartRequest request = buildRequest(bucket, key, uploadId, chunk);
+      
+      CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+        try (Timer.Context uploadContext = uploadChunk.time()) {
+          tags.put(s3.uploadPart(request).getPartETag());
+        }
+        catch (Exception ex) {
+          log.error("Error uploading part of multipart upload", ex);
+          try {
+            tags.put(POISON_TAG);
+          }
+          catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+          }
+        }
+      }, executorService);
+      
+      futures.add(future);
+    }
+
+    // Wait for all futures to complete
+    CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
     List<PartETag> partETags = new ArrayList<>(chunkCount);
     for (int idx = 0; idx < chunkCount; idx++) {
@@ -229,25 +240,6 @@ public class ProducerConsumerUploader
         .withPartNumber(chunk.chunkNumber)
         .withInputStream(new ByteArrayInputStream(chunk.data, 0, chunk.dataLength))
         .withPartSize(chunk.dataLength);
-  }
-
-  public static class UploadBundle
-  {
-    public final AmazonS3 s3;
-
-    public final UploadPartRequest request;
-
-    public final BlockingQueue<PartETag> tags;
-
-    public UploadBundle(
-        final AmazonS3 s3,
-        final UploadPartRequest request,
-        final BlockingQueue<PartETag> tags)
-    {
-      this.s3 = s3;
-      this.request = request;
-      this.tags = tags;
-    }
   }
 
   public static class ChunkReader
@@ -295,44 +287,6 @@ public class ProducerConsumerUploader
         this.dataLength = dataLength;
         this.data = data;  //NOSONAR
         this.chunkNumber = chunkNumber;
-      }
-    }
-  }
-
-  /**
-   * Chunk uploader that runs on a virtual thread to handle I/O-bound S3 upload operations.
-   * Each instance processes upload requests from the shared queue.
-   */
-  private class ChunkUploader
-      implements Runnable
-  {
-    private final BlockingQueue<UploadBundle> bundles;
-
-    ChunkUploader(final BlockingQueue<UploadBundle> bundles)
-    {
-      this.bundles = bundles;
-    }
-
-    @Override
-    public void run() {
-      while (true) { //NOSONAR
-        try {
-          UploadBundle bundle = bundles.take();
-          AmazonS3 s3 = bundle.s3;
-          BlockingQueue<PartETag> tags = bundle.tags;
-          UploadPartRequest request = bundle.request;
-          try (Timer.Context uploadContext = uploadChunk.time()) {
-            tags.put(s3.uploadPart(request).getPartETag());
-          }
-          catch (Exception ex) {
-            log.error("Error uploading part of multipart upload", ex);
-            tags.put(POISON_TAG);
-          }
-        }
-        catch (InterruptedException e) {
-          log.debug("Interrupted while uploading a request");
-          Thread.currentThread().interrupt();
-        }
       }
     }
   }

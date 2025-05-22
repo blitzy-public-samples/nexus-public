@@ -1,0 +1,188 @@
+{
+  "stringTemplatesTestFixtures": [
+    {
+      "id": "simple-interpolation",
+      "description": "Simple variable interpolation in upgrade messages",
+      "templateExpressions": [
+        {
+          "template": "Upgrading schema from version \{schemaVersion} to version \{targetVersion}",
+          "variables": {
+            "schemaVersion": "1.0",
+            "targetVersion": "1.1"
+          },
+          "expectedResult": "Upgrading schema from version 1.0 to version 1.1"
+        },
+        {
+          "template": "Migration \{migrationId} completed in \{executionTime}ms",
+          "variables": {
+            "migrationId": "DB-SCHEMA-1001",
+            "executionTime": 250
+          },
+          "expectedResult": "Migration DB-SCHEMA-1001 completed in 250ms"
+        }
+      ]
+    },
+    {
+      "id": "complex-expressions",
+      "description": "Complex expressions with calculations and method calls",
+      "templateExpressions": [
+        {
+          "template": "Applied \{migrations.length} migrations in \{totalTime}ms (avg: \{totalTime / migrations.length}ms per migration)",
+          "variables": {
+            "migrations": ["M1", "M2", "M3", "M4"],
+            "totalTime": 1200
+          },
+          "expectedResult": "Applied 4 migrations in 1200ms (avg: 300ms per migration)"
+        },
+        {
+          "template": "Migration status: \{success ? 'COMPLETED' : 'FAILED'} with \{errors.size()} errors",
+          "variables": {
+            "success": true,
+            "errors": []
+          },
+          "expectedResult": "Migration status: COMPLETED with 0 errors"
+        }
+      ]
+    },
+    {
+      "id": "multi-line-templates",
+      "description": "Multi-line text block templates for upgrade logs",
+      "templateExpressions": [
+        {
+          "template": "Upgrade Summary:\n- From Version: \{fromVersion}\n- To Version: \{toVersion}\n- Migrations Applied: \{migrationsCount}\n- Total Time: \{executionTime}ms\n- Status: \{status}",
+          "variables": {
+            "fromVersion": "1.0",
+            "toVersion": "1.1",
+            "migrationsCount": 5,
+            "executionTime": 3500,
+            "status": "SUCCESS"
+          },
+          "expectedResult": "Upgrade Summary:\n- From Version: 1.0\n- To Version: 1.1\n- Migrations Applied: 5\n- Total Time: 3500ms\n- Status: SUCCESS"
+        }
+      ]
+    },
+    {
+      "id": "formatted-templates",
+      "description": "Formatted templates using FMT processor",
+      "templateExpressions": [
+        {
+          "template": "Migration completed at %tF %<tT with %.2f%% success rate",
+          "processor": "FMT",
+          "variables": {
+            "timestamp": "java.time.Instant.parse('2023-09-15T14:30:45.123Z')",
+            "successRate": 99.95
+          },
+          "expectedResult": "Migration completed at 2023-09-15 14:30:45 with 99.95% success rate"
+        }
+      ]
+    },
+    {
+      "id": "conditional-expressions",
+      "description": "Templates with conditional expressions for upgrade reporting",
+      "templateExpressions": [
+        {
+          "template": "Upgrade \{success ? 'succeeded' : 'failed'} after \{migrations.size()} migrations. \{errors.isEmpty() ? 'No errors reported.' : 'Errors: ' + errors.size()}",
+          "variables": {
+            "success": true,
+            "migrations": ["M1", "M2", "M3"],
+            "errors": []
+          },
+          "expectedResult": "Upgrade succeeded after 3 migrations. No errors reported."
+        },
+        {
+          "template": "Upgrade \{success ? 'succeeded' : 'failed'} after \{migrations.size()} migrations. \{errors.isEmpty() ? 'No errors reported.' : 'Errors: ' + errors.size()}",
+          "variables": {
+            "success": false,
+            "migrations": ["M1", "M2"],
+            "errors": ["E1", "E2"]
+          },
+          "expectedResult": "Upgrade failed after 2 migrations. Errors: 2"
+        }
+      ]
+    },
+    {
+      "id": "nested-templates",
+      "description": "Templates with nested expressions for complex upgrade logging",
+      "templateExpressions": [
+        {
+          "template": "Database migration \{migrationId} \{success ? 'completed successfully' : 'failed with error: ' + errorMessage} (\{executionTime}ms)",
+          "variables": {
+            "migrationId": "DB-1001",
+            "success": true,
+            "errorMessage": null,
+            "executionTime": 450
+          },
+          "expectedResult": "Database migration DB-1001 completed successfully (450ms)"
+        },
+        {
+          "template": "Database migration \{migrationId} \{success ? 'completed successfully' : 'failed with error: ' + errorMessage} (\{executionTime}ms)",
+          "variables": {
+            "migrationId": "DB-1002",
+            "success": false,
+            "errorMessage": "Connection timeout",
+            "executionTime": 3200
+          },
+          "expectedResult": "Database migration DB-1002 failed with error: Connection timeout (3200ms)"
+        }
+      ]
+    },
+    {
+      "id": "upgrade-event-templates",
+      "description": "Templates for upgrade event messages",
+      "templateExpressions": [
+        {
+          "template": "User \{user.isPresent() ? user.get() : 'system'} initiated upgrade from schema \{schemaVersion.orElse('unknown')} with migrations: \{String.join(", ", migrations)}",
+          "variables": {
+            "user": "java.util.Optional.of('admin')",
+            "schemaVersion": "java.util.Optional.of('1.0')",
+            "migrations": ["1.1", "1.2", "1.3"]
+          },
+          "expectedResult": "User admin initiated upgrade from schema 1.0 with migrations: 1.1, 1.2, 1.3"
+        },
+        {
+          "template": "Upgrade completed on nodes: \{String.join(", ", nodeIds)}",
+          "variables": {
+            "nodeIds": ["node_1", "node_2"]
+          },
+          "expectedResult": "Upgrade completed on nodes: node_1, node_2"
+        },
+        {
+          "template": "Upgrade failed with error: \{errorMessage}",
+          "variables": {
+            "errorMessage": "Database connection lost"
+          },
+          "expectedResult": "Upgrade failed with error: Database connection lost"
+        }
+      ]
+    },
+    {
+      "id": "virtual-thread-templates",
+      "description": "Templates for virtual thread upgrade operations",
+      "templateExpressions": [
+        {
+          "template": "Virtual thread pool executed \{taskCount} upgrade tasks in \{executionTime}ms (\{taskCount / (executionTime / 1000.0)} tasks/sec)",
+          "variables": {
+            "taskCount": 1000,
+            "executionTime": 5000
+          },
+          "expectedResult": "Virtual thread pool executed 1000 upgrade tasks in 5000ms (200.0 tasks/sec)"
+        }
+      ]
+    },
+    {
+      "id": "security-templates",
+      "description": "Templates for security-related upgrade messages",
+      "templateExpressions": [
+        {
+          "template": "Security migration applied: \{migrationId} - \{description} (\{affectedRecords} records updated)",
+          "variables": {
+            "migrationId": "SEC-101",
+            "description": "Password hash algorithm upgraded",
+            "affectedRecords": 250
+          },
+          "expectedResult": "Security migration applied: SEC-101 - Password hash algorithm upgraded (250 records updated)"
+        }
+      ]
+    }
+  ]
+}

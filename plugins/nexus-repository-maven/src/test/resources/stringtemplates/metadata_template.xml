@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 
+  Maven metadata template using Java 21 String Templates feature (JEP 430)
+  This template demonstrates the use of String Templates for formatting Maven metadata XML
+  The template expressions are enclosed in \{...} and will be replaced with actual values
+  when processed by the STR template processor in Java 21
+  
+  Example usage in Java 21:
+  
+  String groupId = "org.sonatype.nexus";
+  String artifactId = "nexus-base";
+  String version = "3.19.0-SNAPSHOT";
+  String baseVersion = "3.19.0";
+  String timestamp = "20190916.172202";
+  String buildNumber = "102";
+  String lastUpdated = "20190916172202";
+  
+  String metadata = STR."<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<metadata>...\{groupId}...</metadata>";
+-->
+<metadata modelVersion="1.1.0">
+  <!-- Basic String Template expressions for artifact coordinates -->
+  <groupId>\{groupId}</groupId>
+  <artifactId>\{artifactId}</artifactId>
+  <version>\{version}</version>
+  <versioning>
+    <snapshot>
+      <!-- String Template expressions for snapshot metadata -->
+      <timestamp>\{timestamp}</timestamp>
+      <buildNumber>\{buildNumber}</buildNumber>
+    </snapshot>
+    <!-- String Template expression for formatting lastUpdated timestamp -->
+    <lastUpdated>\{lastUpdated}</lastUpdated>
+    <snapshotVersions>
+      <!-- String Template expressions for snapshot version with sources classifier -->
+      <snapshotVersion>
+        <classifier>sources</classifier>
+        <extension>jar</extension>
+        <!-- String Template expression combining multiple values -->
+        <value>\{baseVersion}-\{timestamp}-\{buildNumber}</value>
+        <updated>\{lastUpdated}</updated>
+      </snapshotVersion>
+      <!-- String Template expressions for snapshot version with no classifier -->
+      <snapshotVersion>
+        <extension>jar</extension>
+        <value>\{baseVersion}-\{timestamp}-\{buildNumber}</value>
+        <updated>\{lastUpdated}</updated>
+      </snapshotVersion>
+      <!-- String Template expressions for POM snapshot version -->
+      <snapshotVersion>
+        <extension>pom</extension>
+        <value>\{baseVersion}-\{timestamp}-\{buildNumber}</value>
+        <updated>\{lastUpdated}</updated>
+      </snapshotVersion>
+      <!-- Conditional template expression for additional snapshot versions -->
+      \{hasAdditionalVersions ? additionalSnapshotVersionXml : ""}
+    </snapshotVersions>
+  </versioning>
+</metadata>

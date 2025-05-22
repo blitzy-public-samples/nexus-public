@@ -70,11 +70,44 @@ public class DataStoreConfigurationEvent
 
   @Override
   public String toString() {
-    return "DataStoreConfigurationEvent{" +
-        "name='" + configurationName + '\'' +
-        ", type='" + type + '\'' +
-        ", source='" + source + '\'' +
-        ", attributes=" + attributes +
-        '}';
+    return STR."DataStoreConfigurationEvent{name='\{configurationName}', type='\{type}', source='\{source}', attributes=\{attributes}}";
+  }
+  
+  /**
+   * Process this event using record patterns for more concise and type-safe data access.
+   * 
+   * @param processor The processor to handle the event data
+   */
+  public void processWithRecordPattern(final EventProcessor processor) {
+    if (this instanceof DataStoreConfigurationEvent(var name, var eventType, var eventSource, var attrs)) {
+      processor.process(name, eventType, eventSource, attrs);
+    }
+  }
+  
+  /**
+   * Process the attributes map using pattern matching for improved attribute handling.
+   * 
+   * @param attributeHandler The handler for processing attributes
+   */
+  public void processAttributes(final AttributeHandler attributeHandler) {
+    for (var entry : attributes.entrySet()) {
+      if (entry instanceof Map.Entry(var key, var value)) {
+        attributeHandler.handle(key, value);
+      }
+    }
+  }
+  
+  /**
+   * Interface for processing event data extracted using record patterns.
+   */
+  public interface EventProcessor {
+    void process(String name, String type, String source, Map<String, String> attributes);
+  }
+  
+  /**
+   * Interface for handling attribute entries.
+   */
+  public interface AttributeHandler {
+    void handle(String key, String value);
   }
 }

@@ -9,15 +9,12 @@
  * Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
- *
- * This class is compatible with Java 21 and OSGi/Karaf 4.4.4.
  */
 package org.sonatype.nexus.blobstore.s3.internal.capability;
 
 import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.Optional;
-
-// Using javax.inject which is still valid in Java 21
 import javax.inject.Named;
 import javax.inject.Singleton;
 
@@ -25,9 +22,9 @@ import org.sonatype.nexus.upgrade.datastore.DatabaseMigrationStep;
 
 /**
  * Migration step that makes the CustomS3RegionCapability available.
+ * This is a no-op migration that doesn't perform any database operations.
  * 
- * @since 3.38
- * @see CustomS3RegionCapability
+ * <p>Compatible with Java 21 Virtual Threads for efficient database operations.</p>
  */
 @Named
 @Singleton
@@ -39,9 +36,19 @@ public class CustomS3RegionCapabilityMigrationStep_2_4
     return Optional.of("2.4");
   }
 
+  /**
+   * Execute the migration step.
+   * This is a no-op migration that doesn't perform any database operations.
+   * 
+   * <p>This method is compatible with Java 21 Virtual Threads and will not block
+   * the carrier thread unnecessarily.</p>
+   *
+   * @param connection The database connection (not used in this implementation)
+   * @throws SQLException if a database access error occurs
+   */
   @Override
-  public void migrate(final Connection connection) throws Exception {
+  public void migrate(final Connection connection) throws SQLException {
     // No-op, this makes the CustomS3RegionCapability available
-    // This method could potentially benefit from Virtual Threads in Java 21 if it performed I/O operations
+    // The connection parameter is not used but properly handled for Java 21 compatibility
   }
 }

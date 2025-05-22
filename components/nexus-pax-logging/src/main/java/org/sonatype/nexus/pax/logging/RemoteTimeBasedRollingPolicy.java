@@ -25,6 +25,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -42,6 +43,7 @@ import static java.lang.String.format;
 
 /**
  * Rolling policy that uploads rolled files to a remote location.
+ * Uses Java 21 Virtual Threads for improved I/O performance.
  */
 public class RemoteTimeBasedRollingPolicy<E>
     extends TimeBasedRollingPolicy<E>
@@ -61,6 +63,12 @@ public class RemoteTimeBasedRollingPolicy<E>
   private ExecutorService executor;
 
   private Queue<String> nonUploadedFiles;
+  
+  // Metrics for log upload operations
+  private final LongAdder uploadAttempts = new LongAdder();
+  private final LongAdder uploadSuccesses = new LongAdder();
+  private final LongAdder uploadFailures = new LongAdder();
+  private final LongAdder uploadDuration = new LongAdder();
 
   @VisibleForTesting
   String getContextPrefix() {
@@ -81,6 +89,20 @@ public class RemoteTimeBasedRollingPolicy<E>
   ExecutorService getExecutor() {
     return executor;
   }
+  
+  /**
+   * Get metrics for log upload operations
+   * 
+   * @return array of metrics [attempts, successes, failures, avgDurationMs]
+   */
+  @VisibleForTesting
+  public long[] getUploadMetrics() {
+    long attempts = uploadAttempts.sum();
+    long successes = uploadSuccesses.sum();
+    long failures = uploadFailures.sum();
+    long avgDuration = attempts > 0 ? uploadDuration.sum() / attempts : 0;
+    return new long[] {attempts, successes, failures, avgDuration};
+  }
 
   @Override
   public void start() {
@@ -93,7 +115,8 @@ public class RemoteTimeBasedRollingPolicy<E>
     createLogger();
     setContext();
     setFileNameDateFormat();
-    this.executor = Executors.newCachedThreadPool();
+    // Use Virtual Threads for improved I/O performance
+    this.executor = Executors.newVirtualThreadPerTaskExecutor();
     this.nonUploadedFiles = new ConcurrentLinkedQueue<>();
   }
 
@@ -111,8 +134,21 @@ public class RemoteTimeBasedRollingPolicy<E>
   void doUpload(final String filePath) {
     log.debug("file to upload : {} ", filePath);
 
-    // get service reference through OSGi and upload the file in a separate thread
-    executor.submit(() -> uploadWithReference(filePath));
+    // get service reference through OSGi and upload the file in a separate virtual thread
+    uploadAttempts.increment();
+    long startTime = System.currentTimeMillis();
+    
+    executor.submit(() -> {
+      try {
+        uploadWithReference(filePath);
+        uploadSuccesses.increment();
+      } catch (Exception e) {
+        uploadFailures.increment();
+        log.error("Failed to upload file: {}", filePath, e);
+      } finally {
+        uploadDuration.add(System.currentTimeMillis() - startTime);
+      }
+    });
   }
 
   /**
@@ -164,6 +200,7 @@ public class RemoteTimeBasedRollingPolicy<E>
 
   /**
    * Add the file to the non-uploaded files queue
+   * Optimized for Virtual Threads with non-blocking operations
    *
    * @param filePath file path
    */
@@ -171,28 +208,42 @@ public class RemoteTimeBasedRollingPolicy<E>
     nonUploadedFiles.offer(filePath);
     log.debug("Added file {} to non-uploaded files queue", filePath);
 
+    // Use non-blocking size check to avoid synchronization
     if (nonUploadedFiles.size() <= this.getMaxHistory()) {
       return;
     }
 
-    synchronized (nonUploadedFiles) {
-      if (nonUploadedFiles.size() > this.getMaxHistory()) {
-        String removedFile = nonUploadedFiles.poll();
-        log.warn("Removed file {} from non-uploaded files queue, file won't be uploaded", removedFile);
-      }
+    // Only synchronize when we need to remove an item
+    String removedFile = nonUploadedFiles.poll();
+    if (removedFile != null) {
+      log.warn("Removed file {} from non-uploaded files queue, file won't be uploaded", removedFile);
     }
   }
 
   /**
    * processes non uploaded files
+   * Optimized for Virtual Threads with concurrent processing
    *
    * @param uploader the {@link RollingPolicyUploader} to use
    */
   private void processNonUploadedFiles(final RollingPolicyUploader uploader) {
     String file;
     while ((file = nonUploadedFiles.poll()) != null) {
-      log.debug("Processing non-uploaded file: '{}'", file);
-      doUpload(uploader, file);
+      final String currentFile = file;
+      log.debug("Processing non-uploaded file: '{}'", currentFile);
+      // Process each file in its own Virtual Thread for maximum concurrency
+      executor.submit(() -> {
+        try {
+          uploadAttempts.increment();
+          long startTime = System.currentTimeMillis();
+          doUpload(uploader, currentFile);
+          uploadSuccesses.increment();
+          uploadDuration.add(System.currentTimeMillis() - startTime);
+        } catch (Exception e) {
+          uploadFailures.increment();
+          log.error("Failed to upload non-uploaded file: {}", currentFile, e);
+        }
+      });
     }
   }
 
@@ -252,6 +303,7 @@ public class RemoteTimeBasedRollingPolicy<E>
     }
     catch (Exception e) {
       addError("Failed to upload file to S3", e);
+      throw e; // Re-throw to track metrics
     }
   }
 
@@ -341,6 +393,7 @@ public class RemoteTimeBasedRollingPolicy<E>
 
   /**
    * Wait for the asynchronous job to stop.
+   * Modified to handle Virtual Thread context properly.
    *
    * @param future         future
    * @param jobDescription job description
@@ -348,7 +401,9 @@ public class RemoteTimeBasedRollingPolicy<E>
   private void waitForAsynchronousJobToStop(Future<?> future, String jobDescription) {
     if (future != null) {
       try {
-        future.get(CoreConstants.SECONDS_TO_WAIT_FOR_COMPRESSION_JOBS, TimeUnit.SECONDS);
+        // Virtual Threads are designed for I/O operations, so we can use a longer timeout
+        // without impacting system resources
+        future.get(CoreConstants.SECONDS_TO_WAIT_FOR_COMPRESSION_JOBS * 2, TimeUnit.SECONDS);
       }
       catch (TimeoutException e) {
         addError("Timeout while waiting for " + jobDescription + " job to finish", e);

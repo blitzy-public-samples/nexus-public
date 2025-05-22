@@ -24,10 +24,12 @@ import io.swagger.models.Path;
 import io.swagger.models.Swagger;
 import io.swagger.models.parameters.Parameter;
 import io.swagger.models.parameters.QueryParameter;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.Spy;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static io.swagger.models.HttpMethod.GET;
 import static io.swagger.models.HttpMethod.POST;
@@ -40,6 +42,7 @@ import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class ParameterContributorTest
     extends TestSupport
 {
@@ -64,7 +67,7 @@ public class ParameterContributorTest
 
   private TestParameterContributor underTest;
 
-  @Before
+  @BeforeEach
   public void setup() {
     when(swagger.getPaths()).thenReturn(ImmutableMap.of(
         TEST_PATH_1, new Path().get(getOperationPath1).post(postOperationPath1),

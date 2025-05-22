@@ -12,6 +12,7 @@
  */
 package org.sonatype.nexus.extender;
 
+import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 
 import javax.inject.Inject;
@@ -33,8 +34,11 @@ import org.eclipse.sisu.Mediator;
 import org.eclipse.sisu.inject.BeanLocator;
 import org.eclipse.sisu.inject.InjectorBindings;
 import org.eclipse.sisu.inject.MutableBeanLocator;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
 
@@ -48,6 +52,7 @@ import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.SERVICES;
  *
  * This should no longer happen with the change to use the locator lock to also protect lifecycle activation.
  */
+@ExtendWith(MockitoExtension.class)
 public class NexusLifecycleManagerLockTest
     extends TestSupport
 {
@@ -57,7 +62,8 @@ public class NexusLifecycleManagerLockTest
   @Mock
   private Bundle systemBundle;
 
-  @Test(timeout = 60_000) // if this test deadlocks then it will eventually timeout and fail
+  @Test
+  @Timeout(60) // if this test deadlocks then it will eventually timeout and fail after 60 seconds
   public void addingComponentBundlesInParallelDuringLifecycleActivation() throws Exception {
 
     Injector injector = Guice.createInjector(binder -> {
@@ -80,6 +86,48 @@ public class NexusLifecycleManagerLockTest
         throw new RuntimeException(e);
       }
     }).start();
+
+    // wait for lifecycle activation to reach a critical point
+    latch.await();
+
+    // register new Bundle-backed injector - this eventually calls NexusLifecycleManager.sync()
+    // which tries to acquire the lifecycle lock while we're still holding onto the locator lock
+    assertThat(
+        locator.add(
+            new InjectorBindings(
+                Guice.createInjector(binder -> binder.bind(BundleContext.class).toInstance(bundleContext))
+            )
+        ),
+        equalTo(true)
+    );
+
+    // if we reach here without encountering a deadlock then the test has passed
+  }
+
+  @Test
+  @Timeout(60) // if this test deadlocks then it will eventually timeout and fail after 60 seconds
+  public void addingComponentBundlesInParallelDuringLifecycleActivationWithVirtualThreads() throws Exception {
+    Injector injector = Guice.createInjector(binder -> {
+      binder.bind(ManagedLifecycleManager.class).to(NexusLifecycleManager.class);
+      binder.bind(Bundle.class).annotatedWith(named("system")).toInstance(systemBundle);
+      binder.bind(Lifecycle.class).annotatedWith(named("trigger")).to(Trigger.class);
+      binder.bind(CountDownLatch.class).toInstance(new CountDownLatch(1));
+      binder.bind(Integer.class).annotatedWith(Names.named("${nexus.startup.task.delay.seconds:-0}")).toInstance(0);
+    });
+
+    MutableBeanLocator locator = injector.getInstance(MutableBeanLocator.class);
+    CountDownLatch latch = injector.getInstance(CountDownLatch.class);
+
+    // Use virtual thread for lifecycle activation
+    Thread.ofVirtual().name("virtual-lifecycle-thread").start(() -> {
+      try {
+        // begin lifecycle activation in parallel using a virtual thread
+        injector.getInstance(ManagedLifecycleManager.class).to(SERVICES);
+      }
+      catch (Exception e) {
+        throw new RuntimeException(e);
+      }
+    });
 
     // wait for lifecycle activation to reach a critical point
     latch.await();

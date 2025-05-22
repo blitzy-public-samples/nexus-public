@@ -14,7 +14,7 @@ package org.sonatype.nexus.datastore.api;
 
 import java.sql.Connection;
 import java.sql.SQLException;
-import javax.sql.DataSource;
+import jakarta.sql.DataSource;
 
 import org.sonatype.goodies.lifecycle.Lifecycle;
 import org.sonatype.nexus.transaction.TransactionalStore;
@@ -54,12 +54,23 @@ public interface DataStore<S extends DataSession<?>>
 
   /**
    * Opens a new JDBC {@link Connection} to this store.
+   * 
+   * This method is optimized for Virtual Thread execution and will not cause thread pinning
+   * during JDBC operations. It's recommended to use try-with-resources to ensure proper
+   * connection management.
    *
    * @throws UnsupportedOperationException if this store doesn't support JDBC
+   * @throws SQLException if a database access error occurs
    */
   Connection openConnection() throws SQLException;
 
   /**
+   * Returns a Virtual Thread compatible DataSource implementation that can be used
+   * for efficient database operations with minimal resource usage.
+   * 
+   * The returned DataSource is optimized to work with Java 21 Virtual Threads and will
+   * not cause thread pinning during JDBC operations.
+   *
    * @since 3.29
    */
   DataSource getDataSource();

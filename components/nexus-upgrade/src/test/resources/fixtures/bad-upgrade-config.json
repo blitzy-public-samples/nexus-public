@@ -1,0 +1,65 @@
+{
+  "invalidUpgrades": [
+    {
+      "model": "foo",
+      "from": "1.1",
+      "to": "1.1",
+      "description": "Invalid upgrade: version doesn't change",
+      "class": "org.sonatype.nexus.upgrade.bad.UpgradeFoo_1_1"
+    },
+    {
+      "model": "foo",
+      "from": "1.2",
+      "to": "1.1",
+      "description": "Invalid upgrade: version goes backwards",
+      "class": "org.sonatype.nexus.upgrade.bad.UpgradeFoo_1_2"
+    },
+    {
+      "model": "bar",
+      "from": "",
+      "to": "1.0",
+      "description": "Invalid upgrade: empty from version",
+      "class": "org.sonatype.nexus.upgrade.bad.UpgradeBar_Empty"
+    },
+    {
+      "model": "bar",
+      "from": "1.0",
+      "to": "",
+      "description": "Invalid upgrade: empty to version",
+      "class": "org.sonatype.nexus.upgrade.bad.UpgradeBar_EmptyTo"
+    },
+    {
+      "model": "",
+      "from": "1.0",
+      "to": "2.0",
+      "description": "Invalid upgrade: empty model name",
+      "class": "org.sonatype.nexus.upgrade.bad.UpgradeEmptyModel"
+    },
+    {
+      "model": "baz",
+      "from": "1.0",
+      "to": "1.0.0",
+      "description": "Invalid upgrade: incompatible version formats",
+      "class": "org.sonatype.nexus.upgrade.bad.UpgradeBaz_IncompatibleVersions"
+    },
+    {
+      "model": "qux",
+      "from": "1.0-SNAPSHOT",
+      "to": "1.0",
+      "description": "Invalid upgrade: snapshot to release",
+      "class": "org.sonatype.nexus.upgrade.bad.UpgradeQux_SnapshotToRelease"
+    }
+  ],
+  "metadata": {
+    "description": "Test fixture for validating the Nexus upgrade framework's handling of invalid upgrade scenarios",
+    "compatibleWithJava21": true,
+    "testCases": [
+      "identical source and target versions",
+      "backward version changes",
+      "empty version strings",
+      "empty model names",
+      "incompatible version formats",
+      "snapshot to release transitions"
+    ]
+  }
+}

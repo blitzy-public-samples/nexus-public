@@ -12,9 +12,9 @@
  */
 package org.sonatype.nexus.repository.httpbridge.internal.describe;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Tests for {@link DescribeType}.

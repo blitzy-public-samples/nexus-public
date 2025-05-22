@@ -57,7 +57,7 @@ public class ReflectionMBeanBuilder
   public ReflectionMBeanBuilder discover() throws Exception {
     checkNotNull(target);
 
-    log.debug("Discovering managed members of type: {}", type);
+    log.debug(STR."Discovering managed members of type: \{type}");
 
     ManagedObject managedDescriptor = type.getAnnotation(ManagedObject.class);
     checkNotNull(managedDescriptor);
@@ -72,7 +72,7 @@ public class ReflectionMBeanBuilder
         continue;
       }
 
-      log.trace("Scanning for managed annotations on method: {}", method);
+      log.trace(STR."Scanning for managed annotations on method: \{method}");
 
       ManagedAttribute attributeDescriptor = method.getAnnotation(ManagedAttribute.class);
       ManagedOperation operationDescriptor = method.getAnnotation(ManagedOperation.class);
@@ -82,70 +82,75 @@ public class ReflectionMBeanBuilder
         continue;
       }
 
-      // complain if method marked as both attribute and operation
-      if (attributeDescriptor != null && operationDescriptor != null) {
-        log.warn("Confusing managed annotations on method: {}", method);
-        continue;
-      }
-
-      if (attributeDescriptor != null) {
-        log.trace("Processing attribute descriptor: {}", attributeDescriptor);
-
-        // add attribute
-        String name = Strings.emptyToNull(attributeDescriptor.name());
-        if (name == null) {
-          name = attributeName(method);
-        }
-        boolean getter = isGetter(method);
-        boolean setter = isSetter(method);
-
-        // complain if method is not a valid getter or setter
-        if (name == null || (!getter && !setter)) {
-          log.warn("Invalid attribute getter or setter method: {}", method);
+      // Use pattern matching to handle different annotation combinations
+      switch (attributeDescriptor, operationDescriptor) {
+        case (null, null) -> {
+          // Already handled by the if statement above, but included for completeness
           continue;
         }
+        case (ManagedAttribute attr, ManagedOperation op) -> {
+          log.warn(STR."Confusing managed annotations on method: \{method}");
+          continue;
+        }
+        case (ManagedAttribute attr, null) -> {
+          log.trace(STR."Processing attribute descriptor: \{attr}");
 
-        // lookup or create a new attribute builder
-        ReflectionMBeanAttribute.Builder builder = attributeBuilders.get(name);
-        if (builder == null) {
-          builder = new ReflectionMBeanAttribute.Builder()
+          // add attribute
+          String name = Strings.emptyToNull(attr.name());
+          if (name == null) {
+            name = attributeName(method);
+          }
+          boolean getter = isGetter(method);
+          boolean setter = isSetter(method);
+
+          // complain if method is not a valid getter or setter
+          if (name == null || (!getter && !setter)) {
+            log.warn(STR."Invalid attribute getter or setter method: \{method}");
+            continue;
+          }
+
+          // lookup or create a new attribute builder
+          ReflectionMBeanAttribute.Builder builder = attributeBuilders.get(name);
+          if (builder == null) {
+            builder = new ReflectionMBeanAttribute.Builder()
+                .name(name)
+                .target(target);
+
+            attributeBuilders.put(name, builder);
+          }
+
+          // do not clobber description if set on only one attribute method
+          if (Strings.emptyToNull(attr.description()) != null) {
+            builder.description(attr.description());
+          }
+
+          if (getter) {
+            log.debug(STR."Found attribute getter: \{name} -> \{method}");
+            builder.getter(method);
+          }
+          else {
+            log.debug(STR."Found attribute setter: \{name} -> \{method}");
+            builder.setter(method);
+          }
+        }
+        case (null, ManagedOperation op) -> {
+          log.trace(STR."Processing operation descriptor: \{op}");
+
+          // add operation
+          String name = Strings.emptyToNull(op.name());
+          if (name == null) {
+            name = method.getName();
+          }
+
+          log.debug(STR."Found operation: \{name} -> \{method}");
+          operation(new ReflectionMBeanOperation.Builder()
               .name(name)
-              .target(target);
-
-          attributeBuilders.put(name, builder);
+              .target(target)
+              .impact(op.impact())
+              .description(Strings.emptyToNull(op.description()))
+              .method(method)
+              .build());
         }
-
-        // do not clobber description if set on only one attribute method
-        if (Strings.emptyToNull(attributeDescriptor.description()) != null) {
-          builder.description(attributeDescriptor.description());
-        }
-
-        if (getter) {
-          log.debug("Found attribute getter: {} -> {}", name, method);
-          builder.getter(method);
-        }
-        else {
-          log.debug("Found attribute setter: {} -> {}", name, method);
-          builder.setter(method);
-        }
-      }
-      else {
-        log.trace("Processing operation descriptor: {}", operationDescriptor);
-
-        // add operation
-        String name = Strings.emptyToNull(operationDescriptor.name());
-        if (name == null) {
-          name = method.getName();
-        }
-
-        log.debug("Found operation: {} -> {}", name, method);
-        operation(new ReflectionMBeanOperation.Builder()
-            .name(name)
-            .target(target)
-            .impact(operationDescriptor.impact())
-            .description(Strings.emptyToNull(operationDescriptor.description()))
-            .method(method)
-            .build());
       }
     }
 
@@ -189,12 +194,11 @@ public class ReflectionMBeanBuilder
   @Nullable
   private static String attributeName(final Method method) {
     String name = method.getName();
-    if (name.startsWith("is")) {
-      return name.substring(2, name.length());
-    }
-    else if (name.startsWith("get") || name.startsWith("set")) {
-      return name.substring(3, name.length());
-    }
-    return null;
+    // Use pattern matching for switch to handle different method name prefixes
+    return switch (name) {
+      case String s when s.startsWith("is") -> s.substring(2);
+      case String s when s.startsWith("get") || s.startsWith("set") -> s.substring(3);
+      default -> null;
+    };
   }
 }

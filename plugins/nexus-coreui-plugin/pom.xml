@@ -147,17 +147,6 @@
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-compiler-plugin</artifactId>
-        <configuration>
-          <!-- Configure for Java 21 compatibility -->
-          <source>21</source>
-          <target>21</target>
-          <release>21</release>
-        </configuration>
-      </plugin>
-
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-javadoc-plugin</artifactId>
         <configuration>
           <!-- org.sonatype.nexus.coreui.internal.content:org.sonatype.nexus.coreui.internal.capability -->
@@ -181,22 +170,17 @@
       <plugin>
         <groupId>org.apache.karaf.tooling</groupId>
         <artifactId>karaf-maven-plugin</artifactId>
-      </plugin>
-
-      <plugin>
-        <groupId>org.apache.felix</groupId>
-        <artifactId>maven-bundle-plugin</artifactId>
+        <version>4.4.3</version>
         <configuration>
-          <instructions>
-            <!-- Ensure OSGi bundle is compatible with Java 21 -->
-            <Bundle-RequiredExecutionEnvironment>JavaSE-21</Bundle-RequiredExecutionEnvironment>
-          </instructions>
+          <!-- Ensure Java 21 compatibility -->
+          <javase>21</javase>
         </configuration>
       </plugin>
 
       <plugin>
         <groupId>com.github.eirslett</groupId>
         <artifactId>frontend-maven-plugin</artifactId>
+        <version>1.13.4</version>
 
         <executions>
           <execution>
@@ -239,6 +223,16 @@
             </configuration>
           </execution>
         </executions>
+      </plugin>
+      
+      <!-- Add maven-compiler-plugin configuration for Java 21 compatibility -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.12.1</version>
+        <configuration>
+          <release>21</release>
+        </configuration>
       </plugin>
     </plugins>
   </build>

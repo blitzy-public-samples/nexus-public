@@ -26,11 +26,6 @@
   <artifactId>nexus-script-plugin</artifactId>
   <name>${project.groupId}:${project.artifactId}</name>
   <packaging>bundle</packaging>
-  
-  <properties>
-    <maven.compiler.source>21</maven.compiler.source>
-    <maven.compiler.target>21</maven.compiler.target>
-  </properties>
 
   <dependencies>
     <dependency>
@@ -98,13 +93,11 @@
     <dependency>
       <groupId>org.spockframework</groupId>
       <artifactId>spock-core</artifactId>
-      <version>2.3-groovy-4.0</version>
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.spockframework</groupId>
       <artifactId>spock-junit4</artifactId>
-      <version>2.3-groovy-4.0</version>
       <scope>test</scope>
     </dependency>
 
@@ -147,7 +140,6 @@
               groovy.*,
               org.sonatype.nexus.repository.maven
             </DynamicImport-Package>
-            <_removeheaders>Bnd-LastModified,Built-By,Created-By,Tool,Build-Jdk,Include-Resource</_removeheaders>
             <Bundle-RequiredExecutionEnvironment>JavaSE-21</Bundle-RequiredExecutionEnvironment>
           </instructions>
         </configuration>

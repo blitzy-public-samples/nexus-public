@@ -17,7 +17,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import com.google.common.collect.ImmutableSet;
 import org.apache.commons.jexl3.JexlEngine;
 import org.apache.commons.jexl3.internal.introspection.Uberspect;
 import org.apache.commons.jexl3.introspection.JexlMethod;
@@ -32,11 +31,11 @@ import org.apache.commons.logging.LogFactory;
  */
 public class SandboxJexlUberspect extends Uberspect
 {
-  private static final Set<String> COLLECTION_METHODS = ImmutableSet.of("contains");
+  private static final Set<String> COLLECTION_METHODS = Set.of("contains");
 
-  private static final Set<String> MAP_METHODS = ImmutableSet.of("get", "getOrDefault", "containsKey", "containsValue");
+  private static final Set<String> MAP_METHODS = Set.of("get", "getOrDefault", "containsKey", "containsValue");
 
-  private static final Set<String> STRING_METHODS = ImmutableSet.of("toUpperCase", "toLowerCase", "endsWith",
+  private static final Set<String> STRING_METHODS = Set.of("toUpperCase", "toLowerCase", "endsWith",
       "startsWith");
 
   public SandboxJexlUberspect() {

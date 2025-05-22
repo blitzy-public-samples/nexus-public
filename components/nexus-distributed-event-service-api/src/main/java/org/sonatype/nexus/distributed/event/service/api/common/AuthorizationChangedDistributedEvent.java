@@ -12,10 +12,16 @@
  */
 package org.sonatype.nexus.distributed.event.service.api.common;
 
+import static java.lang.StringTemplate.STR;
+
 import org.sonatype.nexus.distributed.event.service.api.EventType;
 
 /**
  * Indicates that authorization changed.
+ *
+ * This class leverages Java 21 String Templates for improved performance and readability
+ * in string formatting operations. The toString() method demonstrates the use of the STR
+ * template processor for efficient string representation.
  *
  * @since 3.38
  */
@@ -30,8 +36,6 @@ public class AuthorizationChangedDistributedEvent
 
   @Override
   public String toString() {
-    return NAME + "{" +
-        "eventType='" + getEventType() + '\'' +
-        "}";
+    return STR."\{NAME}{eventType='\{getEventType()}'}"; 
   }
 }

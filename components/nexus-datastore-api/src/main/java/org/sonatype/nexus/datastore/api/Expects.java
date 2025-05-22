@@ -26,5 +26,10 @@ import java.lang.annotation.Target;
 @Target(ElementType.TYPE)
 public @interface Expects
 {
+  /**
+   * Returns the array of DataAccess types that must be registered before the annotated type.
+   * 
+   * @return array of DataAccess types
+   */
   Class<? extends DataAccess>[] value();
 }

@@ -35,7 +35,6 @@ import com.amazonaws.services.s3.model.PartETag;
 import com.amazonaws.services.s3.model.UploadPartRequest;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.lang.StringTemplate.STR;
 import static java.lang.String.format;
 import static java.util.Optional.empty;
 import static java.util.Optional.of;
@@ -43,12 +42,9 @@ import static java.util.Optional.of;
 /**
  * Uploads an InputStream, using multipart upload in parallel if the file is larger or equal to the chunk size.
  * A normal putObject request is used instead if only a single chunk would be sent.
- * 
- * This implementation leverages Java 21 Virtual Threads for I/O-bound operations to improve concurrency and throughput
- * without increasing resource consumption.
+ * Uses Java 21 Virtual Threads for optimal I/O-bound performance with minimal resource consumption.
  *
  * @since 3.19
- * @requires Java 21
  */
 @Singleton
 @Named("parallelUploader")
@@ -59,16 +55,15 @@ public class ParallelUploader
   private static final Chunk EMPTY_CHUNK = new ChunkReader.Chunk(0, new byte[0], 0);
 
   @Inject
-  public ParallelUploader(@Named("${nexus.s3.parallelRequests.chunksize:-5242880}") final int chunkSize,
-                          @Named("${nexus.s3.parallelRequests.parallelism:-0}") final int nThreads)
+  public ParallelUploader(@Named("${nexus.s3.parallelRequests.chunksize:-5242880}") final int chunkSize)
   {
-    super(chunkSize, nThreads, "uploadThreads");
+    super(chunkSize, "uploadThreads");
   }
 
   @Override
   public void upload(final AmazonS3 s3, final String bucket, final String key, final InputStream contents) {
     try (InputStream input = new BufferedInputStream(contents, chunkSize)) {
-      log.debug(STR."Starting upload to key \{key} in bucket \{bucket}");
+      log.debug("Starting upload to key {} in bucket {}", key, bucket);
 
       input.mark(chunkSize);
       ChunkReader chunkReader = new ChunkReader(input);
@@ -76,21 +71,23 @@ public class ParallelUploader
       input.reset();
 
       if (chunk.dataLength < chunkSize) {
-        // For small files, use a simple putObject request
         ObjectMetadata metadata = new ObjectMetadata();
         metadata.setContentLength(chunk.dataLength);
         s3.putObject(bucket, key, new ByteArrayInputStream(chunk.data, 0, chunk.dataLength), metadata);
       }
       else {
-        // For larger files, use parallel multipart upload with Virtual Threads
         ChunkReader parallelReader = new ChunkReader(input);
         parallelRequests(s3, bucket, key,
             () -> (uploadId -> uploadChunks(s3, bucket, key, uploadId, parallelReader)));
       }
-      log.debug(STR."Finished upload to key \{key} in bucket \{bucket}");
+      log.debug("Finished upload to key {} in bucket {}", key, bucket);
     }
     catch (IOException | SdkClientException e) { // NOSONAR
-      throw new BlobStoreException(STR."Error uploading blob to bucket:\{bucket} key:\{key}", e, null);
+      throw new BlobStoreException(format("Error uploading blob to bucket:%s key:%s", bucket, key), e, null);
+    }
+    catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new BlobStoreException(format("Upload interrupted for bucket:%s key:%s", bucket, key), e, null);
     }
   }
 
@@ -105,14 +102,13 @@ public class ParallelUploader
     Optional<Chunk> chunk;
 
     while ((chunk = chunkReader.readChunk(chunkSize)).isPresent()) {
-      Chunk chunkData = chunk.get();
       UploadPartRequest request = new UploadPartRequest()
           .withBucketName(bucket)
           .withKey(key)
           .withUploadId(uploadId)
-          .withPartNumber(chunkData.chunkNumber)
-          .withInputStream(new ByteArrayInputStream(chunkData.data, 0, chunkData.dataLength))
-          .withPartSize(chunkData.dataLength);
+          .withPartNumber(chunk.get().chunkNumber)
+          .withInputStream(new ByteArrayInputStream(chunk.get().data, 0, chunk.get().dataLength))
+          .withPartSize(chunk.get().dataLength);
 
       tags.add(s3.uploadPart(request).getPartETag());
     }
@@ -120,10 +116,6 @@ public class ParallelUploader
     return tags;
   }
 
-  /**
-   * Reads chunks of data from an input stream.
-   * Designed to be used with Virtual Threads for efficient I/O operations.
-   */
   static class ChunkReader
   {
     private final AtomicInteger counter;
@@ -148,9 +140,6 @@ public class ParallelUploader
       return bytesRead > 0 ? of(new Chunk(bytesRead, buf, counter.getAndIncrement())) : empty();
     }
 
-    /**
-     * Represents a chunk of data read from the input stream.
-     */
     static class Chunk
     {
       final byte[] data;

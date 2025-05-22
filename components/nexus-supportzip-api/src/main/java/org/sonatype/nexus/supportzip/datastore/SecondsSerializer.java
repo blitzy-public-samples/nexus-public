@@ -38,6 +38,10 @@ public class SecondsSerializer
   public void serialize(final Time value, final JsonGenerator jgen, final SerializerProvider provider)
       throws IOException
   {
+    if (value == null) {
+      provider.defaultSerializeNull(jgen);
+      return;
+    }
     jgen.writeNumber(value.toSecondsI());
   }
 }

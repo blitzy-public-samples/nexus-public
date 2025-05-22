@@ -21,6 +21,8 @@ import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.StringReader;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 
 import javax.xml.XMLConstants;
 import javax.xml.parsers.SAXParser;
@@ -66,33 +68,68 @@ public class SanitizedXmlSourceSupport
     this.stylesheet = checkNotNull(stylesheet);
   }
 
+  /**
+   * Prepares the content by applying the XSLT transformation to the XML file.
+   * Uses a Virtual Thread to perform the transformation asynchronously, which improves
+   * performance for I/O-bound operations like XML processing.
+   *
+   * @throws Exception if an error occurs during preparation or transformation
+   * @since 3.0
+   */
   @Override
   public void prepare() throws Exception {
     super.prepare();
     checkState(content == null);
-    ByteArrayOutputStream stream = new ByteArrayOutputStream();
-    try (InputStream input = new BufferedInputStream(new FileInputStream(file))) {
-      try (OutputStream output = new BufferedOutputStream(stream)) {
+    
+    // Create a CompletableFuture to hold the result of the transformation
+    CompletableFuture<byte[]> future = new CompletableFuture<>();
+    
+    // Start a virtual thread to perform the XML transformation
+    // Virtual threads are lightweight and managed by the JVM, making them ideal for I/O operations
+    Thread.startVirtualThread(() -> {
+      try {
+        ByteArrayOutputStream stream = new ByteArrayOutputStream();
+        try (InputStream input = new BufferedInputStream(new FileInputStream(file))) {
+          try (OutputStream output = new BufferedOutputStream(stream)) {
+            // Set up the XSLT transformation
+            StreamSource styleSource = new StreamSource(new StringReader(stylesheet));
+            TransformerFactory transformerFactory = SafeXml.newTransformerFactory();
+            Transformer transformer = transformerFactory.newTransformer(styleSource);
 
-        StreamSource styleSource = new StreamSource(new StringReader(stylesheet));
-        TransformerFactory transformerFactory = SafeXml.newTransformerFactory();
-        Transformer transformer = transformerFactory.newTransformer(styleSource);
+            SAXParserFactory parserFactory = SafeXml.newSaxParserFactory();
+            parserFactory.setNamespaceAware(true);
 
-        SAXParserFactory parserFactory = SafeXml.newSaxParserFactory();
-        parserFactory.setNamespaceAware(true);
+            SAXParser parser = parserFactory.newSAXParser();
+            parser.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            parser.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
 
-        SAXParser parser = parserFactory.newSAXParser();
-        parser.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
-        parser.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+            XMLReader reader = parser.getXMLReader();
+            reader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", false);
+            reader.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
 
-        XMLReader reader = parser.getXMLReader();
-        reader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", false);
-        reader.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
-
-        transformer.transform(new SAXSource(reader, new InputSource(input)), new StreamResult(output));
+            // Perform the transformation
+            transformer.transform(new SAXSource(reader, new InputSource(input)), new StreamResult(output));
+          }
+        }
+        // Complete the future with the transformation result
+        future.complete(stream.toByteArray());
+      } catch (Exception e) {
+        // Complete the future exceptionally if an error occurs
+        future.completeExceptionally(e);
+        log.debug("Error during XML transformation in virtual thread: {}", e.getMessage());
       }
+    });
+    
+    try {
+      // Wait for the transformation to complete and get the result
+      content = future.get();
+      log.debug("XML transformation completed successfully for: {}", file);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException("XML transformation was interrupted", e);
+    } catch (ExecutionException e) {
+      throw new RuntimeException("Error during XML transformation: " + e.getCause().getMessage(), e.getCause());
     }
-    content = stream.toByteArray();
   }
 
   @Override
@@ -107,4 +144,3 @@ public class SanitizedXmlSourceSupport
     log.debug("Reading: {} from memory", file);
     return new BufferedInputStream(new ByteArrayInputStream(content));
   }
-}

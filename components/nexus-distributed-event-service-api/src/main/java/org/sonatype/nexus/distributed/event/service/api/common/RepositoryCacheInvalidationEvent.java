@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.distributed.event.service.api.common;
 
+import static com.google.common.base.Preconditions.checkNotNull;
+
 import org.sonatype.nexus.distributed.event.service.api.EventType;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
@@ -32,10 +34,15 @@ public class RepositoryCacheInvalidationEvent
   @JsonCreator
   public RepositoryCacheInvalidationEvent(@JsonProperty("repositoryName") final String repositoryName) {
     super(EventType.UPDATED);
-    this.repositoryName = repositoryName;
+    this.repositoryName = checkNotNull(repositoryName, "Repository name cannot be null");
   }
 
   public String getRepositoryName() {
     return repositoryName;
+  }
+  
+  @Override
+  public String toString() {
+    return STR."RepositoryCacheInvalidationEvent{repositoryName=\{repositoryName}}";
   }
 }

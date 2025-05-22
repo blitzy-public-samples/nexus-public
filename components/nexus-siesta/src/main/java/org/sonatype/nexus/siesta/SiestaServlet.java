@@ -14,6 +14,9 @@ package org.sonatype.nexus.siesta;
 
 import java.io.IOException;
 import java.lang.annotation.Annotation;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -31,6 +34,7 @@ import com.google.inject.Key;
 import org.eclipse.sisu.BeanEntry;
 import org.eclipse.sisu.Mediator;
 import org.eclipse.sisu.inject.BeanLocator;
+import org.jboss.resteasy.spi.ResteasyProviderFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -54,6 +58,8 @@ public class SiestaServlet
   private final BeanLocator beanLocator;
 
   private final ComponentContainer componentContainer;
+  
+  private ExecutorService virtualThreadExecutor;
 
   @Inject
   public SiestaServlet(final BeanLocator beanLocator, final ComponentContainer componentContainer) {
@@ -67,10 +73,16 @@ public class SiestaServlet
   public void init(final ServletConfig config) throws ServletException {
     super.init(config);
 
-    // TODO: Figure out what version of RESTEasy is used and log it
+    // Initialize virtual thread executor for request handling
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    log.info("Initialized Virtual Thread executor for request handling");
 
     // Initialize container
     componentContainer.init(config);
+    
+    // Log RESTEasy version information
+    String resteasyVersion = ResteasyProviderFactory.class.getPackage().getImplementationVersion();
+    log.info("Using RESTEasy version: {}", resteasyVersion != null ? resteasyVersion : "unknown");
     log.info("JAX-RS RuntimeDelegate: {}", RuntimeDelegate.getInstance());
 
     // Watch for components
@@ -132,17 +144,55 @@ public class SiestaServlet
       log.trace("Servlet path: {}", request.getServletPath());
     }
 
-    MDC.put(getClass().getName(), uri);
+    // Capture the current MDC context to propagate to the virtual thread
+    final String mdcKey = getClass().getName();
+    final String mdcValue = uri;
+    MDC.put(mdcKey, mdcValue);
+    
     try {
-      componentContainer.service(request, response);
-    }
-    finally {
-      MDC.remove(getClass().getName());
+      // Submit the request to be handled by a virtual thread and wait for completion
+      // This ensures I/O-bound operations benefit from virtual threads while maintaining
+      // the synchronous nature of the servlet API
+      virtualThreadExecutor.submit(() -> {
+        // Restore MDC context in the virtual thread
+        MDC.put(mdcKey, mdcValue);
+        try {
+          // Process the request in the virtual thread
+          componentContainer.service(request, response);
+          return null; // Callable needs a return value
+        } catch (ServletException | IOException e) {
+          // Preserve the original exception type
+          log.error("Error processing request in virtual thread", e);
+          throw new RuntimeException(e);
+        } finally {
+          // Clean up MDC in the virtual thread
+          MDC.remove(mdcKey);
+        }
+      }).get(); // Wait for the virtual thread to complete
+    } catch (Exception e) {
+      // Unwrap any exceptions from the virtual thread
+      Throwable cause = e.getCause();
+      if (cause instanceof ServletException) {
+        throw (ServletException) cause;
+      } else if (cause instanceof IOException) {
+        throw (IOException) cause;
+      } else {
+        // For any other exception, wrap in ServletException
+        throw new ServletException("Error processing request", e);
+      }
+    } finally {
+      // Clean up MDC in the original thread
+      MDC.remove(mdcKey);
     }
   }
 
   @Override
   public void destroy() {
+    if (virtualThreadExecutor != null) {
+      virtualThreadExecutor.shutdown();
+      log.info("Virtual Thread executor shutdown");
+    }
+    
     componentContainer.destroy();
     super.destroy();
 

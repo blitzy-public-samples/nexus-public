@@ -1,0 +1,510 @@
+{
+  "virtualThreadTestFixtures": [
+    {
+      "id": "concurrent-upgrade-operations",
+      "description": "Test scenarios for running multiple upgrade operations concurrently using Virtual Threads",
+      "testScenarios": [
+        {
+          "name": "basic-concurrent-migrations",
+          "description": "Basic test for concurrent execution of multiple database migrations",
+          "concurrencyLevel": 10,
+          "migrations": [
+            {
+              "id": "VT-MIGRATION-001",
+              "version": "1.0",
+              "description": "Create test table for virtual thread testing",
+              "sql": "CREATE TABLE vt_test_table (id INTEGER PRIMARY KEY, name VARCHAR(255), created_at TIMESTAMP)",
+              "expectedDuration": 100
+            },
+            {
+              "id": "VT-MIGRATION-002",
+              "version": "1.1",
+              "description": "Add index to test table",
+              "sql": "CREATE INDEX idx_vt_test_name ON vt_test_table(name)",
+              "expectedDuration": 150
+            },
+            {
+              "id": "VT-MIGRATION-003",
+              "version": "1.2",
+              "description": "Add additional columns to test table",
+              "sql": "ALTER TABLE vt_test_table ADD COLUMN description TEXT, ADD COLUMN updated_at TIMESTAMP",
+              "expectedDuration": 200
+            },
+            {
+              "id": "VT-MIGRATION-004",
+              "version": "1.3",
+              "description": "Create secondary test table with foreign key",
+              "sql": "CREATE TABLE vt_test_related (id INTEGER PRIMARY KEY, test_id INTEGER, data TEXT, FOREIGN KEY (test_id) REFERENCES vt_test_table(id))",
+              "expectedDuration": 180
+            },
+            {
+              "id": "VT-MIGRATION-005",
+              "version": "1.4",
+              "description": "Add index to secondary table",
+              "sql": "CREATE INDEX idx_vt_test_related_test_id ON vt_test_related(test_id)",
+              "expectedDuration": 120
+            }
+          ],
+          "expectedResults": {
+            "allMigrationsSuccessful": true,
+            "maxConcurrentThreads": 10,
+            "threadType": "VirtualThread",
+            "totalDurationLessThan": 400,
+            "tablesCreated": ["vt_test_table", "vt_test_related"],
+            "indexesCreated": ["idx_vt_test_name", "idx_vt_test_related_test_id"]
+          }
+        },
+        {
+          "name": "high-concurrency-data-migrations",
+          "description": "Test for high concurrency with data insertion and updates",
+          "concurrencyLevel": 100,
+          "migrations": [
+            {
+              "id": "VT-DATA-MIGRATION-001",
+              "version": "2.0",
+              "description": "Create data table for high concurrency testing",
+              "sql": "CREATE TABLE vt_high_concurrency (id INTEGER PRIMARY KEY, data VARCHAR(255), processed BOOLEAN DEFAULT FALSE)",
+              "expectedDuration": 100
+            },
+            {
+              "id": "VT-DATA-MIGRATION-002",
+              "version": "2.1",
+              "description": "Insert initial test data",
+              "sql": "INSERT INTO vt_high_concurrency (id, data) VALUES (?, ?)",
+              "batchSize": 1000,
+              "parameterGenerator": "org.sonatype.nexus.upgrade.virtualthread.TestDataGenerator.generateRandomData",
+              "expectedDuration": 500
+            },
+            {
+              "id": "VT-DATA-MIGRATION-003",
+              "version": "2.2",
+              "description": "Update data in parallel",
+              "sql": "UPDATE vt_high_concurrency SET processed = TRUE, data = ? WHERE id = ?",
+              "batchSize": 1000,
+              "parameterGenerator": "org.sonatype.nexus.upgrade.virtualthread.TestDataGenerator.generateUpdatedData",
+              "expectedDuration": 800
+            },
+            {
+              "id": "VT-DATA-MIGRATION-004",
+              "version": "2.3",
+              "description": "Verify all data was processed",
+              "sql": "SELECT COUNT(*) FROM vt_high_concurrency WHERE processed = FALSE",
+              "expectedResult": 0,
+              "expectedDuration": 200
+            }
+          ],
+          "expectedResults": {
+            "allMigrationsSuccessful": true,
+            "maxConcurrentThreads": 100,
+            "threadType": "VirtualThread",
+            "totalDurationLessThan": 1000,
+            "recordsProcessed": 1000,
+            "tablesCreated": ["vt_high_concurrency"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "thread-pinning-detection",
+      "description": "Test scenarios to detect and mitigate thread pinning issues",
+      "testScenarios": [
+        {
+          "name": "synchronization-pinning-detection",
+          "description": "Test detection of thread pinning due to synchronization",
+          "concurrencyLevel": 20,
+          "pinningScenarios": [
+            {
+              "id": "PINNING-TEST-001",
+              "description": "Synchronized method causing thread pinning",
+              "className": "org.sonatype.nexus.upgrade.virtualthread.ThreadPinningTest",
+              "methodName": "synchronizedMethodCausingPinning",
+              "expectedPinningDetected": true,
+              "expectedWarningMessage": "Thread pinning detected in synchronizedMethodCausingPinning"
+            },
+            {
+              "id": "PINNING-TEST-002",
+              "description": "Synchronized block causing thread pinning",
+              "className": "org.sonatype.nexus.upgrade.virtualthread.ThreadPinningTest",
+              "methodName": "synchronizedBlockCausingPinning",
+              "expectedPinningDetected": true,
+              "expectedWarningMessage": "Thread pinning detected in synchronizedBlockCausingPinning"
+            },
+            {
+              "id": "PINNING-TEST-003",
+              "description": "Lock-based synchronization without pinning",
+              "className": "org.sonatype.nexus.upgrade.virtualthread.ThreadPinningTest",
+              "methodName": "lockBasedSynchronizationWithoutPinning",
+              "expectedPinningDetected": false
+            }
+          ],
+          "expectedResults": {
+            "pinningDetectionSuccessful": true,
+            "pinningIssuesDetected": 2,
+            "pinningMitigationApplied": true
+          }
+        },
+        {
+          "name": "blocking-io-pinning-detection",
+          "description": "Test detection of thread pinning due to blocking I/O operations",
+          "concurrencyLevel": 50,
+          "pinningScenarios": [
+            {
+              "id": "IO-PINNING-TEST-001",
+              "description": "Blocking file I/O causing thread pinning",
+              "className": "org.sonatype.nexus.upgrade.virtualthread.IOPinningTest",
+              "methodName": "blockingFileIOCausingPinning",
+              "expectedPinningDetected": true,
+              "expectedWarningMessage": "Thread pinning detected in blockingFileIOCausingPinning"
+            },
+            {
+              "id": "IO-PINNING-TEST-002",
+              "description": "Non-virtual thread JDBC operations causing pinning",
+              "className": "org.sonatype.nexus.upgrade.virtualthread.IOPinningTest",
+              "methodName": "nonVirtualThreadJdbcOperations",
+              "expectedPinningDetected": true,
+              "expectedWarningMessage": "Thread pinning detected in nonVirtualThreadJdbcOperations"
+            },
+            {
+              "id": "IO-PINNING-TEST-003",
+              "description": "Virtual thread compatible JDBC operations",
+              "className": "org.sonatype.nexus.upgrade.virtualthread.IOPinningTest",
+              "methodName": "virtualThreadCompatibleJdbcOperations",
+              "expectedPinningDetected": false
+            }
+          ],
+          "expectedResults": {
+            "pinningDetectionSuccessful": true,
+            "pinningIssuesDetected": 2,
+            "pinningMitigationApplied": true,
+            "performanceImprovementAfterMitigation": "50%"
+          }
+        }
+      ]
+    },
+    {
+      "id": "io-bound-operations",
+      "description": "Test scenarios for I/O-bound operations that would benefit from Virtual Threads",
+      "testScenarios": [
+        {
+          "name": "database-io-operations",
+          "description": "Test database I/O operations with Virtual Threads",
+          "concurrencyLevel": 200,
+          "operations": [
+            {
+              "id": "DB-IO-TEST-001",
+              "description": "Bulk data insertion with Virtual Threads",
+              "className": "org.sonatype.nexus.upgrade.virtualthread.DatabaseIOTest",
+              "methodName": "bulkDataInsertionWithVirtualThreads",
+              "parameters": {
+                "recordCount": 10000,
+                "batchSize": 100
+              },
+              "expectedDuration": 2000
+            },
+            {
+              "id": "DB-IO-TEST-002",
+              "description": "Parallel query execution with Virtual Threads",
+              "className": "org.sonatype.nexus.upgrade.virtualthread.DatabaseIOTest",
+              "methodName": "parallelQueryExecutionWithVirtualThreads",
+              "parameters": {
+                "queryCount": 1000,
+                "complexity": "medium"
+              },
+              "expectedDuration": 1500
+            },
+            {
+              "id": "DB-IO-TEST-003",
+              "description": "Schema migration with Virtual Threads",
+              "className": "org.sonatype.nexus.upgrade.virtualthread.DatabaseIOTest",
+              "methodName": "schemaMigrationWithVirtualThreads",
+              "parameters": {
+                "migrationCount": 50,
+                "tablesPerMigration": 2
+              },
+              "expectedDuration": 3000
+            }
+          ],
+          "expectedResults": {
+            "allOperationsSuccessful": true,
+            "platformThreadUsage": "minimal",
+            "virtualThreadCount": 200,
+            "performanceComparedToPlatformThreads": "3x-5x faster",
+            "memoryUsageComparedToPlatformThreads": "80% reduction"
+          }
+        },
+        {
+          "name": "file-io-operations",
+          "description": "Test file I/O operations with Virtual Threads",
+          "concurrencyLevel": 100,
+          "operations": [
+            {
+              "id": "FILE-IO-TEST-001",
+              "description": "Parallel file reading with Virtual Threads",
+              "className": "org.sonatype.nexus.upgrade.virtualthread.FileIOTest",
+              "methodName": "parallelFileReadingWithVirtualThreads",
+              "parameters": {
+                "fileCount": 1000,
+                "fileSize": "1MB"
+              },
+              "expectedDuration": 2500
+            },
+            {
+              "id": "FILE-IO-TEST-002",
+              "description": "Parallel file writing with Virtual Threads",
+              "className": "org.sonatype.nexus.upgrade.virtualthread.FileIOTest",
+              "methodName": "parallelFileWritingWithVirtualThreads",
+              "parameters": {
+                "fileCount": 500,
+                "fileSize": "2MB"
+              },
+              "expectedDuration": 3000
+            },
+            {
+              "id": "FILE-IO-TEST-003",
+              "description": "File copy operations with Virtual Threads",
+              "className": "org.sonatype.nexus.upgrade.virtualthread.FileIOTest",
+              "methodName": "fileCopyOperationsWithVirtualThreads",
+              "parameters": {
+                "fileCount": 200,
+                "fileSize": "5MB"
+              },
+              "expectedDuration": 4000
+            }
+          ],
+          "expectedResults": {
+            "allOperationsSuccessful": true,
+            "platformThreadUsage": "minimal",
+            "virtualThreadCount": 100,
+            "performanceComparedToPlatformThreads": "2x-4x faster",
+            "memoryUsageComparedToPlatformThreads": "75% reduction"
+          }
+        },
+        {
+          "name": "network-io-operations",
+          "description": "Test network I/O operations with Virtual Threads",
+          "concurrencyLevel": 500,
+          "operations": [
+            {
+              "id": "NETWORK-IO-TEST-001",
+              "description": "HTTP client requests with Virtual Threads",
+              "className": "org.sonatype.nexus.upgrade.virtualthread.NetworkIOTest",
+              "methodName": "httpClientRequestsWithVirtualThreads",
+              "parameters": {
+                "requestCount": 1000,
+                "concurrentRequests": 100
+              },
+              "expectedDuration": 5000
+            },
+            {
+              "id": "NETWORK-IO-TEST-002",
+              "description": "REST API calls with Virtual Threads",
+              "className": "org.sonatype.nexus.upgrade.virtualthread.NetworkIOTest",
+              "methodName": "restApiCallsWithVirtualThreads",
+              "parameters": {
+                "apiCallCount": 500,
+                "payloadSize": "10KB"
+              },
+              "expectedDuration": 3000
+            },
+            {
+              "id": "NETWORK-IO-TEST-003",
+              "description": "Database connection pooling with Virtual Threads",
+              "className": "org.sonatype.nexus.upgrade.virtualthread.NetworkIOTest",
+              "methodName": "databaseConnectionPoolingWithVirtualThreads",
+              "parameters": {
+                "connectionCount": 50,
+                "operationsPerConnection": 100
+              },
+              "expectedDuration": 4000
+            }
+          ],
+          "expectedResults": {
+            "allOperationsSuccessful": true,
+            "platformThreadUsage": "minimal",
+            "virtualThreadCount": 500,
+            "performanceComparedToPlatformThreads": "5x-10x faster",
+            "memoryUsageComparedToPlatformThreads": "90% reduction",
+            "connectionPoolSizeReduction": "80%"
+          }
+        }
+      ]
+    },
+    {
+      "id": "upgrade-manager-virtual-thread-tests",
+      "description": "Test scenarios for UpgradeManager with Virtual Threads",
+      "testScenarios": [
+        {
+          "name": "parallel-database-migrations",
+          "description": "Test parallel execution of database migrations with Virtual Threads",
+          "concurrencyLevel": 20,
+          "migrations": [
+            {
+              "id": "UPGRADE-VT-001",
+              "version": "1.0",
+              "description": "Create schema for upgrade testing",
+              "sql": "CREATE TABLE upgrade_vt_test (id INTEGER PRIMARY KEY, name VARCHAR(255), status VARCHAR(50))",
+              "expectedDuration": 100
+            },
+            {
+              "id": "UPGRADE-VT-002",
+              "version": "1.1",
+              "description": "Add indexes to upgrade test table",
+              "sql": "CREATE INDEX idx_upgrade_vt_name ON upgrade_vt_test(name); CREATE INDEX idx_upgrade_vt_status ON upgrade_vt_test(status)",
+              "expectedDuration": 150
+            },
+            {
+              "id": "UPGRADE-VT-003",
+              "version": "1.2",
+              "description": "Insert test data",
+              "sql": "INSERT INTO upgrade_vt_test (id, name, status) VALUES (?, ?, ?)",
+              "batchSize": 1000,
+              "parameterGenerator": "org.sonatype.nexus.upgrade.virtualthread.TestDataGenerator.generateUpgradeTestData",
+              "expectedDuration": 300
+            },
+            {
+              "id": "UPGRADE-VT-004",
+              "version": "1.3",
+              "description": "Update test data in parallel",
+              "sql": "UPDATE upgrade_vt_test SET status = ? WHERE id = ?",
+              "batchSize": 1000,
+              "parameterGenerator": "org.sonatype.nexus.upgrade.virtualthread.TestDataGenerator.generateStatusUpdates",
+              "expectedDuration": 400
+            },
+            {
+              "id": "UPGRADE-VT-005",
+              "version": "1.4",
+              "description": "Create related table with foreign key",
+              "sql": "CREATE TABLE upgrade_vt_related (id INTEGER PRIMARY KEY, test_id INTEGER, metadata TEXT, FOREIGN KEY (test_id) REFERENCES upgrade_vt_test(id))",
+              "expectedDuration": 200
+            }
+          ],
+          "expectedResults": {
+            "allMigrationsSuccessful": true,
+            "maxConcurrentThreads": 20,
+            "threadType": "VirtualThread",
+            "totalDurationLessThan": 600,
+            "tablesCreated": ["upgrade_vt_test", "upgrade_vt_related"],
+            "indexesCreated": ["idx_upgrade_vt_name", "idx_upgrade_vt_status"],
+            "recordsProcessed": 1000
+          }
+        },
+        {
+          "name": "upgrade-manager-implementation-test",
+          "description": "Test UpgradeManagerImpl with Virtual Threads",
+          "implementation": "org.sonatype.nexus.upgrade.datastore.internal.UpgradeManagerImpl",
+          "testMethods": [
+            {
+              "name": "testNoUpgradesWithVirtualThreads",
+              "description": "Test behavior with no upgrades using Virtual Threads",
+              "expectedResult": "No migrations applied, no exceptions thrown"
+            },
+            {
+              "name": "testExampleUpgradeWithVirtualThreads",
+              "description": "Test example upgrade with Virtual Threads",
+              "expectedResult": "Migration applied successfully, events fired correctly"
+            },
+            {
+              "name": "testConcurrentUpgradesWithVirtualThreads",
+              "description": "Test concurrent upgrades with Virtual Threads",
+              "expectedResult": "All migrations applied successfully in parallel"
+            },
+            {
+              "name": "testUpgradeExceptionHandlingWithVirtualThreads",
+              "description": "Test exception handling during upgrades with Virtual Threads",
+              "expectedResult": "Exceptions properly propagated and handled"
+            }
+          ],
+          "expectedResults": {
+            "allTestsSuccessful": true,
+            "threadType": "VirtualThread",
+            "performanceImprovement": "Significant improvement for I/O-bound operations"
+          }
+        }
+      ]
+    },
+    {
+      "id": "virtual-thread-compatibility-tests",
+      "description": "Test scenarios for compatibility with Virtual Threads",
+      "testScenarios": [
+        {
+          "name": "jdbc-driver-compatibility",
+          "description": "Test JDBC driver compatibility with Virtual Threads",
+          "drivers": [
+            {
+              "name": "PostgreSQL JDBC Driver",
+              "version": "42.7.2",
+              "className": "org.postgresql.Driver",
+              "expectedCompatible": true
+            },
+            {
+              "name": "H2 Database Engine",
+              "version": "2.2.224",
+              "className": "org.h2.Driver",
+              "expectedCompatible": true
+            }
+          ],
+          "operations": [
+            {
+              "name": "executeQuery",
+              "sql": "SELECT 1",
+              "concurrentExecutions": 100,
+              "expectedSuccessRate": 100
+            },
+            {
+              "name": "executeBatchUpdate",
+              "sql": "INSERT INTO vt_compat_test VALUES (?, ?)",
+              "batchSize": 1000,
+              "concurrentExecutions": 50,
+              "expectedSuccessRate": 100
+            },
+            {
+              "name": "executeTransaction",
+              "description": "Execute a complete transaction with multiple statements",
+              "concurrentExecutions": 25,
+              "expectedSuccessRate": 100
+            }
+          ],
+          "expectedResults": {
+            "allDriversCompatible": true,
+            "allOperationsSuccessful": true,
+            "performanceImprovement": "3x-5x compared to platform threads"
+          }
+        },
+        {
+          "name": "third-party-library-compatibility",
+          "description": "Test third-party library compatibility with Virtual Threads",
+          "libraries": [
+            {
+              "name": "Apache Shiro",
+              "version": "1.13.0",
+              "expectedCompatible": true,
+              "knownIssues": []
+            },
+            {
+              "name": "Google Guice",
+              "version": "6.0.0",
+              "expectedCompatible": true,
+              "knownIssues": []
+            },
+            {
+              "name": "MyBatis",
+              "version": "3.5.15",
+              "expectedCompatible": true,
+              "knownIssues": []
+            },
+            {
+              "name": "Eclipse Sisu",
+              "version": "0.9.0.M3",
+              "expectedCompatible": true,
+              "knownIssues": []
+            }
+          ],
+          "expectedResults": {
+            "allLibrariesCompatible": true,
+            "mitigationStrategiesImplemented": true
+          }
+        }
+      ]
+    }
+  ]
+}

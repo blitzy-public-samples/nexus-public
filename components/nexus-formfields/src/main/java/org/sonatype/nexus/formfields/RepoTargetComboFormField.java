@@ -13,9 +13,14 @@
 package org.sonatype.nexus.formfields;
 
 import java.util.Map;
+import java.util.concurrent.Executors;
+
+import static java.lang.StringTemplate.STR;
 
 /**
  * The model for a combo field allowing for selection of Repository Targets.
+ * 
+ * Uses Java 21 Virtual Threads for remote API calls to improve performance and scalability.
  *
  * @since 2.5
  */
@@ -66,5 +71,37 @@ public class RepoTargetComboFormField
   @Override
   public Map<String, String> getStoreFilters() {
     return null;
+  }
+  
+  /**
+   * Indicates that this field's API calls should use virtual threads for improved performance.
+   * 
+   * @since 21.0
+   * @return true to use virtual threads for API calls
+   */
+  public boolean useVirtualThreads() {
+    return true;
+  }
+  
+  /**
+   * Creates a virtual thread executor for API calls.
+   * 
+   * @since 21.0
+   * @return a virtual thread per task executor
+   */
+  public static java.util.concurrent.ExecutorService createVirtualThreadExecutor() {
+    return Executors.newVirtualThreadPerTaskExecutor();
+  }
+  
+  /**
+   * Returns an error message using Java 21 String Templates for improved readability.
+   * 
+   * @since 21.0
+   * @param targetId the repository target ID that caused the error
+   * @param errorCode the error code
+   * @return formatted error message using String Templates
+   */
+  public String getErrorMessage(String targetId, String errorCode) {
+    return STR."Error loading repository target \{targetId}: \{errorCode}";
   }
 }

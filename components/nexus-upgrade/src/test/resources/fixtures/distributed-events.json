@@ -1,0 +1,244 @@
+{
+  "distributedEvents": {
+    "testCases": [
+      {
+        "name": "clusteredEnvironment",
+        "description": "Test case for distributed events in a clustered environment",
+        "clusterEnabled": true,
+        "expectedTablePreserved": true,
+        "events": [
+          {
+            "id": "event-001",
+            "type": "REPOSITORY_CREATED",
+            "timestamp": "2023-05-15T10:30:45.123Z",
+            "nodeId": "node-1",
+            "payload": {
+              "repositoryName": "maven-central",
+              "format": "maven2",
+              "type": "proxy"
+            }
+          },
+          {
+            "id": "event-002",
+            "type": "ASSET_UPLOADED",
+            "timestamp": "2023-05-15T10:35:12.456Z",
+            "nodeId": "node-2",
+            "payload": {
+              "repositoryName": "maven-central",
+              "assetId": "asset-123",
+              "path": "/org/example/artifact/1.0/artifact-1.0.jar"
+            }
+          }
+        ]
+      },
+      {
+        "name": "nonClusteredEnvironment",
+        "description": "Test case for distributed events in a non-clustered environment",
+        "clusterEnabled": false,
+        "expectedTablePreserved": false,
+        "events": [
+          {
+            "id": "event-003",
+            "type": "REPOSITORY_UPDATED",
+            "timestamp": "2023-05-16T09:15:30.789Z",
+            "nodeId": "standalone",
+            "payload": {
+              "repositoryName": "nuget-hosted",
+              "format": "nuget",
+              "type": "hosted"
+            }
+          }
+        ]
+      },
+      {
+        "name": "virtualThreadsClusteredTest",
+        "description": "Test case for distributed events using Virtual Threads in a clustered environment",
+        "clusterEnabled": true,
+        "expectedTablePreserved": true,
+        "useVirtualThreads": true,
+        "events": [
+          {
+            "id": "event-004",
+            "type": "COMPONENT_DELETED",
+            "timestamp": "2023-05-17T14:22:33.567Z",
+            "nodeId": "node-1",
+            "payload": {
+              "repositoryName": "docker-hub",
+              "componentId": "comp-456",
+              "name": "nginx",
+              "version": "1.21.0"
+            },
+            "processingMode": "VIRTUAL_THREAD"
+          },
+          {
+            "id": "event-005",
+            "type": "BLOBSTORE_CREATED",
+            "timestamp": "2023-05-17T14:25:10.123Z",
+            "nodeId": "node-2",
+            "payload": {
+              "blobstoreName": "default",
+              "type": "file"
+            },
+            "processingMode": "VIRTUAL_THREAD"
+          }
+        ]
+      },
+      {
+        "name": "virtualThreadsNonClusteredTest",
+        "description": "Test case for distributed events using Virtual Threads in a non-clustered environment",
+        "clusterEnabled": false,
+        "expectedTablePreserved": false,
+        "useVirtualThreads": true,
+        "events": [
+          {
+            "id": "event-006",
+            "type": "USER_CREATED",
+            "timestamp": "2023-05-18T08:45:12.345Z",
+            "nodeId": "standalone",
+            "payload": {
+              "userId": "admin",
+              "source": "default"
+            },
+            "processingMode": "VIRTUAL_THREAD"
+          }
+        ]
+      },
+      {
+        "name": "concurrentEventProcessingTest",
+        "description": "Test case for concurrent processing of distributed events using Virtual Threads",
+        "clusterEnabled": true,
+        "expectedTablePreserved": true,
+        "useVirtualThreads": true,
+        "concurrentProcessing": true,
+        "events": [
+          {
+            "id": "event-007",
+            "type": "REPOSITORY_CREATED",
+            "timestamp": "2023-05-19T10:00:00.000Z",
+            "nodeId": "node-1",
+            "payload": {
+              "repositoryName": "npm-proxy",
+              "format": "npm",
+              "type": "proxy"
+            },
+            "processingMode": "VIRTUAL_THREAD"
+          },
+          {
+            "id": "event-008",
+            "type": "REPOSITORY_CREATED",
+            "timestamp": "2023-05-19T10:00:00.001Z",
+            "nodeId": "node-1",
+            "payload": {
+              "repositoryName": "npm-hosted",
+              "format": "npm",
+              "type": "hosted"
+            },
+            "processingMode": "VIRTUAL_THREAD"
+          },
+          {
+            "id": "event-009",
+            "type": "REPOSITORY_CREATED",
+            "timestamp": "2023-05-19T10:00:00.002Z",
+            "nodeId": "node-1",
+            "payload": {
+              "repositoryName": "npm-group",
+              "format": "npm",
+              "type": "group"
+            },
+            "processingMode": "VIRTUAL_THREAD"
+          }
+        ]
+      }
+    ],
+    "schemaVersion": "1.0",
+    "java21Features": {
+      "virtualThreads": {
+        "enabled": true,
+        "maxConcurrentEvents": 100,
+        "threadNamePrefix": "nexus-distributed-event-"
+      },
+      "stringTemplates": {
+        "enabled": true,
+        "templates": [
+          "Processing event {event.id} of type {event.type} from node {event.nodeId}",
+          "Event {event.id} processed in {processingTime}ms using {threadType}"
+        ]
+      }
+    },
+    "clusterConfiguration": {
+      "nodes": [
+        {
+          "id": "node-1",
+          "host": "nexus-node-1",
+          "port": 8081,
+          "role": "primary"
+        },
+        {
+          "id": "node-2",
+          "host": "nexus-node-2",
+          "port": 8081,
+          "role": "replica"
+        }
+      ],
+      "database": {
+        "type": "postgresql",
+        "version": "13.4",
+        "host": "postgres",
+        "port": 5432,
+        "name": "nexus",
+        "user": "nexus"
+      }
+    },
+    "tableSchema": {
+      "name": "distributed_events",
+      "columns": [
+        {
+          "name": "id",
+          "type": "VARCHAR(64)",
+          "nullable": false,
+          "primaryKey": true
+        },
+        {
+          "name": "type",
+          "type": "VARCHAR(64)",
+          "nullable": false
+        },
+        {
+          "name": "timestamp",
+          "type": "TIMESTAMP WITH TIME ZONE",
+          "nullable": false
+        },
+        {
+          "name": "node_id",
+          "type": "VARCHAR(64)",
+          "nullable": false
+        },
+        {
+          "name": "payload",
+          "type": "CLOB",
+          "nullable": true
+        },
+        {
+          "name": "processing_mode",
+          "type": "VARCHAR(32)",
+          "nullable": true,
+          "default": "'PLATFORM_THREAD'"
+        }
+      ],
+      "indices": [
+        {
+          "name": "idx_distributed_events_type",
+          "columns": ["type"]
+        },
+        {
+          "name": "idx_distributed_events_timestamp",
+          "columns": ["timestamp"]
+        },
+        {
+          "name": "idx_distributed_events_node_id",
+          "columns": ["node_id"]
+        }
+      ]
+    }
+  }
+}

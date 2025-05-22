@@ -15,11 +15,20 @@ package org.sonatype.nexus.coreui;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.nexus.common.log.LogConfigurationCustomizer;
 import org.sonatype.nexus.common.log.LoggerLevel;
 
 /**
  * Core UI {@link LogConfigurationCustomizer}.
+ * 
+ * Updated to use Java 21 String Templates for improved log message formatting.
+ * String Templates provide a more readable and efficient way to format log messages
+ * compared to traditional string concatenation or String.format().
+ * 
+ * The STR template processor automatically converts embedded expressions to strings
+ * and combines them with the template text, resulting in cleaner and more maintainable code.
  *
  * @since 3.0
  */
@@ -28,25 +37,37 @@ import org.sonatype.nexus.common.log.LoggerLevel;
 public class LogConfigurationCustomizerImpl
     implements LogConfigurationCustomizer
 {
-  /**
-   * Customizes the logging configuration for the Core UI component.
-   * 
-   * <p>Note: When implementing logging within this package, Java 21 String Templates
-   * can be leveraged for more readable and maintainable log messages. For example:</p>
-   * 
-   * <pre>
-   * // Instead of concatenation:
-   * log.debug("Processing request for user: " + username + " with role: " + role);
-   * 
-   * // Use String Templates (Java 21):
-   * log.debug(STR."Processing request for user: \{username} with role: \{role}");
-   * </pre>
-   * 
-   * <p>String Templates provide better readability and performance compared to
-   * traditional string concatenation or format methods.</p>
-   */
+  private static final Logger log = LoggerFactory.getLogger(LogConfigurationCustomizerImpl.class);
+  
   @Override
   public void customize(final Configuration configuration) {
-    configuration.setLoggerLevel("org.sonatype.nexus.coreui", LoggerLevel.DEFAULT);
+    String packageName = "org.sonatype.nexus.coreui";
+    LoggerLevel level = LoggerLevel.DEFAULT;
+    
+    // Using Java 21 String Templates for more efficient and readable log message formatting
+    // This replaces traditional string concatenation with the new STR"" template syntax
+    if (log.isDebugEnabled()) {
+      // Example of using String Templates for logging - more readable and efficient than concatenation
+      log.debug(STR."Configuring logger level for package \{packageName} to \{level}");
+      
+      // Example of using String Templates with expressions
+      log.debug(STR."Configuration timestamp: \{System.currentTimeMillis()} ms");
+      
+      // Example of using String Templates with conditional expressions
+      log.debug(STR."Logger level is default: \{level == LoggerLevel.DEFAULT}");
+      
+      // Example comparing old style vs. new String Template style
+      // Old style with concatenation:
+      // log.debug("Found " + configuration.getLoggerNames().size() + " loggers in configuration");
+      // New style with String Templates:
+      log.debug(STR."Found \{configuration.getLoggerNames().size()} loggers in configuration");
+      
+      // Example with multiple expressions and formatting
+      String className = this.getClass().getSimpleName();
+      log.debug(STR."\{className} is applying configuration at thread \{Thread.currentThread().getName()}");
+    }
+    
+    // Apply the configuration
+    configuration.setLoggerLevel(packageName, level);
   }
 }

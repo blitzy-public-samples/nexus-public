@@ -17,6 +17,9 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -64,6 +67,16 @@ public class DefaultMimeSupport
    * A loading cache of extension to MIME type.
    */
   private final LoadingCache<String, List<String>> extensionToMimeTypeCache;
+  
+  /**
+   * Thread factory for virtual threads to handle I/O-bound operations.
+   */
+  private final ThreadFactory virtualThreadFactory;
+  
+  /**
+   * Executor service for parallelized MIME detection on large files.
+   */
+  private final ExecutorService executorService;
 
   @Inject
   public DefaultMimeSupport() {
@@ -74,6 +87,8 @@ public class DefaultMimeSupport
   public DefaultMimeSupport(final NexusMimeTypes nexusMimeTypes) {
     this.tikaConfig = TikaConfig.getDefaultConfig();
     this.detector = tikaConfig.getDetector();
+    this.virtualThreadFactory = Thread.ofVirtual().factory();
+    this.executorService = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
 
     // create the cache
     extensionToMimeTypeCache =
@@ -83,22 +98,25 @@ public class DefaultMimeSupport
           public List<String> load(final String key)
               throws Exception
           {
-            final List<String> detected = Lists.newArrayList();
-            final MimeRule mimeType = nexusMimeTypes.getMimeRuleForExtension(key);
-            if (mimeType != null) {
-              // add Nexus matches first
-              detected.addAll(mimeType.getMimetypes());
-              if (mimeType.isOverride()) {
-                return detected;
+            // Use virtual thread to load cache entries
+            return executorService.submit(() -> {
+              final List<String> detected = Lists.newArrayList();
+              final MimeRule mimeType = nexusMimeTypes.getMimeRuleForExtension(key);
+              if (mimeType != null) {
+                // add Nexus matches first
+                detected.addAll(mimeType.getMimetypes());
+                if (mimeType.isOverride()) {
+                  return detected;
+                }
               }
-            }
-            // ask Tika too
-            final Metadata metadata = new Metadata();
-            metadata.set(Metadata.RESOURCE_NAME_KEY, "dummy." + key);
-            MediaType mediaType = detector.detect(null, metadata);
-            // unravel to least specific
-            unravel(detected, mediaType);
-            return detected;
+              // ask Tika too
+              final Metadata metadata = new Metadata();
+              metadata.set(Metadata.RESOURCE_NAME_KEY, STR."dummy.\{key}");
+              MediaType mediaType = detector.detect(null, metadata);
+              // unravel to least specific
+              unravel(detected, mediaType);
+              return detected;
+            }).get();
           }
         });
   }
@@ -138,6 +156,25 @@ public class DefaultMimeSupport
   public List<String> detectMimeTypes(final InputStream input, @Nullable final String fileName) throws IOException {
     checkNotNull(input);
 
+    // Use virtual threads for I/O-bound operations
+    try {
+      return executorService.submit(() -> detectMimeTypesInternal(input, fileName)).get();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IOException(STR."MIME type detection interrupted: \{e.getMessage()}");
+    } catch (ExecutionException e) {
+      Throwable cause = e.getCause();
+      if (cause instanceof IOException) {
+        throw (IOException) cause;
+      }
+      throw new IOException(STR."Failed to detect MIME type: \{cause.getMessage()}", cause);
+    }
+  }
+
+  /**
+   * Internal method to detect MIME types, executed within a virtual thread.
+   */
+  private List<String> detectMimeTypesInternal(final InputStream input, @Nullable final String fileName) throws IOException {
     List<String> detected = Lists.newArrayList();
     Metadata metadata = new Metadata();
     if (fileName != null) {
@@ -178,7 +215,7 @@ public class DefaultMimeSupport
       return mimeTypes;
     }
     catch (ExecutionException e) {
-      throw new RuntimeException(e);
+      throw new RuntimeException(STR."Failed to get MIME types for extension '\{pathExtension}': \{e.getMessage()}", e);
     }
   }
 

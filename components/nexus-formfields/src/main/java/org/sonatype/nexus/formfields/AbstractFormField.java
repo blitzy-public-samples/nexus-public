@@ -12,22 +12,19 @@
  */
 package org.sonatype.nexus.formfields;
 
-import java.util.HashMap;
+import java.util.Collections;
 import java.util.Map;
-
-import javax.annotation.Nullable;
 
 /**
  * Support for {@link FormField} implementations.
  */
-public abstract class AbstractFormField<T>
+public abstract class AbstractFormField<T extends Object>
     implements FormField<T>
 {
   private String helpText;
 
   private String id;
 
-  @Nullable
   private String regexValidation;
 
   private boolean required;
@@ -38,7 +35,6 @@ public abstract class AbstractFormField<T>
 
   private String label;
 
-  @Nullable
   private T initialValue;
 
   /**
@@ -52,8 +48,8 @@ public abstract class AbstractFormField<T>
                            final String label,
                            final String helpText,
                            final boolean required,
-                           @Nullable final String regexValidation,
-                           @Nullable final T initialValue)
+                           final String regexValidation,
+                           final T initialValue)
   {
     this(id, label, helpText, required, regexValidation);
     this.initialValue = initialValue;
@@ -63,7 +59,7 @@ public abstract class AbstractFormField<T>
                            final String label,
                            final String helpText,
                            final boolean required,
-                           @Nullable final String regexValidation)
+                           final String regexValidation)
   {
     this(id, label, helpText, required);
     this.regexValidation = regexValidation;
@@ -96,7 +92,6 @@ public abstract class AbstractFormField<T>
     return this.id;
   }
 
-  @Nullable
   public String getRegexValidation() {
     return this.regexValidation;
   }
@@ -113,7 +108,6 @@ public abstract class AbstractFormField<T>
     return this.readOnly;
   }
 
-  @Nullable
   public T getInitialValue() {
     return initialValue;
   }
@@ -126,7 +120,7 @@ public abstract class AbstractFormField<T>
     this.id = id;
   }
 
-  public void setRegexValidation(@Nullable final String regex) {
+  public void setRegexValidation(final String regex) {
     this.regexValidation = regex;
   }
 
@@ -146,7 +140,7 @@ public abstract class AbstractFormField<T>
     this.label = label;
   }
 
-  public void setInitialValue(@Nullable final T value) {
+  public void setInitialValue(final T value) {
     this.initialValue = value;
   }
 
@@ -156,13 +150,44 @@ public abstract class AbstractFormField<T>
   @Override
   public Map<String, Object> getAttributes() {
     if (attributes == null) {
-      attributes = new HashMap<>();
+      attributes = Collections.emptyMap();
     }
     return attributes;
   }
 
   public AbstractFormField<T> withAttribute(String key, Object value) {
-    getAttributes().put(key, value);
+    if (attributes == null || attributes.isEmpty()) {
+      attributes = Map.of(key, value);
+    } else {
+      // Create a mutable copy if we need to add more attributes
+      if (attributes.size() == 1 && attributes instanceof Map.Entry) {
+        var entry = (Map.Entry<String, Object>) attributes;
+        attributes = Map.of(entry.getKey(), entry.getValue(), key, value);
+      } else if (attributes.size() == 2 && !(attributes instanceof Collections.UnmodifiableMap)) {
+        // For 3 entries, use Map.of
+        var entries = attributes.entrySet().toArray(new Map.Entry[0]);
+        attributes = Map.of(
+            entries[0].getKey(), entries[0].getValue(),
+            entries[1].getKey(), entries[1].getValue(),
+            key, value);
+      } else {
+        // For more entries or if we already have an unmodifiable map, create a mutable copy
+        var newAttributes = new java.util.HashMap<>(attributes);
+        newAttributes.put(key, value);
+        attributes = Collections.unmodifiableMap(newAttributes);
+      }
+    }
     return this;
+  }
+  
+  /**
+   * Returns a string representation of this form field.
+   * 
+   * @return a string representation of this form field
+   * @since 3.31
+   */
+  @Override
+  public String toString() {
+    return STR."AbstractFormField{id=\{id}, label=\{label}, required=\{required}, readOnly=\{readOnly}, disabled=\{disabled}}";
   }
 }

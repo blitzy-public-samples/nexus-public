@@ -36,8 +36,8 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static java.lang.String.format;
 
 /**
- * Common class to execute parallel requests to S3 for a MultipartUpload operation.
- * Uses Java 21 Virtual Threads for improved throughput and resource utilization.
+ * Common class to execute parallel requests to S3 for a MultipartUpload operation
+ * using Java 21 Virtual Threads for optimal I/O-bound performance.
  *
  * @since 3.19
  */
@@ -46,24 +46,18 @@ public abstract class ParallelRequester
 {
   protected final int chunkSize;
 
-  private final int parallelism;
-
   private final ExecutorService executorService;
 
   /**
    * @param chunkSize       - the number of bytes to be processed in one parallel request
-   * @param numberOfThreads - a non-negative integer, either 0 to indicate that number of threads should be dynamically
-   *                        selected based on the env, or a positive int to set a fixed number of threads
    * @param threadGroupName - a human readable name for the threads
    */
-  public ParallelRequester(final int chunkSize, final int numberOfThreads, final String threadGroupName)
+  public ParallelRequester(final int chunkSize, final String threadGroupName)
   {
-    checkArgument(numberOfThreads >= 0, "Must use a non-negative parallelism");
     checkArgument(chunkSize >= 0, "Must use a non-negative chunkSize");
     this.chunkSize = chunkSize;
-    this.parallelism = (numberOfThreads > 0) ? numberOfThreads : Runtime.getRuntime().availableProcessors();
 
-    // Use Virtual Threads for improved throughput and resource utilization
+    // Use Virtual Threads for optimal I/O-bound performance with minimal resource consumption
     this.executorService = Executors.newVirtualThreadPerTaskExecutor();
   }
 
@@ -72,56 +66,68 @@ public abstract class ParallelRequester
     executorService.shutdownNow();
   }
 
-
   @FunctionalInterface
   protected interface IOFunction<T, R>
   {
     R apply(T v) throws IOException;
   }
 
-  /**
-   * Executes parallel requests to S3 for a MultipartUpload operation.
-   * Uses Virtual Threads to efficiently handle I/O-bound operations without blocking platform threads.
-   *
-   * @param s3 the AmazonS3 client
-   * @param bucket the S3 bucket name
-   * @param key the S3 object key
-   * @param operations supplier of operations to execute in parallel
-   */
   protected void parallelRequests(final AmazonS3 s3,
                                   final String bucket,
                                   final String key,
                                   final Supplier<IOFunction<String, List<PartETag>>> operations)
+      throws InterruptedException
   {
     InitiateMultipartUploadRequest initiateRequest = new InitiateMultipartUploadRequest(bucket, key);
     String uploadId = s3.initiateMultipartUpload(initiateRequest).getUploadId();
 
     CompletionService<List<PartETag>> completionService = new ExecutorCompletionService<>(executorService);
     try {
-      for (int i = 0; i < parallelism; i++) {
+      // Submit tasks to be executed by virtual threads
+      // The number of tasks is determined by the number of chunks to be processed
+      // Each virtual thread will process one chunk
+      int taskCount = Runtime.getRuntime().availableProcessors() * 4; // Optimal multiplier for I/O-bound tasks
+      for (int i = 0; i < taskCount; i++) {
         completionService.submit(() -> operations.get().apply(uploadId));
       }
 
       List<PartETag> partETags = new ArrayList<>();
-      for (int i = 0; i < parallelism; i++) {
-        partETags.addAll(completionService.take().get());
+      for (int i = 0; i < taskCount; i++) {
+        try {
+          List<PartETag> tags = completionService.take().get();
+          if (tags != null && !tags.isEmpty()) {
+            partETags.addAll(tags);
+          }
+        }
+        catch (ExecutionException ex) {
+          // If any task fails, abort the upload and propagate the exception
+          s3.abortMultipartUpload(new AbortMultipartUploadRequest(bucket, key, uploadId));
+          throw new BlobStoreException(
+              format("Error executing parallel requests for bucket:%s key:%s with uploadId:%s", bucket, key, uploadId),
+              ex.getCause(), null);
+        }
       }
 
-      s3.completeMultipartUpload(new CompleteMultipartUploadRequest()
-          .withBucketName(bucket)
-          .withKey(key)
-          .withUploadId(uploadId)
-          .withPartETags(partETags));
+      if (!partETags.isEmpty()) {
+        s3.completeMultipartUpload(new CompleteMultipartUploadRequest()
+            .withBucketName(bucket)
+            .withKey(key)
+            .withUploadId(uploadId)
+            .withPartETags(partETags));
+      }
+      else {
+        // No parts were uploaded, abort the multipart upload
+        s3.abortMultipartUpload(new AbortMultipartUploadRequest(bucket, key, uploadId));
+      }
     }
     catch (InterruptedException interrupted) {
       s3.abortMultipartUpload(new AbortMultipartUploadRequest(bucket, key, uploadId));
-      Thread.currentThread().interrupt();
+      throw interrupted; // Re-throw to allow proper handling by the caller
     }
-    catch (CancellationException | ExecutionException ex) {
+    catch (CancellationException ex) {
       s3.abortMultipartUpload(new AbortMultipartUploadRequest(bucket, key, uploadId));
       throw new BlobStoreException(
-          format("Error executing parallel requests for bucket:%s key:%s with uploadId:%s", bucket, key, uploadId), ex,
-          null);
+          format("Upload cancelled for bucket:%s key:%s with uploadId:%s", bucket, key, uploadId), ex, null);
     }
   }
 }

@@ -17,6 +17,9 @@ import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -37,6 +40,7 @@ import com.codahale.metrics.annotation.ExceptionMetered;
 import com.codahale.metrics.annotation.Timed;
 import com.softwarementors.extjs.djn.config.annotations.DirectAction;
 import com.softwarementors.extjs.djn.config.annotations.DirectMethod;
+import groovy.transform.PackageScope;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.slf4j.Logger;
@@ -56,7 +60,7 @@ class TrustStoreComponent
     extends DirectComponentSupport
 {
   private static final Logger log = LoggerFactory.getLogger(TrustStoreComponent.class);
-
+  
   @Inject
   TrustStore trustStore;
 
@@ -70,12 +74,35 @@ class TrustStoreComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:ssl-truststore:read")
   List<CertificateXO> read() throws Exception {
-    log.debug("Retrieving certificates from trust store");
+    log.debug(STR."Reading certificates from trust store");
+    
     List<CertificateXO> list = new ArrayList<>();
-    for (Certificate certificate : trustStore.getTrustedCertificates()) {
-      list.add(asCertificateXO(certificate, true));
+    
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      List<CompletableFuture<CertificateXO>> futures = new ArrayList<>();
+      
+      for (Certificate certificate : trustStore.getTrustedCertificates()) {
+        CompletableFuture<CertificateXO> future = CompletableFuture.supplyAsync(() -> {
+          try {
+            return asCertificateXO(certificate, true);
+          } catch (Exception e) {
+            log.error(STR."Error converting certificate to XO: \{e.getMessage()}", e);
+            throw new RuntimeException(e);
+          }
+        }, executor);
+        
+        futures.add(future);
+      }
+      
+      // Wait for all futures to complete and collect results
+      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+      
+      for (CompletableFuture<CertificateXO> future : futures) {
+        list.add(future.join());
+      }
     }
-    log.debug("Retrieved {} certificates from trust store", list.size());
+    
+    log.debug(STR."Retrieved \{list.size()} certificates from trust store");
     return list;
   }
 
@@ -92,12 +119,22 @@ class TrustStoreComponent
   @RequiresPermissions("nexus:ssl-truststore:create")
   @Validate
   CertificateXO create(final @NotBlank @PemCertificate String pem) throws Exception {
-    log.debug("Creating certificate from PEM format");
-    Certificate certificate = CertificateUtil.decodePEMFormattedCertificate(pem);
-    String fingerprint = calculateFingerprint(certificate);
-    log.debug("Importing certificate with fingerprint: {}", fingerprint);
-    trustStore.importTrustCertificate(certificate, fingerprint);
-    return asCertificateXO(certificate, true);
+    log.debug(STR."Creating certificate from PEM format");
+    
+    CompletableFuture<CertificateXO> future = CompletableFuture.supplyAsync(() -> {
+      try {
+        Certificate certificate = CertificateUtil.decodePEMFormattedCertificate(pem);
+        String fingerprint = calculateFingerprint(certificate);
+        log.debug(STR."Importing certificate with fingerprint: \{fingerprint}");
+        trustStore.importTrustCertificate(certificate, fingerprint);
+        return asCertificateXO(certificate, true);
+      } catch (Exception e) {
+        log.error(STR."Error creating certificate: \{e.getMessage()}", e);
+        throw new RuntimeException(e);
+      }
+    }, Thread.ofVirtual().factory());
+    
+    return future.join();
   }
 
   /**
@@ -112,43 +149,44 @@ class TrustStoreComponent
   @RequiresPermissions("nexus:ssl-truststore:delete")
   @Validate
   void remove(final @NotEmpty String id) throws KeystoreException {
-    log.debug("Removing certificate with id: {}", id);
-    trustStore.removeTrustCertificate(id);
+    log.debug(STR."Removing certificate with id: \{id}");
+    
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+      try {
+        trustStore.removeTrustCertificate(id);
+        log.debug(STR."Successfully removed certificate with id: \{id}");
+      } catch (KeystoreException e) {
+        log.error(STR."Error removing certificate with id \{id}: \{e.getMessage()}", e);
+        throw new RuntimeException(e);
+      }
+    }, Thread.ofVirtual().factory());
+    
+    try {
+      future.join();
+    } catch (RuntimeException e) {
+      if (e.getCause() instanceof KeystoreException) {
+        throw (KeystoreException) e.getCause();
+      }
+      throw e;
+    }
   }
 
-  /**
-   * Converts a Certificate to a CertificateXO for UI display.
-   *
-   * @param certificate the certificate to convert
-   * @param inTrustStore whether the certificate is in the trust store
-   * @return the certificate exchange object
-   */
+  @PackageScope
   static CertificateXO asCertificateXO(final Certificate certificate, final boolean inTrustStore) throws Exception {
     String fingerprint = calculateFingerprint(certificate);
-    String pemCertificate = CertificateUtil.serializeCertificateInPEM(certificate);
 
+    // Using pattern matching for instanceof check (Java 21 feature)
     if (certificate instanceof X509Certificate x509Certificate) {
       Map<String, String> subjectRdns = CertificateUtil.getSubjectRdns(x509Certificate);
       Map<String, String> issuerRdns = CertificateUtil.getIssuerRdns(x509Certificate);
 
-      return new CertificateXO(
-          fingerprint,
-          fingerprint,
-          pemCertificate,
-          x509Certificate.getSerialNumber().toString(),
-          subjectRdns.get("CN"),
-          subjectRdns.get("O"),
-          subjectRdns.get("OU"),
-          issuerRdns.get("CN"),
-          issuerRdns.get("O"),
-          issuerRdns.get("OU"),
-          x509Certificate.getNotBefore().getTime(),
-          x509Certificate.getNotAfter().getTime(),
-          inTrustStore
-      );
+      return new CertificateXO(fingerprint, fingerprint, CertificateUtil.serializeCertificateInPEM(certificate),
+          x509Certificate.getSerialNumber().toString(), subjectRdns.get("CN"), subjectRdns.get("O"),
+          subjectRdns.get("OU"), issuerRdns.get("CN"), issuerRdns.get("O"), issuerRdns.get("OU"),
+          x509Certificate.getNotBefore().getTime(), x509Certificate.getNotAfter().getTime(), inTrustStore);
     }
     else {
-      return new CertificateXO(fingerprint, fingerprint, pemCertificate);
+      return new CertificateXO(fingerprint, fingerprint, CertificateUtil.serializeCertificateInPEM(certificate));
     }
   }
 }

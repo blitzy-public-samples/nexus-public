@@ -16,13 +16,25 @@ import org.jboss.resteasy.spi.ResteasyDeployment;
 
 /**
  * Sisu {@link ResteasyDeployment}.
+ * Updated for compatibility with RESTEasy 6.2.7.Final deployment model.
  *
  * @since 3.0
  */
 public class SisuResteasyDeployment
     extends ResteasyDeployment
 {
+  /**
+   * Initialize the deployment with a SisuResteasyProviderFactory.
+   * This constructor ensures compatibility with RESTEasy 6.2.7.Final deployment model.
+   */
   public SisuResteasyDeployment() {
+    // Set the provider factory to our custom implementation
     providerFactory = new SisuResteasyProviderFactory();
+    
+    // Initialize deployment with default settings for RESTEasy 6.2.7.Final
+    // This ensures compatibility with the current deployment model
+    setRegisterBuiltin(true);
+    setAsyncJobServiceEnabled(false);
+    setWiderRequestMatching(false);
   }
 }

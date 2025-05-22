@@ -12,13 +12,12 @@
  */
 package org.sonatype.nexus.repository.httpbridge.internal.describe;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
+import java.io.IOException;
+import java.net.ConnectException;
+import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Set;
 
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -30,7 +29,9 @@ import org.sonatype.nexus.repository.view.Request;
 import org.sonatype.nexus.repository.view.Response;
 import org.sonatype.nexus.repository.view.Status;
 
+import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Maps;
 import com.google.common.primitives.Primitives;
 
 import static com.google.common.base.Preconditions.checkState;
@@ -45,12 +46,17 @@ import static com.google.common.base.Strings.nullToEmpty;
 @Singleton
 public class DescriptionHelper
 {
+  /**
+   * All methods in this class are thread-safe and can be used in a Virtual Thread environment
+   * as they don't maintain any mutable state and operate only on parameters passed to them.
+   */
+
   public void describeRequest(final Description desc, final Request request) {
     desc.topic("Request");
 
-    desc.addTable("Details", Map.of(
-            "Action", request.getAction(),
-            "path", request.getPath())
+    desc.addTable("Details", ImmutableMap.<String, Object>builder()
+            .put("Action", request.getAction())
+            .put("path", request.getPath()).build()
     );
 
     desc.addTable("Parameters", toMap(request.getParameters()));
@@ -75,8 +81,8 @@ public class DescriptionHelper
     desc.topic("Response");
 
     final Status status = response.getStatus();
-    desc.addTable("Status", Map.of(
-        "Code", status.getCode(),
+    desc.addTable("Status", ImmutableMap.of(
+        "Code", (Object) status.getCode(),
         "Message", nullToEmpty(status.getMessage())
     ));
 
@@ -89,41 +95,61 @@ public class DescriptionHelper
     }
   }
 
-  private Map<String, Object> toMap(final Payload payload) {
-    return Map.of(
+  private ImmutableMap<String, Object> toMap(final Payload payload) {
+    return ImmutableMap.<String, Object>of(
         "Content-Type", nullToEmpty(payload.getContentType()),
         "Size", payload.getSize()
     );
   }
 
-  public void describeException(final Description d, final Exception e) {
-    d.topic("Exception during handler processing");
-
-    for (Throwable cause : getCausalChain(e)) {
-      d.addTable(cause.getClass().getName(),
-          Map.of("Message", nullToEmpty(cause.getMessage())));
-    }
-  }
-
   /**
-   * Gets a throwable's causal chain as a list.
-   * The first entry is the throwable followed by its causes.
-   * Handles circular references safely.
+   * Describes an exception with enhanced details using Java 21 Pattern Matching.
+   * Provides specialized handling for different exception types.
    */
-  private List<Throwable> getCausalChain(Throwable throwable) {
-    List<Throwable> causes = new ArrayList<>();
-    Set<Throwable> seenCauses = new HashSet<>();
-    
-    while (throwable != null && seenCauses.add(throwable)) {
-      causes.add(throwable);
-      throwable = throwable.getCause();
+  public void describeException(final Description d, final Exception e) {
+    d.topic(STR."Exception during handler processing: \{e.getClass().getSimpleName()}");
+
+    // Process each cause in the chain with pattern matching for specialized handling
+    for (Throwable cause : Throwables.getCausalChain(e)) {
+      // Use pattern matching to provide more detailed information based on exception type
+      if (cause instanceof ConnectException connectEx) {
+        d.addTable(connectEx.getClass().getName(), ImmutableMap.<String, Object>builder()
+            .put("Message", nullToEmpty(connectEx.getMessage()))
+            .put("Type", "Connection Error")
+            .put("Details", "Failed to establish connection to remote server")
+            .build());
+      } 
+      else if (cause instanceof SocketTimeoutException timeoutEx) {
+        d.addTable(timeoutEx.getClass().getName(), ImmutableMap.<String, Object>builder()
+            .put("Message", nullToEmpty(timeoutEx.getMessage()))
+            .put("Type", "Timeout Error")
+            .put("Details", "Connection or read operation timed out")
+            .build());
+      }
+      else if (cause instanceof UnknownHostException hostEx) {
+        d.addTable(hostEx.getClass().getName(), ImmutableMap.<String, Object>builder()
+            .put("Message", nullToEmpty(hostEx.getMessage()))
+            .put("Type", "DNS Resolution Error")
+            .put("Details", STR."Unable to resolve host: \{nullToEmpty(hostEx.getMessage())}")
+            .build());
+      }
+      else if (cause instanceof IOException ioEx) {
+        d.addTable(ioEx.getClass().getName(), ImmutableMap.<String, Object>builder()
+            .put("Message", nullToEmpty(ioEx.getMessage()))
+            .put("Type", "I/O Error")
+            .put("Details", "Error during input/output operation")
+            .build());
+      }
+      else {
+        // Default handling for other exception types
+        d.addTable(cause.getClass().getName(),
+            ImmutableMap.<String, Object>of("Message", nullToEmpty(cause.getMessage())));
+      }
     }
-    
-    return causes;
   }
 
   private Map<String, Object> toMap(final Iterable<Entry<String, Object>> entries) {
-    Map<String, Object> table = new HashMap<>();
+    Map<String, Object> table = Maps.newHashMap();
     for (Entry<String, Object> entry : entries) {
       table.put(entry.getKey(), convert(entry.getValue()));
     }
@@ -131,7 +157,7 @@ public class DescriptionHelper
   }
 
   private Map<String, Object> toMap(final StringMultimap headers) {
-    Map<String, Object> table = new HashMap<>();
+    Map<String, Object> table = Maps.newHashMap();
     final Iterable<Entry<String, String>> entries = headers.entries();
     for (Entry<String, String> e : entries) {
       table.put(e.getKey(), e.getValue());
@@ -141,19 +167,16 @@ public class DescriptionHelper
 
   /**
    * Helper to convert value to string unless its a char-sequence or primitive/boxed-type.
+   * Uses Java 21 Pattern Matching for more elegant type checking.
    *
    * This is to help keep rendering JSON simple, and avoid side-effect with getter invocations when rendering.
    */
   private Object convert(final Object value) {
-    if (value == null) {
-      return null;
-    }
-    if (value instanceof CharSequence charSequence) {
-      return charSequence.toString();
-    }
-    if (value.getClass().isPrimitive() || Primitives.isWrapperType(value.getClass())) {
-      return value;
-    }
-    return String.valueOf(value);
+    return switch (value) {
+      case null -> null;
+      case CharSequence cs -> cs.toString();
+      case Object o when o.getClass().isPrimitive() || Primitives.isWrapperType(o.getClass()) -> o;
+      default -> String.valueOf(value);
+    };
   }
 }

@@ -24,6 +24,9 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 
 /**
+ * API request for script privileges.
+ * Updated for compatibility with RESTEasy 6.2.7.Final and Swagger 2.2.20.
+ *
  * @since 3.19
  */
 public class ApiPrivilegeScriptRequest
@@ -36,12 +39,15 @@ public class ApiPrivilegeScriptRequest
   private String scriptName;
 
   /**
-   * for deserialization
+   * Default constructor for deserialization
    */
   private ApiPrivilegeScriptRequest() {
     super();
   }
 
+  /**
+   * Constructor for creating a new script privilege request
+   */
   public ApiPrivilegeScriptRequest(final String name,
                                    final String description,
                                    final String scriptName,
@@ -51,15 +57,24 @@ public class ApiPrivilegeScriptRequest
     this.scriptName = scriptName;
   }
 
+  /**
+   * Constructor from an existing privilege
+   */
   public ApiPrivilegeScriptRequest(final Privilege privilege) {
     super(privilege);
     scriptName = privilege.getPrivilegeProperty(SCRIPT_KEY);
   }
 
+  /**
+   * Set the script name for this privilege
+   */
   public void setScriptName(final String scriptName) {
     this.scriptName = scriptName;
   }
 
+  /**
+   * Get the script name for this privilege
+   */
   public String getScriptName() {
     return scriptName;
   }

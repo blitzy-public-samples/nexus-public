@@ -24,16 +24,19 @@ import org.apache.shiro.session.Session;
 import org.apache.shiro.subject.PrincipalCollection;
 import org.apache.shiro.subject.Subject;
 import org.apache.shiro.util.ThreadContext;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static com.google.common.net.HttpHeaders.X_FRAME_OPTIONS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class SessionServletTest
     extends TestSupport
 {
@@ -51,7 +54,7 @@ public class SessionServletTest
 
   private SessionServlet underTest;
 
-  @Before
+  @BeforeEach
   public void setup() {
     underTest = new SessionServlet(eventManager);
 
@@ -65,7 +68,7 @@ public class SessionServletTest
     ThreadContext.bind(subject);
   }
 
-  @After
+  @AfterEach
   public void cleanup() {
     ThreadContext.unbindSubject();
   }

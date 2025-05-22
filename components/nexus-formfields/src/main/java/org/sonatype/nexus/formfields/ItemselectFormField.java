@@ -14,6 +14,10 @@ package org.sonatype.nexus.formfields;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 import javax.annotation.Nullable;
 
@@ -29,6 +33,14 @@ public class ItemselectFormField
   public static final String TYPE = "itemselect";
 
   private static final String ATTRIBUTE_LISTENERS = "listeners";
+
+  /**
+   * Record representing a mapping pair for ID and name.
+   * Used for type-safe handling of mapping data.
+   *
+   * @since 3.60
+   */
+public record MappingPair(String idMapping, String nameMapping) {}
 
   private String storeApi;
 
@@ -85,7 +97,7 @@ public class ItemselectFormField
   @Override
   @Nullable
   public Map<String, String> getStoreFilters() {
-    return storeFilters.isEmpty() ? null : storeFilters;
+    return storeFilters.isEmpty() ? null : Map.copyOf(storeFilters);
   }
 
   @Override
@@ -96,6 +108,16 @@ public class ItemselectFormField
   @Override
   public String getNameMapping() {
     return nameMapping;
+  }
+
+  /**
+   * Get the mapping pair containing both ID and name mappings.
+   *
+   * @return a record containing both mappings
+   * @since 3.60
+   */
+  public MappingPair getMappingPair() {
+    return new MappingPair(idMapping, nameMapping);
   }
 
   public void setStoreApi(final String storeApi) {
@@ -110,8 +132,55 @@ public class ItemselectFormField
     this.nameMapping = nameMapping;
   }
 
+  /**
+   * Set both ID and name mappings at once using a mapping pair.
+   *
+   * @param mappingPair the record containing both mappings
+   * @since 3.60
+   */
+  public void setMappingPair(final MappingPair mappingPair) {
+    if (mappingPair instanceof MappingPair(var id, var name)) {
+      this.idMapping = id;
+      this.nameMapping = name;
+    }
+  }
+
   public void addStoreFilter(final String property, final String value) {
     storeFilters.put(property, value);
+  }
+
+  /**
+   * Asynchronously load data from the store API using virtual threads.
+   *
+   * @param dataLoader the function to load data from the store API
+   * @param <T> the type of data to be loaded
+   * @return a CompletableFuture containing the loaded data
+   * @since 3.60
+   */
+  public <T> CompletableFuture<T> loadDataAsync(final Function<String, T> dataLoader) {
+    return CompletableFuture.supplyAsync(() -> {
+      if (storeApi == null) {
+        throw new IllegalStateException(STR."Store API not configured for field \{getId()}");
+      }
+      return dataLoader.apply(storeApi);
+    }, Executors.newVirtualThreadPerTaskExecutor());
+  }
+
+  /**
+   * Asynchronously load data with filters from the store API using virtual threads.
+   *
+   * @param dataLoader the function to load data from the store API with filters
+   * @param <T> the type of data to be loaded
+   * @return a CompletableFuture containing the loaded data
+   * @since 3.60
+   */
+  public <T> CompletableFuture<T> loadDataWithFiltersAsync(final Function<Map<String, String>, T> dataLoader) {
+    return CompletableFuture.supplyAsync(() -> {
+      if (storeApi == null) {
+        throw new IllegalStateException(STR."Store API not configured for field \{getId()}");
+      }
+      return dataLoader.apply(getStoreFilters() != null ? getStoreFilters() : Map.of());
+    }, Executors.newVirtualThreadPerTaskExecutor());
   }
 
   public void setButtons(final String... buttons) {
@@ -142,6 +211,18 @@ public class ItemselectFormField
 
   public ItemselectFormField withNameMapping(final String nameMapping) {
     this.nameMapping = nameMapping;
+    return this;
+  }
+
+  /**
+   * Fluent API for setting both ID and name mappings at once using a mapping pair.
+   *
+   * @param mappingPair the record containing both mappings
+   * @return this instance for method chaining
+   * @since 3.60
+   */
+  public ItemselectFormField withMappingPair(final MappingPair mappingPair) {
+    setMappingPair(mappingPair);
     return this;
   }
 
@@ -185,6 +266,24 @@ public class ItemselectFormField
         : new HashMap<>();
 
     declaredListeners.put(eventName, listenerName);
+    getAttributes().put(ATTRIBUTE_LISTENERS, declaredListeners);
+
+    return this;
+  }
+
+  /**
+   * Configure multiple listeners at once using a map.
+   *
+   * @param listeners a map of event names to listener names
+   * @return this instance for method chaining
+   * @since 3.60
+   */
+  public ItemselectFormField withListeners(final Map<String, String> listeners) {
+    Map<String, String> declaredListeners = getAttributes().containsKey(ATTRIBUTE_LISTENERS)
+        ? (Map<String, String>) getAttributes().get(ATTRIBUTE_LISTENERS)
+        : new HashMap<>();
+
+    declaredListeners.putAll(listeners);
     getAttributes().put(ATTRIBUTE_LISTENERS, declaredListeners);
 
     return this;

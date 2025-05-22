@@ -28,6 +28,7 @@ import com.palominolabs.metrics.guice.DefaultMetricNamer;
 import com.palominolabs.metrics.guice.GaugeInjectionListener;
 import com.palominolabs.metrics.guice.annotation.MethodAnnotationResolver;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -70,34 +71,39 @@ public class CachedGaugeTypeListenerTest
   }
 
   @Test
-  public void testHearNoOverride() {
+  @DisplayName("Verify default behavior with no property overrides")
+  public void hearNoOverride() {
     undertest.hear(testTypeLiteral, mockTypeEncounter);
     verify(mockTypeEncounter, times(1)).register(isA(CachedGaugeInjectionListener.class));
   }
 
   @Test
-  public void testHearAllCacheDisable() {
+  @DisplayName("Verify behavior when all caches are disabled")
+  public void hearAllCacheDisable() {
     mockProperties.put("nexus.analytics.cache.disableAll", "true");
     undertest.hear(testTypeLiteral, mockTypeEncounter);
     verify(mockTypeEncounter, times(1)).register(isA(GaugeInjectionListener.class));
   }
 
   @Test
-  public void testHearSingleCacheDisable() {
+  @DisplayName("Verify behavior when a specific cache is disabled")
+  public void hearSingleCacheDisable() {
     mockProperties.put("nexus.analytics.cache.disable.test.annotated", "true");
     undertest.hear(testTypeLiteral, mockTypeEncounter);
     verify(mockTypeEncounter, times(1)).register(isA(GaugeInjectionListener.class));
   }
 
   @Test
-  public void testHearSingleCacheDisableFalse() {
+  @DisplayName("Verify behavior when a specific cache disable property is set to false")
+  public void hearSingleCacheDisableFalse() {
     mockProperties.put("nexus.analytics.cache.disable.test.annotated", "false");
     undertest.hear(testTypeLiteral, mockTypeEncounter);
     verify(mockTypeEncounter, times(1)).register(isA(CachedGaugeInjectionListener.class));
   }
 
   @Test
-  public void testHearTimeoutOverride() throws Exception {
+  @DisplayName("Verify timeout override through properties")
+  public void hearTimeoutOverride() throws Exception {
     mockProperties.put("test.annotated.cache.timeout", "42");
     undertest.hear(testTypeLiteral, mockTypeEncounter);
     verify(mockTypeEncounter, times(1)).register(injectionListenerArgumentCaptor.capture());
@@ -105,7 +111,8 @@ public class CachedGaugeTypeListenerTest
   }
 
   @Test
-  public void testHearTimeUnitOverride() throws Exception {
+  @DisplayName("Verify time unit override through properties")
+  public void hearTimeUnitOverride() throws Exception {
     mockProperties.put("test.annotated.cache.timeUnit", "minutes");
     undertest.hear(testTypeLiteral, mockTypeEncounter);
     verify(mockTypeEncounter, times(1)).register(injectionListenerArgumentCaptor.capture());
@@ -113,7 +120,8 @@ public class CachedGaugeTypeListenerTest
   }
 
   @Test
-  public void testHearAnalyticDisable() {
+  @DisplayName("Verify behavior when analytics are disabled")
+  public void hearAnalyticDisable() {
     mockProperties.put("test.annotated.disable", "true");
     undertest.hear(testTypeLiteral, mockTypeEncounter);
     verify(mockTypeEncounter, times(0)).register((InjectionListener<? super TestClass>) isNotNull());

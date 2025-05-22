@@ -50,12 +50,23 @@ public class SupportZipGenerationEvent
   public SupportZipGeneratorRequest getRequest() {
     return request;
   }
+  
+  /**
+   * Process the request using pattern matching to extract relevant information.
+   * This demonstrates the use of pattern matching with instanceof for non-record classes.
+   *
+   * @param obj The object to process
+   * @return A description of the request if it's a SupportZipGeneratorRequest, or null otherwise
+   */
+  public String processRequestWithPatternMatching(Object obj) {
+    if (obj instanceof SupportZipGeneratorRequest req) {
+      return STR."Processing support zip request for host \{req.getHostname()} with system info: \{req.isSystemInformation()}";
+    }
+    return null;
+  }
 
   @Override
   public String toString() {
-    return "SupportZipGenerationEvent{" +
-        "recipientNodeId='" + recipientNodeId + '\'' +
-        ", request=" + request +
-        '}';
+    return STR."SupportZipGenerationEvent{recipientNodeId='\{recipientNodeId}', request=\{request}}";
   }
 }

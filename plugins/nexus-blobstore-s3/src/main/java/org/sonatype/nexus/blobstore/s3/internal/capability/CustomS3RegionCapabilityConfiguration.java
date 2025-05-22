@@ -9,8 +9,6 @@
  * Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
- *
- * This file has been updated for Java 21 compatibility.
  */
 package org.sonatype.nexus.blobstore.s3.internal.capability;
 
@@ -25,14 +23,6 @@ import org.sonatype.nexus.blobstore.SelectOption;
 import org.sonatype.nexus.capability.CapabilityConfigurationSupport;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-
-/**
- * Configuration for custom S3 regions capability.
- * 
- * @since 3.0
- * @see <a href="https://docs.aws.amazon.com/general/latest/gr/rande.html">AWS Regions and Endpoints</a>
- * @see <a href="https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/region-selection.html">AWS SDK for Java 2.x - Region Selection</a>
- */
 
 public class CustomS3RegionCapabilityConfiguration
     extends CapabilityConfigurationSupport
@@ -50,11 +40,6 @@ public class CustomS3RegionCapabilityConfiguration
 
   public String getRegions() { return customRegions; }
 
-  /**
-   * Converts the comma-separated regions string into a list of {@link SelectOption} objects.
-   * 
-   * @return List of region select options
-   */
   public List<SelectOption> getRegionsList() {
     return Arrays.stream(customRegions.split(","))
         .map(String::trim)

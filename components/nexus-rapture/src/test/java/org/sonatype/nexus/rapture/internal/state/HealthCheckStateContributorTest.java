@@ -13,8 +13,8 @@
 package org.sonatype.nexus.rapture.internal.state;
 
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
+import java.util.stream.Stream;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.systemchecks.NodeSystemCheckResult;
@@ -22,36 +22,24 @@ import org.sonatype.nexus.systemchecks.SystemCheckService;
 
 import com.codahale.metrics.health.HealthCheck.Result;
 import com.google.common.collect.ImmutableMap;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.junit.runners.Parameterized.Parameter;
-import org.junit.runners.Parameterized.Parameters;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.hasEntry;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.rapture.internal.state.HealthCheckStateContributor.HC_FAILED_KEY;
 
-@RunWith(Parameterized.class)
+@ExtendWith(MockitoExtension.class)
 public class HealthCheckStateContributorTest
     extends TestSupport
 {
-  @Parameters
-  public static Collection<Object[]> data() {
-      return Arrays.asList(new Object[][] {
-          {true, Result.unhealthy("Not healthy")},
-          {false, Result.healthy()}});
-  }
-
-  @Parameter
-  public boolean expectedState;
-
-  @Parameter(1)
-  public Result result;
-
   @Mock
   private SystemCheckService systemCheckService;
 
@@ -64,8 +52,16 @@ public class HealthCheckStateContributorTest
   @InjectMocks
   private HealthCheckStateContributor subject;
 
-  @Test
-  public void testIndicator() {
+  static Stream<Arguments> testIndicatorParams() {
+      return Stream.of(
+          Arguments.of(true, Result.unhealthy("Not healthy")),
+          Arguments.of(false, Result.healthy())
+      );
+  }
+
+  @ParameterizedTest
+  @MethodSource("testIndicatorParams")
+  public void testIndicator(boolean expectedState, Result result) {
     when(nodeA.getResult()).thenReturn(Collections.emptyMap());
     when(nodeB.getResult()).thenReturn(ImmutableMap.of(
         "a", Result.healthy(),

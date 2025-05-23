@@ -26,10 +26,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
 /**
- * Tests {@link UniqueBlobStoreNameValidator} using JUnit Jupiter (JUnit 5) for Java 21 compatibility.
+ * Tests {@link UniqueBlobStoreNameValidator}
  */
 @ExtendWith(MockitoExtension.class)
-class UniqueBlobStoreNameValidatorTest
+public class UniqueBlobStoreNameValidatorTest
     extends TestSupport
 {
   @Mock
@@ -38,12 +38,12 @@ class UniqueBlobStoreNameValidatorTest
   private UniqueBlobStoreNameValidator underTest;
 
   @BeforeEach
-  void setup() {
+  public void setup() {
     underTest = new UniqueBlobStoreNameValidator(blobStoreManager);
   }
 
   @Test
-  void testValidation() {
+  public void validationShouldCheckBlobStoreNameUniqueness() {
     when(blobStoreManager.exists("test")).thenReturn(true);
     when(blobStoreManager.exists("DEFAULT")).thenReturn(false);
 

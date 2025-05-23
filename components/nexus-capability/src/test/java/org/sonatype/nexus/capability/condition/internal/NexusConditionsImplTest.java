@@ -28,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
  * @since capabilities 2.0
  */
 @ExtendWith(MockitoExtension.class)
-public class NexusConditionsImplTest
+class NexusConditionsImplTest
     extends TestSupport
 {
   @Mock
@@ -38,13 +38,11 @@ public class NexusConditionsImplTest
    * active() factory method returns expected condition.
    */
   @Test
-  public void active() {
+  void active() {
     final NexusConditionsImpl underTest = new NexusConditionsImpl(nexusIsActiveCondition);
-    
-    // Using String Template for improved test logging
-    String message = STR."Testing if \{underTest.getClass().getSimpleName()} returns expected condition type";
-    System.out.println(message);
-    
-    assertInstanceOf(NexusIsActiveCondition.class, underTest.active());
+
+    // Using String Template for improved test message
+    assertInstanceOf(NexusIsActiveCondition.class, underTest.active(), 
+        STR."Expected \{NexusIsActiveCondition.class.getSimpleName()} but got \{underTest.active().getClass().getSimpleName()}");
   }
 }

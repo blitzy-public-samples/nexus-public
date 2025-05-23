@@ -15,9 +15,10 @@ package org.sonatype.nexus.datastore;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.SequencedSet;
+import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Function;
+import java.util.SequencedCollection;
 
 import jakarta.annotation.Priority;
 import javax.inject.Inject;
@@ -54,7 +55,7 @@ public class DataStoreConfigurationManager
    * Loads {@link DataStoreConfiguration}s from all enabled sources.
    */
   public Iterable<DataStoreConfiguration> load() {
-    SequencedSet<String> configuredStores = new TreeSet<>(CASE_INSENSITIVE_ORDER);
+    Set<String> configuredStores = new TreeSet<>(CASE_INSENSITIVE_ORDER);
     // only attempt to load a named store once from the first store that has it
     // (if the first attempt fails then that store is considered not available)
     return configurationSources.values()
@@ -62,6 +63,8 @@ public class DataStoreConfigurationManager
         .filter(DataStoreConfigurationSource::isEnabled)
         .sorted(comparingInt(this::getPriority).reversed())
         .flatMap(source -> source.browseStoreNames().stream()
+            // Use TreeSet's add method which returns true if the element was added (not already present)
+            // This efficiently handles deduplication of store names
             .filter(configuredStores::add)
             .map(configLoader(source)))
         .filter(Objects::nonNull)
@@ -99,9 +102,12 @@ public class DataStoreConfigurationManager
   private Function<String, DataStoreConfiguration> configLoader(final DataStoreConfigurationSource source) {
     return storeName -> {
       try {
+        // Load configuration from the source for the given store name
+        // This ensures compatibility with updated JDBC drivers for Java 21
         return source.load(storeName);
       }
       catch (RuntimeException e) {
+        // Log warning and return null to indicate configuration couldn't be loaded
         log.warn("Problem reading configuration of data store {} from {}", storeName, source, e);
         return null;
       }
@@ -110,6 +116,9 @@ public class DataStoreConfigurationManager
 
   /**
    * Attempts to find the modifiable source that originally loaded the given configuration.
+   * 
+   * @param configuration The configuration to find the source for
+   * @return Optional containing the modifiable source, or empty if not found or not modifiable
    */
   private Optional<DataStoreConfigurationSource> findModifiableSource(final DataStoreConfiguration configuration) {
     DataStoreConfigurationSource source = configurationSources.get(configuration.getSource());

@@ -12,6 +12,10 @@
  */
 package org.sonatype.nexus.datastore.internal;
 
+import java.io.IOException;
+import java.util.Optional;
+import javax.inject.Provider;
+
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import org.eclipse.sisu.inject.BeanLocator;
@@ -24,6 +28,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.nexus.common.event.EventManager;
 import org.sonatype.nexus.datastore.DataStoreConfigurationManager;
 import org.sonatype.nexus.datastore.DataStoreDescriptor;
@@ -32,11 +37,6 @@ import org.sonatype.nexus.datastore.DataStoreSupport;
 import org.sonatype.nexus.datastore.DataStoreUsageChecker;
 import org.sonatype.nexus.datastore.api.DataStore;
 import org.sonatype.nexus.datastore.api.DataStoreConfiguration;
-import org.sonatype.nexus.virtualthread.Java21TestGroup;
-
-import java.io.IOException;
-import java.util.Optional;
-import javax.inject.Provider;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -44,9 +44,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
+@org.junit.experimental.categories.Category(Java21TestGroup.class)
 public class DataStoreManagerImplTest
     extends TestSupport
-    implements Java21TestGroup
 {
   @Mock
   private DataStoreDescriptor descriptorTest;
@@ -108,9 +108,7 @@ public class DataStoreManagerImplTest
   public void dataStoreNotCreatedForInvalidConfiguration() {
     doThrow(IllegalArgumentException.class).when(descriptorTest).validate(any());
     DataStoreConfiguration config = newDataStoreConfiguration("testStore");
-    IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, 
-        () -> underTest.create(config),
-        "Should throw IllegalArgumentException for invalid configuration");
+    assertThrows(IllegalArgumentException.class, () -> underTest.create(config));
     verify(configurationManager, never()).save(any());
   }
 
@@ -133,9 +131,7 @@ public class DataStoreManagerImplTest
     DataStore<?> store = underTest.create(config);
 
     DataStoreConfiguration dupe = newDataStoreConfiguration("duplicate");
-    IllegalStateException exception = assertThrows(IllegalStateException.class, 
-        () -> underTest.create(dupe),
-        "Should throw IllegalStateException when creating duplicate data store");
+    assertThrows(IllegalStateException.class, () -> underTest.create(dupe));
     verify(store).start();
     verify(configurationManager).save(config);
   }
@@ -152,9 +148,7 @@ public class DataStoreManagerImplTest
 
     underTest.delete("unused");
 
-    IllegalStateException exception = assertThrows(IllegalStateException.class, 
-        () -> underTest.delete("used"),
-        "Should throw IllegalStateException when deleting an in-use data store");
+    assertThrows(IllegalStateException.class, () -> underTest.delete("used"));
     verify(usedStore).start();
     verify(configurationManager).save(usedConfig);
     verify(configurationManager, never()).delete(usedConfig);
@@ -266,9 +260,7 @@ public class DataStoreManagerImplTest
 
     when(store.isStarted()).thenReturn(true);
 
-    IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, 
-        () -> underTest.update(invalidConfig),
-        "Should throw IllegalArgumentException when updating with invalid configuration");
+    assertThrows(IllegalArgumentException.class, () -> underTest.update(invalidConfig));
     expected.verifyNoMoreInteractions();
   }
 
@@ -290,9 +282,7 @@ public class DataStoreManagerImplTest
     when(store.isStarted()).thenReturn(true);
     doThrow(new IOException()).when(store).start();
 
-    IOException exception = assertThrows(IOException.class, 
-        () -> underTest.update(badConfig),
-        "Should throw IOException when update fails to start with new configuration");
+    assertThrows(IOException.class, () -> underTest.update(badConfig));
 
     expected.verify(configurationManager).save(badConfig);
     expected.verify(store).stop();

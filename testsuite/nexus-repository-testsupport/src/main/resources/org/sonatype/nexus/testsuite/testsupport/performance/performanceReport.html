@@ -22,130 +22,197 @@
             "modules":[{
               "name":"visualization",
               "version":"1",
-              "packages":["corechart"]
+              "packages":["corechart", "table"]
             }]
           }'></script>
+  <style>
+    .chart-container {
+      width: 1100px;
+      height: 600px;
+      margin-bottom: 40px;
+    }
+    .section {
+      margin-bottom: 30px;
+    }
+    .info-panel {
+      background-color: #f8f9fa;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 15px;
+      margin-bottom: 20px;
+    }
+    .thread-pinning-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+    }
+    .thread-pinning-table th, .thread-pinning-table td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+    }
+    .thread-pinning-table th {
+      background-color: #f2f2f2;
+    }
+  </style>
   <script type="text/javascript">
-    google.setOnLoadCallback(drawChart);
+    google.setOnLoadCallback(drawCharts);
 
-    function drawChart() {
+    function drawCharts() {
+      drawRequestProcessingChart();
+      drawThreadComparisonChart();
+      drawThreadLifecycleChart();
+      drawMemoryComparisonChart();
+    }
+
+    function drawRequestProcessingChart() {
       var data = google.visualization.arrayToDataTable([
         /*ROW-DATA*/
       ]);
 
       var options = {
-        title: 'Nexus Repository Performance (Java 21)',
+        title: 'Nexus 3 Request-Processing Performance',
         hAxis: {
           title: '# of Client Threads',
         },
         vAxis: {
           title: 'Requests/Second'
-        },
-        curveType: 'function',
-        legend: { position: 'bottom' },
-        colors: ['#3366cc', '#dc3912', '#ff9900', '#109618', '#990099', '#0099c6', '#dd4477', '#66aa00']
+        }
       };
 
       var chart = new google.visualization.LineChart(document.getElementById('curve_chart'));
+      chart.draw(data, options);
+    }
 
+    function drawThreadComparisonChart() {
+      var data = google.visualization.arrayToDataTable([
+        /*THREAD-COMPARISON-DATA*/
+      ]);
+
+      var options = {
+        title: 'Platform Threads vs. Virtual Threads Performance',
+        hAxis: {
+          title: 'Concurrent Operations',
+        },
+        vAxis: {
+          title: 'Operations/Second'
+        },
+        seriesType: 'bars',
+        series: {2: {type: 'line', lineWidth: 3}}
+      };
+
+      var chart = new google.visualization.ComboChart(document.getElementById('thread_comparison_chart'));
+      chart.draw(data, options);
+    }
+
+    function drawThreadLifecycleChart() {
+      var data = google.visualization.arrayToDataTable([
+        /*THREAD-LIFECYCLE-DATA*/
+      ]);
+
+      var options = {
+        title: 'Thread Creation and Termination Rates',
+        hAxis: {
+          title: 'Time (seconds)',
+        },
+        vAxis: {
+          title: 'Threads/Second'
+        },
+        seriesType: 'line',
+        series: {
+          0: {color: '#4285F4'}, // Creation rate
+          1: {color: '#DB4437'}  // Termination rate
+        }
+      };
+
+      var chart = new google.visualization.LineChart(document.getElementById('thread_lifecycle_chart'));
+      chart.draw(data, options);
+    }
+
+    function drawMemoryComparisonChart() {
+      var data = google.visualization.arrayToDataTable([
+        /*MEMORY-COMPARISON-DATA*/
+      ]);
+
+      var options = {
+        title: 'Memory Utilization Comparison',
+        hAxis: {
+          title: 'Concurrent Operations',
+        },
+        vAxis: {
+          title: 'Memory Usage (MB)'
+        },
+        seriesType: 'line'
+      };
+
+      var chart = new google.visualization.LineChart(document.getElementById('memory_comparison_chart'));
       chart.draw(data, options);
     }
   </script>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 20px;
-      color: #333;
-    }
-    h1 {
-      color: #0074b3;
-      border-bottom: 2px solid #eee;
-      padding-bottom: 10px;
-    }
-    h2 {
-      color: #0074b3;
-      margin-top: 30px;
-    }
-    h3 {
-      color: #0074b3;
-    }
-    pre {
-      background-color: #f8f8f8;
-      padding: 15px;
-      border-radius: 5px;
-      overflow-x: auto;
-    }
-    .info-section {
-      margin: 20px 0;
-      padding: 15px;
-      background-color: #f8f8f8;
-      border-radius: 5px;
-    }
-    table {
-      border-collapse: collapse;
-      width: 100%;
-      margin: 20px 0;
-    }
-    th, td {
-      text-align: left;
-      padding: 8px;
-    }
-    th {
-      background-color: #0074b3;
-      color: white;
-    }
-    tr:nth-child(even) {
-      background-color: #f2f2f2;
-    }
-    .highlight {
-      background-color: #ffffcc;
-      padding: 2px 5px;
-      border-radius: 3px;
-    }
-    .java21-feature {
-      background-color: #e6f7ff;
-      padding: 15px;
-      border-left: 5px solid #0074b3;
-      margin: 20px 0;
-    }
-  </style>
 </head>
 <body>
 <h1>Nexus Repository Performance Report</h1>
-<div class="info-section">
-  <p>This report shows performance metrics for Nexus Repository running on Java 21. The chart displays requests per second for different numbers of client threads.</p>
-  <p>Tests may include both platform threads and virtual threads for comparison.</p>
+
+<div class="section">
+  <h2>Request Processing Performance</h2>
+  <div id="curve_chart" class="chart-container"></div>
+
+  <h3>Example Production Loads</h3>
+  <i>RSO: 16.25 rps<br/>
+    OSSRH: 64.5 rps</i>
 </div>
 
-<div id="curve_chart" style="width: 1100px; height: 600px"></div>
-
-<div class="java21-feature">
-  <h2>Java 21 Runtime Information</h2>
-  <pre><!-- JAVA21-INFO --></pre>
+<div class="section">
+  <h2>Thread Performance Comparison</h2>
+  <p>Comparison of platform threads vs. virtual threads performance across different concurrent operation loads.</p>
+  <div id="thread_comparison_chart" class="chart-container"></div>
 </div>
 
-<div class="java21-feature">
-  <h2>Virtual Thread Performance Analysis</h2>
-  <!-- VIRTUAL-THREAD-METRICS -->
+<div class="section">
+  <h2>Thread Lifecycle Metrics</h2>
+  <p>Creation and termination rates of virtual threads during test execution.</p>
+  <div id="thread_lifecycle_chart" class="chart-container"></div>
 </div>
 
-<h2>System Information</h2>
-<pre><!-- SYSTEM-INFO --></pre>
-
-<h3>Example Production Loads</h3>
-<p><i>RSO: 16.25 rps<br/>
-  OSSRH: 64.5 rps</i></p>
-
-<div class="info-section">
-  <h3>About Java 21 Virtual Threads</h3>
-  <p>Virtual threads are lightweight threads that dramatically reduce the effort of writing, maintaining, and observing high-throughput concurrent applications. Virtual threads are implemented by the JDK and not by the OS.</p>
-  <p>Key benefits:</p>
-  <ul>
-    <li>Significantly lower memory footprint (~2KB vs ~1MB for platform threads)</li>
-    <li>Automatic yielding during blocking operations</li>
-    <li>Simplified concurrency model (thread-per-request)</li>
-    <li>Improved throughput for I/O-bound operations</li>
-  </ul>
+<div class="section">
+  <h2>Memory Utilization</h2>
+  <p>Comparison of memory usage between platform threads and virtual threads under increasing load.</p>
+  <div id="memory_comparison_chart" class="chart-container"></div>
 </div>
+
+<div class="section">
+  <h2>Thread Pinning Events</h2>
+  <p>Detected thread pinning events that may impact virtual thread performance.</p>
+  <div class="info-panel">
+    <table class="thread-pinning-table">
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Duration (ms)</th>
+          <th>Operation</th>
+          <th>Stack Trace</th>
+          <th>Impact</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- THREAD-PINNING-INFO -->
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Carrier Thread Utilization</h2>
+  <p>Efficiency of platform thread usage when running with virtual threads.</p>
+  <div class="info-panel">
+    <!-- CARRIER-THREAD-INFO -->
+  </div>
+</div>
+
+<div class="section">
+  <h2>System Information</h2>
+  <pre><!-- SYSTEM-INFO --></pre>
+</div>
+
 </body>
 </html>

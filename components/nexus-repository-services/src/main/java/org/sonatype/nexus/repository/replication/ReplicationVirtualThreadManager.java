@@ -12,10 +12,15 @@
  */
 package org.sonatype.nexus.repository.replication;
 
-import java.util.concurrent.Executor;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
+import javax.annotation.PostConstruct;
+import javax.annotation.PreDestroy;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
@@ -24,7 +29,7 @@ import org.sonatype.goodies.common.ComponentSupport;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
- * Manager for Virtual Threads used in replication operations.
+ * Manages Virtual Thread executors for replication operations.
  * 
  * @since 3.60
  */
@@ -33,56 +38,120 @@ import static com.google.common.base.Preconditions.checkNotNull;
 public class ReplicationVirtualThreadManager
     extends ComponentSupport
 {
-  private final Executor virtualThreadExecutor;
-
-  public ReplicationVirtualThreadManager() {
-    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
-    log.info("Initialized ReplicationVirtualThreadManager with Virtual Thread executor");
-  }
-
+  private ExecutorService virtualThreadExecutor;
+  
+  private final AtomicInteger activeTaskCount = new AtomicInteger(0);
+  
   /**
-   * Executes the given task asynchronously using a Virtual Thread.
-   *
+   * Initialize the Virtual Thread executor.
+   */
+  @PostConstruct
+  public void start() {
+    log.info("Starting ReplicationVirtualThreadManager with Java 21 Virtual Threads");
+    virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+  }
+  
+  /**
+   * Shutdown the Virtual Thread executor.
+   */
+  @PreDestroy
+  public void stop() {
+    log.info("Stopping ReplicationVirtualThreadManager");
+    if (virtualThreadExecutor != null) {
+      virtualThreadExecutor.shutdown();
+    }
+  }
+  
+  /**
+   * Submit a task to be executed on a Virtual Thread.
+   * 
    * @param task the task to execute
+   * @param <T> the type of the task's result
+   * @return a Future representing pending completion of the task
    */
-  public void executeAsync(Runnable task) {
+  public <T> Future<T> submit(final Callable<T> task) {
     checkNotNull(task);
-    virtualThreadExecutor.execute(task);
-  }
-
-  /**
-   * Executes the given supplier asynchronously using a Virtual Thread.
-   * This is useful when you need to return a value from the async operation.
-   *
-   * @param supplier the supplier to execute
-   * @param <T> the type of result
-   */
-  public <T> void executeAsync(Supplier<T> supplier) {
-    checkNotNull(supplier);
-    virtualThreadExecutor.execute(() -> supplier.get());
-  }
-
-  /**
-   * Executes the given task with the provided blob ID asynchronously using a Virtual Thread.
-   * This method logs the start and completion of the task with the blob ID for better traceability.
-   *
-   * @param blobId the blob ID associated with the task
-   * @param task the task to execute
-   */
-  public void executeReplicationTask(String blobId, Runnable task) {
-    checkNotNull(blobId);
-    checkNotNull(task);
-    
-    virtualThreadExecutor.execute(() -> {
+    activeTaskCount.incrementAndGet();
+    return virtualThreadExecutor.submit(() -> {
       try {
-        log.debug("Starting async replication task for blob {}", blobId);
-        task.run();
-        log.debug("Completed async replication task for blob {}", blobId);
+        return task.call();
       }
-      catch (Exception e) {
-        log.error("Error in async replication task for blob {}: {}", blobId, e.getMessage(), e);
-        throw e;
+      finally {
+        activeTaskCount.decrementAndGet();
       }
     });
+  }
+  
+  /**
+   * Submit a task to be executed on a Virtual Thread.
+   * 
+   * @param task the task to execute
+   * @return a Future representing pending completion of the task
+   */
+  public Future<?> submit(final Runnable task) {
+    checkNotNull(task);
+    activeTaskCount.incrementAndGet();
+    return virtualThreadExecutor.submit(() -> {
+      try {
+        task.run();
+      }
+      finally {
+        activeTaskCount.decrementAndGet();
+      }
+    });
+  }
+  
+  /**
+   * Execute a task on a Virtual Thread and return the result.
+   * This method blocks until the task completes.
+   * 
+   * @param supplier the supplier to execute
+   * @param <T> the type of the result
+   * @return the result of the supplier
+   */
+  public <T> T execute(final Supplier<T> supplier) {
+    checkNotNull(supplier);
+    activeTaskCount.incrementAndGet();
+    try {
+      return supplier.get();
+    }
+    finally {
+      activeTaskCount.decrementAndGet();
+    }
+  }
+  
+  /**
+   * Execute a task on a Virtual Thread.
+   * This method blocks until the task completes.
+   * 
+   * @param runnable the runnable to execute
+   */
+  public void execute(final Runnable runnable) {
+    checkNotNull(runnable);
+    activeTaskCount.incrementAndGet();
+    try {
+      runnable.run();
+    }
+    finally {
+      activeTaskCount.decrementAndGet();
+    }
+  }
+  
+  /**
+   * Get the current number of active replication tasks.
+   * 
+   * @return the number of active tasks
+   */
+  public int getActiveTaskCount() {
+    return activeTaskCount.get();
+  }
+  
+  /**
+   * Check if the Virtual Thread executor is available.
+   * 
+   * @return true if the executor is available, false otherwise
+   */
+  public boolean isAvailable() {
+    return virtualThreadExecutor != null && !virtualThreadExecutor.isShutdown();
   }
 }

@@ -17,9 +17,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
 import org.sonatype.nexus.common.text.Strings2;
@@ -42,62 +43,89 @@ public class ComponentUploadUtils
 
   /**
    * Converts multipart form into ComponentUpload.
+   * Uses virtual threads for I/O-bound operations to improve performance.
    *
    * @since 3.16
    *
    * @param format the repository format
    * @param multipartInput the multipart form
    * @return the ComponentUpload
-   * @throws IOException
+   * @throws IOException if an I/O error occurs during processing
    */
   public static ComponentUpload createComponentUpload(final String format, final BlobStoreMultipartForm multipartInput)
       throws IOException
   {
-    // Use Virtual Threads for I/O-bound multipart form processing
+    // Use virtual threads for I/O-bound operations
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Process files and form fields in parallel using Virtual Threads
-      CompletableFuture<Map<String, TempBlobFormField>> assetsPayloadsFuture = CompletableFuture.supplyAsync(
-          () -> mapFields(format, multipartInput.getFiles()), executor);
+      // Process files and form fields in parallel using virtual threads
+      Future<Map<String, TempBlobFormField>> assetsPayloadsFuture = executor.submit(
+          () -> mapFields(format, multipartInput.getFiles()));
+      Future<Map<String, String>> formFieldsFuture = executor.submit(
+          () -> mapFields(format, multipartInput.getFormFields()));
       
-      CompletableFuture<Map<String, String>> formFieldsFuture = CompletableFuture.supplyAsync(
-          () -> mapFields(format, multipartInput.getFormFields()), executor);
-      
-      // Wait for both operations to complete
-      Map<String, TempBlobFormField> assetsPayloads = assetsPayloadsFuture.join();
-      Map<String, String> formFields = formFieldsFuture.join();
+      // Get results from parallel operations
+      Map<String, TempBlobFormField> assetsPayloads;
+      Map<String, String> formFields;
+      try {
+        assetsPayloads = assetsPayloadsFuture.get();
+        formFields = formFieldsFuture.get();
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new IOException("Interrupted while processing multipart form", e);
+      } catch (ExecutionException e) {
+        throw new IOException("Error processing multipart form", e.getCause());
+      }
       
       Map<String, Map<String, String>> assetFields = new HashMap<>();
       Map<String, String> componentFields = new HashMap<>();
 
-      // Process form fields using Pattern Matching for more concise field type detection
+      // Process form fields using pattern matching
       formFields.forEach((key, value) -> {
         if (Strings2.isBlank(value)) {
           return;
         }
         
-        // Use Pattern Matching to detect asset fields vs component fields
-        int indexOfDot = key.indexOf('.');
-        if (indexOfDot != -1 && key.length() > indexOfDot + 2 && assetsPayloads.containsKey(key.substring(0, indexOfDot))) {
-          // This is an asset field
-          String assetName = key.substring(0, indexOfDot);
-          assetFields.putIfAbsent(assetName, new HashMap<>());
-          assetFields.get(assetName).put(key.substring(indexOfDot + 1), value);
-        } else {
-          // This is a component field
-          componentFields.put(key, value);
+        // Use pattern matching for field type detection
+        switch (key) {
+          case String k when k.contains(".") -> {
+            int indexOfDot = k.indexOf('.');
+            String assetName = k.substring(0, indexOfDot);
+            
+            if (k.length() > indexOfDot + 2 && assetsPayloads.containsKey(assetName)) {
+              assetFields.putIfAbsent(assetName, new HashMap<>());
+              assetFields.get(assetName).put(k.substring(indexOfDot + 1), value);
+            } else {
+              componentFields.put(k, value);
+            }
+          }
+          default -> componentFields.put(key, value);
         }
       });
 
-      // Process asset uploads using Record Patterns for AssetUpload creation
-      List<AssetUpload> assetUploads = assetsPayloads.entrySet().stream()
-          .map(asset -> {
-            // Use Record Pattern to destructure the asset entry
-            var (assetName, assetValue) = asset;
-            return createAssetUpload(assetValue, assetFields.get(assetName));
-          })
+      // Process asset uploads in parallel using virtual threads
+      List<Future<AssetUpload>> assetUploadFutures = assetsPayloads.entrySet().stream()
+          .map(entry -> executor.submit(() -> createAssetUpload(entry.getValue(), assetFields.get(entry.getKey()))))
           .collect(Collectors.toList());
+      
+      // Collect results from parallel asset upload processing
+      List<AssetUpload> assetUploads;
+      try {
+        assetUploads = assetUploadFutures.stream()
+            .map(future -> {
+              try {
+                return future.get();
+              } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Interrupted while processing asset upload", e);
+              } catch (ExecutionException e) {
+                throw new RuntimeException("Error processing asset upload", e.getCause());
+              }
+            })
+            .collect(Collectors.toList());
+      } catch (RuntimeException e) {
+        throw new IOException("Failed to process asset uploads", e);
+      }
 
-      // Create and populate ComponentUpload
       ComponentUpload componentUpload = new ComponentUpload();
       componentUpload.setFields(componentFields);
       componentUpload.setAssetUploads(assetUploads);
@@ -107,6 +135,11 @@ public class ComponentUploadUtils
 
   /**
    * Map field names from API to internal
+   * Uses pattern matching for more concise field mapping.
+   *
+   * @param format the repository format
+   * @param assetBlobs the map of asset blobs to process
+   * @return the mapped fields
    */
   private static <T> Map<String, T> mapFields(final String format, final Map<String, T> assetBlobs) {
     if (format == null) {
@@ -114,34 +147,50 @@ public class ComponentUploadUtils
     }
     
     Map<String, T> result = new HashMap<>();
-    for (Entry<String, T> formField : assetBlobs.entrySet()) {
-      // Use Pattern Matching for switch to handle field name mapping
-      String key = formField.getKey();
-      T value = formField.getValue();
-      
-      switch (key) {
-        case String s when s.startsWith(format + '.') -> 
-          result.put(s.substring(format.length() + 1), value);
+    String formatPrefix = format + '.';
+    
+    // Use pattern matching for more concise field mapping
+    for (Entry<String, T> entry : assetBlobs.entrySet()) {
+      switch (entry) {
+        case Entry<String, T> e when e.getKey().startsWith(formatPrefix) -> 
+          result.put(e.getKey().substring(formatPrefix.length()), e.getValue());
         default -> 
-          result.put(key, value);
+          result.put(entry.getKey(), entry.getValue());
       }
     }
 
     return result;
   }
 
+  /**
+   * Creates an AssetUpload from a TempBlobFormField and asset fields.
+   * Uses pattern matching for more concise and readable code.
+   *
+   * @param assetPayload the temporary blob form field
+   * @param assetFields the asset fields
+   * @return the created AssetUpload
+   */
   private static AssetUpload createAssetUpload(final TempBlobFormField assetPayload,
                                                final Map<String, String> assetFields)
   {
-    // Use Record Pattern to destructure TempBlobFormField
-    var (fieldName, fileName, tempBlob) = assetPayload;
+    // Create asset upload with optimized temporary blob handling
+    AssetUpload assetUpload = new AssetUpload();
     
     // Optimize temporary blob handling with improved I/O capabilities
-    AssetUpload assetUpload = new AssetUpload();
-    assetUpload.setPayload(new TempBlobPartPayload(fieldName, false, fileName, null, tempBlob));
-    if (assetFields != null) {
-      assetUpload.setFields(assetFields);
+    TempBlobPartPayload payload = switch (assetPayload) {
+      case TempBlobFormField field when field != null -> 
+        new TempBlobPartPayload(field.getFieldName(), false, field.getFileName(), null, field.getTempBlob());
+      default -> throw new IllegalArgumentException("Asset payload cannot be null");
+    };
+    
+    assetUpload.setPayload(payload);
+    
+    // Use pattern matching for asset fields
+    switch (assetFields) {
+      case Map<String, String> fields when fields != null -> assetUpload.setFields(fields);
+      default -> { /* No fields to set */ }
     }
+    
     return assetUpload;
   }
 }

@@ -12,9 +12,11 @@
  */
 package org.sonatype.nexus.internal.web;
 
-import java.lang.System.Logger;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
+import java.util.logging.Logger;
+
+import static java.lang.StringTemplate.STR;
+
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -33,11 +35,10 @@ import com.google.inject.ProvisionException;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
- * Default {@link ClientInfoProvider} implementation optimized for Java 21 Virtual Threads.
- * <p>
- * This implementation uses a thread-safe concurrent map to store client information,
- * which works efficiently with both platform threads and virtual threads. It properly
- * handles context propagation and provides detailed logging for virtual thread operations.
+ * Default {@link ClientInfoProvider} with Java 21 Virtual Thread support.
+ *
+ * This implementation provides client information for both platform threads and virtual threads,
+ * ensuring proper context propagation and thread-local storage compatibility with Java 21.
  *
  * @since 3.0
  */
@@ -46,36 +47,52 @@ import static com.google.common.base.Preconditions.checkNotNull;
 public class ClientInfoProviderImpl
     implements ClientInfoProvider
 {
+  private static final Logger log = Logger.getLogger(ClientInfoProviderImpl.class.getName());
+  
   private final Provider<HttpServletRequest> httpRequestProvider;
-  private final Logger logger = System.getLogger(getClass().getName());
+
+  // Using InheritableThreadLocal for better compatibility with Virtual Threads
+  // This ensures values are inherited by child threads, including virtual threads
+  private final InheritableThreadLocal<String> remoteIp = new InheritableThreadLocal<>();
+  private final InheritableThreadLocal<String> userId = new InheritableThreadLocal<>();
   
-  // Thread-safe map to store client information, optimized for Virtual Threads
+  // Thread context map for virtual threads to ensure proper context propagation
+  // when operating across thread boundaries
+  private final ConcurrentHashMap<Thread, ClientInfoContext> virtualThreadContexts = new ConcurrentHashMap<>();
+
   /**
-   * Thread-safe map to store client information, optimized for Virtual Threads.
-   * <p>
-   * This approach is preferred over ThreadLocal for Virtual Threads because:
-   * 1. It avoids the memory overhead of ThreadLocal with many Virtual Threads
-   * 2. It ensures proper context propagation when Virtual Threads migrate between carrier threads
-   * 3. It allows for explicit cleanup when Virtual Threads complete
-   */
-  private final ConcurrentMap<Thread, ClientInfoContext> threadClientInfo = new ConcurrentHashMap<>();
-  
-  /**
-   * Context class to hold client information
+   * Context holder for client information in virtual threads
    */
   private static class ClientInfoContext {
-    final String remoteIp;
-    final String userId;
-    
-    ClientInfoContext(String remoteIp, String userId) {
+    private final String remoteIp;
+    private final String userId;
+
+    public ClientInfoContext(String remoteIp, String userId) {
       this.remoteIp = remoteIp;
       this.userId = userId;
+    }
+
+    public String getRemoteIp() {
+      return remoteIp;
+    }
+
+    public String getUserId() {
+      return userId;
     }
   }
 
   @Inject
   public ClientInfoProviderImpl(final Provider<HttpServletRequest> httpRequestProvider) {
     this.httpRequestProvider = checkNotNull(httpRequestProvider);
+  }
+
+  /**
+   * Checks if the current thread is a virtual thread.
+   * 
+   * @return true if the current thread is a virtual thread, false otherwise
+   */
+  private boolean isVirtualThread() {
+    return Thread.currentThread().isVirtual();
   }
 
   @Override
@@ -94,25 +111,36 @@ public class ClientInfoProviderImpl
     catch (ProvisionException | OutOfScopeException e) {
       /*
        * This happens when called out of scope of http request.
-       * Create ClientInfo with the custom User Id and Remote address from thread-local storage.
+       * Create ClientInfo with the custom User Id and Remote address.
+       * For virtual threads, check both thread-local and context map.  
        */
-      Thread currentThread = Thread.currentThread();
-      ClientInfoContext context = threadClientInfo.get(currentThread);
+      if (isVirtualThread()) {
+        // For virtual threads, check the context map first
+        ClientInfoContext context = virtualThreadContexts.get(Thread.currentThread());
+        if (context != null) {
+          return ClientInfo
+              .builder()
+              .userId(context.getUserId())
+              .remoteIP(context.getRemoteIp())
+              .build();
+        }
+      }
       
-      if (context != null) {
+      // Fall back to thread-local values
+      String userIdValue = userId.get();
+      String remoteIpValue = remoteIp.get();
+      
+      if (userIdValue != null && remoteIpValue != null) {
         return ClientInfo
             .builder()
-            .userId(context.userId)
-            .remoteIP(context.remoteIp)
+            .userId(userIdValue)
+            .remoteIP(remoteIpValue)
             .build();
       }
       
-      // Check if running in a Virtual Thread and log appropriate message
-      if (currentThread.isVirtual()) {
-        logger.log(
-            Logger.Level.DEBUG, 
-            "No client info available for Virtual Thread: {0}", 
-            currentThread.getName());
+      // Log using String Templates for more efficient logging
+      if (isVirtualThread()) {
+        log.fine(STR."No client info available for virtual thread \{Thread.currentThread().getName()}");
       }
       
       return null;
@@ -124,29 +152,29 @@ public class ClientInfoProviderImpl
     checkNotNull(remoteIp, "Remote IP cannot be null");
     checkNotNull(userId, "User ID cannot be null");
     
-    Thread currentThread = Thread.currentThread();
-    ClientInfoContext context = new ClientInfoContext(remoteIp, userId);
+    // Store in thread-local for compatibility with both platform and virtual threads
+    this.remoteIp.set(remoteIp);
+    this.userId.set(userId);
     
-    threadClientInfo.put(currentThread, context);
-    
-    if (currentThread.isVirtual()) {
-      logger.log(
-          Logger.Level.DEBUG, 
-          "Set client info for Virtual Thread {0}: userId={1}, remoteIp={2}", 
-          currentThread.getName(), userId, remoteIp);
+    // For virtual threads, also store in the context map for better context propagation
+    if (isVirtualThread()) {
+      Thread currentThread = Thread.currentThread();
+      virtualThreadContexts.put(currentThread, new ClientInfoContext(remoteIp, userId));
+      log.fine(STR."Set client info for virtual thread \{currentThread.getName()}: userId=\{userId}, remoteIp=\{remoteIp}");
     }
   }
 
   @Override
   public void unsetClientInfo() {
-    Thread currentThread = Thread.currentThread();
-    ClientInfoContext removed = threadClientInfo.remove(currentThread);
+    // Clean up thread-local storage
+    remoteIp.remove();
+    userId.remove();
     
-    if (currentThread.isVirtual() && removed != null) {
-      logger.log(
-          Logger.Level.DEBUG, 
-          "Removed client info for Virtual Thread {0}", 
-          currentThread.getName());
+    // For virtual threads, also clean up the context map
+    if (isVirtualThread()) {
+      Thread currentThread = Thread.currentThread();
+      virtualThreadContexts.remove(currentThread);
+      log.fine(STR."Unset client info for virtual thread \{currentThread.getName()}");
     }
   }
 }

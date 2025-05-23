@@ -18,13 +18,13 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
 import org.sonatype.nexus.repository.search.ComponentSearchResult;
-import org.sonatype.nexus.repository.search.ComponentSearchResult.ComponentRecord;
 import org.sonatype.nexus.repository.search.SearchResponse;
 
 /**
@@ -37,6 +37,16 @@ import org.sonatype.nexus.repository.search.SearchResponse;
 public class SearchResultsGeneratorImpl
     implements SearchResultsGenerator
 {
+  /**
+   * Record pattern for component search result data extraction
+   * Used for efficient data extraction from search results
+   *
+   * @param format The format of the component
+   * @param id The ID of the component
+   * @since Java 21
+   */
+  private record ComponentData(String format, String id) {}
+
   private final Map<String, SearchResultComponentGenerator> searchResultComponentGeneratorMap;
 
   private final SearchResultComponentGenerator defaultSearchResultComponentGenerator;
@@ -52,44 +62,45 @@ public class SearchResultsGeneratorImpl
 
   @Override
   public List<ComponentSearchResult> getSearchResultList(final SearchResponse response) {
-    Set<String> componentIdSet = new HashSet<>();
+    var componentIdSet = new HashSet<String>();
 
-    // Using enhanced type inference with Java 21
     return response.getSearchResults().stream()
         .map(processComponent(componentIdSet))
         .filter(Objects::nonNull)
-        .toList(); // Using toList() instead of collect(Collectors.toList()) in Java 21
+        .collect(Collectors.toList());
   }
   
   /**
-   * Creates a function to process a component search result using pattern matching.
-   * 
-   * @param componentIdSet the set of component IDs to track processed components
-   * @return a function that processes a component search result
+   * Creates a function to process a component search result using pattern matching
+   * This leverages Java 21's pattern matching for more efficient data extraction
+   *
+   * @param componentIdSet Set of component IDs to track processed components
+   * @return A function that processes component search results
    */
   private Function<ComponentSearchResult, ComponentSearchResult> processComponent(final Set<String> componentIdSet) {
     return component -> {
-      // Using Record Pattern matching with Java 21
-      if (component instanceof ComponentSearchResult result 
-          && result.toRecord() instanceof ComponentRecord(var id, var repositoryName, var group, var name, 
-                                                         var version, var format, var lastDownloaded, 
-                                                         var lastModified, var assets, var annotations)) {
+      // Using record pattern for efficient data extraction
+      var componentData = new ComponentData(component.getFormat(), component.getId());
+      
+      // Using pattern matching for different result types
+      var generator = switch (componentData) {
+        // When format is null, use default generator
+        case ComponentData(null, var id) -> defaultSearchResultComponentGenerator;
         
-        // Using Pattern Matching for switch with Java 21 to select the appropriate generator
-        SearchResultComponentGenerator generator = switch (format) {
-          case null -> defaultSearchResultComponentGenerator;
-          case String s when searchResultComponentGeneratorMap.containsKey(s) -> 
-              searchResultComponentGeneratorMap.get(s);
-          default -> defaultSearchResultComponentGenerator;
-        };
-        
-        ComponentSearchResult hit = generator.from(component, componentIdSet);
-        if (hit != null) {
-          componentIdSet.add(hit.getId());
-        }
-        return hit;
+        // When format is present, look up specific generator or use default
+        case ComponentData(var format, var id) -> searchResultComponentGeneratorMap
+            .getOrDefault(format, defaultSearchResultComponentGenerator);
+      };
+      
+      // Process the component with the selected generator
+      var result = generator.from(component, componentIdSet);
+      
+      // Track processed component IDs
+      if (result != null) {
+        componentIdSet.add(result.getId());
       }
-      return null;
+      
+      return result;
     };
   }
 }

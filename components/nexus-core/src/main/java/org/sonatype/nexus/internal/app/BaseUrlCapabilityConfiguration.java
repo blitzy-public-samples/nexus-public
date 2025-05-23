@@ -17,9 +17,11 @@ import java.util.Map;
 import org.sonatype.nexus.capability.CapabilityConfigurationSupport;
 import org.sonatype.nexus.validation.constraint.UrlString;
 
-import javax.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotBlank;
 
 import static java.lang.StringTemplate.STR;
+
+import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * {@link BaseUrlCapability} configuration.
@@ -36,26 +38,26 @@ public class BaseUrlCapabilityConfiguration
   private String url;
 
   /**
-   * Constructs a new configuration from the provided properties map.
-   * Uses Java 21 pattern matching for null checking and property extraction.
+   * Creates a new configuration instance from the provided properties map.
+   * Uses pattern matching to extract the URL property.
    *
-   * @param properties the capability properties map
-   * @throws NullPointerException if properties is null
+   * @param properties The capability properties map
    */
   public BaseUrlCapabilityConfiguration(final Map<String,String> properties) {
-    // Using pattern matching to validate non-null and extract URL in one step
-    if (properties == null) {
-      throw new NullPointerException("Properties map cannot be null");
-    }
+    checkNotNull(properties);
     
-    // Extract URL property using Map.Entry pattern matching when available
-    this.url = properties.get(URL);
+    // Using pattern matching to extract URL property
+    if (properties instanceof Map<String, String> map && map.containsKey(URL)) {
+      this.url = map.get(URL);
+    } else {
+      this.url = null; // Will be caught by @NotBlank validation
+    }
   }
 
   /**
    * Returns the configured URL.
    *
-   * @return the URL string
+   * @return The URL string
    */
   public String getUrl() {
     return url;
@@ -64,21 +66,14 @@ public class BaseUrlCapabilityConfiguration
   /**
    * Sets the URL for this configuration.
    *
-   * @param url the URL to set
+   * @param url The URL to set
    */
   public void setUrl(final String url) {
     this.url = url;
   }
 
-  /**
-   * Returns a string representation of this configuration.
-   * Uses Java 21 String Templates for improved readability and performance.
-   *
-   * @return a string representation of this configuration
-   */
   @Override
   public String toString() {
-    String className = getClass().getSimpleName();
-    return STR."\{className}{url='\{url}'}"; 
+    return STR."\{getClass().getSimpleName()}{url='\{url}'}";
   }
 }

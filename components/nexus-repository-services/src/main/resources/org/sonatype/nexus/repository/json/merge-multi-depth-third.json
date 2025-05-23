@@ -23,177 +23,204 @@
         "title": "This is the second depth",
         "third": {
           "title": "This is the third depth",
-          "description": "The third file has a description for godeep third",
-          "fourth": {
-            "title": "This is the fourth depth",
-            "description": "Added for deep pattern matching tests",
-            "fifth": {
-              "title": "This is the fifth depth",
-              "values": [1, 2, 3, 4, 5],
-              "metadata": {
-                "created": "2023-09-21",
-                "updated": "2023-10-15",
-                "tags": ["deep", "nested", "pattern", "matching"]
-              }
-            }
-          }
+          "description": "The third file has a description for godeep third"
         }
       }
     }
   },
   "reverse-multi-depth": {
     "first": {
-      "title": "This is the first depth",
-      "second": {
-        "title": "This is the second depth",
-        "third": {
-          "title": "This is the third depth",
-          "description": "Enhanced for pattern matching in third file"
-        }
-      }
+      "title": "This is the first depth"
     }
   },
   "dependencies": {
-    "equire(\"orchestrator\")": "*",
+    "equire(\"orchestrator\"": "*",
     "@types/node": "*",
     "@types/orchestrator": "*",
-    "funcky(\"fieldname\")": {
-      "test": "value",
-      "nested": {
-        "property": "for pattern matching"
-      }
+    "funcky(\"fieldname\"": {
+      "test": "value"
     }
   },
   "multi-depth-merge": {
     "first": {
-      "summary": "We have here the first depth from the third response",
-      "details": {
-        "purpose": "Testing deep merging with pattern matching",
-        "version": "3.0.0"
-      }
+      "summary": "We have here the first depth from the third response"
     }
   },
-  "record_patterns": {
+  "record-patterns": {
     "point": {
       "x": 10,
       "y": 20
     },
     "box": {
-      "width": 100,
-      "height": 50,
-      "position": {
-        "x": 25,
-        "y": 30
+      "content": {
+        "value": "nested box content",
+        "type": "string"
       }
     },
-    "person": {
-      "name": "John Doe",
-      "age": 30,
-      "address": {
-        "street": "123 Main St",
-        "city": "Anytown",
-        "zipCode": "12345"
+    "pair": {
+      "first": {
+        "id": 1,
+        "name": "first element"
       },
-      "contacts": [
-        {
-          "type": "email",
-          "value": "john@example.com"
-        },
-        {
-          "type": "phone",
-          "value": "555-1234"
-        }
-      ]
+      "second": {
+        "id": 2,
+        "name": "second element"
+      }
     },
-    "nested_records": {
+    "nestedBox": {
       "outer": {
-        "id": "outer-1",
-        "middle": {
-          "id": "middle-1",
-          "inner": {
-            "id": "inner-1",
-            "value": "Deeply nested value for pattern matching"
+        "inner": {
+          "value": "deeply nested value",
+          "metadata": {
+            "created": "2023-09-19",
+            "modified": "2023-09-20"
           }
         }
       }
+    },
+    "optionalValue": {
+      "present": true,
+      "value": "This value exists"
     }
   },
-  "pattern_matching": {
-    "shapes": [
+  "deep-pattern-hierarchy": {
+    "shape": {
+      "type": "rectangle",
+      "dimensions": {
+        "width": 100,
+        "height": 50
+      },
+      "position": {
+        "x": 25,
+        "y": 30
+      },
+      "style": {
+        "fill": {
+          "color": "blue",
+          "opacity": 0.5
+        },
+        "stroke": {
+          "color": "black",
+          "width": 2,
+          "style": "solid"
+        }
+      }
+    }
+  },
+  "exhaustive-patterns": {
+    "sealed-types": [
       {
         "type": "circle",
-        "radius": 10.5
+        "radius": 15,
+        "center": {
+          "x": 10,
+          "y": 20
+        }
       },
       {
         "type": "rectangle",
-        "width": 20,
-        "height": 15
+        "width": 30,
+        "height": 40
       },
       {
         "type": "triangle",
-        "base": 10,
-        "height": 8
+        "points": [
+          {"x": 0, "y": 0},
+          {"x": 10, "y": 20},
+          {"x": 20, "y": 0}
+        ]
       }
-    ],
-    "sealed_hierarchy": {
-      "vehicle": {
-        "type": "car",
-        "wheels": 4,
-        "make": "Toyota"
-      },
-      "alternative_vehicle": {
-        "type": "motorcycle",
-        "wheels": 2,
-        "make": "Honda"
-      },
-      "complex_vehicle": {
-        "type": "truck",
-        "wheels": 18,
-        "make": "Volvo",
-        "cargo": {
-          "capacity": 5000,
-          "unit": "kg"
+    ]
+  },
+  "nested-records": {
+    "employee": {
+      "id": 1001,
+      "name": "John Doe",
+      "address": {
+        "street": "123 Main St",
+        "city": "Anytown",
+        "state": "CA",
+        "zip": "12345",
+        "coordinates": {
+          "latitude": 37.7749,
+          "longitude": -122.4194
         }
-      }
-    },
-    "exhaustive_patterns": {
-      "option_a": {
-        "value": "First option",
-        "priority": 1
       },
-      "option_b": {
-        "value": "Second option",
-        "priority": 2
+      "department": {
+        "id": 101,
+        "name": "Engineering",
+        "manager": {
+          "id": 501,
+          "name": "Jane Smith",
+          "title": "Engineering Manager"
+        }
       },
-      "option_c": {
-        "value": "Third option",
-        "priority": 3,
-        "extra": "Additional data for pattern matching"
-      }
+      "projects": [
+        {
+          "id": 201,
+          "name": "Project Alpha",
+          "status": "active",
+          "deadline": "2023-12-31"
+        },
+        {
+          "id": 202,
+          "name": "Project Beta",
+          "status": "planning",
+          "deadline": "2024-06-30"
+        }
+      ]
     }
   },
-  "string_template_examples": {
-    "simple": {
-      "name": "Alice",
-      "greeting": "Hello, Alice!"
-    },
-    "complex": {
-      "user": "Bob",
-      "count": 5,
-      "message": "User Bob has 5 notifications"
-    },
-    "nested": {
-      "product": {
-        "name": "Widget",
-        "price": 19.99,
-        "currency": "USD"
+  "string-template-examples": {
+    "simple": "Hello, \\{name}!",
+    "complex": "User \\{user.id} (\\{user.name}) has \\{user.points} points",
+    "nested": "The \\{item.name} costs $\\{item.price} and has \\{item.details.color} color",
+    "multiline": """\\{user.name} has the following roles:\n\\{roles.join("\n")}\n""",
+    "formatted": "Amount: \\{amount %.2f}"
+  },
+  "pattern-matching-switch": {
+    "guarded-patterns": [
+      {
+        "value": 10,
+        "condition": "value > 0"
       },
-      "formatted": "Widget costs $19.99 USD"
-    },
-    "conditional": {
-      "status": "active",
-      "days": 30,
-      "message": "Your account is active with 30 days remaining"
-    }
+      {
+        "value": -5,
+        "condition": "value < 0"
+      },
+      {
+        "value": 0,
+        "condition": "value == 0"
+      }
+    ],
+    "variants": [
+      {
+        "case": "string",
+        "value": "test string"
+      },
+      {
+        "case": "number",
+        "value": 42
+      },
+      {
+        "case": "boolean",
+        "value": true
+      },
+      {
+        "case": "object",
+        "value": {
+          "id": 1,
+          "name": "test object"
+        }
+      },
+      {
+        "case": "array",
+        "value": [1, 2, 3]
+      },
+      {
+        "case": "null",
+        "value": null
+      }
+    ]
   }
 }

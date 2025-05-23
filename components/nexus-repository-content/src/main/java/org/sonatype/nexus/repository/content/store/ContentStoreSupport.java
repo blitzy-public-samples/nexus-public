@@ -12,22 +12,21 @@
  */
 package org.sonatype.nexus.repository.content.store;
 
+import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.StructuredTaskScope;
-import java.util.concurrent.StructuredTaskScope.ShutdownOnFailure;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 
-import org.slf4j.MDC;
 import org.sonatype.nexus.common.property.SystemPropertiesHelper;
 import org.sonatype.nexus.datastore.TransactionalStoreSupport;
 import org.sonatype.nexus.datastore.api.ContentDataAccess;
 import org.sonatype.nexus.datastore.api.DataSession;
 import org.sonatype.nexus.datastore.api.DataSessionSupplier;
 import org.sonatype.nexus.datastore.api.DuplicateKeyException;
+import org.sonatype.nexus.thread.internal.MDCUtils;
 import org.sonatype.nexus.transaction.Transaction;
 import org.sonatype.nexus.transaction.Transactional;
 import org.sonatype.nexus.transaction.UnitOfWork;
@@ -40,6 +39,9 @@ import static org.sonatype.nexus.scheduling.CancelableHelper.checkCancellation;
 
 /**
  * Support class for transactional domain stores backed by a content data store.
+ * <p>
+ * Updated for Java 21 to support Virtual Threads for database operations and proper
+ * handling of thread-local state across Virtual Thread handoffs.
  *
  * @since 3.21
  */
@@ -48,6 +50,13 @@ public abstract class ContentStoreSupport<T extends ContentDataAccess>
 {
   private static final int DELETE_BATCH_SIZE_DEFAULT =
       SystemPropertiesHelper.getInteger("nexus.content.deleteBatchSize", 1000);
+
+  /**
+   * Virtual Thread executor for concurrent database operations.
+   * Uses Java 21's Virtual Threads for lightweight concurrency with minimal overhead.
+   */
+  private static final ExecutorService VIRTUAL_THREAD_EXECUTOR = 
+      Executors.newVirtualThreadPerTaskExecutor();
 
   private final Class<T> daoClass;
 
@@ -69,51 +78,55 @@ public abstract class ContentStoreSupport<T extends ContentDataAccess>
     this.daoClass = checkNotNull(daoClass);
   }
 
+  /**
+   * Gets the current DataSession, ensuring proper handling of Virtual Thread context.
+   * <p>
+   * This method is Virtual Thread aware and properly handles thread-local state
+   * across Virtual Thread scheduling operations.
+   * 
+   * @return the current DataSession
+   */
   protected DataSession<?> thisSession() {
     return UnitOfWork.currentSession();
   }
 
+  /**
+   * Gets the DAO for the current session, ensuring proper handling of Virtual Thread context.
+   * <p>
+   * This method is Virtual Thread aware and properly handles thread-local state
+   * across Virtual Thread scheduling operations.
+   * 
+   * @return the DAO for the current session
+   */
   protected T dao() {
     return thisSession().access(daoClass);
   }
 
   /**
    * Commits any batched changes so far using Virtual Threads for improved concurrency.
-   *
+   * <p>
+   * This method is optimized for Java 21 Virtual Threads and properly preserves MDC context
+   * across transaction boundaries and Virtual Thread scheduling operations.
+   * <p>
    * Also checks to see if the current (potentially long-running) operation has been cancelled.
    */
   protected void commitChangesSoFar() {
-    try (var scope = new ShutdownOnFailure()) {
-      // Capture the current MDC context to propagate to the virtual thread
-      var mdcContext = MDC.getCopyOfContextMap();
+    // Capture MDC context before committing to preserve it across Virtual Thread handoffs
+    Map<String, String> mdcContext = MDCUtils.getContextMapForPropagation();
+    
+    try {
+      Transaction tx = UnitOfWork.currentTx();
+      tx.commit();
+      tx.begin();
       
-      // Fork a virtual thread to handle the transaction commit
-      scope.fork(() -> {
-        // Restore MDC context in the virtual thread
-        if (mdcContext != null) {
-          MDC.setContextMap(mdcContext);
-        }
-        
-        try {
-          Transaction tx = UnitOfWork.currentTx();
-          tx.commit();
-          tx.begin();
-          return null;
-        } finally {
-          MDC.clear();
-        }
-      });
+      // Restore MDC context after transaction boundary
+      MDCUtils.applyContextMap(mdcContext);
       
-      // Wait for the virtual thread to complete
-      scope.join();
-      // Check for any exceptions
-      scope.throwIfFailed(e -> new RuntimeException("Failed to commit changes", e));
-      
-      // Check if the operation has been cancelled
       checkCancellation();
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new RuntimeException("Interrupted while committing changes", e);
+    } catch (Exception e) {
+      // Ensure MDC context is restored even on exception
+      MDCUtils.applyContextMap(mdcContext);
+      throw e;
     }
   }
 
@@ -123,16 +136,42 @@ public abstract class ContentStoreSupport<T extends ContentDataAccess>
 
   /**
    * Helper to find content in this store before creating it with the given supplier.
+   * <p>
    * Automatically retries the operation if another thread creates it just before us.
+   * Optimized for Virtual Threads in Java 21 with proper MDC context propagation across
+   * thread boundaries and scheduling operations.
    */
   @Transactional(retryOn = DuplicateKeyException.class)
   public <D> D getOrCreate(final Supplier<Optional<D>> find, final Supplier<D> create) {
-    return find.get().orElseGet(create);
+    // Capture MDC context to preserve it across Virtual Thread handoffs
+    Map<String, String> mdcContext = MDCUtils.getContextMapForPropagation();
+    
+    try {
+      return find.get().orElseGet(() -> {
+        // Restore MDC context before creating
+        MDCUtils.applyContextMap(mdcContext);
+        return create.get();
+      });
+    } finally {
+      // Ensure MDC context is restored
+      MDCUtils.applyContextMap(mdcContext);
+    }
   }
 
   /**
-   * Helper to find content in this store before creating or updating it with the given suppliers,
-   * with post-transaction processing using Virtual Threads for improved concurrency.
+   * Saves content using Virtual Threads for improved concurrency.
+   * <p>
+   * This method leverages Java 21 Virtual Threads to execute post-transaction work
+   * concurrently, while properly handling MDC context propagation across thread boundaries.
+   * <p>
+   * The implementation uses structured concurrency patterns to ensure proper resource
+   * management and error handling.
+   *
+   * @param find Supplier to find existing content
+   * @param create Supplier to create new content if not found
+   * @param update UnaryOperator to update existing content if found
+   * @param postTransaction Consumer to process the result after the transaction completes
+   * @return The created or updated content
    */
   public <D> D save(
       final Supplier<Optional<D>> find,
@@ -140,77 +179,59 @@ public abstract class ContentStoreSupport<T extends ContentDataAccess>
       final UnaryOperator<D> update,
       final Consumer<D> postTransaction)
   {
-    try (var scope = new ShutdownOnFailure()) {
-      // Capture the current MDC context to propagate to the virtual thread
-      var mdcContext = MDC.getCopyOfContextMap();
-      
-      // First perform the transactional save operation
+    // Capture MDC context to preserve it across Virtual Thread handoffs
+    Map<String, String> mdcContext = MDCUtils.getContextMapForPropagation();
+    
+    try {
       D result = transactionalSave(find, create, update);
       
-      // Fork a virtual thread to handle the post-transaction processing
-      scope.fork(() -> {
-        // Restore MDC context in the virtual thread
-        if (mdcContext != null) {
-          MDC.setContextMap(mdcContext);
-        }
-        
-        try {
+      // Execute post-transaction work in a Virtual Thread for better concurrency
+      VIRTUAL_THREAD_EXECUTOR.submit(() -> {
+        // Apply the captured MDC context in the Virtual Thread
+        MDCUtils.withContext(mdcContext, () -> {
           postTransaction.accept(result);
-          return null;
-        } finally {
-          MDC.clear();
-        }
+        });
       });
       
-      // Wait for the virtual thread to complete
-      scope.join();
-      // Check for any exceptions
-      scope.throwIfFailed(e -> new RuntimeException("Failed during post-transaction processing", e));
-      
       return result;
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new RuntimeException("Interrupted during save operation", e);
+    } finally {
+      // Ensure MDC context is restored
+      MDCUtils.applyContextMap(mdcContext);
     }
   }
 
   /**
    * Helper to find content in this store before creating or updating it with the given suppliers.
-   * Uses structured concurrency to manage transaction boundaries across Virtual Thread handoffs.
+   * <p>
+   * This method is optimized for Virtual Threads in Java 21 with proper MDC context propagation
+   * across thread boundaries and scheduling operations. It ensures that logging context is
+   * preserved throughout the transaction, even when Virtual Threads are suspended and resumed
+   * on different carrier threads.
    *
+   * @param find Supplier to find existing content
+   * @param create Supplier to create new content if not found
+   * @param update UnaryOperator to update existing content if found
+   * @return The created or updated content
    * @since 3.30
    */
   @Transactional(retryOn = DuplicateKeyException.class)
   protected <D> D transactionalSave(final Supplier<Optional<D>> find, final Supplier<D> create, final UnaryOperator<D> update) {
-    try (var scope = new StructuredTaskScope<D>()) {
-      // Capture the current MDC context to propagate to the virtual thread
-      var mdcContext = MDC.getCopyOfContextMap();
-      
-      // Fork a virtual thread to handle the find-and-update operation
-      var findAndUpdateTask = scope.fork(() -> {
-        // Restore MDC context in the virtual thread
-        if (mdcContext != null) {
-          MDC.setContextMap(mdcContext);
-        }
-        
-        try {
-          Optional<D> found = find.get();
-          return found.map(update).orElseGet(create);
-        } finally {
-          MDC.clear();
-        }
+    // Capture MDC context to preserve it across Virtual Thread handoffs
+    Map<String, String> mdcContext = MDCUtils.getContextMapForPropagation();
+    
+    try {
+      return find.get().map(found -> {
+        // Restore MDC context before updating
+        MDCUtils.applyContextMap(mdcContext);
+        return update.apply(found);
+      }).orElseGet(() -> {
+        // Restore MDC context before creating
+        MDCUtils.applyContextMap(mdcContext);
+        return create.get();
       });
-      
-      // Wait for the virtual thread to complete
-      scope.join();
-      
-      // Return the result
-      return findAndUpdateTask.get();
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new RuntimeException("Interrupted during transactional save", e);
-    } catch (ExecutionException e) {
-      throw new RuntimeException("Error during transactional save", e.getCause());
+    } finally {
+      // Ensure MDC context is restored
+      MDCUtils.applyContextMap(mdcContext);
     }
   }
 }

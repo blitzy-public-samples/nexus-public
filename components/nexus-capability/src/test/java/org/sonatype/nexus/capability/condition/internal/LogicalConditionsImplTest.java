@@ -63,16 +63,24 @@ public class LogicalConditionsImplTest
     when(left.isSatisfied()).thenReturn(leftSatisfied);
     when(right.isSatisfied()).thenReturn(rightSatisfied);
 
-    // Using pattern matching for switch to handle condition events
+    // Apply pattern matching for switch in logical condition evaluation
     switch (new boolean[]{leftSatisfied, rightSatisfied}) {
-      case boolean[] arr when arr[0] -> condition.handle(new ConditionEvent.Satisfied(left));
-      case boolean[] _ -> condition.handle(new ConditionEvent.Unsatisfied(left));
-    }
-
-    // Using pattern matching for switch to handle condition events
-    switch (new boolean[]{leftSatisfied, rightSatisfied}) {
-      case boolean[] arr when arr[1] -> condition.handle(new ConditionEvent.Satisfied(right));
-      case boolean[] _ -> condition.handle(new ConditionEvent.Unsatisfied(right));
+      case boolean[] b when b[0] && b[1] -> {
+        condition.handle(new ConditionEvent.Satisfied(left));
+        condition.handle(new ConditionEvent.Satisfied(right));
+      }
+      case boolean[] b when b[0] && !b[1] -> {
+        condition.handle(new ConditionEvent.Satisfied(left));
+        condition.handle(new ConditionEvent.Unsatisfied(right));
+      }
+      case boolean[] b when !b[0] && b[1] -> {
+        condition.handle(new ConditionEvent.Unsatisfied(left));
+        condition.handle(new ConditionEvent.Satisfied(right));
+      }
+      default -> {
+        condition.handle(new ConditionEvent.Unsatisfied(left));
+        condition.handle(new ConditionEvent.Unsatisfied(right));
+      }
     }
 
     return condition;
@@ -141,7 +149,7 @@ public class LogicalConditionsImplTest
   /**
    * Tests a logical OR between conditions.
    * <p/>
-   * Condition is satisfied when left is unsatisfied and right is satisfied.
+   * Condition is not satisfied when left is unsatisfied and right is satisfied.
    */
   @Test
   public void or02() {

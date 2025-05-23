@@ -13,6 +13,11 @@
 package org.sonatype.nexus.coreui.internal.datastore;
 
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.datastore.api.DataStore;
@@ -32,15 +37,11 @@ import static java.util.Arrays.asList;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.when;
 
-/**
- * Tests for {@link DataStoreComponent} with Java 21 compatibility.
- * 
- * @since 3.60
- */
 @ExtendWith(MockitoExtension.class)
-class DataStoreComponentTest
+public class DataStoreComponentTest
     extends TestSupport
 {
   @Mock
@@ -61,7 +62,7 @@ class DataStoreComponentTest
   private DataStoreComponent underTest;
 
   @BeforeEach
-  void setup() {
+  public void setup() {
     DataStoreConfiguration contentConfig = new DataStoreConfiguration();
     contentConfig.setName("content");
     contentConfig.setType("jdbc");
@@ -83,17 +84,68 @@ class DataStoreComponentTest
   }
 
   @Test
-  void testReadingDatabase() {
+  public void readingDatabaseShouldReturnAllDataStores() {
     List<DataStoreXO> dataStores = underTest.read();
     assertThat(dataStores, hasSize(2));
     assertThat(dataStores.get(0).getName(), is("content"));
     assertThat(dataStores.get(1).getName(), is("config"));
+    
+    // Alternative assertion style using JUnit Jupiter
+    assertEquals(2, dataStores.size(), "Should return two data stores");
+    assertEquals("content", dataStores.get(0).getName(), "First data store should be 'content'");
+    assertEquals("config", dataStores.get(1).getName(), "Second data store should be 'config'");
   }
 
   @Test
-  void testReadingH2Database() {
+  public void readingH2DatabaseShouldReturnOnlyH2DataStores() {
     List<DataStoreXO> dataStores = underTest.readH2();
     assertThat(dataStores, hasSize(1));
     assertThat(dataStores.get(0).getName(), is("content"));
+    
+    // Alternative assertion style using JUnit Jupiter
+    assertEquals(1, dataStores.size(), "Should return only one H2 data store");
+    assertEquals("content", dataStores.get(0).getName(), "H2 data store should be 'content'");
+  }
+  
+  @Test
+  public void concurrentOperationsWithVirtualThreadsShouldSucceed() throws Exception {
+    // Create a virtual thread executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    int taskCount = 100;
+    CountDownLatch latch = new CountDownLatch(taskCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    try {
+      // Submit multiple concurrent tasks using virtual threads
+      for (int i = 0; i < taskCount; i++) {
+        executor.submit(() -> {
+          try {
+            // Perform operations on the component
+            List<DataStoreXO> dataStores = underTest.read();
+            if (dataStores.size() != 2) {
+              errorCount.incrementAndGet();
+            }
+            
+            List<DataStoreXO> h2DataStores = underTest.readH2();
+            if (h2DataStores.size() != 1) {
+              errorCount.incrementAndGet();
+            }
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      latch.await(30, TimeUnit.SECONDS);
+      
+      // Verify results
+      assertEquals(0, errorCount.get(), "All virtual thread operations should complete successfully");
+    } finally {
+      executor.shutdown();
+    }
   }
 }

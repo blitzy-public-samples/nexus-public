@@ -12,8 +12,6 @@
  */
 package org.sonatype.nexus.security.authc;
 
-import java.util.Set;
-
 /**
  * The reason why an authentication attempt failed.
  *
@@ -21,70 +19,114 @@ import java.util.Set;
  */
 public enum AuthenticationFailureReason
 {
+  /**
+   * The user was not found in any security realm.
+   */
   USER_NOT_FOUND,
+  
+  /**
+   * The password provided was empty.
+   */
   PASSWORD_EMPTY,
+  
+  /**
+   * The credentials provided were incorrect.
+   */
   INCORRECT_CREDENTIALS,
+  
+  /**
+   * The user account is disabled.
+   */
   DISABLED_ACCOUNT,
+  
+  /**
+   * Authentication failed due to license limitations.
+   */
   LICENSE_LIMITATION,
+  
+  /**
+   * The credentials have expired.
+   */
   EXPIRED_CREDENTIALS,
+  
+  /**
+   * The reason for authentication failure is unknown.
+   */
   UNKNOWN;
   
   /**
-   * Returns a user-friendly description of the authentication failure reason.
-   * 
-   * @return a user-friendly description
+   * Returns a user-friendly error message for this authentication failure reason.
+   *
+   * @return a descriptive error message
    */
-  public String getDescription() {
+  public String getErrorMessage() {
     return switch (this) {
-      case USER_NOT_FOUND -> "User account not found";
-      case PASSWORD_EMPTY -> "Password is empty";
-      case INCORRECT_CREDENTIALS -> "Incorrect credentials provided";
-      case DISABLED_ACCOUNT -> "User account is disabled";
-      case LICENSE_LIMITATION -> "License limitation reached";
-      case EXPIRED_CREDENTIALS -> "Credentials have expired";
-      case UNKNOWN -> "Unknown authentication failure";
+      case USER_NOT_FOUND -> "User not found in any security realm";
+      case PASSWORD_EMPTY -> "Password cannot be empty";
+      case INCORRECT_CREDENTIALS -> "The provided credentials are incorrect";
+      case DISABLED_ACCOUNT -> "The user account is disabled";
+      case LICENSE_LIMITATION -> "Authentication failed due to license limitations";
+      case EXPIRED_CREDENTIALS -> "The credentials have expired";
+      case UNKNOWN -> "Authentication failed due to an unknown reason";
     };
   }
   
   /**
-   * Demonstrates pattern matching for switch with an Object parameter.
-   * Returns a description based on the type of the object and its value.
-   * 
-   * @param obj the object to match against
-   * @return a description based on the object type and value
+   * Returns a detailed error message with additional context.
+   *
+   * @param username the username that failed authentication
+   * @return a detailed error message with username context
    */
-  public static String describeFailure(Object obj) {
-    return switch (obj) {
-      case AuthenticationFailureReason reason -> reason.getDescription();
-      case String s when s.equalsIgnoreCase("user_not_found") -> USER_NOT_FOUND.getDescription();
-      case String s when s.equalsIgnoreCase("password_empty") -> PASSWORD_EMPTY.getDescription();
-      case String s -> "Unrecognized failure reason: " + s;
-      case Set<?> set when !set.isEmpty() -> "Multiple failure reasons: " + set;
-      case null -> "No failure reason provided";
-      default -> "Unsupported failure reason type: " + obj.getClass().getSimpleName();
+  public String getDetailedErrorMessage(String username) {
+    return switch (this) {
+      case USER_NOT_FOUND -> "Authentication failed: User '" + username + "' not found in any security realm";
+      case PASSWORD_EMPTY -> "Authentication failed for user '" + username + "': Password cannot be empty";
+      case INCORRECT_CREDENTIALS -> "Authentication failed for user '" + username + "': The provided credentials are incorrect";
+      case DISABLED_ACCOUNT -> "Authentication failed for user '" + username + "': The account is disabled";
+      case LICENSE_LIMITATION -> "Authentication failed for user '" + username + "': License limitation reached";
+      case EXPIRED_CREDENTIALS -> "Authentication failed for user '" + username + "': The credentials have expired";
+      case UNKNOWN -> "Authentication failed for user '" + username + "': Unknown reason";
     };
   }
   
   /**
-   * Creates an error message for the given authentication failure reason using String Templates.
-   * This demonstrates the use of Java 21's String Templates feature.
-   * 
-   * @param username the username that failed authentication
-   * @return an error message with the username and failure reason
+   * Returns a log-friendly error code for this authentication failure reason.
+   *
+   * @return an error code suitable for logging
    */
-  public String createErrorMessage(String username) {
-    return STR."Authentication failed for user '\{username}': \{getDescription()}";
+  public String getErrorCode() {
+    return switch (this) {
+      case USER_NOT_FOUND -> "AUTH-001";
+      case PASSWORD_EMPTY -> "AUTH-002";
+      case INCORRECT_CREDENTIALS -> "AUTH-003";
+      case DISABLED_ACCOUNT -> "AUTH-004";
+      case LICENSE_LIMITATION -> "AUTH-005";
+      case EXPIRED_CREDENTIALS -> "AUTH-006";
+      case UNKNOWN -> "AUTH-999";
+    };
   }
   
   /**
-   * Creates a detailed error message with additional context using String Templates.
-   * 
-   * @param username the username that failed authentication
-   * @param attemptCount the number of failed authentication attempts
-   * @param ipAddress the IP address from which the authentication attempt was made
-   * @return a detailed error message with all context information
+   * Determines if the failure is related to invalid credentials.
+   *
+   * @return true if the failure is related to invalid credentials
    */
-  public String createDetailedErrorMessage(String username, int attemptCount, String ipAddress) {
-    return STR."Authentication failed for user '\{username}' (attempt #\{attemptCount} from IP \{ipAddress}): \{getDescription()}";
+  public boolean isCredentialRelated() {
+    return switch (this) {
+      case PASSWORD_EMPTY, INCORRECT_CREDENTIALS, EXPIRED_CREDENTIALS -> true;
+      case USER_NOT_FOUND, DISABLED_ACCOUNT, LICENSE_LIMITATION, UNKNOWN -> false;
+    };
+  }
+  
+  /**
+   * Determines if the failure is related to account status.
+   *
+   * @return true if the failure is related to account status
+   */
+  public boolean isAccountRelated() {
+    return switch (this) {
+      case DISABLED_ACCOUNT, LICENSE_LIMITATION -> true;
+      case USER_NOT_FOUND, PASSWORD_EMPTY, INCORRECT_CREDENTIALS, EXPIRED_CREDENTIALS, UNKNOWN -> false;
+    };
   }
 }

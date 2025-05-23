@@ -12,8 +12,6 @@
  */
 package org.sonatype.nexus.internal.email;
 
-import static java.lang.StringTemplate.STR;
-
 import org.sonatype.nexus.common.text.Strings2;
 import org.sonatype.nexus.crypto.secrets.Secret;
 import org.sonatype.nexus.email.EmailConfiguration;
@@ -173,17 +171,15 @@ public class EmailConfigurationData
   @Override
   public EmailConfigurationData copy() {
     // Using pattern matching to simplify the copy implementation
-    try {
-      // Using pattern matching to ensure we're working with the correct type
-      Object cloned = clone();
-      if (cloned instanceof EmailConfigurationData config) {
-        return config; // Using pattern variable directly
+    if (this instanceof EmailConfigurationData data) {
+      try {
+        return (EmailConfigurationData) data.clone();
       }
-      throw new IllegalStateException("Clone did not produce an EmailConfigurationData instance");
+      catch (CloneNotSupportedException e) {
+        throw new RuntimeException(e);
+      }
     }
-    catch (CloneNotSupportedException e) {
-      throw new RuntimeException(e);
-    }
+    throw new IllegalStateException("Unexpected object type");
   }
 
   @Override
@@ -191,18 +187,59 @@ public class EmailConfigurationData
     // Using String Templates for more readable output while maintaining security masking
     return STR."""
         {getClass().getSimpleName()}{
-          enabled={enabled},
-          host='{host}',
-          port={port},
-          username='{username}',
-          password='{Strings2.MASK}',
-          fromAddress='{fromAddress}',
-          subjectPrefix='{subjectPrefix}',
-          startTlsEnabled={startTlsEnabled},
-          startTlsRequired={startTlsRequired},
-          sslOnConnectEnabled={sslOnConnectEnabled},
-          sslCheckServerIdentityEnabled={sslCheckServerIdentityEnabled},
-          nexusTrustStoreEnabled={nexusTrustStoreEnabled}
+        enabled={enabled},
+        host='{host}',
+        port={port},
+        username='{username}',
+        password='{Strings2.MASK}',
+        fromAddress='{fromAddress}',
+        subjectPrefix='{subjectPrefix}',
+        startTlsEnabled={startTlsEnabled},
+        startTlsRequired={startTlsRequired},
+        sslOnConnectEnabled={sslOnConnectEnabled},
+        sslCheckServerIdentityEnabled={sslCheckServerIdentityEnabled},
+        nexusTrustStoreEnabled={nexusTrustStoreEnabled}
         }""";
+  }
+  
+  /**
+   * Apply pattern matching to extract configuration data.
+   * This method demonstrates how to use pattern matching with EmailConfiguration objects.
+   *
+   * @param config The email configuration to extract data from
+   * @return A formatted string with the configuration details
+   */
+  public static String extractConfigData(EmailConfiguration config) {
+    if (config instanceof EmailConfigurationData data) {
+      // Extract values using pattern matching and getters
+      boolean enabled = data.isEnabled();
+      String host = data.getHost();
+      int port = data.getPort();
+      
+      // Using String Templates for formatted output with extracted values
+      return STR."Email Configuration: host='{host}', port={port}, enabled={enabled}";
+    }
+    return "Unknown configuration type";
+  }
+  
+  /**
+   * Demonstrates how to use pattern matching with EmailConfiguration objects
+   * when processing multiple configuration types.
+   *
+   * @param config The email configuration to process
+   * @return A description of the configuration
+   */
+  public static String processConfiguration(Object config) {
+    return switch (config) {
+      case EmailConfigurationData data when data.isEnabled() -> 
+          STR."Active email configuration for host: {data.getHost()}";
+          
+      case EmailConfigurationData data -> 
+          STR."Inactive email configuration for host: {data.getHost()}";
+          
+      case null -> "No configuration provided";
+      
+      default -> "Unknown configuration type";
+    };
   }
 }

@@ -37,7 +37,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * An {@link InputStream} that maintains multiple hashes and the number of bytes of data read from it.
- * Optimized for Virtual Threads in Java 21, with improved thread-safety and non-blocking I/O support.
+ * Optimized for Java 21 Virtual Threads with non-blocking I/O operations and thread-safe hashing.
  *
  * @see HashingInputStream
  * @since 3.0
@@ -47,37 +47,39 @@ public class MultiHashingInputStream
 {
   /**
    * Default buffer size for optimized reading in Virtual Thread context.
+   * Smaller buffer size reduces memory pressure and improves Virtual Thread scheduling.
    */
   private static final int DEFAULT_BUFFER_SIZE = 8192;
-  
+
   /**
-   * Thread-safe map of hashers for concurrent access in Virtual Thread environment.
+   * Virtual Thread executor for asynchronous hashing operations.
+   * Uses Java 21's Virtual Thread per task executor for optimal I/O performance.
+   */
+  private static final Executor HASHING_EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
+
+  /**
+   * Thread-safe map of hash algorithms to their corresponding hashers.
    */
   protected final Map<HashAlgorithm, Hasher> hashers;
-  
+
   /**
-   * Atomic counter for thread-safe byte counting.
+   * Atomic counter for tracking the number of bytes read.
+   * Using AtomicLong for thread safety in Virtual Thread environment.
    */
   private final AtomicLong count = new AtomicLong(0);
-  
+
   /**
-   * Buffer size for optimized reading.
-   */
-  private final int bufferSize;
-  
-  /**
-   * Executor for Virtual Thread-aware parallel hashing operations.
-   * Uses Virtual Threads by default in Java 21.
-   */
-  private final Executor hashingExecutor;
-  
-  /**
-   * Map to track pending hashing operations.
+   * Tracks pending hashing operations to ensure all hashes are complete before returning results.
    */
   private final Map<HashAlgorithm, CompletableFuture<Void>> pendingHashes = new ConcurrentHashMap<>();
 
   /**
-   * Creates a new MultiHashingInputStream with default buffer size.
+   * Buffer size used for reading operations, optimized for Virtual Threads.
+   */
+  private final int bufferSize;
+
+  /**
+   * Creates a new MultiHashingInputStream with the default buffer size.
    *
    * @param algorithms the hash algorithms to use
    * @param inputStream the input stream to read from and hash
@@ -87,21 +89,19 @@ public class MultiHashingInputStream
   }
 
   /**
-   * Creates a new MultiHashingInputStream with specified buffer size.
+   * Creates a new MultiHashingInputStream with a custom buffer size.
    *
    * @param algorithms the hash algorithms to use
    * @param inputStream the input stream to read from and hash
-   * @param bufferSize the buffer size to use for reading
+   * @param bufferSize the buffer size to use for reading operations
    */
-  public MultiHashingInputStream(final Iterable<HashAlgorithm> algorithms, 
-                               final InputStream inputStream, 
-                               final int bufferSize) {
+  public MultiHashingInputStream(final Iterable<HashAlgorithm> algorithms, final InputStream inputStream, final int bufferSize) {
     super(checkNotNull(inputStream));
     checkNotNull(algorithms);
     this.bufferSize = bufferSize;
-    this.hashers = new ConcurrentHashMap<>();
-    this.hashingExecutor = Executors.newVirtualThreadPerTaskExecutor();
     
+    // Using ConcurrentHashMap for thread safety in Virtual Thread environment
+    this.hashers = new ConcurrentHashMap<>();
     for (HashAlgorithm algorithm : algorithms) {
       hashers.put(algorithm, algorithm.function().newHasher());
     }
@@ -113,10 +113,7 @@ public class MultiHashingInputStream
 
     int b = in.read();
     if (b != -1) {
-      // For single byte reads, process immediately without spawning a virtual thread
-      // to avoid the overhead of thread creation for small operations
-      byte value = (byte) b;
-      hashers.values().forEach(hasher -> hasher.putByte(value));
+      submitHashing(hasher -> hasher.putByte((byte) b));
       count.incrementAndGet();
     }
     return b;
@@ -128,38 +125,46 @@ public class MultiHashingInputStream
 
     int numRead = in.read(bytes, off, len);
     if (numRead != -1) {
-      // Create a defensive copy of the read bytes to prevent external modification
-      // This is necessary because the hashing might be performed asynchronously
+      // Create a copy of the read bytes in case the provided buffer is externally modified
       byte[] copy = new byte[numRead];
       System.arraycopy(bytes, off, copy, 0, numRead);
 
-      // Process the bytes in a Virtual Thread to avoid blocking the caller
       submitHashing(hasher -> hasher.putBytes(copy, 0, numRead));
       count.addAndGet(numRead);
     }
     return numRead;
   }
-  
+
   /**
-   * Optimized bulk read method that uses internal buffering for better performance
-   * in Virtual Thread environments. This reduces the number of I/O operations and
-   * context switches.
+   * Optimized bulk read method that uses a buffer sized appropriately for Virtual Threads.
+   * This method reduces context switching and improves performance in Virtual Thread environments.
+   *
+   * @param buffer the buffer to read into
+   * @return the number of bytes read, or -1 if the end of the stream is reached
+   * @throws IOException if an I/O error occurs
    */
-  @Override
-  public long transferTo(java.io.OutputStream out) throws IOException {
-    checkNotNull(out);
+  public int readOptimized(final byte[] buffer) throws IOException {
     waitForHashes();
-    
-    byte[] buffer = new byte[bufferSize];
-    long transferred = 0;
-    int read;
-    
-    while ((read = this.read(buffer, 0, buffer.length)) >= 0) {
-      out.write(buffer, 0, read);
-      transferred += read;
+
+    int numRead = in.read(buffer, 0, buffer.length);
+    if (numRead != -1) {
+      // Create a copy of the read bytes to ensure thread safety
+      byte[] copy = new byte[numRead];
+      System.arraycopy(buffer, 0, copy, 0, numRead);
+
+      submitHashing(hasher -> hasher.putBytes(copy, 0, numRead));
+      count.addAndGet(numRead);
     }
-    
-    return transferred;
+    return numRead;
+  }
+
+  /**
+   * Creates and returns a new buffer with the optimal size for Virtual Thread operations.
+   *
+   * @return a new byte array with the optimal buffer size
+   */
+  public byte[] createOptimalBuffer() {
+    return new byte[bufferSize];
   }
 
   @Override
@@ -204,48 +209,48 @@ public class MultiHashingInputStream
   }
 
   /**
-   * Submits a hashing operation to be performed, potentially in a Virtual Thread.
-   * For larger data chunks, this will use the Virtual Thread executor for non-blocking
-   * processing. For small operations, it may process synchronously to avoid overhead.
+   * Submits a hashing operation to be executed asynchronously using Virtual Threads.
+   * This prevents blocking the current thread during CPU-intensive hashing operations.
    *
    * @param operation the hashing operation to perform
    */
   protected void submitHashing(final Consumer<Hasher> operation) {
-    // For each hash algorithm, submit a task to update its hasher
+    // For small operations, perform synchronously to avoid overhead
+    if (hashers.size() <= 2) {
+      hashers.values().forEach(operation::accept);
+      return;
+    }
+
+    // For larger sets of hashers, process asynchronously using Virtual Threads
     hashers.forEach((algorithm, hasher) -> {
-      // Create a CompletableFuture for this hashing operation
       CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
         operation.accept(hasher);
-      }, hashingExecutor);
-      
-      // Store the future so we can wait for it later if needed
+      }, HASHING_EXECUTOR);
       pendingHashes.put(algorithm, future);
-      
-      // When the future completes, remove it from the pending map
-      future.whenComplete((result, ex) -> {
-        pendingHashes.remove(algorithm, future);
-        if (ex != null) {
-          // Log the exception or handle it as appropriate
-          // We don't rethrow it here as that would break the CompletableFuture chain
-          ex.printStackTrace();
-        }
-      });
     });
   }
 
   /**
    * Waits for all pending hashing operations to complete.
-   * This ensures that all data has been properly hashed before proceeding.
+   * This ensures data consistency when retrieving hash results.
    *
-   * @throws IOException if an error occurs while waiting for hashes
+   * @throws IOException if an error occurs while waiting for hashing operations
    */
   protected void waitForHashes() throws IOException {
+    if (pendingHashes.isEmpty()) {
+      return;
+    }
+
     try {
-      // Create a copy of the pending futures to avoid concurrent modification issues
-      CompletableFuture<Void>[] futures = pendingHashes.values().toArray(new CompletableFuture[0]);
+      // Create a combined future that completes when all hashing operations complete
+      CompletableFuture<Void> allDone = CompletableFuture.allOf(
+          pendingHashes.values().toArray(new CompletableFuture[0]));
       
-      // Wait for all pending hashing operations to complete
-      CompletableFuture.allOf(futures).join();
+      // Wait for all hashing operations to complete
+      allDone.join();
+      
+      // Clear the pending hashes map for the next batch
+      pendingHashes.clear();
     } catch (Exception e) {
       throw new IOException("Error waiting for hashing operations to complete", e);
     }

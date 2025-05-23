@@ -13,93 +13,46 @@
 package virtualthread;
 
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.StructuredTaskScope;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
-
-import javax.ws.rs.core.Response;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Utility class that provides standardized support for virtual thread testing in the REST component.
  * <p>
  * This class facilitates creating and managing virtual threads in tests, detecting thread pinning scenarios,
  * validating thread context propagation across virtual threads, and supporting structured concurrency testing.
- * <p>
- * Virtual threads are lightweight threads introduced in Java 21 that allow for high concurrency with minimal
- * resource usage, particularly beneficial for I/O-bound operations like REST API calls.
  *
  * @since 3.60
  */
 public class VirtualThreadSupport
 {
-  private static final Logger log = LoggerFactory.getLogger(VirtualThreadSupport.class);
-
-  private static final boolean VIRTUAL_THREADS_SUPPORTED = isVirtualThreadsSupported();
-
   private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(10);
 
   /**
-   * Checks if virtual threads are supported in the current JVM.
+   * Checks if the current JVM supports virtual threads.
    *
    * @return true if virtual threads are supported, false otherwise
    */
-  public static boolean isVirtualThreadsSupported() {
+  public static boolean isVirtualThreadSupported() {
     try {
-      // Try to access the ofVirtual method to check if virtual threads are supported
-      Thread.class.getMethod("ofVirtual");
+      // Try to create a virtual thread to check if the feature is supported
+      Thread virtualThread = Thread.ofVirtual().start(() -> {});
+      virtualThread.join();
       return true;
     }
-    catch (NoSuchMethodException e) {
+    catch (Exception e) {
       return false;
     }
   }
 
   /**
-   * Creates a virtual thread factory.
-   *
-   * @return a thread factory that creates virtual threads, or platform threads if virtual threads are not supported
-   */
-  public static ThreadFactory virtualThreadFactory() {
-    if (VIRTUAL_THREADS_SUPPORTED) {
-      return Thread.ofVirtual().factory();
-    }
-    else {
-      log.warn("Virtual threads not supported in this JVM. Using platform threads instead.");
-      return Thread.ofPlatform().factory();
-    }
-  }
-
-  /**
-   * Creates an executor service that uses virtual threads.
-   *
-   * @return an executor service that creates a new virtual thread for each task
-   */
-  public static ExecutorService newVirtualThreadExecutor() {
-    if (VIRTUAL_THREADS_SUPPORTED) {
-      return Executors.newVirtualThreadPerTaskExecutor();
-    }
-    else {
-      log.warn("Virtual threads not supported in this JVM. Using cached thread pool instead.");
-      return Executors.newCachedThreadPool();
-    }
-  }
-
-  /**
-   * Runs a task in a virtual thread and returns the result.
+   * Runs the given task in a virtual thread and returns the result.
    *
    * @param <T> the type of the result
    * @param task the task to run
@@ -107,235 +60,161 @@ public class VirtualThreadSupport
    * @throws RuntimeException if the task throws an exception
    */
   public static <T> T runInVirtualThread(Callable<T> task) {
-    try (ExecutorService executor = newVirtualThreadExecutor()) {
-      Future<T> future = executor.submit(task);
-      return future.get(DEFAULT_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
-    }
-    catch (Exception e) {
-      throw new RuntimeException("Error executing task in virtual thread", e);
-    }
+    return runInVirtualThread(task, DEFAULT_TIMEOUT);
   }
 
   /**
-   * Runs a task in a virtual thread.
-   *
-   * @param task the task to run
-   */
-  public static void runInVirtualThread(Runnable task) {
-    try (ExecutorService executor = newVirtualThreadExecutor()) {
-      Future<?> future = executor.submit(task);
-      future.get(DEFAULT_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
-    }
-    catch (Exception e) {
-      throw new RuntimeException("Error executing task in virtual thread", e);
-    }
-  }
-
-  /**
-   * Runs multiple tasks in parallel using virtual threads.
+   * Runs the given task in a virtual thread and returns the result, with a specified timeout.
    *
    * @param <T> the type of the result
-   * @param tasks the tasks to run
-   * @return a list of results from the tasks
-   * @throws RuntimeException if any task throws an exception
+   * @param task the task to run
+   * @param timeout the maximum time to wait for the task to complete
+   * @return the result of the task
+   * @throws RuntimeException if the task throws an exception or times out
    */
-  public static <T> List<T> runInParallelVirtualThreads(List<Callable<T>> tasks) {
-    try (ExecutorService executor = newVirtualThreadExecutor()) {
-      List<Future<T>> futures = executor.invokeAll(tasks, DEFAULT_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
-      List<T> results = new ArrayList<>(futures.size());
-      for (Future<T> future : futures) {
-        results.add(future.get());
-      }
-      return results;
+  public static <T> T runInVirtualThread(Callable<T> task, Duration timeout) {
+    try {
+      Future<T> future = Thread.ofVirtual().name("virtual-test-thread").start(task);
+      return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
     }
-    catch (Exception e) {
-      throw new RuntimeException("Error executing tasks in parallel virtual threads", e);
+    catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException("Virtual thread execution was interrupted", e);
+    }
+    catch (ExecutionException e) {
+      throw new RuntimeException("Virtual thread execution failed", e.getCause());
+    }
+    catch (TimeoutException e) {
+      throw new RuntimeException("Virtual thread execution timed out after " + timeout, e);
     }
   }
 
   /**
-   * Detects if a virtual thread is pinned when executing the given task.
-   * <p>
-   * Thread pinning occurs when a virtual thread is "stuck" to its carrier thread, preventing the scheduler
-   * from reallocating it to other virtual threads. Common causes include synchronized blocks/methods and
-   * native/foreign function calls.
+   * Executes the given task in a virtual thread and returns a CompletableFuture.
    *
-   * @param task the task to check for pinning
-   * @return true if pinning is detected, false otherwise
+   * @param <T> the type of the result
+   * @param supplier the supplier to run
+   * @return a CompletableFuture that will complete with the result of the task
+   */
+  public static <T> CompletableFuture<T> supplyAsync(Supplier<T> supplier) {
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      return CompletableFuture.supplyAsync(supplier, executor);
+    }
+  }
+
+  /**
+   * Detects if the current thread is a virtual thread.
+   *
+   * @return true if the current thread is a virtual thread, false otherwise
+   */
+  public static boolean isVirtualThread() {
+    return Thread.currentThread().isVirtual();
+  }
+
+  /**
+   * Detects if the given thread is a virtual thread.
+   *
+   * @param thread the thread to check
+   * @return true if the thread is a virtual thread, false otherwise
+   */
+  public static boolean isVirtualThread(Thread thread) {
+    return thread.isVirtual();
+  }
+
+  /**
+   * Detects thread pinning by executing a task that would normally cause pinning and measuring execution time.
+   * Significantly longer execution time indicates potential thread pinning.
+   *
+   * @param task the task to test for pinning
+   * @return true if thread pinning is detected, false otherwise
    */
   public static boolean detectThreadPinning(Runnable task) {
-    if (!VIRTUAL_THREADS_SUPPORTED) {
-      log.warn("Virtual threads not supported in this JVM. Cannot detect thread pinning.");
-      return false;
-    }
-
-    AtomicBoolean pinningDetected = new AtomicBoolean(false);
-    AtomicReference<Thread> virtualThread = new AtomicReference<>();
-
-    // Create a thread that will monitor for pinning
-    Thread monitorThread = new Thread(() -> {
-      try {
-        // Wait a bit for the virtual thread to start
-        Thread.sleep(100);
-        Thread vt = virtualThread.get();
-        if (vt != null) {
-          // Check if the thread is mounted (pinned)
-          // This is a simplistic check and may not catch all pinning scenarios
-          // For production use, JFR events or jdk.tracePinnedThreads would be better
-          StackTraceElement[] stackTrace = vt.getStackTrace();
-          for (StackTraceElement element : stackTrace) {
-            // Look for indicators of pinning in the stack trace
-            if (element.getClassName().contains("VirtualThread") && 
-                (element.getMethodName().contains("parkOnCarrierThread") ||
-                 element.getMethodName().contains("onPinned"))) {
-              pinningDetected.set(true);
-              log.warn("Thread pinning detected in virtual thread: {}", vt.getName());
-              break;
-            }
-          }
-        }
-      }
-      catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-      }
+    // First run without synchronization to establish baseline
+    long baselineStart = System.nanoTime();
+    runInVirtualThread(() -> {
+      task.run();
+      return null;
     });
+    long baselineDuration = System.nanoTime() - baselineStart;
 
-    try (ExecutorService executor = newVirtualThreadExecutor()) {
-      Future<?> future = executor.submit(() -> {
-        virtualThread.set(Thread.currentThread());
+    // Run with synchronization that would cause pinning
+    long pinnedStart = System.nanoTime();
+    Object lock = new Object();
+    runInVirtualThread(() -> {
+      synchronized (lock) {
         task.run();
-      });
+      }
+      return null;
+    });
+    long pinnedDuration = System.nanoTime() - pinnedStart;
 
-      monitorThread.start();
-      future.get(DEFAULT_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
-      monitorThread.join(1000);
-    }
-    catch (Exception e) {
-      log.error("Error while detecting thread pinning", e);
-    }
-
-    return pinningDetected.get();
+    // If pinned execution takes significantly longer (3x), consider it pinned
+    return pinnedDuration > baselineDuration * 3;
   }
 
   /**
-   * Validates that thread context is properly propagated across virtual threads.
-   * <p>
-   * This is important for maintaining security contexts, transaction boundaries, etc., across virtual threads.
+   * Validates that thread context is properly propagated to virtual threads.
    *
    * @param <T> the type of the context value
-   * @param contextSupplier a supplier that provides the context value from the current thread
-   * @param expectedValue the expected context value
-   * @param task the task to run in a virtual thread
+   * @param contextSupplier a supplier that retrieves a context value from the current thread
+   * @param expectedValue the expected value of the context in the virtual thread
    * @return true if the context is properly propagated, false otherwise
    */
   public static <T> boolean validateThreadContextPropagation(
       Supplier<T> contextSupplier,
-      T expectedValue,
-      Runnable task) {
-    AtomicReference<T> contextInVirtualThread = new AtomicReference<>();
-
+      T expectedValue) {
+    T[] valueInVirtualThread = (T[]) new Object[1];
+    
     runInVirtualThread(() -> {
-      contextInVirtualThread.set(contextSupplier.get());
-      task.run();
+      valueInVirtualThread[0] = contextSupplier.get();
+      return null;
     });
-
-    T actualValue = contextInVirtualThread.get();
-    boolean isValid = expectedValue == null ? actualValue == null : expectedValue.equals(actualValue);
-
-    if (!isValid) {
-      log.warn("Thread context propagation failed. Expected: {}, Actual: {}", expectedValue, actualValue);
-    }
-
-    return isValid;
+    
+    return expectedValue == null ?
+        valueInVirtualThread[0] == null :
+        expectedValue.equals(valueInVirtualThread[0]);
   }
 
   /**
-   * Executes a REST API call in a virtual thread and returns the response.
-   * <p>
-   * This method is useful for testing JAX-RS resources with virtual threads.
+   * Creates a virtual thread with the specified name.
    *
-   * @param <T> the type of the response entity
-   * @param apiCall the REST API call to execute
-   * @return the response from the API call
+   * @param name the name of the thread
+   * @param runnable the task to run in the thread
+   * @return the created thread (not started)
    */
-  public static <T> Response executeRestApiInVirtualThread(Callable<Response> apiCall) {
-    return runInVirtualThread(apiCall);
+  public static Thread createVirtualThread(String name, Runnable runnable) {
+    return Thread.ofVirtual().name(name).unstarted(runnable);
   }
 
   /**
-   * Executes multiple REST API calls in parallel using virtual threads.
-   * <p>
-   * This method is useful for testing concurrent access to JAX-RS resources.
+   * Creates and starts a virtual thread with the specified name.
    *
-   * @param apiCalls the REST API calls to execute
-   * @return a list of responses from the API calls
+   * @param name the name of the thread
+   * @param runnable the task to run in the thread
+   * @return the started thread
    */
-  public static List<Response> executeRestApisInParallel(List<Callable<Response>> apiCalls) {
-    return runInParallelVirtualThreads(apiCalls);
+  public static Thread startVirtualThread(String name, Runnable runnable) {
+    return Thread.ofVirtual().name(name).start(runnable);
   }
 
   /**
-   * Executes a task using structured concurrency with virtual threads.
-   * <p>
-   * Structured concurrency treats groups of related tasks running in different threads as a single unit of work,
-   * streamlining error handling and cancellation, improving reliability, and enhancing observability.
+   * Creates a virtual thread executor for running multiple tasks concurrently.
+   *
+   * @return a virtual thread per task executor
+   */
+  public static AutoCloseable createVirtualThreadExecutor() {
+    return Executors.newVirtualThreadPerTaskExecutor();
+  }
+
+  /**
+   * Utility method to test JAX-RS resources with virtual threads.
+   * This simulates how JAX-RS resources would behave when executed in a virtual thread environment.
    *
    * @param <T> the type of the result
-   * @param task the task to execute, which can fork subtasks using the provided scope
-   * @return the result of the task
-   * @throws RuntimeException if the task throws an exception
+   * @param resourceOperation the operation to execute on the JAX-RS resource
+   * @return the result of the resource operation
    */
-  @SuppressWarnings("preview")
-  public static <T> T executeWithStructuredConcurrency(Consumer<StructuredTaskScope<T>> task) {
-    if (!VIRTUAL_THREADS_SUPPORTED) {
-      throw new UnsupportedOperationException("Structured concurrency requires Java 21 or later");
-    }
-
-    try (var scope = new StructuredTaskScope.ShutdownOnFailure()) {
-      AtomicReference<T> result = new AtomicReference<>();
-      task.accept((StructuredTaskScope<T>) scope);
-      scope.join();
-      scope.throwIfFailed();
-      return result.get();
-    }
-    catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new RuntimeException("Structured concurrency task was interrupted", e);
-    }
-    catch (ExecutionException e) {
-      throw new RuntimeException("Error in structured concurrency task", e.getCause());
-    }
-  }
-
-  /**
-   * A simplified version of structured concurrency for testing REST APIs.
-   * <p>
-   * This method executes multiple REST API calls concurrently and returns the first successful response,
-   * or throws an exception if all calls fail.
-   *
-   * @param apiCalls the REST API calls to execute
-   * @return the first successful response
-   * @throws RuntimeException if all API calls fail
-   */
-  @SuppressWarnings("preview")
-  public static Response executeFirstSuccessfulRestApi(List<Callable<Response>> apiCalls) {
-    if (!VIRTUAL_THREADS_SUPPORTED) {
-      throw new UnsupportedOperationException("Structured concurrency requires Java 21 or later");
-    }
-
-    try (var scope = new StructuredTaskScope.ShutdownOnSuccess<Response>()) {
-      for (Callable<Response> apiCall : apiCalls) {
-        scope.fork(apiCall);
-      }
-      scope.join();
-      return scope.result();
-    }
-    catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new RuntimeException("REST API execution was interrupted", e);
-    }
-    catch (ExecutionException e) {
-      throw new RuntimeException("All REST API calls failed", e.getCause());
-    }
+  public static <T> T testJaxRsResourceWithVirtualThread(Callable<T> resourceOperation) {
+    return runInVirtualThread(resourceOperation);
   }
 }

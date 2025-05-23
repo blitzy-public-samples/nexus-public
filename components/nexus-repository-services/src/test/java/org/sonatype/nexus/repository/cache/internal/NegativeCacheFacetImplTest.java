@@ -24,18 +24,18 @@ import org.sonatype.nexus.repository.cache.NegativeCacheKey;
 import org.sonatype.nexus.repository.config.ConfigurationFacet;
 import org.sonatype.nexus.repository.http.HttpStatus;
 import org.sonatype.nexus.repository.view.Status;
+import org.sonatype.nexus.testsuite.testsupport.Java21TestGroup;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.CoreMatchers.equalTo;
-import static org.hamcrest.CoreMatchers.nullValue;
-import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -44,7 +44,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-@Tag("Java21")
+@org.junit.experimental.categories.Category(Java21TestGroup.class)
 public class NegativeCacheFacetImplTest
     extends TestSupport
 {
@@ -90,13 +90,13 @@ public class NegativeCacheFacetImplTest
   }
 
   @Test
-  public void noConfigurationPresentNoCache() throws Exception {
+  void noConfigurationPresentNoCache() throws Exception {
     config = null;
     underTest.attach(repository);
     underTest.init();
     underTest.start();
     verify(cacheHelper, never()).maybeCreateCache(any(String.class), any(Class.class), any(Class.class), any());
-    assertThat(underTest.get(key), nullValue());
+    assertNull(underTest.get(key));
     underTest.put(key, Status.failure(HttpStatus.NOT_FOUND, "404"));
     underTest.invalidate(key);
     underTest.invalidate();
@@ -106,13 +106,13 @@ public class NegativeCacheFacetImplTest
   }
 
   @Test
-  public void notEnabledNoCache() throws Exception {
+  void notEnabledNoCache() throws Exception {
     config.enabled = false;
     underTest.attach(repository);
     underTest.init();
     underTest.start();
     verify(cacheHelper, never()).maybeCreateCache(any(String.class), any(Class.class), any(Class.class), any());
-    assertThat(underTest.get(key), nullValue());
+    assertNull(underTest.get(key));
     underTest.put(key, Status.failure(HttpStatus.NOT_FOUND, "404"));
     underTest.invalidate(key);
     underTest.invalidate();
@@ -122,7 +122,7 @@ public class NegativeCacheFacetImplTest
   }
 
   @Test
-  public void cacheIsCreatedAndRemoved() throws Exception {
+  void cacheIsCreatedAndRemoved() throws Exception {
     config.enabled = true;
     underTest.attach(repository);
     underTest.init();
@@ -136,7 +136,7 @@ public class NegativeCacheFacetImplTest
   }
 
   @Test
-  public void cacheIsNotRemovedWhenManagerIsNotActive() throws Exception {
+  void cacheIsNotRemovedWhenManagerIsNotActive() throws Exception {
     config.enabled = true;
     underTest.attach(repository);
     underTest.init();
@@ -147,7 +147,7 @@ public class NegativeCacheFacetImplTest
   }
 
   @Test
-  public void putCachesElement() throws Exception {
+  void putCachesElement() throws Exception {
     config.enabled = true;
     underTest.attach(repository);
     underTest.init();
@@ -156,34 +156,34 @@ public class NegativeCacheFacetImplTest
     ArgumentCaptor<NegativeCacheKey> keyCaptor = ArgumentCaptor.forClass(NegativeCacheKey.class);
     ArgumentCaptor<Status> statusCaptor = ArgumentCaptor.forClass(Status.class);
     verify(cache).put(keyCaptor.capture(), statusCaptor.capture());
-    assertThat(keyCaptor.getValue(), equalTo(key));
-    assertThat(statusCaptor.getValue(), equalTo(status));
+    assertEquals(key, keyCaptor.getValue());
+    assertEquals(status, statusCaptor.getValue());
   }
 
   @Test
-  public void getReturnsStatus() throws Exception {
+  void getReturnsStatus() throws Exception {
     config.enabled = true;
     underTest.attach(repository);
     underTest.init();
     underTest.start();
     when(cache.get(key)).thenReturn(status);
     Status actualStatus = underTest.get(key);
-    assertThat(actualStatus, equalTo(status));
+    assertEquals(status, actualStatus);
   }
 
   @Test
-  public void getReturnsNullWhenCacheReturnsNull() throws Exception {
+  void getReturnsNullWhenCacheReturnsNull() throws Exception {
     config.enabled = true;
     underTest.attach(repository);
     underTest.init();
     underTest.start();
     when(cache.get(key)).thenReturn(null);
     Status actualStatus = underTest.get(key);
-    assertThat(actualStatus, nullValue());
+    assertNull(actualStatus);
   }
 
   @Test
-  public void invalidateRemovesElement() throws Exception {
+  void invalidateRemovesElement() throws Exception {
     config.enabled = true;
     underTest.attach(repository);
     underTest.init();
@@ -193,7 +193,7 @@ public class NegativeCacheFacetImplTest
   }
 
   @Test
-  public void invalidateRemovesAllElements() throws Exception {
+  void invalidateRemovesAllElements() throws Exception {
     config.enabled = true;
     underTest.attach(repository);
     underTest.init();
@@ -203,7 +203,7 @@ public class NegativeCacheFacetImplTest
   }
 
   @Test
-  public void invalidateSubsetRemovesKeyAndAllChildKeys() throws Exception {
+  void invalidateSubsetRemovesKeyAndAllChildKeys() throws Exception {
     NegativeCacheKey key1 = mock(NegativeCacheKey.class);
     NegativeCacheKey key2 = mock(NegativeCacheKey.class);
     Cache.Entry<NegativeCacheKey, Status> entry1 = mock(Cache.Entry.class);

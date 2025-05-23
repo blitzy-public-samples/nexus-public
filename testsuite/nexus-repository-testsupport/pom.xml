@@ -22,20 +22,17 @@
     <artifactId>nexus-testsuite</artifactId>
     <version>3.77.0-08</version>
   </parent>
-  
-  <!-- 
-  This POM has been updated for Java 21 compatibility as part of the Nexus Repository
-  upgrade from Java 17 to Java 21. Key changes include:
-  - Updated Maven compiler plugin configuration to use Java 21
-  - Updated Groovy Eclipse compiler dependencies for Java 21 compatibility
-  - Updated Maven Bundle Plugin for Java 21 compatibility
-  -->
 
   <artifactId>nexus-repository-testsupport</artifactId>
   <name>${project.groupId}:${project.artifactId}</name>
   <packaging>bundle</packaging>
+  
+  <properties>
+    <!-- Default to false, can be enabled with -Dvirtual.threads=true -->
+    <virtual.threads>false</virtual.threads>
+    <test.additional.args></test.additional.args>
+  </properties>
 
-  <!-- Dependencies updated for Java 21 compatibility -->
   <dependencies>
     <!--
     Dependencies provided by the Nexus container
@@ -110,6 +107,13 @@
       <optional>true</optional>
       <scope>provided</scope>
     </dependency>
+    
+    <dependency>
+      <groupId>org.sonatype.nexus.testsuite</groupId>
+      <artifactId>nexus-virtual-thread-testsupport</artifactId>
+      <optional>true</optional>
+      <scope>provided</scope>
+    </dependency>
 
     <!--
     Dependencies that belong to this feature
@@ -132,6 +136,44 @@
     <dependency>
       <groupId>org.sonatype.nexus</groupId>
       <artifactId>nexus-rest-client</artifactId>
+    </dependency>
+    
+    <!-- JUnit 5 dependencies for Java 21 compatibility -->
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-api</artifactId>
+      <version>5.10.1</version>
+    </dependency>
+    
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-engine</artifactId>
+      <version>5.10.1</version>
+    </dependency>
+    
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-params</artifactId>
+      <version>5.10.1</version>
+    </dependency>
+    
+    <dependency>
+      <groupId>org.junit.vintage</groupId>
+      <artifactId>junit-vintage-engine</artifactId>
+      <version>5.10.1</version>
+    </dependency>
+    
+    <!-- Mockito for Java 21 compatibility -->
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-core</artifactId>
+      <version>5.8.0</version>
+    </dependency>
+    
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-junit-jupiter</artifactId>
+      <version>5.8.0</version>
     </dependency>
 
     <dependency>
@@ -204,9 +246,11 @@
       <artifactId>quartz</artifactId>
     </dependency>
 
+    <!-- Updated Testcontainers for Java 21 compatibility -->
     <dependency>
       <groupId>org.testcontainers</groupId>
       <artifactId>testcontainers</artifactId>
+      <version>1.19.3</version>
     </dependency>
 
     <dependency>
@@ -225,30 +269,26 @@
     </dependency>
   </dependencies>
 
-  <!-- Build configuration updated for Java 21 compatibility -->
   <build>
     <plugins>
-      <!-- Maven Compiler Plugin configured for Java 21 compatibility -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.12.1</version>
         <dependencies>
           <dependency>
             <groupId>org.codehaus.groovy</groupId>
             <artifactId>groovy-eclipse-compiler</artifactId>
-            <version>3.9.0</version>
+            <version>4.8.0</version>
           </dependency>
           <dependency>
             <groupId>org.codehaus.groovy</groupId>
             <artifactId>groovy-eclipse-batch</artifactId>
-            <version>3.0.9-03</version>
+            <version>4.0.9-01</version>
           </dependency>
         </dependencies>
         <configuration>
-          <!-- Explicitly set source and target to Java 21 -->
-          <source>21</source>
-          <target>21</target>
+          <source>${maven.compiler.source}</source>
+          <target>${maven.compiler.target}</target>
           <compilerId>groovy-eclipse-compiler</compilerId>
         </configuration>
       </plugin>
@@ -257,6 +297,42 @@
         <artifactId>maven-javadoc-plugin</artifactId>
         <configuration>
           <excludePackageNames>org.sonatype.nexus.testsuite.testsupport:org.sonatype.nexus.testsuite.testsupport.*</excludePackageNames>
+        </configuration>
+      </plugin>
+      <!-- Maven Surefire Plugin configuration for Java 21 compatibility -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.2.5</version>
+        <configuration>
+          <argLine>-Djava.version=21 ${test.additional.args}</argLine>
+          <systemPropertyVariables>
+            <java.util.concurrent.ForkJoinPool.common.parallelism>16</java.util.concurrent.ForkJoinPool.common.parallelism>
+            <test.virtual.threads>${virtual.threads}</test.virtual.threads>
+            <jdk.tracePinnedThreads>full</jdk.tracePinnedThreads>
+            <jdk.virtualThreadScheduler.parallelism>16</jdk.virtualThreadScheduler.parallelism>
+            <jdk.virtualThreadScheduler.maxPoolSize>256</jdk.virtualThreadScheduler.maxPoolSize>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+      <!-- Maven Failsafe Plugin configuration for Java 21 compatibility -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <version>3.2.5</version>
+        <configuration>
+          <parallel>classes</parallel>
+          <threadCount>4</threadCount>
+          <forkCount>2</forkCount>
+          <reuseForks>true</reuseForks>
+          <argLine>-Djava.version=21 ${test.additional.args}</argLine>
+          <systemPropertyVariables>
+            <java.util.concurrent.ForkJoinPool.common.parallelism>16</java.util.concurrent.ForkJoinPool.common.parallelism>
+            <test.virtual.threads>${virtual.threads}</test.virtual.threads>
+            <jdk.tracePinnedThreads>full</jdk.tracePinnedThreads>
+            <jdk.virtualThreadScheduler.parallelism>16</jdk.virtualThreadScheduler.parallelism>
+            <jdk.virtualThreadScheduler.maxPoolSize>256</jdk.virtualThreadScheduler.maxPoolSize>
+          </systemPropertyVariables>
         </configuration>
       </plugin>
       <plugin>
@@ -278,11 +354,9 @@
         <groupId>org.eclipse.sisu</groupId>
         <artifactId>sisu-maven-plugin</artifactId>
       </plugin>
-      <!-- Maven Bundle Plugin configured for Java 21 compatibility -->
       <plugin>
         <groupId>org.apache.felix</groupId>
         <artifactId>maven-bundle-plugin</artifactId>
-        <version>5.1.9</version>
         <configuration>
           <instructions>
             <!-- mark Pax-Exam imports as optional; not all are needed at test-time -->
@@ -302,6 +376,7 @@
               org.sonatype.nexus.repository.attributes.*;resolution:=optional,
               org.sonatype.nexus.repository.vulnerability.*;resolution:=optional,
               org.sonatype.nexus.testsuite.testsupport.cleanup.*;resolution:=optional,
+              org.sonatype.nexus.testsuite.virtualthread.*;resolution:=optional,
               oshi.*;resolution:=optional,
               *
             </Import-Package>
@@ -309,8 +384,6 @@
               aws-java-sdk-s3,aws-java-sdk-core
             </Embed-Dependency>
             <Embed-Transitive>true</Embed-Transitive>
-            <!-- Added for Java 21 compatibility -->
-            <_noee>true</_noee>
           </instructions>
         </configuration>
       </plugin>

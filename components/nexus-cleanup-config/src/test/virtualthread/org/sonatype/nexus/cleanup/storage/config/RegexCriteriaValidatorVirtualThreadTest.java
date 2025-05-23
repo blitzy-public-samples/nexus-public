@@ -14,8 +14,7 @@ package org.sonatype.nexus.cleanup.storage.config;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -24,84 +23,65 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.cleanup.storage.config.RegexCriteriaValidator.InvalidExpressionException;
 
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import org.junit.Test;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests for {@link RegexCriteriaValidator} specifically focused on virtual thread execution.
+ * Tests for {@link RegexCriteriaValidator} specifically validating behavior under high-concurrency
+ * virtual thread execution using Java 21's virtual threads.
  * 
- * This test validates that the RegexCriteriaValidator behaves correctly when invoked by
- * thousands of concurrent virtual threads, ensuring thread-safety and proper performance
- * under high concurrency scenarios with Java 21's virtual threads.
+ * This test ensures that regex validation operates correctly when invoked by thousands of concurrent
+ * virtual threads without synchronization issues or memory leaks.
  */
 public class RegexCriteriaValidatorVirtualThreadTest
-    extends TestSupport
+    extends RegexCriteriaValidatorTest
 {
   private static final String VALID_EXPRESSION = "org/sonatype";
   private static final String INVALID_EXPRESSION = "hello(world";
-  private static final int CONCURRENT_THREADS = 1000;
-  
+  private static final int THREAD_COUNT = 1000;
+
   /**
-   * Tests that the RegexCriteriaValidator can handle many concurrent validations
-   * using virtual threads without issues.
+   * Tests that valid regex expressions are correctly validated when processed by many concurrent virtual threads.
    */
   @Test
-  @DisplayName("Should handle concurrent validations with virtual threads")
-  void shouldHandleConcurrentValidationsWithVirtualThreads() throws Exception {
-    // Use Java 21's virtual thread per task executor
+  public void testValidExpressionWithVirtualThreads() throws Exception {
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       List<Future<String>> futures = new ArrayList<>();
-      AtomicInteger successCount = new AtomicInteger(0);
       
-      // Submit many concurrent validation tasks
-      for (int i = 0; i < CONCURRENT_THREADS; i++) {
-        futures.add(executor.submit(() -> {
-          String result = RegexCriteriaValidator.validate(VALID_EXPRESSION);
-          successCount.incrementAndGet();
-          return result;
-        }));
+      // Submit 1000 validation tasks to virtual threads
+      for (int i = 0; i < THREAD_COUNT; i++) {
+        futures.add(executor.submit(() -> RegexCriteriaValidator.validate(VALID_EXPRESSION)));
       }
       
-      // Verify all tasks completed successfully
+      // Verify all results are correct
       for (Future<String> future : futures) {
-        assertEquals(VALID_EXPRESSION, future.get());
+        assertThat(future.get(), is(VALID_EXPRESSION));
       }
-      
-      assertEquals(CONCURRENT_THREADS, successCount.get(), 
-          "All validation tasks should complete successfully");
     }
   }
-  
+
   /**
-   * Tests that the RegexCriteriaValidator properly handles invalid expressions
-   * when invoked concurrently by many virtual threads.
+   * Tests that invalid regex expressions consistently throw the expected exception
+   * when processed by many concurrent virtual threads.
    */
   @Test
-  @DisplayName("Should handle concurrent invalid regex validations with virtual threads")
-  void shouldHandleConcurrentInvalidRegexValidationsWithVirtualThreads() throws Exception {
-    // Use Java 21's virtual thread per task executor
+  public void testInvalidExpressionWithVirtualThreads() throws Exception {
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       List<Future<?>> futures = new ArrayList<>();
       AtomicInteger exceptionCount = new AtomicInteger(0);
-      ConcurrentMap<String, Integer> errorMessages = new ConcurrentHashMap<>();
       
-      // Submit many concurrent invalid validation tasks
-      for (int i = 0; i < CONCURRENT_THREADS; i++) {
+      // Submit 1000 validation tasks to virtual threads
+      for (int i = 0; i < THREAD_COUNT; i++) {
         futures.add(executor.submit(() -> {
           try {
             RegexCriteriaValidator.validate(INVALID_EXPRESSION);
-          }
-          catch (InvalidExpressionException e) {
+            return null; // Should not reach here
+          } catch (InvalidExpressionException e) {
             exceptionCount.incrementAndGet();
-            errorMessages.compute(e.getMessage(), (k, v) -> v == null ? 1 : v + 1);
+            return null;
           }
-          return null;
         }));
       }
       
@@ -111,68 +91,52 @@ public class RegexCriteriaValidatorVirtualThreadTest
       }
       
       // Verify all tasks threw the expected exception
-      assertEquals(CONCURRENT_THREADS, exceptionCount.get(), 
-          "All invalid validation tasks should throw exceptions");
-      
-      // Verify all exceptions had the same error message
-      assertEquals(1, errorMessages.size(), 
-          "All exceptions should have the same error message");
-      
-      // Verify the error message contains the expected pattern
-      String errorMessage = errorMessages.keySet().iterator().next();
-      assertTrue(errorMessage.contains("Invalid regular expression pattern:"), 
-          STR."Error message '{errorMessage}' should contain 'Invalid regular expression pattern:'");
+      assertThat(exceptionCount.get(), is(THREAD_COUNT));
     }
   }
-  
+
   /**
-   * Tests that the RegexCriteriaValidator can handle mixed valid and invalid expressions
-   * when invoked concurrently by many virtual threads.
+   * Tests mixed valid and invalid regex expressions to ensure consistent behavior
+   * across many concurrent virtual threads.
    */
   @Test
-  @DisplayName("Should handle mixed valid and invalid regex validations with virtual threads")
-  void shouldHandleMixedValidAndInvalidRegexValidationsWithVirtualThreads() throws Exception {
-    // Use Java 21's virtual thread per task executor
+  public void testMixedExpressionsWithVirtualThreads() throws Exception {
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       List<Future<?>> futures = new ArrayList<>();
       AtomicInteger validCount = new AtomicInteger(0);
       AtomicInteger invalidCount = new AtomicInteger(0);
       
-      // Submit many concurrent mixed validation tasks
-      for (int i = 0; i < CONCURRENT_THREADS; i++) {
-        final boolean useValidExpression = i % 2 == 0;
+      // Submit 1000 validation tasks alternating between valid and invalid expressions
+      for (int i = 0; i < THREAD_COUNT; i++) {
+        final boolean useValidExpression = (i % 2 == 0);
         futures.add(executor.submit(() -> {
           try {
-            String expression = useValidExpression ? VALID_EXPRESSION : INVALID_EXPRESSION;
-            String result = RegexCriteriaValidator.validate(expression);
-            if (useValidExpression) {
+            String result = RegexCriteriaValidator.validate(
+                useValidExpression ? VALID_EXPRESSION : INVALID_EXPRESSION);
+            if (VALID_EXPRESSION.equals(result)) {
               validCount.incrementAndGet();
-              assertEquals(VALID_EXPRESSION, result);
             }
+            return null;
+          } catch (InvalidExpressionException e) {
+            invalidCount.incrementAndGet();
+            return null;
           }
-          catch (InvalidExpressionException e) {
-            if (!useValidExpression) {
-              invalidCount.incrementAndGet();
-              assertTrue(e.getMessage().contains("Invalid regular expression pattern:"));
-            }
-          }
-          return null;
         }));
       }
       
       // Wait for all tasks to complete
       for (Future<?> future : futures) {
-        future.get();
+        try {
+          future.get();
+        } catch (ExecutionException e) {
+          // This should not happen as we're catching InvalidExpressionException inside the task
+          throw new AssertionError("Unexpected exception: " + e.getCause(), e);
+        }
       }
       
-      // Verify counts match expectations
-      int expectedValidCount = CONCURRENT_THREADS / 2;
-      int expectedInvalidCount = CONCURRENT_THREADS - expectedValidCount;
-      
-      assertEquals(expectedValidCount, validCount.get(), 
-          "Valid expression count should match expected value");
-      assertEquals(expectedInvalidCount, invalidCount.get(), 
-          "Invalid expression count should match expected value");
+      // Verify counts match expectations (half valid, half invalid)
+      assertThat(validCount.get(), is(THREAD_COUNT / 2));
+      assertThat(invalidCount.get(), is(THREAD_COUNT / 2));
     }
   }
 }

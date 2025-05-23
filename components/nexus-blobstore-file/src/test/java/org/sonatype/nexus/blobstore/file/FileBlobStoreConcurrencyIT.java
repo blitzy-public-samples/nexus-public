@@ -17,15 +17,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
 import java.security.NoSuchAlgorithmException;
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Queue;
 import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
@@ -45,11 +42,11 @@ import org.sonatype.nexus.blobstore.file.internal.SimpleFileOperations;
 import org.sonatype.nexus.blobstore.file.internal.datastore.metrics.DatastoreFileBlobStoreMetricsService;
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaService;
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaUsageChecker;
+import org.sonatype.nexus.blobstore.virtualthread.VirtualThreadTestGroup;
 import org.sonatype.nexus.common.app.ApplicationDirectories;
 import org.sonatype.nexus.common.log.DryRunPrefix;
 import org.sonatype.nexus.common.node.NodeAccess;
 import org.sonatype.nexus.scheduling.internal.PeriodicJobServiceImpl;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
 
 import com.google.common.base.Objects;
 import com.google.common.base.Stopwatch;
@@ -87,7 +84,8 @@ public class FileBlobStoreConcurrencyIT
 
   private static final int QUOTA_CHECK_INTERVAL = 1;
   
-  private static final String USE_VIRTUAL_THREADS_PROPERTY = "test.virtual.threads";
+  // System property to control whether to use virtual threads
+  private static final String USE_VIRTUAL_THREADS_PROPERTY = "nexus.test.useVirtualThreads";
 
   private FileBlobStore underTest;
 
@@ -143,42 +141,44 @@ public class FileBlobStoreConcurrencyIT
       underTest.stop();
     }
   }
+  
+  /**
+   * Creates a thread factory for platform threads.
+   *
+   * @param namePrefix the prefix to use for thread names
+   * @return a ThreadFactory that creates platform threads
+   */
+  private ThreadFactory createPlatformThreadFactory(final String namePrefix) {
+    return r -> {
+      Thread thread = new Thread(r);
+      thread.setName(namePrefix + "-" + thread.getId());
+      return thread;
+    };
+  }
 
   /**
-   * Tests concurrent operations on the blob store using either platform threads or virtual threads.
-   * <p>
-   * The test can be run with virtual threads by setting the system property {@code test.virtual.threads=true}.
-   * When run with virtual threads, performance metrics are collected and compared with platform threads.
+   * Creates a thread factory for virtual threads.
+   *
+   * @param namePrefix the prefix to use for thread names
+   * @return a ThreadFactory that creates virtual threads
    */
-  @Test
-  public void concurrencyTest() throws Exception {
-    boolean useVirtualThreads = Boolean.getBoolean(USE_VIRTUAL_THREADS_PROPERTY);
-    log("Running concurrency test with " + (useVirtualThreads ? "virtual" : "platform") + " threads");
-    
-    // Create thread factory based on configuration
-    ThreadFactory threadFactory = useVirtualThreads ? 
-        Thread.ofVirtual().factory() : 
-        Thread.ofPlatform().factory();
-    
-    // Run the test and measure performance
-    Stopwatch stopwatch = Stopwatch.createStarted();
-    runConcurrencyTest(threadFactory);
-    long elapsedMillis = stopwatch.elapsed(TimeUnit.MILLISECONDS);
-    
-    log("Concurrency test completed in " + elapsedMillis + "ms using " + 
-        (useVirtualThreads ? "virtual" : "platform") + " threads");
-    
-    // Store performance metrics for comparison if this is part of a comparative run
-    storePerformanceMetrics(useVirtualThreads, elapsedMillis);
-    
-    verify(metricsStore).init(underTest);
-    verify(quotaService, atLeastOnce()).checkQuota(underTest);
+  private ThreadFactory createVirtualThreadFactory(final String namePrefix) {
+    return Thread.ofVirtual()
+        .name(namePrefix, 0)
+        .factory();
   }
   
   /**
-   * Runs the actual concurrency test with the specified thread factory.
+   * Determines whether to use virtual threads based on system property.
+   *
+   * @return true if virtual threads should be used, false otherwise
    */
-  private void runConcurrencyTest(ThreadFactory threadFactory) throws Exception {
+  private boolean useVirtualThreads() {
+    return Boolean.getBoolean(USE_VIRTUAL_THREADS_PROPERTY);
+  }
+
+  @Test
+  public void concurrencyTest() throws Exception {
     final Random random = new Random();
 
     int numberOfCreators = 10;
@@ -188,14 +188,30 @@ public class FileBlobStoreConcurrencyIT
     int numberOfShufflers = 3;
 
     final Queue<BlobId> blobIdsInTheStore = new ConcurrentLinkedDeque<>();
+
     final Set<BlobId> deletedIds = new HashSet<>();
 
     int numberOfIterations = 15;
     int timeoutMinutes = 5;
-    final ConcurrentRunner runner = new ConcurrentRunner(numberOfIterations, timeoutMinutes * 60);
     
-    // Configure the runner to use the specified thread factory
+    // Create the appropriate thread factory based on system property
+    ThreadFactory threadFactory;
+    String threadType;
+    if (useVirtualThreads()) {
+      threadFactory = createVirtualThreadFactory("virtual-test");
+      threadType = "Virtual";
+    } else {
+      threadFactory = createPlatformThreadFactory("platform-test");
+      threadType = "Platform";
+    }
+    
+    log.info("Running concurrency test with {} threads", threadType);
+    
+    final ConcurrentRunner runner = new ConcurrentRunner(numberOfIterations, timeoutMinutes * 60);
     runner.setThreadFactory(threadFactory);
+    
+    // Start timing
+    Stopwatch stopwatch = Stopwatch.createStarted();
 
     runner.addTask(numberOfCreators, () -> {
       final byte[] data = new byte[random.nextInt(BLOB_MAX_SIZE_BYTES) + 1];
@@ -256,46 +272,14 @@ public class FileBlobStoreConcurrencyIT
     runner.addTask(numberOfCompactors, () -> underTest.compact(null));
 
     runner.go();
-  }
+    
+    // Stop timing and log results
+    stopwatch.stop();
+    long elapsedMillis = stopwatch.elapsed(TimeUnit.MILLISECONDS);
+    log.info("{} thread test completed in {} ms", threadType, elapsedMillis);
 
-  /**
-   * Stores performance metrics for comparison between platform threads and virtual threads.
-   * If both types of threads have been tested, logs a comparison of the results.
-   */
-  private void storePerformanceMetrics(boolean useVirtualThreads, long elapsedMillis) {
-    // Use a static map to store metrics across test runs
-    Map<String, Long> metrics = getPerformanceMetrics();
-    
-    // Store the current run's metrics
-    String key = useVirtualThreads ? "virtual" : "platform";
-    metrics.put(key, elapsedMillis);
-    
-    // If we have metrics for both thread types, log a comparison
-    if (metrics.containsKey("virtual") && metrics.containsKey("platform")) {
-      long virtualThreadTime = metrics.get("virtual");
-      long platformThreadTime = metrics.get("platform");
-      double improvement = 100.0 * (platformThreadTime - virtualThreadTime) / platformThreadTime;
-      
-      log("Performance comparison:");
-      log("  Platform threads: " + platformThreadTime + "ms");
-      log("  Virtual threads:  " + virtualThreadTime + "ms");
-      log(String.format("  Improvement:      %.2f%%", improvement));
-    }
-  }
-  
-  /**
-   * Returns the static map used to store performance metrics across test runs.
-   */
-  private static Map<String, Long> getPerformanceMetrics() {
-    // Using a static field to store metrics across test runs
-    return PerformanceMetricsHolder.METRICS;
-  }
-  
-  /**
-   * Holder for static performance metrics.
-   */
-  private static class PerformanceMetricsHolder {
-    static final Map<String, Long> METRICS = new HashMap<>();
+    verify(metricsStore).init(underTest);
+    verify(quotaService, atLeastOnce()).checkQuota(underTest);
   }
 
   /**

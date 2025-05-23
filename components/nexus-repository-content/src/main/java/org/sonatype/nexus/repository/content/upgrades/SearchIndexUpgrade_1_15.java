@@ -17,19 +17,29 @@ import java.util.Optional;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
+import static java.lang.StringTemplate.STR;
+
 import org.sonatype.nexus.repository.content.search.upgrade.SearchIndexUpgrade;
 
 /**
  * Re-index search for all formats to store external id instead of internal id.
+ * 
+ * @since 3.60
  */
 @Named
 @Singleton
 public class SearchIndexUpgrade_1_15
     extends SearchIndexUpgrade
 {
+  /**
+   * Returns the version of this upgrade using Java 21 String Templates for consistent formatting.
+   *
+   * @return the version as an Optional<String>
+   */
   @Override
   public Optional<String> version() {
-    // Using String Templates for consistent version formatting
-    return Optional.of(STR."1.15");
+    // Using Java 21 String Templates for consistent version formatting
+    String versionNumber = STR."\{1}.\{15}";
+    return Optional.of(versionNumber);
   }
 }

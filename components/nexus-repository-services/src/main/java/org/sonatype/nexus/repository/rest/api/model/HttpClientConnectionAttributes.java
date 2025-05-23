@@ -25,45 +25,40 @@ import io.swagger.annotations.ApiModelProperty;
  * @since 3.20
  */
 public record HttpClientConnectionAttributes(
-    @ApiModelProperty(value = "Total retries if the initial connection attempt suffers a timeout", example = "0",
-        allowableValues = "range[0,10]")
-    @Min(0L)
-    @Max(10L)
-    Integer retries,
+  @ApiModelProperty(value = "Total retries if the initial connection attempt suffers a timeout", example = "0",
+      allowableValues = "range[0,10]")
+  @Min(0L)
+  @Max(10L)
+  @JsonProperty("retries")
+  Integer retries,
 
-    @ApiModelProperty(value = "Custom fragment to append to User-Agent header in HTTP requests", example = "")
-    String userAgentSuffix,
+  @ApiModelProperty(value = "Custom fragment to append to User-Agent header in HTTP requests", example = "")
+  @JsonProperty("userAgentSuffix")
+  String userAgentSuffix,
 
-    @ApiModelProperty(value = "Seconds to wait for activity before stopping and retrying the connection", example = "60",
-        allowableValues = "range[1,3600]")
-    @Min(1L)
-    @Max(3600L)
-    Integer timeout,
+  @ApiModelProperty(value = "Seconds to wait for activity before stopping and retrying the connection", example = "60",
+      allowableValues = "range[1,3600]")
+  @Min(1L)
+  @Max(3600L)
+  @JsonProperty("timeout")
+  Integer timeout,
 
-    @ApiModelProperty(value = "Whether to enable redirects to the same location (may be required by some servers)",
-        example = "false")
-    Boolean enableCircularRedirects,
+  @ApiModelProperty(value = "Whether to enable redirects to the same location (may be required by some servers)",
+      example = "false")
+  @JsonProperty("enableCircularRedirects")
+  Boolean enableCircularRedirects,
 
-    @ApiModelProperty(value = "Whether to allow cookies to be stored and used", example = "false")
-    Boolean enableCookies,
+  @ApiModelProperty(value = "Whether to allow cookies to be stored and used", example = "false")
+  @JsonProperty("enableCookies")
+  Boolean enableCookies,
 
-    @ApiModelProperty(value = "Use certificates stored in the Nexus Repository Manager truststore to connect to external systems",
-        example = "false")
-    Boolean useTrustStore
+  @ApiModelProperty(value = "Use certificates stored in the Nexus Repository Manager truststore to connect to external systems",
+      example = "false")
+  @JsonProperty("useTrustStore")
+  Boolean useTrustStore
 ) {
-    @JsonCreator
-    public HttpClientConnectionAttributes(
-        @JsonProperty("retries") final Integer retries,
-        @JsonProperty("userAgentSuffix") final String userAgentSuffix,
-        @JsonProperty("timeout") final Integer timeout,
-        @JsonProperty("enableCircularRedirects") final Boolean enableCircularRedirects,
-        @JsonProperty("enableCookies") final Boolean enableCookies,
-        @JsonProperty("useTrustStore") final Boolean useTrustStore) {
-        this.retries = retries;
-        this.userAgentSuffix = userAgentSuffix;
-        this.timeout = timeout;
-        this.enableCircularRedirects = enableCircularRedirects;
-        this.enableCookies = enableCookies;
-        this.useTrustStore = useTrustStore;
-    }
+  @JsonCreator(mode = JsonCreator.Mode.PROPERTIES)
+  public HttpClientConnectionAttributes {
+    // The canonical constructor is automatically generated with validation
+  }
 }

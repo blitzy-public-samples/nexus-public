@@ -18,85 +18,143 @@ import org.sonatype.nexus.security.config.memory.MemoryCUser;
 import org.sonatype.nexus.security.config.memory.MemoryCUserRoleMapping;
 
 /**
- * Test security configuration utility class for DefaultSecurityConfigurationCleaner tests.
+ * Helper class providing test security configuration data.
  * 
  * @since 3.0
  */
-public final class DefaultSecurityConfigurationCleanerTestSecurity
+public class DefaultSecurityConfigurationCleanerTestSecurity
 {
-  // Prevent instantiation of utility class
-  private DefaultSecurityConfigurationCleanerTestSecurity() {
-  }
 
   /**
-   * Creates a test security model with predefined users, roles, privileges, and mappings.
-   *
-   * @return a populated {@link MemorySecurityConfiguration} for testing
+   * Creates and returns a populated {@link MemorySecurityConfiguration} for testing purposes.
+   * 
+   * @return A memory security configuration with test users, roles, privileges, and mappings
    */
   public static MemorySecurityConfiguration securityModel() {
-    // Common configuration for all privileges
-    final String methodType = "method";
-    final String readMethod = "read";
-    final String permissionPath = "/some/path/";
-    final String defaultSource = "default";
-    final String activeStatus = "active";
-    final String emailAddress = "email";
-    
-    // Create a standard privilege builder with common properties
-    var createPrivilege = (String id) -> new MemoryCPrivilegeBuilder(id)
-        .type(methodType)
-        .name(id)
-        .description("")
-        .property("method", readMethod)
-        .property("permission", permissionPath);
-    
-    // Create a standard user with common properties
-    var createUser = (String id, String firstName, String lastName) -> new MemoryCUser()
-        .withId(id)
-        .withPassword(id) // Using ID as password for simplicity
-        .withFirstName(firstName)
-        .withLastName(lastName)
-        .withStatus(activeStatus)
-        .withEmail(emailAddress);
-    
-    // Create a standard user-role mapping
-    var createUserRoleMapping = (String userId, String... roles) -> new MemoryCUserRoleMapping()
-        .withUserId(userId)
-        .withSource(defaultSource)
-        .withRoles(roles);
-    
-    // Create a standard role
-    var createRole = (String id, String[] privileges, String[] roles) -> new MemoryCRole()
-        .withId(id)
-        .withName(id)
-        .withDescription(id)
-        .withPrivileges(privileges)
-        .withRoles(roles);
-    
     return new MemorySecurityConfiguration()
         .withUsers(
-            createUser("user1", "first1", "last1"),
-            createUser("user2", "first2", "last2"),
-            createUser("user3", "first3", "last3"),
-            createUser("user4", "first4", "last4"),
-            createUser("user5", "first5", "last5"))
+            new MemoryCUser()
+                .withId("user1")
+                .withPassword("user1")
+                .withFirstName("first1")
+                .withLastName("last1")
+                .withStatus("active")
+                .withEmail("email"),
+            new MemoryCUser()
+                .withId("user2")
+                .withPassword("user2")
+                .withFirstName("first2")
+                .withLastName("last2")
+                .withStatus("active")
+                .withEmail("email"),
+            new MemoryCUser()
+                .withId("user3")
+                .withPassword("user3")
+                .withFirstName("first3")
+                .withLastName("last3")
+                .withStatus("active")
+                .withEmail("email"),
+            new MemoryCUser()
+                .withId("user4")
+                .withPassword("user4")
+                .withFirstName("first4")
+                .withLastName("last4")
+                .withStatus("active")
+                .withEmail("email"),
+            new MemoryCUser()
+                .withId("user5")
+                .withPassword("user5")
+                .withFirstName("first5")
+                .withLastName("last5")
+                .withStatus("active")
+                .withEmail("email"))
         .withUserRoleMappings(
-            createUserRoleMapping("user1", "role1"),
-            createUserRoleMapping("user2", "role1", "role2"),
-            createUserRoleMapping("user3", "role1", "role2", "role3"),
-            createUserRoleMapping("user4", "role1", "role2", "role3", "role4"),
-            createUserRoleMapping("user5", "role1", "role2", "role3", "role4", "role5"))
+            new MemoryCUserRoleMapping()
+                .withUserId("user1")
+                .withSource("default")
+                .withRoles("role1"),
+            new MemoryCUserRoleMapping()
+                .withUserId("user2")
+                .withSource("default")
+                .withRoles("role1", "role2"),
+            new MemoryCUserRoleMapping()
+                .withUserId("user3")
+                .withSource("default")
+                .withRoles("role1", "role2", "role3"),
+            new MemoryCUserRoleMapping()
+                .withUserId("user4")
+                .withSource("default")
+                .withRoles("role1", "role2", "role3", "role4"),
+            new MemoryCUserRoleMapping()
+                .withUserId("user5")
+                .withSource("default")
+                .withRoles("role1", "role2", "role3", "role4", "role5"))
         .withPrivileges(
-            createPrivilege("priv1").build(),
-            createPrivilege("priv2").build(),
-            createPrivilege("priv3").build(),
-            createPrivilege("priv4").build(),
-            createPrivilege("priv5").build())
+            new MemoryCPrivilegeBuilder("priv1")
+                .type("method")
+                .name("priv1")
+                .description("")
+                .property("method", "read")
+                .property("permission", "/some/path/")
+                .build(),
+            new MemoryCPrivilegeBuilder("priv2")
+                .type("method")
+                .name("priv2")
+                .description("")
+                .property("method", "read")
+                .property("permission", "/some/path/")
+                .build(),
+            new MemoryCPrivilegeBuilder("priv3")
+                .type("method")
+                .name("priv3")
+                .description("")
+                .property("method", "read")
+                .property("permission", "/some/path/")
+                .build(),
+            new MemoryCPrivilegeBuilder("priv4")
+                .type("method")
+                .name("priv4")
+                .description("")
+                .property("method", "read")
+                .property("permission", "/some/path/")
+                .build(),
+            new MemoryCPrivilegeBuilder("priv5")
+                .type("method")
+                .name("priv5")
+                .description("")
+                .property("method", "read")
+                .property("permission", "/some/path/")
+                .build())
         .withRoles(
-            createRole("role1", new String[]{"priv1"}, new String[]{"role2", "role3", "role4", "role5"}),
-            createRole("role2", new String[]{"priv1", "priv2"}, new String[]{"role3", "role4", "role5"}),
-            createRole("role3", new String[]{"priv1", "priv2", "priv3"}, new String[]{"role4", "role5"}),
-            createRole("role4", new String[]{"priv1", "priv2", "priv3", "priv4"}, new String[]{"role5"}),
-            createRole("role5", new String[]{"priv1", "priv2", "priv3", "priv4", "priv5"}, new String[]{}));
+            new MemoryCRole()
+                .withId("role1")
+                .withName("role1")
+                .withDescription("role1")
+                .withPrivileges("priv1")
+                .withRoles("role2", "role3", "role4", "role5"),
+            new MemoryCRole()
+                .withId("role2")
+                .withName("role2")
+                .withDescription("role2")
+                .withPrivileges("priv1", "priv2")
+                .withRoles("role3", "role4", "role5"),
+            new MemoryCRole()
+                .withId("role3")
+                .withName("role3")
+                .withDescription("role3")
+                .withPrivileges("priv1", "priv2", "priv3")
+                .withRoles("role4", "role5"),
+            new MemoryCRole()
+                .withId("role4")
+                .withName("role4")
+                .withDescription("role4")
+                .withPrivileges("priv1", "priv2", "priv3", "priv4")
+                .withRoles("role5"),
+            new MemoryCRole()
+                .withId("role5")
+                .withName("role5")
+                .withDescription("role5")
+                .withPrivileges("priv1", "priv2", "priv3", "priv4", "priv5"));
   }
+
 }

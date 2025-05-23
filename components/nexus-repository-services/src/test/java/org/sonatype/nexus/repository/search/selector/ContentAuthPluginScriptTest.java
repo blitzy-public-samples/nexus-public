@@ -13,21 +13,22 @@
 package org.sonatype.nexus.repository.search.selector;
 
 import java.util.Collections;
+import java.util.Map;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
 import org.sonatype.nexus.repository.security.ContentPermissionChecker;
 import org.sonatype.nexus.repository.security.VariableResolverAdapter;
 import org.sonatype.nexus.repository.security.VariableResolverAdapterManager;
 import org.sonatype.nexus.selector.VariableSource;
 
-import com.google.common.collect.ImmutableMap;
 import org.apache.shiro.subject.Subject;
 import org.elasticsearch.search.lookup.SourceLookup;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.experimental.categories.Category;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -46,7 +47,7 @@ import static org.sonatype.nexus.security.BreadActions.BROWSE;
  * Tests for {@link ContentAuthPluginScript}.
  */
 @ExtendWith(MockitoExtension.class)
-@Tag("Java21TestGroup")
+@Category(Java21TestGroup.class)
 public class ContentAuthPluginScriptTest
     extends TestSupport
 {
@@ -95,39 +96,43 @@ public class ContentAuthPluginScriptTest
   }
 
   @Test
-  void permittedReturnsTrue() {
-    sourceLookup.setSource(STR."""
-        {"format": "{FORMAT}", 
-         "repository_name": "{REPOSITORY_NAME}", 
-         "assets": [{Collections.singletonMap("name", PATH)}]}
-        """);
+  public void permittedReturnsTrue() {
+    sourceLookup.setSource(Map.of(
+        "format", FORMAT,
+        "repository_name", REPOSITORY_NAME,
+        "assets", Collections.singletonList(Collections.singletonMap("name", PATH))
+    ));
     when(contentPermissionChecker.isPermitted(Collections.singleton(REPOSITORY_NAME), FORMAT, BROWSE, variableSource))
         .thenReturn(true);
     assertThat(underTest.run(), is(true));
-    verify(contentPermissionChecker).isPermitted(Collections.singleton(REPOSITORY_NAME), FORMAT, BROWSE,
-        variableSource);
+    verify(contentPermissionChecker, times(1)).isPermitted(repositories -> repositories.equals(Collections.singleton(REPOSITORY_NAME)), 
+        format -> format.equals(FORMAT), 
+        action -> action.equals(BROWSE), 
+        source -> source.equals(variableSource));
   }
 
   @Test
-  void notPermittedReturnsFalse() {
-    sourceLookup.setSource(STR."""
-        {"format": "{FORMAT}", 
-         "repository_name": "{REPOSITORY_NAME}", 
-         "assets": [{Collections.singletonMap("name", PATH)}]}
-        """);
+  public void notPermittedReturnsFalse() {
+    sourceLookup.setSource(Map.of(
+        "format", FORMAT,
+        "repository_name", REPOSITORY_NAME,
+        "assets", Collections.singletonList(Collections.singletonMap("name", PATH))
+    ));
     when(contentPermissionChecker.isPermitted(Collections.singleton(REPOSITORY_NAME), FORMAT, BROWSE, variableSource))
         .thenReturn(false);
     assertThat(underTest.run(), is(false));
-    verify(contentPermissionChecker).isPermitted(Collections.singleton(REPOSITORY_NAME), FORMAT, BROWSE,
-        variableSource);
+    verify(contentPermissionChecker, times(1)).isPermitted(repositories -> repositories.equals(Collections.singleton(REPOSITORY_NAME)), 
+        format -> format.equals(FORMAT), 
+        action -> action.equals(BROWSE), 
+        source -> source.equals(variableSource));
   }
 
   @Test
-  void withoutAssetsReturnsFalse() {
-    sourceLookup.setSource(STR."""
-        {"format": "{FORMAT}", 
-         "repository_name": "{REPOSITORY_NAME}"}
-        """);
+  public void withoutAssetsReturnsFalse() {
+    sourceLookup.setSource(Map.of(
+        "format", FORMAT,
+        "repository_name", REPOSITORY_NAME
+    ));
     assertThat(underTest.run(), is(false));
     verifyNoInteractions(contentPermissionChecker);
   }

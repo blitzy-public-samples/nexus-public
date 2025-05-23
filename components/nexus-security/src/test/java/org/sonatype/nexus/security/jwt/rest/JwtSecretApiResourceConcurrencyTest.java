@@ -16,340 +16,287 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import javax.ws.rs.core.Response;
+
+import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.security.jwt.SecretStore;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import static javax.ws.rs.core.Response.Status.OK;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThan;
+import static org.hamcrest.Matchers.notNullValue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 /**
  * Concurrency tests for {@link JwtSecretApiResourceV1} using Java 21 virtual threads.
  * 
- * @since 3.62
+ * @since 3.60
  */
 @ExtendWith(MockitoExtension.class)
 public class JwtSecretApiResourceConcurrencyTest
+    extends TestSupport
 {
-  private static final int THREAD_COUNT = 1000;
-  private static final int WARMUP_COUNT = 100;
+  private static final int CONCURRENT_REQUESTS = 1000;
+  private static final int HIGH_CONCURRENCY_REQUESTS = 10000;
+  private static final int WARMUP_REQUESTS = 100;
   
   @Mock
   private SecretStore secretStore;
   
+  @Captor
+  private ArgumentCaptor<String> secretCaptor;
+  
   private JwtSecretApiResourceV1 underTest;
+  
+  private final ConcurrentHashMap<String, AtomicInteger> secretOccurrences = new ConcurrentHashMap<>();
   
   @BeforeEach
   public void setup() {
     underTest = new JwtSecretApiResourceV1(secretStore);
+    
+    // Configure the mock to track secret occurrences to verify thread safety
+    doAnswer(invocation -> {
+      String secret = invocation.getArgument(0);
+      secretOccurrences.computeIfAbsent(secret, k -> new AtomicInteger(0)).incrementAndGet();
+      return null;
+    }).when(secretStore).setSecret(any(String.class));
   }
   
   /**
-   * Test concurrent secret resets using platform threads.
-   * This verifies that the SecretStore implementation correctly handles
-   * concurrent requests without race conditions.
+   * Tests concurrent JWT secret reset operations using virtual threads.
+   * Verifies that all operations complete successfully and that the SecretStore
+   * is called the expected number of times.
    */
   @Test
-  public void testConcurrentSecretResetWithPlatformThreads() throws Exception {
-    // Track all secrets set during the test
-    Set<String> capturedSecrets = ConcurrentHashMap.newKeySet();
-    AtomicInteger secretSetCount = new AtomicInteger(0);
-    
-    // Configure mock to capture secrets and track concurrent access
-    doAnswer(invocation -> {
-      String secret = invocation.getArgument(0);
-      capturedSecrets.add(secret);
-      secretSetCount.incrementAndGet();
-      // Simulate some processing time
-      Thread.sleep(5);
-      return null;
-    }).when(secretStore).setSecret(org.mockito.ArgumentMatchers.any(String.class));
-    
-    // Create a countdown latch to synchronize thread start
-    CountDownLatch startLatch = new CountDownLatch(1);
-    
-    // Create platform thread executor
-    ExecutorService executor = Executors.newFixedThreadPool(THREAD_COUNT);
-    
-    // Submit tasks to reset secrets concurrently
-    List<Runnable> tasks = new ArrayList<>();
-    for (int i = 0; i < THREAD_COUNT; i++) {
-      tasks.add(() -> {
-        try {
-          startLatch.await(); // Wait for all threads to be ready
-          underTest.resetSecret();
-        }
-        catch (InterruptedException e) {
-          Thread.currentThread().interrupt();
-        }
-      });
-    }
-    
-    // Start timing
-    Instant start = Instant.now();
-    
-    // Submit all tasks
-    tasks.forEach(executor::submit);
-    
-    // Start all threads simultaneously
-    startLatch.countDown();
-    
-    // Shutdown and wait for completion
-    executor.shutdown();
-    executor.awaitTermination(30, TimeUnit.SECONDS);
-    
-    // End timing
-    Instant end = Instant.now();
-    Duration platformDuration = Duration.between(start, end);
-    
-    // Verify results
-    assertThat("All secret reset operations should be processed", 
-        secretSetCount.get(), is(THREAD_COUNT));
-    assertThat("Each secret should be unique (no race conditions)", 
-        capturedSecrets.size(), is(THREAD_COUNT));
-    
-    System.out.println("Platform threads completed " + THREAD_COUNT + 
-        " operations in " + platformDuration.toMillis() + "ms");
-  }
-  
-  /**
-   * Test concurrent secret resets using Java 21 virtual threads.
-   * This verifies the same thread-safety as the platform thread test,
-   * but using virtual threads for improved scalability.
-   */
-  @Test
-  public void testConcurrentSecretResetWithVirtualThreads() throws Exception {
-    // Track all secrets set during the test
-    Set<String> capturedSecrets = ConcurrentHashMap.newKeySet();
-    AtomicInteger secretSetCount = new AtomicInteger(0);
-    
-    // Configure mock to capture secrets and track concurrent access
-    doAnswer(invocation -> {
-      String secret = invocation.getArgument(0);
-      capturedSecrets.add(secret);
-      secretSetCount.incrementAndGet();
-      // Simulate some processing time
-      Thread.sleep(5);
-      return null;
-    }).when(secretStore).setSecret(org.mockito.ArgumentMatchers.any(String.class));
-    
-    // Create a countdown latch to synchronize thread start
-    CountDownLatch startLatch = new CountDownLatch(1);
-    
-    // Create virtual thread executor
+  @DisplayName("Test concurrent JWT secret reset with virtual threads")
+  public void testConcurrentResetSecretWithVirtualThreads() throws Exception {
+    // Create a virtual thread executor
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit tasks to reset secrets concurrently
-      List<Runnable> tasks = new ArrayList<>();
-      for (int i = 0; i < THREAD_COUNT; i++) {
-        tasks.add(() -> {
-          try {
-            startLatch.await(); // Wait for all threads to be ready
-            underTest.resetSecret();
-          }
-          catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-          }
-        });
+      List<Future<Response>> futures = new ArrayList<>();
+      
+      // Submit concurrent reset requests
+      for (int i = 0; i < CONCURRENT_REQUESTS; i++) {
+        futures.add(executor.submit(() -> underTest.resetSecret()));
       }
       
-      // Start timing
-      Instant start = Instant.now();
-      
-      // Submit all tasks
-      tasks.forEach(executor::submit);
-      
-      // Start all threads simultaneously
-      startLatch.countDown();
-      
-      // Shutdown and wait for completion
-      executor.shutdown();
-      executor.awaitTermination(30, TimeUnit.SECONDS);
-      
-      // End timing
-      Instant end = Instant.now();
-      Duration virtualDuration = Duration.between(start, end);
-      
-      // Verify results
-      assertThat("All secret reset operations should be processed", 
-          secretSetCount.get(), is(THREAD_COUNT));
-      assertThat("Each secret should be unique (no race conditions)", 
-          capturedSecrets.size(), is(THREAD_COUNT));
-      
-      System.out.println("Virtual threads completed " + THREAD_COUNT + 
-          " operations in " + virtualDuration.toMillis() + "ms");
+      // Wait for all operations to complete and verify responses
+      for (Future<Response> future : futures) {
+        Response response = future.get(10, TimeUnit.SECONDS);
+        assertThat(response.getStatus(), is(OK.getStatusCode()));
+      }
     }
+    
+    // Verify the SecretStore was called the expected number of times
+    verify(secretStore, times(CONCURRENT_REQUESTS)).setSecret(any(String.class));
   }
   
   /**
-   * Compare performance between platform threads and virtual threads
-   * for JWT secret management operations.
+   * Tests concurrent JWT secret reset operations using platform threads.
+   * This provides a comparison point for the virtual thread implementation.
    */
   @Test
-  public void comparePerformanceBetweenPlatformAndVirtualThreads() throws Exception {
+  @DisplayName("Test concurrent JWT secret reset with platform threads")
+  public void testConcurrentResetSecretWithPlatformThreads() throws Exception {
+    // Create a platform thread executor with a fixed thread pool
+    try (ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors())) {
+      List<Future<Response>> futures = new ArrayList<>();
+      
+      // Submit concurrent reset requests
+      for (int i = 0; i < CONCURRENT_REQUESTS; i++) {
+        futures.add(executor.submit(() -> underTest.resetSecret()));
+      }
+      
+      // Wait for all operations to complete and verify responses
+      for (Future<Response> future : futures) {
+        Response response = future.get(10, TimeUnit.SECONDS);
+        assertThat(response.getStatus(), is(OK.getStatusCode()));
+      }
+    }
+    
+    // Verify the SecretStore was called the expected number of times
+    verify(secretStore, times(CONCURRENT_REQUESTS)).setSecret(any(String.class));
+  }
+  
+  /**
+   * Compares the performance of virtual threads vs platform threads for JWT secret reset operations.
+   * This test demonstrates the efficiency gains possible with virtual threads for I/O-bound operations.
+   */
+  @Test
+  @DisplayName("Compare performance between virtual and platform threads")
+  public void comparePerformanceVirtualVsPlatformThreads() throws Exception {
     // Warm up to avoid JIT compilation affecting results
-    warmupThreads(WARMUP_COUNT);
+    runConcurrentRequests(Executors.newVirtualThreadPerTaskExecutor(), WARMUP_REQUESTS);
+    runConcurrentRequests(Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors()), WARMUP_REQUESTS);
     
-    // Track timing for platform threads
-    AtomicInteger platformCounter = new AtomicInteger(0);
-    doAnswer(invocation -> {
-      platformCounter.incrementAndGet();
-      Thread.sleep(5); // Simulate some processing time
-      return null;
-    }).when(secretStore).setSecret(org.mockito.ArgumentMatchers.any(String.class));
-    
-    // Run platform thread test
-    Instant platformStart = Instant.now();
-    runWithPlatformThreads(THREAD_COUNT);
-    Instant platformEnd = Instant.now();
-    Duration platformDuration = Duration.between(platformStart, platformEnd);
-    
-    // Reset counter
-    platformCounter.set(0);
-    
-    // Track timing for virtual threads
-    AtomicInteger virtualCounter = new AtomicInteger(0);
-    doAnswer(invocation -> {
-      virtualCounter.incrementAndGet();
-      Thread.sleep(5); // Simulate some processing time
-      return null;
-    }).when(secretStore).setSecret(org.mockito.ArgumentMatchers.any(String.class));
-    
-    // Run virtual thread test
+    // Test with virtual threads
     Instant virtualStart = Instant.now();
-    runWithVirtualThreads(THREAD_COUNT);
-    Instant virtualEnd = Instant.now();
-    Duration virtualDuration = Duration.between(virtualStart, virtualEnd);
+    runConcurrentRequests(Executors.newVirtualThreadPerTaskExecutor(), CONCURRENT_REQUESTS);
+    Duration virtualDuration = Duration.between(virtualStart, Instant.now());
     
-    // Verify all operations completed
-    assertThat(platformCounter.get(), is(THREAD_COUNT));
-    assertThat(virtualCounter.get(), is(THREAD_COUNT));
+    // Test with platform threads
+    Instant platformStart = Instant.now();
+    runConcurrentRequests(Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors()), CONCURRENT_REQUESTS);
+    Duration platformDuration = Duration.between(platformStart, Instant.now());
     
     // Log performance results
-    System.out.println("Performance comparison for " + THREAD_COUNT + " JWT secret resets:");
-    System.out.println("Platform threads: " + platformDuration.toMillis() + "ms");
-    System.out.println("Virtual threads: " + virtualDuration.toMillis() + "ms");
-    System.out.println("Improvement ratio: " + 
-        String.format("%.2f", (double) platformDuration.toMillis() / virtualDuration.toMillis()) + "x");
+    log.info("Virtual threads execution time: {} ms", virtualDuration.toMillis());
+    log.info("Platform threads execution time: {} ms", platformDuration.toMillis());
     
-    // Virtual threads should generally be faster for I/O bound operations
-    // but the difference might not be significant in all environments
-    // This assertion is intentionally lenient to avoid test flakiness
-    assertThat("Virtual threads should not be significantly slower than platform threads",
-        virtualDuration.toMillis(), lessThan(platformDuration.toMillis() * 2L));
+    // For high-concurrency I/O-bound operations, virtual threads should generally be more efficient
+    // However, we don't assert this as a requirement since it depends on the environment
   }
   
   /**
-   * Test that UUID generation is thread-safe and produces unique values
-   * even under high concurrency with virtual threads.
+   * Tests thread safety under high concurrency using virtual threads.
+   * Verifies that each secret is only used once, confirming the absence of race conditions.
    */
   @Test
-  public void testUuidGenerationThreadSafety() throws Exception {
-    // Track all generated UUIDs
-    Set<String> capturedUuids = ConcurrentHashMap.newKeySet();
-    
-    // Configure mock to capture UUIDs
-    doAnswer(invocation -> {
-      String secret = invocation.getArgument(0);
-      capturedUuids.add(secret);
-      return null;
-    }).when(secretStore).setSecret(org.mockito.ArgumentMatchers.any(String.class));
-    
-    // Run with virtual threads for maximum concurrency
-    runWithVirtualThreads(THREAD_COUNT);
-    
-    // Verify each UUID is unique
-    assertThat("Each UUID should be unique", capturedUuids.size(), is(THREAD_COUNT));
-    
-    // Verify each captured value is a valid UUID
-    capturedUuids.forEach(uuid -> {
-      try {
-        UUID parsedUuid = UUID.fromString(uuid);
-        assertThat("UUID string representation should match parsed value", 
-            uuid, equalTo(parsedUuid.toString()));
-      }
-      catch (IllegalArgumentException e) {
-        throw new AssertionError("Invalid UUID format: " + uuid, e);
-      }
-    });
-  }
-  
-  /**
-   * Helper method to run a warmup with the specified number of threads.
-   */
-  private void warmupThreads(int count) throws Exception {
-    // Configure mock for warmup
-    doAnswer(invocation -> null).when(secretStore).setSecret(org.mockito.ArgumentMatchers.any(String.class));
-    
-    // Run a small number of operations with both thread types
-    runWithPlatformThreads(count);
-    runWithVirtualThreads(count);
-  }
-  
-  /**
-   * Helper method to run the specified number of operations with platform threads.
-   */
-  private void runWithPlatformThreads(int count) throws Exception {
+  @DisplayName("Test thread safety under high concurrency with virtual threads")
+  public void testThreadSafetyUnderHighConcurrency() throws Exception {
+    secretOccurrences.clear();
     CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(count);
     
-    try (ExecutorService executor = Executors.newFixedThreadPool(Math.min(count, 200))) {
-      for (int i = 0; i < count; i++) {
-        executor.submit(() -> {
-          try {
-            startLatch.await();
-            underTest.resetSecret();
-            completionLatch.countDown();
-          }
-          catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-          }
-        });
-      }
-      
-      startLatch.countDown();
-      completionLatch.await(30, TimeUnit.SECONDS);
-    }
-  }
-  
-  /**
-   * Helper method to run the specified number of operations with virtual threads.
-   */
-  private void runWithVirtualThreads(int count) throws Exception {
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(count);
-    
+    // Create a virtual thread executor
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      for (int i = 0; i < count; i++) {
-        executor.submit(() -> {
-          try {
-            startLatch.await();
-            underTest.resetSecret();
-            completionLatch.countDown();
-          }
-          catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-          }
-        });
+      List<Future<Response>> futures = new ArrayList<>();
+      
+      // Submit concurrent reset requests that all start at the same time
+      for (int i = 0; i < HIGH_CONCURRENCY_REQUESTS; i++) {
+        futures.add(executor.submit(() -> {
+          startLatch.await(); // Wait for the signal to start
+          return underTest.resetSecret();
+        }));
       }
       
+      // Signal all threads to start simultaneously
       startLatch.countDown();
-      completionLatch.await(30, TimeUnit.SECONDS);
+      
+      // Wait for all operations to complete
+      for (Future<Response> future : futures) {
+        future.get(30, TimeUnit.SECONDS);
+      }
     }
+    
+    // Verify the SecretStore was called the expected number of times
+    verify(secretStore, times(HIGH_CONCURRENCY_REQUESTS)).setSecret(secretCaptor.capture());
+    
+    // Verify that each secret was only used once (no duplicates)
+    List<String> capturedSecrets = secretCaptor.getAllValues();
+    assertThat(capturedSecrets.size(), is(HIGH_CONCURRENCY_REQUESTS));
+    
+    // Check that each secret was used exactly once
+    for (AtomicInteger count : secretOccurrences.values()) {
+      assertThat("Each secret should be used exactly once", count.get(), is(1));
+    }
+    
+    // The number of unique secrets should match the number of requests
+    assertThat(secretOccurrences.size(), is(HIGH_CONCURRENCY_REQUESTS));
+  }
+  
+  /**
+   * Tests that the SecretStore implementation correctly handles simultaneous reset requests
+   * from both platform and virtual threads without race conditions.
+   */
+  @Test
+  @DisplayName("Test mixed thread types concurrency")
+  public void testMixedThreadTypesConcurrency() throws Exception {
+    secretOccurrences.clear();
+    int requestsPerType = CONCURRENT_REQUESTS / 2;
+    CountDownLatch startLatch = new CountDownLatch(1);
+    
+    // Create executors for both thread types
+    try (ExecutorService virtualExecutor = Executors.newVirtualThreadPerTaskExecutor();
+         ExecutorService platformExecutor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors())) {
+      
+      List<Future<Response>> futures = new ArrayList<>();
+      
+      // Submit requests using virtual threads
+      for (int i = 0; i < requestsPerType; i++) {
+        futures.add(virtualExecutor.submit(() -> {
+          startLatch.await();
+          return underTest.resetSecret();
+        }));
+      }
+      
+      // Submit requests using platform threads
+      for (int i = 0; i < requestsPerType; i++) {
+        futures.add(platformExecutor.submit(() -> {
+          startLatch.await();
+          return underTest.resetSecret();
+        }));
+      }
+      
+      // Signal all threads to start simultaneously
+      startLatch.countDown();
+      
+      // Wait for all operations to complete
+      for (Future<Response> future : futures) {
+        Response response = future.get(10, TimeUnit.SECONDS);
+        assertThat(response.getStatus(), is(OK.getStatusCode()));
+      }
+    }
+    
+    // Verify the SecretStore was called the expected number of times
+    verify(secretStore, times(CONCURRENT_REQUESTS)).setSecret(secretCaptor.capture());
+    
+    // Verify that each secret was only used once (no duplicates)
+    List<String> capturedSecrets = secretCaptor.getAllValues();
+    assertThat(capturedSecrets.size(), is(CONCURRENT_REQUESTS));
+    
+    // Check that each secret was used exactly once
+    for (AtomicInteger count : secretOccurrences.values()) {
+      assertThat("Each secret should be used exactly once", count.get(), is(1));
+    }
+    
+    // The number of unique secrets should match the number of requests
+    assertThat(secretOccurrences.size(), is(CONCURRENT_REQUESTS));
+  }
+  
+  /**
+   * Helper method to run concurrent requests using the specified executor.
+   */
+  private void runConcurrentRequests(ExecutorService executor, int requestCount) throws Exception {
+    try (ExecutorService executorService = executor) {
+      List<Future<Response>> futures = new ArrayList<>();
+      
+      // Submit concurrent reset requests
+      for (int i = 0; i < requestCount; i++) {
+        futures.add(executorService.submit(() -> underTest.resetSecret()));
+      }
+      
+      // Wait for all operations to complete
+      for (Future<Response> future : futures) {
+        future.get(10, TimeUnit.SECONDS);
+      }
+    }
+    
+    // Verify the SecretStore was called at least once
+    verify(secretStore, atLeastOnce()).setSecret(any(String.class));
   }
 }

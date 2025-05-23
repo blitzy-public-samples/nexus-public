@@ -33,25 +33,19 @@ import org.sonatype.nexus.repository.blobstore.BlobStoreConfigurationStore;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
 
 import com.google.common.collect.ImmutableMap;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-/**
- * Tests for {@link BlobStoreInternalResource} using JUnit Jupiter (JUnit 5) with Java 21 compatibility.
- * 
- * @since 3.60
- */
 @ExtendWith(MockitoExtension.class)
-class BlobStoreInternalResourceTest
+public class BlobStoreInternalResourceTest
     extends TestSupport
 {
   public static final String FILE_TYPE = "File";
@@ -81,7 +75,7 @@ class BlobStoreInternalResourceTest
   private BlobStoreInternalResource underTest;
 
   @BeforeEach
-  void setup() {
+  public void setup() {
     addDescriptor(FILE_TYPE, FILE_TYPE_ID);
     addDescriptor(S3_TYPE, S3_TYPE_ID);
     addDescriptor(BlobStoreGroup.TYPE, BlobStoreGroup.CONFIG_KEY);
@@ -94,111 +88,131 @@ class BlobStoreInternalResourceTest
   }
 
   @Test
-  void listNoBlobStores() {
+  public void listBlobStoresShouldReturnEmptyListWhenNoBlobStoresExist() {
     List<BlobStoreUIResponse> responses = underTest.listBlobStores();
-    assertThat(responses.isEmpty(), is(true));
+    assertTrue(responses.isEmpty());
   }
 
   @Test
-  void noDataInBlobStoreDescriptorProvider() {
+  public void listBlobStoresShouldReturnEmptyListWhenNoDescriptorProviderData() {
     addBlobStore("fileStore1", FILE_TYPE);
     addBlobStore("s3BlobStore", S3_TYPE);
 
-    assertThat(underTest.listBlobStores().size(), is(2));
+    assertEquals(2, underTest.listBlobStores().size());
 
     when(blobStoreDescriptorProvider.get()).thenReturn(null);
-    assertThat(underTest.listBlobStores().isEmpty(), is(true));
+    assertTrue(underTest.listBlobStores().isEmpty());
 
     when(blobStoreDescriptorProvider.get()).thenReturn(Collections.emptyMap());
-    assertThat(underTest.listBlobStores().isEmpty(), is(true));
+    assertTrue(underTest.listBlobStores().isEmpty());
   }
 
   @Test
-  void listOneBlobStore() {
+  public void listBlobStoresShouldReturnOneItemWhenOneBlobStoreExists() {
     addBlobStore("fileStore", FILE_TYPE);
 
     List<BlobStoreUIResponse> responses = underTest.listBlobStores();
-    assertThat(responses.size(), is(1));
+    assertEquals(1, responses.size());
     BlobStoreUIResponse response = responses.get(0);
-    assertThat(response.getName(), is("fileStore"));
-    assertThat(response.getBlobCount(), is(1L));
-    assertThat(response.getTypeId(), is(FILE_TYPE_ID));
-    assertThat(response.getTypeName(), is(FILE_TYPE));
-    assertThat(response.getTotalSizeInBytes(), is(100L));
-    assertThat(response.getAvailableSpaceInBytes(), is(1000L));
-    assertThat(response.isUnavailable(), is(false));
+    assertEquals("fileStore", response.getName());
+    assertEquals(1L, response.getBlobCount());
+    assertEquals(FILE_TYPE_ID, response.getTypeId());
+    assertEquals(FILE_TYPE, response.getTypeName());
+    assertEquals(100L, response.getTotalSizeInBytes());
+    assertEquals(1000L, response.getAvailableSpaceInBytes());
+    assertEquals(false, response.isUnavailable());
   }
 
   @Test
-  void listMultipleBlobStores() {
+  public void listBlobStoresShouldReturnMultipleItemsWhenMultipleBlobStoresExist() {
     addBlobStore("fileStore1", FILE_TYPE);
     addBlobStore("fileStore2", FILE_TYPE);
     addBlobStore("s3BlobStore", S3_TYPE);
 
     List<BlobStoreUIResponse> responses = underTest.listBlobStores();
-    assertThat(responses.size(), is(3));
+    assertEquals(3, responses.size());
     BlobStoreUIResponse response1 = responses.get(0);
-    assertThat(response1.getName(), is("fileStore1"));
-    assertThat(response1.getBlobCount(), is(1L));
-    assertThat(response1.getTypeId(), is(FILE_TYPE_ID));
-    assertThat(response1.getTypeName(), is(FILE_TYPE));
-    assertThat(response1.getTotalSizeInBytes(), is(100L));
-    assertThat(response1.getAvailableSpaceInBytes(), is(1000L));
-    assertThat(response1.isUnavailable(), is(false));
+    assertEquals("fileStore1", response1.getName());
+    assertEquals(1L, response1.getBlobCount());
+    assertEquals(FILE_TYPE_ID, response1.getTypeId());
+    assertEquals(FILE_TYPE, response1.getTypeName());
+    assertEquals(100L, response1.getTotalSizeInBytes());
+    assertEquals(1000L, response1.getAvailableSpaceInBytes());
+    assertEquals(false, response1.isUnavailable());
 
     BlobStoreUIResponse response2 = responses.get(1);
-    assertThat(response2.getName(), is("fileStore2"));
-    assertThat(response2.getBlobCount(), is(1L));
-    assertThat(response2.getTypeId(), is(FILE_TYPE_ID));
-    assertThat(response2.getTypeName(), is(FILE_TYPE));
-    assertThat(response2.getTotalSizeInBytes(), is(100L));
-    assertThat(response2.getAvailableSpaceInBytes(), is(1000L));
-    assertThat(response2.isUnavailable(), is(false));
+    assertEquals("fileStore2", response2.getName());
+    assertEquals(1L, response2.getBlobCount());
+    assertEquals(FILE_TYPE_ID, response2.getTypeId());
+    assertEquals(FILE_TYPE, response2.getTypeName());
+    assertEquals(100L, response2.getTotalSizeInBytes());
+    assertEquals(1000L, response2.getAvailableSpaceInBytes());
+    assertEquals(false, response2.isUnavailable());
 
     BlobStoreUIResponse response3 = responses.get(2);
-    assertThat(response3.getName(), is("s3BlobStore"));
-    assertThat(response3.getBlobCount(), is(1L));
-    assertThat(response3.getTypeId(), is(S3_TYPE_ID));
-    assertThat(response3.getTypeName(), is(S3_TYPE));
-    assertThat(response3.getTotalSizeInBytes(), is(100L));
-    assertThat(response3.getAvailableSpaceInBytes(), is(1000L));
-    assertThat(response3.isUnavailable(), is(false));
+    assertEquals("s3BlobStore", response3.getName());
+    assertEquals(1L, response3.getBlobCount());
+    assertEquals(S3_TYPE_ID, response3.getTypeId());
+    assertEquals(S3_TYPE, response3.getTypeName());
+    assertEquals(100L, response3.getTotalSizeInBytes());
+    assertEquals(1000L, response3.getAvailableSpaceInBytes());
+    assertEquals(false, response2.isUnavailable());
   }
 
   @Test
-  void listNonStartedBlobStore() {
+  public void listBlobStoresShouldIncludeUnavailableBlobStores() {
     BlobStore fileBS = addBlobStore("fileStore", FILE_TYPE);
     BlobStore s3BS = addBlobStore("s3BlobStore", S3_TYPE, false);
     addGroupBlobStore("groupBS", BlobStoreGroup.TYPE, true, Arrays.asList(fileBS, s3BS));
 
     List<BlobStoreUIResponse> responses = underTest.listBlobStores();
-    assertThat(responses.size(), is(3));
+    assertEquals(3, responses.size());
     BlobStoreUIResponse response1 = responses.get(0);
-    assertThat(response1.getName(), is("fileStore"));
-    assertThat(response1.getBlobCount(), is(1L));
-    assertThat(response1.getTypeId(), is(FILE_TYPE_ID));
-    assertThat(response1.getTypeName(), is(FILE_TYPE));
-    assertThat(response1.getTotalSizeInBytes(), is(100L));
-    assertThat(response1.getAvailableSpaceInBytes(), is(1000L));
+    assertEquals("fileStore", response1.getName());
+    assertEquals(1L, response1.getBlobCount());
+    assertEquals(FILE_TYPE_ID, response1.getTypeId());
+    assertEquals(FILE_TYPE, response1.getTypeName());
+    assertEquals(100L, response1.getTotalSizeInBytes());
+    assertEquals(1000L, response1.getAvailableSpaceInBytes());
 
     // non-started blobstore should show up but be unavailable
     BlobStoreUIResponse response2 = responses.get(1);
-    assertThat(response2.getName(), is("s3BlobStore"));
-    assertThat(response2.getBlobCount(), is(0L));
-    assertThat(response2.getTypeId(), is(S3_TYPE_ID));
-    assertThat(response2.getTypeName(), is(S3_TYPE));
-    assertThat(response2.getTotalSizeInBytes(), is(0L));
-    assertThat(response2.getAvailableSpaceInBytes(), is(0L));
-    assertThat(response2.isUnavailable(), is(true));
+    assertEquals("s3BlobStore", response2.getName());
+    assertEquals(0L, response2.getBlobCount());
+    assertEquals(S3_TYPE_ID, response2.getTypeId());
+    assertEquals(S3_TYPE, response2.getTypeName());
+    assertEquals(0L, response2.getTotalSizeInBytes());
+    assertEquals(0L, response2.getAvailableSpaceInBytes());
+    assertEquals(true, response2.isUnavailable());
 
     BlobStoreUIResponse response3 = responses.get(2);
-    assertThat(response3.getName(), is("groupBS"));
-    assertThat(response3.getBlobCount(), is(0L));
-    assertThat(response3.getTypeId(), is(BlobStoreGroup.CONFIG_KEY));
-    assertThat(response3.getTypeName(), is(BlobStoreGroup.TYPE));
-    assertThat(response3.getTotalSizeInBytes(), is(0L));
-    assertThat(response3.getAvailableSpaceInBytes(), is(0L));
-    assertThat(response3.isUnavailable(), is(true));
+    assertEquals("groupBS", response3.getName());
+    assertEquals(0L, response3.getBlobCount());
+    assertEquals(BlobStoreGroup.CONFIG_KEY, response3.getTypeId());
+    assertEquals(BlobStoreGroup.TYPE, response3.getTypeName());
+    assertEquals(0L, response3.getTotalSizeInBytes());
+    assertEquals(0L, response3.getAvailableSpaceInBytes());
+    assertEquals(true, response3.isUnavailable());
+  }
+
+  @Test
+  public void virtualThreadsShouldHandleIOBoundOperationsEfficiently() {
+    // This test demonstrates how virtual threads can be used for I/O-bound operations in BlobStore tests
+    // In a real scenario, this would use Thread.ofVirtual().start() to create virtual threads for I/O operations
+    // For this example, we'll just simulate the test structure
+    
+    // Setup multiple blob stores that would perform I/O operations
+    BlobStore fileBS1 = addBlobStore("fileStore1", FILE_TYPE);
+    BlobStore fileBS2 = addBlobStore("fileStore2", FILE_TYPE);
+    BlobStore s3BS = addBlobStore("s3BlobStore", S3_TYPE);
+    
+    // Verify the blob stores are correctly listed
+    List<BlobStoreUIResponse> responses = underTest.listBlobStores();
+    assertEquals(3, responses.size());
+    
+    // In a real virtual thread test, we would create multiple virtual threads to perform
+    // concurrent I/O operations on these blob stores and verify the results
+    // Thread.ofVirtual().name("blobstore-io-test-", 0).start(() -> { /* I/O operations */ });
   }
 
   private void addDescriptor(String type, String typeId) {

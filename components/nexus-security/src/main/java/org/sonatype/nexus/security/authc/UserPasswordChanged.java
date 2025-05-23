@@ -12,39 +12,39 @@
  */
 package org.sonatype.nexus.security.authc;
 
-import org.sonatype.nexus.common.event.Event;
+import java.io.Serializable;
 
 /**
  * An event fired when the user's password has changed.
+ * <p>
+ * This is an immutable record that represents a password change event in the security system.
+ * It is used by the authentication system to trigger necessary actions after a password change,
+ * such as clearing security caches to ensure the new password takes effect immediately.
+ * <p>
+ * As a record, this class provides built-in immutability, equals/hashCode, and pattern matching
+ * capabilities for more maintainable event handling in the security subsystem.
  *
  * @since 3.13
  */
-public record UserPasswordChanged(
-    String userId,
-    boolean clearCache
-) implements Event
-{
+public record UserPasswordChanged(String userId, boolean clearCache) implements Serializable {
+  
   /**
-   * Constructs a new event with clearCache set to true by default.
+   * Creates a new password changed event with cache clearing enabled by default.
    *
-   * @param userId the ID of the user whose password changed
+   * @param userId the ID of the user whose password has changed
    */
   public UserPasswordChanged(final String userId) {
     this(userId, true);
   }
-
+  
   /**
    * Returns a string representation of this event using Java 21 String Templates.
-   * The userId is partially masked for security purposes.
+   * This provides improved logging and debugging capabilities.
+   *
+   * @return a string representation of this event
    */
   @Override
   public String toString() {
-    // Use String Template to create a more readable representation
-    // Mask part of the userId for security in logs
-    String maskedUserId = userId != null && userId.length() > 3 ?
-        userId.substring(0, 2) + "***" + (userId.length() > 5 ? userId.substring(userId.length() - 2) : "") :
-        userId;
-    
-    return STR."UserPasswordChanged[userId=\{maskedUserId}, clearCache=\{clearCache}]";
+    return STR."UserPasswordChanged[userId=\{userId}, clearCache=\{clearCache}]";
   }
 }

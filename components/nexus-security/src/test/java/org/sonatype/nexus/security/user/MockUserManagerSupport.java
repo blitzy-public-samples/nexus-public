@@ -13,206 +13,141 @@
 package org.sonatype.nexus.security.user;
 
 import java.util.Collections;
-import java.util.Map;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
-
-import org.sonatype.nexus.security.role.RoleIdentifier;
 
 /**
- * An abstract, in-memory UserManager implementation for unit tests.
- * <p>
- * This implementation is optimized for Java 21 virtual threads by using thread-safe collections
- * and non-blocking operations instead of synchronized methods. It uses ConcurrentHashMap
- * for thread-safe storage and atomic operations to avoid blocking that could pin virtual threads.
- * </p>
- * <p>
- * The implementation provides basic CRUD operations for User objects, as well as listing and
- * searching functionality. It is designed to be extended by concrete test implementations
- * that provide specific user data and source information.
- * </p>
+ * Abstract support class for mock user managers used in testing.
+ * Updated for Java 21 virtual thread compatibility with thread-safe collections.
  */
 public abstract class MockUserManagerSupport
     extends AbstractUserManager
 {
-  // Using ConcurrentHashMap for thread-safe operations without synchronization blocks
-  // that could pin virtual threads
-  private final Map<String, User> users = new ConcurrentHashMap<>();
+  // Using ConcurrentHashMap.newKeySet() for thread-safe set implementation compatible with virtual threads
+  private final Set<User> users = ConcurrentHashMap.newKeySet();
+
+  public boolean supportsWrite() {
+    return true;
+  }
 
   /**
-   * Add a user to the in-memory store.
-   *
-   * @param user the user to add
-   * @param userId the user ID to use as the key
-   * @return the added user
+   * Add a user to the manager.
+   * Thread-safe implementation for virtual thread compatibility.
    */
-  public User addUser(User user, String userId) {
-    // Use putIfAbsent for atomic check-and-put operation
-    User existing = users.putIfAbsent(userId, user);
-    if (existing != null) {
-      throw new IllegalArgumentException("User ID already exists: " + userId);
-    }
+  public User addUser(User user, String password) {
+    // ConcurrentHashMap.newKeySet() provides thread-safe add operations
+    this.getUsers().add(user);
     return user;
   }
 
   /**
-   * Update a user in the in-memory store.
-   *
-   * @param user the user to update
-   * @return the updated user
-   * @throws UserNotFoundException if the user does not exist
+   * Update a user in the manager.
+   * Thread-safe implementation for virtual thread compatibility.
    */
   public User updateUser(User user) throws UserNotFoundException {
-    String userId = user.getUserId();
-    // Use computeIfPresent for atomic check-and-update operation
-    User updated = users.computeIfPresent(userId, (key, oldValue) -> user);
-    if (updated == null) {
-      throw new UserNotFoundException(userId);
+    User existingUser = this.getUser(user.getUserId());
+
+    if (existingUser == null) {
+      throw new UserNotFoundException(user.getUserId());
     }
+
     return user;
   }
 
   /**
-   * Delete a user from the in-memory store.
-   *
-   * @param userId the ID of the user to delete
-   * @throws UserNotFoundException if the user does not exist
+   * Delete a user from the manager.
+   * Thread-safe implementation for virtual thread compatibility.
    */
   public void deleteUser(String userId) throws UserNotFoundException {
-    // Use computeIfPresent for atomic check-and-remove operation
-    User removed = users.remove(userId);
-    if (removed == null) {
+    User existingUser = this.getUser(userId);
+
+    if (existingUser == null) {
       throw new UserNotFoundException(userId);
     }
+
+    // ConcurrentHashMap.newKeySet() provides thread-safe remove operations
+    this.getUsers().remove(existingUser);
   }
 
   /**
    * Get a user by ID.
-   *
-   * @param userId the ID of the user to retrieve
-   * @return the user
-   * @throws UserNotFoundException if the user does not exist
+   * Thread-safe implementation for virtual thread compatibility.
    */
-  public User getUser(String userId) throws UserNotFoundException {
-    User user = users.get(userId);
-    if (user == null) {
-      throw new UserNotFoundException(userId);
-    }
-    return user;
-  }
-
-  /**
-   * Get a user by ID, filtering by roles if specified.
-   *
-   * @param userId the ID of the user to retrieve
-   * @param roleIds the set of role IDs to filter by, or null for no filtering
-   * @return the user
-   * @throws UserNotFoundException if the user does not exist
-   */
-  public User getUser(String userId, Set<String> roleIds) throws UserNotFoundException {
-    User user = getUser(userId);
+  public User getUser(String userId) {
+    // Creating a snapshot of users to avoid ConcurrentModificationException
+    // when iterating while the collection might be modified by another thread
+    Set<User> userSnapshot = Set.copyOf(this.getUsers());
     
-    // If no role filtering is requested, return the user as is
-    if (roleIds == null || roleIds.isEmpty()) {
-      return user;
-    }
-    
-    // Create a copy of the user for role filtering
-    User filteredUser = new User();
-    filteredUser.setUserId(user.getUserId());
-    filteredUser.setFirstName(user.getFirstName());
-    filteredUser.setLastName(user.getLastName());
-    filteredUser.setEmailAddress(user.getEmailAddress());
-    filteredUser.setSource(user.getSource());
-    filteredUser.setStatus(user.getStatus());
-    filteredUser.setReadOnly(user.isReadOnly());
-    filteredUser.setVersion(user.getVersion());
-    
-    // Only include roles that match the requested role IDs
-    for (RoleIdentifier role : user.getRoles()) {
-      if (roleIds.contains(role.getRoleId())) {
-        filteredUser.addRole(role);
+    for (User user : userSnapshot) {
+      if (user.getUserId().equals(userId)) {
+        return user;
       }
     }
-    
-    return filteredUser;
+    return null;
+  }
+
+  @Override
+  public User getUser(final String userId, final Set<String> roleIds) throws UserNotFoundException {
+    return getUser(userId);
   }
 
   /**
    * List all user IDs.
-   *
-   * @return a set of user IDs
+   * Thread-safe implementation for virtual thread compatibility.
    */
   public Set<String> listUserIds() {
-    return Collections.unmodifiableSet(users.keySet());
+    // Creating a thread-safe result set
+    Set<String> userIds = ConcurrentHashMap.newKeySet();
+
+    // Creating a snapshot of users to avoid ConcurrentModificationException
+    Set<User> userSnapshot = Set.copyOf(this.getUsers());
+    
+    for (User user : userSnapshot) {
+      userIds.add(user.getUserId());
+    }
+
+    return userIds;
   }
 
   /**
    * List all users.
-   *
-   * @return a set of users
+   * Thread-safe implementation for virtual thread compatibility.
    */
   public Set<User> listUsers() {
-    // Use stream API for efficient collection conversion without synchronization
-    return users.values().stream()
-        .collect(Collectors.toUnmodifiableSet());
+    // Return an unmodifiable view of the users set
+    // ConcurrentHashMap.newKeySet() is already thread-safe for iteration
+    return Collections.unmodifiableSet(this.getUsers());
   }
 
   /**
-   * Search for users based on criteria.
-   *
-   * @param criteria the search criteria
-   * @return a set of matching users
+   * Search users based on criteria.
+   * Thread-safe implementation for virtual thread compatibility.
    */
   public Set<User> searchUsers(UserSearchCriteria criteria) {
-    return filterListInMemeory(listUsers(), criteria);
+    // Creating a snapshot of users to avoid ConcurrentModificationException
+    Set<User> userSnapshot = Set.copyOf(this.getUsers());
+    return this.filterListInMemeory(userSnapshot, criteria);
+  }
+
+  /**
+   * Get the set of users.
+   * @return Thread-safe set of users
+   */
+  protected Set<User> getUsers() {
+    return users;
   }
 
   /**
    * Change a user's password.
-   *
-   * @param userId the ID of the user
-   * @param newPassword the new password
-   * @throws UserNotFoundException if the user does not exist
+   * Thread-safe implementation for virtual thread compatibility.
    */
   public void changePassword(String userId, String newPassword) throws UserNotFoundException {
-    // No-op for mock implementation
+    // empty implementation - no thread safety concerns
   }
 
-  /**
-   * Check if this UserManager is configured.
-   *
-   * @return always throws UnsupportedOperationException
-   */
-  public boolean isConfigured() {
-    throw new UnsupportedOperationException("Not implemented in mock");
-  }
-
-  /**
-   * Get the underlying users map for testing purposes.
-   * <p>
-   * Note: This returns a direct reference to the internal map for testing purposes.
-   * Callers should not modify the map directly to avoid thread-safety issues.
-   * </p>
-   *
-   * @return the users map
-   */
-  protected Map<String, User> getUsers() {
-    return users;
-  }
-  
-  /**
-   * Determines if this UserManager supports write operations.
-   * <p>
-   * This implementation always returns true since it supports adding, updating,
-   * and deleting users.
-   * </p>
-   *
-   * @return true
-   */
   @Override
-  public boolean supportsWrite() {
-    return true;
+  public boolean isConfigured() {
+    throw new UnsupportedOperationException("Not supported yet.");
   }
 }

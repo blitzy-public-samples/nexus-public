@@ -27,24 +27,48 @@ import io.swagger.annotations.ApiModelProperty;
 public record HostedStorageAttributes(
     @ApiModelProperty(value = "Blob store used to store repository contents", example = "default", required = true)
     @NotEmpty
-    @JsonProperty("blobStoreName")
-    String blobStoreName,
-
+    @JsonProperty("blobStoreName") String blobStoreName,
+    
     @ApiModelProperty(value = "Whether to validate uploaded content's MIME type appropriate for the repository format",
         example = "true")
     @NotNull
-    @JsonProperty("strictContentTypeValidation")
-    Boolean strictContentTypeValidation,
-
+    @JsonProperty("strictContentTypeValidation") Boolean strictContentTypeValidation,
+    
     @ApiModelProperty(value = "Controls if deployments of and updates to assets are allowed",
         allowableValues = "allow,allow_once,deny",
         example = "allow_once")
     @NotNull
-    @JsonProperty("writePolicy")
-    String writePolicy
-) {
+    @JsonProperty("writePolicy") String writePolicy)
+    implements StorageAttributesAware
+{
+  /**
+   * Creates a new instance with the specified attributes.
+   */
   @JsonCreator
   public HostedStorageAttributes {
-    // The canonical constructor is automatically generated with validation
+    // Record constructor body - validation can be added here if needed
+  }
+  
+  /**
+   * @return the blob store name
+   */
+  @Override
+  public String getBlobStoreName() {
+    return blobStoreName;
+  }
+
+  /**
+   * @return whether to validate uploaded content's MIME type
+   */
+  @Override
+  public Boolean getStrictContentTypeValidation() {
+    return strictContentTypeValidation;
+  }
+  
+  /**
+   * @return the write policy
+   */
+  public String getWritePolicy() {
+    return writePolicy;
   }
 }

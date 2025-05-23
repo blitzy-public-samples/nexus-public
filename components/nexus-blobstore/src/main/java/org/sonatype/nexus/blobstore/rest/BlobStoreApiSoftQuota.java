@@ -21,17 +21,17 @@ import org.sonatype.nexus.blobstore.quota.internal.SpaceUsedQuota;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
- * Data transfer object for BlobStore soft quota configuration.
- * 
+ * Data Transfer Object for BlobStore Soft Quota configuration.
+ *
  * @since 3.19
  */
 public record BlobStoreApiSoftQuota(
-  @NotBlank
-  @Schema(description = "The type to use such as " + SpaceRemainingQuota.ID + ", or " + SpaceUsedQuota.ID,
-      allowableValues = {SpaceRemainingQuota.ID, SpaceUsedQuota.ID})
-  String type,
+    @NotBlank
+    @Schema(description = "The type to use such as " + SpaceRemainingQuota.ID + ", or " + SpaceUsedQuota.ID,
+           allowableValues = {SpaceRemainingQuota.ID, SpaceUsedQuota.ID})
+    String type,
 
-  @Min(0)
-  @Schema(description = "The limit in MB.")
-  Long limit
+    @Min(0)
+    @Schema(description = "The limit in MB.")
+    Long limit
 ) {}

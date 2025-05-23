@@ -29,31 +29,9 @@ import org.sonatype.nexus.repository.view.Payload;
 public interface ExampleContentFacet
     extends ContentFacet
 {
-  /**
-   * Retrieves content at the specified path.
-   *
-   * @param path the path to retrieve content from
-   * @return the content if found, otherwise empty
-   * @throws IOException if there is a problem retrieving the content
-   */
   Optional<Content> get(String path) throws IOException;
 
-  /**
-   * Stores content at the specified path.
-   *
-   * @param path the path to store content at
-   * @param content the content to store
-   * @return the stored content
-   * @throws IOException if there is a problem storing the content
-   */
   Content put(String path, Payload content) throws IOException;
 
-  /**
-   * Deletes content at the specified path.
-   *
-   * @param path the path to delete content from
-   * @return true if content was deleted
-   * @throws IOException if there is a problem deleting the content
-   */
   boolean delete(String path) throws IOException;
 }

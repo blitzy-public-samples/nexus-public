@@ -32,42 +32,44 @@ import static org.mockito.Mockito.when;
  * @since 2.7
  */
 @ExtendWith(MockitoExtension.class)
-public class CipherKeyHighStrengthConditionTest
+class CipherKeyHighStrengthConditionTest
     extends TestSupport
 {
-  private static final String FAKE_TRANSFORMATION = STR."fake-transformation";
-
-  private CipherKeyHighStrengthCondition condition;
-
-  @Mock
-  private CryptoHelper crypto;
+  private static final String TRANSFORMATION = "transformation";
+  private final String transformationName = STR."fake-\{TRANSFORMATION}";
   
   @Mock
   private EventManager eventManager;
+  
+  @Mock
+  private CryptoHelper crypto;
+
+  private CipherKeyHighStrengthCondition condition;
 
   @BeforeEach
-  public void setUp() throws Exception {
-    condition = new CipherKeyHighStrengthCondition(eventManager, crypto, FAKE_TRANSFORMATION);
+  void setUp() throws Exception {
+    condition = new CipherKeyHighStrengthCondition(eventManager, crypto, transformationName);
   }
 
   @Test
-  public void unsatisfiedWhenTransformStrengthIsLow() throws Exception {
-    when(crypto.getCipherMaxAllowedKeyLength(FAKE_TRANSFORMATION))
+  void unsatisfiedWhenTransformStrengthIsLow() throws Exception {
+    when(crypto.getCipherMaxAllowedKeyLength(transformationName))
         .thenReturn(CipherKeyHighStrengthCondition.MIN_BITS - 1);
     condition.bind();
     assertFalse(condition.isSatisfied());
   }
 
   @Test
-  public void satisfiedWhenTransformStrengthIsHigh() throws Exception {
-    when(crypto.getCipherMaxAllowedKeyLength(FAKE_TRANSFORMATION)).thenReturn(CipherKeyHighStrengthCondition.MIN_BITS);
+  void satisfiedWhenTransformStrengthIsHigh() throws Exception {
+    when(crypto.getCipherMaxAllowedKeyLength(transformationName))
+        .thenReturn(CipherKeyHighStrengthCondition.MIN_BITS);
     condition.bind();
     assertTrue(condition.isSatisfied());
   }
 
   @Test
-  public void satisfiedWhenTransformStrengthIsHigher() throws Exception {
-    when(crypto.getCipherMaxAllowedKeyLength(FAKE_TRANSFORMATION))
+  void satisfiedWhenTransformStrengthIsHigher() throws Exception {
+    when(crypto.getCipherMaxAllowedKeyLength(transformationName))
         .thenReturn(CipherKeyHighStrengthCondition.MIN_BITS + 1);
     condition.bind();
     assertTrue(condition.isSatisfied());

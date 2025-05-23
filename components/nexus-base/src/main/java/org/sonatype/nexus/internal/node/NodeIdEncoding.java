@@ -12,11 +12,8 @@
  */
 package org.sonatype.nexus.internal.node;
 
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateEncodingException;
-import java.util.Locale;
 
 import org.sonatype.nexus.common.text.Strings2;
 import org.sonatype.nexus.ssl.CertificateUtil;
@@ -35,110 +32,54 @@ public class NodeIdEncoding
   }
 
   /**
-   * Encode plain Certificate SHA1 into node-id string.
-   * 
-   * @deprecated SHA-1 is considered insecure. Use {@link #nodeIdForSha256(String)} instead.
+   * Encode plain Certificate SHA-256 into node-id string.
    */
-  @Deprecated
-  public static String nodeIdForSha1(final String input) {
+  public static String nodeIdForSha256(final String input) {
     checkNotNull(input);
     return Strings2.encodeSeparator(input, '-', 8);
   }
 
   /**
-   * Decode node-id into plain SHA1 string.
-   * 
-   * @deprecated SHA-1 is considered insecure. Use {@link #sha256ForNodeId(String)} instead.
+   * Decode node-id into plain SHA-256 string.
    */
-  @Deprecated
-  public static String sha1ForNodeId(final String input) {
+  public static String sha256ForNodeId(final String input) {
     checkNotNull(input);
     return input.replaceAll("-", "");
   }
 
   /**
-   * Encode plain Certificate SHA-256 into node-id string.
-   * 
-   * @since 3.60
+   * Return node-id for certificate using SHA-256 for improved security.
    */
-  public static String nodeIdForSha256(final String input) {
-    checkNotNull(input);
-    return STR."\{Strings2.encodeSeparator(input, '-', 8)}";
-  }
-
-  /**
-   * Decode node-id into plain SHA-256 string.
-   * 
-   * @since 3.60
-   */
-  public static String sha256ForNodeId(final String input) {
-    checkNotNull(input);
-    return STR."\{input.replaceAll("-", "")}";
-  }
-
-  /**
-   * Return node-id for certificate using SHA-1.
-   * 
-   * @deprecated SHA-1 is considered insecure. Use {@link #nodeIdForCertificateSha256(Certificate)} instead.
-   */
-  @Deprecated
   public static String nodeIdForCertificate(final Certificate cert) throws CertificateEncodingException {
     checkNotNull(cert);
-    String sha1 = CertificateUtil.calculateSha1(cert);
-    return nodeIdForSha1(sha1);
+    String sha256 = CertificateUtil.calculateSha256(cert);
+    return nodeIdForSha256(sha256);
   }
 
   /**
-   * Return node-id for certificate using SHA-256.
-   * 
-   * @since 3.60
+   * Return node-id for certificate fingerprint.
    */
-  public static String nodeIdForCertificateSha256(final Certificate cert) throws CertificateEncodingException {
-    checkNotNull(cert);
-    // Use MessageDigest directly to calculate SHA-256 hash of certificate
-    try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      byte[] encodedCert = cert.getEncoded();
-      byte[] hashBytes = digest.digest(encodedCert);
-      
-      // Convert to hex string
-      StringBuilder hexString = new StringBuilder();
-      for (byte b : hashBytes) {
-        String hex = Integer.toHexString(0xff & b);
-        if (hex.length() == 1) {
-          hexString.append('0');
-        }
-        hexString.append(hex);
-      }
-      String sha256 = hexString.toString().toUpperCase(Locale.US);
-      return nodeIdForSha256(sha256);
-    }
-    catch (NoSuchAlgorithmException e) {
-      throw new IllegalStateException("SHA-256 algorithm not available", e);
-    }
-  }
-
-  /**
-   * Return node-id for certificate fingerprint using SHA-1.
-   * 
-   * @deprecated SHA-1 is considered insecure. Use {@link #nodeIdForFingerprintSha256(String)} instead.
-   */
-  @Deprecated
   public static String nodeIdForFingerprint(final String fingerprint) {
     checkNotNull(fingerprint);
-    String sha1 = fingerprint.replace(":", "");
-    return nodeIdForSha1(sha1);
+    String sha256 = fingerprint.replace(":", "");
+    return nodeIdForSha256(sha256);
   }
 
   /**
-   * Return node-id for certificate fingerprint using SHA-256.
-   * 
-   * @since 3.60
+   * @deprecated Replaced by {@link #nodeIdForSha256(String)}. Will be removed in a future release.
    */
-  public static String nodeIdForFingerprintSha256(final String fingerprint) {
-    checkNotNull(fingerprint);
-    // Use String Template for string manipulation
-    String sha256 = STR."\{fingerprint.replace(":", "")}";
-    return nodeIdForSha256(sha256);
+  @Deprecated
+  public static String nodeIdForSha1(final String input) {
+    checkNotNull(input);
+    return STR."\{input.substring(0, 8)}-\{input.substring(8, 16)}-\{input.substring(16, 24)}-\{input.substring(24)}";
+  }
+
+  /**
+   * @deprecated Replaced by {@link #sha256ForNodeId(String)}. Will be removed in a future release.
+   */
+  @Deprecated
+  public static String sha1ForNodeId(final String input) {
+    checkNotNull(input);
+    return input.replaceAll("-", "");
   }
 }

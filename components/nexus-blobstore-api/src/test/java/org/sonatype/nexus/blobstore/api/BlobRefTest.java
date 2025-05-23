@@ -17,6 +17,7 @@ import java.time.ZoneOffset;
 
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
+
 import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -44,6 +45,7 @@ public class BlobRefTest
 
   private static final String[] STORES = {"store-@:@:@name", "@", ":", "abc/+xy&%$#", "store-:@:@:@name-for-testing"};
 
+  // Using ZoneOffset.UTC for consistent behavior across Java versions
   private static final OffsetDateTime DATE_CREATED = OffsetDateTime.of(2024, 1, 1, 10, 30, 45, 0, ZoneOffset.UTC);
 
   private static final String DATE_BASED_REF = DATE_CREATED.format(DATE_TIME_FORMATTER);
@@ -107,6 +109,7 @@ public class BlobRefTest
 
   @Test
   public void testDateBasedLayout() {
+    // Test date-time handling with Java 21's enhanced date/time features
     String blobRefString = String.format("%s@%s@%s", STORE_NAME, BLOB_ID, DATE_BASED_REF);
     BlobRef parsed = BlobRef.parse(blobRefString);
     assertThat(parsed.getBlob(), is(BLOB_ID));
@@ -114,7 +117,12 @@ public class BlobRefTest
     assertThat(parsed.getNode(), isEmptyOrNullString());
     OffsetDateTime blobCreatedRef = parsed.getDateBasedRef();
     assertThat(blobCreatedRef, notNullValue());
+    
+    // Ensure consistent formatting behavior with Java 21
     assertThat(blobCreatedRef.format(DATE_TIME_FORMATTER), is(DATE_CREATED.format(DATE_TIME_FORMATTER)));
+    
+    // Additional verification for Java 21 ZoneId implementation compatibility
+    assertThat(blobCreatedRef.getOffset(), is(ZoneOffset.UTC));
   }
 
   private void assertParsed(final BlobRef parsed, final String storeName) {

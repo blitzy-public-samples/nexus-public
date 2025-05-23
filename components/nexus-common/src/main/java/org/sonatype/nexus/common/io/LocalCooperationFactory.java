@@ -15,8 +15,6 @@ package org.sonatype.nexus.common.io;
 import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.stream.Stream;
 
 import javax.inject.Named;
@@ -40,36 +38,16 @@ public class LocalCooperationFactory
   private final ConcurrentMap<String, CooperatingFuture<?>> localFutures = new ConcurrentHashMap<>();
   
   /**
-   * Virtual Thread executor service for cooperative I/O operations.
-   * Lazily initialized when first needed.
+   * Dedicated map for Virtual Thread-based cooperation futures.
+   * Using a separate map provides better performance for Virtual Thread operations.
    * 
    * @since 3.60
    */
-  private volatile ExecutorService virtualThreadExecutor;
-
-  /**
-   * Gets or creates the Virtual Thread executor service.
-   * 
-   * @return the Virtual Thread executor service
-   * @since 3.60
-   */
-  private synchronized ExecutorService getVirtualThreadExecutor() {
-    if (virtualThreadExecutor == null && isUsingVirtualThreads()) {
-      log.debug("Creating Virtual Thread executor for local cooperation");
-      virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
-    }
-    return virtualThreadExecutor;
-  }
+  private final ConcurrentMap<String, CooperatingFuture<?>> virtualThreadFutures = new ConcurrentHashMap<>();
 
   @Override
   @SuppressWarnings("unchecked")
   protected <T> CooperatingFuture<T> beginCooperation(final String scopedKey, final CooperatingFuture<T> future) {
-    if (isUsingVirtualThreads()) {
-      // Ensure the future has a Virtual Thread executor set
-      if (!future.hasVirtualThreadExecutor()) {
-        future.setVirtualThreadExecutor(getVirtualThreadExecutor());
-      }
-    }
     return (CooperatingFuture<T>) localFutures.putIfAbsent(scopedKey, future);
   }
 
@@ -87,16 +65,48 @@ public class LocalCooperationFactory
   }
   
   /**
-   * Shuts down the Virtual Thread executor service if it exists.
-   * This method should be called when the factory is no longer needed.
-   * 
+   * Begins cooperation for the scoped key using the given future with Virtual Thread support.
+   * This implementation uses a dedicated map for Virtual Thread futures to optimize performance.
+   *
+   * @param scopedKey the scoped key for cooperation
+   * @param future the future to associate with this cooperation
+   * @return {@code null} if the key was not already in use; otherwise the currently associated future
    * @since 3.60
    */
-  public synchronized void shutdown() {
-    if (virtualThreadExecutor != null) {
-      log.debug("Shutting down Virtual Thread executor");
-      virtualThreadExecutor.shutdown();
-      virtualThreadExecutor = null;
-    }
+  @Override
+  @SuppressWarnings("unchecked")
+  protected <T> CooperatingFuture<T> beginVirtualThreadCooperation(final String scopedKey, final CooperatingFuture<T> future) {
+    log.debug("Beginning Virtual Thread cooperation for key: {}", scopedKey);
+    return (CooperatingFuture<T>) virtualThreadFutures.putIfAbsent(scopedKey, future);
+  }
+
+  /**
+   * Ends cooperation for the scoped key and its associated future with Virtual Thread support.
+   * This implementation uses a dedicated map for Virtual Thread futures to optimize performance.
+   *
+   * @param scopedKey the scoped key for cooperation
+   * @param future the future to disassociate from this cooperation
+   * @since 3.60
+   */
+  @Override
+  protected <T> void endVirtualThreadCooperation(final String scopedKey, final CooperatingFuture<T> future) {
+    log.debug("Ending Virtual Thread cooperation for key: {}", scopedKey);
+    virtualThreadFutures.remove(scopedKey, future);
+  }
+  
+  /**
+   * Streams all futures that are currently cooperating with Virtual Thread support.
+   * This implementation uses a dedicated map for Virtual Thread futures to optimize performance.
+   *
+   * @param scope the scope to stream futures from
+   * @return stream of cooperating futures
+   * @since 3.60
+   */
+  @Override
+  protected Stream<CooperatingFuture<?>> streamVirtualThreadFutures(final String scope) {
+    return virtualThreadFutures.entrySet()
+        .stream()
+        .filter(entry -> entry.getKey().startsWith(scope))
+        .map(Entry::getValue);
   }
 }

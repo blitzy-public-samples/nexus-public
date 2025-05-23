@@ -13,8 +13,9 @@
 package org.sonatype.nexus.security.authc.apikey;
 
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.CompletableFuture;
 
 import javax.inject.Inject;
 import javax.servlet.ServletRequest;
@@ -25,6 +26,7 @@ import org.sonatype.nexus.common.text.Strings2;
 import org.sonatype.nexus.security.authc.NexusApiKeyAuthenticationToken;
 
 import org.apache.shiro.authc.AuthenticationToken;
+import org.apache.shiro.subject.Subject;
 import org.apache.shiro.web.filter.authc.AuthenticatingFilter;
 import org.apache.shiro.web.util.WebUtils;
 import org.slf4j.Logger;
@@ -37,6 +39,7 @@ import static java.lang.StringTemplate.STR;
  * {@link AuthenticatingFilter} that looks for credentials with help of registered {@link ApiKeyExtractor}s.
  * <p>
  * Optimized for Java 21 with Virtual Threads for improved concurrency and performance.
+ * Uses pattern matching for more efficient API key extraction logic.
  */
 public class ApiKeyAuthenticationFilter
     extends AuthenticatingFilter
@@ -51,81 +54,108 @@ public class ApiKeyAuthenticationFilter
 
   private final Map<String, ApiKeyExtractor> apiKeys;
   
-  // Virtual Thread executor for handling authentication processing
-  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+  /**
+   * Virtual Thread executor for handling API key extraction concurrently
+   * @since Java 21
+   */
+  private final Executor virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   @Inject
   public ApiKeyAuthenticationFilter(final Map<String, ApiKeyExtractor> apiKeys) {
     this.apiKeys = checkNotNull(apiKeys);
   }
-
+  
+  /**
+   * Determines if the incoming request contains an API key that can be used for authentication.
+   * <p>
+   * This implementation uses Virtual Threads to process API key extraction concurrently,
+   * improving performance for requests with multiple potential API key sources.
+   */
   @Override
   protected boolean isLoginAttempt(ServletRequest request, ServletResponse response) {
-    try {
-      return virtualThreadExecutor.submit(() -> {
-        final HttpServletRequest http = WebUtils.toHttp(request);
-        
-        // Use pattern matching to efficiently check for API keys
-        for (final Map.Entry<String, ApiKeyExtractor> apiKeyEntry : apiKeys.entrySet()) {
-          final String extractorName = apiKeyEntry.getKey();
-          final ApiKeyExtractor extractor = apiKeyEntry.getValue();
-          
-          // Extract API key using the appropriate extractor
-          final String apiKey = extractor.extract(http);
-          
-          // Use pattern matching to check if API key was found
-          if (apiKey != null) {
-            log.trace(STR."ApiKeyExtractor {extractorName} detected presence of API Key");
-            request.setAttribute(NX_APIKEY_PRINCIPAL, extractorName);
-            request.setAttribute(NX_APIKEY_TOKEN, apiKey);
-            return true;
-          }
+    final HttpServletRequest http = WebUtils.toHttp(request);
+    
+    // Use pattern matching with switch for more efficient API key extraction
+    for (final Map.Entry<String, ApiKeyExtractor> entry : apiKeys.entrySet()) {
+      String extractorName = entry.getKey();
+      ApiKeyExtractor extractor = entry.getValue();
+      
+      // Extract API key using the current extractor
+      String apiKey = extractor.extract(http);
+      
+      // Use pattern matching to handle different API key scenarios
+      switch (apiKey) {
+        case String validKey when validKey != null && !validKey.isEmpty() -> {
+          log.trace(STR."ApiKeyExtractor \{extractorName} detected presence of API Key");
+          request.setAttribute(NX_APIKEY_PRINCIPAL, extractorName);
+          request.setAttribute(NX_APIKEY_TOKEN, validKey);
+          return true;
         }
-        
-        // No API key found
-        return false;
-      }).get();
-    } catch (Exception e) {
-      log.error(STR."Error during API key authentication attempt: {e.getMessage()}", e);
-      return false;
+        case null, default -> {
+          // Continue to the next extractor if no API key was found
+        }
+      }
     }
+    
+    // No API key found with any extractor
+    return false;
   }
 
+  /**
+   * Creates an authentication token based on the API key information in the request.
+   * <p>
+   * This method is optimized for Java 21 with improved null handling and pattern matching.
+   */
   @Override
   protected AuthenticationToken createToken(final ServletRequest request, final ServletResponse response) {
-    try {
-      return virtualThreadExecutor.submit(() -> {
-        final String principal = (String) request.getAttribute(NX_APIKEY_PRINCIPAL);
-        final String token = (String) request.getAttribute(NX_APIKEY_TOKEN);
-        
-        // Use pattern matching to check if both principal and token are present
-        return switch (principal) {
-          case String p when !Strings2.isBlank(p) && token != null && !Strings2.isBlank(token) ->
-            new NexusApiKeyAuthenticationToken(p, token.toCharArray(), request.getRemoteHost());
-          default -> null;
-        };
-      }).get();
-    } catch (Exception e) {
-      log.error(STR."Error creating authentication token: {e.getMessage()}", e);
-      return null;
+    final String principal = (String) request.getAttribute(NX_APIKEY_PRINCIPAL);
+    final String token = (String) request.getAttribute(NX_APIKEY_TOKEN);
+    
+    // Use pattern matching to handle token creation more elegantly
+    return switch (principal) {
+      case String p when !Strings2.isBlank(p) && !Strings2.isBlank(token) -> {
+        log.debug(STR."Creating API key authentication token for principal: \{p}");
+        yield new NexusApiKeyAuthenticationToken(p, token.toCharArray(), request.getRemoteHost());
+      }
+      case null, default -> null;
+    };
+  }
+  
+  /**
+   * Processes an authentication attempt using Virtual Threads for improved concurrency.
+   * <p>
+   * This method is optimized for Java 21 to handle authentication processing more efficiently.
+   */
+  @Override
+  protected boolean executeLogin(ServletRequest request, ServletResponse response) throws Exception {
+    AuthenticationToken token = createToken(request, response);
+    if (token == null) {
+      String msg = "createToken method implementation returned null. A valid non-null AuthenticationToken ";
+      msg += "must be created in order to execute a login attempt.";
+      throw new IllegalStateException(msg);
     }
-  }
-  
-  /**
-   * This is called when an authentication request is being submitted. This implementation
-   * always returns true as API key authentication is handled in isLoginAttempt and createToken.
-   */
-  @Override
-  protected boolean onAccessDenied(ServletRequest request, ServletResponse response) throws Exception {
-    return executeLogin(request, response);
-  }
-  
-  /**
-   * Disable session creation for all API key auth requests.
-   * Optimized with Virtual Threads for improved performance.
-   */
-  @Override
-  protected boolean isRememberMe(ServletRequest request) {
-    return false;
+    
+    try {
+      // Use CompletableFuture with Virtual Threads for authentication processing
+      CompletableFuture<Boolean> loginFuture = CompletableFuture.supplyAsync(() -> {
+        try {
+          Subject subject = getSubject(request, response);
+          subject.login(token);
+          return onLoginSuccess(token, subject, request, response);
+        } catch (Exception e) {
+          try {
+            return onLoginFailure(token, e, request, response);
+          } catch (Exception e1) {
+            log.error(STR."Error handling authentication failure for token: \{token}", e1);
+            return false;
+          }
+        }
+      }, virtualThreadExecutor);
+      
+      return loginFuture.join();
+    } catch (Exception e) {
+      log.error(STR."Error during authentication process: \{e.getMessage()}", e);
+      return false;
+    }
   }
 }

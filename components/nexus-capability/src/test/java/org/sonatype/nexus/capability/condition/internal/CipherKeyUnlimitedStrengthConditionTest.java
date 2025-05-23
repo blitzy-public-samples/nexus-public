@@ -42,7 +42,7 @@ public class CipherKeyUnlimitedStrengthConditionTest
 
   @Mock
   private CryptoHelper crypto;
-  
+
   @Mock
   private EventManager eventManager;
 

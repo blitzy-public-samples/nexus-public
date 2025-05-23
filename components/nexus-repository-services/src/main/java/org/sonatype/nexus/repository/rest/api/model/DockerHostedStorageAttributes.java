@@ -23,39 +23,57 @@ import io.swagger.annotations.ApiModelProperty;
  */
 public record DockerHostedStorageAttributes(
     @ApiModelProperty(value = "Blob store used to store repository contents", example = "default", required = true)
-    @JsonProperty("blobStoreName")
-    String blobStoreName,
-
+    @JsonProperty("blobStoreName") String blobStoreName,
+    
     @ApiModelProperty(value = "Whether to validate uploaded content's MIME type appropriate for the repository format",
         example = "true")
-    @JsonProperty("strictContentTypeValidation")
-    Boolean strictContentTypeValidation,
-
+    @JsonProperty("strictContentTypeValidation") Boolean strictContentTypeValidation,
+    
     @ApiModelProperty(value = "Controls if deployments of and updates to assets are allowed",
         allowableValues = "allow,allow_once,deny",
         example = "allow_once")
-    @JsonProperty("writePolicy")
-    String writePolicy,
-
+    @JsonProperty("writePolicy") String writePolicy,
+    
     @ApiModelProperty(value = "Whether to allow redeploying the 'latest' tag but defer to the Deployment Policy for all other tags",
         example = "true")
-    @JsonProperty("latestPolicy")
-    Boolean latestPolicy
-) {
+    @JsonProperty("latestPolicy") Boolean latestPolicy)
+    implements StorageAttributesAware
+{
   /**
-   * Creates a new instance with the given values.
+   * Creates a new instance with the specified attributes.
    */
   @JsonCreator
   public DockerHostedStorageAttributes {
-    // The canonical constructor is automatically generated with validation
+    // Record compact constructor - validation can be added here if needed
+  }
+  
+  /**
+   * @return the blob store name
+   */
+  @Override
+  public String getBlobStoreName() {
+    return blobStoreName;
   }
 
   /**
-   * Returns the hosted storage attributes portion of this record.
-   *
-   * @return the hosted storage attributes
+   * @return whether to validate uploaded content's MIME type
    */
-  public HostedStorageAttributes asHostedStorageAttributes() {
-    return new HostedStorageAttributes(blobStoreName, strictContentTypeValidation, writePolicy);
+  @Override
+  public Boolean getStrictContentTypeValidation() {
+    return strictContentTypeValidation;
+  }
+  
+  /**
+   * @return the write policy
+   */
+  public String getWritePolicy() {
+    return writePolicy;
+  }
+  
+  /**
+   * @return the latest policy
+   */
+  public Boolean getLatestPolicy() {
+    return latestPolicy;
   }
 }

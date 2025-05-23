@@ -13,24 +13,28 @@
 package org.sonatype.nexus.audit.internal;
 
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
+import javax.annotation.PostConstruct;
+import javax.annotation.PreDestroy;
+import javax.inject.Named;
+import javax.inject.Singleton;
 
 import org.sonatype.nexus.audit.AuditData;
 import org.sonatype.nexus.audit.AuditDataRecordedEvent;
 import org.sonatype.nexus.audit.internal.GlobalAuditWebhook.AuditWebhookPayload.Audit;
 import org.sonatype.nexus.webhooks.GlobalWebhook;
+import org.sonatype.nexus.webhooks.Subscription;
 import org.sonatype.nexus.webhooks.WebhookPayload;
 
+import com.google.common.eventbus.AllowConcurrentEvents;
 import com.google.common.eventbus.Subscribe;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
- * Global audit {@link GlobalWebhook} implementation.
- * <p>
- * This webhook dispatches audit events to configured subscribers using Java 21 Virtual Threads
- * for improved concurrency and resource utilization.
+ * Global audit {@link Webhook}.
  *
  * @since 3.1
  */
@@ -39,59 +43,72 @@ import com.google.common.eventbus.Subscribe;
 public class GlobalAuditWebhook
     extends GlobalWebhook
 {
+  private static final Logger log = LoggerFactory.getLogger(GlobalAuditWebhook.class);
+  
   public static final String NAME = "audit";
+  
+  /**
+   * Virtual Thread executor for processing webhook operations asynchronously.
+   */
+  private ExecutorService executor;
+  
+  /**
+   * Initialize the Virtual Thread executor.
+   */
+  @PostConstruct
+  public void init() {
+    executor = Executors.newVirtualThreadPerTaskExecutor();
+  }
+  
+  /**
+   * Clean up resources when the component is destroyed.
+   */
+  @PreDestroy
+  public void cleanup() {
+    if (executor != null) {
+      executor.shutdown();
+    }
+  }
 
   @Override
   public String getName() {
     return NAME;
   }
 
-  /**
-   * Event handler for audit data recorded events.
-   * <p>
-   * Uses Java 21 Virtual Threads for non-blocking, concurrent webhook dispatch,
-   * allowing for thousands of concurrent webhook deliveries with minimal resource overhead.
-   * This is particularly beneficial for high-volume audit environments where many
-   * webhook subscribers may exist.
-   *
-   * @param event the audit data recorded event
-   */
   @Subscribe
+  @AllowConcurrentEvents
   public void on(final AuditDataRecordedEvent event) {
-    // Create the payload from the event data
+    // Create payload from audit data
     AuditData auditData = event.getData();
     AuditWebhookPayload payload = new AuditWebhookPayload();
     payload.setInitiator(auditData.getInitiator());
     payload.setNodeId(auditData.getNodeId());
 
-    // Use pattern matching to safely extract and process audit data
-    Audit audit = switch (auditData) {
-      case AuditData data when data != null -> {
-        yield new Audit(data.getDomain(), data.getType(),
-            data.getContext(), data.getAttributes());
-      }
-      case null -> throw new IllegalArgumentException("Audit data cannot be null");
-    };
-    
+    Audit audit = new Audit(auditData.getDomain(), auditData.getType(),
+        auditData.getContext(), auditData.getAttributes());
     payload.setAudit(audit);
 
-    // Dispatch to all subscribers using Virtual Threads for non-blocking I/O operations
-    getSubscriptions().forEach(subscription -> {
-      // Use Virtual Threads for each webhook dispatch to improve concurrency
-      Executors.newVirtualThreadPerTaskExecutor().execute(() -> {
-        queue(subscription, payload);
+    // Get a snapshot of current subscriptions to avoid concurrent modification issues
+    final var subscriptions = getSubscriptions();
+    
+    // Submit each webhook operation to the Virtual Thread executor
+    subscriptions.forEach(subscription -> {
+      final Subscription s = subscription; // Capture for thread safety
+      final WebhookPayload p = payload;   // Capture for thread safety
+      
+      executor.submit(() -> {
+        try {
+          queue(s, p);
+        } catch (Exception e) {
+          log.error("Error processing audit webhook for subscription {}", s.getId(), e);
+        }
       });
     });
   }
 
-  /**
-   * Webhook payload for audit events.
-   */
   public static class AuditWebhookPayload
       extends WebhookPayload
   {
-    private Audit audit;
-
     public Audit getAudit() {
       return audit;
     }
@@ -100,9 +117,8 @@ public class GlobalAuditWebhook
       this.audit = audit;
     }
 
-    /**
-     * Audit data structure for webhook payloads.
-     */
+    private Audit audit;
+
     public static class Audit
     {
       private String domain;

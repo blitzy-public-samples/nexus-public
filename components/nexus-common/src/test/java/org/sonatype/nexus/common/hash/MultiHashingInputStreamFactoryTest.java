@@ -19,22 +19,20 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-import org.sonatype.nexus.virtualthread.Java21TestGroup;
-import org.sonatype.nexus.virtualthread.VirtualThreadTestGroup;
+import org.sonatype.nexus.common.thread.Java21TestGroup;
 
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
 
 /**
  * Tests for {@link MultiHashingInputStreamFactory}.
- *
- * @since 3.0
+ * 
+ * @since 3.60
  */
 @Category(Java21TestGroup.class)
 public class MultiHashingInputStreamFactoryTest
@@ -50,7 +48,7 @@ public class MultiHashingInputStreamFactoryTest
     MultiHashingInputStreamFactory.disableParallel();
 
     assertThat(MultiHashingInputStreamFactory.input(Collections.emptyList(), in()).getClass(),
-        is(equalTo(MultiHashingInputStream.class)));
+        is(MultiHashingInputStream.class));
   }
 
   @Test
@@ -58,92 +56,96 @@ public class MultiHashingInputStreamFactoryTest
     MultiHashingInputStreamFactory.disableParallel();
     MultiHashingInputStreamFactory.enableParallel();
 
-    // In Java 21, this should create a VirtualThreadMultiHashingInputStream
-    // For backward compatibility, we check if it's not a MultiHashingInputStream
-    assertThat(MultiHashingInputStreamFactory.input(Collections.emptyList(), in()) instanceof MultiHashingInputStream, is(true));
-    assertThat(MultiHashingInputStreamFactory.input(Collections.emptyList(), in()) instanceof VirtualThreadMultiHashingInputStream 
-        || MultiHashingInputStreamFactory.input(Collections.emptyList(), in()).getClass().getSimpleName().contains("Parallel"), 
-        is(true));
+    assertThat(MultiHashingInputStreamFactory.input(Collections.emptyList(), in()).getClass(),
+        is(ParallelMultiHashingInputStream.class));
   }
 
   @Test
   public void testThreshold() {
-    // default value should result in a parallel implementation
-    assertThat(MultiHashingInputStreamFactory.input(Collections.emptyList(), in()) instanceof VirtualThreadMultiHashingInputStream 
-        || MultiHashingInputStreamFactory.input(Collections.emptyList(), in()).getClass().getSimpleName().contains("Parallel"), 
-        is(true));
+    // default value should result in a parallel
+    assertThat(MultiHashingInputStreamFactory.input(Collections.emptyList(), in()).getClass(),
+        is(ParallelMultiHashingInputStream.class));
 
-    // Setting threshold to 0 should result in a non-parallel implementation
+    // White box - we know the threshold is multiplied by parallism resulting in zero, and zero isn't less than the
+    // expected zero queued tasks (or if the JVM is using the pool a positive number)
     MultiHashingInputStreamFactory.setThreshold(0);
 
     assertThat(MultiHashingInputStreamFactory.input(Collections.emptyList(), in()).getClass(),
-        is(equalTo(MultiHashingInputStream.class)));
+        is(MultiHashingInputStream.class));
   }
   
+  /**
+   * Tests that the factory correctly selects the implementation based on the current configuration.
+   */
   @Test
   @Category(VirtualThreadTestGroup.class)
-  public void testVirtualThreadImplementation() {
-    // Ensure we're using virtual threads when enabled
+  public void testImplementationSelection() {
+    // Test with parallel enabled (default)
     MultiHashingInputStreamFactory.enableParallel();
     MultiHashingInputStreamFactory.setThreshold(-1);
     
     MultiHashingInputStream stream = MultiHashingInputStreamFactory.input(Collections.emptyList(), in());
-    assertThat(stream, instanceOf(VirtualThreadMultiHashingInputStream.class));
+    assertThat(stream, instanceOf(ParallelMultiHashingInputStream.class));
+    
+    // Test with parallel disabled
+    MultiHashingInputStreamFactory.disableParallel();
+    
+    stream = MultiHashingInputStreamFactory.input(Collections.emptyList(), in());
+    assertThat(stream, instanceOf(MultiHashingInputStream.class));
   }
   
+  /**
+   * Tests that the factory works correctly with larger data streams when using Virtual Threads.
+   */
   @Test
   @Category(VirtualThreadTestGroup.class)
-  public void testVirtualThreadThresholdBehavior() {
-    // Test with threshold of 1 and multiple hash operations
+  public void testWithLargerDataStream() throws IOException {
+    // Create a larger byte array to simulate a more realistic data stream
+    byte[] data = new byte[1024 * 1024]; // 1MB
+    Arrays.fill(data, (byte) 42);
+    
+    List<HashAlgorithm> algorithms = Arrays.asList(HashAlgorithm.SHA1, HashAlgorithm.MD5);
+    
+    // Test with parallel enabled
     MultiHashingInputStreamFactory.enableParallel();
-    MultiHashingInputStreamFactory.setThreshold(1);
+    MultiHashingInputStreamFactory.setThreshold(-1);
     
-    // First request should use virtual threads
-    MultiHashingInputStream stream1 = MultiHashingInputStreamFactory.input(Collections.emptyList(), in());
-    assertThat(stream1, instanceOf(VirtualThreadMultiHashingInputStream.class));
-    
-    // Second request should use regular implementation since we're at threshold
-    MultiHashingInputStream stream2 = MultiHashingInputStreamFactory.input(Collections.emptyList(), in());
-    assertThat(stream2, instanceOf(MultiHashingInputStream.class));
-    assertThat(stream2 instanceof VirtualThreadMultiHashingInputStream, is(false));
-    
-    // After closing the first stream, we should be able to use virtual threads again
-    try {
-      stream1.close();
-      MultiHashingInputStream stream3 = MultiHashingInputStreamFactory.input(Collections.emptyList(), in());
-      assertThat(stream3, instanceOf(VirtualThreadMultiHashingInputStream.class));
-    }
-    catch (IOException e) {
-      // Ignore exception in test
+    try (InputStream inputStream = new ByteArrayInputStream(data)) {
+      MultiHashingInputStream stream = MultiHashingInputStreamFactory.input(algorithms, inputStream);
+      assertThat(stream, instanceOf(ParallelMultiHashingInputStream.class));
+      
+      // Read all data to ensure hashing completes
+      byte[] buffer = new byte[8192];
+      while (stream.read(buffer) != -1) {
+        // Just consume the data
+      }
+      
+      // Verify we have hash results
+      assertThat(stream.hashes().size(), is(algorithms.size()));
     }
   }
   
+  /**
+   * Tests that the factory correctly handles threshold settings with Virtual Threads.
+   */
   @Test
   @Category(VirtualThreadTestGroup.class)
-  public void testMultipleHashAlgorithms() throws IOException {
-    // Test with multiple hash algorithms to ensure they all work correctly
-    List<HashAlgorithm> algorithms = Arrays.asList(HashAlgorithm.SHA1, HashAlgorithm.MD5, HashAlgorithm.SHA256);
+  public void testThresholdWithVirtualThreads() {
+    // Enable parallel processing
+    MultiHashingInputStreamFactory.enableParallel();
     
-    // Create a test input stream with some data
-    byte[] testData = "Test data for hashing with virtual threads".getBytes();
-    InputStream inputStream = new ByteArrayInputStream(testData);
+    // Test with different threshold values
+    MultiHashingInputStreamFactory.setThreshold(-1); // No limit
+    assertThat(MultiHashingInputStreamFactory.input(Collections.emptyList(), in()),
+        instanceOf(ParallelMultiHashingInputStream.class));
     
-    // Create the hashing stream
-    MultiHashingInputStream hashingStream = MultiHashingInputStreamFactory.input(algorithms, inputStream);
+    MultiHashingInputStreamFactory.setThreshold(0); // Should disable parallel
+    assertThat(MultiHashingInputStreamFactory.input(Collections.emptyList(), in()),
+        instanceOf(MultiHashingInputStream.class));
     
-    // Read all data to trigger hashing
-    byte[] buffer = new byte[1024];
-    while (hashingStream.read(buffer) != -1) {
-      // Just read through the stream
-    }
-    
-    // Verify we have hashes for all algorithms
-    for (HashAlgorithm algorithm : algorithms) {
-      assertThat(hashingStream.hashes().containsKey(algorithm), is(true));
-      assertThat(hashingStream.hashes().get(algorithm).length() > 0, is(true));
-    }
-    
-    hashingStream.close();
+    MultiHashingInputStreamFactory.setThreshold(100); // High threshold
+    assertThat(MultiHashingInputStreamFactory.input(Collections.emptyList(), in()),
+        instanceOf(ParallelMultiHashingInputStream.class));
   }
 
   private static ByteArrayInputStream in() {

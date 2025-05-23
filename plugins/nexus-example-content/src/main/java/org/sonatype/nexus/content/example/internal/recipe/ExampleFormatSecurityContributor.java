@@ -12,15 +12,17 @@
  */
 package org.sonatype.nexus.content.example.internal.recipe;
 
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
+import javax.inject.Inject;
+import javax.inject.Named;
+import javax.inject.Singleton;
 
 import org.sonatype.nexus.repository.Format;
 import org.sonatype.nexus.repository.security.RepositoryFormatSecurityContributor;
 
 /**
  * Example format security contributor.
+ * 
+ * This class is compatible with Java 21 and Apache Shiro 2.0.0.
  *
  * @since 3.24
  */

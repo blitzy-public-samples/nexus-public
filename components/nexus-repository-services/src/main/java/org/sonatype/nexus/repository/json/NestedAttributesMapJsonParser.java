@@ -21,6 +21,7 @@ import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import com.fasterxml.jackson.core.JsonParser;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 import static java.util.Objects.isNull;
 
 /**
@@ -39,12 +40,10 @@ public class NestedAttributesMapJsonParser
   private boolean defaultMapping;
 
   /**
-   * Constructs a new NestedAttributesMapJsonParser.
-   *
-   * @param jsonParser the underlying JsonParser to delegate to
-   * @param root the root NestedAttributesMap to use for navigation
-   * @throws NullPointerException if jsonParser or root is null
+   * Record to represent the parser state for a path part and its corresponding object
    */
+  private record PathPart(String part, Object value) {}
+
   public NestedAttributesMapJsonParser(final JsonParser jsonParser, final NestedAttributesMap root) {
     super(checkNotNull(jsonParser));
     this.root = checkNotNull(root);
@@ -69,13 +68,16 @@ public class NestedAttributesMapJsonParser
 
     // remove the first "/" and then split on any leftover
     for (String part : currentPathInParts()) {
-      // Get the object at the current path part
       Object o = existingChild.get(part);
-
-      // Create or retrieve child if the object is null or a Map
-      // Using pattern matching for Map type when possible
-      if (o == null || o instanceof Map) {
-        existingChild = existingChild.child(part);
+      
+      // Create a PathPart record for pattern matching
+      PathPart pathPart = new PathPart(part, o);
+      
+      // Using record pattern matching to check the value type
+      switch (pathPart) {
+        case PathPart(String p, null) -> existingChild = existingChild.child(p);
+        case PathPart(String p, Map<?, ?> m) -> existingChild = existingChild.child(p);
+        default -> { /* Skip this path part as it's not a Map or null */ }
       }
     }
 
@@ -111,23 +113,40 @@ public class NestedAttributesMapJsonParser
   }
 
   /**
-   * @return the root NestedAttributesMap used by this parser
+   * Get the root NestedAttributesMap.
+   * 
+   * @return the root NestedAttributesMap
    */
   public NestedAttributesMap getRoot() {
     return root;
   }
 
   /**
-   * @return true if the parser is currently inside an array, false otherwise
+   * Check if the parser is currently mapping inside an array.
+   * 
+   * @return true if mapping inside an array, false otherwise
    */
   public boolean isMappingInsideArray() {
     return mappingInsideArray;
   }
 
   /**
-   * @return true if default Jackson mapping should be used, false otherwise
+   * Check if default mapping is enabled.
+   * 
+   * @return true if default mapping is enabled, false otherwise
    */
   public boolean isDefaultMapping() {
     return defaultMapping;
+  }
+
+  /**
+   * Get a formatted error message for JSON parsing issues.
+   * 
+   * @param message the base error message
+   * @param path the current JSON path
+   * @return formatted error message with path information
+   */
+  protected String formatErrorMessage(String message, String path) {
+    return STR."\{message} at path: \{path}";
   }
 }

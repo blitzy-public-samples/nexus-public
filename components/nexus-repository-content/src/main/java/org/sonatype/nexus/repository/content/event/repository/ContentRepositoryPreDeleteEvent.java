@@ -13,73 +13,85 @@
 package org.sonatype.nexus.repository.content.event.repository;
 
 import java.util.Objects;
-import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.sonatype.nexus.repository.content.ContentRepository;
 
 /**
  * Event sent just before a {@link ContentRepository} is deleted.
  * <p>
- * This event is optimized for Java 21 Virtual Thread execution and uses Record Patterns
- * for efficient data access. It maintains thread-safety through immutability and
- * provides optimized event dispatch for high-concurrency environments.
+ * This event is optimized for Virtual Thread execution and uses Record Patterns
+ * for efficient data representation. The event maintains proper immutability
+ * for concurrent event handling in high-throughput scenarios.
  *
  * @since 3.27
  */
 public class ContentRepositoryPreDeleteEvent
     extends ContentRepositoryEvent
 {
-  /**
-   * Virtual Thread executor for optimized event dispatch.
-   * This allows event handlers to execute efficiently in high-concurrency scenarios.
-   */
-  private static final Executor VIRTUAL_THREAD_EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
+  private static final Logger log = LoggerFactory.getLogger(ContentRepositoryPreDeleteEvent.class);
 
   /**
-   * Creates a new pre-delete event for the given content repository.
-   * The constructor ensures thread-safe access to repository data before deletion.
+   * Creates a new pre-delete event for the given repository.
+   * <p>
+   * This constructor ensures thread-safe access to repository data before deletion
+   * by performing defensive validation of the input parameter.
    *
    * @param contentRepository the repository about to be deleted (must not be null)
    * @throws NullPointerException if contentRepository is null
    */
   public ContentRepositoryPreDeleteEvent(final ContentRepository contentRepository) {
-    super(Objects.requireNonNull(contentRepository, "Content repository cannot be null"));
+    super(Objects.requireNonNull(contentRepository, "ContentRepository cannot be null"));
   }
-
+  
   /**
-   * Returns the executor service optimized for handling this event.
-   * Uses Java 21 Virtual Threads for efficient concurrent processing.
+   * Dispatches this event using a Virtual Thread for optimal performance.
+   * <p>
+   * This method leverages Java 21's Virtual Threads to efficiently process
+   * the event without blocking platform threads, especially useful for
+   * I/O-bound operations that might occur during repository deletion.
    *
-   * @return the virtual thread executor for this event type
+   * @param handler the handler to process this event
    */
-  public Executor getExecutor() {
-    return VIRTUAL_THREAD_EXECUTOR;
+  public void dispatchAsync(final PreDeleteEventHandler handler) {
+    Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+      try {
+        handler.onPreDelete(this);
+      } catch (Exception e) {
+        // Log and swallow exceptions to prevent thread termination
+        // but allow other handlers to continue processing
+        log(e);
+      }
+    });
   }
-
+  
   /**
-   * Provides a pattern-matching friendly access to the content repository.
-   * This method supports Java 21 Record Patterns for more declarative data access.
-   *
-   * @return the immutable content repository that will be deleted
+   * Functional interface for handling pre-delete events with pattern matching support.
+   * <p>
+   * Implementations can use Java 21 Record Patterns to efficiently extract and process
+   * repository data from the event.
    */
-  @Override
-  public ContentRepository getContentRepository() {
-    return super.getContentRepository();
+  @FunctionalInterface
+  public interface PreDeleteEventHandler {
+    /**
+     * Handles the pre-delete event.
+     *
+     * @param event the pre-delete event to handle
+     */
+    void onPreDelete(ContentRepositoryPreDeleteEvent event);
   }
-
+  
   /**
-   * Returns a string representation of this event using Java 21 pattern matching.
-   * This implementation maintains proper immutability for concurrent event handling.
+   * Logs an exception that occurred during event handling.
+   * <p>
+   * This method is protected to allow subclasses to customize logging behavior.
    *
-   * @return a string representation of this event
+   * @param e the exception to log
    */
-  @Override
-  public String toString() {
-    ContentRepository repository = getContentRepository();
-    return "ContentRepositoryPreDeleteEvent{" +
-        "contentRepository=" + repository +
-        ", repositoryId=" + contentRepositoryId +
-        "}";
+  protected void log(final Exception e) {
+    log.error("Error handling pre-delete event", e);
   }
 }

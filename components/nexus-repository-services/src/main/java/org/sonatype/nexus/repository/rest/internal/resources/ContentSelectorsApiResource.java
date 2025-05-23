@@ -14,7 +14,7 @@ package org.sonatype.nexus.repository.rest.internal.resources;
 
 import java.util.List;
 import java.util.concurrent.Executors;
-import java.util.function.Supplier;
+import java.util.concurrent.ExecutorService;
 
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
@@ -56,6 +56,8 @@ import static jakarta.ws.rs.core.Response.Status.NOT_FOUND;
 import static org.sonatype.nexus.selector.SelectorConfiguration.EXPRESSION;
 
 /**
+ * REST API resource for managing content selectors.
+ *
  * @since 3.19
  */
 @Produces(APPLICATION_JSON)
@@ -70,6 +72,9 @@ public class ContentSelectorsApiResource
   private final SelectorConfigurationStore store;
 
   private final EventManager eventManager;
+  
+  // Virtual thread executor for database operations
+  private final ExecutorService virtualThreadExecutor;
 
   @Inject
   public ContentSelectorsApiResource(
@@ -82,36 +87,7 @@ public class ContentSelectorsApiResource
     this.selectorManager = checkNotNull(selectorManager);
     this.store = checkNotNull(store);
     this.eventManager = checkNotNull(eventManager);
-  }
-  
-  /**
-   * Execute a database operation using Virtual Threads for improved concurrency.
-   *
-   * @param operation the operation to execute
-   * @param <T> the return type of the operation
-   * @return the result of the operation
-   */
-  private <T> T withVirtualThread(final Supplier<T> operation) {
-    try {
-      return Executors.newVirtualThreadPerTaskExecutor().submit(operation::get).get();
-    }
-    catch (Exception e) {
-      throw new RuntimeException("Error executing operation with virtual thread", e);
-    }
-  }
-  
-  /**
-   * Execute a database operation with no return value using Virtual Threads for improved concurrency.
-   *
-   * @param operation the operation to execute
-   */
-  private void withVirtualThread(final Runnable operation) {
-    try {
-      Executors.newVirtualThreadPerTaskExecutor().submit(operation).get();
-    }
-    catch (Exception e) {
-      throw new RuntimeException("Error executing operation with virtual thread", e);
-    }
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   @GET
@@ -119,9 +95,12 @@ public class ContentSelectorsApiResource
   @RequiresPermissions("nexus:selectors:read")
   @NotCacheable
   public List<ContentSelectorApiResponse> getContentSelectors() {
-    return withVirtualThread(() -> store.browse().stream()
-        .map(ContentSelectorsApiResource::fromSelectorConfiguration)
-        .collect(toList()));
+    // Use virtual threads for database operations
+    return virtualThreadExecutor.submit(() -> 
+        store.browse().stream()
+            .map(ContentSelectorsApiResource::fromSelectorConfiguration)
+            .collect(toList())
+    ).join();
   }
 
   @POST
@@ -129,17 +108,25 @@ public class ContentSelectorsApiResource
   @Validate
   @RequiresPermissions("nexus:selectors:create")
   public void createContentSelector(@Valid final ContentSelectorApiCreateRequest request) {
-    withVirtualThread(() -> {
-      selectorFactory.validateSelector(CselSelector.TYPE, request.getExpression());
+    // Validate selector expression
+    selectorFactory.validateSelector(CselSelector.TYPE, request.getExpression());
+    
+    // Use virtual threads for database operations
+    virtualThreadExecutor.submit(() -> {
+      // Create the selector configuration
       selectorManager.create(request.getName(), CselSelector.TYPE, request.getDescription(),
           singletonMap(EXPRESSION, request.getExpression()));
+      
+      // Find the created configuration
       SelectorConfiguration configuration = findConfigurationByNameOrThrowNotFound(request.getName());
       
-      // Post event using virtual thread for non-blocking event dispatch
-      Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
-          eventManager.post(new ContentSelectorCreatedEvent(configuration)));
+      // Post event using virtual threads for asynchronous dispatch
+      virtualThreadExecutor.submit(() -> 
+          eventManager.post(new ContentSelectorCreatedEvent(configuration))
+      );
+      
       return null;
-    });
+    }).join();
   }
 
   @GET
@@ -147,10 +134,11 @@ public class ContentSelectorsApiResource
   @RequiresAuthentication
   @RequiresPermissions("nexus:selectors:read")
   public ContentSelectorApiResponse getContentSelector(@PathParam("name") final String name) {
-    return withVirtualThread(() -> {
+    // Use virtual threads for database operations
+    return virtualThreadExecutor.submit(() -> {
       SelectorConfiguration configuration = findConfigurationByNameOrThrowNotFound(name);
       return ContentSelectorsApiResource.fromSelectorConfiguration(configuration);
-    });
+    }).join();
   }
 
   @PUT
@@ -161,22 +149,25 @@ public class ContentSelectorsApiResource
   public void updateContentSelector(@PathParam("name") final String name,
                                     @Valid final ContentSelectorApiUpdateRequest request)
   {
-    withVirtualThread(() -> {
-      // Use pattern matching with instanceof to handle different request types
-      if (request instanceof ContentSelectorApiUpdateRequest updateRequest) {
-        SelectorConfiguration configuration = findConfigurationByNameOrThrowNotFound(name);
-        selectorFactory.validateSelector(configuration.getType(), updateRequest.getExpression());
-        
-        configuration.setDescription(updateRequest.getDescription());
-        configuration.setAttributes(singletonMap(EXPRESSION, updateRequest.getExpression()));
-        selectorManager.update(configuration);
-        
-        // Post event using virtual thread for non-blocking event dispatch
-        Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
-            eventManager.post(new ContentSelectorUpdatedEvent(configuration)));
-      }
+    // Use virtual threads for database operations
+    virtualThreadExecutor.submit(() -> {
+      SelectorConfiguration configuration = findConfigurationByNameOrThrowNotFound(name);
+
+      // Validate selector expression
+      selectorFactory.validateSelector(configuration.getType(), request.getExpression());
+
+      // Update configuration
+      configuration.setDescription(request.getDescription());
+      configuration.setAttributes(singletonMap(EXPRESSION, request.getExpression()));
+      selectorManager.update(configuration);
+      
+      // Post event using virtual threads for asynchronous dispatch
+      virtualThreadExecutor.submit(() -> 
+          eventManager.post(new ContentSelectorUpdatedEvent(configuration))
+      );
+      
       return null;
-    });
+    }).join();
   }
 
   @DELETE
@@ -184,25 +175,41 @@ public class ContentSelectorsApiResource
   @RequiresAuthentication
   @RequiresPermissions("nexus:selectors:delete")
   public void deleteContentSelector(@PathParam("name") final String name) {
-    withVirtualThread(() -> {
+    // Use virtual threads for database operations
+    virtualThreadExecutor.submit(() -> {
       SelectorConfiguration configuration = findConfigurationByNameOrThrowNotFound(name);
+
+      // Delete configuration
       selectorManager.delete(configuration);
       
-      // Post event using virtual thread for non-blocking event dispatch
-      Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
-          eventManager.post(new ContentSelectorDeletedEvent(configuration)));
+      // Post event using virtual threads for asynchronous dispatch
+      virtualThreadExecutor.submit(() -> 
+          eventManager.post(new ContentSelectorDeletedEvent(configuration))
+      );
+      
       return null;
-    });
+    }).join();
   }
 
   private SelectorConfiguration findConfigurationByNameOrThrowNotFound(final String name) {
+    // Using Java 21 String Templates for error message formatting
     return selectorManager.findByName(name)
         .orElseThrow(() -> new WebApplicationMessageException(NOT_FOUND, 
-            STR."No selector found for \{name}",
-            APPLICATION_JSON));
+            STR."No selector found for \{name}", APPLICATION_JSON));
   }
 
   private static ContentSelectorApiResponse fromSelectorConfiguration(final SelectorConfiguration selectorConfiguration) {
+    // Using pattern matching for instanceof check (though simple in this case)
+    if (selectorConfiguration instanceof SelectorConfiguration config) {
+      ContentSelectorApiResponse response = new ContentSelectorApiResponse();
+      response.setName(config.getName());
+      response.setType(config.getType());
+      response.setDescription(config.getDescription());
+      response.setExpression(config.getAttributes().get(EXPRESSION));
+      return response;
+    }
+    
+    // This is a fallback case that shouldn't be reached in practice
     ContentSelectorApiResponse response = new ContentSelectorApiResponse();
     response.setName(selectorConfiguration.getName());
     response.setType(selectorConfiguration.getType());
@@ -210,5 +217,4 @@ public class ContentSelectorsApiResource
     response.setExpression(selectorConfiguration.getAttributes().get(EXPRESSION));
     return response;
   }
-
 }

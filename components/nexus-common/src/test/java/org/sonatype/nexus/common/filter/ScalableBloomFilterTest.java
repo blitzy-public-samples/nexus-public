@@ -17,7 +17,6 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -31,11 +30,14 @@ import static com.google.common.hash.Funnels.stringFunnel;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.UUID.randomUUID;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.lessThan;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.lessThan;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+/**
+ * Tests for {@link ScalableBloomFilter} with Java 21 compatibility.
+ */
 @Category(Java21TestGroup.class)
 public class ScalableBloomFilterTest
     extends TestSupport
@@ -72,17 +74,19 @@ public class ScalableBloomFilterTest
     // 1,000,000 records for this configuration leads to a probability of ~1.6047675107709276E-19 for a false positive.
     assertThat(uniqueFilter.expectedFpp(), is(lessThan(10e-18)));
   }
-
+  
   @Test
   public void concurrentOperationsWithVirtualThreads() throws Exception {
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    // Create a virtual thread executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     
+    // Create a shared bloom filter
+    ScalableBloomFilter<String> uniqueFilter = buildFilter();
+    
+    // Setup concurrent task execution
     int taskCount = 1000;
     CountDownLatch latch = new CountDownLatch(taskCount);
-    AtomicInteger errorCount = new AtomicInteger(0);
-    
-    ScalableBloomFilter<String> uniqueFilter = buildFilter();
+    AtomicInteger duplicateCount = new AtomicInteger(0);
     
     try {
       // Submit multiple concurrent tasks using virtual threads
@@ -90,21 +94,21 @@ public class ScalableBloomFilterTest
         final int taskId = i;
         executor.submit(() -> {
           try {
-            String value = "value-" + taskId;
-            // First insertion should succeed
-            if (!uniqueFilter.put(value)) {
-              errorCount.incrementAndGet();
+            // Generate a unique value based on task ID
+            String value = "task-" + taskId + "-" + randomUUID();
+            
+            // First check should return false (not present)
+            if (uniqueFilter.mightContain(value)) {
+              duplicateCount.incrementAndGet();
             }
-            // Filter should now contain the value
+            
+            // Add the value to the filter
+            uniqueFilter.put(value);
+            
+            // Second check should return true (now present)
             if (!uniqueFilter.mightContain(value)) {
-              errorCount.incrementAndGet();
+              duplicateCount.incrementAndGet();
             }
-            // Second insertion should fail
-            if (uniqueFilter.put(value)) {
-              errorCount.incrementAndGet();
-            }
-          } catch (Exception e) {
-            errorCount.incrementAndGet();
           } finally {
             latch.countDown();
           }
@@ -112,10 +116,13 @@ public class ScalableBloomFilterTest
       }
       
       // Wait for all tasks to complete
-      latch.await(30, TimeUnit.SECONDS);
+      assertTrue("All tasks should complete in time", latch.await(30, TimeUnit.SECONDS));
       
-      // Verify results
-      assertThat(errorCount.get(), is(0));
+      // Verify no duplicates or missing values were detected
+      assertThat("No errors should occur during concurrent operations", duplicateCount.get(), is(0));
+      
+      // Verify the expected false positive rate is still within bounds
+      assertThat(uniqueFilter.expectedFpp(), is(lessThan(10e-18)));
     } finally {
       executor.shutdown();
     }

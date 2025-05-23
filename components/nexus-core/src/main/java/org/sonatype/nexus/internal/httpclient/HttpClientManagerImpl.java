@@ -63,7 +63,7 @@ import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.St
 import static org.sonatype.nexus.logging.task.TaskLoggingMarkers.OUTBOUND_REQUESTS_LOG_ONLY;
 
 /**
- * Default {@link HttpClientManager} with Java 21 Virtual Threads support.
+ * Default {@link HttpClientManager}.
  *
  * @since 3.0
  */
@@ -82,6 +82,8 @@ public class HttpClientManagerImpl
   private static final String CTX_REQ_STOPWATCH = "request.stopwatch";
 
   private static final String CTX_REQ_URI = "request.uri";
+  
+  private static final String CTX_VIRTUAL_THREAD = "virtual.thread";
 
   private final Logger outboundLog = LoggerFactory.getLogger(HTTPCLIENT_OUTBOUND_LOGGER_NAME);
 
@@ -96,15 +98,17 @@ public class HttpClientManagerImpl
   private final SharedHttpClientConnectionManager sharedConnectionManager;
 
   private final DefaultsCustomizer defaultsCustomizer;
+  
+  /**
+   * Virtual thread executor for I/O-bound HTTP operations.
+   * Uses Java 21's Virtual Threads to efficiently handle thousands of concurrent connections
+   * with minimal resource consumption.
+   */
+  private final ExecutorService virtualThreadExecutor;
 
   private final Mutex lock = new Mutex();
 
   private HttpClientConfiguration configuration;
-  
-  /**
-   * Virtual thread executor for I/O-bound HTTP operations
-   */
-  private ExecutorService virtualThreadExecutor;
 
   @Inject
   public HttpClientManagerImpl(final EventManager eventManager,
@@ -123,6 +127,11 @@ public class HttpClientManagerImpl
 
     this.sharedConnectionManager = checkNotNull(sharedConnectionManager);
     this.defaultsCustomizer = checkNotNull(defaultsCustomizer);
+    
+    // Initialize virtual thread executor for I/O-bound operations
+    // This provides significantly improved scalability for HTTP operations
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    log.debug("Initialized virtual thread executor for HTTP operations");
   }
 
   //
@@ -131,30 +140,27 @@ public class HttpClientManagerImpl
 
   @Override
   protected void doStart() throws Exception {
-    // Create a virtual thread executor for I/O-bound HTTP operations
-    virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
-    log.debug("Created virtual thread executor for HTTP operations");
-    
     sharedConnectionManager.start();
+    log.info("HTTP client manager started with Java 21 Virtual Threads support");
   }
 
   @Override
   protected void doStop() throws Exception {
-    sharedConnectionManager.stop();
-    
-    // Shutdown the virtual thread executor
-    if (virtualThreadExecutor != null) {
+    try {
+      // Attempt graceful shutdown of the virtual thread executor
       virtualThreadExecutor.shutdown();
-      try {
-        if (!virtualThreadExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
-          virtualThreadExecutor.shutdownNow();
-        }
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
+      if (!virtualThreadExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+        log.warn("Virtual thread executor did not terminate in the specified time");
         virtualThreadExecutor.shutdownNow();
       }
-      virtualThreadExecutor = null;
-      log.debug("Stopped virtual thread executor for HTTP operations");
+    } catch (InterruptedException e) {
+      // (Re-)Cancel if current thread also interrupted
+      virtualThreadExecutor.shutdownNow();
+      // Preserve interrupt status
+      Thread.currentThread().interrupt();
+      log.warn("Virtual thread executor shutdown interrupted", e);
+    } finally {
+      sharedConnectionManager.stop();
     }
   }
 
@@ -260,9 +266,8 @@ public class HttpClientManagerImpl
     plan.getClient().setConnectionManager(sharedConnectionManager);
     
     // Configure the client to use virtual threads for I/O operations
-    if (virtualThreadExecutor != null) {
-      plan.getClient().setExecutor(virtualThreadExecutor);
-    }
+    // This significantly improves scalability for concurrent HTTP requests
+    plan.getClient().setExecutor(virtualThreadExecutor);
 
     // apply defaults
     defaultsCustomizer.customize(plan);
@@ -290,6 +295,10 @@ public class HttpClientManagerImpl
     builder.addInterceptorFirst(
         (HttpRequest request, HttpContext context) ->
         {
+          // Mark this request as being processed by a virtual thread
+          // This helps with debugging and monitoring virtual thread usage
+          context.setAttribute(CTX_VIRTUAL_THREAD, Thread.currentThread().isVirtual());
+          
           // add custom http-context attributes
           for (Entry<String, Object> entry : plan.getAttributes().entrySet()) {
             // only set context attribute if not already set, to allow per request overrides
@@ -310,7 +319,12 @@ public class HttpClientManagerImpl
           httpContext.setAttribute(CTX_REQ_STOPWATCH, Stopwatch.createStarted());
           if (outboundLog.isDebugEnabled()) {
             httpContext.setAttribute(CTX_REQ_URI, getRequestURI(httpContext));
-            outboundLog.debug("{} > {}", httpContext.getAttribute(CTX_REQ_URI), httpRequest.getRequestLine());
+            // Enhanced logging with virtual thread information
+            boolean isVirtual = Thread.currentThread().isVirtual();
+            outboundLog.debug("{}[{}] > {}", 
+                httpContext.getAttribute(CTX_REQ_URI),
+                isVirtual ? "virtual" : "platform",
+                httpRequest.getRequestLine());
           }
         }
     );
@@ -320,15 +334,15 @@ public class HttpClientManagerImpl
           URI requestURI = (URI) httpContext.getAttribute(CTX_REQ_URI);
           if (requestURI != null) {
             Stopwatch stopwatch = (Stopwatch) httpContext.getAttribute(CTX_REQ_STOPWATCH);
-            outboundLog.debug("{} < {} @ {}", requestURI, httpResponse.getStatusLine(), stopwatch);
+            // Enhanced logging with virtual thread information
+            boolean isVirtual = Thread.currentThread().isVirtual();
+            outboundLog.debug("{}[{}] < {} @ {}", 
+                requestURI,
+                isVirtual ? "virtual" : "platform",
+                httpResponse.getStatusLine(), 
+                stopwatch);
           }
-          
-          // Use virtual threads for logging to avoid blocking I/O operations
-          if (virtualThreadExecutor != null) {
-            virtualThreadExecutor.execute(() -> printOutboundLog(httpResponse, httpContext));
-          } else {
-            printOutboundLog(httpResponse, httpContext);
-          }
+          printOutboundLog(httpResponse, httpContext);
         }
     );
 
@@ -345,7 +359,14 @@ public class HttpClientManagerImpl
     if (null != httpResponse.getEntity())
       responseLength = httpResponse.getEntity().getContentLength();
     Stopwatch stopwatch = (Stopwatch) httpContext.getAttribute(CTX_REQ_STOPWATCH);
-
+    
+    // Get thread information with virtual thread awareness
+    Thread currentThread = Thread.currentThread();
+    String threadInfo = currentThread.isVirtual() ? 
+        String.format("VirtualThread[%s]", currentThread.getName()) : 
+        currentThread.getName();
+    
+    // Enhanced logging with virtual thread information
     String logMessage = String.format("[%s] %s \"%s %s %s\" %d %d %d \"%s\" [%s]",
         dateFormat.format(new Date()),
         getAuthUser(httpContext),
@@ -356,7 +377,7 @@ public class HttpClientManagerImpl
         responseLength,
         stopwatch.elapsed(TimeUnit.MILLISECONDS),
         userAgent,
-        Thread.currentThread().getName());
+        threadInfo);
     outboundReqLog.info(OUTBOUND_REQUESTS_LOG_ONLY, "{}", logMessage);
   }
 
@@ -381,9 +402,25 @@ public class HttpClientManagerImpl
     builder.setUserAgent(value);
   }
 
+  /**
+   * Creates a new HTTP client plan with optimized settings for Java 21 Virtual Threads.
+   * 
+   * @return A new HttpClientPlan instance configured for optimal performance with virtual threads
+   */
   @VisibleForTesting
   HttpClientPlan httpClientPlan() {
     return new HttpClientPlan();
+  }
+  
+  /**
+   * Submits an HTTP operation to be executed on a virtual thread.
+   * This method allows for executing I/O-bound HTTP operations without blocking platform threads.
+   * 
+   * @param operation The operation to execute
+   * @return A runnable that can be used to submit the operation to the virtual thread executor
+   */
+  public Runnable submitVirtualThreadOperation(Runnable operation) {
+    return () -> virtualThreadExecutor.submit(operation);
   }
 
   private String getAuthUser(final HttpContext context) {

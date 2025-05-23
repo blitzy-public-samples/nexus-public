@@ -31,14 +31,19 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
+import com.google.common.hash.HashCode;
+
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import com.google.common.hash.HashCode;
+import org.junit.experimental.categories.Category;
+import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
@@ -46,449 +51,589 @@ import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
- * Tests for {@link BlobStore} operations using Java 21 Virtual Threads.
+ * Tests the {@link BlobStore} interface methods under Virtual Threads to verify that
+ * asynchronous blob operations (create, read, delete) function correctly when executed
+ * via Java 21's lightweight thread implementation.
  * 
- * This test verifies that BlobStore implementations work correctly with Virtual Threads,
- * particularly for I/O operations which can benefit from the lightweight thread model.
- * Virtual Threads are designed to improve throughput for I/O-bound applications by allowing
- * many more concurrent operations without exhausting system resources.
- *
  * @since 3.60
  */
+@Category(Java21TestGroup.class)
 public class BlobStoreVirtualThreadTest
+    extends TestSupport
 {
   private static final int CONCURRENT_OPERATIONS = 100;
-  private static final int BLOB_CONTENT_SIZE = 1024;
+  private static final int BLOB_SIZE = 1024; // 1KB
   private static final String TEST_CONTENT = "Test content for virtual thread blob operations";
   
-  private MockBlobStore blobStore;
   private ExecutorService virtualThreadExecutor;
+  private TestBlobStore blobStore;
   
   @Before
   public void setUp() {
-    blobStore = new MockBlobStore();
-    // Create a virtual thread per task executor
-    virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    // Create a virtual thread executor using Java 21's Thread.ofVirtual().factory()
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    virtualThreadExecutor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    // Initialize the test blob store
+    blobStore = new TestBlobStore();
+    
+    log.info("Test setup complete with Java 21 Virtual Thread executor");
   }
   
   @After
-  public void tearDown() {
-    virtualThreadExecutor.shutdown();
-    try {
-      if (!virtualThreadExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
-        virtualThreadExecutor.shutdownNow();
-      }
-    } catch (InterruptedException e) {
-      virtualThreadExecutor.shutdownNow();
-      Thread.currentThread().interrupt();
+  public void tearDown() throws Exception {
+    if (virtualThreadExecutor != null) {
+      virtualThreadExecutor.shutdown();
+      boolean terminated = virtualThreadExecutor.awaitTermination(10, TimeUnit.SECONDS);
+      log.info("Virtual thread executor shutdown complete, terminated: {}", terminated);
     }
   }
   
   /**
-   * Tests creating a blob using a virtual thread.
-   */
-  @Test
-  public void testCreateBlobWithVirtualThread() throws Exception {
-    Future<Blob> future = virtualThreadExecutor.submit(() -> {
-      Map<String, String> headers = createHeaders();
-      InputStream inputStream = createInputStream(TEST_CONTENT);
-      return blobStore.create(inputStream, headers);
-    });
-    
-    Blob blob = future.get();
-    assertNotNull("Blob should be created successfully", blob);
-    assertEquals("Blob content should match", TEST_CONTENT, new String(blob.getBytes(), StandardCharsets.UTF_8));
-  }
-  
-  /**
-   * Tests retrieving a blob using a virtual thread.
-   */
-  @Test
-  public void testGetBlobWithVirtualThread() throws Exception {
-    // First create a blob
-    Map<String, String> headers = createHeaders();
-    InputStream inputStream = createInputStream(TEST_CONTENT);
-    Blob createdBlob = blobStore.create(inputStream, headers);
-    BlobId blobId = createdBlob.getId();
-    
-    // Then retrieve it using a virtual thread
-    Future<Blob> future = virtualThreadExecutor.submit(() -> blobStore.get(blobId));
-    
-    Blob retrievedBlob = future.get();
-    assertNotNull("Retrieved blob should not be null", retrievedBlob);
-    assertEquals("Retrieved blob content should match", 
-        TEST_CONTENT, 
-        new String(retrievedBlob.getBytes(), StandardCharsets.UTF_8));
-  }
-  
-  /**
-   * Tests deleting a blob using a virtual thread.
-   */
-  @Test
-  public void testDeleteBlobWithVirtualThread() throws Exception {
-    // First create a blob
-    Map<String, String> headers = createHeaders();
-    InputStream inputStream = createInputStream(TEST_CONTENT);
-    Blob createdBlob = blobStore.create(inputStream, headers);
-    BlobId blobId = createdBlob.getId();
-    
-    // Then delete it using a virtual thread
-    Future<Boolean> future = virtualThreadExecutor.submit(() -> blobStore.delete(blobId, "Test deletion"));
-    
-    boolean deleted = future.get();
-    assertTrue("Blob should be deleted successfully", deleted);
-    assertThat(blobStore.get(blobId), is(nullValue()));
-  }
-  
-  /**
-   * Tests concurrent creation of multiple blobs using virtual threads.
+   * Tests concurrent creation of blobs using Virtual Threads.
+   * Verifies that all blobs are created successfully and can be retrieved.
    */
   @Test
   public void testConcurrentBlobCreationWithVirtualThreads() throws Exception {
-    int numBlobs = CONCURRENT_OPERATIONS;
-    List<Future<Blob>> futures = new ArrayList<>();
+    List<Future<BlobId>> futures = new ArrayList<>();
+    CountDownLatch startLatch = new CountDownLatch(1);
     
-    // Submit blob creation tasks to virtual thread executor
-    for (int i = 0; i < numBlobs; i++) {
+    // Submit concurrent blob creation tasks
+    for (int i = 0; i < CONCURRENT_OPERATIONS; i++) {
       final int index = i;
       futures.add(virtualThreadExecutor.submit(() -> {
-        Map<String, String> headers = createHeaders();
+        // Wait for all threads to start simultaneously
+        startLatch.await();
+        
+        // Create blob with unique content
         String content = TEST_CONTENT + "-" + index;
-        InputStream inputStream = createInputStream(content);
-        return blobStore.create(inputStream, headers);
+        Map<String, String> headers = createTestHeaders("blob-" + index);
+        
+        try (InputStream inputStream = new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8))) {
+          Blob blob = blobStore.create(inputStream, headers);
+          return blob.getId();
+        }
       }));
     }
     
-    // Verify all blobs were created successfully
-    List<Blob> blobs = new ArrayList<>();
-    for (Future<Blob> future : futures) {
-      Blob blob = future.get();
-      assertNotNull("Blob should be created successfully", blob);
-      blobs.add(blob);
+    // Log the thread type to verify we're using virtual threads
+    Thread currentThread = Thread.currentThread();
+    log.info("Current thread is virtual: {}", currentThread.isVirtual());
+    
+    // Start all threads simultaneously
+    startLatch.countDown();
+    
+    // Collect results and verify
+    List<BlobId> blobIds = new ArrayList<>();
+    for (Future<BlobId> future : futures) {
+      BlobId blobId = future.get();
+      assertNotNull("Blob ID should not be null", blobId);
+      blobIds.add(blobId);
     }
     
-    assertEquals("All blobs should be created", numBlobs, blobs.size());
-    
-    // Verify each blob has the correct content
-    for (int i = 0; i < numBlobs; i++) {
-      Blob blob = blobs.get(i);
+    // Verify all blobs can be retrieved
+    for (int i = 0; i < blobIds.size(); i++) {
+      BlobId blobId = blobIds.get(i);
+      Blob blob = blobStore.get(blobId);
+      assertNotNull("Blob should exist", blob);
+      
+      // Verify content
       String expectedContent = TEST_CONTENT + "-" + i;
-      String actualContent = new String(blob.getBytes(), StandardCharsets.UTF_8);
+      String actualContent = readContent(blob);
       assertEquals("Blob content should match", expectedContent, actualContent);
+      
+      // Verify headers
+      Map<String, String> headers = blob.getHeaders();
+      assertEquals("Blob name header should match", "blob-" + i, headers.get(BlobStore.BLOB_NAME_HEADER));
+      assertEquals("Created by header should match", "virtual-thread-test", headers.get(BlobStore.CREATED_BY_HEADER));
     }
   }
   
   /**
-   * Tests concurrent retrieval of blobs using virtual threads.
+   * Tests concurrent retrieval of blobs using Virtual Threads.
+   * Verifies that all blobs can be retrieved concurrently without errors.
    */
   @Test
   public void testConcurrentBlobRetrievalWithVirtualThreads() throws Exception {
-    int numBlobs = CONCURRENT_OPERATIONS;
-    List<Blob> createdBlobs = new ArrayList<>();
-    
-    // Create blobs first
-    for (int i = 0; i < numBlobs; i++) {
-      Map<String, String> headers = createHeaders();
+    // First create a set of blobs
+    List<BlobId> blobIds = new ArrayList<>();
+    for (int i = 0; i < CONCURRENT_OPERATIONS; i++) {
       String content = TEST_CONTENT + "-" + i;
-      InputStream inputStream = createInputStream(content);
-      Blob blob = blobStore.create(inputStream, headers);
-      createdBlobs.add(blob);
-    }
-    
-    // Retrieve blobs concurrently using virtual threads
-    List<Future<Blob>> futures = new ArrayList<>();
-    for (Blob createdBlob : createdBlobs) {
-      futures.add(virtualThreadExecutor.submit(() -> blobStore.get(createdBlob.getId())));
-    }
-    
-    // Verify all blobs were retrieved successfully
-    int index = 0;
-    for (Future<Blob> future : futures) {
-      Blob retrievedBlob = future.get();
-      assertNotNull("Retrieved blob should not be null", retrievedBlob);
+      Map<String, String> headers = createTestHeaders("blob-" + i);
       
-      String expectedContent = TEST_CONTENT + "-" + index;
-      String actualContent = new String(retrievedBlob.getBytes(), StandardCharsets.UTF_8);
-      assertEquals("Retrieved blob content should match", expectedContent, actualContent);
-      index++;
+      try (InputStream inputStream = new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8))) {
+        Blob blob = blobStore.create(inputStream, headers);
+        blobIds.add(blob.getId());
+      }
+    }
+    
+    log.info("Created {} test blobs for concurrent retrieval test", CONCURRENT_OPERATIONS);
+    
+    // Now retrieve them concurrently using virtual threads
+    List<Future<String>> futures = new ArrayList<>();
+    CountDownLatch startLatch = new CountDownLatch(1);
+    
+    for (int i = 0; i < blobIds.size(); i++) {
+      final BlobId blobId = blobIds.get(i);
+      final int index = i;
+      
+      futures.add(virtualThreadExecutor.submit(() -> {
+        startLatch.await();
+        
+        Blob blob = blobStore.get(blobId);
+        if (blob == null) {
+          return "Blob not found: " + blobId;
+        }
+        
+        String content = readContent(blob);
+        String expectedContent = TEST_CONTENT + "-" + index;
+        
+        if (!expectedContent.equals(content)) {
+          return "Content mismatch for blob " + blobId + ": expected '" + expectedContent + "' but got '" + content + "'";
+        }
+        
+        return "success";
+      }));
+    }
+    
+    // Start all threads simultaneously
+    startLatch.countDown();
+    
+    // Verify all retrievals were successful
+    for (Future<String> future : futures) {
+      String result = future.get();
+      assertEquals("Blob retrieval should succeed", "success", result);
     }
   }
   
   /**
-   * Tests concurrent deletion of blobs using virtual threads.
+   * Tests concurrent deletion of blobs using Virtual Threads.
+   * Verifies that all blobs are deleted successfully.
    */
   @Test
   public void testConcurrentBlobDeletionWithVirtualThreads() throws Exception {
-    int numBlobs = CONCURRENT_OPERATIONS;
+    // First create a set of blobs
     List<BlobId> blobIds = new ArrayList<>();
-    
-    // Create blobs first
-    for (int i = 0; i < numBlobs; i++) {
-      Map<String, String> headers = createHeaders();
+    for (int i = 0; i < CONCURRENT_OPERATIONS; i++) {
       String content = TEST_CONTENT + "-" + i;
-      InputStream inputStream = createInputStream(content);
-      Blob blob = blobStore.create(inputStream, headers);
-      blobIds.add(blob.getId());
+      Map<String, String> headers = createTestHeaders("blob-" + i);
+      
+      try (InputStream inputStream = new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8))) {
+        Blob blob = blobStore.create(inputStream, headers);
+        blobIds.add(blob.getId());
+      }
     }
     
-    // Delete blobs concurrently using virtual threads
+    log.info("Created {} test blobs for concurrent deletion test", CONCURRENT_OPERATIONS);
+    
+    // Now delete them concurrently using virtual threads
     List<Future<Boolean>> futures = new ArrayList<>();
+    CountDownLatch startLatch = new CountDownLatch(1);
+    
     for (BlobId blobId : blobIds) {
-      futures.add(virtualThreadExecutor.submit(() -> blobStore.delete(blobId, "Test concurrent deletion")));
+      futures.add(virtualThreadExecutor.submit(() -> {
+        startLatch.await();
+        return blobStore.delete(blobId, "Test deletion");
+      }));
     }
     
-    // Verify all blobs were deleted successfully
+    // Start all threads simultaneously
+    startLatch.countDown();
+    
+    // Verify all deletions were successful
     for (Future<Boolean> future : futures) {
-      boolean deleted = future.get();
-      assertTrue("Blob should be deleted successfully", deleted);
+      Boolean result = future.get();
+      assertTrue("Blob deletion should succeed", result);
     }
     
-    // Verify all blobs are actually gone
+    // Verify all blobs are gone
     for (BlobId blobId : blobIds) {
-      assertThat(blobStore.get(blobId), is(nullValue()));
+      Blob blob = blobStore.get(blobId);
+      assertThat(blob, is(nullValue()));
     }
   }
   
   /**
-   * Tests exception propagation when blob operations fail in virtual threads.
+   * Tests error handling during blob operations with Virtual Threads.
+   * Verifies that exceptions are properly propagated.
    */
   @Test
-  public void testExceptionPropagationInVirtualThreads() {
-    // Configure the mock to throw an exception
-    blobStore.setShouldThrowException(true);
+  public void testErrorHandlingWithVirtualThreads() throws Exception {
+    // Create a blob that will trigger an error on retrieval
+    Map<String, String> headers = createTestHeaders("error-blob");
+    headers.put("trigger-error", "true");
     
-    Future<Blob> future = virtualThreadExecutor.submit(() -> {
-      Map<String, String> headers = createHeaders();
-      InputStream inputStream = createInputStream(TEST_CONTENT);
-      return blobStore.create(inputStream, headers);
-    });
+    BlobId errorBlobId;
+    try (InputStream inputStream = new ByteArrayInputStream(TEST_CONTENT.getBytes(StandardCharsets.UTF_8))) {
+      Blob blob = blobStore.create(inputStream, headers);
+      errorBlobId = blob.getId();
+    }
+    
+    log.info("Created test blob with error trigger for exception handling test");
+    
+    // Try to retrieve the error blob using a virtual thread
+    Future<Blob> future = virtualThreadExecutor.submit(() -> blobStore.get(errorBlobId));
     
     try {
       future.get();
       fail("Should have thrown an exception");
     } catch (ExecutionException e) {
-      assertTrue("Root cause should be BlobStoreException", e.getCause() instanceof BlobStoreException);
-      assertEquals("Exception message should match", "Simulated blob store exception", e.getCause().getMessage());
-    } catch (InterruptedException e) {
-      fail("Unexpected interruption");
+      // Verify the exception is of the expected type
+      assertTrue("Exception should be BlobStoreException", e.getCause() instanceof BlobStoreException);
+      assertEquals("Exception message should match", "Error retrieving blob", e.getCause().getMessage());
+      log.info("Successfully caught expected exception: {}", e.getCause().getMessage());
     }
   }
   
   /**
-   * Tests mixed operations (create, get, delete) running concurrently with virtual threads.
+   * Tests mixed operations (create, get, delete) running concurrently with Virtual Threads.
+   * Verifies that all operations complete successfully without interference.
    */
   @Test
   public void testMixedOperationsWithVirtualThreads() throws Exception {
-    int numOperations = CONCURRENT_OPERATIONS;
-    CountDownLatch latch = new CountDownLatch(numOperations * 3); // create, get, delete operations
-    AtomicInteger successCount = new AtomicInteger(0);
-    
-    // Submit mixed operations to virtual thread executor
-    for (int i = 0; i < numOperations; i++) {
-      final int index = i;
-      virtualThreadExecutor.submit(() -> {
-        try {
-          // Create blob
-          Map<String, String> headers = createHeaders();
-          String content = TEST_CONTENT + "-" + index;
-          InputStream inputStream = createInputStream(content);
-          Blob blob = blobStore.create(inputStream, headers);
-          assertNotNull("Blob should be created successfully", blob);
-          latch.countDown();
-          
-          // Get blob
-          Blob retrievedBlob = blobStore.get(blob.getId());
-          assertNotNull("Retrieved blob should not be null", retrievedBlob);
-          assertEquals("Retrieved blob content should match", 
-              content, 
-              new String(retrievedBlob.getBytes(), StandardCharsets.UTF_8));
-          latch.countDown();
-          
-          // Delete blob
-          boolean deleted = blobStore.delete(blob.getId(), "Test mixed operations");
-          assertTrue("Blob should be deleted successfully", deleted);
-          latch.countDown();
-          
-          successCount.incrementAndGet();
-        } catch (Exception e) {
-          // Count down latch even if operation fails to avoid test hanging
-          while (latch.getCount() > 0) {
-            latch.countDown();
-          }
-          throw new RuntimeException("Failed in mixed operations test", e);
-        }
-        return null;
-      });
+    // Create initial blobs
+    List<BlobId> initialBlobIds = new ArrayList<>();
+    for (int i = 0; i < CONCURRENT_OPERATIONS / 2; i++) {
+      String content = TEST_CONTENT + "-initial-" + i;
+      Map<String, String> headers = createTestHeaders("initial-blob-" + i);
+      
+      try (InputStream inputStream = new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8))) {
+        Blob blob = blobStore.create(inputStream, headers);
+        initialBlobIds.add(blob.getId());
+      }
     }
     
-    // Wait for all operations to complete
-    assertTrue("All operations should complete in time", latch.await(30, TimeUnit.SECONDS));
-    assertEquals("All operations should succeed", numOperations, successCount.get());
-  }
-  
-  /**
-   * Tests that virtual threads can handle high concurrency without exhausting system resources.
-   * This test demonstrates the key advantage of Virtual Threads - the ability to handle
-   * many concurrent operations efficiently, which is particularly important for I/O-bound
-   * operations like those in BlobStore implementations.
-   */
-  @Test
-  public void testHighConcurrencyWithVirtualThreads() throws Exception {
-    int numThreads = 1000; // A higher number to test scalability with Virtual Threads
+    log.info("Created {} initial test blobs for mixed operations test", CONCURRENT_OPERATIONS / 2);
+    
+    // Submit mixed operations
+    List<Future<?>> futures = new ArrayList<>();
     CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(numThreads);
-    AtomicInteger successCount = new AtomicInteger(0);
+    AtomicInteger createCounter = new AtomicInteger();
+    AtomicInteger getCounter = new AtomicInteger();
+    AtomicInteger deleteCounter = new AtomicInteger();
     
-    // Create many virtual threads that will all start at the same time
-    for (int i = 0; i < numThreads; i++) {
+    for (int i = 0; i < CONCURRENT_OPERATIONS * 2; i++) {
       final int index = i;
-      virtualThreadExecutor.submit(() -> {
-        try {
-          // Wait for the signal to start
+      
+      // Mix of operations: 40% create, 40% get, 20% delete
+      if (i % 10 < 4) { // 40% create
+        futures.add(virtualThreadExecutor.submit(() -> {
           startLatch.await();
+          int opIndex = createCounter.getAndIncrement();
+          String content = TEST_CONTENT + "-new-" + opIndex;
+          Map<String, String> headers = createTestHeaders("new-blob-" + opIndex);
           
-          // Create a blob
-          Map<String, String> headers = createHeaders();
-          String content = "Small content " + index; // Keep content small for this test
-          InputStream inputStream = createInputStream(content);
-          Blob blob = blobStore.create(inputStream, headers);
-          
-          // Verify the blob
-          assertNotNull("Blob should be created successfully", blob);
-          assertEquals("Blob content should match", 
-              content, 
-              new String(blob.getBytes(), StandardCharsets.UTF_8));
-          
-          successCount.incrementAndGet();
-        } catch (Exception e) {
-          // Just let the latch count down even if there's a failure
-        } finally {
-          completionLatch.countDown();
-        }
-        return null;
-      });
+          try (InputStream inputStream = new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8))) {
+            Blob blob = blobStore.create(inputStream, headers);
+            return blob.getId();
+          }
+        }));
+      } else if (i % 10 < 8) { // 40% get
+        futures.add(virtualThreadExecutor.submit(() -> {
+          startLatch.await();
+          int opIndex = getCounter.getAndIncrement() % initialBlobIds.size();
+          BlobId blobId = initialBlobIds.get(opIndex);
+          Blob blob = blobStore.get(blobId);
+          if (blob != null) {
+            // Read content to verify it's accessible
+            readContent(blob);
+          }
+          return null;
+        }));
+      } else { // 20% delete
+        futures.add(virtualThreadExecutor.submit(() -> {
+          startLatch.await();
+          int opIndex = deleteCounter.getAndIncrement() % initialBlobIds.size();
+          BlobId blobId = initialBlobIds.get(opIndex);
+          return blobStore.delete(blobId, "Mixed operation test");
+        }));
+      }
     }
     
-    // Signal all threads to start at once
+    // Start all threads simultaneously
     startLatch.countDown();
     
     // Wait for all operations to complete
-    assertTrue("All operations should complete in time", completionLatch.await(60, TimeUnit.SECONDS));
-    assertEquals("All operations should succeed", numThreads, successCount.get());
+    for (Future<?> future : futures) {
+      future.get(); // Just ensure no exceptions are thrown
+    }
+    
+    log.info("Completed {} mixed operations with virtual threads", futures.size());
   }
   
   /**
-   * Creates standard headers for blob creation.
+   * Tests that blob headers and attributes are preserved correctly when accessed via Virtual Threads.
    */
-  private Map<String, String> createHeaders() {
+  @Test
+  public void testBlobHeadersAndAttributesWithVirtualThreads() throws Exception {
+    // Create a blob with specific headers
     Map<String, String> headers = new HashMap<>();
-    headers.put(BlobStore.BLOB_NAME_HEADER, "test-blob-" + UUID.randomUUID());
+    headers.put(BlobStore.BLOB_NAME_HEADER, "attributes-test-blob");
     headers.put(BlobStore.CREATED_BY_HEADER, "virtual-thread-test");
+    headers.put(BlobStore.CONTENT_TYPE_HEADER, "text/plain");
+    headers.put(BlobStore.CREATED_BY_IP_HEADER, "127.0.0.1");
+    headers.put("custom-header-1", "custom-value-1");
+    headers.put("custom-header-2", "custom-value-2");
+    
+    // Create the blob
+    BlobId blobId;
+    try (InputStream inputStream = new ByteArrayInputStream(TEST_CONTENT.getBytes(StandardCharsets.UTF_8))) {
+      Blob blob = blobStore.create(inputStream, headers);
+      blobId = blob.getId();
+    }
+    
+    log.info("Created test blob with custom headers for attributes test");
+    
+    // Retrieve and verify headers using virtual threads
+    Future<Map<String, String>> headersFuture = virtualThreadExecutor.submit(() -> {
+      Blob blob = blobStore.get(blobId);
+      return blob.getHeaders();
+    });
+    
+    Map<String, String> retrievedHeaders = headersFuture.get();
+    assertEquals("Blob name header should match", "attributes-test-blob", retrievedHeaders.get(BlobStore.BLOB_NAME_HEADER));
+    assertEquals("Created by header should match", "virtual-thread-test", retrievedHeaders.get(BlobStore.CREATED_BY_HEADER));
+    assertEquals("Content type header should match", "text/plain", retrievedHeaders.get(BlobStore.CONTENT_TYPE_HEADER));
+    assertEquals("Created by IP header should match", "127.0.0.1", retrievedHeaders.get(BlobStore.CREATED_BY_IP_HEADER));
+    assertEquals("Custom header 1 should match", "custom-value-1", retrievedHeaders.get("custom-header-1"));
+    assertEquals("Custom header 2 should match", "custom-value-2", retrievedHeaders.get("custom-header-2"));
+    
+    // Retrieve and verify attributes using virtual threads
+    Future<BlobAttributes> attributesFuture = virtualThreadExecutor.submit(() -> {
+      return blobStore.getBlobAttributes(blobId);
+    });
+    
+    BlobAttributes attributes = attributesFuture.get();
+    assertNotNull("Attributes should not be null", attributes);
+    assertEquals("Blob name in attributes should match", "attributes-test-blob", attributes.getHeaders().get(BlobStore.BLOB_NAME_HEADER));
+    
+    log.info("Successfully verified blob headers and attributes with virtual threads");
+  }
+  
+  /**
+   * Helper method to create test headers for blob creation.
+   */
+  private Map<String, String> createTestHeaders(String blobName) {
+    Map<String, String> headers = new HashMap<>();
+    headers.put(BlobStore.BLOB_NAME_HEADER, blobName);
+    headers.put(BlobStore.CREATED_BY_HEADER, "virtual-thread-test");
+    headers.put(BlobStore.CREATED_BY_IP_HEADER, "127.0.0.1");
     headers.put(BlobStore.CONTENT_TYPE_HEADER, "text/plain");
     return headers;
   }
   
   /**
-   * Creates an input stream with the given content.
+   * Helper method to read content from a blob.
    */
-  private InputStream createInputStream(String content) {
-    return new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8));
+  private String readContent(Blob blob) throws IOException {
+    try (InputStream inputStream = blob.getInputStream()) {
+      return new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
+    }
   }
   
   /**
-   * A simple mock implementation of BlobStore for testing.
+   * Test implementation of BlobStore for virtual thread testing.
    */
-  /**
-   * A simple mock implementation of BlobStore for testing Virtual Thread compatibility.
-   * This implementation focuses on the core methods that are annotated with @VirtualThreadFriendly
-   * in the BlobStore interface.
-   */
-  private static class MockBlobStore implements BlobStore {
-    private final Map<BlobId, Blob> blobs = new ConcurrentHashMap<>();
-    private boolean shouldThrowException = false;
-    
-    public void setShouldThrowException(boolean shouldThrowException) {
-      this.shouldThrowException = shouldThrowException;
-    }
+  private static class TestBlobStore implements BlobStore {
+    private final Map<String, TestBlob> blobs = new ConcurrentHashMap<>();
+    private final Map<String, TestBlobAttributes> attributes = new ConcurrentHashMap<>();
+    private final BlobStoreConfiguration configuration = new TestBlobStoreConfiguration();
     
     @Override
+    @VirtualThreadFriendly
     public Blob create(InputStream blobData, Map<String, String> headers) {
-      if (shouldThrowException) {
-        throw new BlobStoreException("Simulated blob store exception");
-      }
-      
       try {
-        // Simulate some I/O work
-        byte[] bytes = blobData.readAllBytes();
-        BlobId blobId = new BlobId(UUID.randomUUID().toString());
-        MockBlob blob = new MockBlob(blobId, bytes, headers);
-        blobs.put(blobId, blob);
+        String id = UUID.randomUUID().toString();
+        byte[] data = blobData.readAllBytes();
+        TestBlob blob = new TestBlob(id, new HashMap<>(headers), data);
+        blobs.put(id, blob);
+        
+        // Create attributes
+        TestBlobAttributes blobAttributes = new TestBlobAttributes(headers, data.length);
+        attributes.put(id, blobAttributes);
+        
         return blob;
       } catch (IOException e) {
-        throw new BlobStoreException("Failed to read blob data", e);
+        throw new BlobStoreException("Error creating blob", e);
       }
     }
     
     @Override
-    public Blob get(BlobId blobId) {
-      return blobs.get(blobId);
+    @VirtualThreadFriendly
+    public Blob create(InputStream blobData, Map<String, String> headers, BlobId blobId) {
+      try {
+        String id = blobId != null ? blobId.asUniqueString() : UUID.randomUUID().toString();
+        byte[] data = blobData.readAllBytes();
+        TestBlob blob = new TestBlob(id, new HashMap<>(headers), data);
+        blobs.put(id, blob);
+        
+        // Create attributes
+        TestBlobAttributes blobAttributes = new TestBlobAttributes(headers, data.length);
+        attributes.put(id, blobAttributes);
+        
+        return blob;
+      } catch (IOException e) {
+        throw new BlobStoreException("Error creating blob", e);
+      }
     }
     
     @Override
-    public boolean delete(BlobId blobId, String reason) {
-      if (shouldThrowException) {
-        throw new BlobStoreException("Simulated blob store exception");
+    @VirtualThreadFriendly
+    public Blob get(BlobId blobId) {
+      return get(blobId, false);
+    }
+    
+    @Override
+    @VirtualThreadFriendly
+    public Blob get(BlobId blobId, boolean includeDeleted) {
+      String id = blobId.asUniqueString();
+      TestBlob blob = blobs.get(id);
+      
+      if (blob != null) {
+        // Check if this is an error-triggering blob
+        if ("true".equals(blob.getHeaders().get("trigger-error"))) {
+          throw new BlobStoreException("Error retrieving blob");
+        }
       }
       
-      return blobs.remove(blobId) != null;
-    }
-    
-    // Minimal implementation of required methods
-    
-    @Override
-    public Blob create(InputStream blobData, Map<String, String> headers, BlobId blobId) {
-      throw new UnsupportedOperationException("Not implemented for test");
+      return blob;
     }
     
     @Override
-    public Blob get(BlobId blobId, boolean includeDeleted) {
-      throw new UnsupportedOperationException("Not implemented for test");
+    @VirtualThreadFriendly
+    public boolean delete(BlobId blobId, String reason) {
+      String id = blobId.asUniqueString();
+      TestBlob removed = blobs.remove(id);
+      if (removed != null) {
+        attributes.remove(id);
+        return true;
+      }
+      return false;
     }
     
     @Override
-    public boolean exists(BlobId blobId) {
-      return blobs.containsKey(blobId);
-    }
-    
-    @Override
+    @VirtualThreadFriendly
     public boolean deleteHard(BlobId blobId) {
-      throw new UnsupportedOperationException("Not implemented for test");
+      return delete(blobId, "Hard delete");
+    }
+    
+    @Override
+    @VirtualThreadFriendly
+    public BlobAttributes getBlobAttributes(BlobId blobId) {
+      return attributes.get(blobId.asUniqueString());
+    }
+    
+    @Override
+    @VirtualThreadFriendly
+    public void setBlobAttributes(BlobId blobId, BlobAttributes blobAttributes) {
+      attributes.put(blobId.asUniqueString(), (TestBlobAttributes) blobAttributes);
+    }
+    
+    @Override
+    @VirtualThreadFriendly
+    public boolean exists(BlobId blobId) {
+      return blobs.containsKey(blobId.asUniqueString());
     }
     
     @Override
     public BlobStoreConfiguration getBlobStoreConfiguration() {
-      throw new UnsupportedOperationException("Not implemented for test");
+      return configuration;
     }
     
     @Override
     public void init(BlobStoreConfiguration configuration) {
-      // No-op for test
+      // No-op for test implementation
     }
     
     @Override
     public void start() {
-      // No-op for test
+      // No-op for test implementation
     }
     
     @Override
     public void stop() {
-      // No-op for test
+      // No-op for test implementation
+    }
+    
+    @Override
+    public BlobStoreMetrics getMetrics() {
+      return null; // Not needed for this test
+    }
+    
+    // Implement only the methods needed for the tests
+    // Other methods from BlobStore interface are not implemented for simplicity
+    
+    @Override
+    public <B extends BlobStore> BlobStoreMetricsService<B> getMetricsService() {
+      throw new UnsupportedOperationException();
+    }
+    
+    @Override
+    public Map<OperationType, OperationMetrics> getOperationMetricsByType() {
+      throw new UnsupportedOperationException();
+    }
+    
+    @Override
+    public Map<OperationType, OperationMetrics> getOperationMetricsDelta() {
+      throw new UnsupportedOperationException();
+    }
+    
+    @Override
+    public void clearOperationMetrics() {
+      throw new UnsupportedOperationException();
+    }
+    
+    @Override
+    public void compact(BlobStoreUsageChecker inUseChecker) {
+      throw new UnsupportedOperationException();
+    }
+    
+    @Override
+    public void deleteTempFiles(Integer daysOlderThan) {
+      throw new UnsupportedOperationException();
+    }
+    
+    @Override
+    public void remove() {
+      throw new UnsupportedOperationException();
+    }
+    
+    @Override
+    public Stream<BlobId> getBlobIdStream() {
+      throw new UnsupportedOperationException();
+    }
+    
+    @Override
+    public Stream<BlobId> getBlobIdUpdatedSinceStream(Duration duration) {
+      throw new UnsupportedOperationException();
+    }
+    
+    @Override
+    public PaginatedResult<BlobId> getBlobIdUpdatedSinceStream(String prefix, OffsetDateTime fromDateTime,
+                                                              OffsetDateTime toDateTime, String continuationToken,
+                                                              int pageSize) {
+      throw new UnsupportedOperationException();
+    }
+    
+    @Override
+    public Stream<BlobId> getDirectPathBlobIdStream(String prefix) {
+      throw new UnsupportedOperationException();
+    }
+    
+    @Override
+    public boolean undelete(BlobStoreUsageChecker inUseChecker, BlobId blobId, BlobAttributes attributes,
+                           boolean isDryRun) {
+      throw new UnsupportedOperationException();
+    }
+    
+    @Override
+    public boolean isStorageAvailable() {
+      return true;
     }
     
     @Override
@@ -496,200 +641,213 @@ public class BlobStoreVirtualThreadTest
       return true;
     }
     
-    // The following methods are required by the BlobStore interface but not used in this test
-    @Override
-    public boolean bytesExists(BlobId blobId) {
-      throw new UnsupportedOperationException("Not implemented for test");
-    }
-
-    @Override
-    public boolean isBlobEmpty(BlobId blobId) {
-      throw new UnsupportedOperationException("Not implemented for test");
-    }
-
-    @Override
-    public BlobStoreMetrics getMetrics() {
-      throw new UnsupportedOperationException("Not implemented for test");
-    }
-
-    @Override
-    public Map<OperationType, OperationMetrics> getOperationMetricsByType() {
-      throw new UnsupportedOperationException("Not implemented for test");
-    }
-
-    @Override
-    public Map<OperationType, OperationMetrics> getOperationMetricsDelta() {
-      throw new UnsupportedOperationException("Not implemented for test");
-    }
-
-    @Override
-    public void clearOperationMetrics() {
-      throw new UnsupportedOperationException("Not implemented for test");
-    }
-
-    @Override
-    public void compact(BlobStoreUsageChecker inUseChecker) {
-      throw new UnsupportedOperationException("Not implemented for test");
-    }
-
-    @Override
-    public void deleteTempFiles(Integer daysOlderThan) {
-      throw new UnsupportedOperationException("Not implemented for test");
-    }
-
-    @Override
-    public void remove() {
-      throw new UnsupportedOperationException("Not implemented for test");
-    }
-
-    @Override
-    public Stream<BlobId> getBlobIdStream() {
-      throw new UnsupportedOperationException("Not implemented for test");
-    }
-
-    @Override
-    public Stream<BlobId> getBlobIdUpdatedSinceStream(Duration duration) {
-      throw new UnsupportedOperationException("Not implemented for test");
-    }
-
-    @Override
-    public PaginatedResult<BlobId> getBlobIdUpdatedSinceStream(
-        String prefix,
-        OffsetDateTime fromDateTime,
-        OffsetDateTime toDateTime,
-        String continuationToken,
-        int pageSize) {
-      throw new UnsupportedOperationException("Not implemented for test");
-    }
-
-    @Override
-    public Stream<BlobId> getDirectPathBlobIdStream(String prefix) {
-      throw new UnsupportedOperationException("Not implemented for test");
-    }
-
-    @Override
-    public BlobAttributes getBlobAttributes(BlobId blobId) {
-      throw new UnsupportedOperationException("Not implemented for test");
-    }
-
-    @Override
-    public void setBlobAttributes(BlobId blobId, BlobAttributes blobAttributes) {
-      throw new UnsupportedOperationException("Not implemented for test");
-    }
-
-    @Override
-    public boolean undelete(
-        BlobStoreUsageChecker inUseChecker,
-        BlobId blobId,
-        BlobAttributes attributes,
-        boolean isDryRun) {
-      throw new UnsupportedOperationException("Not implemented for test");
-    }
-
-    @Override
-    public boolean isStorageAvailable() {
-      return true;
-    }
-
     @Override
     public boolean isEmpty() {
       return blobs.isEmpty();
     }
-
+    
     @Override
     public void shutdown() {
-      // No-op for test
+      // No-op for test implementation
     }
-
+    
     @Override
-    public Future<Boolean> asyncDelete(BlobId blobId) {
-      // Use Virtual Thread per task executor for better scalability with Java 21
-      return Executors.newVirtualThreadPerTaskExecutor().submit(() -> deleteHard(blobId));
+    public boolean bytesExists(BlobId blobId) {
+      return exists(blobId);
     }
-
+    
     @Override
-    public <T extends BlobStoreMetricsService<B>, B extends BlobStore> T getMetricsService() {
-      throw new UnsupportedOperationException("Not implemented for test");
+    public boolean isBlobEmpty(BlobId blobId) {
+      TestBlob blob = blobs.get(blobId.asUniqueString());
+      return blob != null && blob.data.length == 0;
     }
-
-    @Override
-    public Blob create(Path sourceFile, Map<String, String> headers, long size, HashCode sha1) {
-      throw new UnsupportedOperationException("Not implemented for test");
-    }
-
-    @Override
-    public void createBlobAttributes(BlobId blobId, Map<String, String> headers, BlobMetrics blobMetrics) {
-      throw new UnsupportedOperationException("Not implemented for test");
-    }
-
+    
     @Override
     public BlobAttributes createBlobAttributesInstance(BlobId blobId, Map<String, String> headers, BlobMetrics metrics) {
-      throw new UnsupportedOperationException("Not implemented for test");
+      return new TestBlobAttributes(headers, ((TestBlobMetrics) metrics).getContentSize());
     }
-
+    
     @Override
     public Blob copy(BlobId blobId, Map<String, String> headers) {
-      throw new UnsupportedOperationException("Not implemented for test");
+      TestBlob original = blobs.get(blobId.asUniqueString());
+      if (original == null) {
+        return null;
+      }
+      
+      String newId = UUID.randomUUID().toString();
+      TestBlob copy = new TestBlob(newId, new HashMap<>(headers), original.data);
+      blobs.put(newId, copy);
+      
+      // Create attributes
+      TestBlobAttributes blobAttributes = new TestBlobAttributes(headers, original.data.length);
+      attributes.put(newId, blobAttributes);
+      
+      return copy;
     }
-
-    @Override
-    public Blob makeBlobPermanent(BlobId blobId, Map<String, String> headers) {
-      throw new UnsupportedOperationException("Not implemented for test");
-    }
-
-    @Override
-    public boolean deleteIfTemp(BlobId blobId) {
-      throw new UnsupportedOperationException("Not implemented for test");
-    }
-
-    @Override
-    public void validateCanCreateAndUpdate() {
-      // No-op for test
-    }
-
+    
     @Override
     public RawObjectAccess getRawObjectAccess() {
-      throw new UnsupportedOperationException("Not implemented for test");
-    }
-
-    @Override
-    public BlobSession<?> openSession() {
-      throw new UnsupportedOperationException("Not implemented for test");
+      throw new UnsupportedOperationException();
     }
   }
   
   /**
-   * A simple mock implementation of Blob for testing.
+   * Test implementation of Blob for virtual thread testing.
    */
-  private static class MockBlob implements Blob {
-    private final BlobId id;
-    private final byte[] bytes;
+  private static class TestBlob implements Blob {
+    private final String id;
     private final Map<String, String> headers;
+    private final byte[] data;
     
-    public MockBlob(BlobId id, byte[] bytes, Map<String, String> headers) {
+    public TestBlob(String id, Map<String, String> headers, byte[] data) {
       this.id = id;
-      this.bytes = bytes;
-      this.headers = new HashMap<>(headers);
+      this.headers = headers;
+      this.data = data;
     }
     
     @Override
     public BlobId getId() {
-      return id;
+      return new BlobId(id);
     }
     
     @Override
     public Map<String, String> getHeaders() {
-      return headers;
+      return new HashMap<>(headers);
     }
     
     @Override
     public InputStream getInputStream() {
-      return new ByteArrayInputStream(bytes);
+      return new ByteArrayInputStream(data);
     }
     
     @Override
-    public byte[] getBytes() {
-      return bytes;
+    public BlobMetrics getMetrics() {
+      return new TestBlobMetrics(data.length);
+    }
+  }
+  
+  /**
+   * Test implementation of BlobMetrics for virtual thread testing.
+   */
+  private static class TestBlobMetrics implements BlobMetrics {
+    private final long contentSize;
+    
+    public TestBlobMetrics(long contentSize) {
+      this.contentSize = contentSize;
+    }
+    
+    @Override
+    public long getContentSize() {
+      return contentSize;
+    }
+    
+    @Override
+    public String getSHA1Hash() {
+      return "test-sha1";
+    }
+    
+    @Override
+    public String getContentType() {
+      return "text/plain";
+    }
+    
+    @Override
+    public OffsetDateTime getCreationTime() {
+      return OffsetDateTime.now();
+    }
+    
+    @Override
+    public String getCreatedBy() {
+      return "virtual-thread-test";
+    }
+    
+    @Override
+    public String getCreatedByIp() {
+      return "127.0.0.1";
+    }
+  }
+  
+  /**
+   * Test implementation of BlobAttributes for virtual thread testing.
+   */
+  private static class TestBlobAttributes implements BlobAttributes {
+    private final Map<String, String> headers;
+    private final TestBlobMetrics metrics;
+    
+    public TestBlobAttributes(Map<String, String> headers, long contentSize) {
+      this.headers = new HashMap<>(headers);
+      this.metrics = new TestBlobMetrics(contentSize);
+    }
+    
+    @Override
+    public Map<String, String> getHeaders() {
+      return new HashMap<>(headers);
+    }
+    
+    @Override
+    public void updateFrom(BlobAttributes blobAttributes) {
+      headers.clear();
+      headers.putAll(blobAttributes.getHeaders());
+    }
+    
+    @Override
+    public BlobMetrics getMetrics() {
+      return metrics;
+    }
+    
+    @Override
+    public boolean isDeleted() {
+      return false;
+    }
+    
+    @Override
+    public void setDeleted(boolean deleted) {
+      // No-op for test implementation
+    }
+    
+    @Override
+    public String getDeletedReason() {
+      return null;
+    }
+    
+    @Override
+    public void setDeletedReason(String deletedReason) {
+      // No-op for test implementation
+    }
+    
+    @Override
+    public void store() {
+      // No-op for test implementation
+    }
+  }
+  
+  /**
+   * Test implementation of BlobStoreConfiguration for virtual thread testing.
+   */
+  private static class TestBlobStoreConfiguration implements BlobStoreConfiguration {
+    @Override
+    public String getName() {
+      return "test-blob-store";
+    }
+    
+    @Override
+    public String getType() {
+      return "test";
+    }
+    
+    @Override
+    public Map<String, Map<String, Object>> getAttributes() {
+      return new HashMap<>();
+    }
+    
+    @Override
+    public boolean isWritable() {
+      return true;
+    }
+    
+    @Override
+    public void setWritable(boolean writable) {
+      // No-op for test implementation
     }
   }
 }

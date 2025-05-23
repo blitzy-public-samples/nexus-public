@@ -12,7 +12,13 @@
  */
 package org.sonatype.nexus.coreui.internal.wonderland;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.ws.rs.core.Response;
 
@@ -22,17 +28,17 @@ import org.sonatype.nexus.common.wonderland.DownloadService;
 import org.sonatype.nexus.common.wonderland.DownloadService.Download;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static com.google.common.net.HttpHeaders.CONTENT_DISPOSITION;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-/**
- * Tests for {@link DownloadResource} with Java 21 and JUnit Jupiter.
- */
+@ExtendWith(MockitoExtension.class)
 public class DownloadResourceTest
     extends TestSupport
 {
@@ -44,24 +50,69 @@ public class DownloadResourceTest
 
   /**
    * Fix for NEXUS-40992
-   * Verifies that the downloadZip method sets the correct Content-Disposition header.
    */
   @Test
-  public void downloadZipUsesCorrectFileNameHeader() throws IOException {
+  public void downloadZipShouldUseCorrectFileNameHeader() throws IOException {
     DownloadResource underTest = new DownloadResource(downloadService, authTicketService);
     String fileName = "supportZip-timestamp.zip";
     mockAuthenticatedDownload(fileName);
 
     Response response = underTest.downloadZip(fileName);
 
-    assertThat(response.getHeaderString(CONTENT_DISPOSITION), is("attachment; filename=\"" + fileName + "\""));
+    assertEquals("attachment; filename=\"" + fileName + "\"", response.getHeaderString(CONTENT_DISPOSITION));
   }
 
   /**
-   * Helper method to mock the authentication and download process.
-   * 
-   * @param fileName the name of the file to download
+   * Test that Virtual Threads can handle multiple concurrent download requests efficiently
    */
+  @Test
+  public void downloadZipWithVirtualThreadsShouldHandleMultipleConcurrentRequests() throws Exception {
+    DownloadResource underTest = new DownloadResource(downloadService, authTicketService);
+    int numThreads = 10;
+    CountDownLatch latch = new CountDownLatch(numThreads);
+    AtomicInteger successCount = new AtomicInteger(0);
+    List<Thread> threads = new ArrayList<>();
+    
+    // Create multiple virtual threads to simulate concurrent requests
+    for (int i = 0; i < numThreads; i++) {
+      String fileName = "supportZip-" + i + ".zip";
+      Thread thread = Thread.startVirtualThread(() -> {
+        try {
+          // Mock the download for this specific thread
+          String fileAuthTicket = fileName + "-authTicket";
+          when(authTicketService.createTicket()).thenReturn(fileAuthTicket);
+          
+          // Create a mock Download with a simple byte stream
+          byte[] content = ("content for " + fileName).getBytes();
+          InputStream inputStream = new ByteArrayInputStream(content);
+          Download mockDownload = new Download(content.length, inputStream);
+          when(downloadService.get(fileName, fileAuthTicket)).thenReturn(mockDownload);
+          
+          // Execute the download
+          Response response = underTest.downloadZip(fileName);
+          
+          // Verify the response
+          assertNotNull(response);
+          assertEquals("attachment; filename=\"" + fileName + "\"", response.getHeaderString(CONTENT_DISPOSITION));
+          successCount.incrementAndGet();
+        } 
+        catch (Exception e) {
+          log.error("Error in virtual thread", e);
+        }
+        finally {
+          latch.countDown();
+        }
+      });
+      threads.add(thread);
+    }
+    
+    // Wait for all threads to complete
+    latch.await();
+    
+    // Verify all downloads were successful
+    assertEquals(numThreads, successCount.get(), "All virtual thread downloads should succeed");
+  }
+
   private void mockAuthenticatedDownload(String fileName) {
     Download mockDownload = mock(Download.class);
     String fileAuthTicket = fileName + "-authTicket";

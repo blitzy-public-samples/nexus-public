@@ -15,7 +15,7 @@ package org.sonatype.nexus.security.authc;
 import java.io.Serializable;
 
 /**
- * Event record representing a user logout action.
+ * Event record representing a user logout.
  * Extends the base SecurityEvent record with logout-specific context.
  *
  * @since 3.0

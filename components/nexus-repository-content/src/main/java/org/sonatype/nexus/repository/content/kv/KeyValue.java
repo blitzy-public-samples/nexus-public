@@ -15,8 +15,9 @@ package org.sonatype.nexus.repository.content.kv;
 import org.sonatype.nexus.common.entity.ContinuationAware;
 
 /**
- * Record representing a key-value pair in the repository.
- * 
+ * Record representing a key-value pair in the repository content.
+ * Implements ContinuationAware for pagination support.
+ *
  * @since 3.41
  */
 public record KeyValue(Integer keyValueId, String category, String key, String value)

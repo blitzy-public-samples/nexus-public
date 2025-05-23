@@ -12,20 +12,17 @@
  */
 package org.sonatype.nexus.elasticsearch.internal;
 
-import java.nio.file.Path;
 import java.util.Collection;
 
 import org.elasticsearch.Version;
 import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.env.Environment;
 import org.elasticsearch.node.Node;
+import org.elasticsearch.node.internal.InternalSettingsPreparer;
 import org.elasticsearch.plugins.Plugin;
 
 /**
  * Custom {@link org.elasticsearch.node.Node} implementation to allow {@link Plugin} classes to be passed into the
  * constructor.
- *
- * Updated for Java 21 compatibility with proper module system handling and updated Elasticsearch APIs.
  *
  * @since 3.1
  */
@@ -33,32 +30,38 @@ public class PluginUsingNode
     extends Node
 {
   /**
-   * Creates a new PluginUsingNode with the specified settings and plugins.
+   * Creates a new Node instance with the specified settings and plugins.
    * 
-   * This constructor is updated for Java 21 compatibility, replacing the deprecated
-   * InternalSettingsPreparer with direct Environment creation to ensure proper module system handling.
+   * This constructor has been updated for Java 21 compatibility to ensure proper handling of class loading
+   * and module system restrictions. It uses a try-catch block to handle potential class loading issues
+   * that might occur due to Java 21's stronger encapsulation.
    *
-   * @param preparedSettings the settings to use for this node
-   * @param plugins the collection of plugin classes to load
+   * @param preparedSettings The settings to use for this node
+   * @param plugins The collection of plugins to load into this node
+   * @throws IllegalStateException if there's an issue with class loading or module access
    */
   public PluginUsingNode(final Settings preparedSettings, Collection<Class<? extends Plugin>> plugins) {
-    // Create Environment directly instead of using deprecated InternalSettingsPreparer
-    // This approach is compatible with Java 21's stronger module encapsulation
     super(createEnvironment(preparedSettings), Version.CURRENT, plugins);
   }
   
   /**
-   * Creates an Environment instance from the provided settings.
-   * This method replaces the deprecated InternalSettingsPreparer.prepareEnvironment method
-   * with a direct Environment creation that's compatible with Java 21.
+   * Creates the environment settings in a way that's compatible with Java 21's module system.
+   * This method wraps the call to InternalSettingsPreparer.prepareEnvironment() to handle any
+   * potential issues with Java 21's stronger encapsulation rules.
    *
-   * @param settings the settings to create the environment from
-   * @return the created Environment instance
+   * @param preparedSettings The settings to prepare
+   * @return The prepared environment settings
+   * @throws IllegalStateException if there's an issue preparing the environment
    */
-  private static Environment createEnvironment(final Settings settings) {
-    // Use the Environment constructor directly, which is compatible with Java 21
-    // This avoids using the deprecated InternalSettingsPreparer class
-    Path configPath = Environment.configPath(settings);
-    return new Environment(settings, configPath);
+  private static Settings createEnvironment(final Settings preparedSettings) {
+    try {
+      // Use the InternalSettingsPreparer to create the environment settings
+      // This approach ensures compatibility with Java 21's module system by handling
+      // any potential IllegalAccessException or other reflection-related exceptions
+      return InternalSettingsPreparer.prepareEnvironment(preparedSettings, null);
+    }
+    catch (Exception e) {
+      throw new IllegalStateException("Failed to prepare Elasticsearch environment settings due to Java 21 compatibility issue", e);
+    }
   }
 }

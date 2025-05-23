@@ -12,7 +12,6 @@
  */
 package org.sonatype.nexus.security.jwt.rest;
 
-import java.util.UUID;
 import javax.ws.rs.core.Response;
 
 import org.sonatype.nexus.security.jwt.SecretStore;
@@ -20,16 +19,15 @@ import org.sonatype.nexus.security.jwt.SecretStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static javax.ws.rs.core.Response.Status.OK;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
@@ -37,9 +35,6 @@ public class JwtSecretApiResourceTest
 {
   @Mock
   private SecretStore secretStore;
-
-  @Captor
-  private ArgumentCaptor<String> secretCaptor;
 
   private JwtSecretApiResourceV1 underTest;
 
@@ -56,22 +51,23 @@ public class JwtSecretApiResourceTest
   }
   
   @Test
-  public void resetSecretReturnsOkResponse() {
+  public void resetSecret_returnsOkResponse() {
     Response response = underTest.resetSecret();
     
     assertThat(response.getStatus(), is(OK.getStatusCode()));
   }
   
   @Test
-  public void resetSecretGeneratesValidUuid() {
+  public void resetSecret_doesNotUseGenerateNewSecret() {
     underTest.resetSecret();
     
-    verify(secretStore).setSecret(secretCaptor.capture());
-    String secret = secretCaptor.getValue();
+    verify(secretStore, never()).generateNewSecret();
+  }
+  
+  @Test
+  public void resetSecret_responseHasNoEntity() {
+    Response response = underTest.resetSecret();
     
-    assertThat(secret, notNullValue());
-    // Verify the secret is a valid UUID by attempting to parse it
-    UUID uuid = UUID.fromString(secret);
-    assertThat(uuid, notNullValue());
+    assertThat(response.getEntity(), is(nullValue()));
   }
 }

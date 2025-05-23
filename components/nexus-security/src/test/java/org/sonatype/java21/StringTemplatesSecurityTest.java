@@ -12,199 +12,219 @@
  */
 package org.sonatype.java21;
 
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.Map;
-
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.security.ErrorMessageUtil;
 
 import org.apache.shiro.authc.AuthenticationException;
-import org.apache.shiro.authc.DisabledAccountException;
-import org.apache.shiro.authc.IncorrectCredentialsException;
-import org.apache.shiro.authc.UnknownAccountException;
+import org.apache.shiro.authc.UsernamePasswordToken;
+import org.apache.shiro.subject.Subject;
 import org.junit.Before;
 import org.junit.Test;
+import org.mockito.Mock;
 
-import static java.lang.StringTemplate.STR;
+import java.util.Map;
+import java.util.HashMap;
+
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.lessThan;
+import static org.hamcrest.Matchers.startsWith;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
- * Tests for Java 21 String Templates feature in security contexts.
+ * Tests for Java 21 String Templates in security contexts.
  * 
- * This test class demonstrates the use of Java 21's String Templates feature for
- * security-related logging, error messages, and audit trails, ensuring improved
- * readability and maintainability while maintaining security standards.
+ * This test suite validates the use of Java 21's String Templates feature for security logging,
+ * error messages, and audit trails, ensuring improved readability and maintainability of
+ * security-related messages while maintaining performance and security standards.
  */
 public class StringTemplatesSecurityTest
     extends TestSupport
 {
-  private static final String USERNAME = "admin";
-  private static final String IP_ADDRESS = "192.168.1.100";
-  private static final String RESOURCE = "/api/v1/security/users";
-  private static final String ACTION = "CREATE";
-  
-  private LocalDateTime timestamp;
-  
-  @Before
-  public void setUp() {
-    timestamp = LocalDateTime.now();
-  }
-  
-  /**
-   * Test demonstrating the use of String Templates for security error message generation.
-   * Shows how String Templates improve readability compared to traditional string concatenation
-   * or formatting methods.
-   */
-  @Test
-  public void testErrorMessageGeneration() {
-    // Traditional approach using String concatenation
-    String traditionalMessage = "Authentication failed for user '" + USERNAME + "' from IP " + IP_ADDRESS + 
-        " at " + timestamp.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+    private static final String USERNAME = "admin";
+    private static final String PASSWORD = "password123";
+    private static final String IP_ADDRESS = "192.168.1.100";
+    private static final String RESOURCE = "/api/v1/security/users";
     
-    // Using Java 21 String Templates
-    String templateMessage = STR."Authentication failed for user '\{USERNAME}' from IP \{IP_ADDRESS} " + 
-        "at \{timestamp.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)}";
+    @Mock
+    private Subject subject;
     
-    // Verify both approaches produce the same result
-    assertThat(templateMessage, equalTo(traditionalMessage));
+    @Before
+    public void setUp() {
+        subject = mock(Subject.class);
+    }
     
-    // Verify message contains expected information
-    assertThat(templateMessage, containsString(USERNAME));
-    assertThat(templateMessage, containsString(IP_ADDRESS));
-  }
-  
-  /**
-   * Test demonstrating the use of String Templates for security audit logging with structured data.
-   * Shows how String Templates can be used to create consistent, readable audit log entries.
-   */
-  @Test
-  public void testAuditLogFormatting() {
-    // Traditional approach using String.format
-    String traditionalAuditLog = String.format("AUDIT: User '%s' performed '%s' on resource '%s' from IP %s at %s",
-        USERNAME, ACTION, RESOURCE, IP_ADDRESS, timestamp.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+    /**
+     * Tests the use of String Templates for security error message generation.
+     * Demonstrates how String Templates improve readability and maintainability
+     * compared to traditional String.format() or concatenation approaches.
+     */
+    @Test
+    public void testSecurityErrorMessageGeneration() {
+        // Traditional approach using String.format
+        String traditionalMessage = String.format(
+            "Authentication failed for user '%s' from IP '%s' when accessing resource '%s'",
+            USERNAME, IP_ADDRESS, RESOURCE);
+            
+        // New approach using String Templates
+        String templateMessage = STR.
+            "Authentication failed for user '\{USERNAME}' from IP '\{IP_ADDRESS}' when accessing resource '\{RESOURCE}'";
+        
+        // Verify both approaches produce the same result
+        assertThat(templateMessage, is(traditionalMessage));
+        
+        // Verify message contains expected information
+        assertThat(templateMessage, containsString(USERNAME));
+        assertThat(templateMessage, containsString(IP_ADDRESS));
+        assertThat(templateMessage, containsString(RESOURCE));
+    }
     
-    // Using Java 21 String Templates
-    String templateAuditLog = STR."AUDIT: User '\{USERNAME}' performed '\{ACTION}' on resource '\{RESOURCE}' " + 
-        "from IP \{IP_ADDRESS} at \{timestamp.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)}";
+    /**
+     * Tests String Templates for security audit logging with structured data.
+     * Demonstrates how String Templates can be used to format audit log entries
+     * with complex structured data in a more readable way.
+     */
+    @Test
+    public void testAuditLogFormatting() {
+        // Create a map of audit data
+        Map<String, Object> auditData = new HashMap<>();
+        auditData.put("user", USERNAME);
+        auditData.put("action", "LOGIN");
+        auditData.put("timestamp", System.currentTimeMillis());
+        auditData.put("ip", IP_ADDRESS);
+        auditData.put("success", true);
+        
+        // Traditional approach using StringBuilder
+        StringBuilder traditionalLog = new StringBuilder();
+        traditionalLog.append("AUDIT: {");
+        traditionalLog.append("\"user\":\"" + auditData.get("user") + "\", ");
+        traditionalLog.append("\"action\":\"" + auditData.get("action") + "\", ");
+        traditionalLog.append("\"timestamp\":" + auditData.get("timestamp") + ", ");
+        traditionalLog.append("\"ip\":\"" + auditData.get("ip") + "\", ");
+        traditionalLog.append("\"success\":" + auditData.get("success"));
+        traditionalLog.append("}");
+        
+        // New approach using String Templates
+        String templateLog = STR.
+            "AUDIT: {\"user\":\"\{auditData.get("user")}\", " +
+            "\"action\":\"\{auditData.get("action")}\", " +
+            "\"timestamp\":\{auditData.get("timestamp")}, " +
+            "\"ip\":\"\{auditData.get("ip")}\", " +
+            "\"success\":\{auditData.get("success")}}";
+        
+        // Verify both approaches produce the same result
+        assertThat(templateLog, is(traditionalLog.toString()));
+        
+        // Verify log contains expected information
+        assertThat(templateLog, startsWith("AUDIT: {"));
+        assertThat(templateLog, containsString("\"user\":\"" + USERNAME + "\""));
+        assertThat(templateLog, containsString("\"ip\":\"" + IP_ADDRESS + "\""));
+    }
     
-    // Verify both approaches produce the same result
-    assertThat(templateAuditLog, equalTo(traditionalAuditLog));
+    /**
+     * Tests String Templates for consistent security validation error formatting.
+     * Demonstrates how String Templates can improve the formatting of validation
+     * error messages in security contexts.
+     */
+    @Test
+    public void testValidationErrorFormatting() {
+        // Traditional approach using ErrorMessageUtil with String.format
+        String traditionalError = ErrorMessageUtil.getFormattedMessage(
+            "Invalid credentials for user '" + USERNAME + "'");
+        
+        // New approach using String Templates
+        String errorMessage = STR."Invalid credentials for user '\{USERNAME}'";
+        String templateError = STR."ValidationErrorXO{id='*', message='\{errorMessage}'}";
+        
+        // Verify both approaches produce the same result
+        assertThat(templateError, is(traditionalError));
+        
+        // Verify error contains expected information
+        assertThat(templateError, containsString("ValidationErrorXO"));
+        assertThat(templateError, containsString(USERNAME));
+    }
     
-    // Verify audit log contains all required fields
-    assertThat(templateAuditLog, containsString("AUDIT"));
-    assertThat(templateAuditLog, containsString(USERNAME));
-    assertThat(templateAuditLog, containsString(ACTION));
-    assertThat(templateAuditLog, containsString(RESOURCE));
-    assertThat(templateAuditLog, containsString(IP_ADDRESS));
-  }
-  
-  /**
-   * Test demonstrating the use of String Templates for consistent security validation error formatting.
-   * Shows how String Templates can be used with existing utility methods to create consistent error messages.
-   */
-  @Test
-  public void testSecurityValidationErrorFormatting() {
-    // Create different types of security exceptions
-    AuthenticationException unknownAccount = new UnknownAccountException("User does not exist");
-    AuthenticationException incorrectCredentials = new IncorrectCredentialsException("Invalid password");
-    AuthenticationException disabledAccount = new DisabledAccountException("Account is locked");
-    
-    // Using Java 21 String Templates with existing utility method
-    String unknownAccountError = ErrorMessageUtil.getFormattedMessage(
-        STR."Authentication failed: \{unknownAccount.getMessage()} for user \{USERNAME}");
-    
-    String incorrectCredentialsError = ErrorMessageUtil.getFormattedMessage(
-        STR."Authentication failed: \{incorrectCredentials.getMessage()} for user \{USERNAME}");
-    
-    String disabledAccountError = ErrorMessageUtil.getFormattedMessage(
-        STR."Authentication failed: \{disabledAccount.getMessage()} for user \{USERNAME}");
-    
-    // Verify error messages contain expected information
-    assertThat(unknownAccountError, containsString("User does not exist"));
-    assertThat(incorrectCredentialsError, containsString("Invalid password"));
-    assertThat(disabledAccountError, containsString("Account is locked"));
-    assertThat(unknownAccountError, containsString(USERNAME));
-  }
-  
-  /**
-   * Test demonstrating the use of String Templates for JSON-like structured security data.
-   * Shows how String Templates can be used to create structured data representations.
-   */
-  @Test
-  public void testStructuredSecurityData() {
-    // Using Java 21 String Templates for JSON-like structured data
-    String jsonTemplate = STR."""
-        {
-          "event": "security_audit",
-          "timestamp": "\{timestamp}",
-          "user": "\{USERNAME}",
-          "action": "\{ACTION}",
-          "resource": "\{RESOURCE}",
-          "ip": "\{IP_ADDRESS}",
-          "status": "success"
+    /**
+     * Tests the performance benefits of String Templates over traditional concatenation.
+     * Demonstrates how String Templates can provide better performance for complex
+     * string formatting in security-sensitive code paths.
+     */
+    @Test
+    public void testPerformanceComparison() {
+        final int iterations = 10000;
+        
+        // Setup test data
+        UsernamePasswordToken token = new UsernamePasswordToken(USERNAME, PASSWORD.toCharArray());
+        token.setHost(IP_ADDRESS);
+        AuthenticationException authException = new AuthenticationException("Invalid credentials");
+        
+        // Measure traditional concatenation approach
+        long traditionalStart = System.nanoTime();
+        for (int i = 0; i < iterations; i++) {
+            String message = "Authentication failed for user '" + token.getUsername() + "' from IP '" + 
+                token.getHost() + "' with error: " + authException.getMessage();
+            assertThat(message.length() > 0, is(true)); // Prevent optimization
         }
-        """;
-    
-    // Verify structured data contains expected information
-    assertThat(jsonTemplate, containsString("security_audit"));
-    assertThat(jsonTemplate, containsString(USERNAME));
-    assertThat(jsonTemplate, containsString(ACTION));
-    assertThat(jsonTemplate, containsString(RESOURCE));
-    assertThat(jsonTemplate, containsString(IP_ADDRESS));
-  }
-  
-  /**
-   * Test demonstrating the performance benefits of String Templates over traditional concatenation.
-   * Shows how String Templates can be more efficient for complex string operations.
-   */
-  @Test
-  public void testPerformanceComparison() {
-    final int iterations = 10000;
-    Map<String, String> securityAttributes = Map.of(
-        "username", USERNAME,
-        "ip", IP_ADDRESS,
-        "resource", RESOURCE,
-        "action", ACTION,
-        "timestamp", timestamp.toString()
-    );
-    
-    // Measure time for traditional string concatenation
-    long startTraditional = System.nanoTime();
-    for (int i = 0; i < iterations; i++) {
-      String traditional = "Security event: User '" + securityAttributes.get("username") + 
-          "' performed '" + securityAttributes.get("action") + 
-          "' on resource '" + securityAttributes.get("resource") + 
-          "' from IP " + securityAttributes.get("ip") + 
-          " at " + securityAttributes.get("timestamp");
+        long traditionalEnd = System.nanoTime();
+        long traditionalDuration = traditionalEnd - traditionalStart;
+        
+        // Measure String Templates approach
+        long templateStart = System.nanoTime();
+        for (int i = 0; i < iterations; i++) {
+            String message = STR."Authentication failed for user '\{token.getUsername()}' from IP '\{token.getHost()}' with error: \{authException.getMessage()}";
+            assertThat(message.length() > 0, is(true)); // Prevent optimization
+        }
+        long templateEnd = System.nanoTime();
+        long templateDuration = templateEnd - templateStart;
+        
+        // Log performance results
+        System.out.println("Performance comparison for " + iterations + " iterations:");
+        System.out.println("Traditional concatenation: " + traditionalDuration / 1_000_000.0 + " ms");
+        System.out.println("String Templates: " + templateDuration / 1_000_000.0 + " ms");
+        System.out.println("Ratio (traditional/templates): " + 
+            String.format("%.2f", (double) traditionalDuration / templateDuration));
+        
+        // Note: We don't assert on performance as it can vary between environments
+        // The test is primarily to demonstrate and log the performance characteristics
     }
-    long endTraditional = System.nanoTime();
-    long traditionalTime = endTraditional - startTraditional;
     
-    // Measure time for String Templates
-    long startTemplate = System.nanoTime();
-    for (int i = 0; i < iterations; i++) {
-      String template = STR."Security event: User '\{securityAttributes.get("username")}' " + 
-          "performed '\{securityAttributes.get("action")}' " + 
-          "on resource '\{securityAttributes.get("resource")}' " + 
-          "from IP \{securityAttributes.get("ip")} " + 
-          "at \{securityAttributes.get("timestamp")}";
+    /**
+     * Tests String Templates for security-sensitive data masking.
+     * Demonstrates how String Templates can be used to consistently mask
+     * sensitive data in security logs and error messages.
+     */
+    @Test
+    public void testSecurityDataMasking() {
+        // Create sensitive data
+        String apiKey = "sk_live_abcdefghijklmnopqrstuvwxyz123456";
+        String maskedApiKey = maskSensitiveData(apiKey);
+        
+        // Traditional approach using String.format
+        String traditionalMessage = String.format(
+            "API key '%s' was used for authentication from IP '%s'",
+            maskedApiKey, IP_ADDRESS);
+            
+        // New approach using String Templates
+        String templateMessage = STR.
+            "API key '\{maskSensitiveData(apiKey)}' was used for authentication from IP '\{IP_ADDRESS}'";
+        
+        // Verify both approaches produce the same result
+        assertThat(templateMessage, is(traditionalMessage));
+        
+        // Verify sensitive data is properly masked
+        assertThat(templateMessage, containsString("sk_live_****"));
+        assertThat(templateMessage, containsString(IP_ADDRESS));
     }
-    long endTemplate = System.nanoTime();
-    long templateTime = endTemplate - startTemplate;
     
-    // Log performance results
-    log.info("Traditional concatenation time: {} ns", traditionalTime);
-    log.info("String Template time: {} ns", templateTime);
-    
-    // Note: This assertion might not always pass due to JVM optimizations and other factors
-    // It's included to demonstrate the potential performance benefits of String Templates
-    // In real-world scenarios, String Templates often perform better for complex strings
-    assertThat("String Templates should be more efficient than traditional concatenation",
-        templateTime, lessThan(traditionalTime * 2)); // Allow some margin for JVM variations
-  }
+    /**
+     * Helper method to mask sensitive data like API keys or tokens.
+     * Only shows the first 8 characters followed by asterisks.
+     */
+    private String maskSensitiveData(String data) {
+        if (data == null || data.length() <= 8) {
+            return data;
+        }
+        return data.substring(0, 8) + "****";
+    }
 }

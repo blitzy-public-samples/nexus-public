@@ -12,18 +12,35 @@
  */
 package org.sonatype.nexus.testcommon.virtualthread;
 
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+import org.junit.jupiter.api.Tag;
+
 /**
- * Marker interface for tests that should be run with Java 21 Virtual Threads.
+ * Annotation for tests that should be executed in a Virtual Thread context.
  * <p>
- * Tests annotated with {@code @Category(VirtualThreadTestGroup.class)} will be included
- * when the {@code virtual-threads} Maven profile is activated with {@code -Dvirtual-threads=true}.
+ * This annotation serves as a marker for tests that specifically validate behavior
+ * when running in Java 21 Virtual Threads. It can be used to categorize and selectively
+ * run tests that verify Virtual Thread compatibility.
  * <p>
- * These tests can be used to validate code that has been optimized for Virtual Threads
- * and to compare performance between platform threads and virtual threads.
+ * Example usage:
+ * <pre>
+ * {@code
+ * @Test
+ * @VirtualThreadTestGroup
+ * void testMethodInVirtualThread() {
+ *   // Test code that should run in a Virtual Thread
+ * }
+ * }
+ * </pre>
  *
  * @since 3.60
  */
-public interface VirtualThreadTestGroup
-{
-  // Marker interface
+@Target({ElementType.TYPE, ElementType.METHOD})
+@Retention(RetentionPolicy.RUNTIME)
+@Tag("virtual-thread")
+public @interface VirtualThreadTestGroup {
 }

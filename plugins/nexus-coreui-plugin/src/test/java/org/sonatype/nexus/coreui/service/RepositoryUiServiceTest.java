@@ -45,24 +45,17 @@ import org.sonatype.nexus.scheduling.TaskScheduler;
 import org.sonatype.nexus.security.SecurityHelper;
 
 import com.google.common.collect.ImmutableMap;
-
-// JUnit Jupiter imports replacing JUnit 4
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-
-// Mockito imports with updated version support
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-// Hamcrest imports compatible with version 2.2
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
-
-// Mockito static imports
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
@@ -71,14 +64,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Test for {@link RepositoryUiService}
- * <p>
- * Migrated to JUnit Jupiter (JUnit 5) and updated for Java 21 compatibility.
- * This test class validates the repository UI service functionality using modern
- * testing frameworks and patterns compatible with Java 21.
+ * Test for {@link RepositoryUiServiceImpl}
  */
 @ExtendWith(MockitoExtension.class)
-class RepositoryUiServiceTest
+public class RepositoryUiServiceTest
     extends TestSupport
 {
   @Mock
@@ -131,12 +120,8 @@ class RepositoryUiServiceTest
 
   private RepositoryUiService underTest;
 
-  /**
-   * Setup test environment before each test method execution.
-   * Initializes mocks and configures the system under test.
-   */
   @BeforeEach
-  void setup() {
+  public void setup() {
     mockRepository();
     mockRecipes();
     BaseUrlHolder.set("http://nexus-url", "");
@@ -158,20 +143,14 @@ class RepositoryUiServiceTest
     });
   }
 
-  /**
-   * Verifies that user permissions are checked when filtering repositories.
-   */
   @Test
-  void checkUserPermissionsOnFilter() {
+  public void filterShouldCheckUserPermissions() {
     underTest.filter(createParameters());
     verify(repositoryPermissionChecker).userCanBrowseRepositories(configuration);
   }
 
-  /**
-   * Tests the autocomplete filtering functionality for repositories.
-   */
   @Test
-  void filterForAutocomplete() {
+  public void filterForAutocompleteShouldReturnMatchingRepositories() {
     List<RepositoryReferenceXO> repositories = getTestRepositories();
     StoreLoadParameters storeLoadParameters = createParameters();
     storeLoadParameters.setQuery("nug");
@@ -182,11 +161,8 @@ class RepositoryUiServiceTest
     assertThat(result.get(1).getName(), is("nuget-hosted"));
   }
 
-  /**
-   * Tests that routing rules are properly set during repository updates.
-   */
   @Test
-  void testRoutingRuleSet() throws Exception {
+  public void updateShouldSetRoutingRule() throws Exception {
     when(repositoryXO.getName()).thenReturn("test");
     when(repositoryXO.getFormat()).thenReturn("format");
 
@@ -202,11 +178,8 @@ class RepositoryUiServiceTest
     verify(configuration).setAttributes(testAttributes);
   }
 
-  /**
-   * Tests that routing rules are properly cleared during repository updates.
-   */
   @Test
-  void testRoutingRuleCleared() throws Exception {
+  public void updateShouldClearRoutingRule() throws Exception {
     when(repositoryXO.getName()).thenReturn("test");
     when(repositoryXO.getFormat()).thenReturn("format");
 
@@ -222,11 +195,8 @@ class RepositoryUiServiceTest
     verify(configuration).setAttributes(testAttributes);
   }
 
-  /**
-   * Tests that repository size information is included in the read response.
-   */
   @Test
-  void testReadContainsRepoSize() {
+  public void readShouldContainRepositorySize() {
     String repoName = "testRepo";
     String recipeName = "testRecipe";
     Long repoSize = 123456L;
@@ -237,10 +207,7 @@ class RepositoryUiServiceTest
     when(configuration.getRepositoryName()).thenReturn(repoName);
     when(repositoryPermissionChecker.userHasRepositoryAdminPermissionFor(any(Iterable.class), anyString()))
         .thenReturn(Collections.singletonList(configuration));
-    
     List<RepositoryXO> repos = underTest.read();
-    
-    // Using JUnit Jupiter assertions
     Assertions.assertEquals(1, repos.size());
     RepositoryXO repoXo = repos.get(0);
     Assertions.assertEquals(repoName, repoXo.getName());
@@ -249,11 +216,8 @@ class RepositoryUiServiceTest
     Assertions.assertEquals("hosted", repoXo.getType());
   }
 
-  /**
-   * Tests that repository references contain all expected information.
-   */
   @Test
-  void testReadReferencesContainsExpectedInfo() {
+  public void readReferencesShouldContainExpectedInfo() {
     List<Configuration> repoConfigurations = givenRepoConfigurations();
     StoreLoadParameters parameters = createParameters();
     doReturn(repoConfigurations).when(underTest).filter(parameters);
@@ -267,7 +231,7 @@ class RepositoryUiServiceTest
           .filter(value -> Objects.equals(repoConfiguration.getRepositoryName(), value.getName()))
           .findAny()
           .orElseThrow(() -> new AssertionError(
-              "Repository %s not found in results".formatted(repoConfiguration.getRepositoryName())));
+              String.format("Repository %s not found in results", repoConfiguration.getRepositoryName())));
       Recipe recipe = recipes.get(repoConfiguration.getRecipeName());
 
       assertThat(reference.getId(), is(repoConfiguration.getRepositoryName()));
@@ -276,25 +240,18 @@ class RepositoryUiServiceTest
       assertThat(reference.getVersionPolicy(), is(getAttribute(repoConfiguration, "maven.versionPolicy")));
       assertThat(reference.getType(), is(recipe.getType().getValue()));
       assertThat(reference.getUrl(),
-          is("%s/repository/%s/".formatted(BaseUrlHolder.get(), repoConfiguration.getRepositoryName())));
+          is(String.format("%s/repository/%s/", BaseUrlHolder.get(), repoConfiguration.getRepositoryName())));
       assertThat(reference.getStatus().getRepositoryName(), is(repoConfiguration.getRepositoryName()));
       assertThat(reference.getStatus().isOnline(), is(repoConfiguration.isOnline()));
     }
   }
 
-  /**
-   * Creates test repository configurations for testing.
-   * Uses Java 21 features like pattern matching and string templates where appropriate.
-   */
   private List<Configuration> givenRepoConfigurations() {
     return List.of(
         givenRepoConfiguration("repo1", "raw", "rawRecipe", "blobStore1", "strict", "testType", true),
         givenRepoConfiguration("repo2", "maven", "mavenRecipe", "blobStore2", "none", "otherType", false));
   }
 
-  /**
-   * Creates a single repository configuration with the specified parameters.
-   */
   private Configuration givenRepoConfiguration(
       String repoName,
       String formatValue,
@@ -327,9 +284,6 @@ class RepositoryUiServiceTest
     return c;
   }
 
-  /**
-   * Creates test repository references for testing autocomplete functionality.
-   */
   private List<RepositoryReferenceXO> getTestRepositories() {
     RepositoryReferenceXO nugetRepoProxy = mock(RepositoryReferenceXO.class);
     when(nugetRepoProxy.getName()).thenReturn("nuget-proxy");
@@ -344,18 +298,12 @@ class RepositoryUiServiceTest
     return repositories;
   }
 
-  /**
-   * Configures the repository mock with test values.
-   */
   private void mockRepository() {
     when(repository.getName()).thenReturn("repository");
     when(repository.getType()).thenReturn(new HostedType());
     when(repository.getFormat()).thenReturn(format);
   }
 
-  /**
-   * Configures the recipe mocks with test values.
-   */
   private void mockRecipes() {
     when(recipe.getType()).thenReturn(new HostedType());
     when(recipe.getFormat()).thenReturn(new Format("maven2") { });
@@ -363,26 +311,19 @@ class RepositoryUiServiceTest
     recipes.put("testRecipe", recipe);
   }
 
-  /**
-   * Creates store load parameters for testing.
-   */
   private static StoreLoadParameters createParameters() {
     StoreLoadParameters params = new StoreLoadParameters();
     params.setFilter(Collections.emptyList());
     return params;
   }
 
-  /**
-   * Retrieves an attribute from a repository configuration using the specified path.
-   * Uses pattern matching for instanceof checks, compatible with Java 21.
-   */
   private static Object getAttribute(final Configuration repository, String path) {
     Object currentValue = repository.getAttributes();
     String[] parts = path.split("\\.");
 
     for (String part : parts) {
-      if (currentValue instanceof Map<?,?> map) {
-        currentValue = map.get(part);
+      if (currentValue instanceof Map) {
+        currentValue = ((Map<?, ?>) currentValue).get(part);
       }
       else {
         throw new IllegalArgumentException();

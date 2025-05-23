@@ -27,11 +27,6 @@
   <name>${project.groupId}:${project.artifactId}</name>
   <packaging>bundle</packaging>
 
-  <!-- 
-  This module provides test support for repository content functionality
-  Requires Java 21 for compatibility with the core platform
-  -->
-  
   <dependencies>
     <!--
     Dependencies provided by the Nexus container
@@ -88,6 +83,11 @@
     <dependency>
       <groupId>org.sonatype.nexus</groupId>
       <artifactId>nexus-test-common</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.sonatype.nexus.testsuite</groupId>
+      <artifactId>nexus-virtual-thread-testsupport</artifactId>
     </dependency>
 
     <dependency>
@@ -158,15 +158,20 @@
     <dependency>
       <groupId>org.awaitility</groupId>
       <artifactId>awaitility</artifactId>
+      <version>4.2.0</version>
     </dependency>
 
     <dependency>
       <groupId>org.hamcrest</groupId>
       <artifactId>hamcrest-core</artifactId>
-      <version>2.2</version>
+    </dependency>
+
+    <dependency>
+      <groupId>com.google.code.gson</groupId>
+      <artifactId>gson</artifactId>
     </dependency>
     
-    <!-- JUnit Jupiter for Java 21 compatible testing -->
+    <!-- JUnit Jupiter dependencies for Java 21 compatibility -->
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter-api</artifactId>
@@ -180,27 +185,16 @@
     </dependency>
     
     <dependency>
-      <groupId>org.junit.vintage</groupId>
-      <artifactId>junit-vintage-engine</artifactId>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-params</artifactId>
       <version>5.10.1</version>
     </dependency>
     
-    <!-- Mockito with Java 21 compatibility -->
+    <!-- Mockito dependency for Java 21 compatibility -->
     <dependency>
       <groupId>org.mockito</groupId>
       <artifactId>mockito-core</artifactId>
-      <version>4.11.0</version>
-    </dependency>
-    
-    <dependency>
-      <groupId>org.mockito</groupId>
-      <artifactId>mockito-junit-jupiter</artifactId>
-      <version>4.11.0</version>
-    </dependency>
-
-    <dependency>
-      <groupId>com.google.code.gson</groupId>
-      <artifactId>gson</artifactId>
+      <version>5.8.0</version>
     </dependency>
   </dependencies>
 
@@ -222,11 +216,13 @@
           </dependency>
         </dependencies>
         <configuration>
-          <!-- Explicitly set Java 21 as source and target for this module -->
-          <source>21</source>
-          <target>21</target>
+          <source>${maven.compiler.source}</source>
+          <target>${maven.compiler.target}</target>
           <release>21</release>
           <compilerId>groovy-eclipse-compiler</compilerId>
+          <compilerArgs>
+            <arg>--enable-preview</arg>
+          </compilerArgs>
         </configuration>
       </plugin>
 
@@ -241,7 +237,6 @@
       <plugin>
         <groupId>org.apache.karaf.tooling</groupId>
         <artifactId>karaf-maven-plugin</artifactId>
-        <version>4.4.3</version>
         <executions>
           <execution>
             <id>test-feature</id>
@@ -257,98 +252,22 @@
       <plugin>
         <groupId>org.eclipse.sisu</groupId>
         <artifactId>sisu-maven-plugin</artifactId>
-        <version>0.10.0</version>
       </plugin>
       <plugin>
         <groupId>org.apache.felix</groupId>
         <artifactId>maven-bundle-plugin</artifactId>
-        <version>5.1.9</version>
         <configuration>
           <instructions>
             <!-- mark Pax-Exam imports as optional; not all are needed at test-time -->
             <Import-Package>org.ops4j.pax.exam.*;resolution:=optional,*</Import-Package>
-            <!-- Ensure OSGi bundle is compatible with Java 21 -->
+            <!-- Ensure Java 21 compatibility -->
             <Bundle-RequiredExecutionEnvironment>JavaSE-21</Bundle-RequiredExecutionEnvironment>
+            <!-- Support for Virtual Threads and other Java 21 features -->
+            <Require-Capability>osgi.ee;filter:="(&amp;(osgi.ee=JavaSE)(version=21))"</Require-Capability>
           </instructions>
         </configuration>
       </plugin>
     </plugins>
   </build>
-  
-  <profiles>
-    <!-- Profile for Java 21 specific tests -->
-    <profile>
-      <id>java21-tests</id>
-      <activation>
-        <property>
-          <name>java21-tests</name>
-          <value>true</value>
-        </property>
-      </activation>
-      <build>
-        <plugins>
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-surefire-plugin</artifactId>
-            <version>3.2.5</version>
-            <configuration>
-              <includes>
-                <include>**/*Test.java</include>
-              </includes>
-              <systemPropertyVariables>
-                <test.virtual.threads>${virtual.threads}</test.virtual.threads>
-              </systemPropertyVariables>
-            </configuration>
-          </plugin>
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-failsafe-plugin</artifactId>
-            <version>3.2.5</version>
-            <configuration>
-              <includes>
-                <include>**/*IT.java</include>
-              </includes>
-              <systemPropertyVariables>
-                <test.virtual.threads>${virtual.threads}</test.virtual.threads>
-              </systemPropertyVariables>
-            </configuration>
-          </plugin>
-          <plugin>
-            <groupId>org.jacoco</groupId>
-            <artifactId>jacoco-maven-plugin</artifactId>
-            <version>0.8.11</version>
-            <executions>
-              <execution>
-                <goals>
-                  <goal>prepare-agent</goal>
-                </goals>
-              </execution>
-              <execution>
-                <id>report</id>
-                <phase>test</phase>
-                <goals>
-                  <goal>report</goal>
-                </goals>
-              </execution>
-            </executions>
-          </plugin>
-        </plugins>
-      </build>
-    </profile>
-    
-    <!-- Profile for virtual thread testing -->
-    <profile>
-      <id>virtual-threads</id>
-      <activation>
-        <property>
-          <name>virtual.threads</name>
-          <value>true</value>
-        </property>
-      </activation>
-      <properties>
-        <test.virtual.threads>true</test.virtual.threads>
-      </properties>
-    </profile>
-  </profiles>
 
 </project>

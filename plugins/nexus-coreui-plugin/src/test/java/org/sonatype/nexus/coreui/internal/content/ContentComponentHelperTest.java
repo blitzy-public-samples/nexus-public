@@ -15,7 +15,11 @@ package org.sonatype.nexus.coreui.internal.content;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
+import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import org.sonatype.nexus.coreui.AssetXO;
 import org.sonatype.nexus.repository.Repository;
@@ -41,13 +45,9 @@ import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-/**
- * Tests for {@link ContentComponentHelper}.
- * 
- * @since 3.38
- */
 @ExtendWith(MockitoExtension.class)
-class ContentComponentHelperTest
+public class ContentComponentHelperTest
+    extends TestSupport
 {
   @Mock
   MaintenanceService maintenanceService;
@@ -77,7 +77,8 @@ class ContentComponentHelperTest
   Repository repository;
 
   @Test
-  void toAssetXOTestHosted() {
+  public void toAssetXOShouldNotIncludeLastModifiedForHosted() {
+
     when(repositoryManager.get("maven-hosted")).thenReturn(repository);
     when(repository.getType()).thenReturn(new HostedType());
     when(componentFinders.get("default")).thenReturn(componentFinder);
@@ -96,14 +97,12 @@ class ContentComponentHelperTest
         "maven2",
         createAsset()
     );
-    
-    @SuppressWarnings("unchecked")
-    Map<String, Object> contentMap = (Map<String, Object>) assetXO.getAttributes().get("content");
-    assertThat(contentMap.containsKey("last_modified"), is(false));
+    assertThat(((Map) assetXO.getAttributes().get("content")).containsKey("last_modified"), is(false));
   }
 
   @Test
-  void toAssetXOTestProxy() {
+  public void toAssetXOShouldIncludeLastModifiedForProxy() {
+
     when(repositoryManager.get("maven-hosted")).thenReturn(repository);
     when(repository.getType()).thenReturn(new ProxyType());
     when(componentFinders.get("default")).thenReturn(componentFinder);
@@ -122,42 +121,62 @@ class ContentComponentHelperTest
         "maven2",
         createAsset()
     );
-    
-    @SuppressWarnings("unchecked")
-    Map<String, Object> contentMap = (Map<String, Object>) assetXO.getAttributes().get("content");
+    Map<String, Object> contentMap =(Map<String, Object>) assetXO.getAttributes().get("content");
     assertThat(contentMap.containsKey("last_modified"), is(true));
     assertThat(contentMap.get("last_modified"), is("2023-11-13T16:00:20.450+02:00"));
   }
 
-  /**
-   * Creates a mock asset for testing.
-   * 
-   * @return a mocked Asset instance
-   */
+  @Test
+  public void toAssetXOShouldWorkWithVirtualThreads() throws Exception {
+    // Set up the same mocks as in other tests
+    when(repositoryManager.get("maven-hosted")).thenReturn(repository);
+    when(repository.getType()).thenReturn(new ProxyType());
+    when(componentFinders.get("default")).thenReturn(componentFinder);
+
+    ContentComponentHelper underTest = new ContentComponentHelper(
+        maintenanceService,
+        componentFinders,
+        assetPermissionChecker,
+        selectorFactory,
+        repositoryManager
+    );
+
+    // Create a virtual thread executor
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit a task to the executor that calls the ContentComponentHelper
+      Future<AssetXO> future = executor.submit(() -> underTest.toAssetXO(
+          "maven-hosted",
+          "maven-hosted",
+          "maven2",
+          createAsset()
+      ));
+
+      // Get the result and verify it
+      AssetXO assetXO = future.get();
+      Map<String, Object> contentMap = (Map<String, Object>) assetXO.getAttributes().get("content");
+      assertThat(contentMap.containsKey("last_modified"), is(true));
+      assertThat(contentMap.get("last_modified"), is("2023-11-13T16:00:20.450+02:00"));
+    }
+  }
+
   private Asset createAsset() {
+
     FluentAssetImpl asset = mock(FluentAssetImpl.class);
     when(asset.path()).thenReturn("/org/apache/logging/log4j/log4j-core/maven-metadata.xml");
-    
     Map<String, String> contentMap = new HashMap<>();
     contentMap.put("last_modified", "2023-11-13T16:00:20.450+02:00");
-    
     Map<String, Object> backingMap = new HashMap<>();
     backingMap.put("content", contentMap);
-    
     when(assetAttributes.backing()).thenReturn(backingMap);
     when(asset.attributes()).thenReturn(assetAttributes);
     when(asset.kind()).thenReturn("REPOSITORY_METADATA");
-    
     OffsetDateTime blobCreated = OffsetDateTime.now();
     when(blob.blobCreated()).thenReturn(blobCreated);
-    
     OffsetDateTime assetCreated = OffsetDateTime.now();
     when(asset.created()).thenReturn(assetCreated);
-    
     AssetData assetData = new AssetData();
     assetData.setAssetId(1);
     when(asset.unwrap()).thenReturn(assetData);
-    
     return asset;
   }
 }

@@ -16,17 +16,18 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.security.AbstractSecurityTest;
+import org.sonatype.nexus.security.SecuritySystem;
 import org.sonatype.nexus.security.config.CUser;
 import org.sonatype.nexus.security.config.CUserRoleMapping;
 import org.sonatype.nexus.security.config.MemorySecurityConfiguration;
@@ -37,30 +38,34 @@ import org.apache.shiro.authc.credential.PasswordService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 /**
- * Integration tests for {@link UserManager} operations using Java 21 Virtual Threads.
- * 
- * These tests verify that user management operations work correctly when executed
- * via Virtual Threads, ensuring thread pinning doesn't occur and operations complete
- * successfully with proper transaction handling.
+ * Integration tests that verify Nexus security user management operations work correctly with Java 21 Virtual Threads.
+ * Tests various user operations (lookup, creation, updates, deletion) executed via Virtual Threads to ensure thread
+ * pinning doesn't occur and operations complete successfully with proper transaction handling.
  */
-@Tag("Java21TestGroup")
-@Tag("VirtualThreadTestGroup")
+@ExtendWith(MockitoExtension.class)
+@org.junit.jupiter.api.Tag("Java21TestGroup")
+@org.junit.jupiter.api.Tag("VirtualThreadTestGroup")
 public class UserManagerVirtualThreadIT
     extends AbstractSecurityTest
 {
+  private static final int CONCURRENT_THREADS = 100;
+  private static final int TIMEOUT_SECONDS = 30;
+  
   private PasswordService passwordService;
-  private UserManager userManager;
   private ExecutorService virtualThreadExecutor;
 
   @Override
@@ -72,291 +77,378 @@ public class UserManagerVirtualThreadIT
   public void setUp() throws Exception {
     super.setUp();
     passwordService = lookup(PasswordService.class, "default");
-    userManager = getUserManager();
     
-    // Create a virtual thread executor using Java 21's virtual thread factory
+    // Create a virtual thread executor
     ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
     virtualThreadExecutor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
   }
-
+  
   @AfterEach
   public void tearDown() throws Exception {
     if (virtualThreadExecutor != null) {
       virtualThreadExecutor.shutdown();
-      try {
-        if (!virtualThreadExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
-          virtualThreadExecutor.shutdownNow();
-        }
-      } catch (InterruptedException e) {
-        virtualThreadExecutor.shutdownNow();
-        Thread.currentThread().interrupt();
-      }
+      virtualThreadExecutor.awaitTermination(TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
     super.tearDown();
   }
 
-  public SecurityConfigurationManager getConfigurationManager() throws Exception {
-    return lookup(SecurityConfigurationManager.class);
-  }
-
   /**
-   * Tests concurrent user lookup operations with a large number of virtual threads.
-   * This verifies that the user manager can handle many concurrent read operations
-   * when executed via virtual threads without thread pinning or other concurrency issues.
+   * Test concurrent user lookups using virtual threads.
+   * This verifies that the UserManager can handle multiple concurrent lookups
+   * without thread pinning or other concurrency issues.
    */
   @Test
   public void testConcurrentUserLookupWithVirtualThreads() throws Exception {
-    // Create a test user first
-    User user = createTestUser("vt-lookup-test");
-    userManager.addUser(user, "password123");
+    UserManager userManager = this.getUserManager();
     
-    int threadCount = 1000; // Use a large number of virtual threads
-    CountDownLatch latch = new CountDownLatch(threadCount);
-    AtomicInteger successCount = new AtomicInteger(0);
+    // Create a countdown latch to wait for all threads to complete
+    CountDownLatch latch = new CountDownLatch(CONCURRENT_THREADS);
     AtomicInteger errorCount = new AtomicInteger(0);
+    AtomicReference<Exception> lastException = new AtomicReference<>();
     
-    // Execute concurrent lookups using virtual threads
-    for (int i = 0; i < threadCount; i++) {
+    // Submit concurrent user lookup tasks
+    for (int i = 0; i < CONCURRENT_THREADS; i++) {
       virtualThreadExecutor.submit(() -> {
         try {
-          User foundUser = userManager.getUser("vt-lookup-test");
-          if (foundUser != null && "vt-lookup-test".equals(foundUser.getUserId())) {
-            successCount.incrementAndGet();
-          }
-        } catch (Exception e) {
+          User user = userManager.getUser("test-user");
+          
+          // Verify user properties
+          assertNotNull(user);
+          assertEquals("test-user", user.getUserId());
+          assertEquals("test-user@example.org", user.getEmailAddress());
+          assertEquals("Test User", user.getName());
+          assertEquals(UserStatus.active.name(), user.getStatus().name());
+          
+          // Verify roles
+          List<String> roleIds = getRoleIds(user);
+          assertTrue(roleIds.contains("role1"));
+          assertTrue(roleIds.contains("role2"));
+          assertEquals(2, roleIds.size());
+        } 
+        catch (Exception e) {
           errorCount.incrementAndGet();
-        } finally {
+          lastException.set(e);
+        } 
+        finally {
           latch.countDown();
         }
       });
     }
     
     // Wait for all threads to complete
-    assertTrue(latch.await(30, TimeUnit.SECONDS), "Timed out waiting for virtual threads to complete");
+    boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
     
-    // Verify all operations completed successfully
-    assertEquals(0, errorCount.get(), "Some user lookup operations failed");
-    assertEquals(threadCount, successCount.get(), "Not all user lookup operations succeeded");
+    // Verify all threads completed successfully
+    assertTrue(completed, "Not all threads completed within the timeout period");
+    if (errorCount.get() > 0) {
+      fail("Encountered " + errorCount.get() + " errors during concurrent user lookups. Last error: " + 
+          lastException.get().getMessage());
+    }
   }
 
   /**
-   * Tests concurrent user creation operations with virtual threads.
-   * This verifies that the user manager can handle concurrent write operations
-   * when executed via virtual threads without thread pinning or transaction issues.
+   * Test concurrent user creation using virtual threads.
+   * This verifies that the UserManager can handle multiple concurrent user creations
+   * without thread pinning or other concurrency issues.
    */
   @Test
   public void testConcurrentUserCreationWithVirtualThreads() throws Exception {
-    int threadCount = 100; // Use a moderate number for creation operations
-    CountDownLatch latch = new CountDownLatch(threadCount);
-    AtomicInteger successCount = new AtomicInteger(0);
-    AtomicInteger errorCount = new AtomicInteger(0);
+    UserManager userManager = this.getUserManager();
+    SecurityConfigurationManager configManager = this.getConfigurationManager();
     
-    // Execute concurrent user creations using virtual threads
-    for (int i = 0; i < threadCount; i++) {
+    // Create a countdown latch to wait for all threads to complete
+    CountDownLatch latch = new CountDownLatch(CONCURRENT_THREADS);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    AtomicReference<Exception> lastException = new AtomicReference<>();
+    
+    // Submit concurrent user creation tasks
+    for (int i = 0; i < CONCURRENT_THREADS; i++) {
       final int index = i;
       virtualThreadExecutor.submit(() -> {
         try {
-          String userId = "vt-create-user-" + index;
-          User user = createTestUser(userId);
-          userManager.addUser(user, "password123");
+          String userId = "vt-user-" + index;
           
-          // Verify the user was created correctly
-          User foundUser = userManager.getUser(userId);
-          assertNotNull(foundUser, "Created user not found");
-          assertEquals(userId, foundUser.getUserId(), "User ID mismatch");
+          User user = new User();
+          user.setUserId(userId);
+          user.setName(userId + "-name");
+          user.setSource("default");
+          user.setEmailAddress(userId + "@example.org");
+          user.setStatus(UserStatus.active);
+          user.addRole(new RoleIdentifier("default", "role1"));
           
-          successCount.incrementAndGet();
-        } catch (Exception e) {
+          userManager.addUser(user, "password-" + index);
+          
+          // Verify user was created correctly
+          CUser secUser = configManager.readUser(userId);
+          assertNotNull(secUser);
+          assertEquals(userId, secUser.getId());
+          assertEquals(user.getEmailAddress(), secUser.getEmail());
+          assertTrue(passwordService.passwordsMatch("password-" + index, secUser.getPassword()));
+          
+          // Verify role mapping
+          CUserRoleMapping roleMapping = configManager.readUserRoleMapping(userId, "default");
+          assertNotNull(roleMapping);
+          assertTrue(roleMapping.getRoles().contains("role1"));
+        } 
+        catch (Exception e) {
           errorCount.incrementAndGet();
-        } finally {
+          lastException.set(e);
+        } 
+        finally {
           latch.countDown();
         }
       });
     }
     
     // Wait for all threads to complete
-    assertTrue(latch.await(30, TimeUnit.SECONDS), "Timed out waiting for virtual threads to complete");
+    boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
     
-    // Verify all operations completed successfully
-    assertEquals(0, errorCount.get(), "Some user creation operations failed");
-    assertEquals(threadCount, successCount.get(), "Not all user creation operations succeeded");
+    // Verify all threads completed successfully
+    assertTrue(completed, "Not all threads completed within the timeout period");
+    if (errorCount.get() > 0) {
+      fail("Encountered " + errorCount.get() + " errors during concurrent user creation. Last error: " + 
+          lastException.get().getMessage());
+    }
     
-    // Verify we can find all created users
-    for (int i = 0; i < threadCount; i++) {
-      String userId = "vt-create-user-" + i;
-      assertNotNull(userManager.getUser(userId), "User " + userId + " not found");
+    // Cleanup - delete created users
+    for (int i = 0; i < CONCURRENT_THREADS; i++) {
+      try {
+        userManager.deleteUser("vt-user-" + i);
+      } 
+      catch (UserNotFoundException e) {
+        // Ignore if user wasn't created
+      }
     }
   }
 
   /**
-   * Tests concurrent user update operations with virtual threads.
-   * This verifies that the user manager can handle concurrent update operations
-   * when executed via virtual threads without thread pinning or transaction issues.
+   * Test concurrent user updates using virtual threads.
+   * This verifies that the UserManager can handle multiple concurrent user updates
+   * without thread pinning or other concurrency issues.
    */
   @Test
   public void testConcurrentUserUpdateWithVirtualThreads() throws Exception {
-    // Create a test user first
-    String userId = "vt-update-test";
-    User user = createTestUser(userId);
-    userManager.addUser(user, "password123");
+    UserManager userManager = this.getUserManager();
+    SecurityConfigurationManager configManager = this.getConfigurationManager();
     
-    int threadCount = 50; // Use a moderate number for update operations
-    CountDownLatch latch = new CountDownLatch(threadCount);
-    AtomicInteger successCount = new AtomicInteger(0);
+    // First create a test user
+    String userId = "vt-update-user";
+    User user = new User();
+    user.setUserId(userId);
+    user.setName(userId + "-name");
+    user.setSource("default");
+    user.setEmailAddress(userId + "@example.org");
+    user.setStatus(UserStatus.active);
+    user.addRole(new RoleIdentifier("default", "role1"));
+    userManager.addUser(user, "initial-password");
+    
+    // Create a countdown latch to wait for all threads to complete
+    CountDownLatch latch = new CountDownLatch(CONCURRENT_THREADS);
     AtomicInteger errorCount = new AtomicInteger(0);
+    AtomicReference<Exception> lastException = new AtomicReference<>();
     
-    // Execute concurrent updates using virtual threads
-    for (int i = 0; i < threadCount; i++) {
+    // Submit concurrent user update tasks
+    for (int i = 0; i < CONCURRENT_THREADS; i++) {
       final int index = i;
       virtualThreadExecutor.submit(() -> {
         try {
           // Get the user
-          User foundUser = userManager.getUser(userId);
+          User updateUser = userManager.getUser(userId);
           
-          // Update the user
-          String newEmail = "vt-update-" + index + "@example.com";
-          foundUser.setEmailAddress(newEmail);
-          userManager.updateUser(foundUser);
+          // Update user properties
+          updateUser.setName(userId + "-updated-" + index);
+          updateUser.setEmailAddress(userId + "-updated-" + index + "@example.org");
           
-          // Verify the update was successful
-          User updatedUser = userManager.getUser(userId);
-          assertEquals(newEmail, updatedUser.getEmailAddress(), "Email update failed");
+          // Update roles - alternate between role1 and role2
+          Set<RoleIdentifier> roles = new HashSet<>();
+          roles.add(new RoleIdentifier("default", (index % 2 == 0) ? "role1" : "role2"));
+          updateUser.setRoles(roles);
           
-          successCount.incrementAndGet();
-        } catch (Exception e) {
+          // Perform the update
+          userManager.updateUser(updateUser);
+          
+          // Change password
+          userManager.changePassword(userId, "updated-password-" + index);
+          
+          // Verify user was updated
+          CUser secUser = configManager.readUser(userId);
+          assertNotNull(secUser);
+          assertEquals(userId, secUser.getId());
+          assertEquals(updateUser.getEmailAddress(), secUser.getEmail());
+          assertTrue(passwordService.passwordsMatch("updated-password-" + index, secUser.getPassword()));
+        } 
+        catch (Exception e) {
           errorCount.incrementAndGet();
-        } finally {
+          lastException.set(e);
+        } 
+        finally {
           latch.countDown();
         }
       });
     }
     
     // Wait for all threads to complete
-    assertTrue(latch.await(30, TimeUnit.SECONDS), "Timed out waiting for virtual threads to complete");
+    boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
     
-    // Verify operations completed - some may fail due to concurrent updates, but that's expected
-    assertTrue(successCount.get() > 0, "No user update operations succeeded");
+    // Verify all threads completed successfully
+    assertTrue(completed, "Not all threads completed within the timeout period");
+    if (errorCount.get() > 0) {
+      fail("Encountered " + errorCount.get() + " errors during concurrent user updates. Last error: " + 
+          lastException.get().getMessage());
+    }
     
-    // Verify the user still exists and has a valid email
-    User finalUser = userManager.getUser(userId);
-    assertNotNull(finalUser, "User not found after updates");
-    assertTrue(finalUser.getEmailAddress().startsWith("vt-update-"), "Email format incorrect");
+    // Cleanup - delete the test user
+    userManager.deleteUser(userId);
   }
 
   /**
-   * Tests concurrent user deletion operations with virtual threads.
-   * This verifies that the user manager can handle concurrent delete operations
-   * when executed via virtual threads without thread pinning or transaction issues.
+   * Test concurrent user deletion using virtual threads.
+   * This verifies that the UserManager can handle multiple concurrent user deletions
+   * without thread pinning or other concurrency issues.
    */
   @Test
   public void testConcurrentUserDeletionWithVirtualThreads() throws Exception {
-    int threadCount = 50; // Use a moderate number for deletion operations
-    CountDownLatch latch = new CountDownLatch(threadCount);
-    AtomicInteger successCount = new AtomicInteger(0);
+    UserManager userManager = this.getUserManager();
     
-    // Create users to delete
-    for (int i = 0; i < threadCount; i++) {
+    // First create test users
+    for (int i = 0; i < CONCURRENT_THREADS; i++) {
       String userId = "vt-delete-user-" + i;
-      User user = createTestUser(userId);
-      userManager.addUser(user, "password123");
+      User user = new User();
+      user.setUserId(userId);
+      user.setName(userId + "-name");
+      user.setSource("default");
+      user.setEmailAddress(userId + "@example.org");
+      user.setStatus(UserStatus.active);
+      user.addRole(new RoleIdentifier("default", "role1"));
+      userManager.addUser(user, "delete-password-" + i);
     }
     
-    // Execute concurrent deletions using virtual threads
-    for (int i = 0; i < threadCount; i++) {
+    // Create a countdown latch to wait for all threads to complete
+    CountDownLatch latch = new CountDownLatch(CONCURRENT_THREADS);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    AtomicReference<Exception> lastException = new AtomicReference<>();
+    
+    // Submit concurrent user deletion tasks
+    for (int i = 0; i < CONCURRENT_THREADS; i++) {
       final int index = i;
       virtualThreadExecutor.submit(() -> {
         try {
           String userId = "vt-delete-user-" + index;
           userManager.deleteUser(userId);
-          successCount.incrementAndGet();
-        } catch (Exception e) {
-          // UserNotFoundException is expected if another thread already deleted the user
-          if (!(e instanceof UserNotFoundException)) {
-            fail("Unexpected exception: " + e.getMessage());
+          
+          // Verify user was deleted
+          try {
+            userManager.getUser(userId);
+            fail("User " + userId + " was not deleted");
+          } 
+          catch (UserNotFoundException e) {
+            // Expected - user should be deleted
           }
-        } finally {
+        } 
+        catch (Exception e) {
+          errorCount.incrementAndGet();
+          lastException.set(e);
+        } 
+        finally {
           latch.countDown();
         }
       });
     }
     
     // Wait for all threads to complete
-    assertTrue(latch.await(30, TimeUnit.SECONDS), "Timed out waiting for virtual threads to complete");
+    boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
     
-    // Verify all users were deleted
-    for (int i = 0; i < threadCount; i++) {
-      String userId = "vt-delete-user-" + i;
-      try {
-        userManager.getUser(userId);
-        fail("User " + userId + " was not deleted");
-      } catch (UserNotFoundException e) {
-        // Expected - user should be deleted
-      }
+    // Verify all threads completed successfully
+    assertTrue(completed, "Not all threads completed within the timeout period");
+    if (errorCount.get() > 0) {
+      fail("Encountered " + errorCount.get() + " errors during concurrent user deletions. Last error: " + 
+          lastException.get().getMessage());
     }
   }
 
   /**
-   * Tests user authentication with virtual threads.
-   * This verifies that the security system can authenticate users correctly
-   * when executed via virtual threads without thread pinning or other issues.
+   * Test setting user roles concurrently using virtual threads.
+   * This verifies that the SecuritySystem can handle multiple concurrent role assignments
+   * without thread pinning or other concurrency issues.
    */
   @Test
-  public void testUserAuthenticationWithVirtualThreads() throws Exception {
-    // Create a test user first
-    String userId = "vt-auth-test";
-    String password = "authPassword123";
-    User user = createTestUser(userId);
-    userManager.addUser(user, password);
+  public void testConcurrentSetUserRolesWithVirtualThreads() throws Exception {
+    SecuritySystem securitySystem = this.getSecuritySystem();
     
-    int threadCount = 100; // Use a moderate number for authentication operations
-    CountDownLatch latch = new CountDownLatch(threadCount);
-    AtomicInteger successCount = new AtomicInteger(0);
+    // First create a test user
+    String userId = "vt-roles-user";
+    UserManager userManager = this.getUserManager();
+    User user = new User();
+    user.setUserId(userId);
+    user.setName(userId + "-name");
+    user.setSource("default");
+    user.setEmailAddress(userId + "@example.org");
+    user.setStatus(UserStatus.active);
+    userManager.addUser(user, "roles-password");
+    
+    // Create a countdown latch to wait for all threads to complete
+    CountDownLatch latch = new CountDownLatch(CONCURRENT_THREADS);
     AtomicInteger errorCount = new AtomicInteger(0);
+    AtomicReference<Exception> lastException = new AtomicReference<>();
     
-    // Execute concurrent authentications using virtual threads
-    for (int i = 0; i < threadCount; i++) {
+    // Submit concurrent role assignment tasks
+    for (int i = 0; i < CONCURRENT_THREADS; i++) {
+      final int index = i;
       virtualThreadExecutor.submit(() -> {
         try {
-          // Verify password matches
-          CUser secUser = getConfigurationManager().readUser(userId);
-          boolean passwordMatches = passwordService.passwordsMatch(password, secUser.getPassword());
-          if (passwordMatches) {
-            successCount.incrementAndGet();
-          } else {
-            errorCount.incrementAndGet();
-          }
-        } catch (Exception e) {
+          // Alternate between role1, role2, and role3
+          Set<RoleIdentifier> roleIdentifiers = new HashSet<>();
+          String roleId = "role" + ((index % 3) + 1);
+          roleIdentifiers.add(new RoleIdentifier("default", roleId));
+          
+          // Set user roles
+          securitySystem.setUsersRoles(userId, "default", roleIdentifiers);
+          
+          // Verify roles were set correctly
+          User updatedUser = userManager.getUser(userId);
+          List<String> roleIds = getRoleIds(updatedUser);
+          assertThat(roleIds, contains(roleId));
+          assertEquals(1, roleIds.size());
+        } 
+        catch (Exception e) {
           errorCount.incrementAndGet();
-        } finally {
+          lastException.set(e);
+        } 
+        finally {
           latch.countDown();
         }
       });
     }
     
     // Wait for all threads to complete
-    assertTrue(latch.await(30, TimeUnit.SECONDS), "Timed out waiting for virtual threads to complete");
+    boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
     
-    // Verify all operations completed successfully
-    assertEquals(0, errorCount.get(), "Some authentication operations failed");
-    assertEquals(threadCount, successCount.get(), "Not all authentication operations succeeded");
+    // Verify all threads completed successfully
+    assertTrue(completed, "Not all threads completed within the timeout period");
+    if (errorCount.get() > 0) {
+      fail("Encountered " + errorCount.get() + " errors during concurrent role assignments. Last error: " + 
+          lastException.get().getMessage());
+    }
+    
+    // Cleanup - delete the test user
+    userManager.deleteUser(userId);
   }
 
   /**
-   * Helper method to create a test user with the given ID.
+   * Helper method to get the SecurityConfigurationManager.
    */
-  private User createTestUser(String userId) {
-    User user = new User();
-    user.setUserId(userId);
-    user.setFirstName("Virtual");
-    user.setLastName("Thread Test");
-    user.setEmailAddress(userId + "@example.org");
-    user.setSource("default");
-    user.setStatus(UserStatus.active);
-    
-    // Add some roles
-    user.addRole(new RoleIdentifier("default", "role1"));
-    user.addRole(new RoleIdentifier("default", "role2"));
-    
-    return user;
+  private SecurityConfigurationManager getConfigurationManager() throws Exception {
+    return lookup(SecurityConfigurationManager.class);
+  }
+
+  /**
+   * Helper method to extract role IDs from a user.
+   */
+  private List<String> getRoleIds(User user) {
+    List<String> roleIds = new ArrayList<>();
+    for (RoleIdentifier role : user.getRoles()) {
+      roleIds.add(role.getRoleId());
+    }
+    return roleIds;
   }
 }

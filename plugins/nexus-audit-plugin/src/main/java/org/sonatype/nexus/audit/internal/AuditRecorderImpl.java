@@ -16,6 +16,8 @@ import java.util.Date;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import javax.annotation.PostConstruct;
+import javax.annotation.PreDestroy;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -37,9 +39,6 @@ import static org.sonatype.nexus.logging.task.TaskLoggingMarkers.AUDIT_LOG_ONLY;
 
 /**
  * Default {@link AuditRecorder} implementation.
- * 
- * Updated for Java 21 to leverage Virtual Threads for I/O operations and event handling,
- * improving scalability and performance for audit event recording.
  *
  * @since 3.1
  */
@@ -57,12 +56,7 @@ public class AuditRecorderImpl
 
   private final Logger auditLogger = LoggerFactory.getLogger("auditlog");
   
-  /**
-   * Virtual thread executor for handling I/O-bound audit operations asynchronously.
-   * Java 21 Virtual Threads provide lightweight concurrency with minimal overhead,
-   * making them ideal for I/O operations like logging and event dispatching.
-   */
-  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+  private ExecutorService virtualThreadExecutor;
 
   private volatile boolean enabled = false;
 
@@ -75,6 +69,20 @@ public class AuditRecorderImpl
     this.eventManager = eventManager;
     this.nodeAccess = nodeAccess;
     this.initiatorProvider = initiatorProvider;
+  }
+  
+  @PostConstruct
+  public void init() {
+    log.debug("Initializing virtual thread executor for audit logging");
+    virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+  }
+  
+  @PreDestroy
+  public void cleanup() {
+    log.debug("Shutting down virtual thread executor");
+    if (virtualThreadExecutor != null) {
+      virtualThreadExecutor.shutdown();
+    }
   }
 
   @Override
@@ -108,38 +116,30 @@ public class AuditRecorderImpl
         }
       }
 
-      // Create a final copy of the data for use in the virtual thread
+      // Create a final copy of the data for use in the lambda
       final AuditData finalData = data;
       
-      // Use Virtual Threads for I/O-bound operations (logging and event posting)
-      // This improves scalability by not blocking platform threads during I/O operations
-      virtualThreadExecutor.submit(() -> {
-        try {
-          // Log the audit data
-          auditLogger.info(AUDIT_LOG_ONLY, new AuditDTO(finalData).toString());
-          
-          // Post the event to the event manager
-          eventManager.post(new AuditDataRecordedEvent(finalData));
-          
-          if (log.isDebugEnabled()) {
-            log.debug("Audit event recorded successfully: domain={}, type={}", 
-                finalData.getDomain(), finalData.getType());
+      try {
+        // Submit audit logging and event posting to the virtual thread executor
+        virtualThreadExecutor.submit(() -> {
+          try {
+            // Log the audit data
+            auditLogger.info(AUDIT_LOG_ONLY, new AuditDTO(finalData).toString());
+            
+            // Post the event
+            eventManager.post(new AuditDataRecordedEvent(finalData));
           }
-        }
-        catch (Exception e) {
-          log.warn("Failed to record audit data: {}", e.getMessage(), e);
-        }
-      });
+          catch (Exception e) {
+            log.warn("Failed to record audit data in virtual thread", e);
+          }
+        });
+      }
+      catch (Exception e) {
+        log.warn("Failed to submit audit data to virtual thread executor", e);
+      }
     }
   }
 
-  /**
-   * Sets the initiator for the audit data, replacing the UNKNOWN placeholder with the principal
-   * from attributes if available.
-   * 
-   * @param data The audit data to update
-   * @param initiator The initiator string that may contain UNKNOWN placeholder
-   */
   private void setInitiator(final AuditData data, final String initiator) {
     if (data.getAttributes().containsKey("principal")) {
       String newInitiator = initiator.replace(UserIdHelper.UNKNOWN, data.getAttributes().get("principal").toString());
@@ -149,14 +149,5 @@ public class AuditRecorderImpl
       data.setInitiator(initiator);
     }
   }
-  
-  /**
-   * Safely shuts down the virtual thread executor when the component is stopped.
-   * This ensures proper cleanup of resources and completion of pending tasks.
-   */
-  @Override
-  protected void doStop() throws Exception {
-    virtualThreadExecutor.close();
-    super.doStop();
-  }
+
 }

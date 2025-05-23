@@ -15,52 +15,82 @@ package org.sonatype.nexus.security.realm;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.SequencedCollection;
+import java.util.Objects;
 
 import javax.annotation.Nullable;
 
 /**
- * Test implementation of {@link RealmConfiguration} that is thread-safe and immutable.
+ * Test implementation of {@link RealmConfiguration} with proper immutability and thread safety for Java 21.
  * 
  * @since 3.0
  */
 public class TestRealmConfiguration
     implements RealmConfiguration
 {
-  private final SequencedCollection<String> realmNames;
+  private volatile List<String> realmNames;
 
   /**
    * Creates a new instance with no realm names.
    */
   public TestRealmConfiguration() {
-    this.realmNames = Collections.unmodifiableSequencedCollection(new ArrayList<>());
+    // Default constructor
   }
 
   /**
-   * Creates a new instance with the given realm names.
+   * Creates a new instance with the specified realm names.
    *
-   * @param realmNames the realm names to use, or null for an empty list
+   * @param realmNames the realm names to set, may be null
    */
   public TestRealmConfiguration(@Nullable final List<String> realmNames) {
-    if (realmNames == null) {
-      this.realmNames = Collections.unmodifiableSequencedCollection(new ArrayList<>());
-    } else {
-      this.realmNames = Collections.unmodifiableSequencedCollection(new ArrayList<>(realmNames));
-    }
+    setRealmNames(realmNames);
   }
 
   @Override
   public List<String> getRealmNames() {
+    if (realmNames == null) {
+      return null;
+    }
+    // Return a defensive copy to ensure immutability
     return Collections.unmodifiableList(new ArrayList<>(realmNames));
   }
 
   @Override
   public void setRealmNames(@Nullable final List<String> realmNames) {
-    throw new UnsupportedOperationException("TestRealmConfiguration is immutable");
+    if (realmNames == null) {
+      this.realmNames = null;
+    } else {
+      // Create a defensive copy to ensure immutability
+      this.realmNames = new ArrayList<>(realmNames);
+    }
   }
 
   @Override
   public RealmConfiguration copy() {
-    return new TestRealmConfiguration(new ArrayList<>(realmNames));
+    // Create a proper defensive copy of the configuration
+    return new TestRealmConfiguration(realmNames);
+  }
+
+  @Override
+  public boolean equals(final Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+    TestRealmConfiguration that = (TestRealmConfiguration) o;
+    return Objects.equals(realmNames, that.realmNames);
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hash(realmNames);
+  }
+
+  @Override
+  public String toString() {
+    return "TestRealmConfiguration{" +
+        "realmNames=" + realmNames +
+        '}';
   }
 }

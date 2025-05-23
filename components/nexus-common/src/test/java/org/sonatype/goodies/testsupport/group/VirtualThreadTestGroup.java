@@ -13,25 +13,13 @@
 package org.sonatype.goodies.testsupport.group;
 
 /**
- * Marker interface for tests that specifically validate Java 21 Virtual Thread functionality.
+ * Marker interface for tests that specifically validate Virtual Thread compatibility.
  * 
- * <p>
- * Tests marked with this category will be executed when the 'virtual-threads' Maven profile is activated
- * with -Dvirtual-threads=true. These tests validate that code paths utilizing Java 21's virtual thread
- * capabilities function correctly.
- * </p>
- * 
- * <p>
- * This category is used to identify tests that:
- * <ul>
- *   <li>Verify operations work correctly when executed in virtual threads</li>
- *   <li>Validate that thread pinning issues are avoided</li>
- *   <li>Test concurrent operations using virtual threads</li>
- *   <li>Compare performance characteristics between platform and virtual threads</li>
- * </ul>
- * </p>
+ * <p>Tests marked with this category will be included in the virtual-threads Maven profile.</p>
+ *
+ * @since 3.60
  */
 public interface VirtualThreadTestGroup
 {
-  // marker interface
+  // empty
 }

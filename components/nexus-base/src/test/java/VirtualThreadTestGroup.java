@@ -15,39 +15,31 @@
  * Marker interface that defines a test category for tests that specifically validate
  * application behavior with Java 21 Virtual Threads.
  * <p>
- * Tests annotated with {@code @Category(VirtualThreadTestGroup.class)} will be executed
- * when the {@code virtual-threads} Maven profile is activated with {@code -Dvirtual-threads=true}.
+ * This interface enables selective execution of virtual thread tests via JUnit Categories
+ * and Maven profiles. Tests focused on concurrency capabilities, thread pinning detection,
+ * and performance comparisons between platform and virtual threads should be annotated with
+ * {@code @Category(VirtualThreadTestGroup.class)}.
  * <p>
- * This test group is focused on validating:
- * <ul>
- *   <li>Concurrency capabilities with high thread counts</li>
- *   <li>Thread pinning detection and mitigation</li>
- *   <li>Performance comparisons between platform and virtual threads</li>
- *   <li>I/O operations optimized for virtual threads</li>
- * </ul>
- * <p>
- * Example usage with JUnit 4:
+ * Example usage:
  * <pre>
  * {@code
  * @Category(VirtualThreadTestGroup.class)
- * @Test
- * public void testConcurrentOperationsWithVirtualThreads() {
- *   // Test implementation using virtual threads
+ * public class MyVirtualThreadTest {
+ *   @Test
+ *   public void testVirtualThreadBehavior() {
+ *     // Test code that validates Virtual Thread behavior
+ *   }
  * }
  * }
  * </pre>
  * <p>
- * Example usage with JUnit Jupiter (JUnit 5):
+ * These tests can be selectively executed using the virtual-threads Maven profile:
  * <pre>
- * {@code
- * @Tag("VirtualThreadTestGroup")
- * @Test
- * void testConcurrentOperationsWithVirtualThreads() {
- *   // Test implementation using virtual threads
- * }
- * }
+ * mvn test -Pvirtual-threads
  * </pre>
+ *
+ * @since 3.60
  */
 public interface VirtualThreadTestGroup {
-    // Marker interface - no methods required
+  // Marker interface - no methods
 }

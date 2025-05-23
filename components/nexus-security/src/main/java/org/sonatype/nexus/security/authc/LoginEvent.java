@@ -15,15 +15,42 @@ package org.sonatype.nexus.security.authc;
 import java.io.Serializable;
 
 /**
- * Event record representing a successful user login.
- * Extends the base SecurityEvent record with login-specific context.
- *
- * @since 3.0
+ * Event representing a successful login action.
+ * <p>
+ * This class supports pattern matching with Java 21 Record Patterns when used in instanceof
+ * or switch expressions.
+ * <p>
+ * Example using pattern matching:
+ * <pre>
+ * if (event instanceof LoginEvent(var principal, var realm)) {
+ *   // Use principal and realm directly without getter methods
+ *   log.info("User {} logged in via {}", principal, realm);
+ * }
+ * </pre>
  */
-public final record LoginEvent(
-    String principal,
-    String realm
-) extends SecurityEvent(principal, realm) implements Serializable
+public class LoginEvent
+  extends SecurityEvent
+  implements Serializable
 {
   private static final long serialVersionUID = 1L;
+  
+  /**
+   * Creates a new login event.
+   *
+   * @param principal the user principal that logged in
+   * @param realm the security realm used for authentication
+   */
+  public LoginEvent(final String principal, final String realm) {
+    super(principal, realm);
+  }
+  
+  /**
+   * Returns a string representation of this event using Java 21 String Templates.
+   *
+   * @return a string representation of this event
+   */
+  @Override
+  public String toString() {
+    return STR."LoginEvent{principal=\{getPrincipal()}, realm=\{getRealm()}}";
+  }
 }

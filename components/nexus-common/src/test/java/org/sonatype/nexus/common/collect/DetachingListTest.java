@@ -17,12 +17,12 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.virtualthread.Java21TestGroup;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
 import com.google.common.collect.ImmutableList;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Category;
+import org.junit.experimental.categories.Category;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 
@@ -36,6 +36,9 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+/**
+ * Tests for {@link DetachingList}.
+ */
 @Category(Java21TestGroup.class)
 public class DetachingListTest
     extends TestSupport
@@ -52,12 +55,12 @@ public class DetachingListTest
   private DetachingList<String> underTest;
 
   @BeforeEach
-  void setUp() {
+  public void setUp() {
     underTest = new DetachingList<>(backing, allowDetach, detach);
   }
 
   @Test
-  void nonEscapingQueriesNeverDetach() {
+  public void nonEscapingQueriesNeverDetach() {
 
     underTest.contains(null);
     underTest.containsAll(null);
@@ -87,7 +90,7 @@ public class DetachingListTest
   }
 
   @Test
-  void escapingQueriesTriggerDetach() {
+  public void escapingQueriesTriggerDetach() {
     when(allowDetach.getAsBoolean()).thenReturn(true);
 
     underTest.iterator();
@@ -108,7 +111,7 @@ public class DetachingListTest
   }
 
   @Test
-  void mutationsTriggerDetach() {
+  public void mutationsTriggerDetach() {
     when(allowDetach.getAsBoolean()).thenReturn(true);
 
     underTest.add("");
@@ -127,7 +130,7 @@ public class DetachingListTest
   }
 
   @Test
-  void detachingCanBeDisallowed() {
+  public void detachingCanBeDisallowed() {
     when(allowDetach.getAsBoolean()).thenReturn(false);
 
     underTest.add("");
@@ -168,7 +171,7 @@ public class DetachingListTest
   }
 
   @Test
-  void simpleDetach() {
+  public void simpleDetach() {
     List<String> original = ImmutableList.of("HELLO", "THERE");
 
     underTest = new DetachingList<>(original, allowDetach, detach);
@@ -192,56 +195,71 @@ public class DetachingListTest
     verifyNoMoreInteractions(allowDetach, detach);
   }
   
+  /**
+   * Tests compatibility with Java 21's Sequenced Collections interface method first().
+   */
   @Test
-  void firstMethodReturnsFirstElement() {
+  public void firstReturnsFirstElement() {
     List<String> original = ImmutableList.of("FIRST", "SECOND", "THIRD");
+    
     underTest = new DetachingList<>(original, allowDetach, detach);
     
     when(allowDetach.getAsBoolean()).thenReturn(false);
-    when(backing.iterator()).thenReturn(original.iterator());
     
     assertThat(underTest.getFirst(), is("FIRST"));
     
     InOrder inOrder = inOrder(backing, allowDetach);
     inOrder.verify(allowDetach).getAsBoolean();
-    inOrder.verify(backing).iterator();
+    inOrder.verify(backing).getFirst();
     
     verifyNoMoreInteractions(backing, allowDetach, detach);
   }
   
+  /**
+   * Tests compatibility with Java 21's Sequenced Collections interface method last().
+   */
   @Test
-  void lastMethodReturnsLastElement() {
+  public void lastReturnsLastElement() {
     List<String> original = ImmutableList.of("FIRST", "SECOND", "THIRD");
+    
     underTest = new DetachingList<>(original, allowDetach, detach);
     
     when(allowDetach.getAsBoolean()).thenReturn(false);
-    when(backing.iterator()).thenReturn(original.iterator());
     
     assertThat(underTest.getLast(), is("THIRD"));
     
     InOrder inOrder = inOrder(backing, allowDetach);
     inOrder.verify(allowDetach).getAsBoolean();
-    inOrder.verify(backing).iterator();
+    inOrder.verify(backing).getLast();
     
     verifyNoMoreInteractions(backing, allowDetach, detach);
   }
   
+  /**
+   * Tests compatibility with Java 21's Sequenced Collections interface method reversed().
+   */
   @Test
-  void reversedMethodReturnsReversedView() {
+  public void reversedReturnsReversedList() {
     List<String> original = ImmutableList.of("FIRST", "SECOND", "THIRD");
+    List<String> reversed = ImmutableList.of("THIRD", "SECOND", "FIRST");
+    
     underTest = new DetachingList<>(original, allowDetach, detach);
     
-    when(allowDetach.getAsBoolean()).thenReturn(false);
-    when(backing.iterator()).thenReturn(original.iterator());
+    when(allowDetach.getAsBoolean()).thenReturn(true);
+    when(detach.apply(isNotNull())).thenAnswer(returnsFirstArg());
     
-    List<String> reversed = underTest.reversed();
-    assertThat(reversed.getFirst(), is("THIRD"));
-    assertThat(reversed.getLast(), is("FIRST"));
+    List<String> result = underTest.reversed();
+    assertThat(result, contains("THIRD", "SECOND", "FIRST"));
     
-    InOrder inOrder = inOrder(backing, allowDetach);
+    // Original list should be unchanged
+    assertThat(original, contains("FIRST", "SECOND", "THIRD"));
+    
+    InOrder inOrder = inOrder(allowDetach, detach);
     inOrder.verify(allowDetach).getAsBoolean();
-    inOrder.verify(backing).iterator();
+    inOrder.verify(detach).apply("FIRST");
+    inOrder.verify(detach).apply("SECOND");
+    inOrder.verify(detach).apply("THIRD");
     
-    verifyNoMoreInteractions(backing, allowDetach, detach);
+    verifyNoMoreInteractions(allowDetach, detach);
   }
 }

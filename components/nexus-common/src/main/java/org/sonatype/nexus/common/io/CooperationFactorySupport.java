@@ -18,10 +18,6 @@ import org.sonatype.goodies.lifecycle.LifecycleSupport;
 
 /**
  * Common scaffolding for {@link CooperationFactory} implementations.
- * <p>
- * With Java 21, this class supports configuration of Virtual Threads for high-throughput
- * I/O operations. Virtual Threads provide significant performance benefits for I/O-bound
- * operations by allowing thousands of concurrent operations with minimal resource overhead.
  *
  * @since 3.14
  */
@@ -29,11 +25,6 @@ public abstract class CooperationFactorySupport
     extends LifecycleSupport
     implements CooperationFactory
 {
-  /**
-   * Default number of carrier threads for Virtual Threads, based on available processors.
-   */
-  private static final int DEFAULT_MAX_CARRIER_THREADS = Runtime.getRuntime().availableProcessors();
-
   @Override
   public Builder configure() {
     return new MutableConfig();
@@ -41,12 +32,10 @@ public abstract class CooperationFactorySupport
 
   /**
    * Builds a new {@link Cooperation} point with the given configuration.
-   * <p>
-   * Implementations should check the config for Virtual Thread settings and optimize
-   * accordingly when running on Java 21 or later.
    *
    * @param id unique identifier for this cooperation point
-   * @param config configuration for the cooperation point
+   * @param config configuration for this cooperation point
+   * @return a new {@link Cooperation} instance
    */
   protected abstract Cooperation build(String id, Config config);
 
@@ -62,22 +51,21 @@ public abstract class CooperationFactorySupport
     protected int threadsPerKey = 0;
     
     /**
-     * Flag indicating whether to use Virtual Threads for I/O operations.
-     * Only effective when running on Java 21 or later.
+     * Flag indicating whether to use Virtual Threads (Java 21+) for this cooperation point.
+     * When true, the cooperation mechanism will leverage Virtual Threads for improved performance
+     * during I/O-bound operations.
+     * 
+     * @since 3.60
      */
     protected boolean useVirtualThreads = false;
     
     /**
-     * Maximum number of carrier threads to use for Virtual Threads.
-     * Only effective when useVirtualThreads is true.
+     * Maximum number of Virtual Threads allowed per cooperation key.
+     * Only applicable when {@link #useVirtualThreads} is true.
+     * 
+     * @since 3.60
      */
-    protected int maxCarrierThreads = DEFAULT_MAX_CARRIER_THREADS;
-    
-    /**
-     * Flag indicating whether to allow Virtual Thread pinning.
-     * Only effective when useVirtualThreads is true.
-     */
-    protected boolean allowThreadPinning = true;
+    protected int virtualThreadsPerKey = 0;
 
     public Duration majorTimeout() {
       return Duration.ofSeconds(majorTimeoutSeconds);
@@ -92,7 +80,7 @@ public abstract class CooperationFactorySupport
     }
     
     /**
-     * Returns whether Virtual Threads should be used for I/O operations.
+     * Returns whether Virtual Threads should be used for this cooperation point.
      * 
      * @return true if Virtual Threads should be used, false otherwise
      * @since 3.60
@@ -102,23 +90,14 @@ public abstract class CooperationFactorySupport
     }
     
     /**
-     * Returns the maximum number of carrier threads to use for Virtual Threads.
+     * Returns the maximum number of Virtual Threads allowed per cooperation key.
+     * Only applicable when {@link #useVirtualThreads()} is true.
      * 
-     * @return the maximum number of carrier threads
+     * @return maximum number of Virtual Threads per key
      * @since 3.60
      */
-    public int maxCarrierThreads() {
-      return maxCarrierThreads;
-    }
-    
-    /**
-     * Returns whether Virtual Thread pinning is allowed.
-     * 
-     * @return true if pinning is allowed, false otherwise
-     * @since 3.60
-     */
-    public boolean allowThreadPinning() {
-      return allowThreadPinning;
+    public int virtualThreadsPerKey() {
+      return virtualThreadsPerKey;
     }
 
     protected Config copy() {
@@ -127,8 +106,7 @@ public abstract class CooperationFactorySupport
       copy.minorTimeoutSeconds = minorTimeoutSeconds;
       copy.threadsPerKey = threadsPerKey;
       copy.useVirtualThreads = useVirtualThreads;
-      copy.maxCarrierThreads = maxCarrierThreads;
-      copy.allowThreadPinning = allowThreadPinning;
+      copy.virtualThreadsPerKey = virtualThreadsPerKey;
       return copy;
     }
   }
@@ -158,21 +136,32 @@ public abstract class CooperationFactorySupport
       return this;
     }
     
+    /**
+     * Configures whether to use Virtual Threads (Java 21+) for this cooperation point.
+     * When enabled, the cooperation mechanism will leverage Virtual Threads for improved
+     * performance during I/O-bound operations.
+     *
+     * @param useVirtualThreads true to use Virtual Threads, false to use platform threads
+     * @return this builder for fluent method chaining
+     * @since 3.60
+     */
     @Override
-    public Builder virtualThreads(boolean enabled) {
-      this.useVirtualThreads = enabled;
+    public Builder useVirtualThreads(final boolean useVirtualThreads) {
+      this.useVirtualThreads = useVirtualThreads;
       return this;
     }
     
+    /**
+     * Configures the maximum number of Virtual Threads allowed per cooperation key.
+     * Only applicable when {@link #useVirtualThreads(boolean)} is set to true.
+     * 
+     * @param virtualThreadsPerKey maximum number of Virtual Threads per key
+     * @return this builder for fluent method chaining
+     * @since 3.60
+     */
     @Override
-    public Builder maxCarrierThreads(int maxCarrierThreads) {
-      this.maxCarrierThreads = maxCarrierThreads;
-      return this;
-    }
-    
-    @Override
-    public Builder allowThreadPinning(boolean allowPinning) {
-      this.allowThreadPinning = allowPinning;
+    public Builder virtualThreadsPerKey(final int virtualThreadsPerKey) {
+      this.virtualThreadsPerKey = virtualThreadsPerKey;
       return this;
     }
 

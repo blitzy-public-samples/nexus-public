@@ -13,9 +13,9 @@
 package virtualthread;
 
 import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -23,414 +23,438 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.virtualthread.VirtualThreadTestGroup;
+import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 
-import org.junit.After;
-import org.junit.Before;
-import org.junit.experimental.categories.Category;
-
-import static java.util.concurrent.TimeUnit.SECONDS;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.greaterThan;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.lessThan;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * Support class for virtual thread testing in the cleanup component. Provides utilities for creating
- * and comparing platform and virtual thread executors, measuring performance metrics, and running
- * cleanup operations concurrently with different thread types.
+ * Support class for virtual thread testing in the cleanup component.
+ * <p>
+ * Provides utilities for creating and comparing platform and virtual thread executors,
+ * measuring performance metrics, and running cleanup operations concurrently with different thread types.
+ * This class serves as the foundation for all cleanup component virtual thread tests.
  *
  * @since 3.60
  */
-@Category(VirtualThreadTestGroup.class)
+@ExtendWith(MockitoExtension.class)
 public class CleanupVirtualThreadTestSupport
     extends TestSupport
 {
   /**
-   * Default number of threads to use for platform thread executors.
+   * System property to enable/disable virtual thread tests.
    */
-  private static final int DEFAULT_PLATFORM_THREAD_COUNT = 100;
+  public static final String VIRTUAL_THREAD_TESTS_ENABLED = "test.virtual.threads";
 
   /**
-   * Default timeout for waiting for operations to complete.
+   * Default timeout for cleanup operations in seconds.
    */
-  private static final int DEFAULT_TIMEOUT_SECONDS = 60;
+  private static final int DEFAULT_TIMEOUT_SECONDS = 30;
 
   /**
-   * System property that controls whether virtual threads are enabled for tests.
+   * Default number of concurrent tasks for performance testing.
    */
-  private static final String VIRTUAL_THREADS_ENABLED_PROPERTY = "test.virtual.threads";
+  private static final int DEFAULT_CONCURRENT_TASKS = 100;
 
   /**
-   * Executor services created during tests that need to be shut down.
-   */
-  private final List<ExecutorService> executorServices = new ArrayList<>();
-
-  @Before
-  public void setupVirtualThreadSupport() {
-    log.info("Virtual thread test support initialized. Virtual threads enabled: {}", isVirtualThreadsEnabled());
-  }
-
-  @After
-  public void shutdownExecutors() {
-    // Shutdown all executor services created during the test
-    executorServices.forEach(executor -> {
-      try {
-        executor.shutdown();
-        if (!executor.awaitTermination(5, SECONDS)) {
-          log.warn("Executor did not terminate in the allotted time. Forcing shutdown.");
-          executor.shutdownNow();
-        }
-      }
-      catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        log.warn("Interrupted while waiting for executor shutdown", e);
-      }
-    });
-    executorServices.clear();
-  }
-
-  /**
-   * Checks if virtual threads are enabled for testing.
+   * Creates a platform thread factory with the specified name prefix.
    *
-   * @return true if virtual threads are enabled
+   * @param namePrefix the prefix to use for thread names
+   * @return a platform thread factory
    */
-  public boolean isVirtualThreadsEnabled() {
-    return Boolean.parseBoolean(System.getProperty(VIRTUAL_THREADS_ENABLED_PROPERTY, "false"));
+  public static ThreadFactory createPlatformThreadFactory(final String namePrefix) {
+    AtomicInteger counter = new AtomicInteger();
+    return r -> {
+      Thread thread = Thread.ofPlatform().name(namePrefix + "-" + counter.incrementAndGet()).build();
+      thread.setDaemon(true);
+      return thread;
+    };
   }
 
   /**
-   * Creates a thread factory for virtual threads if enabled, otherwise for platform threads.
+   * Creates a virtual thread factory with the specified name prefix.
    *
-   * @return the thread factory
+   * @param namePrefix the prefix to use for thread names
+   * @return a virtual thread factory
    */
-  public ThreadFactory createThreadFactory() {
-    return isVirtualThreadsEnabled() ? createVirtualThreadFactory() : createPlatformThreadFactory();
+  public static ThreadFactory createVirtualThreadFactory(final String namePrefix) {
+    AtomicInteger counter = new AtomicInteger();
+    return r -> Thread.ofVirtual().name(namePrefix + "-" + counter.incrementAndGet()).build();
   }
 
   /**
-   * Creates a thread factory for virtual threads.
+   * Creates a platform thread executor service with the specified number of threads.
    *
-   * @return the virtual thread factory
+   * @param namePrefix the prefix to use for thread names
+   * @param threadCount the number of threads in the pool
+   * @return a platform thread executor service
    */
-  public ThreadFactory createVirtualThreadFactory() {
-    return Thread.ofVirtual().name("cleanup-virtual-", 0).factory();
+  public static ExecutorService createPlatformThreadExecutor(final String namePrefix, final int threadCount) {
+    return Executors.newFixedThreadPool(threadCount, createPlatformThreadFactory(namePrefix));
   }
 
   /**
-   * Creates a thread factory for platform threads.
+   * Creates a virtual thread per task executor service.
    *
-   * @return the platform thread factory
+   * @param namePrefix the prefix to use for thread names
+   * @return a virtual thread executor service
    */
-  public ThreadFactory createPlatformThreadFactory() {
-    return Thread.ofPlatform().name("cleanup-platform-", 0).factory();
+  public static ExecutorService createVirtualThreadExecutor(final String namePrefix) {
+    return Executors.newThreadPerTaskExecutor(createVirtualThreadFactory(namePrefix));
   }
 
   /**
-   * Creates an executor service using virtual threads if enabled, otherwise using platform threads.
+   * Checks if virtual thread tests are enabled.
+   * Tests can use this to skip execution when virtual threads are not enabled.
    *
-   * @return the executor service
+   * @return true if virtual thread tests are enabled
    */
-  public ExecutorService createExecutorService() {
-    return createExecutorService(DEFAULT_PLATFORM_THREAD_COUNT);
+  public static boolean isVirtualThreadTestsEnabled() {
+    return Boolean.getBoolean(VIRTUAL_THREAD_TESTS_ENABLED);
   }
 
   /**
-   * Creates an executor service using virtual threads if enabled, otherwise using platform threads
-   * with the specified thread count.
-   *
-   * @param platformThreadCount the number of platform threads to use if virtual threads are disabled
-   * @return the executor service
+   * Assumes that virtual thread tests are enabled, skipping the test if they are not.
+   * This should be called at the beginning of tests that require virtual threads.
    */
-  public ExecutorService createExecutorService(int platformThreadCount) {
-    ExecutorService executor = isVirtualThreadsEnabled() ?
-        Executors.newVirtualThreadPerTaskExecutor() :
-        Executors.newFixedThreadPool(platformThreadCount, createPlatformThreadFactory());
-    
-    // Track the executor for cleanup
-    executorServices.add(executor);
-    
-    return executor;
+  public static void assumeVirtualThreadsEnabled() {
+    Assumptions.assumeTrue(isVirtualThreadTestsEnabled(), 
+        "Virtual thread tests are disabled. Enable with -D" + VIRTUAL_THREAD_TESTS_ENABLED + "=true");
   }
 
   /**
-   * Executes a cleanup operation with the specified concurrency level and measures performance.
+   * Performance measurement result containing execution metrics.
+   */
+  public static class PerformanceResult {
+    private final long totalDurationMs;
+    private final long operationCount;
+    private final String threadType;
+
+    public PerformanceResult(long totalDurationMs, long operationCount, String threadType) {
+      this.totalDurationMs = totalDurationMs;
+      this.operationCount = operationCount;
+      this.threadType = threadType;
+    }
+
+    /**
+     * Gets the total duration in milliseconds.
+     *
+     * @return the total duration in milliseconds
+     */
+    public long getTotalDurationMs() {
+      return totalDurationMs;
+    }
+
+    /**
+     * Gets the number of operations performed.
+     *
+     * @return the number of operations
+     */
+    public long getOperationCount() {
+      return operationCount;
+    }
+
+    /**
+     * Gets the thread type used for the test ("platform" or "virtual").
+     *
+     * @return the thread type
+     */
+    public String getThreadType() {
+      return threadType;
+    }
+
+    /**
+     * Gets the operations per second.
+     *
+     * @return the operations per second
+     */
+    public double getOperationsPerSecond() {
+      return operationCount * 1000.0 / totalDurationMs;
+    }
+
+    /**
+     * Gets the average duration per operation in milliseconds.
+     *
+     * @return the average duration per operation
+     */
+    public double getAverageDurationPerOperationMs() {
+      return (double) totalDurationMs / operationCount;
+    }
+
+    @Override
+    public String toString() {
+      return String.format("%s threads: %d operations in %d ms (%.2f ops/sec, %.2f ms/op)",
+          threadType, operationCount, totalDurationMs, getOperationsPerSecond(), getAverageDurationPerOperationMs());
+    }
+  }
+
+  /**
+   * Measures the performance of a cleanup operation using platform threads.
    *
-   * @param operation the cleanup operation to execute
-   * @param concurrencyLevel the number of concurrent operations to run
-   * @param useVirtualThreads whether to use virtual threads
+   * @param operation the operation to measure
+   * @param concurrentTasks the number of concurrent tasks to execute
    * @return the performance result
    */
-  public PerformanceResult executeWithConcurrency(
-      Supplier<Boolean> operation,
-      int concurrencyLevel,
-      boolean useVirtualThreads) throws Exception
+  public PerformanceResult measurePlatformThreadPerformance(
+      final Runnable operation,
+      final int concurrentTasks) 
   {
-    return executeWithConcurrency(operation, concurrencyLevel, useVirtualThreads, DEFAULT_TIMEOUT_SECONDS);
+    return measurePerformance(
+        operation,
+        concurrentTasks,
+        () -> createPlatformThreadExecutor("cleanup-platform", concurrentTasks),
+        "platform");
   }
 
   /**
-   * Executes a cleanup operation with the specified concurrency level and measures performance.
+   * Measures the performance of a cleanup operation using platform threads with default concurrency.
    *
-   * @param operation the cleanup operation to execute
-   * @param concurrencyLevel the number of concurrent operations to run
-   * @param useVirtualThreads whether to use virtual threads
-   * @param timeoutSeconds the maximum time to wait for operations to complete
+   * @param operation the operation to measure
    * @return the performance result
    */
-  public PerformanceResult executeWithConcurrency(
-      Supplier<Boolean> operation,
-      int concurrencyLevel,
-      boolean useVirtualThreads,
-      int timeoutSeconds) throws Exception
+  public PerformanceResult measurePlatformThreadPerformance(final Runnable operation) {
+    return measurePlatformThreadPerformance(operation, DEFAULT_CONCURRENT_TASKS);
+  }
+
+  /**
+   * Measures the performance of a cleanup operation using virtual threads.
+   *
+   * @param operation the operation to measure
+   * @param concurrentTasks the number of concurrent tasks to execute
+   * @return the performance result
+   */
+  public PerformanceResult measureVirtualThreadPerformance(
+      final Runnable operation,
+      final int concurrentTasks) 
   {
-    log.info("Executing cleanup operation with concurrency level {} using {} threads",
-        concurrencyLevel, useVirtualThreads ? "virtual" : "platform");
+    assumeVirtualThreadsEnabled();
+    return measurePerformance(
+        operation,
+        concurrentTasks,
+        () -> createVirtualThreadExecutor("cleanup-virtual"),
+        "virtual");
+  }
 
-    // Create appropriate executor based on thread type
-    ExecutorService executor = useVirtualThreads ?
-        Executors.newVirtualThreadPerTaskExecutor() :
-        Executors.newFixedThreadPool(concurrencyLevel, createPlatformThreadFactory());
+  /**
+   * Measures the performance of a cleanup operation using virtual threads with default concurrency.
+   *
+   * @param operation the operation to measure
+   * @return the performance result
+   */
+  public PerformanceResult measureVirtualThreadPerformance(final Runnable operation) {
+    return measureVirtualThreadPerformance(operation, DEFAULT_CONCURRENT_TASKS);
+  }
 
-    executorServices.add(executor);
+  /**
+   * Compares the performance of platform threads vs virtual threads for a cleanup operation.
+   *
+   * @param operation the operation to compare
+   * @param concurrentTasks the number of concurrent tasks to execute
+   * @return a list containing both performance results (platform first, virtual second)
+   */
+  public List<PerformanceResult> compareThreadPerformance(
+      final Runnable operation,
+      final int concurrentTasks) 
+  {
+    assumeVirtualThreadsEnabled();
+    List<PerformanceResult> results = new ArrayList<>();
+    
+    // Run platform threads first
+    results.add(measurePlatformThreadPerformance(operation, concurrentTasks));
+    
+    // Then run virtual threads
+    results.add(measureVirtualThreadPerformance(operation, concurrentTasks));
+    
+    // Log the comparison
+    log.info("Performance comparison:");
+    results.forEach(result -> log.info("  " + result));
+    
+    double speedup = results.get(0).getAverageDurationPerOperationMs() / 
+                     results.get(1).getAverageDurationPerOperationMs();
+    log.info("  Virtual thread speedup: {:.2f}x", speedup);
+    
+    return results;
+  }
 
-    CountDownLatch latch = new CountDownLatch(concurrencyLevel);
-    AtomicInteger successCount = new AtomicInteger(0);
-    AtomicInteger errorCount = new AtomicInteger(0);
+  /**
+   * Compares the performance of platform threads vs virtual threads with default concurrency.
+   *
+   * @param operation the operation to compare
+   * @return a list containing both performance results (platform first, virtual second)
+   */
+  public List<PerformanceResult> compareThreadPerformance(final Runnable operation) {
+    return compareThreadPerformance(operation, DEFAULT_CONCURRENT_TASKS);
+  }
 
-    // Record memory usage before test
-    long memoryBefore = getUsedMemory();
-
-    // Record start time
-    Instant startTime = Instant.now();
-
+  /**
+   * Executes a cleanup operation concurrently using the specified executor service.
+   *
+   * @param operation the operation to execute
+   * @param concurrentTasks the number of concurrent tasks to execute
+   * @param executorSupplier supplier for the executor service
+   * @param timeoutSeconds maximum time to wait for completion in seconds
+   * @return true if all tasks completed successfully, false if timeout occurred
+   * @throws Exception if an error occurs during execution
+   */
+  public boolean executeCleanupConcurrently(
+      final Runnable operation,
+      final int concurrentTasks,
+      final Supplier<ExecutorService> executorSupplier,
+      final int timeoutSeconds) throws Exception 
+  {
+    ExecutorService executor = executorSupplier.get();
     try {
-      // Submit tasks
+      CountDownLatch latch = new CountDownLatch(concurrentTasks);
       List<CompletableFuture<Void>> futures = new ArrayList<>();
-
-      for (int i = 0; i < concurrencyLevel; i++) {
+      
+      for (int i = 0; i < concurrentTasks; i++) {
         CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
           try {
-            boolean success = operation.get();
-            if (success) {
-              successCount.incrementAndGet();
-            }
-            else {
-              errorCount.incrementAndGet();
-            }
-          }
-          catch (Exception e) {
-            log.error("Error in cleanup operation", e);
-            errorCount.incrementAndGet();
-          }
-          finally {
+            operation.run();
+          } finally {
             latch.countDown();
           }
         }, executor);
-
         futures.add(future);
       }
-
-      // Wait for all tasks to complete or timeout
+      
+      // Wait for completion or timeout
       boolean completed = latch.await(timeoutSeconds, TimeUnit.SECONDS);
-      if (!completed) {
-        log.warn("Operation timed out before all tasks completed");
+      
+      // Check for exceptions
+      if (completed) {
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
       }
-
-      // Wait for all futures to complete
-      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-    }
-    finally {
+      
+      return completed;
+    } finally {
       executor.shutdown();
+      executor.awaitTermination(timeoutSeconds, TimeUnit.SECONDS);
     }
-
-    // Record end time and calculate duration
-    Instant endTime = Instant.now();
-    long durationMs = Duration.between(startTime, endTime).toMillis();
-
-    // Record memory usage after test
-    long memoryAfter = getUsedMemory();
-    long memoryUsed = memoryAfter - memoryBefore;
-
-    // Create and return result
-    return new PerformanceResult(
-        concurrencyLevel,
-        useVirtualThreads,
-        durationMs,
-        successCount.get(),
-        errorCount.get(),
-        memoryUsed
-    );
   }
 
   /**
-   * Compares the performance of virtual threads vs platform threads for a cleanup operation.
+   * Executes a cleanup operation concurrently using platform threads.
    *
-   * @param operation the cleanup operation to execute
-   * @param concurrencyLevel the number of concurrent operations to run
-   * @param resultConsumer consumer for the comparison result
+   * @param operation the operation to execute
+   * @param concurrentTasks the number of concurrent tasks to execute
+   * @param timeoutSeconds maximum time to wait for completion in seconds
+   * @return true if all tasks completed successfully, false if timeout occurred
+   * @throws Exception if an error occurs during execution
    */
-  public void compareThreadPerformance(
-      Supplier<Boolean> operation,
-      int concurrencyLevel,
-      Consumer<ThreadComparisonResult> resultConsumer) throws Exception
+  public boolean executeCleanupWithPlatformThreads(
+      final Runnable operation,
+      final int concurrentTasks,
+      final int timeoutSeconds) throws Exception 
   {
-    // Skip if virtual threads are not enabled
-    if (!isVirtualThreadsEnabled()) {
-      log.info("Skipping thread performance comparison because virtual threads are not enabled");
-      return;
-    }
-
-    log.info("Comparing thread performance for cleanup operation at concurrency level {}", concurrencyLevel);
-
-    // Run with platform threads
-    PerformanceResult platformResult = executeWithConcurrency(operation, concurrencyLevel, false);
-    log.info("Platform thread result: {}", platformResult);
-
-    // Run with virtual threads
-    PerformanceResult virtualResult = executeWithConcurrency(operation, concurrencyLevel, true);
-    log.info("Virtual thread result: {}", virtualResult);
-
-    // Create comparison result
-    ThreadComparisonResult comparisonResult = new ThreadComparisonResult(platformResult, virtualResult);
-    log.info("Thread comparison result: {}", comparisonResult);
-
-    // Provide result to consumer
-    if (resultConsumer != null) {
-      resultConsumer.accept(comparisonResult);
-    }
+    return executeCleanupConcurrently(
+        operation,
+        concurrentTasks,
+        () -> createPlatformThreadExecutor("cleanup-platform", concurrentTasks),
+        timeoutSeconds);
   }
 
   /**
-   * Gets the current used memory in bytes.
+   * Executes a cleanup operation concurrently using platform threads with default timeout.
    *
-   * @return the used memory
+   * @param operation the operation to execute
+   * @param concurrentTasks the number of concurrent tasks to execute
+   * @return true if all tasks completed successfully, false if timeout occurred
+   * @throws Exception if an error occurs during execution
    */
-  private long getUsedMemory() {
-    Runtime runtime = Runtime.getRuntime();
-    return runtime.totalMemory() - runtime.freeMemory();
+  public boolean executeCleanupWithPlatformThreads(
+      final Runnable operation,
+      final int concurrentTasks) throws Exception 
+  {
+    return executeCleanupWithPlatformThreads(operation, concurrentTasks, DEFAULT_TIMEOUT_SECONDS);
   }
 
   /**
-   * Class representing the result of a performance measurement.
+   * Executes a cleanup operation concurrently using virtual threads.
+   *
+   * @param operation the operation to execute
+   * @param concurrentTasks the number of concurrent tasks to execute
+   * @param timeoutSeconds maximum time to wait for completion in seconds
+   * @return true if all tasks completed successfully, false if timeout occurred
+   * @throws Exception if an error occurs during execution
    */
-  public static class PerformanceResult
+  public boolean executeCleanupWithVirtualThreads(
+      final Runnable operation,
+      final int concurrentTasks,
+      final int timeoutSeconds) throws Exception 
   {
-    private final int concurrencyLevel;
-    private final boolean virtualThreads;
-    private final long durationMs;
-    private final int successCount;
-    private final int errorCount;
-    private final long memoryUsed;
-
-    public PerformanceResult(
-        int concurrencyLevel,
-        boolean virtualThreads,
-        long durationMs,
-        int successCount,
-        int errorCount,
-        long memoryUsed)
-    {
-      this.concurrencyLevel = concurrencyLevel;
-      this.virtualThreads = virtualThreads;
-      this.durationMs = durationMs;
-      this.successCount = successCount;
-      this.errorCount = errorCount;
-      this.memoryUsed = memoryUsed;
-    }
-
-    public int getConcurrencyLevel() {
-      return concurrencyLevel;
-    }
-
-    public boolean isVirtualThreads() {
-      return virtualThreads;
-    }
-
-    public long getDurationMs() {
-      return durationMs;
-    }
-
-    public int getSuccessCount() {
-      return successCount;
-    }
-
-    public int getErrorCount() {
-      return errorCount;
-    }
-
-    public long getMemoryUsed() {
-      return memoryUsed;
-    }
-
-    public double getMemoryUsedMB() {
-      return memoryUsed / (1024.0 * 1024.0);
-    }
-
-    public double getOperationsPerSecond() {
-      int totalOperations = successCount + errorCount;
-      return totalOperations > 0 ? (double) totalOperations / (durationMs / 1000.0) : 0;
-    }
-
-    @Override
-    public String toString() {
-      return String.format(
-          "Performance(threads: %d, virtual: %s) - Duration: %d ms, Success: %d, Errors: %d, " +
-              "Throughput: %.2f ops/sec, Memory: %.2f MB",
-          concurrencyLevel, virtualThreads, durationMs, successCount, errorCount,
-          getOperationsPerSecond(), getMemoryUsedMB());
-    }
+    assumeVirtualThreadsEnabled();
+    return executeCleanupConcurrently(
+        operation,
+        concurrentTasks,
+        () -> createVirtualThreadExecutor("cleanup-virtual"),
+        timeoutSeconds);
   }
 
   /**
-   * Class representing the result of a thread performance comparison.
+   * Executes a cleanup operation concurrently using virtual threads with default timeout.
+   *
+   * @param operation the operation to execute
+   * @param concurrentTasks the number of concurrent tasks to execute
+   * @return true if all tasks completed successfully, false if timeout occurred
+   * @throws Exception if an error occurs during execution
    */
-  public static class ThreadComparisonResult
+  public boolean executeCleanupWithVirtualThreads(
+      final Runnable operation,
+      final int concurrentTasks) throws Exception 
   {
-    private final PerformanceResult platformResult;
-    private final PerformanceResult virtualResult;
+    return executeCleanupWithVirtualThreads(operation, concurrentTasks, DEFAULT_TIMEOUT_SECONDS);
+  }
 
-    public ThreadComparisonResult(PerformanceResult platformResult, PerformanceResult virtualResult) {
-      this.platformResult = platformResult;
-      this.virtualResult = virtualResult;
-    }
-
-    public PerformanceResult getPlatformResult() {
-      return platformResult;
-    }
-
-    public PerformanceResult getVirtualResult() {
-      return virtualResult;
-    }
-
-    public double getDurationImprovement() {
-      return calculateImprovement(platformResult.getDurationMs(), virtualResult.getDurationMs());
-    }
-
-    public double getThroughputImprovement() {
-      return calculateImprovement(virtualResult.getOperationsPerSecond(), platformResult.getOperationsPerSecond());
-    }
-
-    public double getMemoryImprovement() {
-      return calculateImprovement(platformResult.getMemoryUsed(), virtualResult.getMemoryUsed());
-    }
-
-    private double calculateImprovement(double oldValue, double newValue) {
-      if (oldValue == 0) {
-        return 0;
+  /**
+   * Internal method to measure performance of an operation using the specified executor.
+   *
+   * @param operation the operation to measure
+   * @param concurrentTasks the number of concurrent tasks to execute
+   * @param executorSupplier supplier for the executor service
+   * @param threadType the type of threads being used (for reporting)
+   * @return the performance result
+   */
+  private PerformanceResult measurePerformance(
+      final Runnable operation,
+      final int concurrentTasks,
+      final Supplier<ExecutorService> executorSupplier,
+      final String threadType) 
+  {
+    ExecutorService executor = executorSupplier.get();
+    try {
+      // Create tasks
+      List<Callable<Void>> tasks = new ArrayList<>();
+      for (int i = 0; i < concurrentTasks; i++) {
+        tasks.add(() -> {
+          operation.run();
+          return null;
+        });
       }
-      return ((newValue - oldValue) / oldValue) * 100;
-    }
-
-    @Override
-    public String toString() {
-      return String.format(
-          "Thread Comparison - Duration: %.2f%%, Throughput: %.2f%%, Memory: %.2f%%",
-          getDurationImprovement(), getThroughputImprovement(), getMemoryImprovement());
+      
+      // Measure execution time
+      long startTime = System.currentTimeMillis();
+      executor.invokeAll(tasks);
+      long endTime = System.currentTimeMillis();
+      
+      return new PerformanceResult(endTime - startTime, concurrentTasks, threadType);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException("Performance measurement interrupted", e);
+    } finally {
+      executor.shutdown();
+      try {
+        if (!executor.awaitTermination(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+          log.warn("Executor did not terminate in the specified time");
+        }
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        log.warn("Interrupted while waiting for executor shutdown", e);
+      }
     }
   }
 }

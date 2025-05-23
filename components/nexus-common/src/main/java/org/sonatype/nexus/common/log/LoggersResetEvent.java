@@ -25,6 +25,6 @@ public class LoggersResetEvent
 
   @Override
   public String toString() {
-    return STR."LoggersResetEvent{}";
+    return STR."{getClass().getSimpleName()}{}";
   }
 }

@@ -12,72 +12,219 @@
  */
 package org.sonatype.nexus.repository.search;
 
-import java.io.Serializable;
-import java.time.OffsetDateTime;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+
+import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Result of an Asset search
  *
  * @since 3.38
  */
-public class AssetSearchResult implements Serializable
+public class AssetSearchResult
 {
-  private static final long serialVersionUID = 1L;
+  private String path;
 
-  private final String path;
+  private String id;
 
-  private final String id;
+  private String repository;
 
-  private final String repository;
+  private String format;
 
-  private final String format;
+  private Map<String, String> checksum;
 
-  private final Map<String, String> checksum;
+  private String contentType;
 
-  private final String contentType;
+  private Date lastModified;
 
-  private final OffsetDateTime lastModified;
+  private Date lastDownloaded;
 
-  private final OffsetDateTime lastDownloaded;
+  private Date blobCreated;
 
-  private final OffsetDateTime blobCreated;
+  private Long fileSize;
 
-  private final Long fileSize;
+  private String uploader;
 
-  private final String uploader;
+  private String uploaderIp;
 
-  private final String uploaderIp;
-
-  private final Map<String, Object> attributes;
+  private Map<String, Object> attributes;
 
   /**
-   * Creates a new AssetSearchResult from the provided builder.
-   *
-   * @param builder the builder containing the asset search result data
+   * Default constructor
    */
-  private AssetSearchResult(final Builder builder) {
-    this.path = builder.path;
-    this.id = builder.id;
-    this.repository = builder.repository;
-    this.format = builder.format;
-    this.checksum = builder.checksum != null ? Map.copyOf(builder.checksum) : Map.of();
-    this.contentType = builder.contentType;
-    this.lastModified = builder.lastModified;
-    this.lastDownloaded = builder.lastDownloaded;
-    this.blobCreated = builder.blobCreated;
-    this.fileSize = builder.fileSize;
-    this.uploader = builder.uploader;
-    this.uploaderIp = builder.uploaderIp;
-    this.attributes = builder.attributes != null ? Map.copyOf(builder.attributes) : Map.of();
+  public AssetSearchResult() {
+    // Default constructor
   }
 
   /**
-   * Creates a new builder for AssetSearchResult.
-   *
+   * Constructor that uses record patterns to efficiently extract data from search results
+   * 
+   * @param searchData A record containing asset search data
+   * @since Java 21
+   */
+  public <T> AssetSearchResult(record AssetData(String path, String id, String repository, String format,
+      Map<String, String> checksum, String contentType, Date lastModified, Date lastDownloaded,
+      Date blobCreated, Long fileSize, String uploader, String uploaderIp, Map<String, Object> attributes) searchData) {
+    this.path = searchData.path();
+    this.id = searchData.id();
+    this.repository = searchData.repository();
+    this.format = searchData.format();
+    this.checksum = searchData.checksum();
+    this.contentType = searchData.contentType();
+    this.lastModified = searchData.lastModified();
+    this.lastDownloaded = searchData.lastDownloaded();
+    this.blobCreated = searchData.blobCreated();
+    this.fileSize = searchData.fileSize();
+    this.uploader = searchData.uploader();
+    this.uploaderIp = searchData.uploaderIp();
+    this.attributes = searchData.attributes();
+  }
+
+  /**
+   * Static factory method that uses record patterns to efficiently map search result data
+   * 
+   * @param searchResult The search result object to extract data from
+   * @return A new AssetSearchResult populated with data from the search result
+   * @since Java 21
+   */
+  public static <T> AssetSearchResult fromSearchResult(Object searchResult) {
+    if (searchResult instanceof record AssetSearchData(String path, String id, String repository, String format,
+        Map<String, String> checksum, String contentType, Date lastModified, Date lastDownloaded,
+        Date blobCreated, Long fileSize, String uploader, String uploaderIp, Map<String, Object> attributes)) {
+      
+      AssetSearchResult result = new AssetSearchResult();
+      result.setPath(path);
+      result.setId(id);
+      result.setRepository(repository);
+      result.setFormat(format);
+      result.setChecksum(checksum);
+      result.setContentType(contentType);
+      result.setLastModified(lastModified);
+      result.setLastDownloaded(lastDownloaded);
+      result.setBlobCreated(blobCreated);
+      result.setFileSize(fileSize);
+      result.setUploader(uploader);
+      result.setUploaderIp(uploaderIp);
+      result.setAttributes(attributes);
+      
+      return result;
+    }
+    
+    throw new IllegalArgumentException("Search result object does not match expected pattern");
+  }
+  
+  /**
+   * Processes nested asset data using Java 21 record patterns for efficient data extraction
+   * 
+   * @param assetData The asset data object to process
+   * @return A new AssetSearchResult populated with data from the nested structure
+   * @since Java 21
+   */
+  public static AssetSearchResult processNestedAssetData(Object assetData) {
+    // Using nested record patterns to extract data from complex structures
+    if (assetData instanceof record NestedAssetData(
+        record AssetInfo(String path, String id) info,
+        record RepositoryInfo(String name, String format) repo,
+        record ContentInfo(String contentType, Map<String, String> checksums) content,
+        record TimestampInfo(Date lastModified, Date lastDownloaded, Date blobCreated) timestamps,
+        record UploaderInfo(String uploader, String uploaderIp) uploaderData,
+        Long fileSize,
+        Map<String, Object> attributes)) {
+      
+      AssetSearchResult result = new AssetSearchResult();
+      
+      // Extract data from nested records using pattern variables
+      result.setPath(info.path());
+      result.setId(info.id());
+      result.setRepository(repo.name());
+      result.setFormat(repo.format());
+      result.setContentType(content.contentType());
+      result.setChecksum(content.checksums());
+      result.setLastModified(timestamps.lastModified());
+      result.setLastDownloaded(timestamps.lastDownloaded());
+      result.setBlobCreated(timestamps.blobCreated());
+      result.setFileSize(fileSize);
+      result.setUploader(uploaderData.uploader());
+      result.setUploaderIp(uploaderData.uploaderIp());
+      result.setAttributes(attributes);
+      
+      return result;
+    }
+    
+    throw new IllegalArgumentException("Asset data does not match expected nested pattern");
+  }
+  
+  /**
+   * Processes asset data using Java 21's pattern matching in switch statements
+   * for more efficient data handling from search results
+   * 
+   * @param data The data object to process
+   * @return A new AssetSearchResult populated with data based on the input type
+   * @since Java 21
+   */
+  public static AssetSearchResult processAssetData(Object data) {
+    return switch (data) {
+      // Using record patterns in switch cases for type-safe data extraction
+      case record SimpleAsset(String path, String id, String repository, String format) simple -> {
+        var result = new AssetSearchResult();
+        result.setPath(path);
+        result.setId(id);
+        result.setRepository(repository);
+        result.setFormat(format);
+        yield result;
+      }
+      
+      // Nested record pattern with asset and content information
+      case record DetailedAsset(
+          record AssetDetail(String path, String id, String repository) asset,
+          record ContentDetail(String format, String contentType, Map<String, String> checksums) content,
+          Date modified,
+          Long size) detailed -> {
+        
+        var result = new AssetSearchResult();
+        result.setPath(asset.path());
+        result.setId(asset.id());
+        result.setRepository(asset.repository());
+        result.setFormat(content.format());
+        result.setContentType(content.contentType());
+        result.setChecksum(content.checksums());
+        result.setLastModified(modified);
+        result.setFileSize(size);
+        yield result;
+      }
+      
+      // Using var for type inference in pattern variables
+      case record AssetWithAttributes(var path, var id, var repository, var attributes) withAttrs -> {
+        var result = new AssetSearchResult();
+        result.setPath(path);
+        result.setId(id);
+        result.setRepository(repository);
+        
+        // Process attributes if they match expected type
+        if (attributes instanceof Map<?, ?> attrMap) {
+          Map<String, Object> convertedMap = new HashMap<>();
+          attrMap.forEach((key, value) -> {
+            if (key instanceof String keyStr) {
+              convertedMap.put(keyStr, value);
+            }
+          });
+          result.setAttributes(convertedMap);
+        }
+        
+        yield result;
+      }
+      
+      // Default case for unrecognized data types
+      default -> throw new IllegalArgumentException("Unrecognized asset data format");
+    };
+  }
+
+  /**
+   * Creates a new builder for AssetSearchResult
+   * 
    * @return a new builder instance
    */
   public static Builder builder() {
@@ -85,480 +232,335 @@ public class AssetSearchResult implements Serializable
   }
 
   /**
-   * Creates a new builder initialized with values from an existing AssetSearchResult.
-   *
+   * Creates a new builder initialized with values from the provided AssetSearchResult
+   * 
    * @param result the AssetSearchResult to copy values from
    * @return a new builder instance with copied values
    */
-  public static Builder builderFrom(final AssetSearchResult result) {
+  public static Builder builder(AssetSearchResult result) {
     return new Builder()
-        .path(result.path)
-        .id(result.id)
-        .repository(result.repository)
-        .format(result.format)
-        .checksum(result.checksum)
-        .contentType(result.contentType)
-        .lastModified(result.lastModified)
-        .lastDownloaded(result.lastDownloaded)
-        .blobCreated(result.blobCreated)
-        .fileSize(result.fileSize)
-        .uploader(result.uploader)
-        .uploaderIp(result.uploaderIp)
-        .attributes(result.attributes);
+        .path(result.getPath())
+        .id(result.getId())
+        .repository(result.getRepository())
+        .format(result.getFormat())
+        .checksum(result.getChecksum())
+        .contentType(result.getContentType())
+        .lastModified(result.getLastModified())
+        .lastDownloaded(result.getLastDownloaded())
+        .blobCreated(result.getBlobCreated())
+        .fileSize(result.getFileSize())
+        .uploader(result.getUploader())
+        .uploaderIp(result.getUploaderIp())
+        .attributes(result.getAttributes());
+  }
+  
+  /**
+   * Creates a new builder with type inference from the provided parameters
+   * Leverages Java 21's improved type inference for more concise code
+   * 
+   * @param path the asset path
+   * @param id the asset ID
+   * @return a new builder instance with the provided values
+   * @since Java 21
+   */
+  public static <T> Builder builderOf(String path, String id) {
+    return new Builder().path(path).id(id);
+  }
+  
+  /**
+   * Creates a new builder with type inference from the provided parameters
+   * Leverages Java 21's improved type inference for more concise code
+   * 
+   * @param path the asset path
+   * @param id the asset ID
+   * @param repository the repository name
+   * @param format the format
+   * @return a new builder instance with the provided values
+   * @since Java 21
+   */
+  public static <T> Builder builderOf(String path, String id, String repository, String format) {
+    return new Builder()
+        .path(path)
+        .id(id)
+        .repository(repository)
+        .format(format);
   }
 
-  /**
-   * Gets the asset path.
-   * 
-   * @return the asset path
-   */
   public String getPath() {
     return path;
   }
 
-  /**
-   * Gets the asset ID.
-   * 
-   * @return the asset ID
-   */
+  public void setPath(final String path) {
+    this.path = path;
+  }
+
   public String getId() {
     return id;
   }
 
-  /**
-   * Gets the repository name.
-   * 
-   * @return the repository name
-   */
+  public void setId(final String id) {
+    this.id = id;
+  }
+
   public String getRepository() {
     return repository;
   }
 
-  /**
-   * Gets the asset format.
-   * 
-   * @return the asset format
-   */
-  public String getFormat() {
-    return format;
+  public void setRepository(final String repository) {
+    this.repository = repository;
   }
 
-  /**
-   * Gets the asset checksums.
-   * 
-   * @return the asset checksums map, never null
-   */
-  public Map<String, String> getChecksum() {
-    return checksum;
-  }
-
-  /**
-   * Gets the asset content type.
-   * 
-   * @return the asset content type
-   */
-  public String getContentType() {
-    return contentType;
-  }
-
-  /**
-   * Gets the asset last modified date.
-   * 
-   * @return the asset last modified date
-   */
-  public OffsetDateTime getLastModified() {
-    return lastModified;
-  }
-
-  /**
-   * Gets the asset last downloaded date.
-   * 
-   * @return the asset last downloaded date
-   */
-  public OffsetDateTime getLastDownloaded() {
-    return lastDownloaded;
-  }
-
-  /**
-   * Gets the asset blob created date.
-   * 
-   * @return the asset blob created date
-   */
-  public OffsetDateTime getBlobCreated() {
-    return blobCreated;
-  }
-
-  /**
-   * Gets the asset file size.
-   * 
-   * @return the asset file size
-   */
   public Long getFileSize() {
     return fileSize;
   }
 
-  /**
-   * Gets the asset uploader.
-   * 
-   * @return the asset uploader
-   */
+  public void setFileSize(final Long fileSize) {
+    this.fileSize = fileSize;
+  }
+
+  public Date getLastDownloaded() {
+    return lastDownloaded;
+  }
+
+  public void setLastDownloaded(final Date lastDownloaded) {
+    this.lastDownloaded = lastDownloaded;
+  }
+
+  public String getFormat() {
+    return format;
+  }
+
+  public void setFormat(final String format) {
+    this.format = format;
+  }
+
+  public Map<String, String> getChecksum() {
+    return checksum;
+  }
+
+  public void setChecksum(final Map<String, String> checksum) {
+    this.checksum = checksum;
+  }
+
+  public String getContentType() {
+    return contentType;
+  }
+
+  public void setContentType(final String contentType) {
+    this.contentType = contentType;
+  }
+
+  public Date getLastModified() {
+    return lastModified;
+  }
+
+  public void setLastModified(final Date lastModified) {
+    this.lastModified = lastModified;
+  }
+
+  public Date getBlobCreated() {
+    return blobCreated;
+  }
+
+  public void setBlobCreated(final Date blobCreated) {
+    this.blobCreated = blobCreated;
+  }
+
   public String getUploader() {
     return uploader;
   }
 
-  /**
-   * Gets the asset uploader IP.
-   * 
-   * @return the asset uploader IP
-   */
+  public void setUploader(final String uploader) {
+    this.uploader = uploader;
+  }
+
   public String getUploaderIp() {
     return uploaderIp;
   }
 
-  /**
-   * Gets the asset attributes.
-   * 
-   * @return the asset attributes map, never null
-   */
+  public void setUploaderIp(final String uploaderIp) {
+    this.uploaderIp = uploaderIp;
+  }
+
   public Map<String, Object> getAttributes() {
     return attributes;
   }
 
-  /**
-   * For backward compatibility with code that expects Date objects.
-   * 
-   * @return the last modified date as a java.util.Date, or null if lastModified is null
-   * @deprecated Use {@link #getLastModified()} instead
-   */
-  @Deprecated
-  public Date getLastModifiedDate() {
-    return lastModified != null ? Date.from(lastModified.toInstant()) : null;
-  }
-
-  /**
-   * For backward compatibility with code that expects Date objects.
-   * 
-   * @return the last downloaded date as a java.util.Date, or null if lastDownloaded is null
-   * @deprecated Use {@link #getLastDownloaded()} instead
-   */
-  @Deprecated
-  public Date getLastDownloadedDate() {
-    return lastDownloaded != null ? Date.from(lastDownloaded.toInstant()) : null;
-  }
-
-  /**
-   * For backward compatibility with code that expects Date objects.
-   * 
-   * @return the blob created date as a java.util.Date, or null if blobCreated is null
-   * @deprecated Use {@link #getBlobCreated()} instead
-   */
-  @Deprecated
-  public Date getBlobCreatedDate() {
-    return blobCreated != null ? Date.from(blobCreated.toInstant()) : null;
+  public void setAttributes(final Map<String, Object> attributes) {
+    this.attributes = attributes;
   }
 
   @Override
   public String toString() {
     return "AssetSearchResult [path=" + path + ", id=" + id + ", repository=" + repository + ", format=" + format
         + ", checksum=" + checksum + ", contentType=" + contentType + ", lastModified=" + lastModified
-        + ", lastDownloaded=" + lastDownloaded + ", blobCreated=" + blobCreated + ", fileSize=" + fileSize
+        + ", lastDownloaded=" + lastDownloaded + ", blobCreated=" + blobCreated + ", fileSize=" + fileSize 
         + ", uploader=" + uploader + ", uploaderIp=" + uploaderIp + ", attributes=" + attributes + "]";
   }
-
-  @Override
-  public boolean equals(Object o) {
-    if (this == o) return true;
-    if (o == null || getClass() != o.getClass()) return false;
-    AssetSearchResult that = (AssetSearchResult) o;
-    return Objects.equals(id, that.id) &&
-           Objects.equals(repository, that.repository) &&
-           Objects.equals(path, that.path);
-  }
-
-  @Override
-  public int hashCode() {
-    return Objects.hash(id, repository, path);
-  }
-
-  /**
-   * Pattern matching method to extract asset data using Java 21 Record Patterns.
-   * This method allows for more efficient data extraction from search results.
-   *
-   * @param <R> the return type
-   * @param mapper the function to map asset data to the return type
-   * @return the mapped result
-   */
-  public <R> R match(AssetDataMapper<R> mapper) {
-    return mapper.map(path, id, repository, format, checksum, contentType, lastModified, 
-                      lastDownloaded, blobCreated, fileSize, uploader, uploaderIp, attributes);
-  }
-
-  /**
-   * Functional interface for mapping asset data using pattern matching.
-   *
-   * @param <R> the return type
-   */
-  @FunctionalInterface
-  public interface AssetDataMapper<R> {
-    /**
-     * Maps asset data to the return type.
-     *
-     * @param path the asset path
-     * @param id the asset ID
-     * @param repository the repository name
-     * @param format the asset format
-     * @param checksum the asset checksums map
-     * @param contentType the asset content type
-     * @param lastModified the asset last modified date
-     * @param lastDownloaded the asset last downloaded date
-     * @param blobCreated the asset blob created date
-     * @param fileSize the asset file size
-     * @param uploader the asset uploader
-     * @param uploaderIp the asset uploader IP
-     * @param attributes the asset attributes map
-     * @return the mapped result
-     */
-    R map(String path, String id, String repository, String format, Map<String, String> checksum,
-          String contentType, OffsetDateTime lastModified, OffsetDateTime lastDownloaded,
-          OffsetDateTime blobCreated, Long fileSize, String uploader, String uploaderIp,
-          Map<String, Object> attributes);
-  }
   
   /**
-   * Creates a record-like representation of this asset for use with Java 21 Record Patterns.
-   * This allows for pattern matching in switch expressions and instanceof checks.
-   * 
-   * @return a record containing the asset data
-   */
-  public AssetRecord toRecord() {
-    return new AssetRecord(path, id, repository, format, checksum, contentType, lastModified,
-                         lastDownloaded, blobCreated, fileSize, uploader, uploaderIp, attributes);
-  }
-  
-  /**
-   * Record representation of AssetSearchResult for use with Java 21 Record Patterns.
-   */
-  public record AssetRecord(String path, String id, String repository, String format, 
-                           Map<String, String> checksum, String contentType, OffsetDateTime lastModified,
-                           OffsetDateTime lastDownloaded, OffsetDateTime blobCreated, Long fileSize,
-                           String uploader, String uploaderIp, Map<String, Object> attributes) {}
-
-  /**
-   * Builder for {@link AssetSearchResult}.
+   * Builder for AssetSearchResult that leverages Java 21's improved type inference
    */
   public static class Builder {
-    private String path;
-    private String id;
-    private String repository;
-    private String format;
-    private Map<String, String> checksum;
-    private String contentType;
-    private OffsetDateTime lastModified;
-    private OffsetDateTime lastDownloaded;
-    private OffsetDateTime blobCreated;
-    private Long fileSize;
-    private String uploader;
-    private String uploaderIp;
-    private Map<String, Object> attributes;
+    private final AssetSearchResult result;
 
     /**
-     * Sets the asset path.
+     * Creates a new builder with an empty AssetSearchResult
+     */
+    public Builder() {
+      this.result = new AssetSearchResult();
+    }
+
+    /**
+     * Sets the asset path
      * 
      * @param path the asset path
-     * @return this builder
+     * @return this builder for method chaining
      */
-    public Builder path(final String path) {
-      this.path = path;
+    public Builder path(String path) {
+      result.setPath(path);
       return this;
     }
 
     /**
-     * Sets the asset ID.
+     * Sets the asset ID
      * 
      * @param id the asset ID
-     * @return this builder
+     * @return this builder for method chaining
      */
-    public Builder id(final String id) {
-      this.id = id;
+    public Builder id(String id) {
+      result.setId(id);
       return this;
     }
 
     /**
-     * Sets the repository name.
+     * Sets the repository name
      * 
      * @param repository the repository name
-     * @return this builder
+     * @return this builder for method chaining
      */
-    public Builder repository(final String repository) {
-      this.repository = repository;
+    public Builder repository(String repository) {
+      result.setRepository(repository);
       return this;
     }
 
     /**
-     * Sets the asset format.
+     * Sets the format
      * 
-     * @param format the asset format
-     * @return this builder
+     * @param format the format
+     * @return this builder for method chaining
      */
-    public Builder format(final String format) {
-      this.format = format;
+    public Builder format(String format) {
+      result.setFormat(format);
       return this;
     }
 
     /**
-     * Sets the asset checksums map.
+     * Sets the checksum map
      * 
-     * @param checksum the asset checksums map
-     * @return this builder
+     * @param checksum the checksum map
+     * @return this builder for method chaining
      */
-    public Builder checksum(final Map<String, String> checksum) {
-      this.checksum = checksum != null ? new HashMap<>(checksum) : null;
+    public Builder checksum(Map<String, String> checksum) {
+      result.setChecksum(checksum);
       return this;
     }
 
     /**
-     * Sets the asset content type.
+     * Sets the content type
      * 
-     * @param contentType the asset content type
-     * @return this builder
+     * @param contentType the content type
+     * @return this builder for method chaining
      */
-    public Builder contentType(final String contentType) {
-      this.contentType = contentType;
+    public Builder contentType(String contentType) {
+      result.setContentType(contentType);
       return this;
     }
 
     /**
-     * Sets the asset last modified date.
+     * Sets the last modified date
      * 
-     * @param lastModified the asset last modified date
-     * @return this builder
+     * @param lastModified the last modified date
+     * @return this builder for method chaining
      */
-    public Builder lastModified(final OffsetDateTime lastModified) {
-      this.lastModified = lastModified;
+    public Builder lastModified(Date lastModified) {
+      result.setLastModified(lastModified);
       return this;
     }
 
     /**
-     * Sets the asset last downloaded date.
+     * Sets the last downloaded date
      * 
-     * @param lastDownloaded the asset last downloaded date
-     * @return this builder
+     * @param lastDownloaded the last downloaded date
+     * @return this builder for method chaining
      */
-    public Builder lastDownloaded(final OffsetDateTime lastDownloaded) {
-      this.lastDownloaded = lastDownloaded;
+    public Builder lastDownloaded(Date lastDownloaded) {
+      result.setLastDownloaded(lastDownloaded);
       return this;
     }
 
     /**
-     * Sets the asset blob created date.
+     * Sets the blob created date
      * 
-     * @param blobCreated the asset blob created date
-     * @return this builder
+     * @param blobCreated the blob created date
+     * @return this builder for method chaining
      */
-    public Builder blobCreated(final OffsetDateTime blobCreated) {
-      this.blobCreated = blobCreated;
+    public Builder blobCreated(Date blobCreated) {
+      result.setBlobCreated(blobCreated);
       return this;
     }
 
     /**
-     * Sets the asset file size.
+     * Sets the file size
      * 
-     * @param fileSize the asset file size
-     * @return this builder
+     * @param fileSize the file size
+     * @return this builder for method chaining
      */
-    public Builder fileSize(final Long fileSize) {
-      this.fileSize = fileSize;
+    public Builder fileSize(Long fileSize) {
+      result.setFileSize(fileSize);
       return this;
     }
 
     /**
-     * Sets the asset uploader.
+     * Sets the uploader
      * 
-     * @param uploader the asset uploader
-     * @return this builder
+     * @param uploader the uploader
+     * @return this builder for method chaining
      */
-    public Builder uploader(final String uploader) {
-      this.uploader = uploader;
+    public Builder uploader(String uploader) {
+      result.setUploader(uploader);
       return this;
     }
 
     /**
-     * Sets the asset uploader IP.
+     * Sets the uploader IP
      * 
-     * @param uploaderIp the asset uploader IP
-     * @return this builder
+     * @param uploaderIp the uploader IP
+     * @return this builder for method chaining
      */
-    public Builder uploaderIp(final String uploaderIp) {
-      this.uploaderIp = uploaderIp;
+    public Builder uploaderIp(String uploaderIp) {
+      result.setUploaderIp(uploaderIp);
       return this;
     }
 
     /**
-     * Sets the asset attributes map.
+     * Sets the attributes map
      * 
-     * @param attributes the asset attributes map
-     * @return this builder
+     * @param attributes the attributes map
+     * @return this builder for method chaining
      */
-    public Builder attributes(final Map<String, Object> attributes) {
-      this.attributes = attributes != null ? new HashMap<>(attributes) : null;
+    public Builder attributes(Map<String, Object> attributes) {
+      result.setAttributes(attributes);
       return this;
     }
 
     /**
-     * For backward compatibility with code that uses Date objects.
+     * Builds the AssetSearchResult
      * 
-     * @param lastModified the asset last modified date as a java.util.Date
-     * @return this builder
-     * @deprecated Use {@link #lastModified(OffsetDateTime)} instead
-     */
-    @Deprecated
-    public Builder lastModifiedDate(final Date lastModified) {
-      if (lastModified != null) {
-        this.lastModified = OffsetDateTime.ofInstant(lastModified.toInstant(), 
-                                                   java.time.ZoneId.systemDefault());
-      }
-      return this;
-    }
-
-    /**
-     * For backward compatibility with code that uses Date objects.
-     * 
-     * @param lastDownloaded the asset last downloaded date as a java.util.Date
-     * @return this builder
-     * @deprecated Use {@link #lastDownloaded(OffsetDateTime)} instead
-     */
-    @Deprecated
-    public Builder lastDownloadedDate(final Date lastDownloaded) {
-      if (lastDownloaded != null) {
-        this.lastDownloaded = OffsetDateTime.ofInstant(lastDownloaded.toInstant(), 
-                                                     java.time.ZoneId.systemDefault());
-      }
-      return this;
-    }
-
-    /**
-     * For backward compatibility with code that uses Date objects.
-     * 
-     * @param blobCreated the asset blob created date as a java.util.Date
-     * @return this builder
-     * @deprecated Use {@link #blobCreated(OffsetDateTime)} instead
-     */
-    @Deprecated
-    public Builder blobCreatedDate(final Date blobCreated) {
-      if (blobCreated != null) {
-        this.blobCreated = OffsetDateTime.ofInstant(blobCreated.toInstant(), 
-                                                  java.time.ZoneId.systemDefault());
-      }
-      return this;
-    }
-
-    /**
-     * Builds a new AssetSearchResult instance.
-     * 
-     * @return a new AssetSearchResult instance
+     * @return the built AssetSearchResult
      */
     public AssetSearchResult build() {
-      return new AssetSearchResult(this);
+      return result;
     }
   }
 }

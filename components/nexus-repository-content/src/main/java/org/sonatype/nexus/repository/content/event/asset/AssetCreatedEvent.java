@@ -15,7 +15,6 @@ package org.sonatype.nexus.repository.content.event.asset;
 import java.util.Optional;
 
 import org.sonatype.nexus.repository.content.Asset;
-import org.sonatype.nexus.repository.content.AssetData;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -28,49 +27,26 @@ public class AssetCreatedEvent
     extends AssetEvent
 {
   /**
-   * Creates a new asset created event.
-   *
-   * @param asset the created asset (must not be null)
+   * Creates a new event with the given asset.
+   * 
+   * @param asset the asset that was created (must not be null)
+   * @throws NullPointerException if asset is null
    */
   public AssetCreatedEvent(final Asset asset) {
     super(checkNotNull(asset, "Asset cannot be null"));
   }
 
   /**
-   * Extracts path information from the asset using Java 21 Record Patterns.
+   * Demonstrates using Record Patterns to safely extract asset information.
    * 
-   * @return the asset path or empty string if pattern matching fails
+   * @param asset the asset to process
+   * @return a description of the asset path and blob status
    */
-  public String getAssetPath() {
-    Asset asset = getAsset();
-    if (asset != null && asset.data() instanceof AssetData(var path, var kind, var component, var blob, var lastDownloaded, var blobStoreName, var blobSize)) {
-      return path;
+  public static String describeAssetWithPatterns(final Object asset) {
+    if (asset instanceof Asset(var path, var kind, var component, var blob, var hasBlob, var lastDownloaded, var blobStoreName, var blobSize)) {
+      return STR."Asset path: \{path}, kind: \{kind}, has blob: \{hasBlob}, blob store: \{blobStoreName}, size: \{blobSize}";
     }
-    return "";
-  }
-
-  /**
-   * Checks if this event represents a component-associated asset using Record Patterns.
-   * 
-   * @return true if the asset has an associated component
-   */
-  public boolean hasComponent() {
-    Asset asset = getAsset();
-    return asset != null && 
-           asset.data() instanceof AssetData(var path, var kind, Optional.of(var component), var blob, var lastDownloaded, var blobStoreName, var blobSize);
-  }
-
-  /**
-   * Gets the blob store name if available using Record Patterns.
-   * 
-   * @return the blob store name or empty string if not available
-   */
-  public String getBlobStoreName() {
-    Asset asset = getAsset();
-    if (asset != null && asset.data() instanceof AssetData(var path, var kind, var component, var blob, var lastDownloaded, var storeName, var blobSize)) {
-      return storeName;
-    }
-    return "";
+    return "Not a valid Asset";
   }
 
   @Override

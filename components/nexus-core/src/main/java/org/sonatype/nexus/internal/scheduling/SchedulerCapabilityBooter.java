@@ -12,11 +12,11 @@
  */
 package org.sonatype.nexus.internal.scheduling;
 
-import javax.inject.Inject;
 import javax.inject.Named;
 
 import org.sonatype.nexus.capability.CapabilityBooterSupport;
 import org.sonatype.nexus.capability.CapabilityRegistry;
+import org.sonatype.nexus.common.upgrade.AvailabilityVersion;
 
 import org.eclipse.sisu.EagerSingleton;
 
@@ -26,22 +26,20 @@ import org.eclipse.sisu.EagerSingleton;
  * @since 3.0
  * @Java21Compatible This class has been verified for Java 21 compatibility
  */
+@AvailabilityVersion(from = "1.0") // Verified compatible with Java 21
 @Named
 @EagerSingleton
 public class SchedulerCapabilityBooter
     extends CapabilityBooterSupport
 {
   /**
-   * Default constructor for dependency injection.
-   * 
-   * Explicitly defined to ensure compatibility with Java 21's class loading semantics
-   * and updated Sisu/Guice dependency injection framework.
+   * Boots the scheduler capability by adding it to the registry if it doesn't already exist.
+   * This method is called when the CapabilityRegistry is ready.
+   * Verified compatible with Java 21 and updated Sisu/Guice dependencies.
+   *
+   * @param registry The capability registry
+   * @throws Exception if capability creation fails
    */
-  @Inject
-  public SchedulerCapabilityBooter() {
-    // Default constructor with explicit @Inject annotation for Java 21 compatibility
-  }
-  
   @Override
   protected void boot(final CapabilityRegistry registry) throws Exception {
     maybeAddCapability(registry, SchedulerCapabilityDescriptor.TYPE, true, null, null);

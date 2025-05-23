@@ -23,149 +23,171 @@ import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
-import org.junit.jupiter.api.AfterEach;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.bouncycastle.util.encoders.Hex;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.testcommon.Java21TestGroup;
+import org.junit.experimental.categories.Category;
 
 import com.auth0.jwt.JWT;
 import com.auth0.jwt.JWTVerifier;
 import com.auth0.jwt.algorithms.Algorithm;
 import com.auth0.jwt.interfaces.DecodedJWT;
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
-import org.bouncycastle.util.Arrays;
-import org.junit.experimental.categories.Category;
-import org.mindrot.jbcrypt.BCrypt;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Assertions;
 
 /**
- * Tests BouncyCastle 1.78.1 compatibility with Java 21, focusing on cryptographic operations
- * used in the security module. This test ensures that all cryptographic functions used in
- * Nexus security (particularly for tokens and passwords) remain secure and functional
- * after the upgrade to Java 21.
- *
- * @since 3.60
+ * Tests BouncyCastle 1.78.1 cryptography provider compatibility with Java 21.
+ * <p>
+ * This test verifies that encryption, decryption, signing, and verification operations
+ * function correctly under Java 21 with updated security controls.
+ * <p>
+ * The test focuses on cryptographic operations used in the Nexus security module:
+ * - AES-256-GCM encryption/decryption for stored secrets
+ * - HMAC256 signing for JWT tokens
+ * - bcrypt password hashing
  */
+@Tag("java21")
 @Category(Java21TestGroup.class)
 public class BouncyCastleJava21Test
-    extends TestSupport
 {
-  private static final String TEST_SECRET = "test-secret-key-for-java21-compatibility";
-  private static final String TEST_PLAINTEXT = "This is a test message for Java 21 crypto operations";
-  private static final String TEST_PASSWORD = "StrongP@ssw0rd123!";
+  private static final String TEST_SECRET = "This is a test secret for encryption";
   private static final String JWT_ISSUER = "nexus-test";
-  private static final String JWT_SUBJECT = "test-user";
+  private static final String JWT_SECRET = "test-jwt-secret-key";
+  private static final String TEST_PASSWORD = "password123";
   
-  @BeforeEach
-  public void setup() {
-    // Register BouncyCastle as a JCE provider
-    Security.addProvider(new BouncyCastleProvider());
-  }
+  private static final int GCM_TAG_LENGTH = 128; // bits
+  private static final int GCM_IV_LENGTH = 12; // bytes
   
-  @AfterEach
-  public void cleanup() {
-    // Remove the provider to ensure test isolation
-    Security.removeProvider(BouncyCastleProvider.PROVIDER_NAME);
+  /**
+   * Register BouncyCastle provider once for all tests.
+   */
+  @BeforeAll
+  public static void setupClass() {
+    // Register BouncyCastle provider if not already registered
+    if (Security.getProvider(BouncyCastleProvider.PROVIDER_NAME) == null) {
+      Security.addProvider(new BouncyCastleProvider());
+    }
   }
   
   /**
    * Tests AES-256-GCM encryption and decryption using BouncyCastle provider.
-   * This is the algorithm used for storing sensitive data in Nexus.
+   * <p>
+   * This test verifies that the AES-256-GCM algorithm used for storing sensitive
+   * data in Nexus functions correctly under Java 21 with BouncyCastle 1.78.1.
    */
   @Test
-  @DisplayName("Test AES-256-GCM encryption and decryption with BouncyCastle in Java 21")
+  @DisplayName("Test AES-256-GCM encryption/decryption with BouncyCastle under Java 21")
   public void testAesGcmEncryptionDecryption() throws Exception {
     // Generate a random AES-256 key
-    KeyGenerator keyGenerator = KeyGenerator.getInstance("AES", BouncyCastleProvider.PROVIDER_NAME);
-    keyGenerator.init(256);
-    SecretKey secretKey = keyGenerator.generateKey();
+    KeyGenerator keyGen = KeyGenerator.getInstance("AES", BouncyCastleProvider.PROVIDER_NAME);
+    keyGen.init(256);
+    SecretKey secretKey = keyGen.generateKey();
     
-    // Create GCM parameter spec with 12 bytes IV and 128 bits authentication tag length
-    byte[] iv = new byte[12];
-    // In a real scenario, this would be securely random
-    for (int i = 0; i < iv.length; i++) {
-      iv[i] = (byte) i;
-    }
-    GCMParameterSpec gcmParameterSpec = new GCMParameterSpec(128, iv);
+    // Generate a random IV for GCM mode
+    byte[] iv = new byte[GCM_IV_LENGTH];
+    new java.security.SecureRandom().nextBytes(iv);
     
-    // Initialize cipher for encryption
+    // Encrypt
     Cipher encryptCipher = Cipher.getInstance("AES/GCM/NoPadding", BouncyCastleProvider.PROVIDER_NAME);
-    encryptCipher.init(Cipher.ENCRYPT_MODE, secretKey, gcmParameterSpec);
+    GCMParameterSpec parameterSpec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
+    encryptCipher.init(Cipher.ENCRYPT_MODE, secretKey, parameterSpec);
     
-    // Encrypt the plaintext
-    byte[] plaintext = TEST_PLAINTEXT.getBytes(StandardCharsets.UTF_8);
+    byte[] plaintext = TEST_SECRET.getBytes(StandardCharsets.UTF_8);
     byte[] ciphertext = encryptCipher.doFinal(plaintext);
     
-    // Initialize cipher for decryption
+    // Decrypt
     Cipher decryptCipher = Cipher.getInstance("AES/GCM/NoPadding", BouncyCastleProvider.PROVIDER_NAME);
-    decryptCipher.init(Cipher.DECRYPT_MODE, secretKey, gcmParameterSpec);
+    decryptCipher.init(Cipher.DECRYPT_MODE, secretKey, parameterSpec);
+    byte[] decryptedBytes = decryptCipher.doFinal(ciphertext);
+    String decryptedText = new String(decryptedBytes, StandardCharsets.UTF_8);
     
-    // Decrypt the ciphertext
-    byte[] decryptedText = decryptCipher.doFinal(ciphertext);
+    // Verify
+    Assertions.assertEquals(TEST_SECRET, decryptedText, "Decrypted text should match original plaintext");
     
-    // Verify the decrypted text matches the original plaintext
-    assertArrayEquals(plaintext, decryptedText, "Decrypted text should match original plaintext");
-    assertEquals(TEST_PLAINTEXT, new String(decryptedText, StandardCharsets.UTF_8), 
-        "Decrypted text should match original plaintext string");
+    // Log success for debugging
+    System.out.println("AES-256-GCM encryption/decryption successful with BouncyCastle under Java 21");
+    System.out.println("Original: " + TEST_SECRET);
+    System.out.println("Encrypted (hex): " + Hex.toHexString(ciphertext));
+    System.out.println("Decrypted: " + decryptedText);
   }
   
   /**
-   * Tests HMAC-SHA256 signing and verification using BouncyCastle provider.
-   * This is the algorithm used for JWT token signing in Nexus.
+   * Tests HMAC256 signing and verification for JWT tokens using BouncyCastle provider.
+   * <p>
+   * This test verifies that the HMAC256 algorithm used for JWT token signing and
+   * verification in Nexus functions correctly under Java 21 with BouncyCastle 1.78.1.
    */
   @Test
-  @DisplayName("Test HMAC-SHA256 JWT signing and verification with BouncyCastle in Java 21")
-  public void testHmacSha256JwtSigningVerification() throws Exception {
-    // Create a JWT token with HMAC-SHA256 signature
-    Algorithm algorithm = Algorithm.HMAC256(TEST_SECRET);
+  @DisplayName("Test HMAC256 JWT signing/verification with BouncyCastle under Java 21")
+  public void testJwtHmacSigningVerification() {
+    // Create a JWT token with HMAC256 signing
     String userSessionId = UUID.randomUUID().toString();
+    String username = "admin";
+    String realm = "NexusAuthorizingRealm";
     
-    // Create a JWT token with claims
+    // Create a JWT with claims similar to those used in JwtHelper
     String token = JWT.create()
         .withIssuer(JWT_ISSUER)
-        .withSubject(JWT_SUBJECT)
-        .withIssuedAt(new Date())
-        .withExpiresAt(new Date(System.currentTimeMillis() + 3600000)) // 1 hour expiration
-        .withClaim("sessionId", userSessionId)
-        .sign(algorithm);
+        .withExpiresAt(new Date(System.currentTimeMillis() + 3600000)) // 1 hour
+        .withClaim("user_session_id", userSessionId)
+        .withClaim("user", username)
+        .withClaim("realm", realm)
+        .sign(Algorithm.HMAC256(JWT_SECRET));
     
-    // Verify the token
-    JWTVerifier verifier = JWT.require(algorithm)
+    // Verify the JWT token
+    JWTVerifier verifier = JWT.require(Algorithm.HMAC256(JWT_SECRET))
         .withIssuer(JWT_ISSUER)
         .build();
     
     DecodedJWT decodedJWT = verifier.verify(token);
     
-    // Verify the claims
-    assertEquals(JWT_ISSUER, decodedJWT.getIssuer(), "JWT issuer should match");
-    assertEquals(JWT_SUBJECT, decodedJWT.getSubject(), "JWT subject should match");
-    assertEquals(userSessionId, decodedJWT.getClaim("sessionId").asString(), "JWT session ID should match");
+    // Verify claims
+    Assertions.assertEquals(JWT_ISSUER, decodedJWT.getIssuer(), "JWT issuer should match");
+    Assertions.assertEquals(userSessionId, decodedJWT.getClaim("user_session_id").asString(), 
+        "JWT user_session_id claim should match");
+    Assertions.assertEquals(username, decodedJWT.getClaim("user").asString(), 
+        "JWT user claim should match");
+    Assertions.assertEquals(realm, decodedJWT.getClaim("realm").asString(), 
+        "JWT realm claim should match");
+    
+    // Log success for debugging
+    System.out.println("HMAC256 JWT signing/verification successful with BouncyCastle under Java 21");
+    System.out.println("JWT Token: " + token);
   }
   
   /**
    * Tests bcrypt password hashing and verification using BouncyCastle provider.
-   * This is the algorithm used for password storage in Nexus.
+   * <p>
+   * This test verifies that the bcrypt algorithm used for password hashing in Nexus
+   * functions correctly under Java 21 with BouncyCastle 1.78.1.
    */
   @Test
-  @DisplayName("Test bcrypt password hashing and verification with BouncyCastle in Java 21")
-  public void testBcryptPasswordHashing() {
-    // Generate a bcrypt hash with a random salt (work factor 12)
-    String hashedPassword = BCrypt.hashpw(TEST_PASSWORD, BCrypt.gensalt(12));
+  @DisplayName("Test bcrypt password hashing with BouncyCastle under Java 21")
+  public void testBcryptPasswordHashing() throws Exception {
+    // Use BouncyCastle's implementation of bcrypt
+    String salt = "$2a$10$" + Base64.getEncoder().encodeToString(UUID.randomUUID().toString().getBytes()).substring(0, 22);
     
-    // Verify the hash matches the original password
-    assertTrue(BCrypt.checkpw(TEST_PASSWORD, hashedPassword), 
-        "BCrypt hash verification should succeed with correct password");
+    // Hash the password using bcrypt
+    String hashedPassword = org.bouncycastle.crypto.util.Password.bcrypt(TEST_PASSWORD.toCharArray(), salt.getBytes());
     
-    // Verify the hash does not match an incorrect password
-    String wrongPassword = TEST_PASSWORD + "wrong";
-    assertTrue(!BCrypt.checkpw(wrongPassword, hashedPassword), 
-        "BCrypt hash verification should fail with incorrect password");
+    // Verify the password
+    boolean passwordMatches = org.bouncycastle.crypto.util.Password.checkPassword(hashedPassword, TEST_PASSWORD.toCharArray());
+    
+    // Assert
+    Assertions.assertTrue(passwordMatches, "Password verification should succeed");
+    
+    // Verify negative case
+    boolean wrongPasswordMatches = org.bouncycastle.crypto.util.Password.checkPassword(
+        hashedPassword, "wrong-password".toCharArray());
+    Assertions.assertFalse(wrongPasswordMatches, "Wrong password verification should fail");
+    
+    // Log success for debugging
+    System.out.println("bcrypt password hashing successful with BouncyCastle under Java 21");
+    System.out.println("Original password: " + TEST_PASSWORD);
+    System.out.println("Hashed password: " + hashedPassword);
   }
 }

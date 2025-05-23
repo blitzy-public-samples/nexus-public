@@ -26,16 +26,6 @@
 
   <artifactId>nexus-it-suite</artifactId>
   <name>${project.groupId}:${project.artifactId}</name>
-  
-  <!-- Set Java 21 as the target version for this module -->
-  <properties>
-    <maven.compiler.source>21</maven.compiler.source>
-    <maven.compiler.target>21</maven.compiler.target>
-    <!-- JVM flags for Java 21 features and optimizations -->
-    <test.additional.args>-XX:+UseZGC -XX:+ZGenerational -Djdk.tracePinnedThreads=full</test.additional.args>
-    <!-- Default to false, can be enabled with -Dvirtual.threads=true -->
-    <virtual.threads>false</virtual.threads>
-  </properties>
 
   <dependencies>
     <!--
@@ -65,6 +55,15 @@
     <dependency>
       <groupId>org.sonatype.nexus.testsuite</groupId>
       <artifactId>nexus-repository-testsupport</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- 
+    Virtual Thread testing support
+    -->
+    <dependency>
+      <groupId>org.sonatype.nexus.testsuite</groupId>
+      <artifactId>nexus-virtual-thread-testsupport</artifactId>
       <scope>test</scope>
     </dependency>
 
@@ -115,52 +114,48 @@
       <artifactId>nexus-test-common</artifactId>
     </dependency>
 
-    <dependency>
-      <groupId>org.awaitility</groupId>
-      <artifactId>awaitility</artifactId>
-      <scope>test</scope>
-    </dependency>
-
-    <!-- Java 21 compatible test dependencies with explicit versions -->
+    <!-- 
+    Testing dependencies for Java 21 compatibility
+    -->
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter-api</artifactId>
       <version>5.10.1</version>
       <scope>test</scope>
     </dependency>
-    
+
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter-engine</artifactId>
       <version>5.10.1</version>
       <scope>test</scope>
     </dependency>
-    
+
     <dependency>
       <groupId>org.junit.vintage</groupId>
       <artifactId>junit-vintage-engine</artifactId>
       <version>5.10.1</version>
       <scope>test</scope>
     </dependency>
-    
+
     <dependency>
       <groupId>org.mockito</groupId>
       <artifactId>mockito-core</artifactId>
-      <version>4.11.0</version>
+      <version>5.8.0</version>
       <scope>test</scope>
     </dependency>
-    
+
     <dependency>
       <groupId>org.mockito</groupId>
       <artifactId>mockito-junit-jupiter</artifactId>
-      <version>4.11.0</version>
+      <version>5.8.0</version>
       <scope>test</scope>
     </dependency>
-    
+
     <dependency>
-      <groupId>org.hamcrest</groupId>
-      <artifactId>hamcrest</artifactId>
-      <version>2.2</version>
+      <groupId>org.awaitility</groupId>
+      <artifactId>awaitility</artifactId>
+      <version>4.2.2</version>
       <scope>test</scope>
     </dependency>
 
@@ -214,22 +209,23 @@
         <groupId>org.apache.servicemix.tooling</groupId>
         <artifactId>depends-maven-plugin</artifactId>
       </plugin>
-      
-      <!-- Configure Surefire for Java 21 compatibility -->
+
+      <!-- Configure Maven Surefire Plugin for Java 21 support -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <version>3.2.5</version>
         <configuration>
-          <argLine>-Djava.version=21 ${test.additional.args}</argLine>
           <systemPropertyVariables>
-            <java.util.concurrent.ForkJoinPool.common.parallelism>16</java.util.concurrent.ForkJoinPool.common.parallelism>
             <test.virtual.threads>${virtual.threads}</test.virtual.threads>
+            <java.util.concurrent.ForkJoinPool.common.parallelism>16</java.util.concurrent.ForkJoinPool.common.parallelism>
           </systemPropertyVariables>
+          <argLine>-Djdk.tracePinnedThreads=full</argLine>
+          <groups>org.sonatype.goodies.testsupport.group.Java21TestGroup,org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup</groups>
         </configuration>
       </plugin>
-      
-      <!-- Configure Failsafe for Java 21 compatibility -->
+
+      <!-- Configure Maven Failsafe Plugin for Java 21 support -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-failsafe-plugin</artifactId>
@@ -239,24 +235,11 @@
           <threadCount>4</threadCount>
           <forkCount>2</forkCount>
           <reuseForks>true</reuseForks>
-          <argLine>-Djava.version=21 ${test.additional.args}</argLine>
           <systemPropertyVariables>
-            <java.util.concurrent.ForkJoinPool.common.parallelism>16</java.util.concurrent.ForkJoinPool.common.parallelism>
             <test.virtual.threads>${virtual.threads}</test.virtual.threads>
+            <java.util.concurrent.ForkJoinPool.common.parallelism>16</java.util.concurrent.ForkJoinPool.common.parallelism>
           </systemPropertyVariables>
-        </configuration>
-      </plugin>
-      
-      <!-- Configure JaCoCo for Java 21 compatibility -->
-      <plugin>
-        <groupId>org.jacoco</groupId>
-        <artifactId>jacoco-maven-plugin</artifactId>
-        <version>0.8.11</version>
-        <configuration>
-          <excludes>
-            <exclude>**/generated-sources/**</exclude>
-          </excludes>
-          <propertyName>jacocoArgLine</propertyName>
+          <argLine>-Djdk.tracePinnedThreads=full</argLine>
         </configuration>
       </plugin>
     </plugins>
@@ -330,18 +313,7 @@
       </build>
     </profile>
 
-    <profile>
-      <id>idea</id>
-      <dependencies>
-        <dependency>
-          <groupId>org.elasticsearch</groupId>
-          <artifactId>elasticsearch</artifactId>
-          <scope>test</scope>
-        </dependency>
-      </dependencies>
-    </profile>
-    
-    <!-- Java 21 specific tests profile -->
+    <!-- Profile for Java 21 specific tests -->
     <profile>
       <id>java21-tests</id>
       <activation>
@@ -357,22 +329,13 @@
             <artifactId>maven-surefire-plugin</artifactId>
             <configuration>
               <groups>org.sonatype.goodies.testsupport.group.Java21TestGroup</groups>
-              <argLine>-Djava.version=21 ${test.additional.args}</argLine>
-            </configuration>
-          </plugin>
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-failsafe-plugin</artifactId>
-            <configuration>
-              <groups>org.sonatype.goodies.testsupport.group.Java21TestGroup</groups>
-              <argLine>-Djava.version=21 ${test.additional.args}</argLine>
             </configuration>
           </plugin>
         </plugins>
       </build>
     </profile>
-    
-    <!-- Virtual threads test profile -->
+
+    <!-- Profile for Virtual Thread specific tests -->
     <profile>
       <id>virtual-threads</id>
       <activation>
@@ -383,7 +346,6 @@
       </activation>
       <properties>
         <virtual.threads>true</virtual.threads>
-        <test.additional.args>-XX:+UseZGC -XX:+ZGenerational -Djdk.tracePinnedThreads=full -Djdk.virtualThreadScheduler.parallelism=16 -Djdk.virtualThreadScheduler.maxPoolSize=256</test.additional.args>
       </properties>
       <build>
         <plugins>
@@ -394,15 +356,19 @@
               <groups>org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup</groups>
             </configuration>
           </plugin>
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-failsafe-plugin</artifactId>
-            <configuration>
-              <groups>org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup</groups>
-            </configuration>
-          </plugin>
         </plugins>
       </build>
+    </profile>
+
+    <profile>
+      <id>idea</id>
+      <dependencies>
+        <dependency>
+          <groupId>org.elasticsearch</groupId>
+          <artifactId>elasticsearch</artifactId>
+          <scope>test</scope>
+        </dependency>
+      </dependencies>
     </profile>
 
   </profiles>

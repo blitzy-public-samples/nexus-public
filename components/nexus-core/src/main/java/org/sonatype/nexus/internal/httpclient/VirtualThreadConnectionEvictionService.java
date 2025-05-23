@@ -19,7 +19,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
-import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
@@ -33,11 +32,8 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
- * Service responsible for periodically evicting expired and idle HTTP client connections
- * using Java 21 Virtual Threads for efficient resource utilization.
- *
- * <p>This service replaces the traditional thread-based {@link ConnectionEvictionThread} with
- * a more scalable and efficient implementation using Virtual Threads.</p>
+ * Service responsible for evicting expired and idle HTTP connections from connection pools
+ * using Java 21 Virtual Threads for improved scalability and resource efficiency.
  *
  * @since 3.60
  */
@@ -55,19 +51,28 @@ public class VirtualThreadConnectionEvictionService
 
   private final AtomicBoolean running = new AtomicBoolean(false);
 
-  private ExecutorService executor;
+  private ExecutorService executorService;
 
-  @Inject
+  /**
+   * @param connectionManager the connection manager to evict connections from
+   * @param idleTime the idle time after which connections should be evicted
+   * @param evictingDelayTime the delay between eviction runs
+   */
   public VirtualThreadConnectionEvictionService(final HttpClientConnectionManager connectionManager,
-                                               final @Named("${nexus.httpclient.connection.idle.time:-30s}") Time idleTime,
-                                               final @Named("${nexus.httpclient.connection.eviction.delay:-5s}") Time evictingDelayTime)
+                                               final Time idleTime,
+                                               final Time evictingDelayTime)
   {
     this(connectionManager, idleTime.toMillis(), evictingDelayTime.toMillis());
   }
 
-  VirtualThreadConnectionEvictionService(final HttpClientConnectionManager connectionManager,
-                                        final long idleTimeMillis,
-                                        final long evictingDelayMillis)
+  /**
+   * @param connectionManager the connection manager to evict connections from
+   * @param idleTimeMillis the idle time in milliseconds after which connections should be evicted
+   * @param evictingDelayMillis the delay in milliseconds between eviction runs
+   */
+  public VirtualThreadConnectionEvictionService(final HttpClientConnectionManager connectionManager,
+                                               final long idleTimeMillis,
+                                               final long evictingDelayMillis)
   {
     checkArgument(idleTimeMillis > -1, "Keep alive period in milliseconds cannot be negative");
     checkArgument(evictingDelayMillis > 0, "Evicting delay period in milliseconds must be greater than 0");
@@ -85,10 +90,12 @@ public class VirtualThreadConnectionEvictionService
       log.debug("Starting connection eviction service (delay {} millis)", evictingDelayMillis);
       
       // Create a virtual thread executor for the eviction task
-      executor = Executors.newVirtualThreadPerTaskExecutor();
+      executorService = Executors.newVirtualThreadPerTaskExecutor();
       
-      // Submit the eviction task to run periodically
-      executor.submit(this::evictionLoop);
+      // Submit the eviction task
+      executorService.submit(this::evictionLoop);
+      
+      log.debug("Connection eviction service started");
     }
   }
 
@@ -100,28 +107,30 @@ public class VirtualThreadConnectionEvictionService
     if (running.compareAndSet(true, false)) {
       log.debug("Stopping connection eviction service");
       
-      if (executor != null) {
-        executor.shutdown();
+      if (executorService != null) {
+        executorService.shutdown();
         try {
-          // Wait for a short time for the executor to shut down gracefully
-          if (!executor.awaitTermination(1, TimeUnit.SECONDS)) {
-            executor.shutdownNow();
+          // Wait for the eviction task to complete
+          if (!executorService.awaitTermination(1, TimeUnit.SECONDS)) {
+            executorService.shutdownNow();
           }
         }
         catch (InterruptedException e) {
           Thread.currentThread().interrupt();
-          executor.shutdownNow();
+          executorService.shutdownNow();
         }
-        executor = null;
+        executorService = null;
       }
+      
+      log.debug("Connection eviction service stopped");
     }
   }
 
   /**
-   * Main eviction loop that runs in a virtual thread.
+   * The main eviction loop that runs in a virtual thread.
    */
   private void evictionLoop() {
-    log.debug("Connection eviction loop started");
+    log.debug("Starting connection eviction loop");
     
     try {
       while (running.get()) {
@@ -129,12 +138,11 @@ public class VirtualThreadConnectionEvictionService
           // Sleep for the configured delay
           Thread.sleep(evictingDelayMillis);
           
-          // Only proceed if the service is still running
           if (!running.get()) {
             break;
           }
           
-          // Close expired connections
+          // Evict expired connections
           try {
             connectionManager.closeExpiredConnections();
           }
@@ -142,7 +150,7 @@ public class VirtualThreadConnectionEvictionService
             log.warn("Failed to close expired connections", e);
           }
           
-          // Close idle connections
+          // Evict idle connections
           try {
             connectionManager.closeIdleConnections(idleTimeMillis, TimeUnit.MILLISECONDS);
           }
@@ -160,7 +168,7 @@ public class VirtualThreadConnectionEvictionService
       }
     }
     finally {
-      log.debug("Connection eviction loop stopped");
+      log.debug("Connection eviction loop terminated");
     }
   }
 }

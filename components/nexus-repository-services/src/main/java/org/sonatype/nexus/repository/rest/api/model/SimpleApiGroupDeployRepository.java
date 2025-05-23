@@ -12,11 +12,12 @@
  */
 package org.sonatype.nexus.repository.rest.api.model;
 
-import javax.annotation.Nullable;
+import jakarta.annotation.Nullable;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * API Group Deploy Repository for simple formats which do not have custom attributes for groups.
@@ -27,49 +28,51 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 public class SimpleApiGroupDeployRepository
     extends SimpleApiGroupRepository
 {
-  /**
-   * Creates a new SimpleApiGroupDeployRepository instance.
-   *
-   * @param name the repository name
-   * @param format the repository format
-   * @param url the repository URL
-   * @param online whether the repository is online
-   * @param storage the storage attributes (as a record in Java 21)
-   * @param group the group deploy attributes
-   */
+  @Schema(description = "Group deploy attributes")
+  protected final GroupDeployAttributesRecord groupDeploy;
+  
   @JsonCreator
   public SimpleApiGroupDeployRepository(
       @JsonProperty("name") final String name,
       @JsonProperty("format") final String format,
       @JsonProperty("url") final String url,
       @JsonProperty("online") final Boolean online,
-      @JsonProperty("storage") final StorageAttributes storage,
-      @JsonProperty("group") final GroupDeployAttributes group)
+      @JsonProperty("storage") final StorageAttributesRecord storage,
+      @JsonProperty("group") final GroupDeployAttributesRecord group)
   {
     super(name, format, url, online, storage, group);
+    this.groupDeploy = group;
   }
 
   /**
-   * Gets the group attributes as GroupDeployAttributes.
-   *
-   * @return the group deploy attributes
+   * Constructor that accepts legacy attribute types and converts them to records
    */
+  public SimpleApiGroupDeployRepository(
+      final String name,
+      final String format,
+      final String url,
+      final Boolean online,
+      final StorageAttributes storage,
+      final GroupDeployAttributes group)
+  {
+    super(name, format, url, online, storage, group);
+    this.groupDeploy = GroupDeployAttributesRecord.from(group);
+  }
+
   @Override
-  public GroupDeployAttributes getGroup() {
-    return (GroupDeployAttributes) super.getGroup();
+  public GroupDeployAttributesRecord getGroup() {
+    return groupDeploy;
   }
   
   /**
-   * Gets the writable member from group deploy attributes.
-   * Uses pattern matching when available in Java 21.
-   *
+   * Gets the writable member using Record Pattern matching
+   * 
    * @return the writable member name or null if not set
    */
   @Nullable
   public String getWritableMember() {
-    GroupDeployAttributes groupDeploy = getGroup();
-    if (groupDeploy != null) {
-      return groupDeploy.getWritableMember();
+    if (groupDeploy instanceof GroupDeployAttributesRecord(var ignored, String writableMember)) {
+      return writableMember;
     }
     return null;
   }

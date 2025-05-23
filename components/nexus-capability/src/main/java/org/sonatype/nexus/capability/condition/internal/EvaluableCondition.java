@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.capability.condition.internal;
 
-import javax.inject.Provider;
+import java.util.concurrent.locks.StampedLock;
 
 import org.sonatype.nexus.capability.CapabilityContext;
 import org.sonatype.nexus.capability.CapabilityContextAware;
@@ -32,8 +32,8 @@ import static com.google.common.base.Preconditions.checkState;
  * A condition that delegates to provided {@link Evaluable} for checking if the condition is satisfied.
  * {@link Evaluable#isSatisfied()} is reevaluated after each update of capability the condition is used for.
  * <p>
- * This implementation is compatible with Java 21 Virtual Threads and ensures proper event
- * handling and thread context propagation across Virtual Thread boundaries.
+ * This implementation is compatible with Java 21 Virtual Threads and ensures proper event handling
+ * and thread context propagation when evaluating conditions.
  *
  * @since capabilities 2.2
  */
@@ -41,18 +41,18 @@ public class EvaluableCondition
     extends ConditionSupport
     implements CapabilityContextAware
 {
-
+  // Using StampedLock for optimistic reads with non-blocking synchronization
+  private final StampedLock lock = new StampedLock();
+  
   private volatile CapabilityIdentity capabilityIdentity;
 
   private final Evaluable evaluable;
 
   /**
-   * Constructs a new EvaluableCondition with the specified EventManager and Evaluable.
-   * <p>
-   * This implementation ensures proper handling of events across Virtual Thread boundaries.
-   *
-   * @param eventManager the event manager to use
-   * @param evaluable the evaluable to delegate condition checking to
+   * Creates a new EvaluableCondition instance.
+   * 
+   * @param eventManager the event manager for event handling
+   * @param evaluable the evaluable implementation that determines if the condition is satisfied
    */
   public EvaluableCondition(final EventManager eventManager,
                             final Evaluable evaluable)
@@ -62,60 +62,94 @@ public class EvaluableCondition
   }
 
   /**
-   * Constructs a new EvaluableCondition with the specified EventManager provider and Evaluable.
+   * Sets the capability context for this condition.
    * <p>
-   * This constructor is preferred for Virtual Thread compatibility as it ensures proper
-   * access to the EventManager across thread boundaries.
+   * This method uses non-blocking synchronization to ensure thread safety.
    *
-   * @param eventManagerProvider the provider of event manager instances
-   * @param evaluable the evaluable to delegate condition checking to
+   * @param context the capability context
+   * @return this condition instance
    */
-  public EvaluableCondition(final Provider<EventManager> eventManagerProvider,
-                            final Evaluable evaluable)
-  {
-    super(eventManagerProvider, false);
-    this.evaluable = checkNotNull(evaluable);
-  }
-
   @Override
   public EvaluableCondition setContext(final CapabilityContext context) {
-    checkState(!isActive(), "Cannot contextualize when already bounded");
-    checkState(capabilityIdentity == null, "Already contextualized with id '" + capabilityIdentity + "'");
-    capabilityIdentity = context.id();
-
-    return this;
+    long stamp = lock.writeLock();
+    try {
+      checkState(!isActive(), "Cannot contextualize when already bounded");
+      checkState(capabilityIdentity == null, "Already contextualized with id '" + capabilityIdentity + "'");
+      capabilityIdentity = context.id();
+      return this;
+    } finally {
+      lock.unlockWrite(stamp);
+    }
   }
 
+  /**
+   * Binds this condition to start receiving events.
+   * <p>
+   * This implementation ensures proper registration with the EventManager and
+   * initial evaluation of the condition state.
+   */
   @Override
   protected void doBind() {
-    checkState(capabilityIdentity != null, "Capability identity not specified");
+    // Use optimistic read first to avoid unnecessary write lock acquisition
+    long stamp = lock.tryOptimisticRead();
+    CapabilityIdentity identity = capabilityIdentity;
+    if (!lock.validate(stamp)) {
+      // Fallback to read lock if optimistic read fails
+      stamp = lock.readLock();
+      try {
+        identity = capabilityIdentity;
+      } finally {
+        lock.unlockRead(stamp);
+      }
+    }
+    
+    checkState(identity != null, "Capability identity not specified");
     getEventManager().register(this);
-    // Evaluate in the current thread context to ensure proper propagation
-    setSatisfied(evaluable.isSatisfied());
+    
+    // Evaluate the condition in the current thread context to ensure proper propagation
+    boolean satisfied = evaluable.isSatisfied();
+    setSatisfied(satisfied);
   }
 
+  /**
+   * Releases this condition to stop receiving events.
+   * <p>
+   * This implementation ensures proper unregistration from the EventManager.
+   */
   @Override
   public void doRelease() {
     getEventManager().unregister(this);
   }
 
   /**
-   * Handles capability update events, ensuring proper thread context propagation
-   * when evaluating the condition across Virtual Thread boundaries.
+   * Handles capability update events.
+   * <p>
+   * This implementation is designed to work correctly with events from Virtual Threads,
+   * ensuring proper thread context propagation to the Evaluable implementation.
    *
    * @param event the capability update event
    */
   @AllowConcurrentEvents
   @Subscribe
   public void handle(final CapabilityEvent.AfterUpdate event) {
-    // Capture the current capability identity to ensure thread safety
-    final CapabilityIdentity currentCapabilityIdentity = this.capabilityIdentity;
+    // Use optimistic read for better performance with non-blocking synchronization
+    long stamp = lock.tryOptimisticRead();
+    CapabilityIdentity identity = capabilityIdentity;
+    if (!lock.validate(stamp)) {
+      // Fallback to read lock if optimistic read fails
+      stamp = lock.readLock();
+      try {
+        identity = capabilityIdentity;
+      } finally {
+        lock.unlockRead(stamp);
+      }
+    }
     
-    if (currentCapabilityIdentity != null && 
-        event.getReference().context().id().equals(currentCapabilityIdentity)) {
-      // Evaluate in the current thread context (which may be a Virtual Thread)
-      // This ensures proper context propagation across thread boundaries
-      setSatisfied(evaluable.isSatisfied());
+    if (identity != null && event.getReference().context().id().equals(identity)) {
+      // Evaluate the condition in the current thread context to ensure proper propagation
+      // This works correctly regardless of whether the event comes from a platform thread or a virtual thread
+      boolean satisfied = evaluable.isSatisfied();
+      setSatisfied(satisfied);
     }
   }
 
@@ -133,5 +167,4 @@ public class EvaluableCondition
   public String explainUnsatisfied() {
     return evaluable.explainUnsatisfied();
   }
-
 }

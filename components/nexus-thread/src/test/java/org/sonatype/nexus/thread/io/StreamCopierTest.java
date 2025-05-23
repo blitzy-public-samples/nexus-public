@@ -15,33 +15,33 @@ package org.sonatype.nexus.thread.io;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
 
 import org.apache.commons.io.IOUtils;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
-class StreamCopierTest
-    extends TestSupport
+public class StreamCopierTest
+    extends VirtualThreadTestSupport
 {
-  private static final String DEFAULT_READ_OUTPUT = "Test read";
+  private String DEFAULT_READ_OUTPUT = "Test read";
 
   private StreamCopier<String> underTest;
+
+  @BeforeEach
+  void setUp() {
+    underTest = null;
+  }
 
   @Test
   void validOutputWhenReadSimple() {
@@ -99,177 +99,173 @@ class StreamCopierTest
     RuntimeException exception = assertThrows(RuntimeException.class, () -> underTest.read(1000));
     assertEquals("Unable to properly read from stream", exception.getMessage());
   }
-
+  
   @Test
   @Tag("VirtualThreadTestGroup")
-  void concurrentReadWriteOperationsWithVirtualThreads() throws Exception {
-    // Create a StreamCopier that will be used by multiple virtual threads
-    underTest = new StreamCopier<>(this::writeString, this::readString);
+  void concurrentIOOperationsWithVirtualThreads() throws Exception {
+    assumeVirtualThreadSupported();
     
-    // Create a virtual thread executor
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      int taskCount = 10;
-      List<Future<String>> futures = new ArrayList<>();
-      
-      // Submit multiple read tasks to be executed concurrently
-      for (int i = 0; i < taskCount; i++) {
-        futures.add(executor.submit(() -> underTest.read()));
+    // Create a StreamCopier with a virtual thread executor
+    ExecutorService virtualExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    underTest = new StreamCopier<>(this::writeString, this::readString, virtualExecutor);
+    
+    // Run multiple concurrent read operations
+    int concurrentOperations = 100;
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    runConcurrently(concurrentOperations, () -> {
+      String result = underTest.read();
+      if (DEFAULT_READ_OUTPUT.equals(result)) {
+        successCount.incrementAndGet();
       }
-      
-      // Verify all tasks completed successfully with the expected result
-      for (Future<String> future : futures) {
-        assertEquals(DEFAULT_READ_OUTPUT, future.get(5, TimeUnit.SECONDS));
+    });
+    
+    assertEquals(concurrentOperations, successCount.get(), 
+        "All concurrent operations should complete successfully");
+    
+    virtualExecutor.shutdown();
+  }
+  
+  @Test
+  @Tag("VirtualThreadTestGroup")
+  void highConcurrencyWithVirtualThreads() throws Exception {
+    assumeVirtualThreadSupported();
+    
+    // Create a StreamCopier with a virtual thread executor
+    ExecutorService virtualExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    underTest = new StreamCopier<>(this::writeString, this::readString, virtualExecutor);
+    
+    // Run a high number of concurrent operations (1000+)
+    int concurrentOperations = 1000;
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    runConcurrently(concurrentOperations, () -> {
+      String result = underTest.read();
+      if (DEFAULT_READ_OUTPUT.equals(result)) {
+        successCount.incrementAndGet();
       }
-    }
+    });
+    
+    assertEquals(concurrentOperations, successCount.get(), 
+        "All high-concurrency operations should complete successfully");
+    
+    virtualExecutor.shutdown();
   }
   
   @Test
   @Tag("VirtualThreadTestGroup")
   void threadPinningDetectionAndPrevention() throws Exception {
-    // Create a StreamCopier with a custom executor that uses virtual threads
-    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(
-        Thread.ofVirtual()
-            .name("pinning-test-", 0)
-            // Enable thread pinning detection for this test
-            .uncaughtExceptionHandler((thread, throwable) -> 
-                log.error("Uncaught exception in virtual thread: {}", throwable.getMessage()))
-            .factory())) {
-      
-      // Create a StreamCopier that will be used with virtual threads
-      underTest = new StreamCopier<>(
-          // Use a write operation that doesn't cause pinning
-          this::writeString,
-          // Use a read operation that doesn't cause pinning
-          this::readString,
-          executor
-      );
-      
-      // Run multiple operations concurrently
-      List<Future<String>> futures = new ArrayList<>();
-      int taskCount = 20;
-      
-      for (int i = 0; i < taskCount; i++) {
-        futures.add(executor.submit(() -> underTest.read()));
-      }
-      
-      // Verify all operations completed successfully
-      for (Future<String> future : futures) {
-        assertEquals(DEFAULT_READ_OUTPUT, future.get(5, TimeUnit.SECONDS));
-      }
-    }
-  }
-
-  @Test
-  @Tag("VirtualThreadTestGroup")
-  void highConcurrencyWithVirtualThreads() throws Exception {
-    // Create a StreamCopier that will be used by many virtual threads
-    underTest = new StreamCopier<>(this::writeString, this::readString);
+    assumeVirtualThreadSupported();
     
-    // Create a virtual thread executor
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      int taskCount = 1000; // Test with 1000+ tasks
-      List<Future<String>> futures = new ArrayList<>();
-      AtomicInteger successCount = new AtomicInteger(0);
-      
-      // Submit many read tasks to be executed concurrently
-      for (int i = 0; i < taskCount; i++) {
-        futures.add(executor.submit(() -> {
-          String result = underTest.read();
-          if (DEFAULT_READ_OUTPUT.equals(result)) {
-            successCount.incrementAndGet();
-          }
-          return result;
-        }));
+    // Create a task that might cause thread pinning (using synchronized block)
+    Runnable potentiallyPinningTask = () -> {
+      synchronized (this) {
+        // Simulate some work inside a synchronized block
+        try {
+          Thread.sleep(50);
+        }
+        catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
+      }
+    };
+    
+    // Detect if pinning occurs
+    boolean pinningDetected = detectThreadPinning(potentiallyPinningTask);
+    
+    // Create a StreamCopier that avoids pinning by not using synchronized blocks
+    ExecutorService virtualExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    underTest = new StreamCopier<>(this::writeString, this::readString, virtualExecutor);
+    
+    // Verify the StreamCopier can handle concurrent operations even with potential pinning
+    int concurrentOperations = 50;
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    runConcurrently(concurrentOperations, () -> {
+      String result = underTest.read();
+      if (DEFAULT_READ_OUTPUT.equals(result)) {
+        successCount.incrementAndGet();
       }
       
-      // Wait for all tasks to complete
-      for (Future<String> future : futures) {
-        future.get(10, TimeUnit.SECONDS);
-      }
-      
-      // Verify all tasks completed successfully
-      assertEquals(taskCount, successCount.get(), 
-          "All virtual thread tasks should complete successfully");
-    }
+      // Also run the potentially pinning task
+      potentiallyPinningTask.run();
+    });
+    
+    assertEquals(concurrentOperations, successCount.get(), 
+        "All operations should complete successfully despite potential thread pinning");
+    
+    virtualExecutor.shutdown();
   }
-
+  
   @Test
   @Tag("VirtualThreadTestGroup")
   void comparePerformanceBetweenPlatformAndVirtualThreads() throws Exception {
-    // Create StreamCopiers for both thread types
-    ExecutorService platformExecutor = Executors.newFixedThreadPool(10); // Limited platform thread pool
-    ExecutorService virtualExecutor = Executors.newVirtualThreadPerTaskExecutor(); // Unlimited virtual threads
+    assumeVirtualThreadSupported();
     
-    try {
-      StreamCopier<String> platformThreadCopier = new StreamCopier<>(
-          this::writeString, 
-          this::readString, 
-          platformExecutor
-      );
-      
-      StreamCopier<String> virtualThreadCopier = new StreamCopier<>(
-          this::writeString, 
-          this::readString, 
-          virtualExecutor
-      );
-      
-      int taskCount = 100;
-      
-      // Measure platform thread performance
-      long platformStart = System.nanoTime();
-      for (int i = 0; i < taskCount; i++) {
-        assertEquals(DEFAULT_READ_OUTPUT, platformThreadCopier.read());
-      }
-      long platformDuration = System.nanoTime() - platformStart;
-      
-      // Measure virtual thread performance
-      long virtualStart = System.nanoTime();
-      for (int i = 0; i < taskCount; i++) {
-        assertEquals(DEFAULT_READ_OUTPUT, virtualThreadCopier.read());
-      }
-      long virtualDuration = System.nanoTime() - virtualStart;
-      
-      // Log the performance comparison (not asserting as performance can vary)
-      log.info("Platform threads took {} ns, Virtual threads took {} ns for {} operations", 
-          platformDuration, virtualDuration, taskCount);
-      
-      // Virtual threads should generally be more efficient for I/O operations
-      // but we don't assert this as it depends on the environment
-      log.info("Performance ratio (platform/virtual): {}", 
-          (double) platformDuration / virtualDuration);
+    // Create StreamCopiers with different executor types
+    ExecutorService platformExecutor = Executors.newFixedThreadPool(10);
+    ExecutorService virtualExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    StreamCopier<String> platformCopier = new StreamCopier<>(this::writeString, this::readString, platformExecutor);
+    StreamCopier<String> virtualCopier = new StreamCopier<>(this::writeString, this::readString, virtualExecutor);
+    
+    // Measure platform thread performance
+    int operationCount = 100;
+    long platformStart = System.currentTimeMillis();
+    
+    for (int i = 0; i < operationCount; i++) {
+      assertEquals(DEFAULT_READ_OUTPUT, platformCopier.read());
     }
-    finally {
-      // Clean up the executors
-      platformExecutor.shutdown();
-      virtualExecutor.shutdown();
+    
+    long platformDuration = System.currentTimeMillis() - platformStart;
+    
+    // Measure virtual thread performance
+    long virtualStart = System.currentTimeMillis();
+    
+    for (int i = 0; i < operationCount; i++) {
+      assertEquals(DEFAULT_READ_OUTPUT, virtualCopier.read());
     }
+    
+    long virtualDuration = System.currentTimeMillis() - virtualStart;
+    
+    // Log the results (no assertion as performance can vary by environment)
+    log.info("Platform threads: {} operations in {} ms", operationCount, platformDuration);
+    log.info("Virtual threads: {} operations in {} ms", operationCount, virtualDuration);
+    
+    platformExecutor.shutdown();
+    virtualExecutor.shutdown();
   }
-
+  
   @Test
   @Tag("VirtualThreadTestGroup")
   void customVirtualThreadExecutorService() throws Exception {
+    assumeVirtualThreadSupported();
+    
     // Create a custom ExecutorService using Virtual Threads
-    try (ExecutorService customExecutor = Executors.newThreadPerTaskExecutor(
-        Thread.ofVirtual().name("custom-virtual-", 0).factory())) {
-      
-      // Create a StreamCopier with the custom executor
-      underTest = new StreamCopier<>(this::writeString, this::readString, customExecutor);
-      
-      // Test concurrent operations
-      List<Future<String>> futures = new ArrayList<>();
-      int taskCount = 50;
-      
-      for (int i = 0; i < taskCount; i++) {
-        futures.add(customExecutor.submit(() -> underTest.read()));
+    ExecutorService customExecutor = newVirtualThreadExecutor("StreamCopier-Test-");
+    underTest = new StreamCopier<>(this::writeString, this::readString, customExecutor);
+    
+    // Verify it works correctly
+    assertEquals(DEFAULT_READ_OUTPUT, underTest.read());
+    
+    // Run multiple concurrent operations
+    int concurrentOperations = 50;
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    runConcurrently(concurrentOperations, () -> {
+      String result = underTest.read();
+      if (DEFAULT_READ_OUTPUT.equals(result)) {
+        successCount.incrementAndGet();
       }
-      
-      // Verify all operations completed successfully
-      for (Future<String> future : futures) {
-        assertEquals(DEFAULT_READ_OUTPUT, future.get(5, TimeUnit.SECONDS));
-      }
-    }
+    });
+    
+    assertEquals(concurrentOperations, successCount.get(), 
+        "All operations with custom executor should complete successfully");
+    
+    customExecutor.shutdown();
+    customExecutor.awaitTermination(5, TimeUnit.SECONDS);
   }
-
+  
   private void writeStringAndClose(OutputStream outputStream) {
     try {
       this.writeString(outputStream);
@@ -283,7 +279,7 @@ class StreamCopierTest
 
   private void writeString(OutputStream outputStream) {
     try {
-      outputStream.write(DEFAULT_READ_OUTPUT.getBytes(UTF_8));
+      outputStream.write(DEFAULT_READ_OUTPUT.getBytes());
     }
     catch (IOException e) {
       fail(e.getMessage());
@@ -292,7 +288,7 @@ class StreamCopierTest
 
   private String readString(final InputStream inputStream) {
     try {
-      return IOUtils.toString(inputStream, UTF_8);
+      return IOUtils.toString(inputStream);
     }
     catch (IOException e) {
       fail(e.getMessage());

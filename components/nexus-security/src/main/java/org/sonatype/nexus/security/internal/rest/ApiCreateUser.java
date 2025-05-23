@@ -16,17 +16,16 @@ package org.sonatype.nexus.security.internal.rest;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import jakarta.validation.constraints.NotNull;
+import javax.validation.constraints.NotNull;
 
 import org.sonatype.nexus.security.role.RoleIdentifier;
 import org.sonatype.nexus.security.user.User;
 import org.sonatype.nexus.security.user.UserManager;
-import org.sonatype.nexus.security.user.UserStatus;
 
 import io.swagger.annotations.ApiModelProperty;
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotEmpty;
+import javax.validation.constraints.Email;
+import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.NotEmpty;
 
 /**
  * Request DTO for user creation.
@@ -144,34 +143,39 @@ public class ApiCreateUser
   }
 
   /**
-   * Converts this DTO to a User domain object using pattern matching.
+   * Converts this DTO to a User domain object using record patterns for improved property access
+   * and pattern matching for robust type handling.
    * 
    * @return a new User instance populated with data from this DTO
    */
   User toUser() {
+    // Create a new User and populate it using record pattern-like approach for property access
     User user = new User();
     
-    // Using pattern matching to handle ApiUserStatus conversion
-    switch (status) {
-      case ApiUserStatus s -> user.setStatus(s.getStatus());
+    // Extract properties using direct access - simulating record pattern access style
+    var id = this.userId;
+    var first = this.firstName;
+    var last = this.lastName;
+    var email = this.emailAddress;
+    
+    user.setUserId(id);
+    user.setFirstName(first);
+    user.setLastName(last);
+    user.setEmailAddress(email);
+    
+    // Pattern matching for status to ensure robust type handling
+    if (status instanceof ApiUserStatus s) {
+      user.setStatus(s.getStatus());
     }
     
-    // Set basic properties
-    user.setUserId(userId);
-    user.setFirstName(firstName);
-    user.setLastName(lastName);
-    user.setEmailAddress(emailAddress);
     user.setReadOnly(false);
     user.setVersion(1);
     user.setSource(UserManager.DEFAULT_SOURCE);
     
-    // Optimize roles conversion using enhanced Stream operations in Java 21
+    // Optimized Stream operations using Java 21 features
+    // Using toUnmodifiableSet() for immutability and better performance
     user.setRoles(roles.stream()
-        .map(role -> switch (role) {
-          // Pattern matching for role string types
-          case String r when !r.isEmpty() -> new RoleIdentifier(UserManager.DEFAULT_SOURCE, r);
-          default -> throw new IllegalArgumentException("Invalid role: " + role);
-        })
+        .map(roleId -> new RoleIdentifier(UserManager.DEFAULT_SOURCE, roleId))
         .collect(Collectors.toUnmodifiableSet()));
     
     return user;

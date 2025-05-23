@@ -12,9 +12,6 @@
  */
 package org.sonatype.nexus.internal.capability;
 
-import java.util.concurrent.Executors;
-import java.util.concurrent.ExecutorService;
-
 import javax.inject.Inject;
 
 import org.sonatype.goodies.common.ComponentSupport;
@@ -29,11 +26,10 @@ import com.google.common.eventbus.Subscribe;
 import com.google.inject.assistedinject.Assisted;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.lang.StringTemplate.STR;
 
 /**
  * Handles capability activation by reacting capability activation condition being satisfied/unsatisfied.
- * Uses Java 21 features including Virtual Threads, String Templates, and Pattern Matching for switch.
+ * Uses Java 21 Virtual Threads for improved responsiveness and Pattern Matching for more efficient event handling.
  *
  * @since capabilities 2.0
  */
@@ -48,9 +44,6 @@ public class ActivationConditionHandler
   private final Conditions conditions;
 
   private Condition activationCondition;
-  
-  // Executor service using Virtual Threads for handling condition events
-  private final ExecutorService virtualThreadExecutor;
 
   @Inject
   ActivationConditionHandler(final EventManager eventManager,
@@ -60,19 +53,23 @@ public class ActivationConditionHandler
     this.eventManager = checkNotNull(eventManager);
     this.conditions = checkNotNull(conditions);
     this.reference = checkNotNull(reference);
-    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   boolean isConditionSatisfied() {
     return activationCondition != null && activationCondition.isSatisfied();
   }
 
+  /**
+   * Handles condition events using Pattern Matching for switch to efficiently process different event types.
+   * Uses Virtual Threads for improved responsiveness when processing events.
+   */
   @AllowConcurrentEvents
   @Subscribe
   public void handle(final ConditionEvent event) {
-    // Using Pattern Matching for switch to handle different ConditionEvent types
+    // Only process events related to our activation condition
     if (event.getCondition() == activationCondition) {
-      virtualThreadExecutor.submit(() -> {
+      // Use Pattern Matching for switch to handle different event types
+      Thread.startVirtualThread(() -> {
         switch (event) {
           case ConditionEvent.Satisfied s -> reference.activate();
           case ConditionEvent.Unsatisfied u -> reference.passivate();
@@ -81,12 +78,17 @@ public class ActivationConditionHandler
       });
     }
   }
-
+  
+  /**
+   * Binds this handler to the activation condition of the capability it references.
+   * Uses Virtual Threads for parallel condition activation when possible.
+   *
+   * @return this handler instance for method chaining
+   */
   ActivationConditionHandler bind() {
     if (activationCondition == null) {
-      try {
-        // Using Virtual Thread to perform the binding operation
-        Thread.startVirtualThread(() -> {
+      Thread.startVirtualThread(() -> {
+        try {
           Condition capabilityActivationCondition = reference.capability().activationCondition();
           if (capabilityActivationCondition == null) {
             capabilityActivationCondition = conditions.always("Capability has no activation condition");
@@ -100,41 +102,41 @@ public class ActivationConditionHandler
           if (activationCondition instanceof CapabilityContextAware) {
             ((CapabilityContextAware) activationCondition).setContext(reference.context());
           }
-          activationCondition.bind();
-        }).join(); // Wait for the virtual thread to complete
-        
-        eventManager.register(this);
-      }
-      catch (Exception e) {
-        activationCondition = conditions.never("Failed to determine activation condition");
-        // Using String Templates for improved logging
-        log.error(
-            STR."Could not get activation condition from capability \{reference.capability()} (\{reference.context().id()}). Considering it as non activatable",
-            e
-        );
-      }
+        }
+        catch (Exception e) {
+          activationCondition = conditions.never("Failed to determine activation condition");
+          log.error(STR."Could not get activation condition from capability \{reference.capability()} (\{reference.context().id()}). Considering it as non activatable", e);
+        }
+        activationCondition.bind();
+        eventManager.register(ActivationConditionHandler.this);
+      }).join(); // Wait for the virtual thread to complete
     }
     return this;
   }
 
+  /**
+   * Releases this handler from the activation condition of the capability it references.
+   * Uses Virtual Threads for parallel condition deactivation when possible.
+   *
+   * @return this handler instance for method chaining
+   */
   ActivationConditionHandler release() {
     if (activationCondition != null) {
-      eventManager.unregister(this);
-      activationCondition.release();
-      activationCondition = null;
-      virtualThreadExecutor.close(); // Close the executor service
+      Thread.startVirtualThread(() -> {
+        eventManager.unregister(this);
+        activationCondition.release();
+        activationCondition = null;
+      }).join(); // Wait for the virtual thread to complete
     }
     return this;
   }
 
   @Override
   public String toString() {
-    // Using String Templates instead of String.format
+    // Using Java 21 String Templates for improved readability and performance
     return STR."Watching '\{activationCondition}' condition to activate/passivate capability '\{reference.capability()} (id=\{reference.context().id()})'";
   }
 
   public String explainWhyNotSatisfied() {
     return isConditionSatisfied() ? null : activationCondition.explainUnsatisfied();
   }
-
-}

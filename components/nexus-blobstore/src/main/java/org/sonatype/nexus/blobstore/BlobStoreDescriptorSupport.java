@@ -12,90 +12,71 @@
  */
 package org.sonatype.nexus.blobstore;
 
-import java.time.Duration;
-import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
-import javax.annotation.Nonnull;
+import javax.inject.Inject;
 
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
-import org.sonatype.nexus.blobstore.api.BlobStoreException;
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaService;
 
-import com.google.inject.Inject;
-
 /**
- * Support class for BlobStoreDescriptor implementations.
- * 
- * @since 3.0
+ * Abstract support class for BlobStoreDescriptor implementations.
+ * Optimized for Java 21 Virtual Thread execution.
+ *
+ * @since 3.14
  */
 public abstract class BlobStoreDescriptorSupport
     implements BlobStoreDescriptor
 {
-  /**
-   * Default timeout for validation operations in seconds.
-   */
-  private static final long DEFAULT_VALIDATION_TIMEOUT_SECONDS = 30;
-  
   private final BlobStoreQuotaService quotaService;
 
   /**
-   * Constructor with required dependencies.
+   * Constructor with dependency injection for Guice 7.0.0 compatibility.
    *
-   * @param quotaService the quota service to use for validation
-   * @throws NullPointerException if quotaService is null
+   * @param quotaService the BlobStoreQuotaService to use for quota validation
    */
   @Inject
-  public BlobStoreDescriptorSupport(@Nonnull final BlobStoreQuotaService quotaService) {
-    this.quotaService = Objects.requireNonNull(quotaService, "BlobStoreQuotaService cannot be null");
+  public BlobStoreDescriptorSupport(final BlobStoreQuotaService quotaService) {
+    this.quotaService = quotaService;
   }
 
   /**
-   * Validates the blob store configuration using the quota service.
-   * Optimized for execution in Virtual Thread context in Java 21.
-   * <p>
-   * This implementation uses Virtual Threads to perform validation without blocking platform threads,
-   * allowing for higher concurrency and throughput. The validation operation has a timeout to prevent
-   * hanging indefinitely.
+   * Validates the blob store configuration, optimized for Virtual Thread execution.
+   * This implementation ensures proper exception propagation in Virtual Thread context.
    *
-   * @param configuration the blob store configuration to validate
-   * @throws BlobStoreException if validation fails or times out
+   * @param configuration the configuration to validate
    */
   @Override
   public void validateConfig(final BlobStoreConfiguration configuration) {
-    Objects.requireNonNull(configuration, "BlobStore configuration cannot be null");
-    
     try {
-      // Use CompletableFuture with Virtual Thread executor for non-blocking I/O operations
-      CompletableFuture<Void> future = CompletableFuture.runAsync(
-          () -> quotaService.validateSoftQuotaConfig(configuration),
-          Executors.newVirtualThreadPerTaskExecutor());
-      
-      // Add timeout to prevent hanging indefinitely
-      future.orTimeout(DEFAULT_VALIDATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-          .exceptionally(ex -> {
-            // Handle specific exception types with appropriate error messages
-            if (ex instanceof TimeoutException) {
-              throw new BlobStoreException("Validation timed out after " + 
-                  DEFAULT_VALIDATION_TIMEOUT_SECONDS + " seconds", ex);
-            }
-            
-            // Properly propagate exceptions in Virtual Thread context
-            Throwable cause = ex.getCause();
-            if (cause instanceof RuntimeException) {
-              throw (RuntimeException) cause;
-            }
-            throw new BlobStoreException("Failed to validate blob store configuration", cause);
-          })
-          .join(); // Wait for completion
+      // For I/O-bound validation operations, use Virtual Threads to avoid blocking
+      if (Thread.currentThread().isVirtual()) {
+        // Already running in a Virtual Thread, execute directly to avoid nesting
+        quotaService.validateSoftQuotaConfig(configuration);
+      }
+      else {
+        // Execute validation in a Virtual Thread for better scalability
+        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+          quotaService.validateSoftQuotaConfig(configuration);
+        }, Thread.ofVirtual().factory());
+        
+        // Wait for completion and propagate any exceptions
+        future.get();
+      }
     }
-    catch (RuntimeException e) {
-      // Ensure exceptions are properly propagated with detailed messages
-      throw new BlobStoreException("Error validating blob store configuration: " + e.getMessage(), e);
+    catch (InterruptedException e) {
+      // Restore the interrupted status
+      Thread.currentThread().interrupt();
+      throw new RuntimeException("Quota validation was interrupted", e);
+    }
+    catch (ExecutionException e) {
+      // Unwrap and propagate the actual cause
+      Throwable cause = e.getCause();
+      if (cause instanceof RuntimeException) {
+        throw (RuntimeException) cause;
+      }
+      throw new RuntimeException("Error during quota validation", cause);
     }
   }
 }

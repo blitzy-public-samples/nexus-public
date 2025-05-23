@@ -16,71 +16,64 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Holds result for the evaluation of {@link BlobStoreQuota}.
- *
- * <p>This class is immutable and thread-safe. All fields are final and the class provides no
- * methods that can modify its state. This makes it safe to share instances across threads without
- * synchronization, including Java 21 Virtual Threads.</p>
+ * 
+ * This class is immutable and thread-safe, making it suitable for use with Virtual Threads
+ * in high-concurrency environments. All fields are final and the object's state cannot be
+ * modified after construction.
  *
  * @since 3.14
  */
-public class BlobStoreQuotaResult
+public record BlobStoreQuotaResult(
+    boolean isViolation,
+    String blobStoreName,
+    String humanReadableMessage)
 {
-  private final boolean isViolation;
-
-  private final String humanReadableMessage;
-
-  private final String blobStoreName;
-
   /**
-   * Constructs a new immutable quota result.
-   *
+   * Constructs a new BlobStoreQuotaResult with the specified parameters.
+   * 
    * @param isViolation whether the quota is violated
    * @param blobStoreName name of the blob store (must not be null)
    * @param humanReadableMessage human-readable message describing the result (must not be null)
+   * @throws NullPointerException if blobStoreName or humanReadableMessage is null
    */
-  public BlobStoreQuotaResult(
-      final boolean isViolation,
-      final String blobStoreName,
-      final String humanReadableMessage)
-  {
-    this.isViolation = isViolation;
-    this.blobStoreName = checkNotNull(blobStoreName);
-    this.humanReadableMessage = checkNotNull(humanReadableMessage);
+  public BlobStoreQuotaResult {
+    checkNotNull(blobStoreName, "Blob store name cannot be null");
+    checkNotNull(humanReadableMessage, "Human readable message cannot be null");
   }
 
   /**
    * Returns whether the quota is violated.
-   *
+   * 
    * @return true if the quota is violated, false otherwise
    */
   public boolean isViolation() {
-    return this.isViolation;
+    return isViolation;
   }
 
   /**
    * Returns the human-readable message describing the result.
-   *
-   * @return the message
+   * 
+   * @return the human-readable message
    */
   public String getMessage() {
-    return this.humanReadableMessage;
+    return humanReadableMessage;
   }
 
   /**
    * Returns the name of the blob store.
-   *
+   * 
    * @return the blob store name
    */
   public String getBlobStoreName() {
-    return this.blobStoreName;
+    return blobStoreName;
   }
 
   @Override
   public String toString() {
-    return getClass().getSimpleName() + "{" +
-        "isViolation='" + isViolation + '\'' +
-        ", message='" + humanReadableMessage + '\'' +
-        ", blobStoreName='" + blobStoreName + '\'' +
-        '}';
+    return getClass().getSimpleName() + "{"
+        + "isViolation='" + isViolation + '\''
+        + ", message='" + humanReadableMessage + '\''
+        + ", blobStoreName='" + blobStoreName + '\''
+        + '}';
   }
 }

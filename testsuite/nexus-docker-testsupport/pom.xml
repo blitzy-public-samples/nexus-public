@@ -25,7 +25,7 @@
   </parent>
 
   <artifactId>nexus-docker-testsupport</artifactId>
-  <n>${project.groupId}:${project.artifactId}</n>
+  <name>${project.groupId}:${project.artifactId}</name>
   <packaging>bundle</packaging>
 
   <dependencies>
@@ -47,6 +47,7 @@
     <dependency>
       <groupId>org.testcontainers</groupId>
       <artifactId>testcontainers</artifactId>
+      <version>1.19.3</version>
     </dependency>
 
     <dependency>
@@ -71,42 +72,10 @@
       <artifactId>httpclient</artifactId>
       <scope>test</scope>
     </dependency>
-    
-    <!-- JUnit Jupiter (JUnit 5) dependencies -->
-    <dependency>
-      <groupId>org.junit.jupiter</groupId>
-      <artifactId>junit-jupiter-api</artifactId>
-      <scope>test</scope>
-    </dependency>
-    
-    <dependency>
-      <groupId>org.junit.jupiter</groupId>
-      <artifactId>junit-jupiter-engine</artifactId>
-      <scope>test</scope>
-    </dependency>
-    
-    <dependency>
-      <groupId>org.junit.vintage</groupId>
-      <artifactId>junit-vintage-engine</artifactId>
-      <scope>test</scope>
-    </dependency>
-    
-    <dependency>
-      <groupId>org.hamcrest</groupId>
-      <artifactId>hamcrest</artifactId>
-      <scope>test</scope>
-    </dependency>
-    
     <dependency>
       <groupId>org.spockframework</groupId>
       <artifactId>spock-core</artifactId>
-      <scope>test</scope>
-    </dependency>
-
-    <!-- Repository test support for test group classes -->
-    <dependency>
-      <groupId>org.sonatype.nexus.testsuite</groupId>
-      <artifactId>nexus-repository-testsupport</artifactId>
+      <version>2.3-groovy-4.0</version>
       <scope>test</scope>
     </dependency>
 
@@ -138,44 +107,6 @@
             <Import-Package>org.ops4j.pax.exam.*;resolution:=optional,*</Import-Package>
           </instructions>
         </configuration>
-      </plugin>
-      <!-- Configure Surefire for JUnit Jupiter -->
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-surefire-plugin</artifactId>
-        <version>3.2.5</version>
-        <configuration>
-          <argLine>-Djava.version=21 ${test.additional.args}</argLine>
-          <systemPropertyVariables>
-            <java.util.concurrent.ForkJoinPool.common.parallelism>16</java.util.concurrent.ForkJoinPool.common.parallelism>
-            <test.virtual.threads>${virtual.threads}</test.virtual.threads>
-          </systemPropertyVariables>
-        </configuration>
-      </plugin>
-      <!-- Configure Failsafe for integration tests -->
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-failsafe-plugin</artifactId>
-        <version>3.2.5</version>
-        <configuration>
-          <parallel>classes</parallel>
-          <threadCount>4</threadCount>
-          <forkCount>2</forkCount>
-          <reuseForks>true</reuseForks>
-          <argLine>-Djava.version=21 ${test.additional.args}</argLine>
-          <systemPropertyVariables>
-            <java.util.concurrent.ForkJoinPool.common.parallelism>16</java.util.concurrent.ForkJoinPool.common.parallelism>
-            <test.virtual.threads>${virtual.threads}</test.virtual.threads>
-          </systemPropertyVariables>
-        </configuration>
-        <executions>
-          <execution>
-            <goals>
-              <goal>integration-test</goal>
-              <goal>verify</goal>
-            </goals>
-          </execution>
-        </executions>
       </plugin>
     </plugins>
   </build>

@@ -19,10 +19,10 @@ import org.sonatype.nexus.repository.content.store.FormatStoreModule;
 
 /**
  * Configures the content store bindings for an 'example' format.
- * 
- * This module is compatible with Java 21 and leverages the updated dependency injection framework
- * (Guice 7.0.0 and Sisu 0.10.0). The store bindings support Virtual Threads for I/O operations
- * when used with the repository services.
+ * <p>
+ * This module is compatible with Java 21 and Google Guice 7.0.0, leveraging standard JSR-330
+ * annotations for dependency injection. It registers the example format's DAO implementations
+ * with the repository content store framework.
  *
  * @since 3.24
  */

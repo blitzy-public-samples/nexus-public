@@ -12,73 +12,77 @@
  */
 package org.sonatype.nexus.repository.content;
 
-import java.util.UUID;
-import java.util.Optional;
-
 import org.sonatype.nexus.common.entity.EntityId;
-import org.sonatype.nexus.common.entity.EntityUUID;
 
 /**
  * Top-level content metadata for the repository; distinct from the repository entity in the config store.
- *
- * This interface is fully compatible with Java 21 features including pattern matching and virtual threads.
- * Implementations can leverage Java 21's pattern matching for switch and record patterns for optimized
- * EntityId handling.
+ * 
+ * This interface is compatible with Java 21 features including pattern matching in switch expressions
+ * and optimized handling of EntityId through record patterns when applicable. Implementations can benefit
+ * from Java 21's Virtual Threads for I/O-bound operations when interacting with repository content.
  *
  * @since 3.20
+ * @see java.lang.Thread#ofVirtual() for creating virtual threads in implementations with I/O operations
  */
 public interface ContentRepository
     extends RepositoryContent
 {
   /**
    * Identity of the associated repository entity in the config store.
-   *
+   * 
    * @return the EntityId of the repository in the config store
    */
   EntityId configRepositoryId();
 
   /**
    * Identity of the associated repository entity in the content store.
-   *
+   * 
    * @return the Integer ID of the repository in the content store
    */
   Integer contentRepositoryId();
   
   /**
-   * Extracts the UUID from the config repository ID if it's an EntityUUID.
-   * Uses Java 21 pattern matching for optimized type handling.
-   *
-   * @return an Optional containing the UUID if the EntityId is an EntityUUID, or empty otherwise
-   * @since 3.60
+   * Default method to check if this repository has a specific config repository ID.
+   * Leverages Java 21's pattern matching capabilities for more concise client code.
+   * 
+   * @param id the EntityId to check against this repository's config ID
+   * @return true if the provided ID matches this repository's config ID
    */
-  default Optional<UUID> extractConfigRepositoryUUID() {
-    EntityId entityId = configRepositoryId();
-    return (entityId instanceof EntityUUID entityUUID) ? 
-        Optional.of(entityUUID.uuid()) : 
-        Optional.empty();
+  default boolean hasConfigRepositoryId(EntityId id) {
+    return id != null && id.equals(configRepositoryId());
   }
   
   /**
-   * Compares this repository's config ID with another EntityId using pattern matching
-   * for optimized equality checking.
-   *
-   * @param otherId the EntityId to compare with
-   * @return true if the IDs are equal, false otherwise
-   * @since 3.60
+   * Default method to check if this repository has a specific content repository ID.
+   * Designed to work efficiently with Java 21's pattern matching in switch expressions.
+   * 
+   * @param id the Integer ID to check against this repository's content ID
+   * @return true if the provided ID matches this repository's content ID
    */
-  default boolean hasConfigRepositoryId(EntityId otherId) {
-    if (otherId == null) {
-      return false;
-    }
-    
-    EntityId thisId = configRepositoryId();
-    
-    // Use pattern matching to optimize comparison when both are EntityUUID
-    if (thisId instanceof EntityUUID thisUUID && otherId instanceof EntityUUID otherUUID) {
-      return thisUUID.uuid().equals(otherUUID.uuid());
-    }
-    
-    // Fall back to standard equality check
-    return thisId.equals(otherId);
+  default boolean hasContentRepositoryId(Integer id) {
+    return id != null && id.equals(contentRepositoryId());
+  }
+  
+  /**
+   * Utility method to compare this repository with another object using Java 21's pattern matching.
+   * This method demonstrates how implementations can be matched in client code using switch expressions.
+   * 
+   * <pre>
+   * {@code
+   * // Example usage with Java 21 pattern matching in switch expressions:
+   * String result = switch(repository) {
+   *   case ContentRepository cr when cr.isSameAs(otherRepo) -> "Same repository";
+   *   case ContentRepository cr -> "Different repository";
+   *   default -> "Not a repository";
+   * };
+   * }
+   * </pre>
+   * 
+   * @param other the object to compare with this repository
+   * @return true if the other object is the same repository (same content ID)
+   */
+  default boolean isSameAs(Object other) {
+    return other instanceof ContentRepository cr && 
+           hasContentRepositoryId(cr.contentRepositoryId());
   }
 }

@@ -12,64 +12,50 @@
  */
 package org.sonatype.nexus.repository.content.event.repository;
 
-import java.util.Objects;
-import java.util.concurrent.atomic.AtomicReference;
-
 import org.sonatype.nexus.repository.content.ContentRepository;
 import org.sonatype.nexus.repository.content.store.ContentStoreEvent;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.util.Objects.requireNonNull;
 import static org.sonatype.nexus.repository.content.store.InternalIds.contentRepositoryId;
 
 /**
  * Base {@link ContentRepository} event.
- * <p>
- * Optimized for Java 21 Virtual Threads with enhanced thread safety and performance.
+ *
+ * <p>This class is designed to be thread-safe and optimized for use with Java 21 Virtual Threads.
+ * It maintains immutable state and can be safely published across threads without additional synchronization.</p>
  *
  * @since 3.26
  */
 public class ContentRepositoryEvent
     extends ContentStoreEvent
 {
-  // Using final for thread safety in Virtual Thread environments
   private final ContentRepository contentRepository;
-  
-  // Cache for toString to avoid repeated string concatenation in high-concurrency scenarios
-  private final AtomicReference<String> toStringCache = new AtomicReference<>();
 
   /**
-   * Creates a new ContentRepositoryEvent for the given repository.
-   * <p>
-   * Uses Java 21 Record Pattern approach for parameter validation.
-   *
-   * @param contentRepository the content repository (must not be null)
+   * Creates a new event for the given repository.
+   * 
+   * @param contentRepository the repository (must not be null)
+   * @throws NullPointerException if contentRepository is null
    */
   protected ContentRepositoryEvent(final ContentRepository contentRepository) {
     super(contentRepositoryId(contentRepository));
-    this.contentRepository = requireNonNull(contentRepository, "ContentRepository cannot be null");
+    this.contentRepository = checkNotNull(contentRepository);
   }
 
   /**
-   * Returns the content repository associated with this event.
-   * <p>
-   * Thread-safe and optimized for concurrent access in Virtual Thread environments.
+   * Returns the repository associated with this event.
+   * 
+   * <p>This method is thread-safe and can be called concurrently from multiple threads,
+   * including Virtual Threads, without additional synchronization.</p>
    *
-   * @return the content repository (never null)
+   * @return the repository (never null)
    */
   public ContentRepository getContentRepository() {
-    return contentRepository; // Already immutable and thread-safe due to final field
+    return contentRepository;
   }
 
   @Override
   public String toString() {
-    // Use Java 21 String Templates for more efficient string representation
-    // with lazy initialization for better performance in high-concurrency scenarios
-    String result = toStringCache.get();
-    if (result == null) {
-      result = STR."ContentRepositoryEvent{contentRepository=\{contentRepository}} \{super.toString()}";
-      toStringCache.set(result);
-    }
-    return result;
+    return STR."ContentRepositoryEvent{contentRepository=\{contentRepository}} \{super.toString()}";
   }
 }

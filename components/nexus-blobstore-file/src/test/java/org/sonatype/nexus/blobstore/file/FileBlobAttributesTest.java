@@ -13,12 +13,14 @@
 package org.sonatype.nexus.blobstore.file;
 
 import java.io.IOException;
-import java.io.Reader;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.api.BlobMetrics;
@@ -28,23 +30,29 @@ import org.joda.time.DateTime;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.empty;
+import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for {@link FileBlobAttributes}.
  * 
- * This test is compatible with both platform threads and virtual threads.
+ * This test validates the persistence and retrieval of blob attributes in the file system,
+ * with compatibility for both platform threads and virtual threads.
  */
 public class FileBlobAttributesTest
     extends TestSupport
 {
   @TempDir
-  Path tempDir;
+  Path temporaryFolder;
 
+  /**
+   * Tests the persistence of blob attributes to the file system.
+   */
   @Test
   public void testPersistence() throws Exception {
-    Path path = Files.createTempFile(tempDir, "blob-attributes", ".properties");
+    Path path = Files.createTempFile(temporaryFolder, "test", ".properties");
 
     Map<String, String> headers = ImmutableMap.of("hello", "world");
     BlobMetrics metrics = new BlobMetrics(new DateTime(987654321), "0123456789ABCDEF", 42);
@@ -52,53 +60,56 @@ public class FileBlobAttributesTest
 
     original.store();
 
-    assertTrue(Files.isRegularFile(original.getPath()));
+    assertTrue(Files.isRegularFile(original.getPath()), "Attribute file should exist");
 
     Properties properties = new Properties();
-    try (Reader reader = Files.newBufferedReader(original.getPath(), StandardCharsets.UTF_8)) {
+    try (var reader = Files.newBufferedReader(original.getPath())) {
       properties.load(reader);
     }
 
-    assertEquals("world", properties.remove("@hello"));
-    assertEquals("987654321", properties.remove("creationTime"));
-    assertEquals("0123456789ABCDEF", properties.remove("sha1"));
-    assertEquals("42", properties.remove("size"));
-    assertTrue(properties.keySet().isEmpty());
+    assertThat(properties.remove("@hello"), is("world"));
+    assertThat(properties.remove("creationTime"), is("987654321"));
+    assertThat(properties.remove("sha1"), is("0123456789ABCDEF"));
+    assertThat(properties.remove("size"), is("42"));
+    assertThat(properties.keySet(), is(empty()));
 
     original.setDeleted(true);
     original.store();
 
-    try (Reader reader = Files.newBufferedReader(original.getPath(), StandardCharsets.UTF_8)) {
+    try (var reader = Files.newBufferedReader(original.getPath())) {
       properties.load(reader);
     }
 
-    assertEquals("world", properties.remove("@hello"));
-    assertEquals("987654321", properties.remove("creationTime"));
-    assertEquals("0123456789ABCDEF", properties.remove("sha1"));
-    assertEquals("42", properties.remove("size"));
-    assertEquals("true", properties.remove("deleted"));
-    assertEquals("No reason supplied", properties.remove("deletedReason"));
-    assertTrue(properties.keySet().isEmpty());
+    assertThat(properties.remove("@hello"), is("world"));
+    assertThat(properties.remove("creationTime"), is("987654321"));
+    assertThat(properties.remove("sha1"), is("0123456789ABCDEF"));
+    assertThat(properties.remove("size"), is("42"));
+    assertThat(properties.remove("deleted"), is("true"));
+    assertThat(properties.remove("deletedReason"), is("No reason supplied"));
+    assertThat(properties.keySet(), is(empty()));
 
     original.setDeletedReason("Spring cleaning");
     original.store();
 
-    try (Reader reader = Files.newBufferedReader(original.getPath(), StandardCharsets.UTF_8)) {
+    try (var reader = Files.newBufferedReader(original.getPath())) {
       properties.load(reader);
     }
 
-    assertEquals("world", properties.remove("@hello"));
-    assertEquals("987654321", properties.remove("creationTime"));
-    assertEquals("0123456789ABCDEF", properties.remove("sha1"));
-    assertEquals("42", properties.remove("size"));
-    assertEquals("true", properties.remove("deleted"));
-    assertEquals("Spring cleaning", properties.remove("deletedReason"));
-    assertTrue(properties.keySet().isEmpty());
+    assertThat(properties.remove("@hello"), is("world"));
+    assertThat(properties.remove("creationTime"), is("987654321"));
+    assertThat(properties.remove("sha1"), is("0123456789ABCDEF"));
+    assertThat(properties.remove("size"), is("42"));
+    assertThat(properties.remove("deleted"), is("true"));
+    assertThat(properties.remove("deletedReason"), is("Spring cleaning"));
+    assertThat(properties.keySet(), is(empty()));
   }
 
+  /**
+   * Tests the roundtrip of storing and loading blob attributes.
+   */
   @Test
   public void testRoundtrip() throws Exception {
-    Path path = Files.createTempFile(tempDir, "blob-attributes", ".properties");
+    Path path = Files.createTempFile(temporaryFolder, "test", ".properties");
 
     Map<String, String> headers = ImmutableMap.of("hello", "world");
     BlobMetrics metrics = new BlobMetrics(DateTime.now(), "0123456789ABCDEF", 42);
@@ -115,15 +126,18 @@ public class FileBlobAttributesTest
     verifyRoundtrip(original);
   }
 
+  /**
+   * Tests updating attributes from another instance.
+   */
   @Test
   public void testUpdateFrom() throws Exception {
-    Path originalPath = Files.createTempFile(tempDir, "original-attributes", ".properties");
+    Path originalPath = Files.createTempFile(temporaryFolder, "original", ".properties");
 
     Map<String, String> headers = ImmutableMap.of("hello", "world");
     BlobMetrics metrics = new BlobMetrics(DateTime.now(), "0123456789ABCDEF", 42);
     FileBlobAttributes original = new FileBlobAttributes(originalPath, headers, metrics);
 
-    Path updatedPath = Files.createTempFile(tempDir, "updated-attributes", ".properties");
+    Path updatedPath = Files.createTempFile(temporaryFolder, "updated", ".properties");
 
     FileBlobAttributes updated = new FileBlobAttributes(updatedPath);
     updated.updateFrom(original);
@@ -132,14 +146,72 @@ public class FileBlobAttributesTest
     updated = new FileBlobAttributes(updatedPath);
     updated.load();
 
-    assertEquals(original.getHeaders(), updated.getHeaders());
-    assertEquals(original.getMetrics().getCreationTime(), updated.getMetrics().getCreationTime());
-    assertEquals(original.getMetrics().getSha1Hash(), updated.getMetrics().getSha1Hash());
-    assertEquals(original.getMetrics().getContentSize(), updated.getMetrics().getContentSize());
-    assertEquals(original.isDeleted(), updated.isDeleted());
-    assertEquals(original.getDeletedReason(), updated.getDeletedReason());
+    assertThat(updated.getHeaders(), is(original.getHeaders()));
+    assertThat(updated.getMetrics().getCreationTime(), is(original.getMetrics().getCreationTime()));
+    assertThat(updated.getMetrics().getSha1Hash(), is(original.getMetrics().getSha1Hash()));
+    assertThat(updated.getMetrics().getContentSize(), is(original.getMetrics().getContentSize()));
+    assertThat(updated.isDeleted(), is(original.isDeleted()));
+    assertThat(updated.getDeletedReason(), is(original.getDeletedReason()));
   }
 
+  /**
+   * Tests concurrent operations on blob attributes using virtual threads.
+   * This test validates that the FileBlobAttributes implementation works correctly
+   * under high concurrency with virtual threads.
+   */
+  @Test
+  public void testConcurrentOperationsWithVirtualThreads() throws Exception {
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    
+    // Create an executor service using virtual threads
+    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
+      // Number of concurrent operations to perform
+      int operationCount = 100;
+      
+      // Create a temporary file for each operation
+      Path[] paths = new Path[operationCount];
+      for (int i = 0; i < operationCount; i++) {
+        paths[i] = Files.createTempFile(temporaryFolder, "concurrent-" + i, ".properties");
+      }
+      
+      // Submit tasks to create, store, and load attributes concurrently
+      for (int i = 0; i < operationCount; i++) {
+        final int index = i;
+        executor.submit(() -> {
+          try {
+            // Create and store attributes
+            Map<String, String> headers = ImmutableMap.of("key-" + index, "value-" + index);
+            BlobMetrics metrics = new BlobMetrics(DateTime.now(), "hash-" + index, index * 100);
+            FileBlobAttributes attributes = new FileBlobAttributes(paths[index], headers, metrics);
+            attributes.store();
+            
+            // Load attributes and verify
+            FileBlobAttributes loaded = new FileBlobAttributes(paths[index]);
+            loaded.load();
+            
+            // Verify the loaded attributes match what we stored
+            assertThat(loaded.getHeaders().get("key-" + index), is("value-" + index));
+            assertThat(loaded.getMetrics().getSha1Hash(), is("hash-" + index));
+            assertThat(loaded.getMetrics().getContentSize(), is((long) index * 100));
+            
+            return null;
+          } catch (IOException e) {
+            throw new RuntimeException("Failed concurrent operation", e);
+          }
+        });
+      }
+      
+      // Shutdown the executor and wait for all tasks to complete
+      executor.shutdown();
+      assertTrue(executor.awaitTermination(30, TimeUnit.SECONDS), 
+          "All concurrent operations should complete within timeout");
+    }
+  }
+
+  /**
+   * Helper method to verify roundtrip persistence of blob attributes.
+   */
   private static void verifyRoundtrip(final FileBlobAttributes original) throws IOException {
     original.store();
 
@@ -147,12 +219,12 @@ public class FileBlobAttributesTest
 
     restored.load();
 
-    assertEquals(original.getPath(), restored.getPath());
-    assertEquals(original.getHeaders(), restored.getHeaders());
-    assertEquals(original.getMetrics().getCreationTime(), restored.getMetrics().getCreationTime());
-    assertEquals(original.getMetrics().getSha1Hash(), restored.getMetrics().getSha1Hash());
-    assertEquals(original.getMetrics().getContentSize(), restored.getMetrics().getContentSize());
-    assertEquals(original.isDeleted(), restored.isDeleted());
-    assertEquals(original.getDeletedReason(), restored.getDeletedReason());
+    assertThat(restored.getPath(), is(original.getPath()));
+    assertThat(restored.getHeaders(), is(original.getHeaders()));
+    assertThat(restored.getMetrics().getCreationTime(), is(original.getMetrics().getCreationTime()));
+    assertThat(restored.getMetrics().getSha1Hash(), is(original.getMetrics().getSha1Hash()));
+    assertThat(restored.getMetrics().getContentSize(), is(original.getMetrics().getContentSize()));
+    assertThat(restored.isDeleted(), is(original.isDeleted()));
+    assertThat(restored.getDeletedReason(), is(original.getDeletedReason()));
   }
 }

@@ -20,13 +20,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
-/**
- * Tests for {@link DatastoreStateContributor} with Java 21 and JUnit Jupiter compatibility.
- */
 @ExtendWith(MockitoExtension.class)
 public class DatastoreStateContributorTest
     extends TestSupport
@@ -35,14 +31,11 @@ public class DatastoreStateContributorTest
   private DatabaseCheck dbCheck;
 
   @Test
-  public void shouldExposeIsPostgresqlState() {
-    // Configure mock behavior
+  public void getStateShouldIncludePostgresqlFlag() {
     when(dbCheck.isPostgresql()).thenReturn(true);
 
-    // Create the component under test
     DatastoreStateContributor contributor = new DatastoreStateContributor(false, false, dbCheck);
 
-    // Verify the expected behavior
-    assertThat(contributor.getState().get("datastore.isPostgresql"), is(true));
+    assertThat(contributor.getState().get("datastore.isPostgresql")).isEqualTo(true);
   }
 }

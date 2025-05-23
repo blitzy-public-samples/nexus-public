@@ -16,16 +16,14 @@ import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
 import org.junit.Assert;
-import org.junit.Test; // Using JUnit 4 for backward compatibility
+import org.junit.Test;
 import org.junit.experimental.categories.Category;
-
-// JUnit Jupiter imports are commented out for now to avoid conflicts
-// Will be used when fully migrating to JUnit Jupiter
-// import org.junit.jupiter.api.Test;
+// Using both JUnit 4 and JUnit 5 Test annotations for compatibility
+import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.equalTo;
 
 /**
  * Tests for various {@link NumberSequence} implementations.
@@ -35,6 +33,7 @@ public class NumberSequenceTest
     extends TestSupport
 {
   @Test
+  @org.junit.jupiter.api.Test
   public void constantSequenceGeneratesExpectedValues() {
     long startValue = 10;
 
@@ -52,6 +51,7 @@ public class NumberSequenceTest
   }
 
   @Test
+  @org.junit.jupiter.api.Test
   public void linearSequenceGeneratesExpectedValues() {
     long startValue = 0;
 
@@ -60,21 +60,22 @@ public class NumberSequenceTest
     LinearNumberSequence ls = new LinearNumberSequence(startValue, 1, 1, 0);
 
     for (int i = 1; i < 20; i++) {
-      assertThat(ls.next(), is((long) i));
+      assertThat(ls.next(), is((long)i));
     }
 
     ls.reset();
 
     // forth and back
     for (int i = 1; i < 20; i++) {
-      assertThat(ls.next(), is((long) i));
+      assertThat(ls.next(), is((long)i));
     }
     for (int i = 18; i >= 1; i--) {
-      assertThat(ls.prev(), is((long) i));
+      assertThat(ls.prev(), is((long)i));
     }
   }
 
   @Test
+  @org.junit.jupiter.api.Test
   public void linearSequenceWithComplexParametersGeneratesExpectedValues() {
     long startValue = 0;
 
@@ -103,36 +104,38 @@ public class NumberSequenceTest
   }
 
   @Test
+  @org.junit.jupiter.api.Test
   public void fibonacciSequenceGeneratesExpectedValues() {
     int[] fibonacciNumbers = new int[]{1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233};
 
     FibonacciNumberSequence fs = new FibonacciNumberSequence();
 
     for (int f : fibonacciNumbers) {
-      assertThat(fs.next(), is((long) f));
+      assertThat(fs.next(), is(f));
     }
 
     fs.reset();
 
     for (int f : fibonacciNumbers) {
-      assertThat(fs.next(), is((long) f));
+      assertThat(fs.next(), is(f));
     }
   }
 
   @Test
+  @org.junit.jupiter.api.Test
   public void customizedFibonacciSequenceGeneratesExpectedValues() {
     int[] fibonacciNumbers = new int[]{10, 10, 20, 30, 50, 80, 130, 210, 340, 550, 890, 1440, 2330};
 
     FibonacciNumberSequence fs = new FibonacciNumberSequence(10);
 
     for (int f : fibonacciNumbers) {
-      assertThat(fs.next(), is((long) f));
+      assertThat(fs.next(), is(f));
     }
 
     fs.reset();
 
     for (int f : fibonacciNumbers) {
-      assertThat(fs.next(), is((long) f));
+      assertThat(fs.next(), is(f));
     }
   }
 
@@ -153,30 +156,32 @@ public class NumberSequenceTest
   }
 
   @Test
-  public void fibonacciSequenceSupportsBackAndForthNavigation() {
+  @org.junit.jupiter.api.Test
+  public void fibonacciSequenceSupportsBackwardTraversal() {
     int[] fibonacciNumbers = new int[]{10, 10, 20, 30, 50, 80, 130, 210, 340, 550, 890, 1440, 2330};
 
     FibonacciNumberSequence fs = new FibonacciNumberSequence(10);
 
     for (int f : fibonacciNumbers) {
-      assertThat(fs.next(), is((long) f));
+      assertThat(fs.next(), is(f));
     }
 
     fs.reset();
 
     for (int f : fibonacciNumbers) {
-      assertThat(fs.next(), is((long) f));
+      assertThat(fs.next(), is(f));
     }
 
     ArrayUtils_reverse(fibonacciNumbers);
 
     for (int f : fibonacciNumbers) {
-      assertThat(fs.prev(), is((long) f));
+      assertThat(fs.prev(), is(f));
     }
   }
 
   @Test
-  public void linearSequenceWithLimiterRespectsLowerBound() {
+  @org.junit.jupiter.api.Test
+  public void lowerLimitNumberSequenceRespectsMinimumValue() {
     long startValue = 0;
 
     // step=1, multiplier=1, shift=0

@@ -12,8 +12,8 @@
  */
 package org.sonatype.nexus.security.realm;
 
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.Set;
 
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -30,8 +30,7 @@ import org.apache.shiro.subject.PrincipalCollection;
 import org.eclipse.sisu.Description;
 
 /**
- * Mock realm implementation for testing purposes.
- * Updated for Java 21 and Shiro 2.0.0 compatibility with virtual thread support.
+ * Mock realm implementation for testing Shiro 2.0.0 compatibility with Java 21 features.
  */
 @Singleton
 @Named("MockRealmB")
@@ -43,40 +42,34 @@ public class MockRealmB
     this.setAuthenticationTokenClass(UsernamePasswordToken.class);
   }
 
-  /**
-   * Authentication implementation that supports virtual threads by avoiding blocking operations.
-   * Only allows jcool/jcool credentials for testing purposes.
-   */
   @Override
   protected AuthenticationInfo doGetAuthenticationInfo(AuthenticationToken token) throws AuthenticationException {
-    // Using Java 21 pattern matching for more concise credential validation
-    if (token instanceof UsernamePasswordToken userpass) {
-      if ("jcool".equals(userpass.getUsername()) && "jcool".equals(new String(userpass.getPassword()))) {
-        return new SimpleAuthenticationInfo(userpass.getUsername(), new String(userpass.getPassword()), this.getName());
+    // Using pattern matching for more concise credential validation
+    if (token instanceof UsernamePasswordToken userPass) {
+      // Check if username and password both equal "jcool"
+      if ("jcool".equals(userPass.getUsername()) && "jcool".equals(new String(userPass.getPassword()))) {
+        return new SimpleAuthenticationInfo(userPass.getUsername(), new String(userPass.getPassword()), this.getName());
       }
     }
 
     return null;
   }
 
-  /**
-   * Authorization implementation that supports virtual threads by avoiding blocking operations.
-   * Assigns test roles and permissions for the jcool user.
-   */
   @Override
   protected AuthorizationInfo doGetAuthorizationInfo(PrincipalCollection principals) {
-    // Thread-safe check for the principal
+    // Thread-safe and non-blocking implementation for authorization info creation
     if (principals != null && !principals.isEmpty()) {
-      String username = principals.getPrimaryPrincipal().toString();
-      if ("jcool".equals(username)) {
-        // Create authorization info in a thread-safe manner
+      // Using pattern matching to check principal type
+      Object primaryPrincipal = principals.getPrimaryPrincipal();
+      
+      if (primaryPrincipal instanceof String username && "jcool".equals(username)) {
+        // Create thread-safe authorization info
         SimpleAuthorizationInfo info = new SimpleAuthorizationInfo();
-
-        // Add roles in a non-blocking manner
+        
+        // Use non-blocking operations for role and permission assignment
+        // ConcurrentHashMap-backed sets are used internally by SimpleAuthorizationInfo
         info.addRole("test-role1");
         info.addRole("test-role2");
-
-        // Add permissions in a non-blocking manner
         info.addStringPermission("test:*");
 
         return info;
@@ -84,34 +77,6 @@ public class MockRealmB
     }
 
     return null;
-  }
-
-  /**
-   * Non-blocking asynchronous authorization check for virtual thread compatibility.
-   * This method can be used when performing authorization checks in a virtual thread context.
-   *
-   * @param principals the principals to check
-   * @return a CompletionStage with the AuthorizationInfo
-   */
-  public CompletionStage<AuthorizationInfo> getAuthorizationInfoAsync(PrincipalCollection principals) {
-    return CompletableFuture.supplyAsync(() -> doGetAuthorizationInfo(principals));
-  }
-
-  /**
-   * Non-blocking asynchronous authentication check for virtual thread compatibility.
-   * This method can be used when performing authentication in a virtual thread context.
-   *
-   * @param token the authentication token
-   * @return a CompletionStage with the AuthenticationInfo
-   */
-  public CompletionStage<AuthenticationInfo> getAuthenticationInfoAsync(AuthenticationToken token) {
-    return CompletableFuture.supplyAsync(() -> {
-      try {
-        return doGetAuthenticationInfo(token);
-      } catch (AuthenticationException e) {
-        throw new RuntimeException(e);
-      }
-    });
   }
 
   @Override

@@ -12,217 +12,77 @@
  */
 package org.sonatype.nexus.repository.replication;
 
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
-import javax.annotation.Nonnull;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
-import org.sonatype.nexus.common.app.ManagedLifecycle;
-import org.sonatype.nexus.common.stateguard.Guarded;
-import org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport;
-import org.sonatype.nexus.security.subject.FakeAlmightySubject;
-import org.sonatype.nexus.thread.internal.MDCAwareCallable;
-import org.sonatype.nexus.thread.internal.MDCAwareRunnable;
 
-import com.google.common.base.Preconditions;
-
-import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.SERVICES;
-import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.State.STARTED;
+import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
- * Manages Virtual Thread executors for replication operations.
- * <p>
- * This class provides a utility for submitting replication tasks to Java 21 Virtual Threads,
- * which are lightweight threads that are particularly well-suited for I/O-bound operations
- * like replication. Virtual Threads provide high concurrency with minimal overhead, making
- * them ideal for handling many simultaneous replication operations.
- *
+ * Manager for Virtual Threads used in replication operations.
+ * 
  * @since 3.60
  */
 @Named
 @Singleton
-@ManagedLifecycle(phase = SERVICES)
 public class ReplicationVirtualThreadManager
-    extends StateGuardLifecycleSupport
+    extends ComponentSupport
 {
-  private ExecutorService virtualThreadExecutor;
-  
-  private final AtomicLong taskCounter = new AtomicLong(0);
-  private final AtomicLong activeTaskCount = new AtomicLong(0);
-  private final AtomicLong completedTaskCount = new AtomicLong(0);
-  private final AtomicLong failedTaskCount = new AtomicLong(0);
+  private final Executor virtualThreadExecutor;
 
-  /**
-   * Start the virtual thread executor service.
-   */
-  @Override
-  protected void doStart() {
-    virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
-    log.info("Started ReplicationVirtualThreadManager with Virtual Thread executor");
+  public ReplicationVirtualThreadManager() {
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    log.info("Initialized ReplicationVirtualThreadManager with Virtual Thread executor");
   }
 
   /**
-   * Stop the virtual thread executor service.
-   */
-  @Override
-  protected void doStop() {
-    if (virtualThreadExecutor != null) {
-      virtualThreadExecutor.shutdown();
-      virtualThreadExecutor = null;
-      log.info("Stopped ReplicationVirtualThreadManager");
-    }
-  }
-
-  /**
-   * Submit a runnable task to be executed by a Virtual Thread.
-   * <p>
-   * The task will be wrapped to propagate the MDC context and will be executed with the
-   * {@link FakeAlmightySubject#TASK_SUBJECT} security subject.
+   * Executes the given task asynchronously using a Virtual Thread.
    *
    * @param task the task to execute
-   * @return a Future representing the task execution
    */
-  @Guarded(by = STARTED)
-  public Future<?> submit(@Nonnull final Runnable task) {
-    Preconditions.checkNotNull(task, "Task cannot be null");
+  public void executeAsync(Runnable task) {
+    checkNotNull(task);
+    virtualThreadExecutor.execute(task);
+  }
+
+  /**
+   * Executes the given supplier asynchronously using a Virtual Thread.
+   * This is useful when you need to return a value from the async operation.
+   *
+   * @param supplier the supplier to execute
+   * @param <T> the type of result
+   */
+  public <T> void executeAsync(Supplier<T> supplier) {
+    checkNotNull(supplier);
+    virtualThreadExecutor.execute(() -> supplier.get());
+  }
+
+  /**
+   * Executes the given task with the provided blob ID asynchronously using a Virtual Thread.
+   * This method logs the start and completion of the task with the blob ID for better traceability.
+   *
+   * @param blobId the blob ID associated with the task
+   * @param task the task to execute
+   */
+  public void executeReplicationTask(String blobId, Runnable task) {
+    checkNotNull(blobId);
+    checkNotNull(task);
     
-    long taskId = taskCounter.incrementAndGet();
-    activeTaskCount.incrementAndGet();
-    
-    log.debug("Submitting replication task {} to Virtual Thread", taskId);
-    
-    return virtualThreadExecutor.submit(new MDCAwareRunnable(() -> {
+    virtualThreadExecutor.execute(() -> {
       try {
+        log.debug("Starting async replication task for blob {}", blobId);
         task.run();
-        completedTaskCount.incrementAndGet();
-        log.debug("Replication task {} completed successfully", taskId);
+        log.debug("Completed async replication task for blob {}", blobId);
       }
       catch (Exception e) {
-        failedTaskCount.incrementAndGet();
-        log.error("Replication task {} failed with exception", taskId, e);
+        log.error("Error in async replication task for blob {}: {}", blobId, e.getMessage(), e);
         throw e;
       }
-      finally {
-        activeTaskCount.decrementAndGet();
-      }
-    }));
-  }
-
-  /**
-   * Submit a callable task to be executed by a Virtual Thread.
-   * <p>
-   * The task will be wrapped to propagate the MDC context and will be executed with the
-   * {@link FakeAlmightySubject#TASK_SUBJECT} security subject.
-   *
-   * @param <T> the type of the callable's result
-   * @param task the task to execute
-   * @return a Future representing the pending result of the task
-   */
-  @Guarded(by = STARTED)
-  public <T> Future<T> submit(@Nonnull final Callable<T> task) {
-    Preconditions.checkNotNull(task, "Task cannot be null");
-    
-    long taskId = taskCounter.incrementAndGet();
-    activeTaskCount.incrementAndGet();
-    
-    log.debug("Submitting replication callable task {} to Virtual Thread", taskId);
-    
-    return virtualThreadExecutor.submit(new MDCAwareCallable<>(() -> {
-      try {
-        T result = task.call();
-        completedTaskCount.incrementAndGet();
-        log.debug("Replication callable task {} completed successfully", taskId);
-        return result;
-      }
-      catch (Exception e) {
-        failedTaskCount.incrementAndGet();
-        log.error("Replication callable task {} failed with exception", taskId, e);
-        throw e;
-      }
-      finally {
-        activeTaskCount.decrementAndGet();
-      }
-    }));
-  }
-
-  /**
-   * Execute a runnable task on a Virtual Thread and wait for it to complete.
-   * <p>
-   * This is a convenience method that submits the task and waits for it to complete.
-   *
-   * @param task the task to execute
-   * @throws RuntimeException if the task throws an exception
-   */
-  @Guarded(by = STARTED)
-  public void execute(@Nonnull final Runnable task) {
-    try {
-      submit(task).get();
-    }
-    catch (Exception e) {
-      throw new RuntimeException("Error executing replication task", e);
-    }
-  }
-
-  /**
-   * Execute a callable task on a Virtual Thread and return its result.
-   * <p>
-   * This is a convenience method that submits the task and waits for it to complete.
-   *
-   * @param <T> the type of the callable's result
-   * @param task the task to execute
-   * @return the result of the callable
-   * @throws RuntimeException if the task throws an exception
-   */
-  @Guarded(by = STARTED)
-  public <T> T execute(@Nonnull final Callable<T> task) {
-    try {
-      return submit(task).get();
-    }
-    catch (Exception e) {
-      throw new RuntimeException("Error executing replication callable task", e);
-    }
-  }
-
-  /**
-   * Get the number of tasks that have been submitted to this manager.
-   *
-   * @return the total task count
-   */
-  public long getTaskCount() {
-    return taskCounter.get();
-  }
-
-  /**
-   * Get the number of tasks that are currently active.
-   *
-   * @return the active task count
-   */
-  public long getActiveTaskCount() {
-    return activeTaskCount.get();
-  }
-
-  /**
-   * Get the number of tasks that have completed successfully.
-   *
-   * @return the completed task count
-   */
-  public long getCompletedTaskCount() {
-    return completedTaskCount.get();
-  }
-
-  /**
-   * Get the number of tasks that have failed.
-   *
-   * @return the failed task count
-   */
-  public long getFailedTaskCount() {
-    return failedTaskCount.get();
+    });
   }
 }

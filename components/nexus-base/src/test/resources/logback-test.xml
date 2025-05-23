@@ -1,34 +1,42 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Logback configuration for nexus-base test execution with Java 21 Virtual Thread support.
+  This configuration enhances the standard logging pattern to properly display both platform
+  and virtual thread names, along with MDC context values for improved diagnostic capabilities.
+-->
 <configuration>
 
   <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
     <target>System.out</target>
     <encoder>
-      <!-- Enhanced pattern with support for Java 21 Virtual Thread naming patterns -->
-      <pattern>%date %level [%thread%X{DC}%X{virtualThread}] %logger - %msg%n</pattern>
+      <!-- 
+        Enhanced pattern with comprehensive support for Java 21 Virtual Threads:
+        - Standard thread name display works for both platform and virtual threads
+        - MDC context tracking with DC (Diagnostic Context) support
+        - Virtual thread specific context values with VT prefix
+        - Transaction and request tracking for concurrent operations
+      -->
+      <pattern>%date %level [%thread%X{DC}%X{VT.id}%X{VT.name}] %logger{36} - %X{transaction.id:-} %X{request.id:-} %msg%n</pattern>
     </encoder>
   </appender>
 
-  <!-- Configure package logger for nexus-base component -->
+  <!-- Configure specific package logger for this module -->
   <logger name="org.sonatype.nexus.base" level="DEBUG"/>
 
-  <!-- Add support for Virtual Thread diagnostic logging -->
-  <logger name="jdk.internal.vm.virtualthread" level="DEBUG"/>
-  
-  <!-- Configure MDC pattern recognition for virtual thread names -->
-  <turboFilter class="ch.qos.logback.classic.turbo.MDCFilter">
-    <MDCKey>virtualThread</MDCKey>
-    <Value>true</Value>
-    <OnMatch>ACCEPT</OnMatch>
-  </turboFilter>
-  
-  <!-- Add specific configuration for virtual thread testing -->
+  <!-- Support for Virtual Thread diagnostic logging -->
   <logger name="org.sonatype.nexus.virtualthread" level="DEBUG"/>
+  <logger name="org.sonatype.nexus.thread.virtualthread" level="DEBUG"/>
+  <logger name="org.sonatype.nexus.thread.io" level="DEBUG"/>
+  <logger name="org.sonatype.nexus.common.thread" level="DEBUG"/>
 
-  <!-- Add thread context tracking for virtual threads -->
-  <contextListener class="ch.qos.logback.classic.jul.LevelChangePropagator">
-    <resetJUL>true</resetJUL>
-  </contextListener>
+  <!-- Java 21 virtual thread related loggers -->
+  <logger name="java.lang.VirtualThread" level="DEBUG"/>
+  <logger name="jdk.internal.vm.ThreadContainer" level="DEBUG"/>
+  <logger name="java.util.concurrent.StructuredTaskScope" level="DEBUG"/>
+  
+  <!-- Virtual thread performance monitoring -->
+  <logger name="org.sonatype.nexus.thread.io.virtualthread" level="DEBUG"/>
+  <logger name="org.sonatype.nexus.testsuite.testsupport.virtualthread" level="DEBUG"/>
 
   <root level="${test.log.level:-INFO}">
     <appender-ref ref="CONSOLE"/>

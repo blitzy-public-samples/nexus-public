@@ -1,1256 +1,1361 @@
 {
-  "items": [
+  "responseMetadata": {
+    "status": "success",
+    "timestamp": "2025-05-23T10:15:30.123Z",
+    "apiVersion": "2.1.0",
+    "requestId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "processingTime": 235,
+    "resultCount": 1000,
+    "totalCount": 25431,
+    "pagination": {
+      "pageSize": 1000,
+      "pageNumber": 1,
+      "totalPages": 26,
+      "hasMore": true,
+      "nextPageToken": "eyJwYWdlIjoyLCJzaXplIjoxMDAwfQ=="
+    }
+  },
+  "repositories": [
     {
-      "id": "maven2-hosted",
-      "name": "maven2-hosted",
-      "type": "hosted",
-      "url": "http://localhost:8081/repository/maven2-hosted",
-      "online": true,
-      "storage": {
-        "blobStoreName": "default",
-        "strictContentTypeValidation": true,
-        "writePolicy": "ALLOW"
-      },
-      "cleanup": {
-        "policyNames": ["cleanup-weekly"]
-      },
-      "maven": {
-        "versionPolicy": "RELEASE",
-        "layoutPolicy": "STRICT",
-        "contentDisposition": "INLINE"
-      },
-      "component": {
-        "proprietaryComponents": false
-      },
+      "id": "maven-central",
+      "name": "Maven Central",
+      "type": "proxy",
       "format": "maven2",
-      "formatAttributes": {},
-      "repositoryAttributes": {
-        "maven": {
-          "versionPolicy": "RELEASE",
-          "layoutPolicy": "STRICT"
-        }
-      },
-      "_links": {
-        "self": {
-          "href": "http://localhost:8081/service/rest/v1/repositories/maven2-hosted"
-        }
+      "url": "https://repo1.maven.org/maven2/",
+      "status": "online",
+      "lastChecked": "2025-05-23T09:45:12.345Z",
+      "statistics": {
+        "totalDownloads": 15234567,
+        "uniqueIps": 45678,
+        "bandwidthUsed": 1523456789012,
+        "averageDownloadSpeed": 15234567
+      }
+    },
+    {
+      "id": "npm-hosted",
+      "name": "NPM Hosted",
+      "type": "hosted",
+      "format": "npm",
+      "url": "https://nexus.example.com/repository/npm-hosted/",
+      "status": "online",
+      "lastChecked": "2025-05-23T09:48:23.456Z",
+      "statistics": {
+        "totalDownloads": 5678901,
+        "uniqueIps": 12345,
+        "bandwidthUsed": 567890123456,
+        "averageDownloadSpeed": 5678901
+      }
+    },
+    {
+      "id": "docker-proxy",
+      "name": "Docker Hub Proxy",
+      "type": "proxy",
+      "format": "docker",
+      "url": "https://registry-1.docker.io",
+      "status": "online",
+      "lastChecked": "2025-05-23T09:50:34.567Z",
+      "statistics": {
+        "totalDownloads": 3456789,
+        "uniqueIps": 7890,
+        "bandwidthUsed": 345678901234,
+        "averageDownloadSpeed": 3456789
       }
     }
   ],
-  "continuationToken": null,
-  "searchResults": {
-    "total": 1000,
-    "from": 0,
-    "count": 100,
-    "items": [
-      {
-        "id": "component-1",
-        "repository": "maven2-hosted",
-        "format": "maven2",
-        "group": "org.sonatype.nexus",
-        "name": "nexus-common",
-        "version": "3.42.0-01",
-        "assets": [
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-common/3.42.0-01/nexus-common-3.42.0-01.jar",
-            "path": "org/sonatype/nexus/nexus-common/3.42.0-01/nexus-common-3.42.0-01.jar",
-            "id": "asset-1",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "f2b825989a9851d15c271c7a0beb1a1f108e2ab1",
-              "md5": "2a86f68c1aae9e5c9b261a086387267c",
-              "sha256": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c",
-              "sha512": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c"
-            },
-            "contentType": "application/java-archive",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 1234567,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 1542,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "jar",
-                "artifactId": "nexus-common",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          },
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-common/3.42.0-01/nexus-common-3.42.0-01.pom",
-            "path": "org/sonatype/nexus/nexus-common/3.42.0-01/nexus-common-3.42.0-01.pom",
-            "id": "asset-2",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
-              "md5": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d",
-              "sha256": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c",
-              "sha512": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c"
-            },
-            "contentType": "application/xml",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 4567,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 987,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "pom",
-                "artifactId": "nexus-common",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          },
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-common/3.42.0-01/nexus-common-3.42.0-01-sources.jar",
-            "path": "org/sonatype/nexus/nexus-common/3.42.0-01/nexus-common-3.42.0-01-sources.jar",
-            "id": "asset-3",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "b1a2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
-              "md5": "b1a2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
-              "sha256": "b1a2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c",
-              "sha512": "b1a2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c"
-            },
-            "contentType": "application/java-archive",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 987654,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 456,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "jar",
-                "classifier": "sources",
-                "artifactId": "nexus-common",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          }
-        ],
-        "tags": ["release", "java21", "stable"],
-        "vulnerabilities": [
-          {
-            "severity": "MODERATE",
-            "cve": "CVE-2023-12345",
-            "description": "Potential resource leak in thread handling",
-            "url": "https://nvd.nist.gov/vuln/detail/CVE-2023-12345",
-            "fixedIn": "3.42.0-02"
-          }
-        ],
-        "licenses": ["Apache-2.0"],
-        "dependencyCount": 42,
-        "lastUpdated": "2023-01-15T12:30:45.123Z",
-        "popularity": 0.87,
-        "securityData": {
-          "securityIssueCount": 1,
-          "highestThreatLevel": "MODERATE"
+  "artifacts": [
+    {
+      "id": "org.apache.maven:maven-core:3.9.5",
+      "groupId": "org.apache.maven",
+      "artifactId": "maven-core",
+      "version": "3.9.5",
+      "packaging": "jar",
+      "description": "Maven Core classes and APIs for Maven project management and build orchestration",
+      "lastUpdated": "2025-04-15T14:23:45.678Z",
+      "size": 678945,
+      "downloadCount": 1234567,
+      "checksums": {
+        "sha1": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+        "md5": "a1b2c3d4e5f6a7b8c9d0e1f2",
+        "sha256": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
+        "sha512": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6"
+      },
+      "licenses": [
+        {
+          "name": "Apache License, Version 2.0",
+          "url": "https://www.apache.org/licenses/LICENSE-2.0.txt"
         }
-      },
-      {
-        "id": "component-2",
-        "repository": "maven2-hosted",
-        "format": "maven2",
-        "group": "org.sonatype.nexus",
-        "name": "nexus-blobstore-api",
-        "version": "3.42.0-01",
-        "assets": [
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-blobstore-api/3.42.0-01/nexus-blobstore-api-3.42.0-01.jar",
-            "path": "org/sonatype/nexus/nexus-blobstore-api/3.42.0-01/nexus-blobstore-api-3.42.0-01.jar",
-            "id": "asset-4",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0",
-              "md5": "c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6",
-              "sha256": "c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e",
-              "sha512": "c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e"
-            },
-            "contentType": "application/java-archive",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 567890,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 1234,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "jar",
-                "artifactId": "nexus-blobstore-api",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          },
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-blobstore-api/3.42.0-01/nexus-blobstore-api-3.42.0-01.pom",
-            "path": "org/sonatype/nexus/nexus-blobstore-api/3.42.0-01/nexus-blobstore-api-3.42.0-01.pom",
-            "id": "asset-5",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "d1c2b3a4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
-              "md5": "d1c2b3a4e5f6a7b8c9d0e1f2a3b4c5d6",
-              "sha256": "d1c2b3a4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2d",
-              "sha512": "d1c2b3a4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2d3c4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2d3c4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2d"
-            },
-            "contentType": "application/xml",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 3456,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 876,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "pom",
-                "artifactId": "nexus-blobstore-api",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          },
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-blobstore-api/3.42.0-01/nexus-blobstore-api-3.42.0-01-sources.jar",
-            "path": "org/sonatype/nexus/nexus-blobstore-api/3.42.0-01/nexus-blobstore-api-3.42.0-01-sources.jar",
-            "id": "asset-6",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0",
-              "md5": "e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6",
-              "sha256": "e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3e4d5f6g7h8i9j0k1l2",
-              "sha512": "e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3e4d5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0e1f2g3h4i5j6k7l8m9n0o1p2q3r4s5t6u7v8w9x0y1z2a3b4c5d6e7f8g9h0i1j2k3l4m5n6o7p8q9r0s1t2u3v4w5x6y7z8a9b0c1d2e3f4g5h6i7j8k9l0m1n2o3p4q5r6s7t8u9v0w1x2y3z4"
-            },
-            "contentType": "application/java-archive",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 456789,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 345,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "jar",
-                "classifier": "sources",
-                "artifactId": "nexus-blobstore-api",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          }
-        ],
-        "tags": ["release", "java21", "stable"],
-        "vulnerabilities": [],
-        "licenses": ["Apache-2.0"],
-        "dependencyCount": 15,
-        "lastUpdated": "2023-01-15T12:30:45.123Z",
-        "popularity": 0.92,
-        "securityData": {
-          "securityIssueCount": 0,
-          "highestThreatLevel": "NONE"
+      ],
+      "dependencies": [
+        {
+          "groupId": "org.apache.maven",
+          "artifactId": "maven-model",
+          "version": "3.9.5",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.apache.maven",
+          "artifactId": "maven-settings",
+          "version": "3.9.5",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.apache.maven",
+          "artifactId": "maven-settings-builder",
+          "version": "3.9.5",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.apache.maven",
+          "artifactId": "maven-builder-support",
+          "version": "3.9.5",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.apache.maven",
+          "artifactId": "maven-repository-metadata",
+          "version": "3.9.5",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.apache.maven",
+          "artifactId": "maven-artifact",
+          "version": "3.9.5",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.apache.maven",
+          "artifactId": "maven-plugin-api",
+          "version": "3.9.5",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.apache.maven",
+          "artifactId": "maven-model-builder",
+          "version": "3.9.5",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.apache.maven",
+          "artifactId": "maven-resolver-provider",
+          "version": "3.9.5",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.apache.maven.resolver",
+          "artifactId": "maven-resolver-impl",
+          "version": "1.9.16",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.apache.maven.resolver",
+          "artifactId": "maven-resolver-api",
+          "version": "1.9.16",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.apache.maven.resolver",
+          "artifactId": "maven-resolver-spi",
+          "version": "1.9.16",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.apache.maven.resolver",
+          "artifactId": "maven-resolver-util",
+          "version": "1.9.16",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.apache.maven.shared",
+          "artifactId": "maven-shared-utils",
+          "version": "3.3.4",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.eclipse.sisu",
+          "artifactId": "org.eclipse.sisu.plexus",
+          "version": "0.3.5",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.eclipse.sisu",
+          "artifactId": "org.eclipse.sisu.inject",
+          "version": "0.3.5",
+          "scope": "compile"
+        },
+        {
+          "groupId": "com.google.inject",
+          "artifactId": "guice",
+          "version": "5.1.0",
+          "scope": "compile",
+          "classifier": "no_aop"
+        },
+        {
+          "groupId": "com.google.guava",
+          "artifactId": "guava",
+          "version": "32.0.1-jre",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.codehaus.plexus",
+          "artifactId": "plexus-utils",
+          "version": "3.5.1",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.codehaus.plexus",
+          "artifactId": "plexus-classworlds",
+          "version": "2.7.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.codehaus.plexus",
+          "artifactId": "plexus-interpolation",
+          "version": "1.26",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.codehaus.plexus",
+          "artifactId": "plexus-component-annotations",
+          "version": "2.1.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.apache.commons",
+          "artifactId": "commons-lang3",
+          "version": "3.12.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.slf4j",
+          "artifactId": "slf4j-api",
+          "version": "2.0.9",
+          "scope": "compile"
         }
-      },
-      {
-        "id": "component-3",
-        "repository": "maven2-hosted",
-        "format": "maven2",
-        "group": "org.sonatype.nexus",
-        "name": "nexus-thread",
-        "version": "3.42.0-01",
-        "assets": [
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-thread/3.42.0-01/nexus-thread-3.42.0-01.jar",
-            "path": "org/sonatype/nexus/nexus-thread/3.42.0-01/nexus-thread-3.42.0-01.jar",
-            "id": "asset-7",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0",
-              "md5": "f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6",
-              "sha256": "f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2",
-              "sha512": "f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2"
-            },
-            "contentType": "application/java-archive",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 345678,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 2345,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "jar",
-                "artifactId": "nexus-thread",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          },
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-thread/3.42.0-01/nexus-thread-3.42.0-01.pom",
-            "path": "org/sonatype/nexus/nexus-thread/3.42.0-01/nexus-thread-3.42.0-01.pom",
-            "id": "asset-8",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0",
-              "md5": "a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6",
-              "sha256": "a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2",
-              "sha512": "a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2"
-            },
-            "contentType": "application/xml",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 2345,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 765,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "pom",
-                "artifactId": "nexus-thread",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          },
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-thread/3.42.0-01/nexus-thread-3.42.0-01-sources.jar",
-            "path": "org/sonatype/nexus/nexus-thread/3.42.0-01/nexus-thread-3.42.0-01-sources.jar",
-            "id": "asset-9",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0",
-              "md5": "b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6",
-              "sha256": "b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2",
-              "sha512": "b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2"
-            },
-            "contentType": "application/java-archive",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 234567,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 234,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "jar",
-                "classifier": "sources",
-                "artifactId": "nexus-thread",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          }
-        ],
-        "tags": ["release", "java21", "stable", "virtual-thread"],
-        "vulnerabilities": [
-          {
-            "severity": "LOW",
-            "cve": "CVE-2023-54321",
-            "description": "Minor thread scheduling issue in specific edge cases",
-            "url": "https://nvd.nist.gov/vuln/detail/CVE-2023-54321",
-            "fixedIn": "3.42.0-02"
-          }
-        ],
-        "licenses": ["Apache-2.0"],
-        "dependencyCount": 8,
-        "lastUpdated": "2023-01-15T12:30:45.123Z",
-        "popularity": 0.95,
-        "securityData": {
-          "securityIssueCount": 1,
-          "highestThreatLevel": "LOW"
+      ],
+      "repositories": [
+        "central",
+        "apache.snapshots"
+      ],
+      "vulnerabilities": [
+        {
+          "id": "CVE-2023-12345",
+          "severity": "MEDIUM",
+          "description": "Fictional vulnerability for testing purposes",
+          "cvssScore": 5.4,
+          "fixedInVersion": "3.9.6",
+          "references": [
+            "https://nvd.nist.gov/vuln/detail/CVE-2023-12345",
+            "https://github.com/apache/maven/security/advisories/example"
+          ]
         }
+      ],
+      "buildInfo": {
+        "buildHost": "jenkins-maven-01.apache.org",
+        "buildTimestamp": "2023-11-15T08:45:12.345Z",
+        "buildNumber": "12345",
+        "buildTool": "Apache Maven 3.9.4",
+        "jdkVersion": "17.0.8",
+        "osName": "Linux",
+        "osVersion": "5.15.0-1031-azure",
+        "osArch": "amd64"
       },
-      {
-        "id": "component-4",
-        "repository": "maven2-hosted",
-        "format": "maven2",
-        "group": "org.sonatype.nexus",
-        "name": "nexus-httpclient",
-        "version": "3.42.0-01",
-        "assets": [
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-httpclient/3.42.0-01/nexus-httpclient-3.42.0-01.jar",
-            "path": "org/sonatype/nexus/nexus-httpclient/3.42.0-01/nexus-httpclient-3.42.0-01.jar",
-            "id": "asset-10",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0",
-              "md5": "c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6",
-              "sha256": "c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2",
-              "sha512": "c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2"
-            },
-            "contentType": "application/java-archive",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 789012,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 3456,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "jar",
-                "artifactId": "nexus-httpclient",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          },
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-httpclient/3.42.0-01/nexus-httpclient-3.42.0-01.pom",
-            "path": "org/sonatype/nexus/nexus-httpclient/3.42.0-01/nexus-httpclient-3.42.0-01.pom",
-            "id": "asset-11",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0",
-              "md5": "d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6",
-              "sha256": "d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2",
-              "sha512": "d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2"
-            },
-            "contentType": "application/xml",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 5678,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 1098,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "pom",
-                "artifactId": "nexus-httpclient",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          },
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-httpclient/3.42.0-01/nexus-httpclient-3.42.0-01-sources.jar",
-            "path": "org/sonatype/nexus/nexus-httpclient/3.42.0-01/nexus-httpclient-3.42.0-01-sources.jar",
-            "id": "asset-12",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0",
-              "md5": "e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6",
-              "sha256": "e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2",
-              "sha512": "e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2"
-            },
-            "contentType": "application/java-archive",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 654321,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 567,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "jar",
-                "classifier": "sources",
-                "artifactId": "nexus-httpclient",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          }
-        ],
-        "tags": ["release", "java21", "stable", "virtual-thread", "http"],
-        "vulnerabilities": [
-          {
-            "severity": "HIGH",
-            "cve": "CVE-2023-67890",
-            "description": "Potential HTTP request smuggling vulnerability",
-            "url": "https://nvd.nist.gov/vuln/detail/CVE-2023-67890",
-            "fixedIn": "3.42.0-02"
-          },
-          {
-            "severity": "MEDIUM",
-            "cve": "CVE-2023-98765",
-            "description": "Improper handling of redirects could lead to information disclosure",
-            "url": "https://nvd.nist.gov/vuln/detail/CVE-2023-98765",
-            "fixedIn": "3.42.0-02"
-          }
-        ],
-        "licenses": ["Apache-2.0"],
-        "dependencyCount": 25,
-        "lastUpdated": "2023-01-15T12:30:45.123Z",
-        "popularity": 0.89,
-        "securityData": {
-          "securityIssueCount": 2,
-          "highestThreatLevel": "HIGH"
-        }
+      "downloadUrls": {
+        "jar": "https://repo1.maven.org/maven2/org/apache/maven/maven-core/3.9.5/maven-core-3.9.5.jar",
+        "pom": "https://repo1.maven.org/maven2/org/apache/maven/maven-core/3.9.5/maven-core-3.9.5.pom",
+        "javadoc": "https://repo1.maven.org/maven2/org/apache/maven/maven-core/3.9.5/maven-core-3.9.5-javadoc.jar",
+        "sources": "https://repo1.maven.org/maven2/org/apache/maven/maven-core/3.9.5/maven-core-3.9.5-sources.jar"
       },
-      {
-        "id": "component-5",
-        "repository": "maven2-hosted",
-        "format": "maven2",
-        "group": "org.sonatype.nexus",
-        "name": "nexus-blobstore-file",
-        "version": "3.42.0-01",
-        "assets": [
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-blobstore-file/3.42.0-01/nexus-blobstore-file-3.42.0-01.jar",
-            "path": "org/sonatype/nexus/nexus-blobstore-file/3.42.0-01/nexus-blobstore-file-3.42.0-01.jar",
-            "id": "asset-13",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0",
-              "md5": "f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6",
-              "sha256": "f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2",
-              "sha512": "f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2"
-            },
-            "contentType": "application/java-archive",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 876543,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 2109,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "jar",
-                "artifactId": "nexus-blobstore-file",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          },
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-blobstore-file/3.42.0-01/nexus-blobstore-file-3.42.0-01.pom",
-            "path": "org/sonatype/nexus/nexus-blobstore-file/3.42.0-01/nexus-blobstore-file-3.42.0-01.pom",
-            "id": "asset-14",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0",
-              "md5": "a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6",
-              "sha256": "a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2",
-              "sha512": "a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2"
-            },
-            "contentType": "application/xml",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 4321,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 987,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "pom",
-                "artifactId": "nexus-blobstore-file",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          },
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-blobstore-file/3.42.0-01/nexus-blobstore-file-3.42.0-01-sources.jar",
-            "path": "org/sonatype/nexus/nexus-blobstore-file/3.42.0-01/nexus-blobstore-file-3.42.0-01-sources.jar",
-            "id": "asset-15",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0",
-              "md5": "b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6",
-              "sha256": "b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2",
-              "sha512": "b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2"
-            },
-            "contentType": "application/java-archive",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 765432,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 432,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "jar",
-                "classifier": "sources",
-                "artifactId": "nexus-blobstore-file",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          }
-        ],
-        "tags": ["release", "java21", "stable", "virtual-thread", "storage"],
-        "vulnerabilities": [],
-        "licenses": ["Apache-2.0"],
-        "dependencyCount": 18,
-        "lastUpdated": "2023-01-15T12:30:45.123Z",
-        "popularity": 0.91,
-        "securityData": {
-          "securityIssueCount": 0,
-          "highestThreatLevel": "NONE"
-        }
-      },
-      {
-        "id": "component-6",
-        "repository": "maven2-hosted",
-        "format": "maven2",
-        "group": "org.sonatype.nexus",
-        "name": "nexus-repository-content",
-        "version": "3.42.0-01",
-        "assets": [
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-repository-content/3.42.0-01/nexus-repository-content-3.42.0-01.jar",
-            "path": "org/sonatype/nexus/nexus-repository-content/3.42.0-01/nexus-repository-content-3.42.0-01.jar",
-            "id": "asset-16",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0",
-              "md5": "c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6",
-              "sha256": "c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2",
-              "sha512": "c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2"
-            },
-            "contentType": "application/java-archive",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 1234567,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 3210,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "jar",
-                "artifactId": "nexus-repository-content",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          },
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-repository-content/3.42.0-01/nexus-repository-content-3.42.0-01.pom",
-            "path": "org/sonatype/nexus/nexus-repository-content/3.42.0-01/nexus-repository-content-3.42.0-01.pom",
-            "id": "asset-17",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0",
-              "md5": "d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6",
-              "sha256": "d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2",
-              "sha512": "d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2"
-            },
-            "contentType": "application/xml",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 6789,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 1234,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "pom",
-                "artifactId": "nexus-repository-content",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          },
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-repository-content/3.42.0-01/nexus-repository-content-3.42.0-01-sources.jar",
-            "path": "org/sonatype/nexus/nexus-repository-content/3.42.0-01/nexus-repository-content-3.42.0-01-sources.jar",
-            "id": "asset-18",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0",
-              "md5": "e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6",
-              "sha256": "e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2",
-              "sha512": "e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2"
-            },
-            "contentType": "application/java-archive",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 987654,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 654,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "jar",
-                "classifier": "sources",
-                "artifactId": "nexus-repository-content",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          }
-        ],
-        "tags": ["release", "java21", "stable", "repository"],
-        "vulnerabilities": [
-          {
-            "severity": "LOW",
-            "cve": "CVE-2023-11111",
-            "description": "Potential resource exhaustion in content handling",
-            "url": "https://nvd.nist.gov/vuln/detail/CVE-2023-11111",
-            "fixedIn": "3.42.0-02"
-          }
-        ],
-        "licenses": ["Apache-2.0"],
-        "dependencyCount": 35,
-        "lastUpdated": "2023-01-15T12:30:45.123Z",
-        "popularity": 0.88,
-        "securityData": {
-          "securityIssueCount": 1,
-          "highestThreatLevel": "LOW"
-        }
-      },
-      {
-        "id": "component-7",
-        "repository": "maven2-hosted",
-        "format": "maven2",
-        "group": "org.sonatype.nexus",
-        "name": "nexus-datastore",
-        "version": "3.42.0-01",
-        "assets": [
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-datastore/3.42.0-01/nexus-datastore-3.42.0-01.jar",
-            "path": "org/sonatype/nexus/nexus-datastore/3.42.0-01/nexus-datastore-3.42.0-01.jar",
-            "id": "asset-19",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0",
-              "md5": "f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6",
-              "sha256": "f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2",
-              "sha512": "f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2"
-            },
-            "contentType": "application/java-archive",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 654321,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 2345,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "jar",
-                "artifactId": "nexus-datastore",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          },
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-datastore/3.42.0-01/nexus-datastore-3.42.0-01.pom",
-            "path": "org/sonatype/nexus/nexus-datastore/3.42.0-01/nexus-datastore-3.42.0-01.pom",
-            "id": "asset-20",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0",
-              "md5": "a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6",
-              "sha256": "a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2",
-              "sha512": "a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2"
-            },
-            "contentType": "application/xml",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 5432,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 876,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "pom",
-                "artifactId": "nexus-datastore",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          },
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-datastore/3.42.0-01/nexus-datastore-3.42.0-01-sources.jar",
-            "path": "org/sonatype/nexus/nexus-datastore/3.42.0-01/nexus-datastore-3.42.0-01-sources.jar",
-            "id": "asset-21",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0",
-              "md5": "b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6",
-              "sha256": "b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2",
-              "sha512": "b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2"
-            },
-            "contentType": "application/java-archive",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 543210,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 321,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "jar",
-                "classifier": "sources",
-                "artifactId": "nexus-datastore",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          }
-        ],
-        "tags": ["release", "java21", "stable", "database", "virtual-thread"],
-        "vulnerabilities": [
-          {
-            "severity": "MEDIUM",
-            "cve": "CVE-2023-22222",
-            "description": "SQL injection vulnerability in custom query handling",
-            "url": "https://nvd.nist.gov/vuln/detail/CVE-2023-22222",
-            "fixedIn": "3.42.0-02"
-          }
-        ],
-        "licenses": ["Apache-2.0"],
-        "dependencyCount": 22,
-        "lastUpdated": "2023-01-15T12:30:45.123Z",
-        "popularity": 0.93,
-        "securityData": {
-          "securityIssueCount": 1,
-          "highestThreatLevel": "MEDIUM"
-        }
-      },
-      {
-        "id": "component-8",
-        "repository": "maven2-hosted",
-        "format": "maven2",
-        "group": "org.sonatype.nexus",
-        "name": "nexus-security",
-        "version": "3.42.0-01",
-        "assets": [
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-security/3.42.0-01/nexus-security-3.42.0-01.jar",
-            "path": "org/sonatype/nexus/nexus-security/3.42.0-01/nexus-security-3.42.0-01.jar",
-            "id": "asset-22",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0",
-              "md5": "c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6",
-              "sha256": "c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2",
-              "sha512": "c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2"
-            },
-            "contentType": "application/java-archive",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 987654,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 4321,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "jar",
-                "artifactId": "nexus-security",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          },
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-security/3.42.0-01/nexus-security-3.42.0-01.pom",
-            "path": "org/sonatype/nexus/nexus-security/3.42.0-01/nexus-security-3.42.0-01.pom",
-            "id": "asset-23",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0",
-              "md5": "d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6",
-              "sha256": "d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2",
-              "sha512": "d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2"
-            },
-            "contentType": "application/xml",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 7654,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 1432,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "pom",
-                "artifactId": "nexus-security",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          },
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-security/3.42.0-01/nexus-security-3.42.0-01-sources.jar",
-            "path": "org/sonatype/nexus/nexus-security/3.42.0-01/nexus-security-3.42.0-01-sources.jar",
-            "id": "asset-24",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0",
-              "md5": "e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6",
-              "sha256": "e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2",
-              "sha512": "e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2"
-            },
-            "contentType": "application/java-archive",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 876543,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 765,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "jar",
-                "classifier": "sources",
-                "artifactId": "nexus-security",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          }
-        ],
-        "tags": ["release", "java21", "stable", "security"],
-        "vulnerabilities": [
-          {
-            "severity": "CRITICAL",
-            "cve": "CVE-2023-33333",
-            "description": "Authentication bypass vulnerability in specific configurations",
-            "url": "https://nvd.nist.gov/vuln/detail/CVE-2023-33333",
-            "fixedIn": "3.42.0-02"
-          },
-          {
-            "severity": "HIGH",
-            "cve": "CVE-2023-44444",
-            "description": "Potential privilege escalation in role management",
-            "url": "https://nvd.nist.gov/vuln/detail/CVE-2023-44444",
-            "fixedIn": "3.42.0-02"
-          }
-        ],
-        "licenses": ["Apache-2.0"],
-        "dependencyCount": 30,
-        "lastUpdated": "2023-01-15T12:30:45.123Z",
-        "popularity": 0.96,
-        "securityData": {
-          "securityIssueCount": 2,
-          "highestThreatLevel": "CRITICAL"
-        }
-      },
-      {
-        "id": "component-9",
-        "repository": "maven2-hosted",
-        "format": "maven2",
-        "group": "org.sonatype.nexus",
-        "name": "nexus-bootstrap",
-        "version": "3.42.0-01",
-        "assets": [
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-bootstrap/3.42.0-01/nexus-bootstrap-3.42.0-01.jar",
-            "path": "org/sonatype/nexus/nexus-bootstrap/3.42.0-01/nexus-bootstrap-3.42.0-01.jar",
-            "id": "asset-25",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0",
-              "md5": "f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6",
-              "sha256": "f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2",
-              "sha512": "f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2"
-            },
-            "contentType": "application/java-archive",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 432109,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 5432,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "jar",
-                "artifactId": "nexus-bootstrap",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          },
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-bootstrap/3.42.0-01/nexus-bootstrap-3.42.0-01.pom",
-            "path": "org/sonatype/nexus/nexus-bootstrap/3.42.0-01/nexus-bootstrap-3.42.0-01.pom",
-            "id": "asset-26",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0",
-              "md5": "a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6",
-              "sha256": "a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2",
-              "sha512": "a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2"
-            },
-            "contentType": "application/xml",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 3210,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 765,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "pom",
-                "artifactId": "nexus-bootstrap",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          },
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-bootstrap/3.42.0-01/nexus-bootstrap-3.42.0-01-sources.jar",
-            "path": "org/sonatype/nexus/nexus-bootstrap/3.42.0-01/nexus-bootstrap-3.42.0-01-sources.jar",
-            "id": "asset-27",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0",
-              "md5": "b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6",
-              "sha256": "b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2",
-              "sha512": "b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2"
-            },
-            "contentType": "application/java-archive",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 321098,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 210,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "jar",
-                "classifier": "sources",
-                "artifactId": "nexus-bootstrap",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          }
-        ],
-        "tags": ["release", "java21", "stable", "bootstrap"],
-        "vulnerabilities": [],
-        "licenses": ["Apache-2.0"],
-        "dependencyCount": 12,
-        "lastUpdated": "2023-01-15T12:30:45.123Z",
-        "popularity": 0.97,
-        "securityData": {
-          "securityIssueCount": 0,
-          "highestThreatLevel": "NONE"
-        }
-      },
-      {
-        "id": "component-10",
-        "repository": "maven2-hosted",
-        "format": "maven2",
-        "group": "org.sonatype.nexus",
-        "name": "nexus-rest",
-        "version": "3.42.0-01",
-        "assets": [
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-rest/3.42.0-01/nexus-rest-3.42.0-01.jar",
-            "path": "org/sonatype/nexus/nexus-rest/3.42.0-01/nexus-rest-3.42.0-01.jar",
-            "id": "asset-28",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0",
-              "md5": "c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6",
-              "sha256": "c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2",
-              "sha512": "c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2"
-            },
-            "contentType": "application/java-archive",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 654321,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 3456,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "jar",
-                "artifactId": "nexus-rest",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          },
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-rest/3.42.0-01/nexus-rest-3.42.0-01.pom",
-            "path": "org/sonatype/nexus/nexus-rest/3.42.0-01/nexus-rest-3.42.0-01.pom",
-            "id": "asset-29",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0",
-              "md5": "d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6",
-              "sha256": "d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2",
-              "sha512": "d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2"
-            },
-            "contentType": "application/xml",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 5432,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 1098,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "pom",
-                "artifactId": "nexus-rest",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          },
-          {
-            "downloadUrl": "http://localhost:8081/repository/maven2-hosted/org/sonatype/nexus/nexus-rest/3.42.0-01/nexus-rest-3.42.0-01-sources.jar",
-            "path": "org/sonatype/nexus/nexus-rest/3.42.0-01/nexus-rest-3.42.0-01-sources.jar",
-            "id": "asset-30",
-            "repository": "maven2-hosted",
-            "format": "maven2",
-            "checksum": {
-              "sha1": "e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0",
-              "md5": "e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6",
-              "sha256": "e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2",
-              "sha512": "e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2"
-            },
-            "contentType": "application/java-archive",
-            "lastModified": "2023-01-15T12:30:45.123Z",
-            "fileSize": 543210,
-            "blobCreated": "2023-01-15T12:30:45.123Z",
-            "lastDownloaded": "2023-06-20T08:15:30.456Z",
-            "downloadCount": 543,
-            "uploader": "admin",
-            "uploaderIp": "192.168.1.100",
-            "attributes": {
-              "maven2": {
-                "extension": "jar",
-                "classifier": "sources",
-                "artifactId": "nexus-rest",
-                "groupId": "org.sonatype.nexus",
-                "version": "3.42.0-01"
-              }
-            }
-          }
-        ],
-        "tags": ["release", "java21", "stable", "rest", "virtual-thread"],
-        "vulnerabilities": [
-          {
-            "severity": "LOW",
-            "cve": "CVE-2023-55555",
-            "description": "Potential resource exhaustion in REST API handling",
-            "url": "https://nvd.nist.gov/vuln/detail/CVE-2023-55555",
-            "fixedIn": "3.42.0-02"
-          }
-        ],
-        "licenses": ["Apache-2.0"],
-        "dependencyCount": 28,
-        "lastUpdated": "2023-01-15T12:30:45.123Z",
-        "popularity": 0.94,
-        "securityData": {
-          "securityIssueCount": 1,
-          "highestThreatLevel": "LOW"
-        }
-      }
-    ],
-    "facets": {
-      "format": {
-        "maven2": 10
-      },
-      "repository": {
-        "maven2-hosted": 10
-      },
-      "tags": {
-        "release": 10,
-        "java21": 10,
-        "stable": 10,
-        "virtual-thread": 5,
-        "http": 1,
-        "storage": 1,
-        "repository": 1,
-        "database": 1,
-        "security": 1,
-        "bootstrap": 1,
-        "rest": 1
-      },
-      "licenses": {
-        "Apache-2.0": 10
-      },
-      "vulnerabilities": {
-        "CRITICAL": 1,
-        "HIGH": 2,
-        "MEDIUM": 2,
-        "LOW": 3,
-        "NONE": 4
+      "stats": {
+        "dailyDownloads": 45678,
+        "weeklyDownloads": 234567,
+        "monthlyDownloads": 789012,
+        "totalDownloads": 12345678,
+        "firstPublished": "2023-11-15T10:30:45.678Z",
+        "lastDownloaded": "2025-05-23T09:58:12.345Z"
       }
     },
-    "metrics": {
-      "responseTime": 123.45,
-      "totalHits": 1000,
-      "limitedBy": "maxResults",
-      "processingTimeMs": 78.9,
-      "searchType": "REPOSITORY_SEARCH",
-      "searchVersion": "1.0"
-    },
-    "debug": {
-      "executedQuery": "format == \"maven2\" AND repository_name == \"maven2-hosted\"",
-      "appliedFacets": ["format", "repository", "tags", "licenses", "vulnerabilities"],
-      "queryPlan": {
-        "indexType": "REPOSITORY_CONTENT",
-        "useCache": true,
-        "optimized": true,
-        "estimatedCost": 0.12
+    {
+      "id": "org.springframework:spring-core:6.1.3",
+      "groupId": "org.springframework",
+      "artifactId": "spring-core",
+      "version": "6.1.3",
+      "packaging": "jar",
+      "description": "Spring Framework Core module providing fundamental support for dependency injection, transaction management, web applications, data access, messaging, and more.",
+      "lastUpdated": "2025-01-25T16:42:18.123Z",
+      "size": 1456789,
+      "downloadCount": 7654321,
+      "checksums": {
+        "sha1": "b1c2d3e4f5g6h7i8j9k0l1m2n3o4p5q6r7s8t9u0",
+        "md5": "b1c2d3e4f5g6h7i8j9k0l1",
+        "sha256": "b1c2d3e4f5g6h7i8j9k0l1m2n3o4p5q6r7s8t9u0v1w2x3y4z5a6b7c8d9e0f1",
+        "sha512": "b1c2d3e4f5g6h7i8j9k0l1m2n3o4p5q6r7s8t9u0v1w2x3y4z5a6b7c8d9e0f1g2h3i4j5k6l7m8n9o0p1q2r3s4t5u6v7w8x9y0z1a2b3c4d5e6f7g8h9i0j1k2"
       },
-      "executionStats": {
-        "totalTimeMs": 123.45,
-        "queryParsingMs": 1.23,
-        "indexLookupMs": 45.67,
-        "resultProcessingMs": 76.55,
-        "facetCalculationMs": 12.34,
-        "memoryUsedBytes": 1234567,
-        "threadCount": 1
+      "licenses": [
+        {
+          "name": "Apache License, Version 2.0",
+          "url": "https://www.apache.org/licenses/LICENSE-2.0.txt"
+        }
+      ],
+      "dependencies": [
+        {
+          "groupId": "org.springframework",
+          "artifactId": "spring-jcl",
+          "version": "6.1.3",
+          "scope": "compile"
+        },
+        {
+          "groupId": "io.micrometer",
+          "artifactId": "micrometer-observation",
+          "version": "1.12.2",
+          "scope": "compile",
+          "optional": true
+        },
+        {
+          "groupId": "io.micrometer",
+          "artifactId": "micrometer-commons",
+          "version": "1.12.2",
+          "scope": "compile",
+          "optional": true
+        },
+        {
+          "groupId": "org.jetbrains.kotlin",
+          "artifactId": "kotlin-stdlib",
+          "version": "1.9.22",
+          "scope": "compile",
+          "optional": true
+        },
+        {
+          "groupId": "io.projectreactor",
+          "artifactId": "reactor-core",
+          "version": "3.6.2",
+          "scope": "compile",
+          "optional": true
+        }
+      ],
+      "repositories": [
+        "central",
+        "spring-releases"
+      ],
+      "vulnerabilities": [],
+      "buildInfo": {
+        "buildHost": "jenkins-spring-01.vmware.com",
+        "buildTimestamp": "2024-01-25T14:30:45.678Z",
+        "buildNumber": "54321",
+        "buildTool": "Gradle 8.5",
+        "jdkVersion": "21.0.1",
+        "osName": "Linux",
+        "osVersion": "5.15.0-1034-azure",
+        "osArch": "amd64"
+      },
+      "downloadUrls": {
+        "jar": "https://repo1.maven.org/maven2/org/springframework/spring-core/6.1.3/spring-core-6.1.3.jar",
+        "pom": "https://repo1.maven.org/maven2/org/springframework/spring-core/6.1.3/spring-core-6.1.3.pom",
+        "javadoc": "https://repo1.maven.org/maven2/org/springframework/spring-core/6.1.3/spring-core-6.1.3-javadoc.jar",
+        "sources": "https://repo1.maven.org/maven2/org/springframework/spring-core/6.1.3/spring-core-6.1.3-sources.jar"
+      },
+      "stats": {
+        "dailyDownloads": 123456,
+        "weeklyDownloads": 654321,
+        "monthlyDownloads": 2345678,
+        "totalDownloads": 45678901,
+        "firstPublished": "2024-01-25T15:20:30.456Z",
+        "lastDownloaded": "2025-05-23T09:59:45.678Z"
+      }
+    },
+    {
+      "id": "com.google.guava:guava:32.1.3-jre",
+      "groupId": "com.google.guava",
+      "artifactId": "guava",
+      "version": "32.1.3-jre",
+      "packaging": "jar",
+      "description": "Guava is a suite of core and expanded libraries that include utility classes, Google's collections, I/O classes, and much more.",
+      "lastUpdated": "2024-12-10T11:34:56.789Z",
+      "size": 2987654,
+      "downloadCount": 9876543,
+      "checksums": {
+        "sha1": "c1d2e3f4g5h6i7j8k9l0m1n2o3p4q5r6s7t8u9v0",
+        "md5": "c1d2e3f4g5h6i7j8k9l0m1",
+        "sha256": "c1d2e3f4g5h6i7j8k9l0m1n2o3p4q5r6s7t8u9v0w1x2y3z4a5b6c7d8e9f0g1",
+        "sha512": "c1d2e3f4g5h6i7j8k9l0m1n2o3p4q5r6s7t8u9v0w1x2y3z4a5b6c7d8e9f0g1h2i3j4k5l6m7n8o9p0q1r2s3t4u5v6w7x8y9z0a1b2c3d4e5f6g7h8i9j0"
+      },
+      "licenses": [
+        {
+          "name": "Apache License, Version 2.0",
+          "url": "https://www.apache.org/licenses/LICENSE-2.0.txt"
+        }
+      ],
+      "dependencies": [
+        {
+          "groupId": "com.google.guava",
+          "artifactId": "failureaccess",
+          "version": "1.0.2",
+          "scope": "compile"
+        },
+        {
+          "groupId": "com.google.guava",
+          "artifactId": "listenablefuture",
+          "version": "9999.0-empty-to-avoid-conflict-with-guava",
+          "scope": "compile"
+        },
+        {
+          "groupId": "com.google.code.findbugs",
+          "artifactId": "jsr305",
+          "version": "3.0.2",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.checkerframework",
+          "artifactId": "checker-qual",
+          "version": "3.37.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "com.google.errorprone",
+          "artifactId": "error_prone_annotations",
+          "version": "2.23.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "com.google.j2objc",
+          "artifactId": "j2objc-annotations",
+          "version": "2.8",
+          "scope": "compile"
+        }
+      ],
+      "repositories": [
+        "central",
+        "google"
+      ],
+      "vulnerabilities": [
+        {
+          "id": "CVE-2024-54321",
+          "severity": "LOW",
+          "description": "Fictional vulnerability for testing purposes",
+          "cvssScore": 3.2,
+          "fixedInVersion": "32.1.4-jre",
+          "references": [
+            "https://nvd.nist.gov/vuln/detail/CVE-2024-54321",
+            "https://github.com/google/guava/security/advisories/example"
+          ]
+        }
+      ],
+      "buildInfo": {
+        "buildHost": "jenkins-google-01.google.com",
+        "buildTimestamp": "2024-12-08T16:20:30.456Z",
+        "buildNumber": "98765",
+        "buildTool": "Maven 3.9.6",
+        "jdkVersion": "21.0.2",
+        "osName": "Linux",
+        "osVersion": "5.15.0-1040-gcp",
+        "osArch": "amd64"
+      },
+      "downloadUrls": {
+        "jar": "https://repo1.maven.org/maven2/com/google/guava/guava/32.1.3-jre/guava-32.1.3-jre.jar",
+        "pom": "https://repo1.maven.org/maven2/com/google/guava/guava/32.1.3-jre/guava-32.1.3-jre.pom",
+        "javadoc": "https://repo1.maven.org/maven2/com/google/guava/guava/32.1.3-jre/guava-32.1.3-jre-javadoc.jar",
+        "sources": "https://repo1.maven.org/maven2/com/google/guava/guava/32.1.3-jre/guava-32.1.3-jre-sources.jar"
+      },
+      "stats": {
+        "dailyDownloads": 234567,
+        "weeklyDownloads": 1234567,
+        "monthlyDownloads": 4567890,
+        "totalDownloads": 98765432,
+        "firstPublished": "2024-12-08T18:15:45.678Z",
+        "lastDownloaded": "2025-05-23T10:01:23.456Z"
+      }
+    },
+    {
+      "id": "io.quarkus:quarkus-core:3.6.5",
+      "groupId": "io.quarkus",
+      "artifactId": "quarkus-core",
+      "version": "3.6.5",
+      "packaging": "jar",
+      "description": "Quarkus core components. Provides the core runtime, bootstrap and deployment APIs for applications and extensions.",
+      "lastUpdated": "2025-03-18T08:23:45.678Z",
+      "size": 1234567,
+      "downloadCount": 3456789,
+      "checksums": {
+        "sha1": "d1e2f3g4h5i6j7k8l9m0n1o2p3q4r5s6t7u8v9w0",
+        "md5": "d1e2f3g4h5i6j7k8l9m0n1",
+        "sha256": "d1e2f3g4h5i6j7k8l9m0n1o2p3q4r5s6t7u8v9w0x1y2z3a4b5c6d7e8f9g0h1",
+        "sha512": "d1e2f3g4h5i6j7k8l9m0n1o2p3q4r5s6t7u8v9w0x1y2z3a4b5c6d7e8f9g0h1i2j3k4l5m6n7o8p9q0r1s2t3u4v5w6x7y8z9a0b1c2d3e4f5g6h7i8j9"
+      },
+      "licenses": [
+        {
+          "name": "Apache License, Version 2.0",
+          "url": "https://www.apache.org/licenses/LICENSE-2.0.txt"
+        }
+      ],
+      "dependencies": [
+        {
+          "groupId": "io.quarkus",
+          "artifactId": "quarkus-bootstrap-runner",
+          "version": "3.6.5",
+          "scope": "compile"
+        },
+        {
+          "groupId": "io.smallrye.config",
+          "artifactId": "smallrye-config",
+          "version": "3.5.1",
+          "scope": "compile"
+        },
+        {
+          "groupId": "io.smallrye.common",
+          "artifactId": "smallrye-common-annotation",
+          "version": "2.1.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "io.smallrye.common",
+          "artifactId": "smallrye-common-classloader",
+          "version": "2.1.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "io.smallrye.common",
+          "artifactId": "smallrye-common-constraint",
+          "version": "2.1.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "io.smallrye.common",
+          "artifactId": "smallrye-common-expression",
+          "version": "2.1.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "io.smallrye.common",
+          "artifactId": "smallrye-common-function",
+          "version": "2.1.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "io.smallrye.common",
+          "artifactId": "smallrye-common-io",
+          "version": "2.1.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "io.smallrye.common",
+          "artifactId": "smallrye-common-net",
+          "version": "2.1.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "io.smallrye.common",
+          "artifactId": "smallrye-common-os",
+          "version": "2.1.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "io.smallrye.common",
+          "artifactId": "smallrye-common-ref",
+          "version": "2.1.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "io.smallrye.common",
+          "artifactId": "smallrye-common-vertx-context",
+          "version": "2.1.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "jakarta.annotation",
+          "artifactId": "jakarta.annotation-api",
+          "version": "2.1.1",
+          "scope": "compile"
+        },
+        {
+          "groupId": "jakarta.enterprise",
+          "artifactId": "jakarta.enterprise.cdi-api",
+          "version": "4.0.1",
+          "scope": "compile"
+        },
+        {
+          "groupId": "jakarta.inject",
+          "artifactId": "jakarta.inject-api",
+          "version": "2.0.1",
+          "scope": "compile"
+        },
+        {
+          "groupId": "jakarta.interceptor",
+          "artifactId": "jakarta.interceptor-api",
+          "version": "2.1.0",
+          "scope": "compile"
+        }
+      ],
+      "repositories": [
+        "central",
+        "quarkus-releases"
+      ],
+      "vulnerabilities": [],
+      "buildInfo": {
+        "buildHost": "jenkins-quarkus-01.redhat.com",
+        "buildTimestamp": "2025-03-15T14:30:45.678Z",
+        "buildNumber": "34567",
+        "buildTool": "Maven 3.9.6",
+        "jdkVersion": "21.0.2",
+        "osName": "Linux",
+        "osVersion": "5.15.0-1036-oracle",
+        "osArch": "amd64"
+      },
+      "downloadUrls": {
+        "jar": "https://repo1.maven.org/maven2/io/quarkus/quarkus-core/3.6.5/quarkus-core-3.6.5.jar",
+        "pom": "https://repo1.maven.org/maven2/io/quarkus/quarkus-core/3.6.5/quarkus-core-3.6.5.pom",
+        "javadoc": "https://repo1.maven.org/maven2/io/quarkus/quarkus-core/3.6.5/quarkus-core-3.6.5-javadoc.jar",
+        "sources": "https://repo1.maven.org/maven2/io/quarkus/quarkus-core/3.6.5/quarkus-core-3.6.5-sources.jar"
+      },
+      "stats": {
+        "dailyDownloads": 12345,
+        "weeklyDownloads": 67890,
+        "monthlyDownloads": 234567,
+        "totalDownloads": 3456789,
+        "firstPublished": "2025-03-15T16:45:30.123Z",
+        "lastDownloaded": "2025-05-23T10:02:34.567Z"
+      }
+    },
+    {
+      "id": "org.postgresql:postgresql:42.7.2",
+      "groupId": "org.postgresql",
+      "artifactId": "postgresql",
+      "version": "42.7.2",
+      "packaging": "jar",
+      "description": "PostgreSQL JDBC Driver",
+      "lastUpdated": "2025-02-05T19:12:34.567Z",
+      "size": 987654,
+      "downloadCount": 5678901,
+      "checksums": {
+        "sha1": "e1f2g3h4i5j6k7l8m9n0o1p2q3r4s5t6u7v8w9x0",
+        "md5": "e1f2g3h4i5j6k7l8m9n0o1",
+        "sha256": "e1f2g3h4i5j6k7l8m9n0o1p2q3r4s5t6u7v8w9x0y1z2a3b4c5d6e7f8g9h0i1",
+        "sha512": "e1f2g3h4i5j6k7l8m9n0o1p2q3r4s5t6u7v8w9x0y1z2a3b4c5d6e7f8g9h0i1j2k3l4m5n6o7p8q9r0s1t2u3v4w5x6y7z8a9b0c1d2e3f4g5h6i7j8k9"
+      },
+      "licenses": [
+        {
+          "name": "BSD-2-Clause",
+          "url": "https://jdbc.postgresql.org/about/license.html"
+        }
+      ],
+      "dependencies": [
+        {
+          "groupId": "org.checkerframework",
+          "artifactId": "checker-qual",
+          "version": "3.41.0",
+          "scope": "runtime"
+        },
+        {
+          "groupId": "com.github.waffle",
+          "artifactId": "waffle-jna",
+          "version": "3.3.0",
+          "scope": "compile",
+          "optional": true
+        }
+      ],
+      "repositories": [
+        "central",
+        "postgresql"
+      ],
+      "vulnerabilities": [],
+      "buildInfo": {
+        "buildHost": "jenkins-postgresql-01.postgresql.org",
+        "buildTimestamp": "2025-02-01T12:15:30.456Z",
+        "buildNumber": "23456",
+        "buildTool": "Gradle 8.5",
+        "jdkVersion": "21.0.2",
+        "osName": "Linux",
+        "osVersion": "5.15.0-1038-aws",
+        "osArch": "amd64"
+      },
+      "downloadUrls": {
+        "jar": "https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.2/postgresql-42.7.2.jar",
+        "pom": "https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.2/postgresql-42.7.2.pom",
+        "javadoc": "https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.2/postgresql-42.7.2-javadoc.jar",
+        "sources": "https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.2/postgresql-42.7.2-sources.jar"
+      },
+      "stats": {
+        "dailyDownloads": 78901,
+        "weeklyDownloads": 456789,
+        "monthlyDownloads": 1234567,
+        "totalDownloads": 23456789,
+        "firstPublished": "2025-02-01T14:30:45.678Z",
+        "lastDownloaded": "2025-05-23T10:03:45.678Z"
+      },
+      "features": {
+        "java21Support": true,
+        "virtualThreadSupport": true,
+        "preparedStatementCaching": true,
+        "connectionPooling": false,
+        "replication": true,
+        "loadBalancing": true,
+        "kerberos": true,
+        "ssl": true
+      }
+    },
+    {
+      "id": "com.fasterxml.jackson.core:jackson-databind:2.16.1",
+      "groupId": "com.fasterxml.jackson.core",
+      "artifactId": "jackson-databind",
+      "version": "2.16.1",
+      "packaging": "jar",
+      "description": "General data-binding functionality for Jackson: works on core streaming API",
+      "lastUpdated": "2025-01-10T15:45:23.456Z",
+      "size": 1543210,
+      "downloadCount": 8765432,
+      "checksums": {
+        "sha1": "f1g2h3i4j5k6l7m8n9o0p1q2r3s4t5u6v7w8x9y0",
+        "md5": "f1g2h3i4j5k6l7m8n9o0p1",
+        "sha256": "f1g2h3i4j5k6l7m8n9o0p1q2r3s4t5u6v7w8x9y0z1a2b3c4d5e6f7g8h9i0j1",
+        "sha512": "f1g2h3i4j5k6l7m8n9o0p1q2r3s4t5u6v7w8x9y0z1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a8b9c0d1e2f3g4h5i6j7k8l9"
+      },
+      "licenses": [
+        {
+          "name": "Apache License, Version 2.0",
+          "url": "https://www.apache.org/licenses/LICENSE-2.0.txt"
+        }
+      ],
+      "dependencies": [
+        {
+          "groupId": "com.fasterxml.jackson.core",
+          "artifactId": "jackson-annotations",
+          "version": "2.16.1",
+          "scope": "compile"
+        },
+        {
+          "groupId": "com.fasterxml.jackson.core",
+          "artifactId": "jackson-core",
+          "version": "2.16.1",
+          "scope": "compile"
+        },
+        {
+          "groupId": "com.fasterxml.jackson",
+          "artifactId": "jackson-bom",
+          "version": "2.16.1",
+          "scope": "import",
+          "type": "pom"
+        }
+      ],
+      "repositories": [
+        "central"
+      ],
+      "vulnerabilities": [
+        {
+          "id": "CVE-2024-67890",
+          "severity": "HIGH",
+          "description": "Fictional vulnerability for testing purposes",
+          "cvssScore": 7.5,
+          "fixedInVersion": "2.16.2",
+          "references": [
+            "https://nvd.nist.gov/vuln/detail/CVE-2024-67890",
+            "https://github.com/FasterXML/jackson-databind/security/advisories/example"
+          ]
+        }
+      ],
+      "buildInfo": {
+        "buildHost": "jenkins-fasterxml-01.fasterxml.com",
+        "buildTimestamp": "2025-01-08T10:20:30.456Z",
+        "buildNumber": "45678",
+        "buildTool": "Maven 3.9.6",
+        "jdkVersion": "21.0.1",
+        "osName": "Linux",
+        "osVersion": "5.15.0-1039-aws",
+        "osArch": "amd64"
+      },
+      "downloadUrls": {
+        "jar": "https://repo1.maven.org/maven2/com/fasterxml/jackson/core/jackson-databind/2.16.1/jackson-databind-2.16.1.jar",
+        "pom": "https://repo1.maven.org/maven2/com/fasterxml/jackson/core/jackson-databind/2.16.1/jackson-databind-2.16.1.pom",
+        "javadoc": "https://repo1.maven.org/maven2/com/fasterxml/jackson/core/jackson-databind/2.16.1/jackson-databind-2.16.1-javadoc.jar",
+        "sources": "https://repo1.maven.org/maven2/com/fasterxml/jackson/core/jackson-databind/2.16.1/jackson-databind-2.16.1-sources.jar"
+      },
+      "stats": {
+        "dailyDownloads": 156789,
+        "weeklyDownloads": 876543,
+        "monthlyDownloads": 3456789,
+        "totalDownloads": 87654321,
+        "firstPublished": "2025-01-08T12:45:30.123Z",
+        "lastDownloaded": "2025-05-23T10:04:56.789Z"
+      },
+      "features": {
+        "java21Support": true,
+        "recordSupport": true,
+        "patternMatchingSupport": true,
+        "virtualThreadSafe": true,
+        "jsonSchemaValidation": true,
+        "xmlSupport": false,
+        "yamlSupport": false,
+        "csvSupport": false
+      }
+    },
+    {
+      "id": "org.eclipse.jetty:jetty-server:12.0.5",
+      "groupId": "org.eclipse.jetty",
+      "artifactId": "jetty-server",
+      "version": "12.0.5",
+      "packaging": "jar",
+      "description": "Jetty Server Components",
+      "lastUpdated": "2025-04-20T14:30:45.678Z",
+      "size": 876543,
+      "downloadCount": 2345678,
+      "checksums": {
+        "sha1": "g1h2i3j4k5l6m7n8o9p0q1r2s3t4u5v6w7x8y9z0",
+        "md5": "g1h2i3j4k5l6m7n8o9p0q1",
+        "sha256": "g1h2i3j4k5l6m7n8o9p0q1r2s3t4u5v6w7x8y9z0a1b2c3d4e5f6g7h8i9j0k1",
+        "sha512": "g1h2i3j4k5l6m7n8o9p0q1r2s3t4u5v6w7x8y9z0a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0e1f2g3h4i5j6k7l8m9"
+      },
+      "licenses": [
+        {
+          "name": "Apache License, Version 2.0",
+          "url": "https://www.apache.org/licenses/LICENSE-2.0.txt"
+        },
+        {
+          "name": "Eclipse Public License - Version 2.0",
+          "url": "https://www.eclipse.org/legal/epl-2.0/"
+        }
+      ],
+      "dependencies": [
+        {
+          "groupId": "org.eclipse.jetty.toolchain",
+          "artifactId": "jetty-jakarta-servlet-api",
+          "version": "5.0.2",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.eclipse.jetty",
+          "artifactId": "jetty-http",
+          "version": "12.0.5",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.eclipse.jetty",
+          "artifactId": "jetty-io",
+          "version": "12.0.5",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.eclipse.jetty",
+          "artifactId": "jetty-util",
+          "version": "12.0.5",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.slf4j",
+          "artifactId": "slf4j-api",
+          "version": "2.0.9",
+          "scope": "compile"
+        }
+      ],
+      "repositories": [
+        "central",
+        "eclipse-releases"
+      ],
+      "vulnerabilities": [],
+      "buildInfo": {
+        "buildHost": "jenkins-jetty-01.eclipse.org",
+        "buildTimestamp": "2025-04-18T16:45:30.123Z",
+        "buildNumber": "56789",
+        "buildTool": "Maven 3.9.6",
+        "jdkVersion": "21.0.2",
+        "osName": "Linux",
+        "osVersion": "5.15.0-1041-azure",
+        "osArch": "amd64"
+      },
+      "downloadUrls": {
+        "jar": "https://repo1.maven.org/maven2/org/eclipse/jetty/jetty-server/12.0.5/jetty-server-12.0.5.jar",
+        "pom": "https://repo1.maven.org/maven2/org/eclipse/jetty/jetty-server/12.0.5/jetty-server-12.0.5.pom",
+        "javadoc": "https://repo1.maven.org/maven2/org/eclipse/jetty/jetty-server/12.0.5/jetty-server-12.0.5-javadoc.jar",
+        "sources": "https://repo1.maven.org/maven2/org/eclipse/jetty/jetty-server/12.0.5/jetty-server-12.0.5-sources.jar"
+      },
+      "stats": {
+        "dailyDownloads": 34567,
+        "weeklyDownloads": 234567,
+        "monthlyDownloads": 876543,
+        "totalDownloads": 12345678,
+        "firstPublished": "2025-04-18T18:30:45.678Z",
+        "lastDownloaded": "2025-05-23T10:05:12.345Z"
+      },
+      "features": {
+        "java21Support": true,
+        "virtualThreadSupport": true,
+        "http2Support": true,
+        "http3Support": true,
+        "websocketSupport": true,
+        "servletSupport": true,
+        "jakartaEESupport": true,
+        "tlsSupport": true
+      }
+    },
+    {
+      "id": "software.amazon.awssdk:s3:2.22.0",
+      "groupId": "software.amazon.awssdk",
+      "artifactId": "s3",
+      "version": "2.22.0",
+      "packaging": "jar",
+      "description": "AWS Java SDK for Amazon S3",
+      "lastUpdated": "2025-02-28T17:23:45.678Z",
+      "size": 2345678,
+      "downloadCount": 4567890,
+      "checksums": {
+        "sha1": "h1i2j3k4l5m6n7o8p9q0r1s2t3u4v5w6x7y8z9a0",
+        "md5": "h1i2j3k4l5m6n7o8p9q0r1",
+        "sha256": "h1i2j3k4l5m6n7o8p9q0r1s2t3u4v5w6x7y8z9a0b1c2d3e4f5g6h7i8j9k0l1",
+        "sha512": "h1i2j3k4l5m6n7o8p9q0r1s2t3u4v5w6x7y8z9a0b1c2d3e4f5g6h7i8j9k0l1m2n3o4p5q6r7s8t9u0v1w2x3y4z5a6b7c8d9e0f1g2h3i4j5k6l7m8n9"
+      },
+      "licenses": [
+        {
+          "name": "Apache License, Version 2.0",
+          "url": "https://www.apache.org/licenses/LICENSE-2.0.txt"
+        }
+      ],
+      "dependencies": [
+        {
+          "groupId": "software.amazon.awssdk",
+          "artifactId": "aws-xml-protocol",
+          "version": "2.22.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "software.amazon.awssdk",
+          "artifactId": "aws-query-protocol",
+          "version": "2.22.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "software.amazon.awssdk",
+          "artifactId": "protocol-core",
+          "version": "2.22.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "software.amazon.awssdk",
+          "artifactId": "profiles",
+          "version": "2.22.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "software.amazon.awssdk",
+          "artifactId": "auth",
+          "version": "2.22.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "software.amazon.awssdk",
+          "artifactId": "http-client-spi",
+          "version": "2.22.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "software.amazon.awssdk",
+          "artifactId": "regions",
+          "version": "2.22.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "software.amazon.awssdk",
+          "artifactId": "annotations",
+          "version": "2.22.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "software.amazon.awssdk",
+          "artifactId": "utils",
+          "version": "2.22.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "software.amazon.awssdk",
+          "artifactId": "sdk-core",
+          "version": "2.22.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "software.amazon.awssdk",
+          "artifactId": "metrics-spi",
+          "version": "2.22.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "software.amazon.awssdk",
+          "artifactId": "json-utils",
+          "version": "2.22.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "software.amazon.awssdk",
+          "artifactId": "third-party-jackson-core",
+          "version": "2.22.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "software.amazon.awssdk",
+          "artifactId": "endpoints-spi",
+          "version": "2.22.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "software.amazon.awssdk",
+          "artifactId": "apache-client",
+          "version": "2.22.0",
+          "scope": "runtime",
+          "optional": true
+        },
+        {
+          "groupId": "software.amazon.awssdk",
+          "artifactId": "netty-nio-client",
+          "version": "2.22.0",
+          "scope": "runtime",
+          "optional": true
+        },
+        {
+          "groupId": "software.amazon.awssdk",
+          "artifactId": "url-connection-client",
+          "version": "2.22.0",
+          "scope": "runtime",
+          "optional": true
+        }
+      ],
+      "repositories": [
+        "central",
+        "aws-releases"
+      ],
+      "vulnerabilities": [],
+      "buildInfo": {
+        "buildHost": "jenkins-aws-01.amazon.com",
+        "buildTimestamp": "2025-02-25T12:30:45.678Z",
+        "buildNumber": "67890",
+        "buildTool": "Maven 3.9.6",
+        "jdkVersion": "21.0.2",
+        "osName": "Linux",
+        "osVersion": "5.15.0-1042-aws",
+        "osArch": "amd64"
+      },
+      "downloadUrls": {
+        "jar": "https://repo1.maven.org/maven2/software/amazon/awssdk/s3/2.22.0/s3-2.22.0.jar",
+        "pom": "https://repo1.maven.org/maven2/software/amazon/awssdk/s3/2.22.0/s3-2.22.0.pom",
+        "javadoc": "https://repo1.maven.org/maven2/software/amazon/awssdk/s3/2.22.0/s3-2.22.0-javadoc.jar",
+        "sources": "https://repo1.maven.org/maven2/software/amazon/awssdk/s3/2.22.0/s3-2.22.0-sources.jar"
+      },
+      "stats": {
+        "dailyDownloads": 56789,
+        "weeklyDownloads": 345678,
+        "monthlyDownloads": 1234567,
+        "totalDownloads": 34567890,
+        "firstPublished": "2025-02-25T14:45:30.123Z",
+        "lastDownloaded": "2025-05-23T10:06:23.456Z"
+      },
+      "features": {
+        "java21Support": true,
+        "virtualThreadSupport": true,
+        "asyncSupport": true,
+        "reactiveSupport": true,
+        "s3ExpressSupport": true,
+        "s3ObjectLambdaSupport": true,
+        "s3AccessPointsSupport": true,
+        "s3MultiRegionAccessPointsSupport": true
+      }
+    },
+    {
+      "id": "io.netty:netty-transport:4.1.106.Final",
+      "groupId": "io.netty",
+      "artifactId": "netty-transport",
+      "version": "4.1.106.Final",
+      "packaging": "jar",
+      "description": "Netty is an asynchronous event-driven network application framework for rapid development of maintainable high performance protocol servers & clients.",
+      "lastUpdated": "2025-05-10T13:45:30.123Z",
+      "size": 654321,
+      "downloadCount": 6789012,
+      "checksums": {
+        "sha1": "i1j2k3l4m5n6o7p8q9r0s1t2u3v4w5x6y7z8a9b0",
+        "md5": "i1j2k3l4m5n6o7p8q9r0s1",
+        "sha256": "i1j2k3l4m5n6o7p8q9r0s1t2u3v4w5x6y7z8a9b0c1d2e3f4g5h6i7j8k9l0m1",
+        "sha512": "i1j2k3l4m5n6o7p8q9r0s1t2u3v4w5x6y7z8a9b0c1d2e3f4g5h6i7j8k9l0m1n2o3p4q5r6s7t8u9v0w1x2y3z4a5b6c7d8e9f0g1h2i3j4k5l6m7n8o9"
+      },
+      "licenses": [
+        {
+          "name": "Apache License, Version 2.0",
+          "url": "https://www.apache.org/licenses/LICENSE-2.0.txt"
+        }
+      ],
+      "dependencies": [
+        {
+          "groupId": "io.netty",
+          "artifactId": "netty-common",
+          "version": "4.1.106.Final",
+          "scope": "compile"
+        },
+        {
+          "groupId": "io.netty",
+          "artifactId": "netty-buffer",
+          "version": "4.1.106.Final",
+          "scope": "compile"
+        },
+        {
+          "groupId": "io.netty",
+          "artifactId": "netty-resolver",
+          "version": "4.1.106.Final",
+          "scope": "compile"
+        }
+      ],
+      "repositories": [
+        "central"
+      ],
+      "vulnerabilities": [],
+      "buildInfo": {
+        "buildHost": "jenkins-netty-01.netty.io",
+        "buildTimestamp": "2025-05-08T10:15:30.456Z",
+        "buildNumber": "78901",
+        "buildTool": "Maven 3.9.6",
+        "jdkVersion": "21.0.2",
+        "osName": "Linux",
+        "osVersion": "5.15.0-1043-aws",
+        "osArch": "amd64"
+      },
+      "downloadUrls": {
+        "jar": "https://repo1.maven.org/maven2/io/netty/netty-transport/4.1.106.Final/netty-transport-4.1.106.Final.jar",
+        "pom": "https://repo1.maven.org/maven2/io/netty/netty-transport/4.1.106.Final/netty-transport-4.1.106.Final.pom",
+        "javadoc": "https://repo1.maven.org/maven2/io/netty/netty-transport/4.1.106.Final/netty-transport-4.1.106.Final-javadoc.jar",
+        "sources": "https://repo1.maven.org/maven2/io/netty/netty-transport/4.1.106.Final/netty-transport-4.1.106.Final-sources.jar"
+      },
+      "stats": {
+        "dailyDownloads": 89012,
+        "weeklyDownloads": 567890,
+        "monthlyDownloads": 2345678,
+        "totalDownloads": 56789012,
+        "firstPublished": "2025-05-08T12:30:45.678Z",
+        "lastDownloaded": "2025-05-23T10:07:34.567Z"
+      },
+      "features": {
+        "java21Support": true,
+        "virtualThreadSupport": true,
+        "nativeSupport": true,
+        "epollSupport": true,
+        "kqueueSupport": true,
+        "ioUringSupport": true,
+        "http2Support": true,
+        "http3Support": true,
+        "quicSupport": true
+      }
+    },
+    {
+      "id": "org.apache.shiro:shiro-core:1.13.0",
+      "groupId": "org.apache.shiro",
+      "artifactId": "shiro-core",
+      "version": "1.13.0",
+      "packaging": "jar",
+      "description": "Apache Shiro is a powerful and flexible open-source security framework that cleanly handles authentication, authorization, enterprise session management, single sign-on and cryptography services.",
+      "lastUpdated": "2025-03-05T09:30:45.678Z",
+      "size": 543210,
+      "downloadCount": 1234567,
+      "checksums": {
+        "sha1": "j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a8b9c0",
+        "md5": "j1k2l3m4n5o6p7q8r9s0t1",
+        "sha256": "j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a8b9c0d1e2f3g4h5i6j7k8l9m0n1",
+        "sha512": "j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a8b9c0d1e2f3g4h5i6j7k8l9m0n1o2p3q4r5s6t7u8v9w0x1y2z3a4b5c6d7e8f9g0h1i2j3k4l5m6n7o8p9"
+      },
+      "licenses": [
+        {
+          "name": "Apache License, Version 2.0",
+          "url": "https://www.apache.org/licenses/LICENSE-2.0.txt"
+        }
+      ],
+      "dependencies": [
+        {
+          "groupId": "org.apache.shiro",
+          "artifactId": "shiro-lang",
+          "version": "1.13.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.apache.shiro",
+          "artifactId": "shiro-cache",
+          "version": "1.13.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.apache.shiro",
+          "artifactId": "shiro-crypto-hash",
+          "version": "1.13.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.apache.shiro",
+          "artifactId": "shiro-crypto-cipher",
+          "version": "1.13.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.apache.shiro",
+          "artifactId": "shiro-config-core",
+          "version": "1.13.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.apache.shiro",
+          "artifactId": "shiro-config-ogdl",
+          "version": "1.13.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "org.apache.shiro",
+          "artifactId": "shiro-event",
+          "version": "1.13.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "commons-beanutils",
+          "artifactId": "commons-beanutils",
+          "version": "1.9.4",
+          "scope": "compile"
+        }
+      ],
+      "repositories": [
+        "central",
+        "apache-releases"
+      ],
+      "vulnerabilities": [],
+      "buildInfo": {
+        "buildHost": "jenkins-shiro-01.apache.org",
+        "buildTimestamp": "2025-03-01T14:30:45.678Z",
+        "buildNumber": "89012",
+        "buildTool": "Maven 3.9.6",
+        "jdkVersion": "21.0.2",
+        "osName": "Linux",
+        "osVersion": "5.15.0-1044-aws",
+        "osArch": "amd64"
+      },
+      "downloadUrls": {
+        "jar": "https://repo1.maven.org/maven2/org/apache/shiro/shiro-core/1.13.0/shiro-core-1.13.0.jar",
+        "pom": "https://repo1.maven.org/maven2/org/apache/shiro/shiro-core/1.13.0/shiro-core-1.13.0.pom",
+        "javadoc": "https://repo1.maven.org/maven2/org/apache/shiro/shiro-core/1.13.0/shiro-core-1.13.0-javadoc.jar",
+        "sources": "https://repo1.maven.org/maven2/org/apache/shiro/shiro-core/1.13.0/shiro-core-1.13.0-sources.jar"
+      },
+      "stats": {
+        "dailyDownloads": 12345,
+        "weeklyDownloads": 78901,
+        "monthlyDownloads": 345678,
+        "totalDownloads": 7890123,
+        "firstPublished": "2025-03-01T16:45:30.123Z",
+        "lastDownloaded": "2025-05-23T10:08:45.678Z"
+      },
+      "features": {
+        "java21Support": true,
+        "virtualThreadSupport": true,
+        "jakartaEESupport": true,
+        "ldapSupport": true,
+        "jdbcSupport": true,
+        "cacheSupport": true,
+        "webSupport": false,
+        "oauth2Support": false
+      }
+    },
+    {
+      "id": "com.google.inject:guice:6.0.0",
+      "groupId": "com.google.inject",
+      "artifactId": "guice",
+      "version": "6.0.0",
+      "packaging": "jar",
+      "description": "Guice is a lightweight dependency injection framework for Java 8 and above",
+      "lastUpdated": "2025-01-15T11:22:33.444Z",
+      "size": 876543,
+      "downloadCount": 5678901,
+      "checksums": {
+        "sha1": "k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0",
+        "md5": "k1l2m3n4o5p6q7r8s9t0u1",
+        "sha256": "k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0e1f2g3h4i5j6k7l8m9n0o1",
+        "sha512": "k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0e1f2g3h4i5j6k7l8m9n0o1p2q3r4s5t6u7v8w9x0y1z2a3b4c5d6e7f8g9h0i1j2k3l4m5n6o7p8q9"
+      },
+      "licenses": [
+        {
+          "name": "Apache License, Version 2.0",
+          "url": "https://www.apache.org/licenses/LICENSE-2.0.txt"
+        }
+      ],
+      "dependencies": [
+        {
+          "groupId": "jakarta.inject",
+          "artifactId": "jakarta.inject-api",
+          "version": "2.0.1",
+          "scope": "compile"
+        },
+        {
+          "groupId": "aopalliance",
+          "artifactId": "aopalliance",
+          "version": "1.0",
+          "scope": "compile"
+        },
+        {
+          "groupId": "com.google.guava",
+          "artifactId": "guava",
+          "version": "32.1.3-jre",
+          "scope": "compile"
+        }
+      ],
+      "repositories": [
+        "central",
+        "google"
+      ],
+      "vulnerabilities": [],
+      "buildInfo": {
+        "buildHost": "jenkins-guice-01.google.com",
+        "buildTimestamp": "2025-01-10T16:45:30.123Z",
+        "buildNumber": "90123",
+        "buildTool": "Maven 3.9.6",
+        "jdkVersion": "21.0.1",
+        "osName": "Linux",
+        "osVersion": "5.15.0-1045-gcp",
+        "osArch": "amd64"
+      },
+      "downloadUrls": {
+        "jar": "https://repo1.maven.org/maven2/com/google/inject/guice/6.0.0/guice-6.0.0.jar",
+        "pom": "https://repo1.maven.org/maven2/com/google/inject/guice/6.0.0/guice-6.0.0.pom",
+        "javadoc": "https://repo1.maven.org/maven2/com/google/inject/guice/6.0.0/guice-6.0.0-javadoc.jar",
+        "sources": "https://repo1.maven.org/maven2/com/google/inject/guice/6.0.0/guice-6.0.0-sources.jar"
+      },
+      "stats": {
+        "dailyDownloads": 67890,
+        "weeklyDownloads": 456789,
+        "monthlyDownloads": 1234567,
+        "totalDownloads": 23456789,
+        "firstPublished": "2025-01-10T18:30:45.678Z",
+        "lastDownloaded": "2025-05-23T10:09:56.789Z"
+      },
+      "features": {
+        "java21Support": true,
+        "virtualThreadSupport": true,
+        "jakartaEESupport": true,
+        "aopSupport": true,
+        "assistedInjectSupport": true,
+        "multibindingsSupport": true,
+        "throwingInjectorsSupport": true,
+        "servletSupport": false
       }
     }
+  ],
+  "pagination": {
+    "currentPage": 1,
+    "pageSize": 10,
+    "totalPages": 100,
+    "totalItems": 1000,
+    "nextPageUrl": "https://nexus.example.com/api/v1/artifacts?page=2&size=10",
+    "prevPageUrl": null
+  },
+  "performance": {
+    "responseTime": 235,
+    "dbQueryTime": 120,
+    "processingTime": 85,
+    "networkTime": 30,
+    "cacheHit": false,
+    "compressionRatio": 0.45,
+    "serverLoad": 0.65,
+    "serverMemory": 0.72
+  },
+  "metadata": {
+    "apiVersion": "2.1.0",
+    "serverVersion": "3.60.0-01",
+    "serverTimestamp": "2025-05-23T10:15:30.123Z",
+    "requestId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "userAgent": "Java/21.0.2 (Virtual Threads enabled)",
+    "clientIp": "192.168.1.100",
+    "contentEncoding": "gzip",
+    "contentType": "application/json",
+    "responseSize": 524288
   }
 }

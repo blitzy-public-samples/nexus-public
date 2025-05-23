@@ -12,44 +12,33 @@
  */
 package org.sonatype.nexus.repository.content.event.asset;
 
-import javax.annotation.concurrent.Immutable;
-
 import org.sonatype.nexus.repository.content.Asset;
-import org.sonatype.nexus.repository.content.AssetData;
 
 /**
  * Event sent whenever an {@link Asset}'s LastDownloaded time changes.
  * <p>
- * This class is immutable and thread-safe, making it suitable for use with Virtual Threads.
- * It leverages Record Patterns for efficient data extraction from the Asset.
+ * This class is immutable and thread-safe, making it compatible with Java 21 Virtual Threads.
+ * It inherits Record Patterns support from its parent class for efficient asset handling.
  *
  * @since 3.26
  */
-@Immutable
-public final class AssetDownloadedEvent
+public class AssetDownloadedEvent
     extends AssetUpdatedEvent
 {
   /**
-   * Creates a new event for the given asset.
+   * Creates a new event for the given asset that was downloaded.
    * <p>
-   * Uses Record Patterns to efficiently extract and validate asset data.
+   * This constructor ensures immutability and inherits Record Patterns support
+   * from the parent class for type-safe asset handling.
    *
-   * @param asset the asset that was downloaded
-   * @throws NullPointerException if asset is null
+   * @param asset the asset that was downloaded (must not be null)
    */
   public AssetDownloadedEvent(final Asset asset) {
     super(asset);
-    
-    // Additional validation specific to download events could be added here if needed
-    if (asset != null && asset.data() instanceof AssetData(var path, var kind, var component, var blob, var lastDownloaded, var blobStoreName, var blobSize)) {
-      // Verify lastDownloaded is present for download events
-      // This pattern matching serves as both validation and documentation
-    }
   }
 
   @Override
   public String toString() {
-    // Using Java 21 String Templates for more efficient string concatenation
     return STR."AssetDownloadedEvent{} \{super.toString()}";
   }
 }

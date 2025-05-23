@@ -20,6 +20,7 @@ import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -27,16 +28,16 @@ import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 
 import org.junit.Before;
-import org.junit.Category;
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.experimental.categories.Category;
 import org.junit.rules.TemporaryFolder;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 
 public class FileFinderTest
     extends TestSupport
@@ -81,57 +82,86 @@ public class FileFinderTest
     assertTrue(result.get().toString().contains(expectedFileName));
   }
   
+  /**
+   * Tests concurrent file finding operations using Virtual Threads.
+   * This test validates that the FileFinder can be safely used from multiple concurrent threads
+   * without interference, leveraging Java 21's Virtual Thread capabilities for improved concurrency.
+   */
   @Test
   @Category(VirtualThreadTestGroup.class)
   public void concurrentFileFinderOperationsWithVirtualThreads() throws Exception {
-    // Setup test data
-    String prefix = "file-";
-    String suffix = ".txt";
-    int concurrentOperations = 50;
+    // Create a thread factory for virtual threads
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
     
-    // Create a virtual thread executor
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().factory());
-    
-    // Use CountDownLatch to coordinate test completion
-    CountDownLatch latch = new CountDownLatch(concurrentOperations);
-    AtomicReference<Exception> testException = new AtomicReference<>();
+    // Create an executor service that uses virtual threads
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
     
     try {
-      // Submit multiple concurrent file finding operations
+      // Number of concurrent operations to perform
+      int concurrentOperations = 100;
+      
+      // Latch to coordinate thread execution
+      CountDownLatch startLatch = new CountDownLatch(1);
+      CountDownLatch completionLatch = new CountDownLatch(concurrentOperations);
+      
+      // Reference to hold any exception that might occur during execution
+      AtomicReference<Throwable> errorRef = new AtomicReference<>();
+      
+      // Submit tasks to find files concurrently
       for (int i = 0; i < concurrentOperations; i++) {
+        final int taskId = i;
         executor.submit(() -> {
           try {
-            Optional<Path> result = fileFinder.findLatestTimestampedFile(root.toPath(), prefix, suffix);
+            // Wait for all tasks to be ready before starting
+            startLatch.await();
             
-            // Verify each operation returns the expected result
-            assertTrue("File finding operation should return a result", result.isPresent());
-            String expectedFileName = "file-2024-06-15-10-50-44.txt";
-            assertTrue("File finding operation should return the latest file", 
-                result.get().toString().contains(expectedFileName));
-          } 
-          catch (Exception e) {
-            testException.set(e);
-          } 
-          finally {
-            latch.countDown();
+            // Alternate between searching for existing and non-existing files
+            if (taskId % 2 == 0) {
+              // Search for existing files
+              Optional<Path> result = fileFinder.findLatestTimestampedFile(root.toPath(), "file-", ".txt");
+              
+              // Verify the result is as expected
+              String expectedFileName = "file-2024-06-15-10-50-44.txt";
+              if (!result.isPresent() || !result.get().toString().contains(expectedFileName)) {
+                errorRef.compareAndSet(null, new AssertionError(
+                    "Task " + taskId + " failed: Expected to find " + expectedFileName + 
+                    " but got " + (result.isPresent() ? result.get() : "no result")));
+              }
+            } else {
+              // Search for non-existing files
+              Optional<Path> result = fileFinder.findLatestTimestampedFile(root.toPath(), "nonexistent-", ".txt");
+              
+              // Verify the result is as expected
+              if (result.isPresent()) {
+                errorRef.compareAndSet(null, new AssertionError(
+                    "Task " + taskId + " failed: Expected no result but found " + result.get()));
+              }
+            }
+          } catch (Throwable t) {
+            // Capture any exception that occurs
+            errorRef.compareAndSet(null, t);
+          } finally {
+            // Signal that this task is complete
+            completionLatch.countDown();
           }
         });
       }
       
-      // Wait for all operations to complete
-      assertTrue("Timed out waiting for concurrent operations to complete", 
-          latch.await(30, TimeUnit.SECONDS));
+      // Start all tasks simultaneously
+      startLatch.countDown();
       
-      // Check if any operations failed
-      Exception exception = testException.get();
-      if (exception != null) {
-        throw exception;
-      }
-    } 
-    finally {
+      // Wait for all tasks to complete (with timeout for safety)
+      boolean completed = completionLatch.await(30, TimeUnit.SECONDS);
+      assertTrue("Not all concurrent operations completed within the timeout", completed);
+      
+      // Check if any errors occurred
+      assertNull("Concurrent file finding operations failed: " + 
+                (errorRef.get() != null ? errorRef.get().getMessage() : ""), 
+                errorRef.get());
+    } finally {
+      // Clean up the executor service
       executor.shutdown();
-      assertTrue("Executor did not terminate properly", 
-          executor.awaitTermination(5, TimeUnit.SECONDS));
+      executor.awaitTermination(5, TimeUnit.SECONDS);
     }
   }
 }

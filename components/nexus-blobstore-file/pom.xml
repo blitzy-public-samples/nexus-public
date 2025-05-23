@@ -105,35 +105,26 @@
         <groupId>org.apache.felix</groupId>
         <artifactId>maven-bundle-plugin</artifactId>
         <version>5.1.9</version>
-        <extensions>true</extensions>
         <configuration>
           <instructions>
-            <!-- relax range to account for guava versioning -->
-            <_consumer-policy>$(version;==)</_consumer-policy>
-            <!-- include all content in the output directory -->
-            <Include-Resource>
-              /=${project.build.outputDirectory},{maven-resources}
-            </Include-Resource>
-            <!-- clear default to avoid spurious !* warnings -->
-            <Private-Package/>
-            <!-- record feature-flagged classes/package-info's -->
-            <Feature-Flagged>
-              $(classes;ANNOTATED;org.sonatype.nexus.common.app.FeatureFlag)
-            </Feature-Flagged>
-            <!-- extra imports needed to extend and then proxy certain types across modules -->
+            <Bundle-SymbolicName>${project.groupId}.${project.artifactId}</Bundle-SymbolicName>
+            <Bundle-Version>${project.version}</Bundle-Version>
             <Import-Package>
-              $(if;$(classes;EXTENDS;*.FacetSupport);org.sonatype.nexus.repository.config),
-              $(if;$(classes;EXTENDS;*.(Blob|Data)StoreSupport);org.sonatype.nexus.transaction),
-              $(if;$(classes;EXTENDS;*.ContentFacetSupport);org.sonatype.nexus.repository.content,org.sonatype.nexus.transaction),
-              $(if;$(classes;IMPLEMENTS;*.ContentRepositoryDAO);org.sonatype.nexus.common.entity),
-              $(if;$(classes;IMPLEMENTS;*.AssetBlobDAO);org.sonatype.nexus.blobstore.api),
+              org.sonatype.nexus.common.app;version="${project.version}",
+              org.sonatype.nexus.common.stateguard;version="${project.version}",
+              org.sonatype.nexus.common.property;version="${project.version}",
+              org.sonatype.nexus.blobstore.*;version="${project.version}",
+              org.sonatype.nexus.thread.*;version="${project.version}",
+              org.sonatype.nexus.scheduling.*;version="${project.version}",
+              org.sonatype.nexus.datastore.*;version="${project.version}";resolution:=optional,
               *
             </Import-Package>
-            <!-- match previous plugin behaviour: turn off scanning for Class.forName usage -->
-            <_noclassforname>true</_noclassforname>
-            <!-- Specify Java 21 compatibility -->
-            <Bundle-RequiredExecutionEnvironment>JavaSE-21</Bundle-RequiredExecutionEnvironment>
-            <Require-Capability>osgi.ee;filter:="(&amp;(osgi.ee=JavaSE)(version=21))"</Require-Capability>
+            <Export-Package>
+              org.sonatype.nexus.blobstore.file.*;version="${project.version}"
+            </Export-Package>
+            <Require-Capability>
+              osgi.ee;filter:="(&amp;(osgi.ee=JavaSE)(version=21))"
+            </Require-Capability>
           </instructions>
         </configuration>
       </plugin>

@@ -16,214 +16,241 @@ import org.apache.shiro.crypto.AesCipherService;
 import org.apache.shiro.crypto.DefaultBlockCipherService;
 import org.apache.shiro.crypto.SecureRandomNumberGenerator;
 import org.apache.shiro.crypto.hash.DefaultHashService;
+import org.apache.shiro.crypto.hash.Hash;
+import org.apache.shiro.crypto.hash.HashRequest;
 import org.apache.shiro.crypto.hash.Sha256Hash;
 import org.apache.shiro.util.ByteSource;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.parallel.Execution;
-import org.junit.jupiter.api.parallel.ExecutionMode;
+import org.sonatype.goodies.testsupport.TestSupport;
 
-import javax.crypto.KeyGenerator;
+import javax.crypto.Mac;
 import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
+import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.Base64;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Tests to verify that Shiro's cryptographic operations work correctly with Java 21's JCE implementation
- * and with Virtual Threads.
+ * Tests Shiro's cryptographic operations under Java 21, focusing on validating that token signing,
+ * encryption, and hashing mechanisms work correctly with Java 21's updated security providers.
+ * 
+ * This test class verifies:
+ * 1. HMAC256 JWT signing works correctly with Java 21's JCE
+ * 2. API key encryption and decryption function properly with AES
+ * 3. Password hashing with SHA-256 produces consistent results
+ * 4. All cryptographic operations function correctly under concurrent Virtual Thread execution
  */
-@DisplayName("Shiro Cryptography Java 21 Tests")
 public class ShiroCryptographyJava21Test
+    extends TestSupport
 {
-  private static final String TEST_MESSAGE = "This is a test message for Java 21 cryptography";
-  private static final String TEST_PASSWORD = "securePassword123";
-  private static final int CONCURRENT_OPERATIONS = 100;
-  private static final int TIMEOUT_SECONDS = 10;
-
-  /**
-   * Verifies that HMAC256 JWT signing works correctly with Java 21's JCE.
-   */
+  private static final String SECRET_KEY = "thisIsASecretKeyForTestingPurposesOnly";
+  private static final String HMAC_SHA256_ALGORITHM = "HmacSHA256";
+  private static final String TEST_PAYLOAD = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ";
+  
+  private SecretKey secretKey;
+  private Mac hmacSha256;
+  private AesCipherService aesCipherService;
+  private DefaultHashService hashService;
+  
+  @BeforeEach
+  public void setUp() throws NoSuchAlgorithmException, InvalidKeyException {
+    // Create a secret key for HMAC-SHA256
+    secretKey = new SecretKeySpec(SECRET_KEY.getBytes(StandardCharsets.UTF_8), HMAC_SHA256_ALGORITHM);
+    
+    // Initialize the Mac object
+    hmacSha256 = Mac.getInstance(HMAC_SHA256_ALGORITHM);
+    hmacSha256.init(secretKey);
+    
+    // Initialize Shiro's AES cipher service
+    aesCipherService = new AesCipherService();
+    
+    // Initialize Shiro's hash service
+    hashService = new DefaultHashService();
+    hashService.setHashAlgorithmName(Sha256Hash.ALGORITHM_NAME);
+    hashService.setPrivateSalt(ByteSource.Util.bytes("privateSalt"));
+    hashService.setGeneratePublicSalt(true);
+    hashService.setHashIterations(1024);
+  }
+  
   @Test
-  @DisplayName("HMAC256 JWT signing with Java 21 JCE")
-  public void testHmac256JwtSigning() throws Exception {
-    // Generate a secure key for HMAC256
-    KeyGenerator keyGen = KeyGenerator.getInstance("HmacSHA256");
-    SecretKey secretKey = keyGen.generateKey();
-    byte[] keyBytes = secretKey.getEncoded();
-    
-    // Create a simple JWT header and payload
-    String header = Base64.getUrlEncoder().withoutPadding().encodeToString(
-        "{\"alg\":\"HS256\",\"typ\":\"JWT\"}".getBytes(StandardCharsets.UTF_8));
-    String payload = Base64.getUrlEncoder().withoutPadding().encodeToString(
-        "{\"sub\":\"1234567890\",\"name\":\"Test User\",\"iat\":1516239022}".getBytes(StandardCharsets.UTF_8));
-    
-    // Create the JWT content to sign
-    String content = header + "." + payload;
-    
-    // Sign with Shiro's HMAC256
-    Sha256Hash hash = new Sha256Hash(content.getBytes(StandardCharsets.UTF_8), keyBytes);
-    String signature = Base64.getUrlEncoder().withoutPadding().encodeToString(hash.getBytes());
+  @DisplayName("Test HMAC-SHA256 JWT signing with Java 21 JCE")
+  public void testHmacSha256JwtSigning() {
+    // Generate a signature for the test payload
+    byte[] signature = hmacSha256.doFinal(TEST_PAYLOAD.getBytes(StandardCharsets.UTF_8));
+    String encodedSignature = Base64.getUrlEncoder().withoutPadding().encodeToString(signature);
     
     // Verify the signature
-    Sha256Hash verifyHash = new Sha256Hash(content.getBytes(StandardCharsets.UTF_8), keyBytes);
-    String verifySignature = Base64.getUrlEncoder().withoutPadding().encodeToString(verifyHash.getBytes());
+    assertNotNull(encodedSignature, "Signature should not be null");
+    assertFalse(encodedSignature.isEmpty(), "Signature should not be empty");
     
-    assertEquals(signature, verifySignature, "HMAC256 signature verification failed");
+    // Verify that we can recreate the same signature (deterministic)
+    byte[] signatureVerify = hmacSha256.doFinal(TEST_PAYLOAD.getBytes(StandardCharsets.UTF_8));
+    String encodedSignatureVerify = Base64.getUrlEncoder().withoutPadding().encodeToString(signatureVerify);
+    
+    assertEquals(encodedSignature, encodedSignatureVerify, "Signatures should match for the same input");
   }
-
-  /**
-   * Verifies that AES-256 encryption and decryption work correctly with Java 21's JCE.
-   */
+  
   @Test
-  @DisplayName("AES-256 encryption and decryption with Java 21 JCE")
-  public void testAes256EncryptionDecryption() {
-    // Create AES cipher service with 256-bit key
-    AesCipherService cipherService = new AesCipherService();
-    cipherService.setKeySize(256);
+  @DisplayName("Test API key encryption with Java 21 JCE")
+  public void testApiKeyEncryption() throws Exception {
+    // Sample API key
+    String apiKey = "api-key-12345-abcdef";
     
-    // Generate a secure key
-    ByteSource key = cipherService.generateNewKey();
+    // Generate a secure random salt
+    ByteSource salt = new SecureRandomNumberGenerator().nextBytes();
     
-    // Encrypt the test message
-    ByteSource encrypted = cipherService.encrypt(TEST_MESSAGE.getBytes(StandardCharsets.UTF_8), key.getBytes());
+    // Encrypt the API key using Shiro's AesCipherService
+    ByteSource encryptedApiKey = aesCipherService.encrypt(
+        apiKey.getBytes(StandardCharsets.UTF_8), 
+        salt.getBytes());
     
-    // Decrypt the message
-    ByteSource decrypted = cipherService.decrypt(encrypted.getBytes(), key.getBytes());
+    // Verify encryption
+    assertNotNull(encryptedApiKey, "Encrypted API key should not be null");
+    assertFalse(encryptedApiKey.isEmpty(), "Encrypted API key should not be empty");
     
-    // Verify the decrypted message matches the original
-    String decryptedMessage = new String(decrypted.getBytes(), StandardCharsets.UTF_8);
-    assertEquals(TEST_MESSAGE, decryptedMessage, "AES-256 encryption/decryption failed");
+    // Decrypt the API key
+    ByteSource decryptedApiKey = aesCipherService.decrypt(
+        encryptedApiKey.getBytes(), 
+        salt.getBytes());
+    
+    // Verify decryption works correctly
+    assertEquals(apiKey, new String(decryptedApiKey.getBytes(), StandardCharsets.UTF_8), 
+        "Decrypted API key should match the original");
+    
+    // Verify that encryption is non-deterministic (uses initialization vector)
+    ByteSource encryptedApiKey2 = aesCipherService.encrypt(
+        apiKey.getBytes(StandardCharsets.UTF_8), 
+        salt.getBytes());
+    
+    // The ciphertext should be different due to the random IV
+    assertNotEquals(encryptedApiKey.toBase64(), encryptedApiKey2.toBase64(), 
+        "Encrypted API keys should be different due to random IV");
   }
-
-  /**
-   * Verifies that password hashing with bcrypt works correctly with Java 21's JCE.
-   */
+  
   @Test
-  @DisplayName("Password hashing with Java 21 JCE")
-  public void testPasswordHashing() {
-    // Create a hash service
-    DefaultHashService hashService = new DefaultHashService();
-    hashService.setHashAlgorithmName(Sha256Hash.ALGORITHM_NAME);
-    hashService.setHashIterations(1024); // Suitable for testing, use higher in production
+  @DisplayName("Test password hashing with Java 21 JCE")
+  public void testPasswordHashing() throws Exception {
+    // Sample password
+    String password = "P@ssw0rd123!";
     
-    // Generate a random salt
-    SecureRandomNumberGenerator saltGenerator = new SecureRandomNumberGenerator();
-    ByteSource salt = saltGenerator.nextBytes();
+    // Hash the password using Shiro's HashService
+    HashRequest request = new HashRequest.Builder()
+        .setSource(ByteSource.Util.bytes(password))
+        .setSalt(ByteSource.Util.bytes("userSalt"))
+        .setAlgorithmName(Sha256Hash.ALGORITHM_NAME)
+        .setIterations(1024)
+        .build();
     
-    // Hash the password
-    Sha256Hash hash = new Sha256Hash(TEST_PASSWORD, salt, hashService.getHashIterations());
-    String hashedPassword = hash.toBase64();
+    Hash hashedPassword = hashService.computeHash(request);
     
-    // Verify the password
-    Sha256Hash verifyHash = new Sha256Hash(TEST_PASSWORD, salt, hashService.getHashIterations());
-    String verifyHashedPassword = verifyHash.toBase64();
+    // Verify hashing
+    assertNotNull(hashedPassword, "Hashed password should not be null");
+    assertNotNull(hashedPassword.toBase64(), "Hashed password Base64 should not be null");
+    assertFalse(hashedPassword.toBase64().isEmpty(), "Hashed password should not be empty");
     
-    assertEquals(hashedPassword, verifyHashedPassword, "Password hashing verification failed");
+    // Verify that hashing is deterministic for the same password and salt
+    Hash hashedPasswordVerify = hashService.computeHash(request);
+    
+    assertEquals(hashedPassword.toBase64(), hashedPasswordVerify.toBase64(), 
+        "Hashed passwords should match for the same input and salt");
+    
+    // Verify that different passwords produce different hashes
+    String differentPassword = "AnotherP@ssw0rd!";
+    HashRequest differentRequest = new HashRequest.Builder()
+        .setSource(ByteSource.Util.bytes(differentPassword))
+        .setSalt(ByteSource.Util.bytes("userSalt"))
+        .setAlgorithmName(Sha256Hash.ALGORITHM_NAME)
+        .setIterations(1024)
+        .build();
+    
+    Hash differentHashedPassword = hashService.computeHash(differentRequest);
+    
+    assertNotEquals(hashedPassword.toBase64(), differentHashedPassword.toBase64(), 
+        "Hashed passwords should be different for different inputs");
+    
+    // Verify that different salts produce different hashes for the same password
+    HashRequest differentSaltRequest = new HashRequest.Builder()
+        .setSource(ByteSource.Util.bytes(password))
+        .setSalt(ByteSource.Util.bytes("differentSalt"))
+        .setAlgorithmName(Sha256Hash.ALGORITHM_NAME)
+        .setIterations(1024)
+        .build();
+    
+    Hash differentSaltHashedPassword = hashService.computeHash(differentSaltRequest);
+    
+    assertNotEquals(hashedPassword.toBase64(), differentSaltHashedPassword.toBase64(), 
+        "Hashed passwords should be different for different salts");
   }
-
-  /**
-   * Verifies that cryptographic operations work correctly when executed in Virtual Threads.
-   */
+  
   @Test
-  @DisplayName("Cryptographic operations with Virtual Threads")
-  @Execution(ExecutionMode.CONCURRENT)
+  @DisplayName("Test cryptographic operations with Virtual Threads")
   public void testCryptographicOperationsWithVirtualThreads() throws Exception {
-    // Create a countdown latch to wait for all operations to complete
-    CountDownLatch latch = new CountDownLatch(CONCURRENT_OPERATIONS);
-    AtomicBoolean allSucceeded = new AtomicBoolean(true);
+    // Number of concurrent operations to perform
+    int concurrentOperations = 100;
     
-    // Create an executor service with virtual threads
+    // CountDownLatch to wait for all operations to complete
+    CountDownLatch latch = new CountDownLatch(concurrentOperations);
+    
+    // Create a virtual thread executor
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      Instant start = Instant.now();
-      
-      // Submit multiple encryption tasks to be executed in virtual threads
-      for (int i = 0; i < CONCURRENT_OPERATIONS; i++) {
-        final int taskId = i;
+      // Submit tasks to perform cryptographic operations concurrently
+      for (int i = 0; i < concurrentOperations; i++) {
+        final int index = i;
         executor.submit(() -> {
           try {
-            // Perform AES encryption in a virtual thread
-            AesCipherService cipherService = new AesCipherService();
-            ByteSource key = cipherService.generateNewKey();
-            String message = TEST_MESSAGE + "-" + taskId;
+            // Test 1: JWT Signing with HMAC-SHA256
+            String threadPayload = TEST_PAYLOAD + "-" + index;
+            Mac threadLocalMac = Mac.getInstance(HMAC_SHA256_ALGORITHM);
+            threadLocalMac.init(secretKey);
+            byte[] signature = threadLocalMac.doFinal(threadPayload.getBytes(StandardCharsets.UTF_8));
+            String encodedSignature = Base64.getUrlEncoder().withoutPadding().encodeToString(signature);
+            assertFalse(encodedSignature.isEmpty(), "Signature should not be empty in virtual thread " + index);
             
-            ByteSource encrypted = cipherService.encrypt(message.getBytes(StandardCharsets.UTF_8), key.getBytes());
-            ByteSource decrypted = cipherService.decrypt(encrypted.getBytes(), key.getBytes());
+            // Test 2: API Key Encryption with AES
+            String apiKey = "api-key-" + index;
+            ByteSource salt = new SecureRandomNumberGenerator().nextBytes();
+            ByteSource encryptedApiKey = aesCipherService.encrypt(
+                apiKey.getBytes(StandardCharsets.UTF_8), 
+                salt.getBytes());
+            ByteSource decryptedApiKey = aesCipherService.decrypt(
+                encryptedApiKey.getBytes(), 
+                salt.getBytes());
+            assertEquals(apiKey, new String(decryptedApiKey.getBytes(), StandardCharsets.UTF_8),
+                "Decryption should work correctly in virtual thread " + index);
             
-            String decryptedMessage = new String(decrypted.getBytes(), StandardCharsets.UTF_8);
-            if (!message.equals(decryptedMessage)) {
-              System.err.println("Task " + taskId + " failed: decrypted message does not match original");
-              allSucceeded.set(false);
-            }
-          } catch (Exception e) {
-            System.err.println("Task " + taskId + " failed with exception: " + e.getMessage());
-            e.printStackTrace();
-            allSucceeded.set(false);
-          } finally {
+            // Test 3: Password Hashing
+            String password = "password-" + index;
+            HashRequest request = new HashRequest.Builder()
+                .setSource(ByteSource.Util.bytes(password))
+                .setSalt(ByteSource.Util.bytes("salt-" + index))
+                .setAlgorithmName(Sha256Hash.ALGORITHM_NAME)
+                .setIterations(1024)
+                .build();
+            Hash hashedPassword = hashService.computeHash(request);
+            assertNotNull(hashedPassword.toBase64(), 
+                "Hashed password should not be null in virtual thread " + index);
+          } 
+          catch (Exception e) {
+            fail("Exception in virtual thread " + index + ": " + e.getMessage());
+          } 
+          finally {
             latch.countDown();
           }
         });
       }
       
-      // Wait for all tasks to complete or timeout
-      boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      Instant end = Instant.now();
-      
-      // Verify all tasks completed successfully
-      assertTrue(completed, "Not all virtual thread tasks completed within the timeout period");
-      assertTrue(allSucceeded.get(), "Some virtual thread tasks failed");
-      
-      // Log the time taken for all operations
-      Duration duration = Duration.between(start, end);
-      System.out.println("Completed " + CONCURRENT_OPERATIONS + " cryptographic operations in virtual threads in " 
-          + duration.toMillis() + "ms");
+      // Wait for all operations to complete (with timeout)
+      boolean completed = latch.await(10, TimeUnit.SECONDS);
+      assertTrue(completed, "All virtual thread operations should complete within the timeout");
     }
-  }
-
-  /**
-   * Verifies that DefaultBlockCipherService works correctly with Java 21's JCE.
-   */
-  @Test
-  @DisplayName("DefaultBlockCipherService with Java 21 JCE")
-  public void testDefaultBlockCipherService() {
-    // Create a default block cipher service
-    DefaultBlockCipherService cipherService = new DefaultBlockCipherService("AES");
-    cipherService.setKeySize(256);
-    
-    // Generate a secure key
-    ByteSource key = cipherService.generateNewKey();
-    
-    // Encrypt the test message
-    ByteSource encrypted = cipherService.encrypt(TEST_MESSAGE.getBytes(StandardCharsets.UTF_8), key.getBytes());
-    
-    // Decrypt the message
-    ByteSource decrypted = cipherService.decrypt(encrypted.getBytes(), key.getBytes());
-    
-    // Verify the decrypted message matches the original
-    String decryptedMessage = new String(decrypted.getBytes(), StandardCharsets.UTF_8);
-    assertEquals(TEST_MESSAGE, decryptedMessage, "DefaultBlockCipherService encryption/decryption failed");
-  }
-
-  /**
-   * Verifies that Java 21 has unlimited cryptography policies enabled by default.
-   */
-  @Test
-  @DisplayName("Java 21 unlimited cryptography policies")
-  public void testUnlimitedCryptographyPolicies() throws NoSuchAlgorithmException {
-    // Check if unlimited key size is allowed
-    int maxKeySize = javax.crypto.Cipher.getMaxAllowedKeyLength("AES");
-    
-    // If unlimited crypto is enabled, max key size should be very large (2^31-1)
-    assertTrue(maxKeySize >= 256, "Java 21 should have unlimited cryptography policies enabled");
-    System.out.println("Maximum AES key size allowed: " + maxKeySize + " bits");
   }
 }

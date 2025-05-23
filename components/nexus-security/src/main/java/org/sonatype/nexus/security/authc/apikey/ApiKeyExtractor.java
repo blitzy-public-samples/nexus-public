@@ -24,30 +24,28 @@ import org.sonatype.nexus.security.authc.NexusApiKeyAuthenticationToken;
  * NexusApiKeyAuthenticationToken}s that has {@link NexusApiKeyAuthenticationToken#getPrincipal()} equal as name of
  * named component implementing this interface.
  * <p>
- * Implementations of this interface should be designed to be compatible with Java 21 Virtual Threads. This means:
+ * Implementations of this interface should be designed to be compatible with Java 21 Virtual Threads for optimal
+ * performance in high-throughput scenarios. Virtual Threads are lightweight threads that dramatically reduce the
+ * effort of writing, maintaining, and debugging concurrent applications.
+ * <p>
+ * When implementing this interface, consider the following best practices for Virtual Thread compatibility:
  * <ul>
- *   <li>Avoid using thread-local storage that might not be properly propagated across Virtual Thread scheduling points</li>
- *   <li>Ensure any blocking operations are Virtual Thread aware to prevent carrier thread pinning</li>
- *   <li>Consider using non-blocking I/O operations when performing network or file operations</li>
- *   <li>Avoid synchronization on objects that might be held across Virtual Thread scheduling points</li>
+ *   <li>Avoid using synchronized blocks or methods around I/O operations to prevent thread pinning</li>
+ *   <li>Minimize use of ThreadLocal variables as they can increase memory usage with many virtual threads</li>
+ *   <li>Ensure any blocking operations are designed to properly yield to allow the carrier thread to be reused</li>
  * </ul>
  * <p>
- * Implementations can leverage Java 21 pattern matching features for more concise and readable code when handling
- * different types of requests or headers. For example:
+ * Java 21 introduces pattern matching for type checking which can be leveraged in implementations to write
+ * more concise and readable code when handling different types of requests or headers. For example:
  * <pre>
- * // Using pattern matching with instanceof for type checking
- * if (request instanceof HttpServletRequest httpRequest && httpRequest.getHeader("X-API-Key") != null) {
- *     return httpRequest.getHeader("X-API-Key");
+ * public String extract(HttpServletRequest request) {
+ *     if (request instanceof CustomRequestType customRequest) {
+ *         // Use customRequest directly without casting
+ *         return customRequest.getSpecialHeader();
+ *     }
+ *     // Handle other request types
+ *     return null;
  * }
- * 
- * // Using pattern matching in switch expressions for different request types
- * return switch (request) {
- *     case HttpServletRequest httpRequest when httpRequest.getHeader("X-API-Key") != null ->
- *         httpRequest.getHeader("X-API-Key");
- *     case HttpServletRequest httpRequest when httpRequest.getParameter("apiKey") != null ->
- *         httpRequest.getParameter("apiKey");
- *     default -> null;
- * };
  * </pre>
  */
 public interface ApiKeyExtractor
@@ -56,12 +54,8 @@ public interface ApiKeyExtractor
    * Attempts to extract API key as string, whatever part (or parts) of the {@link HttpServletRequest}
    * it needs and returns the extracted key, or returns {@code null}.
    * <p>
-   * This method should be implemented to be compatible with Java 21 Virtual Threads to ensure optimal
-   * performance in high-concurrency scenarios. Implementations should avoid operations that could cause
-   * thread pinning, such as blocking I/O operations without proper Virtual Thread support.
-   *
-   * @param request The HTTP servlet request to extract the API key from
-   * @return The extracted API key as a string, or {@code null} if no API key could be extracted
+   * This method may be called from a Virtual Thread in Java 21 environments. Implementations should
+   * ensure they don't block the underlying carrier thread unnecessarily when performing I/O operations.
    */
   @Nullable
   String extract(HttpServletRequest request);

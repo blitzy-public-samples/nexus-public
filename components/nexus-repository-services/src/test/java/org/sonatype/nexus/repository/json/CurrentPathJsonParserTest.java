@@ -15,14 +15,14 @@ package org.sonatype.nexus.repository.json;
 import java.io.IOException;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.common.test.Java21TestGroup;
 
 import com.fasterxml.jackson.core.JsonFactory;
+import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.experimental.categories.Category;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.sonatype.nexus.testcommon.Java21TestGroup;
 
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.notNullValue;

@@ -34,15 +34,23 @@ import org.eclipse.sisu.inject.BeanLocator;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.EVENTS;
-import static org.sonatype.nexus.common.event.EventBusFactory.reentrantAsyncEventBus;
 import static org.sonatype.nexus.common.event.EventBusFactory.reentrantEventBus;
+import static org.sonatype.nexus.common.event.EventBusFactory.reentrantVirtualThreadEventBus;
 
 /**
  * Default {@link EventManager} implementation.
  * 
- * Uses Java 21 Virtual Threads for asynchronous event processing, providing high-throughput
- * event handling with minimal resource overhead. This implementation maintains event ordering
- * through affinity-based processing while leveraging the scalability benefits of virtual threads.
+ * This implementation uses Java 21 Virtual Threads for asynchronous event processing,
+ * providing significant improvements in concurrency and resource utilization:
+ * 
+ * - Lightweight threads that consume minimal resources compared to platform threads
+ * - Automatic yielding during blocking I/O operations, freeing carrier threads for other work
+ * - Ability to handle many more concurrent operations without thread pool exhaustion
+ * - Simplified programming model compared to reactive approaches
+ * 
+ * The event manager maintains two event buses:
+ * 1. A synchronous bus for immediate event delivery on the calling thread
+ * 2. An asynchronous bus using Virtual Threads for concurrent event processing
  */
 @Named
 @ManagedLifecycle(phase = EVENTS)
@@ -66,7 +74,7 @@ public class EventManagerImpl
     this.eventExecutor = checkNotNull(eventExecutor);
 
     this.eventBus = reentrantEventBus("nexus");
-    this.asyncBus = reentrantAsyncEventBus("nexus.async", eventExecutor);
+    this.asyncBus = reentrantVirtualThreadEventBus("nexus.async");
   }
 
   /**
@@ -141,14 +149,6 @@ public class EventManagerImpl
     }
   }
 
-  /**
-   * Checks if all asynchronous event processing has completed.
-   * 
-   * With Virtual Threads, this indicates whether all event-related virtual threads
-   * have completed their work, rather than checking a fixed-size thread pool.
-   * 
-   * @return true if there are no pending asynchronous events being processed
-   */
   @Override
   @VisibleForTesting
   @ManagedAttribute
@@ -156,14 +156,6 @@ public class EventManagerImpl
     return eventExecutor.isCalmPeriod();
   }
 
-  /**
-   * Checks if affinity-based event ordering is enabled.
-   * 
-   * When enabled, events with the same affinity value are processed sequentially
-   * even when using Virtual Threads, ensuring ordering guarantees are maintained.
-   * 
-   * @return true if affinity-based event ordering is enabled
-   */
   @Override
   public boolean isAffinityEnabled() {
     return eventExecutor.isAffinityEnabled();

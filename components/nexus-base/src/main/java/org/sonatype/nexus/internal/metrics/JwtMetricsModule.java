@@ -12,11 +12,9 @@
  */
 package org.sonatype.nexus.internal.metrics;
 
+import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
-
 import javax.inject.Named;
-
-import com.google.inject.name.Names;
 
 import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.security.FilterChainModule;
@@ -27,8 +25,11 @@ import org.sonatype.nexus.security.authc.AntiCsrfFilter;
 import org.sonatype.nexus.security.authc.NexusAuthenticationFilter;
 import org.sonatype.nexus.security.authz.PermissionsFilter;
 
+import com.google.inject.name.Names;
 import io.dropwizard.metrics.Clock;
 import io.dropwizard.metrics.MetricRegistry;
+import io.prometheus.client.CollectorRegistry;
+import io.prometheus.client.dropwizard.DropwizardExports;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
@@ -55,22 +56,31 @@ public class JwtMetricsModule
 
     final Clock clock = Clock.defaultClock();
     bind(Clock.class).toInstance(clock);
-
-    // Create a JsonMapper with Java 21 pattern matching support
-    final JsonMapper jsonMapper = JsonMapper.builder()
+    
+    // Create a virtual thread-based executor for metrics processing
+    final Executor virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    bind(Executor.class).annotatedWith(Names.named("metricsExecutor")).toInstance(virtualThreadExecutor);
+    
+    // Configure ObjectMapper with Java 21 pattern matching support
+    final ObjectMapper objectMapper = JsonMapper.builder()
+        .enable(com.fasterxml.jackson.databind.MapperFeature.ACCEPT_CASE_INSENSITIVE_PROPERTIES)
         .build();
-    final JsonFactory jsonFactory = new JsonFactory(jsonMapper);
+    final JsonFactory jsonFactory = new JsonFactory(objectMapper);
     bind(JsonFactory.class).toInstance(jsonFactory);
     
-    // Register VirtualThreadMetrics component for tracking Virtual Thread behavior
+    // Register the main metrics registry
     final MetricRegistry metricRegistry = new MetricRegistry();
-    metricRegistry.register("virtualThreads", new VirtualThreadMetrics());
     bind(MetricRegistry.class).toInstance(metricRegistry);
     
-    // Configure Virtual Thread-based executor service for metrics processing
-    bind(java.util.concurrent.ExecutorService.class)
-        .annotatedWith(Names.named("metricsExecutor"))
-        .toInstance(Executors.newVirtualThreadPerTaskExecutor());
+    // Register Java 21 specific metrics registry with VirtualThreadMetrics
+    final MetricRegistry java21Registry = new MetricRegistry().register("jvm.21", new VirtualThreadMetrics());
+    bind(MetricRegistry.class).annotatedWith(Names.named("java21Registry")).toInstance(java21Registry);
+    
+    // Configure Prometheus integration
+    final CollectorRegistry collectorRegistry = CollectorRegistry.defaultRegistry;
+    collectorRegistry.register(new DropwizardExports(metricRegistry));
+    collectorRegistry.register(new DropwizardExports(java21Registry));
+    bind(CollectorRegistry.class).toInstance(collectorRegistry);
 
     install(new MetricsServletModule(MOUNT_POINT)
     {
@@ -94,6 +104,6 @@ public class JwtMetricsModule
       }
     });
 
-    log.info("Metrics support configured with Java 21 Virtual Threads");
+    log.info("Metrics support configured with Java 21 virtual thread capabilities");
   }
 }

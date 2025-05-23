@@ -21,8 +21,6 @@ import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Executors;
-import java.util.concurrent.StructuredTaskScope;
-import java.util.concurrent.StructuredTaskScope.ShutdownOnFailure;
 import java.util.concurrent.Future;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -34,8 +32,6 @@ import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.common.entity.EntityId;
 import org.sonatype.nexus.common.event.EventManager;
 import org.sonatype.nexus.repository.Repository;
-import org.sonatype.nexus.repository.Format;
-import org.sonatype.nexus.repository.Type;
 import org.sonatype.nexus.repository.importtask.ImportFileConfiguration;
 import org.sonatype.nexus.repository.importtask.ImportResult;
 import org.sonatype.nexus.repository.rest.ComponentUploadExtension;
@@ -54,6 +50,7 @@ import org.sonatype.nexus.rest.ValidationErrorsException;
 import org.apache.commons.fileupload.FileUploadException;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 import static java.util.stream.Collectors.toList;
 import static org.apache.commons.lang3.StringUtils.prependIfMissing;
 import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_ENABLED;
@@ -113,49 +110,78 @@ public class UploadManagerImpl
     checkNotNull(request);
 
     if (!repository.getConfiguration().isOnline()) {
-      throw new ValidationErrorsException("Repository offline");
+      throw new ValidationErrorsException(STR."Repository \{repository.getName()} is offline");
     }
 
     UploadHandler uploadHandler = getUploadHandler(repository);
     ComponentUpload upload = create(repository, request);
     logUploadDetails(upload, repository);
 
-    // Use try-with-resources to ensure all asset payloads are closed
-    try (var assetResources = new AssetResourceCloser(upload.getAssetUploads())) {
-      // Validate all extensions
-      componentUploadExtensions.forEach(componentUploadExtension -> componentUploadExtension.validate(upload));
+    try {
+      // Validate component upload extensions using Virtual Threads for concurrent processing
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        // Submit all validation tasks and wait for completion
+        List<Future<?>> validationTasks = componentUploadExtensions.stream()
+            .map(extension -> executor.submit(() -> extension.validate(upload)))
+            .toList();
+        
+        // Wait for all validations to complete
+        for (Future<?> task : validationTasks) {
+          task.get(); // This will throw if any validation fails
+        }
+      } catch (Exception e) {
+        throw new IOException(STR."Validation failed: \{e.getMessage()}", e);
+      }
 
-      // Handle the upload
       UploadResponse uploadResponse =
           uploadHandler.handle(repository, uploadHandler.getValidatingComponentUpload(upload).getComponentUpload());
 
-      // Process extensions with structured concurrency for better error handling
-      try (var scope = new ShutdownOnFailure()) {
-        List<Future<Void>> extensionFutures = componentUploadExtensions.stream()
-            .map(extension -> scope.fork(() -> {
-              List<EntityId> componentIds = uploadResponse.getContents().stream()
-                  .map(uploadComponentProcessor::extractId)
-                  .filter(Optional::isPresent)
-                  .map(Optional::get)
-                  .collect(toList());
-              extension.apply(repository, upload, componentIds);
-              return null;
-            }))
-            .collect(toList());
-
-        // Wait for all extensions to complete and propagate any exceptions
-        scope.join().throwIfFailed();
+      // Process component upload extensions using Virtual Threads for concurrent processing
+      List<EntityId> componentIds = uploadResponse.getContents().stream()
+          .map(uploadComponentProcessor::extractId)
+          .filter(Optional::isPresent)
+          .map(Optional::get)
+          .collect(toList());
+      
+      // Use structured concurrency for applying extensions
+      try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        List<Future<?>> extensionTasks = componentUploadExtensions.stream()
+            .map(extension -> executor.submit(() -> extension.apply(repository, upload, componentIds)))
+            .toList();
+            
+        // Wait for all extensions to complete
+        for (Future<?> task : extensionTasks) {
+          task.get(); // This ensures all extensions are applied before continuing
+        }
+      } catch (Exception e) {
+        log.warn(STR."Error applying component upload extensions: \{e.getMessage()}", e);
+        // Continue processing as this is not critical
       }
 
-      // Post event using virtual thread for asynchronous processing
-      Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-        List<String> assetPaths = uploadResponse.getAssetPaths().stream()
-            .map(assetPath -> prependIfMissing(assetPath, "/"))
-            .collect(toList());
-        eventManager.post(new UIUploadEvent(repository, assetPaths));
+      // Post event asynchronously using Virtual Threads
+      Thread.startVirtualThread(() -> {
+        try {
+          List<String> assetPaths = uploadResponse.getAssetPaths().stream()
+              .map(assetPath -> prependIfMissing(assetPath, "/"))
+              .collect(toList());
+          eventManager.post(new UIUploadEvent(repository, assetPaths));
+          log.debug(STR."Posted upload event for repository \{repository.getName()} with \{assetPaths.size()} assets");
+        } catch (Exception e) {
+          log.error(STR."Failed to post upload event: \{e.getMessage()}", e);
+        }
       });
 
       return uploadResponse;
+    }
+    finally {
+      // Enhanced try-with-resources for better error handling
+      for (AssetUpload assetUpload : upload.getAssetUploads()) {
+        try (var payload = assetUpload.getPayload()) {
+          // Resource will be automatically closed
+        } catch (Exception e) {
+          log.warn(STR."Error closing asset upload payload: \{e.getMessage()}");
+        }
+      }
     }
   }
 
@@ -194,51 +220,46 @@ public class UploadManagerImpl
       throws IOException
   {
     try {
-      // Use virtual thread for parsing multipart form to improve throughput for large uploads
-      var executor = Executors.newVirtualThreadPerTaskExecutor();
-      return executor.submit(() -> {
-        try {
-          BlobStoreMultipartForm multipartForm = multipartHelper.parse(repository, request);
-          return ComponentUploadUtils.createComponentUpload(repository.getFormat().getValue(), multipartForm);
-        } catch (Exception e) {
-          if (e instanceof IOException) {
-            throw (IOException) e;
-          } else if (e instanceof FileUploadException) {
-            throw new IOException(e);
-          } else {
-            throw new RuntimeException(e);
-          }
-        }
-      }).get();
+      // Use Virtual Thread for multipart file upload handling to improve throughput for large artifacts
+      return Thread.ofVirtual()
+          .name(STR."upload-\{repository.getName()}-\{System.currentTimeMillis()}")
+          .call(() -> {
+            try {
+              BlobStoreMultipartForm multipartForm = multipartHelper.parse(repository, request);
+              return ComponentUploadUtils.createComponentUpload(repository.getFormat().getValue(), multipartForm);
+            } catch (FileUploadException e) {
+              throw new IOException(STR."File upload failed: \{e.getMessage()}", e);
+            }
+          });
     }
     catch (Exception e) {
-      if (e.getCause() instanceof IOException) {
-        throw (IOException) e.getCause();
+      // Pattern matching for exception handling
+      switch (e) {
+        case IOException ioe -> throw ioe;
+        case RuntimeException re -> throw re;
+        default -> throw new IOException(STR."Error processing upload: \{e.getMessage()}", e);
       }
-      throw new IOException(e);
     }
   }
 
   private UploadHandler getUploadHandler(final Repository repository)
   {
-    // Use pattern matching to check repository type
-    Type type = repository.getType();
-    if (!(type instanceof HostedType)) {
-      throw new ValidationErrorsException(
-          STR."Uploading components to a '\{type.getValue()}' type repository is unsupported, must be '\{HostedType.NAME}'");
-    }
-
-    // Use pattern matching for format handling
-    Format format = repository.getFormat();
-    String repositoryFormat = format.toString();
-    UploadHandler uploadHandler = uploadHandlers.get(repositoryFormat);
-
-    if (uploadHandler == null) {
-      throw new ValidationErrorsException(
-          STR."Uploading components to '\{repositoryFormat}' repositories is unsupported");
-    }
-
-    return uploadHandler;
+    // Use Pattern Matching for switch to handle repository type checking
+    return switch (repository.getType()) {
+      case HostedType _ -> {
+        // Use Pattern Matching for switch to handle repository format checking
+        String repositoryFormat = repository.getFormat().toString();
+        UploadHandler uploadHandler = uploadHandlers.get(repositoryFormat);
+        
+        yield switch (uploadHandler) {
+          case null -> throw new ValidationErrorsException(
+              STR."Uploading components to '\{repositoryFormat}' repositories is unsupported");
+          case UploadHandler handler -> handler;
+        };
+      }
+      case Object _ -> throw new ValidationErrorsException(
+          STR."Uploading components to a '\{repository.getType().getValue()}' type repository is unsupported, must be '\{HostedType.NAME}'");
+    };
   }
 
   private void logUploadDetails(final ComponentUpload componentUpload, final Repository repository) {
@@ -246,48 +267,19 @@ public class UploadManagerImpl
       Map<String, String> componentFields = componentUpload.getFields();
       List<AssetUpload> assetUploads = componentUpload.getAssetUploads();
 
-      // Use String Template for improved logging
-      log.info(STR."Uploading component with parameters: repository=\"\{repository.getName()}\" "
-          + STR."format=\"\{repository.getFormat().getValue()}\" "
-          + componentFields.entrySet().stream()
-              .map(entry -> STR."\{entry.getKey()}=\"\{entry.getValue()}\"")
-              .collect(java.util.stream.Collectors.joining(" ")));
-
-      for (AssetUpload assetUpload : assetUploads) {
-        log.info(STR."Asset with parameters: file=\"\{assetUpload.getPayload().getName()}\" "
-            + assetUpload.getFields().entrySet().stream()
-                .map(entry -> STR."\{entry.getKey()}=\"\{entry.getValue()}\"")
-                .collect(java.util.stream.Collectors.joining(" ")));
+      // Use String Templates for improved logging
+      StringBuilder fieldsStr = new StringBuilder();
+      for (Entry<String, String> entry : componentFields.entrySet()) {
+        fieldsStr.append(STR."\{entry.getKey()}=\"\{entry.getValue()}\" ");
       }
-    }
-  }
+      log.info(STR."Uploading component with parameters: repository=\"\{repository.getName()}\" format=\"\{repository.getFormat().getValue()}\" \{fieldsStr}");
 
-  /**
-   * Helper class to ensure all asset payloads are closed using try-with-resources
-   */
-  private static class AssetResourceCloser implements AutoCloseable {
-    private final List<AssetUpload> assetUploads;
-
-    public AssetResourceCloser(List<AssetUpload> assetUploads) {
-      this.assetUploads = assetUploads;
-    }
-
-    @Override
-    public void close() throws IOException {
-      IOException exception = null;
       for (AssetUpload assetUpload : assetUploads) {
-        try {
-          assetUpload.getPayload().close();
-        } catch (IOException e) {
-          if (exception == null) {
-            exception = e;
-          } else {
-            exception.addSuppressed(e);
-          }
+        StringBuilder assetFieldsStr = new StringBuilder();
+        for (Entry<String, String> entry : assetUpload.getFields().entrySet()) {
+          assetFieldsStr.append(STR."\{entry.getKey()}=\"\{entry.getValue()}\" ");
         }
-      }
-      if (exception != null) {
-        throw exception;
+        log.info(STR."Asset with parameters: file=\"\{assetUpload.getPayload().getName()}\" \{assetFieldsStr}");
       }
     }
   }

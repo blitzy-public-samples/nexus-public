@@ -17,94 +17,109 @@ import java.util.Objects;
 import org.sonatype.nexus.repository.rest.sql.SearchField;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.lang.StringTemplate.STR;
 
 /**
  * A predicate used in an SQL query, e.g. {@code foo = 'bar'}
+ * 
+ * @since 3.60
  */
 public class SqlPredicate
     implements Expression
 {
-  private final Operand operand;
-
-  private final SearchField searchField;
-
-  private final Term term;
-  
   /**
-   * Record representation of SqlPredicate for use with record patterns.
-   * Enables efficient destructuring of predicate components.
-   *
-   * @since 3.60
+   * Record to represent the field-operand-term combination for more efficient pattern matching.
+   * This enables direct access to components through record patterns.
    */
-  public record PredicateComponents(Operand operand, SearchField searchField, Term term) {}
+  private record PredicateComponents(Operand operand, SearchField searchField, Term term) {}
 
+  private final PredicateComponents components;
+
+  /**
+   * Constructs a new SQL predicate with the specified operand, search field, and term.
+   *
+   * @param operand the operand to use in this predicate (must not be null)
+   * @param searchField the search field to use in this predicate (must not be null)
+   * @param term the term to use in this predicate (must not be null)
+   */
   public SqlPredicate(final Operand operand, final SearchField searchField, final Term term) {
-    this.operand = checkNotNull(operand);
-    this.searchField = checkNotNull(searchField);
-    this.term = checkNotNull(term);
+    checkNotNull(operand, "Operand cannot be null");
+    checkNotNull(searchField, "SearchField cannot be null");
+    checkNotNull(term, "Term cannot be null");
+    this.components = new PredicateComponents(operand, searchField, term);
   }
 
   @Override
   public Operand operand() {
-    return operand;
+    return components.operand();
   }
 
   /**
    * The database field on the left of the operand in this predicate.
+   *
+   * @return the search field used in this predicate
    */
   public SearchField getSearchField() {
-    return searchField;
+    return components.searchField();
   }
 
   /**
    * The term on the right of the operand in this predicate.
+   *
+   * @return the term used in this predicate
    */
   public Term getTerm() {
-    return term;
+    return components.term();
   }
-  
+
   /**
-   * Returns the components of this predicate as a record for use with record patterns.
-   * This enables more efficient field-operand-term handling through pattern matching.
+   * Extracts the components of this predicate using record pattern matching.
+   * This demonstrates the use of record patterns for efficient component access.
    *
-   * @return record containing the predicate components
-   * @since 3.60
+   * @return the components of this predicate as a string
    */
-  public PredicateComponents components() {
-    return new PredicateComponents(operand, searchField, term);
-  }
-  
-  /**
-   * Processes this predicate using record pattern matching for more efficient component access.
-   * Demonstrates the use of record patterns for field-operand-term handling.
-   *
-   * @param processor function to process the predicate components
-   * @param <R> the return type
-   * @return the result of processing
-   * @since 3.60
-   */
-  public <R> R processWithPatternMatching(java.util.function.Function<PredicateComponents, R> processor) {
-    return processor.apply(components());
+  public String getComponentsAsString() {
+    // Using record pattern to extract components in a single step
+    if (components instanceof PredicateComponents(var op, var field, var t)) {
+      return STR."Operand: \{op}, Field: \{field}, Term: \{t}";
+    }
+    return "Invalid components";
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(operand, searchField, term);
+    // Using record pattern to extract components for hash code calculation
+    if (components instanceof PredicateComponents(var op, var field, var t)) {
+      return Objects.hash(op, field, t);
+    }
+    return 0;
   }
 
   @Override
   public boolean equals(final Object obj) {
-    // Using pattern matching for instanceof check to improve type handling safety
-    return this == obj || (obj instanceof SqlPredicate other && 
-        operand == other.operand && 
-        searchField == other.searchField && 
-        Objects.equals(term, other.term));
+    if (this == obj)
+      return true;
+    if (obj == null)
+      return false;
+    
+    // Using pattern matching for instanceof to simplify type checking and casting
+    if (obj instanceof SqlPredicate other) {
+      // Using record patterns to extract components from both objects for comparison
+      if (components instanceof PredicateComponents(var thisOp, var thisField, var thisTerm) &&
+          other.components instanceof PredicateComponents(var otherOp, var otherField, var otherTerm)) {
+        return thisOp == otherOp && 
+               thisField == otherField && 
+               Objects.equals(thisTerm, otherTerm);
+      }
+    }
+    return false;
   }
 
   @Override
   public String toString() {
-    // Using Java 21 String Templates for improved debugging output
-    return STR."SqlPredicate[searchField=\{searchField}, operand=\{operand}, term=\{term}]";
+    // Using String Templates with record pattern for improved debugging output
+    if (components instanceof PredicateComponents(var op, var field, var term)) {
+      return STR."SqlPredicate [searchField=\{field}, operand=\{op}, term=\{term}]";
+    }
+    return "SqlPredicate [invalid]";
   }
 }

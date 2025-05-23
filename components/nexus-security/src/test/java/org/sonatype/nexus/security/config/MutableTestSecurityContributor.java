@@ -12,66 +12,55 @@
  */
 package org.sonatype.nexus.security.config;
 
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.sonatype.goodies.common.Locks;
 import org.sonatype.nexus.security.privilege.WildcardPrivilegeDescriptor;
 
 /**
- * A mutable security contributor for testing purposes with enhanced thread safety for Java 21 Virtual Threads.
- * 
- * @since 3.1
+ * A mutable security contributor for testing purposes.
+ * Enhanced for thread-safety to support testing with Java 21 Virtual Threads.
  */
 public class MutableTestSecurityContributor
     extends MutableSecurityContributor
 {
+  // Using AtomicBoolean for thread-safe access across virtual threads
   private final AtomicBoolean configRequested = new AtomicBoolean(false);
-  
+
+  // Using AtomicInteger for thread-safe counter increments across virtual threads
   private static final AtomicInteger INSTANCE_COUNT = new AtomicInteger(1);
-  
-  private final ReadWriteLock privIdLock = new ReentrantReadWriteLock();
+
+  // Initialized once during construction and immutable thereafter
   private final String privId;
-  
+
+  /**
+   * Constructs a new instance with a unique privilege ID.
+   */
   public MutableTestSecurityContributor() {
     this.privId = "priv-" + INSTANCE_COUNT.getAndIncrement();
   }
 
   @Override
   protected void initial(final SecurityConfiguration model) {
-    model.addPrivilege(WildcardPrivilegeDescriptor.privilege("foo:bar:" + getId() + ":read"));
+    model.addPrivilege(WildcardPrivilegeDescriptor.privilege("foo:bar:" + privId + ":read"));
   }
 
   /**
-   * Returns the unique identifier for this contributor.
-   * Thread-safe for use with Virtual Threads.
+   * Returns the unique privilege ID for this contributor.
    */
   public String getId() {
-    Lock lock = Locks.read(privIdLock);
-    try {
-      return privId;
-    }
-    finally {
-      lock.unlock();
-    }
+    return privId;
   }
 
   /**
-   * Sets the configRequested flag in a thread-safe manner.
-   * 
-   * @param requested the new value for the configRequested flag
+   * Thread-safe method to set the config requested flag.
    */
-  public void setConfigRequested(boolean requested) {
-    configRequested.set(requested);
+  public void setConfigRequested(boolean configRequested) {
+    this.configRequested.set(configRequested);
   }
 
   /**
-   * Checks if configuration was requested in a thread-safe manner.
-   * 
-   * @return true if configuration was requested
+   * Thread-safe method to check if config was requested.
    */
   public boolean wasConfigRequested() {
     return configRequested.get();
@@ -84,10 +73,7 @@ public class MutableTestSecurityContributor
   }
 
   /**
-   * Sets the dirty state of this contributor.
-   * Thread-safe for use with Virtual Threads.
-   * 
-   * @param dirty whether to mark the model as dirty
+   * Thread-safe method to mark the model as dirty.
    */
   public void setDirty(boolean dirty) {
     if (dirty) {
@@ -96,14 +82,5 @@ public class MutableTestSecurityContributor
         // marks model as dirty
       });
     }
-  }
-  
-  /**
-   * Creates a new instance of this contributor that can be used in Virtual Thread tests.
-   * 
-   * @return a new thread-safe instance
-   */
-  public static MutableTestSecurityContributor forVirtualThreadTest() {
-    return new MutableTestSecurityContributor();
   }
 }

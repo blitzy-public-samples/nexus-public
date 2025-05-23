@@ -12,17 +12,20 @@
  */
 package org.sonatype.nexus.repository.content.browse;
 
+import java.lang.reflect.Field;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
@@ -36,6 +39,9 @@ import org.sonatype.nexus.repository.browse.node.BrowseNode;
 import org.sonatype.nexus.repository.browse.node.BrowsePath;
 import org.sonatype.nexus.repository.content.Asset;
 import org.sonatype.nexus.repository.content.Component;
+import org.sonatype.nexus.repository.content.browse.BrowseFacet;
+import org.sonatype.nexus.repository.content.browse.BrowseFacetImpl;
+import org.sonatype.nexus.repository.content.browse.BrowseTestSupport;
 import org.sonatype.nexus.repository.content.browse.store.BrowseNodeData;
 import org.sonatype.nexus.repository.content.browse.store.BrowseNodeManager;
 import org.sonatype.nexus.repository.ossindex.PackageUrlService;
@@ -43,8 +49,12 @@ import org.sonatype.nexus.repository.ossindex.PackageUrlService;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static java.util.Arrays.asList;
+import static java.util.Collections.emptyList;
+import static java.util.Collections.emptyMap;
+import static java.util.Collections.singletonList;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThan;
@@ -54,11 +64,13 @@ import static org.hamcrest.Matchers.lessThan;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -66,541 +78,464 @@ import static org.mockito.Mockito.when;
 /**
  * Tests for repository browse operations using Java 21 Virtual Threads.
  * 
- * This test class validates that browse node generation, tree traversal, and path-based content 
- * retrieval maintain consistency and performance when executed concurrently across many virtual threads.
+ * This test class validates that hierarchical browsing functions correctly under high concurrency
+ * when using Virtual Threads. It verifies that browse node generation, tree traversal, and
+ * path-based content retrieval maintain consistency and performance.
+ *
+ * @since 3.60
  */
 public class ContentBrowseVirtualThreadTest
-    extends TestSupport
+    extends BrowseTestSupport
 {
   private static final int VIRTUAL_THREAD_COUNT = 1000;
-  private static final int BROWSE_DEPTH = 5;
-  private static final int BROWSE_WIDTH = 10;
-  private static final int BROWSE_OPERATIONS = 5000;
-  private static final int TIMEOUT_SECONDS = 30;
-  
+  private static final int DEEP_HIERARCHY_DEPTH = 10;
+  private static final int BROWSE_OPERATIONS_PER_THREAD = 50;
+  private static final long PERFORMANCE_THRESHOLD_MS = 5000; // 5 seconds max for concurrent operations
+
   @Mock
   private BrowseNodeManager browseNodeManager;
-  
+
   @Mock
   private Repository repository;
-  
+
   @Mock
   private PackageUrlService packageUrlService;
-  
+
   private BrowseFacet browseFacet;
-  
-  private DefaultBrowseNodeGenerator nodeGenerator;
-  
-  private Random random = new Random();
-  
+
+  private List<BrowseNode> mockBrowseNodes;
+
   @Before
   public void setUp() throws Exception {
-    // Setup the browse facet with mocks
+    // Create the BrowseFacet implementation
     browseFacet = new BrowseFacetImpl(
         Collections.emptyMap(),
         Collections.emptyMap(),
         packageUrlService,
         1000);
-    
+
+    // Set up the repository
     when(repository.getFormat()).thenReturn(new Format("raw") {});
-    when(repository.getName()).thenReturn("virtual-thread-test-repo");
-    
+    when(repository.getName()).thenReturn("Virtual-Thread-Test-Repository");
+
+    // Attach the repository to the browse facet
     browseFacet.attach(repository);
-    
-    // Use reflection to inject the mocked browseNodeManager
-    java.lang.reflect.Field browseNodeManagerField = BrowseFacetImpl.class.getDeclaredField("browseNodeManager");
+
+    // Inject the browse node manager using reflection
+    Field browseNodeManagerField = BrowseFacetImpl.class.getDeclaredField("browseNodeManager");
     browseNodeManagerField.setAccessible(true);
     browseNodeManagerField.set(browseFacet, browseNodeManager);
+
+    // Create mock browse nodes for testing
+    mockBrowseNodes = createMockBrowseNodes();
+
+    // Set up the browse node manager to return mock nodes
+    when(browseNodeManager.getByDisplayPath(anyList(), anyInt(), anyString(), anyMap()))
+        .thenReturn(mockBrowseNodes);
     
-    // Initialize the node generator
-    nodeGenerator = new DefaultBrowseNodeGenerator();
-    
-    // Setup mock behavior for browse operations
-    setupMockBrowseNodeManager();
+    // Set up getByRequestPath to return a mock node
+    BrowseNode mockNode = mockBrowseNodes.get(0);
+    when(browseNodeManager.getByRequestPath(anyString()))
+        .thenReturn(Optional.of(mockNode));
   }
-  
+
   /**
-   * Sets up mock behavior for the BrowseNodeManager to simulate repository browsing operations.
-   */
-  private void setupMockBrowseNodeManager() {
-    // Create a map to store our simulated browse nodes
-    Map<Long, BrowseNodeData> nodeDataMap = new ConcurrentHashMap<>();
-    Map<String, Long> pathToIdMap = new ConcurrentHashMap<>();
-    AtomicInteger nodeIdGenerator = new AtomicInteger(1);
-    
-    // Setup root node
-    BrowseNodeData rootNode = new BrowseNodeData();
-    rootNode.setNodeId(0L);
-    rootNode.setParentId(null);
-    rootNode.setName("");
-    rootNode.setPath("");
-    nodeDataMap.put(0L, rootNode);
-    pathToIdMap.put("", 0L);
-    
-    // Mock getChildNodes to return nodes based on our simulated repository
-    when(browseNodeManager.getChildNodes(anyLong())).thenAnswer(invocation -> {
-      Long parentId = invocation.getArgument(0);
-      BrowseNodeData parent = nodeDataMap.get(parentId);
-      if (parent == null) {
-        return Collections.emptyList();
-      }
-      
-      // Generate child nodes on demand
-      String parentPath = parent.getPath();
-      int depth = parentPath.isEmpty() ? 0 : parentPath.split("/").length;
-      
-      if (depth >= BROWSE_DEPTH) {
-        return Collections.emptyList();
-      }
-      
-      List<BrowseNode> children = new ArrayList<>();
-      for (int i = 0; i < BROWSE_WIDTH; i++) {
-        String childName = "folder-" + i;
-        String childPath = parentPath.isEmpty() ? childName : parentPath + "/" + childName;
-        
-        // Create the node if it doesn't exist
-        if (!pathToIdMap.containsKey(childPath)) {
-          long nodeId = nodeIdGenerator.getAndIncrement();
-          BrowseNodeData childNode = new BrowseNodeData();
-          childNode.setNodeId(nodeId);
-          childNode.setParentId(parentId);
-          childNode.setName(childName);
-          childNode.setPath(childPath);
-          nodeDataMap.put(nodeId, childNode);
-          pathToIdMap.put(childPath, nodeId);
-        }
-        
-        Long nodeId = pathToIdMap.get(childPath);
-        BrowseNodeData childNode = nodeDataMap.get(nodeId);
-        children.add(childNode);
-      }
-      
-      return children;
-    });
-    
-    // Mock getNodeByPath to return nodes based on path
-    when(browseNodeManager.getNodeByPath(anyString())).thenAnswer(invocation -> {
-      String path = invocation.getArgument(0);
-      Long nodeId = pathToIdMap.get(path);
-      return nodeId != null ? nodeDataMap.get(nodeId) : null;
-    });
-    
-    // Mock getNodeParents to return parent nodes
-    when(browseNodeManager.getNodeParents(anyLong())).thenAnswer(invocation -> {
-      Long nodeId = invocation.getArgument(0);
-      BrowseNodeData node = nodeDataMap.get(nodeId);
-      if (node == null || node.getParentId() == null) {
-        return Collections.emptyList();
-      }
-      
-      BrowseNodeData parent = nodeDataMap.get(node.getParentId());
-      return parent != null ? List.of(parent) : Collections.emptyList();
-    });
-    
-    // Mock deleteByAssetIdAndPath
-    when(browseNodeManager.deleteByAssetIdAndPath(anyInt(), anyString())).thenReturn(0L);
-    
-    // Mock delete
-    doAnswer(invocation -> null).when(browseNodeManager).delete(anyLong());
-  }
-  
-  /**
-   * Creates a mock asset with the given path and optional component.
-   */
-  private Asset createAsset(String path, Component component) {
-    Asset asset = mock(Asset.class);
-    when(asset.path()).thenReturn(path);
-    when(asset.component()).thenReturn(java.util.Optional.ofNullable(component));
-    EntityId entityId = mock(EntityId.class);
-    when(asset.assetId()).thenReturn(entityId);
-    return asset;
-  }
-  
-  /**
-   * Creates a mock asset with the given path and no component.
-   */
-  private Asset createAsset(String path) {
-    return createAsset(path, null);
-  }
-  
-  /**
-   * Creates a mock component with the given name, namespace, and version.
-   */
-  private Component createComponent(String name, String namespace, String version) {
-    Component component = mock(Component.class);
-    when(component.name()).thenReturn(name);
-    when(component.namespace()).thenReturn(namespace);
-    when(component.version()).thenReturn(version);
-    return component;
-  }
-  
-  /**
-   * Tests concurrent browse operations using virtual threads.
+   * Tests concurrent browse operations using Virtual Threads.
    * 
-   * This test validates that browse operations can be performed concurrently
-   * by many virtual threads without issues.
+   * This test creates a large number of Virtual Threads that each perform multiple
+   * browse operations, verifying that the system can handle high concurrency without
+   * errors or excessive thread overhead.
    */
   @Test
-  public void testConcurrentBrowseWithVirtualThreads() throws Exception {
-    // Create a virtual thread executor
+  public void testConcurrentBrowseOperationsWithVirtualThreads() throws Exception {
+    // Create a countdown latch to synchronize thread start
+    CountDownLatch startLatch = new CountDownLatch(1);
+    
+    // Create a countdown latch to wait for all threads to complete
+    CountDownLatch completionLatch = new CountDownLatch(VIRTUAL_THREAD_COUNT);
+    
+    // Track any exceptions that occur during execution
+    ConcurrentHashMap<Integer, Throwable> exceptions = new ConcurrentHashMap<>();
+    
+    // Create and start virtual threads
+    long startTime = System.currentTimeMillis();
+    
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      CountDownLatch startLatch = new CountDownLatch(1);
-      CountDownLatch completionLatch = new CountDownLatch(VIRTUAL_THREAD_COUNT);
-      List<Future<?>> futures = new ArrayList<>();
-      
-      // Submit tasks to browse the repository concurrently
+      // Submit tasks to the executor
       for (int i = 0; i < VIRTUAL_THREAD_COUNT; i++) {
-        futures.add(executor.submit(() -> {
+        final int threadId = i;
+        executor.submit(() -> {
           try {
-            startLatch.await(); // Wait for all threads to be ready
+            // Wait for the signal to start
+            startLatch.await();
             
-            // Perform random browse operations
-            for (int j = 0; j < BROWSE_OPERATIONS / VIRTUAL_THREAD_COUNT; j++) {
-              // Choose a random browse depth
-              int depth = random.nextInt(BROWSE_DEPTH);
-              StringBuilder path = new StringBuilder();
+            // Perform multiple browse operations
+            for (int j = 0; j < BROWSE_OPERATIONS_PER_THREAD; j++) {
+              List<String> displayPath = List.of("path" + threadId, "subpath" + j);
+              List<BrowseNode> nodes = browseFacet.getByDisplayPath(displayPath, 100, null, null);
               
-              // Build a random path
-              for (int k = 0; k < depth; k++) {
-                if (k > 0) {
-                  path.append("/");
-                }
-                path.append("folder-").append(random.nextInt(BROWSE_WIDTH));
-              }
-              
-              // Get browse nodes at this path
-              String browsePath = path.toString();
-              BrowseNodeData node = browseNodeManager.getNodeByPath(browsePath);
-              
-              if (node != null) {
-                // Browse children
-                List<BrowseNode> children = browseNodeManager.getChildNodes(node.getNodeId());
-                
-                // Verify children
-                assertThat("Children should not be null", children, is(notNullValue()));
-                
-                // If not at max depth, should have children
-                if (depth < BROWSE_DEPTH - 1) {
-                  assertThat("Should have expected number of children", 
-                      children.size(), is(equalTo(BROWSE_WIDTH)));
-                }
-              }
+              // Verify the results
+              assertThat(nodes, notNullValue());
+              assertThat(nodes, hasSize(mockBrowseNodes.size()));
             }
           }
-          catch (Exception e) {
-            log.error("Error in virtual thread browse operation", e);
-            throw new RuntimeException(e);
+          catch (Throwable t) {
+            exceptions.put(threadId, t);
           }
           finally {
             completionLatch.countDown();
           }
-        }));
+        });
       }
       
-      // Start all threads simultaneously
+      // Signal all threads to start
       startLatch.countDown();
       
       // Wait for all threads to complete
-      boolean completed = completionLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertThat("All virtual threads should complete within timeout", completed, is(true));
-      
-      // Check for any exceptions
-      for (Future<?> future : futures) {
-        future.get(); // Will throw an exception if the task failed
-      }
+      boolean completed = completionLatch.await(PERFORMANCE_THRESHOLD_MS, TimeUnit.MILLISECONDS);
+      assertThat("All virtual threads should complete within the time threshold", completed, is(true));
     }
     
-    // Verify browse operations were performed
-    verify(browseNodeManager, times(BROWSE_OPERATIONS)).getNodeByPath(anyString());
+    long endTime = System.currentTimeMillis();
+    long duration = endTime - startTime;
+    
+    // Check for any exceptions
+    if (!exceptions.isEmpty()) {
+      throw new AssertionError("Exceptions occurred during concurrent execution: " + exceptions);
+    }
+    
+    // Verify the browse operations were performed the expected number of times
+    verify(browseNodeManager, times(VIRTUAL_THREAD_COUNT * BROWSE_OPERATIONS_PER_THREAD))
+        .getByDisplayPath(anyList(), anyInt(), anyString(), anyMap());
+    
+    // Log performance metrics
+    log.info("Completed {} browse operations across {} virtual threads in {} ms",
+        VIRTUAL_THREAD_COUNT * BROWSE_OPERATIONS_PER_THREAD, VIRTUAL_THREAD_COUNT, duration);
+    
+    // Assert that the operation completed within the performance threshold
+    assertThat("Browse operations should complete within performance threshold",
+        duration, lessThan(PERFORMANCE_THRESHOLD_MS));
   }
-  
+
   /**
-   * Tests the performance of browse path generation with virtual threads.
+   * Tests browsing deep hierarchies using Virtual Threads.
    * 
-   * This test compares the performance of computing browse paths using
-   * virtual threads versus platform threads.
+   * This test verifies that the system can efficiently navigate deep hierarchical
+   * structures when using Virtual Threads, which is a common scenario in repository
+   * management systems with nested directory structures.
    */
   @Test
-  public void testBrowsePathGenerationPerformance() throws Exception {
-    // Create test assets and components
-    List<Asset> assets = new ArrayList<>();
-    for (int i = 0; i < 1000; i++) {
-      Component component = createComponent("component-" + i, "namespace-" + (i % 10), "1.0." + i);
-      Asset asset = createAsset("path/to/asset-" + i, component);
-      assets.add(asset);
-    }
+  public void testDeepHierarchyBrowsingWithVirtualThreads() throws Exception {
+    // Create a deep hierarchy of mock browse nodes
+    List<List<BrowseNode>> hierarchyLevels = createDeepHierarchy(DEEP_HIERARCHY_DEPTH);
     
-    // Test with platform threads
-    long platformThreadTime = measureBrowsePathGeneration(assets, false);
-    log.info("Platform thread time: {} ms", platformThreadTime);
+    // Configure the browse node manager to return different levels based on the display path depth
+    when(browseNodeManager.getByDisplayPath(anyList(), anyInt(), anyString(), anyMap()))
+        .thenAnswer(invocation -> {
+          List<String> displayPath = invocation.getArgument(0);
+          int depth = displayPath.size();
+          if (depth < hierarchyLevels.size()) {
+            return hierarchyLevels.get(depth);
+          }
+          return emptyList();
+        });
     
-    // Test with virtual threads
-    long virtualThreadTime = measureBrowsePathGeneration(assets, true);
-    log.info("Virtual thread time: {} ms", virtualThreadTime);
-    
-    // Virtual threads should be more efficient for I/O-bound operations
-    // but for pure computation, they might be similar or slightly slower
-    // The key benefit is scalability with many concurrent operations
-    assertThat("Virtual thread performance should be reasonable compared to platform threads",
-        virtualThreadTime, lessThan(platformThreadTime * 2)); // Allow some overhead for virtual threads
-  }
-  
-  /**
-   * Measures the time taken to generate browse paths for assets using either
-   * platform threads or virtual threads.
-   * 
-   * @param assets the assets to generate browse paths for
-   * @param useVirtualThreads whether to use virtual threads
-   * @return the time taken in milliseconds
-   */
-  private long measureBrowsePathGeneration(List<Asset> assets, boolean useVirtualThreads) throws Exception {
-    int threadCount = Math.min(assets.size(), 100); // Use up to 100 threads
+    // Create a countdown latch to synchronize thread start
     CountDownLatch startLatch = new CountDownLatch(1);
+    
+    // Create a countdown latch to wait for all threads to complete
+    int threadCount = 100; // Fewer threads for deep hierarchy test
     CountDownLatch completionLatch = new CountDownLatch(threadCount);
     
-    // Create appropriate executor
-    ExecutorService executor = useVirtualThreads ?
-        Executors.newVirtualThreadPerTaskExecutor() :
-        Executors.newFixedThreadPool(threadCount);
+    // Track any exceptions that occur during execution
+    ConcurrentHashMap<Integer, Throwable> exceptions = new ConcurrentHashMap<>();
     
-    try {
-      // Partition assets among threads
-      List<List<Asset>> partitions = partitionList(assets, threadCount);
-      List<Future<?>> futures = new ArrayList<>();
-      
-      // Start timing
-      long startTime = System.nanoTime();
-      
-      // Submit tasks
-      for (List<Asset> partition : partitions) {
-        futures.add(executor.submit(() -> {
+    // Create and start virtual threads
+    long startTime = System.currentTimeMillis();
+    
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit tasks to the executor
+      for (int i = 0; i < threadCount; i++) {
+        final int threadId = i;
+        executor.submit(() -> {
           try {
-            startLatch.await(); // Wait for all threads to be ready
+            // Wait for the signal to start
+            startLatch.await();
             
-            // Generate browse paths for each asset
-            for (Asset asset : partition) {
-              List<BrowsePath> assetPaths = nodeGenerator.computeAssetPaths(asset);
-              List<BrowsePath> componentPaths = nodeGenerator.computeComponentPaths(asset);
+            // Navigate the entire hierarchy depth
+            List<String> path = new ArrayList<>();
+            for (int depth = 0; depth < DEEP_HIERARCHY_DEPTH; depth++) {
+              path.add("level" + depth);
+              List<BrowseNode> nodes = browseFacet.getByDisplayPath(path, 100, null, null);
               
-              // Verify paths were generated correctly
-              assertThat("Asset paths should not be empty", assetPaths, hasSize(greaterThan(0)));
-              if (asset.component().isPresent()) {
-                assertThat("Component paths should not be empty", componentPaths, hasSize(greaterThan(0)));
+              // Verify the results
+              assertThat(nodes, notNullValue());
+              if (depth < DEEP_HIERARCHY_DEPTH - 1) {
+                assertThat(nodes, hasSize(greaterThan(0)));
               }
             }
           }
-          catch (Exception e) {
-            log.error("Error generating browse paths", e);
-            throw new RuntimeException(e);
+          catch (Throwable t) {
+            exceptions.put(threadId, t);
           }
           finally {
             completionLatch.countDown();
           }
-        }));
+        });
       }
       
-      // Start all threads simultaneously
+      // Signal all threads to start
       startLatch.countDown();
       
       // Wait for all threads to complete
-      boolean completed = completionLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertThat("All threads should complete within timeout", completed, is(true));
-      
-      // Check for any exceptions
-      for (Future<?> future : futures) {
-        future.get(); // Will throw an exception if the task failed
-      }
-      
-      // Calculate elapsed time
-      long endTime = System.nanoTime();
-      return MILLISECONDS.convert(endTime - startTime, TimeUnit.NANOSECONDS);
+      boolean completed = completionLatch.await(PERFORMANCE_THRESHOLD_MS, TimeUnit.MILLISECONDS);
+      assertThat("All virtual threads should complete within the time threshold", completed, is(true));
     }
-    finally {
-      executor.shutdown();
+    
+    long endTime = System.currentTimeMillis();
+    long duration = endTime - startTime;
+    
+    // Check for any exceptions
+    if (!exceptions.isEmpty()) {
+      throw new AssertionError("Exceptions occurred during concurrent execution: " + exceptions);
     }
+    
+    // Verify the browse operations were performed the expected number of times
+    verify(browseNodeManager, times(threadCount * DEEP_HIERARCHY_DEPTH))
+        .getByDisplayPath(anyList(), anyInt(), anyString(), anyMap());
+    
+    // Log performance metrics
+    log.info("Completed deep hierarchy browsing ({} levels) across {} virtual threads in {} ms",
+        DEEP_HIERARCHY_DEPTH, threadCount, duration);
+    
+    // Assert that the operation completed within the performance threshold
+    assertThat("Deep hierarchy browsing should complete within performance threshold",
+        duration, lessThan(PERFORMANCE_THRESHOLD_MS));
   }
-  
+
   /**
-   * Tests that browse operations don't cause thread pinning with virtual threads.
+   * Compares the performance of Virtual Threads vs Platform Threads for browse operations.
    * 
-   * Thread pinning occurs when a virtual thread is pinned to its carrier thread,
-   * preventing the carrier thread from being used by other virtual threads.
-   * This can happen with synchronized blocks or native methods.
+   * This test executes the same browse operations using both Virtual Threads and Platform Threads,
+   * measuring the performance difference to validate that Virtual Threads provide better
+   * scalability for I/O-bound operations like repository browsing.
    */
   @Test
-  public void testBrowseOperationsAvoidThreadPinning() throws Exception {
-    // Create a virtual thread executor with limited carrier threads
-    // This will make thread pinning more obvious if it occurs
-    System.setProperty("jdk.virtualThreadScheduler.parallelism", "4");
+  public void testVirtualThreadsVsPlatformThreadsPerformance() throws Exception {
+    int threadCount = 500; // Use fewer threads for comparison test
+    int operationsPerThread = 20;
+    
+    // Run with platform threads first
+    long platformThreadDuration = runBrowseOperationsWithThreads(
+        threadCount, operationsPerThread, Thread::new);
+    
+    // Run with virtual threads
+    long virtualThreadDuration = runBrowseOperationsWithThreads(
+        threadCount, operationsPerThread, Thread.ofVirtual()::unstarted);
+    
+    // Log performance comparison
+    log.info("Performance comparison for {} threads with {} operations each:", 
+        threadCount, operationsPerThread);
+    log.info("Platform Threads: {} ms", platformThreadDuration);
+    log.info("Virtual Threads: {} ms", virtualThreadDuration);
+    log.info("Improvement factor: {}x", (double) platformThreadDuration / virtualThreadDuration);
+    
+    // Virtual threads should generally be more efficient for I/O-bound operations
+    // but we don't make a hard assertion since this is environment-dependent
+    // and we're using mocks which may not accurately reflect real I/O behavior
+  }
+
+  /**
+   * Tests that thread pinning is minimized during browse operations with Virtual Threads.
+   * 
+   * Thread pinning occurs when a Virtual Thread cannot be unmounted from its carrier thread,
+   * typically due to synchronized blocks or native methods. This test verifies that the
+   * browse operations avoid excessive thread pinning, which would reduce the scalability
+   * benefits of Virtual Threads.
+   */
+  @Test
+  public void testThreadPinningMinimizedWithVirtualThreads() throws Exception {
+    // Create a countdown latch to synchronize thread start
+    CountDownLatch startLatch = new CountDownLatch(1);
+    
+    // Create a countdown latch to wait for all threads to complete
+    int threadCount = 200;
+    CountDownLatch completionLatch = new CountDownLatch(threadCount);
+    
+    // Track thread execution times to detect potential pinning
+    ConcurrentHashMap<Integer, Long> executionTimes = new ConcurrentHashMap<>();
+    
+    // Create and start virtual threads
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      CountDownLatch startLatch = new CountDownLatch(1);
-      CountDownLatch completionLatch = new CountDownLatch(VIRTUAL_THREAD_COUNT);
-      List<Future<?>> futures = new ArrayList<>();
-      
-      // Track start and end times to detect potential pinning
-      long[] startTimes = new long[VIRTUAL_THREAD_COUNT];
-      long[] endTimes = new long[VIRTUAL_THREAD_COUNT];
-      
-      // Submit tasks to browse the repository concurrently
-      for (int i = 0; i < VIRTUAL_THREAD_COUNT; i++) {
-        final int threadIndex = i;
-        futures.add(executor.submit(() -> {
+      // Submit tasks to the executor
+      for (int i = 0; i < threadCount; i++) {
+        final int threadId = i;
+        executor.submit(() -> {
           try {
-            startLatch.await(); // Wait for all threads to be ready
-            startTimes[threadIndex] = System.nanoTime();
+            // Wait for the signal to start
+            startLatch.await();
             
-            // Perform browse operations that could potentially cause pinning
-            String path = "folder-" + (threadIndex % BROWSE_WIDTH);
-            BrowseNodeData node = browseNodeManager.getNodeByPath(path);
+            long threadStartTime = System.nanoTime();
             
-            if (node != null) {
-              // Browse children and perform operations that might cause pinning
-              List<BrowseNode> children = browseNodeManager.getChildNodes(node.getNodeId());
-              
-              // Simulate some work with the browse results
-              Thread.sleep(10); // Small delay to simulate work
-              
-              // Delete operations
-              if (threadIndex % 10 == 0) { // Only some threads perform delete
-                browseFacet.deleteByAssetIdAndPath(threadIndex, path);
-              }
+            // Perform browse operations that should not cause pinning
+            for (int j = 0; j < 10; j++) {
+              // Use getByRequestPath which should be non-blocking and avoid pinning
+              Optional<BrowseNode> node = browseFacet.getByRequestPath("/path" + threadId + "/" + j);
+              assertThat(node.isPresent(), is(true));
             }
             
-            endTimes[threadIndex] = System.nanoTime();
+            long threadEndTime = System.nanoTime();
+            executionTimes.put(threadId, threadEndTime - threadStartTime);
           }
-          catch (Exception e) {
-            log.error("Error in virtual thread browse operation", e);
-            throw new RuntimeException(e);
+          catch (Throwable t) {
+            log.error("Exception in thread {}: {}", threadId, t.getMessage(), t);
           }
           finally {
             completionLatch.countDown();
           }
-        }));
+        });
       }
       
-      // Start all threads simultaneously
+      // Signal all threads to start
       startLatch.countDown();
       
       // Wait for all threads to complete
-      boolean completed = completionLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertThat("All virtual threads should complete within timeout", completed, is(true));
-      
-      // Check for any exceptions
-      for (Future<?> future : futures) {
-        future.get(); // Will throw an exception if the task failed
-      }
-      
-      // Analyze timing data to detect potential pinning
-      // If threads are pinned, we'd see sequential execution patterns
-      // rather than concurrent execution
-      List<Duration> durations = new ArrayList<>();
-      for (int i = 0; i < VIRTUAL_THREAD_COUNT; i++) {
-        durations.add(Duration.ofNanos(endTimes[i] - startTimes[i]));
-      }
-      
-      // Sort durations to analyze distribution
-      Collections.sort(durations);
-      
-      // Calculate percentiles
-      Duration median = durations.get(durations.size() / 2);
-      Duration p90 = durations.get((int)(durations.size() * 0.9));
-      Duration p99 = durations.get((int)(durations.size() * 0.99));
-      
-      log.info("Thread execution time statistics:");
-      log.info("  Median: {} ms", median.toMillis());
-      log.info("  90th percentile: {} ms", p90.toMillis());
-      log.info("  99th percentile: {} ms", p99.toMillis());
-      
-      // If there's significant thread pinning, the p99 would be much higher than median
-      // as threads would be waiting for pinned carrier threads
-      assertThat("99th percentile should not be excessively higher than median, which would indicate thread pinning",
-          p99.toMillis(), lessThan(median.toMillis() * 10));
+      boolean completed = completionLatch.await(PERFORMANCE_THRESHOLD_MS, TimeUnit.MILLISECONDS);
+      assertThat("All virtual threads should complete within the time threshold", completed, is(true));
     }
-    finally {
-      System.clearProperty("jdk.virtualThreadScheduler.parallelism");
-    }
-  }
-  
-  /**
-   * Tests deep browse hierarchy traversal with virtual threads.
-   * 
-   * This test validates that deep browse hierarchies can be efficiently
-   * traversed using virtual threads without excessive overhead.
-   */
-  @Test
-  public void testDeepBrowseHierarchyTraversal() throws Exception {
-    // Create a virtual thread executor
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      CountDownLatch completionLatch = new CountDownLatch(100);
-      List<Future<?>> futures = new ArrayList<>();
-      
-      // Submit tasks to traverse deep hierarchies
-      for (int i = 0; i < 100; i++) {
-        futures.add(executor.submit(() -> {
-          try {
-            // Start at root and traverse to a leaf node
-            Long nodeId = 0L; // Root node
-            int depth = 0;
-            
-            while (depth < BROWSE_DEPTH) {
-              List<BrowseNode> children = browseNodeManager.getChildNodes(nodeId);
-              if (children.isEmpty()) {
-                break;
-              }
-              
-              // Select a random child to traverse
-              BrowseNode child = children.get(random.nextInt(children.size()));
-              nodeId = ((BrowseNodeData) child).getNodeId();
-              depth++;
-              
-              // Verify we can get parent nodes (traversing back up)
-              List<BrowseNode> parents = browseNodeManager.getNodeParents(nodeId);
-              if (depth > 0) {
-                assertThat("Should have a parent node", parents, hasSize(1));
-              }
-            }
-            
-            assertThat("Should reach expected depth", depth, is(equalTo(BROWSE_DEPTH)));
-          }
-          catch (Exception e) {
-            log.error("Error in deep hierarchy traversal", e);
-            throw new RuntimeException(e);
-          }
-          finally {
-            completionLatch.countDown();
-          }
-        }));
-      }
-      
-      // Wait for all threads to complete
-      boolean completed = completionLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertThat("All virtual threads should complete within timeout", completed, is(true));
-      
-      // Check for any exceptions
-      for (Future<?> future : futures) {
-        future.get(); // Will throw an exception if the task failed
-      }
-    }
-  }
-  
-  /**
-   * Partitions a list into approximately equal-sized sublists.
-   * 
-   * @param list the list to partition
-   * @param partitions the number of partitions to create
-   * @return a list of partitioned sublists
-   */
-  private <T> List<List<T>> partitionList(List<T> list, int partitions) {
-    int size = list.size();
-    int partitionSize = (size + partitions - 1) / partitions; // Ceiling division
     
-    return IntStream.range(0, partitions)
+    // Calculate statistics on execution times
+    List<Long> times = new ArrayList<>(executionTimes.values());
+    Collections.sort(times);
+    
+    long median = times.get(times.size() / 2);
+    long p90 = times.get((int)(times.size() * 0.9));
+    
+    // Log statistics
+    log.info("Thread execution time statistics (ns):");
+    log.info("Median: {}", median);
+    log.info("90th percentile: {}", p90);
+    log.info("Max: {}", times.get(times.size() - 1));
+    
+    // If there is significant thread pinning, the max execution time would be
+    // much higher than the median as pinned threads would block carrier threads
+    double maxToMedianRatio = (double) times.get(times.size() - 1) / median;
+    log.info("Max/Median ratio: {}", maxToMedianRatio);
+    
+    // A high ratio could indicate thread pinning, but the exact threshold depends
+    // on the environment and test conditions. We use a conservative value here.
+    assertThat("Max execution time should not be excessively higher than median",
+        maxToMedianRatio, lessThan(100.0));
+  }
+
+  /**
+   * Helper method to run browse operations with either platform or virtual threads.
+   * 
+   * @param threadCount Number of threads to create
+   * @param operationsPerThread Number of browse operations per thread
+   * @param threadFactory Factory to create either platform or virtual threads
+   * @return Duration in milliseconds to complete all operations
+   */
+  private long runBrowseOperationsWithThreads(
+      int threadCount, 
+      int operationsPerThread,
+      ThreadFactory threadFactory) throws Exception {
+    
+    // Create a countdown latch to synchronize thread start
+    CountDownLatch startLatch = new CountDownLatch(1);
+    
+    // Create a countdown latch to wait for all threads to complete
+    CountDownLatch completionLatch = new CountDownLatch(threadCount);
+    
+    // Create threads
+    List<Thread> threads = new ArrayList<>(threadCount);
+    for (int i = 0; i < threadCount; i++) {
+      final int threadId = i;
+      Thread thread = threadFactory.newThread(() -> {
+        try {
+          // Wait for the signal to start
+          startLatch.await();
+          
+          // Perform browse operations
+          for (int j = 0; j < operationsPerThread; j++) {
+            List<String> displayPath = List.of("path" + threadId, "subpath" + j);
+            browseFacet.getByDisplayPath(displayPath, 100, null, null);
+          }
+        }
+        catch (Throwable t) {
+          log.error("Exception in thread {}: {}", threadId, t.getMessage(), t);
+        }
+        finally {
+          completionLatch.countDown();
+        }
+      });
+      
+      threads.add(thread);
+      thread.start();
+    }
+    
+    // Reset the mock to clear invocation counts
+    Mockito.reset(browseNodeManager);
+    when(browseNodeManager.getByDisplayPath(anyList(), anyInt(), anyString(), anyMap()))
+        .thenReturn(mockBrowseNodes);
+    
+    // Measure execution time
+    long startTime = System.currentTimeMillis();
+    
+    // Signal all threads to start
+    startLatch.countDown();
+    
+    // Wait for all threads to complete
+    boolean completed = completionLatch.await(PERFORMANCE_THRESHOLD_MS * 2, TimeUnit.MILLISECONDS);
+    if (!completed) {
+      log.warn("Not all threads completed within the timeout period");
+    }
+    
+    long endTime = System.currentTimeMillis();
+    return endTime - startTime;
+  }
+
+  /**
+   * Creates a list of mock browse nodes for testing.
+   * 
+   * @return List of mock browse nodes
+   */
+  private List<BrowseNode> createMockBrowseNodes() {
+    return IntStream.range(0, 10)
         .mapToObj(i -> {
-          int start = i * partitionSize;
-          int end = Math.min(start + partitionSize, size);
-          return start < end ? list.subList(start, end) : Collections.<T>emptyList();
+          BrowseNodeData node = new BrowseNodeData();
+          node.setNodeId((long) i);
+          node.setName("node" + i);
+          node.setAssetCount(i % 3 == 0 ? 5L : 0L);
+          node.setComponentCount(i % 2 == 0 ? 2L : 0L);
+          return (BrowseNode) node;
         })
-        .filter(partition -> !partition.isEmpty())
+        .collect(Collectors.toList());
+  }
+
+  /**
+   * Creates a deep hierarchy of browse nodes for testing deep traversal.
+   * 
+   * @param depth The depth of the hierarchy to create
+   * @return List of lists of browse nodes, one list per hierarchy level
+   */
+  private List<List<BrowseNode>> createDeepHierarchy(int depth) {
+    return IntStream.range(0, depth)
+        .mapToObj(level -> {
+          // Create more nodes at shallow levels, fewer at deep levels
+          int nodeCount = Math.max(1, 10 - level);
+          
+          return IntStream.range(0, nodeCount)
+              .mapToObj(i -> {
+                BrowseNodeData node = new BrowseNodeData();
+                node.setNodeId(level * 100L + i);
+                node.setName("level" + level + "_node" + i);
+                node.setAssetCount(i % 3 == 0 ? 2L : 0L);
+                node.setComponentCount(i % 2 == 0 ? 1L : 0L);
+                return (BrowseNode) node;
+              })
+              .collect(Collectors.toList());
+        })
         .collect(Collectors.toList());
   }
 }

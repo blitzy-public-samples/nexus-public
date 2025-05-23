@@ -25,12 +25,10 @@ import org.sonatype.nexus.repository.manager.RepositoryManager;
 import org.sonatype.nexus.repository.types.GroupType;
 import org.sonatype.nexus.repository.types.HostedType;
 import org.sonatype.nexus.repository.types.ProxyType;
-import org.sonatype.nexus.virtualthread.Java21TestGroup;
 
 import com.google.common.graph.Graph;
 import com.google.common.graph.GraphBuilder;
 import com.google.common.graph.MutableGraph;
-import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -44,8 +42,11 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+/**
+ * Tests for {@link RepositoryMemberGraph}.
+ */
 @ExtendWith(MockitoExtension.class)
-@Category(Java21TestGroup.class)
+@org.sonatype.nexus.common.test.Category(Java21TestGroup.class)
 public class RepositoryMemberGraphTest
     extends TestSupport
 {
@@ -61,7 +62,7 @@ public class RepositoryMemberGraphTest
   private RepositoryMemberGraph repositoryMemberGraph;
 
   @BeforeEach
-  public void setUp() {
+  void setUp() {
     groupType = new GroupType();
     hostedType = new HostedType();
     proxyType = new ProxyType();
@@ -69,7 +70,7 @@ public class RepositoryMemberGraphTest
   }
 
   @Test
-  public void singleNodeNonGroupGraphShouldHaveOneNodeAndNoEdges() {
+  void singleNodeNonGroupGraphShouldHaveOneNodeAndNoEdges() {
     Repository repository = mock(Repository.class);
     when(repository.getType()).thenReturn(hostedType);
 
@@ -82,7 +83,7 @@ public class RepositoryMemberGraphTest
   }
 
   @Test
-  public void singleNodeGroupGraphShouldHaveOneNodeAndNoEdges() {
+  void singleNodeGroupGraphShouldHaveOneNodeAndNoEdges() {
     Repository repository = mock(Repository.class);
     Configuration configuration = mock(Configuration.class);
     NestedAttributesMap attributesMap = new NestedAttributesMap("group", Map.of("memberNames", List.of()));
@@ -100,7 +101,7 @@ public class RepositoryMemberGraphTest
   }
 
   @Test
-  public void groupNodeWithMembersShouldHaveCorrectNodesAndEdges() {
+  void groupNodeWithMembersShouldHaveCorrectNodesAndEdges() {
     Repository group = mock(Repository.class);
     Repository hosted = mock(Repository.class);
     Repository proxy = mock(Repository.class);
@@ -130,7 +131,7 @@ public class RepositoryMemberGraphTest
   }
 
   @Test
-  public void groupNodeWithNestedGroupsShouldHaveCorrectNodesAndEdges() {
+  void groupNodeWithNestedGroupsShouldHaveCorrectNodesAndEdges() {
     Repository group1 = mock(Repository.class);
     Repository hosted1 = mock(Repository.class);
     Repository proxy1 = mock(Repository.class);
@@ -197,7 +198,7 @@ public class RepositoryMemberGraphTest
   }
 
   @Test
-  public void cyclicGraphShouldThrowException() {
+  void cyclicGraphShouldThrowIllegalArgumentException() {
     Repository group1 = mock(Repository.class);
     Repository group2 = mock(Repository.class);
 
@@ -217,15 +218,15 @@ public class RepositoryMemberGraphTest
     when(configuration2.attributes(anyString())).thenReturn(attributesMap2);
     when(repositoryManager.get("group1")).thenReturn(group1);
 
-    IllegalArgumentException expected =
+    IllegalArgumentException exception =
         assertThrows(IllegalArgumentException.class, () -> repositoryMemberGraph.render(group1));
 
-    assertThat(expected.getMessage(),
+    assertThat(exception.getMessage(),
         is("Group repository already processed, indicates a cycle in the graph for : group1"));
   }
 
   @Test
-  public void combineGraphsShouldMergeNodesAndEdges() {
+  void combineGraphsShouldMergeNodesAndEdges() {
     Repository group1 = mock(Repository.class);
     Repository hosted1 = mock(Repository.class);
     Configuration configuration1 = mock(Configuration.class);
@@ -266,7 +267,7 @@ public class RepositoryMemberGraphTest
   }
 
   @Test
-  public void convertToDotGraphShouldGenerateCorrectDotNotation() {
+  void convertToDotGraphShouldGenerateCorrectDotFormat() {
     Repository group = mock(Repository.class);
     Repository hosted = mock(Repository.class);
     Repository proxy = mock(Repository.class);
@@ -299,7 +300,7 @@ public class RepositoryMemberGraphTest
   }
 
   @Test
-  public void renderAllRepositoryGraphsTogetherShouldIncludeAllRepos() {
+  void renderAllRepositoryGraphsTogetherShouldCombineAllRepositories() {
     Repository hosted1 = mock(Repository.class);
     Repository hosted2 = mock(Repository.class);
 

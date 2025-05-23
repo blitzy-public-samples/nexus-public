@@ -19,6 +19,7 @@ import org.sonatype.nexus.repository.rest.api.AbstractRepositoryApiRequestToConf
 import org.sonatype.nexus.repository.rest.api.model.GroupAttributes;
 import org.sonatype.nexus.repository.rest.api.model.GroupDeployAttributes;
 import org.sonatype.nexus.repository.rest.api.model.GroupRepositoryApiRequest;
+import org.sonatype.nexus.repository.rest.api.model.StorageAttributes;
 
 import static org.sonatype.nexus.repository.config.ConfigurationConstants.BLOB_STORE_NAME;
 import static org.sonatype.nexus.repository.config.ConfigurationConstants.GROUP_WRITE_MEMBER;
@@ -37,23 +38,27 @@ public class GroupRepositoryApiRequestToConfigurationConverter<T extends GroupRe
   public Configuration convert(final T request) {
     Configuration configuration = super.convert(request);
 
-    configuration.attributes(STORAGE).set(BLOB_STORE_NAME, request.getStorage().getBlobStoreName());
-    configuration.attributes(STORAGE)
-        .set(STRICT_CONTENT_TYPE_VALIDATION, request.getStorage().getStrictContentTypeValidation());
+    // Use pattern matching to extract storage attributes
+    StorageAttributes storage = request.getStorage();
+    configuration.attributes(STORAGE).set(BLOB_STORE_NAME, storage.getBlobStoreName());
+    configuration.attributes(STORAGE).set(STRICT_CONTENT_TYPE_VALIDATION, storage.getStrictContentTypeValidation());
     maybeAddDataStoreName(configuration);
 
-    configuration.attributes("group").set("memberNames", request.getGroup().getMemberNames());
-
+    // Configure group attributes
     GroupAttributes group = request.getGroup();
-    // Using Pattern Matching for instanceof to simplify type checking and casting
+    configuration.attributes("group").set("memberNames", group.getMemberNames());
+
+    // Use pattern matching for instanceof to simplify type checking and casting
     if (group instanceof GroupDeployAttributes groupDeployAttributes) {
       String writableMember = groupDeployAttributes.getWritableMember();
       if (writableMember != null && !writableMember.isEmpty()) {
         configuration.attributes("group").set(GROUP_WRITE_MEMBER, writableMember);
-        // Using String Template for logging or debugging (commented out as there's no logger in the original code)
-        // String message = STR."Setting writable member \{writableMember} for group repository \{request.getName()}";
+        
+        // Using String Template for logging or validation messages if needed
+        // log.debug(STR."Configured writable member: {writableMember} for group repository");
       }
     }
+    
     return configuration;
   }
 }

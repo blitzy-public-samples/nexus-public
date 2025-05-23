@@ -12,26 +12,27 @@
  */
 package org.sonatype.nexus.common.collect;
 
+import java.util.Iterator;
+import java.util.List;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.virtualthread.Java21TestGroup;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
 import com.google.common.collect.ImmutableSet;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.runner.RunWith;
 import org.junit.experimental.categories.Category;
 import org.mockito.InOrder;
 import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertIterableEquals;
 import static org.mockito.AdditionalAnswers.returnsFirstArg;
 import static org.mockito.ArgumentMatchers.isNotNull;
 import static org.mockito.Mockito.inOrder;
@@ -39,9 +40,11 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+/**
+ * Tests for {@link DetachingSet}.
+ */
 @Category(Java21TestGroup.class)
-@ExtendWith(MockitoExtension.class)
-public class DetachingSetTest
+class DetachingSetTest
     extends TestSupport
 {
   @Mock
@@ -56,12 +59,12 @@ public class DetachingSetTest
   private DetachingSet<String> underTest;
 
   @BeforeEach
-  public void setUp() {
+  void setUp() {
     underTest = new DetachingSet<>(backing, allowDetach, detach);
   }
 
   @Test
-  public void nonEscapingQueriesNeverDetach() {
+  void nonEscapingQueriesNeverDetach() {
 
     underTest.contains(null);
     underTest.containsAll(null);
@@ -87,7 +90,7 @@ public class DetachingSetTest
   }
 
   @Test
-  public void escapingQueriesTriggerDetach() {
+  void escapingQueriesTriggerDetach() {
     when(allowDetach.getAsBoolean()).thenReturn(true);
 
     underTest.iterator();
@@ -105,7 +108,7 @@ public class DetachingSetTest
   }
 
   @Test
-  public void mutationsTriggerDetach() {
+  void mutationsTriggerDetach() {
     when(allowDetach.getAsBoolean()).thenReturn(true);
 
     underTest.add("");
@@ -123,7 +126,7 @@ public class DetachingSetTest
   }
 
   @Test
-  public void detachingCanBeDisallowed() {
+  void detachingCanBeDisallowed() {
     when(allowDetach.getAsBoolean()).thenReturn(false);
 
     underTest.add("");
@@ -152,7 +155,7 @@ public class DetachingSetTest
   }
 
   @Test
-  public void simpleDetach() {
+  void simpleDetach() {
     Set<String> original = ImmutableSet.of("HELLO", "THERE");
 
     underTest = new DetachingSet<>(original, allowDetach, detach);
@@ -177,19 +180,17 @@ public class DetachingSetTest
   }
   
   @Test
-  public void firstElementIsAccessible() {
+  void firstMethodReturnsFirstElement() {
     Set<String> original = ImmutableSet.of("FIRST", "SECOND", "THIRD");
-    
     underTest = new DetachingSet<>(original, allowDetach, detach);
     
     when(allowDetach.getAsBoolean()).thenReturn(false);
     when(backing.iterator()).thenReturn(original.iterator());
     
-    // Test first() method from Sequenced Collections interface
-    assertThat(underTest.getFirst(), is("FIRST"));
+    String first = underTest.getFirst();
+    assertEquals("FIRST", first, "First element should be 'FIRST'");
     
     InOrder inOrder = inOrder(backing, allowDetach);
-    
     inOrder.verify(allowDetach).getAsBoolean();
     inOrder.verify(backing).iterator();
     
@@ -197,19 +198,17 @@ public class DetachingSetTest
   }
   
   @Test
-  public void lastElementIsAccessible() {
+  void lastMethodReturnsLastElement() {
     Set<String> original = ImmutableSet.of("FIRST", "SECOND", "THIRD");
-    
     underTest = new DetachingSet<>(original, allowDetach, detach);
     
     when(allowDetach.getAsBoolean()).thenReturn(false);
     when(backing.iterator()).thenReturn(original.iterator());
     
-    // Test last() method from Sequenced Collections interface
-    assertThat(underTest.getLast(), is("THIRD"));
+    String last = underTest.getLast();
+    assertEquals("THIRD", last, "Last element should be 'THIRD'");
     
     InOrder inOrder = inOrder(backing, allowDetach);
-    
     inOrder.verify(allowDetach).getAsBoolean();
     inOrder.verify(backing).iterator();
     
@@ -217,23 +216,56 @@ public class DetachingSetTest
   }
   
   @Test
-  public void reversedViewIsCorrect() {
+  void reversedMethodReturnsReversedView() {
     Set<String> original = ImmutableSet.of("FIRST", "SECOND", "THIRD");
-    
     underTest = new DetachingSet<>(original, allowDetach, detach);
     
     when(allowDetach.getAsBoolean()).thenReturn(false);
     when(backing.iterator()).thenReturn(original.iterator());
     
-    // Test reversed() method from Sequenced Collections interface
     Set<String> reversed = underTest.reversed();
-    assertThat(reversed.getFirst(), is("THIRD"));
-    assertThat(reversed.getLast(), is("FIRST"));
+    
+    // Verify the reversed set contains the same elements
+    assertThat(reversed, containsInAnyOrder("FIRST", "SECOND", "THIRD"));
+    
+    // Verify the iteration order is reversed
+    Iterator<String> iterator = reversed.iterator();
+    assertEquals("THIRD", iterator.next(), "First element in reversed view should be 'THIRD'");
+    assertEquals("SECOND", iterator.next(), "Second element in reversed view should be 'SECOND'");
+    assertEquals("FIRST", iterator.next(), "Third element in reversed view should be 'FIRST'");
     
     InOrder inOrder = inOrder(backing, allowDetach);
-    
     inOrder.verify(allowDetach).getAsBoolean();
     inOrder.verify(backing).iterator();
+    
+    verifyNoMoreInteractions(backing, allowDetach, detach);
+  }
+  
+  @Test
+  void sequencedCollectionMethodsWorkWithDetaching() {
+    Set<String> original = ImmutableSet.of("FIRST", "SECOND", "THIRD");
+    underTest = new DetachingSet<>(original, allowDetach, detach);
+    
+    when(allowDetach.getAsBoolean()).thenReturn(true);
+    when(detach.apply(isNotNull())).thenAnswer(returnsFirstArg());
+    
+    // Test first() and last() after detaching
+    String first = underTest.getFirst();
+    String last = underTest.getLast();
+    
+    assertEquals("FIRST", first, "First element should be 'FIRST' after detaching");
+    assertEquals("THIRD", last, "Last element should be 'THIRD' after detaching");
+    
+    // Test reversed() after detaching
+    List<String> reversedList = underTest.reversed().stream().toList();
+    assertIterableEquals(List.of("THIRD", "SECOND", "FIRST"), reversedList, 
+        "Reversed view should contain elements in reverse order");
+    
+    InOrder inOrder = inOrder(allowDetach, detach);
+    inOrder.verify(allowDetach).getAsBoolean();
+    inOrder.verify(detach).apply("FIRST");
+    inOrder.verify(detach).apply("SECOND");
+    inOrder.verify(detach).apply("THIRD");
     
     verifyNoMoreInteractions(backing, allowDetach, detach);
   }

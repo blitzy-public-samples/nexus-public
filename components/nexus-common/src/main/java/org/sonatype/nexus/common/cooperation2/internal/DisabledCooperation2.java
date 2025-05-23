@@ -26,6 +26,9 @@ import com.google.common.base.Stopwatch;
 /**
  * An implementation of {@link Cooperation2} which doesn't use any concurrency control and each thread proceeds
  * individually. This is used when co-operation is disabled.
+ * <p>
+ * This implementation is aware of Virtual Thread requests but maintains sequential execution behavior
+ * since cooperation is disabled.
  *
  * @since 3.41
  */
@@ -36,17 +39,23 @@ public class DisabledCooperation2
   private final String scope;
 
   /**
-   * Creates a new disabled cooperation instance with the given scope.
-   * 
-   * @param scope the cooperation scope
+   * Creates a new instance with the specified scope.
+   *
+   * @param scope the scope for this cooperation instance
    */
   public DisabledCooperation2(final String scope) {
     this.scope = scope;
-    log.debug("Created DisabledCooperation2 for scope {}, Virtual Thread requests will be ignored", scope);
+    log.debug("Created DisabledCooperation2 for scope {}", scope);
   }
 
   @Override
   public <RET> Builder<RET> on(final IOCall<RET> workFunction) {
+    return new DisabledCooperation2Builder<>(workFunction);
+  }
+
+  @Override
+  public <RET> Builder<RET> onIOOperation(final IOCall<RET> workFunction) {
+    log.debug("Virtual Thread execution request received but will be executed sequentially as cooperation is disabled");
     return new DisabledCooperation2Builder<>(workFunction);
   }
 
@@ -58,28 +67,18 @@ public class DisabledCooperation2
   private class DisabledCooperation2Builder<R>
       extends Cooperation2Builder<R>
   {
-    private boolean useVirtualThread = false;
-    private boolean propagateContext = false;
+    private boolean useVirtualThreads = false;
 
     DisabledCooperation2Builder(final IOCall<R> workFunction) {
       super(workFunction);
     }
 
     @Override
-    public DisabledCooperation2Builder<R> useVirtualThread(final boolean useVirtualThread) {
-      this.useVirtualThread = useVirtualThread;
-      if (useVirtualThread) {
-        log.debug("Virtual Thread execution requested but will be ignored in disabled cooperation mode");
+    public DisabledCooperation2Builder<R> useVirtualThreads(final boolean useVirtualThreads) {
+      if (useVirtualThreads) {
+        log.debug("Virtual Thread execution requested but will be ignored as cooperation is disabled");
       }
-      return this;
-    }
-
-    @Override
-    public DisabledCooperation2Builder<R> propagateContext(final boolean propagateContext) {
-      this.propagateContext = propagateContext;
-      if (propagateContext) {
-        log.debug("Context propagation requested but will be ignored in disabled cooperation mode");
-      }
+      this.useVirtualThreads = useVirtualThreads;
       return this;
     }
 
@@ -87,8 +86,8 @@ public class DisabledCooperation2
     public R cooperate(final String action, final String... nestedScope) throws IOException {
       CooperationKey cooperationKey = CooperationKey.create(scope, action, nestedScope);
       
-      if (useVirtualThread) {
-        log.debug("Starting work for {} (Virtual Thread execution requested but ignored in disabled mode)", cooperationKey);
+      if (useVirtualThreads) {
+        log.debug("Starting work for {} with Virtual Thread request (ignored in disabled mode)", cooperationKey);
       } else {
         log.debug("Starting work for {}", cooperationKey);
       }
@@ -99,9 +98,8 @@ public class DisabledCooperation2
         return workFunction.call();
       }
       finally {
-        if (useVirtualThread) {
-          log.debug("Completed work for {} in {} (executed in platform thread despite Virtual Thread request)", 
-              cooperationKey, timer.elapsed());
+        if (useVirtualThreads) {
+          log.debug("Completed work for {} in {} (Virtual Thread request was ignored)", cooperationKey, timer.elapsed());
         } else {
           log.debug("Completed work for {} in {}", cooperationKey, timer.elapsed());
         }

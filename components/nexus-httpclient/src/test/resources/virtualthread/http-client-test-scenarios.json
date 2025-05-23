@@ -5,322 +5,467 @@
     {
       "id": "concurrent-connections",
       "name": "Massively Concurrent HTTP Client Connections",
-      "description": "Tests the HTTP client's ability to handle a large number of concurrent connections using Virtual Threads",
-      "category": "concurrency",
-      "configurations": [
+      "description": "Validates the HTTP client's ability to handle a large number of concurrent connections using Virtual Threads",
+      "testCases": [
         {
-          "name": "low-concurrency",
-          "concurrentConnections": 100,
-          "requestsPerConnection": 10,
-          "requestIntervalMs": 50,
-          "timeoutMs": 5000
+          "id": "basic-concurrent-get",
+          "name": "Basic Concurrent GET Requests",
+          "description": "Executes multiple concurrent GET requests to validate basic Virtual Thread functionality",
+          "parameters": {
+            "concurrentRequests": 1000,
+            "requestType": "GET",
+            "targetEndpoint": "${test.server.url}/simple-resource",
+            "expectedStatusCode": 200,
+            "timeoutSeconds": 30
+          }
         },
         {
-          "name": "medium-concurrency",
-          "concurrentConnections": 1000,
-          "requestsPerConnection": 5,
-          "requestIntervalMs": 20,
-          "timeoutMs": 10000
+          "id": "scaled-concurrent-get",
+          "name": "Scaled Concurrent GET Requests",
+          "description": "Tests scalability by executing an extremely high number of concurrent GET requests",
+          "parameters": {
+            "concurrentRequests": 10000,
+            "requestType": "GET",
+            "targetEndpoint": "${test.server.url}/simple-resource",
+            "expectedStatusCode": 200,
+            "timeoutSeconds": 60
+          }
         },
         {
-          "name": "high-concurrency",
-          "concurrentConnections": 10000,
-          "requestsPerConnection": 2,
-          "requestIntervalMs": 10,
-          "timeoutMs": 30000
+          "id": "mixed-http-methods",
+          "name": "Mixed HTTP Methods Concurrently",
+          "description": "Executes a mix of GET, POST, PUT, and DELETE requests concurrently",
+          "parameters": {
+            "concurrentRequests": 2000,
+            "requestTypes": ["GET", "POST", "PUT", "DELETE"],
+            "targetEndpoints": {
+              "GET": "${test.server.url}/resources",
+              "POST": "${test.server.url}/resources",
+              "PUT": "${test.server.url}/resources/{id}",
+              "DELETE": "${test.server.url}/resources/{id}"
+            },
+            "expectedStatusCodes": {
+              "GET": 200,
+              "POST": 201,
+              "PUT": 200,
+              "DELETE": 204
+            },
+            "timeoutSeconds": 45
+          }
+        },
+        {
+          "id": "concurrent-with-authentication",
+          "name": "Concurrent Requests with Authentication",
+          "description": "Tests concurrent requests that require authentication",
+          "parameters": {
+            "concurrentRequests": 500,
+            "requestType": "GET",
+            "targetEndpoint": "${test.server.url}/protected-resource",
+            "authType": "basic",
+            "credentials": {
+              "username": "${test.auth.username}",
+              "password": "${test.auth.password}"
+            },
+            "expectedStatusCode": 200,
+            "timeoutSeconds": 30
+          }
         }
-      ],
-      "expectedResults": {
-        "successRate": 100,
-        "maxMemoryIncreaseMb": 300,
-        "maxP95ResponseTimeMs": 350,
-        "maxP99ResponseTimeMs": 600,
-        "noThreadPinning": true
-      }
+      ]
     },
     {
       "id": "io-bound-operations",
       "name": "I/O-Bound HTTP Operations",
-      "description": "Tests HTTP client performance for I/O-bound operations using Virtual Threads",
-      "category": "performance",
-      "operations": [
+      "description": "Validates the performance benefits of Virtual Threads for I/O-bound HTTP operations",
+      "testCases": [
         {
-          "name": "large-download",
-          "method": "GET",
-          "responseSize": "100MB",
-          "concurrentRequests": 50,
-          "expectedThroughputMbps": 500
+          "id": "large-file-download",
+          "name": "Large File Download",
+          "description": "Tests downloading large files concurrently to validate I/O performance with Virtual Threads",
+          "parameters": {
+            "concurrentRequests": 50,
+            "requestType": "GET",
+            "targetEndpoint": "${test.server.url}/large-file",
+            "fileSizeMB": 100,
+            "expectedStatusCode": 200,
+            "timeoutSeconds": 120,
+            "validateChecksum": true
+          }
         },
         {
-          "name": "large-upload",
-          "method": "POST",
-          "requestSize": "50MB",
-          "concurrentRequests": 20,
-          "expectedThroughputMbps": 200
+          "id": "large-file-upload",
+          "name": "Large File Upload",
+          "description": "Tests uploading large files concurrently to validate I/O performance with Virtual Threads",
+          "parameters": {
+            "concurrentRequests": 20,
+            "requestType": "POST",
+            "targetEndpoint": "${test.server.url}/upload",
+            "fileSizeMB": 50,
+            "expectedStatusCode": 201,
+            "timeoutSeconds": 180,
+            "contentType": "multipart/form-data"
+          }
         },
         {
-          "name": "mixed-io-operations",
-          "method": "MIXED",
-          "operations": ["GET", "POST", "PUT", "DELETE"],
-          "concurrentRequests": 100,
-          "requestsPerSecond": 1000
+          "id": "streaming-download",
+          "name": "Streaming Download",
+          "description": "Tests streaming download with concurrent requests",
+          "parameters": {
+            "concurrentRequests": 30,
+            "requestType": "GET",
+            "targetEndpoint": "${test.server.url}/stream",
+            "streamDurationSeconds": 60,
+            "expectedStatusCode": 200,
+            "timeoutSeconds": 120,
+            "bufferSizeKB": 8
+          }
+        },
+        {
+          "id": "delayed-response",
+          "name": "Delayed Response Handling",
+          "description": "Tests handling of deliberately delayed HTTP responses to validate Virtual Thread efficiency",
+          "parameters": {
+            "concurrentRequests": 200,
+            "requestType": "GET",
+            "targetEndpoint": "${test.server.url}/delayed-response",
+            "serverDelayMs": [500, 1000, 2000, 5000],
+            "expectedStatusCode": 200,
+            "timeoutSeconds": 60,
+            "measureResourceUsage": true
+          }
         }
-      ],
-      "expectedResults": {
-        "successRate": 100,
-        "platformThreadComparison": {
-          "throughputImprovement": 30,
-          "latencyReduction": 40,
-          "memoryUsageReduction": 70
-        }
-      }
+      ]
     },
     {
       "id": "error-handling",
       "name": "Error Handling with Virtual Threads",
-      "description": "Tests HTTP client error handling and resilience with Virtual Threads",
-      "category": "resilience",
-      "errorScenarios": [
+      "description": "Validates error handling behavior when using Virtual Threads for HTTP client operations",
+      "testCases": [
         {
-          "name": "connection-timeout",
-          "errorType": "CONNECTION_TIMEOUT",
-          "concurrentRequests": 500,
-          "timeoutMs": 100
+          "id": "connection-timeout",
+          "name": "Connection Timeout Handling",
+          "description": "Tests handling of connection timeouts with Virtual Threads",
+          "parameters": {
+            "concurrentRequests": 100,
+            "requestType": "GET",
+            "targetEndpoint": "${test.server.url}/timeout-simulation",
+            "connectionTimeoutMs": 500,
+            "expectedExceptionType": "ConnectTimeoutException",
+            "timeoutSeconds": 30
+          }
         },
         {
-          "name": "socket-timeout",
-          "errorType": "SOCKET_TIMEOUT",
-          "concurrentRequests": 500,
-          "timeoutMs": 500
+          "id": "socket-timeout",
+          "name": "Socket Timeout Handling",
+          "description": "Tests handling of socket read timeouts with Virtual Threads",
+          "parameters": {
+            "concurrentRequests": 100,
+            "requestType": "GET",
+            "targetEndpoint": "${test.server.url}/slow-response",
+            "socketTimeoutMs": 1000,
+            "expectedExceptionType": "SocketTimeoutException",
+            "timeoutSeconds": 30
+          }
         },
         {
-          "name": "connection-reset",
-          "errorType": "CONNECTION_RESET",
-          "concurrentRequests": 500,
-          "resetProbability": 0.5
+          "id": "server-errors",
+          "name": "Server Error Handling",
+          "description": "Tests handling of server errors (5xx) with Virtual Threads",
+          "parameters": {
+            "concurrentRequests": 200,
+            "requestType": "GET",
+            "targetEndpoint": "${test.server.url}/error-simulation",
+            "errorCodes": [500, 502, 503, 504],
+            "expectedExceptionType": "HttpResponseException",
+            "timeoutSeconds": 30
+          }
         },
         {
-          "name": "http-errors",
-          "errorType": "HTTP_ERROR",
-          "concurrentRequests": 500,
-          "statusCodes": [400, 401, 403, 404, 500, 502, 503, 504]
+          "id": "client-errors",
+          "name": "Client Error Handling",
+          "description": "Tests handling of client errors (4xx) with Virtual Threads",
+          "parameters": {
+            "concurrentRequests": 200,
+            "requestType": "GET",
+            "targetEndpoint": "${test.server.url}/client-error-simulation",
+            "errorCodes": [400, 401, 403, 404, 429],
+            "expectedExceptionType": "HttpResponseException",
+            "timeoutSeconds": 30
+          }
+        },
+        {
+          "id": "connection-reset",
+          "name": "Connection Reset Handling",
+          "description": "Tests handling of connection resets with Virtual Threads",
+          "parameters": {
+            "concurrentRequests": 100,
+            "requestType": "GET",
+            "targetEndpoint": "${test.server.url}/connection-reset-simulation",
+            "expectedExceptionType": "ConnectionResetException",
+            "timeoutSeconds": 30
+          }
         }
-      ],
-      "expectedResults": {
-        "gracefulErrorHandling": true,
-        "noThreadLeaks": true,
-        "properExceptionPropagation": true,
-        "resourceCleanup": true
-      }
+      ]
     },
     {
-      "id": "connection-pooling",
+      "id": "connection-pool",
       "name": "Connection Pool Behavior with Virtual Threads",
-      "description": "Tests HTTP client connection pooling behavior with Virtual Threads",
-      "category": "resource-management",
-      "poolConfigurations": [
+      "description": "Validates connection pool behavior when using Virtual Threads",
+      "testCases": [
         {
-          "name": "default-pool",
-          "maxConnections": 20,
-          "maxConnectionsPerRoute": 2,
-          "keepAliveMs": 30000,
-          "validateAfterInactivityMs": 10000
+          "id": "connection-reuse",
+          "name": "Connection Reuse",
+          "description": "Tests connection reuse patterns with Virtual Threads",
+          "parameters": {
+            "concurrentRequests": 500,
+            "requestsPerThread": 10,
+            "requestType": "GET",
+            "targetEndpoint": "${test.server.url}/connection-info",
+            "expectedStatusCode": 200,
+            "timeoutSeconds": 60,
+            "validateConnectionReuse": true
+          }
         },
         {
-          "name": "large-pool",
-          "maxConnections": 200,
-          "maxConnectionsPerRoute": 20,
-          "keepAliveMs": 60000,
-          "validateAfterInactivityMs": 30000
+          "id": "connection-eviction",
+          "name": "Connection Eviction",
+          "description": "Tests connection eviction from the pool with Virtual Threads",
+          "parameters": {
+            "concurrentRequests": 200,
+            "requestType": "GET",
+            "targetEndpoint": "${test.server.url}/simple-resource",
+            "expectedStatusCode": 200,
+            "timeoutSeconds": 30,
+            "maxConnectionsPerRoute": 20,
+            "maxTotalConnections": 100,
+            "connectionTTLSeconds": 5
+          }
         },
         {
-          "name": "unlimited-pool",
-          "maxConnections": -1,
-          "maxConnectionsPerRoute": -1,
-          "keepAliveMs": 120000,
-          "validateAfterInactivityMs": 60000
+          "id": "connection-limit",
+          "name": "Connection Limit Handling",
+          "description": "Tests behavior when connection limits are reached with Virtual Threads",
+          "parameters": {
+            "concurrentRequests": 1000,
+            "requestType": "GET",
+            "targetEndpoint": "${test.server.url}/simple-resource",
+            "expectedStatusCode": 200,
+            "timeoutSeconds": 60,
+            "maxConnectionsPerRoute": 10,
+            "maxTotalConnections": 50,
+            "validateQueueBehavior": true
+          }
+        },
+        {
+          "id": "connection-keepalive",
+          "name": "Connection Keep-Alive",
+          "description": "Tests keep-alive behavior with Virtual Threads",
+          "parameters": {
+            "concurrentRequests": 100,
+            "requestsPerThread": 5,
+            "requestInterval": 2000,
+            "requestType": "GET",
+            "targetEndpoint": "${test.server.url}/connection-info",
+            "expectedStatusCode": 200,
+            "timeoutSeconds": 60,
+            "keepAliveStrategy": "default"
+          }
         }
-      ],
-      "testPatterns": [
-        {
-          "name": "burst-requests",
-          "concurrentRequests": 1000,
-          "burstDurationMs": 5000,
-          "pauseBetweenBurstsMs": 10000,
-          "numberOfBursts": 5
-        },
-        {
-          "name": "steady-load",
-          "concurrentRequests": 500,
-          "durationMs": 60000,
-          "requestsPerSecond": 100
-        },
-        {
-          "name": "connection-reuse",
-          "initialConnections": 50,
-          "subsequentRequests": 1000,
-          "delayBetweenRequestsMs": 100
-        }
-      ],
-      "expectedResults": {
-        "connectionReuseRate": 95,
-        "noConnectionLeaks": true,
-        "properConnectionValidation": true,
-        "efficientResourceUtilization": true
-      }
+      ]
     },
     {
-      "id": "thread-pinning-detection",
-      "name": "Virtual Thread Pinning Detection",
-      "description": "Tests for detecting and measuring thread pinning during HTTP client operations",
-      "category": "diagnostics",
-      "pinningScenarios": [
+      "id": "performance-comparison",
+      "name": "Performance Comparison: Virtual vs Platform Threads",
+      "description": "Compares performance metrics between Virtual Threads and Platform Threads",
+      "testCases": [
         {
-          "name": "synchronous-io",
-          "operation": "FILE_IO",
-          "concurrentRequests": 100,
-          "expectedPinningEvents": 0
+          "id": "throughput-comparison",
+          "name": "Throughput Comparison",
+          "description": "Compares request throughput between Virtual Threads and Platform Threads",
+          "parameters": {
+            "concurrentRequests": [100, 500, 1000, 5000, 10000],
+            "requestType": "GET",
+            "targetEndpoint": "${test.server.url}/simple-resource",
+            "expectedStatusCode": 200,
+            "timeoutSeconds": 120,
+            "warmupIterations": 10,
+            "measurementIterations": 20,
+            "threadTypes": ["virtual", "platform"]
+          }
         },
         {
-          "name": "synchronized-blocks",
-          "operation": "SYNCHRONIZED_METHOD",
-          "concurrentRequests": 100,
-          "expectedPinningEvents": "variable",
-          "maxAcceptablePinningDurationMs": 10
+          "id": "latency-comparison",
+          "name": "Latency Comparison",
+          "description": "Compares request latency between Virtual Threads and Platform Threads",
+          "parameters": {
+            "concurrentRequests": [100, 500, 1000, 5000],
+            "requestType": "GET",
+            "targetEndpoint": "${test.server.url}/simple-resource",
+            "expectedStatusCode": 200,
+            "timeoutSeconds": 120,
+            "warmupIterations": 10,
+            "measurementIterations": 20,
+            "threadTypes": ["virtual", "platform"],
+            "capturePercentiles": [50, 90, 95, 99]
+          }
         },
         {
-          "name": "native-calls",
-          "operation": "JNI_CALL",
-          "concurrentRequests": 100,
-          "expectedPinningEvents": "variable",
-          "maxAcceptablePinningDurationMs": 5
+          "id": "memory-comparison",
+          "name": "Memory Usage Comparison",
+          "description": "Compares memory usage between Virtual Threads and Platform Threads",
+          "parameters": {
+            "concurrentRequests": [100, 1000, 10000],
+            "requestType": "GET",
+            "targetEndpoint": "${test.server.url}/simple-resource",
+            "expectedStatusCode": 200,
+            "timeoutSeconds": 120,
+            "threadTypes": ["virtual", "platform"],
+            "captureMemoryMetrics": ["heap", "non-heap", "thread-stack"]
+          }
+        },
+        {
+          "id": "cpu-comparison",
+          "name": "CPU Usage Comparison",
+          "description": "Compares CPU usage between Virtual Threads and Platform Threads",
+          "parameters": {
+            "concurrentRequests": [100, 1000, 5000],
+            "requestType": "GET",
+            "targetEndpoint": "${test.server.url}/simple-resource",
+            "expectedStatusCode": 200,
+            "timeoutSeconds": 120,
+            "threadTypes": ["virtual", "platform"],
+            "captureCpuMetrics": ["system", "process", "thread"]
+          }
         }
-      ],
-      "jvmFlags": [
-        "-Djdk.tracePinnedThreads=full"
-      ],
-      "expectedResults": {
-        "minimalPinning": true,
-        "shortPinningDurations": true,
-        "properDiagnosticOutput": true
-      }
+      ]
     },
     {
-      "id": "proxy-connections",
-      "name": "Proxy Connection Handling with Virtual Threads",
-      "description": "Tests HTTP client proxy connection handling with Virtual Threads",
-      "category": "connectivity",
-      "proxyConfigurations": [
+      "id": "thread-pinning",
+      "name": "Thread Pinning Detection and Mitigation",
+      "description": "Tests to detect and mitigate thread pinning issues with Virtual Threads",
+      "testCases": [
         {
-          "name": "http-proxy",
-          "type": "HTTP",
-          "authentication": false,
-          "concurrentConnections": 500
+          "id": "synchronization-pinning",
+          "name": "Synchronization-Based Pinning",
+          "description": "Tests for thread pinning caused by synchronization on non-virtual thread objects",
+          "parameters": {
+            "concurrentRequests": 1000,
+            "requestType": "GET",
+            "targetEndpoint": "${test.server.url}/synchronized-operation",
+            "expectedStatusCode": 200,
+            "timeoutSeconds": 60,
+            "detectPinning": true,
+            "jvmFlag": "-Djdk.tracePinnedThreads=full"
+          }
         },
         {
-          "name": "https-proxy",
-          "type": "HTTPS",
-          "authentication": false,
-          "concurrentConnections": 500
+          "id": "blocking-io-pinning",
+          "name": "Blocking I/O Pinning",
+          "description": "Tests for thread pinning caused by blocking I/O operations",
+          "parameters": {
+            "concurrentRequests": 500,
+            "requestType": "GET",
+            "targetEndpoint": "${test.server.url}/blocking-io-operation",
+            "expectedStatusCode": 200,
+            "timeoutSeconds": 60,
+            "detectPinning": true,
+            "jvmFlag": "-Djdk.tracePinnedThreads=full"
+          }
         },
         {
-          "name": "authenticated-proxy",
-          "type": "HTTP",
-          "authentication": true,
-          "authType": "BASIC",
-          "concurrentConnections": 200
-        },
-        {
-          "name": "ntlm-proxy",
-          "type": "HTTP",
-          "authentication": true,
-          "authType": "NTLM",
-          "concurrentConnections": 100
+          "id": "native-method-pinning",
+          "name": "Native Method Pinning",
+          "description": "Tests for thread pinning caused by native method calls",
+          "parameters": {
+            "concurrentRequests": 500,
+            "requestType": "GET",
+            "targetEndpoint": "${test.server.url}/native-method-operation",
+            "expectedStatusCode": 200,
+            "timeoutSeconds": 60,
+            "detectPinning": true,
+            "jvmFlag": "-Djdk.tracePinnedThreads=full"
+          }
         }
-      ],
-      "expectedResults": {
-        "successRate": 100,
-        "correctProxyRouting": true,
-        "properAuthenticationHandling": true,
-        "noThreadPinning": true
-      }
+      ]
     },
     {
-      "id": "ssl-connections",
-      "name": "SSL/TLS Connection Handling with Virtual Threads",
-      "description": "Tests HTTP client SSL/TLS connection handling with Virtual Threads",
-      "category": "security",
-      "sslConfigurations": [
+      "id": "proxy-configuration",
+      "name": "Proxy Configuration with Virtual Threads",
+      "description": "Tests HTTP client proxy configuration with Virtual Threads",
+      "testCases": [
         {
-          "name": "tls-1.2",
-          "protocol": "TLSv1.2",
-          "cipherSuites": ["TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"],
-          "concurrentConnections": 500
+          "id": "http-proxy",
+          "name": "HTTP Proxy Configuration",
+          "description": "Tests HTTP proxy configuration with Virtual Threads",
+          "parameters": {
+            "concurrentRequests": 200,
+            "requestType": "GET",
+            "targetEndpoint": "http://example.com/resource",
+            "proxyType": "http",
+            "proxyHost": "${test.proxy.host}",
+            "proxyPort": "${test.proxy.port}",
+            "expectedStatusCode": 200,
+            "timeoutSeconds": 30,
+            "validateProxyUsage": true
+          }
         },
         {
-          "name": "tls-1.3",
-          "protocol": "TLSv1.3",
-          "cipherSuites": ["TLS_AES_128_GCM_SHA256"],
-          "concurrentConnections": 500
+          "id": "https-proxy",
+          "name": "HTTPS Proxy Configuration",
+          "description": "Tests HTTPS proxy configuration with Virtual Threads",
+          "parameters": {
+            "concurrentRequests": 200,
+            "requestType": "GET",
+            "targetEndpoint": "https://example.com/resource",
+            "proxyType": "https",
+            "proxyHost": "${test.proxy.host}",
+            "proxyPort": "${test.proxy.port}",
+            "expectedStatusCode": 200,
+            "timeoutSeconds": 30,
+            "validateProxyUsage": true
+          }
         },
         {
-          "name": "client-auth",
-          "protocol": "TLSv1.3",
-          "clientAuth": true,
-          "concurrentConnections": 200
+          "id": "proxy-authentication",
+          "name": "Proxy Authentication",
+          "description": "Tests proxy authentication with Virtual Threads",
+          "parameters": {
+            "concurrentRequests": 100,
+            "requestType": "GET",
+            "targetEndpoint": "https://example.com/resource",
+            "proxyType": "https",
+            "proxyHost": "${test.proxy.host}",
+            "proxyPort": "${test.proxy.port}",
+            "proxyAuth": {
+              "username": "${test.proxy.username}",
+              "password": "${test.proxy.password}"
+            },
+            "expectedStatusCode": 200,
+            "timeoutSeconds": 30,
+            "validateProxyUsage": true
+          }
         },
         {
-          "name": "session-reuse",
-          "protocol": "TLSv1.3",
-          "sessionReuse": true,
-          "concurrentConnections": 1000,
-          "connectionsPerSession": 10
+          "id": "non-proxy-hosts",
+          "name": "Non-Proxy Hosts Configuration",
+          "description": "Tests non-proxy hosts configuration with Virtual Threads",
+          "parameters": {
+            "concurrentRequests": 100,
+            "requestType": "GET",
+            "targetEndpoints": [
+              "http://localhost:8080/resource",
+              "http://internal.example.com/resource",
+              "http://example.com/resource"
+            ],
+            "proxyType": "http",
+            "proxyHost": "${test.proxy.host}",
+            "proxyPort": "${test.proxy.port}",
+            "nonProxyHosts": ["localhost", "*.internal.example.com"],
+            "expectedStatusCode": 200,
+            "timeoutSeconds": 30,
+            "validateProxyUsage": true
+          }
         }
-      ],
-      "expectedResults": {
-        "successRate": 100,
-        "properHandshakeCompletion": true,
-        "sessionReuseEfficiency": true,
-        "noThreadPinning": true
-      }
-    },
-    {
-      "id": "content-compression",
-      "name": "Content Compression Handling with Virtual Threads",
-      "description": "Tests HTTP client content compression handling with Virtual Threads",
-      "category": "performance",
-      "compressionConfigurations": [
-        {
-          "name": "gzip-enabled",
-          "compressionType": "gzip",
-          "responseSize": "10MB",
-          "concurrentRequests": 200
-        },
-        {
-          "name": "deflate-enabled",
-          "compressionType": "deflate",
-          "responseSize": "10MB",
-          "concurrentRequests": 200
-        },
-        {
-          "name": "brotli-enabled",
-          "compressionType": "br",
-          "responseSize": "10MB",
-          "concurrentRequests": 200
-        },
-        {
-          "name": "compression-disabled",
-          "compressionType": "none",
-          "responseSize": "10MB",
-          "concurrentRequests": 200
-        }
-      ],
-      "expectedResults": {
-        "successRate": 100,
-        "properContentDecompression": true,
-        "bandwidthSavings": true,
-        "noThreadPinning": true
-      }
+      ]
     }
   ]
 }

@@ -10,463 +10,725 @@
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  */
-package org.sonatype.nexus.virtualthread;
+package org.sonatype.nexus.datastore;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.common.event.EventManager;
 import org.sonatype.nexus.datastore.api.DataSession;
 import org.sonatype.nexus.datastore.api.DataStore;
-import org.sonatype.nexus.transaction.Transaction;
-import org.sonatype.nexus.transaction.TransactionIsolation;
+import org.sonatype.nexus.datastore.api.DataStoreConfiguration;
+import org.sonatype.nexus.testdb.DataSessionRule;
+import org.sonatype.nexus.transaction.TransactionException;
 import org.sonatype.nexus.transaction.UnitOfWork;
 
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.experimental.categories.Category;
 import org.mockito.Mock;
-import org.mockito.Mockito;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
-import static org.hamcrest.Matchers.sameInstance;
-import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.sonatype.nexus.datastore.api.DataStoreManager.DEFAULT_DATASTORE_NAME;
 
 /**
- * Tests for transaction context preservation across Virtual Thread handoffs in the Nexus datastore.
- * 
+ * Test class for validating transaction context preservation across Virtual Thread handoffs in the Nexus datastore.
+ * <p>
  * This class ensures that database transactions maintain proper isolation, consistency, and atomicity
- * when operations span multiple Virtual Threads. It tests scenarios where transactions are started in
- * one thread and completed in another, verifying that commit and rollback operations work correctly.
+ * when operations span multiple Virtual Threads. It tests scenarios where transactions are started in one
+ * thread and completed in another, verifying that commit and rollback operations work correctly.
+ * <p>
+ * Key aspects tested:
+ * <ul>
+ *   <li>Transaction context preservation across thread boundaries</li>
+ *   <li>Rollback functionality during thread handoffs</li>
+ *   <li>Transaction isolation levels with concurrent Virtual Threads</li>
+ *   <li>Proper operation of transaction managers with Virtual Thread scheduling</li>
+ * </ul>
  */
 public class DataStoreTransactionVirtualThreadTest
     extends TestSupport
 {
+  private static final String TEST_TABLE = "virtual_thread_tx_test";
+  private static final String CREATE_TABLE_SQL = 
+      "CREATE TABLE IF NOT EXISTS " + TEST_TABLE + " (id INTEGER PRIMARY KEY, value VARCHAR(255))";
+  private static final String INSERT_SQL = "INSERT INTO " + TEST_TABLE + " VALUES (?, ?)";
+  private static final String SELECT_SQL = "SELECT value FROM " + TEST_TABLE + " WHERE id = ?";
+  private static final String UPDATE_SQL = "UPDATE " + TEST_TABLE + " SET value = ? WHERE id = ?";
+  private static final String DELETE_SQL = "DELETE FROM " + TEST_TABLE + " WHERE id = ?";
+  
+  @Rule
+  public DataSessionRule sessionRule = new DataSessionRule();
+  
   @Mock
-  private DataStore<?> dataStore;
-
-  @Mock
-  private DataSession<?> dataSession;
-
-  @Mock
-  private Transaction transaction;
-
+  private EventManager eventManager;
+  
+  private ExecutorService virtualThreadExecutor;
+  
   @Before
-  public void setup() throws Exception {
-    when(dataStore.openSession()).thenReturn(dataSession);
-    when(dataSession.getTransaction()).thenReturn(transaction);
+  public void setUp() throws Exception {
+    virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    // Create test table
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      session.access(Connection.class).prepareStatement(CREATE_TABLE_SQL).execute();
+      session.getTransaction().commit();
+    }
   }
-
+  
   @After
   public void tearDown() throws Exception {
-    UnitOfWork.end();
+    if (virtualThreadExecutor != null) {
+      virtualThreadExecutor.close();
+    }
+    
+    // Clean up test table
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      session.access(Connection.class).prepareStatement("DROP TABLE IF EXISTS " + TEST_TABLE).execute();
+      session.getTransaction().commit();
+    }
   }
-
+  
   /**
-   * Tests that a transaction started in one Virtual Thread can be successfully committed in another Virtual Thread.
-   * 
-   * This verifies that the transaction context is properly preserved across thread handoffs, which is essential
-   * for maintaining data consistency when using Virtual Threads for I/O operations.
+   * Tests that transaction context is preserved when a transaction is started in one Virtual Thread
+   * and completed in another.
+   * <p>
+   * This test verifies that the transaction context is properly maintained across thread boundaries,
+   * allowing operations to be performed in different threads while maintaining transactional integrity.
    */
   @Test
-  public void testTransactionContextPreservationAcrossVirtualThreads() throws Exception {
-    // Create a latch to coordinate between threads
-    CountDownLatch threadHandoffLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(1);
+  public void testTransactionContextPreservationAcrossThreads() throws Exception {
+    final int testId = 1;
+    final String initialValue = "initial-value";
+    final String updatedValue = "updated-value";
+    final AtomicReference<DataSession<?>> sessionRef = new AtomicReference<>();
+    final CountDownLatch threadHandoffLatch = new CountDownLatch(1);
+    final CountDownLatch completionLatch = new CountDownLatch(1);
     
-    // Reference to hold any exceptions that occur in the threads
-    AtomicReference<Throwable> threadException = new AtomicReference<>();
-    
-    // Start a virtual thread that begins a transaction
-    Thread firstThread = Thread.ofVirtual().name("first-thread").start(() -> {
+    // First Virtual Thread: Start transaction and insert data
+    CompletableFuture<Void> firstThreadFuture = CompletableFuture.runAsync(() -> {
       try {
-        // Begin a unit of work and open a session
-        UnitOfWork.begin(dataStore);
+        log.info("First Virtual Thread: Starting transaction and inserting data");
+        DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME);
+        sessionRef.set(session);
         
-        // Verify the transaction is active
-        assertThat(UnitOfWork.peekTransaction(), is(notNullValue()));
-        assertThat(UnitOfWork.peekTransaction(), is(sameInstance(transaction)));
+        // Begin transaction and insert initial data
+        Connection conn = session.access(Connection.class);
+        PreparedStatement stmt = conn.prepareStatement(INSERT_SQL);
+        stmt.setInt(1, testId);
+        stmt.setString(2, initialValue);
+        stmt.executeUpdate();
         
-        // Signal the second thread to continue
+        // Signal that the first part of the transaction is complete
         threadHandoffLatch.countDown();
+        
+        // Wait for the second thread to complete its work
+        completionLatch.await(5, TimeUnit.SECONDS);
       }
-      catch (Throwable t) {
-        threadException.set(t);
-        threadHandoffLatch.countDown();
+      catch (Exception e) {
+        log.error("Error in first Virtual Thread", e);
+        fail("Exception in first Virtual Thread: " + e.getMessage());
       }
-    });
+    }, virtualThreadExecutor);
     
-    // Start a second virtual thread that continues the transaction
-    Thread secondThread = Thread.ofVirtual().name("second-thread").start(() -> {
+    // Wait for the first thread to insert data
+    assertTrue("First thread did not complete in time", 
+        threadHandoffLatch.await(5, TimeUnit.SECONDS));
+    
+    // Second Virtual Thread: Continue the transaction and commit
+    CompletableFuture<Void> secondThreadFuture = CompletableFuture.runAsync(() -> {
       try {
-        // Wait for the first thread to begin the transaction
-        threadHandoffLatch.await(5, TimeUnit.SECONDS);
+        log.info("Second Virtual Thread: Continuing transaction and updating data");
+        DataSession<?> session = sessionRef.get();
+        assertThat("Session should be available", session, notNullValue());
         
-        // If an exception occurred in the first thread, don't proceed
-        if (threadException.get() != null) {
-          completionLatch.countDown();
-          return;
-        }
+        // Verify the data was inserted by the first thread
+        Connection conn = session.access(Connection.class);
+        PreparedStatement selectStmt = conn.prepareStatement(SELECT_SQL);
+        selectStmt.setInt(1, testId);
+        ResultSet rs = selectStmt.executeQuery();
+        assertTrue("Data should be available from first thread", rs.next());
+        assertThat(rs.getString(1), is(initialValue));
         
-        // Verify we can access the same transaction
-        assertThat(UnitOfWork.peekTransaction(), is(notNullValue()));
-        assertThat(UnitOfWork.peekTransaction(), is(sameInstance(transaction)));
+        // Update the data
+        PreparedStatement updateStmt = conn.prepareStatement(UPDATE_SQL);
+        updateStmt.setString(1, updatedValue);
+        updateStmt.setInt(2, testId);
+        updateStmt.executeUpdate();
         
         // Commit the transaction
-        UnitOfWork.end();
+        session.getTransaction().commit();
         
+        // Signal completion
         completionLatch.countDown();
       }
-      catch (Throwable t) {
-        threadException.set(t);
-        completionLatch.countDown();
+      catch (Exception e) {
+        log.error("Error in second Virtual Thread", e);
+        fail("Exception in second Virtual Thread: " + e.getMessage());
       }
-    });
+    }, virtualThreadExecutor);
     
     // Wait for both threads to complete
-    completionLatch.await(5, TimeUnit.SECONDS);
+    CompletableFuture.allOf(firstThreadFuture, secondThreadFuture).get(10, TimeUnit.SECONDS);
     
-    // Check if any exceptions occurred
-    if (threadException.get() != null) {
-      fail("Exception in test threads: " + threadException.get().getMessage());
+    // Verify the final state of the data
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      Connection conn = session.access(Connection.class);
+      PreparedStatement stmt = conn.prepareStatement(SELECT_SQL);
+      stmt.setInt(1, testId);
+      ResultSet rs = stmt.executeQuery();
+      
+      assertTrue("Data should be available after cross-thread transaction", rs.next());
+      assertThat("Data should have the updated value", rs.getString(1), is(updatedValue));
+      
+      session.getTransaction().commit();
     }
-    
-    // Verify the transaction was committed
-    verify(transaction).commit();
-    verify(dataSession).close();
   }
-
+  
   /**
-   * Tests that a transaction started in one Virtual Thread can be rolled back in another Virtual Thread.
-   * 
-   * This verifies that rollback functionality works correctly during thread handoffs, which is important
-   * for maintaining data consistency when errors occur in asynchronous operations.
+   * Tests that transaction rollback works correctly when a transaction is started in one Virtual Thread
+   * and rolled back in another.
+   * <p>
+   * This test verifies that when a transaction is rolled back in a different thread than where it was started,
+   * the rollback is properly applied and no data is committed to the database.
    */
   @Test
-  public void testRollbackDuringVirtualThreadHandoff() throws Exception {
-    // Create a latch to coordinate between threads
-    CountDownLatch threadHandoffLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(1);
+  public void testTransactionRollbackAcrossThreads() throws Exception {
+    final int testId = 2;
+    final String testValue = "rollback-test-value";
+    final AtomicReference<DataSession<?>> sessionRef = new AtomicReference<>();
+    final CountDownLatch threadHandoffLatch = new CountDownLatch(1);
+    final CountDownLatch completionLatch = new CountDownLatch(1);
     
-    // Reference to hold any exceptions that occur in the threads
-    AtomicReference<Throwable> threadException = new AtomicReference<>();
-    
-    // Start a virtual thread that begins a transaction
-    Thread firstThread = Thread.ofVirtual().name("first-thread").start(() -> {
+    // First Virtual Thread: Start transaction and insert data
+    CompletableFuture<Void> firstThreadFuture = CompletableFuture.runAsync(() -> {
       try {
-        // Begin a unit of work and open a session
-        UnitOfWork.begin(dataStore);
+        log.info("First Virtual Thread: Starting transaction for rollback test");
+        DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME);
+        sessionRef.set(session);
         
-        // Verify the transaction is active
-        assertThat(UnitOfWork.peekTransaction(), is(notNullValue()));
+        // Begin transaction and insert data
+        Connection conn = session.access(Connection.class);
+        PreparedStatement stmt = conn.prepareStatement(INSERT_SQL);
+        stmt.setInt(1, testId);
+        stmt.setString(2, testValue);
+        stmt.executeUpdate();
         
-        // Signal the second thread to continue
+        // Signal that the first part of the transaction is complete
         threadHandoffLatch.countDown();
+        
+        // Wait for the second thread to complete its work
+        completionLatch.await(5, TimeUnit.SECONDS);
       }
-      catch (Throwable t) {
-        threadException.set(t);
-        threadHandoffLatch.countDown();
+      catch (Exception e) {
+        log.error("Error in first Virtual Thread", e);
+        fail("Exception in first Virtual Thread: " + e.getMessage());
       }
-    });
+    }, virtualThreadExecutor);
     
-    // Start a second virtual thread that rolls back the transaction
-    Thread secondThread = Thread.ofVirtual().name("second-thread").start(() -> {
+    // Wait for the first thread to insert data
+    assertTrue("First thread did not complete in time", 
+        threadHandoffLatch.await(5, TimeUnit.SECONDS));
+    
+    // Second Virtual Thread: Continue the transaction but roll it back
+    CompletableFuture<Void> secondThreadFuture = CompletableFuture.runAsync(() -> {
       try {
-        // Wait for the first thread to begin the transaction
-        threadHandoffLatch.await(5, TimeUnit.SECONDS);
+        log.info("Second Virtual Thread: Continuing transaction and rolling back");
+        DataSession<?> session = sessionRef.get();
+        assertThat("Session should be available", session, notNullValue());
         
-        // If an exception occurred in the first thread, don't proceed
-        if (threadException.get() != null) {
-          completionLatch.countDown();
-          return;
-        }
-        
-        // Verify we can access the same transaction
-        Transaction tx = UnitOfWork.peekTransaction();
-        assertThat(tx, is(notNullValue()));
+        // Verify the data is visible within the transaction
+        Connection conn = session.access(Connection.class);
+        PreparedStatement selectStmt = conn.prepareStatement(SELECT_SQL);
+        selectStmt.setInt(1, testId);
+        ResultSet rs = selectStmt.executeQuery();
+        assertTrue("Data should be available within transaction", rs.next());
+        assertThat(rs.getString(1), is(testValue));
         
         // Roll back the transaction
-        tx.rollback();
-        UnitOfWork.end();
+        session.getTransaction().rollback();
         
+        // Signal completion
         completionLatch.countDown();
       }
-      catch (Throwable t) {
-        threadException.set(t);
-        completionLatch.countDown();
+      catch (Exception e) {
+        log.error("Error in second Virtual Thread", e);
+        fail("Exception in second Virtual Thread: " + e.getMessage());
       }
-    });
+    }, virtualThreadExecutor);
     
     // Wait for both threads to complete
-    completionLatch.await(5, TimeUnit.SECONDS);
+    CompletableFuture.allOf(firstThreadFuture, secondThreadFuture).get(10, TimeUnit.SECONDS);
     
-    // Check if any exceptions occurred
-    if (threadException.get() != null) {
-      fail("Exception in test threads: " + threadException.get().getMessage());
+    // Verify the data was not committed due to rollback
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      Connection conn = session.access(Connection.class);
+      PreparedStatement stmt = conn.prepareStatement(SELECT_SQL);
+      stmt.setInt(1, testId);
+      ResultSet rs = stmt.executeQuery();
+      
+      assertFalse("Data should not be available after rollback", rs.next());
+      
+      session.getTransaction().commit();
     }
-    
-    // Verify the transaction was rolled back and not committed
-    verify(transaction).rollback();
-    verify(transaction, never()).commit();
-    verify(dataSession).close();
   }
-
+  
   /**
    * Tests transaction isolation levels with concurrent Virtual Threads.
-   * 
-   * This verifies that transactions with SERIALIZABLE isolation level properly handle
-   * concurrent access from multiple Virtual Threads.
+   * <p>
+   * This test verifies that transactions in different Virtual Threads are properly isolated from each other,
+   * ensuring that changes made in one transaction are not visible to other transactions until committed.
    */
   @Test
   public void testTransactionIsolationWithConcurrentVirtualThreads() throws Exception {
-    // Mock a data store that supports SERIALIZABLE isolation
-    DataStore<?> serializableStore = Mockito.mock(DataStore.class);
-    DataSession<?> serializableSession = Mockito.mock(DataSession.class);
-    Transaction serializableTx = Mockito.mock(Transaction.class);
+    final int testId = 3;
+    final String initialValue = "isolation-initial";
+    final String updatedValue = "isolation-updated";
+    final CountDownLatch setupLatch = new CountDownLatch(1);
+    final CountDownLatch thread1StartedLatch = new CountDownLatch(1);
+    final CountDownLatch thread2CompletedLatch = new CountDownLatch(1);
+    final AtomicBoolean thread2SawUpdatedValue = new AtomicBoolean(false);
     
-    when(serializableStore.openSession(TransactionIsolation.SERIALIZABLE)).thenReturn(serializableSession);
-    when(serializableSession.getTransaction()).thenReturn(serializableTx);
-    
-    // Create a barrier to synchronize the start of both threads
-    CyclicBarrier barrier = new CyclicBarrier(2);
-    CountDownLatch completionLatch = new CountDownLatch(2);
-    
-    // Reference to hold any exceptions that occur in the threads
-    AtomicReference<Throwable> threadException = new AtomicReference<>();
-    
-    // Flag to track if both transactions were active simultaneously
-    AtomicBoolean concurrentTransactions = new AtomicBoolean(false);
-    
-    // Start two virtual threads that begin transactions with SERIALIZABLE isolation
-    Thread thread1 = Thread.ofVirtual().name("isolation-thread-1").start(() -> {
-      try {
-        // Wait for both threads to start simultaneously
-        barrier.await(5, TimeUnit.SECONDS);
-        
-        // Begin a unit of work with SERIALIZABLE isolation
-        UnitOfWork.begin(() -> serializableStore.openSession(TransactionIsolation.SERIALIZABLE));
-        
-        // Simulate some work
-        Thread.sleep(100);
-        
-        // Check if the other transaction is also active
-        if (UnitOfWork.isActiveInOtherThread()) {
-          concurrentTransactions.set(true);
-        }
-        
-        // Commit and end the transaction
-        UnitOfWork.end();
-        
-        completionLatch.countDown();
-      }
-      catch (Throwable t) {
-        threadException.set(t);
-        completionLatch.countDown();
-      }
-    });
-    
-    Thread thread2 = Thread.ofVirtual().name("isolation-thread-2").start(() -> {
-      try {
-        // Wait for both threads to start simultaneously
-        barrier.await(5, TimeUnit.SECONDS);
-        
-        // Begin a unit of work with SERIALIZABLE isolation
-        UnitOfWork.begin(() -> serializableStore.openSession(TransactionIsolation.SERIALIZABLE));
-        
-        // Simulate some work
-        Thread.sleep(100);
-        
-        // Check if the other transaction is also active
-        if (UnitOfWork.isActiveInOtherThread()) {
-          concurrentTransactions.set(true);
-        }
-        
-        // Commit and end the transaction
-        UnitOfWork.end();
-        
-        completionLatch.countDown();
-      }
-      catch (Throwable t) {
-        threadException.set(t);
-        completionLatch.countDown();
-      }
-    });
-    
-    // Wait for both threads to complete
-    completionLatch.await(5, TimeUnit.SECONDS);
-    
-    // Check if any exceptions occurred
-    if (threadException.get() != null) {
-      fail("Exception in test threads: " + threadException.get().getMessage());
+    // Setup: Insert initial data
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      Connection conn = session.access(Connection.class);
+      PreparedStatement stmt = conn.prepareStatement(INSERT_SQL);
+      stmt.setInt(1, testId);
+      stmt.setString(2, initialValue);
+      stmt.executeUpdate();
+      session.getTransaction().commit();
+      setupLatch.countDown();
     }
     
-    // Verify both transactions were committed
-    verify(serializableTx, times(2)).commit();
-    verify(serializableSession, times(2)).close();
+    // Wait for setup to complete
+    assertTrue("Setup did not complete in time", setupLatch.await(5, TimeUnit.SECONDS));
     
-    // With SERIALIZABLE isolation, we expect concurrent transactions to be possible with Virtual Threads
-    // since they don't block each other at the thread level (database will handle isolation)
-    assertThat("Concurrent transactions should be possible with Virtual Threads", concurrentTransactions.get(), is(true));
+    // First Virtual Thread: Start a long-running transaction that updates the data
+    CompletableFuture<Void> firstThreadFuture = CompletableFuture.runAsync(() -> {
+      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+        log.info("First Virtual Thread: Starting long-running transaction");
+        
+        // Begin transaction and update data
+        Connection conn = session.access(Connection.class);
+        PreparedStatement updateStmt = conn.prepareStatement(UPDATE_SQL);
+        updateStmt.setString(1, updatedValue);
+        updateStmt.setInt(2, testId);
+        updateStmt.executeUpdate();
+        
+        // Signal that the first thread has started its transaction
+        thread1StartedLatch.countDown();
+        
+        // Wait for the second thread to complete its check
+        thread2CompletedLatch.await(5, TimeUnit.SECONDS);
+        
+        // Now commit the transaction
+        session.getTransaction().commit();
+        log.info("First Virtual Thread: Committed transaction");
+      }
+      catch (Exception e) {
+        log.error("Error in first Virtual Thread", e);
+        fail("Exception in first Virtual Thread: " + e.getMessage());
+      }
+    }, virtualThreadExecutor);
+    
+    // Wait for the first thread to start its transaction
+    assertTrue("First thread did not start in time", 
+        thread1StartedLatch.await(5, TimeUnit.SECONDS));
+    
+    // Second Virtual Thread: Start a separate transaction and check the value
+    CompletableFuture<Void> secondThreadFuture = CompletableFuture.runAsync(() -> {
+      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+        log.info("Second Virtual Thread: Starting separate transaction to check isolation");
+        
+        // Begin transaction and check data
+        Connection conn = session.access(Connection.class);
+        PreparedStatement selectStmt = conn.prepareStatement(SELECT_SQL);
+        selectStmt.setInt(1, testId);
+        ResultSet rs = selectStmt.executeQuery();
+        
+        assertTrue("Data should be available", rs.next());
+        String value = rs.getString(1);
+        log.info("Second Virtual Thread: Read value: {}", value);
+        
+        // If isolation is working correctly, we should still see the initial value
+        // because the first transaction hasn't committed yet
+        if (updatedValue.equals(value)) {
+          thread2SawUpdatedValue.set(true);
+        }
+        
+        session.getTransaction().commit();
+        
+        // Signal that the second thread has completed its check
+        thread2CompletedLatch.countDown();
+      }
+      catch (Exception e) {
+        log.error("Error in second Virtual Thread", e);
+        fail("Exception in second Virtual Thread: " + e.getMessage());
+      }
+    }, virtualThreadExecutor);
+    
+    // Wait for both threads to complete
+    CompletableFuture.allOf(firstThreadFuture, secondThreadFuture).get(10, TimeUnit.SECONDS);
+    
+    // Verify that the second thread did not see the updated value (isolation worked)
+    assertFalse("Second thread should not have seen the updated value due to transaction isolation",
+        thread2SawUpdatedValue.get());
+    
+    // Verify the final state of the data (should be updated)
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      Connection conn = session.access(Connection.class);
+      PreparedStatement stmt = conn.prepareStatement(SELECT_SQL);
+      stmt.setInt(1, testId);
+      ResultSet rs = stmt.executeQuery();
+      
+      assertTrue("Data should be available after transactions", rs.next());
+      assertThat("Data should have the updated value", rs.getString(1), is(updatedValue));
+      
+      session.getTransaction().commit();
+    }
   }
-
+  
   /**
-   * Tests that transaction managers operate properly with Virtual Thread scheduling.
-   * 
-   * This verifies that transactions can be properly managed even when Virtual Threads
-   * are unmounted and remounted by the scheduler during I/O operations.
+   * Tests transaction context preservation during Virtual Thread scheduling events.
+   * <p>
+   * This test verifies that transaction context is properly maintained when a Virtual Thread
+   * is unmounted and remounted during blocking operations, which can happen during I/O or when
+   * the thread yields.
    */
   @Test
-  public void testTransactionManagerWithVirtualThreadScheduling() throws Exception {
-    // Create a latch to coordinate between threads
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch midpointLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(1);
+  public void testTransactionContextDuringThreadScheduling() throws Exception {
+    final int testId = 4;
+    final String testValue = "scheduling-test-value";
+    final int iterations = 5;
+    final AtomicInteger successCount = new AtomicInteger(0);
     
-    // Reference to hold any exceptions that occur in the thread
-    AtomicReference<Throwable> threadException = new AtomicReference<>();
-    
-    // Start a virtual thread that performs a transaction with I/O simulation
-    Thread virtualThread = Thread.ofVirtual().name("scheduling-test-thread").start(() -> {
-      try {
-        // Wait for the test to signal start
-        startLatch.await(5, TimeUnit.SECONDS);
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+        log.info("Starting transaction with potential scheduling events");
+        Connection conn = session.access(Connection.class);
         
-        // Begin a unit of work
-        UnitOfWork.begin(dataStore);
+        // Insert initial data
+        PreparedStatement insertStmt = conn.prepareStatement(INSERT_SQL);
+        insertStmt.setInt(1, testId);
+        insertStmt.setString(2, testValue);
+        insertStmt.executeUpdate();
         
-        // Verify the transaction is active
-        assertThat(UnitOfWork.peekTransaction(), is(notNullValue()));
+        // Perform multiple operations with yields in between to force thread scheduling
+        for (int i = 0; i < iterations; i++) {
+          // Yield to potentially cause the Virtual Thread to be unmounted
+          Thread.yield();
+          
+          // Sleep to force a blocking operation that will unmount the Virtual Thread
+          Thread.sleep(10);
+          
+          // After potential remount, verify we can still access the transaction
+          PreparedStatement selectStmt = conn.prepareStatement(SELECT_SQL);
+          selectStmt.setInt(1, testId);
+          ResultSet rs = selectStmt.executeQuery();
+          
+          if (rs.next() && testValue.equals(rs.getString(1))) {
+            successCount.incrementAndGet();
+          }
+          
+          // Update the data slightly to ensure we're making changes
+          PreparedStatement updateStmt = conn.prepareStatement(UPDATE_SQL);
+          updateStmt.setString(1, testValue + "-" + i);
+          updateStmt.setInt(2, testId);
+          updateStmt.executeUpdate();
+        }
         
-        // Signal that we've reached the midpoint
-        midpointLatch.countDown();
-        
-        // Simulate I/O operation that would cause the virtual thread to be unmounted
-        Thread.sleep(500);
-        
-        // After "I/O", verify the transaction is still active
-        assertThat(UnitOfWork.peekTransaction(), is(notNullValue()));
-        assertThat(UnitOfWork.peekTransaction(), is(sameInstance(transaction)));
-        
-        // Commit and end the transaction
-        UnitOfWork.end();
-        
-        completionLatch.countDown();
+        // Commit the transaction
+        session.getTransaction().commit();
+        log.info("Completed transaction with {} successful verifications", successCount.get());
       }
-      catch (Throwable t) {
-        threadException.set(t);
-        midpointLatch.countDown();
-        completionLatch.countDown();
+      catch (Exception e) {
+        log.error("Error during transaction with scheduling events", e);
+        fail("Exception during transaction with scheduling events: " + e.getMessage());
       }
-    });
+    }, virtualThreadExecutor);
     
-    // Signal the thread to start
+    // Wait for the future to complete
+    future.get(10, TimeUnit.SECONDS);
+    
+    // Verify that all iterations were successful
+    assertThat("All iterations should have successfully verified the data",
+        successCount.get(), is(iterations));
+    
+    // Verify the final state of the data
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      Connection conn = session.access(Connection.class);
+      PreparedStatement stmt = conn.prepareStatement(SELECT_SQL);
+      stmt.setInt(1, testId);
+      ResultSet rs = stmt.executeQuery();
+      
+      assertTrue("Data should be available after transaction", rs.next());
+      assertThat("Data should have the final updated value",
+          rs.getString(1), is(testValue + "-" + (iterations - 1)));
+      
+      session.getTransaction().commit();
+    }
+  }
+  
+  /**
+   * Tests multiple concurrent transactions with Virtual Threads.
+   * <p>
+   * This test verifies that multiple concurrent transactions in different Virtual Threads
+   * can operate independently without interfering with each other.
+   */
+  @Test
+  public void testMultipleConcurrentTransactions() throws Exception {
+    final int threadCount = 10;
+    final CountDownLatch startLatch = new CountDownLatch(1);
+    final CountDownLatch completionLatch = new CountDownLatch(threadCount);
+    final List<Future<?>> futures = new ArrayList<>();
+    
+    // Start multiple virtual threads that will all perform their own transactions
+    for (int i = 0; i < threadCount; i++) {
+      final int threadId = i + 10; // Use as record ID to avoid conflicts
+      final String threadValue = "concurrent-thread-" + threadId;
+      
+      futures.add(virtualThreadExecutor.submit(() -> {
+        try {
+          // Wait for all threads to be ready
+          startLatch.await();
+          
+          // Perform transaction
+          try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+            Connection conn = session.access(Connection.class);
+            
+            // Insert data specific to this thread
+            PreparedStatement insertStmt = conn.prepareStatement(INSERT_SQL);
+            insertStmt.setInt(1, threadId);
+            insertStmt.setString(2, threadValue);
+            insertStmt.executeUpdate();
+            
+            // Simulate some work with potential thread scheduling
+            Thread.sleep((long) (Math.random() * 50));
+            
+            // Verify our own data is visible in the transaction
+            PreparedStatement selectStmt = conn.prepareStatement(SELECT_SQL);
+            selectStmt.setInt(1, threadId);
+            ResultSet rs = selectStmt.executeQuery();
+            
+            assertTrue("Thread should see its own data", rs.next());
+            assertThat(rs.getString(1), is(threadValue));
+            
+            // Commit the transaction
+            session.getTransaction().commit();
+          }
+        }
+        catch (Exception e) {
+          log.error("Error in concurrent transaction thread {}", threadId, e);
+          fail("Exception in concurrent transaction thread " + threadId + ": " + e.getMessage());
+        }
+        finally {
+          completionLatch.countDown();
+        }
+        return null;
+      }));
+    }
+    
+    // Start all threads simultaneously
     startLatch.countDown();
     
-    // Wait for the thread to reach the midpoint
-    midpointLatch.await(5, TimeUnit.SECONDS);
+    // Wait for all threads to complete
+    assertTrue("Not all threads completed in time", 
+        completionLatch.await(10, TimeUnit.SECONDS));
     
-    // Verify the transaction is active at this point
-    verify(transaction, never()).commit();
-    verify(transaction, never()).rollback();
-    
-    // Wait for the thread to complete
-    completionLatch.await(5, TimeUnit.SECONDS);
-    
-    // Check if any exceptions occurred
-    if (threadException.get() != null) {
-      fail("Exception in test thread: " + threadException.get().getMessage());
+    // Verify that all threads' data was committed correctly
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      Connection conn = session.access(Connection.class);
+      
+      for (int i = 0; i < threadCount; i++) {
+        final int threadId = i + 10;
+        final String expectedValue = "concurrent-thread-" + threadId;
+        
+        PreparedStatement stmt = conn.prepareStatement(SELECT_SQL);
+        stmt.setInt(1, threadId);
+        ResultSet rs = stmt.executeQuery();
+        
+        assertTrue("Data from thread " + threadId + " should be available", rs.next());
+        assertThat("Data from thread " + threadId + " should have the correct value",
+            rs.getString(1), is(expectedValue));
+      }
+      
+      session.getTransaction().commit();
     }
-    
-    // Verify the transaction was committed
-    verify(transaction).commit();
-    verify(dataSession).close();
   }
-
+  
   /**
-   * Tests that exceptions during transaction processing are properly propagated across Virtual Thread boundaries.
-   * 
-   * This verifies that when an exception occurs in one Virtual Thread, it can be properly caught and handled
-   * in another Virtual Thread, ensuring robust error handling in asynchronous operations.
+   * Tests transaction context preservation with UnitOfWork across Virtual Thread handoffs.
+   * <p>
+   * This test verifies that the UnitOfWork transaction context is properly maintained when a Virtual Thread
+   * is unmounted and remounted during blocking operations.
    */
   @Test
-  public void testExceptionPropagationAcrossVirtualThreads() throws Exception {
-    // Create a latch to coordinate between threads
-    CountDownLatch threadHandoffLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(1);
+  public void testUnitOfWorkTransactionContextAcrossThreadHandoffs() throws Exception {
+    final int testId = 5;
+    final String initialValue = "unitofwork-initial";
+    final String updatedValue = "unitofwork-updated";
     
-    // Reference to hold any exceptions that occur in the threads
-    AtomicReference<Throwable> threadException = new AtomicReference<>();
-    
-    // Configure the transaction to throw an exception on commit
-    doThrow(new RuntimeException("Simulated commit failure")).when(transaction).commit();
-    
-    // Start a virtual thread that begins a transaction
-    Thread firstThread = Thread.ofVirtual().name("first-thread").start(() -> {
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
       try {
-        // Begin a unit of work and open a session
-        UnitOfWork.begin(dataStore);
+        // Set up UnitOfWork for this thread
+        UnitOfWork.begin(sessionRule.openSession(DEFAULT_DATASTORE_NAME));
         
-        // Verify the transaction is active
-        assertThat(UnitOfWork.peekTransaction(), is(notNullValue()));
-        
-        // Signal the second thread to continue
-        threadHandoffLatch.countDown();
-      }
-      catch (Throwable t) {
-        threadException.set(t);
-        threadHandoffLatch.countDown();
-      }
-    });
-    
-    // Start a second virtual thread that tries to commit the transaction
-    Thread secondThread = Thread.ofVirtual().name("second-thread").start(() -> {
-      try {
-        // Wait for the first thread to begin the transaction
-        threadHandoffLatch.await(5, TimeUnit.SECONDS);
-        
-        // If an exception occurred in the first thread, don't proceed
-        if (threadException.get() != null) {
-          completionLatch.countDown();
-          return;
+        try {
+          log.info("Starting UnitOfWork transaction");
+          
+          // Insert initial data
+          Connection conn = UnitOfWork.currentSession().access(Connection.class);
+          PreparedStatement insertStmt = conn.prepareStatement(INSERT_SQL);
+          insertStmt.setInt(1, testId);
+          insertStmt.setString(2, initialValue);
+          insertStmt.executeUpdate();
+          
+          // Simulate a blocking operation that would cause a Virtual Thread handoff
+          Thread.sleep(100); // This will likely cause the Virtual Thread to be unmounted and remounted
+          
+          // After the handoff, verify we can still access the transaction context
+          PreparedStatement selectStmt = conn.prepareStatement(SELECT_SQL);
+          selectStmt.setInt(1, testId);
+          ResultSet rs = selectStmt.executeQuery();
+          assertTrue("Data should be available after thread handoff", rs.next());
+          assertThat(rs.getString(1), is(initialValue));
+          
+          // Update the data after the handoff
+          PreparedStatement updateStmt = conn.prepareStatement(UPDATE_SQL);
+          updateStmt.setString(1, updatedValue);
+          updateStmt.setInt(2, testId);
+          updateStmt.executeUpdate();
+          
+          // Commit the transaction
+          UnitOfWork.end();
+          log.info("Completed UnitOfWork transaction");
         }
-        
-        // Verify we can access the same transaction
-        assertThat(UnitOfWork.peekTransaction(), is(notNullValue()));
-        
-        // Try to commit the transaction - this should throw an exception
-        assertThrows(RuntimeException.class, () -> UnitOfWork.end());
-        
-        completionLatch.countDown();
+        catch (Exception e) {
+          UnitOfWork.end(e);
+          throw e;
+        }
       }
-      catch (Throwable t) {
-        threadException.set(t);
-        completionLatch.countDown();
+      catch (Exception e) {
+        log.error("Error in UnitOfWork transaction", e);
+        fail("Exception in UnitOfWork transaction: " + e.getMessage());
       }
-    });
+    }, virtualThreadExecutor);
     
-    // Wait for both threads to complete
-    completionLatch.await(5, TimeUnit.SECONDS);
+    // Wait for the future to complete
+    future.get(10, TimeUnit.SECONDS);
     
-    // Check if any unexpected exceptions occurred
-    if (threadException.get() != null) {
-      fail("Unexpected exception in test threads: " + threadException.get().getMessage());
+    // Verify the final state of the data
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      Connection conn = session.access(Connection.class);
+      PreparedStatement stmt = conn.prepareStatement(SELECT_SQL);
+      stmt.setInt(1, testId);
+      ResultSet rs = stmt.executeQuery();
+      
+      assertTrue("Data should be available after UnitOfWork transaction", rs.next());
+      assertThat("Data should have the updated value", rs.getString(1), is(updatedValue));
+      
+      session.getTransaction().commit();
     }
+  }
+  
+  /**
+   * Tests transaction rollback with exceptions across Virtual Thread handoffs.
+   * <p>
+   * This test verifies that when an exception occurs after a Virtual Thread handoff during a transaction,
+   * the transaction is properly rolled back and no data is committed to the database.
+   */
+  @Test
+  public void testTransactionRollbackWithExceptionAcrossThreadHandoffs() throws Exception {
+    final int testId = 6;
+    final String testValue = "exception-rollback-test";
     
-    // Verify the transaction commit was attempted but failed
-    verify(transaction).commit();
-    verify(dataSession).close();
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+      try {
+        // Set up UnitOfWork for this thread
+        UnitOfWork.begin(sessionRule.openSession(DEFAULT_DATASTORE_NAME));
+        
+        try {
+          log.info("Starting transaction that will roll back due to exception");
+          
+          // Insert data
+          Connection conn = UnitOfWork.currentSession().access(Connection.class);
+          PreparedStatement insertStmt = conn.prepareStatement(INSERT_SQL);
+          insertStmt.setInt(1, testId);
+          insertStmt.setString(2, testValue);
+          insertStmt.executeUpdate();
+          
+          // Simulate a blocking operation that would cause a Virtual Thread handoff
+          Thread.sleep(100); // This will likely cause the Virtual Thread to be unmounted and remounted
+          
+          // After the handoff, verify we can still access the transaction context
+          PreparedStatement selectStmt = conn.prepareStatement(SELECT_SQL);
+          selectStmt.setInt(1, testId);
+          ResultSet rs = selectStmt.executeQuery();
+          assertTrue("Data should be available within transaction", rs.next());
+          assertThat(rs.getString(1), is(testValue));
+          
+          // Throw an exception to trigger rollback
+          throw new RuntimeException("Intentional exception to trigger rollback");
+        }
+        catch (Exception e) {
+          // End the UnitOfWork with the exception to trigger rollback
+          UnitOfWork.end(e);
+          
+          // We expect a RuntimeException, so rethrow it
+          if (e instanceof RuntimeException) {
+            throw (RuntimeException) e;
+          }
+          throw new RuntimeException(e);
+        }
+      }
+      catch (RuntimeException e) {
+        // Expected exception, verify it's the one we threw
+        if (!e.getMessage().contains("Intentional exception")) {
+          log.error("Unexpected exception", e);
+          fail("Unexpected exception: " + e.getMessage());
+        }
+      }
+      catch (Exception e) {
+        log.error("Error in transaction with exception", e);
+        fail("Exception in transaction with exception: " + e.getMessage());
+      }
+    }, virtualThreadExecutor);
+    
+    // Wait for the future to complete
+    future.get(10, TimeUnit.SECONDS);
+    
+    // Verify the data was not committed due to rollback
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      Connection conn = session.access(Connection.class);
+      PreparedStatement stmt = conn.prepareStatement(SELECT_SQL);
+      stmt.setInt(1, testId);
+      ResultSet rs = stmt.executeQuery();
+      
+      assertFalse("Data should not be available after rollback", rs.next());
+      
+      session.getTransaction().commit();
+    }
   }
 }

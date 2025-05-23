@@ -16,7 +16,15 @@ import java.io.IOException;
 import java.util.Map;
 
 /**
- * Cooperation interface for coordinating work between threads and nodes.
+ * Cooperation interface for coordinating work between multiple threads or nodes to prevent duplicate work.
+ * <p>
+ * This interface supports Java 21 Virtual Threads for I/O-bound operations, allowing for improved scalability
+ * and resource utilization. Operations that involve network calls, file system access, or database interactions
+ * are particularly well-suited for Virtual Thread execution.
+ * <p>
+ * When using Virtual Threads with this interface, context propagation is handled automatically to ensure
+ * that thread-local variables and other context information are properly maintained when a Virtual Thread
+ * is suspended and later resumed.
  * 
  * @since 3.41
  */
@@ -26,12 +34,34 @@ public interface Cooperation2
    * Sets the function that is used to perform the work. Depending on the thread, or the node chosen to perform the
    * co-operation there is no guarantee that the function will be called and the {@link Cooperation2} built may return
    * the result from another thread.
+   * <p>
+   * The provided work function may be executed using a Virtual Thread if the operation is I/O-bound and
+   * Virtual Thread execution is enabled in the builder. This is particularly beneficial for operations that
+   * involve network calls, file system access, or database interactions.
    *
    * @param workFunction a function which can be used to perform the operation
    * @param <RET> the type of the return value
    * @return the resulting builder
    */
   <RET> Builder<RET> on(IOCall<RET> workFunction);
+  
+  /**
+   * Sets the function that is used to perform the work, with an explicit indication that the operation
+   * can benefit from Virtual Thread execution. This method should be used for I/O-bound operations
+   * that may block for extended periods, such as network calls, file system access, or database interactions.
+   * <p>
+   * When an operation is marked as suitable for Virtual Thread execution, the implementation may choose to
+   * execute it using a Virtual Thread, which allows for better resource utilization when the operation blocks.
+   * <p>
+   * Note that the implementation may still choose not to use Virtual Threads based on runtime conditions or
+   * configuration settings.
+   *
+   * @param workFunction a function which can be used to perform the operation
+   * @param <RET> the type of the return value
+   * @return the resulting builder with Virtual Thread execution enabled by default
+   * @since Java 21
+   */
+  <RET> Builder<RET> onIOOperation(IOCall<RET> workFunction);
 
   /**
    * @return number of threads cooperating per request-key.
@@ -56,65 +86,50 @@ public interface Cooperation2
 
     /**
      * The co-operation may (depending on implementation) perform the work if concurrency controls timeout.
-     * 
+     *
      * @param performWorkOnFail whether to perform work if concurrency controls timeout
      * @return the resulting builder
      */
     Builder<RET> performWorkOnFail(final boolean performWorkOnFail);
     
     /**
-     * Indicates that this operation is I/O-bound and would benefit from execution in a Virtual Thread.
-     * When this flag is set, the implementation may choose to execute the work in a Virtual Thread
-     * to improve throughput, especially for operations that spend significant time waiting for I/O.
-     * 
-     * <p>Virtual Threads are particularly beneficial for operations that:</p>
+     * Specifies whether this operation should use Virtual Threads for execution. This is particularly
+     * beneficial for I/O-bound operations that may block for extended periods, such as network calls,
+     * file system access, or database interactions.
+     * <p>
+     * When Virtual Thread execution is enabled, the implementation will attempt to execute the operation
+     * using a Virtual Thread, which allows for better resource utilization when the operation blocks.
+     * <p>
+     * Note that the implementation may still choose not to use Virtual Threads based on runtime conditions
+     * or if the JVM does not support Virtual Threads.
+     * <p>
+     * Best practices for Virtual Thread usage:
      * <ul>
-     *   <li>Perform network I/O (HTTP requests, database queries, etc.)</li>
-     *   <li>Wait for file system operations</li>
-     *   <li>Block on external resources</li>
+     *   <li>Use Virtual Threads for I/O-bound operations that may block</li>
+     *   <li>Avoid using synchronized blocks or methods within Virtual Thread operations</li>
+     *   <li>Be aware that thread-local variables are maintained across Virtual Thread suspensions</li>
+     *   <li>Do not use Virtual Threads for CPU-intensive operations</li>
      * </ul>
-     * 
-     * <p><strong>Note:</strong> Operations that use {@code synchronized} blocks or methods may experience
-     * "pinning" which prevents the Virtual Thread from being unmounted during blocking operations.
-     * This can reduce the benefits of Virtual Threads.</p>
-     * 
-     * @param useVirtualThread whether to use a Virtual Thread for executing this operation
+     *
+     * @param useVirtualThreads whether to use Virtual Threads for this operation
      * @return the resulting builder
-     * @since 3.60
+     * @since Java 21
      */
-    Builder<RET> useVirtualThread(final boolean useVirtualThread);
-    
-    /**
-     * Specifies how to handle context propagation when using Virtual Threads.
-     * This is important for ensuring that thread-local values, transaction contexts,
-     * security contexts, and other thread-bound state are properly propagated to
-     * Virtual Threads when they are used.
-     * 
-     * <p>When context propagation is enabled, the implementation will ensure that relevant
-     * thread-local state is captured from the parent thread and properly restored in the
-     * Virtual Thread before executing the work function.</p>
-     * 
-     * <p><strong>Note:</strong> Context propagation may have a small performance overhead,
-     * but is essential for correct operation of code that relies on ThreadLocal values.</p>
-     * 
-     * @param propagateContext whether to propagate thread-local context to Virtual Threads
-     * @return the resulting builder
-     * @since 3.60
-     */
-    Builder<RET> propagateContext(final boolean propagateContext);
+    Builder<RET> useVirtualThreads(final boolean useVirtualThreads);
 
     /**
      * Perform the co-operation. (Note implementations may not execute the work asynchronously)
-     * 
-     * <p>When Virtual Threads are enabled via {@link #useVirtualThread(boolean)}, the implementation
-     * may choose to execute the work in a Virtual Thread for improved throughput, especially for
-     * I/O-bound operations. Context propagation behavior is controlled by the {@link #propagateContext(boolean)}
-     * setting.</p>
-     * 
+     * <p>
+     * If Virtual Thread execution is enabled for this operation, the implementation will attempt to
+     * execute the operation using a Virtual Thread, which allows for better resource utilization when
+     * the operation blocks. Context propagation is handled automatically to ensure that thread-local
+     * variables and other context information are properly maintained when a Virtual Thread is suspended
+     * and later resumed.
+     *
      * @param action the action being performed
-     * @param scopes the scopes involved in the action
+     * @param scopes optional scopes to further qualify the action
      * @return the result of the cooperation
-     * @throws IOException if an I/O error occurs during the operation
+     * @throws IOException if an I/O error occurs during the cooperation
      */
     RET cooperate(String action, String... scopes) throws IOException;
   }

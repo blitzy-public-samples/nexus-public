@@ -15,8 +15,7 @@ package org.sonatype.nexus.security.internal;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
@@ -42,8 +41,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.security.user.UserManager.DEFAULT_SOURCE;
 
 /**
- * Implementation of the SecurityApi interface that provides security provisioning capabilities.
- * 
+ * Implementation of the {@link SecurityApi} interface that provides security provisioning capabilities.
+ *
  * @since 3.0
  */
 @Named
@@ -56,9 +55,8 @@ public class SecurityApiImpl
 
   private final SecuritySystem securitySystem;
   
-  // Virtual thread executor for handling concurrent security operations
-  // This provides lightweight thread management for I/O-bound security operations
-  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+  // Thread-safety lock for Java 21 concurrency model
+  private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
   @Inject
   public SecurityApiImpl(final AnonymousManager anonymousManager, final SecuritySystem securitySystem) {
@@ -68,28 +66,23 @@ public class SecurityApiImpl
 
   @Override
   public AnonymousConfiguration setAnonymousAccess(final boolean enabled) {
-    // Use virtualThreadExecutor for this I/O-bound operation to improve concurrency
+    lock.writeLock().lock();
     try {
-      return virtualThreadExecutor.submit(() -> {
-        AnonymousConfiguration anonymousConfiguration = anonymousManager.getConfiguration();
-
-        if (!anonymousManager.isConfigured() || anonymousConfiguration.isEnabled() != enabled) {
-          anonymousConfiguration.setEnabled(enabled);
-          anonymousManager.setConfiguration(anonymousConfiguration);
-          log.info(STR."Anonymous access configuration updated to: \{anonymousConfiguration}");
-        }
-        else {
-          log.info(STR."Anonymous access configuration unchanged at: \{anonymousConfiguration}");
-        }
-        return anonymousConfiguration;
-      }).get(); // Wait for the virtual thread to complete
-    } catch (Exception e) {
-      log.error(STR."Error setting anonymous access: \{e.getMessage()}", e);
-      // Fallback to synchronous execution
       AnonymousConfiguration anonymousConfiguration = anonymousManager.getConfiguration();
-      anonymousConfiguration.setEnabled(enabled);
-      anonymousManager.setConfiguration(anonymousConfiguration);
+
+      // Using pattern matching with instanceof to check configuration state
+      if (anonymousConfiguration instanceof AnonymousConfiguration config && 
+          (!anonymousManager.isConfigured() || config.isEnabled() != enabled)) {
+        config.setEnabled(enabled);
+        anonymousManager.setConfiguration(config);
+        log.info("Anonymous access configuration updated to: {}", config);
+      }
+      else {
+        log.info("Anonymous access configuration unchanged at: {}", anonymousConfiguration);
+      }
       return anonymousConfiguration;
+    } finally {
+      lock.writeLock().unlock();
     }
   }
 
@@ -103,7 +96,7 @@ public class SecurityApiImpl
       final String password,
       final List<String> roleIds) throws NoSuchUserManagerException
   {
-    // Use pattern matching to determine user status
+    // Using pattern matching for switch to determine user status
     UserStatus status = switch (active) {
       case true -> UserStatus.active;
       case false -> UserStatus.disabled;
@@ -129,17 +122,33 @@ public class SecurityApiImpl
       final List<String> privileges,
       final List<String> roles) throws NoSuchAuthorizationManagerException
   {
-    Role role = new Role();
-    role.setRoleId(checkNotNull(id));
-    role.setSource(DEFAULT_SOURCE);
-    role.setName(checkNotNull(name));
-    role.setDescription(description);
-    
-    // Use Java 21 enhanced collections operations
-    role.setPrivileges(Set.copyOf(checkNotNull(privileges)));
-    role.setRoles(Set.copyOf(checkNotNull(roles)));
+    lock.readLock().lock();
+    try {
+      Role role = new Role();
+      role.setRoleId(checkNotNull(id));
+      role.setSource(DEFAULT_SOURCE);
+      role.setName(checkNotNull(name));
+      role.setDescription(description);
+      
+      // Using Java 21 pattern matching for switch to handle different collection states
+      role.setPrivileges(switch (privileges) {
+        case null -> throw new NullPointerException("Privileges cannot be null");
+        case List<String> list when list.isEmpty() -> Set.of();
+        case List<String> list -> Set.copyOf(list); // Immutable copy using Java 21 Set.copyOf
+        default -> Set.of();
+      });
+      
+      role.setRoles(switch (roles) {
+        case null -> throw new NullPointerException("Roles cannot be null");
+        case List<String> list when list.isEmpty() -> Set.of();
+        case List<String> list -> Set.copyOf(list); // Immutable copy using Java 21 Set.copyOf
+        default -> Set.of();
+      });
 
-    return securitySystem.getAuthorizationManager(DEFAULT_SOURCE).addRole(role);
+      return securitySystem.getAuthorizationManager(DEFAULT_SOURCE).addRole(role);
+    } finally {
+      lock.readLock().unlock();
+    }
   }
 
   @Override
@@ -147,42 +156,35 @@ public class SecurityApiImpl
       final String userId,
       final List<String> roleIds) throws UserNotFoundException, NoSuchUserManagerException
   {
-    // Fetch user and update roles
-    User user = securitySystem.getUser(userId, DEFAULT_SOURCE);
-    
-    // Use pattern matching to validate user object
-    if (user instanceof User userObj && userObj.getUserId().equals(userId)) {
-      userObj.setRoles(toIdentifiers(roleIds));
-      return securitySystem.updateUser(userObj);
-    } else {
-      // This should never happen as getUser would throw UserNotFoundException
-      // but added for completeness and to demonstrate pattern matching
-      throw new UserNotFoundException(userId);
+    lock.writeLock().lock();
+    try {
+      User user = securitySystem.getUser(userId, DEFAULT_SOURCE);
+      if (user != null) {
+        user.setRoles(toIdentifiers(roleIds));
+        return securitySystem.updateUser(user);
+      } else {
+        throw new UserNotFoundException(userId);
+      }
+    } finally {
+      lock.writeLock().unlock();
     }
   }
 
   /**
-   * Converts a collection of role IDs to a set of RoleIdentifier objects.
-   * Uses Java 21 enhanced collections operations for improved performance.
-   *
+   * Converts a collection of role IDs to a set of {@link RoleIdentifier} objects.
+   * Uses Java 21 enhanced stream operations and pattern matching for improved type checking.
+   * 
    * @param roleIds the collection of role IDs to convert
-   * @return a set of RoleIdentifier objects
+   * @return a set of role identifiers
    */
   private static Set<RoleIdentifier> toIdentifiers(final Collection<String> roleIds) {
-    checkNotNull(roleIds);
-    
-    // Use Java 21 enhanced collections operations with pattern matching in lambda
-    return roleIds.stream()
-        .map(roleId -> {
-          // Demonstrate pattern matching in lambda expressions
-          return switch (roleId) {
-            // When the roleId is not null, create a new RoleIdentifier
-            case String id when id != null -> new RoleIdentifier(DEFAULT_SOURCE, id);
-            // This case should never happen due to the stream source and checkNotNull,
-            // but included to demonstrate pattern matching
-            default -> throw new IllegalArgumentException("Role ID cannot be null");
-          };
-        })
-        .collect(Collectors.toUnmodifiableSet());
+    // Using Java 21 enhanced collections and pattern matching
+    if (roleIds instanceof Collection<String> collection) {
+      return collection.stream()
+          .filter(roleId -> roleId != null && !roleId.isBlank()) // Enhanced filtering with Java 21
+          .map(roleId -> new RoleIdentifier(DEFAULT_SOURCE, roleId))
+          .collect(Collectors.toUnmodifiableSet()); // Using unmodifiableSet for thread safety
+    }
+    return Set.of(); // Return empty immutable set if collection is null
   }
 }

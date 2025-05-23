@@ -13,6 +13,8 @@
 package org.sonatype.nexus.blobstore.metrics;
 
 import java.lang.reflect.Method;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.blobstore.BlobSupport;
@@ -27,9 +29,7 @@ import static com.google.common.base.Preconditions.checkState;
 
 /**
  * A method interceptor which monitor blob store operations (see {@link OperationType}) of the annotated method.
- * 
- * <p>This interceptor also supports tracking thread type (platform or virtual) for operations that are
- * annotated with {@link MonitoringBlobStoreMetrics#trackThreadType()} set to true.</p>
+ * Optimized for both platform threads and virtual threads in Java 21.
  *
  * @since 3.38
  */
@@ -37,15 +37,36 @@ public class BlobStoreAnalyticsInterceptor
     extends ComponentSupport
     implements MethodInterceptor
 {
+  // Cache of VirtualThreadBlobStoreMetrics instances per BlobStore to avoid repeated lookups
+  private final Map<BlobStore, VirtualThreadBlobStoreMetrics> virtualThreadMetricsCache = new ConcurrentHashMap<>();
+
   /**
    * Determines if the current thread is a virtual thread.
-   * 
+   * Uses Java 21's Thread.currentThread().isVirtual() method.
+   *
    * @return true if the current thread is a virtual thread, false otherwise
    */
   private boolean isVirtualThread() {
-    return Thread.currentThread().isVirtual();
+    try {
+      // Use reflection to avoid compilation errors on Java versions before 21
+      Method isVirtualMethod = Thread.class.getMethod("isVirtual");
+      return (Boolean) isVirtualMethod.invoke(Thread.currentThread());
+    } catch (Exception e) {
+      // If the method doesn't exist or fails, we're not on a virtual thread
+      return false;
+    }
   }
-  
+
+  /**
+   * Gets or creates a VirtualThreadBlobStoreMetrics instance for the given BlobStore.
+   *
+   * @param blobStore the BlobStore to get metrics for
+   * @return the VirtualThreadBlobStoreMetrics instance
+   */
+  private VirtualThreadBlobStoreMetrics getVirtualThreadMetrics(BlobStore blobStore) {
+    return virtualThreadMetricsCache.computeIfAbsent(blobStore, k -> new VirtualThreadBlobStoreMetrics());
+  }
+
   @Override
   public Object invoke(final MethodInvocation invocation) throws Throwable {
     String clazz = invocation.getThis().getClass().getSimpleName();
@@ -55,14 +76,6 @@ public class BlobStoreAnalyticsInterceptor
     MonitoringBlobStoreMetrics metricsAnnotation = method.getAnnotation(MonitoringBlobStoreMetrics.class);
     checkState(metricsAnnotation != null);
     OperationType operationType = metricsAnnotation.operationType();
-    boolean trackThreadType = metricsAnnotation.trackThreadType();
-    boolean virtualThreadCompatible = metricsAnnotation.virtualThreadCompatible();
-
-    // Log if a virtual thread compatible operation is running on a platform thread
-    if (virtualThreadCompatible && trackThreadType && !isVirtualThread()) {
-      log.debug("Virtual thread compatible operation running on platform thread: class={}, methodName={}", 
-          clazz, methodName);
-    }
 
     BlobStore blobStore;
     OperationMetrics operationMetrics;
@@ -75,33 +88,53 @@ public class BlobStoreAnalyticsInterceptor
       return invocation.proceed();
     }
 
-    long start = System.currentTimeMillis();
+    // Check if we're running in a virtual thread context
+    boolean isVirtual = isVirtualThread();
+    VirtualThreadBlobStoreMetrics virtualMetrics = null;
+    
+    if (isVirtual) {
+      virtualMetrics = getVirtualThreadMetrics(blobStore);
+    }
+
+    // Use nanoTime for more precise timing in high-throughput scenarios
+    long startTime = isVirtual ? System.nanoTime() : System.currentTimeMillis();
+    
     try {
       Object result = invocation.proceed();
 
-      // record metrics only in case of successful processing.
-      operationMetrics.addSuccessfulRequest();
-      operationMetrics.addTimeOnRequests(System.currentTimeMillis() - start);
-      
-      // Track thread type if requested
-      if (trackThreadType) {
-        if (isVirtualThread()) {
-          // Add virtual thread specific metrics if needed
-          log.trace("Operation executed on virtual thread: class={}, methodName={}", clazz, methodName);
-        } else {
-          // Add platform thread specific metrics if needed
-          log.trace("Operation executed on platform thread: class={}, methodName={}", clazz, methodName);
+      // Record metrics based on thread type
+      if (isVirtual && virtualMetrics != null) {
+        // For virtual threads, use specialized metrics collection
+        long blobSize = 0;
+        if (result instanceof BlobSupport) {
+          blobSize = ((BlobSupport) result).getMetrics().getContentSize();
         }
-      }
+        virtualMetrics.recordSuccessfulOperation(operationType, blobSize, System.nanoTime() - startTime);
+        
+        // Also update standard metrics for consistency
+        operationMetrics.addSuccessfulRequest();
+        operationMetrics.addTimeOnRequests((System.nanoTime() - startTime) / 1_000_000); // Convert nanos to millis
+        if (blobSize > 0) {
+          operationMetrics.addBlobSize(blobSize);
+        }
+      } else {
+        // For platform threads, use standard metrics collection
+        operationMetrics.addSuccessfulRequest();
+        operationMetrics.addTimeOnRequests(System.currentTimeMillis() - startTime);
 
-      if (result instanceof BlobSupport) {
-        long totalSize = ((BlobSupport) result).getMetrics().getContentSize();
-        operationMetrics.addBlobSize(totalSize);
+        if (result instanceof BlobSupport) {
+          long totalSize = ((BlobSupport) result).getMetrics().getContentSize();
+          operationMetrics.addBlobSize(totalSize);
+        }
       }
 
       return result;
     }
     catch (Exception e) {
+      // Record error metrics based on thread type
+      if (isVirtual && virtualMetrics != null) {
+        virtualMetrics.recordErrorOperation(operationType);
+      }
       operationMetrics.addErrorRequest();
       throw e;
     }

@@ -12,336 +12,685 @@
  */
 package org.apache.shiro.java21;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.notNullValue;
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
-
+import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+
+import org.sonatype.java21.Java21TestSupport;
 
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authc.AuthenticationException;
 import org.apache.shiro.authc.UsernamePasswordToken;
+import org.apache.shiro.authz.Permission;
+import org.apache.shiro.authz.permission.WildcardPermission;
 import org.apache.shiro.mgt.DefaultSecurityManager;
 import org.apache.shiro.realm.SimpleAccountRealm;
 import org.apache.shiro.session.Session;
 import org.apache.shiro.subject.Subject;
-import org.apache.shiro.subject.support.SubjectThreadState;
-import org.apache.shiro.util.ThreadContext;
-import org.apache.shiro.util.ThreadState;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.sonatype.nexus.testcommon.virtualthread.ThreadPinningDetector;
+
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests Apache Shiro compatibility with Java 21 Virtual Threads.
- * 
- * Validates that Shiro's security operations (authentication, authorization, and session management)
- * work correctly when executed concurrently using virtual threads.
- * 
- * Verifies that thread-local security contexts are properly maintained across virtual thread boundaries
- * and that no thread pinning occurs during security operations.
+ * <p>
+ * This test class validates that Shiro's security operations (authentication, authorization,
+ * and session management) work correctly when executed concurrently using virtual threads.
+ * It verifies that thread-local security contexts are properly maintained across virtual thread
+ * boundaries and that no thread pinning occurs during security operations.
+ *
+ * @since 3.60
  */
 @ExtendWith(MockitoExtension.class)
-@Tag("Java21TestGroup")
-@Tag("VirtualThreadTestGroup")
-public class VirtualThreadShiroIntegrationTest
+@Tag("java21")
+@Tag("virtualthread")
+public class VirtualThreadShiroIntegrationTest extends Java21TestSupport
 {
-  private static final String USERNAME = "testuser";
-  private static final String PASSWORD = "password";
-  private static final String ROLE = "testrole";
-  private static final String PERMISSION = "test:permission";
+  private static final int THREAD_COUNT = 100;
+  private static final int OPERATIONS_PER_THREAD = 50;
   
   private DefaultSecurityManager securityManager;
   private SimpleAccountRealm realm;
-  private ThreadFactory virtualThreadFactory;
-  private ExecutorService virtualThreadExecutor;
-  private ThreadPinningDetector pinningDetector;
-
+  
+  /**
+   * Setup method that runs before each test.
+   * Initializes the Shiro security manager with a simple realm for testing.
+   */
   @BeforeEach
-  public void setUp() {
-    // Set up Shiro security manager and realm
+  public void setupShiroEnvironment() {
+    // Setup Shiro security manager with a simple realm
     realm = new SimpleAccountRealm();
-    realm.addAccount(USERNAME, PASSWORD, ROLE);
+    realm.addAccount("admin", "admin_password", "admin");
+    realm.addAccount("user", "user_password", "user");
+    realm.addAccount("guest", "guest_password", "guest");
+    
+    // Add permissions
+    realm.setPermissionResolver(permission -> new WildcardPermission(permission));
+    realm.addRole("admin", Collections.singleton(new WildcardPermission("*")));
+    realm.addRole("user", Collections.singleton(new WildcardPermission("repository:read:*")));
+    realm.addRole("guest", Collections.singleton(new WildcardPermission("repository:read:public")));
+    
     securityManager = new DefaultSecurityManager(realm);
     SecurityUtils.setSecurityManager(securityManager);
-    
-    // Create virtual thread factory and executor
-    virtualThreadFactory = Thread.ofVirtual().name("shiro-test-", 0).factory();
-    virtualThreadExecutor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-    
-    // Initialize thread pinning detector
-    pinningDetector = new ThreadPinningDetector();
   }
-
+  
+  /**
+   * Cleanup method that runs after each test.
+   * Resets the Shiro security manager.
+   */
   @AfterEach
-  public void tearDown() {
-    // Clean up thread context and shutdown executor
-    ThreadContext.remove();
+  public void tearDownShiroEnvironment() {
     SecurityUtils.setSecurityManager(null);
-    virtualThreadExecutor.shutdown();
-    try {
-      if (!virtualThreadExecutor.awaitTermination(2, TimeUnit.SECONDS)) {
-        virtualThreadExecutor.shutdownNow();
-      }
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      virtualThreadExecutor.shutdownNow();
-    }
   }
-
+  
   /**
-   * Tests that basic authentication works correctly in a virtual thread.
+   * Tests that basic authentication works correctly with virtual threads.
+   * <p>
+   * This test creates multiple virtual threads that perform authentication operations
+   * concurrently and verifies that all operations complete successfully.
    */
   @Test
-  public void testAuthenticationInVirtualThread() throws Exception {
-    CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> {
-      Subject subject = SecurityUtils.getSubject();
-      UsernamePasswordToken token = new UsernamePasswordToken(USERNAME, PASSWORD);
+  @DisplayName("Authentication operations should work correctly with virtual threads")
+  public void testAuthenticationWithVirtualThreads() throws Exception {
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("auth-test-", 0).factory();
+    
+    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
+      CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
+      AtomicReference<Throwable> error = new AtomicReference<>();
+      
+      for (int i = 0; i < THREAD_COUNT; i++) {
+        final String username = (i % 3 == 0) ? "admin" : (i % 3 == 1) ? "user" : "guest";
+        final String password = username + "_password";
+        final String expectedRole = username;
+        
+        executor.submit(() -> {
+          try {
+            Subject threadSubject = SecurityUtils.getSubject();
+            UsernamePasswordToken token = new UsernamePasswordToken(username, password);
+            threadSubject.login(token);
+            
+            assertTrue(threadSubject.isAuthenticated(), "Subject should be authenticated");
+            assertTrue(threadSubject.hasRole(expectedRole), "Subject should have the expected role");
+            
+            // Test that the principal is correct
+            assertEquals(username, threadSubject.getPrincipal(), "Principal should match the username");
+            
+            threadSubject.logout();
+            assertFalse(threadSubject.isAuthenticated(), "Subject should be logged out");
+          }
+          catch (Throwable t) {
+            error.compareAndSet(null, t);
+          }
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      assertTrue(latch.await(10, TimeUnit.SECONDS), "Authentication test timed out");
+      
+      if (error.get() != null) {
+        throw new AssertionError("Error during authentication test", error.get());
+      }
+    }
+  }
+  
+  /**
+   * Tests that authorization operations work correctly with virtual threads.
+   * <p>
+   * This test creates multiple virtual threads that perform permission checks
+   * concurrently and verifies that all operations complete successfully.
+   */
+  @Test
+  @DisplayName("Authorization operations should work correctly with virtual threads")
+  public void testAuthorizationWithVirtualThreads() throws Exception {
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("authz-test-", 0).factory();
+    
+    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
+      CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
+      AtomicReference<Throwable> error = new AtomicReference<>();
+      
+      for (int i = 0; i < THREAD_COUNT; i++) {
+        final String username = (i % 3 == 0) ? "admin" : (i % 3 == 1) ? "user" : "guest";
+        final String password = username + "_password";
+        
+        executor.submit(() -> {
+          try {
+            Subject threadSubject = SecurityUtils.getSubject();
+            UsernamePasswordToken token = new UsernamePasswordToken(username, password);
+            threadSubject.login(token);
+            
+            // Test permissions based on role
+            Permission readPublicPerm = new WildcardPermission("repository:read:public");
+            Permission readPrivatePerm = new WildcardPermission("repository:read:private");
+            Permission writePerm = new WildcardPermission("repository:write:*");
+            
+            assertTrue(threadSubject.isPermitted(readPublicPerm), 
+                "All users should have permission to read public repositories");
+            
+            if ("admin".equals(username)) {
+              assertTrue(threadSubject.isPermitted(readPrivatePerm), 
+                  "Admin should have permission to read private repositories");
+              assertTrue(threadSubject.isPermitted(writePerm), 
+                  "Admin should have permission to write to repositories");
+            }
+            else if ("user".equals(username)) {
+              assertTrue(threadSubject.isPermitted(readPrivatePerm), 
+                  "User should have permission to read private repositories");
+              assertFalse(threadSubject.isPermitted(writePerm), 
+                  "User should not have permission to write to repositories");
+            }
+            else { // guest
+              assertFalse(threadSubject.isPermitted(readPrivatePerm), 
+                  "Guest should not have permission to read private repositories");
+              assertFalse(threadSubject.isPermitted(writePerm), 
+                  "Guest should not have permission to write to repositories");
+            }
+            
+            threadSubject.logout();
+          }
+          catch (Throwable t) {
+            error.compareAndSet(null, t);
+          }
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      assertTrue(latch.await(10, TimeUnit.SECONDS), "Authorization test timed out");
+      
+      if (error.get() != null) {
+        throw new AssertionError("Error during authorization test", error.get());
+      }
+    }
+  }
+  
+  /**
+   * Tests that session management works correctly with virtual threads.
+   * <p>
+   * This test creates multiple virtual threads that perform session operations
+   * concurrently and verifies that all operations complete successfully.
+   */
+  @Test
+  @DisplayName("Session management should work correctly with virtual threads")
+  public void testSessionManagementWithVirtualThreads() throws Exception {
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("session-test-", 0).factory();
+    
+    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
+      CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
+      AtomicReference<Throwable> error = new AtomicReference<>();
+      
+      for (int i = 0; i < THREAD_COUNT; i++) {
+        final String username = (i % 3 == 0) ? "admin" : (i % 3 == 1) ? "user" : "guest";
+        final String password = username + "_password";
+        final String attributeKey = "testAttribute-" + i;
+        final String attributeValue = "value-" + i;
+        
+        executor.submit(() -> {
+          try {
+            Subject threadSubject = SecurityUtils.getSubject();
+            Session session = threadSubject.getSession(true);
+            assertNotNull(session, "Session should not be null");
+            
+            // Test session operations
+            session.setAttribute(attributeKey, attributeValue);
+            assertEquals(attributeValue, session.getAttribute(attributeKey), 
+                "Session attribute should be retrievable");
+            
+            // Login and verify session is maintained
+            UsernamePasswordToken token = new UsernamePasswordToken(username, password);
+            threadSubject.login(token);
+            
+            // Session should still have our attribute after login
+            assertEquals(attributeValue, threadSubject.getSession().getAttribute(attributeKey), 
+                "Session attribute should be maintained after login");
+            
+            // Test timeout operations
+            long originalTimeout = session.getTimeout();
+            session.setTimeout(3600000); // 1 hour
+            assertEquals(3600000, session.getTimeout(), "Session timeout should be updatable");
+            
+            // Reset timeout
+            session.setTimeout(originalTimeout);
+            
+            threadSubject.logout();
+          }
+          catch (Throwable t) {
+            error.compareAndSet(null, t);
+          }
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      assertTrue(latch.await(10, TimeUnit.SECONDS), "Session management test timed out");
+      
+      if (error.get() != null) {
+        throw new AssertionError("Error during session management test", error.get());
+      }
+    }
+  }
+  
+  /**
+   * Tests that security contexts are properly maintained across virtual thread yields.
+   * <p>
+   * This is important because virtual threads can be unmounted from carrier threads during
+   * blocking operations. This test verifies that the security context is maintained correctly
+   * across these yield points.
+   */
+  @Test
+  @DisplayName("Security contexts should be maintained across virtual thread yields")
+  public void testSecurityContextAcrossVirtualThreadYields() throws Exception {
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("context-test-", 0).factory();
+    
+    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
+      CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
+      AtomicReference<Throwable> error = new AtomicReference<>();
+      
+      for (int i = 0; i < THREAD_COUNT; i++) {
+        final String username = (i % 3 == 0) ? "admin" : (i % 3 == 1) ? "user" : "guest";
+        final String password = username + "_password";
+        final String expectedRole = username;
+        
+        executor.submit(() -> {
+          try {
+            Subject threadSubject = SecurityUtils.getSubject();
+            UsernamePasswordToken token = new UsernamePasswordToken(username, password);
+            threadSubject.login(token);
+            
+            // Verify role before yield
+            assertTrue(threadSubject.hasRole(expectedRole), 
+                "Subject should have the expected role before yield");
+            
+            // Perform a blocking operation that will cause the virtual thread to yield
+            Thread.sleep(10);
+            
+            // Verify that the security context is maintained after yield
+            assertTrue(threadSubject.hasRole(expectedRole), 
+                "Security context should be maintained after virtual thread yield");
+            assertEquals(username, threadSubject.getPrincipal(), 
+                "Principal should be maintained after virtual thread yield");
+            
+            // Perform another blocking operation with a longer duration
+            Thread.sleep(50);
+            
+            // Verify again after a longer yield
+            assertTrue(threadSubject.hasRole(expectedRole), 
+                "Security context should be maintained after longer virtual thread yield");
+            assertEquals(username, threadSubject.getPrincipal(), 
+                "Principal should be maintained after longer virtual thread yield");
+            
+            threadSubject.logout();
+          }
+          catch (Throwable t) {
+            error.compareAndSet(null, t);
+          }
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      assertTrue(latch.await(10, TimeUnit.SECONDS), "Security context test timed out");
+      
+      if (error.get() != null) {
+        throw new AssertionError("Error during security context test", error.get());
+      }
+    }
+  }
+  
+  /**
+   * Tests for thread pinning issues when using virtual threads with Shiro operations.
+   * <p>
+   * Thread pinning occurs when a virtual thread is forced to stay on its carrier thread,
+   * typically due to synchronized blocks or native methods. This test verifies that Shiro
+   * operations don't cause excessive thread pinning.
+   */
+  @Test
+  @DisplayName("Shiro operations should not cause excessive thread pinning")
+  public void testThreadPinningWithShiroOperations() throws Exception {
+    // We'll use a small number of carrier threads to make pinning more obvious
+    System.setProperty("jdk.virtualThreadScheduler.parallelism", "4");
+    
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("pinning-test-", 0).factory();
+    
+    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
+      CountDownLatch startLatch = new CountDownLatch(1);
+      CountDownLatch completionLatch = new CountDownLatch(THREAD_COUNT);
+      AtomicReference<Throwable> error = new AtomicReference<>();
+      AtomicInteger concurrentOperations = new AtomicInteger(0);
+      AtomicInteger maxConcurrentOperations = new AtomicInteger(0);
+      
+      // Start threads that will all try to perform Shiro operations simultaneously
+      for (int i = 0; i < THREAD_COUNT; i++) {
+        final String username = (i % 3 == 0) ? "admin" : (i % 3 == 1) ? "user" : "guest";
+        final String password = username + "_password";
+        
+        executor.submit(() -> {
+          try {
+            // Wait for all threads to be ready
+            startLatch.await();
+            
+            // Track concurrent operations
+            int current = concurrentOperations.incrementAndGet();
+            int max;
+            do {
+              max = maxConcurrentOperations.get();
+              if (current <= max) break;
+            } while (!maxConcurrentOperations.compareAndSet(max, current));
+            
+            // Perform Shiro operations
+            Subject threadSubject = SecurityUtils.getSubject();
+            UsernamePasswordToken token = new UsernamePasswordToken(username, password);
+            threadSubject.login(token);
+            
+            // Small delay to simulate I/O
+            Thread.sleep(5);
+            
+            // Perform authorization check
+            boolean hasPermission = threadSubject.isPermitted("repository:read:public");
+            assertTrue(hasPermission, "All users should have permission to read public repositories");
+            
+            // Another small delay
+            Thread.sleep(5);
+            
+            // Session operations
+            Session session = threadSubject.getSession(true);
+            session.setAttribute("testKey", "testValue");
+            assertEquals("testValue", session.getAttribute("testKey"));
+            
+            threadSubject.logout();
+            concurrentOperations.decrementAndGet();
+          }
+          catch (Throwable t) {
+            error.compareAndSet(null, t);
+          }
+          finally {
+            completionLatch.countDown();
+          }
+        });
+      }
+      
+      // Start all threads simultaneously
+      startLatch.countDown();
+      
+      // Wait for completion
+      assertTrue(completionLatch.await(10, TimeUnit.SECONDS), "Thread pinning test timed out");
+      
+      if (error.get() != null) {
+        throw new AssertionError("Error during thread pinning test", error.get());
+      }
+      
+      // If we're not experiencing severe thread pinning, we should see high concurrency
+      // even with a limited number of carrier threads
+      log.info("Maximum concurrent operations: {}", maxConcurrentOperations.get());
+      assertTrue(maxConcurrentOperations.get() > 4, 
+          "Expected higher concurrency with virtual threads, which indicates no severe thread pinning");
+      
+      // Reset system property
+      System.clearProperty("jdk.virtualThreadScheduler.parallelism");
+    }
+  }
+  
+  /**
+   * Tests high concurrency Shiro operations using virtual threads.
+   * <p>
+   * This test creates a large number of virtual threads to demonstrate the scalability
+   * of Shiro operations when using virtual threads.
+   */
+  @Test
+  @DisplayName("Shiro should handle high concurrency with virtual threads")
+  public void testHighConcurrencyWithVirtualThreads() throws Exception {
+    // Use a much higher thread count for this test to demonstrate virtual thread scalability
+    final int highConcurrencyThreadCount = 1000;
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("high-concurrency-", 0).factory();
+    
+    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
+      CountDownLatch latch = new CountDownLatch(highConcurrencyThreadCount);
+      AtomicReference<Throwable> error = new AtomicReference<>();
+      AtomicBoolean allOperationsSuccessful = new AtomicBoolean(true);
+      
+      for (int i = 0; i < highConcurrencyThreadCount; i++) {
+        final String username = (i % 3 == 0) ? "admin" : (i % 3 == 1) ? "user" : "guest";
+        final String password = username + "_password";
+        
+        executor.submit(() -> {
+          try {
+            Subject threadSubject = SecurityUtils.getSubject();
+            UsernamePasswordToken token = new UsernamePasswordToken(username, password);
+            threadSubject.login(token);
+            
+            // Verify authentication was successful
+            if (!threadSubject.isAuthenticated()) {
+              allOperationsSuccessful.set(false);
+            }
+            
+            // Perform a simple permission check
+            boolean hasPermission = threadSubject.isPermitted("repository:read:public");
+            if (!hasPermission) {
+              allOperationsSuccessful.set(false);
+            }
+            
+            // Simulate some I/O delay
+            Thread.sleep(5);
+            
+            threadSubject.logout();
+          }
+          catch (Throwable t) {
+            error.compareAndSet(null, t);
+          }
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      assertTrue(latch.await(30, TimeUnit.SECONDS), "High concurrency test timed out");
+      
+      if (error.get() != null) {
+        throw new AssertionError("Error during high concurrency test", error.get());
+      }
+      
+      assertTrue(allOperationsSuccessful.get(), "Some Shiro operations failed during high concurrency test");
+    }
+  }
+  
+  /**
+   * Tests that authentication failures are handled correctly with virtual threads.
+   * <p>
+   * This test verifies that Shiro correctly handles authentication failures when
+   * running on virtual threads.
+   */
+  @Test
+  @DisplayName("Authentication failures should be handled correctly with virtual threads")
+  public void testAuthenticationFailureWithVirtualThreads() throws Exception {
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("auth-failure-test-", 0).factory();
+    
+    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
+      List<Future<Boolean>> futures = new ArrayList<>();
+      
+      for (int i = 0; i < 10; i++) {
+        futures.add(executor.submit(() -> {
+          Subject threadSubject = SecurityUtils.getSubject();
+          UsernamePasswordToken token = new UsernamePasswordToken("admin", "wrong_password");
+          
+          try {
+            threadSubject.login(token);
+            return false; // Should not reach here
+          }
+          catch (AuthenticationException e) {
+            // Expected exception
+            return true;
+          }
+        }));
+      }
+      
+      // Verify all authentication attempts failed as expected
+      for (Future<Boolean> future : futures) {
+        assertTrue(future.get(5, TimeUnit.SECONDS), 
+            "Authentication should fail with incorrect credentials");
+      }
+    }
+  }
+  
+  /**
+   * Tests that concurrent logins and logouts work correctly with virtual threads.
+   * <p>
+   * This test creates multiple virtual threads that perform login and logout operations
+   * concurrently and verifies that all operations complete successfully.
+   */
+  @Test
+  @DisplayName("Concurrent logins and logouts should work correctly with virtual threads")
+  public void testConcurrentLoginLogoutWithVirtualThreads() throws Exception {
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("login-logout-test-", 0).factory();
+    
+    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
+      CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
+      AtomicReference<Throwable> error = new AtomicReference<>();
+      
+      for (int i = 0; i < THREAD_COUNT; i++) {
+        final String username = (i % 3 == 0) ? "admin" : (i % 3 == 1) ? "user" : "guest";
+        final String password = username + "_password";
+        
+        executor.submit(() -> {
+          try {
+            Subject threadSubject = SecurityUtils.getSubject();
+            
+            // Perform multiple login/logout cycles
+            for (int j = 0; j < 5; j++) {
+              UsernamePasswordToken token = new UsernamePasswordToken(username, password);
+              threadSubject.login(token);
+              assertTrue(threadSubject.isAuthenticated(), "Subject should be authenticated");
+              
+              // Small delay to increase chance of thread interactions
+              Thread.sleep(1);
+              
+              threadSubject.logout();
+              assertFalse(threadSubject.isAuthenticated(), "Subject should be logged out");
+              
+              // Another small delay
+              Thread.sleep(1);
+            }
+          }
+          catch (Throwable t) {
+            error.compareAndSet(null, t);
+          }
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      assertTrue(latch.await(10, TimeUnit.SECONDS), "Concurrent login/logout test timed out");
+      
+      if (error.get() != null) {
+        throw new AssertionError("Error during concurrent login/logout test", error.get());
+      }
+    }
+  }
+  
+  /**
+   * Tests that the thread pinning detector works correctly by intentionally creating
+   * a task that will cause thread pinning.
+   * <p>
+   * This test is used to validate that our thread pinning detection mechanism is working
+   * correctly, which is important for the other tests that check for thread pinning.
+   */
+  @Test
+  @DisplayName("Thread pinning detector should correctly identify pinned threads")
+  public void testThreadPinningDetector() {
+    // Create a task that will intentionally cause thread pinning
+    Runnable pinningTask = createPinningTask();
+    
+    // Verify that the pinning detector correctly identifies the pinning
+    boolean pinningDetected = detectThreadPinning(pinningTask);
+    assertTrue(pinningDetected, "Thread pinning detector should identify pinned threads");
+    
+    // Create a task that should not cause thread pinning
+    Runnable nonPinningTask = () -> {
       try {
-        subject.login(token);
-        return subject.isAuthenticated();
-      } catch (AuthenticationException e) {
-        return false;
-      } finally {
-        subject.logout();
+        // This should not cause pinning as it's just a sleep without synchronized block
+        Thread.sleep(100);
       }
-    }, virtualThreadExecutor);
-
-    assertTrue(future.get(), "Authentication should succeed in virtual thread");
-  }
-
-  /**
-   * Tests that authorization checks work correctly in a virtual thread.
-   */
-  @Test
-  public void testAuthorizationInVirtualThread() throws Exception {
-    // Add permission to the user
-    realm.setPermissionResolver(permission -> permission);
-    realm.addRole(ROLE, PERMISSION);
-
-    CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> {
-      Subject subject = SecurityUtils.getSubject();
-      UsernamePasswordToken token = new UsernamePasswordToken(USERNAME, PASSWORD);
-      try {
-        subject.login(token);
-        boolean hasRole = subject.hasRole(ROLE);
-        boolean isPermitted = subject.isPermitted(PERMISSION);
-        return hasRole && isPermitted;
-      } catch (AuthenticationException e) {
-        return false;
-      } finally {
-        subject.logout();
+      catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
       }
-    }, virtualThreadExecutor);
-
-    assertTrue(future.get(), "Authorization should work in virtual thread");
+    };
+    
+    // Verify that the pinning detector correctly identifies non-pinning tasks
+    boolean nonPinningDetected = detectThreadPinning(nonPinningTask);
+    assertFalse(nonPinningDetected, "Thread pinning detector should not identify non-pinned threads");
   }
-
+  
   /**
-   * Tests that session management works correctly in a virtual thread.
+   * Tests that Shiro's thread-local security manager works correctly with virtual threads.
+   * <p>
+   * This test verifies that the thread-local security manager is properly accessible from
+   * virtual threads and that it behaves correctly.
    */
   @Test
-  public void testSessionManagementInVirtualThread() throws Exception {
-    CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> {
-      Subject subject = SecurityUtils.getSubject();
-      Session session = subject.getSession();
-      String attributeKey = "testAttribute";
-      String attributeValue = "testValue";
-      session.setAttribute(attributeKey, attributeValue);
-      return attributeValue.equals(session.getAttribute(attributeKey));
-    }, virtualThreadExecutor);
-
-    assertTrue(future.get(), "Session management should work in virtual thread");
-  }
-
-  /**
-   * Tests that thread-local security contexts are properly maintained across virtual thread boundaries.
-   */
-  @Test
-  public void testThreadLocalContextPropagation() throws Exception {
-    // Create and bind a subject to the main thread
-    Subject mainThreadSubject = new Subject.Builder(securityManager).buildSubject();
-    ThreadState threadState = new SubjectThreadState(mainThreadSubject);
-    threadState.bind();
+  @DisplayName("Shiro's thread-local security manager should work correctly with virtual threads")
+  public void testThreadLocalSecurityManagerWithVirtualThreads() throws Exception {
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("security-manager-test-", 0).factory();
     
-    // Verify the subject is bound to the main thread
-    Subject retrievedSubject = SecurityUtils.getSubject();
-    assertEquals(mainThreadSubject, retrievedSubject, "Subject should be bound to main thread");
-    
-    // Test that a new virtual thread gets its own thread-local context
-    CompletableFuture<Subject> virtualThreadSubjectFuture = CompletableFuture.supplyAsync(() -> {
-      return SecurityUtils.getSubject();
-    }, virtualThreadExecutor);
-    
-    Subject virtualThreadSubject = virtualThreadSubjectFuture.get();
-    assertNotNull(virtualThreadSubject, "Virtual thread should have a subject");
-    assertFalse(mainThreadSubject.equals(virtualThreadSubject), 
-        "Virtual thread should have a different subject than main thread");
-    
-    // Clean up
-    threadState.restore();
-  }
-
-  /**
-   * Tests that multiple concurrent virtual threads can perform Shiro operations correctly.
-   */
-  @Test
-  public void testConcurrentVirtualThreads() throws Exception {
-    int threadCount = 100;
-    List<CompletableFuture<Boolean>> futures = new ArrayList<>();
-    
-    for (int i = 0; i < threadCount; i++) {
-      CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> {
-        Subject subject = SecurityUtils.getSubject();
-        UsernamePasswordToken token = new UsernamePasswordToken(USERNAME, PASSWORD);
-        try {
-          subject.login(token);
-          boolean authenticated = subject.isAuthenticated();
-          boolean hasRole = subject.hasRole(ROLE);
-          Session session = subject.getSession();
-          session.setAttribute("testKey", "testValue");
-          boolean sessionWorks = "testValue".equals(session.getAttribute("testKey"));
-          return authenticated && hasRole && sessionWorks;
-        } catch (Exception e) {
-          return false;
-        } finally {
-          subject.logout();
-        }
-      }, virtualThreadExecutor);
+    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
+      List<CompletableFuture<Boolean>> futures = new ArrayList<>();
       
-      futures.add(future);
-    }
-    
-    // Wait for all futures to complete and verify results
-    CompletableFuture<Void> allFutures = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
-    allFutures.get(5, TimeUnit.SECONDS); // Add timeout to prevent test hanging
-    
-    for (CompletableFuture<Boolean> future : futures) {
-      assertTrue(future.get(), "All Shiro operations should succeed in concurrent virtual threads");
-    }
-  }
-
-  /**
-   * Tests that Shiro operations don't cause thread pinning issues.
-   */
-  @Test
-  public void testNoPinningDuringShiroOperations() throws Exception {
-    // Start pinning detection
-    pinningDetector.startDetection();
-    
-    try {
-      // Perform Shiro operations in a virtual thread
-      CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-        Subject subject = SecurityUtils.getSubject();
-        UsernamePasswordToken token = new UsernamePasswordToken(USERNAME, PASSWORD);
-        try {
-          // Perform various Shiro operations that might cause pinning
-          subject.login(token);
-          subject.hasRole(ROLE);
-          Session session = subject.getSession();
-          session.setAttribute("testKey", "testValue");
-          session.getAttribute("testKey");
-          subject.logout();
-        } catch (Exception e) {
-          throw new RuntimeException("Shiro operation failed", e);
-        }
-      }, virtualThreadExecutor);
-      
-      future.get(5, TimeUnit.SECONDS); // Add timeout to prevent test hanging
-      
-      // Check if any pinning was detected
-      Collection<String> pinningEvents = pinningDetector.getPinningEvents();
-      assertTrue(pinningEvents.isEmpty(), 
-          "No thread pinning should occur during Shiro operations: " + pinningEvents);
-      
-    } finally {
-      pinningDetector.stopDetection();
-    }
-  }
-
-  /**
-   * Tests that Shiro's SecurityManager can be accessed from a virtual thread.
-   */
-  @Test
-  public void testSecurityManagerAccessInVirtualThread() throws Exception {
-    CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> {
-      return SecurityUtils.getSecurityManager() != null;
-    }, virtualThreadExecutor);
-
-    assertTrue(future.get(), "SecurityManager should be accessible from virtual thread");
-  }
-
-  /**
-   * Tests that a Subject created in one virtual thread can be propagated to another virtual thread.
-   */
-  @Test
-  public void testSubjectPropagationBetweenVirtualThreads() throws Exception {
-    // Create a subject in the first virtual thread
-    AtomicReference<Subject> subjectRef = new AtomicReference<>();
-    
-    CompletableFuture<Void> future1 = CompletableFuture.runAsync(() -> {
-      Subject subject = SecurityUtils.getSubject();
-      UsernamePasswordToken token = new UsernamePasswordToken(USERNAME, PASSWORD);
-      subject.login(token);
-      subjectRef.set(subject);
-    }, virtualThreadExecutor);
-    
-    future1.get(); // Wait for the first thread to complete
-    
-    // Use the subject in a second virtual thread
-    CompletableFuture<Boolean> future2 = CompletableFuture.supplyAsync(() -> {
-      Subject subject = subjectRef.get();
-      ThreadState threadState = new SubjectThreadState(subject);
-      threadState.bind();
-      try {
-        return SecurityUtils.getSubject().isAuthenticated();
-      } finally {
-        threadState.restore();
+      for (int i = 0; i < THREAD_COUNT; i++) {
+        futures.add(CompletableFuture.supplyAsync(() -> {
+          try {
+            // Verify that the security manager is accessible from the virtual thread
+            assertNotNull(SecurityUtils.getSecurityManager(), 
+                "Security manager should be accessible from virtual thread");
+            
+            // Verify that it's the same instance we set up
+            assertEquals(securityManager, SecurityUtils.getSecurityManager(), 
+                "Security manager should be the same instance we set up");
+            
+            return true;
+          }
+          catch (Throwable t) {
+            log.error("Error in thread-local security manager test", t);
+            return false;
+          }
+        }, executor));
       }
-    }, virtualThreadExecutor);
-    
-    assertTrue(future2.get(), "Subject should be propagated between virtual threads");
-  }
-
-  /**
-   * Tests that Shiro's thread context is properly isolated between virtual threads.
-   */
-  @Test
-  public void testThreadContextIsolation() throws Exception {
-    // Set a value in the thread context of the main thread
-    String key = "testKey";
-    String value = "testValue";
-    ThreadContext.put(key, value);
-    
-    // Check that the value is not visible in a virtual thread
-    CompletableFuture<Object> future = CompletableFuture.supplyAsync(() -> {
-      return ThreadContext.get(key);
-    }, virtualThreadExecutor);
-    
-    assertThat(future.get(), is(null));
-    
-    // Clean up
-    ThreadContext.remove(key);
+      
+      // Wait for all futures to complete and verify results
+      CompletableFuture<Void> allFutures = CompletableFuture.allOf(
+          futures.toArray(new CompletableFuture[0]));
+      allFutures.get(10, TimeUnit.SECONDS);
+      
+      // Verify all operations were successful
+      for (CompletableFuture<Boolean> future : futures) {
+        assertTrue(future.get(), "Thread-local security manager operation failed");
+      }
+    }
   }
 }

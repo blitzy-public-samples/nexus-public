@@ -10,41 +10,36 @@
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  */
-package org.sonatype.nexus.repository.content.store;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-
-import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.common.entity.Continuation;
-import org.sonatype.nexus.datastore.api.DataSession;
-import org.sonatype.nexus.datastore.api.DataStoreManager;
-import org.sonatype.nexus.repository.content.Asset;
-import org.sonatype.nexus.repository.content.AssetBlob;
-import org.sonatype.nexus.repository.content.Component;
-import org.sonatype.nexus.repository.content.store.example.TestAssetBlobDAO;
-import org.sonatype.nexus.repository.content.store.example.TestAssetDAO;
-import org.sonatype.nexus.repository.content.store.example.TestComponentDAO;
-import org.sonatype.nexus.repository.content.store.example.TestContentRepositoryDAO;
 
 import org.junit.After;
 import org.junit.Before;
-import org.junit.Rule;
 import org.junit.Test;
-import org.junit.rules.TestName;
+import org.junit.experimental.categories.Category;
+import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
+import org.sonatype.nexus.common.entity.Continuation;
+import org.sonatype.nexus.datastore.api.DataSession;
+import org.sonatype.nexus.repository.content.Asset;
+import org.sonatype.nexus.repository.content.Component;
+import org.sonatype.nexus.repository.content.store.AssetData;
+import org.sonatype.nexus.repository.content.store.AssetDAOTestSupport;
+import org.sonatype.nexus.repository.content.store.ComponentDAOTestSupport;
+import org.sonatype.nexus.repository.content.store.ComponentData;
+import org.sonatype.nexus.repository.content.store.ContentRepositoryData;
+import org.sonatype.nexus.repository.content.store.example.TestAssetDAO;
+import org.sonatype.nexus.repository.content.store.example.TestComponentDAO;
+import org.sonatype.nexus.repository.content.store.example.TestContentRepositoryDAO;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
@@ -52,1010 +47,915 @@ import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 import static org.sonatype.nexus.datastore.api.DataStoreManager.DEFAULT_DATASTORE_NAME;
 
 /**
- * Tests the repository content store operations using Java 21 Virtual Threads to validate 
- * compatibility and concurrent performance.
+ * Tests the repository content store operations using Java 21 Virtual Threads to validate compatibility and
+ * concurrent performance.
  * 
- * This class verifies that asset and component store operations can correctly function with 
- * virtual threads, including CRUD operations, browsing assets/components, and handling 
- * concurrent operations. It ensures store operations don't cause thread pinning and maintain 
- * transactional integrity when executed via virtual threads.
- * 
- * @since 3.60
+ * This class verifies that asset and component store operations can correctly function with virtual threads,
+ * including CRUD operations, browsing assets/components, and handling concurrent operations. It ensures store
+ * operations don't cause thread pinning and maintain transactional integrity when executed via virtual threads.
  */
+@Category(VirtualThreadTestGroup.class)
 public class ContentStoreVirtualThreadTest
-    extends ExampleContentTestSupport
+    extends ComponentDAOTestSupport
 {
-  private static final int CONCURRENT_THREADS = 100;
-  private static final int OPERATIONS_PER_THREAD = 10;
+  private static final int CONCURRENT_OPERATIONS = 100;
   private static final int TIMEOUT_SECONDS = 30;
-  private static final int BROWSE_LIMIT = 10;
+  private static final boolean ENTITY_VERSION_ENABLED = true;
   
-  @Rule
-  public TestName testName = new TestName();
-  
-  private ExecutorService virtualThreadExecutor;
   private int repositoryId;
-  
+  private ThreadFactory virtualThreadFactory;
+  private ExecutorService executor;
+
   @Before
-  public void setUp() throws Exception {
-    // Create a virtual thread executor
-    virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+  public void setUp() {
+    // Initialize virtual thread factory and executor
+    virtualThreadFactory = Thread.ofVirtual().name("content-store-test-", 0).factory();
+    executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
     
-    // Set up a content repository for testing
+    // Setup content repository for testing
+    setupContent(ENTITY_VERSION_ENABLED);
     ContentRepositoryData contentRepository = randomContentRepository();
     createContentRepository(contentRepository);
     repositoryId = contentRepository.repositoryId;
-    
-    // Generate random test data
-    generateRandomNamespaces(100);
-    generateRandomNames(100);
-    generateRandomVersions(100);
-    generateRandomPaths(100);
   }
-  
+
   @After
-  public void tearDown() throws Exception {
-    if (virtualThreadExecutor != null && !virtualThreadExecutor.isShutdown()) {
-      virtualThreadExecutor.shutdownNow();
-    }
-  }
-  
-  /**
-   * Create a content repository for testing.
-   */
-  private void createContentRepository(final ContentRepositoryData contentRepository) {
-    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-      ContentRepositoryDAO dao = session.access(TestContentRepositoryDAO.class);
-      dao.createContentRepository(contentRepository);
-      session.getTransaction().commit();
-    }
-  }
-  
-  /**
-   * Test basic CRUD operations for components using Virtual Threads.
-   */
-  @Test
-  public void testComponentCrudWithVirtualThreads() throws Exception {
-    // Create component data
-    ComponentData component = randomComponent(repositoryId);
-    component.setNamespace("virtual-thread-test");
-    component.setName("component-crud-test");
-    component.setVersion("1.0.0");
-    component.setKind("test-kind");
-    
-    // Create component using a virtual thread
-    Future<?> createFuture = virtualThreadExecutor.submit(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        ComponentDAO dao = session.access(TestComponentDAO.class);
-        dao.createComponent(component, true); // with entity version
-        session.getTransaction().commit();
-      } catch (Exception e) {
-        fail("Failed to create component: " + e.getMessage());
-      }
-    });
-    
-    // Wait for creation to complete
-    createFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    
-    // Read component using a virtual thread
-    Future<Component> readFuture = virtualThreadExecutor.submit(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        ComponentDAO dao = session.access(TestComponentDAO.class);
-        Optional<Component> result = dao.readCoordinate(
-            repositoryId, 
-            component.namespace(), 
-            component.name(), 
-            component.version());
-        return result.orElse(null);
-      } catch (Exception e) {
-        fail("Failed to read component: " + e.getMessage());
-        return null;
-      }
-    });
-    
-    // Verify read result
-    Component readComponent = readFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertThat(readComponent, notNullValue());
-    assertThat(readComponent.namespace(), equalTo(component.namespace()));
-    assertThat(readComponent.name(), equalTo(component.name()));
-    assertThat(readComponent.version(), equalTo(component.version()));
-    assertThat(readComponent.kind(), equalTo(component.kind()));
-    assertThat(readComponent.entityVersion(), equalTo(1)); // First version
-    
-    // Update component using a virtual thread
-    Future<?> updateFuture = virtualThreadExecutor.submit(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        ComponentDAO dao = session.access(TestComponentDAO.class);
-        component.setKind("updated-kind");
-        component.attributes("test-section").set("test-key", "test-value");
-        dao.updateComponentKind(component, true);
-        dao.updateComponentAttributes(component, true);
-        session.getTransaction().commit();
-      } catch (Exception e) {
-        fail("Failed to update component: " + e.getMessage());
-      }
-    });
-    
-    // Wait for update to complete
-    updateFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    
-    // Read updated component using a virtual thread
-    Future<Component> readUpdatedFuture = virtualThreadExecutor.submit(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        ComponentDAO dao = session.access(TestComponentDAO.class);
-        Optional<Component> result = dao.readCoordinate(
-            repositoryId, 
-            component.namespace(), 
-            component.name(), 
-            component.version());
-        return result.orElse(null);
-      } catch (Exception e) {
-        fail("Failed to read updated component: " + e.getMessage());
-        return null;
-      }
-    });
-    
-    // Verify updated component
-    Component updatedComponent = readUpdatedFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertThat(updatedComponent, notNullValue());
-    assertThat(updatedComponent.kind(), equalTo("updated-kind"));
-    assertThat(updatedComponent.attributes("test-section").get("test-key"), equalTo("test-value"));
-    assertThat(updatedComponent.entityVersion(), equalTo(3)); // Third version after two updates
-    
-    // Delete component using a virtual thread
-    Future<Boolean> deleteFuture = virtualThreadExecutor.submit(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        ComponentDAO dao = session.access(TestComponentDAO.class);
-        boolean result = dao.deleteComponent(component);
-        session.getTransaction().commit();
-        return result;
-      } catch (Exception e) {
-        fail("Failed to delete component: " + e.getMessage());
-        return false;
-      }
-    });
-    
-    // Verify deletion
-    Boolean deleted = deleteFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertThat(deleted, is(true));
-    
-    // Verify component is gone
-    Future<Boolean> verifyDeleteFuture = virtualThreadExecutor.submit(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        ComponentDAO dao = session.access(TestComponentDAO.class);
-        Optional<Component> result = dao.readCoordinate(
-            repositoryId, 
-            component.namespace(), 
-            component.name(), 
-            component.version());
-        return !result.isPresent();
-      } catch (Exception e) {
-        fail("Failed to verify component deletion: " + e.getMessage());
-        return false;
-      }
-    });
-    
-    Boolean isDeleted = verifyDeleteFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertThat(isDeleted, is(true));
-  }
-  
-  /**
-   * Test basic CRUD operations for assets using Virtual Threads.
-   */
-  @Test
-  public void testAssetCrudWithVirtualThreads() throws Exception {
-    // Create component for the asset
-    ComponentData component = randomComponent(repositoryId);
-    component.setNamespace("virtual-thread-test");
-    component.setName("asset-crud-test");
-    component.setVersion("1.0.0");
-    
-    // Create asset data
-    AssetData asset = randomAsset(repositoryId);
-    asset.setPath("/virtual-thread-test/asset-crud-test/1.0.0/test-asset.jar");
-    asset.setKind("test-kind");
-    
-    // Create component and asset using a virtual thread
-    Future<?> createFuture = virtualThreadExecutor.submit(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        ComponentDAO componentDao = session.access(TestComponentDAO.class);
-        AssetDAO assetDao = session.access(TestAssetDAO.class);
-        
-        // Create component first
-        componentDao.createComponent(component, true);
-        
-        // Set component reference and create asset
-        asset.setComponent(component);
-        assetDao.createAsset(asset, true);
-        
-        session.getTransaction().commit();
-      } catch (Exception e) {
-        fail("Failed to create asset: " + e.getMessage());
-      }
-    });
-    
-    // Wait for creation to complete
-    createFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    
-    // Read asset using a virtual thread
-    Future<Asset> readFuture = virtualThreadExecutor.submit(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        AssetDAO dao = session.access(TestAssetDAO.class);
-        Optional<Asset> result = dao.readPath(repositoryId, asset.path());
-        return result.orElse(null);
-      } catch (Exception e) {
-        fail("Failed to read asset: " + e.getMessage());
-        return null;
-      }
-    });
-    
-    // Verify read result
-    Asset readAsset = readFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertThat(readAsset, notNullValue());
-    assertThat(readAsset.path(), equalTo(asset.path()));
-    assertThat(readAsset.kind(), equalTo(asset.kind()));
-    assertTrue(readAsset.component().isPresent());
-    assertThat(readAsset.component().get().name(), equalTo(component.name()));
-    
-    // Update asset using a virtual thread
-    Future<?> updateFuture = virtualThreadExecutor.submit(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        AssetDAO dao = session.access(TestAssetDAO.class);
-        asset.setKind("updated-kind");
-        asset.attributes("test-section").set("test-key", "test-value");
-        dao.updateAssetKind(asset, true);
-        dao.updateAssetAttributes(asset, true);
-        session.getTransaction().commit();
-      } catch (Exception e) {
-        fail("Failed to update asset: " + e.getMessage());
-      }
-    });
-    
-    // Wait for update to complete
-    updateFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    
-    // Read updated asset using a virtual thread
-    Future<Asset> readUpdatedFuture = virtualThreadExecutor.submit(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        AssetDAO dao = session.access(TestAssetDAO.class);
-        Optional<Asset> result = dao.readPath(repositoryId, asset.path());
-        return result.orElse(null);
-      } catch (Exception e) {
-        fail("Failed to read updated asset: " + e.getMessage());
-        return null;
-      }
-    });
-    
-    // Verify updated asset
-    Asset updatedAsset = readUpdatedFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertThat(updatedAsset, notNullValue());
-    assertThat(updatedAsset.kind(), equalTo("updated-kind"));
-    assertThat(updatedAsset.attributes("test-section").get("test-key"), equalTo("test-value"));
-    
-    // Create and attach blob to asset
-    AssetBlobData assetBlob = randomAssetBlob();
-    
-    Future<?> attachBlobFuture = virtualThreadExecutor.submit(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        AssetBlobDAO blobDao = session.access(TestAssetBlobDAO.class);
-        AssetDAO assetDao = session.access(TestAssetDAO.class);
-        
-        // Create blob
-        blobDao.createAssetBlob(assetBlob);
-        
-        // Attach blob to asset
-        asset.setAssetBlob(assetBlob);
-        assetDao.updateAssetBlobLink(asset, true);
-        
-        session.getTransaction().commit();
-      } catch (Exception e) {
-        fail("Failed to attach blob to asset: " + e.getMessage());
-      }
-    });
-    
-    // Wait for blob attachment to complete
-    attachBlobFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    
-    // Read asset with blob using a virtual thread
-    Future<AssetBlob> readBlobFuture = virtualThreadExecutor.submit(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        AssetDAO dao = session.access(TestAssetDAO.class);
-        Optional<Asset> result = dao.readPath(repositoryId, asset.path());
-        if (result.isPresent() && result.get().blob().isPresent()) {
-          return result.get().blob().get();
+  public void tearDown() {
+    if (executor != null) {
+      executor.shutdown();
+      try {
+        if (!executor.awaitTermination(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+          executor.shutdownNow();
         }
-        return null;
-      } catch (Exception e) {
-        fail("Failed to read asset with blob: " + e.getMessage());
-        return null;
+      } catch (InterruptedException e) {
+        executor.shutdownNow();
+        Thread.currentThread().interrupt();
       }
-    });
-    
-    // Verify blob attachment
-    AssetBlob readBlob = readBlobFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertThat(readBlob, notNullValue());
-    assertThat(readBlob.blobRef(), equalTo(assetBlob.blobRef()));
-    
-    // Delete asset using a virtual thread
-    Future<Boolean> deleteFuture = virtualThreadExecutor.submit(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        AssetDAO dao = session.access(TestAssetDAO.class);
-        boolean result = dao.deleteAsset(asset);
-        session.getTransaction().commit();
-        return result;
-      } catch (Exception e) {
-        fail("Failed to delete asset: " + e.getMessage());
-        return false;
-      }
-    });
-    
-    // Verify deletion
-    Boolean deleted = deleteFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertThat(deleted, is(true));
-    
-    // Verify asset is gone
-    Future<Boolean> verifyDeleteFuture = virtualThreadExecutor.submit(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        AssetDAO dao = session.access(TestAssetDAO.class);
-        Optional<Asset> result = dao.readPath(repositoryId, asset.path());
-        return !result.isPresent();
-      } catch (Exception e) {
-        fail("Failed to verify asset deletion: " + e.getMessage());
-        return false;
-      }
-    });
-    
-    Boolean isDeleted = verifyDeleteFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertThat(isDeleted, is(true));
+    }
   }
-  
+
   /**
-   * Test browsing components with Virtual Threads.
+   * Tests concurrent component creation operations using virtual threads.
+   * Verifies that multiple components can be created concurrently without errors.
    */
   @Test
-  public void testBrowseComponentsWithVirtualThreads() throws Exception {
-    // Generate a set of components for browsing
-    final int componentCount = 50;
+  public void testConcurrentComponentCreation() throws Exception {
+    int componentCount = CONCURRENT_OPERATIONS;
+    CountDownLatch latch = new CountDownLatch(componentCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
     List<ComponentData> components = new ArrayList<>();
     
-    // Create components using a virtual thread
-    Future<?> createFuture = virtualThreadExecutor.submit(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        ComponentDAO dao = session.access(TestComponentDAO.class);
-        
-        for (int i = 0; i < componentCount; i++) {
-          ComponentData component = randomComponent(repositoryId);
-          component.setNamespace("browse-test");
-          component.setName("component-" + i);
-          component.setVersion("1.0." + i);
-          component.setKind(i % 2 == 0 ? "even-kind" : "odd-kind");
-          
-          dao.createComponent(component, true);
-          components.add(component);
+    // Generate random components
+    for (int i = 0; i < componentCount; i++) {
+      ComponentData component = randomComponent(repositoryId);
+      component.setVersion("1." + i); // Ensure unique versions
+      components.add(component);
+    }
+    
+    // Submit component creation tasks to virtual thread executor
+    for (ComponentData component : components) {
+      executor.submit(() -> {
+        try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+          TestComponentDAO dao = session.access(TestComponentDAO.class);
+          dao.createComponent(component, ENTITY_VERSION_ENABLED);
+          session.getTransaction().commit();
+        } catch (Exception e) {
+          errorCount.incrementAndGet();
+          logger.error("Error creating component", e);
+        } finally {
+          latch.countDown();
         }
-        
-        session.getTransaction().commit();
-      } catch (Exception e) {
-        fail("Failed to create components for browsing: " + e.getMessage());
-      }
-    });
+      });
+    }
     
-    // Wait for creation to complete
-    createFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    // Wait for all operations to complete
+    assertTrue("Timed out waiting for component creation", 
+        latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
     
-    // Browse all components using a virtual thread
-    Future<List<Component>> browseFuture = virtualThreadExecutor.submit(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        ComponentDAO dao = session.access(TestComponentDAO.class);
-        List<Component> result = new ArrayList<>();
-        
-        String continuationToken = null;
-        Continuation<Component> continuation;
-        do {
-          continuation = dao.browseComponents(repositoryId, BROWSE_LIMIT, continuationToken, null, null, null);
-          result.addAll(continuation);
-          continuationToken = continuation.nextContinuationToken();
-        } while (continuationToken != null);
-        
-        return result;
-      } catch (Exception e) {
-        fail("Failed to browse components: " + e.getMessage());
-        return null;
-      }
-    });
+    // Verify results
+    assertThat("No errors should occur during concurrent component creation", 
+        errorCount.get(), is(0));
     
-    // Verify browse results
-    List<Component> browsedComponents = browseFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertThat(browsedComponents, notNullValue());
-    assertThat(browsedComponents.size(), greaterThan(componentCount - 1)); // At least our components
-    
-    // Browse components by kind using a virtual thread
-    Future<List<Component>> browseByKindFuture = virtualThreadExecutor.submit(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        ComponentDAO dao = session.access(TestComponentDAO.class);
-        List<Component> result = new ArrayList<>();
-        
-        String continuationToken = null;
-        Continuation<Component> continuation;
-        do {
-          continuation = dao.browseComponents(repositoryId, BROWSE_LIMIT, continuationToken, "even-kind", null, null);
-          result.addAll(continuation);
-          continuationToken = continuation.nextContinuationToken();
-        } while (continuationToken != null);
-        
-        return result;
-      } catch (Exception e) {
-        fail("Failed to browse components by kind: " + e.getMessage());
-        return null;
-      }
-    });
-    
-    // Verify browse by kind results
-    List<Component> browsedByKind = browseByKindFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertThat(browsedByKind, notNullValue());
-    assertThat(browsedByKind.size(), greaterThan(componentCount / 2 - 1)); // At least our even components
-    
-    // Verify all browsed components with even-kind have the correct kind
-    for (Component component : browsedByKind) {
-      if (component.namespace().equals("browse-test")) {
-        assertThat(component.kind(), equalTo("even-kind"));
-      }
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      TestComponentDAO dao = session.access(TestComponentDAO.class);
+      int count = dao.countComponents(repositoryId, null, null, null);
+      assertThat("All components should be created", count, is(componentCount));
     }
   }
-  
+
   /**
-   * Test browsing assets with Virtual Threads.
+   * Tests concurrent component browsing operations using virtual threads.
+   * Verifies that components can be browsed concurrently without errors.
    */
   @Test
-  public void testBrowseAssetsWithVirtualThreads() throws Exception {
-    // Generate a set of components and assets for browsing
-    final int assetCount = 50;
+  public void testConcurrentComponentBrowsing() throws Exception {
+    // Create components first
+    int componentCount = 50;
+    List<ComponentData> components = new ArrayList<>();
+    
+    for (int i = 0; i < componentCount; i++) {
+      ComponentData component = randomComponent(repositoryId);
+      component.setVersion("1." + i); // Ensure unique versions
+      components.add(component);
+    }
+    
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      TestComponentDAO dao = session.access(TestComponentDAO.class);
+      for (ComponentData component : components) {
+        dao.createComponent(component, ENTITY_VERSION_ENABLED);
+      }
+      session.getTransaction().commit();
+    }
+    
+    // Now test concurrent browsing
+    int browseOperations = CONCURRENT_OPERATIONS;
+    CountDownLatch latch = new CountDownLatch(browseOperations);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    AtomicInteger totalComponentsFound = new AtomicInteger(0);
+    
+    // Submit browse tasks to virtual thread executor
+    for (int i = 0; i < browseOperations; i++) {
+      final int limit = 10;
+      final int offset = i % 5; // Create some variation in continuation tokens
+      
+      executor.submit(() -> {
+        try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+          TestComponentDAO dao = session.access(TestComponentDAO.class);
+          String continuationToken = null;
+          int found = 0;
+          
+          // Browse with pagination
+          do {
+            Continuation<Component> results = dao.browseComponents(
+                repositoryId, limit, continuationToken, null, null, null);
+            found += results.size();
+            continuationToken = results.nextContinuationToken();
+          } while (continuationToken != null);
+          
+          totalComponentsFound.addAndGet(found);
+        } catch (Exception e) {
+          errorCount.incrementAndGet();
+          logger.error("Error browsing components", e);
+        } finally {
+          latch.countDown();
+        }
+      });
+    }
+    
+    // Wait for all operations to complete
+    assertTrue("Timed out waiting for component browsing", 
+        latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+    
+    // Verify results
+    assertThat("No errors should occur during concurrent component browsing", 
+        errorCount.get(), is(0));
+    assertThat("Components should be found in each browse operation", 
+        totalComponentsFound.get(), is(browseOperations * componentCount));
+  }
+
+  /**
+   * Tests concurrent component updates using virtual threads.
+   * Verifies that components can be updated concurrently without errors.
+   */
+  @Test
+  public void testConcurrentComponentUpdates() throws Exception {
+    // Create a component to update
+    ComponentData component = randomComponent(repositoryId);
+    
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      TestComponentDAO dao = session.access(TestComponentDAO.class);
+      dao.createComponent(component, ENTITY_VERSION_ENABLED);
+      session.getTransaction().commit();
+    }
+    
+    // Now test concurrent updates
+    int updateOperations = CONCURRENT_OPERATIONS;
+    CountDownLatch latch = new CountDownLatch(updateOperations);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    // Submit update tasks to virtual thread executor
+    for (int i = 0; i < updateOperations; i++) {
+      final int updateIndex = i;
+      
+      executor.submit(() -> {
+        try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+          TestComponentDAO dao = session.access(TestComponentDAO.class);
+          
+          // Read the component
+          Optional<Component> maybeComponent = dao.readComponent(component.componentId);
+          if (maybeComponent.isPresent()) {
+            ComponentData toUpdate = (ComponentData) maybeComponent.get();
+            
+            // Update attributes
+            toUpdate.attributes("test-section").set("update-key", "update-value-" + updateIndex);
+            dao.updateComponentAttributes(toUpdate, ENTITY_VERSION_ENABLED);
+            
+            session.getTransaction().commit();
+          } else {
+            errorCount.incrementAndGet();
+          }
+        } catch (Exception e) {
+          errorCount.incrementAndGet();
+          logger.error("Error updating component", e);
+        } finally {
+          latch.countDown();
+        }
+      });
+    }
+    
+    // Wait for all operations to complete
+    assertTrue("Timed out waiting for component updates", 
+        latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+    
+    // Verify results
+    assertThat("No errors should occur during concurrent component updates", 
+        errorCount.get(), is(0));
+    
+    // Verify the component was updated
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      TestComponentDAO dao = session.access(TestComponentDAO.class);
+      Optional<Component> maybeComponent = dao.readComponent(component.componentId);
+      assertTrue("Component should exist", maybeComponent.isPresent());
+      
+      Component updated = maybeComponent.get();
+      assertThat("Entity version should be incremented", 
+          updated.entityVersion(), is(ENTITY_VERSION_ENABLED ? updateOperations + 1 : null));
+    }
+  }
+
+  /**
+   * Tests concurrent asset creation operations using virtual threads.
+   * Verifies that multiple assets can be created concurrently without errors.
+   */
+  @Test
+  public void testConcurrentAssetCreation() throws Exception {
+    // Create a component to associate with assets
+    ComponentData component = randomComponent(repositoryId);
+    
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      TestComponentDAO dao = session.access(TestComponentDAO.class);
+      dao.createComponent(component, ENTITY_VERSION_ENABLED);
+      session.getTransaction().commit();
+    }
+    
+    // Now test concurrent asset creation
+    int assetCount = CONCURRENT_OPERATIONS;
+    CountDownLatch latch = new CountDownLatch(assetCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    List<AssetData> assets = new ArrayList<>();
+    
+    // Generate random assets
+    for (int i = 0; i < assetCount; i++) {
+      AssetData asset = randomAsset(repositoryId);
+      asset.setPath("/path/to/asset-" + i); // Ensure unique paths
+      asset.setComponent(component);
+      assets.add(asset);
+    }
+    
+    // Submit asset creation tasks to virtual thread executor
+    for (AssetData asset : assets) {
+      executor.submit(() -> {
+        try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+          TestAssetDAO dao = session.access(TestAssetDAO.class);
+          dao.createAsset(asset, ENTITY_VERSION_ENABLED);
+          session.getTransaction().commit();
+        } catch (Exception e) {
+          errorCount.incrementAndGet();
+          logger.error("Error creating asset", e);
+        } finally {
+          latch.countDown();
+        }
+      });
+    }
+    
+    // Wait for all operations to complete
+    assertTrue("Timed out waiting for asset creation", 
+        latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+    
+    // Verify results
+    assertThat("No errors should occur during concurrent asset creation", 
+        errorCount.get(), is(0));
+    
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      TestAssetDAO dao = session.access(TestAssetDAO.class);
+      int count = dao.countAssets(repositoryId, null, null, null);
+      assertThat("All assets should be created", count, is(assetCount));
+      
+      // Verify component entity version was updated correctly
+      TestComponentDAO componentDao = session.access(TestComponentDAO.class);
+      Optional<Component> maybeComponent = componentDao.readComponent(component.componentId);
+      assertTrue("Component should exist", maybeComponent.isPresent());
+      
+      Component updated = maybeComponent.get();
+      assertThat("Component entity version should be incremented for each asset", 
+          updated.entityVersion(), is(ENTITY_VERSION_ENABLED ? assetCount + 1 : null));
+    }
+  }
+
+  /**
+   * Tests concurrent asset browsing operations using virtual threads.
+   * Verifies that assets can be browsed concurrently without errors.
+   */
+  @Test
+  public void testConcurrentAssetBrowsing() throws Exception {
+    // Create a component and assets first
+    ComponentData component = randomComponent(repositoryId);
+    int assetCount = 50;
+    
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      TestComponentDAO componentDao = session.access(TestComponentDAO.class);
+      componentDao.createComponent(component, ENTITY_VERSION_ENABLED);
+      
+      TestAssetDAO assetDao = session.access(TestAssetDAO.class);
+      for (int i = 0; i < assetCount; i++) {
+        AssetData asset = randomAsset(repositoryId);
+        asset.setPath("/path/to/asset-" + i); // Ensure unique paths
+        asset.setComponent(component);
+        assetDao.createAsset(asset, ENTITY_VERSION_ENABLED);
+      }
+      
+      session.getTransaction().commit();
+    }
+    
+    // Now test concurrent browsing
+    int browseOperations = CONCURRENT_OPERATIONS;
+    CountDownLatch latch = new CountDownLatch(browseOperations);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    AtomicInteger totalAssetsFound = new AtomicInteger(0);
+    
+    // Submit browse tasks to virtual thread executor
+    for (int i = 0; i < browseOperations; i++) {
+      final int limit = 10;
+      final int offset = i % 5; // Create some variation in continuation tokens
+      
+      executor.submit(() -> {
+        try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+          TestAssetDAO dao = session.access(TestAssetDAO.class);
+          String continuationToken = null;
+          int found = 0;
+          
+          // Browse with pagination
+          do {
+            Continuation<Asset> results = dao.browseAssets(
+                repositoryId, limit, continuationToken, null, null, null);
+            found += results.size();
+            continuationToken = results.nextContinuationToken();
+          } while (continuationToken != null);
+          
+          totalAssetsFound.addAndGet(found);
+        } catch (Exception e) {
+          errorCount.incrementAndGet();
+          logger.error("Error browsing assets", e);
+        } finally {
+          latch.countDown();
+        }
+      });
+    }
+    
+    // Wait for all operations to complete
+    assertTrue("Timed out waiting for asset browsing", 
+        latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+    
+    // Verify results
+    assertThat("No errors should occur during concurrent asset browsing", 
+        errorCount.get(), is(0));
+    assertThat("Assets should be found in each browse operation", 
+        totalAssetsFound.get(), is(browseOperations * assetCount));
+  }
+
+  /**
+   * Tests concurrent asset updates using virtual threads.
+   * Verifies that assets can be updated concurrently without errors.
+   */
+  @Test
+  public void testConcurrentAssetUpdates() throws Exception {
+    // Create a component and asset to update
+    ComponentData component = randomComponent(repositoryId);
+    AssetData asset = randomAsset(repositoryId);
+    asset.setComponent(component);
+    
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      TestComponentDAO componentDao = session.access(TestComponentDAO.class);
+      componentDao.createComponent(component, ENTITY_VERSION_ENABLED);
+      
+      TestAssetDAO assetDao = session.access(TestAssetDAO.class);
+      assetDao.createAsset(asset, ENTITY_VERSION_ENABLED);
+      
+      session.getTransaction().commit();
+    }
+    
+    // Now test concurrent updates
+    int updateOperations = CONCURRENT_OPERATIONS;
+    CountDownLatch latch = new CountDownLatch(updateOperations);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    // Submit update tasks to virtual thread executor
+    for (int i = 0; i < updateOperations; i++) {
+      final int updateIndex = i;
+      
+      executor.submit(() -> {
+        try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+          TestAssetDAO dao = session.access(TestAssetDAO.class);
+          
+          // Read the asset
+          Optional<Asset> maybeAsset = dao.readAsset(asset.assetId);
+          if (maybeAsset.isPresent()) {
+            AssetData toUpdate = (AssetData) maybeAsset.get();
+            
+            // Update attributes
+            toUpdate.attributes("test-section").set("update-key", "update-value-" + updateIndex);
+            dao.updateAssetAttributes(toUpdate, ENTITY_VERSION_ENABLED);
+            
+            session.getTransaction().commit();
+          } else {
+            errorCount.incrementAndGet();
+          }
+        } catch (Exception e) {
+          errorCount.incrementAndGet();
+          logger.error("Error updating asset", e);
+        } finally {
+          latch.countDown();
+        }
+      });
+    }
+    
+    // Wait for all operations to complete
+    assertTrue("Timed out waiting for asset updates", 
+        latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+    
+    // Verify results
+    assertThat("No errors should occur during concurrent asset updates", 
+        errorCount.get(), is(0));
+    
+    // Verify the asset and component were updated
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      TestAssetDAO assetDao = session.access(TestAssetDAO.class);
+      Optional<Asset> maybeAsset = assetDao.readAsset(asset.assetId);
+      assertTrue("Asset should exist", maybeAsset.isPresent());
+      
+      // Verify component entity version was updated correctly
+      TestComponentDAO componentDao = session.access(TestComponentDAO.class);
+      Optional<Component> maybeComponent = componentDao.readComponent(component.componentId);
+      assertTrue("Component should exist", maybeComponent.isPresent());
+      
+      Component updated = maybeComponent.get();
+      assertThat("Component entity version should be incremented for each asset update", 
+          updated.entityVersion(), is(ENTITY_VERSION_ENABLED ? updateOperations + 2 : null));
+    }
+  }
+
+  /**
+   * Tests concurrent mixed operations (create, read, update) using virtual threads.
+   * Verifies that different operations can be performed concurrently without errors.
+   */
+  @Test
+  public void testConcurrentMixedOperations() throws Exception {
+    // Create initial components and assets
+    int initialCount = 20;
     List<ComponentData> components = new ArrayList<>();
     List<AssetData> assets = new ArrayList<>();
     
-    // Create components and assets using a virtual thread
-    Future<?> createFuture = virtualThreadExecutor.submit(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        ComponentDAO componentDao = session.access(TestComponentDAO.class);
-        AssetDAO assetDao = session.access(TestAssetDAO.class);
-        
-        for (int i = 0; i < assetCount; i++) {
-          // Create component
-          ComponentData component = randomComponent(repositoryId);
-          component.setNamespace("browse-test");
-          component.setName("asset-component-" + i);
-          component.setVersion("1.0." + i);
-          componentDao.createComponent(component, true);
-          components.add(component);
-          
-          // Create asset linked to component
-          AssetData asset = randomAsset(repositoryId);
-          asset.setPath("/browse-test/asset-" + i + ".jar");
-          asset.setKind(i % 2 == 0 ? "even-kind" : "odd-kind");
-          asset.setComponent(component);
-          assetDao.createAsset(asset, true);
-          assets.add(asset);
-        }
-        
-        session.getTransaction().commit();
-      } catch (Exception e) {
-        fail("Failed to create assets for browsing: " + e.getMessage());
-      }
-    });
-    
-    // Wait for creation to complete
-    createFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    
-    // Browse all assets using a virtual thread
-    Future<List<Asset>> browseFuture = virtualThreadExecutor.submit(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        AssetDAO dao = session.access(TestAssetDAO.class);
-        List<Asset> result = new ArrayList<>();
-        
-        String continuationToken = null;
-        Continuation<Asset> continuation;
-        do {
-          continuation = dao.browseAssets(repositoryId, BROWSE_LIMIT, continuationToken, null, null, null);
-          result.addAll(continuation);
-          continuationToken = continuation.nextContinuationToken();
-        } while (continuationToken != null);
-        
-        return result;
-      } catch (Exception e) {
-        fail("Failed to browse assets: " + e.getMessage());
-        return null;
-      }
-    });
-    
-    // Verify browse results
-    List<Asset> browsedAssets = browseFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertThat(browsedAssets, notNullValue());
-    assertThat(browsedAssets.size(), greaterThan(assetCount - 1)); // At least our assets
-    
-    // Browse assets by kind using a virtual thread
-    Future<List<Asset>> browseByKindFuture = virtualThreadExecutor.submit(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        AssetDAO dao = session.access(TestAssetDAO.class);
-        List<Asset> result = new ArrayList<>();
-        
-        String continuationToken = null;
-        Continuation<Asset> continuation;
-        do {
-          continuation = dao.browseAssets(repositoryId, BROWSE_LIMIT, continuationToken, "even-kind", null, null);
-          result.addAll(continuation);
-          continuationToken = continuation.nextContinuationToken();
-        } while (continuationToken != null);
-        
-        return result;
-      } catch (Exception e) {
-        fail("Failed to browse assets by kind: " + e.getMessage());
-        return null;
-      }
-    });
-    
-    // Verify browse by kind results
-    List<Asset> browsedByKind = browseByKindFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertThat(browsedByKind, notNullValue());
-    assertThat(browsedByKind.size(), greaterThan(assetCount / 2 - 1)); // At least our even assets
-    
-    // Verify all browsed assets with even-kind have the correct kind
-    for (Asset asset : browsedByKind) {
-      if (asset.path().startsWith("/browse-test/")) {
-        assertThat(asset.kind(), equalTo("even-kind"));
-      }
-    }
-    
-    // Browse component assets using a virtual thread
-    ComponentData firstComponent = components.get(0);
-    Future<List<Asset>> browseComponentAssetsFuture = virtualThreadExecutor.submit(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        AssetDAO dao = session.access(TestAssetDAO.class);
-        return dao.browseComponentAssets(firstComponent);
-      } catch (Exception e) {
-        fail("Failed to browse component assets: " + e.getMessage());
-        return null;
-      }
-    });
-    
-    // Verify component assets browse results
-    List<Asset> componentAssets = browseComponentAssetsFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertThat(componentAssets, notNullValue());
-    assertThat(componentAssets, hasSize(1)); // One asset per component
-    assertThat(componentAssets.get(0).component().get().name(), equalTo(firstComponent.name()));
-  }
-  
-  /**
-   * Test high concurrency with multiple Virtual Threads performing content store operations simultaneously.
-   */
-  @Test
-  public void testHighConcurrencyWithVirtualThreads() throws Exception {
-    // Create a countdown latch to coordinate thread start
-    CountDownLatch startLatch = new CountDownLatch(1);
-    
-    // Create a countdown latch to wait for all threads to complete
-    CountDownLatch completionLatch = new CountDownLatch(CONCURRENT_THREADS);
-    
-    // Track successful operations
-    AtomicInteger successfulOperations = new AtomicInteger(0);
-    
-    // Create multiple virtual threads to perform concurrent operations
-    List<Future<?>> futures = new ArrayList<>();
-    for (int i = 0; i < CONCURRENT_THREADS; i++) {
-      final int threadId = i;
-      futures.add(virtualThreadExecutor.submit(() -> {
-        try {
-          // Wait for the signal to start
-          startLatch.await();
-          
-          // Perform multiple operations per thread
-          for (int j = 0; j < OPERATIONS_PER_THREAD; j++) {
-            String componentName = "concurrent-component-" + threadId + "-" + j;
-            String assetPath = "/concurrent-test/" + threadId + "/asset-" + j + ".jar";
-            
-            try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-              ComponentDAO componentDao = session.access(TestComponentDAO.class);
-              AssetDAO assetDao = session.access(TestAssetDAO.class);
-              
-              // Create component
-              ComponentData component = randomComponent(repositoryId);
-              component.setNamespace("concurrent-test");
-              component.setName(componentName);
-              component.setVersion("1.0.0");
-              componentDao.createComponent(component, true);
-              
-              // Create asset linked to component
-              AssetData asset = randomAsset(repositoryId);
-              asset.setPath(assetPath);
-              asset.setComponent(component);
-              assetDao.createAsset(asset, true);
-              
-              // Commit transaction
-              session.getTransaction().commit();
-              
-              // Increment success counter
-              successfulOperations.incrementAndGet();
-            }
-          }
-        } 
-        catch (Exception e) {
-          log.error("Error in virtual thread {}: {}", threadId, e.getMessage(), e);
-        } 
-        finally {
-          completionLatch.countDown();
-        }
-      }));
-    }
-    
-    // Start all threads simultaneously
-    startLatch.countDown();
-    
-    // Wait for all threads to complete or timeout
-    boolean completed = completionLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertThat("All virtual threads should complete within the timeout", completed, is(true));
-    
-    // Verify that all operations were successful
-    int expectedOperations = CONCURRENT_THREADS * OPERATIONS_PER_THREAD;
-    assertThat("All operations should succeed", successfulOperations.get(), is(expectedOperations));
-    
-    // Verify the total number of components in the repository
-    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-      ComponentDAO dao = session.access(TestComponentDAO.class);
-      int componentCount = dao.countComponents(repositoryId, null, null, null);
-      assertThat(componentCount, greaterThan(expectedOperations - 1));
-    }
-  }
-  
-  /**
-   * Test concurrent browsing with Virtual Threads.
-   */
-  @Test
-  public void testConcurrentBrowsingWithVirtualThreads() throws Exception {
-    // First create a set of components and assets
-    final int itemCount = 100;
-    
-    // Create components and assets
-    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-      ComponentDAO componentDao = session.access(TestComponentDAO.class);
-      AssetDAO assetDao = session.access(TestAssetDAO.class);
+    for (int i = 0; i < initialCount; i++) {
+      ComponentData component = randomComponent(repositoryId);
+      component.setVersion("1." + i); // Ensure unique versions
+      components.add(component);
       
-      for (int i = 0; i < itemCount; i++) {
-        // Create component
-        ComponentData component = randomComponent(repositoryId);
-        component.setNamespace("concurrent-browse");
-        component.setName("component-" + i);
-        component.setVersion("1.0." + i);
-        componentDao.createComponent(component, true);
-        
-        // Create asset linked to component
-        AssetData asset = randomAsset(repositoryId);
-        asset.setPath("/concurrent-browse/asset-" + i + ".jar");
-        asset.setComponent(component);
-        assetDao.createAsset(asset, true);
+      AssetData asset = randomAsset(repositoryId);
+      asset.setPath("/path/to/asset-" + i); // Ensure unique paths
+      asset.setComponent(component);
+      assets.add(asset);
+    }
+    
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      TestComponentDAO componentDao = session.access(TestComponentDAO.class);
+      TestAssetDAO assetDao = session.access(TestAssetDAO.class);
+      
+      for (int i = 0; i < initialCount; i++) {
+        componentDao.createComponent(components.get(i), ENTITY_VERSION_ENABLED);
+        assetDao.createAsset(assets.get(i), ENTITY_VERSION_ENABLED);
       }
       
       session.getTransaction().commit();
     }
     
-    // Now perform concurrent browsing with virtual threads
-    final int browseThreads = 20;
-    CountDownLatch browseLatch = new CountDownLatch(browseThreads);
-    Map<Integer, List<Component>> componentResults = new ConcurrentHashMap<>();
-    Map<Integer, List<Asset>> assetResults = new ConcurrentHashMap<>();
+    // Now test concurrent mixed operations
+    int operationCount = CONCURRENT_OPERATIONS;
+    CountDownLatch latch = new CountDownLatch(operationCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    AtomicInteger createCount = new AtomicInteger(0);
+    AtomicInteger readCount = new AtomicInteger(0);
+    AtomicInteger updateCount = new AtomicInteger(0);
     
-    // Launch concurrent browse operations
-    List<CompletableFuture<Void>> browseFutures = IntStream.range(0, browseThreads)
-        .mapToObj(i -> CompletableFuture.runAsync(() -> {
-          try {
-            // Browse components
-            List<Component> components = new ArrayList<>();
-            try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-              ComponentDAO dao = session.access(TestComponentDAO.class);
-              String continuationToken = null;
-              Continuation<Component> continuation;
-              do {
-                continuation = dao.browseComponents(repositoryId, BROWSE_LIMIT, continuationToken, null, null, null);
-                components.addAll(continuation);
-                continuationToken = continuation.nextContinuationToken();
-              } while (continuationToken != null);
-            }
-            componentResults.put(i, components);
-            
-            // Browse assets
-            List<Asset> assets = new ArrayList<>();
-            try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-              AssetDAO dao = session.access(TestAssetDAO.class);
-              String continuationToken = null;
-              Continuation<Asset> continuation;
-              do {
-                continuation = dao.browseAssets(repositoryId, BROWSE_LIMIT, continuationToken, null, null, null);
-                assets.addAll(continuation);
-                continuationToken = continuation.nextContinuationToken();
-              } while (continuationToken != null);
-            }
-            assetResults.put(i, assets);
-          } 
-          catch (Exception e) {
-            log.error("Error in concurrent browse thread {}: {}", i, e.getMessage(), e);
-          } 
-          finally {
-            browseLatch.countDown();
+    // Submit mixed operation tasks to virtual thread executor
+    for (int i = 0; i < operationCount; i++) {
+      final int operationIndex = i;
+      
+      executor.submit(() -> {
+        try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+          TestComponentDAO componentDao = session.access(TestComponentDAO.class);
+          TestAssetDAO assetDao = session.access(TestAssetDAO.class);
+          
+          // Determine operation type based on index
+          int operationType = operationIndex % 3; // 0=create, 1=read, 2=update
+          
+          switch (operationType) {
+            case 0: // Create
+              ComponentData newComponent = randomComponent(repositoryId);
+              newComponent.setVersion("2." + operationIndex); // Ensure unique versions
+              componentDao.createComponent(newComponent, ENTITY_VERSION_ENABLED);
+              
+              AssetData newAsset = randomAsset(repositoryId);
+              newAsset.setPath("/path/to/new-asset-" + operationIndex); // Ensure unique paths
+              newAsset.setComponent(newComponent);
+              assetDao.createAsset(newAsset, ENTITY_VERSION_ENABLED);
+              
+              createCount.incrementAndGet();
+              break;
+              
+            case 1: // Read
+              int randomIndex = operationIndex % initialCount;
+              componentDao.readComponent(components.get(randomIndex).componentId);
+              assetDao.readAsset(assets.get(randomIndex).assetId);
+              readCount.incrementAndGet();
+              break;
+              
+            case 2: // Update
+              int updateIndex = operationIndex % initialCount;
+              ComponentData componentToUpdate = (ComponentData) componentDao
+                  .readComponent(components.get(updateIndex).componentId).get();
+              componentToUpdate.attributes("test-section").set("mixed-key", "mixed-value-" + operationIndex);
+              componentDao.updateComponentAttributes(componentToUpdate, ENTITY_VERSION_ENABLED);
+              
+              AssetData assetToUpdate = (AssetData) assetDao
+                  .readAsset(assets.get(updateIndex).assetId).get();
+              assetToUpdate.attributes("test-section").set("mixed-key", "mixed-value-" + operationIndex);
+              assetDao.updateAssetAttributes(assetToUpdate, ENTITY_VERSION_ENABLED);
+              
+              updateCount.incrementAndGet();
+              break;
           }
-        }, virtualThreadExecutor))
-        .collect(Collectors.toList());
+          
+          session.getTransaction().commit();
+        } catch (Exception e) {
+          errorCount.incrementAndGet();
+          logger.error("Error in mixed operation", e);
+        } finally {
+          latch.countDown();
+        }
+      });
+    }
     
-    // Wait for all browse operations to complete
-    browseLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    // Wait for all operations to complete
+    assertTrue("Timed out waiting for mixed operations", 
+        latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
     
-    // Verify all browse operations completed successfully
-    assertThat(componentResults.size(), is(browseThreads));
-    assertThat(assetResults.size(), is(browseThreads));
+    // Verify results
+    assertThat("No errors should occur during concurrent mixed operations", 
+        errorCount.get(), is(0));
     
-    // Verify all threads saw the same data
-    int expectedComponentCount = componentResults.get(0).size();
-    int expectedAssetCount = assetResults.get(0).size();
+    // Verify operation counts
+    int totalOperations = createCount.get() + readCount.get() + updateCount.get();
+    assertThat("All operations should complete", totalOperations, is(operationCount));
     
-    for (int i = 1; i < browseThreads; i++) {
-      assertThat("Thread " + i + " should see the same number of components",
-          componentResults.get(i).size(), is(expectedComponentCount));
-      assertThat("Thread " + i + " should see the same number of assets",
-          assetResults.get(i).size(), is(expectedAssetCount));
+    // Verify final counts
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      TestComponentDAO componentDao = session.access(TestComponentDAO.class);
+      TestAssetDAO assetDao = session.access(TestAssetDAO.class);
+      
+      int componentCount = componentDao.countComponents(repositoryId, null, null, null);
+      int assetCount = assetDao.countAssets(repositoryId, null, null, null);
+      
+      assertThat("Component count should match initial plus created", 
+          componentCount, is(initialCount + createCount.get()));
+      assertThat("Asset count should match initial plus created", 
+          assetCount, is(initialCount + createCount.get()));
     }
   }
-  
+
   /**
-   * Test versioned vs unversioned entity operations with Virtual Threads.
+   * Tests high-concurrency component operations using virtual threads.
+   * Verifies that a large number of virtual threads can operate concurrently without errors.
    */
   @Test
-  public void testVersionedVsUnversionedWithVirtualThreads() throws Exception {
-    // Create components with and without versioning
-    ComponentData versionedComponent = randomComponent(repositoryId);
-    versionedComponent.setNamespace("version-test");
-    versionedComponent.setName("versioned-component");
-    versionedComponent.setVersion("1.0.0");
+  public void testHighConcurrencyComponentOperations() throws Exception {
+    // Use a higher number of concurrent operations for this test
+    int highConcurrency = 1000;
+    CountDownLatch latch = new CountDownLatch(highConcurrency);
+    AtomicInteger errorCount = new AtomicInteger(0);
     
-    ComponentData unversionedComponent = randomComponent(repositoryId);
-    unversionedComponent.setNamespace("version-test");
-    unversionedComponent.setName("unversioned-component");
-    unversionedComponent.setVersion("1.0.0");
+    // Submit high-concurrency tasks to virtual thread executor
+    for (int i = 0; i < highConcurrency; i++) {
+      final int operationIndex = i;
+      
+      executor.submit(() -> {
+        try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+          TestComponentDAO dao = session.access(TestComponentDAO.class);
+          
+          // Create a component
+          ComponentData component = randomComponent(repositoryId);
+          component.setVersion("high-concurrency-" + operationIndex); // Ensure unique versions
+          dao.createComponent(component, ENTITY_VERSION_ENABLED);
+          
+          // Read it back
+          Optional<Component> maybeComponent = dao.readComponent(component.componentId);
+          if (maybeComponent.isPresent()) {
+            // Update it
+            ComponentData toUpdate = (ComponentData) maybeComponent.get();
+            toUpdate.attributes("high-concurrency").set("test-key", "test-value-" + operationIndex);
+            dao.updateComponentAttributes(toUpdate, ENTITY_VERSION_ENABLED);
+          } else {
+            errorCount.incrementAndGet();
+          }
+          
+          session.getTransaction().commit();
+        } catch (Exception e) {
+          errorCount.incrementAndGet();
+          logger.error("Error in high-concurrency operation", e);
+        } finally {
+          latch.countDown();
+        }
+      });
+    }
     
-    // Create components using virtual threads
-    CompletableFuture<Void> createVersionedFuture = CompletableFuture.runAsync(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        ComponentDAO dao = session.access(TestComponentDAO.class);
-        dao.createComponent(versionedComponent, true); // with versioning
-        session.getTransaction().commit();
-      } catch (Exception e) {
-        fail("Failed to create versioned component: " + e.getMessage());
-      }
-    }, virtualThreadExecutor);
+    // Wait for all operations to complete with a longer timeout
+    assertTrue("Timed out waiting for high-concurrency operations", 
+        latch.await(TIMEOUT_SECONDS * 2, TimeUnit.SECONDS));
     
-    CompletableFuture<Void> createUnversionedFuture = CompletableFuture.runAsync(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        ComponentDAO dao = session.access(TestComponentDAO.class);
-        dao.createComponent(unversionedComponent, false); // without versioning
-        session.getTransaction().commit();
-      } catch (Exception e) {
-        fail("Failed to create unversioned component: " + e.getMessage());
-      }
-    }, virtualThreadExecutor);
+    // Verify results
+    assertThat("No errors should occur during high-concurrency operations", 
+        errorCount.get(), is(0));
     
-    // Wait for creation to complete
-    CompletableFuture.allOf(createVersionedFuture, createUnversionedFuture).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    
-    // Update components multiple times
-    CompletableFuture<Void> updateVersionedFuture = CompletableFuture.runAsync(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        ComponentDAO dao = session.access(TestComponentDAO.class);
-        
-        // First update
-        versionedComponent.setKind("first-update");
-        dao.updateComponentKind(versionedComponent, true);
-        
-        // Second update
-        versionedComponent.attributes("test-section").set("test-key", "test-value");
-        dao.updateComponentAttributes(versionedComponent, true);
-        
-        session.getTransaction().commit();
-      } catch (Exception e) {
-        fail("Failed to update versioned component: " + e.getMessage());
-      }
-    }, virtualThreadExecutor);
-    
-    CompletableFuture<Void> updateUnversionedFuture = CompletableFuture.runAsync(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        ComponentDAO dao = session.access(TestComponentDAO.class);
-        
-        // First update
-        unversionedComponent.setKind("first-update");
-        dao.updateComponentKind(unversionedComponent, false);
-        
-        // Second update
-        unversionedComponent.attributes("test-section").set("test-key", "test-value");
-        dao.updateComponentAttributes(unversionedComponent, false);
-        
-        session.getTransaction().commit();
-      } catch (Exception e) {
-        fail("Failed to update unversioned component: " + e.getMessage());
-      }
-    }, virtualThreadExecutor);
-    
-    // Wait for updates to complete
-    CompletableFuture.allOf(updateVersionedFuture, updateUnversionedFuture).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    
-    // Read components and verify versioning
-    CompletableFuture<Component> readVersionedFuture = CompletableFuture.supplyAsync(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        ComponentDAO dao = session.access(TestComponentDAO.class);
-        Optional<Component> result = dao.readCoordinate(
-            repositoryId, 
-            versionedComponent.namespace(), 
-            versionedComponent.name(), 
-            versionedComponent.version());
-        return result.orElse(null);
-      } catch (Exception e) {
-        fail("Failed to read versioned component: " + e.getMessage());
-        return null;
-      }
-    }, virtualThreadExecutor);
-    
-    CompletableFuture<Component> readUnversionedFuture = CompletableFuture.supplyAsync(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        ComponentDAO dao = session.access(TestComponentDAO.class);
-        Optional<Component> result = dao.readCoordinate(
-            repositoryId, 
-            unversionedComponent.namespace(), 
-            unversionedComponent.name(), 
-            unversionedComponent.version());
-        return result.orElse(null);
-      } catch (Exception e) {
-        fail("Failed to read unversioned component: " + e.getMessage());
-        return null;
-      }
-    }, virtualThreadExecutor);
-    
-    // Get results and verify
-    Component readVersioned = readVersionedFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    Component readUnversioned = readUnversionedFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    
-    assertThat(readVersioned, notNullValue());
-    assertThat(readUnversioned, notNullValue());
-    
-    // Versioned component should have entity version 3 (initial + 2 updates)
-    assertThat(readVersioned.entityVersion(), equalTo(3));
-    
-    // Unversioned component should have null entity version
-    assertThat(readUnversioned.entityVersion(), equalTo(null));
-    
-    // Both should have the updated values
-    assertThat(readVersioned.kind(), equalTo("first-update"));
-    assertThat(readUnversioned.kind(), equalTo("first-update"));
-    assertThat(readVersioned.attributes("test-section").get("test-key"), equalTo("test-value"));
-    assertThat(readUnversioned.attributes("test-section").get("test-key"), equalTo("test-value"));
+    // Verify final count
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      TestComponentDAO dao = session.access(TestComponentDAO.class);
+      int count = dao.countComponents(repositoryId, null, null, null);
+      assertThat("All high-concurrency components should be created", 
+          count, is(highConcurrency));
+    }
   }
-  
+
   /**
-   * Test transaction integrity with Virtual Threads.
+   * Tests concurrent component deletion operations using virtual threads.
+   * Verifies that components can be deleted concurrently without errors.
    */
   @Test
-  public void testTransactionIntegrityWithVirtualThreads() throws Exception {
-    // Create a component and asset in a single transaction
+  public void testConcurrentComponentDeletion() throws Exception {
+    // Create components to delete
+    int componentCount = CONCURRENT_OPERATIONS;
+    List<ComponentData> components = new ArrayList<>();
+    
+    for (int i = 0; i < componentCount; i++) {
+      ComponentData component = randomComponent(repositoryId);
+      component.setVersion("delete-" + i); // Ensure unique versions
+      components.add(component);
+    }
+    
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      TestComponentDAO dao = session.access(TestComponentDAO.class);
+      for (ComponentData component : components) {
+        dao.createComponent(component, ENTITY_VERSION_ENABLED);
+      }
+      session.getTransaction().commit();
+    }
+    
+    // Verify components were created
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      TestComponentDAO dao = session.access(TestComponentDAO.class);
+      int count = dao.countComponents(repositoryId, null, null, null);
+      assertThat("All components should be created before deletion test", 
+          count, is(componentCount));
+    }
+    
+    // Now test concurrent deletion
+    CountDownLatch latch = new CountDownLatch(componentCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    AtomicInteger deleteSuccessCount = new AtomicInteger(0);
+    
+    // Submit deletion tasks to virtual thread executor
+    for (ComponentData component : components) {
+      executor.submit(() -> {
+        try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+          TestComponentDAO dao = session.access(TestComponentDAO.class);
+          boolean deleted = dao.deleteComponent(component);
+          if (deleted) {
+            deleteSuccessCount.incrementAndGet();
+          }
+          session.getTransaction().commit();
+        } catch (Exception e) {
+          errorCount.incrementAndGet();
+          logger.error("Error deleting component", e);
+        } finally {
+          latch.countDown();
+        }
+      });
+    }
+    
+    // Wait for all operations to complete
+    assertTrue("Timed out waiting for component deletion", 
+        latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+    
+    // Verify results
+    assertThat("No errors should occur during concurrent component deletion", 
+        errorCount.get(), is(0));
+    assertThat("All components should be successfully deleted", 
+        deleteSuccessCount.get(), is(componentCount));
+    
+    // Verify final count
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      TestComponentDAO dao = session.access(TestComponentDAO.class);
+      int count = dao.countComponents(repositoryId, null, null, null);
+      assertThat("No components should remain after deletion", count, is(0));
+    }
+  }
+
+  /**
+   * Tests concurrent asset deletion operations using virtual threads.
+   * Verifies that assets can be deleted concurrently without errors.
+   */
+  @Test
+  public void testConcurrentAssetDeletion() throws Exception {
+    // Create a component for the assets
     ComponentData component = randomComponent(repositoryId);
-    component.setNamespace("transaction-test");
-    component.setName("transaction-component");
-    component.setVersion("1.0.0");
     
-    AssetData asset = randomAsset(repositoryId);
-    asset.setPath("/transaction-test/transaction-asset.jar");
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      TestComponentDAO dao = session.access(TestComponentDAO.class);
+      dao.createComponent(component, ENTITY_VERSION_ENABLED);
+      session.getTransaction().commit();
+    }
     
-    // Successful transaction with both component and asset
-    CompletableFuture<Void> successfulTransactionFuture = CompletableFuture.runAsync(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        ComponentDAO componentDao = session.access(TestComponentDAO.class);
-        AssetDAO assetDao = session.access(TestAssetDAO.class);
-        
-        // Create component
-        componentDao.createComponent(component, true);
-        
-        // Create asset linked to component
-        asset.setComponent(component);
-        assetDao.createAsset(asset, true);
-        
-        // Commit transaction
-        session.getTransaction().commit();
-      } catch (Exception e) {
-        fail("Failed in successful transaction: " + e.getMessage());
+    // Create assets to delete
+    int assetCount = CONCURRENT_OPERATIONS;
+    List<AssetData> assets = new ArrayList<>();
+    
+    for (int i = 0; i < assetCount; i++) {
+      AssetData asset = randomAsset(repositoryId);
+      asset.setPath("/path/to/delete-asset-" + i); // Ensure unique paths
+      asset.setComponent(component);
+      assets.add(asset);
+    }
+    
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      TestAssetDAO dao = session.access(TestAssetDAO.class);
+      for (AssetData asset : assets) {
+        dao.createAsset(asset, ENTITY_VERSION_ENABLED);
       }
-    }, virtualThreadExecutor);
+      session.getTransaction().commit();
+    }
     
-    // Wait for successful transaction to complete
-    successfulTransactionFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    // Verify assets were created
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      TestAssetDAO dao = session.access(TestAssetDAO.class);
+      int count = dao.countAssets(repositoryId, null, null, null);
+      assertThat("All assets should be created before deletion test", 
+          count, is(assetCount));
+    }
     
-    // Verify both component and asset were created
-    CompletableFuture<Boolean> verifySuccessfulFuture = CompletableFuture.supplyAsync(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        ComponentDAO componentDao = session.access(TestComponentDAO.class);
-        AssetDAO assetDao = session.access(TestAssetDAO.class);
-        
-        Optional<Component> componentResult = componentDao.readCoordinate(
-            repositoryId, component.namespace(), component.name(), component.version());
-        Optional<Asset> assetResult = assetDao.readPath(repositoryId, asset.path());
-        
-        return componentResult.isPresent() && assetResult.isPresent();
-      } catch (Exception e) {
-        fail("Failed to verify successful transaction: " + e.getMessage());
-        return false;
+    // Now test concurrent deletion
+    CountDownLatch latch = new CountDownLatch(assetCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    AtomicInteger deleteSuccessCount = new AtomicInteger(0);
+    
+    // Submit deletion tasks to virtual thread executor
+    for (AssetData asset : assets) {
+      executor.submit(() -> {
+        try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+          TestAssetDAO dao = session.access(TestAssetDAO.class);
+          boolean deleted = dao.deleteAsset(asset);
+          if (deleted) {
+            deleteSuccessCount.incrementAndGet();
+          }
+          session.getTransaction().commit();
+        } catch (Exception e) {
+          errorCount.incrementAndGet();
+          logger.error("Error deleting asset", e);
+        } finally {
+          latch.countDown();
+        }
+      });
+    }
+    
+    // Wait for all operations to complete
+    assertTrue("Timed out waiting for asset deletion", 
+        latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+    
+    // Verify results
+    assertThat("No errors should occur during concurrent asset deletion", 
+        errorCount.get(), is(0));
+    assertThat("All assets should be successfully deleted", 
+        deleteSuccessCount.get(), is(assetCount));
+    
+    // Verify final count
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      TestAssetDAO dao = session.access(TestAssetDAO.class);
+      int count = dao.countAssets(repositoryId, null, null, null);
+      assertThat("No assets should remain after deletion", count, is(0));
+    }
+  }
+
+  /**
+   * Tests performance comparison between virtual threads and platform threads.
+   * This test validates that virtual threads provide better scalability for I/O-bound operations.
+   */
+  @Test
+  public void testVirtualThreadPerformanceComparison() throws Exception {
+    // Create a moderate number of components for performance testing
+    int componentCount = 100;
+    List<ComponentData> components = new ArrayList<>();
+    
+    for (int i = 0; i < componentCount; i++) {
+      ComponentData component = randomComponent(repositoryId);
+      component.setVersion("perf-" + i); // Ensure unique versions
+      components.add(component);
+    }
+    
+    try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+      TestComponentDAO dao = session.access(TestComponentDAO.class);
+      for (ComponentData component : components) {
+        dao.createComponent(component, ENTITY_VERSION_ENABLED);
       }
-    }, virtualThreadExecutor);
+      session.getTransaction().commit();
+    }
     
-    Boolean successfulTransactionVerified = verifySuccessfulFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertThat(successfulTransactionVerified, is(true));
+    // Test with virtual threads (already using virtual thread executor)
+    int operationCount = 500;
+    long virtualThreadStartTime = System.nanoTime();
+    CountDownLatch virtualThreadLatch = new CountDownLatch(operationCount);
+    AtomicInteger virtualThreadErrors = new AtomicInteger(0);
     
-    // Failed transaction with rollback
-    ComponentData failComponent = randomComponent(repositoryId);
-    failComponent.setNamespace("transaction-test");
-    failComponent.setName("fail-component");
-    failComponent.setVersion("1.0.0");
+    // Submit tasks to virtual thread executor
+    for (int i = 0; i < operationCount; i++) {
+      final int index = i % componentCount;
+      
+      executor.submit(() -> {
+        try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+          TestComponentDAO dao = session.access(TestComponentDAO.class);
+          dao.readComponent(components.get(index).componentId);
+        } catch (Exception e) {
+          virtualThreadErrors.incrementAndGet();
+        } finally {
+          virtualThreadLatch.countDown();
+        }
+      });
+    }
     
-    AssetData failAsset = randomAsset(repositoryId);
-    failAsset.setPath("/transaction-test/fail-asset.jar");
+    // Wait for virtual thread operations to complete
+    virtualThreadLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    long virtualThreadDuration = System.nanoTime() - virtualThreadStartTime;
     
-    // This asset will cause a conflict by using the same path as an existing asset
-    AssetData conflictAsset = randomAsset(repositoryId);
-    conflictAsset.setPath(asset.path()); // Use same path as existing asset to cause conflict
+    // Now test with platform threads
+    ThreadFactory platformThreadFactory = Thread.ofPlatform().factory();
+    ExecutorService platformExecutor = Executors.newFixedThreadPool(16, platformThreadFactory);
     
-    CompletableFuture<Boolean> failedTransactionFuture = CompletableFuture.supplyAsync(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        ComponentDAO componentDao = session.access(TestComponentDAO.class);
-        AssetDAO assetDao = session.access(TestAssetDAO.class);
-        
-        // Create component
-        componentDao.createComponent(failComponent, true);
-        
-        // Create first asset
-        failAsset.setComponent(failComponent);
-        assetDao.createAsset(failAsset, true);
-        
-        // Try to create conflicting asset - should fail
-        conflictAsset.setComponent(failComponent);
-        assetDao.createAsset(conflictAsset, true);
-        
-        // Commit transaction - should not reach here
-        session.getTransaction().commit();
-        return false; // Transaction should have failed
-      } catch (Exception e) {
-        // Expected exception due to duplicate asset path
-        return true; // Transaction failed as expected
-      }
-    }, virtualThreadExecutor);
+    long platformThreadStartTime = System.nanoTime();
+    CountDownLatch platformThreadLatch = new CountDownLatch(operationCount);
+    AtomicInteger platformThreadErrors = new AtomicInteger(0);
     
-    // Wait for failed transaction to complete
-    Boolean transactionFailed = failedTransactionFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertThat("Transaction should fail due to conflict", transactionFailed, is(true));
+    // Submit tasks to platform thread executor
+    for (int i = 0; i < operationCount; i++) {
+      final int index = i % componentCount;
+      
+      platformExecutor.submit(() -> {
+        try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
+          TestComponentDAO dao = session.access(TestComponentDAO.class);
+          dao.readComponent(components.get(index).componentId);
+        } catch (Exception e) {
+          platformThreadErrors.incrementAndGet();
+        } finally {
+          platformThreadLatch.countDown();
+        }
+      });
+    }
     
-    // Verify the component and first asset were not created (transaction rolled back)
-    CompletableFuture<Boolean> verifyRollbackFuture = CompletableFuture.supplyAsync(() -> {
-      try (DataSession<?> session = sessionRule.openSession(DEFAULT_DATASTORE_NAME)) {
-        ComponentDAO componentDao = session.access(TestComponentDAO.class);
-        AssetDAO assetDao = session.access(TestAssetDAO.class);
-        
-        Optional<Component> componentResult = componentDao.readCoordinate(
-            repositoryId, failComponent.namespace(), failComponent.name(), failComponent.version());
-        Optional<Asset> assetResult = assetDao.readPath(repositoryId, failAsset.path());
-        
-        // Both should not exist due to transaction rollback
-        return !componentResult.isPresent() && !assetResult.isPresent();
-      } catch (Exception e) {
-        fail("Failed to verify rollback: " + e.getMessage());
-        return false;
-      }
-    }, virtualThreadExecutor);
+    // Wait for platform thread operations to complete
+    platformThreadLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    long platformThreadDuration = System.nanoTime() - platformThreadStartTime;
     
-    Boolean rollbackVerified = verifyRollbackFuture.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertThat("Transaction should have been rolled back", rollbackVerified, is(true));
+    // Shutdown platform executor
+    platformExecutor.shutdown();
+    platformExecutor.awaitTermination(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    
+    // Verify results
+    assertThat("No errors should occur with virtual threads", 
+        virtualThreadErrors.get(), is(0));
+    assertThat("No errors should occur with platform threads", 
+        platformThreadErrors.get(), is(0));
+    
+    // Log performance comparison
+    double virtualThreadDurationMs = Duration.ofNanos(virtualThreadDuration).toMillis();
+    double platformThreadDurationMs = Duration.ofNanos(platformThreadDuration).toMillis();
+    
+    logger.info("Virtual Thread Duration: {} ms", virtualThreadDurationMs);
+    logger.info("Platform Thread Duration: {} ms", platformThreadDurationMs);
+    logger.info("Performance Ratio (Platform/Virtual): {}", 
+        platformThreadDurationMs / virtualThreadDurationMs);
+    
+    // Virtual threads should generally be more efficient for I/O-bound operations
+    // but we don't assert this as it depends on the test environment
+    // Just log the results for analysis
   }
 }

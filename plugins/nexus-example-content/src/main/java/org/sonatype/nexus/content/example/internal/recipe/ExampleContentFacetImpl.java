@@ -14,10 +14,12 @@ package org.sonatype.nexus.content.example.internal.recipe;
 
 import java.io.IOException;
 import java.util.Optional;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.CompletableFuture;
 
-import java.lang.Thread;
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
+import javax.inject.Inject;
+import javax.inject.Named;
 
 import org.sonatype.nexus.common.hash.HashAlgorithm;
 import org.sonatype.nexus.content.example.ExampleContentFacet;
@@ -34,7 +36,6 @@ import static org.sonatype.nexus.common.hash.HashAlgorithm.SHA256;
 
 /**
  * Provides persistent content for an 'example' format.
- * Leverages Java 21 Virtual Threads for improved I/O performance.
  *
  * @since 3.24
  */
@@ -54,35 +55,37 @@ public class ExampleContentFacetImpl
 
   @Override
   public Optional<Content> get(final String path) {
-    // Use Virtual Thread for I/O-bound operation
-    return Thread.startVirtualThread(() -> {
-      return assets().path(path).find().map(FluentAsset::download);
-    }).join();
+    // Create a virtual thread executor for I/O-bound operations
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit the asset retrieval operation to the virtual thread executor
+      return CompletableFuture.supplyAsync(() -> assets().path(path).find().map(FluentAsset::download), executor)
+          .join();
+    }
   }
 
   @Override
   public Content put(final String path, final Payload content) throws IOException {
-    // Use Virtual Thread for I/O-bound operation
-    return Thread.startVirtualThread(() -> {
-      try (TempBlob blob = blobs().ingest(content, HASHING)) {
-        return assets().path(path).blob(blob).save().markAsCached(content).download();
-      }
-      catch (IOException e) {
-        throw new RuntimeException("Failed to store content at path: " + path, e);
-      }
-    }).join();
+    // Create a virtual thread executor for I/O-bound operations
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit the content storage operation to the virtual thread executor
+      return CompletableFuture.supplyAsync(() -> {
+        try (TempBlob blob = blobs().ingest(content, HASHING)) {
+          return assets().path(path).blob(blob).save().markAsCached(content).download();
+        } catch (IOException e) {
+          throw new RuntimeException("Failed to store content at path: " + path, e);
+        }
+      }, executor).join();
+    }
   }
 
   @Override
   public boolean delete(final String path) throws IOException {
-    // Use Virtual Thread for I/O-bound operation
-    return Thread.startVirtualThread(() -> {
-      try {
-        return assets().path(path).find().map(FluentAsset::delete).orElse(false);
-      }
-      catch (IOException e) {
-        throw new RuntimeException("Failed to delete content at path: " + path, e);
-      }
-    }).join();
+    // Create a virtual thread executor for I/O-bound operations
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit the asset deletion operation to the virtual thread executor
+      return CompletableFuture.supplyAsync(
+          () -> assets().path(path).find().map(FluentAsset::delete).orElse(false),
+          executor).join();
+    }
   }
 }

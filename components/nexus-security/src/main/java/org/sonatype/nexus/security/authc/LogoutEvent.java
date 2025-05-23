@@ -12,26 +12,18 @@
  */
 package org.sonatype.nexus.security.authc;
 
+import java.io.Serializable;
+
 /**
- * Event fired when a user logs out.
+ * Event record representing a user logout action.
+ * Extends the base SecurityEvent record with logout-specific context.
  *
  * @since 3.0
  */
 public final record LogoutEvent(
     String principal,
     String realm
-) implements java.io.Serializable, SecurityEvent {
-  
-  /**
-   * Pattern matching example for working with LogoutEvent records.
-   * 
-   * @param event The security event to check
-   * @return true if this is a logout event with a non-empty principal
-   */
-  public static boolean isValidLogoutEvent(SecurityEvent event) {
-    return switch(event) {
-      case LogoutEvent(String principal, String realm) when principal != null && !principal.isEmpty() -> true;
-      default -> false;
-    };
-  }
+) extends SecurityEvent(principal, realm) implements Serializable
+{
+  private static final long serialVersionUID = 1L;
 }

@@ -13,12 +13,10 @@
 package org.sonatype.nexus.logging.task;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.common.thread.Java21TestGroup;
-
+import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.api.Category;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.Logger;
@@ -33,7 +31,6 @@ import static org.sonatype.nexus.logging.task.TaskLogger.TASK_LOG_ONLY_MDC;
 import static org.sonatype.nexus.logging.task.TaskLoggingMarkers.NEXUS_LOG_ONLY;
 
 @ExtendWith(MockitoExtension.class)
-@Category(Java21TestGroup.class)
 public class TaskLogOnlyTaskLoggerTest
     extends TestSupport
 {

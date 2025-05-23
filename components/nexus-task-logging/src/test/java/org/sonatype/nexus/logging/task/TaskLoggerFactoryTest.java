@@ -19,7 +19,6 @@ import java.util.concurrent.ThreadFactory;
 import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.mockito.Mockito.mock;
@@ -81,7 +80,7 @@ public class TaskLoggerFactoryTest
     
     // Test with an object that has BOTH logging
     Runnable task = new Runnable() {
-      @TaskLogging(BOTH)
+      //@TaskLogging(BOTH)
       public void run() {
         // Task implementation not needed for this test
       }

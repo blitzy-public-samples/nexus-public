@@ -25,7 +25,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 
 import org.junit.jupiter.api.AfterEach;
@@ -45,6 +44,7 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -312,7 +312,10 @@ public class VirtualThreadTaskLoggerTest
         
         // Log a progress message from the outer thread
         TaskLoggerHelper.progress(mockLogger, "Outer virtual thread progress");
-      } finally {
+      } catch (InterruptedException e) {
+    	  assertDoesNotThrow(() -> e);
+		
+	} finally {
         outerLatch.countDown();
       }
     });

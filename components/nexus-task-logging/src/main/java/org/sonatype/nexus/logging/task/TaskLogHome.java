@@ -25,7 +25,6 @@ import ch.qos.logback.core.rolling.RollingFileAppender;
 import org.apache.commons.io.FileUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.slf4j.impl.StaticLoggerBinder;
 
 import static org.slf4j.Logger.ROOT_LOGGER_NAME;
 
@@ -81,7 +80,7 @@ public class TaskLogHome
   }
 
   private static Appender<ILoggingEvent> getAppender(String appenderName) {
-    LoggerContext loggerContext = (LoggerContext) StaticLoggerBinder.getSingleton().getLoggerFactory();
+    LoggerContext loggerContext = (LoggerContext) LoggerFactory.getILoggerFactory();
     return loggerContext.getLogger(ROOT_LOGGER_NAME).getAppender(appenderName);
   }
 

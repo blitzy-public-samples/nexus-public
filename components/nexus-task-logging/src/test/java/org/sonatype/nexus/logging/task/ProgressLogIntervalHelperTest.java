@@ -20,11 +20,11 @@ import com.google.common.base.Stopwatch;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+//import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
-import org.junit.jupiter.api.Category;
 import org.slf4j.Logger;
 
+import org.junit.experimental.categories.Category;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;

@@ -14,7 +14,7 @@ package org.sonatype.nexus.logging.task;
 
 import javax.annotation.Nullable;
 
-import org.junit.Category;
+import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,7 +24,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.Logger;
 import org.slf4j.MDC;
 import org.slf4j.Marker;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.notNullValue;
@@ -37,7 +36,7 @@ import static org.sonatype.nexus.logging.task.TaskLoggingMarkers.TASK_LOG_ONLY;
 
 @ExtendWith(MockitoExtension.class)
 @org.junit.jupiter.api.Tag("Java21TestGroup")
-@org.junit.Category(Java21TestGroup.class)
+@Category(Java21TestGroup.class)
 public class SeparateTaskLogTaskLoggerTest
     extends ProgressTaskLoggerTest
 {

@@ -40,7 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * This test also verifies MDC context propagation in both platform threads and virtual threads (Java 21+).
  */
 @ExtendWith(MockitoExtension.class)
-@org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup
+@VirtualThreadTestGroup
 public class ProgressTaskLoggerMDCTest
 {
   @Mock

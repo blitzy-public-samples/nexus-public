@@ -109,8 +109,26 @@
 
     <dependency>
       <groupId>io.dropwizard.metrics</groupId>
+      <artifactId>metrics-jetty12-ee10</artifactId>
+      <version>4.2.30</version> 
+      <optional>true</optional>
+    </dependency>
+
+    <dependency>
+      <groupId>io.dropwizard.metrics</groupId>
       <artifactId>metrics-logback</artifactId>
       <optional>true</optional>
+    </dependency>
+
+    <dependency>
+      <groupId>io.dropwizard.metrics</groupId>
+      <artifactId>metrics-core</artifactId>
+      <version>4.1.35</version>
+    </dependency>
+
+    <dependency>
+      <groupId>com.google.guava</groupId>
+      <artifactId>guava</artifactId>
     </dependency>
 
     <dependency>

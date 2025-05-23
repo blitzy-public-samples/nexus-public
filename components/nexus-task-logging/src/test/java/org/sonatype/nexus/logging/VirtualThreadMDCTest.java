@@ -70,7 +70,7 @@ public class VirtualThreadMDCTest
   public void testBasicMdcPropagationToVirtualThread() throws Exception {
     // Skip test if not running on Java 21+
     if (!isVirtualThreadSupported()) {
-      log.info("Skipping test as Virtual Threads are not supported in this Java version");
+      mockLogger.info("Skipping test as Virtual Threads are not supported in this Java version");
       return;
     }
     
@@ -121,7 +121,7 @@ public class VirtualThreadMDCTest
   public void testNestedVirtualThreadsMdcPropagation() throws Exception {
     // Skip test if not running on Java 21+
     if (!isVirtualThreadSupported()) {
-      log.info("Skipping test as Virtual Threads are not supported in this Java version");
+      mockLogger.info("Skipping test as Virtual Threads are not supported in this Java version");
       return;
     }
     
@@ -157,7 +157,7 @@ public class VirtualThreadMDCTest
   public void testVirtualThreadPoolMdcPropagation() throws Exception {
     // Skip test if not running on Java 21+
     if (!isVirtualThreadSupported()) {
-      log.info("Skipping test as Virtual Threads are not supported in this Java version");
+      mockLogger.info("Skipping test as Virtual Threads are not supported in this Java version");
       return;
     }
     
@@ -177,7 +177,7 @@ public class VirtualThreadMDCTest
             // Verify the MDC value in each virtual thread
             String mdcValue = MDC.get("poolKey");
             if (!"poolValue".equals(mdcValue)) {
-              log.error("Task {} had incorrect MDC value: {}", taskId, mdcValue);
+              mockLogger.error("Task {} had incorrect MDC value: {}", taskId, mdcValue);
               allThreadsHadCorrectMdc.set(false);
             }
           } finally {
@@ -207,7 +207,7 @@ public class VirtualThreadMDCTest
   public void testMdcContextCleanupAfterVirtualThreadCompletion() throws Exception {
     // Skip test if not running on Java 21+
     if (!isVirtualThreadSupported()) {
-      log.info("Skipping test as Virtual Threads are not supported in this Java version");
+      mockLogger.info("Skipping test as Virtual Threads are not supported in this Java version");
       return;
     }
     
@@ -242,7 +242,7 @@ public class VirtualThreadMDCTest
   public void testMdcContextIntegrityDuringIoOperations() throws Exception {
     // Skip test if not running on Java 21+
     if (!isVirtualThreadSupported()) {
-      log.info("Skipping test as Virtual Threads are not supported in this Java version");
+      mockLogger.info("Skipping test as Virtual Threads are not supported in this Java version");
       return;
     }
     
@@ -278,10 +278,10 @@ public class VirtualThreadMDCTest
           // Capture MDC after I/O
           mdcAfterIo.set(MDC.get("ioKey"));
         } catch (Exception e) {
-          log.error("Error during file I/O operation", e);
+          mockLogger.error("Error during file I/O operation", e);
         }
       } catch (InterruptedException e) {
-        log.error("Virtual thread was interrupted", e);
+        mockLogger.error("Virtual thread was interrupted", e);
       } finally {
         completionLatch.countDown();
       }
@@ -318,7 +318,7 @@ public class VirtualThreadMDCTest
   public void testHighConcurrencyMdcPropagation() throws Exception {
     // Skip test if not running on Java 21+
     if (!isVirtualThreadSupported()) {
-      log.info("Skipping test as Virtual Threads are not supported in this Java version");
+      mockLogger.info("Skipping test as Virtual Threads are not supported in this Java version");
       return;
     }
     
@@ -343,7 +343,7 @@ public class VirtualThreadMDCTest
             // Verify the MDC value in the virtual thread matches what was set
             String actualValue = MDC.get("concurrentKey");
             if (!expectedValue.equals(actualValue)) {
-              log.error("Thread {} expected MDC value '{}' but got '{}'", 
+              mockLogger.error("Thread {} expected MDC value '{}' but got '{}'", 
                   threadId, expectedValue, actualValue);
               allThreadsHadCorrectMdc.set(false);
             }
@@ -353,7 +353,7 @@ public class VirtualThreadMDCTest
               Thread.sleep(1);
             }
           } catch (Exception e) {
-            log.error("Error in virtual thread {}", threadId, e);
+            mockLogger.error("Error in virtual thread {}", threadId, e);
             allThreadsHadCorrectMdc.set(false);
           } finally {
             latch.countDown();
@@ -383,7 +383,7 @@ public class VirtualThreadMDCTest
   public void testPlatformAndVirtualThreadInteraction() throws Exception {
     // Skip test if not running on Java 21+
     if (!isVirtualThreadSupported()) {
-      log.info("Skipping test as Virtual Threads are not supported in this Java version");
+      mockLogger.info("Skipping test as Virtual Threads are not supported in this Java version");
       return;
     }
     
@@ -415,7 +415,7 @@ public class VirtualThreadMDCTest
           // Wait for virtual thread to complete
           virtualThread.join(1000);
         } catch (InterruptedException e) {
-          log.error("Thread was interrupted", e);
+          mockLogger.error("Thread was interrupted", e);
         } finally {
           platformLatch.countDown();
         }
@@ -448,7 +448,7 @@ public class VirtualThreadMDCTest
   public void testMdcContextIsolationBetweenThreads() throws Exception {
     // Skip test if not running on Java 21+
     if (!isVirtualThreadSupported()) {
-      log.info("Skipping test as Virtual Threads are not supported in this Java version");
+      mockLogger.info("Skipping test as Virtual Threads are not supported in this Java version");
       return;
     }
     
@@ -505,7 +505,7 @@ public class VirtualThreadMDCTest
   public void testStructuredConcurrencyMdcPropagation() throws Exception {
     // Skip test if not running on Java 21+
     if (!isVirtualThreadSupported()) {
-      log.info("Skipping test as Virtual Threads are not supported in this Java version");
+      mockLogger.info("Skipping test as Virtual Threads are not supported in this Java version");
       return;
     }
     
@@ -513,7 +513,7 @@ public class VirtualThreadMDCTest
     try {
       Class.forName("java.util.concurrent.StructuredTaskScope");
     } catch (ClassNotFoundException e) {
-      log.info("Skipping test as StructuredTaskScope is not available");
+      mockLogger.info("Skipping test as StructuredTaskScope is not available");
       return;
     }
     
@@ -545,7 +545,7 @@ public class VirtualThreadMDCTest
           Thread.sleep(100);
           task2MdcValue.set(MDC.get("structuredKey"));
         } catch (InterruptedException e) {
-          log.error("Task interrupted", e);
+          mockLogger.error("Task interrupted", e);
         }
         return null;
       });
@@ -564,7 +564,7 @@ public class VirtualThreadMDCTest
       assertThat("MDC context was not propagated to second structured task", 
           task2MdcValue.get(), equalTo("structuredValue"));
     } catch (Exception e) {
-      log.error("Error testing structured concurrency", e);
+      mockLogger.error("Error testing structured concurrency", e);
       throw e;
     } finally {
       MDC.remove("structuredKey");
@@ -602,10 +602,10 @@ public class VirtualThreadMDCTest
         try {
           createNestedVirtualThread(currentDepth + 1, maxDepth, deepestMdcValue, latch);
         } catch (Exception e) {
-          log.error("Error creating nested virtual thread at depth {}", currentDepth + 1, e);
+          mockLogger.error("Error creating nested virtual thread at depth {}", currentDepth + 1, e);
         }
       } catch (Exception e) {
-        log.error("Error in virtual thread at depth {}", currentDepth, e);
+        mockLogger.error("Error in virtual thread at depth {}", currentDepth, e);
       }
     });
     
@@ -623,7 +623,7 @@ public class VirtualThreadMDCTest
   public void testCustomVirtualThreadFactoryMdcPropagation() throws Exception {
     // Skip test if not running on Java 21+
     if (!isVirtualThreadSupported()) {
-      log.info("Skipping test as Virtual Threads are not supported in this Java version");
+      mockLogger.info("Skipping test as Virtual Threads are not supported in this Java version");
       return;
     }
     
@@ -655,17 +655,17 @@ public class VirtualThreadMDCTest
             // Verify the MDC value in the virtual thread
             String mdcValue = MDC.get("factoryKey");
             if (!"factoryValue".equals(mdcValue)) {
-              log.error("Thread had incorrect MDC value: {}", mdcValue);
+              mockLogger.error("Thread had incorrect MDC value: {}", mdcValue);
               allThreadsHadCorrectMdc.set(false);
             }
             
             // Verify this is actually a virtual thread
             if (!Thread.currentThread().isVirtual()) {
-              log.error("Thread is not a virtual thread");
+              mockLogger.error("Thread is not a virtual thread");
               allThreadsHadCorrectMdc.set(false);
             }
           } catch (Exception e) {
-            log.error("Error in virtual thread", e);
+            mockLogger.error("Error in virtual thread", e);
             allThreadsHadCorrectMdc.set(false);
           } finally {
             latch.countDown();

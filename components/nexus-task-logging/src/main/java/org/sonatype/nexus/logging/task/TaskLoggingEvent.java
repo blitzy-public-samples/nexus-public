@@ -169,7 +169,7 @@ public class TaskLoggingEvent
   @Override
   public String toString() {
     if (hasTemplate()) {
-      return STR."TaskLoggingEvent{logger=\{logger.getName()}, template=\{StringTemplate.interpolate(template)}, context=\{context}}";
+      return STR."TaskLoggingEvent{logger=\{logger.getName()}, template=\{template.interpolate()}, context=\{context}}";
     } else {
       return STR."TaskLoggingEvent{logger=\{logger.getName()}, message='\{message}', args=\{args == null ? "null" : args.length + " args"}, context=\{context}}";
     }

@@ -13,7 +13,6 @@
 package org.sonatype.nexus.logging.task;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -75,7 +74,7 @@ public class ProgressTaskLoggerTest
     underTest.logProgress();
 
     // verify no progress was logged as no progress message was set
-    verify(mockLogger, never()).info(any(Marker.class), anyString(), any());
+    verify(mockLogger, never()).info(any(Marker.class), anyString());
   }
 
   private void verifyLog(final Marker m, final String s, final Object... args) {

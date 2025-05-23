@@ -73,7 +73,7 @@ public class StringTemplateLoggingTest
   public void testBasicStringTemplateWithInfoLogging() {
     // Skip test if not running on Java 21+
     if (!isStringTemplateSupported()) {
-      log.info("Skipping test as String Templates are not supported in this Java version");
+      mockLogger.info("Skipping test as String Templates are not supported in this Java version");
       return;
     }
     
@@ -101,7 +101,7 @@ public class StringTemplateLoggingTest
   public void testStringTemplateWithDebugLogging() {
     // Skip test if not running on Java 21+
     if (!isStringTemplateSupported()) {
-      log.info("Skipping test as String Templates are not supported in this Java version");
+      mockLogger.info("Skipping test as String Templates are not supported in this Java version");
       return;
     }
     
@@ -129,7 +129,7 @@ public class StringTemplateLoggingTest
   public void testStringTemplateWithComplexExpressions() {
     // Skip test if not running on Java 21+
     if (!isStringTemplateSupported()) {
-      log.info("Skipping test as String Templates are not supported in this Java version");
+      mockLogger.info("Skipping test as String Templates are not supported in this Java version");
       return;
     }
     
@@ -156,7 +156,7 @@ public class StringTemplateLoggingTest
   public void testStringTemplateWithSpecialCharacters() {
     // Skip test if not running on Java 21+
     if (!isStringTemplateSupported()) {
-      log.info("Skipping test as String Templates are not supported in this Java version");
+      mockLogger.info("Skipping test as String Templates are not supported in this Java version");
       return;
     }
     
@@ -188,7 +188,7 @@ public class StringTemplateLoggingTest
   public void testStringTemplateWithMDCContext() {
     // Skip test if not running on Java 21+
     if (!isStringTemplateSupported()) {
-      log.info("Skipping test as String Templates are not supported in this Java version");
+      mockLogger.info("Skipping test as String Templates are not supported in this Java version");
       return;
     }
     
@@ -229,7 +229,7 @@ public class StringTemplateLoggingTest
   public void testMultiLineStringTemplate() {
     // Skip test if not running on Java 21+
     if (!isStringTemplateSupported()) {
-      log.info("Skipping test as String Templates are not supported in this Java version");
+      mockLogger.info("Skipping test as String Templates are not supported in this Java version");
       return;
     }
     
@@ -262,7 +262,7 @@ public class StringTemplateLoggingTest
   public void testStringTemplateWithErrorAndException() {
     // Skip test if not running on Java 21+
     if (!isStringTemplateSupported()) {
-      log.info("Skipping test as String Templates are not supported in this Java version");
+      mockLogger.info("Skipping test as String Templates are not supported in this Java version");
       return;
     }
     
@@ -296,7 +296,7 @@ public class StringTemplateLoggingTest
   public void testStringTemplateWithParameterizedLogging() {
     // Skip test if not running on Java 21+
     if (!isStringTemplateSupported()) {
-      log.info("Skipping test as String Templates are not supported in this Java version");
+      mockLogger.info("Skipping test as String Templates are not supported in this Java version");
       return;
     }
     
@@ -330,7 +330,7 @@ public class StringTemplateLoggingTest
   public void testStringTemplateWithAllLogLevels() {
     // Skip test if not running on Java 21+
     if (!isStringTemplateSupported()) {
-      log.info("Skipping test as String Templates are not supported in this Java version");
+      mockLogger.info("Skipping test as String Templates are not supported in this Java version");
       return;
     }
     
@@ -378,7 +378,7 @@ public class StringTemplateLoggingTest
   public void testStringTemplateNotEvaluatedWhenLogLevelDisabled() {
     // Skip test if not running on Java 21+
     if (!isStringTemplateSupported()) {
-      log.info("Skipping test as String Templates are not supported in this Java version");
+      mockLogger.info("Skipping test as String Templates are not supported in this Java version");
       return;
     }
     

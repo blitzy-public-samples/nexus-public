@@ -135,7 +135,7 @@ public class TaskLogHomeTest
             completionLatch.countDown();
           }
           catch (Exception e) {
-            log.error("Error in virtual thread {}", threadId, e);
+            logger.error("Error in virtual thread {}", threadId, e);
           }
         });
       }

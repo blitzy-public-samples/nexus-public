@@ -21,12 +21,13 @@ import java.util.Optional;
 import org.sonatype.goodies.common.ComponentSupport;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 
 /**
- * Key-value storage implementation for Nexus Repository Manager.
- * Enhanced with Java 21 Pattern Matching for type conversion and improved type safety.
+ * Key-value storage implementation for Nexus Repository.
+ * Enhanced with Java 21 Pattern Matching for improved type safety and code readability.
  */
 public class NexusKeyValue
     extends ComponentSupport
@@ -39,39 +40,84 @@ public class NexusKeyValue
 
   private Map<String, Object> value = new HashMap<>();
 
+  /**
+   * Creates a new key-value pair with the specified key, type, and value.
+   *
+   * @param key the key
+   * @param type the value type
+   * @param value the value
+   */
   public NexusKeyValue(final String key, final ValueType type, final Object value) {
     this.key = key;
     this.type = type;
     setValue(value);
   }
 
+  /**
+   * Default constructor for deserialization.
+   */
   public NexusKeyValue() {
   }
 
+  /**
+   * Gets the key.
+   *
+   * @return the key
+   */
   public String key() {
     return key;
   }
 
+  /**
+   * Sets the key.
+   *
+   * @param key the key
+   */
   public void setKey(final String key) {
     this.key = key;
   }
 
+  /**
+   * Gets the value type.
+   *
+   * @return the value type
+   */
   public ValueType type() {
     return type;
   }
 
+  /**
+   * Sets the value type.
+   *
+   * @param type the value type
+   */
   public void setType(final ValueType type) {
     this.type = type;
   }
 
+  /**
+   * Gets the value map.
+   *
+   * @return the value map
+   */
   public Map<String, Object> value() {
     return value;
   }
 
+  /**
+   * Sets the value map.
+   *
+   * @param value the value map
+   */
   public void setValue(final Map<String, Object> value) {
     this.value = value;
   }
 
+  /**
+   * Sets the value.
+   *
+   * @param value the value
+   */
   public void setValue(final Object value) {
     this.value.put(VALUE_NESTED_KEY, value);
   }
@@ -79,66 +125,14 @@ public class NexusKeyValue
   /**
    * Gets the raw value stored in this key-value pair.
    *
-   * @return the raw value object
+   * @return the raw value, or null if not present
    */
   public Object getValue() {
     return value.get(VALUE_NESTED_KEY);
   }
 
   /**
-   * Gets the value converted to the appropriate type based on the ValueType.
-   * Uses Pattern Matching for switch to handle different types more elegantly.
-   *
-   * @return the converted value
-   */
-  public Object getValueAs() {
-    Object rawValue = getValue();
-    if (rawValue == null) {
-      return null;
-    }
-    
-    return switch (type) {
-      case CHARACTER -> switch (rawValue) {
-        case String s -> s;
-        default -> rawValue.toString();
-      };
-      case NUMBER -> switch (rawValue) {
-        case Integer i -> i;
-        case Long l -> l;
-        case Double d -> d;
-        case Float f -> f;
-        case String s -> {
-          try {
-            if (s.contains(".")) {
-              yield Double.parseDouble(s);
-            } else {
-              yield Integer.parseInt(s);
-            }
-          } catch (NumberFormatException e) {
-            log.warn("Failed to parse number from string: {}", s, e);
-            yield 0;
-          }
-        }
-        default -> {
-          log.warn("Unexpected type for NUMBER: {}", rawValue.getClass().getName());
-          yield 0;
-        }
-      };
-      case BOOLEAN -> switch (rawValue) {
-        case Boolean b -> b;
-        case String s -> Boolean.parseBoolean(s);
-        case Integer i -> i != 0;
-        default -> {
-          log.warn("Unexpected type for BOOLEAN: {}", rawValue.getClass().getName());
-          yield false;
-        }
-      };
-      case OBJECT -> rawValue;
-    };
-  }
-
-  /**
-   * Gets the value as a string, using Pattern Matching for improved type handling.
+   * Gets the value as a string using Pattern Matching for improved type safety.
    *
    * @return the value as a string
    */
@@ -147,96 +141,68 @@ public class NexusKeyValue
     return switch (rawValue) {
       case null -> "";
       case String s -> s;
+      case Number n -> n.toString();
+      case Boolean b -> b.toString();
       default -> rawValue.toString();
     };
   }
 
   /**
-   * Gets the value as an integer, using Pattern Matching for improved type handling.
+   * Gets the value as an integer using Pattern Matching for improved type safety.
    *
    * @return the value as an integer
+   * @throws NumberFormatException if the value cannot be converted to an integer
    */
   public Integer getAsInt() {
     Object rawValue = getValue();
     return switch (rawValue) {
       case null -> 0;
       case Integer i -> i;
-      case Long l -> l.intValue();
-      case Double d -> d.intValue();
-      case Float f -> f.intValue();
-      case String s -> {
-        try {
-          yield Integer.parseInt(s);
-        } catch (NumberFormatException e) {
-          log.warn("Failed to parse integer from string: {}", s, e);
-          yield 0;
-        }
-      }
-      default -> {
-        log.warn("Unexpected type for integer conversion: {}", rawValue.getClass().getName());
-        yield 0;
-      }
+      case Number n -> n.intValue();
+      case String s -> Integer.parseInt(s);
+      case Boolean b -> b ? 1 : 0;
+      default -> Integer.parseInt(rawValue.toString());
     };
   }
 
   /**
-   * Gets the value as a long, using Pattern Matching for improved type handling.
+   * Gets the value as a long using Pattern Matching for improved type safety.
    *
    * @return the value as a long
+   * @throws NumberFormatException if the value cannot be converted to a long
    */
   public Long getAsLong() {
     Object rawValue = getValue();
     return switch (rawValue) {
       case null -> 0L;
-      case Integer i -> i.longValue();
       case Long l -> l;
-      case Double d -> d.longValue();
-      case Float f -> f.longValue();
-      case String s -> {
-        try {
-          yield Long.parseLong(s);
-        } catch (NumberFormatException e) {
-          log.warn("Failed to parse long from string: {}", s, e);
-          yield 0L;
-        }
-      }
-      default -> {
-        log.warn("Unexpected type for long conversion: {}", rawValue.getClass().getName());
-        yield 0L;
-      }
+      case Number n -> n.longValue();
+      case String s -> Long.parseLong(s);
+      case Boolean b -> b ? 1L : 0L;
+      default -> Long.parseLong(rawValue.toString());
     };
   }
 
   /**
-   * Gets the value as a double, using Pattern Matching for improved type handling.
+   * Gets the value as a double using Pattern Matching for improved type safety.
    *
    * @return the value as a double
+   * @throws NumberFormatException if the value cannot be converted to a double
    */
   public Double getAsDouble() {
     Object rawValue = getValue();
     return switch (rawValue) {
       case null -> 0.0;
-      case Integer i -> i.doubleValue();
-      case Long l -> l.doubleValue();
       case Double d -> d;
-      case Float f -> f.doubleValue();
-      case String s -> {
-        try {
-          yield Double.parseDouble(s);
-        } catch (NumberFormatException e) {
-          log.warn("Failed to parse double from string: {}", s, e);
-          yield 0.0;
-        }
-      }
-      default -> {
-        log.warn("Unexpected type for double conversion: {}", rawValue.getClass().getName());
-        yield 0.0;
-      }
+      case Number n -> n.doubleValue();
+      case String s -> Double.parseDouble(s);
+      case Boolean b -> b ? 1.0 : 0.0;
+      default -> Double.parseDouble(rawValue.toString());
     };
   }
 
   /**
-   * Gets the value as a boolean, using Pattern Matching for improved type handling.
+   * Gets the value as a boolean using Pattern Matching for improved type safety.
    *
    * @return the value as a boolean
    */
@@ -245,23 +211,23 @@ public class NexusKeyValue
     return switch (rawValue) {
       case null -> false;
       case Boolean b -> b;
-      case String s -> Boolean.parseBoolean(s);
-      case Integer i -> i != 0;
-      case Long l -> l != 0;
-      default -> {
-        log.warn("Unexpected type for boolean conversion: {}", rawValue.getClass().getName());
-        yield false;
-      }
+      case Number n -> n.intValue() != 0;
+      case String s -> switch (s.toLowerCase()) {
+        case "true", "yes", "1" -> true;
+        default -> false;
+      };
+      default -> false;
     };
   }
 
   /**
-   * Gets the value as an object of the specified class, using Jackson for conversion.
+   * Gets the value as an object of the specified type using Jackson for deserialization.
    * Optimized for Java 21 with improved error handling.
    *
+   * @param <T> the target type
    * @param mapper the ObjectMapper to use for conversion
-   * @param typeClass the class to convert to
-   * @return the value as an object of the specified class
+   * @param typeClass the class of the target type
+   * @return the value as an object of the specified type
    */
   public <T> T getAsObject(final ObjectMapper mapper, final Class<T> typeClass) {
     Object rawValue = getValue();
@@ -269,34 +235,27 @@ public class NexusKeyValue
       return null;
     }
     
-    try {
-      // Configure mapper for better performance with Java 21
-      ObjectMapper optimizedMapper = mapper.copy()
-          .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-      
-      return switch (rawValue) {
-        case null -> null;
-        default -> {
-          if (typeClass.isInstance(rawValue)) {
-            yield typeClass.cast(rawValue);
-          } else {
-            yield optimizedMapper.convertValue(rawValue, typeClass);
-          }
-        }
-      };
-    } catch (Exception e) {
-      log.warn("Failed to convert value to {}: {}", typeClass.getName(), e.getMessage());
-      return null;
-    }
+    // Optimize mapper for better performance in Java 21
+    ObjectMapper optimizedMapper = mapper.copy()
+        .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+        .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false);
+    
+    // Use pattern matching to handle different types more elegantly
+    return switch (rawValue) {
+      case null -> null;
+      case T t when typeClass.isInstance(rawValue) -> t;
+      default -> optimizedMapper.convertValue(rawValue, typeClass);
+    };
   }
 
   /**
-   * Gets the value as an object of the specified type reference, using Jackson for conversion.
+   * Gets the value as an object of the specified type using Jackson for deserialization.
    * Optimized for Java 21 with improved error handling.
    *
+   * @param <T> the target type
    * @param mapper the ObjectMapper to use for conversion
-   * @param typeReference the type reference to convert to
-   * @return the value as an object of the specified type reference
+   * @param typeReference the type reference of the target type
+   * @return the value as an object of the specified type
    */
   public <T> T getAsObject(final ObjectMapper mapper, final TypeReference<T> typeReference) {
     Object rawValue = getValue();
@@ -304,25 +263,22 @@ public class NexusKeyValue
       return null;
     }
     
-    try {
-      // Configure mapper for better performance with Java 21
-      ObjectMapper optimizedMapper = mapper.copy()
-          .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-      
-      return optimizedMapper.convertValue(rawValue, typeReference);
-    } catch (Exception e) {
-      log.warn("Failed to convert value to type reference: {}", e.getMessage());
-      return null;
-    }
+    // Optimize mapper for better performance in Java 21
+    ObjectMapper optimizedMapper = mapper.copy()
+        .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+        .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false);
+    
+    return optimizedMapper.convertValue(rawValue, typeReference);
   }
 
   /**
-   * Gets the value as a list of objects of the specified class, using Jackson for conversion.
+   * Gets the value as a list of objects of the specified type using Jackson for deserialization.
    * Optimized for Java 21 with improved error handling.
    *
+   * @param <T> the element type
    * @param mapper the ObjectMapper to use for conversion
-   * @param typeClass the class of the list elements
-   * @return the value as a list of objects of the specified class
+   * @param typeClass the class of the element type
+   * @return the value as a list of objects of the specified type
    */
   public <T> List<T> getAsObjectList(final ObjectMapper mapper, Class<T> typeClass) {
     Object rawValue = getValue();
@@ -330,77 +286,69 @@ public class NexusKeyValue
       return List.of();
     }
     
-    try {
-      // Configure mapper for better performance with Java 21
-      ObjectMapper optimizedMapper = mapper.copy()
-          .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-      
-      return switch (rawValue) {
-        case List<?> list -> {
-          if (list.isEmpty() || typeClass.isInstance(list.get(0))) {
-            @SuppressWarnings("unchecked")
-            List<T> typedList = (List<T>) list;
-            yield typedList;
-          } else {
-            yield optimizedMapper.convertValue(list,
-                optimizedMapper.getTypeFactory().constructCollectionType(List.class, typeClass));
-          }
-        }
-        default -> optimizedMapper.convertValue(rawValue,
-            optimizedMapper.getTypeFactory().constructCollectionType(List.class, typeClass));
-      };
-    } catch (Exception e) {
-      log.warn("Failed to convert value to list of {}: {}", typeClass.getName(), e.getMessage());
-      return List.of();
-    }
+    // Optimize mapper for better performance in Java 21
+    ObjectMapper optimizedMapper = mapper.copy()
+        .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+        .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false);
+    
+    return optimizedMapper.convertValue(rawValue,
+        optimizedMapper.getTypeFactory().constructCollectionType(List.class, typeClass));
   }
 
   /**
-   * Gets the value as an Optional of the specified class, using Pattern Matching for improved type handling.
-   * This method provides a null-safe way to get values.
+   * Gets the value as an Optional of the specified type using Pattern Matching for improved type safety.
+   * This is a new method that leverages Java 21 features for more reliable type handling.
    *
-   * @param typeClass the class to convert to
-   * @return an Optional containing the value as an object of the specified class, or empty if conversion fails
+   * @param <T> the target type
+   * @param typeClass the class of the target type
+   * @return an Optional containing the value as an object of the specified type, or empty if not present or not convertible
    */
-  public <T> Optional<T> getAsOptional(Class<T> typeClass) {
+  public <T> Optional<T> getValueAs(Class<T> typeClass) {
     Object rawValue = getValue();
     return switch (rawValue) {
       case null -> Optional.empty();
-      default -> {
-        if (typeClass.isInstance(rawValue)) {
-          yield Optional.of(typeClass.cast(rawValue));
-        } else {
-          try {
-            if (typeClass == String.class) {
-              @SuppressWarnings("unchecked")
-              T result = (T) rawValue.toString();
-              yield Optional.of(result);
-            } else if (typeClass == Integer.class && rawValue instanceof Number n) {
-              @SuppressWarnings("unchecked")
-              T result = (T) Integer.valueOf(n.intValue());
-              yield Optional.of(result);
-            } else if (typeClass == Long.class && rawValue instanceof Number n) {
-              @SuppressWarnings("unchecked")
-              T result = (T) Long.valueOf(n.longValue());
-              yield Optional.of(result);
-            } else if (typeClass == Double.class && rawValue instanceof Number n) {
-              @SuppressWarnings("unchecked")
-              T result = (T) Double.valueOf(n.doubleValue());
-              yield Optional.of(result);
-            } else if (typeClass == Boolean.class) {
-              @SuppressWarnings("unchecked")
-              T result = (T) Boolean.valueOf(getAsBoolean());
-              yield Optional.of(result);
-            } else {
-              yield Optional.empty();
-            }
-          } catch (Exception e) {
-            log.debug("Failed to convert value to {}: {}", typeClass.getName(), e.getMessage());
-            yield Optional.empty();
-          }
+      case T t when typeClass.isInstance(rawValue) -> Optional.of(t);
+      case String s when typeClass == Integer.class -> {
+        try {
+          yield Optional.of(typeClass.cast(Integer.parseInt(s)));
+        } catch (NumberFormatException e) {
+          yield Optional.empty();
         }
-      }
+      };
+      case String s when typeClass == Long.class -> {
+        try {
+          yield Optional.of(typeClass.cast(Long.parseLong(s)));
+        } catch (NumberFormatException e) {
+          yield Optional.empty();
+        }
+      };
+      case String s when typeClass == Double.class -> {
+        try {
+          yield Optional.of(typeClass.cast(Double.parseDouble(s)));
+        } catch (NumberFormatException e) {
+          yield Optional.empty();
+        }
+      };
+      case String s when typeClass == Boolean.class -> 
+          Optional.of(typeClass.cast(Boolean.parseBoolean(s)));
+      default -> Optional.empty();
     };
+  }
+
+  /**
+   * Gets the value converted according to the specified ValueType using Pattern Matching.
+   * This is a new method that leverages Java 21 features for more reliable type handling.
+   *
+   * @param targetType the target ValueType
+   * @return the value converted to the target type
+   */
+  public Object getValueAsType(ValueType targetType) {
+    Object rawValue = getValue();
+    if (rawValue == null) {
+      return targetType.getDefaultValue();
+    }
+    
+    return targetType.convertValue(rawValue);
   }
 
   @Override
@@ -418,5 +366,14 @@ public class NexusKeyValue
   @Override
   public int hashCode() {
     return Objects.hash(key, type, value);
+  }
+  
+  @Override
+  public String toString() {
+    return "NexusKeyValue{" +
+        "key='" + key + '\'' +
+        ", type=" + type +
+        ", value=" + value +
+        '}';
   }
 }

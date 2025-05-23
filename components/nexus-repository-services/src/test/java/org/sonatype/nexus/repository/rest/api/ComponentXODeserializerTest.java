@@ -16,7 +16,7 @@ import java.io.IOException;
 import java.util.Map;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.nexus.java21.Java21TestGroup;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
@@ -24,10 +24,10 @@ import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.experimental.categories.Category;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -36,8 +36,10 @@ import static java.util.Collections.emptyMap;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.when;
-import static org.sonatype.nexus.common.decorator.DecoratorUtils.getDecoratedEntity;@Category(Java21TestGroup.class)
+import static org.sonatype.nexus.common.decorator.DecoratorUtils.getDecoratedEntity;
+
 @ExtendWith(MockitoExtension.class)
+@Category(Java21TestGroup.class)
 public class ComponentXODeserializerTest
     extends TestSupport
 {
@@ -73,24 +75,18 @@ public class ComponentXODeserializerTest
     jsonParser.setCodec(objectMapper);
     ComponentXO result = underTest.deserialize(jsonParser, deserializationContext);
 
-    assertNotNull(result, "Result should not be null");
-    assertEquals("theid", result.getId(), "ID should match");
+    assertNotNull(result);
+    assertEquals("theid", result.getId());
     FooComponentXO fooComponentXO = getDecoratedEntity(result, FooComponentXO.class);
-    assertNotNull(fooComponentXO, "FooComponentXO should not be null");
-    assertEquals("fiz", fooComponentXO.getFoo(), "Foo value should match");
+    assertNotNull(fooComponentXO);
+    assertEquals("fiz", fooComponentXO.getFoo());
     BarComponentXO barComponentXO = getDecoratedEntity(result, BarComponentXO.class);
-    assertNotNull(barComponentXO, "BarComponentXO should not be null");
-    assertEquals("biz", barComponentXO.getBar(), "Bar value should match");
+    assertNotNull(barComponentXO);
+    assertEquals("biz", barComponentXO.getBar());
   }
 
-  /**
-   * Tests record pattern matching with ComponentXO objects.
-   * This test demonstrates how to use Java 21's record pattern matching
-   * to simplify working with decorated ComponentXO objects.
-   */
   @Test
-  public void deserializeWithRecordPatternMatching() throws IOException {
-    // Create a decorated ComponentXO
+  public void deserializeWithRecordPattern() throws IOException {
     ComponentXO componentXO = new FooComponentXO(new BarComponentXO(new DefaultComponentXO()));
     when(componentXOFactory.createComponentXO()).thenReturn(componentXO);
 
@@ -99,19 +95,21 @@ public class ComponentXODeserializerTest
     jsonParser.setCodec(objectMapper);
     ComponentXO result = underTest.deserialize(jsonParser, deserializationContext);
 
-    // Use record pattern matching to extract and validate values
-    if (result instanceof ComponentXO component) {
-      assertEquals("record-pattern-id", component.getId(), "ID should match");
+    assertNotNull(result);
+    
+    // Using record pattern matching to extract and validate component values
+    if (result instanceof FooComponentXO(BarComponentXO(var baseComponent), var fooValue)) {
+      assertEquals("record-pattern-id", baseComponent.getId());
+      assertEquals("record-foo", fooValue);
       
-      // Extract FooComponentXO using pattern matching
-      if (component instanceof FooComponentXO(ComponentXO nested) foo) {
-        assertEquals("record-foo", foo.getFoo(), "Foo value should match");
-        
-        // Extract BarComponentXO using nested pattern matching
-        if (nested instanceof BarComponentXO bar) {
-          assertEquals("record-bar", bar.getBar(), "Bar value should match");
-        }
+      // Further pattern matching on the BarComponentXO
+      if (baseComponent instanceof BarComponentXO(var coreComponent, var barValue)) {
+        assertEquals("record-pattern-id", coreComponent.getId());
+        assertEquals("record-bar", barValue);
       }
+    } else {
+      // This should not happen if the pattern matching works correctly
+      throw new AssertionError("Record pattern matching failed");
     }
   }
 
@@ -170,14 +168,13 @@ public class ComponentXODeserializerTest
   {
     @Override
     public ComponentXO updateComponentXO(final ComponentXO componentXO, final JsonNode jsonNode) {
-      // Use pattern matching to simplify type checking and casting
-      if (componentXO instanceof FooComponentXO foo) {
-        JsonNode data = jsonNode.get("foo");
-        if (data != null) {
-          foo.setFoo(data.asText());
-        }
+      FooComponentXO fooComponentXO = getDecoratedEntity(componentXO, FooComponentXO.class);
+      if (fooComponentXO == null) {
         return componentXO;
       }
+
+      JsonNode data = jsonNode.get("foo");
+      fooComponentXO.setFoo(data.asText());
       return componentXO;
     }
   }
@@ -187,14 +184,13 @@ public class ComponentXODeserializerTest
   {
     @Override
     public ComponentXO updateComponentXO(final ComponentXO componentXO, final JsonNode jsonNode) {
-      // Use pattern matching to simplify type checking and casting
-      if (componentXO instanceof BarComponentXO bar) {
-        JsonNode data = jsonNode.get("bar");
-        if (data != null) {
-          bar.setBar(data.asText());
-        }
+      BarComponentXO barComponentXO = getDecoratedEntity(componentXO, BarComponentXO.class);
+      if (barComponentXO == null) {
         return componentXO;
       }
+
+      JsonNode data = jsonNode.get("bar");
+      barComponentXO.setBar(data.asText());
       return componentXO;
     }
   }

@@ -14,14 +14,14 @@ package org.sonatype.nexus.blobstore.rest;
 
 import org.sonatype.nexus.rest.WebApplicationMessageException;
 
-import static java.lang.StringTemplate.STR;
-import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON;
-import static jakarta.ws.rs.core.Response.Status.BAD_REQUEST;
-import static jakarta.ws.rs.core.Response.Status.NOT_FOUND;
+import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
+import static javax.ws.rs.core.Response.Status.BAD_REQUEST;
+import static javax.ws.rs.core.Response.Status.NOT_FOUND;
 
 /**
- * Utility class for BlobStore REST resources exception handling.
- * 
+ * Utility class for BlobStore REST resources providing standardized exception handling.
+ * Optimized for Java 21 Virtual Thread context with non-blocking exception propagation.
+ *
  * @since 3.19
  */
 public class BlobStoreResourceUtil
@@ -30,14 +30,14 @@ public class BlobStoreResourceUtil
    * Throws {@link BAD_REQUEST} exception in case when BlobStore manager could not perform operation (for example,
    * blobstore is in use). Optimized for Virtual Thread context to ensure proper exception propagation.
    *
-   * @param message error message
+   * @param message error message to be included in the response
    * @throws WebApplicationMessageException with BAD_REQUEST status and formatted error message
    */
   public static void throwBlobStoreBadRequestException(final String message) throws WebApplicationMessageException {
-    // Using String Templates for improved readability and performance
+    // Using String Templates for more efficient and readable error message formatting
     throw new WebApplicationMessageException(
         BAD_REQUEST,
-        STR."\"{message}\"",
+        STR."\"\{message}\"",
         APPLICATION_JSON);
   }
 
@@ -45,18 +45,18 @@ public class BlobStoreResourceUtil
    * Returns a {@link NOT_FOUND} WebApplicationMessageException when blobstore is not found.
    * Creates a structured error message with detailed information for better diagnostics.
    *
-   * @param blobStoreType The type of the blobstore (e.g.: File, Group, S3, Azure Cloud Storage).
-   * @param blobStoreName The name of the blobstore.
-   * @return {@link WebApplicationMessageException} with NOT_FOUND status and formatted error message.
+   * @param blobStoreType The type of the blobstore (e.g.: File, Group, S3, Azure Cloud Storage)
+   * @param blobStoreName The name of the blobstore
+   * @return {@link WebApplicationMessageException} with NOT_FOUND status and detailed error message
    */
   public static WebApplicationMessageException createBlobStoreNotFoundException(
       final String blobStoreType,
       final String blobStoreName)
   {
-    // Using String Templates for improved readability and performance
+    // Using String Templates for more efficient and readable error message formatting
     return new WebApplicationMessageException(
         NOT_FOUND,
-        STR."Unable to find {blobStoreType} '{blobStoreName}' blobstore",
+        STR."Unable to find \{blobStoreType} '\{blobStoreName}' blobstore",
         APPLICATION_JSON);
   }
 
@@ -64,9 +64,9 @@ public class BlobStoreResourceUtil
    * Throws a {@link NOT_FOUND} WebApplicationMessageException when blobstore is not found.
    * Optimized for Virtual Thread context to ensure proper exception propagation.
    *
-   * @param blobStoreType The type of the blobstore (e.g.: File, Group, S3, Azure Cloud Storage).
-   * @param blobStoreName The name of the blobstore.
-   * @throws WebApplicationMessageException with NOT_FOUND status and formatted error message.
+   * @param blobStoreType The type of the blobstore (e.g.: File, Group, S3, Azure Cloud Storage)
+   * @param blobStoreName The name of the blobstore
+   * @throws WebApplicationMessageException with NOT_FOUND status and detailed error message
    */
   public static void throwCreateBlobStoreNotFoundException(
       final String blobStoreType,

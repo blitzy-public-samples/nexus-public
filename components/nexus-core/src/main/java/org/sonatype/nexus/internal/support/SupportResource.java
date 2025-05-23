@@ -13,13 +13,13 @@
 package org.sonatype.nexus.internal.support;
 
 import java.io.IOException;
+import java.io.OutputStream;
 import java.text.SimpleDateFormat;
 import java.time.Duration;
 import java.util.Date;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.CompletableFuture;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -28,6 +28,7 @@ import javax.ws.rs.Consumes;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.Produces;
+import javax.ws.rs.WebApplicationException;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.StreamingOutput;
 
@@ -59,26 +60,24 @@ public class SupportResource
     implements Resource
 {
   public static final String RESOURCE_URI = "/v1/support";
-  
+
   /**
-   * Timeout for support ZIP generation operations (5 minutes)
+   * Timeout for support ZIP generation operations (in seconds)
    */
-  private static final Duration ZIP_GENERATION_TIMEOUT = Duration.ofMinutes(5);
+  private static final long ZIP_GENERATION_TIMEOUT_SECONDS = 300; // 5 minutes
 
   @Inject
   private SupportZipGenerator supportZipGenerator;
-  
-  /**
-   * Virtual thread executor for handling support ZIP generation tasks.
-   * Using virtual threads improves performance for I/O-bound operations like ZIP creation.
-   */
-  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   /**
    * Creates and downloads a support zip using Java 21 Virtual Threads for improved performance.
    * 
-   * @param request The support zip generator request
-   * @return HTTP response with the support zip as a streaming attachment
+   * This implementation leverages Virtual Threads to handle the I/O-bound ZIP generation process,
+   * allowing for better resource utilization and increased concurrency without the overhead of
+   * traditional platform threads.
+   *
+   * @param request The support ZIP generation request parameters
+   * @return HTTP response with the generated ZIP file as a streaming attachment
    */
   @RequiresAuthentication
   @RequiresPermissions("nexus:atlas:create")
@@ -90,46 +89,51 @@ public class SupportResource
   public Response supportzip(final SupportZipGeneratorRequest request) {
     String name = "support-" + new SimpleDateFormat("yyyyMMdd-HHmmss").format(new Date()) + "-1.zip";
 
-    // Create a streaming output that uses virtual threads for ZIP generation
-    StreamingOutput entity = output -> {
-      try {
-        // Submit the ZIP generation task to the virtual thread executor
-        CompletableFuture<Void> future = CompletableFuture.runAsync(
-            () -> {
-              try {
-                supportZipGenerator.generate(request, "support", output);
-              } 
-              catch (IOException e) {
-                log.error("Error generating support ZIP: {}", e.getMessage(), e);
-                throw new RuntimeException("Failed to generate support ZIP", e);
-              }
-            },
-            virtualThreadExecutor
-        );
-        
-        // Wait for completion with timeout
-        future.orTimeout(ZIP_GENERATION_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS).join();
-      } 
-      catch (Exception e) {
-        log.error("Support ZIP generation failed or timed out: {}", e.getMessage(), e);
-        if (e.getCause() instanceof IOException) {
-          throw (IOException) e.getCause();
+    // Create a StreamingOutput that uses Virtual Threads for ZIP generation
+    StreamingOutput entity = new StreamingOutput() {
+      @Override
+      public void write(final OutputStream output) throws IOException, WebApplicationException {
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+          // Submit the ZIP generation task to a virtual thread
+          CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+            try {
+              log.debug("Starting support ZIP generation using virtual thread: {}", Thread.currentThread());
+              supportZipGenerator.generate(request, "support", output);
+              log.debug("Completed support ZIP generation");
+            } 
+            catch (IOException e) {
+              log.error("Error generating support ZIP: {}", e.getMessage(), e);
+              throw new RuntimeException(STR."Failed to generate support ZIP: \{e.getMessage()}", e);
+            }
+          }, executor);
+          
+          // Wait for the ZIP generation to complete with a timeout
+          try {
+            future.orTimeout(ZIP_GENERATION_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS).join();
+          } 
+          catch (Exception e) {
+            log.error("Support ZIP generation failed or timed out: {}", e.getMessage(), e);
+            throw new WebApplicationException("Support ZIP generation failed: " + e.getMessage(), 
+                Response.Status.INTERNAL_SERVER_ERROR);
+          }
         }
-        throw new IOException("Support ZIP generation failed: " + e.getMessage(), e);
       }
     };
     
     return Response.ok(entity)
         .header("Content-Disposition", "attachment; filename=\"" + name + "\"")
-        .header("Content-Type", APPLICATION_OCTET_STREAM)
         .build();
   }
 
   /**
-   * Creates a support zip and returns the path, using Java 21 Virtual Threads for improved performance.
+   * Creates a support zip and returns metadata about it using Java 21 Virtual Threads.
    * 
-   * @param request The support zip generator request
-   * @return Support zip metadata including path, filename, size and truncation status
+   * This implementation uses Virtual Threads to improve performance for the ZIP generation process,
+   * which is primarily I/O-bound. Virtual Threads provide better resource utilization and increased
+   * concurrency without the overhead of traditional platform threads.
+   *
+   * @param request The support ZIP generation request parameters
+   * @return Metadata about the generated ZIP file
    */
   @RequiresAuthentication
   @RequiresPermissions("nexus:atlas:create")
@@ -139,29 +143,25 @@ public class SupportResource
   @POST
   @Path("/supportzippath")
   public SupportZipXO supportzippath(final SupportZipGeneratorRequest request) {
-    try {
-      // Submit the ZIP generation task to the virtual thread executor
-      CompletableFuture<Result> future = CompletableFuture.supplyAsync(
-          () -> {
-            try {
-              return supportZipGenerator.generate(request);
-            } 
-            catch (IOException e) {
-              log.error("Error generating support ZIP: {}", e.getMessage(), e);
-              throw new RuntimeException("Failed to generate support ZIP", e);
-            }
-          },
-          virtualThreadExecutor
-      );
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit the ZIP generation task to a virtual thread and wait for the result
+      CompletableFuture<Result> future = CompletableFuture.supplyAsync(() -> {
+        log.debug("Starting support ZIP generation using virtual thread: {}", Thread.currentThread());
+        Result result = supportZipGenerator.generate(request);
+        log.debug("Completed support ZIP generation: {}", result.getFilename());
+        return result;
+      }, executor);
       
-      // Wait for completion with timeout
-      Result result = future.orTimeout(ZIP_GENERATION_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS).join();
-      return new SupportZipXO(result.getLocalPath(), result.getFilename(), result.getSize(), result.isTruncated());
-    } 
-    catch (Exception e) {
-      log.error("Support ZIP generation failed or timed out: {}", e.getMessage(), e);
-      Throwable cause = e.getCause() != null ? e.getCause() : e;
-      throw new RuntimeException("Failed to generate support ZIP: " + cause.getMessage(), cause);
+      // Wait for the ZIP generation to complete with a timeout
+      try {
+        Result result = future.orTimeout(ZIP_GENERATION_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS).join();
+        return new SupportZipXO(result.getLocalPath(), result.getFilename(), result.getSize(), result.isTruncated());
+      } 
+      catch (Exception e) {
+        log.error("Support ZIP generation failed or timed out: {}", e.getMessage(), e);
+        throw new WebApplicationException(STR."Support ZIP generation failed: \{e.getMessage()}", 
+            Response.Status.INTERNAL_SERVER_ERROR);
+      }
     }
   }
 }

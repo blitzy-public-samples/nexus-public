@@ -12,27 +12,25 @@
  */
 package org.sonatype.nexus.onboarding.internal;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-
-import org.sonatype.nexus.onboarding.OnboardingItemPriority;
-import org.sonatype.nexus.onboarding.capability.OnboardingCapability;
-import org.sonatype.nexus.onboarding.capability.OnboardingCapabilityHelper;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
-/**
- * Tests for {@link SelectLicenseOnboardingItem}.
- */
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.Mock;
+import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.onboarding.OnboardingItemPriority;
+import org.sonatype.nexus.onboarding.capability.OnboardingCapability;
+import org.sonatype.nexus.onboarding.capability.OnboardingCapabilityHelper;
+
 @ExtendWith(MockitoExtension.class)
 public class SelectLicenseOnboardingItemTest
-{
+    extends TestSupport {
+
   @Mock
   private InstanceStatus instanceStatus;
 
@@ -45,34 +43,30 @@ public class SelectLicenseOnboardingItemTest
   private SelectLicenseOnboardingItem underTest;
 
   @BeforeEach
-  public void setUp() {
+  public void setup() {
     when(onboardingCapabilityHelper.getOnboardingCapability()).thenReturn(onboardingCapability);
     underTest = new SelectLicenseOnboardingItem(instanceStatus, onboardingCapabilityHelper);
   }
 
   @Test
-  public void shouldReturnCorrectPriority() {
+  public void getPriority() {
     assertEquals(OnboardingItemPriority.CONFIGURE_ANONYMOUS_ACCESS + 1, underTest.getPriority());
   }
 
   @Test
-  public void shouldDetermineWhenOnboardingItemApplies() {
-    // Case 1: New instance but registration completed
+  public void applies() {
     when(instanceStatus.isNew()).thenReturn(true);
     when(onboardingCapability.isRegistrationCompleted()).thenReturn(true);
     assertFalse(underTest.applies());
 
-    // Case 2: New instance and registration not completed
     when(instanceStatus.isNew()).thenReturn(true);
     when(onboardingCapability.isRegistrationCompleted()).thenReturn(false);
     assertTrue(underTest.applies());
 
-    // Case 3: Not a new instance but registration completed
     when(instanceStatus.isNew()).thenReturn(false);
     when(onboardingCapability.isRegistrationCompleted()).thenReturn(true);
     assertFalse(underTest.applies());
 
-    // Case 4: Not a new instance and registration not completed
     when(instanceStatus.isNew()).thenReturn(false);
     when(onboardingCapability.isRegistrationCompleted()).thenReturn(false);
     assertFalse(underTest.applies());

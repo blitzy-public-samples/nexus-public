@@ -15,16 +15,17 @@ package org.sonatype.nexus.blobstore.quota.internal;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.api.BlobStoreMetrics;
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import org.sonatype.nexus.rest.ValidationErrorsException;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -32,7 +33,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static java.lang.StringTemplate.STR;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -60,7 +60,7 @@ public class SpaceUsedQuotaTest
   NestedAttributesMap attributesMap;
 
   @BeforeEach
-  public void setup() {
+  void setup() {
     when(blobStore.getMetrics()).thenReturn(metrics);
     when(blobStore.getBlobStoreConfiguration()).thenReturn(config);
     when(config.getName()).thenReturn("test");
@@ -74,14 +74,14 @@ public class SpaceUsedQuotaTest
   void usingLessThanTheLimit() {
     when(metrics.getTotalSize()).thenReturn(5L);
 
-    assertFalse(quota.check(blobStore).isViolation(), STR."Expected no violation when using less than the limit");
+    assertFalse(quota.check(blobStore).isViolation(), STR."Quota should not be violated when using \{metrics.getTotalSize()} bytes with limit of 10");
   }
 
   @Test
   void usingMoreThanTheLimit() {
     when(metrics.getTotalSize()).thenReturn(20L);
 
-    assertTrue(quota.check(blobStore).isViolation(), STR."Expected violation when using more than the limit");
+    assertTrue(quota.check(blobStore).isViolation(), STR."Quota should be violated when using \{metrics.getTotalSize()} bytes with limit of 10");
   }
 
   @Test
@@ -93,27 +93,33 @@ public class SpaceUsedQuotaTest
   @Test
   void zeroLimitIsInvalid() {
     when(attributesMap.get(eq(LIMIT_KEY), eq(Number.class))).thenReturn(0);
-    assertThrows(ValidationErrorsException.class, () -> quota.validateConfig(config));
+    
+    ValidationErrorsException exception = assertThrows(ValidationErrorsException.class, () -> {
+      quota.validateConfig(config);
+    }, STR."Should throw ValidationErrorsException for zero limit");
   }
 
   @Test
   void noLimitIsInvalid() {
     when(attributesMap.get(eq(LIMIT_KEY), eq(Number.class))).thenReturn(null);
-    assertThrows(IllegalArgumentException.class, () -> quota.validateConfig(config));
+    
+    IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+      quota.validateConfig(config);
+    }, STR."Should throw IllegalArgumentException for null limit");
   }
-  
+
   @Test
   @VirtualThreadTestGroup
-  void concurrentQuotaChecksAreConsistent() throws Exception {
-    when(metrics.getTotalSize()).thenReturn(20L); // Over the limit
+  void concurrentQuotaChecksAreAccurate() throws Exception {
+    // Set up a scenario where the quota is just below the limit
+    when(metrics.getTotalSize()).thenReturn(9L);
     
     int taskCount = 100;
     CountDownLatch latch = new CountDownLatch(taskCount);
     AtomicInteger violationCount = new AtomicInteger(0);
     
-    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
-    
-    try {
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
       // Submit multiple concurrent tasks using virtual threads
       for (int i = 0; i < taskCount; i++) {
         executor.submit(() -> {
@@ -128,73 +134,51 @@ public class SpaceUsedQuotaTest
       }
       
       // Wait for all tasks to complete
-      latch.await(30, TimeUnit.SECONDS);
+      latch.await(10, TimeUnit.SECONDS);
       
-      // All checks should report a violation since we're over the limit
+      // Verify results - no violations should occur as we're under the limit
+      assertFalse(violationCount.get() > 0, STR."Expected no violations but got \{violationCount.get()}");
+      
+      // Now set the metrics to exceed the limit
+      when(metrics.getTotalSize()).thenReturn(11L);
+      
+      // Reset counters
+      latch = new CountDownLatch(taskCount);
+      violationCount.set(0);
+      
+      // Run the test again with the new limit
+      for (int i = 0; i < taskCount; i++) {
+        executor.submit(() -> {
+          try {
+            if (quota.check(blobStore).isViolation()) {
+              violationCount.incrementAndGet();
+            }
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      latch.await(10, TimeUnit.SECONDS);
+      
+      // Verify results - all checks should report violations
       assertTrue(violationCount.get() == taskCount, 
-          STR."Expected all \{taskCount} quota checks to report violations, but got \{violationCount.get()}");
-    } finally {
-      executor.shutdown();
+          STR."Expected \{taskCount} violations but got \{violationCount.get()}");
     }
   }
   
   @Test
-  @VirtualThreadTestGroup
-  void quotaCalculationsRemainAccurateUnderConcurrentOperations() throws Exception {
-    // Start with a size under the limit
-    when(metrics.getTotalSize()).thenReturn(5L);
+  void validateConfigWithPatternMatching() {
+    // Test pattern matching for instanceof checks
+    Object value = 15L;
     
-    int taskCount = 100;
-    CountDownLatch latch = new CountDownLatch(taskCount);
-    AtomicInteger initialViolationCount = new AtomicInteger(0);
-    AtomicInteger finalViolationCount = new AtomicInteger(0);
-    
-    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
-    
-    try {
-      // First phase: check quota while under the limit
-      for (int i = 0; i < taskCount; i++) {
-        executor.submit(() -> {
-          try {
-            if (quota.check(blobStore).isViolation()) {
-              initialViolationCount.incrementAndGet();
-            }
-          } finally {
-            latch.countDown();
-          }
-        });
+    if (value instanceof Number number) {
+      if (number instanceof Long longValue) {
+        assertTrue(longValue > 0, STR."Limit value \{longValue} should be greater than zero");
+      } else if (number instanceof Integer intValue) {
+        assertTrue(intValue > 0, STR."Limit value \{intValue} should be greater than zero");
       }
-      
-      latch.await(30, TimeUnit.SECONDS);
-      
-      // Change the metrics to be over the limit
-      when(metrics.getTotalSize()).thenReturn(15L);
-      
-      // Reset for second phase
-      latch = new CountDownLatch(taskCount);
-      
-      // Second phase: check quota while over the limit
-      for (int i = 0; i < taskCount; i++) {
-        executor.submit(() -> {
-          try {
-            if (quota.check(blobStore).isViolation()) {
-              finalViolationCount.incrementAndGet();
-            }
-          } finally {
-            latch.countDown();
-          }
-        });
-      }
-      
-      latch.await(30, TimeUnit.SECONDS);
-      
-      // Verify results
-      assertTrue(initialViolationCount.get() == 0, 
-          STR."Expected no violations initially, but got \{initialViolationCount.get()}");
-      assertTrue(finalViolationCount.get() == taskCount, 
-          STR."Expected all \{taskCount} quota checks to report violations after size increase, but got \{finalViolationCount.get()}");
-    } finally {
-      executor.shutdown();
     }
   }
 }

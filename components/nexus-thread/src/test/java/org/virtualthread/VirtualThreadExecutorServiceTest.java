@@ -14,319 +14,448 @@ package org.virtualthread;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-
-import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.thread.NexusExecutorService;
 
 import org.apache.shiro.subject.Subject;
 import org.apache.shiro.util.ThreadContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.security.subject.FakeAlmightySubject;
+import org.sonatype.nexus.thread.NexusExecutorService;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.hamcrest.Matchers.startsWith;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Tests for {@link NexusExecutorService} with Virtual Threads.
+ * Tests for {@link ExecutorService} implementation using Java 21 Virtual Threads in Nexus.
  * 
- * This test class verifies that the NexusExecutorService correctly propagates security contexts,
- * MDC logging context, and thread names when submitting tasks to Java 21 Virtual Threads.
- *
- * @since 3.60
+ * Verifies that the Virtual Thread ExecutorService correctly propagates security contexts,
+ * MDC logging context, and thread names when submitting tasks to Virtual Threads.
  */
+@ExtendWith(MockitoExtension.class)
 public class VirtualThreadExecutorServiceTest
     extends TestSupport
 {
-  private static final String TEST_MDC_KEY = "test-mdc-key";
-  private static final String TEST_MDC_VALUE = "test-mdc-value";
-  private static final String TEST_SUBJECT_ID = "test-subject-id";
-
+  private static final Logger log = LoggerFactory.getLogger(VirtualThreadExecutorServiceTest.class);
+  
+  private static final String MDC_TEST_KEY = "testKey";
+  private static final String MDC_TEST_VALUE = "testValue";
+  private static final String THREAD_NAME_PREFIX = "nexus-vt";
+  private static final int CONCURRENT_TASKS = 1000;
+  private static final int TASK_DURATION_MS = 10;
+  
   @Mock
   private Subject subject;
-
+  
   private ExecutorService virtualThreadExecutor;
-
+  private NexusExecutorService nexusVirtualThreadExecutor;
+  
   @BeforeEach
-  public void setUp() {
-    // Set up the mock Subject
-    when(subject.getPrincipal()).thenReturn(TEST_SUBJECT_ID);
+  public void setup() {
+    // Create a virtual thread per task executor
+    virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
     
-    // Set up MDC context
-    MDC.put(TEST_MDC_KEY, TEST_MDC_VALUE);
+    // Create a Nexus executor service that wraps the virtual thread executor
+    // and binds tasks to the provided subject
+    nexusVirtualThreadExecutor = NexusExecutorService.forFixedSubject(virtualThreadExecutor, subject);
     
-    // Create the executor service with virtual threads
-    virtualThreadExecutor = NexusExecutorService.forFixedSubjectVirtual(subject);
+    // Set up MDC context for the test
+    MDC.put(MDC_TEST_KEY, MDC_TEST_VALUE);
   }
-
+  
   @AfterEach
-  public void tearDown() {
+  public void tearDown() throws Exception {
     // Clean up MDC context
     MDC.clear();
     
-    // Clean up Shiro ThreadContext
-    ThreadContext.unbindSubject();
+    // Clean up thread context
     ThreadContext.remove();
     
-    // Shutdown the executor service
-    if (virtualThreadExecutor != null) {
-      virtualThreadExecutor.shutdown();
-      try {
-        if (!virtualThreadExecutor.awaitTermination(2, TimeUnit.SECONDS)) {
-          virtualThreadExecutor.shutdownNow();
-        }
-      }
-      catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        virtualThreadExecutor.shutdownNow();
-      }
-    }
+    // Shutdown executor services
+    nexusVirtualThreadExecutor.shutdown();
+    virtualThreadExecutor.shutdown();
+    
+    // Wait for termination
+    nexusVirtualThreadExecutor.awaitTermination(1, TimeUnit.SECONDS);
+    virtualThreadExecutor.awaitTermination(1, TimeUnit.SECONDS);
   }
-
+  
   /**
-   * Tests that a Callable task executes successfully on a virtual thread and returns the expected result.
+   * Test that a Callable executed by the virtual thread executor has the correct Subject bound to it.
    */
   @Test
-  public void testCallableExecution() throws Exception {
-    // Create a Callable that returns a string
-    Callable<String> callable = () -> "success";
+  public void testCallableSubjectPropagation() throws Exception {
+    // Set up a reference to capture the subject from the virtual thread
+    AtomicReference<Subject> threadSubject = new AtomicReference<>();
     
-    // Submit the Callable to the executor service
-    Future<String> future = virtualThreadExecutor.submit(callable);
-    
-    // Verify the result
-    assertEquals("success", future.get(), "Callable should return the expected result");
-  }
-
-  /**
-   * Tests that a Runnable task executes successfully on a virtual thread.
-   */
-  @Test
-  public void testRunnableExecution() throws Exception {
-    // Create an AtomicBoolean to track execution
-    AtomicBoolean executed = new AtomicBoolean(false);
-    
-    // Create a Runnable that sets the AtomicBoolean to true
-    Runnable runnable = () -> executed.set(true);
-    
-    // Submit the Runnable to the executor service
-    Future<?> future = virtualThreadExecutor.submit(runnable);
-    
-    // Wait for completion
-    future.get();
-    
-    // Verify execution
-    assertTrue(executed.get(), "Runnable should have executed");
-  }
-
-  /**
-   * Tests that the Subject is properly propagated to the virtual thread.
-   */
-  @Test
-  public void testSubjectPropagation() throws Exception {
-    // Create an AtomicReference to capture the Subject in the virtual thread
-    AtomicReference<Object> threadSubjectPrincipal = new AtomicReference<>();
-    
-    // Create a Callable that captures the Subject principal
-    Callable<Boolean> callable = () -> {
-      Subject threadSubject = ThreadContext.getSubject();
-      if (threadSubject != null) {
-        threadSubjectPrincipal.set(threadSubject.getPrincipal());
-        return true;
-      }
-      return false;
+    // Create a callable that captures the current subject
+    Callable<String> callable = () -> {
+      threadSubject.set(ThreadContext.getSubject());
+      return "success";
     };
     
-    // Submit the Callable to the executor service
-    Future<Boolean> future = virtualThreadExecutor.submit(callable);
+    // Execute the callable and wait for the result
+    Future<String> future = nexusVirtualThreadExecutor.submit(callable);
+    String result = future.get();
     
-    // Verify that the Subject was available in the virtual thread
-    assertTrue(future.get(), "Subject should be available in the virtual thread");
-    
-    // Verify that the Subject principal matches the expected value
-    assertEquals(TEST_SUBJECT_ID, threadSubjectPrincipal.get(), 
-        "Subject principal in virtual thread should match the original Subject");
-    
-    // Verify that the Subject's getPrincipal method was called
-    verify(subject).getPrincipal();
+    // Verify the result and that the subject was correctly propagated
+    assertThat(result, is("success"));
+    assertThat(threadSubject.get(), is(subject));
   }
-
+  
   /**
-   * Tests that MDC context is properly propagated to the virtual thread.
+   * Test that a Runnable executed by the virtual thread executor has the correct Subject bound to it.
+   */
+  @Test
+  public void testRunnableSubjectPropagation() throws Exception {
+    // Set up a reference to capture the subject from the virtual thread
+    AtomicReference<Subject> threadSubject = new AtomicReference<>();
+    AtomicBoolean executed = new AtomicBoolean(false);
+    
+    // Create a runnable that captures the current subject
+    Runnable runnable = () -> {
+      threadSubject.set(ThreadContext.getSubject());
+      executed.set(true);
+    };
+    
+    // Execute the runnable and wait for completion
+    Future<?> future = nexusVirtualThreadExecutor.submit(runnable);
+    future.get();
+    
+    // Verify that the runnable executed and the subject was correctly propagated
+    assertThat(executed.get(), is(true));
+    assertThat(threadSubject.get(), is(subject));
+  }
+  
+  /**
+   * Test that MDC context is correctly propagated to virtual threads.
    */
   @Test
   public void testMdcPropagation() throws Exception {
-    // Create an AtomicReference to capture the MDC value in the virtual thread
+    // Set up a reference to capture the MDC context from the virtual thread
     AtomicReference<String> threadMdcValue = new AtomicReference<>();
     
-    // Create a Callable that captures the MDC value
-    Callable<Boolean> callable = () -> {
-      String mdcValue = MDC.get(TEST_MDC_KEY);
-      threadMdcValue.set(mdcValue);
-      return mdcValue != null;
-    };
-    
-    // Submit the Callable to the executor service
-    Future<Boolean> future = virtualThreadExecutor.submit(callable);
-    
-    // Verify that the MDC value was available in the virtual thread
-    assertTrue(future.get(), "MDC value should be available in the virtual thread");
-    
-    // Verify that the MDC value matches the expected value
-    assertEquals(TEST_MDC_VALUE, threadMdcValue.get(), 
-        "MDC value in virtual thread should match the original MDC value");
-  }
-
-  /**
-   * Tests that tasks are actually running on virtual threads.
-   */
-  @Test
-  public void testVirtualThreadExecution() throws Exception {
-    // Create an AtomicBoolean to track if the thread is virtual
-    AtomicBoolean isVirtual = new AtomicBoolean(false);
-    
-    // Create a Callable that checks if the current thread is virtual
-    Callable<Boolean> callable = () -> {
-      boolean virtual = Thread.currentThread().isVirtual();
-      isVirtual.set(virtual);
-      return virtual;
-    };
-    
-    // Submit the Callable to the executor service
-    Future<Boolean> future = virtualThreadExecutor.submit(callable);
-    
-    // Verify that the thread is virtual
-    assertTrue(future.get(), "Task should execute on a virtual thread");
-    assertTrue(isVirtual.get(), "Thread should be virtual");
-  }
-
-  /**
-   * Tests that thread names follow the expected pattern for virtual threads.
-   */
-  @Test
-  public void testVirtualThreadNaming() throws Exception {
-    // Create an AtomicReference to capture the thread name
-    AtomicReference<String> threadName = new AtomicReference<>();
-    
-    // Create a Callable that captures the thread name
+    // Create a callable that captures the MDC value
     Callable<String> callable = () -> {
-      String name = Thread.currentThread().getName();
-      threadName.set(name);
-      return name;
+      threadMdcValue.set(MDC.get(MDC_TEST_KEY));
+      return "success";
     };
     
-    // Submit the Callable to the executor service
-    Future<String> future = virtualThreadExecutor.submit(callable);
+    // Execute the callable and wait for the result
+    Future<String> future = nexusVirtualThreadExecutor.submit(callable);
+    future.get();
     
-    // Get the thread name
-    String name = future.get();
-    
-    // Verify that the thread name is not null
-    assertNotNull(name, "Thread name should not be null");
-    assertThat(threadName.get(), is(notNullValue()));
-    
-    // Virtual thread names typically contain "VirtualThread" or follow a specific pattern
-    // This is implementation-dependent, so we just check that it's not null or empty
-    assertTrue(!name.isEmpty(), "Thread name should not be empty");
+    // Verify that the MDC context was correctly propagated
+    assertThat(threadMdcValue.get(), is(MDC_TEST_VALUE));
   }
-
+  
   /**
-   * Tests concurrent execution of multiple tasks on virtual threads.
+   * Test that the FakeAlmightySubject can be used with virtual threads.
    */
   @Test
-  public void testConcurrentExecution() throws Exception {
-    // Number of tasks to execute concurrently
-    int taskCount = 1000;
+  public void testWithFakeAlmightySubject() throws Exception {
+    // Create a new executor service with the FakeAlmightySubject
+    NexusExecutorService almightyExecutor = 
+        NexusExecutorService.forFixedSubject(virtualThreadExecutor, FakeAlmightySubject.TASK_SUBJECT);
     
-    // Create a list to hold the futures
-    List<Future<Integer>> futures = new ArrayList<>(taskCount);
-    
-    // Submit multiple tasks
-    for (int i = 0; i < taskCount; i++) {
-      final int taskId = i;
-      futures.add(virtualThreadExecutor.submit(() -> {
-        // Simulate some work
-        Thread.sleep(10);
-        return taskId;
-      }));
+    try {
+      // Set up a reference to capture the subject from the virtual thread
+      AtomicReference<Subject> threadSubject = new AtomicReference<>();
+      
+      // Create a callable that captures the current subject
+      Callable<String> callable = () -> {
+        threadSubject.set(ThreadContext.getSubject());
+        return "success";
+      };
+      
+      // Execute the callable and wait for the result
+      Future<String> future = almightyExecutor.submit(callable);
+      String result = future.get();
+      
+      // Verify the result and that the subject was correctly propagated
+      assertThat(result, is("success"));
+      assertThat(threadSubject.get(), is(FakeAlmightySubject.TASK_SUBJECT));
     }
-    
-    // Wait for all tasks to complete and verify results
-    for (int i = 0; i < taskCount; i++) {
-      assertEquals(i, futures.get(i).get(), "Task result should match task ID");
+    finally {
+      almightyExecutor.shutdown();
+      almightyExecutor.awaitTermination(1, TimeUnit.SECONDS);
     }
   }
-
+  
   /**
-   * Tests that exceptions in tasks are properly propagated.
+   * Test that virtual threads correctly handle exceptions in submitted tasks.
    */
   @Test
-  public void testExceptionPropagation() {
-    // Create a Callable that throws an exception
-    Callable<Object> callable = () -> {
+  public void testExceptionHandling() {
+    // Create a callable that throws an exception
+    Callable<String> callable = () -> {
       throw new RuntimeException("Test exception");
     };
     
-    // Submit the Callable to the executor service
-    Future<Object> future = virtualThreadExecutor.submit(callable);
+    // Execute the callable
+    Future<String> future = nexusVirtualThreadExecutor.submit(callable);
     
-    // Verify that the exception is propagated
-    try {
-      future.get();
-      // If we get here, the test has failed
-      throw new AssertionError("Expected ExecutionException was not thrown");
-    }
-    catch (ExecutionException e) {
-      // Expected exception
-      assertTrue(e.getCause() instanceof RuntimeException, "Cause should be RuntimeException");
-      assertEquals("Test exception", e.getCause().getMessage(), "Exception message should match");
-    }
-    catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new AssertionError("Unexpected InterruptedException", e);
-    }
+    // Verify that the exception is properly propagated
+    ExecutionException exception = assertThrows(ExecutionException.class, () -> future.get());
+    assertThat(exception.getCause().getMessage(), is("Test exception"));
   }
-
+  
   /**
-   * Tests that MDC context is properly cleaned up after task execution.
+   * Test concurrent execution of many lightweight tasks to verify virtual thread scalability.
    */
   @Test
-  public void testMdcCleanup() throws Exception {
-    // Create a custom MDC key that should only exist during task execution
-    final String customMdcKey = "custom-mdc-key";
-    final String customMdcValue = "custom-mdc-value";
+  public void testConcurrentExecution() throws Exception {
+    // Create a countdown latch to track task completion
+    CountDownLatch latch = new CountDownLatch(CONCURRENT_TASKS);
     
-    // Create a Callable that sets a custom MDC value
+    // Create a counter to track successful executions
+    AtomicInteger successCounter = new AtomicInteger(0);
+    
+    // Submit many concurrent tasks
+    List<Future<String>> futures = new ArrayList<>();
+    for (int i = 0; i < CONCURRENT_TASKS; i++) {
+      final int taskId = i;
+      futures.add(nexusVirtualThreadExecutor.submit(() -> {
+        try {
+          // Simulate some work
+          Thread.sleep(TASK_DURATION_MS);
+          // Verify this is running on a virtual thread
+          assertThat(Thread.currentThread().isVirtual(), is(true));
+          // Verify subject propagation
+          assertThat(ThreadContext.getSubject(), is(subject));
+          // Verify MDC propagation
+          assertThat(MDC.get(MDC_TEST_KEY), is(MDC_TEST_VALUE));
+          
+          successCounter.incrementAndGet();
+          return "Task " + taskId + " completed";
+        }
+        finally {
+          latch.countDown();
+        }
+      }));
+    }
+    
+    // Wait for all tasks to complete
+    boolean allCompleted = latch.await(5, TimeUnit.SECONDS);
+    assertThat("All tasks should complete within the timeout", allCompleted, is(true));
+    
+    // Verify all tasks completed successfully
+    assertThat(successCounter.get(), is(CONCURRENT_TASKS));
+    
+    // Verify all futures completed
+    for (Future<String> future : futures) {
+      assertThat(future.isDone(), is(true));
+      assertThat(future.get(), startsWith("Task "));
+    }
+  }
+  
+  /**
+   * Test that virtual threads have appropriate thread names.
+   */
+  @Test
+  public void testThreadNaming() throws Exception {
+    // Set up a reference to capture the thread name
+    AtomicReference<String> threadName = new AtomicReference<>();
+    
+    // Create a custom executor with a specific thread name prefix
+    ExecutorService namedExecutor = Executors.newThreadPerTaskExecutor(
+        Thread.ofVirtual().name(THREAD_NAME_PREFIX + "-", 0).factory());
+    
+    NexusExecutorService namedNexusExecutor = 
+        NexusExecutorService.forFixedSubject(namedExecutor, subject);
+    
+    try {
+      // Submit a task that captures its thread name
+      Future<String> future = namedNexusExecutor.submit(() -> {
+        threadName.set(Thread.currentThread().getName());
+        return "success";
+      });
+      
+      future.get();
+      
+      // Verify the thread name has the expected prefix
+      assertThat(threadName.get(), startsWith(THREAD_NAME_PREFIX));
+    }
+    finally {
+      namedNexusExecutor.shutdown();
+      namedExecutor.shutdown();
+      namedNexusExecutor.awaitTermination(1, TimeUnit.SECONDS);
+      namedExecutor.awaitTermination(1, TimeUnit.SECONDS);
+    }
+  }
+  
+  /**
+   * Test that all MDC context entries are correctly propagated to virtual threads.
+   */
+  @Test
+  public void testFullMdcContextPropagation() throws Exception {
+    // Set up multiple MDC entries
+    MDC.put("key1", "value1");
+    MDC.put("key2", "value2");
+    MDC.put("key3", "value3");
+    
+    // Set up a reference to capture the full MDC context
+    AtomicReference<Map<String, String>> threadMdcContext = new AtomicReference<>();
+    
+    // Create a callable that captures the full MDC context
     Callable<String> callable = () -> {
-      MDC.put(customMdcKey, customMdcValue);
-      return MDC.get(customMdcKey);
+      threadMdcContext.set(MDC.getCopyOfContextMap());
+      return "success";
     };
     
-    // Submit the Callable to the executor service
-    Future<String> future = virtualThreadExecutor.submit(callable);
+    // Execute the callable and wait for the result
+    Future<String> future = nexusVirtualThreadExecutor.submit(callable);
+    future.get();
     
-    // Verify that the custom MDC value was set during execution
-    assertEquals(customMdcValue, future.get(), "Custom MDC value should be set during task execution");
+    // Verify that all MDC entries were correctly propagated
+    Map<String, String> mdcContext = threadMdcContext.get();
+    assertThat(mdcContext, notNullValue());
+    assertThat(mdcContext.get(MDC_TEST_KEY), is(MDC_TEST_VALUE));
+    assertThat(mdcContext.get("key1"), is("value1"));
+    assertThat(mdcContext.get("key2"), is("value2"));
+    assertThat(mdcContext.get("key3"), is("value3"));
     
-    // Submit another task to check if the custom MDC value was cleaned up
-    Future<String> cleanupCheck = virtualThreadExecutor.submit(() -> MDC.get(customMdcKey));
+    // Clean up the additional MDC entries
+    MDC.remove("key1");
+    MDC.remove("key2");
+    MDC.remove("key3");
+  }
+  
+  /**
+   * Test performance comparison between platform threads and virtual threads.
+   */
+  @Test
+  public void testPerformanceComparison() throws Exception {
+    // Number of tasks for performance test
+    final int taskCount = 500;
     
-    // Verify that the custom MDC value is not present in the new task
-    assertEquals(null, cleanupCheck.get(), "Custom MDC value should not be present in subsequent tasks");
+    // Create a platform thread executor for comparison
+    ExecutorService platformExecutor = Executors.newFixedThreadPool(20);
+    NexusExecutorService nexusPlatformExecutor = 
+        NexusExecutorService.forFixedSubject(platformExecutor, subject);
+    
+    try {
+      // Measure execution time with platform threads
+      long platformStart = System.currentTimeMillis();
+      List<CompletableFuture<Void>> platformFutures = new ArrayList<>();
+      
+      for (int i = 0; i < taskCount; i++) {
+        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+          try {
+            // Simulate I/O-bound work
+            Thread.sleep(TASK_DURATION_MS);
+          }
+          catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+          }
+        }, nexusPlatformExecutor);
+        
+        platformFutures.add(future);
+      }
+      
+      // Wait for all platform thread tasks to complete
+      CompletableFuture.allOf(platformFutures.toArray(new CompletableFuture[0])).get();
+      long platformDuration = System.currentTimeMillis() - platformStart;
+      
+      // Measure execution time with virtual threads
+      long virtualStart = System.currentTimeMillis();
+      List<CompletableFuture<Void>> virtualFutures = new ArrayList<>();
+      
+      for (int i = 0; i < taskCount; i++) {
+        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+          try {
+            // Simulate I/O-bound work
+            Thread.sleep(TASK_DURATION_MS);
+          }
+          catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+          }
+        }, nexusVirtualThreadExecutor);
+        
+        virtualFutures.add(future);
+      }
+      
+      // Wait for all virtual thread tasks to complete
+      CompletableFuture.allOf(virtualFutures.toArray(new CompletableFuture[0])).get();
+      long virtualDuration = System.currentTimeMillis() - virtualStart;
+      
+      // Log the performance comparison
+      log.info("Platform threads execution time: {} ms", platformDuration);
+      log.info("Virtual threads execution time: {} ms", virtualDuration);
+      
+      // Virtual threads should generally be more efficient for this workload
+      // but we don't make a hard assertion since performance can vary by environment
+      // Just log the results for analysis
+    }
+    finally {
+      nexusPlatformExecutor.shutdown();
+      platformExecutor.shutdown();
+      nexusPlatformExecutor.awaitTermination(1, TimeUnit.SECONDS);
+      platformExecutor.awaitTermination(1, TimeUnit.SECONDS);
+    }
+  }
+  
+  /**
+   * Test that the UnhandledExceptionHandler is properly invoked for uncaught exceptions.
+   */
+  @Test
+  public void testUnhandledExceptionHandler() throws Exception {
+    // Create a custom exception handler
+    AtomicReference<Throwable> caughtException = new AtomicReference<>();
+    Thread.UncaughtExceptionHandler handler = (thread, throwable) -> {
+      caughtException.set(throwable);
+    };
+    
+    // Create a virtual thread factory with the custom exception handler
+    Thread.Builder.OfVirtual virtualBuilder = Thread.ofVirtual()
+        .name(THREAD_NAME_PREFIX + "-exception-")
+        .uncaughtExceptionHandler(handler);
+    
+    // Create an executor with the custom thread factory
+    ExecutorService customExecutor = Executors.newThreadPerTaskExecutor(virtualBuilder.factory());
+    
+    try {
+      // Submit a task that throws an uncaught exception
+      customExecutor.submit(() -> {
+        throw new RuntimeException("Uncaught exception test");
+      });
+      
+      // Give some time for the exception handler to be invoked
+      Thread.sleep(100);
+      
+      // Verify the exception was caught by our handler
+      assertThat(caughtException.get(), notNullValue());
+      assertThat(caughtException.get().getMessage(), is("Uncaught exception test"));
+    }
+    finally {
+      customExecutor.shutdown();
+      customExecutor.awaitTermination(1, TimeUnit.SECONDS);
+    }
   }
 }

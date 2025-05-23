@@ -53,11 +53,32 @@
           </exclusion>
         </exclusions>
       </dependency>
+      <!-- Update Apache Shiro dependencies to 2.0.0 for Java 21 compatibility -->
+      <dependency>
+        <groupId>org.apache.shiro</groupId>
+        <artifactId>shiro-core</artifactId>
+        <version>2.0.0</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.shiro</groupId>
+        <artifactId>shiro-web</artifactId>
+        <version>2.0.0</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.shiro</groupId>
+        <artifactId>shiro-guice</artifactId>
+        <version>2.0.0</version>
+      </dependency>
+      <!-- Update java-jwt to 4.4.0 for Java 21 compatibility -->
+      <dependency>
+        <groupId>com.auth0</groupId>
+        <artifactId>java-jwt</artifactId>
+        <version>4.4.0</version>
+      </dependency>
     </dependencies>
   </dependencyManagement>
 
   <dependencies>
-    <!-- Java-JWT dependency updated to 4.4.0 for Java 21 compatibility as per technical specification -->
     <dependency>
       <groupId>com.auth0</groupId>
       <artifactId>java-jwt</artifactId>
@@ -113,7 +134,6 @@
       <artifactId>swagger-annotations</artifactId>
     </dependency>
 
-    <!-- Apache Shiro dependencies updated to 2.0.0 for Java 21 compatibility as per technical specification -->
     <dependency>
       <groupId>org.apache.shiro</groupId>
       <artifactId>shiro-core</artifactId>
@@ -162,11 +182,6 @@
 
     <!--
     FIXME: Sort this out; used by ResourceMergingManagerThreadedTest
-    NOTE: multithreadedtc 1.01 may have compatibility issues with Java 21.
-    Consider replacing with JCStress (org.openjdk.jcstress:jcstress-core) which is maintained by OpenJDK
-    and supports Java 17+ for testing concurrent code. JCStress is the recommended tool by OpenJDK
-    for testing concurrency in Java applications and is compatible with Java 21's Virtual Threads
-    and other concurrency features.
     -->
     <dependency>
       <groupId>edu.umd.cs.mtc</groupId>
@@ -175,16 +190,18 @@
       <scope>test</scope>
     </dependency>
 
-    <!-- Spock dependencies updated to 2.3-groovy-4.0 for Java 21 compatibility as per technical specification -->
+    <!-- Update Spock to 2.3-groovy-4.0 for Java 21 compatibility -->
     <dependency>
       <groupId>org.spockframework</groupId>
       <artifactId>spock-core</artifactId>
+      <version>2.3-groovy-4.0</version>
       <scope>test</scope>
     </dependency>
 
     <dependency>
       <groupId>org.spockframework</groupId>
       <artifactId>spock-junit4</artifactId>
+      <version>2.3-groovy-4.0</version>
       <scope>test</scope>
     </dependency>
 

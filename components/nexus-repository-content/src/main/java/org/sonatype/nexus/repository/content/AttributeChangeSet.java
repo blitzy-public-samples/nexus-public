@@ -12,35 +12,37 @@
  */
 package org.sonatype.nexus.repository.content;
 
-import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
-import java.util.SequencedCollection;
 
 import javax.annotation.Nullable;
 
-import org.sonatype.nexus.common.collect.AttributesMap;
 import org.sonatype.nexus.repository.content.fluent.FluentAttributes;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.collect.Lists.newArrayList;
-import static java.lang.StringTemplate.STR;
 
 /**
- * A set of attribute changes to be applied to repository content.
- * 
+ * A set of attribute changes to be applied to a content entity.
+ *
  * @since 3.29
  */
 public class AttributeChangeSet
     implements FluentAttributes<AttributeChangeSet>
 {
-  private final SequencedCollection<AttributeChange> changes = new ArrayList<>();
+  // Using LinkedList which implements SequencedCollection in Java 21
+  private final List<AttributeChange> changes = new LinkedList<>();
 
+  /**
+   * Create a change set with a single attribute change.
+   */
   public AttributeChangeSet(final AttributeOperation operation, final String key, final Object value) {
     changes.add(new AttributeChange(operation, key, value));
   }
 
+  /**
+   * Create an empty change set.
+   */
   public AttributeChangeSet() {
     // do nothing
   }
@@ -53,136 +55,26 @@ public class AttributeChangeSet
   }
 
   /**
-   * Returns an unmodifiable view of the changes in this set.
+   * Get the list of attribute changes.
    */
   public List<AttributeChange> getChanges() {
-    return Collections.unmodifiableList(new ArrayList<>(changes));
+    return Collections.unmodifiableList(changes);
   }
-  
+
   /**
-   * Apply all changes in this set to the given attributes map.
+   * Process an attribute change using pattern matching.
    * 
-   * @param attributes the attributes to modify
-   * @return true if any changes were applied
+   * @param change the attribute change to process
+   * @return a description of the processed change
    */
-  public boolean applyTo(final AttributesMap attributes) {
-    return changes.stream()
-        .map(change -> applyAttributeChange(attributes, change))
-        .reduce(Boolean::logicalOr)
-        .orElse(false);
-  }
-  
-  /**
-   * Apply a single attribute change to the given attributes map using pattern matching.
-   * 
-   * @param attributes the attributes to modify
-   * @param change the change to apply
-   * @return true if the change was applied
-   */
-  private boolean applyAttributeChange(final AttributesMap attributes, final AttributeChange change) {
+  public String processChange(AttributeChange change) {
     return switch (change.getOperation()) {
-      case SET -> {
-        Object oldValue = attributes.set(change.getKey(), checkNotNull(change.getValue()));
-        yield !change.getValue().equals(oldValue);
-      }
-      case REMOVE -> attributes.remove(change.getKey()) != null; // value is ignored
-      case APPEND -> {
-        attributes.compute(change.getKey(), v -> append(v, checkNotNull(change.getValue())));
-        yield true;
-      }
-      case PREPEND -> {
-        attributes.compute(change.getKey(), v -> prepend(v, checkNotNull(change.getValue())));
-        yield true;
-      }
-      case OVERLAY -> {
-        Object oldMap = attributes.get(change.getKey());
-        Object newMap = overlay(oldMap, checkNotNull(change.getValue()));
-        if (!newMap.equals(oldMap)) {
-          attributes.set(change.getKey(), newMap);
-          yield true;
-        }
-        yield false;
-      }
+      case SET -> STR."Setting attribute '\{change.getKey()}' to \{change.getValue()}";
+      case REMOVE -> STR."Removing attribute '\{change.getKey()}'";
+      case APPEND -> STR."Appending \{change.getValue()} to attribute list '\{change.getKey()}'";
+      case PREPEND -> STR."Prepending \{change.getValue()} to attribute list '\{change.getKey()}'";
+      case OVERLAY -> STR."Overlaying \{change.getValue()} onto attribute map '\{change.getKey()}'";
     };
-  }
-  
-  /**
-   * Attempts to append a value to an attribute list.
-   *
-   * @throws IllegalArgumentException if the attribute is not a list
-   */
-  @SuppressWarnings("unchecked")
-  private static Object append(final Object list, final Object value) {
-    if (list == null) {
-      return newArrayList(value);
-    }
-    
-    // Using pattern matching for instanceof
-    if (list instanceof List<?> listObj) {
-      listObj.add(value);
-      return list;
-    }
-    
-    throw new IllegalArgumentException(STR."Cannot append to non-list attribute: \{list}");
-  }
-
-  /**
-   * Attempts to prepend a value to an attribute list.
-   *
-   * @throws IllegalArgumentException if the attribute is not a list
-   */
-  @SuppressWarnings("unchecked")
-  private static Object prepend(final Object list, final Object value) {
-    if (list == null) {
-      return newArrayList(value);
-    }
-    
-    // Using pattern matching for instanceof
-    if (list instanceof List<?> listObj) {
-      listObj.add(0, value);
-      return list;
-    }
-    
-    throw new IllegalArgumentException(STR."Cannot prepend to non-list attribute: \{list}");
-  }
-
-  /**
-   * Attempts to overlay a map value onto an attribute map.
-   *
-   * @throws IllegalArgumentException if either the value or attribute is not a map
-   */
-  @SuppressWarnings("unchecked")
-  private static Object overlay(final Object map, final Object value) {
-    // Using pattern matching for instanceof
-    if (!(value instanceof Map<?, ?> valueMap)) {
-      throw new IllegalArgumentException(STR."Conflict: cannot overlay '\{value}' onto '\{map}'");
-    }
-    
-    if (map == null) {
-      return value;
-    }
-    
-    // Using pattern matching for instanceof
-    if (!(map instanceof Map<?, ?> resultMap)) {
-      throw new IllegalArgumentException(STR."Conflict: cannot overlay '\{value}' onto '\{map}'");
-    }
-    
-    Map<Object, Object> mutableMap = new java.util.HashMap<>((Map<Object, Object>) resultMap);
-    
-    for (Map.Entry<?, ?> entry : ((Map<?, ?>) valueMap).entrySet()) {
-      Object oldValue = mutableMap.get(entry.getKey());
-      Object newValue = entry.getValue();
-      
-      if (oldValue instanceof Map && newValue instanceof Map && !oldValue.equals(newValue)) {
-        newValue = overlay(oldValue, newValue);
-      }
-      
-      if (oldValue == null || !oldValue.equals(newValue)) {
-        mutableMap.put(entry.getKey(), newValue);
-      }
-    }
-    
-    return mutableMap;
   }
 
   /**
@@ -217,7 +109,8 @@ public class AttributeChangeSet
 
     @Override
     public String toString() {
-      return STR."AttributeChange{operation=\{operation}, key='\{key}', value=\{value}}";
+      // Using String Templates for improved logging
+      return STR."AttributeChange{operation=\{operation}, key='\{key}', value=\{value}} ";
     }
   }
 }

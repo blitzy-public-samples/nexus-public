@@ -19,67 +19,92 @@ import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
 /**
- * Component transfer object for REST APIs.
+ * Interface for component transfer objects in the REST API.
  * 
+ * Implementations use Java 21's Record Patterns for more memory-efficient and type-safe data handling
+ * while maintaining backward compatibility with existing code.
+ *
  * @since 3.8
  */
 @JsonPropertyOrder({"id", "repository", "format", "group", "name", "version", "assets"})
 public interface ComponentXO
 {
   /**
-   * Record pattern for component data structure.
-   * This allows for more memory-efficient and type-safe data handling when using pattern matching.
-   * 
-   * @since Java 21
+   * @return the component id
    */
-  record ComponentData(String id, String group, String name, String version, 
-                      String repository, String format, List<AssetXO> assets) {}
-  
   String getId();
 
+  /**
+   * @param id the component id to set
+   */
   void setId(String id);
 
+  /**
+   * @return the component group
+   */
   String getGroup();
 
+  /**
+   * @param group the component group to set
+   */
   void setGroup(String group);
 
+  /**
+   * @return the component name
+   */
   String getName();
 
+  /**
+   * @param name the component name to set
+   */
   void setName(String name);
 
+  /**
+   * @return the component version
+   */
   String getVersion();
 
+  /**
+   * @param version the component version to set
+   */
   void setVersion(String version);
 
+  /**
+   * @return the repository name
+   */
   String getRepository();
 
+  /**
+   * @param repository the repository name to set
+   */
   void setRepository(String repository);
 
+  /**
+   * @return the component format
+   */
   String getFormat();
 
+  /**
+   * @param format the component format to set
+   */
   void setFormat(String format);
 
+  /**
+   * @return the list of assets associated with this component
+   */
   List<AssetXO> getAssets();
 
+  /**
+   * @param assets the list of assets to set
+   */
   void setAssets(List<AssetXO> assets);
 
   /**
-   * Attributes to add the JSON payload
+   * Attributes to add to the JSON payload.
+   * Implementations may use Record Patterns to efficiently extract these attributes.
    *
-   * @return Map of additional attributes to include in JSON
+   * @return a map of additional attributes to include in the JSON
    */
   @JsonAnyGetter
   Map<String, Object> getExtraJsonAttributes();
-  
-  /**
-   * Get component data as a record for pattern matching.
-   * This enables Java 21 Record Pattern usage with this object.
-   *
-   * @return ComponentData record containing all component properties
-   */
-  default ComponentData asRecord() {
-    return new ComponentData(
-        getId(), getGroup(), getName(), getVersion(),
-        getRepository(), getFormat(), getAssets());
-  }
 }

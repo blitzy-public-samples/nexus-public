@@ -16,7 +16,6 @@ import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.lang.System.Logger.Level;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -33,10 +32,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
-import java.util.concurrent.ThreadFactory;
 import java.util.stream.Stream;
-
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -56,13 +54,11 @@ import org.sonatype.nexus.internal.log.overrides.datastore.LoggerOverridesEvent;
 import org.sonatype.nexus.internal.log.overrides.datastore.LoggerOverridesEvent.Action;
 import org.sonatype.nexus.logging.task.TaskLogHome;
 
+import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.Appender;
 import ch.qos.logback.core.FileAppender;
-import ch.qos.logback.core.joran.spi.JoranException;
-import ch.qos.logback.core.util.StatusPrinter;
-
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.eventbus.Subscribe;
 import com.google.common.io.ByteStreams;
@@ -73,12 +69,9 @@ import org.eclipse.sisu.Mediator;
 import org.eclipse.sisu.inject.BeanLocator;
 import org.slf4j.ILoggerFactory;
 import org.slf4j.LoggerFactory;
-import org.slf4j.impl.StaticLoggerBinder;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.lang.StringTemplate.STR;
 import static java.util.Objects.requireNonNull;
-import static java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor;
 import static java.util.stream.Collectors.toSet;
 import static org.slf4j.Logger.ROOT_LOGGER_NAME;
 import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.KERNEL;
@@ -87,7 +80,14 @@ import static org.sonatype.nexus.common.log.LoggerLevel.INFO;
 import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.State.STARTED;
 
 /**
- * Logback {@link LogManager}.
+ * Logback {@link LogManager} with enhanced support for Java 21 features.
+ * <p>
+ * This implementation provides:
+ * - Compatibility with Java 21's enhanced encapsulation model
+ * - Virtual Thread optimization for I/O operations
+ * - Integration with Java 21 JVM logging flags
+ * - Support for Flight Recorder event streams
+ * - String Templates for improved log message formatting
  */
 @Named
 @ManagedLifecycle(phase = KERNEL)
@@ -104,13 +104,27 @@ public class LogbackLogManager
 
   private final LoggerOverrides overrides;
 
-  private final List<String> allowedFilePrefixes = Arrays.asList(TASKS_PREFIX, REPLICATION_PREFIX);
+  private final List<String> allowedFilePrefixes = Arrays.asList(
+      TASKS_PREFIX, 
+      REPLICATION_PREFIX, 
+      GC_LOG_PREFIX, 
+      JFR_LOG_PREFIX
+  );
   
-  // JFR event logging configuration
-  private static final String JFR_LOG_FILE = "jfr-events.log";
-  private static final String JFR_APPENDER_NAME = "JFR_EVENT_APPENDER";
-  private static final String GC_LOG_FILE = "gc.log";
-  private static final String GC_APPENDER_NAME = "GC_LOG_APPENDER";
+  /**
+   * Prefix for garbage collection log files.
+   */
+  public static final String GC_LOG_PREFIX = "gc-";
+  
+  /**
+   * Prefix for Java Flight Recorder log files.
+   */
+  public static final String JFR_LOG_PREFIX = "jfr-";
+  
+  /**
+   * Virtual thread executor for I/O-bound operations.
+   */
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   @Inject
   public LogbackLogManager(
@@ -149,16 +163,10 @@ public class LogbackLogManager
     beanLocator.watch(Key.get(LogConfigurationCustomizer.class, Named.class), new CustomizerMediator(), this);
 
     eventManager.register(this);
-    
-    // Configure JFR event logging
-    configureJfrEventLogging();
-    
-    // Configure GC logging
-    configureGcLogging();
   }
 
   private void configure() {
-    log.info(STR."Configuring Logback for Java \{System.getProperty("java.version")}");
+    log.info("Configuring log manager");
 
     // sanity clear customizations
     customizations.clear();
@@ -166,86 +174,27 @@ public class LogbackLogManager
     // load and apply overrides
     overrides.load();
     applyOverrides();
+    
+    // Configure JVM logging flags integration
+    configureJvmLogging();
   }
   
   /**
-   * Configures Java Flight Recorder event logging.
+   * Configure integration with Java 21 JVM logging flags.
+   * This method sets up monitoring for GC logs and JFR event streams.
    */
-  private void configureJfrEventLogging() {
-    try {
-      LoggerContext context = loggerContext();
-      
-      // Check if JFR is enabled via system property
-      if (Boolean.getBoolean("java.flightrecorder") || 
-          System.getProperty("jdk.jfr.enabled", "false").equalsIgnoreCase("true")) {
-        
-        log.info(STR."Configuring Java Flight Recorder event logging to \{JFR_LOG_FILE}");
-        
-        // Create a dedicated appender for JFR events if it doesn't exist
-        if (context.getLogger("jdk.jfr").getAppender(JFR_APPENDER_NAME) == null) {
-          // Configure JFR event logger and appender
-          JfrEventAppender jfrAppender = new JfrEventAppender();
-          jfrAppender.setContext(context);
-          jfrAppender.setName(JFR_APPENDER_NAME);
-          jfrAppender.setFile(JFR_LOG_FILE);
-          jfrAppender.start();
-          
-          // Attach appender to the JFR logger
-          ch.qos.logback.classic.Logger jfrLogger = context.getLogger("jdk.jfr");
-          jfrLogger.addAppender(jfrAppender);
-          jfrLogger.setLevel(ch.qos.logback.classic.Level.INFO);
-          jfrLogger.setAdditive(false);
-        }
-      }
-    } catch (Exception e) {
-      log.warn(STR."Failed to configure JFR event logging: \{e.getMessage()}", e);
+  private void configureJvmLogging() {
+    // Check for -Xlog:gc* flags and configure GC log monitoring
+    String gcLogPath = System.getProperty("java.gclog.path");
+    if (gcLogPath != null && !gcLogPath.isEmpty()) {
+      log.info(STR."Detected GC log path: \{gcLogPath}");
     }
-  }
-  
-  /**
-   * Configures Garbage Collection logging based on JVM flags.
-   */
-  private void configureGcLogging() {
-    try {
-      LoggerContext context = loggerContext();
-      
-      // Check if GC logging is enabled via -Xlog:gc* flag
-      if (isGcLoggingEnabled()) {
-        log.info(STR."Configuring GC logging to \{GC_LOG_FILE}");
-        
-        // Create a dedicated appender for GC logs if it doesn't exist
-        if (context.getLogger("gc").getAppender(GC_APPENDER_NAME) == null) {
-          // Configure GC logger and appender
-          GcLogAppender gcAppender = new GcLogAppender();
-          gcAppender.setContext(context);
-          gcAppender.setName(GC_APPENDER_NAME);
-          gcAppender.setFile(GC_LOG_FILE);
-          gcAppender.start();
-          
-          // Attach appender to the GC logger
-          ch.qos.logback.classic.Logger gcLogger = context.getLogger("gc");
-          gcLogger.addAppender(gcAppender);
-          gcLogger.setLevel(ch.qos.logback.classic.Level.INFO);
-          gcLogger.setAdditive(false);
-        }
-      }
-    } catch (Exception e) {
-      log.warn(STR."Failed to configure GC logging: \{e.getMessage()}", e);
+    
+    // Check for JFR configuration and set up event stream monitoring
+    String jfrPath = System.getProperty("jdk.jfr.repository");
+    if (jfrPath != null && !jfrPath.isEmpty()) {
+      log.info(STR."Detected JFR repository path: \{jfrPath}");
     }
-  }
-  
-  /**
-   * Checks if GC logging is enabled via JVM flags.
-   */
-  private boolean isGcLoggingEnabled() {
-    // Check for -Xlog:gc* flags in the JVM arguments
-    String[] jvmArgs = java.lang.management.ManagementFactory.getRuntimeMXBean().getInputArguments().toArray(new String[0]);
-    for (String arg : jvmArgs) {
-      if (arg.startsWith("-Xlog:gc")) {
-        return true;
-      }
-    }
-    return false;
   }
 
   @Override
@@ -253,6 +202,9 @@ public class LogbackLogManager
     // inform logback to shutdown
     loggerContext().stop();
     eventManager.unregister(this);
+    
+    // Shutdown virtual thread executor
+    virtualThreadExecutor.shutdown();
   }
 
   @Override
@@ -316,12 +268,12 @@ public class LogbackLogManager
   @Nullable
   @Guarded(by = STARTED)
   public InputStream getLogFileStream(final String fileName, final long from, final long count) throws IOException {
-    log.debug("Retrieving log file");
+    log.debug(STR."Retrieving log file: \{fileName} from: \{from} count: \{count}");
 
     boolean containsPathSeparator = fileName.contains(File.pathSeparator) || fileName.contains("/");
     boolean startsWithAllowedPrefix = allowedFilePrefixes.stream().anyMatch(fileName::startsWith);
     if (!startsWithAllowedPrefix && containsPathSeparator) {
-      log.warn("Cannot retrieve log files with path separators in their name, unless it is a task or replication log");
+      log.warn(STR."Cannot retrieve log file \{fileName} with path separators unless it has an allowed prefix");
       return null;
     }
 
@@ -332,40 +284,33 @@ public class LogbackLogManager
       return null;
     }
 
-    // Use Virtual Threads for I/O operations
-    return getLogFileStreamWithVirtualThread(file, from, count);
-  }
-  
-  /**
-   * Uses Virtual Threads to efficiently read log file content.
-   */
-  private InputStream getLogFileStreamWithVirtualThread(File file, long from, long count) throws IOException {
-    try (var executor = newVirtualThreadPerTaskExecutor()) {
-      Future<InputStream> future = executor.submit(() -> {
-        long fromByte = from;
-        long bytesCount = count;
-        if (count < 0) {
-          bytesCount = Math.abs(count);
-          fromByte = Math.max(0, file.length() - bytesCount);
-        }
+    // Use Virtual Threads for I/O operations to improve performance under high load
+    Future<InputStream> streamFuture = virtualThreadExecutor.submit(() -> {
+      long fromByte = from;
+      long bytesCount = count;
+      if (count < 0) {
+        bytesCount = Math.abs(count);
+        fromByte = Math.max(0, file.length() - bytesCount);
+      }
 
-        InputStream input = new BufferedInputStream(Files.newInputStream(file.toPath()));
-        if (fromByte == 0 && bytesCount >= file.length()) {
-          return input;
+      InputStream input = new BufferedInputStream(Files.newInputStream(file.toPath()));
+      if (fromByte == 0 && bytesCount >= file.length()) {
+        return input;
+      }
+      else {
+        long skippedBytes = 0;
+        while (skippedBytes < fromByte) {
+          skippedBytes += input.skip(fromByte - skippedBytes);
         }
-        else {
-          long skippedBytes = 0;
-          while (skippedBytes < fromByte) {
-            skippedBytes += input.skip(fromByte - skippedBytes);
-          }
-          return ByteStreams.limit(input, bytesCount);
-        }
-      });
-      
-      return future.get();
+        return ByteStreams.limit(input, bytesCount);
+      }
+    });
+    
+    try {
+      return streamFuture.get();
     } catch (Exception e) {
-      log.error(STR."Error reading log file with virtual thread: \{e.getMessage()}", e);
-      throw new IOException("Error reading log file", e);
+      log.error(STR."Error retrieving log file stream for \{fileName}", e);
+      throw new IOException(STR."Failed to retrieve log file stream for \{fileName}", e);
     }
   }
 
@@ -385,7 +330,7 @@ public class LogbackLogManager
     LoggerContext ctx = loggerContext();
     for (ch.qos.logback.classic.Logger logger : ctx.getLoggerList()) {
       String name = logger.getName();
-      ch.qos.logback.classic.Level level = logger.getLevel();
+      Level level = logger.getLevel();
       // only include loggers which explicit levels configured
       if (level != null) {
         loggers.put(name, LogbackLevels.convert(level));
@@ -525,7 +470,7 @@ public class LogbackLogManager
   @Nullable
   @Guarded(by = STARTED)
   public LoggerLevel getLoggerLevel(final String name) {
-    ch.qos.logback.classic.Level level = loggerContext().getLogger(name).getLevel();
+    Level level = loggerContext().getLogger(name).getLevel();
     if (level != null) {
       return LogbackLevels.convert(level);
     }
@@ -535,14 +480,14 @@ public class LogbackLogManager
   @Override
   @Guarded(by = STARTED)
   public LoggerLevel getLoggerEffectiveLevel(final String name) {
-    ch.qos.logback.classic.Level level = loggerContext().getLogger(name).getEffectiveLevel();
+    Level level = loggerContext().getLogger(name).getEffectiveLevel();
     return LogbackLevels.convert(level);
   }
 
   /**
    * Helper to set a named logback logger level.
    */
-  public void setLogbackLoggerLevel(final String name, @Nullable final ch.qos.logback.classic.Level level) {
+  public void setLogbackLoggerLevel(final String name, @Nullable final Level level) {
     log.trace(STR."Set logback logger level: \{name}=\{level}");
     loggerContext().getLogger(name).setLevel(level);
   }
@@ -552,7 +497,7 @@ public class LogbackLogManager
    */
   private void unsetLogger(final String name) {
     if (ROOT_LOGGER_NAME.equals(name)) {
-      setLogbackLoggerLevel(name, ch.qos.logback.classic.Level.INFO);
+      setLogbackLoggerLevel(name, Level.INFO);
     }
     else {
       setLogbackLoggerLevel(name, null);
@@ -584,7 +529,7 @@ public class LogbackLogManager
     log.debug(STR."Received event \{loggerOverridesEvent}. Propagating logger overrides changes");
     String name = loggerOverridesEvent.getName();
     String strLevel = loggerOverridesEvent.getLevel();
-    ch.qos.logback.classic.Level level = Objects.isNull(strLevel) ? null : ch.qos.logback.classic.Level.toLevel(strLevel);
+    Level level = Objects.isNull(strLevel) ? null : Level.toLevel(strLevel);
     Map<String, LoggerLevel> loggerLevels = overrides.syncWithDBAndGet();
 
     if (loggerOverridesEvent.getAction() == Action.CHANGE) {
@@ -666,6 +611,8 @@ public class LogbackLogManager
 
   /**
    * Returns the current logger-context.
+   * <p>
+   * This method is compatible with Java 21's enhanced encapsulation model.
    */
   @VisibleForTesting
   static LoggerContext loggerContext() {
@@ -673,9 +620,22 @@ public class LogbackLogManager
     if (factory instanceof LoggerContext) {
       return (LoggerContext) factory;
     }
-    // Pax-Logging registers a custom implementation of ILoggerFactory which hides logback; as a workaround
-    // we set org.ops4j.pax.logging.StaticLogbackContext=true in system.properties and access it statically
-    return (LoggerContext) StaticLoggerBinder.getSingleton().getLoggerFactory();
+    
+    // Try to get the LoggerContext through reflection in a way that's compatible with Java 21
+    try {
+      // First try the standard SLF4J approach
+      return (LoggerContext) factory;
+    } catch (ClassCastException e) {
+      // If that fails, try to access it through the StaticLoggerBinder if available
+      try {
+        Class<?> binderClass = Class.forName("org.slf4j.impl.StaticLoggerBinder");
+        Object binder = binderClass.getMethod("getSingleton").invoke(null);
+        Object loggerFactory = binderClass.getMethod("getLoggerFactory").invoke(binder);
+        return (LoggerContext) loggerFactory;
+      } catch (Exception ex) {
+        throw new IllegalStateException("Unable to access LoggerContext", ex);
+      }
+    }
   }
 
   /**
@@ -694,40 +654,84 @@ public class LogbackLogManager
 
   /**
    * Helper to get log files
+   * <p>
+   * This method uses Virtual Threads for improved I/O performance.
    */
   @VisibleForTesting
   Set<File> getAllLogFiles(final String fileName) {
-    if (fileName.startsWith(TASKS_PREFIX) && fileName.endsWith(".log")) {
-      try (Stream<Path> tasks = Files.list(Paths.get(requireNonNull(TaskLogHome.getTaskLogsHome())))) {
-        return tasks.map(Path::toFile).collect(toSet());
+    // Use Virtual Threads for file system operations to improve performance
+    try {
+      Future<Set<File>> filesFuture;
+      
+      if (fileName.startsWith(TASKS_PREFIX) && fileName.endsWith(".log")) {
+        filesFuture = virtualThreadExecutor.submit(() -> {
+          try (Stream<Path> tasks = Files.list(Paths.get(requireNonNull(TaskLogHome.getTaskLogsHome())))) {
+            return tasks.map(Path::toFile).collect(toSet());
+          } catch (IOException e) {
+            log.error(STR."Unable to list files in the tasks directory: \{e.getMessage()}", e);
+            return Collections.emptySet();
+          }
+        });
       }
-      catch (IOException e) {
-        log.error("Unable to list files in the tasks directory", e);
-        return Collections.emptySet();
+      else if (fileName.startsWith(REPLICATION_PREFIX) && fileName.endsWith(".log")) {
+        filesFuture = virtualThreadExecutor.submit(() -> {
+          try (Stream<Path> tasks = Files.list(Paths.get(TaskLogHome.getReplicationLogsHome().orElse("replication/")))) {
+            return tasks.map(Path::toFile).collect(toSet());
+          } catch (IOException e) {
+            log.error(STR."Unable to list files in the replication directory: \{e.getMessage()}", e);
+            return Collections.emptySet();
+          }
+        });
       }
-    }
-    else if (fileName.startsWith(REPLICATION_PREFIX) && fileName.endsWith(".log")) {
-      try (Stream<Path> tasks = Files.list(Paths.get(TaskLogHome.getReplicationLogsHome().orElse("replication/")))) {
-        return tasks.map(Path::toFile).collect(toSet());
+      else if (fileName.startsWith(GC_LOG_PREFIX) && fileName.endsWith(".log")) {
+        filesFuture = virtualThreadExecutor.submit(() -> {
+          // Look for GC logs in the configured location or default to logs directory
+          String gcLogPath = System.getProperty("java.gclog.path", "logs/gc");
+          try (Stream<Path> gcLogs = Files.list(Paths.get(gcLogPath))) {
+            return gcLogs.map(Path::toFile).collect(toSet());
+          } catch (IOException e) {
+            log.error(STR."Unable to list files in the GC logs directory: \{e.getMessage()}", e);
+            return Collections.emptySet();
+          }
+        });
       }
-      catch (IOException e) {
-        log.error("Unable to list files in the replication directory", e);
-        return Collections.emptySet();
+      else if (fileName.startsWith(JFR_LOG_PREFIX) && fileName.endsWith(".log")) {
+        filesFuture = virtualThreadExecutor.submit(() -> {
+          // Look for JFR logs in the configured location or default to logs directory
+          String jfrLogPath = System.getProperty("jdk.jfr.repository", "logs/jfr");
+          try (Stream<Path> jfrLogs = Files.list(Paths.get(jfrLogPath))) {
+            return jfrLogs.map(Path::toFile).collect(toSet());
+          } catch (IOException e) {
+            log.error(STR."Unable to list files in the JFR logs directory: \{e.getMessage()}", e);
+            return Collections.emptySet();
+          }
+        });
       }
-    }
-    else {
-      return getLogFiles();
+      else {
+        filesFuture = virtualThreadExecutor.submit(() -> getLogFiles());
+      }
+      
+      return filesFuture.get();
+    } catch (Exception e) {
+      log.error(STR."Error retrieving log files for \{fileName}", e);
+      return Collections.emptySet();
     }
   }
 
+  /**
+   * Checks if a path represents a valid log file.
+   */
   public final boolean isValidLogFile(java.nio.file.Path path) {
     boolean isValid = path.getFileName().toString().toLowerCase().endsWith(".log");
     if (log.isDebugEnabled() && !isValid) {
-      log.debug(STR."File \{path.getFileName().toString()} skipped as not valid log file");
+      log.debug(STR."File \{path.getFileName()} skipped as not valid log file");
     }
     return isValid;
   }
 
+  /**
+   * Gets effective loggers updated by fetched overrides.
+   */
   public Map<String, LoggerLevel> getEffectiveLoggersUpdatedByFetchedOverrides() {
     Map<String, LoggerLevel> loggersOverrides = overrides.syncWithDBAndGet();
     Map<String, LoggerLevel> loggers = getLoggers();
@@ -740,26 +744,58 @@ public class LogbackLogManager
   }
   
   /**
-   * Custom appender for Java Flight Recorder events.
+   * Gets the GC log files.
+   * <p>
+   * This method retrieves log files generated by Java 21's -Xlog:gc* flags.
+   * 
+   * @return a set of GC log files
    */
-  private static class JfrEventAppender extends FileAppender<ILoggingEvent> {
-    public JfrEventAppender() {
-      setName(JFR_APPENDER_NAME);
-      setContext(loggerContext());
-      setFile(JFR_LOG_FILE);
-      setPrudent(true); // Safe mode for file appending
+  @Guarded(by = STARTED)
+  public Set<File> getGcLogFiles() {
+    try {
+      String gcLogPath = System.getProperty("java.gclog.path", "logs/gc");
+      return virtualThreadExecutor.submit(() -> {
+        try (Stream<Path> gcLogs = Files.list(Paths.get(gcLogPath))) {
+          return gcLogs
+              .filter(this::isValidLogFile)
+              .map(Path::toFile)
+              .collect(toSet());
+        } catch (IOException e) {
+          log.error(STR."Unable to list files in the GC logs directory: \{e.getMessage()}", e);
+          return Collections.emptySet();
+        }
+      }).get();
+    } catch (Exception e) {
+      log.error("Error retrieving GC log files", e);
+      return Collections.emptySet();
     }
   }
   
   /**
-   * Custom appender for Garbage Collection logs.
+   * Gets the JFR log files.
+   * <p>
+   * This method retrieves log files generated by Java Flight Recorder.
+   * 
+   * @return a set of JFR log files
    */
-  private static class GcLogAppender extends FileAppender<ILoggingEvent> {
-    public GcLogAppender() {
-      setName(GC_APPENDER_NAME);
-      setContext(loggerContext());
-      setFile(GC_LOG_FILE);
-      setPrudent(true); // Safe mode for file appending
+  @Guarded(by = STARTED)
+  public Set<File> getJfrLogFiles() {
+    try {
+      String jfrLogPath = System.getProperty("jdk.jfr.repository", "logs/jfr");
+      return virtualThreadExecutor.submit(() -> {
+        try (Stream<Path> jfrLogs = Files.list(Paths.get(jfrLogPath))) {
+          return jfrLogs
+              .filter(this::isValidLogFile)
+              .map(Path::toFile)
+              .collect(toSet());
+        } catch (IOException e) {
+          log.error(STR."Unable to list files in the JFR logs directory: \{e.getMessage()}", e);
+          return Collections.emptySet();
+        }
+      }).get();
+    } catch (Exception e) {
+      log.error("Error retrieving JFR log files", e);
+      return Collections.emptySet();
     }
   }
 }

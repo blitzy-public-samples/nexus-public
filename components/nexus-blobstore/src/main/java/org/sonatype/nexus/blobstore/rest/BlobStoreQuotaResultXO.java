@@ -16,11 +16,7 @@ import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaResult;
 
 import jakarta.validation.constraints.NotEmpty;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
-
 /**
- * Data transfer object for BlobStoreQuotaResult.
- *
  * @since 3.14
  */
 public class BlobStoreQuotaResultXO
@@ -41,7 +37,6 @@ public class BlobStoreQuotaResultXO
     this.isViolation = isViolation;
   }
 
-  @JsonProperty("message")
   public String getMessage() {
     return message;
   }
@@ -50,7 +45,6 @@ public class BlobStoreQuotaResultXO
     this.message = message;
   }
 
-  @JsonProperty("blobStoreName")
   public String getBlobStoreName() {
     return blobStoreName;
   }
@@ -60,10 +54,10 @@ public class BlobStoreQuotaResultXO
   }
 
   /**
-   * Creates a BlobStoreQuotaResultXO from a BlobStoreQuotaResult.
+   * Create a quota result XO from a BlobStoreQuotaResult
    *
-   * @param result the BlobStoreQuotaResult to convert
-   * @return a new BlobStoreQuotaResultXO instance
+   * @param result the quota result to convert
+   * @return a new BlobStoreQuotaResultXO
    */
   static BlobStoreQuotaResultXO asQuotaXO(final BlobStoreQuotaResult result) {
     if (result instanceof BlobStoreQuotaResult(var isViolation, var blobStoreName, var message)) {
@@ -77,10 +71,10 @@ public class BlobStoreQuotaResultXO
   }
 
   /**
-   * Creates a BlobStoreQuotaResultXO for a blob store with no quota.
+   * Create a quota result XO for a blob store with no quota
    *
    * @param blobStoreName the name of the blob store
-   * @return a new BlobStoreQuotaResultXO instance
+   * @return a new BlobStoreQuotaResultXO
    */
   static BlobStoreQuotaResultXO asNoQuotaXO(final String blobStoreName) {
     BlobStoreQuotaResultXO blobStoreQuotaResultXO = new BlobStoreQuotaResultXO();

@@ -1,266 +1,214 @@
--- H2 database schema for Virtual Thread testing
+-- H2 Database Schema for Virtual Thread Testing
 -- This schema is designed to test JDBC operations with Java 21 Virtual Threads
--- focusing on scenarios that might cause thread pinning in traditional implementations
---
--- This schema is specifically created to test the following scenarios with Virtual Threads:
--- 1. Basic CRUD operations with various column types
--- 2. Foreign key relationships and referential integrity
--- 3. Large object (BLOB/CLOB) operations that traditionally cause thread pinning
--- 4. Batch processing operations
--- 5. Index operations and query performance
--- 6. Transaction processing with concurrent operations
--- 7. Optimistic and pessimistic locking patterns
---
--- The schema is designed to be compatible with H2 database while maintaining
--- functional equivalence with the PostgreSQL schema for the same tests.
+-- focusing on scenarios that might traditionally cause thread pinning
+-- 
+-- Key operations tested:
+-- 1. Large object (BLOB/CLOB) operations
+-- 2. Batch processing
+-- 3. Concurrent transaction handling
+-- 4. Complex joins with multiple foreign keys
+-- 5. Index operations
 
 -- Drop tables if they exist to ensure clean setup
-DROP TABLE IF EXISTS vt_child_table;
-DROP TABLE IF EXISTS vt_parent_table;
-DROP TABLE IF EXISTS vt_large_object_test;
+DROP TABLE IF EXISTS vt_order_items;
+DROP TABLE IF EXISTS vt_orders;
+DROP TABLE IF EXISTS vt_customers;
+DROP TABLE IF EXISTS vt_products;
+DROP TABLE IF EXISTS vt_categories;
+DROP TABLE IF EXISTS vt_blob_test;
 DROP TABLE IF EXISTS vt_batch_test;
-DROP TABLE IF EXISTS vt_index_test;
-DROP TABLE IF EXISTS vt_transaction_test;
 DROP TABLE IF EXISTS vt_concurrent_test;
+DROP TABLE IF EXISTS vt_isolation_test;
+DROP TABLE IF EXISTS vt_connection_test;
+DROP TABLE IF EXISTS vt_statement_test;
 
--- Create domain for JSON compatibility with PostgreSQL
-CREATE DOMAIN IF NOT EXISTS JSONB AS JSON;
-
--- Table for testing basic CRUD operations with Virtual Threads
-CREATE TABLE vt_parent_table (
-    id IDENTITY PRIMARY KEY,
+-- Create category table with basic columns
+CREATE TABLE vt_categories (
+    category_id INT PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     description CLOB,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP(),
-    active BOOLEAN DEFAULT TRUE,
-    priority INTEGER DEFAULT 0,
-    data JSONB
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    active BOOLEAN DEFAULT TRUE
 );
 
--- Table with foreign key relationship to test transaction integrity with Virtual Threads
-CREATE TABLE vt_child_table (
-    id IDENTITY PRIMARY KEY,
-    parent_id INTEGER NOT NULL,
+-- Create index on category name for query testing
+CREATE INDEX idx_category_name ON vt_categories(name);
+
+-- Create product table with foreign key to categories
+CREATE TABLE vt_products (
+    product_id INT PRIMARY KEY,
+    category_id INT,
+    name VARCHAR(200) NOT NULL,
+    description VARCHAR(2000),
+    price DECIMAL(10,2) NOT NULL,
+    stock_quantity INT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (category_id) REFERENCES vt_categories(category_id)
+);
+
+-- Create indexes on product table for query optimization testing
+CREATE INDEX idx_product_category ON vt_products(category_id);
+CREATE INDEX idx_product_name ON vt_products(name);
+
+-- Create customer table for relationship testing
+CREATE TABLE vt_customers (
+    customer_id INT PRIMARY KEY,
+    first_name VARCHAR(50) NOT NULL,
+    last_name VARCHAR(50) NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    phone VARCHAR(20),
+    address VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_login TIMESTAMP
+);
+
+-- Create index on customer email for lookup testing
+CREATE INDEX idx_customer_email ON vt_customers(email);
+
+-- Create orders table with foreign key to customers
+CREATE TABLE vt_orders (
+    order_id INT PRIMARY KEY,
+    customer_id INT NOT NULL,
+    order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    status VARCHAR(20) DEFAULT 'PENDING',
+    total_amount DECIMAL(12,2),
+    shipping_address VARCHAR(255),
+    tracking_number VARCHAR(50),
+    notes CLOB,
+    FOREIGN KEY (customer_id) REFERENCES vt_customers(customer_id)
+);
+
+-- Create indexes on orders for query testing
+CREATE INDEX idx_order_customer ON vt_orders(customer_id);
+CREATE INDEX idx_order_date ON vt_orders(order_date);
+CREATE INDEX idx_order_status ON vt_orders(status);
+
+-- Create order items table with multiple foreign keys
+-- This tests complex relationship handling with Virtual Threads
+CREATE TABLE vt_order_items (
+    item_id INT PRIMARY KEY,
+    order_id INT NOT NULL,
+    product_id INT NOT NULL,
+    quantity INT NOT NULL,
+    unit_price DECIMAL(10,2) NOT NULL,
+    discount DECIMAL(5,2) DEFAULT 0,
+    FOREIGN KEY (order_id) REFERENCES vt_orders(order_id),
+    FOREIGN KEY (product_id) REFERENCES vt_products(product_id)
+);
+
+-- Create index on order items for query optimization
+CREATE INDEX idx_orderitem_order ON vt_order_items(order_id);
+CREATE INDEX idx_orderitem_product ON vt_order_items(product_id);
+
+-- Create a table specifically for BLOB/CLOB testing
+-- Large object operations are known to potentially cause thread pinning
+-- with traditional JDBC implementations in older Java versions
+CREATE TABLE vt_blob_test (
+    id INT PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
-    value NUMERIC(10, 2),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP(),
-    CONSTRAINT fk_parent
-        FOREIGN KEY (parent_id)
-        REFERENCES vt_parent_table (id)
-        ON DELETE CASCADE
+    binary_data BLOB,         -- For testing BLOB read/write operations
+    text_data CLOB,           -- For testing CLOB read/write operations
+    metadata VARCHAR(255),    -- For storing information about the binary data
+    checksum VARCHAR(64),     -- For verifying data integrity
+    file_size BIGINT,         -- For testing large object size handling
+    mime_type VARCHAR(100),   -- For testing content type handling
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_accessed TIMESTAMP   -- For tracking access patterns
 );
 
--- Create index on foreign key to test index operations with Virtual Threads
-CREATE INDEX idx_child_parent_id ON vt_child_table (parent_id);
-
--- Table for testing large object operations with Virtual Threads
--- BLOB and CLOB columns can cause thread pinning in traditional implementations
-CREATE TABLE vt_large_object_test (
-    id IDENTITY PRIMARY KEY,
-    binary_data BLOB,
-    text_data CLOB,
-    description VARCHAR(200),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP()
-);
-
--- Create indexes on large object columns to test different index operations
-CREATE INDEX idx_large_object_description ON vt_large_object_test (description);
--- Hash index equivalent in H2
-CREATE HASH INDEX idx_large_object_id_hash ON vt_large_object_test (id);
-
--- Table for testing batch operations with Virtual Threads
+-- Create a table for batch operation testing
+-- Batch operations can be optimized with Virtual Threads to improve throughput
 CREATE TABLE vt_batch_test (
-    id IDENTITY PRIMARY KEY,
-    batch_id INTEGER NOT NULL,
-    sequence_num INTEGER NOT NULL,
-    data VARCHAR(500),
-    processed BOOLEAN DEFAULT FALSE,
-    processed_at TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP()
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    batch_id VARCHAR(36) NOT NULL,       -- UUID for batch identification
+    sequence_num INT NOT NULL,           -- Order within batch
+    payload VARCHAR(1000),               -- Data to be processed
+    processed BOOLEAN DEFAULT FALSE,     -- Processing status flag
+    error_message VARCHAR(500),          -- For tracking processing errors
+    retry_count INT DEFAULT 0,           -- For testing retry logic
+    priority INT DEFAULT 5,              -- For testing prioritized processing
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    processed_at TIMESTAMP,              -- When the record was processed
+    UNIQUE (batch_id, sequence_num)      -- Ensure sequence integrity within batch
 );
 
--- Create indexes for batch processing
-CREATE INDEX idx_batch_test_batch_id ON vt_batch_test (batch_id);
-CREATE INDEX idx_batch_test_processed ON vt_batch_test (processed);
-CREATE INDEX idx_batch_test_batch_seq ON vt_batch_test (batch_id, sequence_num);
+-- Create index on batch_id for batch processing tests
+CREATE INDEX idx_batch_id ON vt_batch_test(batch_id);
 
--- Table for testing index operations with Virtual Threads
--- H2 doesn't support GIN indexes, so we use standard indexes instead
-CREATE TABLE vt_index_test (
-    id IDENTITY PRIMARY KEY,
-    tags VARCHAR(1000), -- Storing as comma-separated values instead of array
-    keywords VARCHAR(1000), -- Storing as comma-separated values instead of array
-    document JSONB,
-    full_text CLOB,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP()
-);
-
--- Create indexes for text search operations
-CREATE INDEX idx_index_test_tags ON vt_index_test (tags);
-CREATE INDEX idx_index_test_full_text ON vt_index_test (full_text(255)); -- Index first 255 chars
-
--- Table for testing transaction operations with Virtual Threads
-CREATE TABLE vt_transaction_test (
-    id IDENTITY PRIMARY KEY,
-    account_id VARCHAR(50) NOT NULL,
-    transaction_type VARCHAR(20) NOT NULL,
-    amount NUMERIC(15, 2) NOT NULL,
-    balance NUMERIC(15, 2) NOT NULL,
-    description CLOB,
-    transaction_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP(),
-    status VARCHAR(20) DEFAULT 'pending',
-    CONSTRAINT chk_transaction_type CHECK (transaction_type IN ('deposit', 'withdrawal', 'transfer'))
-);
-
--- Create indexes for transaction processing
-CREATE INDEX idx_transaction_test_account_id ON vt_transaction_test (account_id);
-CREATE INDEX idx_transaction_test_status ON vt_transaction_test (status);
-CREATE INDEX idx_transaction_test_date ON vt_transaction_test (transaction_date);
-
--- Table for testing concurrent operations with Virtual Threads
+-- Create a table for concurrent transaction testing
+-- This specifically tests scenarios where multiple Virtual Threads
+-- might attempt to update the same records simultaneously
 CREATE TABLE vt_concurrent_test (
-    id IDENTITY PRIMARY KEY,
-    resource_id VARCHAR(50) NOT NULL,
-    lock_owner VARCHAR(100),
-    lock_acquired_at TIMESTAMP WITH TIME ZONE,
-    lock_expires_at TIMESTAMP WITH TIME ZONE,
-    data JSONB,
-    version INTEGER DEFAULT 1,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP()
+    id INT PRIMARY KEY,
+    resource_name VARCHAR(100) NOT NULL,
+    counter INT DEFAULT 0,
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    version INT DEFAULT 0,  -- For optimistic locking tests
+    lock_owner VARCHAR(36), -- For pessimistic locking tests
+    UNIQUE (resource_name)
 );
 
--- Create unique index on resource_id to test concurrent access patterns
-CREATE UNIQUE INDEX idx_concurrent_test_resource_id ON vt_concurrent_test (resource_id);
--- Create index on lock expiration to test time-based operations
-CREATE INDEX idx_concurrent_test_lock_expires ON vt_concurrent_test (lock_expires_at);
+-- Create a table for testing transaction isolation levels with Virtual Threads
+CREATE TABLE vt_isolation_test (
+    id INT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    value INT NOT NULL,
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_by VARCHAR(50)
+);
 
--- Add comments to explain the purpose of this schema
-COMMENT ON TABLE vt_parent_table IS 'Table for testing basic CRUD operations with Virtual Threads';
-COMMENT ON TABLE vt_child_table IS 'Table for testing foreign key relationships with Virtual Threads';
-COMMENT ON TABLE vt_large_object_test IS 'Table for testing large object operations that might cause thread pinning';
-COMMENT ON TABLE vt_batch_test IS 'Table for testing batch operations with Virtual Threads';
-COMMENT ON TABLE vt_index_test IS 'Table for testing index operations with Virtual Threads';
-COMMENT ON TABLE vt_transaction_test IS 'Table for testing transaction operations with Virtual Threads';
-COMMENT ON TABLE vt_concurrent_test IS 'Table for testing concurrent operations with Virtual Threads';
+-- Insert sample data for isolation testing
+INSERT INTO vt_isolation_test (id, name, value, updated_by) VALUES
+(1, 'counter1', 0, 'system'),
+(2, 'counter2', 0, 'system');
 
--- Add function to test procedural operations with Virtual Threads
--- H2 doesn't support pg_sleep, so we use SLEEP instead
-CREATE ALIAS vt_test_function FOR """
-    @CODE
-    import java.sql.*;
-    import java.util.concurrent.TimeUnit;
-    
-    @SuppressWarnings("unchecked")
-    public static ResultSet testFunction(Connection conn, int id) throws SQLException {
-        // Simulate some processing time that might cause thread pinning
-        try {
-            TimeUnit.MILLISECONDS.sleep(10);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-        
-        PreparedStatement stmt = conn.prepareStatement(
-            "SELECT id, name, description FROM vt_parent_table WHERE id = ?");
-        stmt.setInt(1, id);
-        return stmt.executeQuery();
-    }
-""";
+-- Insert some sample data for categories
+INSERT INTO vt_categories (category_id, name, description) VALUES 
+(1, 'Electronics', 'Electronic devices and accessories'),
+(2, 'Books', 'Books, e-books, and publications'),
+(3, 'Clothing', 'Apparel and fashion items');
 
--- Add function to test batch operations with Virtual Threads
-CREATE ALIAS vt_batch_process FOR """
-    @CODE
-    import java.sql.*;
-    import java.util.concurrent.TimeUnit;
-    
-    @SuppressWarnings("unchecked")
-    public static int processBatch(Connection conn, int batchId) throws SQLException {
-        // Simulate some processing time that might cause thread pinning
-        try {
-            TimeUnit.MILLISECONDS.sleep(5);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-        
-        PreparedStatement updateStmt = conn.prepareStatement(
-            "UPDATE vt_batch_test SET processed = TRUE, processed_at = CURRENT_TIMESTAMP() " +
-            "WHERE batch_id = ? AND processed = FALSE");
-        updateStmt.setInt(1, batchId);
-        return updateStmt.executeUpdate();
-    }
-""";
+-- Insert some sample data for products
+INSERT INTO vt_products (product_id, category_id, name, price, stock_quantity) VALUES 
+(101, 1, 'Smartphone', 699.99, 50),
+(102, 1, 'Laptop', 1299.99, 25),
+(103, 2, 'Java Programming', 49.99, 100),
+(104, 3, 'T-Shirt', 19.99, 200);
 
--- Add function to test BLOB/CLOB operations with Virtual Threads
-CREATE ALIAS vt_large_object_test FOR """
-    @CODE
-    import java.sql.*;
-    import java.io.*;
-    import java.util.concurrent.TimeUnit;
-    
-    @SuppressWarnings("unchecked")
-    public static boolean testLargeObject(Connection conn, int id, byte[] data, String text) throws SQLException {
-        // Simulate some processing time that might cause thread pinning
-        try {
-            TimeUnit.MILLISECONDS.sleep(15);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-        
-        PreparedStatement stmt = conn.prepareStatement(
-            "UPDATE vt_large_object_test SET binary_data = ?, text_data = ? WHERE id = ?");
-        
-        // Set BLOB data
-        stmt.setBytes(1, data);
-        
-        // Set CLOB data
-        stmt.setString(2, text);
-        
-        stmt.setInt(3, id);
-        return stmt.executeUpdate() > 0;
-    }
-""";
+-- Insert sample data for customers
+INSERT INTO vt_customers (customer_id, first_name, last_name, email, phone) VALUES 
+(1001, 'John', 'Doe', 'john.doe@example.com', '555-123-4567'),
+(1002, 'Jane', 'Smith', 'jane.smith@example.com', '555-987-6543');
 
--- Add function to test concurrent operations with Virtual Threads
-CREATE ALIAS vt_try_acquire_lock FOR """
-    @CODE
-    import java.sql.*;
-    import java.util.concurrent.TimeUnit;
-    
-    @SuppressWarnings("unchecked")
-    public static boolean tryAcquireLock(Connection conn, String resourceId, String owner, int timeoutSeconds) throws SQLException {
-        // Simulate some processing time that might cause thread pinning
-        try {
-            TimeUnit.MILLISECONDS.sleep(5);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-        
-        // First check if lock is available
-        PreparedStatement checkStmt = conn.prepareStatement(
-            "SELECT id FROM vt_concurrent_test " +
-            "WHERE resource_id = ? AND (lock_owner IS NULL OR lock_expires_at < CURRENT_TIMESTAMP())");
-        checkStmt.setString(1, resourceId);
-        ResultSet rs = checkStmt.executeQuery();
-        
-        if (rs.next()) {
-            int id = rs.getInt(1);
-            rs.close();
-            
-            // Try to acquire the lock with optimistic locking using version
-            PreparedStatement updateStmt = conn.prepareStatement(
-                "UPDATE vt_concurrent_test " +
-                "SET lock_owner = ?, lock_acquired_at = CURRENT_TIMESTAMP(), " +
-                "lock_expires_at = DATEADD('SECOND', ?, CURRENT_TIMESTAMP()), " +
-                "version = version + 1, updated_at = CURRENT_TIMESTAMP() " +
-                "WHERE id = ? AND (lock_owner IS NULL OR lock_expires_at < CURRENT_TIMESTAMP())");
-            updateStmt.setString(1, owner);
-            updateStmt.setInt(2, timeoutSeconds);
-            updateStmt.setInt(3, id);
-            
-            return updateStmt.executeUpdate() > 0;
-        }
-        
-        return false;
-    }
-""";
+-- Insert sample data for concurrent testing
+INSERT INTO vt_concurrent_test (id, resource_name, counter) VALUES 
+(1, 'resource1', 0),
+(2, 'resource2', 0),
+(3, 'resource3', 0),
+(4, 'resource4', 0),
+(5, 'resource5', 0);
+
+-- Create a table for testing connection pool behavior with Virtual Threads
+CREATE TABLE vt_connection_test (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    connection_id VARCHAR(100) NOT NULL,  -- Connection identifier
+    thread_name VARCHAR(100) NOT NULL,    -- Thread that acquired the connection
+    acquire_time TIMESTAMP,               -- When connection was acquired
+    release_time TIMESTAMP,               -- When connection was released
+    operation_type VARCHAR(50),           -- Type of operation performed
+    duration_ms BIGINT,                   -- How long the connection was held
+    success BOOLEAN                       -- Whether operation completed successfully
+);
+
+-- Create a table for testing prepared statement caching with Virtual Threads
+CREATE TABLE vt_statement_test (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    statement_id VARCHAR(100) NOT NULL,   -- Statement identifier
+    sql_text CLOB,                        -- The SQL text of the statement
+    parameter_count INT,                  -- Number of parameters
+    execution_count INT DEFAULT 0,        -- How many times executed
+    avg_execution_time DOUBLE,            -- Average execution time
+    last_execution_time TIMESTAMP,        -- When last executed
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

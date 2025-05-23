@@ -208,7 +208,7 @@ public class DefaultComponentXO
           ", repository='" + repository + '\'' +
           ", format='" + format + '\'' +
           ", assets=" + assets +
-          '}';
+          "}";
     }
     return "DefaultComponentXO{data=null}";
   }

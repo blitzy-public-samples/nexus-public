@@ -21,11 +21,19 @@ import org.sonatype.nexus.blobstore.api.OperationType;
 
 /**
  * Marks a blob store method with {@link OperationType} type to collect metrics.
- * <p>
- * With Java 21 support, this annotation can also indicate whether an operation is compatible with
- * Virtual Threads for improved I/O-bound operation performance. Operations that are primarily I/O-bound
- * (such as file system operations, network transfers, and database access) are good candidates for
- * Virtual Thread execution. CPU-intensive operations should continue to use platform threads.
+ * 
+ * <p>This annotation also provides information about the method's compatibility with Java 21 Virtual Threads.
+ * Methods that perform I/O operations (such as reading from or writing to blob stores) are typically good
+ * candidates for Virtual Thread execution, as they can yield the carrier thread during blocking I/O operations,
+ * improving overall system throughput.</p>
+ *
+ * <p>When a method is marked as {@code virtualThreadCompatible=true}, it indicates that the method:
+ * <ul>
+ *   <li>Does not use synchronized blocks or methods that would cause thread pinning</li>
+ *   <li>Does not use thread-local variables in ways incompatible with Virtual Threads</li>
+ *   <li>Is safe to execute on a Virtual Thread without performance degradation</li>
+ * </ul>
+ * </p>
  *
  * @since 3.38
  */
@@ -33,13 +41,34 @@ import org.sonatype.nexus.blobstore.api.OperationType;
 @Target({ElementType.METHOD})
 public @interface MonitoringBlobStoreMetrics
 {
+  /**
+   * The type of operation being performed.
+   *
+   * @return the operation type
+   */
   OperationType operationType();
   
   /**
-   * Indicates if the operation is compatible with Java 21 Virtual Threads.
+   * Indicates whether this operation is compatible with Java 21 Virtual Threads.
    * 
-   * @return true if the operation can be executed on a Virtual Thread, false otherwise
-   * @since 3.60
+   * <p>Operations that are I/O-bound and don't use constructs that cause thread pinning
+   * (such as synchronized blocks) should be marked as compatible with Virtual Threads.</p>
+   * 
+   * <p>When set to {@code true}, the BlobStore implementation may choose to execute this
+   * operation on a Virtual Thread for improved throughput, especially during blocking I/O
+   * operations.</p>
+   *
+   * @return true if the operation is compatible with Virtual Threads, false otherwise
    */
   boolean virtualThreadCompatible() default false;
+  
+  /**
+   * Indicates whether the thread type (platform or virtual) should be tracked in metrics.
+   * 
+   * <p>When set to {@code true}, the metrics collected for this operation will include
+   * information about whether it was executed on a platform thread or a virtual thread.</p>
+   *
+   * @return true if thread type should be tracked in metrics, false otherwise
+   */
+  boolean trackThreadType() default false;
 }

@@ -31,16 +31,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
-/**
- * Tests for {@link CommunityEulaOnboardingItem}.
- * 
- * Validates the behavior of the EULA onboarding item under different conditions:
- * - When running Community Edition with EULA not accepted
- * - When running Community Edition with EULA already accepted
- * - When running Professional Edition (where EULA doesn't apply)
- */
 @ExtendWith(MockitoExtension.class)
-class CommunityEulaOnboardingItemTest
+public class CommunityEulaOnboardingItemTest
     extends TestSupport
 {
   @Mock
@@ -53,38 +45,26 @@ class CommunityEulaOnboardingItemTest
   private CommunityEulaOnboardingItem underTest;
 
   @BeforeEach
-  void setUp() {
+  public void setUp() {
     when(mockApplicationVersion.getEdition()).thenReturn("COMMUNITY");
   }
 
-  /**
-   * Verifies that the onboarding item applies when running Community Edition
-   * and the EULA has not been accepted yet.
-   */
   @Test
-  void appliesWhenCommunityAndEulaNotAccepted() {
+  public void appliesWhenCommunityAndEulaNotAccepted() {
     when(mockGlobalKeyValueStore.getKey("nexus.community.eula.accepted")).thenReturn(Optional.empty());
     assertTrue(underTest.applies());
   }
 
-  /**
-   * Verifies that the onboarding item does not apply when running Community Edition
-   * but the EULA has already been accepted.
-   */
   @Test
-  void appliesWhenCommunityAndEulaAccepted() {
+  public void appliesWhenCommunityAndEulaAccepted() {
     NexusKeyValue eulaStatus = new NexusKeyValue();
     eulaStatus.setValue(Map.of("accepted", true));
     when(mockGlobalKeyValueStore.getKey("nexus.community.eula.accepted")).thenReturn(Optional.of(eulaStatus));
     assertFalse(underTest.applies());
   }
 
-  /**
-   * Verifies that the onboarding item does not apply when running Professional Edition,
-   * regardless of EULA acceptance status.
-   */
   @Test
-  void appliesWhenNotCommunity() {
+  public void appliesWhenNotCommunity() {
     when(mockApplicationVersion.getEdition()).thenReturn("PRO");
     assertFalse(underTest.applies());
   }

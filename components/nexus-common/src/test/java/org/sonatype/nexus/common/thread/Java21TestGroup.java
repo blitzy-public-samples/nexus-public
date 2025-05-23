@@ -13,24 +13,23 @@
 package org.sonatype.nexus.common.thread;
 
 /**
- * Marker interface for tests that validate Java 21 specific features.
+ * Marker interface for tests that require Java 21 features.
  * <p>
- * Tests marked with this category will be included in Java 21 test suites
- * and validate functionality specific to Java 21 features such as:
- * <ul>
- *   <li>Virtual Threads</li>
- *   <li>Pattern Matching for switch</li>
- *   <li>Record Patterns</li>
- *   <li>String Templates</li>
- *   <li>Sequenced Collections</li>
- * </ul>
+ * This interface is used with JUnit 4's @Category annotation to mark tests that
+ * specifically validate behavior when running with Java 21 features.
  * <p>
- * This category helps identify tests that specifically validate Java 21 features
- * and may be executed selectively using the java21-tests Maven profile.
+ * Example usage:
+ * <pre>
+ * {@code
+ * @Test
+ * @Category(Java21TestGroup.class)
+ * public void testMethodWithJava21Features() {
+ *   // Test code that requires Java 21 features
+ * }
+ * }
+ * </pre>
  *
  * @since 3.60
  */
-public interface Java21TestGroup
-{
-  // Marker interface - no methods
+public interface Java21TestGroup {
 }

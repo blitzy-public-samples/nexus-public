@@ -12,11 +12,9 @@
  */
 package org.sonatype.nexus.repository.content.event.asset;
 
-import java.util.Objects;
-import java.util.Optional;
-
 import org.sonatype.nexus.repository.content.Asset;
-import org.sonatype.nexus.repository.content.AssetData;
+
+import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Event sent whenever an {@link Asset} is uploaded.
@@ -27,27 +25,13 @@ public class AssetUploadedEvent
     extends AssetUpdatedEvent
 {
   /**
-   * Creates a new asset uploaded event.
+   * Constructs a new event with the given asset.
    *
    * @param asset the uploaded asset (must not be null)
    * @throws NullPointerException if asset is null
    */
   public AssetUploadedEvent(final Asset asset) {
-    super(Objects.requireNonNull(asset, "Asset cannot be null"));
-  }
-
-  /**
-   * Extracts asset information using pattern matching.
-   * 
-   * @return Optional containing the asset path if available
-   * @since 3.41
-   */
-  public Optional<String> extractAssetPath() {
-    Asset asset = getAsset();
-    if (asset instanceof Asset a && a.data() instanceof AssetData(var path, var kind, var component, var blob, var lastDownloaded, var blobStoreName, var blobSize)) {
-      return Optional.of(path);
-    }
-    return Optional.empty();
+    super(checkNotNull(asset, "Asset cannot be null"));
   }
 
   @Override

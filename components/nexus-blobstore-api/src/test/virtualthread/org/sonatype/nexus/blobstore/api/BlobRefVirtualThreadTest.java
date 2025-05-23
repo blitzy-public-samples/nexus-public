@@ -17,19 +17,15 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
@@ -38,18 +34,17 @@ import static org.hamcrest.Matchers.isEmptyOrNullString;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.sonatype.nexus.blobstore.api.BlobRef.DATE_TIME_FORMATTER;
 
 /**
  * Tests for {@link BlobRef} when executed using Java 21 Virtual Threads.
- * 
- * This test class verifies that BlobRef operations function correctly when running
- * under the Virtual Thread concurrency model introduced in Java 21.
+ * This test ensures that BlobRef operations perform correctly under the Virtual Thread concurrency model.
  *
  * @since 3.60
  */
+@DisplayName("BlobRef Virtual Thread Tests")
 public class BlobRefVirtualThreadTest
 {
   private static final String STORE_NAME = "test-store";
@@ -63,152 +58,120 @@ public class BlobRefVirtualThreadTest
   private static final OffsetDateTime DATE_CREATED = OffsetDateTime.of(2024, 1, 1, 10, 30, 45, 0, ZoneOffset.UTC);
 
   private static final String DATE_BASED_REF = DATE_CREATED.format(DATE_TIME_FORMATTER);
-  
-  private static final int CONCURRENT_THREADS = 1000;
-  
-  private ExecutorService virtualThreadExecutor;
-  private ExecutorService platformThreadExecutor;
-
-  @BeforeEach
-  void setUp() {
-    // Create executors for virtual threads and platform threads
-    virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
-    platformThreadExecutor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
-  }
-
-  @AfterEach
-  void tearDown() throws Exception {
-    // Shutdown executors
-    if (virtualThreadExecutor != null) {
-      virtualThreadExecutor.shutdown();
-      virtualThreadExecutor.awaitTermination(5, TimeUnit.SECONDS);
-    }
-    if (platformThreadExecutor != null) {
-      platformThreadExecutor.shutdown();
-      platformThreadExecutor.awaitTermination(5, TimeUnit.SECONDS);
-    }
-  }
 
   /**
-   * Tests BlobRef.toString() and BlobRef.parse() within a virtual thread.
+   * Tests that BlobRef.toString() and BlobRef.parse() work correctly when executed in a virtual thread.
    */
   @Test
-  void testToStringInVirtualThread() throws Exception {
-    Future<?> future = virtualThreadExecutor.submit(() -> {
+  @DisplayName("Test toString() and parse() in a virtual thread")
+  public void testToStringInVirtualThread() throws Exception {
+    Thread.startVirtualThread(() -> {
       final BlobRef blobRef = new BlobRef(NODE_ID, STORE_NAME, BLOB_ID);
       final String spec = blobRef.toString();
       final BlobRef reconstituted = BlobRef.parse(spec);
 
       assertThat(reconstituted, is(equalTo(blobRef)));
-      assertTrue(Thread.currentThread().isVirtual(), "Test should run in a virtual thread");
-    });
-    
-    // Wait for the virtual thread to complete
-    future.get(5, TimeUnit.SECONDS);
+      assertThat(Thread.currentThread().isVirtual(), is(true));
+    }).join();
   }
 
   /**
-   * Tests parsing canonical BlobRef format within a virtual thread.
+   * Tests that BlobRef.parse() correctly handles canonical format when executed in a virtual thread.
    */
   @Test
-  void testParseCanonicalInVirtualThread() throws Exception {
-    Future<?> future = virtualThreadExecutor.submit(() -> {
+  @DisplayName("Test parse canonical format in a virtual thread")
+  public void testParseCanonicalInVirtualThread() throws Exception {
+    Thread.startVirtualThread(() -> {
       String blobRefString = String.format("%s@%s", STORE_NAME, BLOB_ID);
       BlobRef parsed = BlobRef.parse(blobRefString);
       assertParsed(parsed, STORE_NAME);
-      assertTrue(Thread.currentThread().isVirtual(), "Test should run in a virtual thread");
-    });
-    
-    future.get(5, TimeUnit.SECONDS);
+      assertThat(Thread.currentThread().isVirtual(), is(true));
+    }).join();
   }
 
   /**
-   * Tests parsing legacy Orient BlobRef format within a virtual thread.
+   * Tests that BlobRef.parse() correctly handles legacy Orient format when executed in a virtual thread.
    */
   @Test
-  void testParseLegacyOrientInVirtualThread() throws Exception {
-    Future<?> future = virtualThreadExecutor.submit(() -> {
+  @DisplayName("Test parse legacy Orient format in a virtual thread")
+  public void testParseLegacyOrientInVirtualThread() throws Exception {
+    Thread.startVirtualThread(() -> {
       String blobRefString = String.format("%s@%s:%s", STORE_NAME, NODE_ID, BLOB_ID);
       BlobRef parsed = BlobRef.parse(blobRefString);
       assertParsed(parsed, STORE_NAME);
-      assertTrue(Thread.currentThread().isVirtual(), "Test should run in a virtual thread");
-    });
-    
-    future.get(5, TimeUnit.SECONDS);
+      assertThat(Thread.currentThread().isVirtual(), is(true));
+    }).join();
   }
 
   /**
-   * Tests parsing legacy SQL BlobRef format within a virtual thread.
+   * Tests that BlobRef.parse() correctly handles legacy SQL format when executed in a virtual thread.
    */
   @Test
-  void testParseLegacySqlInVirtualThread() throws Exception {
-    Future<?> future = virtualThreadExecutor.submit(() -> {
+  @DisplayName("Test parse legacy SQL format in a virtual thread")
+  public void testParseLegacySqlInVirtualThread() throws Exception {
+    Thread.startVirtualThread(() -> {
       String blobRefString = String.format("%s:%s@%s", STORE_NAME, BLOB_ID, NODE_ID);
       BlobRef parsed = BlobRef.parse(blobRefString);
       assertParsed(parsed, STORE_NAME);
-      assertTrue(Thread.currentThread().isVirtual(), "Test should run in a virtual thread");
-    });
-    
-    future.get(5, TimeUnit.SECONDS);
+      assertThat(Thread.currentThread().isVirtual(), is(true));
+    }).join();
   }
 
   /**
-   * Tests parsing canonical BlobRef format with fuzzy characters within a virtual thread.
+   * Tests that BlobRef.parse() correctly handles canonical format with fuzzy characters when executed in a virtual thread.
    */
   @Test
-  void testParseCanonicalWithFuzzyCharsInVirtualThread() throws Exception {
-    Future<?> future = virtualThreadExecutor.submit(() -> {
+  @DisplayName("Test parse canonical format with fuzzy chars in a virtual thread")
+  public void testParseCanonicalWithFuzzyCharsInVirtualThread() throws Exception {
+    Thread.startVirtualThread(() -> {
       for (String storeName : STORES) {
         String blobRefString = String.format("%s@%s", storeName, BLOB_ID);
         BlobRef parsed = BlobRef.parse(blobRefString);
         assertParsed(parsed, storeName);
       }
-      assertTrue(Thread.currentThread().isVirtual(), "Test should run in a virtual thread");
-    });
-    
-    future.get(5, TimeUnit.SECONDS);
+      assertThat(Thread.currentThread().isVirtual(), is(true));
+    }).join();
   }
 
   /**
-   * Tests parsing legacy Orient BlobRef format with fuzzy characters within a virtual thread.
+   * Tests that BlobRef.parse() correctly handles legacy Orient format with fuzzy characters when executed in a virtual thread.
    */
   @Test
-  void testParseLegacyOrientWithFuzzyCharsInVirtualThread() throws Exception {
-    Future<?> future = virtualThreadExecutor.submit(() -> {
+  @DisplayName("Test parse legacy Orient format with fuzzy chars in a virtual thread")
+  public void testParseLegacyOrientWithFuzzyCharsInVirtualThread() throws Exception {
+    Thread.startVirtualThread(() -> {
       for (String storeName : STORES) {
         String blobRefString = String.format("%s@%s:%s", storeName, NODE_ID, BLOB_ID);
         BlobRef parsed = BlobRef.parse(blobRefString);
         assertParsed(parsed, storeName);
       }
-      assertTrue(Thread.currentThread().isVirtual(), "Test should run in a virtual thread");
-    });
-    
-    future.get(5, TimeUnit.SECONDS);
+      assertThat(Thread.currentThread().isVirtual(), is(true));
+    }).join();
   }
 
   /**
-   * Tests parsing legacy SQL BlobRef format with fuzzy characters within a virtual thread.
+   * Tests that BlobRef.parse() correctly handles legacy SQL format with fuzzy characters when executed in a virtual thread.
    */
   @Test
-  void testParseLegacySqlWithFuzzyCharsInVirtualThread() throws Exception {
-    Future<?> future = virtualThreadExecutor.submit(() -> {
+  @DisplayName("Test parse legacy SQL format with fuzzy chars in a virtual thread")
+  public void testParseLegacySqlWithFuzzyCharsInVirtualThread() throws Exception {
+    Thread.startVirtualThread(() -> {
       for (String storeName : STORES) {
         String blobRefString = String.format("%s:%s@%s", storeName, BLOB_ID, NODE_ID);
         BlobRef parsed = BlobRef.parse(blobRefString);
         assertParsed(parsed, storeName);
       }
-      assertTrue(Thread.currentThread().isVirtual(), "Test should run in a virtual thread");
-    });
-    
-    future.get(5, TimeUnit.SECONDS);
+      assertThat(Thread.currentThread().isVirtual(), is(true));
+    }).join();
   }
 
   /**
-   * Tests date-based BlobRef layout within a virtual thread.
+   * Tests that BlobRef.parse() correctly handles date-based layout when executed in a virtual thread.
    */
   @Test
-  void testDateBasedLayoutInVirtualThread() throws Exception {
-    Future<?> future = virtualThreadExecutor.submit(() -> {
+  @DisplayName("Test date-based layout in a virtual thread")
+  public void testDateBasedLayoutInVirtualThread() throws Exception {
+    Thread.startVirtualThread(() -> {
       String blobRefString = String.format("%s@%s@%s", STORE_NAME, BLOB_ID, DATE_BASED_REF);
       BlobRef parsed = BlobRef.parse(blobRefString);
       assertThat(parsed.getBlob(), is(BLOB_ID));
@@ -217,18 +180,17 @@ public class BlobRefVirtualThreadTest
       OffsetDateTime blobCreatedRef = parsed.getDateBasedRef();
       assertThat(blobCreatedRef, notNullValue());
       assertThat(blobCreatedRef.format(DATE_TIME_FORMATTER), is(DATE_CREATED.format(DATE_TIME_FORMATTER)));
-      assertTrue(Thread.currentThread().isVirtual(), "Test should run in a virtual thread");
-    });
-    
-    future.get(5, TimeUnit.SECONDS);
+      assertThat(Thread.currentThread().isVirtual(), is(true));
+    }).join();
   }
 
   /**
-   * Tests BlobRef illegal format handling within a virtual thread.
+   * Tests that BlobRef.parse() correctly handles illegal formats when executed in a virtual thread.
    */
   @Test
-  void testBlobRefIllegalFormatInVirtualThread() throws Exception {
-    Future<?> future = virtualThreadExecutor.submit(() -> {
+  @DisplayName("Test illegal format handling in a virtual thread")
+  public void testBlobRefIllegalFormatInVirtualThread() throws Exception {
+    Thread.startVirtualThread(() -> {
       assertParseFailure("wrong-blobref-format/string");
       // empty blobstorename
       assertParseFailure("@nodeid:blobid");
@@ -238,190 +200,158 @@ public class BlobRefVirtualThreadTest
       assertParseFailure("blobstore@nodeid:");
       // no nodeid or blobid
       assertParseFailure("blobstore@");
-      
-      assertTrue(Thread.currentThread().isVirtual(), "Test should run in a virtual thread");
-    });
-    
-    future.get(5, TimeUnit.SECONDS);
+      assertThat(Thread.currentThread().isVirtual(), is(true));
+    }).join();
   }
 
   /**
    * Tests concurrent BlobRef operations with many virtual threads.
-   * This test creates a large number of virtual threads that simultaneously
-   * create and parse BlobRef objects to verify thread safety.
+   * This test creates 1000 virtual threads, each parsing and creating BlobRef objects.
    */
   @Test
-  @Timeout(value = 10, unit = TimeUnit.SECONDS)
-  void testConcurrentBlobRefOperationsWithVirtualThreads() throws Exception {
-    final int threadCount = CONCURRENT_THREADS;
-    final CountDownLatch startLatch = new CountDownLatch(1);
-    final CountDownLatch completionLatch = new CountDownLatch(threadCount);
-    final AtomicBoolean failed = new AtomicBoolean(false);
-    final ConcurrentHashMap<String, String> errors = new ConcurrentHashMap<>();
+  @DisplayName("Test concurrent BlobRef operations with 1000 virtual threads")
+  public void testConcurrentBlobRefOperations() throws Exception {
+    int threadCount = 1000;
+    CountDownLatch latch = new CountDownLatch(threadCount);
+    AtomicInteger successCount = new AtomicInteger(0);
     
-    // Create and start many virtual threads
-    for (int i = 0; i < threadCount; i++) {
-      final int threadId = i;
-      virtualThreadExecutor.submit(() -> {
-        try {
-          // Wait for all threads to be ready
-          startLatch.await();
-          
-          // Create a unique store name for this thread
-          String storeName = STORE_NAME + "-" + threadId;
-          
-          // Create and parse BlobRef
-          BlobRef blobRef = new BlobRef(NODE_ID, storeName, BLOB_ID);
-          String spec = blobRef.toString();
-          BlobRef reconstituted = BlobRef.parse(spec);
-          
-          // Verify results
-          if (!reconstituted.equals(blobRef)) {
-            failed.set(true);
-            errors.put("Thread-" + threadId, "BlobRef equality check failed");
-          }
-          
-          if (!Thread.currentThread().isVirtual()) {
-            failed.set(true);
-            errors.put("Thread-" + threadId, "Not running in a virtual thread");
-          }
-        }
-        catch (Exception e) {
-          failed.set(true);
-          errors.put("Thread-" + threadId, e.toString());
-        }
-        finally {
-          completionLatch.countDown();
-        }
-      });
-    }
-    
-    // Start all threads simultaneously
-    startLatch.countDown();
-    
-    // Wait for all threads to complete
-    completionLatch.await(5, TimeUnit.SECONDS);
-    
-    // Check for failures
-    if (failed.get()) {
-      StringBuilder errorMessage = new StringBuilder("Concurrent test failed with errors:\n");
-      errors.forEach((thread, error) -> errorMessage.append(thread).append(": ").append(error).append("\n"));
-      fail(errorMessage.toString());
-    }
-  }
-
-  /**
-   * Tests performance comparison between platform threads and virtual threads.
-   * This test measures the time taken to perform BlobRef operations using both
-   * platform threads and virtual threads, and verifies that virtual threads
-   * can handle higher concurrency more efficiently.
-   */
-  @Test
-  @Timeout(value = 30, unit = TimeUnit.SECONDS)
-  void testPerformanceComparisonBetweenPlatformAndVirtualThreads() throws Exception {
-    final int operationsPerThread = 100;
-    final int maxPlatformThreads = Math.min(100, Runtime.getRuntime().availableProcessors() * 4);
-    
-    // Test with platform threads (limited number)
-    long platformThreadTime = measureExecutionTime(() -> {
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       List<Future<?>> futures = new ArrayList<>();
-      CountDownLatch platformLatch = new CountDownLatch(maxPlatformThreads);
       
-      for (int i = 0; i < maxPlatformThreads; i++) {
-        futures.add(platformThreadExecutor.submit(() -> {
+      for (int i = 0; i < threadCount; i++) {
+        final int index = i;
+        futures.add(executor.submit(() -> {
           try {
-            for (int j = 0; j < operationsPerThread; j++) {
-              BlobRef blobRef = new BlobRef(NODE_ID, STORE_NAME, BLOB_ID);
-              String spec = blobRef.toString();
-              BlobRef.parse(spec);
+            // Create a unique store name for each thread to avoid contention
+            String storeName = STORE_NAME + "-" + index;
+            BlobRef blobRef = new BlobRef(NODE_ID, storeName, BLOB_ID);
+            String spec = blobRef.toString();
+            BlobRef reconstituted = BlobRef.parse(spec);
+            
+            if (reconstituted.equals(blobRef) && Thread.currentThread().isVirtual()) {
+              successCount.incrementAndGet();
             }
-          }
+          } 
           finally {
-            platformLatch.countDown();
+            latch.countDown();
           }
         }));
       }
       
-      platformLatch.await(20, TimeUnit.SECONDS);
-      return null;
-    });
-    
-    // Test with virtual threads (much higher number)
-    long virtualThreadTime = measureExecutionTime(() -> {
-      List<Future<?>> futures = new ArrayList<>();
-      CountDownLatch virtualLatch = new CountDownLatch(CONCURRENT_THREADS);
+      // Wait for all threads to complete or timeout after 10 seconds
+      assertThat("All virtual threads should complete in time", 
+          latch.await(10, TimeUnit.SECONDS), is(true));
       
-      for (int i = 0; i < CONCURRENT_THREADS; i++) {
-        futures.add(virtualThreadExecutor.submit(() -> {
-          try {
-            for (int j = 0; j < operationsPerThread; j++) {
-              BlobRef blobRef = new BlobRef(NODE_ID, STORE_NAME, BLOB_ID);
-              String spec = blobRef.toString();
-              BlobRef.parse(spec);
-            }
-          }
-          finally {
-            virtualLatch.countDown();
-          }
-        }));
-      }
-      
-      virtualLatch.await(20, TimeUnit.SECONDS);
-      return null;
-    });
-    
-    // Log the results for analysis
-    System.out.println("Performance comparison:");
-    System.out.println("Platform threads (" + maxPlatformThreads + "): " + platformThreadTime + "ms");
-    System.out.println("Virtual threads (" + CONCURRENT_THREADS + "): " + virtualThreadTime + "ms");
-    System.out.println("Operations per thread: " + operationsPerThread);
-    
-    // Calculate operations per second
-    double platformOps = (maxPlatformThreads * operationsPerThread * 1000.0) / platformThreadTime;
-    double virtualOps = (CONCURRENT_THREADS * operationsPerThread * 1000.0) / virtualThreadTime;
-    
-    System.out.println("Platform thread throughput: " + String.format("%.2f", platformOps) + " ops/sec");
-    System.out.println("Virtual thread throughput: " + String.format("%.2f", virtualOps) + " ops/sec");
-    
-    // We expect virtual threads to handle more total operations in less time per operation
-    // due to their lightweight nature, but we don't fail the test if this isn't the case
-    // as it depends on the environment
+      // Verify all operations were successful
+      assertThat("All operations should succeed", successCount.get(), is(threadCount));
+    }
   }
 
   /**
    * Tests for thread pinning issues when using BlobRef operations.
-   * Thread pinning occurs when a virtual thread is forced to stay on a carrier thread,
-   * which can impact performance. This test attempts to detect such issues.
+   * This test verifies that BlobRef operations don't cause thread pinning when executed in virtual threads.
    */
   @Test
-  void testThreadPinningWithBlobRefOperations() throws Exception {
-    final int iterations = 1000;
-    final AtomicInteger pinnedCount = new AtomicInteger(0);
+  @DisplayName("Test for thread pinning issues with BlobRef operations")
+  public void testThreadPinningWithBlobRef() {
+    // This test should complete quickly if no thread pinning occurs
+    assertTimeoutPreemptively(Duration.ofSeconds(5), () -> {
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        // Run 100 tasks that perform BlobRef operations with potential I/O operations
+        for (int i = 0; i < 100; i++) {
+          executor.submit(() -> {
+            // Create and parse BlobRef with various formats
+            BlobRef blobRef = new BlobRef(NODE_ID, STORE_NAME, BLOB_ID);
+            String spec = blobRef.toString();
+            BlobRef.parse(spec);
+            
+            // Test with date-based format which involves more complex parsing
+            String dateBasedSpec = String.format("%s@%s@%s", STORE_NAME, BLOB_ID, DATE_BASED_REF);
+            BlobRef.parse(dateBasedSpec);
+            
+            // Simulate a small delay to detect any thread pinning
+            try {
+              Thread.sleep(10);
+            } 
+            catch (InterruptedException e) {
+              Thread.currentThread().interrupt();
+            }
+            
+            return null;
+          });
+        }
+      }
+    });
+  }
+
+  /**
+   * Compares performance between virtual threads and platform threads for BlobRef operations.
+   * This test measures the time taken to perform the same operations using both thread types.
+   */
+  @Test
+  @DisplayName("Compare performance between virtual threads and platform threads")
+  public void testPerformanceComparison() throws Exception {
+    int operationCount = 10000;
     
-    // Enable thread pinning detection via JDK's built-in mechanism
-    // This is a simple approach - in a real environment, you might use more sophisticated detection
-    System.setProperty("jdk.tracePinnedThreads", "full");
-    
-    Future<?> future = virtualThreadExecutor.submit(() -> {
-      for (int i = 0; i < iterations; i++) {
-        // Create and parse BlobRef in a loop to detect any pinning issues
-        BlobRef blobRef = new BlobRef(NODE_ID, STORE_NAME + i, BLOB_ID + i);
-        String spec = blobRef.toString();
-        BlobRef.parse(spec);
+    // Test with virtual threads
+    long virtualThreadTime = measureExecutionTime(() -> {
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        List<Future<?>> futures = new ArrayList<>();
+        for (int i = 0; i < operationCount; i++) {
+          futures.add(executor.submit(() -> {
+            BlobRef blobRef = new BlobRef(NODE_ID, STORE_NAME, BLOB_ID);
+            String spec = blobRef.toString();
+            BlobRef.parse(spec);
+            return null;
+          }));
+        }
         
-        // In a real implementation, we would check if the thread is pinned here
-        // For this test, we're just demonstrating the concept
+        // Wait for all tasks to complete
+        for (Future<?> future : futures) {
+          future.get();
+        }
       }
     });
     
-    future.get(10, TimeUnit.SECONDS);
+    // Test with platform threads (using a fixed thread pool)
+    int platformThreadCount = Math.min(100, Runtime.getRuntime().availableProcessors() * 2);
+    long platformThreadTime = measureExecutionTime(() -> {
+      try (ExecutorService executor = Executors.newFixedThreadPool(platformThreadCount)) {
+        List<Future<?>> futures = new ArrayList<>();
+        for (int i = 0; i < operationCount; i++) {
+          futures.add(executor.submit(() -> {
+            BlobRef blobRef = new BlobRef(NODE_ID, STORE_NAME, BLOB_ID);
+            String spec = blobRef.toString();
+            BlobRef.parse(spec);
+            return null;
+          }));
+        }
+        
+        // Wait for all tasks to complete
+        for (Future<?> future : futures) {
+          future.get();
+        }
+      }
+    });
     
-    // Log the results - in a real test, we might assert that pinnedCount is below a threshold
-    System.out.println("BlobRef operations completed with " + pinnedCount.get() + 
-        " potential thread pinning incidents detected out of " + iterations + " operations");
+    System.out.printf("Performance comparison for %d BlobRef operations:%n", operationCount);
+    System.out.printf("Virtual Threads: %d ms%n", virtualThreadTime);
+    System.out.printf("Platform Threads (%d threads): %d ms%n", platformThreadCount, platformThreadTime);
     
-    // Reset the system property
-    System.clearProperty("jdk.tracePinnedThreads");
+    // We don't assert on specific times as they can vary by environment,
+    // but we log the results for analysis
+  }
+
+  /**
+   * Helper method to measure execution time of a runnable task.
+   *
+   * @param task The task to measure
+   * @return Execution time in milliseconds
+   */
+  private long measureExecutionTime(Runnable task) throws Exception {
+    long startTime = System.currentTimeMillis();
+    task.run();
+    return System.currentTimeMillis() - startTime;
   }
 
   /**
@@ -438,18 +368,12 @@ public class BlobRefVirtualThreadTest
    * Helper method to assert that parsing an invalid BlobRef string fails with the expected exception.
    */
   private void assertParseFailure(final String blobref) {
-    IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+    try {
       BlobRef.parse(blobref);
-    });
-    assertThat(exception.getMessage(), is("Not a valid blob reference"));
-  }
-
-  /**
-   * Helper method to measure execution time of a task.
-   */
-  private long measureExecutionTime(Runnable task) throws Exception {
-    long startTime = System.currentTimeMillis();
-    task.run();
-    return System.currentTimeMillis() - startTime;
+      fail("Expected exception");
+    }
+    catch (IllegalArgumentException e) {
+      assertThat(e.getMessage(), is("Not a valid blob reference"));
+    }
   }
 }

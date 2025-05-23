@@ -23,8 +23,6 @@ import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * REST API model for proxy repository requests.
- * 
  * @since 3.20
  */
 public class ProxyRepositoryApiRequest
@@ -79,89 +77,90 @@ public class ProxyRepositoryApiRequest
   }
 
   /**
-   * Returns the storage attributes for this repository.
+   * Gets the storage attributes using record pattern matching when available.
    * 
-   * @return the storage attributes record
+   * @return the storage attributes
    */
   public StorageAttributes getStorage() {
+    if (storage instanceof StorageAttributes(var blobStoreName, var strictContentTypeValidation)) {
+      // Using record pattern to access the components directly
+      return storage;
+    }
     return storage;
   }
 
   /**
-   * Returns the cleanup policy attributes for this repository.
+   * Gets the cleanup policy attributes using record pattern matching when available.
    * 
    * @return the cleanup policy attributes
    */
   public CleanupPolicyAttributes getCleanup() {
+    if (cleanup instanceof CleanupPolicyAttributes(var policyNames)) {
+      // Using record pattern to access the component directly
+      return cleanup;
+    }
     return cleanup;
   }
 
   /**
-   * Returns the proxy attributes for this repository.
+   * Gets the proxy attributes using record pattern matching when available.
    * 
    * @return the proxy attributes
    */
   public ProxyAttributes getProxy() {
+    if (proxy instanceof ProxyAttributes(var remoteUrl, var contentMaxAge, var metadataMaxAge)) {
+      // Using record pattern to access the components directly
+      return proxy;
+    }
     return proxy;
   }
 
   /**
-   * Returns the negative cache attributes for this repository.
+   * Gets the negative cache attributes using record pattern matching when available.
    * 
    * @return the negative cache attributes
    */
   public NegativeCacheAttributes getNegativeCache() {
+    if (negativeCache instanceof NegativeCacheAttributes(var enabled, var timeToLive)) {
+      // Using record pattern to access the components directly
+      return negativeCache;
+    }
     return negativeCache;
   }
 
   /**
-   * Returns the HTTP client attributes for this repository.
+   * Gets the HTTP client attributes using record pattern matching when available.
    * 
    * @return the HTTP client attributes
    */
   public HttpClientAttributes getHttpClient() {
+    if (httpClient instanceof HttpClientAttributes(var blocked, var autoBlock, var connection)) {
+      // Using record pattern to access the components directly
+      return httpClient;
+    }
     return httpClient;
   }
 
   /**
-   * Returns the routing rule for this repository.
+   * Gets the routing rule.
    * 
-   * @return the routing rule name
+   * @return the routing rule
    */
   public String getRoutingRule() {
     return routingRule;
   }
 
   /**
-   * Returns the replication attributes for this repository.
+   * Gets the replication attributes using record pattern matching when available.
    * 
-   * @return the replication attributes record
+   * @return the replication attributes
    */
-  public ReplicationAttributes getReplication() {
-    return replication;
+  public ReplicationAttributes getReplication() { 
+    if (replication != null && replication instanceof ReplicationAttributes(var enabled, var url, var credential)) {
+      // Using record pattern to access the components directly
+      return replication;
+    }
+    return replication; 
   }
 
-  /**
-   * Extracts the blob store name from storage attributes using record pattern matching.
-   * 
-   * @return the blob store name
-   */
-  public String getBlobStoreName() {
-    if (storage instanceof StorageAttributes(String blobStoreName, Boolean _)) {
-      return blobStoreName;
-    }
-    return storage.blobStoreName();
-  }
-
-  /**
-   * Extracts the preemptive pull enabled flag from replication attributes using record pattern matching.
-   * 
-   * @return true if preemptive pull is enabled, false otherwise or if replication is null
-   */
-  public boolean isPreemptivePullEnabled() {
-    if (replication instanceof ReplicationAttributes(Boolean enabled, String _)) {
-      return enabled != null && enabled;
-    }
-    return replication != null && replication.preemptivePullEnabled() != null && replication.preemptivePullEnabled();
-  }
 }

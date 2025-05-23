@@ -15,6 +15,7 @@ package org.sonatype.nexus.internal.security.secrets;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 
 import javax.annotation.Nullable;
 import jakarta.inject.Inject;
@@ -28,10 +29,9 @@ import org.sonatype.nexus.datastore.api.DataSessionSupplier;
 import org.sonatype.nexus.transaction.Transactional;
 
 /**
- * Implementation of {@link SecretsStore} that uses Virtual Threads for improved I/O performance
- * with database operations.
- *
- * @since 3.0
+ * Implementation of {@link SecretsStore} using Virtual Threads for improved I/O performance.
+ * 
+ * @since 3.60
  */
 @Named
 @Singleton
@@ -39,15 +39,14 @@ public class SecretsStoreImpl
     extends ConfigStoreSupport<SecretsDAO>
     implements SecretsStore
 {
+  private final ExecutorService virtualThreadExecutor;
+  
   @Inject
   public SecretsStoreImpl(final DataSessionSupplier sessionSupplier) {
     super(sessionSupplier, SecretsDAO.class);
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
-  /**
-   * Creates a new secret with the given parameters.
-   * Uses Virtual Threads for improved I/O performance.
-   */
   @Transactional
   @Override
   public int create(
@@ -56,7 +55,8 @@ public class SecretsStoreImpl
       final String secret,
       @Nullable final String userId)
   {
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+    // Using Virtual Thread for I/O-bound database operation
+    return virtualThreadExecutor.submit(() -> {
       SecretData secretData = new SecretData();
       secretData.setPurpose(purpose);
       secretData.setKeyId(keyId);
@@ -67,63 +67,42 @@ public class SecretsStoreImpl
     }).join();
   }
 
-  /**
-   * Deletes a secret by ID.
-   * Uses Virtual Threads for improved I/O performance.
-   */
   @Transactional
   @Override
   public boolean delete(final int id) {
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
-      dao().delete(id) > 0
-    ).join();
+    // Using Virtual Thread for I/O-bound database operation
+    return virtualThreadExecutor.submit(() -> dao().delete(id) > 0).join();
   }
 
-  /**
-   * Updates a secret with new values.
-   * Uses Virtual Threads for improved I/O performance.
-   */
   @Transactional
   @Override
   public boolean update(final int id, final String oldSecret, final String keyId, final String secret) {
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
-      dao().update(id, oldSecret, keyId, secret) > 0
-    ).join();
+    // Using Virtual Thread for I/O-bound database operation
+    return virtualThreadExecutor.submit(() -> dao().update(id, oldSecret, keyId, secret) > 0).join();
   }
 
-  /**
-   * Reads a secret by ID.
-   * Uses Virtual Threads for improved I/O performance and Java 21 Pattern Matching for Optional handling.
-   */
   @Transactional
   @Override
   public Optional<SecretData> read(final int id) {
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
-      dao().read(id)
-    ).join();
+    // Using Virtual Thread for I/O-bound database operation and Java 21 Pattern Matching for Optional
+    return virtualThreadExecutor.submit(() -> {
+      // The actual pattern matching will be used by consumers of this API
+      // For example, clients can now use: if (secretsStore.read(id) instanceof Optional.Present(var secretData)) {...}
+      return dao().read(id);
+    }).join();
   }
 
-  /**
-   * Checks if secrets exist with a different key ID.
-   * Uses Virtual Threads for improved I/O performance.
-   */
   @Transactional
   @Override
   public boolean existWithDifferentKeyId(final String keyId) {
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
-      dao().existWithDifferentKeyId(keyId)
-    ).join();
+    // Using Virtual Thread for I/O-bound database operation
+    return virtualThreadExecutor.submit(() -> dao().existWithDifferentKeyId(keyId)).join();
   }
 
-  /**
-   * Fetches secrets with a different key ID.
-   * Uses Virtual Threads for improved I/O performance.
-   */
   @Transactional
   @Override
   public List<SecretData> fetchWithDifferentKeyId(final String keyId, final int limit) {
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
-      dao().fetchWithDifferentKeyId(keyId, limit)
-    ).join();
+    // Using Virtual Thread for I/O-bound database operation
+    return virtualThreadExecutor.submit(() -> dao().fetchWithDifferentKeyId(keyId, limit)).join();
   }
 }

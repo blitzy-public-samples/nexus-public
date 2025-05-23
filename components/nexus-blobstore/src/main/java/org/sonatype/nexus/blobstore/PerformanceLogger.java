@@ -13,15 +13,17 @@
 package org.sonatype.nexus.blobstore;
 
 import java.io.InputStream;
-import java.lang.StringTemplate;
 
 import org.sonatype.goodies.common.Loggers;
 import org.sonatype.nexus.blobstore.api.Blob;
 
 import org.slf4j.Logger;
 
+// Import for Java 21 String Templates
+import static java.lang.StringTemplate.STR;
+
 /**
- * Logs blob store performance statistics.
+ * Logs blob store performance statistics, including Virtual Thread specific metrics.
  *
  * @since 3.21
  */
@@ -29,17 +31,28 @@ public class PerformanceLogger
 {
 
   private static final String IOSTAT_LOGGER_NAME = "org.sonatype.nexus.blobstore.iostat";
+  private static final String VIRTUAL_THREAD_IOSTAT_LOGGER_NAME = "org.sonatype.nexus.blobstore.iostat.virtualthread";
+  private static final String THREAD_PINNING_LOGGER_NAME = "org.sonatype.nexus.blobstore.iostat.threadpinning";
 
   private final Logger log = Loggers.getLogger(IOSTAT_LOGGER_NAME);
+  private final Logger virtualThreadLog = Loggers.getLogger(VIRTUAL_THREAD_IOSTAT_LOGGER_NAME);
+  private final Logger threadPinningLog = Loggers.getLogger(THREAD_PINNING_LOGGER_NAME);
 
   private String blobStoreName = "<not set>";
+  
+  // Threshold in milliseconds to consider a virtual thread operation as potentially pinned
+  private static final double PINNING_THRESHOLD_MS = 20.0;
 
   public void setBlobStoreName(final String blobStoreName) {
     this.blobStoreName = blobStoreName;
   }
 
+  /**
+   * Wraps the input stream with performance logging if debug is enabled.
+   * Detects if running in a virtual thread and applies appropriate monitoring.
+   */
   public InputStream maybeWrapForPerformanceLogging(final InputStream inputStream) {
-    if (log.isDebugEnabled()) {
+    if (log.isDebugEnabled() || virtualThreadLog.isDebugEnabled()) {
       return new PerformanceLoggingInputStream(inputStream, this);
     }
     else {
@@ -48,13 +61,13 @@ public class PerformanceLogger
   }
 
   /**
-   * Logs read operation performance metrics.
-   * 
-   * @param bytes number of bytes read
-   * @param nanos time taken in nanoseconds
+   * Logs read performance metrics. Uses Java 21 String Templates for improved performance.
+   * Detects if running in a virtual thread and logs appropriate metrics.
    */
   public void logRead(final long bytes, final long nanos) {
-    if (!log.isDebugEnabled()) {
+    boolean isVirtualThread = Thread.currentThread().isVirtual();
+    
+    if (!log.isDebugEnabled() && !(isVirtualThread && virtualThreadLog.isDebugEnabled())) {
       return;
     }
 
@@ -65,18 +78,30 @@ public class PerformanceLogger
       mbPerSecond = ((double) bytes) / ((double) nanos) * 1e3d;
     }
     
-    boolean isVirtualThread = Thread.currentThread().isVirtual();
-    log.debug(STR."blobstore \{blobStoreName}: \{bytes} bytes read in \{millis} ms (\{mbPerSecond} mb/s) \{isVirtualThread ? "[virtual thread]" : ""}");
+    // Log to standard performance logger
+    if (log.isDebugEnabled()) {
+      log.debug(STR."blobstore \{blobStoreName}: \{bytes} bytes read in \{millis} ms (\{mbPerSecond} mb/s)");
+    }
+    
+    // Additional logging for virtual threads
+    if (isVirtualThread && virtualThreadLog.isDebugEnabled()) {
+      virtualThreadLog.debug(STR."[VirtualThread] blobstore \{blobStoreName}: \{bytes} bytes read in \{millis} ms (\{mbPerSecond} mb/s)");
+      
+      // Check for potential thread pinning
+      if (millis > PINNING_THRESHOLD_MS && threadPinningLog.isDebugEnabled()) {
+        threadPinningLog.debug(STR."[POTENTIAL PINNING] VirtualThread read operation in blobstore \{blobStoreName} took \{millis} ms");
+      }
+    }
   }
 
   /**
-   * Logs blob creation performance metrics.
-   * 
-   * @param blob the created blob
-   * @param nanos time taken in nanoseconds
+   * Logs blob creation performance metrics. Uses Java 21 String Templates for improved performance.
+   * Detects if running in a virtual thread and logs appropriate metrics.
    */
   public void logCreate(final Blob blob, final long nanos) {
-    if (!log.isDebugEnabled()) {
+    boolean isVirtualThread = Thread.currentThread().isVirtual();
+    
+    if (!log.isDebugEnabled() && !(isVirtualThread && virtualThreadLog.isDebugEnabled())) {
       return;
     }
 
@@ -88,17 +113,30 @@ public class PerformanceLogger
       mbPerSecond = ((double) bytes) / ((double) nanos) * 1e3d;
     }
     
-    boolean isVirtualThread = Thread.currentThread().isVirtual();
-    log.debug(STR."blobstore \{blobStoreName}: \{bytes} bytes written in \{millis} ms (\{mbPerSecond} mb/s) \{isVirtualThread ? "[virtual thread]" : ""}");
+    // Log to standard performance logger
+    if (log.isDebugEnabled()) {
+      log.debug(STR."blobstore \{blobStoreName}: \{bytes} bytes written in \{millis} ms (\{mbPerSecond} mb/s)");
+    }
+    
+    // Additional logging for virtual threads
+    if (isVirtualThread && virtualThreadLog.isDebugEnabled()) {
+      virtualThreadLog.debug(STR."[VirtualThread] blobstore \{blobStoreName}: \{bytes} bytes written in \{millis} ms (\{mbPerSecond} mb/s)");
+      
+      // Check for potential thread pinning
+      if (millis > PINNING_THRESHOLD_MS && threadPinningLog.isDebugEnabled()) {
+        threadPinningLog.debug(STR."[POTENTIAL PINNING] VirtualThread create operation in blobstore \{blobStoreName} took \{millis} ms");
+      }
+    }
   }
 
   /**
-   * Logs blob deletion performance metrics.
-   * 
-   * @param nanos time taken in nanoseconds
+   * Logs blob deletion performance metrics. Uses Java 21 String Templates for improved performance.
+   * Detects if running in a virtual thread and logs appropriate metrics.
    */
   public void logDelete(final long nanos) {
-    if (!log.isDebugEnabled()) {
+    boolean isVirtualThread = Thread.currentThread().isVirtual();
+    
+    if (!log.isDebugEnabled() && !(isVirtualThread && virtualThreadLog.isDebugEnabled())) {
       return;
     }
 
@@ -107,27 +145,50 @@ public class PerformanceLogger
       millis = ((double) nanos) / 1e6d;
     }
     
-    boolean isVirtualThread = Thread.currentThread().isVirtual();
-    log.debug(STR."blobstore \{blobStoreName}: blob deleted in \{millis} ms \{isVirtualThread ? "[virtual thread]" : ""}");
+    // Log to standard performance logger
+    if (log.isDebugEnabled()) {
+      log.debug(STR."blobstore \{blobStoreName}: blob deleted in \{millis} ms");
+    }
+    
+    // Additional logging for virtual threads
+    if (isVirtualThread && virtualThreadLog.isDebugEnabled()) {
+      virtualThreadLog.debug(STR."[VirtualThread] blobstore \{blobStoreName}: blob deleted in \{millis} ms");
+      
+      // Check for potential thread pinning
+      if (millis > PINNING_THRESHOLD_MS && threadPinningLog.isDebugEnabled()) {
+        threadPinningLog.debug(STR."[POTENTIAL PINNING] VirtualThread delete operation in blobstore \{blobStoreName} took \{millis} ms");
+      }
+    }
   }
   
   /**
-   * Determines if the current thread is a virtual thread.
-   * 
-   * @return true if the current thread is a virtual thread, false otherwise
+   * Logs a virtual thread specific operation with performance metrics.
+   * This method is used for tracking virtual thread specific operations that aren't
+   * covered by the standard read/create/delete methods.
+   *
+   * @param operationName The name of the operation being performed
+   * @param nanos The duration of the operation in nanoseconds
+   * @param additionalInfo Optional additional information about the operation
    */
-  public boolean isVirtualThread() {
-    return Thread.currentThread().isVirtual();
-  }
-  
-  /**
-   * Gets information about the current thread, including whether it's a virtual thread.
-   * 
-   * @return a string containing thread information
-   */
-  public String getThreadInfo() {
-    Thread currentThread = Thread.currentThread();
-    boolean isVirtual = currentThread.isVirtual();
-    return STR."Thread[id=\{currentThread.threadId()}, name=\{currentThread.getName()}, \{isVirtual ? "virtual" : "platform"} thread]";
+  public void logVirtualThreadOperation(final String operationName, final long nanos, final String additionalInfo) {
+    if (!Thread.currentThread().isVirtual() || !virtualThreadLog.isDebugEnabled()) {
+      return;
+    }
+    
+    double millis = 0d;
+    if (nanos > 0) {
+      millis = ((double) nanos) / 1e6d;
+    }
+    
+    String logMessage = additionalInfo != null && !additionalInfo.isEmpty() 
+        ? STR."[VirtualThread] blobstore \{blobStoreName}: \{operationName} completed in \{millis} ms (\{additionalInfo})"
+        : STR."[VirtualThread] blobstore \{blobStoreName}: \{operationName} completed in \{millis} ms";
+    
+    virtualThreadLog.debug(logMessage);
+    
+    // Check for potential thread pinning
+    if (millis > PINNING_THRESHOLD_MS && threadPinningLog.isDebugEnabled()) {
+      threadPinningLog.debug(STR."[POTENTIAL PINNING] VirtualThread \{operationName} operation in blobstore \{blobStoreName} took \{millis} ms");
+    }
   }
 }

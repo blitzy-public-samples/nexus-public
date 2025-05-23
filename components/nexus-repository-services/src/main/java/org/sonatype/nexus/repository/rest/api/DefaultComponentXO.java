@@ -21,12 +21,25 @@ import com.fasterxml.jackson.annotation.JsonAnyGetter;
 
 /**
  * Component transfer object for REST APIs.
- * Implementation of {@link ComponentXO} that uses Java 21 Record Patterns for efficient data handling.
+ * 
+ * Leverages Java 21's Record Patterns for type-safe and memory-efficient data representation.
  */
 public class DefaultComponentXO
     implements ComponentXO
 {
-  // Using the ComponentData record from the interface
+  /**
+   * Internal record to hold component data in a type-safe and memory-efficient way.
+   * This enables the use of Record Patterns for data manipulation.
+   */
+  private record ComponentData(
+      String id,
+      String group,
+      String name,
+      String version,
+      String repository,
+      String format,
+      List<AssetXO> assets) {}
+
   private ComponentData data;
 
   public DefaultComponentXO() {
@@ -47,90 +60,113 @@ public class DefaultComponentXO
 
   @Override
   public String getId() {
-    return data.id();
+    if (data instanceof ComponentData(var id, var _, var _, var _, var _, var _, var _)) {
+      return id;
+    }
+    return null;
   }
 
   @Override
   public void setId(String id) {
-    this.data = new ComponentData(id, data.group(), data.name(), data.version(), 
-        data.repository(), data.format(), data.assets());
+    if (data instanceof ComponentData(var _, var group, var name, var version, var repository, var format, var assets)) {
+      this.data = new ComponentData(id, group, name, version, repository, format, assets);
+    }
   }
 
   @Override
   public String getGroup() {
-    return data.group();
+    if (data instanceof ComponentData(var _, var group, var _, var _, var _, var _, var _)) {
+      return group;
+    }
+    return null;
   }
 
   @Override
   public void setGroup(String group) {
-    this.data = new ComponentData(data.id(), group, data.name(), data.version(), 
-        data.repository(), data.format(), data.assets());
+    if (data instanceof ComponentData(var id, var _, var name, var version, var repository, var format, var assets)) {
+      this.data = new ComponentData(id, group, name, version, repository, format, assets);
+    }
   }
 
   @Override
   public String getName() {
-    return data.name();
+    if (data instanceof ComponentData(var _, var _, var name, var _, var _, var _, var _)) {
+      return name;
+    }
+    return null;
   }
 
   @Override
   public void setName(String name) {
-    this.data = new ComponentData(data.id(), data.group(), name, data.version(), 
-        data.repository(), data.format(), data.assets());
+    if (data instanceof ComponentData(var id, var group, var _, var version, var repository, var format, var assets)) {
+      this.data = new ComponentData(id, group, name, version, repository, format, assets);
+    }
   }
 
   @Override
   public String getVersion() {
-    return data.version();
+    if (data instanceof ComponentData(var _, var _, var _, var version, var _, var _, var _)) {
+      return version;
+    }
+    return null;
   }
 
   @Override
   public void setVersion(String version) {
-    this.data = new ComponentData(data.id(), data.group(), data.name(), version, 
-        data.repository(), data.format(), data.assets());
+    if (data instanceof ComponentData(var id, var group, var name, var _, var repository, var format, var assets)) {
+      this.data = new ComponentData(id, group, name, version, repository, format, assets);
+    }
   }
 
   @Override
   public String getRepository() {
-    return data.repository();
+    if (data instanceof ComponentData(var _, var _, var _, var _, var repository, var _, var _)) {
+      return repository;
+    }
+    return null;
   }
 
   @Override
   public void setRepository(String repository) {
-    this.data = new ComponentData(data.id(), data.group(), data.name(), data.version(), 
-        repository, data.format(), data.assets());
+    if (data instanceof ComponentData(var id, var group, var name, var version, var _, var format, var assets)) {
+      this.data = new ComponentData(id, group, name, version, repository, format, assets);
+    }
   }
 
   @Override
   public String getFormat() {
-    return data.format();
+    if (data instanceof ComponentData(var _, var _, var _, var _, var _, var format, var _)) {
+      return format;
+    }
+    return null;
   }
 
   @Override
   public void setFormat(String format) {
-    this.data = new ComponentData(data.id(), data.group(), data.name(), data.version(), 
-        data.repository(), format, data.assets());
+    if (data instanceof ComponentData(var id, var group, var name, var version, var repository, var _, var assets)) {
+      this.data = new ComponentData(id, group, name, version, repository, format, assets);
+    }
   }
 
   @Override
   public List<AssetXO> getAssets() {
-    return data.assets();
+    if (data instanceof ComponentData(var _, var _, var _, var _, var _, var _, var assets)) {
+      return assets;
+    }
+    return null;
   }
 
   @Override
   public void setAssets(List<AssetXO> assets) {
-    this.data = new ComponentData(data.id(), data.group(), data.name(), data.version(), 
-        data.repository(), data.format(), assets);
+    if (data instanceof ComponentData(var id, var group, var name, var version, var repository, var format, var _)) {
+      this.data = new ComponentData(id, group, name, version, repository, format, assets);
+    }
   }
 
   @Override
   @JsonAnyGetter
   public Map<String, Object> getExtraJsonAttributes() {
     return Collections.emptyMap();
-  }
-  
-  @Override
-  public ComponentData asRecord() {
-    return data;
   }
 
   @Override
@@ -142,39 +178,49 @@ public class DefaultComponentXO
       return false;
     }
     
-    // Using record pattern matching for type-safe comparison
-    if (o instanceof DefaultComponentXO(var otherData)) {
-      return Objects.equals(data.id(), otherData.id());
+    // Use record pattern to extract id for comparison
+    DefaultComponentXO that = (DefaultComponentXO) o;
+    if (this.data instanceof ComponentData(var thisId, var _, var _, var _, var _, var _, var _) &&
+        that.data instanceof ComponentData(var thatId, var _, var _, var _, var _, var _, var _)) {
+      return Objects.equals(thisId, thatId);
     }
     return false;
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(data.id());
+    // Use record pattern to extract id for hash code calculation
+    if (data instanceof ComponentData(var id, var _, var _, var _, var _, var _, var _)) {
+      return Objects.hash(id);
+    }
+    return 0;
   }
 
   @Override
   public String toString() {
-    // Using record pattern matching for string representation
-    ComponentData(String id, String group, String name, String version, 
-                 String repository, String format, List<AssetXO> assets) = data;
-    
-    return "DefaultComponentXO{" +
-        "id='" + id + '\'' +
-        ", group='" + group + '\'' +
-        ", name='" + name + '\'' +
-        ", version='" + version + '\'' +
-        ", repository='" + repository + '\'' +
-        ", format='" + format + '\'' +
-        ", assets=" + assets +
-        '}';
+    // Use record pattern to extract all fields for string representation
+    if (data instanceof ComponentData(var id, var group, var name, var version, var repository, var format, var assets)) {
+      return "DefaultComponentXO{" +
+          "id='" + id + '\'' +
+          ", group='" + group + '\'' +
+          ", name='" + name + '\'' +
+          ", version='" + version + '\'' +
+          ", repository='" + repository + '\'' +
+          ", format='" + format + '\'' +
+          ", assets=" + assets +
+          '}';
+    }
+    return "DefaultComponentXO{data=null}";
   }
 
   public static DefaultComponentXOBuilder builder() {
     return new DefaultComponentXOBuilder();
   }
 
+  /**
+   * Builder pattern implementation updated to work with Record Patterns.
+   * Uses the ComponentData record internally for type-safe data representation.
+   */
   public static class DefaultComponentXOBuilder
   {
     private String id;
@@ -221,11 +267,7 @@ public class DefaultComponentXO
     }
 
     public DefaultComponentXO build() {
-      // Using record pattern for creating the final object
-      ComponentData data = new ComponentData(id, group, name, version, repository, format, assets);
-      DefaultComponentXO component = new DefaultComponentXO();
-      component.data = data;
-      return component;
+      return new DefaultComponentXO(id, group, name, version, repository, format, assets);
     }
   }
 }

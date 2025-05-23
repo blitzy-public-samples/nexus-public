@@ -13,17 +13,16 @@
 package org.sonatype.nexus.blobstore.quota.internal;
 
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.api.BlobStoreMetrics;
-import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaResult;
-import org.sonatype.nexus.blobstore.virtualthread.VirtualThreadTestGroup;
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import org.sonatype.nexus.rest.ValidationErrorsException;
 
@@ -33,10 +32,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static java.lang.StringTemplate.STR;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.blobstore.quota.BlobStoreQuotaSupport.LIMIT_KEY;
@@ -61,7 +59,7 @@ public class SpaceRemainingQuotaTest
   NestedAttributesMap attributesMap;
 
   @BeforeEach
-  public void setup() {
+  void setup() {
     when(blobStore.getMetrics()).thenReturn(metrics);
     when(blobStore.getBlobStoreConfiguration()).thenReturn(config);
     when(config.getName()).thenReturn("test");
@@ -72,165 +70,127 @@ public class SpaceRemainingQuotaTest
   }
 
   @Test
-  public void sufficientSpaceRemaining() {
+  void sufficientSpaceRemaining() {
     when(metrics.isUnlimited()).thenReturn(false);
     when(metrics.getAvailableSpace()).thenReturn(20L);
 
-    assertFalse(quota.check(blobStore).isViolation(), "Should not report violation when sufficient space remains");
+    assertFalse(quota.check(blobStore).isViolation(), STR."Space check should not be violated with \{metrics.getAvailableSpace()} available space");
   }
 
   @Test
-  public void insufficientSpaceRemaining() {
+  void insufficientSpaceRemaining() {
     when(metrics.isUnlimited()).thenReturn(false);
     when(metrics.getAvailableSpace()).thenReturn(5L);
 
-    assertTrue(quota.check(blobStore).isViolation(), "Should report violation when insufficient space remains");
+    assertTrue(quota.check(blobStore).isViolation(), STR."Space check should be violated with only \{metrics.getAvailableSpace()} available space");
   }
 
   @Test
-  public void unlimitedSpaceRemaining() {
+  void unlimitedSpaceRemaining() {
     when(metrics.isUnlimited()).thenReturn(true);
     when(metrics.getAvailableSpace()).thenReturn(5L);
 
-    assertFalse(quota.check(blobStore).isViolation(), "Should not report violation when space is unlimited");
+    assertFalse(quota.check(blobStore).isViolation(), STR."Space check should not be violated when space is unlimited");
   }
 
   @Test
-  public void greaterThanZeroLimitIsValid() {
+  void greaterThanZeroLimitIsValid() {
     when(attributesMap.get(eq(LIMIT_KEY), eq(Number.class))).thenReturn(10L);
     quota.validateConfig(config);
   }
 
   @Test
-  public void zeroLimitIsInvalid() {
+  void zeroLimitIsInvalid() {
     when(attributesMap.get(eq(LIMIT_KEY), eq(Number.class))).thenReturn(0);
-    
-    ValidationErrorsException exception = assertThrows(ValidationErrorsException.class, 
-        () -> quota.validateConfig(config),
-        STR."Should throw ValidationErrorsException for zero limit");
+    assertThrows(ValidationErrorsException.class, () -> quota.validateConfig(config), 
+        STR."Should throw ValidationErrorsException when limit is \{attributesMap.get(eq(LIMIT_KEY), eq(Number.class))}");
   }
 
   @Test
-  public void noLimitIsInvalid() {
+  void noLimitIsInvalid() {
     when(attributesMap.get(eq(LIMIT_KEY), eq(Number.class))).thenReturn(null);
-    
-    assertThrows(IllegalArgumentException.class, 
-        () -> quota.validateConfig(config),
+    assertThrows(IllegalArgumentException.class, () -> quota.validateConfig(config),
         STR."Should throw IllegalArgumentException when limit is null");
   }
   
+  @Test
   @VirtualThreadTestGroup
-  public void concurrentQuotaChecks() throws Exception {
+  void concurrentQuotaChecks() throws Exception {
     // Setup for concurrent testing
-    int threadCount = 100;
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(threadCount);
+    when(metrics.isUnlimited()).thenReturn(false);
+    when(metrics.getAvailableSpace()).thenReturn(5L); // Insufficient space
+    
+    int taskCount = 100;
+    CountDownLatch latch = new CountDownLatch(taskCount);
     AtomicInteger violationCount = new AtomicInteger(0);
     
-    // Configure metrics to alternate between sufficient and insufficient space
-    when(metrics.isUnlimited()).thenReturn(false);
-    
+    // Create virtual thread executor
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Launch multiple virtual threads to check quota concurrently
-      for (int i = 0; i < threadCount; i++) {
-        final int threadId = i;
+      // Submit multiple concurrent quota check tasks
+      for (int i = 0; i < taskCount; i++) {
         executor.submit(() -> {
           try {
-            startLatch.await(); // Wait for all threads to be ready
-            
-            // Even threads get sufficient space, odd threads get insufficient space
-            long availableSpace = (threadId % 2 == 0) ? 20L : 5L;
-            when(metrics.getAvailableSpace()).thenReturn(availableSpace);
-            
-            BlobStoreQuotaResult result = quota.check(blobStore);
-            if (result.isViolation()) {
+            if (quota.check(blobStore).isViolation()) {
               violationCount.incrementAndGet();
             }
-            
-            return null;
-          }
-          catch (Exception e) {
-            log.error(STR."Error in virtual thread \{threadId}", e);
-            return null;
-          }
-          finally {
-            completionLatch.countDown();
+          } finally {
+            latch.countDown();
           }
         });
       }
       
-      // Start all threads simultaneously
-      startLatch.countDown();
+      // Wait for all tasks to complete
+      assertTrue(latch.await(10, TimeUnit.SECONDS), STR."Timed out waiting for \{taskCount} virtual threads to complete");
       
-      // Wait for all threads to complete
-      assertTrue(completionLatch.await(10, TimeUnit.SECONDS), 
-          STR."All \{threadCount} virtual threads should complete within timeout");
-      
-      // Approximately half of the threads should report violations
-      int expectedViolations = threadCount / 2;
-      assertTrue(Math.abs(violationCount.get() - expectedViolations) <= 5, 
-          STR."Expected approximately \{expectedViolations} violations, got \{violationCount.get()}");
+      // All checks should report violation
+      assertTrue(violationCount.get() == taskCount, 
+          STR."Expected \{taskCount} violations but got \{violationCount.get()}");
     }
   }
   
+  @Test
   @VirtualThreadTestGroup
-  public void quotaEnforcementUnderHighConcurrency() throws Exception {
-    int threadCount = 1000;
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(threadCount);
-    AtomicInteger successCount = new AtomicInteger(0);
-    AtomicInteger failureCount = new AtomicInteger(0);
-    
-    // Configure for dynamic space checking
+  void quotaEnforcingUnderHighConcurrency() throws Exception {
+    // Setup for high concurrency testing with varying available space
+    AtomicInteger availableSpace = new AtomicInteger(15); // Start with sufficient space
     when(metrics.isUnlimited()).thenReturn(false);
+    when(metrics.getAvailableSpace()).thenAnswer(invocation -> (long) availableSpace.get());
     
+    int taskCount = 1000;
+    CountDownLatch latch = new CountDownLatch(taskCount);
+    AtomicInteger violationCount = new AtomicInteger(0);
+    
+    // Create virtual thread executor for high concurrency
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Launch many virtual threads to simulate high concurrency
-      for (int i = 0; i < threadCount; i++) {
-        final int threadId = i;
+      // Submit many concurrent quota check tasks
+      for (int i = 0; i < taskCount; i++) {
+        final int iteration = i;
         executor.submit(() -> {
           try {
-            startLatch.await();
-            
-            // Simulate decreasing available space as more threads run
-            // This tests pattern matching with instanceof in the quota validation logic
-            long availableSpace = 15L - (threadId % 10);
-            when(metrics.getAvailableSpace()).thenReturn(availableSpace);
-            
-            BlobStoreQuotaResult result = quota.check(blobStore);
-            
-            // Use pattern matching to handle the result
-            if (result instanceof BlobStoreQuotaResult quotaResult && quotaResult.isViolation()) {
-              failureCount.incrementAndGet();
-            } else {
-              successCount.incrementAndGet();
+            // Every 100 iterations, decrease available space
+            if (iteration % 100 == 0 && iteration > 0) {
+              availableSpace.updateAndGet(current -> Math.max(0, current - 2));
             }
             
-            return null;
-          }
-          catch (Exception e) {
-            log.error(STR."Error in high concurrency test thread \{threadId}", e);
-            return null;
-          }
-          finally {
-            completionLatch.countDown();
+            // Check quota and count violations
+            if (quota.check(blobStore).isViolation()) {
+              violationCount.incrementAndGet();
+            }
+          } finally {
+            latch.countDown();
           }
         });
       }
       
-      // Start all threads simultaneously
-      startLatch.countDown();
+      // Wait for all tasks to complete
+      assertTrue(latch.await(10, TimeUnit.SECONDS), STR."Timed out waiting for \{taskCount} virtual threads to complete");
       
-      // Wait for all threads to complete
-      assertTrue(completionLatch.await(10, TimeUnit.SECONDS), 
-          STR."All \{threadCount} virtual threads in high concurrency test should complete within timeout");
+      // Verify that we have some violations (exact count will depend on execution order)
+      assertTrue(violationCount.get() > 0, 
+          STR."Expected some quota violations but got \{violationCount.get()}");
       
-      // Verify results
-      int totalResults = successCount.get() + failureCount.get();
-      assertTrue(totalResults == threadCount, 
-          STR."Expected \{threadCount} total results, got \{totalResults}");
-      
-      log.info(STR."High concurrency test completed with \{successCount.get()} successes and \{failureCount.get()} failures");
+      // Log the final state for diagnostics
+      logger.info(STR."Final available space: \{availableSpace.get()}, Violation count: \{violationCount.get()}");
     }
   }
 }

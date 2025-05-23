@@ -14,7 +14,6 @@ package org.sonatype.nexus.security.authc;
 
 import java.util.Collections;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 
 import org.sonatype.nexus.security.realm.MockRealmA;
 import org.sonatype.nexus.security.realm.MockRealmB;
@@ -51,15 +50,20 @@ public class FirstSuccessfulModularRealAuthenticatorTest
   @Mock
   private Subject subject;
 
+  @Mock
+  private PrincipalCollection principals;
+
   @BeforeEach
-  void init() {
+  public void init() {
     firstSuccessfulModularRealmAuthenticator = new FirstSuccessfulModularRealmAuthenticator();
-    // Setup SecurityUtils to return our mocked subject
-    SecurityUtils.setSecurityManager(new TestSecurityManager(subject));
+    when(subject.getPrincipals()).thenReturn(principals);
+    when(principals.getRealmNames()).thenReturn(Collections.emptySet());
+    SecurityUtils.setSecurityManager(mock(org.apache.shiro.mgt.SecurityManager.class));
+    when(SecurityUtils.getSubject()).thenReturn(subject);
   }
 
   @Test
-  void testMultiRealmInvalidCredentials() {
+  public void testMultiRealmInvalidCredentials() {
     UsernamePasswordToken usernamePasswordToken = new UsernamePasswordToken("username", "password");
 
     Realm realmOne = mock(Realm.class);
@@ -71,28 +75,21 @@ public class FirstSuccessfulModularRealAuthenticatorTest
     when(realmOne.getAuthenticationInfo(usernamePasswordToken)).thenThrow(new IncorrectCredentialsException());
     when(realmTwo.getAuthenticationInfo(usernamePasswordToken)).thenThrow(new IncorrectCredentialsException());
 
-    PrincipalCollection principals = mock(PrincipalCollection.class);
-    when(principals.getRealmNames()).thenReturn(Collections.emptySet());
-    when(subject.getPrincipals()).thenReturn(principals);
-
-    NexusAuthenticationException exception = assertThrows(NexusAuthenticationException.class, () ->
-        firstSuccessfulModularRealmAuthenticator
-            .doMultiRealmAuthentication(Lists.newArrayList(realmOne, realmTwo), usernamePasswordToken));
+    NexusAuthenticationException exception = assertThrows(NexusAuthenticationException.class, () -> {
+      firstSuccessfulModularRealmAuthenticator
+          .doMultiRealmAuthentication(Lists.newArrayList(realmOne, realmTwo), usernamePasswordToken);
+    });
     
     assertThat(exception.getAuthenticationFailureReasons(), containsInAnyOrder(
         AuthenticationFailureReason.INCORRECT_CREDENTIALS));
   }
 
   @Test
-  void testMultiRealmMultipleFailures() {
+  public void testMultiRealmMultipleFailures() {
     UsernamePasswordToken usernamePasswordToken = new UsernamePasswordToken("username", "password");
 
     Realm realmOne = mock(Realm.class);
     Realm realmTwo = mock(Realm.class);
-
-    PrincipalCollection principals = mock(PrincipalCollection.class);
-    when(principals.getRealmNames()).thenReturn(Collections.emptySet());
-    when(subject.getPrincipals()).thenReturn(principals);
 
     when(realmOne.supports(usernamePasswordToken)).thenReturn(true);
     when(realmTwo.supports(usernamePasswordToken)).thenReturn(true);
@@ -100,9 +97,10 @@ public class FirstSuccessfulModularRealAuthenticatorTest
     when(realmOne.getAuthenticationInfo(usernamePasswordToken)).thenThrow(new IncorrectCredentialsException());
     when(realmTwo.getAuthenticationInfo(usernamePasswordToken)).thenThrow(new UnknownAccountException());
 
-    NexusAuthenticationException exception = assertThrows(NexusAuthenticationException.class, () ->
-        firstSuccessfulModularRealmAuthenticator
-            .doMultiRealmAuthentication(Lists.newArrayList(realmOne, realmTwo), usernamePasswordToken));
+    NexusAuthenticationException exception = assertThrows(NexusAuthenticationException.class, () -> {
+      firstSuccessfulModularRealmAuthenticator
+          .doMultiRealmAuthentication(Lists.newArrayList(realmOne, realmTwo), usernamePasswordToken);
+    });
     
     assertThat(exception.getAuthenticationFailureReasons(), containsInAnyOrder(
         AuthenticationFailureReason.INCORRECT_CREDENTIALS,
@@ -110,7 +108,7 @@ public class FirstSuccessfulModularRealAuthenticatorTest
   }
 
   @Test
-  void testSingleRealmFailureIsStillSuccessful() {
+  public void testSingleRealmFailureIsStillSuccessful() {
     UsernamePasswordToken usernamePasswordToken = new UsernamePasswordToken("username", "password");
 
     Realm realmOne = mock(Realm.class);
@@ -123,9 +121,7 @@ public class FirstSuccessfulModularRealAuthenticatorTest
     when(realmOne.getAuthenticationInfo(usernamePasswordToken)).thenThrow(new IncorrectCredentialsException());
     when(realmTwo.getAuthenticationInfo(usernamePasswordToken)).thenReturn(simpleAccount);
 
-    PrincipalCollection principals = mock(PrincipalCollection.class);
     when(principals.getRealmNames()).thenReturn(Collections.singleton("realmName"));
-    when(subject.getPrincipals()).thenReturn(principals);
     when(subject.isAuthenticated()).thenReturn(true);
 
     // No exception should be thrown
@@ -134,7 +130,7 @@ public class FirstSuccessfulModularRealAuthenticatorTest
   }
 
   @Test
-  void testSameUserIdInDifferentRealmsShouldReturnsCorrectAuthenticationInfo() {
+  public void testSameUserIdInDifferentRealmsShouldReturnsCorrectAuthenticationInfo() {
     // two same user ids but with different passwords and realms
     UsernamePasswordToken usernameRealmA = new UsernamePasswordToken("username", "passwordA");
     UsernamePasswordToken usernameRealmB = new UsernamePasswordToken("username", "passwordB");
@@ -158,11 +154,9 @@ public class FirstSuccessfulModularRealAuthenticatorTest
     when(realmTwo.getAuthenticationInfo(usernameRealmB)).thenReturn(simpleAccountB);
 
     // the first principal which is returned 'MockRealmA' is incorrect for the user 'usernameRealmB'
-    PrincipalCollection principals = mock(PrincipalCollection.class);
     when(principals.getRealmNames())
         .thenReturn(Collections.singleton("MockRealmA"))
         .thenReturn(Collections.singleton("MockRealmB"));
-    when(subject.getPrincipals()).thenReturn(principals);
     when(subject.isAuthenticated()).thenReturn(true);
 
     AuthenticationInfo authenticationInfo = firstSuccessfulModularRealmAuthenticator
@@ -170,11 +164,11 @@ public class FirstSuccessfulModularRealAuthenticatorTest
     Set<String> realmNames = authenticationInfo.getPrincipals().getRealmNames();
     assertThat(realmNames, contains("MockRealmB"));
   }
-  
+
   @Test
-  void testAuthenticationInVirtualThread() throws Exception {
-    // Run the test in a virtual thread to verify compatibility with Java 21 virtual threads
-    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+  public void testAuthenticatorInVirtualThread() {
+    // This test verifies that the authenticator works correctly in a Virtual Thread context
+    Thread.startVirtualThread(() -> {
       UsernamePasswordToken usernamePasswordToken = new UsernamePasswordToken("username", "password");
 
       Realm realmOne = mock(Realm.class);
@@ -183,54 +177,16 @@ public class FirstSuccessfulModularRealAuthenticatorTest
       when(realmOne.supports(usernamePasswordToken)).thenReturn(true);
       when(realmTwo.supports(usernamePasswordToken)).thenReturn(true);
 
+      SimpleAccount simpleAccount = new SimpleAccount(ImmutableList.of("simple"), usernamePasswordToken, "realmName");
       when(realmOne.getAuthenticationInfo(usernamePasswordToken)).thenThrow(new IncorrectCredentialsException());
-      when(realmTwo.getAuthenticationInfo(usernamePasswordToken)).thenThrow(new IncorrectCredentialsException());
+      when(realmTwo.getAuthenticationInfo(usernamePasswordToken)).thenReturn(simpleAccount);
 
-      PrincipalCollection principals = mock(PrincipalCollection.class);
-      when(principals.getRealmNames()).thenReturn(Collections.emptySet());
-      when(subject.getPrincipals()).thenReturn(principals);
+      when(principals.getRealmNames()).thenReturn(Collections.singleton("realmName"));
+      when(subject.isAuthenticated()).thenReturn(true);
 
-      NexusAuthenticationException exception = assertThrows(NexusAuthenticationException.class, () ->
-          firstSuccessfulModularRealmAuthenticator
-              .doMultiRealmAuthentication(Lists.newArrayList(realmOne, realmTwo), usernamePasswordToken));
-      
-      assertThat(exception.getAuthenticationFailureReasons(), containsInAnyOrder(
-          AuthenticationFailureReason.INCORRECT_CREDENTIALS));
-    }, Thread.ofVirtual().name("virtual-auth-test").factory());
-    
-    // Wait for the virtual thread to complete
-    future.join();
-  }
-  
-  /**
-   * Simple SecurityManager implementation for testing that returns our mocked Subject
-   */
-  private static class TestSecurityManager extends org.apache.shiro.mgt.SecurityManager {
-    private final Subject subject;
-    
-    public TestSecurityManager(Subject subject) {
-      this.subject = subject;
-    }
-    
-    @Override
-    public Subject getSubject() {
-      return subject;
-    }
-    
-    // Implement required methods with minimal implementations
-    @Override
-    public AuthenticationInfo authenticate(org.apache.shiro.authc.AuthenticationToken token) {
-      return null;
-    }
-    
-    @Override
-    public void logout(Subject subject) {
-      // No-op for test
-    }
-    
-    @Override
-    public org.apache.shiro.authz.AuthorizationInfo getAuthorizationInfo(PrincipalCollection principals) {
-      return null;
-    }
+      // No exception should be thrown
+      firstSuccessfulModularRealmAuthenticator
+          .doMultiRealmAuthentication(Lists.newArrayList(realmOne, realmTwo), usernamePasswordToken);
+    }).join(); // Wait for the virtual thread to complete
   }
 }

@@ -13,28 +13,65 @@
 package org.sonatype.nexus.freeze.event;
 
 /**
- * Event fired to request that the system enters a frozen state.
+ * Event fired to signal that the system should enter a frozen state.
  * <p>
- * This event is part of the system freeze mechanism that temporarily suspends certain operations
- * to ensure data consistency during maintenance or backup operations.
+ * This event is part of the system freeze mechanism that manages the lifecycle of freeze operations.
+ * When this event is published, listeners will acquire locks and prevent certain operations from
+ * proceeding until a corresponding {@link FreezeReleaseEvent} or {@link FreezeForceReleaseEvent}
+ * is published.
  * <p>
- * Compatible with Java 21 runtime environment and designed to work with the sealed class pattern
- * when the base {@link FreezeEvent} class is updated to use this feature.
+ * This class is designed to work with Java 21's sealed class pattern as one of the permitted
+ * subclasses of the {@link FreezeEvent} sealed hierarchy. It represents the initial event in the
+ * freeze lifecycle, carrying a reason for the freeze operation that can be logged or displayed
+ * to users.
+ * <p>
+ * In Java 21 environments, this event can be efficiently pattern-matched in switch expressions:
+ * <pre>
+ * {@code
+ * switch (event) {
+ *   case FreezeRequestEvent e -> {
+ *     String reason = e.getReason();
+ *     log.info(STR."System freeze requested: \{reason}");
+ *     handleFreezeRequest(reason);
+ *   }
+ *   case FreezeReleaseEvent e -> handleNormalRelease();
+ *   case FreezeForceReleaseEvent e -> handleForcedRelease();
+ * }
+ * }</pre>
+ * <p>
+ * The reason field can be efficiently formatted in logs using Java 21's String Templates (STR):
+ * <pre>
+ * {@code
+ * String reason = event.getReason();
+ * log.info(STR."System freeze initiated for: \{reason}");
+ * }</pre>
+ * <p>
+ * Event handlers for this event can be safely executed on virtual threads, as indicated by
+ * the {@link VirtualThreadCompatible} annotation on applicable methods in the event hierarchy.
  *
  * @since 3.0
  */
-public class FreezeRequestEvent
+public final class FreezeRequestEvent
     extends FreezeEvent
 {
+  /**
+   * The reason for the system freeze request.
+   * <p>
+   * This field stores a human-readable explanation of why the system is being frozen,
+   * which can be used for logging, auditing, or user notifications.
+   */
   private final String reason;
 
   /**
    * Creates a new freeze request event with the specified reason.
    * <p>
-   * The reason is used for auditing and logging purposes to document why the system
-   * was placed in a frozen state.
+   * This constructor initializes the event with the {@link FreezeEventTypes#FREEZE} type
+   * and stores the provided reason for the freeze operation.
+   * <p>
+   * When published, this event signals to all listeners that certain operations should
+   * be suspended until a corresponding release event is published.
    *
-   * @param reason a human-readable description of why the system is being frozen
+   * @param reason a human-readable explanation of why the system is being frozen
    */
   public FreezeRequestEvent(final String reason) {
     super(FreezeEventTypes.FREEZE);
@@ -44,11 +81,19 @@ public class FreezeRequestEvent
   /**
    * Returns the reason for this freeze request.
    * <p>
-   * When logging this reason, Java 21 String Templates should be used for structured logging
-   * with proper escaping and context preservation.
+   * The reason provides context about why the system is being frozen, which can be
+   * used for logging, auditing, or user notifications.
+   * <p>
+   * In Java 21 environments, this value can be efficiently formatted using String Templates:
+   * <pre>
+   * {@code
+   * String reason = event.getReason();
+   * log.info(STR."System freeze initiated for: \{reason}");
+   * }</pre>
    *
-   * @return the reason provided when creating this event
+   * @return the reason for the freeze request
    */
+  @VirtualThreadCompatible
   public String getReason() {
     return reason;
   }

@@ -23,36 +23,18 @@ import org.sonatype.nexus.validation.ValidationModule;
 
 import com.google.inject.AbstractModule;
 import com.google.inject.Guice;
-
-// JUnit Jupiter imports
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-
-// Mockito imports
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-// Hamcrest imports
-import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
-
-// Jupiter assertions
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.fail;
-
-// Mockito static imports
 import static org.mockito.Mockito.verify;
-
-// Constants
 import static org.sonatype.nexus.onboarding.internal.OnboardingResource.PASSWORD_REQUIRED;
 
-/**
- * Tests for {@link OnboardingResource}.
- * 
- * Verifies the behavior of the onboarding resource, particularly around admin password validation
- * and security system interactions.
- */
 @ExtendWith(MockitoExtension.class)
 public class OnboardingResourceTest
     extends TestSupport
@@ -72,7 +54,7 @@ public class OnboardingResourceTest
   private OnboardingResource underTest;
 
   @BeforeEach
-  public void setUp() {
+  public void setup() {
     underTest = Guice.createInjector(new ValidationModule(), new AbstractModule()
     {
       @Override
@@ -85,43 +67,46 @@ public class OnboardingResourceTest
     }).getInstance(OnboardingResource.class);
   }
 
-  /**
-   * Verifies that changing the admin password with a valid password works correctly.
-   */
   @Test
-  public void shouldChangeAdminPasswordWithValidPassword() throws Exception {
-    // When: changing the admin password with a valid password
+  public void changeAdminPassword() throws Exception {
     underTest.changeAdminPassword("newpass");
 
-    // Then: the security system should be called to change the password
     verify(securitySystem).changePassword("admin", "newpass", false);
   }
 
-  /**
-   * Verifies that changing the admin password with an empty password fails validation.
-   */
   @Test
-  public void shouldFailValidationWithEmptyPassword() {
-    // When: changing the admin password with an empty password
-    // Then: a constraint violation exception should be thrown with the correct message
-    ConstraintViolationException exception = assertThrows(ConstraintViolationException.class, () -> {
+  public void changeAdminPasswordEmpty() {
+    try {
       underTest.changeAdminPassword("");
-    });
-    
-    assertThat(exception.getConstraintViolations().iterator().next().getMessage(), is(PASSWORD_REQUIRED));
+      fail("empty password should have failed validation");
+    }
+    catch (ConstraintViolationException e) {
+      assertThat(e.getConstraintViolations().iterator().next().getMessage(), is(PASSWORD_REQUIRED));
+    }
   }
 
-  /**
-   * Verifies that changing the admin password with a null password fails validation.
-   */
   @Test
-  public void shouldFailValidationWithNullPassword() {
-    // When: changing the admin password with a null password
-    // Then: a constraint violation exception should be thrown with the correct message
-    ConstraintViolationException exception = assertThrows(ConstraintViolationException.class, () -> {
+  public void changeAdminPasswordNull() {
+    try {
       underTest.changeAdminPassword(null);
-    });
+      fail("null password should have failed validation");
+    }
+    catch (ConstraintViolationException e) {
+      assertThat(e.getConstraintViolations().iterator().next().getMessage(), is(PASSWORD_REQUIRED));
+    }
+  }
+  
+  @Test
+  public void stringTemplateForErrorMessage() {
+    String inputType = "password";
+    String expectedMessage = STR."The \{inputType} field is required";
     
-    assertThat(exception.getConstraintViolations().iterator().next().getMessage(), is(PASSWORD_REQUIRED));
+    // Verify that the PASSWORD_REQUIRED constant matches our expected template-generated message
+    assertThat(PASSWORD_REQUIRED, is(expectedMessage));
+    
+    // Test with different input type to demonstrate template flexibility
+    String anotherType = "username";
+    String anotherMessage = STR."The \{anotherType} field is required";
+    assertThat(anotherMessage, is("The username field is required"));
   }
 }

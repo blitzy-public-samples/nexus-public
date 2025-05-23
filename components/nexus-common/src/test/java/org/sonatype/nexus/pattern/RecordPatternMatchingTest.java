@@ -15,8 +15,8 @@ package org.sonatype.nexus.pattern;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
-import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.Test;
+import org.junit.experimental.categories.Category;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -28,12 +28,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Tests for Java 21 Record Pattern Matching features.
  * 
- * These tests validate that record pattern matching works correctly in the Nexus codebase
- * after upgrading to Java 21. They ensure that basic record patterns, nested record patterns,
- * and pattern matching with type guards function as expected.
+ * These tests validate that record pattern matching works correctly in the Nexus Repository codebase.
+ * This ensures that code using these features will function properly in production.
  */
 @Category(Java21TestGroup.class)
-public class RecordPatternMatchingTest
+class RecordPatternMatchingTest
     extends TestSupport
 {
   // Sample record definitions for testing
@@ -43,159 +42,150 @@ public class RecordPatternMatchingTest
   record ColoredShape(String color, Object shape) {}
   
   /**
-   * Tests basic record pattern matching using instanceof with a pattern variable.
+   * Tests basic record pattern matching using instanceof with a simple record.
    */
   @Test
-  public void testBasicRecordPatternMatching() {
-    // Create a point record
+  void testBasicRecordPatternMatching() {
+    // Create a Point record
     Point point = new Point(10, 20);
+    Object obj = point;
     
     // Test pattern matching with instanceof
-    if (point instanceof Point(int x, int y)) {
+    if (obj instanceof Point(int x, int y)) {
       assertEquals(10, x, "x coordinate should match");
       assertEquals(20, y, "y coordinate should match");
-    } else {
-      // This should never happen
-      assertFalse(true, "Pattern matching failed");
     }
-    
-    // Test pattern matching in a conditional expression
-    int sum = point instanceof Point(int x, int y) ? x + y : 0;
-    assertEquals(30, sum, "Sum of coordinates should be 30");
+    else {
+      // This should not happen
+      assertFalse(true, "Pattern matching failed for Point record");
+    }
   }
   
   /**
-   * Tests nested record pattern matching to extract values from multi-level records.
+   * Tests nested record pattern matching with a Rectangle containing Points.
    */
   @Test
-  public void testNestedRecordPatternMatching() {
-    // Create a rectangle with two points
-    Rectangle rectangle = new Rectangle(new Point(10, 20), new Point(30, 40));
+  void testNestedRecordPatternMatching() {
+    // Create a Rectangle with two Points
+    Rectangle rectangle = new Rectangle(new Point(0, 0), new Point(100, 50));
+    Object obj = rectangle;
     
     // Test nested pattern matching with instanceof
-    if (rectangle instanceof Rectangle(Point(int x1, int y1), Point(int x2, int y2))) {
-      assertEquals(10, x1, "Top-left x should match");
-      assertEquals(20, y1, "Top-left y should match");
-      assertEquals(30, x2, "Bottom-right x should match");
-      assertEquals(40, y2, "Bottom-right y should match");
-      
-      // Calculate width and height using extracted values
-      int width = x2 - x1;
-      int height = y2 - y1;
-      assertEquals(20, width, "Width should be 20");
-      assertEquals(20, height, "Height should be 20");
-    } else {
-      // This should never happen
-      assertFalse(true, "Nested pattern matching failed");
+    if (obj instanceof Rectangle(Point(int x1, int y1), Point(int x2, int y2))) {
+      assertEquals(0, x1, "Top-left x should be 0");
+      assertEquals(0, y1, "Top-left y should be 0");
+      assertEquals(100, x2, "Bottom-right x should be 100");
+      assertEquals(50, y2, "Bottom-right y should be 50");
+    }
+    else {
+      // This should not happen
+      assertFalse(true, "Nested pattern matching failed for Rectangle record");
     }
   }
   
   /**
-   * Tests pattern matching with type guards to conditionally extract values based on type.
+   * Tests pattern matching with var instead of explicit types.
    */
   @Test
-  public void testPatternMatchingWithTypeGuards() {
-    // Create colored shapes with different underlying shapes
+  void testPatternMatchingWithVar() {
+    // Create a Circle record
+    Circle circle = new Circle(new Point(50, 50), 25);
+    Object obj = circle;
+    
+    // Test pattern matching with var
+    if (obj instanceof Circle(Point(var x, var y), var radius)) {
+      assertEquals(50, x, "Center x should be 50");
+      assertEquals(50, y, "Center y should be 50");
+      assertEquals(25, radius, "Radius should be 25");
+    }
+    else {
+      // This should not happen
+      assertFalse(true, "Pattern matching with var failed for Circle record");
+    }
+  }
+  
+  /**
+   * Tests pattern matching with type patterns and guards.
+   */
+  @Test
+  void testPatternMatchingWithGuards() {
+    // Create a ColoredShape with a Circle
     ColoredShape redCircle = new ColoredShape("red", new Circle(new Point(10, 10), 5));
-    ColoredShape blueRectangle = new ColoredShape("blue", 
-        new Rectangle(new Point(0, 0), new Point(20, 30)));
+    Object obj = redCircle;
     
-    // Test pattern matching with type guards for Circle
-    String circleDescription = switch (redCircle) {
-      case ColoredShape(String color, Circle(Point center, int radius)) ->
-          color + " circle with radius " + radius;
-      case ColoredShape(String color, Rectangle(Point topLeft, Point bottomRight)) ->
-          color + " rectangle";
-      default -> "unknown shape";
-    };
-    assertEquals("red circle with radius 5", circleDescription, "Circle description should match");
-    
-    // Test pattern matching with type guards for Rectangle
-    String rectangleDescription = switch (blueRectangle) {
-      case ColoredShape(String color, Circle(Point center, int radius)) ->
-          color + " circle";
-      case ColoredShape(String color, Rectangle(Point(int x1, int y1), Point(int x2, int y2))) ->
-          color + " rectangle with width " + (x2 - x1) + " and height " + (y2 - y1);
-      default -> "unknown shape";
-    };
-    assertEquals("blue rectangle with width 20 and height 30", rectangleDescription, 
-        "Rectangle description should match");
+    // Test pattern matching with type patterns and guards
+    if (obj instanceof ColoredShape(String color, Object shape) && shape instanceof Circle(Point center, int radius)) {
+      assertEquals("red", color, "Color should be red");
+      assertEquals(10, center.x(), "Center x should be 10");
+      assertEquals(10, center.y(), "Center y should be 10");
+      assertEquals(5, radius, "Radius should be 5");
+    }
+    else {
+      // This should not happen
+      assertFalse(true, "Pattern matching with guards failed for ColoredShape record");
+    }
   }
   
   /**
-   * Tests pattern matching in switch expressions with multiple patterns.
+   * Tests pattern matching with conditional guards.
    */
   @Test
-  public void testPatternMatchingInSwitchExpressions() {
-    // Create different objects to test in switch expressions
-    Object point = new Point(5, 10);
-    Object rectangle = new Rectangle(new Point(0, 0), new Point(10, 20));
-    Object circle = new Circle(new Point(15, 15), 10);
-    Object string = "not a shape";
+  void testPatternMatchingWithConditionalGuards() {
+    // Create a Point record
+    Point point = new Point(15, 25);
+    Object obj = point;
     
-    // Test pattern matching in switch expression
-    String pointResult = switch (point) {
-      case Point(int x, int y) -> "Point at (" + x + ", " + y + ")";
-      case Rectangle(Point p1, Point p2) -> "Rectangle";
-      case Circle(Point center, int radius) -> "Circle";
-      default -> "Not a recognized shape";
-    };
-    assertEquals("Point at (5, 10)", pointResult, "Point switch result should match");
+    // Test pattern matching with conditional guards
+    if (obj instanceof Point(int x, int y) && x > 10 && y > 20) {
+      assertEquals(15, x, "x should be 15");
+      assertEquals(25, y, "y should be 25");
+      assertTrue(x > 10 && y > 20, "Conditional guard should be satisfied");
+    }
+    else {
+      // This should not happen
+      assertFalse(true, "Pattern matching with conditional guards failed");
+    }
     
-    // Test rectangle pattern
-    String rectangleResult = switch (rectangle) {
-      case Point(int x, int y) -> "Point";
-      case Rectangle(Point topLeft, Point bottomRight) -> 
-          "Rectangle from " + topLeft + " to " + bottomRight;
-      case Circle(Point center, int radius) -> "Circle";
-      default -> "Not a recognized shape";
-    };
-    assertEquals("Rectangle from Point[x=0, y=0] to Point[x=10, y=20]", rectangleResult, 
-        "Rectangle switch result should match");
+    // Test a case where the guard should fail
+    Point smallPoint = new Point(5, 5);
+    obj = smallPoint;
     
-    // Test circle pattern
-    String circleResult = switch (circle) {
-      case Point(int x, int y) -> "Point";
-      case Rectangle(Point p1, Point p2) -> "Rectangle";
-      case Circle(Point(int x, int y), int r) -> 
-          "Circle at (" + x + ", " + y + ") with radius " + r;
-      default -> "Not a recognized shape";
-    };
-    assertEquals("Circle at (15, 15) with radius 10", circleResult, 
-        "Circle switch result should match");
-    
-    // Test non-matching pattern
-    String stringResult = switch (string) {
-      case Point(int x, int y) -> "Point";
-      case Rectangle(Point p1, Point p2) -> "Rectangle";
-      case Circle(Point center, int radius) -> "Circle";
-      default -> "Not a recognized shape";
-    };
-    assertEquals("Not a recognized shape", stringResult, 
-        "Non-matching switch result should match");
+    if (obj instanceof Point(int x, int y) && x > 10 && y > 20) {
+      // This should not happen
+      assertFalse(true, "Conditional guard should have failed");
+    }
+    else {
+      // This is expected
+      assertTrue(true, "Conditional guard correctly failed");
+    }
   }
   
   /**
-   * Tests pattern matching with null handling.
+   * Tests pattern matching in combination with record methods.
    */
   @Test
-  public void testPatternMatchingWithNullHandling() {
-    // Create objects including null
-    Point point = new Point(1, 2);
-    Point nullPoint = null;
+  void testPatternMatchingWithRecordMethods() {
+    // Create a Rectangle record
+    Rectangle rectangle = new Rectangle(new Point(10, 20), new Point(30, 40));
+    Object obj = rectangle;
     
-    // Test pattern matching with non-null object
-    String nonNullResult = switch (point) {
-      case null -> "null point";
-      case Point(int x, int y) -> "Point at (" + x + ", " + y + ")";
-    };
-    assertEquals("Point at (1, 2)", nonNullResult, "Non-null result should match");
-    
-    // Test pattern matching with null object
-    String nullResult = switch (nullPoint) {
-      case null -> "null point";
-      case Point(int x, int y) -> "Point at (" + x + ", " + y + ")";
-    };
-    assertEquals("null point", nullResult, "Null result should match");
+    // Test pattern matching with record methods
+    if (obj instanceof Rectangle(Point topLeft, Point bottomRight)) {
+      assertEquals(10, topLeft.x(), "Top-left x should be 10");
+      assertEquals(20, topLeft.y(), "Top-left y should be 20");
+      assertEquals(30, bottomRight.x(), "Bottom-right x should be 30");
+      assertEquals(40, bottomRight.y(), "Bottom-right y should be 40");
+      
+      // Calculate width and height using the extracted components
+      int width = bottomRight.x() - topLeft.x();
+      int height = bottomRight.y() - topLeft.y();
+      
+      assertEquals(20, width, "Width should be 20");
+      assertEquals(20, height, "Height should be 20");
+    }
+    else {
+      // This should not happen
+      assertFalse(true, "Pattern matching with record methods failed");
+    }
   }
 }

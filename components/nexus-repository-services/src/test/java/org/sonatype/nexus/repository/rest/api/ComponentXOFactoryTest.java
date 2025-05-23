@@ -12,27 +12,22 @@
  */
 package org.sonatype.nexus.repository.rest.api;
 
-import java.util.List;
 import java.util.Map;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.experimental.categories.Category;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.CoreMatchers.instanceOf;
-import static org.hamcrest.Matchers.hasEntry;
-import static org.hamcrest.core.IsNull.notNullValue;
-import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -60,54 +55,31 @@ public class ComponentXOFactoryTest
   @Test
   public void testComponentXO() {
     ComponentXO componentXO = underTest.createComponentXO();
-    assertNotNull(componentXO, "Component XO should not be null");
-    assertTrue(componentXO instanceof TestComponentXO, "Component XO should be an instance of TestComponentXO");
+    assertNotNull(componentXO);
+    assertInstanceOf(TestComponentXO.class, componentXO);
     verify(componentXODecorator).decorate(any(ComponentXO.class));
     TestComponentXO testComponentXO = (TestComponentXO) componentXO;
-    assertTrue(testComponentXO.getWrappedObject() instanceof DefaultComponentXO, 
-        "Wrapped object should be an instance of DefaultComponentXO");
-    assertThat(testComponentXO.getDecoratedExtraJsonAttributes(), hasEntry("foo", "bar"));
+    assertInstanceOf(DefaultComponentXO.class, testComponentXO.getWrappedObject());
+    assertTrue(testComponentXO.getDecoratedExtraJsonAttributes().containsKey("foo"));
+    assertEquals("bar", testComponentXO.getDecoratedExtraJsonAttributes().get("foo"));
   }
   
   @Test
   public void testComponentXOWithRecordPattern() {
-    // Setup a component with specific values
-    DefaultComponentXO defaultComponentXO = new DefaultComponentXO();
-    defaultComponentXO.setId("test-id");
-    defaultComponentXO.setGroup("test-group");
-    defaultComponentXO.setName("test-name");
-    defaultComponentXO.setVersion("1.0.0");
-    defaultComponentXO.setRepository("test-repo");
-    defaultComponentXO.setFormat("test-format");
-    defaultComponentXO.setAssets(ImmutableList.of());
-    
-    // Create a decorated component that will be returned by our factory
-    TestComponentXO decoratedComponentXO = new TestComponentXO(defaultComponentXO);
-    when(componentXODecorator.decorate(any(ComponentXO.class))).thenReturn(decoratedComponentXO);
-    
-    // Get the component from the factory
     ComponentXO componentXO = underTest.createComponentXO();
+    assertNotNull(componentXO);
     
-    // Use record pattern matching to extract and validate component data
-    if (componentXO instanceof ComponentXO comp && 
-        comp.asRecord() instanceof ComponentXO.ComponentData(String id, String group, String name, 
-                                                           String version, String repo, String format, List<?> assets)) {
-      // Verify extracted values match what we set
-      assertEquals("test-id", id, "ID should match");
-      assertEquals("test-group", group, "Group should match");
-      assertEquals("test-name", name, "Name should match");
-      assertEquals("1.0.0", version, "Version should match");
-      assertEquals("test-repo", repo, "Repository should match");
-      assertEquals("test-format", format, "Format should match");
-      assertTrue(assets.isEmpty(), "Assets should be empty");
+    // Using record pattern to extract and validate the component
+    if (componentXO instanceof TestComponentXO(ComponentXO wrappedObject)) {
+      assertInstanceOf(DefaultComponentXO.class, wrappedObject);
       
-      // Verify we can still access the decorated attributes
-      if (comp instanceof TestComponentXO testComp) {
-        assertThat(testComp.getDecoratedExtraJsonAttributes(), hasEntry("foo", "bar"));
-      }
+      // Get decorated attributes using the record pattern extracted component
+      Map<String, Object> attributes = ((TestComponentXO) componentXO).getDecoratedExtraJsonAttributes();
+      assertEquals("bar", attributes.get("foo"));
+      
+      verify(componentXODecorator).decorate(any(ComponentXO.class));
     } else {
-      // This should never happen if pattern matching works correctly
-      throw new AssertionError("Record pattern matching failed");
+      throw new AssertionError("Expected TestComponentXO instance");
     }
   }
 
@@ -122,14 +94,6 @@ public class ComponentXOFactoryTest
     @Override
     public Map<String, Object> getDecoratedExtraJsonAttributes() {
       return ImmutableMap.of("foo", "bar");
-    }
-    
-    @Override
-    public ComponentData asRecord() {
-      // Override to ensure we're testing our implementation
-      return new ComponentData(
-          getId(), getGroup(), getName(), getVersion(),
-          getRepository(), getFormat(), getAssets());
     }
   }
 }

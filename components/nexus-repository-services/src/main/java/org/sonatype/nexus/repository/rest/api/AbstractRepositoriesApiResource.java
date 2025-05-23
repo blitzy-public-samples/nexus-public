@@ -14,9 +14,12 @@ package org.sonatype.nexus.repository.rest.api;
 
 import java.util.Map;
 import java.util.Optional;
-import java.util.StringTemplate;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import javax.inject.Inject;
 import javax.validation.ConstraintViolationException;
@@ -35,7 +38,6 @@ import javax.ws.rs.core.Response.Status;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.blobstore.api.BlobStoreManager;
-import org.sonatype.nexus.common.thread.VirtualThreadExecutorService;
 import org.sonatype.nexus.repository.Recipe;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.config.Configuration;
@@ -46,6 +48,7 @@ import org.sonatype.nexus.repository.HighAvailabilitySupportChecker;
 import org.sonatype.nexus.rest.Resource;
 import org.sonatype.nexus.rest.ValidationErrorsException;
 import org.sonatype.nexus.rest.WebApplicationMessageException;
+import org.sonatype.nexus.thread.VirtualThreadExecutorService;
 import org.sonatype.nexus.validation.Validate;
 
 import io.swagger.annotations.ApiOperation;
@@ -55,7 +58,7 @@ import org.apache.shiro.authz.AuthorizationException;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.util.StringTemplate.STR;
+import static java.lang.StringTemplate.STR;
 import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
 import static javax.ws.rs.core.Response.Status.BAD_REQUEST;
 import static javax.ws.rs.core.Response.Status.METHOD_NOT_ALLOWED;
@@ -85,8 +88,6 @@ public abstract class AbstractRepositoriesApiResource<T extends AbstractReposito
   private ApiRepositoryAdapter defaultAdapter;
 
   protected HighAvailabilitySupportChecker highAvailabilitySupportChecker;
-
-  private Map<String, Recipe> recipesByFormat;
   
   private VirtualThreadExecutorService virtualThreadExecutorService;
 
@@ -137,34 +138,53 @@ public abstract class AbstractRepositoriesApiResource<T extends AbstractReposito
     this.virtualThreadExecutorService = checkNotNull(virtualThreadExecutorService);
   }
 
+  private Map<String, Recipe> recipesByFormat;
+
   @POST
   @RequiresAuthentication
   @Validate
   public Response createRepository(@NotNull @Valid final T request) {
     verifyAPIEnabled(request.getFormat());
     try {
+      // Create configuration outside the virtual thread
       Configuration configuration = configurationAdapter.convert(request);
       validateRequest(configuration, configuration.getRepositoryName());
       
-      // Use Virtual Threads for improved concurrency
-      CompletableFuture<Void> future = virtualThreadExecutorService.runAsync(() -> {
-        authorizingRepositoryManager.create(configurationAdapter.convert(request));
-      });
+      // Execute repository creation in a virtual thread for improved concurrency
+      CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+        try {
+          authorizingRepositoryManager.create(configuration);
+        } catch (Exception e) {
+          throw new RuntimeException(e);
+        }
+      }, virtualThreadExecutorService);
       
-      // Wait for the operation to complete
-      future.join();
-      
-      return Response.status(Status.CREATED).build();
+      // Wait for completion with a timeout
+      try {
+        future.get(30, TimeUnit.SECONDS);
+        return Response.status(Status.CREATED).build();
+      } catch (InterruptedException | TimeoutException e) {
+        Thread.currentThread().interrupt();
+        throw new WebApplicationMessageException(BAD_REQUEST, 
+            STR."Repository creation timed out for \{configuration.getRepositoryName()}", APPLICATION_JSON);
+      } catch (ExecutionException e) {
+        throw e.getCause();
+      }
     }
     catch (AuthorizationException | AuthenticationException | ConstraintViolationException e) {
       throw e;
     }
     catch (Exception e) {
-      // Use Java 21 String Templates for better readability and performance
-      String message = STR."\"{e.getMessage()}
-{String.join("\n", java.util.Arrays.stream(e.getSuppressed()).map(Throwable::getMessage).toList())}\"".toString();
+      // Use String Templates for better readability and performance
+      StringBuilder errorMessage = new StringBuilder();
+      errorMessage.append(e.getMessage());
       
-      log.debug(STR."Failed to create a new repository via REST: {message}", e);
+      for (Throwable t : e.getSuppressed()) {
+        errorMessage.append("\n").append(t.getMessage());
+      }
+      
+      String message = STR."\"\{errorMessage}\"";
+      log.debug(STR."Failed to create a new repository via REST: \{message}", e);
       throw new WebApplicationMessageException(BAD_REQUEST, message, APPLICATION_JSON);
     }
   }
@@ -178,30 +198,46 @@ public abstract class AbstractRepositoriesApiResource<T extends AbstractReposito
       @PathParam("repositoryName") final String repositoryName)
   {
     try {
+      // Create configuration outside the virtual thread
       Configuration newConfiguration = configurationAdapter.convert(request);
       validateRequest(newConfiguration, repositoryName);
       
-      // Use Virtual Threads for improved concurrency
-      CompletableFuture<Boolean> future = virtualThreadExecutorService.supplyAsync(() -> {
-        return authorizingRepositoryManager.update(newConfiguration);
-      });
+      // Execute repository update in a virtual thread for improved concurrency
+      CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> {
+        try {
+          return authorizingRepositoryManager.update(newConfiguration);
+        } catch (Exception e) {
+          throw new RuntimeException(e);
+        }
+      }, virtualThreadExecutorService);
       
-      // Wait for the operation to complete
-      boolean updated = future.join();
-
-      Status status = updated ? Status.NO_CONTENT : Status.NOT_FOUND;
-      return Response.status(status).build();
+      // Wait for completion with a timeout
+      try {
+        boolean updated = future.get(30, TimeUnit.SECONDS);
+        Status status = updated ? Status.NO_CONTENT : Status.NOT_FOUND;
+        return Response.status(status).build();
+      } catch (InterruptedException | TimeoutException e) {
+        Thread.currentThread().interrupt();
+        throw new WebApplicationMessageException(BAD_REQUEST, 
+            STR."Repository update timed out for \{repositoryName}", APPLICATION_JSON);
+      } catch (ExecutionException e) {
+        throw e.getCause();
+      }
     }
     catch (AuthorizationException | AuthenticationException | ConstraintViolationException e) {
       throw e;
     }
     catch (Exception e) {
-      // Use Java 21 String Templates for better readability and performance
-      String message = STR."\"{e.getMessage()}
-{String.join("\n", java.util.Arrays.stream(e.getSuppressed()).map(Throwable::getMessage).toList())}\"".toString();
+      // Use String Templates for better readability and performance
+      StringBuilder errorMessage = new StringBuilder();
+      errorMessage.append(e.getMessage());
       
-      log.debug(STR."Failed to edit a repository via REST: {message}", e);
-
+      for (Throwable t : e.getSuppressed()) {
+        errorMessage.append("\n").append(t.getMessage());
+      }
+      
+      String message = STR."\"\{errorMessage}\"";
+      log.debug(STR."Failed to edit a repository via REST: \{message}", e);
       throw new WebApplicationMessageException(BAD_REQUEST, message, APPLICATION_JSON);
     }
   }
@@ -215,18 +251,35 @@ public abstract class AbstractRepositoriesApiResource<T extends AbstractReposito
       @ApiParam(hidden = true) @BeanParam final FormatAndType formatAndType,
       @PathParam("repositoryName") final String repositoryName)
   {
-    // Use Virtual Threads for improved concurrency
-    CompletableFuture<AbstractApiRepository> future = virtualThreadExecutorService.supplyAsync(() -> {
-      return authorizingRepositoryManager.getRepositoryWithAdmin(repositoryName)
-          .filter(r -> r.getType().getValue().equals(formatAndType.type()) &&
-              r.getFormat().getValue().equals(formatAndType.format()))
-          .map(r -> convertersByFormat.getOrDefault(r.getFormat().toString(), defaultAdapter).adapt(r))
-          .orElseThrow(() -> new WebApplicationMessageException(NOT_FOUND, 
-              STR."\"Repository {repositoryName} not found\"".toString(), APPLICATION_JSON));
-    });
-    
-    // Wait for the operation to complete
-    return future.join();
+    try {
+      // Execute repository retrieval in a virtual thread for improved concurrency
+      CompletableFuture<Optional<AbstractApiRepository>> future = CompletableFuture.supplyAsync(() -> {
+        return authorizingRepositoryManager.getRepositoryWithAdmin(repositoryName)
+            .filter(r -> r.getType().getValue().equals(formatAndType.type()) &&
+                r.getFormat().getValue().equals(formatAndType.format()))
+            .map(r -> convertersByFormat.getOrDefault(r.getFormat().toString(), defaultAdapter).adapt(r));
+      }, virtualThreadExecutorService);
+      
+      // Wait for completion with a timeout
+      try {
+        Optional<AbstractApiRepository> result = future.get(30, TimeUnit.SECONDS);
+        return result.orElseThrow(() -> 
+            new WebApplicationMessageException(NOT_FOUND, STR."\"Repository \{repositoryName} not found\"", APPLICATION_JSON));
+      } catch (InterruptedException | TimeoutException e) {
+        Thread.currentThread().interrupt();
+        throw new WebApplicationMessageException(BAD_REQUEST, 
+            STR."Repository retrieval timed out for \{repositoryName}", APPLICATION_JSON);
+      } catch (ExecutionException e) {
+        throw (Exception) e.getCause();
+      }
+    } catch (Exception e) {
+      if (e instanceof WebApplicationMessageException) {
+        throw (WebApplicationMessageException) e;
+      }
+      log.debug(STR."Failed to get repository \{repositoryName} via REST", e);
+      throw new WebApplicationMessageException(BAD_REQUEST, 
+          STR."\"Failed to get repository: \{e.getMessage()}\"", APPLICATION_JSON);
+    }
   }
 
   /**
@@ -246,8 +299,7 @@ public abstract class AbstractRepositoriesApiResource<T extends AbstractReposito
 
   private void ensureRepositoryNameMatches(final Configuration newConfig, final String repositoryName) {
     if (!repositoryName.equals(newConfig.getRepositoryName())) {
-      throw new ValidationErrorsException("name", 
-          STR."Renaming a repository from {repositoryName} to {newConfig.getRepositoryName()} is not supported".toString());
+      throw new ValidationErrorsException("name", "Renaming a repository is not supported");
     }
   }
 
@@ -277,7 +329,7 @@ public abstract class AbstractRepositoriesApiResource<T extends AbstractReposito
 
   private void verifyAPIEnabled(final String format) {
     if (!isApiEnabled()) {
-      String message = STR."Format {format} is disabled in High Availability".toString();
+      String message = STR."Format \{format} is disabled in High Availability";
       throw new WebApplicationMessageException(METHOD_NOT_ALLOWED, message, APPLICATION_JSON);
     }
   }
@@ -285,8 +337,7 @@ public abstract class AbstractRepositoriesApiResource<T extends AbstractReposito
   private void validateFormatEnabled(final String recipeName) {
     Recipe recipe = recipesByFormat.get(recipeName);
     if (recipe != null && !recipe.isFeatureEnabled()) {
-      throw new ValidationErrorsException("format", 
-          STR."Format {recipeName} is not currently enabled".toString());
+      throw new ValidationErrorsException("This format is not currently enabled");
     }
   }
 }

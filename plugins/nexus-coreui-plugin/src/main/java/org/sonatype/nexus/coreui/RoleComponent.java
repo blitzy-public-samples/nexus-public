@@ -39,8 +39,10 @@ import org.apache.shiro.authz.annotation.RequiresPermissions;
 
 import javax.validation.constraints.NotEmpty;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -58,6 +60,9 @@ public class RoleComponent
   private final SecuritySystem securitySystem;
 
   private final List<AuthorizationManager> authorizationManagers;
+  
+  // Create a virtual thread executor for I/O-bound operations
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   @Inject
   public RoleComponent(final SecuritySystem securitySystem, final List<AuthorizationManager> authorizationManagers) {
@@ -75,17 +80,15 @@ public class RoleComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:roles:read")
   public List<RoleXO> read() throws NoSuchAuthorizationManagerException {
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      return executor.submit(() -> 
+    try {
+      Future<List<RoleXO>> future = virtualThreadExecutor.submit(() -> 
           securitySystem.listRoles(DEFAULT_SOURCE)
               .stream()
               .map(this::convert)
-              .collect(Collectors.toList()) // NOSONAR
-      ).get();
-    } catch (Exception e) {
-      if (e.getCause() instanceof NoSuchAuthorizationManagerException) {
-        throw (NoSuchAuthorizationManagerException) e.getCause();
-      }
+              .collect(Collectors.toList()));
+      return future.get();
+    } catch (InterruptedException | ExecutionException e) {
+      Thread.currentThread().interrupt();
       throw new RuntimeException("Error retrieving roles", e);
     }
   }
@@ -100,17 +103,15 @@ public class RoleComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:roles:read")
   public List<ReferenceXO> readReferences() throws NoSuchAuthorizationManagerException {
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      return executor.submit(() -> 
+    try {
+      Future<List<ReferenceXO>> future = virtualThreadExecutor.submit(() -> 
           securitySystem.listRoles(DEFAULT_SOURCE)
               .stream()
               .map(input -> new ReferenceXO(input.getRoleId(), input.getName()))
-              .collect(Collectors.toList()) // NOSONAR
-      ).get();
-    } catch (Exception e) {
-      if (e.getCause() instanceof NoSuchAuthorizationManagerException) {
-        throw (NoSuchAuthorizationManagerException) e.getCause();
-      }
+              .collect(Collectors.toList()));
+      return future.get();
+    } catch (InterruptedException | ExecutionException e) {
+      Thread.currentThread().interrupt();
       throw new RuntimeException("Error retrieving role references", e);
     }
   }
@@ -124,14 +125,15 @@ public class RoleComponent
   @Timed
   @ExceptionMetered
   public List<ReferenceXO> readSources() {
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      return executor.submit(() -> 
+    try {
+      Future<List<ReferenceXO>> future = virtualThreadExecutor.submit(() -> 
           authorizationManagers.stream()
               .filter(manager -> !DEFAULT_SOURCE.equals(manager.getSource()))
               .map(manager -> new ReferenceXO(manager.getSource(), manager.getSource()))
-              .collect(Collectors.toList()) // NOSONAR
-      ).get();
-    } catch (Exception e) {
+              .collect(Collectors.toList()));
+      return future.get();
+    } catch (InterruptedException | ExecutionException e) {
+      Thread.currentThread().interrupt();
       throw new RuntimeException("Error retrieving role sources", e);
     }
   }
@@ -148,17 +150,15 @@ public class RoleComponent
   @RequiresPermissions("nexus:roles:read")
   @Validate
   public List<RoleXO> readFromSource(@NotEmpty final String source) throws NoSuchAuthorizationManagerException {
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      return executor.submit(() -> 
+    try {
+      Future<List<RoleXO>> future = virtualThreadExecutor.submit(() -> 
           securitySystem.listRoles(source)
               .stream()
               .map(this::convert)
-              .collect(Collectors.toList()) // NOSONAR
-      ).get();
-    } catch (Exception e) {
-      if (e.getCause() instanceof NoSuchAuthorizationManagerException) {
-        throw (NoSuchAuthorizationManagerException) e.getCause();
-      }
+              .collect(Collectors.toList()));
+      return future.get();
+    } catch (InterruptedException | ExecutionException e) {
+      Thread.currentThread().interrupt();
       throw new RuntimeException("Error retrieving roles from source: " + source, e);
     }
   }
@@ -176,8 +176,8 @@ public class RoleComponent
   @RequiresPermissions("nexus:roles:create")
   @Validate(groups = {Create.class, Default.class})
   public RoleXO create(@NotNull @Valid final RoleXO roleXO) throws NoSuchAuthorizationManagerException {
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      return executor.submit(() -> {
+    try {
+      Future<RoleXO> future = virtualThreadExecutor.submit(() -> {
         // HACK: Temporary validation for external role IDs to support editable text entry in combo box (LDAP only)
         if ("LDAP".equals(roleXO.getSource())) {
           securitySystem.getAuthorizationManager(roleXO.getSource()).getRole(roleXO.getId());
@@ -192,11 +192,10 @@ public class RoleComponent
                     false,
                     roleXO.getRoles(),
                     roleXO.getPrivileges())));
-      }).get();
-    } catch (Exception e) {
-      if (e.getCause() instanceof NoSuchAuthorizationManagerException) {
-        throw (NoSuchAuthorizationManagerException) e.getCause();
-      }
+      });
+      return future.get();
+    } catch (InterruptedException | ExecutionException e) {
+      Thread.currentThread().interrupt();
       throw new RuntimeException("Error creating role", e);
     }
   }
@@ -214,8 +213,8 @@ public class RoleComponent
   @RequiresPermissions("nexus:roles:update")
   @Validate(groups = {Update.class, Default.class})
   public RoleXO update(@NotNull @Valid final RoleXO roleXO) throws NoSuchAuthorizationManagerException {
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      return executor.submit(() -> {
+    try {
+      Future<RoleXO> future = virtualThreadExecutor.submit(() -> {
         Role roleToUpdate = new Role();
         roleToUpdate.setRoleId(roleXO.getId());
         roleToUpdate.setName(roleXO.getName());
@@ -227,11 +226,10 @@ public class RoleComponent
         roleToUpdate.setVersion(Integer.parseInt(roleXO.getVersion()));
         return convert(securitySystem.getAuthorizationManager(DEFAULT_SOURCE)
             .updateRole(roleToUpdate));
-      }).get();
-    } catch (Exception e) {
-      if (e.getCause() instanceof NoSuchAuthorizationManagerException) {
-        throw (NoSuchAuthorizationManagerException) e.getCause();
-      }
+      });
+      return future.get();
+    } catch (InterruptedException | ExecutionException e) {
+      Thread.currentThread().interrupt();
       throw new RuntimeException("Error updating role", e);
     }
   }
@@ -248,15 +246,14 @@ public class RoleComponent
   @RequiresPermissions("nexus:roles:delete")
   @Validate
   public void remove(@NotEmpty final String id) throws NoSuchAuthorizationManagerException {
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      executor.submit(() -> {
+    try {
+      Future<?> future = virtualThreadExecutor.submit(() -> {
         securitySystem.getAuthorizationManager(DEFAULT_SOURCE).deleteRole(id);
         return null;
-      }).get();
-    } catch (Exception e) {
-      if (e.getCause() instanceof NoSuchAuthorizationManagerException) {
-        throw (NoSuchAuthorizationManagerException) e.getCause();
-      }
+      });
+      future.get();
+    } catch (InterruptedException | ExecutionException e) {
+      Thread.currentThread().interrupt();
       throw new RuntimeException("Error removing role: " + id, e);
     }
   }

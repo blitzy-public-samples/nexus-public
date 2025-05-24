@@ -14,18 +14,19 @@ package org.sonatype.nexus.onboarding.internal;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.security.SecuritySystem;
 import org.sonatype.nexus.security.user.NoSuchUserManagerException;
 import org.sonatype.nexus.security.user.User;
 import org.sonatype.nexus.security.user.UserNotFoundException;
 import org.sonatype.nexus.security.user.UserStatus;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
-import org.sonatype.nexus.virtualthread.Java21TestGroup;
 
+import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -37,14 +38,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
 /**
- * Tests {@link ChangeAdminPasswordOnboardingItem} in a virtual thread execution environment.
- * This test validates that the onboarding item correctly determines when an admin password
- * change is required when executed within virtual threads.
+ * Tests for {@link ChangeAdminPasswordOnboardingItem} running in a virtual thread environment.
+ * 
+ * This test validates that the onboarding item correctly determines when an admin password change
+ * is required across various admin user statuses and exception scenarios when executed within
+ * virtual threads. The test ensures that onboarding components properly leverage Virtual Threads
+ * without thread pinning issues, particularly for I/O-bound operations like security system interactions.
  */
 @ExtendWith(MockitoExtension.class)
-@Tag("Java21TestGroup")
-@Tag("VirtualThreadTestGroup")
-public class ChangeAdminPasswordOnboardingItemVirtualThreadTest
+@Category({Java21TestGroup.class, VirtualThreadTestGroup.class})
+class ChangeAdminPasswordOnboardingItemVirtualThreadTest
     extends TestSupport
 {
   @Mock
@@ -53,119 +56,255 @@ public class ChangeAdminPasswordOnboardingItemVirtualThreadTest
   private ChangeAdminPasswordOnboardingItem underTest;
 
   @BeforeEach
-  public void setup() {
+  void setup() {
     underTest = new ChangeAdminPasswordOnboardingItem(securitySystem);
   }
 
+  /**
+   * Tests that the onboarding item correctly identifies when an admin password change is required
+   * when executed in a virtual thread.
+   */
   @Test
-  public void testApplies() throws Exception {
+  void testAppliesInVirtualThread() throws Exception {
+    // Create a user with changepassword status
     User user = new User();
     user.setStatus(UserStatus.changepassword);
 
+    // Configure the mock
     when(securitySystem.getUser("admin", "default")).thenReturn(user);
 
-    runInVirtualThread(() -> {
-      // Verify we're running in a virtual thread
-      assertTrue(Thread.currentThread().isVirtual(), "Test should run in a virtual thread");
-      
-      // Test the applies method
-      assertThat(underTest.applies(), is(true));
-    });
-  }
-
-  @Test
-  public void testApplies_statusActive() throws Exception {
-    User user = new User();
-    user.setStatus(UserStatus.active);
-
-    when(securitySystem.getUser("admin", "default")).thenReturn(user);
-
-    runInVirtualThread(() -> {
-      // Verify we're running in a virtual thread
-      assertTrue(Thread.currentThread().isVirtual(), "Test should run in a virtual thread");
-      
-      // Test the applies method
-      assertThat(underTest.applies(), is(false));
-    });
-  }
-
-  @Test
-  public void testApplies_statusDisabled() throws Exception {
-    User user = new User();
-    user.setStatus(UserStatus.disabled);
-
-    when(securitySystem.getUser("admin", "default")).thenReturn(user);
-
-    runInVirtualThread(() -> {
-      // Verify we're running in a virtual thread
-      assertTrue(Thread.currentThread().isVirtual(), "Test should run in a virtual thread");
-      
-      // Test the applies method
-      assertThat(underTest.applies(), is(false));
-    });
-  }
-
-  @Test
-  public void testApplies_statusLocked() throws Exception {
-    User user = new User();
-    user.setStatus(UserStatus.locked);
-
-    when(securitySystem.getUser("admin", "default")).thenReturn(user);
-
-    runInVirtualThread(() -> {
-      // Verify we're running in a virtual thread
-      assertTrue(Thread.currentThread().isVirtual(), "Test should run in a virtual thread");
-      
-      // Test the applies method
-      assertThat(underTest.applies(), is(false));
-    });
-  }
-
-  @Test
-  public void testApplies_userNotFound() throws Exception {
-    when(securitySystem.getUser("admin", "default")).thenThrow(new UserNotFoundException("admin"));
-
-    runInVirtualThread(() -> {
-      // Verify we're running in a virtual thread
-      assertTrue(Thread.currentThread().isVirtual(), "Test should run in a virtual thread");
-      
-      // Test the applies method
-      assertThat(underTest.applies(), is(false));
-    });
-  }
-
-  @Test
-  public void testApplies_userManagerNotFound() throws Exception {
-    when(securitySystem.getUser("admin", "default")).thenThrow(new NoSuchUserManagerException("default"));
-
-    runInVirtualThread(() -> {
-      // Verify we're running in a virtual thread
-      assertTrue(Thread.currentThread().isVirtual(), "Test should run in a virtual thread");
-      
-      // Test the applies method
-      assertThat(underTest.applies(), is(false));
-    });
-  }
-  
-  /**
-   * Helper method to run a test in a virtual thread and wait for its completion.
-   *
-   * @param runnable the test code to execute in a virtual thread
-   * @throws Exception if the test execution fails or times out
-   */
-  private void runInVirtualThread(Runnable runnable) throws Exception {
+    // Create a latch to wait for the virtual thread to complete
     CountDownLatch latch = new CountDownLatch(1);
-    Thread virtualThread = Thread.ofVirtual().name("virtual-test-thread").start(() -> {
+    AtomicReference<Boolean> appliesResult = new AtomicReference<>();
+    AtomicReference<Boolean> isVirtualThread = new AtomicReference<>();
+
+    // Execute the test in a virtual thread
+    Thread virtualThread = Thread.ofVirtual().start(() -> {
       try {
-        runnable.run();
-      } finally {
+        // Verify we're running in a virtual thread
+        isVirtualThread.set(Thread.currentThread().isVirtual());
+        
+        // Call the method under test
+        appliesResult.set(underTest.applies());
+      }
+      finally {
         latch.countDown();
       }
     });
+
+    // Wait for the virtual thread to complete
+    assertTrue(latch.await(5, TimeUnit.SECONDS), "Virtual thread did not complete in time");
     
-    // Wait for the virtual thread to complete, with a timeout
-    if (!latch.await(10, TimeUnit.SECONDS)) {
-      throw new AssertionError("Test in virtual thread did not complete within timeout");
-    }
+    // Verify the test ran in a virtual thread
+    assertThat("Test should run in a virtual thread", isVirtualThread.get(), is(true));
+    
+    // Verify the applies method returned the expected result
+    assertThat("Admin with changepassword status should require password change", 
+        appliesResult.get(), is(true));
+  }
+
+  /**
+   * Tests that the onboarding item correctly identifies when an admin password change is not required
+   * for an active user when executed in a virtual thread.
+   */
+  @Test
+  void testAppliesStatusActiveInVirtualThread() throws Exception {
+    // Create a user with active status
+    User user = new User();
+    user.setStatus(UserStatus.active);
+
+    // Configure the mock
+    when(securitySystem.getUser("admin", "default")).thenReturn(user);
+
+    // Create a latch to wait for the virtual thread to complete
+    CountDownLatch latch = new CountDownLatch(1);
+    AtomicReference<Boolean> appliesResult = new AtomicReference<>();
+    AtomicReference<Boolean> isVirtualThread = new AtomicReference<>();
+
+    // Execute the test in a virtual thread
+    Thread virtualThread = Thread.ofVirtual().start(() -> {
+      try {
+        // Verify we're running in a virtual thread
+        isVirtualThread.set(Thread.currentThread().isVirtual());
+        
+        // Call the method under test
+        appliesResult.set(underTest.applies());
+      }
+      finally {
+        latch.countDown();
+      }
+    });
+
+    // Wait for the virtual thread to complete
+    assertTrue(latch.await(5, TimeUnit.SECONDS), "Virtual thread did not complete in time");
+    
+    // Verify the test ran in a virtual thread
+    assertThat("Test should run in a virtual thread", isVirtualThread.get(), is(true));
+    
+    // Verify the applies method returned the expected result
+    assertThat("Admin with active status should not require password change", 
+        appliesResult.get(), is(false));
+  }
+
+  /**
+   * Tests that the onboarding item correctly identifies when an admin password change is not required
+   * for a disabled user when executed in a virtual thread.
+   */
+  @Test
+  void testAppliesStatusDisabledInVirtualThread() throws Exception {
+    // Create a user with disabled status
+    User user = new User();
+    user.setStatus(UserStatus.disabled);
+
+    // Configure the mock
+    when(securitySystem.getUser("admin", "default")).thenReturn(user);
+
+    // Create a latch to wait for the virtual thread to complete
+    CountDownLatch latch = new CountDownLatch(1);
+    AtomicReference<Boolean> appliesResult = new AtomicReference<>();
+    AtomicReference<Boolean> isVirtualThread = new AtomicReference<>();
+
+    // Execute the test in a virtual thread
+    Thread virtualThread = Thread.ofVirtual().start(() -> {
+      try {
+        // Verify we're running in a virtual thread
+        isVirtualThread.set(Thread.currentThread().isVirtual());
+        
+        // Call the method under test
+        appliesResult.set(underTest.applies());
+      }
+      finally {
+        latch.countDown();
+      }
+    });
+
+    // Wait for the virtual thread to complete
+    assertTrue(latch.await(5, TimeUnit.SECONDS), "Virtual thread did not complete in time");
+    
+    // Verify the test ran in a virtual thread
+    assertThat("Test should run in a virtual thread", isVirtualThread.get(), is(true));
+    
+    // Verify the applies method returned the expected result
+    assertThat("Admin with disabled status should not require password change", 
+        appliesResult.get(), is(false));
+  }
+
+  /**
+   * Tests that the onboarding item correctly identifies when an admin password change is not required
+   * for a locked user when executed in a virtual thread.
+   */
+  @Test
+  void testAppliesStatusLockedInVirtualThread() throws Exception {
+    // Create a user with locked status
+    User user = new User();
+    user.setStatus(UserStatus.locked);
+
+    // Configure the mock
+    when(securitySystem.getUser("admin", "default")).thenReturn(user);
+
+    // Create a latch to wait for the virtual thread to complete
+    CountDownLatch latch = new CountDownLatch(1);
+    AtomicReference<Boolean> appliesResult = new AtomicReference<>();
+    AtomicReference<Boolean> isVirtualThread = new AtomicReference<>();
+
+    // Execute the test in a virtual thread
+    Thread virtualThread = Thread.ofVirtual().start(() -> {
+      try {
+        // Verify we're running in a virtual thread
+        isVirtualThread.set(Thread.currentThread().isVirtual());
+        
+        // Call the method under test
+        appliesResult.set(underTest.applies());
+      }
+      finally {
+        latch.countDown();
+      }
+    });
+
+    // Wait for the virtual thread to complete
+    assertTrue(latch.await(5, TimeUnit.SECONDS), "Virtual thread did not complete in time");
+    
+    // Verify the test ran in a virtual thread
+    assertThat("Test should run in a virtual thread", isVirtualThread.get(), is(true));
+    
+    // Verify the applies method returned the expected result
+    assertThat("Admin with locked status should not require password change", 
+        appliesResult.get(), is(false));
+  }
+
+  /**
+   * Tests that the onboarding item correctly handles a UserNotFoundException when executed in a virtual thread.
+   */
+  @Test
+  void testAppliesUserNotFoundInVirtualThread() throws Exception {
+    // Configure the mock to throw UserNotFoundException
+    when(securitySystem.getUser("admin", "default")).thenThrow(new UserNotFoundException("admin"));
+
+    // Create a latch to wait for the virtual thread to complete
+    CountDownLatch latch = new CountDownLatch(1);
+    AtomicReference<Boolean> appliesResult = new AtomicReference<>();
+    AtomicReference<Boolean> isVirtualThread = new AtomicReference<>();
+
+    // Execute the test in a virtual thread
+    Thread virtualThread = Thread.ofVirtual().start(() -> {
+      try {
+        // Verify we're running in a virtual thread
+        isVirtualThread.set(Thread.currentThread().isVirtual());
+        
+        // Call the method under test
+        appliesResult.set(underTest.applies());
+      }
+      finally {
+        latch.countDown();
+      }
+    });
+
+    // Wait for the virtual thread to complete
+    assertTrue(latch.await(5, TimeUnit.SECONDS), "Virtual thread did not complete in time");
+    
+    // Verify the test ran in a virtual thread
+    assertThat("Test should run in a virtual thread", isVirtualThread.get(), is(true));
+    
+    // Verify the applies method returned the expected result
+    assertThat("UserNotFoundException should result in no password change required", 
+        appliesResult.get(), is(false));
+  }
+
+  /**
+   * Tests that the onboarding item correctly handles a NoSuchUserManagerException when executed in a virtual thread.
+   */
+  @Test
+  void testAppliesUserManagerNotFoundInVirtualThread() throws Exception {
+    // Configure the mock to throw NoSuchUserManagerException
+    when(securitySystem.getUser("admin", "default")).thenThrow(new NoSuchUserManagerException("default"));
+
+    // Create a latch to wait for the virtual thread to complete
+    CountDownLatch latch = new CountDownLatch(1);
+    AtomicReference<Boolean> appliesResult = new AtomicReference<>();
+    AtomicReference<Boolean> isVirtualThread = new AtomicReference<>();
+
+    // Execute the test in a virtual thread
+    Thread virtualThread = Thread.ofVirtual().start(() -> {
+      try {
+        // Verify we're running in a virtual thread
+        isVirtualThread.set(Thread.currentThread().isVirtual());
+        
+        // Call the method under test
+        appliesResult.set(underTest.applies());
+      }
+      finally {
+        latch.countDown();
+      }
+    });
+
+    // Wait for the virtual thread to complete
+    assertTrue(latch.await(5, TimeUnit.SECONDS), "Virtual thread did not complete in time");
+    
+    // Verify the test ran in a virtual thread
+    assertThat("Test should run in a virtual thread", isVirtualThread.get(), is(true));
+    
+    // Verify the applies method returned the expected result
+    assertThat("NoSuchUserManagerException should result in no password change required", 
+        appliesResult.get(), is(false));
   }
 }

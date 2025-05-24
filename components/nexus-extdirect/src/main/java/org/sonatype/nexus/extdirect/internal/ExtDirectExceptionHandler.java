@@ -40,6 +40,8 @@ import static org.sonatype.nexus.extdirect.model.Responses.error;
 import static org.sonatype.nexus.extdirect.model.Responses.invalid;
 
 /**
+ * Exception handler for ExtDirect requests.
+ * 
  * @since 3.15
  */
 @Named
@@ -52,49 +54,79 @@ public class ExtDirectExceptionHandler
   private static final List<Class<? extends RuntimeException>> SUPPRESSED_EXCEPTIONS = ListUtils.unmodifiableList(
       Arrays.asList(UnauthenticatedException.class, AuthenticationException.class, ValidationErrorsException.class));
 
+  /**
+   * Handle exceptions from ExtDirect requests.
+   *
+   * @param method the registered method that threw the exception
+   * @param e the exception that was thrown
+   * @return an appropriate response based on the exception type
+   */
   public Response handleException(final RegisteredMethod method, final Throwable e) {
     // debug logging for sanity (without stacktrace for suppressed exception)
     log.debug(STR."Failed to invoke action method: \{method.getFullName()}, java-method: \{method.getFullJavaMethodName()}, exception message: \{e.getMessage()}",
         isSuppressedException(e) ? null : e);
 
-    // handle exception using pattern matching with switch
+    // Use pattern matching with switch to handle different exception types
     return switch (e) {
+      // Handle validation message responses which have contents
       case ConstraintViolationException cve when cve.getConstraintViolations() != null && !cve.getConstraintViolations().isEmpty() -> {
-        // handle validation message responses which have contents
         yield invalid(cve);
       }
-      case FrozenException fe, Throwable t when t.getCause() instanceof FrozenException -> {
-        // handle frozen exception or exception with frozen exception cause
+      
+      // Handle frozen repository exceptions
+      case FrozenException fe -> {
         yield error(new Exception("Nexus Repository Manager is in read-only mode"));
       }
-      case SQLException sqlEx, 
-           Throwable t when t.getClass().getName().contains("org.apache.ibatis") || 
-                         t.getClass().getName().contains("org.sonatype.nexus.datastore") -> {
-        // handle database-related exceptions
-        if (!isSuppressedException(e)) {
-          log.error(STR."Failed to invoke action method: \{method.getFullName()}, java-method: \{method.getFullJavaMethodName()}", e);
-        }
+      
+      case Throwable t when t.getCause() instanceof FrozenException -> {
+        yield error(new Exception("Nexus Repository Manager is in read-only mode"));
+      }
+      
+      // Handle database-related exceptions
+      case SQLException se -> {
+        logErrorIfNotSuppressed(method, e);
         yield error(new Exception("A database error occurred"));
       }
-      case HttpHostConnectException httpEx, 
-           Throwable t when t.getClass().getName().contains("com.sonatype.insight.rm.rest.HttpException") -> {
-        // handle connection-related exceptions
-        if (!isSuppressedException(e)) {
-          log.error(STR."Failed to invoke action method: \{method.getFullName()}, java-method: \{method.getFullJavaMethodName()}", e);
-        }
+      
+      // Handle connection-related exceptions
+      case HttpHostConnectException hce -> {
+        logErrorIfNotSuppressed(method, e);
         yield error(new Exception("Connection unsuccessful."));
       }
-      default -> {
-        // handle all other exceptions
-        if (!isSuppressedException(e)) {
-          log.error(STR."Failed to invoke action method: \{method.getFullName()}, java-method: \{method.getFullJavaMethodName()}", e);
+      
+      // Handle all other exceptions with pattern matching on class name
+      case Throwable t -> {
+        logErrorIfNotSuppressed(method, e);
+        String exceptionName = t.getClass().getName();
+        
+        if (exceptionName.contains("org.apache.ibatis") || exceptionName.contains("org.sonatype.nexus.datastore")) {
+          yield error(new Exception("A database error occurred"));
+        } else if (exceptionName.contains("com.sonatype.insight.rm.rest.HttpException")) {
+          yield error(new Exception("Connection unsuccessful."));
+        } else {
+          yield error(e);
         }
-        yield error(e);
       }
     };
   }
 
+  /**
+   * Log error for non-suppressed exceptions.
+   */
+  private void logErrorIfNotSuppressed(final RegisteredMethod method, final Throwable e) {
+    if (!isSuppressedException(e)) {
+      log.error(STR."Failed to invoke action method: \{method.getFullName()}, java-method: \{method.getFullJavaMethodName()}", e);
+    }
+  }
+
+  /**
+   * Check if the exception or its cause is in the list of suppressed exceptions.
+   */
   private boolean isSuppressedException(final Throwable e) {
-    return SUPPRESSED_EXCEPTIONS.stream().anyMatch(ex -> ex.isInstance(e) || ex.isInstance(e.getCause()));
+    return SUPPRESSED_EXCEPTIONS.stream().anyMatch(ex -> switch(e) {
+      case Throwable t when ex.isInstance(t) -> true;
+      case Throwable t when t.getCause() != null && ex.isInstance(t.getCause()) -> true;
+      default -> false;
+    });
   }
 }

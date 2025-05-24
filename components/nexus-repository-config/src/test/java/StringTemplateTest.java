@@ -10,194 +10,231 @@
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  */
-package org.sonatype.nexus.repository.config;
+
+import static java.lang.StringTemplate.STR;
+import static java.lang.StringTemplate.RAW;
+import static java.lang.StringTemplate.FMT;
 
 import java.util.Map;
+import java.util.List;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.common.entity.EntityId;
+import org.sonatype.nexus.repository.config.Configuration;
 import org.sonatype.nexus.repository.config.internal.ConfigurationData;
 
-import com.google.common.collect.ImmutableMap;
-import org.junit.Before;
 import org.junit.Test;
-import org.mockito.Mock;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.not;
-import static org.mockito.Mockito.when;
+import static org.hamcrest.Matchers.containsString;
 
 /**
  * Tests for Java 21 String Templates in repository configuration context.
+ * 
+ * This test class validates that string templates can be used to create more readable
+ * and maintainable log messages and error reports when working with repository configurations.
  */
 public class StringTemplateTest
     extends TestSupport
 {
-  @Mock
-  private EntityId entityId;
-
-  private ConfigurationData configuration;
-
-  @Before
-  public void setup() {
-    when(entityId.getValue()).thenReturn("test-entity-id");
-
-    configuration = new ConfigurationData();
-    configuration.setId(entityId);
-    configuration.setName("test-repo");
-    configuration.setRecipeName("maven2-hosted");
-    configuration.setOnline(true);
-    configuration.setAttributes(ImmutableMap.of(
-        "storage", Map.of("blobStoreName", "default"),
-        "maven", Map.of("versionPolicy", "RELEASE", "layoutPolicy", "STRICT"),
-        "cleanup", Map.of("policyName", "cleanup-weekly")
-    ));
-  }
-
   /**
    * Test basic string template interpolation with repository configuration properties.
    */
   @Test
   public void testBasicStringTemplateInterpolation() {
-    String name = configuration.getName();
-    String recipeName = configuration.getRecipeName();
-    boolean online = configuration.isOnline();
-
-    // Using Java 21 String Template for simple interpolation
-    String message = STR."""
-        Repository: \{name}
-        Recipe: \{recipeName}
-        Online: \{online}
+    // Create a sample configuration
+    ConfigurationData configuration = createSampleConfiguration();
+    
+    // Traditional string concatenation approach
+    String traditionalMessage = "Repository '" + configuration.getName() + "' of type '" + 
+        configuration.getRecipeName() + "' is " + (configuration.isOnline() ? "online" : "offline");
+    
+    // Using Java 21 String Templates
+    String templateMessage = STR."Repository '\{configuration.getName()}' of type '\{configuration.getRecipeName()}' is \{configuration.isOnline() ? "online" : "offline"}";
+    
+    // Verify both approaches produce the same result
+    assertThat(templateMessage, is(traditionalMessage));
+    assertThat(templateMessage, is("Repository 'test-repo' of type 'maven-proxy' is online"));
+  }
+  
+  /**
+   * Test string templates with complex expressions for error reporting.
+   */
+  @Test
+  public void testComplexExpressionsInErrorReporting() {
+    // Create a sample configuration with attributes
+    ConfigurationData configuration = createSampleConfiguration();
+    String remoteUrl = (String) configuration.getAttributes().get("proxy").get("remoteUrl");
+    
+    // Traditional approach for error message
+    String traditionalError = "Failed to connect to remote repository '" + configuration.getName() + 
+        "' at URL '" + remoteUrl + "'. Attempted " + 3 + " times with " + 
+        150 + "ms timeout. Check network connectivity and remote repository availability.";
+    
+    // Using Java 21 String Templates with embedded expressions
+    int attempts = 3;
+    int timeout = 150;
+    String templateError = STR."""
+        Failed to connect to remote repository '\{configuration.getName()}' 
+        at URL '\{remoteUrl}'. 
+        Attempted \{attempts} times with \{timeout}ms timeout. 
+        Check network connectivity and remote repository availability.
         """;
-
-    assertThat(message, containsString("Repository: test-repo"));
-    assertThat(message, containsString("Recipe: maven2-hosted"));
-    assertThat(message, containsString("Online: true"));
+    
+    // Normalize whitespace for comparison
+    String normalizedTemplateError = templateError.replaceAll("\\s+", " ").trim();
+    
+    // Verify the error message contains the expected information
+    assertThat(normalizedTemplateError, containsString("Failed to connect to remote repository 'test-repo'"));
+    assertThat(normalizedTemplateError, containsString("at URL 'https://repo.maven.apache.org/maven2'"));
+    assertThat(normalizedTemplateError, containsString("Attempted 3 times"));
+    assertThat(normalizedTemplateError, containsString("150ms timeout"));
   }
-
+  
   /**
-   * Test string templates for log message formatting with repository configuration.
+   * Test string templates with conditional logic for log messages.
    */
   @Test
-  public void testLogMessageFormatting() {
-    String name = configuration.getName();
-    String recipeName = configuration.getRecipeName();
-    Map<String, Map<String, Object>> attributes = configuration.getAttributes();
-
-    // Using Java 21 String Template for log message formatting
-    String logMessage = STR."Repository \{name} (\{recipeName}) has been configured with blobStore \{attributes.get("storage").get("blobStoreName")}";
-
-    assertThat(logMessage, is("Repository test-repo (maven2-hosted) has been configured with blobStore default"));
+  public void testConditionalLogicInLogMessages() {
+    // Create sample configurations
+    ConfigurationData onlineConfig = createSampleConfiguration();
+    ConfigurationData offlineConfig = createSampleConfiguration();
+    offlineConfig.setOnline(false);
+    
+    // Using Java 21 String Templates with conditional logic
+    String onlineMessage = STR."Repository \{onlineConfig.getName()} status: \{onlineConfig.isOnline() ? "✓ ONLINE" : "✗ OFFLINE"}";
+    String offlineMessage = STR."Repository \{offlineConfig.getName()} status: \{offlineConfig.isOnline() ? "✓ ONLINE" : "✗ OFFLINE"}";
+    
+    // Verify conditional expressions work correctly
+    assertThat(onlineMessage, is("Repository test-repo status: ✓ ONLINE"));
+    assertThat(offlineMessage, is("Repository test-repo status: ✗ OFFLINE"));
   }
-
+  
   /**
-   * Test string templates for error reporting with repository configuration.
+   * Test string templates with formatted values using the FMT processor.
    */
   @Test
-  public void testErrorReporting() {
-    String name = configuration.getName();
-    String recipeName = configuration.getRecipeName();
+  public void testFormattedValuesInTemplates() {
+    // Create a sample configuration
+    ConfigurationData configuration = createSampleConfiguration();
     
-    // Simulate an error condition
-    String invalidAttribute = "nonexistent";
+    // Add some metrics to the configuration attributes
+    Map<String, Object> metrics = Map.of(
+        "downloadCount", 1234567,
+        "uploadCount", 89012,
+        "storageSize", 9876543210L,
+        "hitRatio", 0.9876
+    );
+    configuration.getAttributes().put("metrics", metrics);
     
-    // Using Java 21 String Template for error message formatting
-    String errorMessage = STR."Error accessing attribute '\{invalidAttribute}' in repository \{name} (\{recipeName}). " +
-        "Available attributes: \{String.join(", ", configuration.getAttributes().keySet())}";
-
-    assertThat(errorMessage, containsString("Error accessing attribute 'nonexistent' in repository test-repo (maven2-hosted)"));
-    assertThat(errorMessage, containsString("Available attributes: "));
-    assertThat(errorMessage, containsString("storage"));
-    assertThat(errorMessage, containsString("maven"));
-    assertThat(errorMessage, containsString("cleanup"));
-  }
-
-  /**
-   * Test string templates with complex expressions and conditional logic.
-   */
-  @Test
-  public void testComplexExpressionsAndConditionalLogic() {
-    String name = configuration.getName();
-    boolean online = configuration.isOnline();
-    Map<String, Map<String, Object>> attributes = configuration.getAttributes();
-    
-    // Using Java 21 String Template with complex expressions and conditional logic
-    String statusMessage = STR."""
-        Repository \{name} is currently \{online ? "online" : "offline"}.
-        Storage: \{attributes.get("storage").get("blobStoreName")}
-        Maven Version Policy: \{attributes.get("maven").get("versionPolicy")}
-        Maven Layout Policy: \{attributes.get("maven").get("layoutPolicy")}
-        Cleanup Policy: \{attributes.get("cleanup").containsKey("policyName") ? 
-            attributes.get("cleanup").get("policyName") : "none"}
+    // Using FMT processor for formatted values
+    String formattedStats = FMT."""
+        Repository Statistics for '\{configuration.getName()}':
+        - Download Count: \{%,d metrics.get("downloadCount")}
+        - Upload Count: \{%,d metrics.get("uploadCount")}
+        - Storage Size: \{%,d metrics.get("storageSize")} bytes
+        - Cache Hit Ratio: \{%.2f metrics.get("hitRatio") * 100}%
         """;
-
-    assertThat(statusMessage, containsString("Repository test-repo is currently online."));
-    assertThat(statusMessage, containsString("Storage: default"));
-    assertThat(statusMessage, containsString("Maven Version Policy: RELEASE"));
-    assertThat(statusMessage, containsString("Maven Layout Policy: STRICT"));
-    assertThat(statusMessage, containsString("Cleanup Policy: cleanup-weekly"));
-  }
-
-  /**
-   * Test string templates with proper formatting and escaping.
-   */
-  @Test
-  public void testFormattingAndEscaping() {
-    String name = configuration.getName();
     
-    // Using Java 21 String Template with formatting and escaping
-    String formattedMessage = STR."""
-        Repository details for "\{name}":
-        - ID: \{entityId.getValue()}
-        - Type: \{configuration.getRecipeName().toUpperCase()}
-        - Status: \{configuration.isOnline() ? "\u2713 ONLINE" : "\u2717 OFFLINE"}
-        """;
-
-    assertThat(formattedMessage, containsString("Repository details for \"test-repo\":"));
-    assertThat(formattedMessage, containsString("- ID: test-entity-id"));
-    assertThat(formattedMessage, containsString("- Type: MAVEN2-HOSTED"));
-    assertThat(formattedMessage, containsString("- Status: ✓ ONLINE"));
+    // Verify formatted values
+    String normalizedStats = formattedStats.replaceAll("\\s+", " ").trim();
+    assertThat(normalizedStats, containsString("Download Count: 1,234,567"));
+    assertThat(normalizedStats, containsString("Upload Count: 89,012"));
+    assertThat(normalizedStats, containsString("Storage Size: 9,876,543,210 bytes"));
+    assertThat(normalizedStats, containsString("Cache Hit Ratio: 98.76%"));
   }
-
+  
   /**
-   * Test string templates for sensitive information handling.
+   * Test string templates with proper escaping in log messages.
    */
   @Test
-  public void testSensitiveInformationHandling() {
-    // Create a configuration with sensitive information
-    ConfigurationData secureConfig = new ConfigurationData();
-    secureConfig.setName("secure-repo");
-    secureConfig.setRecipeName("maven2-proxy");
-    secureConfig.setAttributes(ImmutableMap.of(
-        "httpclient", Map.of(
-            "authentication", Map.of(
-                "username", "admin",
-                "password", "secret123",
-                "ntlmHost", "host",
-                "ntlmDomain", "domain"
-            )
+  public void testEscapingInTemplates() {
+    // Create a sample configuration with special characters
+    ConfigurationData configuration = createSampleConfiguration();
+    configuration.setName("test-repo{with}special\"chars");
+    
+    // Using Java 21 String Templates with escaping
+    String escapedMessage = STR."Processing repository '\{configuration.getName()}'";
+    
+    // Verify special characters are properly handled
+    assertThat(escapedMessage, is("Processing repository 'test-repo{with}special\"chars'"));
+    
+    // Test escaping the template delimiter itself
+    String delimiterMessage = STR."To include a \\{ character in templates, use \\\\{ escape sequence";
+    assertThat(delimiterMessage, is("To include a \\{ character in templates, use \\\\{ escape sequence"));
+  }
+  
+  /**
+   * Test using RAW processor to defer template processing.
+   */
+  @Test
+  public void testRawTemplateProcessor() {
+    // Create a sample configuration
+    ConfigurationData configuration = createSampleConfiguration();
+    
+    // Using RAW processor to create a template that can be processed later
+    var rawTemplate = RAW."Repository '\{configuration.getName()}' is \{configuration.isOnline() ? "online" : "offline"}";
+    
+    // Process the template with STR processor
+    String processedMessage = STR.process(rawTemplate);
+    
+    // Verify the processed message
+    assertThat(processedMessage, is("Repository 'test-repo' is online"));
+    
+    // Verify we can access the fragments and values separately
+    List<String> fragments = rawTemplate.fragments();
+    List<Object> values = rawTemplate.values();
+    
+    assertThat(fragments.size(), is(3)); // One more fragment than values
+    assertThat(fragments.get(0), is("Repository '"));
+    assertThat(fragments.get(1), is("' is "));
+    assertThat(fragments.get(2), is(""));
+    
+    assertThat(values.size(), is(2));
+    assertThat(values.get(0), is("test-repo"));
+    assertThat(values.get(1), is("online"));
+  }
+  
+  /**
+   * Helper method to create a sample repository configuration for testing.
+   */
+  private ConfigurationData createSampleConfiguration() {
+    ConfigurationData configuration = new ConfigurationData();
+    configuration.setName("test-repo");
+    configuration.setRecipeName("maven-proxy");
+    configuration.setOnline(true);
+    
+    // Add some attributes that would be typical for a Maven proxy repository
+    Map<String, Object> proxyAttributes = Map.of(
+        "remoteUrl", "https://repo.maven.apache.org/maven2",
+        "contentMaxAge", 1440,
+        "metadataMaxAge", 1440
+    );
+    
+    Map<String, Object> httpClientAttributes = Map.of(
+        "blocked", false,
+        "autoBlock", true,
+        "connection", Map.of(
+            "retries", 3,
+            "timeout", 60,
+            "enableCircularRedirects", false,
+            "enableCookies", false
         )
-    ));
-
-    // Using Java 21 String Template with sensitive information handling
-    String secureMessage = STR."""
-        Repository \{secureConfig.getName()} (\{secureConfig.getRecipeName()}) authentication:
-        Username: \{secureConfig.getAttributes().get("httpclient").get("authentication").get("username")}
-        Password: \{maskPassword(secureConfig.getAttributes().get("httpclient").get("authentication").get("password").toString())}
-        """;
-
-    assertThat(secureMessage, containsString("Repository secure-repo (maven2-proxy) authentication:"));
-    assertThat(secureMessage, containsString("Username: admin"));
-    assertThat(secureMessage, containsString("Password: ******"));
-    assertThat(secureMessage, not(containsString("secret123")));
-  }
-
-  /**
-   * Helper method to mask passwords in log messages.
-   */
-  private String maskPassword(String password) {
-    return password != null ? "******" : null;
+    );
+    
+    Map<String, Object> negativeCache = Map.of(
+        "enabled", true,
+        "timeToLive", 1440
+    );
+    
+    Map<String, Map<String, Object>> attributes = Map.of(
+        "proxy", proxyAttributes,
+        "httpclient", httpClientAttributes,
+        "negativeCache", negativeCache
+    );
+    
+    configuration.setAttributes(attributes);
+    
+    return configuration;
   }
 }

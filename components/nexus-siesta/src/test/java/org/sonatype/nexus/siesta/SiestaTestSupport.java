@@ -13,8 +13,6 @@
 package org.sonatype.nexus.siesta;
 
 import java.util.EnumSet;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 
 import javax.servlet.DispatcherType;
@@ -30,6 +28,9 @@ import org.eclipse.jetty.servlet.ServletTester;
 import org.jboss.resteasy.client.jaxrs.ResteasyClientBuilder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.function.Executable;
+
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Support for Siesta tests.
@@ -42,8 +43,6 @@ public class SiestaTestSupport
   private String url;
 
   private Client client;
-  
-  private ExecutorService virtualThreadExecutor;
 
   @BeforeEach
   public void startJetty() throws Exception {
@@ -62,19 +61,16 @@ public class SiestaTestSupport
     url = servletTester.createConnector(true) + TestModule.MOUNT_POINT;
     servletTester.addFilter(GuiceFilter.class, "/*", EnumSet.of(DispatcherType.REQUEST));
     servletTester.addServlet(DummyServlet.class, "/*");
-    
-    // Configure virtual threads if running on Java 21 or newer
-    configureVirtualThreads();
-    
     servletTester.start();
 
-    // Use RESTEasy client builder for compatibility with RESTEasy 6.2.7.Final
+    // Use ResteasyClientBuilder for RESTEasy 6.2.7.Final compatibility
     client = ResteasyClientBuilder.newClient();
   }
 
   @AfterEach
   public void stopJetty() throws Exception {
     try {
+      // Proper resource cleanup
       if (client != null) {
         client.close();
       }
@@ -82,41 +78,21 @@ public class SiestaTestSupport
       if (servletTester != null) {
         servletTester.stop();
       }
-      
-      if (virtualThreadExecutor != null) {
-        virtualThreadExecutor.shutdown();
-      }
     }
   }
-  
+
   /**
-   * Configure virtual threads if running on Java 21 or newer.
+   * Creates a ThreadFactory that can be configured to use virtual threads when running on Java 21.
+   * 
+   * @param useVirtualThreads whether to use virtual threads (true) or platform threads (false)
+   * @param namePrefix prefix for thread names
+   * @return a ThreadFactory that creates either virtual or platform threads
    */
-  private void configureVirtualThreads() {
-    try {
-      // Check if we're running on Java 21 or newer with virtual threads support
-      Class<?> virtualThreadBuilderClass = Class.forName("java.lang.Thread$Builder$OfVirtual");
-      if (virtualThreadBuilderClass != null) {
-        // Create a virtual thread executor
-        virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
-        
-        // Configure ServletTester to use virtual threads if possible
-        // This is a best-effort approach as the exact API might vary by Jetty version
-        try {
-          // Try to set virtual thread executor on the ServletTester if the method exists
-          java.lang.reflect.Method setVirtualThreadsExecutorMethod = 
-              servletTester.getClass().getMethod("setVirtualThreadsExecutor", ExecutorService.class);
-          if (setVirtualThreadsExecutorMethod != null) {
-            setVirtualThreadsExecutorMethod.invoke(servletTester, virtualThreadExecutor);
-          }
-        } catch (Exception e) {
-          // Virtual thread configuration not supported in this Jetty version, continue with platform threads
-          log.debug("Virtual thread configuration not supported in this Jetty version", e);
-        }
-      }
-    } catch (ClassNotFoundException e) {
-      // Running on Java version prior to 21, virtual threads not available
-      log.debug("Virtual threads not available in this Java version");
+  protected ThreadFactory createThreadFactory(boolean useVirtualThreads, String namePrefix) {
+    if (useVirtualThreads) {
+      return Thread.ofVirtual().name(namePrefix, 0).factory();
+    } else {
+      return Thread.ofPlatform().name(namePrefix, 0).factory();
     }
   }
 

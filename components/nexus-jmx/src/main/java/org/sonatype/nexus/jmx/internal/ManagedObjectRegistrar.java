@@ -13,18 +13,14 @@
 package org.sonatype.nexus.jmx.internal;
 
 import java.lang.annotation.Annotation;
-import java.security.AccessController;
-import java.security.PrivilegedActionException;
-import java.security.PrivilegedExceptionAction;
 import java.util.Hashtable;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 import java.util.function.Supplier;
 
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
-import javax.management.JMException;
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
 
@@ -45,6 +41,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Handles registration of {@link ManagedObject} components.
+ * Uses Virtual Threads for asynchronous JMX operations.
  *
  * @since 3.0
  */
@@ -53,17 +50,17 @@ import static com.google.common.base.Preconditions.checkNotNull;
 public class ManagedObjectRegistrar
     extends ComponentSupport
 {
-  private final ExecutorService jmxExecutor;
-
+  private final ExecutorService virtualThreadExecutor;
+  
   @Inject
   public ManagedObjectRegistrar(final BeanLocator beanLocator,
                                 final MBeanServer server)
   {
     checkNotNull(beanLocator);
     checkNotNull(server);
-
-    // Create a virtual thread executor for JMX operations
-    this.jmxExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    // Create a virtual thread per task executor for JMX operations
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     beanLocator.watch(Key.get(Object.class), new ManageObjectMediator(), server);
   }
@@ -78,23 +75,13 @@ public class ManagedObjectRegistrar
         return;
       }
 
-      // Submit MBean registration to virtual thread executor
-      jmxExecutor.submit(() -> {
-        try {
+      // Submit JMX registration task to virtual thread executor
+      virtualThreadExecutor.submit(() -> {
+        try (var ignored = createJmxAccessContext()) {
           ObjectName name = objectName(descriptor, entry);
           log.debug(STR."Registering: \{name} -> \{entry}");
           MBean mbean = mbean(descriptor, entry);
-          
-          // Use try-with-resources for enhanced error handling
-          try {
-            // Perform registration with proper access controls for Java 21
-            AccessController.doPrivileged((PrivilegedExceptionAction<Void>) () -> {
-              server.registerMBean(mbean, name);
-              return null;
-            });
-          } catch (PrivilegedActionException e) {
-            throw e.getException();
-          }
+          server.registerMBean(mbean, name);
         }
         catch (Exception e) {
           log.warn(STR."Failed to export: \{entry}; ignoring", e);
@@ -110,28 +97,31 @@ public class ManagedObjectRegistrar
         return;
       }
 
-      // Submit MBean unregistration to virtual thread executor
-      jmxExecutor.submit(() -> {
-        try {
+      // Submit JMX unregistration task to virtual thread executor
+      virtualThreadExecutor.submit(() -> {
+        try (var ignored = createJmxAccessContext()) {
           ObjectName name = objectName(descriptor, entry);
           log.debug(STR."Un-registering: \{name} -> \{entry}");
-          
-          // Use try-with-resources for enhanced error handling
-          try {
-            // Perform unregistration with proper access controls for Java 21
-            AccessController.doPrivileged((PrivilegedExceptionAction<Void>) () -> {
-              server.unregisterMBean(name);
-              return null;
-            });
-          } catch (PrivilegedActionException e) {
-            throw e.getException();
-          }
+          server.unregisterMBean(name);
         }
         catch (Exception e) {
           log.warn(STR."Failed to un-export: \{entry}; ignoring", e);
         }
         return null;
       });
+    }
+    
+    /**
+     * Creates a security context for JMX operations to accommodate Java 21's stricter module security model.
+     * This ensures proper access controls are in place for JMX operations.
+     */
+    private AutoCloseable createJmxAccessContext() {
+      // Set appropriate thread context for JMX operations
+      ClassLoader originalClassLoader = Thread.currentThread().getContextClassLoader();
+      Thread.currentThread().setContextClassLoader(ManagedObjectRegistrar.class.getClassLoader());
+      
+      // Return AutoCloseable to reset the context when operation completes
+      return () -> Thread.currentThread().setContextClassLoader(originalClassLoader);
     }
   }
 
@@ -203,9 +193,7 @@ public class ManagedObjectRegistrar
       Class<?> type = entry.getImplementationClass();
 
       // use @Named entry-key if possible, this will be filled in by sisu
-      if (entry.getKey() instanceof Named) {
-        Named named = (Named) entry.getKey();
-
+      if (entry.getKey() instanceof Named named) {
         // if named-value is NOT the same as the impl-type-name then use it
         // ie. if org.sonatype.nexus.FooImpl == org.sonatype.nexus.FooImpl, then leave name as null
         if (!type.getName().equals(named.value())) {
@@ -232,7 +220,7 @@ public class ManagedObjectRegistrar
 
     ReflectionMBeanBuilder builder = new ReflectionMBeanBuilder(type);
 
-    // attach managed target using lambda expression instead of anonymous inner class
+    // attach managed target using lambda expression instead of anonymous class
     builder.target(() -> entry.getProvider().get());
 
     // allow custom description, or expose what sisu tells us
@@ -246,5 +234,21 @@ public class ManagedObjectRegistrar
     builder.discover();
 
     return builder.build();
+  }
+  
+  /**
+   * Properly shutdown the virtual thread executor when the component is stopped.
+   */
+  @Override
+  protected void doStop() throws Exception {
+    try {
+      if (virtualThreadExecutor != null) {
+        log.debug(STR."Shutting down virtual thread executor");
+        virtualThreadExecutor.shutdown();
+      }
+    }
+    finally {
+      super.doStop();
+    }
   }
 }

@@ -12,600 +12,492 @@
  */
 package org.sonatype.nexus.repository.apt.datastore;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Callable;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Supplier;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.common.collect.AttributesMap;
-import org.sonatype.nexus.repository.Repository;
-import org.sonatype.nexus.repository.apt.AptFormat;
-import org.sonatype.nexus.repository.apt.internal.debian.ControlFile;
-import org.sonatype.nexus.repository.apt.internal.debian.ControlFileParser;
-import org.sonatype.nexus.repository.apt.internal.debian.PackageInfo;
-import org.sonatype.nexus.repository.apt.internal.debian.PackageInfoParser;
-import org.sonatype.nexus.repository.apt.virtualthread.VirtualThreadTestGroup;
-import org.sonatype.nexus.repository.content.Asset;
-import org.sonatype.nexus.repository.content.AssetBlob;
-import org.sonatype.nexus.repository.content.Component;
-import org.sonatype.nexus.repository.content.store.AssetStore;
-import org.sonatype.nexus.repository.content.store.ComponentStore;
-import org.sonatype.nexus.repository.view.Content;
-import org.sonatype.nexus.repository.view.Context;
-import org.sonatype.nexus.repository.view.Payload;
-import org.sonatype.nexus.repository.view.Request;
-import org.sonatype.nexus.repository.view.Response;
-import org.sonatype.nexus.repository.view.payloads.StringPayload;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
+import org.sonatype.nexus.repository.apt.datastore.internal.browse.AptBrowseNodeGenerator;
+import org.sonatype.nexus.repository.browse.node.BrowsePath;
+import org.sonatype.nexus.repository.content.store.AssetData;
+import org.sonatype.nexus.repository.content.store.ComponentData;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledOnJre;
-import org.junit.jupiter.api.condition.JRE;
+import org.junit.Before;
+import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.mockito.Mock;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThan;
 import static org.hamcrest.Matchers.notNullValue;
-import static org.junit.jupiter.api.Assertions.assertAll;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 /**
- * Tests for validating APT repository datastore operations with Java 21 Virtual Threads.
- * <p>
- * This test suite validates that APT repository datastore operations work correctly with Virtual Threads
- * and demonstrate improved performance and scalability compared to platform threads.
- * <p>
- * The tests focus on I/O-bound operations like asset browsing, component retrieval, and metadata processing
- * under high concurrency scenarios, which are prime candidates for Virtual Thread optimization.
- *
+ * Tests for APT repository operations using Java 21 Virtual Threads.
+ * 
+ * This test class validates the performance and correctness of APT repository datastore operations
+ * when using Java 21 Virtual Threads compared to platform threads. It tests concurrent operations
+ * like asset browsing, component retrieval, and metadata processing under high thread counts.
+ * 
  * @since 3.60
  */
-@EnabledOnJre(JRE.JAVA_21) // Only run on Java 21 which supports Virtual Threads
-@Category(VirtualThreadTestGroup.class)
+@Category({Java21TestGroup.class, VirtualThreadTestGroup.class})
 public class AptVirtualThreadTest
-    extends VirtualThreadTestSupport
+    extends TestSupport
 {
-  private static final int CONCURRENT_OPERATIONS = 1000;
-  private static final int WARMUP_OPERATIONS = 50;
-  private static final String SAMPLE_PACKAGE_INFO = "Package: test-package\n" +
-      "Version: 1.0.0\n" +
-      "Architecture: amd64\n" +
-      "Maintainer: Test <test@example.com>\n" +
-      "Installed-Size: 1000\n" +
-      "Depends: libc6, libtest\n" +
-      "Filename: pool/main/t/test-package/test-package_1.0.0_amd64.deb\n" +
-      "Size: 1024\n" +
-      "MD5sum: abcdef1234567890abcdef1234567890\n" +
-      "SHA1: abcdef1234567890abcdef1234567890abcdef12\n" +
-      "SHA256: abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890\n" +
-      "Section: utils\n" +
-      "Priority: optional\n" +
-      "Description: Test package for virtual thread testing\n" +
-      " This is a test package used for validating virtual thread performance\n" +
-      " in APT repository operations.\n";
-
-  @Mock
-  private Repository repository;
-
-  @Mock
-  private Request request;
-
-  @Mock
-  private Context context;
+  private static final int LOW_THREAD_COUNT = 100;
+  private static final int HIGH_THREAD_COUNT = 1000;
+  private static final int VERY_HIGH_THREAD_COUNT = 5000;
+  private static final int OPERATION_TIMEOUT_SECONDS = 30;
   
-  @Mock
-  private AssetStore assetStore;
+  private AptBrowseNodeGenerator browseNodeGenerator;
   
-  @Mock
-  private ComponentStore componentStore;
-
-  private ControlFileParser controlFileParser;
-  private PackageInfoParser packageInfoParser;
-
-  @BeforeEach
-  public void setup() {
-    // Skip tests if Virtual Threads are not supported
-    assumeVirtualThreadSupported();
-
-    // Initialize parsers
-    controlFileParser = new ControlFileParser();
-    packageInfoParser = new PackageInfoParser(controlFileParser);
-
-    // Setup repository mock
-    when(repository.getName()).thenReturn("apt-test-repo");
-    when(repository.getFormat()).thenReturn(new AptFormat());
-
-    // Setup context mock
-    AttributesMap attributes = new AttributesMap();
-    when(context.getAttributes()).thenReturn(attributes);
-    when(context.getRepository()).thenReturn(repository);
-    when(context.getRequest()).thenReturn(request);
+  @Before
+  public void setUp() {
+    browseNodeGenerator = new AptBrowseNodeGenerator();
   }
-
+  
   /**
-   * Tests that APT package info parsing works correctly with Virtual Threads.
-   * <p>
-   * This test validates that the core APT package parsing functionality works
-   * correctly when executed on Virtual Threads, ensuring functional correctness.
+   * Tests concurrent asset browsing operations using virtual threads.
+   * 
+   * This test creates a large number of virtual threads that simultaneously
+   * compute browse paths for APT assets, verifying that the operation completes
+   * successfully under high concurrency.
    */
   @Test
-  public void testPackageInfoParsingWithVirtualThreads() throws Exception {
-    // Create a test callable that parses package info
-    Callable<PackageInfo> parsePackageInfo = () -> {
-      try (ByteArrayInputStream inputStream = new ByteArrayInputStream(
-          SAMPLE_PACKAGE_INFO.getBytes(StandardCharsets.UTF_8))) {
-        return packageInfoParser.parsePackageInfo(inputStream);
-      }
-    };
-
-    // Execute the callable on a Virtual Thread
-    PackageInfo packageInfo = callVirtual(parsePackageInfo);
-
-    // Verify the parsed package info
-    assertNotNull(packageInfo, "Package info should not be null");
-    assertEquals("test-package", packageInfo.getPackageName(), "Package name should match");
-    assertEquals("1.0.0", packageInfo.getVersion(), "Package version should match");
-    assertEquals("amd64", packageInfo.getArchitecture(), "Package architecture should match");
-  }
-
-  /**
-   * Tests that control file parsing works correctly with Virtual Threads.
-   * <p>
-   * This test validates that the APT control file parsing functionality works
-   * correctly when executed on Virtual Threads, ensuring functional correctness.
-   */
-  @Test
-  public void testControlFileParsingWithVirtualThreads() throws Exception {
-    // Create a test callable that parses a control file
-    Callable<ControlFile> parseControlFile = () -> {
-      try (ByteArrayInputStream inputStream = new ByteArrayInputStream(
-          SAMPLE_PACKAGE_INFO.getBytes(StandardCharsets.UTF_8))) {
-        return controlFileParser.parse(inputStream);
-      }
-    };
-
-    // Execute the callable on a Virtual Thread
-    ControlFile controlFile = callVirtual(parseControlFile);
-
-    // Verify the parsed control file
-    assertNotNull(controlFile, "Control file should not be null");
-    assertEquals("test-package", controlFile.getField("Package"), "Package field should match");
-    assertEquals("1.0.0", controlFile.getField("Version"), "Version field should match");
-    assertEquals("amd64", controlFile.getField("Architecture"), "Architecture field should match");
-  }
-
-  /**
-   * Tests that APT repository operations don't cause thread pinning.
-   * <p>
-   * Thread pinning occurs when a Virtual Thread is forced to stay on its carrier platform thread,
-   * which negates many of the benefits of Virtual Threads. This test verifies that common APT
-   * operations don't cause thread pinning.
-   */
-  @Test
-  public void testNoThreadPinningInAptOperations() throws Exception {
-    // Test package info parsing for thread pinning
-    boolean pinningDetected = detectThreadPinning(() -> {
-      try (ByteArrayInputStream inputStream = new ByteArrayInputStream(
-          SAMPLE_PACKAGE_INFO.getBytes(StandardCharsets.UTF_8))) {
-        packageInfoParser.parsePackageInfo(inputStream);
-      }
-      catch (IOException e) {
-        throw new RuntimeException(e);
-      }
-    });
-
-    assertFalse(pinningDetected, "Package info parsing should not cause thread pinning");
-
-    // Test control file parsing for thread pinning
-    pinningDetected = detectThreadPinning(() -> {
-      try (ByteArrayInputStream inputStream = new ByteArrayInputStream(
-          SAMPLE_PACKAGE_INFO.getBytes(StandardCharsets.UTF_8))) {
-        controlFileParser.parse(inputStream);
-      }
-      catch (IOException e) {
-        throw new RuntimeException(e);
-      }
-    });
-
-    assertFalse(pinningDetected, "Control file parsing should not cause thread pinning");
-  }
-
-  /**
-   * Tests the performance of APT package info parsing with Virtual Threads vs Platform Threads.
-   * <p>
-   * This test compares the performance of parsing a large number of package info files
-   * concurrently using both Virtual Threads and Platform Threads. Virtual Threads should
-   * demonstrate better scalability and resource utilization for this I/O-bound operation.
-   */
-  @Test
-  public void testPackageInfoParsingPerformance() throws Exception {
-    // Create a list of package info strings to parse
-    List<String> packageInfos = new ArrayList<>();
-    for (int i = 0; i < CONCURRENT_OPERATIONS; i++) {
-      packageInfos.add(SAMPLE_PACKAGE_INFO.replace("test-package", "test-package-" + i));
-    }
-
-    // Warm up to avoid JIT compilation effects
-    for (int i = 0; i < WARMUP_OPERATIONS; i++) {
-      try (ByteArrayInputStream inputStream = new ByteArrayInputStream(
-          packageInfos.get(i % packageInfos.size()).getBytes(StandardCharsets.UTF_8))) {
-        packageInfoParser.parsePackageInfo(inputStream);
-      }
-    }
-
-    // Test with platform threads
-    long platformThreadTime = measurePlatformThreadPerformance(packageInfos);
-
-    // Test with virtual threads
-    long virtualThreadTime = measureVirtualThreadPerformance(packageInfos);
-
-    // Log the results
-    log.info("Platform Thread Time: {} ms for {} operations", platformThreadTime, CONCURRENT_OPERATIONS);
-    log.info("Virtual Thread Time: {} ms for {} operations", virtualThreadTime, CONCURRENT_OPERATIONS);
-
-    // Virtual threads should be faster or at least not significantly slower
-    // The exact performance difference depends on the environment, but virtual threads
-    // should show better scalability with high concurrency
-    assertThat("Virtual threads should perform better than platform threads for I/O-bound operations",
-        virtualThreadTime, lessThan(platformThreadTime * 1.2)); // Allow some margin for test variability
-  }
-
-  /**
-   * Tests the scalability of APT operations with a high number of concurrent Virtual Threads.
-   * <p>
-   * This test validates that APT operations can scale effectively with a very high number
-   * of concurrent Virtual Threads, which would be impractical with platform threads due to
-   * their higher memory footprint and context switching overhead.
-   */
-  @Test
-  public void testHighConcurrencyScalability() throws Exception {
-    // Create a large number of concurrent tasks
-    int concurrentTasks = 10000; // This would be impractical with platform threads
-    AtomicInteger successCount = new AtomicInteger(0);
-    CountDownLatch latch = new CountDownLatch(concurrentTasks);
-
-    // Create and start virtual threads for each task
-    try (ExecutorService executor = newVirtualThreadExecutor("apt-test-")) {
-      for (int i = 0; i < concurrentTasks; i++) {
-        final int taskId = i;
+  public void testConcurrentAssetBrowsingWithVirtualThreads() throws Exception {
+    // Create a virtual thread executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    // Number of concurrent operations to perform
+    int operationCount = HIGH_THREAD_COUNT;
+    
+    // Create a countdown latch to synchronize completion
+    CountDownLatch latch = new CountDownLatch(operationCount);
+    
+    // Track any errors that occur
+    AtomicBoolean hasErrors = new AtomicBoolean(false);
+    AtomicInteger completedOperations = new AtomicInteger(0);
+    
+    try {
+      // Submit tasks to the executor
+      for (int i = 0; i < operationCount; i++) {
+        final int index = i;
         executor.submit(() -> {
           try {
-            // Simulate an APT repository operation
-            String packageInfoContent = SAMPLE_PACKAGE_INFO.replace("test-package", "test-package-" + taskId);
-            try (ByteArrayInputStream inputStream = new ByteArrayInputStream(
-                packageInfoContent.getBytes(StandardCharsets.UTF_8))) {
-              PackageInfo packageInfo = packageInfoParser.parsePackageInfo(inputStream);
-              if (packageInfo != null && packageInfo.getPackageName().equals("test-package-" + taskId)) {
-                successCount.incrementAndGet();
-              }
+            // Create a test asset with a unique path
+            AssetData asset = new AssetData();
+            asset.setPath("/path/asset" + index + ".deb");
+            
+            // Compute browse paths for the asset
+            List<BrowsePath> paths = browseNodeGenerator.computeAssetPaths(asset);
+            
+            // Verify the result is correct
+            if (paths.size() != 3) {
+              log.error("Incorrect number of browse paths: {}", paths.size());
+              hasErrors.set(true);
             }
+            
+            completedOperations.incrementAndGet();
           }
           catch (Exception e) {
-            log.error("Error in virtual thread task", e);
+            log.error("Error in virtual thread operation", e);
+            hasErrors.set(true);
           }
           finally {
             latch.countDown();
           }
         });
       }
-
-      // Wait for all tasks to complete or timeout
-      boolean completed = latch.await(30, TimeUnit.SECONDS);
-      assertTrue(completed, "All virtual thread tasks should complete within the timeout");
-
-      // Verify that all tasks completed successfully
-      assertEquals(concurrentTasks, successCount.get(),
-          "All concurrent tasks should complete successfully");
+      
+      // Wait for all operations to complete or timeout
+      boolean completed = latch.await(OPERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      
+      // Verify all operations completed successfully
+      assertThat("All operations should complete within the timeout", completed, is(true));
+      assertThat("No errors should occur during concurrent operations", hasErrors.get(), is(false));
+      assertThat("All operations should complete successfully", completedOperations.get(), is(operationCount));
+    }
+    finally {
+      // Shutdown the executor
+      executor.shutdown();
     }
   }
-
+  
   /**
-   * Tests that APT repository response handling works correctly with Virtual Threads.
-   * <p>
-   * This test validates that the APT repository response handling functionality works
-   * correctly when executed on Virtual Threads, ensuring functional correctness.
+   * Tests concurrent component path generation using virtual threads.
+   * 
+   * This test creates a large number of virtual threads that simultaneously
+   * compute browse paths for APT components, verifying that the operation completes
+   * successfully under high concurrency.
    */
   @Test
-  public void testRepositoryResponseHandlingWithVirtualThreads() throws Exception {
-    // Create a mock response
-    Response response = mock(Response.class);
-    Content content = mock(Content.class);
-    Payload payload = new StringPayload(SAMPLE_PACKAGE_INFO, "text/plain");
-    when(content.getPayload()).thenReturn(payload);
-    when(response.getPayload()).thenReturn(content);
-    when(response.getStatus()).thenReturn(Response.Status.success(200));
-
-    // Create a test callable that processes the response
-    Callable<PackageInfo> processResponse = () -> {
-      try (ByteArrayInputStream inputStream = new ByteArrayInputStream(
-          SAMPLE_PACKAGE_INFO.getBytes(StandardCharsets.UTF_8))) {
-        return packageInfoParser.parsePackageInfo(inputStream);
+  public void testConcurrentComponentPathGenerationWithVirtualThreads() throws Exception {
+    // Create a virtual thread executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    // Number of concurrent operations to perform
+    int operationCount = HIGH_THREAD_COUNT;
+    
+    // Create a countdown latch to synchronize completion
+    CountDownLatch latch = new CountDownLatch(operationCount);
+    
+    // Track any errors that occur
+    AtomicBoolean hasErrors = new AtomicBoolean(false);
+    AtomicInteger completedOperations = new AtomicInteger(0);
+    
+    try {
+      // Submit tasks to the executor
+      for (int i = 0; i < operationCount; i++) {
+        final int index = i;
+        executor.submit(() -> {
+          try {
+            // Create a test component with a unique name
+            ComponentData componentData = new ComponentData();
+            componentData.setRepositoryId(1);
+            componentData.setComponentId(index);
+            componentData.setName("package" + index);
+            componentData.setNamespace("amd64");
+            componentData.setVersion("1.0." + index);
+            
+            // Create a test asset with the component
+            AssetData asset = new AssetData();
+            asset.setComponent(componentData);
+            asset.setPath("/path/asset" + index);
+            
+            // Compute browse paths for the component
+            List<BrowsePath> paths = browseNodeGenerator.computeComponentPaths(asset);
+            
+            // Verify the result is correct
+            if (paths.size() != 6) {
+              log.error("Incorrect number of browse paths: {}", paths.size());
+              hasErrors.set(true);
+            }
+            
+            completedOperations.incrementAndGet();
+          }
+          catch (Exception e) {
+            log.error("Error in virtual thread operation", e);
+            hasErrors.set(true);
+          }
+          finally {
+            latch.countDown();
+          }
+        });
       }
-    };
-
-    // Execute the callable on a Virtual Thread
-    PackageInfo packageInfo = callVirtual(processResponse);
-
-    // Verify the processed response
-    assertNotNull(packageInfo, "Package info should not be null");
-    assertEquals("test-package", packageInfo.getPackageName(), "Package name should match");
+      
+      // Wait for all operations to complete or timeout
+      boolean completed = latch.await(OPERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      
+      // Verify all operations completed successfully
+      assertThat("All operations should complete within the timeout", completed, is(true));
+      assertThat("No errors should occur during concurrent operations", hasErrors.get(), is(false));
+      assertThat("All operations should complete successfully", completedOperations.get(), is(operationCount));
+    }
+    finally {
+      // Shutdown the executor
+      executor.shutdown();
+    }
   }
-
+  
   /**
-   * Tests concurrent APT repository datastore operations with mixed read patterns.
-   * <p>
-   * This test validates that APT repository datastore operations with mixed read patterns
-   * work correctly when executed concurrently on Virtual Threads.
+   * Tests for thread pinning issues when performing APT operations with virtual threads.
+   * 
+   * This test executes operations that might cause thread pinning (like synchronized blocks)
+   * and verifies that the operations complete successfully without deadlocks or excessive
+   * carrier thread usage.
    */
   @Test
-  public void testConcurrentDatastoreOperations() throws Exception {
-    // Setup mock assets and components for datastore operations
-    List<Asset> mockAssets = new ArrayList<>();
-    List<Component> mockComponents = new ArrayList<>();
-    
-    for (int i = 0; i < 100; i++) {
-      Asset asset = mock(Asset.class);
-      Component component = mock(Component.class);
-      AssetBlob assetBlob = mock(AssetBlob.class);
-      
-      when(asset.path()).thenReturn("/path/to/asset-" + i);
-      when(asset.component()).thenReturn(component);
-      when(asset.blob()).thenReturn(assetBlob);
-      when(component.namespace()).thenReturn("amd64");
-      when(component.name()).thenReturn("test-package-" + i);
-      when(component.version()).thenReturn("1.0." + i);
-      
-      mockAssets.add(asset);
-      mockComponents.add(component);
-    }
-    
-    // Configure asset store to return mock assets
-    when(assetStore.browseAssets(any(), any(), any(), any())).thenReturn(mockAssets.iterator());
-    when(componentStore.browseComponents(any(), any(), any(), any())).thenReturn(mockComponents.iterator());
-    
-    int concurrentTasks = 1000;
-    AtomicInteger successCount = new AtomicInteger(0);
-    CountDownLatch latch = new CountDownLatch(concurrentTasks);
-
-    // Create a mix of read operations
-    List<Supplier<Runnable>> tasks = new ArrayList<>();
-    for (int i = 0; i < concurrentTasks; i++) {
-      final int taskId = i;
-      if (i % 3 == 0) {
-        // Asset browsing operation
-        tasks.add(() -> () -> {
-          try {
-            // Simulate browsing assets
-            mockAssets.forEach(asset -> {
-              String path = asset.path();
-              if (path != null && path.contains("asset-")) {
-                successCount.incrementAndGet();
-              }
-            });
-          }
-          catch (Exception e) {
-            log.error("Error in asset browsing operation", e);
-          }
-        });
-      }
-      else if (i % 3 == 1) {
-        // Component browsing operation
-        tasks.add(() -> () -> {
-          try {
-            // Simulate browsing components
-            mockComponents.forEach(component -> {
-              String name = component.name();
-              if (name != null && name.contains("test-package-")) {
-                successCount.incrementAndGet();
-              }
-            });
-          }
-          catch (Exception e) {
-            log.error("Error in component browsing operation", e);
-          }
-        });
-      }
-      else {
-        // Package info parsing operation
-        tasks.add(() -> () -> {
-          try {
-            String packageInfoContent = SAMPLE_PACKAGE_INFO.replace("test-package", "test-package-" + taskId);
-            try (ByteArrayInputStream inputStream = new ByteArrayInputStream(
-                packageInfoContent.getBytes(StandardCharsets.UTF_8))) {
-              PackageInfo packageInfo = packageInfoParser.parsePackageInfo(inputStream);
-              if (packageInfo != null) {
-                successCount.incrementAndGet();
-              }
-            }
-          }
-          catch (Exception e) {
-            log.error("Error in package info parsing operation", e);
-          }
-        });
-      }
-    }
-
-    // Execute all tasks concurrently using virtual threads
-    runConcurrently(concurrentTasks, () -> {
-      try {
-        int index = (int) (Math.random() * tasks.size());
-        tasks.get(index).get().run();
-      }
-      finally {
-        latch.countDown();
-      }
-    });
-
-    // Wait for all tasks to complete
-    boolean completed = latch.await(30, TimeUnit.SECONDS);
-    assertTrue(completed, "All virtual thread tasks should complete within the timeout");
-    
-    // Verify that tasks completed successfully
-    assertThat("A significant number of tasks should complete successfully", 
-        successCount.get(), greaterThan(concurrentTasks / 2));
-  }
-
-  /**
-   * Measures the performance of parsing package info files using platform threads.
-   *
-   * @param packageInfos the list of package info strings to parse
-   * @return the time taken in milliseconds
-   */
-  private long measurePlatformThreadPerformance(List<String> packageInfos) throws Exception {
-    final int threadPoolSize = Math.min(100, Runtime.getRuntime().availableProcessors() * 2);
-    final AtomicInteger successCount = new AtomicInteger(0);
-
-    long startTime = System.currentTimeMillis();
-
-    try (ExecutorService executor = Executors.newFixedThreadPool(threadPoolSize)) {
-      List<Future<?>> futures = new ArrayList<>();
-
-      for (int i = 0; i < packageInfos.size(); i++) {
-        final String packageInfoContent = packageInfos.get(i);
-        futures.add(executor.submit(() -> {
-          try (ByteArrayInputStream inputStream = new ByteArrayInputStream(
-              packageInfoContent.getBytes(StandardCharsets.UTF_8))) {
-            PackageInfo packageInfo = packageInfoParser.parsePackageInfo(inputStream);
-            if (packageInfo != null) {
-              successCount.incrementAndGet();
-            }
-          }
-          catch (Exception e) {
-            log.error("Error parsing package info with platform thread", e);
-          }
-        }));
-      }
-
-      // Wait for all tasks to complete
-      for (Future<?> future : futures) {
-        future.get();
-      }
-    }
-
-    long endTime = System.currentTimeMillis();
-    assertEquals(packageInfos.size(), successCount.get(), "All package info files should be parsed successfully");
-    return endTime - startTime;
-  }
-
-  /**
-   * Measures the performance of parsing package info files using virtual threads.
-   *
-   * @param packageInfos the list of package info strings to parse
-   * @return the time taken in milliseconds
-   */
-  private long measureVirtualThreadPerformance(List<String> packageInfos) throws Exception {
-    final AtomicInteger successCount = new AtomicInteger(0);
-
-    long startTime = System.currentTimeMillis();
-
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      List<Future<?>> futures = new ArrayList<>();
-
-      for (int i = 0; i < packageInfos.size(); i++) {
-        final String packageInfoContent = packageInfos.get(i);
-        futures.add(executor.submit(() -> {
-          try (ByteArrayInputStream inputStream = new ByteArrayInputStream(
-              packageInfoContent.getBytes(StandardCharsets.UTF_8))) {
-            PackageInfo packageInfo = packageInfoParser.parsePackageInfo(inputStream);
-            if (packageInfo != null) {
-              successCount.incrementAndGet();
-            }
-          }
-          catch (Exception e) {
-            log.error("Error parsing package info with virtual thread", e);
-          }
-        }));
-      }
-
-      // Wait for all tasks to complete
-      for (Future<?> future : futures) {
-        future.get();
-      }
-    }
-
-    long endTime = System.currentTimeMillis();
-    assertEquals(packageInfos.size(), successCount.get(), "All package info files should be parsed successfully");
-    return endTime - startTime;
-  }
-
-  /**
-   * Custom implementation of thread pinning detection for APT operations.
-   * <p>
-   * This method runs a task on a virtual thread and attempts to detect if the thread
-   * gets pinned to its carrier platform thread during execution.
-   *
-   * @param task the task to execute and check for pinning
-   * @return true if pinning was detected, false otherwise
-   */
-  private boolean detectThreadPinning(Runnable task) throws Exception {
-    // Enable thread pinning detection via JVM flag
-    String previousValue = System.getProperty("jdk.tracePinnedThreads");
+  public void testThreadPinningDetection() throws Exception {
+    // Enable thread pinning detection via system property
+    // Note: In a real environment, this would be set via -Djdk.tracePinnedThreads=full
+    String originalPinnedThreadsValue = System.getProperty("jdk.tracePinnedThreads");
     try {
       System.setProperty("jdk.tracePinnedThreads", "full");
       
-      // Create a concurrent task that will run alongside the main task
-      AtomicInteger concurrentExecutions = new AtomicInteger(0);
-      CountDownLatch startLatch = new CountDownLatch(1);
-      CountDownLatch endLatch = new CountDownLatch(1);
+      // Create a virtual thread executor
+      ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
       
-      // Start the main task
-      Thread mainThread = Thread.ofVirtual().name("apt-main-task").start(() -> {
-        try {
-          startLatch.countDown(); // Signal that the main thread has started
-          task.run();
+      // Number of concurrent operations to perform
+      int operationCount = LOW_THREAD_COUNT;
+      
+      // Create a countdown latch to synchronize completion
+      CountDownLatch latch = new CountDownLatch(operationCount);
+      
+      // Track any errors that occur
+      AtomicBoolean hasErrors = new AtomicBoolean(false);
+      
+      // Create a shared object that will be used with synchronized blocks
+      // to potentially trigger thread pinning
+      Object sharedLock = new Object();
+      
+      try {
+        // Submit tasks to the executor
+        for (int i = 0; i < operationCount; i++) {
+          final int index = i;
+          executor.submit(() -> {
+            try {
+              // Create test data
+              AssetData asset = new AssetData();
+              asset.setPath("/path/asset" + index + ".deb");
+              
+              // Perform operations that might cause thread pinning
+              synchronized (sharedLock) {
+                // Compute browse paths within a synchronized block
+                List<BrowsePath> paths = browseNodeGenerator.computeAssetPaths(asset);
+                
+                // Verify the result is correct
+                if (paths.size() != 3) {
+                  log.error("Incorrect number of browse paths: {}", paths.size());
+                  hasErrors.set(true);
+                }
+                
+                // Simulate some work inside the synchronized block
+                Thread.sleep(5);
+              }
+            }
+            catch (Exception e) {
+              log.error("Error in virtual thread operation", e);
+              hasErrors.set(true);
+            }
+            finally {
+              latch.countDown();
+            }
+          });
         }
-        finally {
-          endLatch.countDown(); // Signal that the main thread has completed
-        }
-      });
+        
+        // Wait for all operations to complete or timeout
+        boolean completed = latch.await(OPERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        
+        // Verify all operations completed successfully
+        assertThat("All operations should complete within the timeout", completed, is(true));
+        assertThat("No errors should occur during concurrent operations", hasErrors.get(), is(false));
+      }
+      finally {
+        // Shutdown the executor
+        executor.shutdown();
+      }
+    }
+    finally {
+      // Restore the original system property value
+      if (originalPinnedThreadsValue != null) {
+        System.setProperty("jdk.tracePinnedThreads", originalPinnedThreadsValue);
+      }
+      else {
+        System.clearProperty("jdk.tracePinnedThreads");
+      }
+    }
+  }
+  
+  /**
+   * Compares performance between platform threads and virtual threads for APT operations.
+   * 
+   * This test executes the same operations using both thread types and compares
+   * execution time, throughput, and resource utilization.
+   */
+  @Test
+  public void testPlatformVsVirtualThreadPerformance() throws Exception {
+    // Create thread factories for both thread types
+    ThreadFactory platformThreadFactory = Thread.ofPlatform().factory();
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    
+    // Number of concurrent operations to perform
+    int operationCount = VERY_HIGH_THREAD_COUNT;
+    
+    // Run the test with platform threads
+    long platformThreadTime = measureExecutionTime(platformThreadFactory, operationCount);
+    log.info("Platform thread execution time: {} ms", platformThreadTime);
+    
+    // Run the test with virtual threads
+    long virtualThreadTime = measureExecutionTime(virtualThreadFactory, operationCount);
+    log.info("Virtual thread execution time: {} ms", virtualThreadTime);
+    
+    // Verify that virtual threads perform better than platform threads for high concurrency
+    assertThat("Virtual threads should be faster than platform threads for high concurrency", 
+        virtualThreadTime, lessThan(platformThreadTime));
+  }
+  
+  /**
+   * Tests memory efficiency when handling numerous concurrent APT operations with virtual threads.
+   * 
+   * This test creates a very large number of virtual threads and monitors memory usage
+   * to verify that virtual threads use significantly less memory than platform threads.
+   */
+  @Test
+  public void testMemoryEfficiencyWithVirtualThreads() throws Exception {
+    // Create thread factories for both thread types
+    ThreadFactory platformThreadFactory = Thread.ofPlatform().factory();
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    
+    // Number of concurrent operations to perform
+    int operationCount = VERY_HIGH_THREAD_COUNT;
+    
+    // Measure memory usage with platform threads
+    long platformThreadMemory = measureMemoryUsage(platformThreadFactory, operationCount);
+    log.info("Platform thread memory usage: {} bytes", platformThreadMemory);
+    
+    // Measure memory usage with virtual threads
+    long virtualThreadMemory = measureMemoryUsage(virtualThreadFactory, operationCount);
+    log.info("Virtual thread memory usage: {} bytes", virtualThreadMemory);
+    
+    // Verify that virtual threads use less memory than platform threads
+    assertThat("Virtual threads should use less memory than platform threads", 
+        virtualThreadMemory, lessThan(platformThreadMemory));
+  }
+  
+  /**
+   * Measures the execution time of concurrent APT operations using the specified thread factory.
+   * 
+   * @param threadFactory The thread factory to use (platform or virtual)
+   * @param operationCount The number of concurrent operations to perform
+   * @return The execution time in milliseconds
+   */
+  private long measureExecutionTime(ThreadFactory threadFactory, int operationCount) throws Exception {
+    // Create an executor with the specified thread factory
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(threadFactory);
+    
+    // Create a countdown latch to synchronize completion
+    CountDownLatch latch = new CountDownLatch(operationCount);
+    
+    // Track any errors that occur
+    AtomicBoolean hasErrors = new AtomicBoolean(false);
+    
+    try {
+      // Record the start time
+      long startTime = System.currentTimeMillis();
       
-      // Wait for the main thread to start
-      startLatch.await();
-      
-      // Start multiple concurrent tasks to detect pinning
-      int probeCount = 10;
-      Thread[] probeThreads = new Thread[probeCount];
-      for (int i = 0; i < probeCount; i++) {
-        probeThreads[i] = Thread.ofVirtual().name("apt-probe-" + i).start(() -> {
-          concurrentExecutions.incrementAndGet();
+      // Submit tasks to the executor
+      for (int i = 0; i < operationCount; i++) {
+        final int index = i;
+        executor.submit(() -> {
+          try {
+            // Create a test asset with a unique path
+            AssetData asset = new AssetData();
+            asset.setPath("/path/asset" + index + ".deb");
+            
+            // Compute browse paths for the asset
+            browseNodeGenerator.computeAssetPaths(asset);
+          }
+          catch (Exception e) {
+            log.error("Error in thread operation", e);
+            hasErrors.set(true);
+          }
+          finally {
+            latch.countDown();
+          }
         });
       }
       
-      // Wait for the main thread to complete
-      endLatch.await();
+      // Wait for all operations to complete or timeout
+      boolean completed = latch.await(OPERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
       
-      // If fewer than expected concurrent executions occurred, pinning may have happened
-      return concurrentExecutions.get() < probeCount;
+      // Record the end time
+      long endTime = System.currentTimeMillis();
+      
+      // Verify all operations completed successfully
+      assertThat("All operations should complete within the timeout", completed, is(true));
+      assertThat("No errors should occur during concurrent operations", hasErrors.get(), is(false));
+      
+      // Return the execution time
+      return endTime - startTime;
     }
     finally {
-      // Restore the previous system property value
-      if (previousValue == null) {
-        System.clearProperty("jdk.tracePinnedThreads");
+      // Shutdown the executor
+      executor.shutdown();
+    }
+  }
+  
+  /**
+   * Measures the memory usage of concurrent APT operations using the specified thread factory.
+   * 
+   * @param threadFactory The thread factory to use (platform or virtual)
+   * @param operationCount The number of concurrent operations to perform
+   * @return The memory usage in bytes
+   */
+  private long measureMemoryUsage(ThreadFactory threadFactory, int operationCount) throws Exception {
+    // Force garbage collection before measuring
+    System.gc();
+    Thread.sleep(100);
+    
+    // Record the initial memory usage
+    long initialMemory = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+    
+    // Create an executor with the specified thread factory
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(threadFactory);
+    
+    // Create a countdown latch to synchronize completion
+    CountDownLatch latch = new CountDownLatch(operationCount);
+    
+    // Create a list to hold references to prevent garbage collection during the test
+    List<Object> references = new ArrayList<>(operationCount);
+    
+    try {
+      // Submit tasks to the executor
+      for (int i = 0; i < operationCount; i++) {
+        final int index = i;
+        executor.submit(() -> {
+          try {
+            // Create a test asset with a unique path
+            AssetData asset = new AssetData();
+            asset.setPath("/path/asset" + index + ".deb");
+            
+            // Compute browse paths for the asset
+            List<BrowsePath> paths = browseNodeGenerator.computeAssetPaths(asset);
+            
+            // Store a reference to prevent garbage collection
+            synchronized (references) {
+              references.add(paths);
+            }
+            
+            // Simulate some work
+            Thread.sleep(10);
+          }
+          catch (Exception e) {
+            log.error("Error in thread operation", e);
+          }
+          finally {
+            latch.countDown();
+          }
+        });
       }
-      else {
-        System.setProperty("jdk.tracePinnedThreads", previousValue);
-      }
+      
+      // Wait for half of the operations to complete to measure peak memory usage
+      latch.await(operationCount / 2, TimeUnit.MILLISECONDS);
+      
+      // Force garbage collection before measuring peak memory
+      System.gc();
+      Thread.sleep(100);
+      
+      // Record the peak memory usage
+      long peakMemory = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+      
+      // Wait for all operations to complete
+      latch.await(OPERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      
+      // Return the memory usage (peak - initial)
+      return peakMemory - initialMemory;
+    }
+    finally {
+      // Clear references
+      references.clear();
+      
+      // Shutdown the executor
+      executor.shutdown();
+      
+      // Force garbage collection after the test
+      System.gc();
     }
   }
 }

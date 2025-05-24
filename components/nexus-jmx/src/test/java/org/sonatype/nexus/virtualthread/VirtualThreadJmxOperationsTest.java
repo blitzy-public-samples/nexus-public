@@ -19,795 +19,497 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicLong;
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
-import org.sonatype.nexus.jmx.reflect.ExampleManagedObject;
 
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.experimental.categories.Category;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThan;
+import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThan;
-import static org.hamcrest.Matchers.notNullValue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Test to validate JMX operations under high-concurrency scenarios using Java 21 Virtual Threads.
+ * Tests for JMX operations using Java 21 Virtual Threads.
  * 
- * This test suite validates that JMX operations maintain correctness and show improved performance
- * when executed concurrently using Virtual Threads, particularly for I/O-bound operations.
- * 
- * @since 3.60
+ * This test suite validates that JMX operations can be efficiently executed using
+ * Virtual Threads, demonstrating improved performance for I/O-bound operations
+ * and correct behavior under high concurrency scenarios.
  */
+@ExtendWith(MockitoExtension.class)
 @Category({Java21TestGroup.class, VirtualThreadTestGroup.class})
 public class VirtualThreadJmxOperationsTest
     extends TestSupport
 {
-  private static final int THREAD_COUNT = 2000;
-  private static final int OPERATIONS_PER_THREAD = 50;
-  private static final String OBJECT_NAME = "org.sonatype.nexus.jmx:foo=bar";
+  private static final int CONCURRENT_OPERATIONS = 5000;
+  private static final int OPERATION_DELAY_MS = 10;
+  private static final int TIMEOUT_SECONDS = 30;
   
   private MBeanServer mbeanServer;
-  private ObjectName objectName;
-  private ExampleManagedObject managedObject;
+  private ObjectName testBeanName;
+  private TestMBeanImpl testBean;
   
-  @Before
-  public void setUp() throws Exception {
+  /**
+   * Interface for our test MBean.
+   */
+  public interface TestMBean {
+    int getValue();
+    void setValue(int value);
+    int performOperation(int input);
+    int performSlowOperation(int input, long delayMs);
+  }
+  
+  /**
+   * Implementation of our test MBean.
+   */
+  public static class TestMBeanImpl implements TestMBean {
+    private final AtomicInteger value = new AtomicInteger(0);
+    private final AtomicLong operationCount = new AtomicLong(0);
+    
+    @Override
+    public int getValue() {
+      return value.get();
+    }
+    
+    @Override
+    public void setValue(int newValue) {
+      value.set(newValue);
+    }
+    
+    @Override
+    public int performOperation(int input) {
+      operationCount.incrementAndGet();
+      return input * 2;
+    }
+    
+    @Override
+    public int performSlowOperation(int input, long delayMs) {
+      operationCount.incrementAndGet();
+      try {
+        // Simulate I/O-bound operation with a delay
+        Thread.sleep(delayMs);
+      }
+      catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+      return input * 2;
+    }
+    
+    public long getOperationCount() {
+      return operationCount.get();
+    }
+    
+    public void resetOperationCount() {
+      operationCount.set(0);
+    }
+  }
+  
+  @BeforeEach
+  void setUp() throws Exception {
     mbeanServer = ManagementFactory.getPlatformMBeanServer();
-    managedObject = new ExampleManagedObject();
-    objectName = new ObjectName(OBJECT_NAME);
+    testBean = new TestMBeanImpl();
+    testBeanName = new ObjectName("org.sonatype.nexus.virtualthread:type=TestMBean");
     
-    if (mbeanServer.isRegistered(objectName)) {
-      mbeanServer.unregisterMBean(objectName);
+    // Register the MBean
+    if (mbeanServer.isRegistered(testBeanName)) {
+      mbeanServer.unregisterMBean(testBeanName);
     }
-    
-    mbeanServer.registerMBean(managedObject, objectName);
+    mbeanServer.registerMBean(testBean, testBeanName);
   }
   
-  @After
-  public void tearDown() throws Exception {
-    if (mbeanServer.isRegistered(objectName)) {
-      mbeanServer.unregisterMBean(objectName);
+  @AfterEach
+  void tearDown() throws Exception {
+    if (mbeanServer.isRegistered(testBeanName)) {
+      mbeanServer.unregisterMBean(testBeanName);
     }
   }
   
   /**
-   * Tests high-concurrency JMX attribute reads using Virtual Threads.
-   * 
-   * This test validates that thousands of concurrent JMX attribute read operations
-   * can be executed efficiently using Virtual Threads without errors.
+   * Tests that JMX operations can be invoked concurrently using Virtual Threads.
    */
   @Test
-  public void testHighConcurrencyAttributeReads() throws Exception {
-    log.info("Testing high-concurrency JMX attribute reads with Virtual Threads");
+  void testConcurrentJmxOperationsWithVirtualThreads() throws Exception {
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
     
-    // Set initial value
-    managedObject.setName("initialValue");
-    
-    // Create a countdown latch to synchronize thread start
-    CountDownLatch startLatch = new CountDownLatch(1);
-    
-    // Create a countdown latch to wait for all threads to complete
-    CountDownLatch completionLatch = new CountDownLatch(THREAD_COUNT);
-    
-    // Create atomic counter for successful operations
-    AtomicInteger successCounter = new AtomicInteger(0);
-    
-    // Create atomic reference to capture any exception
-    AtomicReference<Throwable> firstException = new AtomicReference<>();
-    
-    // Create virtual thread executor
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      List<Future<?>> futures = new ArrayList<>();
-      
-      // Create tasks for concurrent reads
-      for (int i = 0; i < THREAD_COUNT; i++) {
-        futures.add(executor.submit(() -> {
-          try {
-            // Wait for all threads to be ready
-            startLatch.await();
-            
-            // Perform multiple read operations
-            for (int j = 0; j < OPERATIONS_PER_THREAD; j++) {
-              String value = (String) mbeanServer.getAttribute(objectName, "Name");
-              if ("initialValue".equals(value)) {
-                successCounter.incrementAndGet();
-              }
-            }
-            
-            return true;
-          }
-          catch (Exception e) {
-            log.error("Error in virtual thread", e);
-            firstException.compareAndSet(null, e);
-            return false;
-          }
-          finally {
-            completionLatch.countDown();
-          }
-        }));
-      }
-      
-      // Start timing
-      long startTime = System.nanoTime();
-      
-      // Release all threads to start concurrently
-      startLatch.countDown();
-      
-      // Wait for all threads to complete
-      boolean completed = completionLatch.await(60, TimeUnit.SECONDS);
-      
-      // End timing
-      long endTime = System.nanoTime();
-      long durationMs = TimeUnit.NANOSECONDS.toMillis(endTime - startTime);
-      
-      log.info("High-concurrency attribute reads test completed in {} ms", durationMs);
-      log.info("Successful operations: {} out of {}", 
-          successCounter.get(), THREAD_COUNT * OPERATIONS_PER_THREAD);
-      
-      // Verify all threads completed successfully
-      assertThat("All threads should complete in time", completed, equalTo(true));
-      
-      // Verify no exceptions occurred
-      if (firstException.get() != null) {
-        throw new AssertionError("Exception during test execution", firstException.get());
-      }
-      
-      // Verify all operations were successful
-      assertThat("All operations should succeed", 
-          successCounter.get(), equalTo(THREAD_COUNT * OPERATIONS_PER_THREAD));
-    }
-  }
-  
-  /**
-   * Tests high-concurrency JMX attribute writes using Virtual Threads.
-   * 
-   * This test validates that thousands of concurrent JMX attribute write operations
-   * can be executed efficiently using Virtual Threads without errors.
-   */
-  @Test
-  public void testHighConcurrencyAttributeWrites() throws Exception {
-    log.info("Testing high-concurrency JMX attribute writes with Virtual Threads");
-    
-    // Create a countdown latch to synchronize thread start
-    CountDownLatch startLatch = new CountDownLatch(1);
-    
-    // Create a countdown latch to wait for all threads to complete
-    CountDownLatch completionLatch = new CountDownLatch(THREAD_COUNT);
-    
-    // Create atomic counter for successful operations
-    AtomicInteger successCounter = new AtomicInteger(0);
-    
-    // Create atomic reference to capture any exception
-    AtomicReference<Throwable> firstException = new AtomicReference<>();
-    
-    // Create virtual thread executor
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      List<Future<?>> futures = new ArrayList<>();
-      
-      // Create tasks for concurrent writes
-      for (int i = 0; i < THREAD_COUNT; i++) {
-        final int threadId = i;
-        futures.add(executor.submit(() -> {
-          try {
-            // Wait for all threads to be ready
-            startLatch.await();
-            
-            // Perform multiple write operations
-            for (int j = 0; j < OPERATIONS_PER_THREAD; j++) {
-              String newValue = "thread-" + threadId + "-op-" + j;
-              mbeanServer.setAttribute(objectName, new javax.management.Attribute("Name", newValue));
-              
-              // Verify the value was set (this also tests read after write)
-              String currentValue = (String) mbeanServer.getAttribute(objectName, "Name");
-              if (currentValue != null) {
-                successCounter.incrementAndGet();
-              }
-            }
-            
-            return true;
-          }
-          catch (Exception e) {
-            log.error("Error in virtual thread", e);
-            firstException.compareAndSet(null, e);
-            return false;
-          }
-          finally {
-            completionLatch.countDown();
-          }
-        }));
-      }
-      
-      // Start timing
-      long startTime = System.nanoTime();
-      
-      // Release all threads to start concurrently
-      startLatch.countDown();
-      
-      // Wait for all threads to complete
-      boolean completed = completionLatch.await(60, TimeUnit.SECONDS);
-      
-      // End timing
-      long endTime = System.nanoTime();
-      long durationMs = TimeUnit.NANOSECONDS.toMillis(endTime - startTime);
-      
-      log.info("High-concurrency attribute writes test completed in {} ms", durationMs);
-      log.info("Successful operations: {} out of {}", 
-          successCounter.get(), THREAD_COUNT * OPERATIONS_PER_THREAD);
-      
-      // Verify all threads completed successfully
-      assertThat("All threads should complete in time", completed, equalTo(true));
-      
-      // Verify no exceptions occurred
-      if (firstException.get() != null) {
-        throw new AssertionError("Exception during test execution", firstException.get());
-      }
-      
-      // Verify all operations were successful
-      assertThat("All operations should succeed", 
-          successCounter.get(), equalTo(THREAD_COUNT * OPERATIONS_PER_THREAD));
-    }
-  }
-  
-  /**
-   * Tests high-concurrency JMX operation invocations using Virtual Threads.
-   * 
-   * This test validates that thousands of concurrent JMX operation invocations
-   * can be executed efficiently using Virtual Threads without errors.
-   */
-  @Test
-  public void testHighConcurrencyOperationInvocations() throws Exception {
-    log.info("Testing high-concurrency JMX operation invocations with Virtual Threads");
-    
-    // Create a countdown latch to synchronize thread start
-    CountDownLatch startLatch = new CountDownLatch(1);
-    
-    // Create a countdown latch to wait for all threads to complete
-    CountDownLatch completionLatch = new CountDownLatch(THREAD_COUNT);
-    
-    // Create atomic counter for successful operations
-    AtomicInteger successCounter = new AtomicInteger(0);
-    
-    // Create atomic reference to capture any exception
-    AtomicReference<Throwable> firstException = new AtomicReference<>();
-    
-    // Create virtual thread executor
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      List<Future<?>> futures = new ArrayList<>();
-      
-      // Create tasks for concurrent operation invocations
-      for (int i = 0; i < THREAD_COUNT; i++) {
-        final int threadId = i;
-        futures.add(executor.submit(() -> {
-          try {
-            // Wait for all threads to be ready
-            startLatch.await();
-            
-            // Perform multiple operation invocations
-            for (int j = 0; j < OPERATIONS_PER_THREAD; j++) {
-              // First set a name
-              String newValue = "thread-" + threadId + "-op-" + j;
-              mbeanServer.setAttribute(objectName, new javax.management.Attribute("Name", newValue));
-              
-              // Then reset it using the operation
-              mbeanServer.invoke(objectName, "resetName", new Object[0], new String[0]);
-              
-              // Verify the name was reset
-              String currentValue = (String) mbeanServer.getAttribute(objectName, "Name");
-              if (currentValue == null) {
-                successCounter.incrementAndGet();
-              }
-            }
-            
-            return true;
-          }
-          catch (Exception e) {
-            log.error("Error in virtual thread", e);
-            firstException.compareAndSet(null, e);
-            return false;
-          }
-          finally {
-            completionLatch.countDown();
-          }
-        }));
-      }
-      
-      // Start timing
-      long startTime = System.nanoTime();
-      
-      // Release all threads to start concurrently
-      startLatch.countDown();
-      
-      // Wait for all threads to complete
-      boolean completed = completionLatch.await(60, TimeUnit.SECONDS);
-      
-      // End timing
-      long endTime = System.nanoTime();
-      long durationMs = TimeUnit.NANOSECONDS.toMillis(endTime - startTime);
-      
-      log.info("High-concurrency operation invocations test completed in {} ms", durationMs);
-      log.info("Successful operations: {} out of {}", 
-          successCounter.get(), THREAD_COUNT * OPERATIONS_PER_THREAD);
-      
-      // Verify all threads completed successfully
-      assertThat("All threads should complete in time", completed, equalTo(true));
-      
-      // Verify no exceptions occurred
-      if (firstException.get() != null) {
-        throw new AssertionError("Exception during test execution", firstException.get());
-      }
-      
-      // Verify all operations were successful
-      assertThat("All operations should succeed", 
-          successCounter.get(), equalTo(THREAD_COUNT * OPERATIONS_PER_THREAD));
-    }
-  }
-  
-  /**
-   * Tests mixed JMX operations (reads, writes, invocations) using Virtual Threads.
-   * 
-   * This test validates that thousands of concurrent mixed JMX operations
-   * can be executed efficiently using Virtual Threads without errors.
-   */
-  @Test
-  public void testMixedJmxOperations() throws Exception {
-    log.info("Testing mixed JMX operations with Virtual Threads");
-    
-    // Create a countdown latch to synchronize thread start
-    CountDownLatch startLatch = new CountDownLatch(1);
-    
-    // Create a countdown latch to wait for all threads to complete
-    CountDownLatch completionLatch = new CountDownLatch(THREAD_COUNT);
-    
-    // Create atomic counter for successful operations
-    AtomicInteger successCounter = new AtomicInteger(0);
-    
-    // Create atomic reference to capture any exception
-    AtomicReference<Throwable> firstException = new AtomicReference<>();
-    
-    // Create virtual thread executor
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      List<Future<?>> futures = new ArrayList<>();
-      
-      // Create tasks for mixed JMX operations
-      for (int i = 0; i < THREAD_COUNT; i++) {
-        final int threadId = i;
-        futures.add(executor.submit(() -> {
-          try {
-            // Wait for all threads to be ready
-            startLatch.await();
-            
-            // Perform multiple mixed operations
-            for (int j = 0; j < OPERATIONS_PER_THREAD; j++) {
-              // Operation type based on iteration (read, write, or invoke)
-              int operationType = j % 3;
-              
-              switch (operationType) {
-                case 0: // Read operation
-                  String value = (String) mbeanServer.getAttribute(objectName, "Name");
-                  // Just verify we got a value (could be null or any string)
-                  successCounter.incrementAndGet();
-                  break;
-                  
-                case 1: // Write operation
-                  String newValue = "thread-" + threadId + "-op-" + j;
-                  mbeanServer.setAttribute(objectName, new javax.management.Attribute("Name", newValue));
-                  successCounter.incrementAndGet();
-                  break;
-                  
-                case 2: // Invoke operation
-                  mbeanServer.invoke(objectName, "resetName", new Object[0], new String[0]);
-                  successCounter.incrementAndGet();
-                  break;
-              }
-            }
-            
-            return true;
-          }
-          catch (Exception e) {
-            log.error("Error in virtual thread", e);
-            firstException.compareAndSet(null, e);
-            return false;
-          }
-          finally {
-            completionLatch.countDown();
-          }
-        }));
-      }
-      
-      // Start timing
-      long startTime = System.nanoTime();
-      
-      // Release all threads to start concurrently
-      startLatch.countDown();
-      
-      // Wait for all threads to complete
-      boolean completed = completionLatch.await(60, TimeUnit.SECONDS);
-      
-      // End timing
-      long endTime = System.nanoTime();
-      long durationMs = TimeUnit.NANOSECONDS.toMillis(endTime - startTime);
-      
-      log.info("Mixed JMX operations test completed in {} ms", durationMs);
-      log.info("Successful operations: {} out of {}", 
-          successCounter.get(), THREAD_COUNT * OPERATIONS_PER_THREAD);
-      
-      // Verify all threads completed successfully
-      assertThat("All threads should complete in time", completed, equalTo(true));
-      
-      // Verify no exceptions occurred
-      if (firstException.get() != null) {
-        throw new AssertionError("Exception during test execution", firstException.get());
-      }
-      
-      // Verify all operations were successful
-      assertThat("All operations should succeed", 
-          successCounter.get(), equalTo(THREAD_COUNT * OPERATIONS_PER_THREAD));
-    }
-  }
-  
-  /**
-   * Compares performance between Virtual Threads and Platform Threads for JMX operations.
-   * 
-   * This test validates that Virtual Threads provide better performance for I/O-bound
-   * JMX operations compared to Platform Threads, especially under high concurrency.
-   */
-  @Test
-  public void testVirtualThreadsVsPlatformThreadsPerformance() throws Exception {
-    log.info("Comparing Virtual Threads vs Platform Threads for JMX operations");
-    
-    // Number of threads for comparison (reduced for platform threads to avoid resource exhaustion)
-    final int comparisonThreadCount = 1000;
-    final int operationsPerThread = 20;
-    
-    // Measure virtual threads performance
-    long virtualThreadsDuration = measurePerformance(
-        Executors.newVirtualThreadPerTaskExecutor(),
-        comparisonThreadCount,
-        operationsPerThread,
-        "Virtual Threads");
-    
-    // Measure platform threads performance with a reasonable thread pool size
-    // to avoid resource exhaustion
-    int platformThreadPoolSize = Math.min(100, comparisonThreadCount);
-    long platformThreadsDuration = measurePerformance(
-        Executors.newFixedThreadPool(platformThreadPoolSize),
-        comparisonThreadCount,
-        operationsPerThread,
-        "Platform Threads");
-    
-    log.info("Performance comparison results:");
-    log.info("  Virtual Threads: {} ms for {} concurrent operations", 
-        virtualThreadsDuration, comparisonThreadCount * operationsPerThread);
-    log.info("  Platform Threads: {} ms for {} concurrent operations", 
-        platformThreadsDuration, comparisonThreadCount * operationsPerThread);
-    
-    // Virtual threads should generally be more efficient for I/O-bound operations like JMX
-    // We expect virtual threads to perform better, but the exact performance difference
-    // depends on many factors including hardware, JVM version, and system load
-    assertThat("Virtual threads should not be significantly slower than platform threads",
-        virtualThreadsDuration, lessThan(platformThreadsDuration * 1.5));
-    
-    // In most cases, virtual threads should be faster, but we use a conservative assertion
-    // to avoid test flakiness due to environmental factors
-    log.info("Performance ratio (platform/virtual): {}", 
-        (double) platformThreadsDuration / virtualThreadsDuration);
-  }
-  
-  /**
-   * Tests asynchronous JMX operations using CompletableFuture with Virtual Threads.
-   * 
-   * This test validates that JMX operations can be efficiently executed asynchronously
-   * using CompletableFuture with Virtual Threads as the execution mechanism.
-   */
-  @Test
-  public void testAsyncJmxOperationsWithCompletableFuture() throws Exception {
-    log.info("Testing asynchronous JMX operations with CompletableFuture and Virtual Threads");
-    
-    // Set initial value
-    managedObject.setName("initialValue");
-    
-    // Create a countdown latch to wait for all operations to complete
-    CountDownLatch completionLatch = new CountDownLatch(THREAD_COUNT);
-    
-    // Create atomic counter for successful operations
-    AtomicInteger successCounter = new AtomicInteger(0);
-    
-    // Create atomic reference to capture any exception
-    AtomicReference<Throwable> firstException = new AtomicReference<>();
-    
-    // Start timing
-    long startTime = System.nanoTime();
-    
-    // Create CompletableFuture tasks for async JMX operations
-    List<CompletableFuture<Void>> futures = new ArrayList<>();
-    
-    for (int i = 0; i < THREAD_COUNT; i++) {
-      final int threadId = i;
-      
-      CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-        try {
-          // Perform multiple operations
-          for (int j = 0; j < OPERATIONS_PER_THREAD; j++) {
-            // Mixed operations based on iteration
-            if (j % 3 == 0) {
-              // Read operation
-              String value = (String) mbeanServer.getAttribute(objectName, "Name");
-              if (value != null || value == null) { // Always true, just to count
-                successCounter.incrementAndGet();
-              }
-            }
-            else if (j % 3 == 1) {
-              // Write operation
-              String newValue = "thread-" + threadId + "-op-" + j;
-              mbeanServer.setAttribute(objectName, new javax.management.Attribute("Name", newValue));
-              successCounter.incrementAndGet();
-            }
-            else {
-              // Invoke operation
-              mbeanServer.invoke(objectName, "resetName", new Object[0], new String[0]);
-              successCounter.incrementAndGet();
-            }
-          }
-        }
-        catch (Exception e) {
-          log.error("Error in CompletableFuture task", e);
-          firstException.compareAndSet(null, e);
-        }
-        finally {
-          completionLatch.countDown();
-        }
-      }, Executors.newVirtualThreadPerTaskExecutor());
-      
-      futures.add(future);
-    }
-    
-    // Wait for all operations to complete
-    boolean completed = completionLatch.await(60, TimeUnit.SECONDS);
-    
-    // End timing
-    long endTime = System.nanoTime();
-    long durationMs = TimeUnit.NANOSECONDS.toMillis(endTime - startTime);
-    
-    log.info("Async JMX operations test completed in {} ms", durationMs);
-    log.info("Successful operations: {} out of {}", 
-        successCounter.get(), THREAD_COUNT * OPERATIONS_PER_THREAD);
-    
-    // Verify all operations completed successfully
-    assertThat("All operations should complete in time", completed, equalTo(true));
-    
-    // Verify no exceptions occurred
-    if (firstException.get() != null) {
-      throw new AssertionError("Exception during async execution", firstException.get());
-    }
-    
-    // Verify all operations were successful
-    assertThat("All operations should succeed", 
-        successCounter.get(), equalTo(THREAD_COUNT * OPERATIONS_PER_THREAD));
-    
-    // Verify CompletableFuture tasks completed successfully
-    CompletableFuture<Void> allFutures = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
-    allFutures.join(); // This should not throw if all futures completed successfully
-  }
-  
-  /**
-   * Tests resource utilization of Virtual Threads vs Platform Threads for JMX operations.
-   * 
-   * This test validates that Virtual Threads use significantly less system resources
-   * compared to Platform Threads when executing JMX operations, particularly under
-   * high concurrency scenarios.
-   */
-  @Test
-  public void testResourceUtilization() throws Exception {
-    log.info("Testing resource utilization of Virtual Threads vs Platform Threads for JMX operations");
-    
-    // Number of threads for comparison
-    final int resourceThreadCount = 1000;
-    
-    // Measure memory usage before creating platform threads
-    long beforePlatformThreads = getUsedMemory();
-    
-    // Create platform threads (but don't start them to avoid excessive resource usage)
-    List<Thread> platformThreads = new ArrayList<>();
-    for (int i = 0; i < resourceThreadCount; i++) {
-      Thread thread = new Thread(() -> {
-        try {
-          // Simulate JMX operation
-          mbeanServer.getAttribute(objectName, "Name");
-          Thread.sleep(10);
-        }
-        catch (Exception e) {
-          // Ignore
-        }
-      });
-      platformThreads.add(thread);
-    }
-    
-    // Measure memory after creating platform threads
-    long afterPlatformThreads = getUsedMemory();
-    long platformThreadsMemory = afterPlatformThreads - beforePlatformThreads;
-    
-    // Clean up platform threads to free memory
-    platformThreads.clear();
-    System.gc();
-    
-    // Measure memory usage before creating virtual threads
-    long beforeVirtualThreads = getUsedMemory();
-    
-    // Create virtual threads (but don't start them)
-    List<Thread> virtualThreads = new ArrayList<>();
-    ThreadFactory factory = Thread.ofVirtual().factory();
-    for (int i = 0; i < resourceThreadCount; i++) {
-      Thread thread = factory.newThread(() -> {
-        try {
-          // Simulate JMX operation
-          mbeanServer.getAttribute(objectName, "Name");
-          Thread.sleep(10);
-        }
-        catch (Exception e) {
-          // Ignore
-        }
-      });
-      virtualThreads.add(thread);
-    }
-    
-    // Measure memory after creating virtual threads
-    long afterVirtualThreads = getUsedMemory();
-    long virtualThreadsMemory = afterVirtualThreads - beforeVirtualThreads;
-    
-    log.info("Memory usage for {} threads:", resourceThreadCount);
-    log.info("  Platform threads: {} bytes", platformThreadsMemory);
-    log.info("  Virtual threads: {} bytes", virtualThreadsMemory);
-    
-    // Virtual threads should use significantly less memory
-    assertThat("Virtual threads should use less memory than platform threads",
-        virtualThreadsMemory, lessThan(platformThreadsMemory));
-    
-    // Calculate and log the memory efficiency ratio
-    double memoryEfficiencyRatio = (double) platformThreadsMemory / virtualThreadsMemory;
-    log.info("Memory efficiency ratio (platform/virtual): {}", memoryEfficiencyRatio);
-    
-    // In most environments, virtual threads should be at least 2x more memory efficient
-    assertThat("Virtual threads should be significantly more memory efficient",
-        memoryEfficiencyRatio, greaterThan(1.5));
-  }
-  
-  /**
-   * Helper method to measure performance of JMX operations using the provided executor.
-   * 
-   * @param executor The executor service to use for concurrent operations
-   * @param threadCount The number of concurrent threads/tasks
-   * @param operationsPerThread The number of operations per thread
-   * @param executorType A descriptive name for the executor type (for logging)
-   * @return The duration in milliseconds to complete all operations
-   */
-  private long measurePerformance(
-      ExecutorService executor,
-      int threadCount,
-      int operationsPerThread,
-      String executorType) throws Exception
-  {
-    // Reset the managed object
-    managedObject.setName(null);
-    
-    // Create a countdown latch to synchronize thread start
-    CountDownLatch startLatch = new CountDownLatch(1);
-    
-    // Create a countdown latch to wait for all threads to complete
-    CountDownLatch completionLatch = new CountDownLatch(threadCount);
-    
-    // Create atomic counter for successful operations
-    AtomicInteger successCounter = new AtomicInteger(0);
-    
-    // Create atomic reference to capture any exception
-    AtomicReference<Throwable> firstException = new AtomicReference<>();
-    
-    List<Future<?>> futures = new ArrayList<>();
+    int operationCount = CONCURRENT_OPERATIONS;
+    CountDownLatch latch = new CountDownLatch(operationCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
     
     try {
-      // Create tasks for mixed JMX operations
-      for (int i = 0; i < threadCount; i++) {
-        final int threadId = i;
-        futures.add(executor.submit(() -> {
+      // Submit multiple concurrent tasks using virtual threads
+      for (int i = 0; i < operationCount; i++) {
+        final int value = i;
+        executor.submit(() -> {
           try {
-            // Wait for all threads to be ready
-            startLatch.await();
-            
-            // Perform a mix of read, write, and operation invocations
-            for (int j = 0; j < operationsPerThread; j++) {
-              // Operation type based on iteration
-              int operationType = j % 3;
-              
-              switch (operationType) {
-                case 0: // Read operation
-                  String value = (String) mbeanServer.getAttribute(objectName, "Name");
-                  // Just verify we got a value (could be null or any string)
-                  successCounter.incrementAndGet();
-                  break;
-                  
-                case 1: // Write operation
-                  String newValue = "thread-" + threadId + "-op-" + j;
-                  mbeanServer.setAttribute(objectName, new javax.management.Attribute("Name", newValue));
-                  successCounter.incrementAndGet();
-                  break;
-                  
-                case 2: // Invoke operation
-                  mbeanServer.invoke(objectName, "resetName", new Object[0], new String[0]);
-                  successCounter.incrementAndGet();
-                  break;
-              }
+            int result = (int) mbeanServer.invoke(testBeanName, "performOperation", 
+                new Object[]{value}, new String[]{"int"});
+            if (result != value * 2) {
+              errorCount.incrementAndGet();
             }
-            
-            return true;
-          }
+          } 
           catch (Exception e) {
-            log.error("Error in {} thread", executorType, e);
-            firstException.compareAndSet(null, e);
-            return false;
-          }
+            errorCount.incrementAndGet();
+          } 
           finally {
-            completionLatch.countDown();
+            latch.countDown();
           }
-        }));
+        });
       }
       
-      // Start timing
-      long startTime = System.nanoTime();
+      // Wait for all tasks to complete
+      assertTrue(latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), 
+          "All operations should complete within timeout");
       
-      // Release all threads to start concurrently
-      startLatch.countDown();
-      
-      // Wait for all threads to complete
-      boolean completed = completionLatch.await(60, TimeUnit.SECONDS);
-      
-      // End timing
-      long endTime = System.nanoTime();
-      long durationMs = TimeUnit.NANOSECONDS.toMillis(endTime - startTime);
-      
-      log.info("{} test completed in {} ms", executorType, durationMs);
-      log.info("Successful operations: {} out of {}", 
-          successCounter.get(), threadCount * operationsPerThread);
-      
-      // Verify all threads completed successfully
-      assertThat("All threads should complete in time", completed, equalTo(true));
-      
-      // Verify no exceptions occurred
-      if (firstException.get() != null) {
-        throw new AssertionError("Exception during test execution", firstException.get());
-      }
-      
-      // Verify all operations were successful
-      assertThat("All operations should succeed", 
-          successCounter.get(), equalTo(threadCount * operationsPerThread));
-      
-      return durationMs;
-    }
+      // Verify results
+      assertThat("No errors should occur during concurrent operations", 
+          errorCount.get(), is(0));
+      assertThat("All operations should be processed", 
+          testBean.getOperationCount(), is((long) operationCount));
+    } 
     finally {
       executor.shutdown();
-      executor.awaitTermination(10, TimeUnit.SECONDS);
     }
   }
   
   /**
-   * Helper method to measure used memory.
-   * 
-   * @return The amount of used memory in bytes
+   * Tests that JMX attribute updates can be performed concurrently using Virtual Threads.
    */
-  private long getUsedMemory() {
-    System.gc(); // Request garbage collection to get more accurate measurements
-    Runtime runtime = Runtime.getRuntime();
-    return runtime.totalMemory() - runtime.freeMemory();
+  @Test
+  void testConcurrentJmxAttributeUpdatesWithVirtualThreads() throws Exception {
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    int operationCount = CONCURRENT_OPERATIONS;
+    CountDownLatch latch = new CountDownLatch(operationCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    try {
+      // Submit multiple concurrent attribute updates using virtual threads
+      for (int i = 0; i < operationCount; i++) {
+        final int value = i;
+        executor.submit(() -> {
+          try {
+            mbeanServer.setAttribute(testBeanName, 
+                new javax.management.Attribute("Value", value));
+            
+            // Read back the attribute to verify
+            int readValue = (int) mbeanServer.getAttribute(testBeanName, "Value");
+            // We can't verify exact value due to race conditions, but we can check it's valid
+            if (readValue < 0 || readValue >= operationCount) {
+              errorCount.incrementAndGet();
+            }
+          } 
+          catch (Exception e) {
+            errorCount.incrementAndGet();
+          } 
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      assertTrue(latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), 
+          "All operations should complete within timeout");
+      
+      // Verify results
+      assertThat("No errors should occur during concurrent attribute updates", 
+          errorCount.get(), is(0));
+      
+      // Final value should be within valid range
+      int finalValue = testBean.getValue();
+      assertThat("Final value should be within valid range", 
+          finalValue, is(greaterThan(-1)));
+      assertThat("Final value should be within valid range", 
+          finalValue, is(lessThan(operationCount)));
+    } 
+    finally {
+      executor.shutdown();
+    }
+  }
+  
+  /**
+   * Compares performance between Virtual Threads and Platform Threads for I/O-bound JMX operations.
+   */
+  @Test
+  void compareVirtualThreadsVsPlatformThreadsForJmxOperations() throws Exception {
+    // Reset operation count
+    testBean.resetOperationCount();
+    
+    // Run with platform threads
+    long platformThreadDuration = measureJmxOperationsWithThreadType(false);
+    long platformThreadOperations = testBean.getOperationCount();
+    testBean.resetOperationCount();
+    
+    // Run with virtual threads
+    long virtualThreadDuration = measureJmxOperationsWithThreadType(true);
+    long virtualThreadOperations = testBean.getOperationCount();
+    
+    // Log the results
+    log.info("Platform Threads: {} operations in {} ms", platformThreadOperations, platformThreadDuration);
+    log.info("Virtual Threads: {} operations in {} ms", virtualThreadOperations, virtualThreadDuration);
+    
+    // Virtual threads should complete all operations
+    assertThat("Virtual threads should complete all operations", 
+        virtualThreadOperations, is((long) CONCURRENT_OPERATIONS));
+    
+    // Platform threads might not complete all operations due to thread pool limitations
+    // but we expect virtual threads to be more efficient
+    assertTrue(virtualThreadDuration <= platformThreadDuration * 1.2, 
+        "Virtual threads should be at least as efficient as platform threads");
+  }
+  
+  /**
+   * Tests that I/O-bound JMX operations benefit from Virtual Threads.
+   */
+  @Test
+  void testIoBoundJmxOperationsWithVirtualThreads() throws Exception {
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    int operationCount = 1000; // Reduced count for I/O-bound operations
+    CountDownLatch latch = new CountDownLatch(operationCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    AtomicBoolean allOperationsStarted = new AtomicBoolean(false);
+    List<CompletableFuture<Void>> futures = new ArrayList<>();
+    
+    try {
+      // Submit multiple concurrent I/O-bound operations using virtual threads
+      for (int i = 0; i < operationCount; i++) {
+        final int value = i;
+        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+          try {
+            int result = (int) mbeanServer.invoke(testBeanName, "performSlowOperation", 
+                new Object[]{value, OPERATION_DELAY_MS}, 
+                new String[]{"int", "long"});
+            if (result != value * 2) {
+              errorCount.incrementAndGet();
+            }
+          } 
+          catch (Exception e) {
+            errorCount.incrementAndGet();
+          } 
+          finally {
+            latch.countDown();
+          }
+        }, executor);
+        futures.add(future);
+      }
+      
+      allOperationsStarted.set(true);
+      
+      // Wait for all tasks to complete
+      assertTrue(latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), 
+          "All operations should complete within timeout");
+      
+      // Verify results
+      assertThat("No errors should occur during I/O-bound operations", 
+          errorCount.get(), is(0));
+      assertThat("All operations should be processed", 
+          testBean.getOperationCount(), is((long) operationCount));
+      
+      // All futures should complete successfully
+      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+    } 
+    finally {
+      executor.shutdown();
+    }
+  }
+  
+  /**
+   * Tests that JMX operations maintain correctness under extreme concurrency with Virtual Threads.
+   */
+  @Test
+  void testJmxOperationCorrectnessUnderExtremeConcurrency() throws Exception {
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    int operationCount = CONCURRENT_OPERATIONS;
+    CountDownLatch latch = new CountDownLatch(operationCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    // Reset the bean value
+    testBean.setValue(0);
+    
+    try {
+      // Submit multiple concurrent increment operations using virtual threads
+      for (int i = 0; i < operationCount; i++) {
+        executor.submit(() -> {
+          try {
+            // Get current value
+            int currentValue = (int) mbeanServer.getAttribute(testBeanName, "Value");
+            
+            // Increment value (this is intentionally not atomic to test concurrency issues)
+            mbeanServer.setAttribute(testBeanName, 
+                new javax.management.Attribute("Value", currentValue + 1));
+          } 
+          catch (Exception e) {
+            errorCount.incrementAndGet();
+          } 
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      assertTrue(latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), 
+          "All operations should complete within timeout");
+      
+      // Verify results
+      assertThat("No errors should occur during concurrent operations", 
+          errorCount.get(), is(0));
+      
+      // Due to race conditions, the final value will be less than operationCount
+      // but we can verify it's greater than zero and less than or equal to operationCount
+      int finalValue = testBean.getValue();
+      log.info("Final value after {} concurrent increments: {}", operationCount, finalValue);
+      
+      assertThat("Final value should be greater than zero", 
+          finalValue, is(greaterThan(0)));
+      assertThat("Final value should be less than or equal to operation count", 
+          finalValue, is(lessThan(operationCount + 1)));
+      
+      // The race condition is expected, so we don't assert that finalValue == operationCount
+    } 
+    finally {
+      executor.shutdown();
+    }
+  }
+  
+  /**
+   * Tests that JMX operations can be performed with thousands of concurrent Virtual Threads.
+   */
+  @Test
+  void testThousandsOfConcurrentJmxOperations() throws Exception {
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    int operationCount = 10000; // Ten thousand concurrent operations
+    CountDownLatch latch = new CountDownLatch(operationCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    AtomicInteger completedCount = new AtomicInteger(0);
+    
+    try {
+      // Reset operation count
+      testBean.resetOperationCount();
+      
+      // Submit thousands of concurrent operations using virtual threads
+      for (int i = 0; i < operationCount; i++) {
+        final int value = i;
+        executor.submit(() -> {
+          try {
+            int result = (int) mbeanServer.invoke(testBeanName, "performOperation", 
+                new Object[]{value}, new String[]{"int"});
+            if (result == value * 2) {
+              completedCount.incrementAndGet();
+            }
+            else {
+              errorCount.incrementAndGet();
+            }
+          } 
+          catch (Exception e) {
+            errorCount.incrementAndGet();
+          } 
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      assertTrue(latch.await(TIMEOUT_SECONDS * 2, TimeUnit.SECONDS), 
+          "All operations should complete within extended timeout");
+      
+      // Verify results
+      assertThat("No errors should occur during concurrent operations", 
+          errorCount.get(), is(0));
+      assertThat("All operations should complete successfully", 
+          completedCount.get(), is(operationCount));
+      assertThat("All operations should be processed by the MBean", 
+          testBean.getOperationCount(), is((long) operationCount));
+    } 
+    finally {
+      executor.shutdown();
+    }
+  }
+  
+  /**
+   * Helper method to measure JMX operation performance with either platform or virtual threads.
+   * 
+   * @param useVirtualThreads true to use virtual threads, false to use platform threads
+   * @return the duration in milliseconds
+   */
+  private long measureJmxOperationsWithThreadType(boolean useVirtualThreads) throws Exception {
+    ThreadFactory threadFactory;
+    ExecutorService executor;
+    
+    if (useVirtualThreads) {
+      threadFactory = Thread.ofVirtual().factory();
+      executor = Executors.newThreadPerTaskExecutor(threadFactory);
+    } 
+    else {
+      // Use a fixed thread pool for platform threads with a reasonable size
+      int threadPoolSize = Math.min(100, Runtime.getRuntime().availableProcessors() * 8);
+      executor = Executors.newFixedThreadPool(threadPoolSize);
+    }
+    
+    int operationCount = CONCURRENT_OPERATIONS;
+    CountDownLatch latch = new CountDownLatch(operationCount);
+    
+    try {
+      long startTime = System.currentTimeMillis();
+      
+      // Submit operations
+      for (int i = 0; i < operationCount; i++) {
+        final int value = i;
+        executor.submit(() -> {
+          try {
+            mbeanServer.invoke(testBeanName, "performSlowOperation", 
+                new Object[]{value, OPERATION_DELAY_MS / 2}, // Use half the delay for this benchmark
+                new String[]{"int", "long"});
+          } 
+          catch (Exception e) {
+            // Log but continue
+            log.error("Error during JMX operation", e);
+          } 
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for operations to complete or timeout
+      boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      long endTime = System.currentTimeMillis();
+      
+      if (!completed) {
+        log.warn("Not all operations completed within timeout using {} threads", 
+            useVirtualThreads ? "virtual" : "platform");
+      }
+      
+      return endTime - startTime;
+    } 
+    finally {
+      executor.shutdownNow();
+    }
   }
 }

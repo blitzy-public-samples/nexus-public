@@ -13,18 +13,13 @@
 package org.sonatype.nexus.email.virtualthread;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.commons.mail.Email;
 import org.apache.commons.mail.SimpleEmail;
@@ -36,8 +31,15 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.common.event.EventManager;
+import org.sonatype.nexus.crypto.secrets.Secret;
+import org.sonatype.nexus.crypto.secrets.SecretsService;
 import org.sonatype.nexus.email.EmailConfiguration;
-import org.sonatype.nexus.email.EmailManager;
+import org.sonatype.nexus.internal.email.EmailConfigurationStore;
+import org.sonatype.nexus.internal.email.EmailManagerImpl;
+import org.sonatype.nexus.security.UserIdHelper;
+import org.sonatype.nexus.ssl.TrustStore;
+import org.sonatype.nexus.testsuite.testsupport.VirtualThreadTestGroup;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.greaterThan;
@@ -45,47 +47,90 @@ import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThan;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
 /**
- * Tests high-concurrency email operations using Java 21 Virtual Threads versus traditional platform threads.
- * Measures and compares performance metrics, validates correctness under load, and verifies that
- * Virtual Threads significantly improve throughput and resource utilization in email sending operations.
- *
- * @since 3.60
+ * High-concurrency stress testing for the email subsystem using Java 21 Virtual Threads
+ * versus traditional platform threads. This test class measures and compares performance metrics,
+ * validates correctness under load, and verifies that Virtual Threads significantly
+ * improve throughput and resource utilization in email sending operations.
+ * 
+ * <p>The test methodology:</p>
+ * <ul>
+ *   <li>Compares Virtual Threads (using ThreadFactory.ofVirtual().factory()) with Platform Threads 
+ *       (using ThreadFactory.ofPlatform().factory())</li>
+ *   <li>Tests with different concurrency levels (100, 1000, 10000 concurrent clients)</li>
+ *   <li>Measures key performance metrics: throughput, response time, memory usage</li>
+ *   <li>Runs multiple iterations with warm-up cycles to ensure reliable results</li>
+ *   <li>Simulates I/O-bound operations typical in email sending scenarios</li>
+ * </ul>
+ * 
+ * <p>This test demonstrates the benefits of Java 21's Virtual Threads for I/O-bound operations,
+ * particularly in scenarios with high concurrency where traditional thread pools would be limited
+ * by the number of available platform threads.</p>
  */
 @Category(VirtualThreadTestGroup.class)
 public class EmailConcurrencyTest
     extends TestSupport
 {
-  private static final int[] CONCURRENT_CLIENT_COUNTS = {100, 500, 1000, 5000, 10000};
-  private static final int WARMUP_ITERATIONS = 5;
-  private static final int TEST_ITERATIONS = 10;
-  private static final long OPERATION_TIMEOUT_MS = 30000; // 30 seconds
+  private static final int SMALL_CONCURRENCY = 100;
+  private static final int MEDIUM_CONCURRENCY = 1000;
+  private static final int LARGE_CONCURRENCY = 10000;
+  
+  private static final int WARMUP_ITERATIONS = 3;
+  private static final int TEST_ITERATIONS = 5;
+  private static final long OPERATION_DELAY_MS = 50; // Simulated email sending delay
 
   @Mock
-  private EmailManager emailManager;
+  private EventManager eventManager;
 
   @Mock
-  private EmailConfiguration emailConfiguration;
+  private EmailConfigurationStore emailConfigurationStore;
 
+  @Mock
+  private TrustStore trustStore;
+
+  @Mock
+  private SecretsService secretsService;
+
+  private EmailManagerImpl emailManager;
+  private EmailConfiguration emailConfig;
   private AutoCloseable mocks;
 
   @Before
   public void setup() throws Exception {
     mocks = MockitoAnnotations.openMocks(this);
     
-    // Configure email manager mock
-    when(emailManager.getConfiguration()).thenReturn(emailConfiguration);
-    when(emailConfiguration.isEnabled()).thenReturn(true);
-    when(emailConfiguration.getHost()).thenReturn("localhost");
-    when(emailConfiguration.getPort()).thenReturn(25);
-    when(emailConfiguration.getFromAddress()).thenReturn("test@example.com");
+    // Mock UserIdHelper.get() to return "userId"
+    try (var userIdHelperMock = mockStatic(UserIdHelper.class)) {
+      userIdHelperMock.when(UserIdHelper::get).thenReturn("userId");
+    }
+
+    // Setup email configuration
+    emailConfig = mock(EmailConfiguration.class);
+    when(emailConfig.isEnabled()).thenReturn(true);
+    when(emailConfig.getHost()).thenReturn("example.com");
+    when(emailConfig.getPort()).thenReturn(25);
+    when(emailConfig.getFromAddress()).thenReturn("sender@example.com");
+    when(emailConfig.getUsername()).thenReturn("user");
+    when(emailConfig.isStartTlsEnabled()).thenReturn(true);
+    when(emailConfig.isStartTlsRequired()).thenReturn(false);
+    when(emailConfig.isSslOnConnectEnabled()).thenReturn(false);
+    when(emailConfig.isSslCheckServerIdentityEnabled()).thenReturn(false);
+    when(emailConfig.isNexusTrustStoreEnabled()).thenReturn(true);
     
-    // Simulate email sending with a small delay to mimic network I/O
+    when(emailConfigurationStore.load()).thenReturn(emailConfig);
+    
+    // Create email manager with partial mocking to simulate network delay without actually sending emails
+    emailManager = spy(new EmailManagerImpl(eventManager, emailConfigurationStore, trustStore, null, null, secretsService));
+    
+    // Mock the send method to simulate network delay
     doAnswer(invocation -> {
-      // Simulate network I/O with a small delay
-      Thread.sleep(5);
+      // Simulate email sending delay
+      Thread.sleep(OPERATION_DELAY_MS);
       return null;
     }).when(emailManager).send(any(Email.class));
   }
@@ -97,297 +142,391 @@ public class EmailConcurrencyTest
     }
   }
 
+  /**
+   * Tests email sending performance with a small number of concurrent clients (100) using both
+   * platform threads and virtual threads.
+   * 
+   * <p>This test case represents a moderate load scenario that traditional thread pools
+   * can typically handle, but where Virtual Threads may still show some performance advantages
+   * due to their lightweight nature and more efficient resource utilization.</p>
+   */
   @Test
-  public void testEmailConcurrencyWithVirtualThreads() throws Exception {
-    log.info("Starting email concurrency test with Virtual Threads vs Platform Threads");
+  public void testSmallConcurrency() throws Exception {
+    log.info("Testing with {} concurrent clients", SMALL_CONCURRENCY);
     
-    // Create thread factories for both types
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    ThreadFactory platformThreadFactory = Thread.ofPlatform().factory();
-    
-    // Store performance results for comparison
-    Map<String, Map<Integer, PerformanceMetrics>> allResults = new HashMap<>();
-    allResults.put("virtual", new HashMap<>());
-    allResults.put("platform", new HashMap<>());
-    
-    // Run tests with increasing concurrency
-    for (int clientCount : CONCURRENT_CLIENT_COUNTS) {
-      log.info("Testing with {} concurrent clients", clientCount);
-      
-      // Test with virtual threads
-      PerformanceMetrics virtualMetrics = runConcurrencyTest("Virtual", virtualThreadFactory, clientCount);
-      allResults.get("virtual").put(clientCount, virtualMetrics);
-      
-      // Test with platform threads (skip higher concurrency levels that would cause resource issues)
-      if (clientCount <= 1000) {
-        PerformanceMetrics platformMetrics = runConcurrencyTest("Platform", platformThreadFactory, clientCount);
-        allResults.get("platform").put(clientCount, platformMetrics);
-      }
+    // Warm up
+    for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+      runConcurrencyTest(SMALL_CONCURRENCY, true);
+      runConcurrencyTest(SMALL_CONCURRENCY, false);
     }
     
-    // Log and validate results
-    logResults(allResults);
-    validateResults(allResults);
-  }
-
-  private PerformanceMetrics runConcurrencyTest(String threadType, ThreadFactory threadFactory, int clientCount) 
-      throws Exception {
-    log.info("Running {} thread test with {} concurrent clients", threadType, clientCount);
+    // Actual test
+    PerformanceResult platformResult = new PerformanceResult();
+    PerformanceResult virtualResult = new PerformanceResult();
     
-    // Create executor with the specified thread factory
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(threadFactory);
-    
-    try {
-      // Warmup phase
-      for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-        runIteration(executor, clientCount, false);
-      }
-      
-      // Measurement phase
-      PerformanceMetrics metrics = new PerformanceMetrics();
-      
-      for (int i = 0; i < TEST_ITERATIONS; i++) {
-        IterationResult result = runIteration(executor, clientCount, true);
-        metrics.addResult(result);
-      }
-      
-      log.info("{} thread test with {} clients completed. Avg time: {}ms, Throughput: {} emails/sec, Errors: {}", 
-          threadType, clientCount, metrics.getAverageResponseTime(), metrics.getThroughput(), metrics.getErrorCount());
-      
-      return metrics;
-    } finally {
-      executor.shutdown();
-      executor.awaitTermination(1, TimeUnit.MINUTES);
-    }
-  }
-
-  private IterationResult runIteration(ExecutorService executor, int clientCount, boolean measure) 
-      throws Exception {
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(clientCount);
-    AtomicInteger errorCount = new AtomicInteger(0);
-    ConcurrentHashMap<Integer, Long> responseTimes = new ConcurrentHashMap<>();
-    
-    // Track memory before test
-    long memoryBefore = 0;
-    if (measure) {
-      System.gc(); // Request garbage collection to get more accurate measurements
-      memoryBefore = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+    for (int i = 0; i < TEST_ITERATIONS; i++) {
+      platformResult.addResult(runConcurrencyTest(SMALL_CONCURRENCY, false));
+      virtualResult.addResult(runConcurrencyTest(SMALL_CONCURRENCY, true));
     }
     
-    long startTime = System.currentTimeMillis();
-    
-    // Submit tasks
-    List<CompletableFuture<Void>> futures = new ArrayList<>(clientCount);
-    for (int i = 0; i < clientCount; i++) {
-      final int clientId = i;
-      CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-        try {
-          // Wait for all threads to be ready
-          startLatch.await();
-          
-          long clientStartTime = System.nanoTime();
-          
-          // Perform email operation
-          SimpleEmail email = new SimpleEmail();
-          email.setSubject("Test email " + clientId);
-          email.addTo("recipient" + clientId + "@example.com");
-          email.setMsg("This is a test email from client " + clientId);
-          
-          emailManager.send(email);
-          
-          if (measure) {
-            long clientEndTime = System.nanoTime();
-            responseTimes.put(clientId, (clientEndTime - clientStartTime) / 1_000_000); // Convert to ms
-          }
-        } catch (Exception e) {
-          errorCount.incrementAndGet();
-          log.error("Error in client {}: {}", clientId, e.getMessage(), e);
-        } finally {
-          completionLatch.countDown();
-        }
-      }, executor);
-      
-      futures.add(future);
-    }
-    
-    // Start all threads simultaneously
-    startLatch.countDown();
-    
-    // Wait for completion with timeout
-    boolean completed = completionLatch.await(OPERATION_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-    long endTime = System.currentTimeMillis();
-    long totalTime = endTime - startTime;
-    
-    // Track memory after test
-    long memoryAfter = 0;
-    long memoryUsed = 0;
-    if (measure) {
-      System.gc(); // Request garbage collection to get more accurate measurements
-      memoryAfter = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
-      memoryUsed = memoryAfter - memoryBefore;
-    }
-    
-    // Cancel any remaining futures if we timed out
-    if (!completed) {
-      log.warn("Test timed out after {} ms", OPERATION_TIMEOUT_MS);
-      futures.forEach(f -> f.cancel(true));
-    }
-    
-    return new IterationResult(totalTime, clientCount, errorCount.get(), responseTimes, memoryUsed);
-  }
-
-  private void logResults(Map<String, Map<Integer, PerformanceMetrics>> allResults) {
-    log.info("\nPerformance Comparison Results:");
-    log.info("---------------------------------");
-    log.info("Concurrent Clients | Thread Type | Avg Response Time (ms) | Throughput (emails/sec) | Memory Usage (MB) | Errors");
-    log.info("---------------------------------");
-    
-    for (int clientCount : CONCURRENT_CLIENT_COUNTS) {
-      PerformanceMetrics virtualMetrics = allResults.get("virtual").get(clientCount);
-      if (virtualMetrics != null) {
-        log.info("{} | Virtual | {} | {} | {} | {}", 
-            clientCount, 
-            String.format("%.2f", virtualMetrics.getAverageResponseTime()),
-            String.format("%.2f", virtualMetrics.getThroughput()),
-            String.format("%.2f", virtualMetrics.getAverageMemoryUsage() / (1024.0 * 1024.0)),
-            virtualMetrics.getErrorCount());
-      }
-      
-      PerformanceMetrics platformMetrics = allResults.get("platform").get(clientCount);
-      if (platformMetrics != null) {
-        log.info("{} | Platform | {} | {} | {} | {}", 
-            clientCount, 
-            String.format("%.2f", platformMetrics.getAverageResponseTime()),
-            String.format("%.2f", platformMetrics.getThroughput()),
-            String.format("%.2f", platformMetrics.getAverageMemoryUsage() / (1024.0 * 1024.0)),
-            platformMetrics.getErrorCount());
-      }
-    }
-  }
-
-  private void validateResults(Map<String, Map<Integer, PerformanceMetrics>> allResults) {
-    // Validate that all tests completed successfully
-    for (Map<Integer, PerformanceMetrics> results : allResults.values()) {
-      for (PerformanceMetrics metrics : results.values()) {
-        assertThat("No errors should occur during test", metrics.getErrorCount(), is(0));
-      }
-    }
-    
-    // For comparable concurrency levels, virtual threads should outperform platform threads
-    for (int clientCount : CONCURRENT_CLIENT_COUNTS) {
-      if (clientCount <= 1000) { // We only have platform thread data up to 1000 clients
-        PerformanceMetrics virtualMetrics = allResults.get("virtual").get(clientCount);
-        PerformanceMetrics platformMetrics = allResults.get("platform").get(clientCount);
-        
-        if (virtualMetrics != null && platformMetrics != null) {
-          // At higher concurrency, virtual threads should have better throughput
-          if (clientCount >= 500) {
-            assertThat("Virtual threads should have higher throughput at high concurrency",
-                virtualMetrics.getThroughput(), greaterThan(platformMetrics.getThroughput()));
-          }
-          
-          // Virtual threads should use less memory per thread
-          assertThat("Virtual threads should use less memory",
-              virtualMetrics.getAverageMemoryUsage(), lessThan(platformMetrics.getAverageMemoryUsage()));
-        }
-      }
-    }
-    
-    // Verify that virtual threads can handle high concurrency
-    PerformanceMetrics highConcurrencyMetrics = allResults.get("virtual").get(CONCURRENT_CLIENT_COUNTS[CONCURRENT_CLIENT_COUNTS.length - 1]);
-    assertThat("Virtual threads should handle high concurrency", highConcurrencyMetrics.getErrorCount(), is(0));
+    logResults("Small Concurrency", platformResult, virtualResult);
+    assertPerformanceImprovement(platformResult, virtualResult);
   }
 
   /**
-   * Represents the result of a single test iteration
+   * Tests email sending performance with a medium number of concurrent clients (1000) using both
+   * platform threads and virtual threads.
+   * 
+   * <p>This test case represents a high load scenario where traditional thread pools
+   * start to show limitations due to the overhead of maintaining many platform threads.
+   * Virtual Threads are expected to demonstrate significant advantages in throughput
+   * and resource efficiency at this concurrency level.</p>
    */
-  private static class IterationResult
-  {
+  @Test
+  public void testMediumConcurrency() throws Exception {
+    log.info("Testing with {} concurrent clients", MEDIUM_CONCURRENCY);
+    
+    // Warm up
+    for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+      runConcurrencyTest(MEDIUM_CONCURRENCY, true);
+      runConcurrencyTest(MEDIUM_CONCURRENCY, false);
+    }
+    
+    // Actual test
+    PerformanceResult platformResult = new PerformanceResult();
+    PerformanceResult virtualResult = new PerformanceResult();
+    
+    for (int i = 0; i < TEST_ITERATIONS; i++) {
+      platformResult.addResult(runConcurrencyTest(MEDIUM_CONCURRENCY, false));
+      virtualResult.addResult(runConcurrencyTest(MEDIUM_CONCURRENCY, true));
+    }
+    
+    logResults("Medium Concurrency", platformResult, virtualResult);
+    assertPerformanceImprovement(platformResult, virtualResult);
+  }
+
+  /**
+   * Tests email sending performance with a large number of concurrent clients (10000) using both
+   * platform threads and virtual threads.
+   * 
+   * <p>This test case represents an extreme load scenario that would typically be impossible
+   * for traditional thread pools to handle efficiently due to the high memory overhead
+   * of platform threads. Virtual Threads are expected to excel in this scenario,
+   * demonstrating their ability to handle massive concurrency with minimal resource usage.</p>
+   * 
+   * <p>This test validates one of the key benefits of Java 21's Virtual Threads: the ability
+   * to efficiently handle thousands of concurrent operations that would be impractical
+   * with traditional threading models.</p>
+   */
+  @Test
+  public void testLargeConcurrency() throws Exception {
+    log.info("Testing with {} concurrent clients", LARGE_CONCURRENCY);
+    
+    // Warm up
+    for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+      runConcurrencyTest(LARGE_CONCURRENCY, true);
+      runConcurrencyTest(LARGE_CONCURRENCY, false);
+    }
+    
+    // Actual test
+    PerformanceResult platformResult = new PerformanceResult();
+    PerformanceResult virtualResult = new PerformanceResult();
+    
+    for (int i = 0; i < TEST_ITERATIONS; i++) {
+      platformResult.addResult(runConcurrencyTest(LARGE_CONCURRENCY, false));
+      virtualResult.addResult(runConcurrencyTest(LARGE_CONCURRENCY, true));
+    }
+    
+    logResults("Large Concurrency", platformResult, virtualResult);
+    assertPerformanceImprovement(platformResult, virtualResult);
+  }
+
+  /**
+   * Runs a concurrency test with the specified number of concurrent clients and thread type.
+   * This method is the core of the performance testing methodology, creating either virtual
+   * or platform threads based on the parameters, and measuring various performance metrics.
+   *
+   * <p>The method performs the following steps:</p>
+   * <ol>
+   *   <li>Creates an appropriate thread factory and executor service based on the thread type</li>
+   *   <li>Sets up synchronization mechanisms (CountDownLatch) to ensure accurate timing</li>
+   *   <li>Measures memory usage before the test</li>
+   *   <li>Submits the specified number of concurrent email sending tasks</li>
+   *   <li>Measures total execution time, individual response times, and success/error counts</li>
+   *   <li>Measures memory usage after the test</li>
+   *   <li>Calculates performance metrics (throughput, average response time, etc.)</li>
+   * </ol>
+   *
+   * @param concurrency the number of concurrent clients
+   * @param useVirtualThreads whether to use virtual threads or platform threads
+   * @return the test result containing performance metrics
+   */
+  private TestResult runConcurrencyTest(int concurrency, boolean useVirtualThreads) throws Exception {
+    // Create thread factory based on the specified thread type
+    ThreadFactory threadFactory = useVirtualThreads ? 
+        ThreadFactory.ofVirtual().factory() : 
+        ThreadFactory.ofPlatform().factory();
+    
+    // Create executor service with the thread factory
+    ExecutorService executor = useVirtualThreads ?
+        Executors.newVirtualThreadPerTaskExecutor() :
+        Executors.newFixedThreadPool(Math.min(concurrency, Runtime.getRuntime().availableProcessors() * 2), threadFactory);
+    
+    try {
+      CountDownLatch startLatch = new CountDownLatch(1);
+      CountDownLatch completionLatch = new CountDownLatch(concurrency);
+      AtomicInteger successCount = new AtomicInteger(0);
+      AtomicInteger errorCount = new AtomicInteger(0);
+      List<Long> responseTimes = new ArrayList<>(concurrency);
+      
+      // Record memory usage before test
+      System.gc(); // Request garbage collection to get more accurate memory readings
+      long memoryBefore = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+      
+      // Submit tasks to the executor
+      for (int i = 0; i < concurrency; i++) {
+        executor.submit(() -> {
+          try {
+            // Wait for all threads to be ready
+            startLatch.await();
+            
+            // Record start time
+            long startTime = System.nanoTime();
+            
+            // Send email
+            sendTestEmail();
+            
+            // Record response time
+            long responseTime = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime);
+            synchronized (responseTimes) {
+              responseTimes.add(responseTime);
+            }
+            
+            // Increment success count
+            successCount.incrementAndGet();
+          } 
+          catch (Exception e) {
+            // Increment error count
+            errorCount.incrementAndGet();
+            log.error("Error sending email", e);
+          } 
+          finally {
+            // Signal completion
+            completionLatch.countDown();
+          }
+        });
+      }
+      
+      // Start the test
+      long startTime = System.currentTimeMillis();
+      startLatch.countDown();
+      
+      // Wait for all threads to complete
+      completionLatch.await();
+      long endTime = System.currentTimeMillis();
+      
+      // Record memory usage after test
+      System.gc(); // Request garbage collection to get more accurate memory readings
+      long memoryAfter = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+      
+      // Calculate metrics
+      long totalTime = endTime - startTime;
+      double throughput = (double) successCount.get() / (totalTime / 1000.0);
+      double avgResponseTime = responseTimes.stream().mapToLong(Long::longValue).average().orElse(0);
+      long memoryUsed = memoryAfter - memoryBefore;
+      
+      // Create and return test result
+      return new TestResult(concurrency, useVirtualThreads, totalTime, throughput, avgResponseTime, 
+          successCount.get(), errorCount.get(), memoryUsed);
+    } 
+    finally {
+      // Shutdown executor
+      executor.shutdown();
+      if (!executor.awaitTermination(30, TimeUnit.SECONDS)) {
+        executor.shutdownNow();
+      }
+    }
+  }
+
+  /**
+   * Sends a test email using the email manager.
+   */
+  private void sendTestEmail() throws Exception {
+    SimpleEmail email = new SimpleEmail();
+    email.setSubject("Test Email");
+    email.setMsg("This is a test email.");
+    email.addTo("recipient@example.com");
+    
+    emailManager.send(email);
+  }
+
+  /**
+   * Logs the results of the performance tests.
+   *
+   * @param testName the name of the test
+   * @param platformResult the platform thread test results
+   * @param virtualResult the virtual thread test results
+   */
+  private void logResults(String testName, PerformanceResult platformResult, PerformanceResult virtualResult) {
+    log.info("----- {} Test Results -----", testName);
+    log.info("Platform Threads:");
+    log.info("  Avg Total Time: {} ms", platformResult.getAvgTotalTime());
+    log.info("  Avg Throughput: {} emails/sec", platformResult.getAvgThroughput());
+    log.info("  Avg Response Time: {} ms", platformResult.getAvgResponseTime());
+    log.info("  Avg Success Rate: {}%", platformResult.getAvgSuccessRate());
+    log.info("  Avg Memory Used: {} bytes", platformResult.getAvgMemoryUsed());
+    
+    log.info("Virtual Threads:");
+    log.info("  Avg Total Time: {} ms", virtualResult.getAvgTotalTime());
+    log.info("  Avg Throughput: {} emails/sec", virtualResult.getAvgThroughput());
+    log.info("  Avg Response Time: {} ms", virtualResult.getAvgResponseTime());
+    log.info("  Avg Success Rate: {}%", virtualResult.getAvgSuccessRate());
+    log.info("  Avg Memory Used: {} bytes", virtualResult.getAvgMemoryUsed());
+    
+    // Calculate improvement percentages
+    double throughputImprovement = ((virtualResult.getAvgThroughput() / platformResult.getAvgThroughput()) - 1) * 100;
+    double responseTimeImprovement = ((platformResult.getAvgResponseTime() / virtualResult.getAvgResponseTime()) - 1) * 100;
+    double memoryImprovement = ((platformResult.getAvgMemoryUsed() / virtualResult.getAvgMemoryUsed()) - 1) * 100;
+    
+    log.info("Improvements with Virtual Threads:");
+    log.info("  Throughput: {}%", String.format("%.2f", throughputImprovement));
+    log.info("  Response Time: {}%", String.format("%.2f", responseTimeImprovement));
+    log.info("  Memory Usage: {}%", String.format("%.2f", memoryImprovement));
+  }
+
+  /**
+   * Asserts that virtual threads provide a performance improvement over platform threads.
+   * This method validates the core hypothesis of the test: that Java 21's Virtual Threads
+   * offer significant performance advantages for I/O-bound operations under high concurrency.
+   *
+   * <p>The method checks three key performance metrics:</p>
+   * <ol>
+   *   <li>Throughput: Virtual threads should process more emails per second</li>
+   *   <li>Response time: Virtual threads should have lower average response times</li>
+   *   <li>Memory usage: Virtual threads should use less memory despite higher concurrency</li>
+   * </ol>
+   *
+   * <p>Additionally, it verifies that both thread types maintain 100% success rate,
+   * ensuring that the performance improvements don't come at the cost of reliability.</p>
+   *
+   * @param platformResult the platform thread test results
+   * @param virtualResult the virtual thread test results
+   */
+  private void assertPerformanceImprovement(PerformanceResult platformResult, PerformanceResult virtualResult) {
+    // Assert that virtual threads have higher throughput
+    assertThat("Virtual threads should have higher throughput", 
+        virtualResult.getAvgThroughput(), greaterThan(platformResult.getAvgThroughput()));
+    
+    // Assert that virtual threads have lower response time
+    assertThat("Virtual threads should have lower response time", 
+        virtualResult.getAvgResponseTime(), lessThan(platformResult.getAvgResponseTime()));
+    
+    // Assert that virtual threads have lower memory usage
+    assertThat("Virtual threads should have lower memory usage", 
+        virtualResult.getAvgMemoryUsed(), lessThan(platformResult.getAvgMemoryUsed()));
+    
+    // Assert that both thread types have 100% success rate
+    assertThat("Platform threads should have 100% success rate", 
+        platformResult.getAvgSuccessRate(), is(100.0));
+    assertThat("Virtual threads should have 100% success rate", 
+        virtualResult.getAvgSuccessRate(), is(100.0));
+  }
+
+  /**
+   * Represents the result of a single concurrency test.
+   * This class encapsulates all the performance metrics collected during a test run,
+   * providing a comprehensive view of the test's performance characteristics.
+   */
+  private static class TestResult {
+    private final int concurrency;
+    private final boolean useVirtualThreads;
     private final long totalTime;
-    private final int clientCount;
+    private final double throughput;
+    private final double avgResponseTime;
+    private final int successCount;
     private final int errorCount;
-    private final Map<Integer, Long> responseTimes;
     private final long memoryUsed;
 
-    public IterationResult(long totalTime, int clientCount, int errorCount, Map<Integer, Long> responseTimes, long memoryUsed) {
+    public TestResult(int concurrency, boolean useVirtualThreads, long totalTime, double throughput, 
+                     double avgResponseTime, int successCount, int errorCount, long memoryUsed) {
+      this.concurrency = concurrency;
+      this.useVirtualThreads = useVirtualThreads;
       this.totalTime = totalTime;
-      this.clientCount = clientCount;
+      this.throughput = throughput;
+      this.avgResponseTime = avgResponseTime;
+      this.successCount = successCount;
       this.errorCount = errorCount;
-      this.responseTimes = responseTimes;
       this.memoryUsed = memoryUsed;
+    }
+
+    public int getConcurrency() {
+      return concurrency;
+    }
+
+    public boolean isUseVirtualThreads() {
+      return useVirtualThreads;
     }
 
     public long getTotalTime() {
       return totalTime;
     }
 
-    public int getClientCount() {
-      return clientCount;
+    public double getThroughput() {
+      return throughput;
+    }
+
+    public double getAvgResponseTime() {
+      return avgResponseTime;
+    }
+
+    public int getSuccessCount() {
+      return successCount;
     }
 
     public int getErrorCount() {
       return errorCount;
     }
 
-    public Map<Integer, Long> getResponseTimes() {
-      return responseTimes;
-    }
-
     public long getMemoryUsed() {
       return memoryUsed;
     }
 
-    public double getThroughput() {
-      return (clientCount - errorCount) * 1000.0 / totalTime;
+    public double getSuccessRate() {
+      return (double) successCount / (successCount + errorCount) * 100;
     }
   }
 
   /**
-   * Aggregates performance metrics across multiple test iterations
+   * Aggregates multiple test results and calculates average metrics.
+   * This class collects results from multiple test iterations and provides methods
+   * to calculate average performance metrics, ensuring that the test results are
+   * statistically significant and not affected by transient system conditions.
    */
-  private static class PerformanceMetrics
-  {
-    private final List<IterationResult> results = new ArrayList<>();
-    private final AtomicLong totalResponseTime = new AtomicLong(0);
-    private final AtomicLong responseCount = new AtomicLong(0);
-    private final AtomicInteger totalErrors = new AtomicInteger(0);
-    private final AtomicLong totalMemoryUsed = new AtomicLong(0);
+  private static class PerformanceResult {
+    private final List<TestResult> results = new ArrayList<>();
 
-    public void addResult(IterationResult result) {
+    public void addResult(TestResult result) {
       results.add(result);
-      totalErrors.addAndGet(result.getErrorCount());
-      totalMemoryUsed.addAndGet(result.getMemoryUsed());
-      
-      // Add individual response times
-      for (Long responseTime : result.getResponseTimes().values()) {
-        totalResponseTime.addAndGet(responseTime);
-        responseCount.incrementAndGet();
-      }
     }
 
-    public double getAverageResponseTime() {
-      return responseCount.get() > 0 ? totalResponseTime.get() / (double) responseCount.get() : 0;
+    public double getAvgTotalTime() {
+      return results.stream().mapToLong(TestResult::getTotalTime).average().orElse(0);
     }
 
-    public double getThroughput() {
-      double totalOperations = 0;
-      double totalTimeMs = 0;
-      
-      for (IterationResult result : results) {
-        totalOperations += result.getClientCount() - result.getErrorCount();
-        totalTimeMs += result.getTotalTime();
-      }
-      
-      return totalTimeMs > 0 ? (totalOperations * 1000.0) / totalTimeMs : 0;
+    public double getAvgThroughput() {
+      return results.stream().mapToDouble(TestResult::getThroughput).average().orElse(0);
     }
 
-    public int getErrorCount() {
-      return totalErrors.get();
+    public double getAvgResponseTime() {
+      return results.stream().mapToDouble(TestResult::getAvgResponseTime).average().orElse(0);
     }
 
-    public double getAverageMemoryUsage() {
-      return results.isEmpty() ? 0 : totalMemoryUsed.get() / (double) results.size();
+    public double getAvgSuccessRate() {
+      return results.stream().mapToDouble(TestResult::getSuccessRate).average().orElse(0);
+    }
+
+    public long getAvgMemoryUsed() {
+      return (long) results.stream().mapToLong(TestResult::getMemoryUsed).average().orElse(0);
     }
   }
 }

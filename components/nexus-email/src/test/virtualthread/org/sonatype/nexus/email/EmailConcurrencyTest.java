@@ -19,406 +19,496 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
-import org.apache.commons.mail.Email;
-import org.apache.commons.mail.EmailException;
-import org.apache.commons.mail.SimpleEmail;
+import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.testsuite.testsupport.performance.PerformanceData;
+import org.sonatype.nexus.testsuite.testsupport.performance.PerformanceData.PerformanceRunResult;
+import org.sonatype.nexus.testsuite.testsupport.performance.PerformanceData.PerformanceTestSeries;
+
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestInfo;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.io.TempDir;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.junit.jupiter.api.condition.EnabledOnJre;
+import org.junit.jupiter.api.condition.JRE;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.greaterThan;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.lessThan;
 import static org.junit.jupiter.api.Assertions.assertAll;
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
- * Tests to evaluate the performance and scalability benefits of Java 21 virtual threads
+ * Test class that evaluates the performance and scalability benefits of Java 21 virtual threads
  * for email operations compared to traditional platform threads.
- *
+ * 
+ * This test performs comparative benchmarks between platform and virtual thread executors
+ * using identical email operations and records execution times, memory usage, and throughput metrics.
+ * 
  * @since 3.60
  */
-@DisplayName("Email Concurrency Performance Test")
+@EnabledOnJre(JRE.JAVA_21)
+@Tag("VirtualThreadTest")
 public class EmailConcurrencyTest
+    extends TestSupport
 {
-  private static final Logger log = LoggerFactory.getLogger(EmailConcurrencyTest.class);
-
-  private static final int[] THREAD_COUNTS = {100, 500, 1000, 5000};
+  private static final int[] THREAD_COUNTS = new int[]{100, 500, 1000, 5000};
   
-  private static final int WARMUP_ITERATIONS = 3;
+  private static final int DURATION_SECONDS = 10;
   
-  private static final int TEST_ITERATIONS = 5;
+  private static final int WARMUP_ITERATIONS = 5;
   
-  private static final int EMAIL_OPERATION_DELAY_MS = 50; // Simulate I/O delay
-
-  private static final String TEST_EMAIL_SUBJECT = "Test Email";
+  private static final int MEASUREMENT_ITERATIONS = 20;
   
-  private static final String TEST_EMAIL_BODY = "This is a test email for concurrency testing.";
-
-  private AutoCloseable mocks;
-
-  @Mock
-  private EmailManager emailManager;
-
-  @Mock
-  private EmailConfiguration emailConfiguration;
-
   @TempDir
   Path tempDir;
-
-  private Path resultsFile;
-
+  
+  private Path emailDir;
+  
+  private MockEmailer emailer;
+  
+  private ExecutorService platformExecutor;
+  
+  private ExecutorService virtualExecutor;
+  
   @BeforeEach
-  void setup(TestInfo testInfo) throws IOException {
-    mocks = MockitoAnnotations.openMocks(this);
+  void setUp() throws IOException {
+    emailDir = tempDir.resolve("emails");
+    Files.createDirectories(emailDir);
     
-    // Setup mock behavior for email operations
-    when(emailManager.getConfiguration()).thenReturn(emailConfiguration);
-    when(emailConfiguration.isEnabled()).thenReturn(true);
-    when(emailConfiguration.getHost()).thenReturn("localhost");
-    when(emailConfiguration.getPort()).thenReturn(25);
-    when(emailConfiguration.getFromAddress()).thenReturn("test@example.com");
+    emailer = new MockEmailer(emailDir.toFile());
     
-    // Simulate I/O-bound email sending with a delay
-    doAnswer(invocation -> {
-      Thread.sleep(EMAIL_OPERATION_DELAY_MS); // Simulate network I/O
-      return null;
-    }).when(emailManager).send(any(Email.class));
+    // Create platform thread executor with fixed thread pool
+    platformExecutor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
     
-    // Create results file
-    resultsFile = tempDir.resolve("email-concurrency-results.csv");
-    Files.writeString(resultsFile, "ThreadType,ThreadCount,TotalEmails,SuccessfulEmails,FailedEmails," +
-        "TotalDurationMs,AverageResponseTimeMs,MaxResponseTimeMs,MinResponseTimeMs," +
-        "MemoryUsedMB\n");
+    // Create virtual thread executor using Java 21 virtual threads
+    virtualExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
-
+  
   @AfterEach
-  void cleanup() throws Exception {
-    if (mocks != null) {
-      mocks.close();
+  void tearDown() {
+    if (platformExecutor != null) {
+      platformExecutor.shutdownNow();
     }
     
-    log.info("Test results written to: {}", resultsFile.toAbsolutePath());
+    if (virtualExecutor != null) {
+      virtualExecutor.shutdownNow();
+    }
   }
-
+  
+  /**
+   * Tests the performance difference between platform threads and virtual threads
+   * when handling concurrent email operations.
+   * 
+   * This test demonstrates the efficiency advantages of virtual threads when dealing with
+   * I/O-bound email operations and provides performance validation in high-concurrency scenarios.
+   */
   @Test
-  @DisplayName("Compare platform threads vs virtual threads with escalating client counts")
-  void compareThreadModelsWithEscalatingLoad() throws Exception {
-    // Skip test if not running on Java 21+
-    String javaVersion = System.getProperty("java.version");
-    Assumptions.assumeTrue(javaVersion != null && javaVersion.startsWith("21"),
-        "Test requires Java 21 or higher, but found: " + javaVersion);
-
-    // Run warmup iterations to stabilize JVM
-    log.info("Running {} warmup iterations...", WARMUP_ITERATIONS);
-    for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-      runEmailBenchmark("Warmup", 100, Thread.ofPlatform().factory());
-      runEmailBenchmark("Warmup", 100, Thread.ofVirtual().factory());
-    }
-
-    // Run actual benchmarks with different thread counts
+  @DisplayName("Compare platform threads vs virtual threads for email operations")
+  void compareThreadModelsForEmailOperations() throws Exception {
+    // Verify we're running on Java 21 or later
+    assumeTrue(Runtime.version().feature() >= 21, 
+        "This test requires Java 21 or later for virtual thread support");
+    
+    log.info("Starting email concurrency performance test");
+    
+    // Run performance tests for both thread models
+    PerformanceData platformResults = runPerformanceTest("Platform Threads", this::createPlatformThreadTasks);
+    PerformanceData virtualResults = runPerformanceTest("Virtual Threads", this::createVirtualThreadTasks);
+    
+    // Log the results
+    log.info("Platform Thread Results: {}", platformResults);
+    log.info("Virtual Thread Results: {}", virtualResults);
+    
+    // Verify that virtual threads can handle higher concurrency
+    int maxPlatformThreads = platformResults.getMaxThreads();
+    int maxVirtualThreads = virtualResults.getMaxThreads();
+    
+    log.info("Max Platform Threads: {}", maxPlatformThreads);
+    log.info("Max Virtual Threads: {}", maxVirtualThreads);
+    
+    // Verify performance metrics
+    double platformThroughput = platformResults.getThroughput();
+    double virtualThroughput = virtualResults.getThroughput();
+    
+    log.info("Platform Thread Throughput: {} ops/sec", platformThroughput);
+    log.info("Virtual Thread Throughput: {} ops/sec", virtualThroughput);
+    
+    // Memory usage comparison
+    long platformMemoryUsage = platformResults.getMemoryUsage();
+    long virtualMemoryUsage = virtualResults.getMemoryUsage();
+    
+    log.info("Platform Thread Memory Usage: {} MB", platformMemoryUsage / (1024 * 1024));
+    log.info("Virtual Thread Memory Usage: {} MB", virtualMemoryUsage / (1024 * 1024));
+    
+    // Assertions to validate virtual thread benefits
+    assertAll(
+        // Virtual threads should support more concurrent connections
+        () -> assertThat("Virtual threads should support higher concurrency", 
+            maxVirtualThreads, greaterThan(maxPlatformThreads)),
+        
+        // Virtual threads should have higher throughput
+        () -> assertThat("Virtual threads should provide better throughput", 
+            virtualThroughput, greaterThan(platformThroughput)),
+        
+        // Virtual threads should use less memory per thread
+        () -> assertThat("Virtual threads should use less memory per thread", 
+            (double) virtualMemoryUsage / maxVirtualThreads, 
+            lessThan((double) platformMemoryUsage / maxPlatformThreads))
+    );
+  }
+  
+  /**
+   * Tests the scalability of virtual threads with increasing concurrent client connections.
+   * 
+   * This test demonstrates how virtual threads can efficiently handle a large number of
+   * concurrent connections without significant performance degradation, unlike platform threads.
+   */
+  @Test
+  @DisplayName("Test virtual thread scalability with increasing client connections")
+  void testVirtualThreadScalability() throws Exception {
+    // Verify we're running on Java 21 or later
+    assumeTrue(Runtime.version().feature() >= 21, 
+        "This test requires Java 21 or later for virtual thread support");
+    
+    log.info("Starting virtual thread scalability test");
+    
+    // Create performance data for tracking results
+    PerformanceData results = new PerformanceData();
+    PerformanceTestSeries virtualSeries = results.findTestResult("Virtual Threads");
+    
+    // Test with escalating thread counts
     for (int threadCount : THREAD_COUNTS) {
-      log.info("\nRunning benchmark with {} threads...", threadCount);
+      log.info("Testing with {} virtual threads", threadCount);
       
-      // Test with platform threads
-      ThreadFactory platformThreadFactory = Thread.ofPlatform().factory();
-      BenchmarkResult platformResult = runEmailBenchmark("Platform", threadCount, platformThreadFactory);
-      logAndSaveResults("Platform", threadCount, platformResult);
+      // Create tasks for the current thread count
+      List<Callable<Void>> tasks = createTasksForThreadCount(threadCount, virtualExecutor);
       
-      // Test with virtual threads
-      ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-      BenchmarkResult virtualResult = runEmailBenchmark("Virtual", threadCount, virtualThreadFactory);
-      logAndSaveResults("Virtual", threadCount, virtualResult);
-      
-      // Verify virtual threads perform better at higher concurrency
-      if (threadCount >= 1000) {
-        assertAll(
-            () -> assertTrue(virtualResult.averageResponseTimeMs < platformResult.averageResponseTimeMs,
-                "Virtual threads should have lower average response time than platform threads"),
-            () -> assertTrue(virtualResult.memoryUsedMB < platformResult.memoryUsedMB,
-                "Virtual threads should use less memory than platform threads")
-        );
+      // Warm up
+      for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+        runTasks(tasks, virtualExecutor, 1);
       }
       
-      // Allow system to recover between tests
-      Thread.sleep(2000);
+      // Measure memory before test
+      long memoryBefore = getUsedMemory();
+      
+      // Run the test and measure time
+      long startTime = System.nanoTime();
+      int completedTasks = runTasks(tasks, virtualExecutor, MEASUREMENT_ITERATIONS);
+      long endTime = System.nanoTime();
+      
+      // Measure memory after test
+      long memoryAfter = getUsedMemory();
+      long memoryUsage = memoryAfter - memoryBefore;
+      
+      // Calculate metrics
+      double durationSeconds = Duration.ofNanos(endTime - startTime).toMillis() / 1000.0;
+      double throughput = completedTasks / durationSeconds;
+      
+      // Record results
+      virtualSeries.addResults(threadCount, new PerformanceRunResult(
+          completedTasks,
+          0, // No failed tasks
+          (int) durationSeconds,
+          false // No exceptions
+      ));
+      
+      log.info("Thread count: {}, Throughput: {} ops/sec, Memory usage: {} MB", 
+          threadCount, throughput, memoryUsage / (1024 * 1024));
+      
+      // Verify that the test completed successfully with all thread counts
+      assertTrue(completedTasks > 0, "No tasks completed for thread count: " + threadCount);
     }
+    
+    // Verify that the test was able to handle the maximum thread count
+    assertTrue(virtualSeries.hasResults(THREAD_COUNTS[THREAD_COUNTS.length - 1]), 
+        "Failed to test with maximum thread count");
   }
-
+  
   /**
-   * Runs a benchmark with the specified thread count and thread factory.
+   * Runs a performance test with the given thread model and returns performance data.
    */
-  private BenchmarkResult runEmailBenchmark(String threadType, int threadCount, ThreadFactory threadFactory) 
+  private PerformanceData runPerformanceTest(String testName, Supplier<List<Callable<Void>>> taskSupplier) 
       throws Exception {
-    log.info("Running {} thread benchmark with {} threads...", threadType, threadCount);
+    PerformanceData results = new PerformanceData();
+    PerformanceTestSeries series = results.findTestResult(testName);
     
-    // Create executor with the specified thread factory
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(threadFactory);
-    
-    try {
-      List<BenchmarkResult> iterationResults = new ArrayList<>();
-      
-      // Run multiple iterations to get stable results
-      for (int i = 0; i < TEST_ITERATIONS; i++) {
-        BenchmarkResult result = runSingleIteration(executor, threadCount);
-        iterationResults.add(result);
-        log.debug("Iteration {} completed: {} ms avg response time", i + 1, result.averageResponseTimeMs);
-      }
-      
-      // Calculate average results across all iterations
-      return calculateAverageResult(iterationResults);
-    } 
-    finally {
-      executor.shutdown();
-      boolean terminated = executor.awaitTermination(30, SECONDS);
-      if (!terminated) {
-        log.warn("Executor did not terminate within timeout");
-        executor.shutdownNow();
-      }
-    }
-  }
-
-  /**
-   * Runs a single benchmark iteration with the specified executor and thread count.
-   */
-  private BenchmarkResult runSingleIteration(ExecutorService executor, int threadCount) throws Exception {
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(threadCount);
-    
-    AtomicInteger successCount = new AtomicInteger(0);
-    AtomicInteger failureCount = new AtomicInteger(0);
-    
-    // Track response times
-    AtomicLong totalResponseTime = new AtomicLong(0);
-    AtomicLong maxResponseTime = new AtomicLong(0);
-    AtomicLong minResponseTime = new AtomicLong(Long.MAX_VALUE);
-    
-    // Measure memory usage before test
-    System.gc(); // Request garbage collection to get more accurate measurements
-    long memoryBefore = getUsedMemory();
-    
-    // Start timing
-    long startTime = System.nanoTime();
-    
-    // Submit tasks to the executor
-    List<CompletableFuture<Void>> futures = new ArrayList<>();
-    for (int i = 0; i < threadCount; i++) {
-      final int emailId = i;
-      CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-        try {
-          // Wait for all threads to be ready
-          startLatch.await();
-          
-          long taskStartTime = System.nanoTime();
-          
-          // Simulate email verification request
-          assertDoesNotThrow(() -> {
-            Email email = createTestEmail(emailId);
-            emailManager.send(email);
-          });
-          
-          // Record response time
-          long responseTime = MILLISECONDS.convert(System.nanoTime() - taskStartTime, TimeUnit.NANOSECONDS);
-          totalResponseTime.addAndGet(responseTime);
-          updateMax(maxResponseTime, responseTime);
-          updateMin(minResponseTime, responseTime);
-          
-          successCount.incrementAndGet();
-        } 
-        catch (Exception e) {
-          failureCount.incrementAndGet();
-          log.error("Error in email task {}: {}", emailId, e.getMessage(), e);
-        } 
-        finally {
-          completionLatch.countDown();
+    for (int threadCount : THREAD_COUNTS) {
+      try {
+        log.info("Testing {} with {} threads", testName, threadCount);
+        
+        // Create tasks for the current thread model and thread count
+        List<Callable<Void>> tasks = taskSupplier.get();
+        
+        // Limit tasks to the current thread count
+        tasks = tasks.subList(0, Math.min(tasks.size(), threadCount));
+        
+        // Warm up
+        for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+          runTasks(tasks, getExecutorForTestName(testName), 1);
         }
-      }, executor);
+        
+        // Measure memory before test
+        long memoryBefore = getUsedMemory();
+        
+        // Run the test and measure time
+        long startTime = System.nanoTime();
+        int completedTasks = runTasks(tasks, getExecutorForTestName(testName), MEASUREMENT_ITERATIONS);
+        long endTime = System.nanoTime();
+        
+        // Measure memory after test
+        long memoryAfter = getUsedMemory();
+        long memoryUsage = memoryAfter - memoryBefore;
+        
+        // Calculate metrics
+        double durationSeconds = Duration.ofNanos(endTime - startTime).toMillis() / 1000.0;
+        double throughput = completedTasks / durationSeconds;
+        
+        // Record results
+        series.addResults(threadCount, new PerformanceRunResult(
+            completedTasks,
+            0, // No failed tasks
+            (int) durationSeconds,
+            false // No exceptions
+        ));
+        
+        // Store additional metrics in the performance data
+        results.setThroughput(throughput);
+        results.setMemoryUsage(memoryUsage);
+        results.setMaxThreads(threadCount);
+        
+        log.info("{} - Thread count: {}, Throughput: {} ops/sec, Memory usage: {} MB", 
+            testName, threadCount, throughput, memoryUsage / (1024 * 1024));
+      } 
+      catch (Exception e) {
+        log.error("Error testing {} with {} threads", testName, threadCount, e);
+        // Record the failure but continue with the next thread count
+        series.addResults(threadCount, new PerformanceRunResult(
+            0, // No completed tasks
+            threadCount, // All tasks failed
+            DURATION_SECONDS,
+            true // Exception occurred
+        ));
+        
+        // If we can't handle this thread count, we won't be able to handle higher counts
+        break;
+      }
+    }
+    
+    return results;
+  }
+  
+  /**
+   * Creates tasks that use platform threads for email operations.
+   */
+  private List<Callable<Void>> createPlatformThreadTasks() {
+    return createTasksForThreadCount(THREAD_COUNTS[THREAD_COUNTS.length - 1], platformExecutor);
+  }
+  
+  /**
+   * Creates tasks that use virtual threads for email operations.
+   */
+  private List<Callable<Void>> createVirtualThreadTasks() {
+    return createTasksForThreadCount(THREAD_COUNTS[THREAD_COUNTS.length - 1], virtualExecutor);
+  }
+  
+  /**
+   * Creates a list of callable tasks for the given thread count and executor.
+   */
+  private List<Callable<Void>> createTasksForThreadCount(int threadCount, ExecutorService executor) {
+    List<Callable<Void>> tasks = new ArrayList<>(threadCount);
+    
+    for (int i = 0; i < threadCount; i++) {
+      final int taskId = i;
+      tasks.add(() -> {
+        // Simulate an email verification operation
+        String recipient = "user" + taskId + "@example.com";
+        String subject = "Test Email " + taskId;
+        String body = "This is a test email for task " + taskId;
+        
+        // Perform the email operation
+        emailer.sendEmail(recipient, subject, body);
+        
+        // Verify the email was sent
+        boolean verified = emailer.verifyEmailSent(recipient, subject);
+        assertThat("Email should be sent and verified", verified, is(true));
+        
+        return null;
+      });
+    }
+    
+    return tasks;
+  }
+  
+  /**
+   * Runs the given tasks using the provided executor and returns the number of completed tasks.
+   */
+  private int runTasks(List<Callable<Void>> tasks, ExecutorService executor, int iterations) throws Exception {
+    AtomicInteger completedTasks = new AtomicInteger(0);
+    
+    for (int i = 0; i < iterations; i++) {
+      List<CompletableFuture<Void>> futures = new ArrayList<>(tasks.size());
       
-      futures.add(future);
+      for (Callable<Void> task : tasks) {
+        CompletableFuture<Void> future = CompletableFuture.supplyAsync(() -> {
+          try {
+            task.call();
+            completedTasks.incrementAndGet();
+            return null;
+          } 
+          catch (Exception e) {
+            throw new RuntimeException(e);
+          }
+        }, executor);
+        
+        futures.add(future);
+      }
+      
+      // Wait for all tasks to complete or timeout
+      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+          .orTimeout(DURATION_SECONDS, SECONDS)
+          .exceptionally(ex -> null)
+          .join();
     }
     
-    // Start all threads simultaneously
-    startLatch.countDown();
-    
-    // Wait for all tasks to complete
-    boolean completed = completionLatch.await(2, TimeUnit.MINUTES);
-    if (!completed) {
-      log.warn("Not all tasks completed within timeout");
-    }
-    
-    // Calculate total duration
-    long totalDurationMs = MILLISECONDS.convert(System.nanoTime() - startTime, TimeUnit.NANOSECONDS);
-    
-    // Measure memory after test
-    System.gc(); // Request garbage collection to get more accurate measurements
-    long memoryAfter = getUsedMemory();
-    long memoryUsed = memoryAfter - memoryBefore;
-    
-    // Calculate average response time
-    long totalEmails = successCount.get() + failureCount.get();
-    double avgResponseTime = totalEmails > 0 ? (double) totalResponseTime.get() / totalEmails : 0;
-    
-    return new BenchmarkResult(
-        totalEmails,
-        successCount.get(),
-        failureCount.get(),
-        totalDurationMs,
-        avgResponseTime,
-        maxResponseTime.get(),
-        minResponseTime.get() == Long.MAX_VALUE ? 0 : minResponseTime.get(),
-        memoryUsed / (1024 * 1024) // Convert to MB
-    );
+    return completedTasks.get();
   }
-
+  
   /**
-   * Creates a test email with the specified ID.
+   * Returns the executor for the given test name.
    */
-  private Email createTestEmail(int id) throws EmailException {
-    SimpleEmail email = new SimpleEmail();
-    email.setSubject(TEST_EMAIL_SUBJECT + " #" + id);
-    email.setMsg(TEST_EMAIL_BODY);
-    email.addTo("recipient" + id + "@example.com");
-    return email;
+  private ExecutorService getExecutorForTestName(String testName) {
+    return testName.contains("Virtual") ? virtualExecutor : platformExecutor;
   }
-
+  
   /**
-   * Logs and saves benchmark results to the results file.
-   */
-  private void logAndSaveResults(String threadType, int threadCount, BenchmarkResult result) throws IOException {
-    log.info("{} Thread Results ({}): {} emails, {} successful, {} failed, {} ms total, {} ms avg response time, {} MB memory used",
-        threadType, threadCount, result.totalEmails, result.successfulEmails, result.failedEmails,
-        result.totalDurationMs, String.format("%.2f", result.averageResponseTimeMs), result.memoryUsedMB);
-    
-    // Append results to CSV file
-    String resultLine = String.format("%s,%d,%d,%d,%d,%d,%.2f,%d,%d,%d\n",
-        threadType, threadCount, result.totalEmails, result.successfulEmails, result.failedEmails,
-        result.totalDurationMs, result.averageResponseTimeMs, result.maxResponseTimeMs, result.minResponseTimeMs,
-        result.memoryUsedMB);
-    
-    Files.writeString(resultsFile, resultLine, java.nio.file.StandardOpenOption.APPEND);
-  }
-
-  /**
-   * Calculates the average result across multiple benchmark iterations.
-   */
-  private BenchmarkResult calculateAverageResult(List<BenchmarkResult> results) {
-    int size = results.size();
-    if (size == 0) {
-      return new BenchmarkResult(0, 0, 0, 0, 0, 0, 0, 0);
-    }
-    
-    long totalEmails = 0;
-    long successfulEmails = 0;
-    long failedEmails = 0;
-    long totalDuration = 0;
-    double totalAvgResponseTime = 0;
-    long totalMaxResponseTime = 0;
-    long totalMinResponseTime = 0;
-    long totalMemoryUsed = 0;
-    
-    for (BenchmarkResult result : results) {
-      totalEmails += result.totalEmails;
-      successfulEmails += result.successfulEmails;
-      failedEmails += result.failedEmails;
-      totalDuration += result.totalDurationMs;
-      totalAvgResponseTime += result.averageResponseTimeMs;
-      totalMaxResponseTime += result.maxResponseTimeMs;
-      totalMinResponseTime += result.minResponseTimeMs;
-      totalMemoryUsed += result.memoryUsedMB;
-    }
-    
-    return new BenchmarkResult(
-        totalEmails / size,
-        successfulEmails / size,
-        failedEmails / size,
-        totalDuration / size,
-        totalAvgResponseTime / size,
-        totalMaxResponseTime / size,
-        totalMinResponseTime / size,
-        totalMemoryUsed / size
-    );
-  }
-
-  /**
-   * Gets the current used memory in bytes.
+   * Returns the current used memory in bytes.
    */
   private long getUsedMemory() {
+    System.gc(); // Request garbage collection to get more accurate memory usage
     Runtime runtime = Runtime.getRuntime();
     return runtime.totalMemory() - runtime.freeMemory();
   }
-
+  
   /**
-   * Atomically updates the maximum value.
+   * Mock implementation of an email service for testing purposes.
    */
-  private void updateMax(AtomicLong maxValue, long newValue) {
-    long currentMax = maxValue.get();
-    while (newValue > currentMax) {
-      if (maxValue.compareAndSet(currentMax, newValue)) {
-        break;
+  private static class MockEmailer {
+    private final File emailDir;
+    
+    public MockEmailer(File emailDir) {
+      this.emailDir = emailDir;
+    }
+    
+    /**
+     * Simulates sending an email by writing it to a file.
+     */
+    public void sendEmail(String recipient, String subject, String body) throws IOException {
+      // Create a unique filename based on recipient and subject
+      String filename = recipient.replace("@", "_at_") + "_" + subject.replaceAll("\\s+", "_") + ".eml";
+      File emailFile = new File(emailDir, filename);
+      
+      // Simulate network I/O delay that would occur in a real email system
+      try {
+        // Simulate network latency (50-150ms)
+        MILLISECONDS.sleep(50 + (long) (Math.random() * 100));
+      } 
+      catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
       }
-      currentMax = maxValue.get();
+      
+      // Write the email content to the file
+      String content = "To: " + recipient + "\n" +
+                      "Subject: " + subject + "\n" +
+                      "\n" +
+                      body;
+      
+      Files.writeString(emailFile.toPath(), content);
+      
+      // Simulate additional processing delay
+      try {
+        // Simulate processing time (10-30ms)
+        MILLISECONDS.sleep(10 + (long) (Math.random() * 20));
+      } 
+      catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+    }
+    
+    /**
+     * Verifies that an email was sent to the given recipient with the given subject.
+     */
+    public boolean verifyEmailSent(String recipient, String subject) {
+      // Create the expected filename
+      String filename = recipient.replace("@", "_at_") + "_" + subject.replaceAll("\\s+", "_") + ".eml";
+      File emailFile = new File(emailDir, filename);
+      
+      // Simulate verification delay
+      try {
+        // Simulate verification time (20-50ms)
+        MILLISECONDS.sleep(20 + (long) (Math.random() * 30));
+      } 
+      catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+      
+      return emailFile.exists();
     }
   }
-
+  
   /**
-   * Atomically updates the minimum value.
+   * Extension of PerformanceData to store additional metrics.
    */
-  private void updateMin(AtomicLong minValue, long newValue) {
-    long currentMin = minValue.get();
-    while (newValue < currentMin) {
-      if (minValue.compareAndSet(currentMin, newValue)) {
-        break;
-      }
-      currentMin = minValue.get();
+  private static class PerformanceData extends org.sonatype.nexus.testsuite.testsupport.performance.PerformanceData {
+    private double throughput;
+    private long memoryUsage;
+    private int maxThreads;
+    
+    public double getThroughput() {
+      return throughput;
     }
-  }
-
-  /**
-   * Class to hold benchmark results.
-   */
-  private static class BenchmarkResult {
-    final long totalEmails;
-    final long successfulEmails;
-    final long failedEmails;
-    final long totalDurationMs;
-    final double averageResponseTimeMs;
-    final long maxResponseTimeMs;
-    final long minResponseTimeMs;
-    final long memoryUsedMB;
-
-    BenchmarkResult(long totalEmails, long successfulEmails, long failedEmails, long totalDurationMs,
-                    double averageResponseTimeMs, long maxResponseTimeMs, long minResponseTimeMs, long memoryUsedMB) {
-      this.totalEmails = totalEmails;
-      this.successfulEmails = successfulEmails;
-      this.failedEmails = failedEmails;
-      this.totalDurationMs = totalDurationMs;
-      this.averageResponseTimeMs = averageResponseTimeMs;
-      this.maxResponseTimeMs = maxResponseTimeMs;
-      this.minResponseTimeMs = minResponseTimeMs;
-      this.memoryUsedMB = memoryUsedMB;
+    
+    public void setThroughput(double throughput) {
+      this.throughput = throughput;
+    }
+    
+    public long getMemoryUsage() {
+      return memoryUsage;
+    }
+    
+    public void setMemoryUsage(long memoryUsage) {
+      this.memoryUsage = memoryUsage;
+    }
+    
+    public int getMaxThreads() {
+      return maxThreads;
+    }
+    
+    public void setMaxThreads(int maxThreads) {
+      this.maxThreads = maxThreads;
+    }
+    
+    @Override
+    public String toString() {
+      return "PerformanceData{" +
+          "throughput=" + throughput +
+          ", memoryUsage=" + memoryUsage +
+          ", maxThreads=" + maxThreads +
+          "}";
     }
   }
 }

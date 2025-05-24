@@ -12,23 +12,36 @@
  */
 package org.sonatype.nexus.repository.maven.patternmatching;
 
-import org.sonatype.nexus.common.testgroup.Java21TestGroup;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
 /**
- * JUnit category marker interface for tests that validate Java 21's Pattern Matching for switch features
+ * JUnit category marker interface for tests that specifically validate Java 21's Pattern Matching for switch features
  * in the Maven repository plugin.
  * <p>
- * Tests annotated with {@code @Category(Java21PatternMatchingTestCategory.class)} will only be executed
- * when the {@code java21-tests} Maven profile is activated, allowing selective execution in CI/CD pipelines.
+ * Tests annotated with this category will only be executed when the {@code java21-tests} Maven profile is activated,
+ * allowing selective execution in CI/CD pipelines.
  * <p>
- * This category is specifically for tests that verify the correct functioning of Pattern Matching for switch,
- * which is a key Java 21 feature being implemented in the Maven repository plugin. Pattern Matching for switch
- * enables more concise and type-safe code when working with complex object hierarchies and polymorphic types.
+ * Pattern Matching for switch is a key Java 21 feature that enables more expressive and concise code by allowing
+ * switch expressions and statements to test whether a selector expression matches a pattern, rather than just testing
+ * for equality against constants.
+ * <p>
+ * Example usage:
+ * <pre>
+ * {@code
+ * @Category(Java21PatternMatchingTestCategory.class)
+ * public class MyPatternMatchingTest {
+ *   @Test
+ *   public void testPatternMatchingForSwitch() {
+ *     // Test code using Java 21 Pattern Matching for switch
+ *   }
+ * }
+ * }
+ * </pre>
  *
  * @since 3.60
  */
 public interface Java21PatternMatchingTestCategory
     extends Java21TestGroup
 {
-  // Marker interface - no methods required
+  // Marker interface
 }

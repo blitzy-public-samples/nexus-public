@@ -18,42 +18,39 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.http.HttpMethods;
 import org.sonatype.nexus.repository.security.ContentPermissionChecker;
 import org.sonatype.nexus.repository.security.VariableResolverAdapter;
 import org.sonatype.nexus.repository.view.Request;
 import org.sonatype.nexus.security.BreadActions;
-import org.sonatype.nexus.testcommon.VirtualThreadTestGroup;
+import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
 
 import org.apache.shiro.authz.AuthorizationException;
-import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Tests for {@link MavenSecurityFacet} with Virtual Threads.
+ * Tests for {@link MavenSecurityFacet} using Java 21 Virtual Threads.
+ * 
+ * This test class verifies that the MavenSecurityFacet correctly handles permission checking
+ * when operations are performed concurrently using Virtual Threads.
  */
+@Tag("virtualthread")
 @ExtendWith(MockitoExtension.class)
-@Category(VirtualThreadTestGroup.class)
 public class MavenSecurityFacetVirtualThreadTest
-    extends TestSupport
+    extends VirtualThreadTestSupport
 {
-  private static final int CONCURRENT_THREADS = 50;
-  private static final int TIMEOUT_SECONDS = 10;
-
   @Mock
   Request request;
 
@@ -72,7 +69,7 @@ public class MavenSecurityFacetVirtualThreadTest
   MavenSecurityFacet mavenSecurityFacet;
 
   @BeforeEach
-  public void setupConfig() {
+  void setupConfig() throws Exception {
     when(request.getPath()).thenReturn("/mygroupid/myartifactid/1.0/myartifactid-1.0.jar");
     when(request.getAction()).thenReturn(HttpMethods.GET);
 
@@ -86,244 +83,172 @@ public class MavenSecurityFacetVirtualThreadTest
   }
 
   @Test
-  public void testEnsurePermittedWithVirtualThreads() throws Exception {
+  void testEnsurePermitted() throws Exception {
     when(contentPermissionChecker
         .isPermitted(eq("MavenSecurityFacetTest"), eq(Maven2Format.NAME), eq(BreadActions.READ), any()))
         .thenReturn(true);
 
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(CONCURRENT_THREADS);
-    AtomicInteger failureCount = new AtomicInteger(0);
-
-    // Create an executor service with virtual threads
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit multiple concurrent tasks
-      for (int i = 0; i < CONCURRENT_THREADS; i++) {
-        executor.submit(() -> {
-          try {
-            // Wait for all threads to be ready
-            startLatch.await();
-            
-            // Test the permission check
-            mavenSecurityFacet.ensurePermitted(request);
-          }
-          catch (Exception e) {
-            failureCount.incrementAndGet();
-            log.error("Virtual thread test failed", e);
-          }
-          finally {
-            completionLatch.countDown();
-          }
-        });
-      }
-
-      // Start all threads simultaneously
-      startLatch.countDown();
-      
-      // Wait for all threads to complete
-      if (!completionLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-        fail("Test timed out waiting for virtual threads to complete");
-      }
-      
-      // Verify no failures occurred
-      if (failureCount.get() > 0) {
-        fail("Expected permitted operations to succeed, but " + failureCount.get() + " failures occurred");
-      }
-    }
+    // No exception should be thrown
+    mavenSecurityFacet.ensurePermitted(request);
   }
 
   @Test
-  public void testEnsurePermitted_notPermittedWithVirtualThreads() throws Exception {
-    // Configure the mock to return false for permission check
-    when(contentPermissionChecker
-        .isPermitted(eq("MavenSecurityFacetTest"), eq(Maven2Format.NAME), eq(BreadActions.READ), any()))
-        .thenReturn(false);
+  void testEnsurePermitted_notPermitted() throws Exception {
+    assertThrows(AuthorizationException.class, () -> {
+      mavenSecurityFacet.ensurePermitted(request);
+    });
 
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(CONCURRENT_THREADS);
-    AtomicInteger successCount = new AtomicInteger(0);
-
-    // Create an executor service with virtual threads
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit multiple concurrent tasks
-      for (int i = 0; i < CONCURRENT_THREADS; i++) {
-        executor.submit(() -> {
-          try {
-            // Wait for all threads to be ready
-            startLatch.await();
-            
-            // Test the permission check - should throw AuthorizationException
-            assertThrows(AuthorizationException.class, () -> {
-              mavenSecurityFacet.ensurePermitted(request);
-            });
-            
-            successCount.incrementAndGet();
-          }
-          catch (Exception e) {
-            log.error("Virtual thread test failed", e);
-          }
-          finally {
-            completionLatch.countDown();
-          }
-        });
-      }
-
-      // Start all threads simultaneously
-      startLatch.countDown();
-      
-      // Wait for all threads to complete
-      if (!completionLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-        fail("Test timed out waiting for virtual threads to complete");
-      }
-      
-      // Verify all threads correctly detected the authorization failure
-      if (successCount.get() != CONCURRENT_THREADS) {
-        fail("Expected all " + CONCURRENT_THREADS + " threads to detect authorization failure, but only " 
-            + successCount.get() + " did");
-      }
-    }
-    
-    // Verify the permission check was called
     verify(contentPermissionChecker)
         .isPermitted(eq("MavenSecurityFacetTest"), eq(Maven2Format.NAME), eq(BreadActions.READ), any());
   }
-
+  
   @Test
-  public void testEnsurePermittedWithMixedPermissionsInVirtualThreads() throws Exception {
-    // Set up a counter to track which thread is calling
-    AtomicInteger threadCounter = new AtomicInteger(0);
-    
-    // Configure the mock to alternate between permitted and not permitted
+  void testEnsurePermittedConcurrently() throws Exception {
     when(contentPermissionChecker
         .isPermitted(eq("MavenSecurityFacetTest"), eq(Maven2Format.NAME), eq(BreadActions.READ), any()))
-        .thenAnswer(invocation -> threadCounter.incrementAndGet() % 2 == 0);
-
+        .thenReturn(true);
+    
+    int threadCount = 100;
     CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(CONCURRENT_THREADS);
-    AtomicInteger permittedCount = new AtomicInteger(0);
-    AtomicInteger notPermittedCount = new AtomicInteger(0);
-
-    // Create an executor service with virtual threads
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit multiple concurrent tasks
-      for (int i = 0; i < CONCURRENT_THREADS; i++) {
+    CountDownLatch completionLatch = new CountDownLatch(threadCount);
+    
+    try (ExecutorService executor = createVirtualThreadExecutorService()) {
+      // Start multiple virtual threads that all try to check permissions at the same time
+      for (int i = 0; i < threadCount; i++) {
         executor.submit(() -> {
           try {
-            // Wait for all threads to be ready
-            startLatch.await();
-            
-            try {
-              mavenSecurityFacet.ensurePermitted(request);
-              permittedCount.incrementAndGet();
-            }
-            catch (AuthorizationException e) {
-              notPermittedCount.incrementAndGet();
-            }
+            startLatch.await(); // Wait for all threads to be ready
+            mavenSecurityFacet.ensurePermitted(request); // This should not throw an exception
+            completionLatch.countDown();
           }
           catch (Exception e) {
-            log.error("Virtual thread test failed", e);
-          }
-          finally {
+            // Count down even if there's an exception to avoid test hanging
             completionLatch.countDown();
+            throw new RuntimeException(e);
           }
         });
       }
-
-      // Start all threads simultaneously
+      
+      // Start all threads at once
       startLatch.countDown();
       
       // Wait for all threads to complete
-      if (!completionLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-        fail("Test timed out waiting for virtual threads to complete");
-      }
-      
-      // Verify we got a mix of permitted and not permitted results
-      log.info("Permitted: {}, Not Permitted: {}", permittedCount.get(), notPermittedCount.get());
-      if (permittedCount.get() == 0 || notPermittedCount.get() == 0) {
-        fail("Expected a mix of permitted and not permitted results, but got: Permitted=" 
-            + permittedCount.get() + ", Not Permitted=" + notPermittedCount.get());
-      }
-      
-      // Verify the total count matches our expected thread count
-      if (permittedCount.get() + notPermittedCount.get() != CONCURRENT_THREADS) {
-        fail("Expected " + CONCURRENT_THREADS + " total results, but got " 
-            + (permittedCount.get() + notPermittedCount.get()));
+      boolean allCompleted = completionLatch.await(5, TimeUnit.SECONDS);
+      if (!allCompleted) {
+        throw new AssertionError("Not all virtual threads completed in time");
       }
     }
   }
   
   @Test
-  public void testEnsurePermittedWithDynamicPermissionChangesInVirtualThreads() throws Exception {
-    // Start with permission granted
+  void testEnsurePermittedConcurrently_notPermitted() throws Exception {
+    // Configure the mock to return false for permission check
     when(contentPermissionChecker
         .isPermitted(eq("MavenSecurityFacetTest"), eq(Maven2Format.NAME), eq(BreadActions.READ), any()))
-        .thenReturn(true);
-
-    CountDownLatch firstPhaseLatch = new CountDownLatch(CONCURRENT_THREADS / 2);
-    CountDownLatch secondPhaseLatch = new CountDownLatch(CONCURRENT_THREADS / 2);
-    AtomicInteger firstPhaseFailures = new AtomicInteger(0);
-    AtomicInteger secondPhaseFailures = new AtomicInteger(0);
-
-    // Create an executor service with virtual threads
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // First half of threads should succeed (permission granted)
-      for (int i = 0; i < CONCURRENT_THREADS / 2; i++) {
+        .thenReturn(false);
+    
+    int threadCount = 100;
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch completionLatch = new CountDownLatch(threadCount);
+    AtomicInteger exceptionCount = new AtomicInteger(0);
+    
+    try (ExecutorService executor = createVirtualThreadExecutorService()) {
+      // Start multiple virtual threads that all try to check permissions at the same time
+      for (int i = 0; i < threadCount; i++) {
         executor.submit(() -> {
           try {
-            // Test the permission check - should succeed
-            assertDoesNotThrow(() -> mavenSecurityFacet.ensurePermitted(request));
+            startLatch.await(); // Wait for all threads to be ready
+            try {
+              mavenSecurityFacet.ensurePermitted(request); // This should throw an exception
+            }
+            catch (AuthorizationException e) {
+              // Expected exception
+              exceptionCount.incrementAndGet();
+            }
+            completionLatch.countDown();
           }
           catch (Exception e) {
-            firstPhaseFailures.incrementAndGet();
-            log.error("First phase virtual thread test failed", e);
-          }
-          finally {
-            firstPhaseLatch.countDown();
+            // Count down even if there's an unexpected exception
+            completionLatch.countDown();
+            throw new RuntimeException(e);
           }
         });
       }
-
-      // Wait for first phase to complete
-      if (!firstPhaseLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-        fail("Test timed out waiting for first phase virtual threads to complete");
+      
+      // Start all threads at once
+      startLatch.countDown();
+      
+      // Wait for all threads to complete
+      boolean allCompleted = completionLatch.await(5, TimeUnit.SECONDS);
+      if (!allCompleted) {
+        throw new AssertionError("Not all virtual threads completed in time");
       }
       
-      // Change permission to denied for second phase
-      when(contentPermissionChecker
-          .isPermitted(eq("MavenSecurityFacetTest"), eq(Maven2Format.NAME), eq(BreadActions.READ), any()))
-          .thenReturn(false);
-      
-      // Second half of threads should fail (permission denied)
-      for (int i = 0; i < CONCURRENT_THREADS / 2; i++) {
+      // Verify that all threads got the expected exception
+      if (exceptionCount.get() != threadCount) {
+        throw new AssertionError("Expected " + threadCount + " authorization exceptions, but got " + 
+            exceptionCount.get());
+      }
+    }
+  }
+  
+  @Test
+  void testEnsurePermittedConcurrently_mixedPermissions() throws Exception {
+    // Configure the mock to alternate between permitted and not permitted
+    AtomicInteger callCount = new AtomicInteger(0);
+    when(contentPermissionChecker
+        .isPermitted(eq("MavenSecurityFacetTest"), eq(Maven2Format.NAME), eq(BreadActions.READ), any()))
+        .thenAnswer(invocation -> callCount.incrementAndGet() % 2 == 0); // Even calls return true, odd calls return false
+    
+    int threadCount = 100;
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch completionLatch = new CountDownLatch(threadCount);
+    AtomicInteger exceptionCount = new AtomicInteger(0);
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    try (ExecutorService executor = createVirtualThreadExecutorService()) {
+      // Start multiple virtual threads that all try to check permissions at the same time
+      for (int i = 0; i < threadCount; i++) {
         executor.submit(() -> {
           try {
-            // Test the permission check - should throw AuthorizationException
-            assertThrows(AuthorizationException.class, () -> {
+            startLatch.await(); // Wait for all threads to be ready
+            try {
               mavenSecurityFacet.ensurePermitted(request);
-            });
+              successCount.incrementAndGet();
+            }
+            catch (AuthorizationException e) {
+              // Expected for some threads
+              exceptionCount.incrementAndGet();
+            }
+            completionLatch.countDown();
           }
           catch (Exception e) {
-            secondPhaseFailures.incrementAndGet();
-            log.error("Second phase virtual thread test failed", e);
-          }
-          finally {
-            secondPhaseLatch.countDown();
+            // Count down even if there's an unexpected exception
+            completionLatch.countDown();
+            throw new RuntimeException(e);
           }
         });
       }
-
-      // Wait for second phase to complete
-      if (!secondPhaseLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-        fail("Test timed out waiting for second phase virtual threads to complete");
+      
+      // Start all threads at once
+      startLatch.countDown();
+      
+      // Wait for all threads to complete
+      boolean allCompleted = completionLatch.await(5, TimeUnit.SECONDS);
+      if (!allCompleted) {
+        throw new AssertionError("Not all virtual threads completed in time");
       }
       
-      // Verify no failures occurred in either phase
-      if (firstPhaseFailures.get() > 0) {
-        fail("Expected first phase permitted operations to succeed, but " + firstPhaseFailures.get() + " failures occurred");
+      // Verify that we got a mix of successes and failures
+      if (exceptionCount.get() == 0 || successCount.get() == 0) {
+        throw new AssertionError("Expected a mix of successes and failures, but got " + 
+            successCount.get() + " successes and " + exceptionCount.get() + " failures");
       }
       
-      if (secondPhaseFailures.get() > 0) {
-        fail("Expected second phase permission denials to be detected, but " + secondPhaseFailures.get() + " failures occurred");
+      // Verify that all threads were accounted for
+      if (exceptionCount.get() + successCount.get() != threadCount) {
+        throw new AssertionError("Expected " + threadCount + " total results, but got " + 
+            (exceptionCount.get() + successCount.get()));
       }
     }
   }

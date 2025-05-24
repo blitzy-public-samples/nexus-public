@@ -12,12 +12,11 @@
  */
 package org.sonatype.nexus.pax.logging;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.classic.spi.LoggingEvent;
@@ -42,37 +41,37 @@ import static org.sonatype.nexus.logging.task.TaskLoggingMarkers.PROGRESS;
 import static org.sonatype.nexus.logging.task.TaskLoggingMarkers.TASK_LOG_ONLY;
 
 @ExtendWith(MockitoExtension.class)
-public class NexusLogFilterTest
+class NexusLogFilterTest
 {
   private NexusLogFilter excludeProgressLogsFilter;
 
   private ILoggingEvent event;
 
   @BeforeEach
-  public void setup() {
+  void setup() {
     excludeProgressLogsFilter = new NexusLogFilter();
     event = new LoggingEvent();
   }
 
   @AfterEach
-  public void tearDown() {
+  void tearDown() {
     MDC.remove(TASK_LOG_ONLY_MDC);
     MDC.remove(TASK_LOG_WITH_PROGRESS_MDC);
   }
 
   @Test
-  public void testNothingInMDC() {
+  void testNothingInMDC() {
     assertThat(excludeProgressLogsFilter.decide(event), equalTo(NEUTRAL));
   }
 
   @Test
-  public void testOtherMarkerInMDC() {
+  void testOtherMarkerInMDC() {
     Marker fooMarker = MarkerFactory.getMarker("foo");
     assertThat(excludeProgressLogsFilter.decide(eventWithMarkerOf(fooMarker)), equalTo(NEUTRAL));
   }
 
   @Test
-  public void testTaskLogWithProgressMarkerInMDC() {
+  void testTaskLogWithProgressMarkerInMDC() {
     MDC.put(TASK_LOG_WITH_PROGRESS_MDC, "true");
 
     // as the method also returns NEUTRAL by default, we also test that TASK_LOG_ONLY_MDC being set has no affect
@@ -82,111 +81,102 @@ public class NexusLogFilterTest
   }
 
   @Test
-  public void testProgressMarkerInMDC() {
+  void testProgressMarkerInMDC() {
     assertThat(excludeProgressLogsFilter.decide(eventWithMarkerOf(PROGRESS)), equalTo(DENY));
   }
 
   @Test
-  public void testTaskMarkerInMDC() {
+  void testTaskMarkerInMDC() {
     assertThat(excludeProgressLogsFilter.decide(eventWithMarkerOf(TASK_LOG_ONLY)), equalTo(DENY));
   }
 
   @Test
-  public void testTaskOnlyMDCConstant_InMDC() {
+  void testTaskOnlyMDCConstant_InMDC() {
     MDC.put(TASK_LOG_ONLY_MDC, "anything");
     assertThat(excludeProgressLogsFilter.decide(event), equalTo(DENY));
   }
 
   @Test
-  public void testAuditLogNotWrittenToNexusLog() {
+  void testAuditLogNotWrittenToNexusLog() {
     assertThat(excludeProgressLogsFilter.decide(eventWithMarkerOf(AUDIT_LOG_ONLY)), equalTo(DENY));
   }
 
   @Test
-  public void testInVirtualThread() throws Exception {
-    CountDownLatch latch = new CountDownLatch(1);
-    
-    Thread virtualThread = Thread.ofVirtual().name("test-virtual-thread").start(() -> {
-      try {
-        // Test basic filter functionality in a virtual thread
-        assertThat(excludeProgressLogsFilter.decide(event), equalTo(NEUTRAL));
-        
-        // Test with marker in virtual thread
-        Marker fooMarker = MarkerFactory.getMarker("foo");
-        assertThat(excludeProgressLogsFilter.decide(eventWithMarkerOf(fooMarker)), equalTo(NEUTRAL));
-        
-        // Test with progress marker in virtual thread
-        assertThat(excludeProgressLogsFilter.decide(eventWithMarkerOf(PROGRESS)), equalTo(DENY));
-      } finally {
-        latch.countDown();
-      }
+  void testInVirtualThread() throws Exception {
+    // Create and run a virtual thread to verify NexusLogFilter works in virtual thread context
+    Thread virtualThread = Thread.ofVirtual().name("virtual-test-thread").start(() -> {
+      // Test basic filter functionality in virtual thread
+      assertThat(excludeProgressLogsFilter.decide(event), equalTo(NEUTRAL));
+      
+      // Test with marker in virtual thread
+      MDC.put(TASK_LOG_ONLY_MDC, "virtual-thread-test");
+      assertThat(excludeProgressLogsFilter.decide(event), equalTo(DENY));
     });
     
     // Wait for virtual thread to complete
-    latch.await(5, TimeUnit.SECONDS);
+    virtualThread.join();
   }
 
   @Test
-  public void testMDCPropagationInVirtualThreads() throws Exception {
-    CountDownLatch latch = new CountDownLatch(1);
-    
+  void testMDCPropagationInVirtualThreads() throws Exception {
     // Set MDC in parent thread
-    MDC.put(TASK_LOG_ONLY_MDC, "test-value");
+    MDC.put(TASK_LOG_ONLY_MDC, "parent-thread-value");
     
-    Thread virtualThread = Thread.ofVirtual().name("mdc-virtual-thread").start(() -> {
-      try {
-        // Verify MDC is properly propagated to virtual thread
-        String mdcValue = MDC.get(TASK_LOG_ONLY_MDC);
-        assertThat(mdcValue, equalTo("test-value"));
-        
-        // Test filter with propagated MDC
-        assertThat(excludeProgressLogsFilter.decide(event), equalTo(DENY));
-      } finally {
-        latch.countDown();
-      }
+    // Create a reference to hold the MDC value from the virtual thread
+    AtomicReference<String> virtualThreadMdcValue = new AtomicReference<>();
+    
+    // Create and run a virtual thread
+    Thread virtualThread = Thread.ofVirtual().name("mdc-propagation-test").start(() -> {
+      // Capture the MDC value in the virtual thread
+      virtualThreadMdcValue.set(MDC.get(TASK_LOG_ONLY_MDC));
+      
+      // Test filter behavior with the propagated MDC
+      assertThat(excludeProgressLogsFilter.decide(event), equalTo(DENY));
     });
     
     // Wait for virtual thread to complete
-    latch.await(5, TimeUnit.SECONDS);
+    virtualThread.join();
+    
+    // Verify MDC was properly propagated to the virtual thread
+    assertThat(virtualThreadMdcValue.get(), equalTo("parent-thread-value"));
   }
 
   @Test
-  public void testVirtualThreadBulkFiltering() throws Exception {
-    int threadCount = 100;
-    CountDownLatch latch = new CountDownLatch(threadCount);
-    List<Thread> virtualThreads = new ArrayList<>();
+  void testVirtualThreadBulkFiltering() throws Exception {
+    // Create a virtual thread executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     
-    // Create and start multiple virtual threads to test filter under load
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    // Number of virtual threads to test with
+    int threadCount = 1000;
+    CountDownLatch latch = new CountDownLatch(threadCount);
+    
+    try {
+      // Submit tasks to virtual threads
       for (int i = 0; i < threadCount; i++) {
-        final int threadId = i;
+        final String taskId = "task-" + i;
         executor.submit(() -> {
           try {
-            // Set unique MDC value for each thread
-            MDC.put("thread-id", String.valueOf(threadId));
+            // Set unique MDC value for this virtual thread
+            MDC.put(TASK_LOG_ONLY_MDC, taskId);
             
-            // Test with different markers based on thread ID
-            if (threadId % 3 == 0) {
-              // Test with progress marker
-              assertThat(excludeProgressLogsFilter.decide(eventWithMarkerOf(PROGRESS)), equalTo(DENY));
-            } else if (threadId % 3 == 1) {
-              // Test with task marker
-              assertThat(excludeProgressLogsFilter.decide(eventWithMarkerOf(TASK_LOG_ONLY)), equalTo(DENY));
-            } else {
-              // Test with other marker
-              Marker customMarker = MarkerFactory.getMarker("custom-" + threadId);
-              assertThat(excludeProgressLogsFilter.decide(eventWithMarkerOf(customMarker)), equalTo(NEUTRAL));
-            }
+            // Create event with marker
+            ILoggingEvent threadEvent = eventWithMarkerOf(TASK_LOG_ONLY);
+            
+            // Verify filter behavior under load
+            assertThat(excludeProgressLogsFilter.decide(threadEvent), equalTo(DENY));
           } finally {
             MDC.clear();
             latch.countDown();
           }
         });
       }
+      
+      // Wait for all virtual threads to complete (with timeout)
+      boolean completed = latch.await(10, TimeUnit.SECONDS);
+      assertThat("All virtual threads should complete in time", completed, equalTo(true));
+    } finally {
+      executor.shutdown();
     }
-    
-    // Wait for all virtual threads to complete
-    latch.await(10, TimeUnit.SECONDS);
   }
 
   private ILoggingEvent eventWithMarkerOf(final Marker marker) {

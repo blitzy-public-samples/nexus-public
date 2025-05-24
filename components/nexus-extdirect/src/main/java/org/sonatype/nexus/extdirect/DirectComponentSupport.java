@@ -12,14 +12,43 @@
  */
 package org.sonatype.nexus.extdirect;
 
-import java.util.Map;
+import static java.lang.StringTemplate.STR;
 
 import org.sonatype.goodies.common.ComponentSupport;
 
 /**
  * Support for {@link DirectComponent} implementations.
+ * 
  * <p>
- * Provides utility methods for logging Ext.Direct related information using Java 21 String Templates.
+ * This class provides logging support via Java 21 String Templates for improved readability and performance.
+ * String Templates allow for more readable and efficient logging statements compared to traditional
+ * string concatenation or parameterized logging.
+ * </p>
+ * 
+ * <p>
+ * Example usage in subclasses:
+ * <pre>
+ * // Instead of:
+ * // log.debug("Processing request for component: {} with parameters: {}", componentId, params);
+ * // Use:
+ * log.debug(STR."Processing request for component: \{componentId} with parameters: \{params}");
+ * 
+ * // Instead of:
+ * // log.info("Created {} with id: {} at {}", type, id, timestamp);
+ * // Use:
+ * log.info(STR."Created \{type} with id: \{id} at \{timestamp}");
+ * 
+ * // Instead of:
+ * // if (log.isDebugEnabled()) {
+ * //     log.debug("Complex calculation result: " + expensiveCalculation());
+ * // }
+ * // Use:
+ * if (log.isDebugEnabled()) {
+ *     var result = expensiveCalculation();
+ *     log.debug(STR."Complex calculation result: \{result}");
+ * }
+ * </pre>
+ * </p>
  *
  * @since 3.0
  */
@@ -28,70 +57,46 @@ public abstract class DirectComponentSupport
   implements DirectComponent
 {
   /**
-   * Logs a method invocation with parameters using String Templates.
-   *
-   * @param methodName the name of the method being invoked
-   * @param params the parameters passed to the method
+   * Logs a debug message using Java 21 String Templates.
+   * 
+   * @param template The string template to log
    */
-  protected void logMethodInvocation(final String methodName, final Object... params) {
+  protected void logDebug(StringTemplate template) {
     if (log.isDebugEnabled()) {
-      log.debug(STR."Method invoked: \{methodName} with \{params.length} parameter(s)");
-      
-      if (params.length > 0 && log.isTraceEnabled()) {
-        for (int i = 0; i < params.length; i++) {
-          log.trace(STR."  Parameter \{i}: \{params[i]}");
-        }
-      }
+      log.debug(STR.process(template));
     }
   }
 
   /**
-   * Logs a method result using String Templates.
-   *
-   * @param methodName the name of the method
-   * @param result the result returned by the method
+   * Logs an info message using Java 21 String Templates.
+   * 
+   * @param template The string template to log
    */
-  protected void logMethodResult(final String methodName, final Object result) {
-    if (log.isDebugEnabled()) {
-      String resultType = result != null ? result.getClass().getSimpleName() : "null";
-      log.debug(STR."Method \{methodName} returned result of type \{resultType}");
-      
-      if (log.isTraceEnabled() && result != null) {
-        log.trace(STR."  Result: \{result}");
-      }
+  protected void logInfo(StringTemplate template) {
+    if (log.isInfoEnabled()) {
+      log.info(STR.process(template));
     }
   }
 
   /**
-   * Logs an exception that occurred during method execution using String Templates.
-   *
-   * @param methodName the name of the method where the exception occurred
-   * @param e the exception that was thrown
+   * Logs a warning message using Java 21 String Templates.
+   * 
+   * @param template The string template to log
    */
-  protected void logMethodException(final String methodName, final Exception e) {
-    log.error(STR."Exception in method \{methodName}: \{e.getMessage()}", e);
+  protected void logWarn(StringTemplate template) {
+    if (log.isWarnEnabled()) {
+      log.warn(STR.process(template));
+    }
   }
 
   /**
-   * Logs form data submission using String Templates.
-   *
-   * @param formName the name of the form being submitted
-   * @param formData the form data as a map
+   * Logs an error message using Java 21 String Templates.
+   * 
+   * @param template The string template to log
    */
-  protected void logFormSubmission(final String formName, final Map<String, Object> formData) {
-    if (log.isDebugEnabled()) {
-      log.debug(STR."Form submitted: \{formName} with \{formData.size()} field(s)");
-      
-      if (log.isTraceEnabled()) {
-        formData.forEach((key, value) -> {
-          // Avoid logging sensitive information like passwords
-          boolean isSensitive = key.toLowerCase().contains("password") || 
-                              key.toLowerCase().contains("secret") || 
-                              key.toLowerCase().contains("token");
-          String displayValue = isSensitive ? "*****" : String.valueOf(value);
-          log.trace(STR."  Field \{key}: \{displayValue}");
-        });
-      }
+  protected void logError(StringTemplate template) {
+    if (log.isErrorEnabled()) {
+      log.error(STR.process(template));
     }
   }
 }

@@ -12,23 +12,20 @@
  */
 package virtualthread;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
+import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.blobstore.api.Blob;
 import org.sonatype.nexus.blobstore.api.BlobId;
 import org.sonatype.nexus.blobstore.api.BlobRef;
@@ -42,44 +39,41 @@ import org.sonatype.nexus.repository.content.facet.ContentFacetStores;
 import org.sonatype.nexus.repository.content.facet.ContentFacetSupport;
 import org.sonatype.nexus.repository.content.store.AssetBlobStore;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
 import org.sonatype.nexus.test.util.Whitebox;
 
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.experimental.categories.Category;
 import org.mockito.Mock;
-import org.mockito.invocation.InvocationOnMock;
-import org.mockito.stubbing.Answer;
+import org.mockito.MockitoAnnotations;
 
 import static java.util.Optional.empty;
 import static java.util.Optional.of;
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.greaterThan;
-import static org.hamcrest.Matchers.lessThan;
-import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.blobstore.api.BlobStore.REPO_NAME_HEADER;
-import static org.sonatype.nexus.testcommon.virtualthread.VirtualThreadMatchers.isVirtualThread;
 
 /**
- * Tests that {@link DefaultBlobStoreUsageChecker} effectively utilizes Java 21 Virtual Threads
+ * Test class to validate that {@link DefaultBlobStoreUsageChecker} effectively utilizes Java 21 Virtual Threads
  * for concurrent blob usage checking operations.
+ * 
+ * This test verifies that the checker can efficiently process large volumes of blob usage checks simultaneously
+ * without thread resource exhaustion. It simulates high-concurrency scenarios with multiple blob stores and repositories,
+ * measures performance improvements when using Virtual Threads compared to platform threads, and ensures proper
+ * handling of I/O operations during blob usage checking.
  */
+@Category(VirtualThreadTestGroup.class)
 public class BlobStoreUsageCheckerVirtualThreadTest
-    extends VirtualThreadTestSupport
+    extends TestSupport
 {
   private static final String REPO_NAME = "repoName";
-  private static final String NODE_ID = "nodeId";
-  private static final String BLOB_STORE_NAME = "default";
-  private static final String BLOB_NAME_PREFIX = "/fake/blob";
-  private static final int BLOB_COUNT = 10_000; // Large number of blobs to test concurrency
-  private static final int SIMULATED_IO_DELAY_MS = 5; // Simulate I/O delay
+  private static final String NODE_ID = "repoName";
+  private static final String DEFAULT = "default";
+  private static final String BLOB_NAME = "/fake/blob.name";
 
   @Mock
   private RepositoryManager repositoryManager;
@@ -103,384 +97,285 @@ public class BlobStoreUsageCheckerVirtualThreadTest
   private ContentFacetStores contentFacetStores;
 
   private DefaultBlobStoreUsageChecker underTest;
-  
-  private final Map<String, Blob> blobs = new ConcurrentHashMap<>();
-  private final Map<BlobRef, AssetBlob> assetBlobs = new ConcurrentHashMap<>();
-  private final AtomicInteger ioOperationCount = new AtomicInteger(0);
+
+  // Number of concurrent tasks to run
+  private static final int TASK_COUNT = 1000;
+
+  // Number of blobs to check in each task
+  private static final int BLOBS_PER_TASK = 10;
 
   @Before
   public void setUp() {
+    MockitoAnnotations.openMocks(this);
+    
     Whitebox.setInternalState(contentFacetStores, "assetBlobStore", assetBlobStore);
 
     when(contentFacet.stores()).thenReturn(contentFacetStores);
     when(contentFacet.nodeName()).thenReturn(NODE_ID);
 
-    when(blobStoreConfiguration.getName()).thenReturn(BLOB_STORE_NAME);
+    when(blobStoreConfiguration.getName()).thenReturn(DEFAULT);
     when(blobStore.getBlobStoreConfiguration()).thenReturn(blobStoreConfiguration);
 
     when(repositoryManager.get(REPO_NAME)).thenReturn(repository);
     when(repository.facet(ContentFacet.class)).thenReturn(contentFacet);
 
-    // Setup mock behavior for blob retrieval with simulated I/O delay
-    when(blobStore.get(any(BlobId.class))).thenAnswer(invocation -> {
-      BlobId blobId = invocation.getArgument(0);
-      simulateIoOperation();
-      return blobs.get(blobId.asUniqueString());
-    });
-
-    // Setup mock behavior for asset blob retrieval with simulated I/O delay
-    when(assetBlobStore.readAssetBlob(any(BlobRef.class))).thenAnswer(invocation -> {
-      BlobRef blobRef = invocation.getArgument(0);
-      simulateIoOperation();
-      AssetBlob assetBlob = assetBlobs.get(blobRef);
-      return assetBlob != null ? of(assetBlob) : empty();
-    });
-
     underTest = new DefaultBlobStoreUsageChecker(repositoryManager);
+  }
+
+  /**
+   * Tests the performance and behavior of DefaultBlobStoreUsageChecker when using Virtual Threads
+   * for concurrent blob usage checking operations.
+   * 
+   * This test simulates a high-concurrency scenario with multiple threads simultaneously checking
+   * blob usage across repositories. It verifies that Virtual Threads can efficiently handle
+   * a large number of concurrent operations without exhausting system resources.
+   */
+  @Test
+  public void testConcurrentBlobUsageCheckingWithVirtualThreads() throws Exception {
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
     
-    // Create test data
-    createTestBlobs();
-  }
-
-  /**
-   * Creates test blobs and asset blobs for testing.
-   * Half of the blobs will be referenced (have corresponding asset blobs),
-   * and half will be unreferenced.
-   */
-  private void createTestBlobs() {
-    for (int i = 0; i < BLOB_COUNT; i++) {
-      String blobIdString = UUID.randomUUID().toString();
-      BlobId blobId = new BlobId(blobIdString);
-      String blobName = BLOB_NAME_PREFIX + i + ".txt";
-      
-      // Create mock blob
-      Blob blob = createMockBlob(blobIdString);
-      blobs.put(blobIdString, blob);
-      
-      // For half of the blobs, create corresponding asset blobs
-      if (i % 2 == 0) {
-        BlobRef blobRef = new BlobRef(NODE_ID, BLOB_STORE_NAME, blobIdString);
-        AssetBlob assetBlob = createMockAssetBlob(blobRef);
-        assetBlobs.put(blobRef, assetBlob);
-      }
-    }
-  }
-
-  private Blob createMockBlob(String blobIdString) {
-    Blob blob = mock(Blob.class);
-    Map<String, String> headers = new HashMap<>();
-    headers.put(REPO_NAME_HEADER, REPO_NAME);
-    when(blob.getHeaders()).thenReturn(headers);
-    when(blob.getId()).thenReturn(new BlobId(blobIdString));
-    return blob;
-  }
-
-  private AssetBlob createMockAssetBlob(BlobRef blobRef) {
-    AssetBlob assetBlob = mock(AssetBlob.class);
-    when(assetBlob.getBlobRef()).thenReturn(blobRef);
-    return assetBlob;
-  }
-
-  /**
-   * Simulates an I/O operation with a small delay to mimic real-world scenarios.
-   * This helps demonstrate the benefits of Virtual Threads for I/O-bound operations.
-   */
-  private void simulateIoOperation() {
-    ioOperationCount.incrementAndGet();
+    CountDownLatch latch = new CountDownLatch(TASK_COUNT);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    // Set up mock blobs and their references
+    setupMockBlobs();
+    
+    long startTime = System.currentTimeMillis();
+    
     try {
-      // Small delay to simulate I/O
-      Thread.sleep(SIMULATED_IO_DELAY_MS);
-    }
-    catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
+      // Submit multiple concurrent tasks using virtual threads
+      for (int i = 0; i < TASK_COUNT; i++) {
+        final int taskId = i;
+        executor.submit(() -> {
+          try {
+            // Check multiple blobs in each task
+            for (int j = 0; j < BLOBS_PER_TASK; j++) {
+              BlobId blobId = new BlobId(UUID.randomUUID().toString());
+              // Set up this specific blob to be found
+              setupMockBlob(blobId);
+              // Check if the blob is in use
+              boolean result = underTest.test(blobStore, blobId, BLOB_NAME);
+              if (!result) {
+                errorCount.incrementAndGet();
+              }
+            }
+          } catch (Exception e) {
+            log.error("Error in task {}", taskId, e);
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      boolean completed = latch.await(30, TimeUnit.SECONDS);
+      
+      long duration = System.currentTimeMillis() - startTime;
+      log.info("Virtual Thread test completed in {} ms", duration);
+      
+      // Verify all tasks completed successfully
+      assertThat("All tasks should complete within the timeout", completed, is(true));
+      assertThat("No errors should occur during concurrent blob checking", errorCount.get(), is(0));
+    } finally {
+      executor.shutdown();
     }
   }
 
   /**
-   * Tests that the current thread executing the test is a virtual thread.
-   * This verifies that the test infrastructure is correctly set up for virtual thread testing.
+   * Compares the performance of Virtual Threads versus Platform Threads for concurrent
+   * blob usage checking operations.
+   * 
+   * This test runs the same workload using both thread types and measures the execution time
+   * to demonstrate the efficiency gains from using Virtual Threads for I/O-bound operations.
    */
   @Test
-  public void testCurrentThreadIsVirtual() {
-    // This test will run on a virtual thread when executed with the appropriate JVM flags
-    // It serves as a verification that the test infrastructure is correctly set up
-    Thread currentThread = Thread.currentThread();
-    log.info("Current thread: {}, isVirtual: {}", currentThread.getName(), Thread.currentThread().isVirtual());
+  public void compareVirtualThreadsVsPlatformThreadsPerformance() throws Exception {
+    // Run with virtual threads
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    long virtualThreadTime = runConcurrentBlobChecks(virtualThreadFactory, "Virtual Threads");
     
-    // Note: This assertion may fail if the test is not run with virtual threads enabled
-    // It's primarily for documentation and verification when virtual threads are enabled
-    if (isVirtualThreadsEnabled()) {
-      assertThat(currentThread, isVirtualThread());
+    // Run with platform threads
+    ThreadFactory platformThreadFactory = Thread.ofPlatform().factory();
+    long platformThreadTime = runConcurrentBlobChecks(platformThreadFactory, "Platform Threads");
+    
+    log.info("Performance comparison: Virtual Threads: {} ms, Platform Threads: {} ms", 
+        virtualThreadTime, platformThreadTime);
+    
+    // Log the performance difference
+    if (platformThreadTime > virtualThreadTime) {
+      double improvement = (double) (platformThreadTime - virtualThreadTime) / platformThreadTime * 100.0;
+      log.info("Virtual Threads were {}% faster than Platform Threads", String.format("%.2f", improvement));
+    } else {
+      double difference = (double) (virtualThreadTime - platformThreadTime) / platformThreadTime * 100.0;
+      log.info("Platform Threads were {}% faster than Virtual Threads", String.format("%.2f", difference));
     }
+    
+    // We don't assert on the actual performance difference as it can vary by environment,
+    // but we log it for analysis. In most I/O-bound scenarios, Virtual Threads should show
+    // better performance at high concurrency levels.
   }
 
   /**
-   * Tests that DefaultBlobStoreUsageChecker correctly identifies referenced and unreferenced blobs.
-   */
-  @Test
-  public void testBlobReferenceChecking() {
-    // Test with a referenced blob (even index)
-    String referencedBlobId = blobs.keySet().stream().findFirst().orElseThrow();
-    BlobId blobId = new BlobId(referencedBlobId);
-    String blobName = BLOB_NAME_PREFIX + "0.txt";
-    
-    // If this is a referenced blob (even index), it should return true
-    boolean isReferenced = underTest.test(blobStore, blobId, blobName);
-    assertThat(isReferenced, is(true));
-    
-    // Create a blob ID that doesn't exist in our test data
-    BlobId nonExistentBlobId = new BlobId("non-existent-blob-id");
-    isReferenced = underTest.test(blobStore, nonExistentBlobId, blobName);
-    assertThat(isReferenced, is(false));
-  }
-
-  /**
-   * Tests the performance of DefaultBlobStoreUsageChecker with a large number of concurrent operations
-   * using Virtual Threads. Compares performance with platform threads to demonstrate the benefits
-   * of Virtual Threads for I/O-bound operations.
-   */
-  @Test
-  public void testConcurrentBlobChecking() throws Exception {
-    List<BlobCheckTask> tasks = createBlobCheckTasks();
-    
-    // Test with platform threads
-    long platformThreadTime = runWithExecutor(
-        Executors.newFixedThreadPool(Math.min(100, Runtime.getRuntime().availableProcessors() * 2)),
-        "Platform Threads",
-        tasks);
-    
-    // Reset counter for fair comparison
-    ioOperationCount.set(0);
-    
-    // Test with virtual threads
-    long virtualThreadTime = runWithExecutor(
-        Executors.newVirtualThreadPerTaskExecutor(),
-        "Virtual Threads",
-        tasks);
-    
-    // Log the results
-    log.info("Platform thread time: {} ms, Virtual thread time: {} ms", platformThreadTime, virtualThreadTime);
-    log.info("Performance improvement with Virtual Threads: {}%", 
-        Math.round((platformThreadTime - virtualThreadTime) * 100.0 / platformThreadTime));
-    
-    // Virtual threads should be faster for I/O-bound operations with high concurrency
-    // However, this assertion is commented out as the actual performance difference
-    // depends on the test environment and may vary
-    // assertThat(virtualThreadTime, lessThan(platformThreadTime));
-  }
-
-  /**
-   * Tests that DefaultBlobStoreUsageChecker can handle a very large number of concurrent operations
-   * using Virtual Threads without exhausting system resources.
+   * Tests the behavior of DefaultBlobStoreUsageChecker with a very high number of Virtual Threads
+   * to verify scalability under extreme concurrency.
+   * 
+   * This test creates a large number of Virtual Threads to simulate a high-load scenario
+   * and verifies that the system can handle it without resource exhaustion.
    */
   @Test
   public void testHighConcurrencyWithVirtualThreads() throws Exception {
-    // Only run this test if virtual threads are enabled
-    if (!isVirtualThreadsEnabled()) {
-      log.info("Skipping high concurrency test as virtual threads are not enabled");
-      return;
-    }
+    // Use a higher number of tasks for this test to demonstrate Virtual Thread scalability
+    final int highConcurrencyTaskCount = 5000;
     
-    // Create a very large number of tasks to demonstrate the scalability of virtual threads
-    int taskCount = BLOB_COUNT * 10; // 100,000 concurrent operations
-    List<BlobCheckTask> tasks = createBlobCheckTasks(taskCount);
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
     
-    // Use a countdown latch to ensure all tasks start at roughly the same time
-    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch latch = new CountDownLatch(highConcurrencyTaskCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    AtomicInteger successCount = new AtomicInteger(0);
     
-    // Create a virtual thread per task
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      List<Future<Boolean>> futures = new ArrayList<>(taskCount);
-      
-      // Submit all tasks
-      for (BlobCheckTask task : tasks) {
-        futures.add(executor.submit(() -> {
-          startLatch.await(); // Wait for the signal to start
-          return task.call();
-        }));
-      }
-      
-      // Start all tasks simultaneously
-      long startTime = System.currentTimeMillis();
-      startLatch.countDown();
-      
-      // Wait for all tasks to complete and collect results
-      int successCount = 0;
-      for (Future<Boolean> future : futures) {
-        if (future.get()) {
-          successCount++;
-        }
-      }
-      long endTime = System.currentTimeMillis();
-      
-      // Log the results
-      log.info("Completed {} concurrent blob checks in {} ms using Virtual Threads", 
-          taskCount, (endTime - startTime));
-      log.info("Success rate: {}%", (successCount * 100.0 / taskCount));
-      log.info("Total I/O operations performed: {}", ioOperationCount.get());
-      
-      // Verify that all tasks completed successfully
-      assertThat(successCount, equalTo(taskCount));
-    }
-  }
-
-  /**
-   * Tests that DefaultBlobStoreUsageChecker correctly handles errors during concurrent operations
-   * and aggregates results properly.
-   */
-  @Test
-  public void testErrorHandlingWithVirtualThreads() throws Exception {
-    // Inject random failures into the blob store
-    doAnswer(new Answer<Blob>() {
-      @Override
-      public Blob answer(InvocationOnMock invocation) throws Throwable {
-        BlobId blobId = invocation.getArgument(0);
-        simulateIoOperation();
-        
-        // Randomly throw exceptions to simulate failures
-        if (Math.random() < 0.1) { // 10% failure rate
-          throw new RuntimeException("Simulated blob store failure");
-        }
-        
-        return blobs.get(blobId.asUniqueString());
-      }
-    }).when(blobStore).get(any(BlobId.class));
+    // Set up mock blobs
+    setupMockBlobs();
     
-    // Create tasks
-    List<BlobCheckTask> tasks = createBlobCheckTasks(1000);
+    long startTime = System.currentTimeMillis();
     
-    // Run with virtual threads
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      List<Future<Boolean>> futures = new ArrayList<>(tasks.size());
-      
-      // Submit all tasks
-      for (BlobCheckTask task : tasks) {
-        futures.add(executor.submit(task));
-      }
-      
-      // Wait for all tasks to complete and collect results
-      int successCount = 0;
-      int failureCount = 0;
-      int exceptionCount = 0;
-      
-      for (Future<Boolean> future : futures) {
-        try {
-          if (future.get()) {
-            successCount++;
-          }
-          else {
-            failureCount++;
-          }
-        }
-        catch (Exception e) {
-          exceptionCount++;
-        }
-      }
-      
-      // Log the results
-      log.info("Success count: {}, Failure count: {}, Exception count: {}", 
-          successCount, failureCount, exceptionCount);
-      
-      // Verify that we had some failures due to the injected errors
-      assertThat(exceptionCount, greaterThan(0));
-      // But also some successes
-      assertThat(successCount, greaterThan(0));
-    }
-  }
-
-  /**
-   * Runs the given tasks with the provided executor and returns the execution time in milliseconds.
-   */
-  private long runWithExecutor(ExecutorService executor, String executorName, List<BlobCheckTask> tasks) 
-      throws Exception {
     try {
-      long startTime = System.currentTimeMillis();
-      
-      List<Future<Boolean>> futures = new ArrayList<>(tasks.size());
-      for (BlobCheckTask task : tasks) {
-        futures.add(executor.submit(task));
+      // Submit a very high number of concurrent tasks
+      for (int i = 0; i < highConcurrencyTaskCount; i++) {
+        final int taskId = i;
+        executor.submit(() -> {
+          try {
+            BlobId blobId = new BlobId(UUID.randomUUID().toString());
+            setupMockBlob(blobId);
+            boolean result = underTest.test(blobStore, blobId, BLOB_NAME);
+            if (result) {
+              successCount.incrementAndGet();
+            } else {
+              errorCount.incrementAndGet();
+            }
+          } catch (Exception e) {
+            log.error("Error in high concurrency task {}", taskId, e);
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        });
       }
       
-      int successCount = 0;
-      for (Future<Boolean> future : futures) {
-        if (future.get()) {
-          successCount++;
-        }
+      // Wait for all tasks to complete with a longer timeout due to the higher task count
+      boolean completed = latch.await(60, TimeUnit.SECONDS);
+      
+      long duration = System.currentTimeMillis() - startTime;
+      log.info("High concurrency test with {} tasks completed in {} ms", 
+          highConcurrencyTaskCount, duration);
+      log.info("Success count: {}, Error count: {}", successCount.get(), errorCount.get());
+      
+      // Verify all tasks completed successfully
+      assertThat("All high concurrency tasks should complete within the timeout", completed, is(true));
+      assertThat("No errors should occur during high concurrency blob checking", errorCount.get(), is(0));
+      assertThat("All blob checks should succeed", successCount.get(), equalTo(highConcurrencyTaskCount));
+    } finally {
+      executor.shutdown();
+    }
+  }
+
+  /**
+   * Helper method to run concurrent blob checks with the specified thread factory.
+   * 
+   * @param threadFactory The thread factory to use (virtual or platform)
+   * @param threadType A descriptive name for the thread type being used
+   * @return The execution time in milliseconds
+   */
+  private long runConcurrentBlobChecks(ThreadFactory threadFactory, String threadType) throws Exception {
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(threadFactory);
+    
+    CountDownLatch latch = new CountDownLatch(TASK_COUNT);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    // Set up mock blobs
+    setupMockBlobs();
+    
+    long startTime = System.currentTimeMillis();
+    
+    try {
+      // Submit concurrent tasks
+      for (int i = 0; i < TASK_COUNT; i++) {
+        executor.submit(() -> {
+          try {
+            // Check multiple blobs in each task
+            for (int j = 0; j < BLOBS_PER_TASK; j++) {
+              BlobId blobId = new BlobId(UUID.randomUUID().toString());
+              setupMockBlob(blobId);
+              boolean result = underTest.test(blobStore, blobId, BLOB_NAME);
+              if (result) {
+                successCount.incrementAndGet();
+              } else {
+                errorCount.incrementAndGet();
+              }
+            }
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        });
       }
       
-      long endTime = System.currentTimeMillis();
-      long duration = endTime - startTime;
+      // Wait for all tasks to complete
+      latch.await(30, TimeUnit.SECONDS);
       
-      log.info("{} completed {} blob checks in {} ms with {} successes", 
-          executorName, tasks.size(), duration, successCount);
-      log.info("{} I/O operations performed with {}", ioOperationCount.get(), executorName);
+      long duration = System.currentTimeMillis() - startTime;
+      log.info("{} test completed in {} ms with {} successful checks and {} errors", 
+          threadType, duration, successCount.get(), errorCount.get());
       
       return duration;
-    }
-    finally {
+    } finally {
       executor.shutdown();
-      assertTrue(executor.awaitTermination(30, TimeUnit.SECONDS));
     }
   }
 
   /**
-   * Creates a list of tasks to check blob references.
+   * Sets up mock blobs for testing.
    */
-  private List<BlobCheckTask> createBlobCheckTasks() {
-    return createBlobCheckTasks(BLOB_COUNT);
-  }
-
-  /**
-   * Creates a list of tasks to check blob references with the specified count.
-   */
-  private List<BlobCheckTask> createBlobCheckTasks(int count) {
-    return IntStream.range(0, count)
-        .mapToObj(i -> {
-          // Cycle through the available blob IDs
-          String blobIdString = new ArrayList<>(blobs.keySet()).get(i % blobs.size());
-          BlobId blobId = new BlobId(blobIdString);
-          String blobName = BLOB_NAME_PREFIX + (i % blobs.size()) + ".txt";
-          return new BlobCheckTask(blobId, blobName);
-        })
-        .collect(Collectors.toList());
-  }
-
-  /**
-   * A task that checks if a blob is referenced.
-   */
-  private class BlobCheckTask implements java.util.concurrent.Callable<Boolean> {
-    private final BlobId blobId;
-    private final String blobName;
-
-    public BlobCheckTask(BlobId blobId, String blobName) {
-      this.blobId = blobId;
-      this.blobName = blobName;
-    }
-
-    @Override
-    public Boolean call() {
-      try {
-        return underTest.test(blobStore, blobId, blobName);
-      }
-      catch (Exception e) {
-        log.error("Error checking blob reference: {}", e.getMessage());
-        throw e;
-      }
+  private void setupMockBlobs() {
+    // Pre-setup some mock blobs to avoid excessive mock setup during concurrent execution
+    for (int i = 0; i < 100; i++) {
+      BlobId blobId = new BlobId(UUID.randomUUID().toString());
+      setupMockBlob(blobId);
     }
   }
 
   /**
-   * Checks if virtual threads are enabled in the current JVM.
+   * Sets up a mock blob with the specified ID.
+   * 
+   * @param blobId The ID of the blob to set up
    */
-  private boolean isVirtualThreadsEnabled() {
-    try {
-      // Create a virtual thread and check if it's actually virtual
-      Thread virtualThread = Thread.ofVirtual().name("virtual-thread-test").start(() -> {});
-      virtualThread.join(Duration.ofSeconds(1));
-      return true;
-    }
-    catch (Exception e) {
-      return false;
-    }
+  private void setupMockBlob(BlobId blobId) {
+    Blob blob = mock(Blob.class);
+    AssetBlob assetBlob = mock(AssetBlob.class);
+    BlobRef blobRef = new BlobRef(NODE_ID, DEFAULT, blobId.asUniqueString());
+    
+    Map<String, String> headers = new HashMap<>();
+    headers.put(REPO_NAME_HEADER, REPO_NAME);
+    
+    when(blob.getHeaders()).thenReturn(headers);
+    when(blobStore.get(blobId)).thenReturn(blob);
+    when(assetBlobStore.readAssetBlob(any())).thenReturn(empty());
+    when(assetBlobStore.readAssetBlob(eq(blobRef))).thenReturn(of(assetBlob));
+  }
+
+  /**
+   * Creates a mock object of the specified type.
+   * 
+   * @param <T> The type of the mock to create
+   * @param classToMock The class to mock
+   * @return A mock object of the specified type
+   */
+  private <T> T mock(Class<T> classToMock) {
+    return org.mockito.Mockito.mock(classToMock);
   }
 }

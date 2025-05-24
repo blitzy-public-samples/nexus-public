@@ -16,12 +16,13 @@ import org.sonatype.goodies.testsupport.TestSupport;
 
 import org.junit.Test;
 
-import static org.hamcrest.CoreMatchers.is;
-import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
 
 /**
- * Tests for Java 21 record pattern matching with configuration data in the Nexus Extender module.
+ * Tests for Java 21 record pattern matching with Nexus Extender configuration objects.
  * 
  * @since 3.60
  */
@@ -29,224 +30,201 @@ public class ExtenderConfigRecordPatternTest
     extends TestSupport
 {
   /**
-   * Simple configuration record for module settings
+   * Simple record representing a module configuration.
    */
-  record ModuleConfig(String name, boolean enabled, int priority) {}
-  
-  /**
-   * Lifecycle configuration record containing module settings
-   */
-  record LifecycleConfig(String phase, ModuleConfig moduleConfig) {}
-  
-  /**
-   * Nested configuration record for complex settings
-   */
-  record ExtenderConfig(String version, LifecycleConfig lifecycleConfig, SecurityConfig securityConfig) {}
-  
-  /**
-   * Security configuration record
-   */
-  record SecurityConfig(String realm, AuthConfig authConfig) {}
-  
-  /**
-   * Authentication configuration record
-   */
-  record AuthConfig(String type, boolean required) {}
+  record ModuleConfig(String name, String version, boolean enabled) {}
 
   /**
-   * Tests basic record pattern matching for simple configuration extraction.
+   * Record representing lifecycle configuration.
    */
+  record LifecycleConfig(String phase, int priority) {}
+
+  /**
+   * Nested record representing a complete extender configuration.
+   */
+  record ExtenderConfig(ModuleConfig module, LifecycleConfig lifecycle) {}
+
+  /**
+   * Record with optional fields that might be null.
+   */
+  record OptionalConfig(String name, String description, ModuleConfig module) {}
+
   @Test
   public void testBasicRecordPatternMatching() {
-    ModuleConfig config = new ModuleConfig("test-module", true, 10);
-    Object obj = config;
+    Object config = new ModuleConfig("test-module", "1.0.0", true);
     
     // Traditional approach with instanceof and casting
-    if (obj instanceof ModuleConfig) {
-      ModuleConfig moduleConfig = (ModuleConfig) obj;
+    if (config instanceof ModuleConfig) {
+      ModuleConfig moduleConfig = (ModuleConfig) config;
       assertThat(moduleConfig.name(), is("test-module"));
+      assertThat(moduleConfig.version(), is("1.0.0"));
       assertThat(moduleConfig.enabled(), is(true));
-      assertThat(moduleConfig.priority(), is(10));
+    }
+    else {
+      fail("Expected ModuleConfig instance");
     }
     
-    // Java 21 record pattern matching approach
-    if (obj instanceof ModuleConfig(String name, boolean enabled, int priority)) {
+    // Java 21 approach with record pattern matching
+    if (config instanceof ModuleConfig(String name, String version, boolean enabled)) {
       assertThat(name, is("test-module"));
+      assertThat(version, is("1.0.0"));
       assertThat(enabled, is(true));
-      assertThat(priority, is(10));
+    }
+    else {
+      fail("Expected ModuleConfig pattern match");
     }
   }
 
-  /**
-   * Tests record pattern matching with var for type inference.
-   */
-  @Test
-  public void testRecordPatternMatchingWithVar() {
-    ModuleConfig config = new ModuleConfig("test-module", true, 10);
-    Object obj = config;
-    
-    // Java 21 record pattern matching with var for type inference
-    if (obj instanceof ModuleConfig(var name, var enabled, var priority)) {
-      assertThat(name, is("test-module"));
-      assertThat(enabled, is(true));
-      assertThat(priority, is(10));
-    }
-  }
-
-  /**
-   * Tests nested record pattern matching for multi-level configuration access.
-   */
   @Test
   public void testNestedRecordPatternMatching() {
-    ModuleConfig moduleConfig = new ModuleConfig("test-module", true, 10);
-    LifecycleConfig lifecycleConfig = new LifecycleConfig("STARTUP", moduleConfig);
-    AuthConfig authConfig = new AuthConfig("basic", true);
-    SecurityConfig securityConfig = new SecurityConfig("default", authConfig);
-    ExtenderConfig extenderConfig = new ExtenderConfig("1.0", lifecycleConfig, securityConfig);
+    ModuleConfig moduleConfig = new ModuleConfig("test-module", "1.0.0", true);
+    LifecycleConfig lifecycleConfig = new LifecycleConfig("KERNEL", 10);
+    ExtenderConfig config = new ExtenderConfig(moduleConfig, lifecycleConfig);
     
-    Object obj = extenderConfig;
-    
-    // Traditional approach with instanceof and casting - multiple levels of access
-    if (obj instanceof ExtenderConfig) {
-      ExtenderConfig config = (ExtenderConfig) obj;
-      LifecycleConfig lifecycle = config.lifecycleConfig();
-      ModuleConfig module = lifecycle.moduleConfig();
-      SecurityConfig security = config.securityConfig();
-      AuthConfig auth = security.authConfig();
+    // Traditional approach with nested access
+    if (config instanceof ExtenderConfig) {
+      ExtenderConfig extenderConfig = config;
+      ModuleConfig module = extenderConfig.module();
+      LifecycleConfig lifecycle = extenderConfig.lifecycle();
       
       assertThat(module.name(), is("test-module"));
-      assertThat(module.enabled(), is(true));
-      assertThat(auth.type(), is("basic"));
-      assertThat(auth.required(), is(true));
+      assertThat(module.version(), is("1.0.0"));
+      assertThat(lifecycle.phase(), is("KERNEL"));
+      assertThat(lifecycle.priority(), is(10));
+    }
+    else {
+      fail("Expected ExtenderConfig instance");
     }
     
-    // Java 21 nested record pattern matching - direct access to nested components
-    if (obj instanceof ExtenderConfig(var version, 
-                                     LifecycleConfig(var phase, ModuleConfig(var name, var enabled, var priority)),
-                                     SecurityConfig(var realm, AuthConfig(var authType, var authRequired)))) {
-      assertThat(version, is("1.0"));
-      assertThat(phase, is("STARTUP"));
+    // Java 21 approach with nested record pattern matching
+    if (config instanceof ExtenderConfig(ModuleConfig(String name, String version, boolean enabled), 
+                                        LifecycleConfig(String phase, int priority))) {
       assertThat(name, is("test-module"));
+      assertThat(version, is("1.0.0"));
       assertThat(enabled, is(true));
+      assertThat(phase, is("KERNEL"));
       assertThat(priority, is(10));
-      assertThat(realm, is("default"));
-      assertThat(authType, is("basic"));
-      assertThat(authRequired, is(true));
+    }
+    else {
+      fail("Expected nested ExtenderConfig pattern match");
     }
   }
 
-  /**
-   * Tests record pattern matching with guard conditions for conditional configuration extraction.
-   */
+  @Test
+  public void testRecordPatternMatchingWithVar() {
+    Object config = new ModuleConfig("test-module", "1.0.0", true);
+    
+    // Java 21 approach with var for type inference
+    if (config instanceof ModuleConfig(var name, var version, var enabled)) {
+      assertThat(name, is("test-module"));
+      assertThat(version, is("1.0.0"));
+      assertThat(enabled, is(true));
+    }
+    else {
+      fail("Expected ModuleConfig pattern match with var");
+    }
+  }
+
   @Test
   public void testRecordPatternMatchingWithGuards() {
-    ModuleConfig enabledConfig = new ModuleConfig("enabled-module", true, 10);
-    ModuleConfig disabledConfig = new ModuleConfig("disabled-module", false, 5);
-    ModuleConfig highPriorityConfig = new ModuleConfig("high-priority-module", true, 100);
+    Object config = new ModuleConfig("test-module", "1.0.0", true);
     
-    assertThat(getModuleStatus(enabledConfig), is("Module enabled-module is active with priority 10"));
-    assertThat(getModuleStatus(disabledConfig), is("Module disabled-module is inactive"));
-    assertThat(getModuleStatus(highPriorityConfig), is("High priority module: high-priority-module"));
-    assertThat(getModuleStatus(null), is("No module configuration found"));
+    // Java 21 approach with pattern matching and guard condition
+    if (config instanceof ModuleConfig(String name, String version, boolean enabled) && enabled) {
+      assertThat(name, is("test-module"));
+      assertThat(version, is("1.0.0"));
+    }
+    else {
+      fail("Expected ModuleConfig pattern match with guard");
+    }
+    
+    // Alternative approach with pattern matching in switch with guard
+    String result = switch (config) {
+      case ModuleConfig(String name, String version, boolean enabled) when enabled -> 
+          name + "-" + version;
+      case ModuleConfig(String name, String version, boolean enabled) -> 
+          name + "-disabled";
+      default -> "unknown";
+    };
+    
+    assertThat(result, is("test-module-1.0.0"));
+  }
+
+  @Test
+  public void testRecordPatternMatchingWithNullHandling() {
+    OptionalConfig config = new OptionalConfig("test-optional", null, null);
+    
+    // Traditional approach with null checks
+    String description = config.description();
+    ModuleConfig module = config.module();
+    
+    assertThat(description, nullValue());
+    assertThat(module, nullValue());
+    
+    // Java 21 approach with pattern matching and null handling
+    if (config instanceof OptionalConfig(String name, String desc, ModuleConfig mod)) {
+      assertThat(name, is("test-optional"));
+      assertThat(desc, nullValue());
+      assertThat(mod, nullValue());
+    }
+    else {
+      fail("Expected OptionalConfig pattern match");
+    }
+    
+    // Create a non-null config for comparison
+    OptionalConfig fullConfig = new OptionalConfig(
+        "test-optional", 
+        "A description", 
+        new ModuleConfig("inner-module", "2.0.0", false));
+    
+    // Pattern matching with nested patterns and null-safe access
+    String moduleVersion = switch (fullConfig) {
+      case OptionalConfig(var n, var d, ModuleConfig(var mn, var mv, var me)) -> mv;
+      case OptionalConfig(var n, var d, null) -> "N/A";
+      default -> "unknown";
+    };
+    
+    assertThat(moduleVersion, is("2.0.0"));
+    
+    // Same check with the null module config
+    String nullModuleVersion = switch (config) {
+      case OptionalConfig(var n, var d, ModuleConfig(var mn, var mv, var me)) -> mv;
+      case OptionalConfig(var n, var d, null) -> "N/A";
+      default -> "unknown";
+    };
+    
+    assertThat(nullModuleVersion, is("N/A"));
+  }
+
+  @Test
+  public void testExtractConfigurationWithPatternMatching() {
+    // Create a complex configuration structure
+    ModuleConfig moduleConfig = new ModuleConfig("test-module", "1.0.0", true);
+    LifecycleConfig lifecycleConfig = new LifecycleConfig("KERNEL", 10);
+    ExtenderConfig config = new ExtenderConfig(moduleConfig, lifecycleConfig);
+    
+    // Extract configuration using pattern matching
+    String moduleInfo = extractModuleInfo(config);
+    assertThat(moduleInfo, is("Module: test-module v1.0.0 (enabled)"));
+    
+    // Extract with disabled module
+    ModuleConfig disabledModule = new ModuleConfig("test-module", "1.0.0", false);
+    ExtenderConfig disabledConfig = new ExtenderConfig(disabledModule, lifecycleConfig);
+    
+    String disabledInfo = extractModuleInfo(disabledConfig);
+    assertThat(disabledInfo, is("Module: test-module v1.0.0 (disabled)"));
   }
   
   /**
-   * Helper method that uses pattern matching with guards in a switch expression.
+   * Extracts module information using pattern matching.
    */
-  private String getModuleStatus(Object config) {
+  private String extractModuleInfo(Object config) {
     return switch (config) {
-      case ModuleConfig(var name, var enabled, var priority) when priority > 50 -> 
-          "High priority module: " + name;
-      case ModuleConfig(var name, true, var priority) -> 
-          "Module " + name + " is active with priority " + priority;
-      case ModuleConfig(var name, false, var priority) -> 
-          "Module " + name + " is inactive";
-      case null -> 
-          "No module configuration found";
-      default -> 
-          "Unknown configuration";
+      case ExtenderConfig(ModuleConfig(String name, String version, boolean enabled), var lifecycle) when enabled ->
+          String.format("Module: %s v%s (enabled)", name, version);
+      case ExtenderConfig(ModuleConfig(String name, String version, boolean enabled), var lifecycle) ->
+          String.format("Module: %s v%s (disabled)", name, version);
+      default -> "Unknown configuration";
     };
-  }
-
-  /**
-   * Tests pattern matching in switch for different configuration types.
-   */
-  @Test
-  public void testPatternMatchingInSwitch() {
-    ModuleConfig moduleConfig = new ModuleConfig("test-module", true, 10);
-    LifecycleConfig lifecycleConfig = new LifecycleConfig("STARTUP", moduleConfig);
-    AuthConfig authConfig = new AuthConfig("basic", true);
-    
-    assertThat(getConfigType(moduleConfig), is("Module configuration: test-module"));
-    assertThat(getConfigType(lifecycleConfig), is("Lifecycle configuration for phase: STARTUP"));
-    assertThat(getConfigType(authConfig), is("Auth configuration of type: basic"));
-    assertThat(getConfigType("not-a-config"), is("Not a configuration object"));
-  }
-  
-  /**
-   * Helper method that uses pattern matching in a switch expression to determine configuration type.
-   */
-  private String getConfigType(Object config) {
-    return switch (config) {
-      case ModuleConfig(var name, var enabled, var priority) -> 
-          "Module configuration: " + name;
-      case LifecycleConfig(var phase, var moduleConfig) -> 
-          "Lifecycle configuration for phase: " + phase;
-      case AuthConfig(var type, var required) -> 
-          "Auth configuration of type: " + type;
-      default -> 
-          "Not a configuration object";
-    };
-  }
-
-  /**
-   * Tests partial record pattern matching where only some components are extracted.
-   */
-  @Test
-  public void testPartialRecordPatternMatching() {
-    LifecycleConfig config = new LifecycleConfig("STARTUP", new ModuleConfig("test-module", true, 10));
-    Object obj = config;
-    
-    // Extract only the phase from LifecycleConfig
-    if (obj instanceof LifecycleConfig(String phase, var moduleConfig)) {
-      assertThat(phase, is("STARTUP"));
-      // We can still access the moduleConfig as a whole
-      assertThat(moduleConfig.name(), is("test-module"));
-    }
-    
-    // Extract only the name from the nested ModuleConfig
-    if (obj instanceof LifecycleConfig(var phase, ModuleConfig(String name, var enabled, var priority))) {
-      assertThat(phase, is("STARTUP"));
-      assertThat(name, is("test-module"));
-    }
-  }
-
-  /**
-   * Tests record pattern matching with null handling.
-   */
-  @Test
-  public void testRecordPatternMatchingWithNull() {
-    ModuleConfig validConfig = new ModuleConfig("test-module", true, 10);
-    ModuleConfig configWithNullName = new ModuleConfig(null, true, 10);
-    
-    // Pattern matching with non-null values
-    if (validConfig instanceof ModuleConfig(var name, var enabled, var priority)) {
-      assertThat(name, is("test-module"));
-    }
-    
-    // Pattern matching with null component
-    if (configWithNullName instanceof ModuleConfig(var name, var enabled, var priority)) {
-      assertThat(name, is(nullValue()));
-    }
-    
-    // Null doesn't match any record pattern
-    ModuleConfig nullConfig = null;
-    boolean matched = false;
-    
-    if (nullConfig instanceof ModuleConfig(var name, var enabled, var priority)) {
-      matched = true;
-    }
-    
-    assertThat("Null should not match any record pattern", matched, is(false));
   }
 }

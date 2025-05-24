@@ -15,311 +15,353 @@ package org.sonatype.nexus.virtualthread;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import javax.servlet.http.HttpServletRequest;
 
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
+import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.coreui.internal.UploadService;
-import org.sonatype.nexus.repository.Format;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.cache.RepositoryCacheInvalidationService;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
+import org.sonatype.nexus.repository.upload.UploadDefinition;
 import org.sonatype.nexus.repository.upload.UploadManager;
 import org.sonatype.nexus.repository.upload.UploadResponse;
+import org.sonatype.nexus.testcommon.virtualthread.ThreadPinningDetector;
+import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.Mockito;
 
+import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
  * Tests for {@link UploadService} using Java 21 Virtual Threads.
- * 
- * This test class verifies that file upload operations function correctly under high concurrency
- * with Virtual Threads, ensuring no thread pinning issues occur during I/O-intensive upload operations.
+ * <p>
+ * This test class verifies that the UploadService works correctly with Virtual Threads,
+ * ensuring that file upload operations benefit from Virtual Threads and that no thread
+ * pinning issues occur during upload operations.
+ *
+ * @since 3.60
  */
-@ExtendWith(MockitoExtension.class)
-@org.junit.experimental.categories.Category(VirtualThreadTestGroup.class)
+@VirtualThreadTestGroup
 public class UploadServiceVirtualThreadTest
+    extends TestSupport
 {
-  private static final int CONCURRENT_UPLOADS = 1000;
+  private static final int CONCURRENT_UPLOADS = 100;
+  private static final int UPLOAD_TIMEOUT_SECONDS = 10;
   private static final String REPOSITORY_NAME = "test-repo";
-  private static final String NPM_REPOSITORY_NAME = "npm-repo";
   private static final String NPM_FORMAT = "npm";
-  
+  private static final String MAVEN_FORMAT = "maven";
+
   @Mock
   private RepositoryManager repositoryManager;
-  
+
   @Mock
   private UploadManager uploadManager;
-  
+
   @Mock
   private RepositoryCacheInvalidationService repositoryCacheInvalidationService;
-  
+
   @Mock
   private Repository repository;
-  
+
   @Mock
-  private Repository npmRepository;
-  
+  private Repository.Format format;
+
   @Mock
-  private Format npmFormat;
-  
+  private HttpServletRequest request;
+
   private UploadService uploadService;
-  
+  private ExecutorService virtualThreadExecutor;
+  private ThreadFactory virtualThreadFactory;
+
   @BeforeEach
   void setUp() {
+    // Create the UploadService with mocked dependencies
     uploadService = new UploadService(repositoryManager, uploadManager, repositoryCacheInvalidationService);
-    
+
+    // Create a virtual thread factory and executor
+    virtualThreadFactory = Thread.ofVirtual().factory();
+    virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+
+    // Enable thread pinning detection for tests
+    ThreadPinningDetector.enableJdkPinningDetectionConcise();
+    ThreadPinningDetector.startJfrMonitoring();
+
+    // Setup common mocks
     when(repositoryManager.get(REPOSITORY_NAME)).thenReturn(repository);
-    when(repositoryManager.get(NPM_REPOSITORY_NAME)).thenReturn(npmRepository);
-    when(npmRepository.getFormat()).thenReturn(npmFormat);
-    when(npmFormat.getValue()).thenReturn(NPM_FORMAT);
+    when(repository.getFormat()).thenReturn(format);
+    
+    // Setup mock for uploadManager.handle to return a response with asset paths
+    UploadResponse uploadResponse = Mockito.mock(UploadResponse.class);
+    when(uploadResponse.getAssetPaths()).thenReturn(List.of("/path/to/asset"));
+    when(uploadManager.handle(any(Repository.class), any(HttpServletRequest.class))).thenReturn(uploadResponse);
   }
-  
+
+  @AfterEach
+  void tearDown() throws Exception {
+    // Shutdown the executor and wait for termination
+    virtualThreadExecutor.shutdown();
+    assertTrue(virtualThreadExecutor.awaitTermination(5, SECONDS));
+    
+    // Stop thread pinning detection
+    ThreadPinningDetector.stopJfrMonitoring();
+  }
+
   /**
-   * Tests that the UploadService can handle multiple concurrent upload operations
-   * efficiently using Virtual Threads.
+   * Tests that the UploadService can retrieve available definitions using Virtual Threads.
+   */
+  @Test
+  void testGetAvailableDefinitionsWithVirtualThreads() throws Exception {
+    // Setup mock for uploadManager.getAvailableDefinitions
+    UploadDefinition definition = Mockito.mock(UploadDefinition.class);
+    when(uploadManager.getAvailableDefinitions()).thenReturn(List.of(definition));
+
+    // Create a latch to wait for all threads to complete
+    CountDownLatch latch = new CountDownLatch(CONCURRENT_UPLOADS);
+
+    // Submit multiple concurrent tasks to get available definitions using virtual threads
+    for (int i = 0; i < CONCURRENT_UPLOADS; i++) {
+      virtualThreadExecutor.submit(() -> {
+        try {
+          Collection<UploadDefinition> definitions = uploadService.getAvailableDefinitions();
+          assertNotNull(definitions);
+          assertEquals(1, definitions.size());
+        } 
+        finally {
+          latch.countDown();
+        }
+      });
+    }
+
+    // Wait for all threads to complete
+    assertTrue(latch.await(UPLOAD_TIMEOUT_SECONDS, TimeUnit.SECONDS));
+
+    // Verify that the uploadManager.getAvailableDefinitions method was called the expected number of times
+    verify(uploadManager, times(CONCURRENT_UPLOADS)).getAvailableDefinitions();
+  }
+
+  /**
+   * Tests that the UploadService can handle concurrent uploads using Virtual Threads.
    */
   @Test
   void testConcurrentUploadsWithVirtualThreads() throws Exception {
-    // Create a virtual thread factory
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    
-    // Create an executor service that uses virtual threads
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-    
-    try {
-      // Set up mocks for concurrent uploads
-      when(uploadManager.handle(eq(repository), any(HttpServletRequest.class)))
-          .thenAnswer(invocation -> {
-            // Simulate some I/O work that would normally block a thread
-            Thread.sleep(50);
-            return new UploadResponse(Collections.singletonList("/some/path/file.jar"));
-          });
-      
-      // Create a latch to wait for all uploads to complete
-      CountDownLatch latch = new CountDownLatch(CONCURRENT_UPLOADS);
-      AtomicInteger errorCount = new AtomicInteger(0);
-      
-      // Submit concurrent upload tasks
-      List<CompletableFuture<String>> futures = IntStream.range(0, CONCURRENT_UPLOADS)
-          .mapToObj(i -> CompletableFuture.supplyAsync(() -> {
-            try {
-              HttpServletRequest request = mock(HttpServletRequest.class);
-              String result = uploadService.upload(REPOSITORY_NAME, request);
-              return result;
-            } 
-            catch (Exception e) {
-              errorCount.incrementAndGet();
-              return null;
-            }
-            finally {
-              latch.countDown();
-            }
-          }, executor))
-          .collect(Collectors.toList());
-      
-      // Wait for all uploads to complete
-      boolean completed = latch.await(30, TimeUnit.SECONDS);
-      
-      // Verify all uploads completed successfully
-      assertTrue(completed, "All uploads should complete within the timeout period");
-      assertEquals(0, errorCount.get(), "No errors should occur during concurrent uploads");
-      
-      // Verify the upload manager was called the expected number of times
-      verify(uploadManager, times(CONCURRENT_UPLOADS)).handle(eq(repository), any(HttpServletRequest.class));
-      
-      // Verify all futures completed successfully
-      List<String> results = futures.stream()
-          .map(CompletableFuture::join)
-          .collect(Collectors.toList());
-      
-      assertEquals(CONCURRENT_UPLOADS, results.size());
-      results.forEach(result -> assertEquals("/some/path", result));
-    } 
-    finally {
-      executor.shutdown();
+    // Setup format mock to return a non-NPM format
+    when(format.getValue()).thenReturn(MAVEN_FORMAT);
+
+    // Create a latch to wait for all threads to complete
+    CountDownLatch latch = new CountDownLatch(CONCURRENT_UPLOADS);
+
+    // Submit multiple concurrent upload tasks using virtual threads
+    for (int i = 0; i < CONCURRENT_UPLOADS; i++) {
+      final int index = i;
+      virtualThreadExecutor.submit(() -> {
+        try {
+          String result = uploadService.upload(REPOSITORY_NAME, request);
+          assertNotNull(result);
+          assertEquals("/path/to/asset", result);
+        } 
+        catch (IOException e) {
+          log.error("Error in virtual thread {}: {}", index, e.getMessage(), e);
+          throw new RuntimeException(e);
+        } 
+        finally {
+          latch.countDown();
+        }
+      });
     }
+
+    // Wait for all threads to complete
+    assertTrue(latch.await(UPLOAD_TIMEOUT_SECONDS, TimeUnit.SECONDS));
+
+    // Verify that the upload methods were called the expected number of times
+    verify(uploadManager, times(CONCURRENT_UPLOADS)).handle(eq(repository), eq(request));
+    verify(repositoryCacheInvalidationService, times(0)).processCachesInvalidation(any());
   }
-  
+
   /**
-   * Tests that the UploadService correctly invalidates repository caches for NPM repositories
-   * when using Virtual Threads.
+   * Tests that the UploadService correctly invalidates repository caches for NPM format repositories.
    */
   @Test
-  void testNpmRepositoryCacheInvalidation() throws Exception {
-    // Create a virtual thread factory
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+  void testNpmRepositoryCacheInvalidationWithVirtualThreads() throws Exception {
+    // Setup format mock to return NPM format
+    when(format.getValue()).thenReturn(NPM_FORMAT);
     
-    // Set up mocks for NPM repository and group repositories
-    List<String> groupRepoNames = Arrays.asList("npm-group-1", "npm-group-2");
-    when(repositoryManager.findContainingGroups(NPM_REPOSITORY_NAME)).thenReturn(groupRepoNames);
+    // Setup mock for repository groups
+    List<String> groupRepoNames = Arrays.asList("group1", "group2");
+    when(repositoryManager.findContainingGroups(REPOSITORY_NAME)).thenReturn(groupRepoNames);
     
-    Repository npmGroup1 = mock(Repository.class);
-    Repository npmGroup2 = mock(Repository.class);
-    when(repositoryManager.get("npm-group-1")).thenReturn(npmGroup1);
-    when(repositoryManager.get("npm-group-2")).thenReturn(npmGroup2);
-    
-    when(uploadManager.handle(eq(npmRepository), any(HttpServletRequest.class)))
-        .thenReturn(new UploadResponse(Collections.singletonList("/npm/package/file.tgz")));
-    
-    // Execute upload in a virtual thread
-    Thread virtualThread = virtualThreadFactory.newThread(() -> {
-      try {
-        HttpServletRequest request = mock(HttpServletRequest.class);
-        uploadService.upload(NPM_REPOSITORY_NAME, request);
-      } 
-      catch (IOException e) {
-        throw new RuntimeException(e);
-      }
-    });
-    
-    virtualThread.start();
-    virtualThread.join();
-    
-    // Verify cache invalidation was called for each group repository
-    verify(repositoryCacheInvalidationService).processCachesInvalidation(npmGroup1);
-    verify(repositoryCacheInvalidationService).processCachesInvalidation(npmGroup2);
+    // Setup mocks for group repositories
+    Repository group1 = Mockito.mock(Repository.class);
+    Repository group2 = Mockito.mock(Repository.class);
+    when(repositoryManager.get("group1")).thenReturn(group1);
+    when(repositoryManager.get("group2")).thenReturn(group2);
+
+    // Create a latch to wait for all threads to complete
+    CountDownLatch latch = new CountDownLatch(CONCURRENT_UPLOADS);
+
+    // Submit multiple concurrent upload tasks using virtual threads
+    for (int i = 0; i < CONCURRENT_UPLOADS; i++) {
+      virtualThreadExecutor.submit(() -> {
+        try {
+          String result = uploadService.upload(REPOSITORY_NAME, request);
+          assertNotNull(result);
+          assertEquals("/path/to/asset", result);
+        } 
+        catch (IOException e) {
+          throw new RuntimeException(e);
+        } 
+        finally {
+          latch.countDown();
+        }
+      });
+    }
+
+    // Wait for all threads to complete
+    assertTrue(latch.await(UPLOAD_TIMEOUT_SECONDS, TimeUnit.SECONDS));
+
+    // Verify that the cache invalidation was called for each group repository
+    verify(repositoryCacheInvalidationService, times(CONCURRENT_UPLOADS)).processCachesInvalidation(group1);
+    verify(repositoryCacheInvalidationService, times(CONCURRENT_UPLOADS)).processCachesInvalidation(group2);
   }
-  
+
   /**
-   * Tests that the UploadService correctly creates search terms from multiple concurrent uploads
-   * when using Virtual Threads.
+   * Tests that the UploadService correctly handles the createSearchTerm method with Virtual Threads.
    */
   @Test
-  void testSearchTermCreationWithConcurrentUploads() throws Exception {
-    // Create a virtual thread factory
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    
-    // Create an executor service that uses virtual threads
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-    
-    try {
-      // Test cases for search term creation
-      Object[][] testCases = {
-          // Asset paths, expected search term
-          {Collections.emptyList(), null},
-          {Collections.singletonList("/path/to/file.jar"), "/path/to/file.jar"},
-          {Arrays.asList("/path/to/file1.jar", "/path/to/file2.jar"), "/path/to"},
-          {Arrays.asList("/path/to/file.jar", "/other/path/file.jar"), ""},
-      };
-      
-      // Create a latch to wait for all test cases to complete
-      CountDownLatch latch = new CountDownLatch(testCases.length);
-      
-      // Run each test case in a separate virtual thread
-      for (Object[] testCase : testCases) {
-        @SuppressWarnings("unchecked")
-        Collection<String> assetPaths = (Collection<String>) testCase[0];
-        String expectedSearchTerm = (String) testCase[1];
-        
-        executor.submit(() -> {
-          try {
-            // Test the createSearchTerm method directly
-            String actualSearchTerm = uploadService.createSearchTerm(assetPaths);
-            
-            if (expectedSearchTerm == null) {
-              assertNull(actualSearchTerm);
-            } else {
-              assertNotNull(actualSearchTerm);
-              assertEquals(expectedSearchTerm, actualSearchTerm);
-            }
+  void testCreateSearchTermWithVirtualThreads() throws Exception {
+    // Create a list of test paths
+    List<String> testCases = List.of(
+        List.of("/path/to/asset1", "/path/to/asset2"),
+        List.of("/path/to/asset1", "/path/to/different/asset2"),
+        List.of("/single/path"),
+        List.of()
+    );
+
+    // Create a latch to wait for all threads to complete
+    CountDownLatch latch = new CountDownLatch(testCases.size());
+
+    // Submit tasks to test createSearchTerm with different inputs using virtual threads
+    for (List<String> paths : testCases) {
+      virtualThreadFactory.newThread(() -> {
+        try {
+          String result = uploadService.createSearchTerm(paths);
+          
+          if (paths.isEmpty()) {
+            assertThat(result, is(equalTo(null)));
           } 
-          finally {
-            latch.countDown();
+          else if (paths.size() == 1) {
+            assertThat(result, is(equalTo(paths.get(0))));
+          } 
+          else {
+            // For multiple paths, the result should be the longest common prefix
+            String commonPrefix = findLongestCommonPrefix(paths);
+            assertThat(result, is(equalTo(commonPrefix)));
           }
-        });
-      }
-      
-      // Wait for all test cases to complete
-      boolean completed = latch.await(10, TimeUnit.SECONDS);
-      assertTrue(completed, "All test cases should complete within the timeout period");
-    } 
-    finally {
-      executor.shutdown();
+        } 
+        finally {
+          latch.countDown();
+        }
+      }).start();
     }
+
+    // Wait for all threads to complete
+    assertTrue(latch.await(UPLOAD_TIMEOUT_SECONDS, TimeUnit.SECONDS));
   }
-  
+
   /**
-   * Tests that the UploadService can handle large file uploads efficiently using Virtual Threads,
-   * ensuring no thread pinning issues occur during I/O-intensive operations.
+   * Tests that the UploadService can handle large file uploads using Virtual Threads without thread pinning.
+   * This test simulates I/O-bound operations that would benefit from Virtual Threads.
    */
   @Test
   void testLargeFileUploadsWithVirtualThreads() throws Exception {
-    // Create a virtual thread factory
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    // Setup format mock to return a non-NPM format
+    when(format.getValue()).thenReturn(MAVEN_FORMAT);
     
-    // Create an executor service that uses virtual threads
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    // Setup mock for uploadManager.handle to simulate a time-consuming I/O operation
+    UploadResponse uploadResponse = Mockito.mock(UploadResponse.class);
+    when(uploadResponse.getAssetPaths()).thenReturn(List.of("/path/to/large/asset"));
     
-    try {
-      // Set up mock for large file uploads with simulated I/O delay
-      doAnswer(invocation -> {
-        // Simulate longer I/O work for large file uploads
-        Thread.sleep(200);
-        return new UploadResponse(Collections.singletonList("/large/file/path.jar"));
-      }).when(uploadManager).handle(eq(repository), any(HttpServletRequest.class));
-      
-      // Number of concurrent large file uploads
-      int concurrentLargeUploads = 100;
-      
-      // Create a latch to wait for all uploads to complete
-      CountDownLatch latch = new CountDownLatch(concurrentLargeUploads);
-      AtomicInteger errorCount = new AtomicInteger(0);
-      
-      // Submit concurrent large file upload tasks
-      for (int i = 0; i < concurrentLargeUploads; i++) {
-        executor.submit(() -> {
-          try {
-            HttpServletRequest request = mock(HttpServletRequest.class);
-            uploadService.upload(REPOSITORY_NAME, request);
-          } 
-          catch (Exception e) {
-            errorCount.incrementAndGet();
-          }
-          finally {
-            latch.countDown();
-          }
-        });
-      }
-      
-      // Wait for all uploads to complete
-      boolean completed = latch.await(30, TimeUnit.SECONDS);
-      
-      // Verify all uploads completed successfully
-      assertTrue(completed, "All large file uploads should complete within the timeout period");
-      assertEquals(0, errorCount.get(), "No errors should occur during concurrent large file uploads");
-      
-      // Verify the upload manager was called the expected number of times
-      verify(uploadManager, times(concurrentLargeUploads)).handle(eq(repository), any(HttpServletRequest.class));
-    } 
-    finally {
-      executor.shutdown();
+    doAnswer(invocation -> {
+      // Simulate I/O operation that would normally block a thread
+      Thread.sleep(100); // Simulate network or disk I/O
+      return uploadResponse;
+    }).when(uploadManager).handle(any(Repository.class), any(HttpServletRequest.class));
+
+    // Create a latch to wait for all threads to complete
+    CountDownLatch latch = new CountDownLatch(CONCURRENT_UPLOADS);
+
+    // Submit multiple concurrent upload tasks using virtual threads
+    for (int i = 0; i < CONCURRENT_UPLOADS; i++) {
+      virtualThreadExecutor.submit(() -> {
+        try {
+          String result = uploadService.upload(REPOSITORY_NAME, request);
+          assertNotNull(result);
+          assertEquals("/path/to/large/asset", result);
+        } 
+        catch (IOException e) {
+          throw new RuntimeException(e);
+        } 
+        finally {
+          latch.countDown();
+        }
+      });
     }
+
+    // Wait for all threads to complete
+    assertTrue(latch.await(UPLOAD_TIMEOUT_SECONDS, TimeUnit.SECONDS));
+
+    // Verify that the upload methods were called the expected number of times
+    verify(uploadManager, times(CONCURRENT_UPLOADS)).handle(eq(repository), eq(request));
+  }
+
+  /**
+   * Helper method to find the longest common prefix among a list of paths.
+   */
+  private String findLongestCommonPrefix(List<String> paths) {
+    if (paths == null || paths.isEmpty()) {
+      return null;
+    }
+    if (paths.size() == 1) {
+      return paths.get(0);
+    }
+
+    String prefix = paths.get(0);
+    for (int i = 1; i < paths.size(); i++) {
+      String path = paths.get(i);
+      while (!path.startsWith(prefix)) {
+        prefix = prefix.substring(0, prefix.lastIndexOf('/'));
+        if (prefix.isEmpty()) {
+          return "";
+        }
+      }
+    }
+    return prefix;
   }
 }

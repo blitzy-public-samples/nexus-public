@@ -12,9 +12,6 @@
  */
 package org.sonatype.nexus.datastore.mybatis;
 
-import java.io.File;
-import java.util.Optional;
-
 import org.sonatype.nexus.common.app.ApplicationDirectories;
 import org.sonatype.nexus.common.app.ManagedLifecycleManager;
 import org.sonatype.nexus.common.io.FileFinder;
@@ -29,13 +26,16 @@ import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import java.io.File;
+import java.util.Optional;
 
+import static org.mockito.Mockito.*;
+
+/**
+ * Tests for {@link H2VersionUpgrader}.
+ */
 @ExtendWith(MockitoExtension.class)
-class H2VersionUpgraderTest
+public class H2VersionUpgraderTest
 {
   @Mock
   private ApplicationDirectories directories;
@@ -43,26 +43,32 @@ class H2VersionUpgraderTest
   @Mock
   private ManagedLifecycleManager managedLifecycleManager;
 
-  @InjectMocks
-  private H2VersionUpgrader underTest;
-
   @Mock
   private HikariConfig hikariConfig;
 
+  @InjectMocks
+  private H2VersionUpgrader underTest;
+
   @BeforeEach
-  void setUp() {
-    // No need to manually initialize mocks or create underTest as MockitoExtension handles this
+  public void setUp() {
+    // Re-initialize the underTest object with mocks
+    underTest = new H2VersionUpgrader(directories, managedLifecycleManager);
   }
 
   @Test
-  void upgradeH2DatabaseWhenSqlFileNotPresent() throws Exception {
-    when(directories.getWorkDirectory(any(String.class))).thenReturn(new File("/"));
+  public void upgradeH2DatabaseWhenSqlFileNotPresent() throws Exception {
+    // Setup mocks
+    lenient().when(directories.getWorkDirectory(any(String.class))).thenReturn(new File("/"));
+    
+    // Use try-with-resources for MockedStatic to ensure proper resource management in Java 21
     try (MockedStatic<FileFinder> utilities = Mockito.mockStatic(FileFinder.class)) {
       utilities.when(() -> FileFinder.findLatestTimestampedFile(any(), any(), any())).thenReturn(Optional.empty());
+      
+      // Execute the method under test
+      underTest.upgradeH2Database("testStore", hikariConfig);
+      
+      // Verify the expected behavior
+      verify(managedLifecycleManager).shutdownWithExitCode(1);
     }
-
-    underTest.upgradeH2Database("testStore", hikariConfig);
-
-    verify(managedLifecycleManager).shutdownWithExitCode(1);
   }
 }

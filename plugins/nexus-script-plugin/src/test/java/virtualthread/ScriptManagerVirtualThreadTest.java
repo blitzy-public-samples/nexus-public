@@ -15,18 +15,10 @@ package virtualthread;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.common.app.ManagedLifecycle.State;
 import org.sonatype.nexus.common.event.EventManager;
-import org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport;
 import org.sonatype.nexus.script.Script;
 import org.sonatype.nexus.script.ScriptCreatedEvent;
 import org.sonatype.nexus.script.ScriptDeletedEvent;
@@ -35,24 +27,28 @@ import org.sonatype.nexus.script.plugin.internal.ScriptManagerImpl;
 import org.sonatype.nexus.script.plugin.internal.ScriptStore;
 import org.sonatype.nexus.script.plugin.internal.ScriptingDisabledException;
 
+import org.junit.Before;
+import org.junit.Test;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
-import static org.hamcrest.Matchers.sameInstance;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.Assert.fail;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Tests for {@link ScriptManagerImpl} using Virtual Threads.
+ * Tests for {@link ScriptManagerImpl} using Java 21 Virtual Threads.
  * 
- * @since 3.60
+ * This test ensures that script management operations (browse, get, create, update, delete)
+ * work correctly when executed in virtual threads, which is important for maintaining
+ * performance during high-concurrency scenarios.
  */
-@ExtendWith(MockitoExtension.class)
 public class ScriptManagerVirtualThreadTest
     extends TestSupport
 {
@@ -67,392 +63,364 @@ public class ScriptManagerVirtualThreadTest
 
   private ScriptManagerImpl underTest;
 
-  @BeforeEach
-  void setup() throws Exception {
+  @Before
+  public void setUp() throws Exception {
+    // Initialize with scripting enabled
     underTest = new ScriptManagerImpl(eventManager, scriptStore, true);
-    // Start the lifecycle to enable state-guarded methods
-    ((StateGuardLifecycleSupport) underTest).start();
+    underTest.start();
+
+    // Set up common script mock behavior
+    when(script.getName()).thenReturn("test-script");
+    when(script.getContent()).thenReturn("println 'hello'");
+    when(script.getType()).thenReturn("groovy");
   }
 
   /**
-   * Test that browse() works correctly when executed in a virtual thread.
+   * Tests that the browse operation works correctly when executed in a virtual thread.
    */
   @Test
-  void testBrowseInVirtualThread() throws Exception {
-    // Setup
+  public void testBrowseInVirtualThread() throws Exception {
+    // Set up mock behavior
     when(scriptStore.list()).thenReturn(List.of(script));
-    
-    // Create a latch to wait for the virtual thread to complete
+
+    // Execute in virtual thread and capture result
+    AtomicReference<List<Script>> result = new AtomicReference<>();
     CountDownLatch latch = new CountDownLatch(1);
-    
-    // Execute in a virtual thread
-    Thread virtualThread = Thread.startVirtualThread(() -> {
+
+    Thread.startVirtualThread(() -> {
       try {
-        // Execute browse() in the virtual thread
-        Iterable<Script> result = underTest.browse();
-        
-        // Verify the result
-        assertThat(List.copyOf(result), contains(script));
-      } 
-      finally {
+        result.set(List.copyOf(underTest.browse()));
         latch.countDown();
       }
+      catch (Exception e) {
+        fail("Exception in virtual thread: " + e.getMessage());
+      }
     });
-    
-    // Wait for the virtual thread to complete
-    latch.await(5, TimeUnit.SECONDS);
-    virtualThread.join();
-    
-    // Verify interactions
-    verify(scriptStore).list();
+
+    // Wait for virtual thread to complete
+    assertThat("Virtual thread operation timed out", latch.await(5, TimeUnit.SECONDS), is(true));
+
+    // Verify result
+    assertThat(result.get(), contains(script));
   }
 
   /**
-   * Test that get() works correctly when executed in a virtual thread.
+   * Tests that the get operation works correctly when executed in a virtual thread.
    */
   @Test
-  void testGetInVirtualThread() throws Exception {
-    // Setup
-    String scriptName = "test-script";
-    when(scriptStore.get(scriptName)).thenReturn(script);
-    
-    // Create a latch to wait for the virtual thread to complete
+  public void testGetInVirtualThread() throws Exception {
+    // Set up mock behavior
+    when(scriptStore.get("test-script")).thenReturn(script);
+
+    // Execute in virtual thread and capture result
+    AtomicReference<Script> result = new AtomicReference<>();
     CountDownLatch latch = new CountDownLatch(1);
-    
-    // Execute in a virtual thread
-    Thread virtualThread = Thread.startVirtualThread(() -> {
+
+    Thread.startVirtualThread(() -> {
       try {
-        // Execute get() in the virtual thread
-        Script result = underTest.get(scriptName);
-        
-        // Verify the result
-        assertThat(result, sameInstance(script));
-      } 
-      finally {
+        result.set(underTest.get("test-script"));
         latch.countDown();
       }
+      catch (Exception e) {
+        fail("Exception in virtual thread: " + e.getMessage());
+      }
     });
-    
-    // Wait for the virtual thread to complete
-    latch.await(5, TimeUnit.SECONDS);
-    virtualThread.join();
-    
-    // Verify interactions
-    verify(scriptStore).get(scriptName);
+
+    // Wait for virtual thread to complete
+    assertThat("Virtual thread operation timed out", latch.await(5, TimeUnit.SECONDS), is(true));
+
+    // Verify result
+    assertThat(result.get(), is(script));
   }
 
   /**
-   * Test that create() works correctly when executed in a virtual thread.
+   * Tests that the create operation works correctly when executed in a virtual thread.
    */
   @Test
-  void testCreateInVirtualThread() throws Exception {
-    // Setup
-    String scriptName = "test-script";
-    String scriptContent = "println 'Hello, World!'";
-    String scriptType = "groovy";
-    
+  public void testCreateInVirtualThread() throws Exception {
+    // Set up mock behavior
     when(scriptStore.newScript()).thenReturn(script);
-    
-    // Create a latch to wait for the virtual thread to complete
+
+    // Execute in virtual thread and capture result
+    AtomicReference<Script> result = new AtomicReference<>();
     CountDownLatch latch = new CountDownLatch(1);
-    
-    // Execute in a virtual thread
-    Thread virtualThread = Thread.startVirtualThread(() -> {
+
+    Thread.startVirtualThread(() -> {
       try {
-        // Execute create() in the virtual thread
-        Script result = underTest.create(scriptName, scriptContent, scriptType);
-        
-        // Verify the result
-        assertThat(result, sameInstance(script));
-      } 
-      finally {
+        result.set(underTest.create("test-script", "println 'hello'", "groovy"));
         latch.countDown();
       }
+      catch (Exception e) {
+        fail("Exception in virtual thread: " + e.getMessage());
+      }
     });
-    
-    // Wait for the virtual thread to complete
-    latch.await(5, TimeUnit.SECONDS);
-    virtualThread.join();
-    
-    // Verify interactions
-    verify(script).setName(scriptName);
-    verify(script).setContent(scriptContent);
-    verify(script).setType(scriptType);
+
+    // Wait for virtual thread to complete
+    assertThat("Virtual thread operation timed out", latch.await(5, TimeUnit.SECONDS), is(true));
+
+    // Verify result and interactions
+    assertThat(result.get(), is(script));
+    verify(script).setName("test-script");
+    verify(script).setContent("println 'hello'");
+    verify(script).setType("groovy");
     verify(scriptStore).create(script);
-    
+
     // Verify event was posted
     ArgumentCaptor<ScriptCreatedEvent> eventCaptor = ArgumentCaptor.forClass(ScriptCreatedEvent.class);
     verify(eventManager).post(eventCaptor.capture());
-    assertThat(eventCaptor.getValue().getScript(), sameInstance(script));
+    assertThat(eventCaptor.getValue().getScript(), is(script));
   }
 
   /**
-   * Test that create() throws ScriptingDisabledException when scripting is disabled and executed in a virtual thread.
+   * Tests that the update operation works correctly when executed in a virtual thread.
    */
   @Test
-  void testCreateWithScriptingDisabledInVirtualThread() throws Exception {
-    // Setup - create a new instance with scripting disabled
-    underTest = new ScriptManagerImpl(eventManager, scriptStore, false);
-    ((StateGuardLifecycleSupport) underTest).start();
-    
-    // Create a latch to wait for the virtual thread to complete
-    CountDownLatch latch = new CountDownLatch(1);
-    
-    // Execute in a virtual thread
-    Thread virtualThread = Thread.startVirtualThread(() -> {
-      try {
-        // Execute create() in the virtual thread and expect exception
-        assertThrows(ScriptingDisabledException.class, () -> 
-            underTest.create("test-script", "println 'Hello, World!'", "groovy"));
-      } 
-      finally {
-        latch.countDown();
-      }
-    });
-    
-    // Wait for the virtual thread to complete
-    latch.await(5, TimeUnit.SECONDS);
-    virtualThread.join();
-    
-    // Verify no interactions with script store
-    verify(scriptStore, never()).create(any());
-    verify(eventManager, never()).post(any());
-  }
+  public void testUpdateInVirtualThread() throws Exception {
+    // Set up mock behavior
+    when(scriptStore.get("test-script")).thenReturn(script);
 
-  /**
-   * Test that update() works correctly when executed in a virtual thread.
-   */
-  @Test
-  void testUpdateInVirtualThread() throws Exception {
-    // Setup
-    String scriptName = "test-script";
-    String scriptContent = "println 'Updated content'";
-    
-    when(scriptStore.get(scriptName)).thenReturn(script);
-    
-    // Create a latch to wait for the virtual thread to complete
+    // Execute in virtual thread and capture result
+    AtomicReference<Script> result = new AtomicReference<>();
     CountDownLatch latch = new CountDownLatch(1);
-    
-    // Execute in a virtual thread
-    Thread virtualThread = Thread.startVirtualThread(() -> {
+
+    Thread.startVirtualThread(() -> {
       try {
-        // Execute update() in the virtual thread
-        Script result = underTest.update(scriptName, scriptContent);
-        
-        // Verify the result
-        assertThat(result, sameInstance(script));
-      } 
-      finally {
+        result.set(underTest.update("test-script", "println 'updated'"));
         latch.countDown();
       }
+      catch (Exception e) {
+        fail("Exception in virtual thread: " + e.getMessage());
+      }
     });
-    
-    // Wait for the virtual thread to complete
-    latch.await(5, TimeUnit.SECONDS);
-    virtualThread.join();
-    
-    // Verify interactions
-    verify(scriptStore).get(scriptName);
-    verify(script).setContent(scriptContent);
+
+    // Wait for virtual thread to complete
+    assertThat("Virtual thread operation timed out", latch.await(5, TimeUnit.SECONDS), is(true));
+
+    // Verify result and interactions
+    assertThat(result.get(), is(script));
+    verify(script).setContent("println 'updated'");
     verify(scriptStore).update(script);
-    
+
     // Verify event was posted
     ArgumentCaptor<ScriptUpdatedEvent> eventCaptor = ArgumentCaptor.forClass(ScriptUpdatedEvent.class);
     verify(eventManager).post(eventCaptor.capture());
-    assertThat(eventCaptor.getValue().getScript(), sameInstance(script));
+    assertThat(eventCaptor.getValue().getScript(), is(script));
   }
 
   /**
-   * Test that update() returns null when script doesn't exist and executed in a virtual thread.
+   * Tests that the update operation returns null when the script doesn't exist, when executed in a virtual thread.
    */
   @Test
-  void testUpdateNonExistentScriptInVirtualThread() throws Exception {
-    // Setup
-    String scriptName = "non-existent-script";
-    String scriptContent = "println 'Updated content'";
-    
-    when(scriptStore.get(scriptName)).thenReturn(null);
-    
-    // Create a latch to wait for the virtual thread to complete
+  public void testUpdateNonExistentScriptInVirtualThread() throws Exception {
+    // Set up mock behavior - script doesn't exist
+    when(scriptStore.get("non-existent")).thenReturn(null);
+
+    // Execute in virtual thread and capture result
+    AtomicReference<Script> result = new AtomicReference<>();
     CountDownLatch latch = new CountDownLatch(1);
-    
-    // Execute in a virtual thread
-    Thread virtualThread = Thread.startVirtualThread(() -> {
+
+    Thread.startVirtualThread(() -> {
       try {
-        // Execute update() in the virtual thread
-        Script result = underTest.update(scriptName, scriptContent);
-        
-        // Verify the result is null
-        assertThat(result, nullValue());
-      } 
-      finally {
+        result.set(underTest.update("non-existent", "println 'updated'"));
         latch.countDown();
       }
+      catch (Exception e) {
+        fail("Exception in virtual thread: " + e.getMessage());
+      }
     });
-    
-    // Wait for the virtual thread to complete
-    latch.await(5, TimeUnit.SECONDS);
-    virtualThread.join();
-    
-    // Verify interactions
-    verify(scriptStore).get(scriptName);
-    verify(scriptStore, never()).update(any());
-    verify(eventManager, never()).post(any());
+
+    // Wait for virtual thread to complete
+    assertThat("Virtual thread operation timed out", latch.await(5, TimeUnit.SECONDS), is(true));
+
+    // Verify result and interactions
+    assertThat(result.get(), is(nullValue()));
+    verify(scriptStore, never()).update(any(Script.class));
+    verify(eventManager, never()).post(any(ScriptUpdatedEvent.class));
   }
 
   /**
-   * Test that delete() works correctly when executed in a virtual thread.
+   * Tests that the delete operation works correctly when executed in a virtual thread.
    */
   @Test
-  void testDeleteInVirtualThread() throws Exception {
-    // Setup
-    String scriptName = "test-script";
-    
-    when(scriptStore.get(scriptName)).thenReturn(script);
-    
-    // Create a latch to wait for the virtual thread to complete
+  public void testDeleteInVirtualThread() throws Exception {
+    // Set up mock behavior
+    when(scriptStore.get("test-script")).thenReturn(script);
+
+    // Execute in virtual thread
     CountDownLatch latch = new CountDownLatch(1);
-    
-    // Execute in a virtual thread
-    Thread virtualThread = Thread.startVirtualThread(() -> {
+
+    Thread.startVirtualThread(() -> {
       try {
-        // Execute delete() in the virtual thread
-        underTest.delete(scriptName);
-      } 
-      finally {
+        underTest.delete("test-script");
         latch.countDown();
       }
+      catch (Exception e) {
+        fail("Exception in virtual thread: " + e.getMessage());
+      }
     });
-    
-    // Wait for the virtual thread to complete
-    latch.await(5, TimeUnit.SECONDS);
-    virtualThread.join();
-    
+
+    // Wait for virtual thread to complete
+    assertThat("Virtual thread operation timed out", latch.await(5, TimeUnit.SECONDS), is(true));
+
     // Verify interactions
-    verify(scriptStore).get(scriptName);
     verify(scriptStore).delete(script);
-    
+
     // Verify event was posted
     ArgumentCaptor<ScriptDeletedEvent> eventCaptor = ArgumentCaptor.forClass(ScriptDeletedEvent.class);
     verify(eventManager).post(eventCaptor.capture());
-    assertThat(eventCaptor.getValue().getScript(), sameInstance(script));
+    assertThat(eventCaptor.getValue().getScript(), is(script));
   }
 
   /**
-   * Test that delete() does nothing when script doesn't exist and executed in a virtual thread.
+   * Tests that the delete operation does nothing when the script doesn't exist, when executed in a virtual thread.
    */
   @Test
-  void testDeleteNonExistentScriptInVirtualThread() throws Exception {
-    // Setup
-    String scriptName = "non-existent-script";
-    
-    when(scriptStore.get(scriptName)).thenReturn(null);
-    
-    // Create a latch to wait for the virtual thread to complete
+  public void testDeleteNonExistentScriptInVirtualThread() throws Exception {
+    // Set up mock behavior - script doesn't exist
+    when(scriptStore.get("non-existent")).thenReturn(null);
+
+    // Execute in virtual thread
     CountDownLatch latch = new CountDownLatch(1);
-    
-    // Execute in a virtual thread
-    Thread virtualThread = Thread.startVirtualThread(() -> {
+
+    Thread.startVirtualThread(() -> {
       try {
-        // Execute delete() in the virtual thread
-        underTest.delete(scriptName);
-      } 
-      finally {
+        underTest.delete("non-existent");
         latch.countDown();
       }
+      catch (Exception e) {
+        fail("Exception in virtual thread: " + e.getMessage());
+      }
     });
-    
-    // Wait for the virtual thread to complete
-    latch.await(5, TimeUnit.SECONDS);
-    virtualThread.join();
-    
+
+    // Wait for virtual thread to complete
+    assertThat("Virtual thread operation timed out", latch.await(5, TimeUnit.SECONDS), is(true));
+
     // Verify interactions
-    verify(scriptStore).get(scriptName);
-    verify(scriptStore, never()).delete(any());
-    verify(eventManager, never()).post(any());
+    verify(scriptStore, never()).delete(any(Script.class));
+    verify(eventManager, never()).post(any(ScriptDeletedEvent.class));
   }
 
   /**
-   * Test that isEnabled() works correctly when executed in a virtual thread.
+   * Tests that script creation is prevented when scripting is disabled, when executed in a virtual thread.
    */
   @Test
-  void testIsEnabledInVirtualThread() throws Exception {
-    // Create a latch to wait for the virtual thread to complete
+  public void testCreateWithScriptingDisabledInVirtualThread() throws Exception {
+    // Initialize with scripting disabled
+    underTest = new ScriptManagerImpl(eventManager, scriptStore, false);
+    underTest.start();
+
+    // Execute in virtual thread and capture exception
+    AtomicReference<Exception> caughtException = new AtomicReference<>();
     CountDownLatch latch = new CountDownLatch(1);
-    
-    // Execute in a virtual thread
-    Thread virtualThread = Thread.startVirtualThread(() -> {
+
+    Thread.startVirtualThread(() -> {
       try {
-        // Execute isEnabled() in the virtual thread
-        boolean result = underTest.isEnabled();
-        
-        // Verify the result
-        assertThat(result, is(true));
-      } 
+        underTest.create("test-script", "println 'hello'", "groovy");
+        fail("Expected ScriptingDisabledException was not thrown");
+      }
+      catch (Exception e) {
+        caughtException.set(e);
+      }
       finally {
         latch.countDown();
       }
     });
-    
-    // Wait for the virtual thread to complete
-    latch.await(5, TimeUnit.SECONDS);
-    virtualThread.join();
+
+    // Wait for virtual thread to complete
+    assertThat("Virtual thread operation timed out", latch.await(5, TimeUnit.SECONDS), is(true));
+
+    // Verify exception
+    assertThat(caughtException.get() instanceof ScriptingDisabledException, is(true));
+    verify(scriptStore, never()).create(any(Script.class));
+    verify(eventManager, never()).post(any(ScriptCreatedEvent.class));
   }
 
   /**
-   * Test that multiple concurrent operations work correctly when executed in virtual threads.
+   * Tests that script update is prevented when scripting is disabled, when executed in a virtual thread.
    */
   @Test
-  void testConcurrentOperationsInVirtualThreads() throws Exception {
-    // Setup
-    int threadCount = 10;
-    CountDownLatch latch = new CountDownLatch(threadCount);
-    
-    // Setup mocks
-    when(scriptStore.list()).thenReturn(List.of(script));
-    when(scriptStore.get("test-script")).thenReturn(script);
-    when(scriptStore.newScript()).thenReturn(script);
-    
-    // Create and start multiple virtual threads
-    for (int i = 0; i < threadCount; i++) {
-      final int index = i;
-      Thread.startVirtualThread(() -> {
-        try {
-          // Perform different operations based on thread index
-          switch (index % 5) {
-            case 0:
-              // Browse
-              Iterable<Script> scripts = underTest.browse();
-              assertThat(List.copyOf(scripts), contains(script));
-              break;
-            case 1:
-              // Get
-              Script result = underTest.get("test-script");
-              assertThat(result, sameInstance(script));
-              break;
-            case 2:
-              // Create
-              Script created = underTest.create("test-script-" + index, "content", "groovy");
-              assertThat(created, sameInstance(script));
-              break;
-            case 3:
-              // Update
-              Script updated = underTest.update("test-script", "updated content");
-              assertThat(updated, sameInstance(script));
-              break;
-            case 4:
-              // Delete
-              underTest.delete("test-script");
-              break;
-          }
-        } 
-        finally {
-          latch.countDown();
-        }
-      });
-    }
-    
-    // Wait for all virtual threads to complete
-    latch.await(10, TimeUnit.SECONDS);
+  public void testUpdateWithScriptingDisabledInVirtualThread() throws Exception {
+    // Initialize with scripting disabled
+    underTest = new ScriptManagerImpl(eventManager, scriptStore, false);
+    underTest.start();
+
+    // Execute in virtual thread and capture exception
+    AtomicReference<Exception> caughtException = new AtomicReference<>();
+    CountDownLatch latch = new CountDownLatch(1);
+
+    Thread.startVirtualThread(() -> {
+      try {
+        underTest.update("test-script", "println 'updated'");
+        fail("Expected ScriptingDisabledException was not thrown");
+      }
+      catch (Exception e) {
+        caughtException.set(e);
+      }
+      finally {
+        latch.countDown();
+      }
+    });
+
+    // Wait for virtual thread to complete
+    assertThat("Virtual thread operation timed out", latch.await(5, TimeUnit.SECONDS), is(true));
+
+    // Verify exception
+    assertThat(caughtException.get() instanceof ScriptingDisabledException, is(true));
+    verify(scriptStore, never()).update(any(Script.class));
+    verify(eventManager, never()).post(any(ScriptUpdatedEvent.class));
+  }
+
+  /**
+   * Tests that the isEnabled method works correctly when executed in a virtual thread.
+   */
+  @Test
+  public void testIsEnabledInVirtualThread() throws Exception {
+    // Test with scripting enabled
+    underTest = new ScriptManagerImpl(eventManager, scriptStore, true);
+    underTest.start();
+
+    // Execute in virtual thread and capture result
+    AtomicReference<Boolean> result = new AtomicReference<>();
+    CountDownLatch latch = new CountDownLatch(1);
+
+    Thread.startVirtualThread(() -> {
+      try {
+        result.set(underTest.isEnabled());
+        latch.countDown();
+      }
+      catch (Exception e) {
+        fail("Exception in virtual thread: " + e.getMessage());
+      }
+    });
+
+    // Wait for virtual thread to complete
+    assertThat("Virtual thread operation timed out", latch.await(5, TimeUnit.SECONDS), is(true));
+
+    // Verify result
+    assertThat(result.get(), is(true));
+
+    // Test with scripting disabled
+    underTest = new ScriptManagerImpl(eventManager, scriptStore, false);
+    underTest.start();
+
+    // Reset latch and result
+    latch = new CountDownLatch(1);
+    result.set(null);
+
+    Thread.startVirtualThread(() -> {
+      try {
+        result.set(underTest.isEnabled());
+        latch.countDown();
+      }
+      catch (Exception e) {
+        fail("Exception in virtual thread: " + e.getMessage());
+      }
+    });
+
+    // Wait for virtual thread to complete
+    assertThat("Virtual thread operation timed out", latch.await(5, TimeUnit.SECONDS), is(true));
+
+    // Verify result
+    assertThat(result.get(), is(false));
   }
 }

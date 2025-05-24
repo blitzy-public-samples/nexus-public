@@ -18,7 +18,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
-import java.util.stream.Collectors;
 
 import org.sonatype.nexus.common.app.BaseUrlHolder;
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
@@ -43,22 +42,23 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.Mockito;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 import static com.google.common.collect.Maps.newHashMap;
-import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.AdditionalMatchers.not;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Tests the {@link MavenApiRepositoryAdapter} using Java 21 Virtual Threads to ensure it correctly transforms
- * Nexus Repository instances into their REST API model representations when executed concurrently in a
- * Virtual Thread environment.
+ * Tests for {@link MavenApiRepositoryAdapter} using Java 21 Virtual Threads.
  */
+@ExtendWith(MockitoExtension.class)
 public class MavenApiRepositoryAdapterVirtualThreadTest
     extends VirtualThreadTestSupport
 {
@@ -118,7 +118,7 @@ public class MavenApiRepositoryAdapterVirtualThreadTest
 
   /**
    * Tests concurrent adaptation of multiple repository types using Virtual Threads.
-   * This test validates that the adapter can handle concurrent operations in a Virtual Thread environment.
+   * This validates that the adapter is thread-safe when used concurrently in a Virtual Thread environment.
    */
   @Test
   public void testConcurrentAdaptWithVirtualThreads() throws Exception {
@@ -136,50 +136,45 @@ public class MavenApiRepositoryAdapterVirtualThreadTest
     
     List<Repository> repositories = Arrays.asList(groupRepo, hostedRepo, proxyRepo);
     
-    // Create a virtual thread executor
+    // Create a virtual thread factory and executor
     ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
-      // Adapt all repositories concurrently using virtual threads
-      List<CompletableFuture<AbstractApiRepository>> futures = repositories.stream()
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    try {
+      // Adapt all repositories concurrently using CompletableFuture with virtual threads
+      CompletableFuture<?>[] futures = repositories.stream()
           .map(repo -> CompletableFuture.supplyAsync(() -> underTest.adapt(repo), executor))
-          .collect(Collectors.toList());
+          .toArray(CompletableFuture[]::new);
       
       // Wait for all adaptations to complete
-      CompletableFuture<Void> allFutures = CompletableFuture.allOf(
-          futures.toArray(new CompletableFuture[0]));
-      
-      // Get the results
-      allFutures.join();
-      List<AbstractApiRepository> results = futures.stream()
-          .map(CompletableFuture::join)
-          .collect(Collectors.toList());
+      CompletableFuture.allOf(futures).join();
       
       // Verify results
-      assertThat(results.size(), is(3));
+      AbstractApiRepository groupResult = (AbstractApiRepository) futures[0].get();
+      AbstractApiRepository hostedResult = (AbstractApiRepository) futures[1].get();
+      AbstractApiRepository proxyResult = (AbstractApiRepository) futures[2].get();
       
-      // Verify each repository was adapted correctly
-      AbstractApiRepository adaptedGroupRepo = results.stream()
-          .filter(repo -> repo.getType().equals("group"))
-          .findFirst()
-          .orElse(null);
-      assertThat(adaptedGroupRepo, notNullValue());
-      assertRepository(adaptedGroupRepo, "group", true);
+      // Verify group repository
+      assertThat(groupResult instanceof SimpleApiGroupRepository, is(true));
+      assertRepository(groupResult, "group", true);
       
-      AbstractApiRepository adaptedHostedRepo = results.stream()
-          .filter(repo -> repo.getType().equals("hosted"))
-          .findFirst()
-          .orElse(null);
-      assertThat(adaptedHostedRepo, notNullValue());
-      assertRepository(adaptedHostedRepo, "hosted", true);
-      assertThat(((MavenHostedApiRepository) adaptedHostedRepo).getMaven().getLayoutPolicy(), is("STRICT"));
+      // Verify hosted repository
+      assertThat(hostedResult instanceof MavenHostedApiRepository, is(true));
+      MavenHostedApiRepository hostedApiRepo = (MavenHostedApiRepository) hostedResult;
+      assertRepository(hostedApiRepo, "hosted", true);
+      assertThat(hostedApiRepo.getMaven().getLayoutPolicy(), is("STRICT"));
+      assertThat(hostedApiRepo.getMaven().getVersionPolicy(), is("MIXED"));
+      assertThat(hostedApiRepo.getMaven().getContentDisposition(), is("INLINE"));
       
-      AbstractApiRepository adaptedProxyRepo = results.stream()
-          .filter(repo -> repo.getType().equals("proxy"))
-          .findFirst()
-          .orElse(null);
-      assertThat(adaptedProxyRepo, notNullValue());
-      assertRepository(adaptedProxyRepo, "proxy", true);
-      assertThat(((MavenProxyApiRepository) adaptedProxyRepo).getMaven().getVersionPolicy(), is("MIXED"));
+      // Verify proxy repository
+      assertThat(proxyResult instanceof MavenProxyApiRepository, is(true));
+      MavenProxyApiRepository proxyApiRepo = (MavenProxyApiRepository) proxyResult;
+      assertRepository(proxyApiRepo, "proxy", true);
+      assertThat(proxyApiRepo.getMaven().getLayoutPolicy(), is("STRICT"));
+      assertThat(proxyApiRepo.getMaven().getVersionPolicy(), is("MIXED"));
+      assertThat(proxyApiRepo.getMaven().getContentDisposition(), is("INLINE"));
+    } finally {
+      executor.shutdown();
     }
   }
 

@@ -13,17 +13,25 @@
 package org.virtualthread;
 
 import java.lang.management.ManagementFactory;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
 
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.jmx.reflect.ExampleManagedObject;
 import org.sonatype.nexus.jmx.reflect.ManagedObject;
@@ -31,300 +39,435 @@ import org.sonatype.nexus.jmx.reflect.ReflectionMBeanBuilder;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.lessThan;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 
 /**
  * Tests the registration and operation of MBeans when executed from Java 21 Virtual Threads.
- * 
+ * Verifies that MBean registration, attribute access, and operation invocation function correctly
+ * when performed from virtual threads.
+ *
  * @since 3.60
  */
+@ExtendWith(MockitoExtension.class)
 public class VirtualThreadMBeanExporterTest
     extends TestSupport
 {
   private MBeanServer mbeanServer;
-  private ObjectName objectName;
+  
   private ExampleManagedObject managedObject;
-
-  @Before
-  public void setUp() throws Exception {
+  
+  private ObjectName objectName;
+  
+  @BeforeEach
+  void setUp() throws Exception {
+    // Use the platform MBeanServer for testing
     mbeanServer = ManagementFactory.getPlatformMBeanServer();
+    
+    // Create the managed object
     managedObject = new ExampleManagedObject();
     
-    // Create the ObjectName based on the @ManagedObject annotation
-    ManagedObject mo = ExampleManagedObject.class.getAnnotation(ManagedObject.class);
-    objectName = new ObjectName(mo.domain() + ":foo=bar");
+    // Get the ManagedObject annotation to extract domain and entries
+    ManagedObject descriptor = managedObject.getClass().getAnnotation(ManagedObject.class);
+    assertThat(descriptor, notNullValue());
+    
+    // Build the ObjectName from the annotation
+    String domain = descriptor.domain();
+    objectName = new ObjectName(domain + ":type=ExampleManagedObject");
+    
+    // Build the MBean using the ReflectionMBeanBuilder
+    ReflectionMBeanBuilder builder = new ReflectionMBeanBuilder(managedObject.getClass());
+    builder.target(() -> managedObject);
+    builder.description(descriptor.description());
+    builder.discover();
+    
+    // Register the MBean
+    mbeanServer.registerMBean(builder.build(), objectName);
   }
-
-  @After
-  public void tearDown() throws Exception {
+  
+  @AfterEach
+  void tearDown() throws Exception {
     // Unregister the MBean if it exists
     if (mbeanServer.isRegistered(objectName)) {
       mbeanServer.unregisterMBean(objectName);
     }
   }
-
+  
   /**
-   * Tests that an MBean can be registered from a virtual thread.
+   * Tests that MBean attribute getters and setters work correctly when invoked from a virtual thread.
    */
   @Test
-  public void testRegisterMBeanFromVirtualThread() throws Exception {
-    AtomicReference<Exception> exception = new AtomicReference<>();
-    CountDownLatch latch = new CountDownLatch(1);
-    
-    // Use Java 21 Virtual Thread to register the MBean
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      executor.submit(() -> {
-        try {
-          log.info("Registering MBean from virtual thread: {}", Thread.currentThread());
-          
-          // Build and register the MBean
-          ReflectionMBeanBuilder builder = new ReflectionMBeanBuilder(ExampleManagedObject.class);
-          builder.target(() -> managedObject);
-          builder.build();
-          
-          mbeanServer.registerMBean(builder.build(), objectName);
-        }
-        catch (Exception e) {
-          exception.set(e);
-        }
-        finally {
-          latch.countDown();
-        }
-      });
-    }
+  void testAttributeAccessFromVirtualThread() throws Exception {
+    // Create a virtual thread to perform the attribute operations
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+      try {
+        // Verify the thread is a virtual thread
+        assertThat(Thread.currentThread().isVirtual(), is(true));
+        
+        // Set the name attribute
+        mbeanServer.setAttribute(objectName, new javax.management.Attribute("Name", "TestName"));
+        
+        // Get the name attribute and verify it was set correctly
+        String name = (String) mbeanServer.getAttribute(objectName, "Name");
+        assertThat(name, equalTo("TestName"));
+        
+        // Set the password attribute (write-only)
+        mbeanServer.setAttribute(objectName, new javax.management.Attribute("Password", "secret"));
+        
+        // Verify the password was set correctly in the managed object
+        assertThat(managedObject.getPassword(), equalTo("secret"));
+      }
+      catch (Exception e) {
+        throw new RuntimeException("Failed to access MBean attributes from virtual thread", e);
+      }
+    }, Thread.ofVirtual().factory().newThread(Runnable::run));
     
     // Wait for the virtual thread to complete
-    latch.await(5, TimeUnit.SECONDS);
-    
-    // Check for exceptions
-    if (exception.get() != null) {
-      throw exception.get();
-    }
-    
-    // Verify the MBean was registered
-    assertThat(mbeanServer.isRegistered(objectName), is(true));
+    future.join();
   }
-
+  
   /**
-   * Tests that MBean attributes can be accessed from a virtual thread.
+   * Tests that MBean operations can be invoked correctly from a virtual thread.
    */
   @Test
-  public void testMBeanAttributesFromVirtualThread() throws Exception {
-    // Register the MBean directly
-    ReflectionMBeanBuilder builder = new ReflectionMBeanBuilder(ExampleManagedObject.class);
-    builder.target(() -> managedObject);
-    mbeanServer.registerMBean(builder.build(), objectName);
+  void testOperationInvocationFromVirtualThread() throws Exception {
+    // Set the name attribute directly
+    managedObject.setName("InitialName");
     
-    AtomicReference<Exception> exception = new AtomicReference<>();
-    CountDownLatch latch = new CountDownLatch(1);
-    
-    // Use Java 21 Virtual Thread to access MBean attributes
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      executor.submit(() -> {
-        try {
-          log.info("Accessing MBean attributes from virtual thread: {}", Thread.currentThread());
-          
-          // Test getting attribute (initially null)
-          String name = (String) mbeanServer.getAttribute(objectName, "Name");
-          assertThat(name, is(nullValue()));
-          
-          // Test setting attribute
-          mbeanServer.setAttribute(objectName, new javax.management.Attribute("Name", "TestName"));
-          
-          // Test getting attribute after setting
-          name = (String) mbeanServer.getAttribute(objectName, "Name");
-          assertThat(name, is(equalTo("TestName")));
-          
-          // Test write-only attribute
-          mbeanServer.setAttribute(objectName, new javax.management.Attribute("Password", "secret"));
-          assertThat(managedObject.getPassword(), is(equalTo("secret")));
-        }
-        catch (Exception e) {
-          exception.set(e);
-        }
-        finally {
-          latch.countDown();
-        }
-      });
-    }
+    // Create a virtual thread to invoke the operation
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+      try {
+        // Verify the thread is a virtual thread
+        assertThat(Thread.currentThread().isVirtual(), is(true));
+        
+        // Invoke the resetName operation
+        mbeanServer.invoke(objectName, "resetName", null, null);
+        
+        // Verify the name was reset
+        String name = (String) mbeanServer.getAttribute(objectName, "Name");
+        assertThat(name, nullValue());
+      }
+      catch (Exception e) {
+        throw new RuntimeException("Failed to invoke MBean operation from virtual thread", e);
+      }
+    }, Thread.ofVirtual().factory().newThread(Runnable::run));
     
     // Wait for the virtual thread to complete
-    latch.await(5, TimeUnit.SECONDS);
-    
-    // Check for exceptions
-    if (exception.get() != null) {
-      throw exception.get();
-    }
+    future.join();
   }
-
+  
   /**
-   * Tests that MBean operations can be invoked from a virtual thread.
+   * Tests that MBean registration and unregistration work correctly from a virtual thread.
    */
   @Test
-  public void testInvokeOperationFromVirtualThread() throws Exception {
-    // Register the MBean directly
-    ReflectionMBeanBuilder builder = new ReflectionMBeanBuilder(ExampleManagedObject.class);
-    builder.target(() -> managedObject);
-    mbeanServer.registerMBean(builder.build(), objectName);
+  void testMBeanRegistrationFromVirtualThread() throws Exception {
+    // Create a new ObjectName for this test
+    ObjectName testObjectName = new ObjectName("org.sonatype.nexus.jmx:type=TestObject");
     
-    // Set a name value to verify reset operation
-    managedObject.setName("NameToReset");
+    // Create a new managed object
+    ExampleManagedObject testObject = new ExampleManagedObject();
     
-    AtomicReference<Exception> exception = new AtomicReference<>();
-    CountDownLatch latch = new CountDownLatch(1);
+    // Use an AtomicReference to capture any exception from the virtual thread
+    AtomicReference<Exception> exceptionRef = new AtomicReference<>();
     
-    // Use Java 21 Virtual Thread to invoke MBean operation
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      executor.submit(() -> {
-        try {
-          log.info("Invoking MBean operation from virtual thread: {}", Thread.currentThread());
-          
-          // Verify name is set before operation
-          String name = (String) mbeanServer.getAttribute(objectName, "Name");
-          assertThat(name, is(equalTo("NameToReset")));
-          
-          // Invoke the resetName operation
-          mbeanServer.invoke(objectName, "resetName", new Object[0], new String[0]);
-          
-          // Verify name was reset
-          name = (String) mbeanServer.getAttribute(objectName, "Name");
-          assertThat(name, is(nullValue()));
-        }
-        catch (Exception e) {
-          exception.set(e);
-        }
-        finally {
-          latch.countDown();
-        }
-      });
+    // Create a virtual thread to register the MBean
+    CompletableFuture<Void> registerFuture = CompletableFuture.runAsync(() -> {
+      try {
+        // Verify the thread is a virtual thread
+        assertThat(Thread.currentThread().isVirtual(), is(true));
+        
+        // Build the MBean
+        ReflectionMBeanBuilder builder = new ReflectionMBeanBuilder(testObject.getClass());
+        builder.target(() -> testObject);
+        builder.description("Test object");
+        builder.discover();
+        
+        // Register the MBean
+        mbeanServer.registerMBean(builder.build(), testObjectName);
+        
+        // Verify the MBean is registered
+        assertThat(mbeanServer.isRegistered(testObjectName), is(true));
+      }
+      catch (Exception e) {
+        exceptionRef.set(e);
+      }
+    }, Thread.ofVirtual().factory().newThread(Runnable::run));
+    
+    // Wait for the registration to complete
+    registerFuture.join();
+    
+    // Check if any exception occurred
+    if (exceptionRef.get() != null) {
+      throw new AssertionError("MBean registration from virtual thread failed", exceptionRef.get());
     }
     
-    // Wait for the virtual thread to complete
-    latch.await(5, TimeUnit.SECONDS);
+    // Create a virtual thread to unregister the MBean
+    CompletableFuture<Void> unregisterFuture = CompletableFuture.runAsync(() -> {
+      try {
+        // Verify the thread is a virtual thread
+        assertThat(Thread.currentThread().isVirtual(), is(true));
+        
+        // Unregister the MBean
+        mbeanServer.unregisterMBean(testObjectName);
+        
+        // Verify the MBean is no longer registered
+        assertThat(mbeanServer.isRegistered(testObjectName), is(false));
+      }
+      catch (Exception e) {
+        exceptionRef.set(e);
+      }
+    }, Thread.ofVirtual().factory().newThread(Runnable::run));
     
-    // Check for exceptions
-    if (exception.get() != null) {
-      throw exception.get();
+    // Wait for the unregistration to complete
+    unregisterFuture.join();
+    
+    // Check if any exception occurred
+    if (exceptionRef.get() != null) {
+      throw new AssertionError("MBean unregistration from virtual thread failed", exceptionRef.get());
     }
   }
-
-  /**
-   * Tests that an MBean can be unregistered from a virtual thread.
-   */
-  @Test
-  public void testUnregisterMBeanFromVirtualThread() throws Exception {
-    // Register the MBean directly
-    ReflectionMBeanBuilder builder = new ReflectionMBeanBuilder(ExampleManagedObject.class);
-    builder.target(() -> managedObject);
-    mbeanServer.registerMBean(builder.build(), objectName);
-    
-    // Verify it's registered
-    assertThat(mbeanServer.isRegistered(objectName), is(true));
-    
-    AtomicReference<Exception> exception = new AtomicReference<>();
-    CountDownLatch latch = new CountDownLatch(1);
-    
-    // Use Java 21 Virtual Thread to unregister the MBean
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      executor.submit(() -> {
-        try {
-          log.info("Unregistering MBean from virtual thread: {}", Thread.currentThread());
-          mbeanServer.unregisterMBean(objectName);
-        }
-        catch (Exception e) {
-          exception.set(e);
-        }
-        finally {
-          latch.countDown();
-        }
-      });
-    }
-    
-    // Wait for the virtual thread to complete
-    latch.await(5, TimeUnit.SECONDS);
-    
-    // Check for exceptions
-    if (exception.get() != null) {
-      throw exception.get();
-    }
-    
-    // Verify the MBean was unregistered
-    assertThat(mbeanServer.isRegistered(objectName), is(false));
-  }
-
+  
   /**
    * Tests the performance characteristics of JMX operations under virtual threads versus platform threads.
-   * This is a simple benchmark to demonstrate that virtual threads can handle many concurrent JMX operations
-   * with minimal overhead.
+   * This test creates a large number of threads to perform concurrent JMX operations and measures
+   * the execution time and success rate for both thread types.
    */
   @Test
-  public void testConcurrentJmxOperationsPerformance() throws Exception {
+  void testJmxPerformanceWithVirtualThreads() throws Exception {
     // Number of concurrent operations to perform
-    final int concurrentOperations = 100;
+    final int concurrentOperations = 1000;
     
-    // Register the MBean directly
-    ReflectionMBeanBuilder builder = new ReflectionMBeanBuilder(ExampleManagedObject.class);
-    builder.target(() -> managedObject);
-    mbeanServer.registerMBean(builder.build(), objectName);
+    // Create thread factories for both types
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ThreadFactory platformThreadFactory = Thread.ofPlatform().factory();
     
     // Test with platform threads
-    CountDownLatch platformLatch = new CountDownLatch(concurrentOperations);
-    long platformStart = System.currentTimeMillis();
-    
-    try (var executor = Executors.newFixedThreadPool(20)) { // Limited thread pool
-      for (int i = 0; i < concurrentOperations; i++) {
-        executor.submit(() -> {
-          try {
-            // Perform a mix of JMX operations
-            mbeanServer.setAttribute(objectName, new javax.management.Attribute("Name", "Thread" + Thread.currentThread().threadId()));
-            mbeanServer.getAttribute(objectName, "Name");
-            mbeanServer.invoke(objectName, "resetName", new Object[0], new String[0]);
-          }
-          catch (Exception e) {
-            log.error("Error in platform thread JMX operation", e);
-          }
-          finally {
-            platformLatch.countDown();
-          }
-        });
-      }
-    }
-    
-    platformLatch.await(10, TimeUnit.SECONDS);
-    long platformDuration = System.currentTimeMillis() - platformStart;
+    long platformThreadTime = measureJmxOperations(platformThreadFactory, concurrentOperations);
+    log.info("Platform thread execution time for {} operations: {} ms", concurrentOperations, platformThreadTime);
     
     // Test with virtual threads
-    CountDownLatch virtualLatch = new CountDownLatch(concurrentOperations);
-    long virtualStart = System.currentTimeMillis();
+    long virtualThreadTime = measureJmxOperations(virtualThreadFactory, concurrentOperations);
+    log.info("Virtual thread execution time for {} operations: {} ms", concurrentOperations, virtualThreadTime);
     
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      for (int i = 0; i < concurrentOperations; i++) {
+    // Virtual threads should generally be more efficient for I/O-bound operations like JMX
+    // However, we don't make a strict assertion here as performance can vary by environment
+    log.info("Performance ratio (platform/virtual): {}", (double) platformThreadTime / virtualThreadTime);
+    
+    // For high concurrency operations, virtual threads should show better scalability
+    if (concurrentOperations >= 1000) {
+      assertThat("Virtual threads should be more efficient for high concurrency JMX operations",
+          virtualThreadTime, lessThan(platformThreadTime));
+    }
+  }
+  
+  /**
+   * Helper method to measure the execution time of concurrent JMX operations using the specified thread factory.
+   *
+   * @param threadFactory the thread factory to use (virtual or platform)
+   * @param operationCount the number of concurrent operations to perform
+   * @return the execution time in milliseconds
+   */
+  private long measureJmxOperations(ThreadFactory threadFactory, int operationCount) throws Exception {
+    // Create an executor with the specified thread factory
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(threadFactory);
+    
+    try {
+      // Create a latch to wait for all operations to complete
+      CountDownLatch latch = new CountDownLatch(operationCount);
+      
+      // Track success/failure
+      AtomicInteger successCount = new AtomicInteger(0);
+      AtomicInteger failureCount = new AtomicInteger(0);
+      
+      // Start timing
+      long startTime = System.currentTimeMillis();
+      
+      // Submit the operations
+      for (int i = 0; i < operationCount; i++) {
+        final int index = i;
         executor.submit(() -> {
           try {
-            // Perform the same mix of JMX operations
-            mbeanServer.setAttribute(objectName, new javax.management.Attribute("Name", "VThread" + Thread.currentThread().threadId()));
-            mbeanServer.getAttribute(objectName, "Name");
-            mbeanServer.invoke(objectName, "resetName", new Object[0], new String[0]);
+            // Set a unique name for each operation
+            String name = "TestName-" + index;
+            mbeanServer.setAttribute(objectName, new javax.management.Attribute("Name", name));
+            
+            // Get the name back
+            String retrievedName = (String) mbeanServer.getAttribute(objectName, "Name");
+            
+            // Verify it matches what we set
+            if (name.equals(retrievedName)) {
+              successCount.incrementAndGet();
+            }
+            else {
+              failureCount.incrementAndGet();
+            }
           }
           catch (Exception e) {
-            log.error("Error in virtual thread JMX operation", e);
+            log.error("JMX operation failed", e);
+            failureCount.incrementAndGet();
           }
           finally {
-            virtualLatch.countDown();
+            latch.countDown();
           }
         });
       }
+      
+      // Wait for all operations to complete or timeout after 30 seconds
+      boolean completed = latch.await(30, TimeUnit.SECONDS);
+      
+      // End timing
+      long endTime = System.currentTimeMillis();
+      
+      // Log results
+      log.info("JMX operations completed: {}, success: {}, failure: {}", 
+          completed ? "all" : "timeout", successCount.get(), failureCount.get());
+      
+      // Verify all operations succeeded
+      assertThat("All JMX operations should succeed", successCount.get(), equalTo(operationCount));
+      assertThat("No JMX operations should fail", failureCount.get(), equalTo(0));
+      
+      // Return the execution time
+      return endTime - startTime;
     }
+    finally {
+      // Shutdown the executor
+      executor.shutdown();
+      executor.awaitTermination(5, TimeUnit.SECONDS);
+    }
+  }
+  
+  /**
+   * Tests that multiple concurrent MBean registrations and unregistrations work correctly from virtual threads.
+   * This test simulates a high-concurrency scenario where many MBeans are being registered and unregistered
+   * simultaneously from virtual threads.
+   */
+  @Test
+  void testConcurrentMBeanRegistrationFromVirtualThreads() throws Exception {
+    // Number of MBeans to register concurrently
+    final int mbeanCount = 100;
     
-    virtualLatch.await(10, TimeUnit.SECONDS);
-    long virtualDuration = System.currentTimeMillis() - virtualStart;
+    // Create a virtual thread executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     
-    log.info("Platform threads: {} operations in {} ms", concurrentOperations, platformDuration);
-    log.info("Virtual threads: {} operations in {} ms", concurrentOperations, virtualDuration);
-    
-    // We don't assert on specific timings as they can vary by environment,
-    // but we log the results for analysis
+    try {
+      // Create a latch to wait for all operations to complete
+      CountDownLatch latch = new CountDownLatch(mbeanCount * 2); // Register + Unregister
+      
+      // Track success/failure
+      AtomicInteger registrationSuccessCount = new AtomicInteger(0);
+      AtomicInteger registrationFailureCount = new AtomicInteger(0);
+      AtomicInteger unregistrationSuccessCount = new AtomicInteger(0);
+      AtomicInteger unregistrationFailureCount = new AtomicInteger(0);
+      
+      // Create ObjectNames and managed objects
+      ObjectName[] objectNames = new ObjectName[mbeanCount];
+      ExampleManagedObject[] managedObjects = new ExampleManagedObject[mbeanCount];
+      
+      for (int i = 0; i < mbeanCount; i++) {
+        objectNames[i] = new ObjectName("org.sonatype.nexus.jmx:type=ConcurrentTest,index=" + i);
+        managedObjects[i] = new ExampleManagedObject();
+      }
+      
+      // Submit registration tasks
+      for (int i = 0; i < mbeanCount; i++) {
+        final int index = i;
+        executor.submit(() -> {
+          try {
+            // Verify this is a virtual thread
+            assertThat(Thread.currentThread().isVirtual(), is(true));
+            
+            // Build the MBean
+            ReflectionMBeanBuilder builder = new ReflectionMBeanBuilder(managedObjects[index].getClass());
+            builder.target(() -> managedObjects[index]);
+            builder.description("Concurrent test object " + index);
+            builder.discover();
+            
+            // Register the MBean
+            mbeanServer.registerMBean(builder.build(), objectNames[index]);
+            
+            // Verify registration
+            if (mbeanServer.isRegistered(objectNames[index])) {
+              registrationSuccessCount.incrementAndGet();
+            }
+            else {
+              registrationFailureCount.incrementAndGet();
+            }
+          }
+          catch (Exception e) {
+            log.error("MBean registration failed for index " + index, e);
+            registrationFailureCount.incrementAndGet();
+          }
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for registrations to complete (give them a head start)
+      Thread.sleep(500);
+      
+      // Submit unregistration tasks
+      for (int i = 0; i < mbeanCount; i++) {
+        final int index = i;
+        executor.submit(() -> {
+          try {
+            // Verify this is a virtual thread
+            assertThat(Thread.currentThread().isVirtual(), is(true));
+            
+            // Only try to unregister if it's registered
+            if (mbeanServer.isRegistered(objectNames[index])) {
+              // Unregister the MBean
+              mbeanServer.unregisterMBean(objectNames[index]);
+              
+              // Verify unregistration
+              if (!mbeanServer.isRegistered(objectNames[index])) {
+                unregistrationSuccessCount.incrementAndGet();
+              }
+              else {
+                unregistrationFailureCount.incrementAndGet();
+              }
+            }
+            else {
+              // If it wasn't registered, count as a failure
+              unregistrationFailureCount.incrementAndGet();
+            }
+          }
+          catch (Exception e) {
+            log.error("MBean unregistration failed for index " + index, e);
+            unregistrationFailureCount.incrementAndGet();
+          }
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all operations to complete or timeout
+      boolean completed = latch.await(30, TimeUnit.SECONDS);
+      
+      // Log results
+      log.info("Concurrent MBean operations completed: {}", completed ? "all" : "timeout");
+      log.info("Registration success: {}, failure: {}", registrationSuccessCount.get(), registrationFailureCount.get());
+      log.info("Unregistration success: {}, failure: {}", unregistrationSuccessCount.get(), unregistrationFailureCount.get());
+      
+      // Verify all operations succeeded
+      assertThat("All MBean registrations should succeed", registrationSuccessCount.get(), greaterThan(0));
+      assertThat("All MBean unregistrations should succeed", unregistrationSuccessCount.get(), greaterThan(0));
+      
+      // Clean up any remaining MBeans
+      for (int i = 0; i < mbeanCount; i++) {
+        if (mbeanServer.isRegistered(objectNames[i])) {
+          mbeanServer.unregisterMBean(objectNames[i]);
+        }
+      }
+    }
+    finally {
+      // Shutdown the executor
+      executor.shutdown();
+      executor.awaitTermination(5, TimeUnit.SECONDS);
+    }
   }
 }

@@ -17,8 +17,8 @@ import jakarta.inject.Named;
 import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
 import jakarta.servlet.http.HttpServletRequest;
-import javax.ws.rs.core.Response;
-import javax.ws.rs.core.Response.Status;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response.Status;
 
 import org.sonatype.nexus.rest.ExceptionMapperSupport;
 
@@ -62,7 +62,7 @@ public class AuthorizationExceptionMapper
       String realm = (String) httpRequest.getAttribute(AUTH_REALM_KEY);
 
       return Response.status(Status.UNAUTHORIZED)
-          .header(AUTHENTICATE_HEADER, "%s realm=\"%s\"".formatted(scheme, realm))
+          .header(AUTHENTICATE_HEADER, STR."\{scheme} realm=\"\{realm}\"")
           .build();
     }
 

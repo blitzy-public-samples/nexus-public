@@ -22,8 +22,9 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
@@ -110,9 +111,6 @@ public class RepositoryUiService
   private final List<Format> formats;
 
   private final RepositoryPermissionChecker repositoryPermissionChecker;
-  
-  // Virtual Thread executor for I/O-bound operations
-  private final ExecutorService virtualThreadExecutor;
 
   @Inject
   public RepositoryUiService(
@@ -137,7 +135,6 @@ public class RepositoryUiService
     this.typeLookup = checkNotNull(typeLookup);
     this.formats = checkNotNull(formats);
     this.repositoryPermissionChecker = checkNotNull(repositoryPermissionChecker);
-    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   public List<RepositoryXO> read() {
@@ -336,13 +333,18 @@ public class RepositoryUiService
     securityHelper.ensurePermitted(adminPermission(repository, BreadActions.EDIT));
     
     // Use Virtual Threads for non-blocking task submission
-    return virtualThreadExecutor.submit(() -> {
-      TaskConfiguration taskConfiguration =
-          taskScheduler.createTaskConfigurationInstance(RebuildIndexTaskDescriptor.TYPE_ID);
-      taskConfiguration.setString(RebuildIndexTask.REPOSITORY_NAME_FIELD_ID, repository.getName());
-      TaskInfo taskInfo = taskScheduler.submit(taskConfiguration);
-      return taskInfo.getId();
-    }).join();
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      return executor.submit(() -> {
+        TaskConfiguration taskConfiguration =
+            taskScheduler.createTaskConfigurationInstance(RebuildIndexTaskDescriptor.TYPE_ID);
+        taskConfiguration.setString(RebuildIndexTask.REPOSITORY_NAME_FIELD_ID, repository.getName());
+        TaskInfo taskInfo = taskScheduler.submit(taskConfiguration);
+        return taskInfo.getId();
+      }).get();
+    } catch (Exception e) {
+      log.error("Error submitting rebuild index task for repository {}", repository.getName(), e);
+      throw new RuntimeException("Failed to submit rebuild index task", e);
+    }
   }
 
   @RequiresAuthentication
@@ -352,9 +354,19 @@ public class RepositoryUiService
     securityHelper.ensurePermitted(adminPermission(repository, BreadActions.EDIT));
     
     // Use Virtual Threads for concurrent cache invalidation operations
-    virtualThreadExecutor.submit(() -> {
-      repositoryCacheInvalidationService.processCachesInvalidation(repository);
-    }).join();
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      executor.submit(() -> {
+        try {
+          repositoryCacheInvalidationService.processCachesInvalidation(repository);
+          log.debug("Cache invalidation completed for repository {}", repository.getName());
+        } catch (Exception e) {
+          log.error("Error during cache invalidation for repository {}", repository.getName(), e);
+        }
+      }).get(); // Wait for completion to maintain backward compatibility
+    } catch (Exception e) {
+      log.error("Failed to execute cache invalidation for repository {}", repository.getName(), e);
+      throw new RuntimeException("Cache invalidation failed", e);
+    }
   }
 
   @VisibleForTesting
@@ -419,11 +431,23 @@ public class RepositoryUiService
 
   @RequiresAuthentication
   public List<RepositoryStatusXO> readStatus(final Map<String, String> params) {
-    // Use Virtual Threads for concurrent repository status checks
-    return StreamSupport.stream(browse().spliterator(), true)
-        .map(config -> virtualThreadExecutor.submit(() -> buildStatus(config)))
-        .map(future -> future.join())
-        .collect(Collectors.toList());
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      List<Future<RepositoryStatusXO>> futures = StreamSupport.stream(browse().spliterator(), false)
+          .map(config -> executor.submit(() -> buildStatus(config)))
+          .collect(Collectors.toList());
+      
+      return futures.stream()
+          .map(future -> {
+            try {
+              return future.get();
+            } catch (Exception e) {
+              log.error("Error retrieving repository status", e);
+              return null;
+            }
+          })
+          .filter(Objects::nonNull)
+          .collect(Collectors.toList());
+    }
   }
 
   private RepositoryStatusXO buildStatus(final Repository repository) {
@@ -431,21 +455,26 @@ public class RepositoryUiService
     statusXO.setRepositoryName(repository.getName());
     statusXO.setOnline(repository.getConfiguration().isOnline());
 
-    // Use Virtual Threads for retrieving remote connection status for proxy repositories
+    // TODO - should we try to aggregate status from group members?
     if (repository.getType() instanceof ProxyType) {
       try {
-        // Submit the remote status check to the virtual thread executor
-        RemoteConnectionStatus remoteStatus = virtualThreadExecutor.submit(() -> {
-          return repository.facet(HttpClientFacet.class).getStatus();
-        }).join();
-        
-        statusXO.setDescription(remoteStatus.getDescription());
-        if (remoteStatus.getReason() != null) {
-          statusXO.setReason(remoteStatus.getReason());
+        // Use Virtual Threads for remote connection status check
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+          Future<RemoteConnectionStatus> future = executor.submit(() -> 
+              repository.facet(HttpClientFacet.class).getStatus());
+          
+          RemoteConnectionStatus remoteStatus = future.get();
+          statusXO.setDescription(remoteStatus.getDescription());
+          if (remoteStatus.getReason() != null) {
+            statusXO.setReason(remoteStatus.getReason());
+          }
         }
       }
       catch (MissingFacetException e) {
         // no http client facet (usually on proxies), no remote status
+      }
+      catch (Exception e) {
+        log.error("Error retrieving remote connection status for repository {}", repository.getName(), e);
       }
     }
     return statusXO;
@@ -457,27 +486,33 @@ public class RepositoryUiService
     statusXO.setOnline(configuration.isOnline());
 
     Recipe recipe = recipes.get(configuration.getRecipeName());
-    // Use Virtual Threads for retrieving remote connection status for proxy repositories
+    // TODO - should we try to aggregate status from group members?
     if (recipe.getType() instanceof ProxyType) {
       try {
         boolean loaded = StreamSupport.stream(repositoryManager.browse().spliterator(), false)
             .anyMatch(repo -> configuration.getRepositoryName().equals(repo.getName()));
         if (loaded) {
-          // Submit the remote status check to the virtual thread executor
-          RemoteConnectionStatus remoteStatus = virtualThreadExecutor.submit(() -> {
-            return repositoryManager.get(configuration.getRepositoryName())
-                .facet(HttpClientFacet.class)
-                .getStatus();
-          }).join();
-          
-          statusXO.setDescription(remoteStatus.getDescription());
-          if (remoteStatus.getReason() != null) {
-            statusXO.setReason(remoteStatus.getReason());
+          // Use Virtual Threads for remote connection status check
+          try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            Future<RemoteConnectionStatus> future = executor.submit(() -> 
+                repositoryManager.get(configuration.getRepositoryName())
+                    .facet(HttpClientFacet.class)
+                    .getStatus());
+            
+            RemoteConnectionStatus remoteStatus = future.get();
+            statusXO.setDescription(remoteStatus.getDescription());
+            if (remoteStatus.getReason() != null) {
+              statusXO.setReason(remoteStatus.getReason());
+            }
           }
         }
       }
       catch (MissingFacetException e) {
         // no http client facet (usually on proxies), no remote status
+      }
+      catch (Exception e) {
+        log.error("Error retrieving remote connection status for repository {}", 
+            configuration.getRepositoryName(), e);
       }
     }
     return statusXO;
@@ -614,25 +649,26 @@ public class RepositoryUiService
     return StreamSupport.stream(iterable.spliterator(), false)
         .filter(result -> {
           String fieldValue = filteredFieldSelector.apply(result);
-
-          // Use pattern matching for switch to improve readability and maintainability
+          
+          // Using Pattern Matching for switch to improve readability and maintainability
           return switch (fieldValue) {
             case null -> allExcludes; // If fieldValue is null, include only if all filters are excludes
             default -> {
               boolean shouldInclude = allExcludes;
               
               for (String strFilter : filters) {
-                // Use pattern matching for switch with guard patterns
+                // Using Pattern Matching for switch with String patterns
                 switch (strFilter) {
-                  case String s when s.startsWith("!") && Objects.equals(fieldValue, s.substring(1)) -> {
-                    shouldInclude = false;
-                    break;
+                  case String s when s.startsWith("!") -> {
+                    if (Objects.equals(fieldValue, s.substring(1))) {
+                      shouldInclude = false;
+                    }
                   }
-                  case String s when Objects.equals(fieldValue, s) -> {
-                    shouldInclude = true;
-                    break;
+                  case String s -> {
+                    if (Objects.equals(fieldValue, s)) {
+                      shouldInclude = true;
+                    }
                   }
-                  default -> { /* No match, continue */ }
                 }
               }
               yield shouldInclude;

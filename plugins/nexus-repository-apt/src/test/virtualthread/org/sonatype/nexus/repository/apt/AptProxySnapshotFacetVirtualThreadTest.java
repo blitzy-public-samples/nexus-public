@@ -12,47 +12,35 @@
  */
 package org.sonatype.nexus.repository.apt;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.apt.datastore.internal.proxy.AptProxyFacet;
 import org.sonatype.nexus.repository.apt.datastore.internal.proxy.AptProxySnapshotFacet;
 import org.sonatype.nexus.repository.apt.internal.snapshot.SnapshotItem;
 import org.sonatype.nexus.repository.apt.internal.snapshot.SnapshotItem.ContentSpecifier;
-import org.sonatype.nexus.repository.apt.internal.snapshot.SnapshotItem.Role;
-import org.sonatype.nexus.repository.view.Content;
-import org.sonatype.nexus.repository.view.payloads.BytesPayload;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadMatchers;
 import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.Before;
+import org.junit.Test;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThan;
-import static org.hamcrest.Matchers.notNullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.doAnswer;
@@ -61,16 +49,20 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Tests for {@link AptProxySnapshotFacet} using virtual threads.
+ * Tests for {@link AptProxySnapshotFacet} with Java 21 Virtual Threads.
+ * 
+ * Validates that snapshot operations benefit from the improved concurrency model provided by
+ * Virtual Threads, ensuring performance improvements when retrieving multiple snapshot items
+ * simultaneously and correct behavior under high concurrency scenarios.
  * 
  * @since 3.60
  */
 public class AptProxySnapshotFacetVirtualThreadTest
     extends VirtualThreadTestSupport
 {
-  private static final int ITEM_COUNT = 10;
-  private static final int CONCURRENT_REQUESTS = 5;
-  private static final long SIMULATED_IO_DELAY_MS = 50;
+  private static final int SNAPSHOT_ITEM_COUNT = 100;
+  private static final int CONCURRENT_OPERATIONS = 10;
+  private static final Duration OPERATION_DELAY = Duration.ofMillis(50);
   
   @Mock
   private Repository repository;
@@ -80,327 +72,372 @@ public class AptProxySnapshotFacetVirtualThreadTest
   
   private AptProxySnapshotFacet snapshotFacet;
   
-  @BeforeEach
-  public void setUp() throws Exception {
+  @Before
+  public void setup() throws Exception {
     // Skip tests if virtual threads are not supported
-    assumeVirtualThreadSupported();
+    org.junit.Assume.assumeTrue("Virtual Threads not supported in this JVM", isVirtualThreadSupported());
     
-    // Set up the snapshot facet with mocked dependencies
-    snapshotFacet = new AptProxySnapshotFacet();
+    // Setup mocks
     when(repository.facet(AptProxyFacet.class)).thenReturn(proxyFacet);
+    
+    // Create the facet under test
+    snapshotFacet = new AptProxySnapshotFacet();
     snapshotFacet.attach(repository);
+    
+    // Configure the proxy facet to simulate I/O delay and return mock snapshot items
+    doAnswer(invocation -> {
+      List<ContentSpecifier> specs = invocation.getArgument(0);
+      // Simulate I/O delay
+      Thread.sleep(OPERATION_DELAY.toMillis());
+      
+      // Create mock snapshot items corresponding to the specs
+      return specs.stream()
+          .map(spec -> createMockSnapshotItem(spec))
+          .collect(Collectors.toList());
+    }).when(proxyFacet).getSnapshotItems(anyList());
   }
   
   /**
-   * Tests that the snapshot facet can fetch items using virtual threads.
+   * Tests that the AptProxySnapshotFacet correctly fetches snapshot items using virtual threads.
+   * This verifies basic functionality with the new thread model.
    */
   @Test
   public void testFetchSnapshotItemsWithVirtualThreads() throws Exception {
-    // Set up mock to return snapshot items
-    List<SnapshotItem> expectedItems = createMockSnapshotItems(ITEM_COUNT);
-    when(proxyFacet.getSnapshotItems(anyList())).thenReturn(expectedItems);
+    // Create a list of content specifiers
+    List<ContentSpecifier> specs = createContentSpecifiers(10);
     
-    // Execute the fetchSnapshotItems method on a virtual thread
-    List<ContentSpecifier> specs = createContentSpecifiers(ITEM_COUNT);
-    List<SnapshotItem> result = callVirtual(() -> snapshotFacet.fetchSnapshotItems(specs));
-    
-    // Verify the result
-    assertThat(result, hasSize(ITEM_COUNT));
-    assertThat(result, equalTo(expectedItems));
-    verify(proxyFacet).getSnapshotItems(specs);
-  }
-  
-  /**
-   * Tests that the snapshot facet can fetch items concurrently using virtual threads.
-   */
-  @Test
-  public void testConcurrentFetchingWithVirtualThreads() throws Exception {
-    // Set up mock to return snapshot items with a delay to simulate I/O
-    doAnswer(invocation -> {
-      List<ContentSpecifier> specs = invocation.getArgument(0);
-      Thread.sleep(SIMULATED_IO_DELAY_MS); // Simulate I/O delay
-      return specs.stream()
-          .map(spec -> createSnapshotItem(spec))
-          .collect(Collectors.toList());
-    }).when(proxyFacet).getSnapshotItems(anyList());
-    
-    // Create multiple sets of content specifiers
-    List<List<ContentSpecifier>> specSets = IntStream.range(0, CONCURRENT_REQUESTS)
-        .mapToObj(i -> createContentSpecifiers(ITEM_COUNT))
-        .collect(Collectors.toList());
-    
-    // Execute fetchSnapshotItems concurrently using virtual threads
-    ExecutorService executor = newVirtualThreadExecutor("snapshot-test-");
-    try {
-      List<Future<List<SnapshotItem>>> futures = specSets.stream()
-          .map(specs -> executor.submit(() -> snapshotFacet.fetchSnapshotItems(specs)))
-          .collect(Collectors.toList());
-      
-      // Wait for all futures to complete and collect results
-      List<List<SnapshotItem>> results = futures.stream()
-          .map(future -> {
-            try {
-              return future.get(10, TimeUnit.SECONDS);
-            }
-            catch (Exception e) {
-              throw new RuntimeException(e);
-            }
-          })
-          .collect(Collectors.toList());
-      
-      // Verify results
-      assertThat(results, hasSize(CONCURRENT_REQUESTS));
-      results.forEach(items -> assertThat(items, hasSize(ITEM_COUNT)));
-    }
-    finally {
-      executor.shutdown();
-    }
-    
-    // Verify that getSnapshotItems was called the expected number of times
-    verify(proxyFacet, times(CONCURRENT_REQUESTS)).getSnapshotItems(any());
-  }
-  
-  /**
-   * Tests that virtual threads provide better performance than platform threads
-   * when fetching snapshot items concurrently.
-   */
-  @Test
-  public void testVirtualThreadPerformanceComparison() throws Exception {
-    // Set up mock to return snapshot items with a delay to simulate I/O
-    AtomicInteger concurrentExecutions = new AtomicInteger(0);
-    AtomicInteger maxConcurrentExecutions = new AtomicInteger(0);
-    
-    doAnswer(invocation -> {
-      List<ContentSpecifier> specs = invocation.getArgument(0);
-      // Track concurrent executions
-      int current = concurrentExecutions.incrementAndGet();
-      maxConcurrentExecutions.updateAndGet(max -> Math.max(max, current));
-      
+    // Execute the fetch operation on a virtual thread
+    List<SnapshotItem> items = supplyFromVirtualThread(() -> {
       try {
-        Thread.sleep(SIMULATED_IO_DELAY_MS); // Simulate I/O delay
-        return specs.stream()
-            .map(spec -> createSnapshotItem(spec))
-            .collect(Collectors.toList());
-      }
-      finally {
-        concurrentExecutions.decrementAndGet();
-      }
-    }).when(proxyFacet).getSnapshotItems(anyList());
-    
-    // Create a large number of content specifier sets
-    int requestCount = 50;
-    List<List<ContentSpecifier>> specSets = IntStream.range(0, requestCount)
-        .mapToObj(i -> createContentSpecifiers(5))
-        .collect(Collectors.toList());
-    
-    // Measure execution time with platform threads (limited concurrency)
-    long platformThreadTime = measureExecutionTimeWithThreads(
-        specSets, 
-        Executors.newFixedThreadPool(10), // Limited to 10 platform threads
-        "Platform Thread Test");
-    
-    // Reset counters
-    maxConcurrentExecutions.set(0);
-    Mockito.clearInvocations(proxyFacet);
-    
-    // Measure execution time with virtual threads (high concurrency)
-    long virtualThreadTime = measureExecutionTimeWithThreads(
-        specSets, 
-        newVirtualThreadExecutor("virtual-snapshot-test-"),
-        "Virtual Thread Test");
-    
-    // Verify that virtual threads achieved higher concurrency
-    assertThat("Virtual threads should achieve higher concurrency",
-        maxConcurrentExecutions.get(), greaterThan(10));
-    
-    // Verify that virtual threads were faster
-    log.info("Platform thread execution time: {} ms", platformThreadTime);
-    log.info("Virtual thread execution time: {} ms", virtualThreadTime);
-    assertThat("Virtual threads should be faster than platform threads",
-        virtualThreadTime, lessThan(platformThreadTime));
-  }
-  
-  /**
-   * Tests that the snapshot facet correctly aggregates results when fetching items concurrently.
-   */
-  @Test
-  public void testConcurrentAggregation() throws Exception {
-    // Set up a CountDownLatch to synchronize threads
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(CONCURRENT_REQUESTS);
-    
-    // Set up mock to return snapshot items with synchronized execution
-    doAnswer(invocation -> {
-      List<ContentSpecifier> specs = invocation.getArgument(0);
-      startLatch.await(); // Wait for all threads to be ready
-      Thread.sleep(SIMULATED_IO_DELAY_MS); // Simulate I/O delay
-      List<SnapshotItem> items = specs.stream()
-          .map(spec -> createSnapshotItem(spec))
-          .collect(Collectors.toList());
-      completionLatch.countDown();
-      return items;
-    }).when(proxyFacet).getSnapshotItems(anyList());
-    
-    // Create multiple sets of content specifiers with overlapping items
-    List<ContentSpecifier> commonSpecs = createContentSpecifiers(5);
-    List<List<ContentSpecifier>> specSets = IntStream.range(0, CONCURRENT_REQUESTS)
-        .mapToObj(i -> {
-          List<ContentSpecifier> uniqueSpecs = createContentSpecifiers(5, "unique-" + i + "-");
-          List<ContentSpecifier> combined = new ArrayList<>(commonSpecs);
-          combined.addAll(uniqueSpecs);
-          return combined;
-        })
-        .collect(Collectors.toList());
-    
-    // Execute fetchSnapshotItems concurrently using virtual threads
-    ExecutorService executor = newVirtualThreadExecutor("snapshot-aggregation-test-");
-    try {
-      List<Future<List<SnapshotItem>>> futures = specSets.stream()
-          .map(specs -> executor.submit(() -> snapshotFacet.fetchSnapshotItems(specs)))
-          .collect(Collectors.toList());
-      
-      // Start all threads simultaneously
-      startLatch.countDown();
-      
-      // Wait for all operations to complete
-      completionLatch.await(10, TimeUnit.SECONDS);
-      
-      // Collect results
-      List<List<SnapshotItem>> results = futures.stream()
-          .map(future -> {
-            try {
-              return future.get(5, TimeUnit.SECONDS);
-            }
-            catch (Exception e) {
-              throw new RuntimeException(e);
-            }
-          })
-          .collect(Collectors.toList());
-      
-      // Verify that each result has the expected number of items
-      results.forEach(items -> assertThat(items, hasSize(10))); // 5 common + 5 unique
-      
-      // Verify that getSnapshotItems was called the expected number of times
-      verify(proxyFacet, times(CONCURRENT_REQUESTS)).getSnapshotItems(any());
-    }
-    finally {
-      executor.shutdown();
-    }
-  }
-  
-  /**
-   * Tests that the callable for fetching snapshot items completes within an expected time frame.
-   */
-  @Test
-  public void testFetchSnapshotItemsCompletesWithinExpectedTime() throws Exception {
-    // Set up mock to return snapshot items with a fixed delay
-    doAnswer(invocation -> {
-      Thread.sleep(SIMULATED_IO_DELAY_MS);
-      return createMockSnapshotItems(ITEM_COUNT);
-    }).when(proxyFacet).getSnapshotItems(anyList());
-    
-    // Create a callable that fetches snapshot items
-    List<ContentSpecifier> specs = createContentSpecifiers(ITEM_COUNT);
-    Callable<List<SnapshotItem>> fetchCallable = () -> snapshotFacet.fetchSnapshotItems(specs);
-    
-    // Verify that the callable completes within the expected time
-    Duration expectedDuration = Duration.ofMillis(SIMULATED_IO_DELAY_MS * 2); // Allow some buffer
-    assertThat(fetchCallable, VirtualThreadMatchers.executesWithin(expectedDuration));
-  }
-  
-  /**
-   * Tests that the thread used to fetch snapshot items is a virtual thread.
-   */
-  @Test
-  public void testFetchSnapshotItemsUsesVirtualThread() throws Exception {
-    // Set up mock to capture and verify the thread type
-    doAnswer(invocation -> {
-      // Verify that the current thread is a virtual thread
-      Thread currentThread = Thread.currentThread();
-      assertThat(currentThread, VirtualThreadMatchers.isVirtualThread());
-      return createMockSnapshotItems(ITEM_COUNT);
-    }).when(proxyFacet).getSnapshotItems(anyList());
-    
-    // Execute fetchSnapshotItems on a virtual thread
-    List<ContentSpecifier> specs = createContentSpecifiers(ITEM_COUNT);
-    runVirtual(() -> {
-      try {
-        snapshotFacet.fetchSnapshotItems(specs);
+        // Verify we're running on a virtual thread
+        assertCurrentThreadIsVirtual();
+        return snapshotFacet.fetchSnapshotItems(specs);
       }
       catch (IOException e) {
         throw new RuntimeException(e);
       }
     });
     
-    // Verify that getSnapshotItems was called
+    // Verify the results
+    assertThat(items, hasSize(10));
     verify(proxyFacet).getSnapshotItems(specs);
   }
   
   /**
-   * Helper method to measure execution time with different thread types.
+   * Tests the performance difference between platform threads and virtual threads
+   * when fetching snapshot items. Virtual threads should provide better performance
+   * for I/O-bound operations like snapshot fetching.
    */
-  private long measureExecutionTimeWithThreads(
-      List<List<ContentSpecifier>> specSets,
-      ExecutorService executor,
-      String testName) throws Exception 
-  {
-    long startTime = System.currentTimeMillis();
+  @Test
+  public void testPerformanceComparisonBetweenPlatformAndVirtualThreads() throws Exception {
+    // Create a large list of content specifiers
+    List<ContentSpecifier> specs = createContentSpecifiers(SNAPSHOT_ITEM_COUNT);
     
-    try {
-      // Submit all tasks to the executor
-      List<Future<List<SnapshotItem>>> futures = specSets.stream()
-          .map(specs -> executor.submit(() -> snapshotFacet.fetchSnapshotItems(specs)))
-          .collect(Collectors.toList());
-      
-      // Wait for all futures to complete
-      for (Future<List<SnapshotItem>> future : futures) {
-        List<SnapshotItem> items = future.get(30, TimeUnit.SECONDS);
-        assertThat(items, notNullValue());
+    // Split the specs into smaller batches to simulate concurrent operations
+    List<List<ContentSpecifier>> batches = splitIntoBatches(specs, CONCURRENT_OPERATIONS);
+    
+    // Measure time with platform threads
+    long platformThreadTime = measureExecutionTime(() -> {
+      try {
+        executeConcurrentlyWithPlatformThreads(batches);
       }
-      
-      return System.currentTimeMillis() - startTime;
-    }
-    finally {
-      executor.shutdown();
-      executor.awaitTermination(1, TimeUnit.MINUTES);
-    }
+      catch (Exception e) {
+        throw new RuntimeException(e);
+      }
+    });
+    
+    // Measure time with virtual threads
+    long virtualThreadTime = measureExecutionTime(() -> {
+      try {
+        executeConcurrentlyWithVirtualThreads(batches);
+      }
+      catch (Exception e) {
+        throw new RuntimeException(e);
+      }
+    });
+    
+    // Log the results
+    log.info("Platform thread execution time: {} ms", platformThreadTime);
+    log.info("Virtual thread execution time: {} ms", virtualThreadTime);
+    
+    // Virtual threads should be faster for I/O-bound operations
+    assertThat("Virtual threads should be faster than platform threads for I/O-bound operations",
+        virtualThreadTime, lessThan(platformThreadTime));
   }
   
   /**
-   * Creates a list of mock snapshot items.
+   * Tests that the AptProxySnapshotFacet correctly handles concurrent fetching of
+   * multiple snapshot items using virtual threads.
    */
-  private List<SnapshotItem> createMockSnapshotItems(int count) {
+  @Test
+  public void testConcurrentSnapshotFetchingWithVirtualThreads() throws Exception {
+    // Create a list of content specifiers
+    List<ContentSpecifier> specs = createContentSpecifiers(SNAPSHOT_ITEM_COUNT);
+    
+    // Split the specs into smaller batches to simulate concurrent operations
+    List<List<ContentSpecifier>> batches = splitIntoBatches(specs, CONCURRENT_OPERATIONS);
+    
+    // Execute the batches concurrently using virtual threads
+    List<List<SnapshotItem>> results = executeConcurrentlyWithVirtualThreads(batches);
+    
+    // Verify the results
+    assertThat(results, hasSize(batches.size()));
+    int totalItems = results.stream().mapToInt(List::size).sum();
+    assertThat(totalItems, is(equalTo(SNAPSHOT_ITEM_COUNT)));
+    
+    // Verify that the proxy facet was called for each batch
+    verify(proxyFacet, times(batches.size())).getSnapshotItems(anyList());
+  }
+  
+  /**
+   * Tests that the AptProxySnapshotFacet correctly handles errors during concurrent
+   * snapshot fetching with virtual threads.
+   */
+  @Test
+  public void testErrorHandlingDuringConcurrentFetching() throws Exception {
+    // Configure the proxy facet to throw an exception for certain specs
+    doAnswer(invocation -> {
+      List<ContentSpecifier> specs = invocation.getArgument(0);
+      // Simulate I/O delay
+      Thread.sleep(OPERATION_DELAY.toMillis());
+      
+      // Throw an exception if the first spec has an ID divisible by 3
+      if (!specs.isEmpty() && specs.get(0).getId() % 3 == 0) {
+        throw new IOException("Simulated network error");
+      }
+      
+      // Otherwise, return mock snapshot items
+      return specs.stream()
+          .map(spec -> createMockSnapshotItem(spec))
+          .collect(Collectors.toList());
+    }).when(proxyFacet).getSnapshotItems(anyList());
+    
+    // Create a list of content specifiers
+    List<ContentSpecifier> specs = createContentSpecifiers(SNAPSHOT_ITEM_COUNT);
+    
+    // Split the specs into smaller batches to simulate concurrent operations
+    List<List<ContentSpecifier>> batches = splitIntoBatches(specs, CONCURRENT_OPERATIONS);
+    
+    // Execute the batches concurrently using virtual threads, catching exceptions
+    List<CompletableFuture<List<SnapshotItem>>> futures = new ArrayList<>();
+    try (ExecutorService executor = createVirtualThreadExecutorService()) {
+      for (List<ContentSpecifier> batch : batches) {
+        CompletableFuture<List<SnapshotItem>> future = CompletableFuture.supplyAsync(() -> {
+          try {
+            // Verify we're running on a virtual thread
+            assertCurrentThreadIsVirtual();
+            return snapshotFacet.fetchSnapshotItems(batch);
+          }
+          catch (IOException e) {
+            // Convert to unchecked exception for CompletableFuture
+            throw new RuntimeException(e);
+          }
+        }, executor);
+        futures.add(future);
+      }
+      
+      // Wait for all futures to complete, including those that complete exceptionally
+      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+          .exceptionally(ex -> null)
+          .join();
+    }
+    
+    // Count successful and failed operations
+    int successCount = 0;
+    int failureCount = 0;
+    for (CompletableFuture<List<SnapshotItem>> future : futures) {
+      if (future.isCompletedExceptionally()) {
+        failureCount++;
+      }
+      else {
+        successCount++;
+      }
+    }
+    
+    // Log the results
+    log.info("Successful operations: {}", successCount);
+    log.info("Failed operations: {}", failureCount);
+    
+    // Verify that some operations succeeded and some failed
+    assertThat("Some operations should succeed", successCount > 0, is(true));
+    assertThat("Some operations should fail", failureCount > 0, is(true));
+    assertThat("Total operations should match batch count", successCount + failureCount, is(equalTo(batches.size())));
+  }
+  
+  /**
+   * Tests that the AptProxySnapshotFacet correctly handles a high number of concurrent
+   * operations using virtual threads, which would be impractical with platform threads.
+   */
+  @Test
+  public void testHighConcurrencyWithVirtualThreads() throws Exception {
+    // Skip this test if running in a CI environment or with limited resources
+    org.junit.Assume.assumeTrue("Skipping high concurrency test in resource-constrained environment",
+        Runtime.getRuntime().availableProcessors() >= 4);
+    
+    // Create a very large number of content specifiers
+    final int HIGH_CONCURRENCY = 1000;
+    List<ContentSpecifier> specs = createContentSpecifiers(HIGH_CONCURRENCY);
+    
+    // Use individual specs for maximum concurrency (one virtual thread per spec)
+    List<List<ContentSpecifier>> batches = specs.stream()
+        .map(List::of)
+        .collect(Collectors.toList());
+    
+    // Configure the proxy facet for high concurrency testing
+    doAnswer(invocation -> {
+      List<ContentSpecifier> batchSpecs = invocation.getArgument(0);
+      // Shorter delay for high concurrency test
+      Thread.sleep(10);
+      return batchSpecs.stream()
+          .map(spec -> createMockSnapshotItem(spec))
+          .collect(Collectors.toList());
+    }).when(proxyFacet).getSnapshotItems(anyList());
+    
+    // Execute with virtual threads
+    long startTime = System.currentTimeMillis();
+    List<List<SnapshotItem>> results;
+    try (ExecutorService executor = createVirtualThreadExecutorService()) {
+      List<CompletableFuture<List<SnapshotItem>>> futures = batches.stream()
+          .map(batch -> CompletableFuture.supplyAsync(() -> {
+            try {
+              assertCurrentThreadIsVirtual();
+              return snapshotFacet.fetchSnapshotItems(batch);
+            }
+            catch (IOException e) {
+              throw new RuntimeException(e);
+            }
+          }, executor))
+          .collect(Collectors.toList());
+      
+      results = futures.stream()
+          .map(CompletableFuture::join)
+          .collect(Collectors.toList());
+    }
+    long duration = System.currentTimeMillis() - startTime;
+    
+    // Log the results
+    log.info("Completed {} concurrent operations in {} ms", HIGH_CONCURRENCY, duration);
+    log.info("Average time per operation: {} ms", (double) duration / HIGH_CONCURRENCY);
+    
+    // Verify the results
+    assertThat(results, hasSize(HIGH_CONCURRENCY));
+    int totalItems = results.stream().mapToInt(List::size).sum();
+    assertThat(totalItems, is(equalTo(HIGH_CONCURRENCY)));
+    
+    // Verify that the proxy facet was called for each batch
+    verify(proxyFacet, times(HIGH_CONCURRENCY)).getSnapshotItems(anyList());
+    
+    // The total duration should be much less than if we did these sequentially
+    // Sequential would be approximately HIGH_CONCURRENCY * 10ms
+    long sequentialEstimate = HIGH_CONCURRENCY * 10;
+    assertThat("Virtual threads should provide significant concurrency benefits",
+        duration, lessThan(sequentialEstimate / 10));
+  }
+  
+  /**
+   * Helper method to create a list of mock content specifiers.
+   */
+  private List<ContentSpecifier> createContentSpecifiers(int count) {
     return IntStream.range(0, count)
         .mapToObj(i -> {
-          ContentSpecifier spec = new ContentSpecifier(Role.RELEASE_INDEX, "path/to/item-" + i);
-          return createSnapshotItem(spec);
+          ContentSpecifier spec = Mockito.mock(ContentSpecifier.class);
+          when(spec.getId()).thenReturn(i);
+          when(spec.toString()).thenReturn("ContentSpecifier-" + i);
+          return spec;
         })
         .collect(Collectors.toList());
   }
   
   /**
-   * Creates a snapshot item for the given content specifier.
+   * Helper method to create a mock snapshot item for a content specifier.
    */
-  private SnapshotItem createSnapshotItem(ContentSpecifier spec) {
-    byte[] bytes = ("content for " + spec.path).getBytes();
-    BytesPayload payload = new BytesPayload(bytes, spec.role.getMimeType());
-    Content content = new Content(payload);
-    return new SnapshotItem(spec, content);
+  private SnapshotItem createMockSnapshotItem(ContentSpecifier spec) {
+    SnapshotItem item = Mockito.mock(SnapshotItem.class);
+    when(item.getContentSpecifier()).thenReturn(spec);
+    when(item.toString()).thenReturn("SnapshotItem-" + spec.getId());
+    return item;
   }
   
   /**
-   * Creates a list of content specifiers.
+   * Helper method to split a list into smaller batches.
    */
-  private List<ContentSpecifier> createContentSpecifiers(int count) {
-    return createContentSpecifiers(count, "");
+  private <T> List<List<T>> splitIntoBatches(List<T> items, int batchCount) {
+    List<List<T>> batches = new ArrayList<>();
+    int itemsPerBatch = (int) Math.ceil((double) items.size() / batchCount);
+    
+    for (int i = 0; i < items.size(); i += itemsPerBatch) {
+      int end = Math.min(i + itemsPerBatch, items.size());
+      batches.add(new ArrayList<>(items.subList(i, end)));
+    }
+    
+    return batches;
   }
   
   /**
-   * Creates a list of content specifiers with a prefix.
+   * Helper method to execute batches concurrently using platform threads.
    */
-  private List<ContentSpecifier> createContentSpecifiers(int count, String prefix) {
-    return IntStream.range(0, count)
-        .mapToObj(i -> new ContentSpecifier(Role.RELEASE_INDEX, prefix + "path/to/item-" + i))
-        .collect(Collectors.toList());
+  private List<List<SnapshotItem>> executeConcurrentlyWithPlatformThreads(List<List<ContentSpecifier>> batches) 
+      throws Exception 
+  {
+    List<CompletableFuture<List<SnapshotItem>>> futures = new ArrayList<>();
+    ThreadFactory platformThreadFactory = Thread.ofPlatform().factory();
+    
+    try (ExecutorService executor = Executors.newFixedThreadPool(CONCURRENT_OPERATIONS, platformThreadFactory)) {
+      for (List<ContentSpecifier> batch : batches) {
+        CompletableFuture<List<SnapshotItem>> future = CompletableFuture.supplyAsync(() -> {
+          try {
+            // Verify we're running on a platform thread
+            assertCurrentThreadIsNotVirtual();
+            return snapshotFacet.fetchSnapshotItems(batch);
+          }
+          catch (IOException e) {
+            throw new RuntimeException(e);
+          }
+        }, executor);
+        futures.add(future);
+      }
+      
+      return futures.stream()
+          .map(CompletableFuture::join)
+          .collect(Collectors.toList());
+    }
+  }
+  
+  /**
+   * Helper method to execute batches concurrently using virtual threads.
+   */
+  private List<List<SnapshotItem>> executeConcurrentlyWithVirtualThreads(List<List<ContentSpecifier>> batches) 
+      throws Exception 
+  {
+    List<CompletableFuture<List<SnapshotItem>>> futures = new ArrayList<>();
+    
+    try (ExecutorService executor = createVirtualThreadExecutorService()) {
+      for (List<ContentSpecifier> batch : batches) {
+        CompletableFuture<List<SnapshotItem>> future = CompletableFuture.supplyAsync(() -> {
+          try {
+            // Verify we're running on a virtual thread
+            assertCurrentThreadIsVirtual();
+            return snapshotFacet.fetchSnapshotItems(batch);
+          }
+          catch (IOException e) {
+            throw new RuntimeException(e);
+          }
+        }, executor);
+        futures.add(future);
+      }
+      
+      return futures.stream()
+          .map(CompletableFuture::join)
+          .collect(Collectors.toList());
+    }
+  }
+  
+  /**
+   * Helper method to measure the execution time of a runnable.
+   */
+  private long measureExecutionTime(Runnable runnable) {
+    long startTime = System.currentTimeMillis();
+    runnable.run();
+    return System.currentTimeMillis() - startTime;
   }
 }

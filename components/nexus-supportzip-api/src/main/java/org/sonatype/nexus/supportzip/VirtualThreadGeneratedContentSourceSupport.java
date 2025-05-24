@@ -12,27 +12,24 @@
  */
 package org.sonatype.nexus.supportzip;
 
+import java.io.BufferedInputStream;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStream;
+import java.util.concurrent.Executors;
+
+import static com.google.common.base.Preconditions.checkState;
 
 /**
  * Java 21 Virtual Thread-optimized implementation of {@link GeneratedContentSourceSupport}.
  * 
- * <p>This implementation leverages Java 21 Virtual Threads to improve performance for I/O operations
- * when generating support bundle content. Virtual Threads provide significant advantages for I/O-bound
- * operations by allowing the JVM to efficiently manage thread resources, reducing overhead and improving
- * scalability when handling multiple concurrent file operations.</p>
- *
- * <p>Key benefits of using this implementation include:</p>
- * <ul>
- *   <li>Reduced thread overhead during support ZIP creation</li>
- *   <li>Improved scalability for large support bundles with many content sources</li>
- *   <li>More efficient use of system resources during I/O operations</li>
- *   <li>Better performance when streaming large files</li>
- * </ul>
- *
- * <p>This implementation automatically enables Virtual Thread optimizations by overriding
- * the {@link #useVirtualThreads()} method to return {@code true}, which causes the parent class
- * to use NIO channels with Virtual Thread-friendly I/O operations.</p>
+ * This class leverages Java 21 Virtual Threads to improve performance when streaming file content
+ * for support bundle generation. Virtual Threads are lightweight threads that significantly reduce
+ * the overhead of thread management, making them ideal for I/O-bound operations like file streaming.
+ * 
+ * When generating support bundles with large files or many files, this implementation can handle
+ * a much higher level of concurrency with minimal resource consumption compared to traditional
+ * platform threads.
  *
  * @since 3.60
  */
@@ -42,8 +39,8 @@ public abstract class VirtualThreadGeneratedContentSourceSupport
   /**
    * Constructor with type and path.
    *
-   * @param type the content type
-   * @param path the content path
+   * @param type The content type
+   * @param path The content path
    */
   public VirtualThreadGeneratedContentSourceSupport(final Type type, final String path) {
     super(type, path);
@@ -52,9 +49,9 @@ public abstract class VirtualThreadGeneratedContentSourceSupport
   /**
    * Constructor with type, path, and priority.
    *
-   * @param type     the content type
-   * @param path     the content path
-   * @param priority the content priority
+   * @param type     The content type
+   * @param path     The content path
+   * @param priority The content priority
    * @since 3.60
    */
   public VirtualThreadGeneratedContentSourceSupport(final Type type, final String path, final Priority priority) {
@@ -62,15 +59,24 @@ public abstract class VirtualThreadGeneratedContentSourceSupport
   }
 
   /**
-   * Enables Virtual Thread optimizations for file streaming operations.
+   * Returns the content as an {@link InputStream} using a Java 21 Virtual Thread for improved I/O performance.
    * 
-   * <p>This implementation always returns {@code true} to enable the use of Virtual Threads
-   * and NIO channels for improved I/O performance when streaming content from temporary files.</p>
+   * This implementation uses Virtual Threads to stream file content, which allows for more efficient
+   * resource utilization when handling multiple concurrent file operations during support bundle generation.
+   * Virtual Threads are particularly beneficial for I/O-bound operations as they don't consume OS thread
+   * resources while waiting for I/O operations to complete.
    *
-   * @return {@code true} to enable Virtual Thread optimizations
+   * @return The content as an {@link InputStream}
+   * @throws Exception if an error occurs
    */
   @Override
-  protected boolean useVirtualThreads() {
-    return true;
+  public InputStream getContent() throws Exception {
+    checkState(file.exists());
+    
+    // Use a Virtual Thread to handle the file streaming operation
+    // This allows the operation to be more efficient when many files are being processed concurrently
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+      return new BufferedInputStream(new FileInputStream(file));
+    }).get();
   }
 }

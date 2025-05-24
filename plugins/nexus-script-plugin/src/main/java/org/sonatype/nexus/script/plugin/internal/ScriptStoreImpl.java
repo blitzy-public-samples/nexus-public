@@ -16,6 +16,8 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import javax.annotation.PostConstruct;
+import javax.annotation.PreDestroy;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -28,7 +30,11 @@ import org.sonatype.nexus.transaction.Transactional;
 import com.google.common.collect.ImmutableList;
 
 /**
- * MyBatis {@link ScriptStore} implementation with Java 21 Virtual Threads support.
+ * MyBatis {@link ScriptStore} implementation with Java 21 Virtual Thread support.
+ * <p>
+ * This implementation leverages Java 21 Virtual Threads for database operations to improve
+ * I/O performance. The ScriptDAO interface is annotated with @VirtualThreadSupport, indicating
+ * that it's optimized for execution in Virtual Threads.
  *
  * @since 3.21
  */
@@ -39,15 +45,37 @@ public class ScriptStoreImpl
     implements ScriptStore
 {
   /**
-   * Virtual thread executor for I/O-bound database operations.
-   * Using virtual threads improves scalability for database operations without the overhead of platform threads.
+   * Virtual Thread executor for database operations.
+   * <p>
+   * This executor creates a new Virtual Thread for each submitted task, which is ideal for
+   * I/O-bound operations like database access. Virtual Threads are much lighter than platform
+   * threads and can be created in large numbers without significant overhead.
    */
-  private final ExecutorService virtualThreadExecutor;
+  private ExecutorService virtualThreadExecutor;
 
   @Inject
   public ScriptStoreImpl(final DataSessionSupplier sessionSupplier) {
     super(sessionSupplier);
-    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+  }
+
+  /**
+   * Initialize the Virtual Thread executor.
+   */
+  @PostConstruct
+  public void init() {
+    // Create a Virtual Thread per task executor with a descriptive thread name prefix
+    virtualThreadExecutor = Executors.newThreadPerTaskExecutor(
+        Thread.ofVirtual().name("script-store-").factory());
+  }
+
+  /**
+   * Shutdown the Virtual Thread executor when the bean is destroyed.
+   */
+  @PreDestroy
+  public void destroy() {
+    if (virtualThreadExecutor != null) {
+      virtualThreadExecutor.shutdown();
+    }
   }
 
   @Override
@@ -56,8 +84,13 @@ public class ScriptStoreImpl
   }
 
   /**
-   * Lists all scripts using virtual threads for improved I/O performance.
-   * The @Transactional annotation is preserved to maintain transaction boundaries.
+   * Lists all scripts using Virtual Threads for improved I/O performance.
+   * <p>
+   * The @Transactional annotation ensures that the database operation occurs within a transaction,
+   * while the Virtual Thread executor allows for efficient handling of I/O operations without
+   * blocking platform threads.
+   *
+   * @return an immutable list of all scripts
    */
   @Transactional
   @Override
@@ -66,13 +99,19 @@ public class ScriptStoreImpl
       return virtualThreadExecutor.submit(() -> ImmutableList.copyOf(dao().browse())).get();
     }
     catch (Exception e) {
-      throw new RuntimeException("Error listing scripts with virtual thread", e);
+      throw new RuntimeException("Error listing scripts with Virtual Thread", e);
     }
   }
 
   /**
-   * Gets a script by name using virtual threads for improved I/O performance.
-   * The @Transactional annotation is preserved to maintain transaction boundaries.
+   * Gets a script by name using Virtual Threads for improved I/O performance.
+   * <p>
+   * The @Transactional annotation ensures that the database operation occurs within a transaction,
+   * while the Virtual Thread executor allows for efficient handling of I/O operations without
+   * blocking platform threads.
+   *
+   * @param name the script name
+   * @return the script, or null if not found
    */
   @Transactional
   @Override
@@ -81,13 +120,18 @@ public class ScriptStoreImpl
       return virtualThreadExecutor.submit(() -> dao().read(name).orElse(null)).get();
     }
     catch (Exception e) {
-      throw new RuntimeException("Error getting script with virtual thread: " + name, e);
+      throw new RuntimeException("Error getting script with Virtual Thread: " + name, e);
     }
   }
 
   /**
-   * Creates a script using virtual threads for improved I/O performance.
-   * The @Transactional annotation is preserved to maintain transaction boundaries.
+   * Creates a new script using Virtual Threads for improved I/O performance.
+   * <p>
+   * The @Transactional annotation ensures that the database operation occurs within a transaction,
+   * while the Virtual Thread executor allows for efficient handling of I/O operations without
+   * blocking platform threads.
+   *
+   * @param script the script to create
    */
   @Transactional
   @Override
@@ -99,13 +143,18 @@ public class ScriptStoreImpl
       }).get();
     }
     catch (Exception e) {
-      throw new RuntimeException("Error creating script with virtual thread: " + script.getName(), e);
+      throw new RuntimeException("Error creating script with Virtual Thread: " + script.getName(), e);
     }
   }
 
   /**
-   * Updates a script using virtual threads for improved I/O performance.
-   * The @Transactional annotation is preserved to maintain transaction boundaries.
+   * Updates an existing script using Virtual Threads for improved I/O performance.
+   * <p>
+   * The @Transactional annotation ensures that the database operation occurs within a transaction,
+   * while the Virtual Thread executor allows for efficient handling of I/O operations without
+   * blocking platform threads.
+   *
+   * @param script the script to update
    */
   @Transactional
   @Override
@@ -117,13 +166,18 @@ public class ScriptStoreImpl
       }).get();
     }
     catch (Exception e) {
-      throw new RuntimeException("Error updating script with virtual thread: " + script.getName(), e);
+      throw new RuntimeException("Error updating script with Virtual Thread: " + script.getName(), e);
     }
   }
 
   /**
-   * Deletes a script using virtual threads for improved I/O performance.
-   * The @Transactional annotation is preserved to maintain transaction boundaries.
+   * Deletes a script using Virtual Threads for improved I/O performance.
+   * <p>
+   * The @Transactional annotation ensures that the database operation occurs within a transaction,
+   * while the Virtual Thread executor allows for efficient handling of I/O operations without
+   * blocking platform threads.
+   *
+   * @param script the script to delete
    */
   @Transactional
   @Override
@@ -135,7 +189,7 @@ public class ScriptStoreImpl
       }).get();
     }
     catch (Exception e) {
-      throw new RuntimeException("Error deleting script with virtual thread: " + script.getName(), e);
+      throw new RuntimeException("Error deleting script with Virtual Thread: " + script.getName(), e);
     }
   }
 }

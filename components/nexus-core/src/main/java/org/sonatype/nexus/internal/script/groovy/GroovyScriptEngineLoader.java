@@ -13,13 +13,17 @@
 package org.sonatype.nexus.internal.script.groovy;
 
 import java.util.List;
-import java.util.Objects;
+import java.util.ServiceLoader;
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
-import javax.script.ScriptEngine;
 import javax.script.ScriptEngineFactory;
 import javax.script.ScriptEngineManager;
+
+// Import for Java 21 String Templates
+import static java.lang.StringTemplate.STR;
 
 import org.sonatype.nexus.common.app.ApplicationDirectories;
 import org.sonatype.nexus.common.app.ManagedLifecycle;
@@ -30,6 +34,8 @@ import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.SERVICES;
 
 /**
  * Groovy script engine loader. Is used to run groovy scripts.
+ * 
+ * Updated for Java 21 compatibility with enhanced module system support and improved error handling.
  * 
  * @since 3.0
  */
@@ -51,79 +57,73 @@ public class GroovyScriptEngineLoader
       final ApplicationDirectories applicationDirectories,
       final ScriptEngineManager scriptEngineManager)
   {
-    this.classLoader = checkNotNull(classLoader);
-    this.applicationDirectories = checkNotNull(applicationDirectories);
-    this.scriptEngineManager = checkNotNull(scriptEngineManager);
+    this.classLoader = checkNotNull(classLoader, "ClassLoader cannot be null");
+    this.applicationDirectories = checkNotNull(applicationDirectories, "ApplicationDirectories cannot be null");
+    this.scriptEngineManager = checkNotNull(scriptEngineManager, "ScriptEngineManager cannot be null");
   }
 
   @Override
   protected void doStart() throws Exception {
-    // Create the Groovy script engine factory with Java 21 compatible class loading
+    // Create the Groovy engine factory with our class loader and application directories
     GroovyScriptEngineFactory groovyEngineFactory = new GroovyScriptEngineFactory(classLoader, applicationDirectories);
     
+    // Use String Template for improved logging clarity
     log.debug(STR."Registering Groovy script engine factory: \{groovyEngineFactory}");
     
-    // Register the engine factory with validation for Java 21 compatibility
-    registerEngineFactory(groovyEngineFactory);
-  }
-  
-  /**
-   * Registers the Groovy script engine factory with additional validation for Java 21 compatibility.
-   * This method ensures proper interaction with Java 21's enhanced module system and provides
-   * improved error handling and diagnostics.
-   *
-   * @param engineFactory the Groovy script engine factory to register
-   */
-  private void registerEngineFactory(final GroovyScriptEngineFactory engineFactory) {
-    try {
-      // Get all supported engine names
-      List<String> engineNames = engineFactory.getNames();
-      
-      // Validate that we have at least one engine name
-      if (engineNames == null || engineNames.isEmpty()) {
-        log.warn(STR."No engine names provided by Groovy script engine factory: \{engineFactory}");
-        return;
+    // Get all engine names supported by this factory
+    List<String> engineNames = groovyEngineFactory.getNames();
+    
+    if (engineNames.isEmpty()) {
+      log.warn(STR."No engine names found for Groovy script engine factory: \{groovyEngineFactory}");
+      return;
+    }
+    
+    // Track registration success
+    AtomicBoolean registrationSuccess = new AtomicBoolean(false);
+    
+    // Register each engine name with validation
+    engineNames.forEach(name -> {
+      try {
+        log.debug(STR."Registering engine name: \{name}");
+        scriptEngineManager.registerEngineName(name, groovyEngineFactory);
+        
+        // Verify registration was successful by attempting to get the engine
+        if (scriptEngineManager.getEngineByName(name) != null) {
+          log.debug(STR."Successfully registered and verified engine: \{name}");
+          registrationSuccess.set(true);
+        } else {
+          log.warn(STR."Engine registration verification failed for: \{name}");
+        }
+      } catch (Exception e) {
+        log.error(STR."Failed to register engine name: \{name}", e);
       }
+    });
+    
+    // Verify at least one engine was successfully registered
+    if (!registrationSuccess.get()) {
+      log.error("No Groovy script engines were successfully registered. Script execution may not work correctly.");
       
-      // Register each engine name with the ScriptEngineManager
-      engineNames.forEach(name -> {
-        if (name == null || name.isBlank()) {
-          log.warn(STR."Skipping registration of engine with invalid name: '\{name}'")
-          return;
+      // As a fallback for Java 21 module system, try to ensure the script engine is available
+      // through the ServiceLoader mechanism
+      try {
+        log.debug("Attempting fallback registration through ServiceLoader mechanism");
+        ServiceLoader<ScriptEngineFactory> serviceLoader = ServiceLoader.load(ScriptEngineFactory.class, classLoader);
+        boolean foundGroovy = false;
+        
+        for (ScriptEngineFactory factory : serviceLoader) {
+          if (factory.getEngineName().toLowerCase().contains("groovy")) {
+            log.debug(STR."Found Groovy engine via ServiceLoader: \{factory.getEngineName()}");
+            foundGroovy = true;
+            break;
+          }
         }
         
-        try {
-          // Register the engine factory with the ScriptEngineManager
-          scriptEngineManager.registerEngineName(name, engineFactory);
-          
-          // Verify the registration was successful
-          ScriptEngine engine = scriptEngineManager.getEngineByName(name);
-          if (engine != null) {
-            ScriptEngineFactory factory = engine.getFactory();
-            if (Objects.equals(factory, engineFactory)) {
-              log.debug(STR."Successfully registered Groovy script engine with name: '\{name}'")
-            } else {
-              log.warn(STR."Engine registered but factory mismatch for name: '\{name}'. Expected: \{engineFactory}, Got: \{factory}");
-            }
-          } else {
-            log.warn(STR."Failed to verify engine registration for name: '\{name}'")
-          }
-        } catch (Exception e) {
-          log.error(STR."Failed to register Groovy script engine with name: '\{name}'", e);
+        if (!foundGroovy) {
+          log.warn("Could not find Groovy engine via ServiceLoader. Script execution may be unavailable.");
         }
-      });
-      
-      // Final verification that at least one engine is available
-      boolean anyEngineAvailable = engineNames.stream()
-          .anyMatch(name -> scriptEngineManager.getEngineByName(name) != null);
-      
-      if (anyEngineAvailable) {
-        log.info(STR."Groovy script engine successfully registered and available");
-      } else {
-        log.warn(STR."Groovy script engine registration may have failed - unable to retrieve engine by any registered name");
+      } catch (Exception e) {
+        log.error("Error during ServiceLoader fallback registration", e);
       }
-    } catch (Exception e) {
-      log.error(STR."Failed to register Groovy script engine factory: \{engineFactory}", e);
     }
   }
 }

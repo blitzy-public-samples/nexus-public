@@ -21,8 +21,8 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
@@ -108,6 +108,9 @@ public class TaskComponent
 
   private final boolean allowCreation;
   
+  /**
+   * Virtual thread executor for I/O-bound operations
+   */
   private final ExecutorService virtualThreadExecutor;
 
   @Inject
@@ -122,6 +125,11 @@ public class TaskComponent
     this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
+  /**
+   * Gets the state for the component.
+   * 
+   * @return the state as a map
+   */
   @Nullable
   @Override
   public Map<String, Object> getState() {
@@ -130,23 +138,32 @@ public class TaskComponent
 
   /**
    * Retrieve a list of scheduled tasks.
+   * Uses virtual threads for I/O-bound operations.
    */
   @DirectMethod
   @Timed
   @ExceptionMetered
   @RequiresPermissions("nexus:tasks:read")
-  public List<TaskXO> read() throws Exception {
-    Future<List<TaskXO>> future = virtualThreadExecutor.submit(() -> 
-        taskScheduler.listsTasks()
-            .stream()
-            .filter(taskInfo -> taskInfo.getConfiguration().isVisible())
-            .map(this::asTaskXO)
-            .collect(toList()));
-    return future.get();
+  public List<TaskXO> read() {
+    try {
+      Future<List<TaskXO>> future = virtualThreadExecutor.submit(() -> 
+          taskScheduler.listsTasks()
+              .stream()
+              .filter(taskInfo -> taskInfo.getConfiguration().isVisible())
+              .map(this::asTaskXO)
+              .collect(toList())
+      );
+      return future.get();
+    } 
+    catch (Exception e) {
+      log.error("Failed to retrieve tasks", e);
+      throw new RuntimeException("Failed to retrieve tasks", e);
+    }
   }
 
   /**
    * Retrieve available task types.
+   * Uses virtual threads for I/O-bound operations.
    *
    * @return a list of task types
    */
@@ -154,16 +171,24 @@ public class TaskComponent
   @Timed
   @ExceptionMetered
   @RequiresPermissions("nexus:tasks:read")
-  public List<TaskTypeXO> readTypes() throws Exception {
-    Future<List<TaskTypeXO>> future = virtualThreadExecutor.submit(() -> 
-        taskScheduler.getTaskFactory().getDescriptors().stream()
-            .map(TaskComponent::asTaskTypeXO)
-            .collect(toList()));
-    return future.get();
+  public List<TaskTypeXO> readTypes() {
+    try {
+      Future<List<TaskTypeXO>> future = virtualThreadExecutor.submit(() ->
+          taskScheduler.getTaskFactory().getDescriptors().stream()
+              .map(TaskComponent::asTaskTypeXO)
+              .collect(toList())
+      );
+      return future.get();
+    }
+    catch (Exception e) {
+      log.error("Failed to retrieve task types", e);
+      throw new RuntimeException("Failed to retrieve task types", e);
+    }
   }
 
   /**
    * Creates a task.
+   * Uses virtual threads for I/O-bound operations.
    *
    * @param taskXO to be created
    * @return created task
@@ -175,7 +200,7 @@ public class TaskComponent
   @RequiresPermissions("nexus:tasks:create")
   @Validate(groups = {Create.class, Default.class})
   public TaskXO create(final @NotNull @Valid TaskXO taskXO) throws Exception {
-    Future<TaskXO> future = virtualThreadExecutor.submit(() -> {
+    return virtualThreadExecutor.submit(() -> {
       Schedule schedule = asSchedule(taskXO);
 
       TaskConfiguration taskConfiguration = taskScheduler.createTaskConfigurationInstance(taskXO.getTypeId());
@@ -191,12 +216,12 @@ public class TaskComponent
       log.debug("Created task with type '{}': {} {}", taskConfiguration.getClass(), taskConfiguration.getName(),
           taskConfiguration.getId());
       return asTaskXO(task);
-    });
-    return future.get();
+    }).get();
   }
 
   /**
    * Updates a task.
+   * Uses virtual threads for I/O-bound operations.
    *
    * @param taskXO to be updated
    * @return updated task
@@ -208,7 +233,7 @@ public class TaskComponent
   @RequiresPermissions("nexus:tasks:update")
   @Validate(groups = {Update.class, Default.class})
   public TaskXO update(final @NotNull @Valid TaskXO taskXO) throws Exception {
-    Future<TaskXO> future = virtualThreadExecutor.submit(() -> {
+    return virtualThreadExecutor.submit(() -> {
       TaskInfo task = taskScheduler.getTaskById(taskXO.getId());
       validateState(taskXO.getId(), task);
       if ("script".equals(task.getTypeId())) {
@@ -223,29 +248,46 @@ public class TaskComponent
       taskConfiguration.setNotificationCondition(taskXO.getNotificationCondition());
       taskXO.getProperties().forEach(taskConfiguration::setString);
 
-      task = scheduleTask(() -> taskScheduler.scheduleTask(taskConfiguration, schedule));
+      TaskInfo updatedTask = scheduleTask(() -> taskScheduler.scheduleTask(taskConfiguration, schedule));
 
-      return asTaskXO(task);
-    });
-    return future.get();
+      return asTaskXO(updatedTask);
+    }).get();
   }
 
+  /**
+   * Removes a task.
+   * Uses virtual threads for I/O-bound operations.
+   *
+   * @param id of the task to be removed
+   */
   @DirectMethod
   @Timed
   @ExceptionMetered
   @RequiresAuthentication
   @RequiresPermissions("nexus:tasks:delete")
   @Validate
-  public void remove(final @NotEmpty String id) throws Exception {
-    virtualThreadExecutor.submit(() -> {
-      TaskInfo taskInfo = taskScheduler.getTaskById(id);
-      if (taskInfo != null) {
-        taskInfo.remove();
-      }
-      return null;
-    }).get();
+  public void remove(final @NotEmpty String id) {
+    try {
+      virtualThreadExecutor.submit(() -> {
+        TaskInfo taskInfo = taskScheduler.getTaskById(id);
+        if (taskInfo != null) {
+          taskInfo.remove();
+        }
+        return null;
+      }).get();
+    }
+    catch (Exception e) {
+      log.error("Failed to remove task with id: {}", id, e);
+      throw new RuntimeException("Failed to remove task", e);
+    }
   }
 
+  /**
+   * Runs a task.
+   * Uses virtual threads for I/O-bound operations.
+   *
+   * @param id of the task to be run
+   */
   @DirectMethod
   @Timed
   @ExceptionMetered
@@ -262,19 +304,37 @@ public class TaskComponent
     }).get();
   }
 
+  /**
+   * Stops a task.
+   * Uses virtual threads for I/O-bound operations.
+   *
+   * @param id of the task to be stopped
+   */
   @DirectMethod
   @Timed
   @ExceptionMetered
   @RequiresAuthentication
   @RequiresPermissions("nexus:tasks:stop")
   @Validate
-  public void stop(final @NotEmpty String id) throws Exception {
-    virtualThreadExecutor.submit(() -> {
-      taskScheduler.cancel(id, false);
-      return null;
-    }).get();
+  public void stop(final @NotEmpty String id) {
+    try {
+      virtualThreadExecutor.submit(() -> {
+        taskScheduler.cancel(id, false);
+        return null;
+      }).get();
+    }
+    catch (Exception e) {
+      log.error("Failed to stop task with id: {}", id, e);
+      throw new RuntimeException("Failed to stop task", e);
+    }
   }
 
+  /**
+   * Converts a TaskInfo to a TaskXO using pattern matching for switch.
+   * 
+   * @param taskInfo the task info to convert
+   * @return the converted TaskXO
+   */
   private TaskXO asTaskXO(final TaskInfo taskInfo) {
     ExternalTaskState externalTaskState = taskScheduler.toExternalTaskState(taskInfo);
     TaskState taskState = externalTaskState.getState();
@@ -305,85 +365,104 @@ public class TaskComponent
     result.setNotificationCondition(configuration.getNotificationCondition());
     result.setProperties(configuration.asMap());
 
+    // Use pattern matching for switch to handle different schedule types
     Schedule schedule = taskInfo.getSchedule();
-    
-    // Using pattern matching for switch to handle different schedule types
     switch (schedule) {
-      case Once once -> result.setStartDate(once.getStartAt());
-      case Hourly hourly -> result.setStartDate(hourly.getStartAt());
-      case Daily daily -> result.setStartDate(daily.getStartAt());
-      case Weekly weekly -> {
-        result.setStartDate(weekly.getStartAt());
+      case Once o -> {
+        result.setStartDate(o.getStartAt());
+      }
+      case Hourly h -> {
+        result.setStartDate(h.getStartAt());
+      }
+      case Daily d -> {
+        result.setStartDate(d.getStartAt());
+      }
+      case Weekly w -> {
+        result.setStartDate(w.getStartAt());
         // expects integers with 1=SUN, 2=MON, etc...
         result.setRecurringDays(
-            weekly.getDaysToRun()
+            w.getDaysToRun()
                 .stream()
                 .map(dayToRun -> dayToRun.ordinal() + 1)
                 .collect(toList())
                 .toArray(new Integer[]{}));
       }
-      case Monthly monthly -> {
-        result.setStartDate(monthly.getStartAt());
+      case Monthly m -> {
+        result.setStartDate(m.getStartAt());
         // expects ints, with 999 being the lastDayOfMonth
-        result.setRecurringDays(monthly.getDaysToRun()
+        result.setRecurringDays(m.getDaysToRun()
             .stream()
             .map(dayToRun -> dayToRun.isLastDayOfMonth() ? 999 : dayToRun.getDay())
             .collect(toList())
             .toArray(new Integer[]{}));
       }
-      case Cron cron -> {
-        result.setStartDate(cron.getStartAt());
-        result.setCronExpression(cron.getCronExpression());
+      case Cron c -> {
+        result.setStartDate(c.getStartAt());
+        result.setCronExpression(c.getCronExpression());
       }
-      default -> { /* No action needed for other schedule types */ }
+      default -> { /* No additional processing needed */ }
     }
     
     result.setIsReadOnlyUi(configuration.getBoolean(".readOnlyUi", false));
     return result;
   }
 
+  /**
+   * Converts a TaskXO to a Schedule using pattern matching for switch.
+   * 
+   * @param taskXO the task XO to convert
+   * @return the converted Schedule
+   */
   private Schedule asSchedule(final TaskXO taskXO) {
+    // Handle advanced schedule type
     if ("advanced".equals(taskXO.getSchedule())) {
       ZoneOffset clientZoneOffset = ZoneOffset.of(taskXO.getTimeZoneOffset());
       validatorProvider.get().validate(taskXO, AdvancedSchedule.class);
       return taskScheduler.getScheduleFactory().cron(new Date(), taskXO.getCronExpression(), clientZoneOffset.getId());
     }
-    if (!"manual".equals(taskXO.getSchedule())) {
-      if (taskXO.getStartDate() == null) {
-        validatorProvider.get().validate(taskXO, OnceToMonthlySchedule.class);
-      }
-      ZoneOffset clientZoneOffset = ZoneOffset.of(taskXO.getTimeZoneOffset());
-      LocalDateTime startDateClient =
-          LocalDateTime.ofInstant(taskXO.getStartDate().toInstant(), ZoneId.of(clientZoneOffset.getId()));
-      LocalDateTime startDateServer =
-          LocalDateTime.ofInstant(taskXO.getStartDate().toInstant(), ZoneId.systemDefault());
-      Calendar date = Calendar.getInstance();
-      date.setTimeInMillis(taskXO.getStartDate().getTime());
-      date.set(Calendar.SECOND, 0);
-      date.set(Calendar.MILLISECOND, 0);
-      return switch (taskXO.getSchedule()) {
-        case "once" -> {
-          validatorProvider.get().validate(taskXO, OnceSchedule.class);
-          yield taskScheduler.getScheduleFactory().once(date.getTime());
-        }
-        case "hourly" -> taskScheduler.getScheduleFactory().hourly(date.getTime());
-        case "daily" -> taskScheduler.getScheduleFactory().daily(date.getTime());
-        case "weekly" -> taskScheduler.getScheduleFactory()
-            .weekly(date.getTime(), Arrays.stream(taskXO.getRecurringDays())
-                .map(recurringDay -> Weekday.values()[shiftWeekDay(recurringDay - 1, startDateClient,
-                    startDateServer)])
-                .collect(Collectors.toSet()));
-        case "monthly" -> taskScheduler.getScheduleFactory()
-            .monthly(date.getTime(), Arrays.stream(taskXO.getRecurringDays())
-                .map(recurringDay -> recurringDay == 999
-                    ? CalendarDay.lastDay()
-                    : CalendarDay.day(
-                        shiftMonthDay(recurringDay, startDateClient, startDateServer)))
-                .collect(Collectors.toSet()));
-        default -> taskScheduler.getScheduleFactory().manual();
-      };
+    
+    // Handle manual schedule type
+    if ("manual".equals(taskXO.getSchedule())) {
+      return taskScheduler.getScheduleFactory().manual();
     }
-    return taskScheduler.getScheduleFactory().manual();
+    
+    // Handle other schedule types
+    if (taskXO.getStartDate() == null) {
+      validatorProvider.get().validate(taskXO, OnceToMonthlySchedule.class);
+    }
+    
+    ZoneOffset clientZoneOffset = ZoneOffset.of(taskXO.getTimeZoneOffset());
+    LocalDateTime startDateClient =
+        LocalDateTime.ofInstant(taskXO.getStartDate().toInstant(), ZoneId.of(clientZoneOffset.getId()));
+    LocalDateTime startDateServer =
+        LocalDateTime.ofInstant(taskXO.getStartDate().toInstant(), ZoneId.systemDefault());
+    Calendar date = Calendar.getInstance();
+    date.setTimeInMillis(taskXO.getStartDate().getTime());
+    date.set(Calendar.SECOND, 0);
+    date.set(Calendar.MILLISECOND, 0);
+    
+    // Use pattern matching for switch to handle different schedule types
+    return switch (taskXO.getSchedule()) {
+      case "once" -> {
+        validatorProvider.get().validate(taskXO, OnceSchedule.class);
+        yield taskScheduler.getScheduleFactory().once(date.getTime());
+      }
+      case "hourly" -> taskScheduler.getScheduleFactory().hourly(date.getTime());
+      case "daily" -> taskScheduler.getScheduleFactory().daily(date.getTime());
+      case "weekly" -> taskScheduler.getScheduleFactory()
+          .weekly(date.getTime(), Arrays.stream(taskXO.getRecurringDays())
+              .map(recurringDay -> Weekday.values()[shiftWeekDay(recurringDay - 1, startDateClient,
+                  startDateServer)])
+              .collect(Collectors.toSet()));
+      case "monthly" -> taskScheduler.getScheduleFactory()
+          .monthly(date.getTime(), Arrays.stream(taskXO.getRecurringDays())
+              .map(recurringDay -> recurringDay == 999
+                  ? CalendarDay.lastDay()
+                  : CalendarDay.day(
+                      shiftMonthDay(recurringDay, startDateClient, startDateServer)))
+              .collect(Collectors.toSet()));
+      default -> taskScheduler.getScheduleFactory().manual();
+    };
   }
 
   @VisibleForTesting
@@ -422,38 +501,45 @@ public class TaskComponent
     }
   }
 
+  /**
+   * Gets the schedule type as a string using pattern matching for switch.
+   * 
+   * @param schedule the schedule to get the type for
+   * @return the schedule type as a string
+   */
   private static String getSchedule(final Schedule schedule) {
     return switch (schedule) {
-      case Manual ignored -> "manual";
-      case Now ignored -> "internal";
-      case Once ignored -> "once";
-      case Hourly ignored -> "hourly";
-      case Daily ignored -> "daily";
-      case Weekly ignored -> "weekly";
-      case Monthly ignored -> "monthly";
-      case Cron ignored -> "advanced";
+      case Manual m -> "manual";
+      case Now n -> "internal";
+      case Once o -> "once";
+      case Hourly h -> "hourly";
+      case Daily d -> "daily";
+      case Weekly w -> "weekly";
+      case Monthly m -> "monthly";
+      case Cron c -> "advanced";
       default -> schedule.getClass().getName();
     };
   }
 
+  /**
+   * Gets the last run result as a string using pattern matching for switch.
+   * 
+   * @param taskInfo the task info
+   * @param endState the end state of the task
+   * @param runDuration the duration of the run
+   * @return the last run result as a string
+   */
   private static String getLastRunResult(final TaskInfo taskInfo, final TaskState endState, final Long runDuration) {
     StringBuilder lastRunResult = new StringBuilder();
 
     if (endState != null) {
-      if (OK.equals(endState)) {
-        lastRunResult.append(TASK_RESULT_OK);
-      }
-      else if (CANCELED.equals(endState)) {
-        lastRunResult.append(TASK_RESULT_CANCELED);
-      }
-      else if (FAILED.equals(endState)) {
-        lastRunResult.append(TASK_RESULT_ERROR);
-      }
-      else if (INTERRUPTED.equals(endState)) {
-        lastRunResult.append(TASK_RESULT_INTERRUPTED);
-      }
-      else {
-        lastRunResult.append(endState.name());
+      // Use pattern matching for switch to determine the result text
+      switch (endState) {
+        case OK -> lastRunResult.append(TASK_RESULT_OK);
+        case CANCELED -> lastRunResult.append(TASK_RESULT_CANCELED);
+        case FAILED -> lastRunResult.append(TASK_RESULT_ERROR);
+        case INTERRUPTED -> lastRunResult.append(TASK_RESULT_INTERRUPTED);
+        default -> lastRunResult.append(endState.name());
       }
 
       if (runDuration != null) {
@@ -478,8 +564,16 @@ public class TaskComponent
     return lastRunResult.toString();
   }
 
+  /**
+   * Appends plan reconciliation text to the last run result if applicable.
+   * 
+   * @param lastRunResult the last run result to append to
+   * @param endState the end state of the task
+   * @param taskInfo the task info
+   */
   private static void appendPlanReconciliationText(StringBuilder lastRunResult, TaskState endState, TaskInfo taskInfo) {
-    if (OK.equals(endState) && taskInfo.getTypeId().equals(PLAN_RECONCILIATION_TASK_ID)) {
+    // Use pattern matching with a guarded pattern to check conditions
+    if (endState == OK && taskInfo.getTypeId().equals(PLAN_RECONCILIATION_TASK_ID)) {
       lastRunResult.append(PLAN_RECONCILIATION_TASK_OK_TEXT);
     }
   }

@@ -18,7 +18,6 @@ import java.io.FileInputStream;
 import java.io.InputStream;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
-import java.nio.channels.ReadableByteChannel;
 import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
 
@@ -28,12 +27,6 @@ import static com.google.common.base.Preconditions.checkState;
  * Support for generated {@link SupportBundle.ContentSource} implementations.
  *
  * These sources will buffer output to a file on prepare.
- *
- * <p>As of version 3.60, this class supports Virtual Threads for file streaming operations
- * through the {@link #getContent()} method. Subclasses can override {@link #useVirtualThreads()}
- * to enable Virtual Thread optimizations. This provides compatibility with
- * VirtualThreadGeneratedContentSourceSupport implementations while maintaining backward
- * compatibility with existing code.</p>
  *
  * @since 2.7
  */
@@ -71,24 +64,29 @@ public abstract class GeneratedContentSourceSupport
 
   /**
    * Determines whether to use Virtual Threads for file streaming operations.
-   * This method can be overridden by subclasses to control the behavior.
    * 
-   * @return true if Virtual Threads should be used, false otherwise
+   * <p>This method can be overridden by subclasses to enable Virtual Thread optimizations
+   * for I/O operations. When enabled, the {@link #getContent()} method will use NIO channels
+   * with Virtual Thread-friendly I/O operations for improved performance.</p>
+   * 
+   * <p>The default implementation returns {@code false} for backward compatibility.</p>
+   * 
+   * @return {@code true} to enable Virtual Thread optimizations, {@code false} otherwise
    * @since 3.60
    */
   protected boolean useVirtualThreads() {
-    return false; // Default to false for backward compatibility
+    return false;
   }
-  
+
   @Override
   public InputStream getContent() throws Exception {
     checkState(file.exists());
     
     if (useVirtualThreads()) {
-      // Use NIO for better performance with Virtual Threads
-      FileChannel fileChannel = FileChannel.open(file.toPath(), StandardOpenOption.READ);
-      ReadableByteChannel readableByteChannel = fileChannel;
-      return Channels.newInputStream(readableByteChannel);
+      // Use NIO channels with Virtual Thread-friendly I/O operations
+      // This approach is optimized for Java 21 Virtual Threads
+      FileChannel channel = FileChannel.open(file.toPath(), StandardOpenOption.READ);
+      return Channels.newInputStream(channel);
     } else {
       // Use traditional I/O for backward compatibility
       return new BufferedInputStream(new FileInputStream(file));

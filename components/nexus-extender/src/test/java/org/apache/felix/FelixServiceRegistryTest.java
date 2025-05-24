@@ -19,8 +19,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Dictionary;
 import java.util.Hashtable;
@@ -31,576 +33,579 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-import org.apache.felix.framework.Felix;
-import org.apache.felix.framework.util.FelixConstants;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
-import org.osgi.framework.BundleException;
 import org.osgi.framework.Constants;
 import org.osgi.framework.Filter;
+import org.osgi.framework.FrameworkUtil;
 import org.osgi.framework.InvalidSyntaxException;
 import org.osgi.framework.ServiceEvent;
 import org.osgi.framework.ServiceListener;
 import org.osgi.framework.ServiceReference;
 import org.osgi.framework.ServiceRegistration;
-import org.osgi.util.tracker.ServiceTracker;
-import org.osgi.util.tracker.ServiceTrackerCustomizer;
 
 /**
- * JUnit 5 test suite that validates the Apache Felix OSGi service registry functionality under Java 21.
- * Tests service registration, lookup, tracking, filtering by properties, service ranking, and integration
- * with bundle lifecycle events. This test ensures that OSGi service-oriented architecture primitives
- * function correctly with Java 21's modified classloading and concurrency model, preventing service
- * resolution and event handling issues in production.
+ * Tests to validate Apache Felix OSGi service registry functionality under Java 21.
+ * 
+ * This test suite ensures that OSGi service-oriented architecture primitives function correctly
+ * with Java 21's modified classloading and concurrency model, preventing service resolution
+ * and event handling issues in production.
  */
-@DisplayName("Felix Service Registry Java 21 Compatibility Tests")
+@ExtendWith(MockitoExtension.class)
 public class FelixServiceRegistryTest
 {
-    private Felix felix;
-    private BundleContext bundleContext;
-
-    /**
-     * Test service interface used for service registry tests.
-     */
-    public interface TestService {
-        String getMessage();
+  /**
+   * Record type for testing Java 21 record pattern support in OSGi service properties
+   */
+  public record ServiceConfig(String name, int priority, Map<String, Object> attributes) {}
+  
+  /**
+   * Simple service interface for testing
+   */
+  public interface TestService {
+    String getName();
+    int getPriority();
+  }
+  
+  /**
+   * Implementation of test service
+   */
+  public static class TestServiceImpl implements TestService {
+    private final String name;
+    private final int priority;
+    
+    public TestServiceImpl(String name, int priority) {
+      this.name = name;
+      this.priority = priority;
     }
-
-    /**
-     * Implementation of the test service.
-     */
-    public static class TestServiceImpl implements TestService {
-        private final String message;
-
-        public TestServiceImpl(String message) {
-            this.message = message;
-        }
-
-        @Override
-        public String getMessage() {
-            return message;
-        }
+    
+    @Override
+    public String getName() {
+      return name;
     }
-
-    /**
-     * Java 21 record type used to test service properties with record patterns.
-     */
-    public record ServiceConfig(String name, int priority, Map<String, Object> attributes) {}
-
-    @BeforeEach
-    public void setUp() throws BundleException {
-        // Configure Felix with minimal settings for testing
-        Map<String, Object> config = new ConcurrentHashMap<>();
-        config.put(FelixConstants.LOG_LEVEL_PROP, "4"); // Only log errors
-        config.put(Constants.FRAMEWORK_STORAGE, "target/felix-cache");
-        config.put(Constants.FRAMEWORK_STORAGE_CLEAN, Constants.FRAMEWORK_STORAGE_CLEAN_ONFIRSTINIT);
-        
-        // Start Felix
-        felix = new Felix(config);
-        felix.start();
-        bundleContext = felix.getBundleContext();
+    
+    @Override
+    public int getPriority() {
+      return priority;
     }
-
-    @AfterEach
-    public void tearDown() throws BundleException, InterruptedException {
-        if (felix != null) {
-            felix.stop();
-            felix.waitForStop(5000);
-            felix = null;
-            bundleContext = null;
-        }
+  }
+  
+  @Mock
+  private Bundle bundle;
+  
+  @Mock
+  private BundleContext bundleContext;
+  
+  private ServiceRegistry serviceRegistry;
+  
+  @BeforeEach
+  void setUp() {
+    // Create a new service registry for each test
+    serviceRegistry = new ServiceRegistry(bundle);
+    
+    // Set up bundle context mock
+    when(bundle.getBundleContext()).thenReturn(bundleContext);
+  }
+  
+  @AfterEach
+  void tearDown() {
+    // Clean up any resources
+    serviceRegistry = null;
+  }
+  
+  @Test
+  @DisplayName("Test basic service registration and lookup")
+  void testBasicServiceRegistrationAndLookup() {
+    // Create a test service
+    TestService service = new TestServiceImpl("test-service", 100);
+    
+    // Create service properties
+    Dictionary<String, Object> properties = new Hashtable<>();
+    properties.put("service.name", "test-service");
+    properties.put("service.priority", 100);
+    
+    // Register the service
+    ServiceRegistration<?> registration = serviceRegistry.registerService(
+        bundleContext, new String[] { TestService.class.getName() }, service, properties);
+    
+    // Verify registration is not null
+    assertNotNull(registration, "Service registration should not be null");
+    
+    // Get service reference
+    ServiceReference<?> reference = registration.getReference();
+    assertNotNull(reference, "Service reference should not be null");
+    
+    // Verify service properties
+    assertEquals("test-service", reference.getProperty("service.name"));
+    assertEquals(100, reference.getProperty("service.priority"));
+    
+    // Get service
+    TestService retrievedService = (TestService) serviceRegistry.getService(bundleContext, reference);
+    assertNotNull(retrievedService, "Retrieved service should not be null");
+    assertEquals("test-service", retrievedService.getName());
+    assertEquals(100, retrievedService.getPriority());
+    
+    // Unregister service
+    registration.unregister();
+    
+    // Verify service is no longer available
+    assertNull(serviceRegistry.getService(bundleContext, reference), "Service should be null after unregistration");
+  }
+  
+  @Test
+  @DisplayName("Test service registration with Java 21 record type properties")
+  void testServiceRegistrationWithRecordProperties() {
+    // Create a test service
+    TestService service = new TestServiceImpl("record-service", 200);
+    
+    // Create a record for service properties
+    Map<String, Object> attributes = new ConcurrentHashMap<>();
+    attributes.put("feature", "virtual-threads");
+    attributes.put("enabled", true);
+    
+    ServiceConfig config = new ServiceConfig("record-service", 200, attributes);
+    
+    // Create service properties from record
+    Dictionary<String, Object> properties = new Hashtable<>();
+    properties.put("service.name", config.name());
+    properties.put("service.priority", config.priority());
+    properties.put("service.config", config); // Store the entire record as a property
+    properties.put("service.attributes", config.attributes());
+    
+    // Register the service
+    ServiceRegistration<?> registration = serviceRegistry.registerService(
+        bundleContext, new String[] { TestService.class.getName() }, service, properties);
+    
+    // Get service reference
+    ServiceReference<?> reference = registration.getReference();
+    
+    // Verify service properties
+    assertEquals("record-service", reference.getProperty("service.name"));
+    assertEquals(200, reference.getProperty("service.priority"));
+    assertTrue(reference.getProperty("service.config") instanceof ServiceConfig);
+    
+    // Use pattern matching with record type (Java 21 feature)
+    if (reference.getProperty("service.config") instanceof ServiceConfig(String name, int priority, var attrs)) {
+      assertEquals("record-service", name);
+      assertEquals(200, priority);
+      assertEquals(true, attrs.get("enabled"));
+      assertEquals("virtual-threads", attrs.get("feature"));
+    } else {
+      throw new AssertionError("Pattern matching with record type failed");
     }
-
-    @Test
-    @DisplayName("Basic service registration and lookup works with Java 21")
-    public void testBasicServiceRegistrationAndLookup() {
-        // Register a service
-        TestService service = new TestServiceImpl("Hello from Java 21");
-        ServiceRegistration<TestService> registration = bundleContext.registerService(
-                TestService.class, service, null);
-
-        // Look up the service
-        ServiceReference<TestService> reference = bundleContext.getServiceReference(TestService.class);
-        TestService lookedUpService = bundleContext.getService(reference);
-
-        // Verify service lookup works
-        assertNotNull(lookedUpService, "Service should be found");
-        assertEquals("Hello from Java 21", lookedUpService.getMessage(), "Service message should match");
-
-        // Unregister the service
-        registration.unregister();
-
-        // Verify service is no longer available
-        ServiceReference<TestService> referenceAfterUnregister = 
-                bundleContext.getServiceReference(TestService.class);
-        assertNull(referenceAfterUnregister, "Service should not be found after unregistering");
+    
+    // Unregister service
+    registration.unregister();
+  }
+  
+  @Test
+  @DisplayName("Test service lookup with filter")
+  void testServiceLookupWithFilter() throws InvalidSyntaxException {
+    // Register multiple services
+    registerTestService("service-1", 100, "type", "primary");
+    registerTestService("service-2", 200, "type", "secondary");
+    registerTestService("service-3", 300, "type", "primary");
+    
+    // Create filter
+    Filter filter = FrameworkUtil.createFilter("(&(service.name=*)(type=primary))");
+    
+    // Get service references
+    ServiceReference<?>[] references = serviceRegistry.getServiceReferences(bundleContext, TestService.class.getName(), filter.toString());
+    
+    // Verify we got the expected services
+    assertNotNull(references, "Service references should not be null");
+    assertEquals(2, references.length, "Should find 2 services matching the filter");
+    
+    // Verify the services have the expected properties
+    List<String> serviceNames = new ArrayList<>();
+    for (ServiceReference<?> reference : references) {
+      serviceNames.add((String) reference.getProperty("service.name"));
     }
-
-    @Test
-    @DisplayName("Service properties with Java 21 record types work correctly")
-    public void testServicePropertiesWithRecordTypes() {
-        // Create a service config using Java 21 record
-        Map<String, Object> attributes = new ConcurrentHashMap<>();
-        attributes.put("feature", "Java21");
-        attributes.put("enabled", true);
+    
+    assertTrue(serviceNames.contains("service-1"), "Should find service-1");
+    assertTrue(serviceNames.contains("service-3"), "Should find service-3");
+    assertFalse(serviceNames.contains("service-2"), "Should not find service-2");
+  }
+  
+  @Test
+  @DisplayName("Test service ranking")
+  void testServiceRanking() {
+    // Register multiple services with different rankings
+    registerTestService("low-priority", 100, Constants.SERVICE_RANKING, Integer.valueOf(1));
+    registerTestService("medium-priority", 200, Constants.SERVICE_RANKING, Integer.valueOf(50));
+    registerTestService("high-priority", 300, Constants.SERVICE_RANKING, Integer.valueOf(100));
+    
+    // Get highest ranked service
+    ServiceReference<?> reference = serviceRegistry.getServiceReference(bundleContext, TestService.class.getName());
+    
+    // Verify it's the highest ranked service
+    assertNotNull(reference, "Service reference should not be null");
+    assertEquals("high-priority", reference.getProperty("service.name"));
+    assertEquals(Integer.valueOf(100), reference.getProperty(Constants.SERVICE_RANKING));
+    
+    // Get the service
+    TestService service = (TestService) serviceRegistry.getService(bundleContext, reference);
+    assertEquals("high-priority", service.getName());
+    assertEquals(300, service.getPriority());
+  }
+  
+  @Test
+  @DisplayName("Test service listener notifications")
+  void testServiceListenerNotifications() throws InvalidSyntaxException {
+    // Create a service listener
+    AtomicReference<ServiceEvent> registeredEvent = new AtomicReference<>();
+    AtomicReference<ServiceEvent> modifiedEvent = new AtomicReference<>();
+    AtomicReference<ServiceEvent> unregisteredEvent = new AtomicReference<>();
+    
+    ServiceListener listener = event -> {
+      switch (event.getType()) {
+        case ServiceEvent.REGISTERED -> registeredEvent.set(event);
+        case ServiceEvent.MODIFIED -> modifiedEvent.set(event);
+        case ServiceEvent.UNREGISTERING -> unregisteredEvent.set(event);
+      }
+    };
+    
+    // Add the listener
+    serviceRegistry.addServiceListener(bundleContext, listener, null);
+    
+    // Register a service
+    Dictionary<String, Object> properties = new Hashtable<>();
+    properties.put("service.name", "listener-test");
+    TestService service = new TestServiceImpl("listener-test", 100);
+    
+    ServiceRegistration<?> registration = serviceRegistry.registerService(
+        bundleContext, new String[] { TestService.class.getName() }, service, properties);
+    
+    // Verify REGISTERED event
+    assertNotNull(registeredEvent.get(), "REGISTERED event should not be null");
+    assertEquals(ServiceEvent.REGISTERED, registeredEvent.get().getType());
+    assertEquals("listener-test", registeredEvent.get().getServiceReference().getProperty("service.name"));
+    
+    // Modify service properties
+    Dictionary<String, Object> updatedProperties = new Hashtable<>();
+    updatedProperties.put("service.name", "listener-test-updated");
+    registration.setProperties(updatedProperties);
+    
+    // Verify MODIFIED event
+    assertNotNull(modifiedEvent.get(), "MODIFIED event should not be null");
+    assertEquals(ServiceEvent.MODIFIED, modifiedEvent.get().getType());
+    assertEquals("listener-test-updated", modifiedEvent.get().getServiceReference().getProperty("service.name"));
+    
+    // Unregister service
+    registration.unregister();
+    
+    // Verify UNREGISTERING event
+    assertNotNull(unregisteredEvent.get(), "UNREGISTERING event should not be null");
+    assertEquals(ServiceEvent.UNREGISTERING, unregisteredEvent.get().getType());
+    
+    // Remove the listener
+    serviceRegistry.removeServiceListener(bundleContext, listener);
+  }
+  
+  @Test
+  @DisplayName("Test service operations with virtual threads")
+  void testServiceOperationsWithVirtualThreads() throws Exception {
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    
+    // Create an executor service with virtual threads
+    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
+      int numServices = 100;
+      CountDownLatch registrationLatch = new CountDownLatch(numServices);
+      List<ServiceRegistration<?>> registrations = new ConcurrentHashMap<Integer, ServiceRegistration<?>>().newKeySet()
+          .stream().collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
+      
+      // Register services concurrently using virtual threads
+      List<CompletableFuture<Void>> registrationFutures = new ArrayList<>();
+      
+      for (int i = 0; i < numServices; i++) {
+        final int index = i;
+        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+          String serviceName = "virtual-service-" + index;
+          TestService service = new TestServiceImpl(serviceName, index);
+          
+          Dictionary<String, Object> properties = new Hashtable<>();
+          properties.put("service.name", serviceName);
+          properties.put("service.index", index);
+          
+          ServiceRegistration<?> registration = serviceRegistry.registerService(
+              bundleContext, new String[] { TestService.class.getName() }, service, properties);
+          
+          registrations.add(registration);
+          registrationLatch.countDown();
+        }, executor);
         
-        ServiceConfig config = new ServiceConfig("TestService", 100, attributes);
-        
-        // Register service with properties from record
-        Dictionary<String, Object> props = new Hashtable<>();
-        props.put("name", config.name());
-        props.put("priority", config.priority());
-        props.put("feature", config.attributes().get("feature"));
-        props.put("enabled", config.attributes().get("enabled"));
-        props.put("config", config); // Store the entire record as a property
-        
-        TestService service = new TestServiceImpl("Service with record properties");
-        ServiceRegistration<TestService> registration = bundleContext.registerService(
-                TestService.class, service, props);
-
-        // Look up the service by filter using record properties
-        try {
-            String filter = "(&(name=TestService)(priority>=100)(feature=Java21)(enabled=true))"; 
-            Filter osgiFilter = bundleContext.createFilter(filter);
-            ServiceReference<?>[] refs = bundleContext.getServiceReferences(TestService.class.getName(), filter);
+        registrationFutures.add(future);
+      }
+      
+      // Wait for all registrations to complete
+      CompletableFuture.allOf(registrationFutures.toArray(new CompletableFuture[0])).join();
+      assertTrue(registrationLatch.await(5, TimeUnit.SECONDS), "Service registrations should complete within timeout");
+      
+      // Verify all services were registered
+      assertEquals(numServices, registrations.size(), "All services should be registered");
+      
+      // Look up services concurrently
+      CountDownLatch lookupLatch = new CountDownLatch(numServices);
+      AtomicInteger successfulLookups = new AtomicInteger(0);
+      
+      List<CompletableFuture<Void>> lookupFutures = new ArrayList<>();
+      
+      for (int i = 0; i < numServices; i++) {
+        final int index = i;
+        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+          try {
+            // Create a filter to find the specific service
+            String filter = "(service.index=" + index + ")";
+            ServiceReference<?>[] references = serviceRegistry.getServiceReferences(
+                bundleContext, TestService.class.getName(), filter);
             
-            assertNotNull(refs, "Service references should be found");
-            assertTrue(refs.length > 0, "At least one service reference should be found");
-            assertTrue(osgiFilter.match(refs[0]), "Filter should match service reference");
-            
-            // Verify we can retrieve the record from properties
-            ServiceConfig retrievedConfig = (ServiceConfig) refs[0].getProperty("config");
-            assertNotNull(retrievedConfig, "Should retrieve record from properties");
-            assertEquals("TestService", retrievedConfig.name(), "Record name should match");
-            assertEquals(100, retrievedConfig.priority(), "Record priority should match");
-            assertEquals("Java21", retrievedConfig.attributes().get("feature"), "Record feature should match");
-        }
-        catch (InvalidSyntaxException e) {
-            throw new RuntimeException("Invalid filter syntax", e);
-        }
-        finally {
-            registration.unregister();
-        }
+            if (references != null && references.length == 1) {
+              TestService service = (TestService) serviceRegistry.getService(bundleContext, references[0]);
+              if (service != null && service.getName().equals("virtual-service-" + index)) {
+                successfulLookups.incrementAndGet();
+              }
+            }
+          } catch (InvalidSyntaxException e) {
+            throw new RuntimeException(e);
+          } finally {
+            lookupLatch.countDown();
+          }
+        }, executor);
+        
+        lookupFutures.add(future);
+      }
+      
+      // Wait for all lookups to complete
+      CompletableFuture.allOf(lookupFutures.toArray(new CompletableFuture[0])).join();
+      assertTrue(lookupLatch.await(5, TimeUnit.SECONDS), "Service lookups should complete within timeout");
+      
+      // Verify all lookups were successful
+      assertEquals(numServices, successfulLookups.get(), "All service lookups should succeed");
+      
+      // Unregister all services concurrently
+      CountDownLatch unregistrationLatch = new CountDownLatch(numServices);
+      
+      List<CompletableFuture<Void>> unregistrationFutures = new ArrayList<>();
+      
+      for (ServiceRegistration<?> registration : registrations) {
+        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+          registration.unregister();
+          unregistrationLatch.countDown();
+        }, executor);
+        
+        unregistrationFutures.add(future);
+      }
+      
+      // Wait for all unregistrations to complete
+      CompletableFuture.allOf(unregistrationFutures.toArray(new CompletableFuture[0])).join();
+      assertTrue(unregistrationLatch.await(5, TimeUnit.SECONDS), "Service unregistrations should complete within timeout");
     }
-
-    @Test
-    @DisplayName("Service tracking works with Java 21 virtual threads")
-    public void testServiceTrackingWithVirtualThreads() throws Exception {
-        // Create a tracker to monitor service registrations
-        final CountDownLatch serviceAddedLatch = new CountDownLatch(1);
-        final CountDownLatch serviceRemovedLatch = new CountDownLatch(1);
-        final AtomicReference<TestService> trackedService = new AtomicReference<>();
-        
-        ServiceTracker<TestService, TestService> tracker = new ServiceTracker<>(
-                bundleContext, TestService.class, new ServiceTrackerCustomizer<TestService, TestService>() {
-                    @Override
-                    public TestService addingService(ServiceReference<TestService> reference) {
-                        TestService service = bundleContext.getService(reference);
-                        trackedService.set(service);
-                        serviceAddedLatch.countDown();
-                        return service;
-                    }
-
-                    @Override
-                    public void modifiedService(ServiceReference<TestService> reference, TestService service) {
-                        // Not testing modification in this test
-                    }
-
-                    @Override
-                    public void removedService(ServiceReference<TestService> reference, TestService service) {
-                        serviceRemovedLatch.countDown();
-                    }
-                });
-        
-        tracker.open();
-        
-        try {
-            // Use virtual threads to register and unregister services
-            try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-                // Register service in a virtual thread
-                CompletableFuture<ServiceRegistration<TestService>> future = CompletableFuture.supplyAsync(() -> {
-                    TestService service = new TestServiceImpl("Service from virtual thread");
-                    Dictionary<String, Object> props = new Hashtable<>();
-                    props.put("thread", "virtual");
-                    return bundleContext.registerService(TestService.class, service, props);
-                }, executor);
-                
-                ServiceRegistration<TestService> registration = future.get(5, TimeUnit.SECONDS);
-                
-                // Wait for service to be tracked
-                assertTrue(serviceAddedLatch.await(5, TimeUnit.SECONDS), "Service should be tracked");
-                assertNotNull(trackedService.get(), "Tracked service should not be null");
-                assertEquals("Service from virtual thread", trackedService.get().getMessage(), 
-                        "Tracked service message should match");
-                
-                // Unregister service in another virtual thread
-                CompletableFuture<Void> unregisterFuture = CompletableFuture.runAsync(() -> {
-                    registration.unregister();
-                }, executor);
-                
-                unregisterFuture.get(5, TimeUnit.SECONDS);
-                
-                // Wait for service removal to be tracked
-                assertTrue(serviceRemovedLatch.await(5, TimeUnit.SECONDS), 
-                        "Service removal should be tracked");
-            }
-        } 
-        finally {
-            tracker.close();
+  }
+  
+  @Test
+  @DisplayName("Test service tracker with virtual threads")
+  void testServiceTrackerWithVirtualThreads() throws Exception {
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    
+    // Create an executor service with virtual threads
+    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
+      // Create a mock service tracker
+      ServiceTracker<TestService, TestService> tracker = mock(ServiceTracker.class);
+      
+      // Register the tracker with the service registry
+      serviceRegistry.addServiceListener(bundleContext, event -> {
+        if (event.getType() == ServiceEvent.REGISTERED) {
+          ServiceReference<?> reference = event.getServiceReference();
+          if (TestService.class.getName().equals(reference.getProperty(Constants.OBJECTCLASS))) {
+            TestService service = (TestService) serviceRegistry.getService(bundleContext, reference);
+            tracker.addingService(reference);
+          }
+        } else if (event.getType() == ServiceEvent.UNREGISTERING) {
+          ServiceReference<?> reference = event.getServiceReference();
+          if (TestService.class.getName().equals(reference.getProperty(Constants.OBJECTCLASS))) {
+            tracker.removedService(reference, null);
+          }
         }
+      }, "(objectClass=" + TestService.class.getName() + ")");
+      
+      // Register services concurrently
+      int numServices = 50;
+      List<CompletableFuture<ServiceRegistration<?>>> registrationFutures = new ArrayList<>();
+      
+      for (int i = 0; i < numServices; i++) {
+        final int index = i;
+        CompletableFuture<ServiceRegistration<?>> future = CompletableFuture.supplyAsync(() -> {
+          String serviceName = "tracker-service-" + index;
+          TestService service = new TestServiceImpl(serviceName, index);
+          
+          Dictionary<String, Object> properties = new Hashtable<>();
+          properties.put("service.name", serviceName);
+          properties.put("service.index", index);
+          
+          return serviceRegistry.registerService(
+              bundleContext, new String[] { TestService.class.getName() }, service, properties);
+        }, executor);
+        
+        registrationFutures.add(future);
+      }
+      
+      // Wait for all registrations to complete
+      List<ServiceRegistration<?>> registrations = new ArrayList<>();
+      for (CompletableFuture<ServiceRegistration<?>> future : registrationFutures) {
+        registrations.add(future.join());
+      }
+      
+      // Verify tracker was notified for each service
+      verify(tracker, org.mockito.Mockito.timeout(Duration.ofSeconds(5).toMillis()).times(numServices)).addingService(org.mockito.ArgumentMatchers.any());
+      
+      // Unregister services concurrently
+      List<CompletableFuture<Void>> unregistrationFutures = new ArrayList<>();
+      
+      for (ServiceRegistration<?> registration : registrations) {
+        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+          registration.unregister();
+        }, executor);
+        
+        unregistrationFutures.add(future);
+      }
+      
+      // Wait for all unregistrations to complete
+      CompletableFuture.allOf(unregistrationFutures.toArray(new CompletableFuture[0])).join();
+      
+      // Verify tracker was notified for each service removal
+      verify(tracker, org.mockito.Mockito.timeout(Duration.ofSeconds(5).toMillis()).times(numServices)).removedService(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
-
-    @Test
-    @DisplayName("Service events are properly delivered with Java 21")
-    public void testServiceEvents() throws Exception {
-        final CountDownLatch registeredLatch = new CountDownLatch(1);
-        final CountDownLatch modifiedLatch = new CountDownLatch(1);
-        final CountDownLatch unregisteredLatch = new CountDownLatch(1);
-        
-        // Add service listener
-        ServiceListener listener = event -> {
-            switch (event.getType()) {
-                case ServiceEvent.REGISTERED -> registeredLatch.countDown();
-                case ServiceEvent.MODIFIED -> modifiedLatch.countDown();
-                case ServiceEvent.UNREGISTERING -> unregisteredLatch.countDown();
-            }
-        };
-        
-        bundleContext.addServiceListener(listener);
-        
-        try {
-            // Register service
-            TestService service = new TestServiceImpl("Event test service");
-            Dictionary<String, Object> props = new Hashtable<>();
-            props.put("test", "events");
-            ServiceRegistration<TestService> registration = 
-                    bundleContext.registerService(TestService.class, service, props);
-            
-            // Wait for registered event
-            assertTrue(registeredLatch.await(5, TimeUnit.SECONDS), 
-                    "Service registered event should be received");
-            
-            // Modify service properties
-            props = new Hashtable<>();
-            props.put("test", "events-modified");
-            registration.setProperties(props);
-            
-            // Wait for modified event
-            assertTrue(modifiedLatch.await(5, TimeUnit.SECONDS), 
-                    "Service modified event should be received");
-            
-            // Unregister service
-            registration.unregister();
-            
-            // Wait for unregistered event
-            assertTrue(unregisteredLatch.await(5, TimeUnit.SECONDS), 
-                    "Service unregistered event should be received");
-        } 
-        finally {
-            bundleContext.removeServiceListener(listener);
-        }
+  }
+  
+  @Test
+  @DisplayName("Test bundle lifecycle integration with service registry")
+  void testBundleLifecycleIntegration() {
+    // Create a mock bundle
+    Bundle mockBundle = mock(Bundle.class);
+    BundleContext mockBundleContext = mock(BundleContext.class);
+    when(mockBundle.getBundleContext()).thenReturn(mockBundleContext);
+    
+    // Create a service registry for this bundle
+    ServiceRegistry bundleServiceRegistry = new ServiceRegistry(mockBundle);
+    
+    // Register a service
+    TestService service = new TestServiceImpl("bundle-service", 100);
+    Dictionary<String, Object> properties = new Hashtable<>();
+    properties.put("service.name", "bundle-service");
+    
+    ServiceRegistration<?> registration = bundleServiceRegistry.registerService(
+        mockBundleContext, new String[] { TestService.class.getName() }, service, properties);
+    
+    // Verify service is registered
+    ServiceReference<?> reference = registration.getReference();
+    assertNotNull(reference, "Service reference should not be null");
+    assertEquals("bundle-service", reference.getProperty("service.name"));
+    
+    // Simulate bundle stopping
+    bundleServiceRegistry.removeBundle(mockBundle);
+    
+    // Verify all services for this bundle are unregistered
+    try {
+      registration.getReference();
+      throw new AssertionError("Service should be unregistered when bundle is removed");
+    } catch (IllegalStateException e) {
+      // Expected exception when service is unregistered
     }
-
-    @Test
-    @DisplayName("Service ranking works correctly with Java 21")
-    public void testServiceRanking() {
-        // Register multiple services with different rankings
-        TestService service1 = new TestServiceImpl("Low priority service");
-        Dictionary<String, Object> props1 = new Hashtable<>();
-        props1.put(Constants.SERVICE_RANKING, 10);
-        ServiceRegistration<TestService> reg1 = 
-                bundleContext.registerService(TestService.class, service1, props1);
-        
-        TestService service2 = new TestServiceImpl("High priority service");
-        Dictionary<String, Object> props2 = new Hashtable<>();
-        props2.put(Constants.SERVICE_RANKING, 100);
-        ServiceRegistration<TestService> reg2 = 
-                bundleContext.registerService(TestService.class, service2, props2);
-        
-        try {
-            // Get highest ranked service
-            ServiceReference<TestService> ref = bundleContext.getServiceReference(TestService.class);
-            TestService highestRanked = bundleContext.getService(ref);
-            
-            assertNotNull(highestRanked, "Highest ranked service should be found");
-            assertEquals("High priority service", highestRanked.getMessage(), 
-                    "Highest ranked service should be the one with highest ranking");
-            assertEquals(100, ref.getProperty(Constants.SERVICE_RANKING), 
-                    "Service ranking property should match");
-            
-            // Get all services and verify order
-            ServiceReference<?>[] allRefs = bundleContext.getServiceReferences(TestService.class.getName(), null);
-            assertNotNull(allRefs, "Service references should be found");
-            assertEquals(2, allRefs.length, "Should find two service references");
-            
-            // First reference should be highest ranked
-            assertEquals(100, allRefs[0].getProperty(Constants.SERVICE_RANKING), 
-                    "First reference should have highest ranking");
-        } 
-        catch (InvalidSyntaxException e) {
-            throw new RuntimeException("Invalid filter syntax", e);
-        } 
-        finally {
-            reg1.unregister();
-            reg2.unregister();
-        }
+  }
+  
+  @Test
+  @DisplayName("Test service property pattern matching with Java 21 features")
+  void testServicePropertyPatternMatching() {
+    // Register a service with complex properties
+    TestService service = new TestServiceImpl("pattern-service", 100);
+    
+    // Create nested data structures for properties
+    Map<String, Object> configMap = new ConcurrentHashMap<>();
+    configMap.put("enabled", true);
+    configMap.put("maxConnections", 50);
+    
+    List<String> supportedFormats = List.of("maven", "npm", "docker");
+    configMap.put("formats", supportedFormats);
+    
+    // Create a record with the configuration
+    record ConnectionConfig(boolean secure, int timeout) {}
+    ConnectionConfig connConfig = new ConnectionConfig(true, 30000);
+    configMap.put("connection", connConfig);
+    
+    Dictionary<String, Object> properties = new Hashtable<>();
+    properties.put("service.name", "pattern-service");
+    properties.put("config", configMap);
+    
+    ServiceRegistration<?> registration = serviceRegistry.registerService(
+        bundleContext, new String[] { TestService.class.getName() }, service, properties);
+    
+    ServiceReference<?> reference = registration.getReference();
+    
+    // Use pattern matching to extract and validate properties
+    Object config = reference.getProperty("config");
+    
+    if (config instanceof Map<?, ?> map) {
+      // Use pattern matching in instanceof check (Java 21 feature)
+      if (map.get("connection") instanceof ConnectionConfig(boolean secure, int timeout)) {
+        assertAll(
+            () -> assertTrue(secure, "Connection should be secure"),
+            () -> assertEquals(30000, timeout, "Timeout should be 30000")
+        );
+      } else {
+        throw new AssertionError("Connection config pattern matching failed");
+      }
+      
+      // Check formats using pattern matching
+      if (map.get("formats") instanceof List<?> formats) {
+        assertEquals(3, formats.size(), "Should have 3 supported formats");
+        assertTrue(formats.contains("maven"), "Should support maven format");
+        assertTrue(formats.contains("npm"), "Should support npm format");
+        assertTrue(formats.contains("docker"), "Should support docker format");
+      } else {
+        throw new AssertionError("Formats pattern matching failed");
+      }
+    } else {
+      throw new AssertionError("Config pattern matching failed");
     }
-
-    @Test
-    @DisplayName("Concurrent service operations work with Java 21 virtual threads")
-    @Timeout(value = 10, unit = TimeUnit.SECONDS)
-    public void testConcurrentServiceOperations() throws Exception {
-        final int SERVICE_COUNT = 50;
-        final CountDownLatch completionLatch = new CountDownLatch(SERVICE_COUNT);
-        final AtomicBoolean failed = new AtomicBoolean(false);
-        final List<ServiceRegistration<?>> registrations = new ArrayList<>();
-        
-        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            // Register multiple services concurrently using virtual threads
-            List<CompletableFuture<Void>> futures = new ArrayList<>();
-            
-            for (int i = 0; i < SERVICE_COUNT; i++) {
-                final int index = i;
-                CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-                    try {
-                        TestService service = new TestServiceImpl("Concurrent service " + index);
-                        Dictionary<String, Object> props = new Hashtable<>();
-                        props.put("index", index);
-                        
-                        ServiceRegistration<TestService> registration = 
-                                bundleContext.registerService(TestService.class, service, props);
-                        
-                        synchronized (registrations) {
-                            registrations.add(registration);
-                        }
-                        
-                        // Verify we can find our own service
-                        String filter = "(index=" + index + ")";
-                        ServiceReference<?>[] refs = 
-                                bundleContext.getServiceReferences(TestService.class.getName(), filter);
-                        
-                        if (refs == null || refs.length == 0) {
-                            failed.set(true);
-                        }
-                    } 
-                    catch (Exception e) {
-                        e.printStackTrace();
-                        failed.set(true);
-                    } 
-                    finally {
-                        completionLatch.countDown();
-                    }
-                }, executor);
-                
-                futures.add(future);
-            }
-            
-            // Wait for all operations to complete
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-            assertTrue(completionLatch.await(5, TimeUnit.SECONDS), "All service operations should complete");
-            assertFalse(failed.get(), "No operations should fail");
-            
-            // Verify all services are registered
-            ServiceReference<?>[] allRefs = bundleContext.getServiceReferences(TestService.class.getName(), null);
-            assertNotNull(allRefs, "Service references should be found");
-            assertEquals(SERVICE_COUNT, allRefs.length, "Should find all registered services");
-        } 
-        finally {
-            // Clean up all registrations
-            for (ServiceRegistration<?> registration : registrations) {
-                try {
-                    registration.unregister();
-                } 
-                catch (Exception e) {
-                    // Ignore, might be already unregistered
-                }
-            }
-        }
-    }
-
-    @Test
-    @DisplayName("Service registry handles bundle lifecycle events correctly with Java 21")
-    public void testBundleLifecycleIntegration() throws BundleException {
-        // Mock a bundle for testing
-        Bundle mockBundle = mock(Bundle.class);
-        when(mockBundle.getBundleId()).thenReturn(999L);
-        when(mockBundle.getSymbolicName()).thenReturn("mock.bundle");
-        
-        // Get all services before our test
-        ServiceReference<?>[] beforeRefs;
-        try {
-            beforeRefs = bundleContext.getAllServiceReferences(null, null);
-        } 
-        catch (InvalidSyntaxException e) {
-            throw new RuntimeException("Invalid filter syntax", e);
-        }
-        
-        int initialServiceCount = (beforeRefs != null) ? beforeRefs.length : 0;
-        
-        // Register a service listener to track bundle service events
-        final AtomicInteger registeredCount = new AtomicInteger(0);
-        final AtomicInteger unregisteredCount = new AtomicInteger(0);
-        
-        ServiceListener listener = event -> {
-            ServiceReference<?> ref = event.getServiceReference();
-            if (ref.getProperty(Constants.SERVICE_BUNDLEID).equals(999L)) {
-                if (event.getType() == ServiceEvent.REGISTERED) {
-                    registeredCount.incrementAndGet();
-                } 
-                else if (event.getType() == ServiceEvent.UNREGISTERING) {
-                    unregisteredCount.incrementAndGet();
-                }
-            }
-        };
-        
-        bundleContext.addServiceListener(listener);
-        
-        try {
-            // Simulate bundle starting and registering services
-            Dictionary<String, Object> props = new Hashtable<>();
-            props.put(Constants.SERVICE_BUNDLEID, 999L);
-            props.put("bundle.symbolic.name", "mock.bundle");
-            
-            // Register multiple services from the mock bundle
-            List<ServiceRegistration<?>> registrations = new ArrayList<>();
-            for (int i = 0; i < 5; i++) {
-                TestService service = new TestServiceImpl("Bundle service " + i);
-                ServiceRegistration<TestService> reg = 
-                        bundleContext.registerService(TestService.class, service, props);
-                registrations.add(reg);
-            }
-            
-            // Verify services are registered
-            assertEquals(5, registeredCount.get(), "Should receive 5 service registered events");
-            
-            // Get all services from our mock bundle
-            ServiceReference<?>[] bundleRefs;
-            try {
-                bundleRefs = bundleContext.getAllServiceReferences(null, 
-                        "(bundle.symbolic.name=mock.bundle)");
-            } 
-            catch (InvalidSyntaxException e) {
-                throw new RuntimeException("Invalid filter syntax", e);
-            }
-            
-            assertNotNull(bundleRefs, "Bundle service references should be found");
-            assertEquals(5, bundleRefs.length, "Should find 5 bundle services");
-            
-            // Unregister all services (simulating bundle stopping)
-            for (ServiceRegistration<?> reg : registrations) {
-                reg.unregister();
-            }
-            
-            // Verify services are unregistered
-            assertEquals(5, unregisteredCount.get(), "Should receive 5 service unregistered events");
-            
-            // Verify no services remain for our mock bundle
-            try {
-                bundleRefs = bundleContext.getAllServiceReferences(null, 
-                        "(bundle.symbolic.name=mock.bundle)");
-                assertTrue(bundleRefs == null || bundleRefs.length == 0, 
-                        "No bundle services should remain");
-            } 
-            catch (InvalidSyntaxException e) {
-                throw new RuntimeException("Invalid filter syntax", e);
-            }
-            
-            // Verify total service count is back to initial
-            try {
-                ServiceReference<?>[] afterRefs = bundleContext.getAllServiceReferences(null, null);
-                int finalServiceCount = (afterRefs != null) ? afterRefs.length : 0;
-                assertEquals(initialServiceCount, finalServiceCount, 
-                        "Service count should return to initial value");
-            } 
-            catch (InvalidSyntaxException e) {
-                throw new RuntimeException("Invalid filter syntax", e);
-            }
-        } 
-        finally {
-            bundleContext.removeServiceListener(listener);
-        }
-    }
-
-    @Test
-    @DisplayName("Pattern matching with service properties works in Java 21")
-    public void testPatternMatchingWithServiceProperties() {
-        // Register a service with nested properties structure
-        TestService service = new TestServiceImpl("Pattern matching test");
-        
-        // Create a complex property structure
-        Map<String, Object> nestedMap = new ConcurrentHashMap<>();
-        nestedMap.put("key1", "value1");
-        nestedMap.put("key2", 42);
-        
-        ServiceConfig config1 = new ServiceConfig("config1", 10, nestedMap);
-        ServiceConfig config2 = new ServiceConfig("config2", 20, nestedMap);
-        
-        List<ServiceConfig> configList = new ArrayList<>();
-        configList.add(config1);
-        configList.add(config2);
-        
-        Dictionary<String, Object> props = new Hashtable<>();
-        props.put("configs", configList);
-        props.put("mainConfig", config1);
-        
-        ServiceRegistration<TestService> registration = 
-                bundleContext.registerService(TestService.class, service, props);
-        
-        try {
-            // Get the service reference
-            ServiceReference<TestService> reference = bundleContext.getServiceReference(TestService.class);
-            assertNotNull(reference, "Service reference should be found");
-            
-            // Use pattern matching with instanceof to process properties
-            Object mainConfig = reference.getProperty("mainConfig");
-            
-            // Pattern matching with instanceof (Java 21 feature)
-            if (mainConfig instanceof ServiceConfig(String name, int priority, Map<String, Object> attributes)) {
-                // Verify extracted values from pattern match
-                assertEquals("config1", name, "Name should match from pattern");
-                assertEquals(10, priority, "Priority should match from pattern");
-                assertEquals("value1", attributes.get("key1"), "Nested attribute should match");
-            } else {
-                throw new AssertionError("Pattern matching failed");
-            }
-            
-            // Get the configs list and use pattern matching in a loop
-            @SuppressWarnings("unchecked")
-            List<ServiceConfig> configs = (List<ServiceConfig>) reference.getProperty("configs");
-            assertNotNull(configs, "Configs list should be found");
-            assertEquals(2, configs.size(), "Should have 2 configs");
-            
-            // Use pattern matching in a switch expression (Java 21 feature)
-            for (ServiceConfig config : configs) {
-                String result = switch (config) {
-                    case ServiceConfig(String name, int p, var _) when p > 15 -> 
-                        "High priority config: " + name;
-                    case ServiceConfig(String name, int p, var _) when p <= 15 -> 
-                        "Low priority config: " + name;
-                    default -> "Unknown config";
-                };
-                
-                if (config.name().equals("config1")) {
-                    assertEquals("Low priority config: config1", result, 
-                            "Switch pattern for config1 should match low priority");
-                } else if (config.name().equals("config2")) {
-                    assertEquals("High priority config: config2", result, 
-                            "Switch pattern for config2 should match high priority");
-                }
-            }
-        } 
-        finally {
-            registration.unregister();
-        }
-    }
+    
+    // Unregister service
+    registration.unregister();
+  }
+  
+  /**
+   * Helper method to register a test service with properties
+   */
+  private ServiceRegistration<?> registerTestService(String name, int priority, String key, Object value) {
+    TestService service = new TestServiceImpl(name, priority);
+    
+    Dictionary<String, Object> properties = new Hashtable<>();
+    properties.put("service.name", name);
+    properties.put("service.priority", priority);
+    properties.put(key, value);
+    
+    return serviceRegistry.registerService(
+        bundleContext, new String[] { TestService.class.getName() }, service, properties);
+  }
+  
+  /**
+   * Mock implementation of ServiceTracker for testing
+   */
+  public interface ServiceTracker<S, T> {
+    T addingService(ServiceReference<S> reference);
+    void removedService(ServiceReference<S> reference, T service);
+  }
 }

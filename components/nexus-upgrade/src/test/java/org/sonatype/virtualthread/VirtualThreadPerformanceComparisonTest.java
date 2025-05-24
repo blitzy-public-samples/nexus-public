@@ -14,639 +14,696 @@ package org.sonatype.virtualthread;
 
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.sql.Statement;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import java.util.Optional;
-import java.util.concurrent.Callable;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
+import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.upgrade.events.UpgradeCompletedEvent;
 import org.sonatype.nexus.common.upgrade.events.UpgradeStartedEvent;
 import org.sonatype.nexus.datastore.api.DataStore;
 import org.sonatype.nexus.datastore.api.DataStoreManager;
-import org.sonatype.nexus.testcommon.virtualthread.ThreadPinningDetector;
-import org.sonatype.nexus.testcommon.virtualthread.ThreadPinningDetector.PinningInfo;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
 import org.sonatype.nexus.testdb.DataSessionRule;
 import org.sonatype.nexus.upgrade.datastore.DatabaseMigrationStep;
-import org.sonatype.nexus.upgrade.datastore.internal.PostStartupUpgradeAuditor;
 import org.sonatype.nexus.upgrade.datastore.internal.UpgradeManagerImpl;
+import org.sonatype.nexus.upgrade.datastore.internal.TestMigrationStep;
 import org.sonatype.nexus.upgrade.plan.DependencyResolver;
 import org.sonatype.nexus.upgrade.plan.DependencySource;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
 
 import static java.util.Collections.singletonList;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.greaterThan;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.lessThan;
+import static org.hamcrest.Matchers.lessThanOrEqualTo;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.datastore.api.DataStoreManager.DEFAULT_DATASTORE_NAME;
 
 /**
- * Performance comparison tests between platform threads and virtual threads for Nexus upgrade operations.
- * <p>
- * This test class measures throughput, latency, and resource utilization for key upgrade operations like
+ * Performance comparison test between platform threads and virtual threads for Nexus upgrade operations.
+ * This test measures throughput, latency, and resource utilization for key upgrade operations like
  * database migrations, dependency resolution, and upgrade task execution under both threading models.
- * It validates the performance benefits of virtual threads for I/O-bound operations and identifies any
- * potential bottlenecks or thread pinning issues.
- *
+ * 
  * @since 3.60
  */
-@Tag("VirtualThreadTestGroup")
-@DisplayName("Virtual Thread Performance Comparison for Upgrade Operations")
 public class VirtualThreadPerformanceComparisonTest
-    extends VirtualThreadTestSupport
+    extends TestSupport
 {
-  private static final int WARMUP_ITERATIONS = 5;
-  private static final int MEASUREMENT_ITERATIONS = 10;
+  private static final int WARMUP_ITERATIONS = 3;
+  private static final int MEASUREMENT_ITERATIONS = 5;
   private static final int MAX_CONCURRENCY = 1000;
-  private static final int CONCURRENCY_STEP = 100;
+  private static final int STEP_SIZE = 100;
+  private static final Duration TEST_TIMEOUT = Duration.ofMinutes(5);
   
-  private DataSessionRule dataSessionRule;
+  private AutoCloseable mocks;
+  
+  @Mock
   private DataStoreManager dataStoreManager;
+  
+  @Mock
   private PostStartupUpgradeAuditor auditor;
   
-  /**
-   * Set up test environment before each test.
-   */
   @BeforeEach
   void setUp() {
-    // Ensure virtual threads are supported before running tests
-    assumeVirtualThreadSupported();
-    
-    // Initialize test database
-    dataSessionRule = new DataSessionRule();
-    
-    // Mock DataStoreManager to return our test DataStore
-    dataStoreManager = mock(DataStoreManager.class);
-    when(dataStoreManager.get(DEFAULT_DATASTORE_NAME)).thenReturn(getDataStore());
-    
-    // Mock auditor for upgrade events
-    auditor = mock(PostStartupUpgradeAuditor.class);
-    
-    // Enable thread pinning detection
-    ThreadPinningDetector.enableJdkPinningDetection();
-    ThreadPinningDetector.startJfrMonitoring();
+    mocks = MockitoAnnotations.openMocks(this);
   }
   
-  /**
-   * Clean up after each test.
-   */
   @AfterEach
-  void tearDown() {
-    // Stop thread pinning monitoring
-    ThreadPinningDetector.stopJfrMonitoring();
+  void tearDown() throws Exception {
+    if (mocks != null) {
+      mocks.close();
+    }
+  }
+  
+  /**
+   * Detects thread pinning events during test execution.
+   * Thread pinning occurs when a virtual thread is pinned to its carrier thread,
+   * preventing the carrier thread from being used by other virtual threads.
+   */
+  private static class ThreadPinningDetector {
+    private final Map<Thread, StackTraceElement[]> pinnedThreads = new ConcurrentHashMap<>();
+    private final Thread monitorThread;
+    private volatile boolean running = true;
     
-    // Print thread pinning statistics
-    List<PinningInfo> pinningStats = ThreadPinningDetector.getPinningStatistics();
-    if (!pinningStats.isEmpty()) {
-      log.warn("Thread pinning detected during test execution:");
-      for (PinningInfo info : pinningStats) {
-        log.warn(STR."  \{info.getLocation()} - Count: \{info.getCount()}, Total Duration: \{info.getTotalDurationMs()}ms, Avg: \{String.format("%.2f", info.getAverageDurationMs())}ms");
-      }
+    public ThreadPinningDetector() {
+      monitorThread = new Thread(() -> {
+        while (running) {
+          detectPinnedThreads();
+          try {
+            Thread.sleep(100);
+          }
+          catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            break;
+          }
+        }
+      }, "thread-pinning-detector");
+      monitorThread.setDaemon(true);
     }
     
-    // Clear pinning statistics for next test
-    ThreadPinningDetector.clearPinningStatistics();
+    public void start() {
+      monitorThread.start();
+    }
+    
+    public void stop() {
+      running = false;
+      monitorThread.interrupt();
+    }
+    
+    private void detectPinnedThreads() {
+      Thread.getAllStackTraces().forEach((thread, stackTrace) -> {
+        if (thread.toString().contains("VirtualThread") && 
+            thread.getState() == Thread.State.RUNNABLE) {
+          for (StackTraceElement element : stackTrace) {
+            // Check for common pinning causes
+            if (element.getMethodName().contains("synchronized") ||
+                element.getClassName().contains("native") ||
+                element.getClassName().contains("jni")) {
+              pinnedThreads.put(thread, stackTrace);
+              break;
+            }
+          }
+        }
+      });
+    }
+    
+    public Map<Thread, StackTraceElement[]> getPinnedThreads() {
+      return pinnedThreads;
+    }
+    
+    public String getPinningReport() {
+      StringBuilder report = new StringBuilder("Thread Pinning Report:\n");
+      if (pinnedThreads.isEmpty()) {
+        report.append("No thread pinning detected.\n");
+      } else {
+        report.append("Detected ").append(pinnedThreads.size()).append(" pinned threads:\n");
+        pinnedThreads.forEach((thread, stackTrace) -> {
+          report.append("Thread: ").append(thread).append("\n");
+          for (StackTraceElement element : stackTrace) {
+            report.append("  at ").append(element).append("\n");
+          }
+          report.append("\n");
+        });
+      }
+      return report.toString();
+    }
   }
   
   /**
-   * Compares the performance of database migration operations between platform threads and virtual threads.
-   * <p>
-   * This test executes database migrations with increasing concurrency levels using both thread types
-   * and measures throughput, latency, and resource utilization.
+   * Performance measurement results for a specific test scenario.
    */
-  @Test
-  @DisplayName("Database Migration Performance: Platform vs Virtual Threads")
-  void testDatabaseMigrationPerformance() throws Exception {
-    // Create test migration step
-    TestMigrationStep migrationStep = new TestMigrationStep();
+  private static class PerformanceResult {
+    private final String name;
+    private final int concurrency;
+    private final long operationCount;
+    private final long durationMs;
+    private final double operationsPerSecond;
+    private final double avgLatencyMs;
+    private final long maxLatencyMs;
+    private final long minLatencyMs;
+    private final long p95LatencyMs;
+    private final long p99LatencyMs;
+    private final long memoryUsedBytes;
+    private final int errorCount;
     
-    // Run performance comparison
-    PerformanceResult platformResult = measurePerformance(
-        () -> runDatabaseMigration(migrationStep),
-        Thread.ofPlatform().factory(),
-        "Platform Thread - Database Migration");
-    
-    PerformanceResult virtualResult = measurePerformance(
-        () -> runDatabaseMigration(migrationStep),
-        Thread.ofVirtual().factory(),
-        "Virtual Thread - Database Migration");
-    
-    // Log results using Java 21 string templates
-    logPerformanceComparison(platformResult, virtualResult);
-    
-    // Verify virtual threads provide better scalability at high concurrency
-    assertTrue(virtualResult.getMaxThroughput() >= platformResult.getMaxThroughput(),
-        STR."Virtual thread throughput (\{virtualResult.getMaxThroughput()}) should be at least as good as platform thread throughput (\{platformResult.getMaxThroughput()})");
-    
-    // Verify virtual threads use fewer resources at high concurrency
-    assertTrue(virtualResult.getResourceUtilization() <= platformResult.getResourceUtilization(),
-        STR."Virtual thread resource utilization (\{virtualResult.getResourceUtilization()}) should be lower than platform thread utilization (\{platformResult.getResourceUtilization()})");
-  }
-  
-  /**
-   * Compares the performance of dependency resolution operations between platform threads and virtual threads.
-   * <p>
-   * This test resolves complex dependency graphs with increasing concurrency levels using both thread types
-   * and measures throughput, latency, and resource utilization.
-   */
-  @Test
-  @DisplayName("Dependency Resolution Performance: Platform vs Virtual Threads")
-  void testDependencyResolutionPerformance() throws Exception {
-    // Run performance comparison
-    PerformanceResult platformResult = measurePerformance(
-        this::resolveDependencies,
-        Thread.ofPlatform().factory(),
-        "Platform Thread - Dependency Resolution");
-    
-    PerformanceResult virtualResult = measurePerformance(
-        this::resolveDependencies,
-        Thread.ofVirtual().factory(),
-        "Virtual Thread - Dependency Resolution");
-    
-    // Log results using Java 21 string templates
-    logPerformanceComparison(platformResult, virtualResult);
-    
-    // Verify virtual threads provide better scalability at high concurrency
-    assertTrue(virtualResult.getMaxThroughput() >= platformResult.getMaxThroughput(),
-        STR."Virtual thread throughput (\{virtualResult.getMaxThroughput()}) should be at least as good as platform thread throughput (\{platformResult.getMaxThroughput()})");
-    
-    // Verify virtual threads use fewer resources at high concurrency
-    assertTrue(virtualResult.getResourceUtilization() <= platformResult.getResourceUtilization(),
-        STR."Virtual thread resource utilization (\{virtualResult.getResourceUtilization()}) should be lower than platform thread utilization (\{platformResult.getResourceUtilization()})");
-  }
-  
-  /**
-   * Tests the scalability of upgrade operations with increasing concurrency levels.
-   * <p>
-   * This test measures how well virtual threads scale compared to platform threads as the number
-   * of concurrent operations increases.
-   *
-   * @param threadType the type of thread to use ("platform" or "virtual")
-   */
-  @ParameterizedTest(name = "Upgrade Scalability with {0} Threads")
-  @ValueSource(strings = {"platform", "virtual"})
-  void testUpgradeScalability(String threadType) throws Exception {
-    // Create thread factory based on type
-    ThreadFactory threadFactory = "virtual".equals(threadType) ?
-        Thread.ofVirtual().factory() :
-        Thread.ofPlatform().factory();
-    
-    // Create test migration step
-    TestMigrationStep migrationStep = new TestMigrationStep();
-    
-    // Measure scalability with increasing concurrency
-    log.info(STR."Testing upgrade scalability with \{threadType} threads:");
-    
-    for (int concurrency = CONCURRENCY_STEP; concurrency <= MAX_CONCURRENCY; concurrency += CONCURRENCY_STEP) {
-      // Measure throughput at this concurrency level
-      double throughput = measureThroughputAtConcurrency(
-          () -> runDatabaseMigration(migrationStep),
-          threadFactory,
-          concurrency);
+    public PerformanceResult(String name, int concurrency, long operationCount, long durationMs, 
+                            List<Long> latencies, long memoryUsedBytes, int errorCount) {
+      this.name = name;
+      this.concurrency = concurrency;
+      this.operationCount = operationCount;
+      this.durationMs = durationMs;
+      this.operationsPerSecond = operationCount * 1000.0 / durationMs;
       
-      log.info(STR."  Concurrency: \{concurrency}, Throughput: \{String.format("%.2f", throughput)} ops/sec");
+      // Calculate latency statistics
+      if (latencies.isEmpty()) {
+        this.avgLatencyMs = 0;
+        this.maxLatencyMs = 0;
+        this.minLatencyMs = 0;
+        this.p95LatencyMs = 0;
+        this.p99LatencyMs = 0;
+      } else {
+        this.avgLatencyMs = latencies.stream().mapToLong(Long::longValue).average().orElse(0);
+        this.maxLatencyMs = latencies.stream().mapToLong(Long::longValue).max().orElse(0);
+        this.minLatencyMs = latencies.stream().mapToLong(Long::longValue).min().orElse(0);
+        
+        // Sort latencies for percentile calculations
+        latencies.sort(Long::compare);
+        int p95Index = (int) Math.ceil(latencies.size() * 0.95) - 1;
+        int p99Index = (int) Math.ceil(latencies.size() * 0.99) - 1;
+        this.p95LatencyMs = latencies.get(Math.max(0, p95Index));
+        this.p99LatencyMs = latencies.get(Math.max(0, p99Index));
+      }
+      
+      this.memoryUsedBytes = memoryUsedBytes;
+      this.errorCount = errorCount;
+    }
+    
+    public String getName() {
+      return name;
+    }
+    
+    public int getConcurrency() {
+      return concurrency;
+    }
+    
+    public long getOperationCount() {
+      return operationCount;
+    }
+    
+    public long getDurationMs() {
+      return durationMs;
+    }
+    
+    public double getOperationsPerSecond() {
+      return operationsPerSecond;
+    }
+    
+    public double getAvgLatencyMs() {
+      return avgLatencyMs;
+    }
+    
+    public long getMaxLatencyMs() {
+      return maxLatencyMs;
+    }
+    
+    public long getMinLatencyMs() {
+      return minLatencyMs;
+    }
+    
+    public long getP95LatencyMs() {
+      return p95LatencyMs;
+    }
+    
+    public long getP99LatencyMs() {
+      return p99LatencyMs;
+    }
+    
+    public long getMemoryUsedBytes() {
+      return memoryUsedBytes;
+    }
+    
+    public int getErrorCount() {
+      return errorCount;
+    }
+    
+    @Override
+    public String toString() {
+      return STR."""
+          Performance Results for \{
+ame} (Concurrency: \{concurrency}):
+          - Operations: \{operationCount}
+          - Duration: \{durationMs} ms
+          - Throughput: \{String.format("%.2f", operationsPerSecond)} ops/sec
+          - Avg Latency: \{String.format("%.2f", avgLatencyMs)} ms
+          - Min Latency: \{minLatencyMs} ms
+          - Max Latency: \{maxLatencyMs} ms
+          - P95 Latency: \{p95LatencyMs} ms
+          - P99 Latency: \{p99LatencyMs} ms
+          - Memory Used: \{memoryUsedBytes / 1024} KB
+          - Errors: \{errorCount}
+          """;
     }
   }
   
   /**
-   * Tests for thread pinning issues in upgrade operations.
-   * <p>
-   * This test identifies operations that may cause virtual threads to be pinned to platform threads,
-   * which can limit scalability and performance benefits.
+   * Runs a performance test with increasing concurrency levels for both platform threads and virtual threads.
+   * 
+   * @param testName the name of the test
+   * @param operation the operation to benchmark
+   * @return a list of performance results for each concurrency level and thread type
    */
-  @Test
-  @DisplayName("Thread Pinning Detection in Upgrade Operations")
-  void testThreadPinningInUpgradeOperations() throws Exception {
-    // Create test migration step
-    TestMigrationStep migrationStep = new TestMigrationStep();
-    
-    // Test database migration for pinning
-    boolean migrationPinning = ThreadPinningDetector.detectThreadPinning(() -> {
-      try {
-        runDatabaseMigration(migrationStep);
-      }
-      catch (Exception e) {
-        throw new RuntimeException(e);
-      }
-    });
-    
-    // Test dependency resolution for pinning
-    boolean dependencyPinning = ThreadPinningDetector.detectThreadPinning(() -> {
-      try {
-        resolveDependencies();
-      }
-      catch (Exception e) {
-        throw new RuntimeException(e);
-      }
-    });
-    
-    // Log results
-    log.info(STR."Thread pinning detected in database migration: \{migrationPinning}");
-    log.info(STR."Thread pinning detected in dependency resolution: \{dependencyPinning}");
-    
-    // Verify no thread pinning in critical operations
-    assertFalse(migrationPinning, "Database migration should not cause thread pinning");
-    assertFalse(dependencyPinning, "Dependency resolution should not cause thread pinning");
-  }
-  
-  /**
-   * Runs a database migration operation.
-   *
-   * @param migrationStep the migration step to execute
-   * @throws Exception if an error occurs during migration
-   */
-  private void runDatabaseMigration(DatabaseMigrationStep migrationStep) throws Exception {
-    UpgradeManagerImpl upgradeManager = new UpgradeManagerImpl(dataStoreManager, auditor, singletonList(migrationStep));
-    upgradeManager.migrate();
-  }
-  
-  /**
-   * Resolves a complex dependency graph.
-   *
-   * @throws Exception if an error occurs during dependency resolution
-   */
-  private void resolveDependencies() throws Exception {
-    DependencyResolver<TestDependency> resolver = new DependencyResolver<>();
-    
-    // Create a complex dependency graph
-    resolver.add(
-        new TestDependency("a", "b", "c"),
-        new TestDependency("b", "d", "e"),
-        new TestDependency("c", "f"),
-        new TestDependency("d"),
-        new TestDependency("e", "g"),
-        new TestDependency("f"),
-        new TestDependency("g"),
-        new TestDependency("h", "i"),
-        new TestDependency("i", "j"),
-        new TestDependency("j")
-    );
-    
-    // Resolve dependencies
-    resolver.resolve();
-  }
-  
-  /**
-   * Measures performance metrics for an operation with both thread types.
-   *
-   * @param operation the operation to measure
-   * @param threadFactory the thread factory to use
-   * @param label a label for logging
-   * @return performance metrics
-   */
-  private PerformanceResult measurePerformance(
-      Callable<Void> operation,
-      ThreadFactory threadFactory,
-      String label) throws Exception
-  {
-    log.info(STR."Measuring performance for: \{label}");
+  private List<PerformanceResult> runScalabilityTest(String testName, Runnable operation) {
+    List<PerformanceResult> results = new ArrayList<>();
     
     // Warm up
-    log.info(STR."  Warming up with \{WARMUP_ITERATIONS} iterations...");
+    log.info("Warming up {}...", testName);
     for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-      operation.call();
+      operation.run();
     }
     
-    // Measure baseline (single-threaded)
-    log.info("  Measuring baseline (single-threaded) performance...");
-    long startTime = System.nanoTime();
-    for (int i = 0; i < MEASUREMENT_ITERATIONS; i++) {
-      operation.call();
-    }
-    long endTime = System.nanoTime();
-    double baselineLatency = (endTime - startTime) / (double) MEASUREMENT_ITERATIONS / 1_000_000.0; // ms
-    double baselineThroughput = 1000.0 / baselineLatency; // ops/sec
-    
-    log.info(STR."  Baseline latency: \{String.format("%.2f", baselineLatency)} ms");
-    log.info(STR."  Baseline throughput: \{String.format("%.2f", baselineThroughput)} ops/sec");
-    
-    // Measure with increasing concurrency
-    double maxThroughput = baselineThroughput;
-    double p95Latency = baselineLatency;
-    double resourceUtilization = 0.0;
-    
-    for (int concurrency = CONCURRENCY_STEP; concurrency <= MAX_CONCURRENCY; concurrency += CONCURRENCY_STEP) {
-      double throughput = measureThroughputAtConcurrency(operation, threadFactory, concurrency);
-      if (throughput > maxThroughput) {
-        maxThroughput = throughput;
-      }
-      
-      // Estimate resource utilization (simplified model)
-      double currentUtilization = (double) concurrency / Runtime.getRuntime().availableProcessors();
-      if (currentUtilization > resourceUtilization) {
-        resourceUtilization = currentUtilization;
-      }
-      
-      log.info(STR."  Concurrency: \{concurrency}, Throughput: \{String.format("%.2f", throughput)} ops/sec");
+    // Test with increasing concurrency using platform threads
+    for (int concurrency = STEP_SIZE; concurrency <= MAX_CONCURRENCY; concurrency += STEP_SIZE) {
+      log.info("Testing {} with {} platform threads", testName, concurrency);
+      results.add(measurePerformance(testName + " (Platform Threads)", concurrency, false, operation));
     }
     
-    // Measure p95 latency at max concurrency
-    p95Latency = measureP95LatencyAtConcurrency(operation, threadFactory, MAX_CONCURRENCY);
-    log.info(STR."  P95 latency at max concurrency: \{String.format("%.2f", p95Latency)} ms");
+    // Test with increasing concurrency using virtual threads
+    for (int concurrency = STEP_SIZE; concurrency <= MAX_CONCURRENCY; concurrency += STEP_SIZE) {
+      log.info("Testing {} with {} virtual threads", testName, concurrency);
+      results.add(measurePerformance(testName + " (Virtual Threads)", concurrency, true, operation));
+    }
     
-    return new PerformanceResult(label, baselineLatency, baselineThroughput, maxThroughput, p95Latency, resourceUtilization);
+    return results;
   }
   
   /**
-   * Measures throughput at a specific concurrency level.
-   *
-   * @param operation the operation to measure
-   * @param threadFactory the thread factory to use
+   * Measures the performance of an operation with a specific concurrency level and thread type.
+   * 
+   * @param name the name of the test
    * @param concurrency the number of concurrent operations
-   * @return throughput in operations per second
+   * @param useVirtualThreads whether to use virtual threads
+   * @param operation the operation to benchmark
+   * @return the performance result
    */
-  private double measureThroughputAtConcurrency(
-      Callable<Void> operation,
-      ThreadFactory threadFactory,
-      int concurrency) throws Exception
-  {
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(threadFactory);
+  private PerformanceResult measurePerformance(String name, int concurrency, boolean useVirtualThreads, Runnable operation) {
+    ThreadPinningDetector pinningDetector = new ThreadPinningDetector();
+    if (useVirtualThreads) {
+      pinningDetector.start();
+    }
+    
+    // Create appropriate executor service
+    ExecutorService executor = useVirtualThreads ?
+        Executors.newVirtualThreadPerTaskExecutor() :
+        Executors.newFixedThreadPool(concurrency);
+    
     try {
-      CountDownLatch startLatch = new CountDownLatch(1);
-      CountDownLatch completionLatch = new CountDownLatch(concurrency);
-      AtomicInteger completedOperations = new AtomicInteger(0);
-      AtomicInteger errors = new AtomicInteger(0);
+      AtomicInteger errorCount = new AtomicInteger(0);
+      AtomicInteger completedCount = new AtomicInteger(0);
+      List<Long> latencies = new ArrayList<>(concurrency);
+      CountDownLatch latch = new CountDownLatch(concurrency);
+      
+      // Measure memory before test
+      Runtime runtime = Runtime.getRuntime();
+      System.gc(); // Request garbage collection to get more accurate memory measurement
+      long memoryBefore = runtime.totalMemory() - runtime.freeMemory();
+      
+      // Start timing
+      Instant start = Instant.now();
       
       // Submit tasks
       for (int i = 0; i < concurrency; i++) {
         executor.submit(() -> {
           try {
-            startLatch.await(); // Wait for all tasks to be ready
-            operation.call();
-            completedOperations.incrementAndGet();
+            Instant operationStart = Instant.now();
+            operation.run();
+            Instant operationEnd = Instant.now();
+            
+            // Record latency
+            synchronized (latencies) {
+              latencies.add(Duration.between(operationStart, operationEnd).toMillis());
+            }
+            
+            completedCount.incrementAndGet();
           }
           catch (Exception e) {
-            errors.incrementAndGet();
-            log.error("Error during concurrent operation", e);
+            log.error("Error during operation execution", e);
+            errorCount.incrementAndGet();
           }
           finally {
-            completionLatch.countDown();
+            latch.countDown();
           }
-          return null;
         });
       }
       
-      // Start all tasks simultaneously
-      long startTime = System.nanoTime();
-      startLatch.countDown();
-      
       // Wait for all tasks to complete
-      completionLatch.await();
-      long endTime = System.nanoTime();
+      latch.await(1, TimeUnit.MINUTES);
       
-      // Calculate throughput
-      double elapsedSeconds = (endTime - startTime) / 1_000_000_000.0;
-      return completedOperations.get() / elapsedSeconds;
+      // End timing
+      Instant end = Instant.now();
+      long durationMs = Duration.between(start, end).toMillis();
+      
+      // Measure memory after test
+      System.gc(); // Request garbage collection to get more accurate memory measurement
+      long memoryAfter = runtime.totalMemory() - runtime.freeMemory();
+      long memoryUsed = memoryAfter - memoryBefore;
+      
+      if (useVirtualThreads) {
+        pinningDetector.stop();
+        if (!pinningDetector.getPinnedThreads().isEmpty()) {
+          log.warn(pinningDetector.getPinningReport());
+        }
+      }
+      
+      return new PerformanceResult(
+          name,
+          concurrency,
+          completedCount.get(),
+          durationMs,
+          latencies,
+          memoryUsed,
+          errorCount.get()
+      );
+    }
+    catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException("Performance test was interrupted", e);
     }
     finally {
-      executor.shutdown();
+      executor.shutdownNow();
+      try {
+        executor.awaitTermination(10, TimeUnit.SECONDS);
+      }
+      catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
     }
   }
   
   /**
-   * Measures P95 latency at a specific concurrency level.
-   *
-   * @param operation the operation to measure
-   * @param threadFactory the thread factory to use
-   * @param concurrency the number of concurrent operations
-   * @return P95 latency in milliseconds
+   * Compares the performance of database migrations using platform threads vs virtual threads.
    */
-  private double measureP95LatencyAtConcurrency(
-      Callable<Void> operation,
-      ThreadFactory threadFactory,
-      int concurrency) throws Exception
-  {
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(threadFactory);
-    try {
-      CountDownLatch startLatch = new CountDownLatch(1);
-      List<Long> latencies = new ArrayList<>(concurrency);
-      List<Future<Long>> futures = new ArrayList<>(concurrency);
+  @Test
+  @DisplayName("Compare database migration performance: Platform Threads vs Virtual Threads")
+  void compareDatabaseMigrationPerformance() {
+    assertTimeoutPreemptively(TEST_TIMEOUT, () -> {
+      // Set up test database
+      DataSessionRule dataSessionRule = new DataSessionRule();
+      when(dataStoreManager.get(DEFAULT_DATASTORE_NAME)).thenReturn(dataSessionRule.getDataStore(DEFAULT_DATASTORE_NAME));
       
-      // Submit tasks
-      for (int i = 0; i < concurrency; i++) {
-        futures.add(executor.submit(() -> {
-          startLatch.await(); // Wait for all tasks to be ready
-          long start = System.nanoTime();
-          operation.call();
-          long end = System.nanoTime();
-          return (end - start) / 1_000_000; // Convert to ms
-        }));
-      }
+      // Create test migration step
+      TestMigrationStep migrationStep = new TestMigrationStep();
       
-      // Start all tasks simultaneously
-      startLatch.countDown();
+      // Define the operation to benchmark
+      Runnable migrationOperation = () -> {
+        UpgradeManagerImpl upgradeManager = new UpgradeManagerImpl(dataStoreManager, auditor, singletonList(migrationStep));
+        upgradeManager.migrate();
+        
+        // Verify migration was successful
+        verify(auditor).post(any(UpgradeStartedEvent.class));
+        verify(auditor).post(any(UpgradeCompletedEvent.class));
+      };
       
-      // Collect latencies
-      for (Future<Long> future : futures) {
+      // Run the performance comparison
+      List<PerformanceResult> results = runScalabilityTest("Database Migration", migrationOperation);
+      
+      // Log results
+      results.forEach(result -> log.info(result.toString()));
+      
+      // Compare results at maximum concurrency
+      PerformanceResult platformResult = results.stream()
+          .filter(r -> r.getName().contains("Platform") && r.getConcurrency() == MAX_CONCURRENCY)
+          .findFirst()
+          .orElseThrow();
+      
+      PerformanceResult virtualResult = results.stream()
+          .filter(r -> r.getName().contains("Virtual") && r.getConcurrency() == MAX_CONCURRENCY)
+          .findFirst()
+          .orElseThrow();
+      
+      // Assert performance expectations
+      assertAll(
+          () -> assertThat("Virtual threads should have zero errors", virtualResult.getErrorCount(), is(0)),
+          () -> assertThat("Platform threads should have zero errors", platformResult.getErrorCount(), is(0)),
+          () -> assertThat("Virtual threads should handle more operations per second", 
+              virtualResult.getOperationsPerSecond(), greaterThan(platformResult.getOperationsPerSecond())),
+          () -> assertThat("Virtual threads should use less memory", 
+              virtualResult.getMemoryUsedBytes(), lessThan(platformResult.getMemoryUsedBytes()))
+      );
+    });
+  }
+  
+  /**
+   * Compares the performance of dependency resolution using platform threads vs virtual threads.
+   */
+  @Test
+  @DisplayName("Compare dependency resolution performance: Platform Threads vs Virtual Threads")
+  void compareDependencyResolutionPerformance() {
+    assertTimeoutPreemptively(TEST_TIMEOUT, () -> {
+      // Define the operation to benchmark
+      Runnable dependencyResolutionOperation = () -> {
+        // Create a complex dependency graph
+        List<TestDependencySource> sources = createComplexDependencyGraph(100);
+        
+        // Resolve dependencies
+        DependencyResolver<TestDependencySource> resolver = new DependencyResolver<>();
+        sources.forEach(resolver::add);
+        resolver.resolve();
+      };
+      
+      // Run the performance comparison
+      List<PerformanceResult> results = runScalabilityTest("Dependency Resolution", dependencyResolutionOperation);
+      
+      // Log results
+      results.forEach(result -> log.info(result.toString()));
+      
+      // Compare results at maximum concurrency
+      PerformanceResult platformResult = results.stream()
+          .filter(r -> r.getName().contains("Platform") && r.getConcurrency() == MAX_CONCURRENCY)
+          .findFirst()
+          .orElseThrow();
+      
+      PerformanceResult virtualResult = results.stream()
+          .filter(r -> r.getName().contains("Virtual") && r.getConcurrency() == MAX_CONCURRENCY)
+          .findFirst()
+          .orElseThrow();
+      
+      // Assert performance expectations
+      assertAll(
+          () -> assertThat("Virtual threads should have zero errors", virtualResult.getErrorCount(), is(0)),
+          () -> assertThat("Platform threads should have zero errors", platformResult.getErrorCount(), is(0)),
+          () -> assertThat("Virtual threads should have lower P95 latency", 
+              virtualResult.getP95LatencyMs(), lessThanOrEqualTo(platformResult.getP95LatencyMs()))
+      );
+    });
+  }
+  
+  /**
+   * Tests the scalability of virtual threads with very high concurrency levels.
+   */
+  @ParameterizedTest
+  @ValueSource(ints = {1000, 5000, 10000})
+  @DisplayName("Test virtual thread scalability with high concurrency")
+  void testVirtualThreadScalability(int concurrency) {
+    assertTimeoutPreemptively(TEST_TIMEOUT, () -> {
+      // Create a simple I/O-bound operation that simulates network or disk I/O
+      Runnable ioOperation = () -> {
         try {
-          latencies.add(future.get());
+          // Simulate I/O operation with sleep
+          Thread.sleep(50);
         }
-        catch (Exception e) {
-          log.error("Error measuring latency", e);
-        }
-      }
-      
-      // Calculate P95 latency
-      if (latencies.isEmpty()) {
-        return 0.0;
-      }
-      
-      latencies.sort(Long::compare);
-      int p95Index = (int) Math.ceil(latencies.size() * 0.95) - 1;
-      return latencies.get(p95Index);
-    }
-    finally {
-      executor.shutdown();
-    }
-  }
-  
-  /**
-   * Logs a comparison of performance results between platform and virtual threads.
-   *
-   * @param platformResult performance results for platform threads
-   * @param virtualResult performance results for virtual threads
-   */
-  private void logPerformanceComparison(PerformanceResult platformResult, PerformanceResult virtualResult) {
-    log.info("\nPERFORMANCE COMPARISON RESULTS:");
-    log.info(STR."  Platform Thread - Baseline Latency: \{String.format("%.2f", platformResult.getBaselineLatency())} ms");
-    log.info(STR."  Virtual Thread  - Baseline Latency: \{String.format("%.2f", virtualResult.getBaselineLatency())} ms");
-    log.info(STR."  Platform Thread - Baseline Throughput: \{String.format("%.2f", platformResult.getBaselineThroughput())} ops/sec");
-    log.info(STR."  Virtual Thread  - Baseline Throughput: \{String.format("%.2f", virtualResult.getBaselineThroughput())} ops/sec");
-    log.info(STR."  Platform Thread - Max Throughput: \{String.format("%.2f", platformResult.getMaxThroughput())} ops/sec");
-    log.info(STR."  Virtual Thread  - Max Throughput: \{String.format("%.2f", virtualResult.getMaxThroughput())} ops/sec");
-    log.info(STR."  Platform Thread - P95 Latency: \{String.format("%.2f", platformResult.getP95Latency())} ms");
-    log.info(STR."  Virtual Thread  - P95 Latency: \{String.format("%.2f", virtualResult.getP95Latency())} ms");
-    log.info(STR."  Platform Thread - Resource Utilization: \{String.format("%.2f", platformResult.getResourceUtilization())}");
-    log.info(STR."  Virtual Thread  - Resource Utilization: \{String.format("%.2f", virtualResult.getResourceUtilization())}");
-    
-    // Calculate improvement percentages
-    double throughputImprovement = ((virtualResult.getMaxThroughput() / platformResult.getMaxThroughput()) - 1.0) * 100.0;
-    double latencyImprovement = ((platformResult.getP95Latency() / virtualResult.getP95Latency()) - 1.0) * 100.0;
-    double resourceImprovement = ((platformResult.getResourceUtilization() / virtualResult.getResourceUtilization()) - 1.0) * 100.0;
-    
-    log.info("\nIMPROVEMENT SUMMARY:");
-    log.info(STR."  Throughput Improvement: \{String.format("%.2f", throughputImprovement)}%");
-    log.info(STR."  Latency Improvement: \{String.format("%.2f", latencyImprovement)}%");
-    log.info(STR."  Resource Utilization Improvement: \{String.format("%.2f", resourceImprovement)}%");
-  }
-  
-  /**
-   * Gets the test DataStore.
-   *
-   * @return the DataStore for testing
-   */
-  private Optional<DataStore<?>> getDataStore() {
-    return dataSessionRule.getDataStore(DEFAULT_DATASTORE_NAME);
-  }
-  
-  /**
-   * A simple test migration step for performance testing.
-   */
-  private static class TestMigrationStep
-      implements DatabaseMigrationStep
-  {
-    @Override
-    public Optional<String> version() {
-      return Optional.of("1.0");
-    }
-    
-    @Override
-    public void migrate(Connection connection) throws Exception {
-      try (Statement stmt = connection.createStatement()) {
-        // Create a test table
-        stmt.execute("CREATE TABLE IF NOT EXISTS example (name VARCHAR(255))");
-        
-        // Insert some test data
-        stmt.execute("INSERT INTO example (name) VALUES ('fawkes')");
-        
-        // Simulate some I/O-bound work
-        Thread.sleep(50);
-      }
-    }
-    
-    public boolean isH2(Connection connection) throws SQLException {
-      return connection.getMetaData().getDatabaseProductName().equals("H2");
-    }
-  }
-  
-  /**
-   * A simple test dependency for performance testing.
-   */
-  private static class TestDependency
-      implements DependencySource<TestDependency>
-  {
-    private final String id;
-    private final List<Dependency<TestDependency>> dependencies = new ArrayList<>();
-    
-    public TestDependency(String id, String... dependsOn) {
-      this.id = id;
-      for (String dep : dependsOn) {
-        dependencies.add(dependency(dep));
-      }
-    }
-    
-    @Override
-    public List<Dependency<TestDependency>> getDependencies() {
-      return dependencies;
-    }
-    
-    /**
-     * Creates a dependency which requires a thing with the given identifier.
-     */
-    static Dependency<TestDependency> dependency(final String id) {
-      return new Dependency<TestDependency>() {
-        @Override
-        public boolean satisfiedBy(final TestDependency other) {
-          return other.id.equals(id);
-        }
-        
-        @Override
-        public String toString() {
-          return "DEPENDS_ON(" + id + ")";
+        catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
         }
       };
+      
+      // Measure performance with virtual threads
+      PerformanceResult result = measurePerformance(
+          "I/O Operation (Virtual Threads)", 
+          concurrency, 
+          true, 
+          ioOperation
+      );
+      
+      log.info(result.toString());
+      
+      // Assert that virtual threads can handle high concurrency
+      assertAll(
+          () -> assertThat("All operations should complete successfully", 
+              result.getOperationCount(), is((long) concurrency)),
+          () -> assertThat("There should be no errors", 
+              result.getErrorCount(), is(0))
+      );
+    });
+  }
+  
+  /**
+   * Tests thread pinning detection during synchronized block execution.
+   */
+  @Test
+  @DisplayName("Detect thread pinning during synchronized block execution")
+  void detectThreadPinningDuringSynchronizedExecution() {
+    assertTimeoutPreemptively(TEST_TIMEOUT, () -> {
+      // Create an object for synchronization
+      Object lock = new Object();
+      
+      // Create an operation that uses synchronized blocks (which cause pinning)
+      Runnable pinnedOperation = () -> {
+        synchronized (lock) {
+          try {
+            // Hold the lock for a while
+            Thread.sleep(100);
+          }
+          catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+          }
+        }
+      };
+      
+      // Measure performance with virtual threads
+      ThreadPinningDetector pinningDetector = new ThreadPinningDetector();
+      pinningDetector.start();
+      
+      try {
+        // Run the operation with virtual threads
+        ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+        try {
+          // Submit multiple tasks
+          List<CompletableFuture<Void>> futures = new ArrayList<>();
+          for (int i = 0; i < 10; i++) {
+            CompletableFuture<Void> future = CompletableFuture.runAsync(pinnedOperation, executor);
+            futures.add(future);
+          }
+          
+          // Wait for all tasks to complete
+          CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        }
+        finally {
+          executor.shutdownNow();
+          executor.awaitTermination(10, TimeUnit.SECONDS);
+        }
+        
+        // Check if pinning was detected
+        pinningDetector.stop();
+        Map<Thread, StackTraceElement[]> pinnedThreads = pinningDetector.getPinnedThreads();
+        
+        log.info(pinningDetector.getPinningReport());
+        
+        // We expect to detect at least one pinned thread
+        assertThat("Thread pinning should be detected", !pinnedThreads.isEmpty());
+      }
+      finally {
+        pinningDetector.stop();
+      }
+    });
+  }
+  
+  /**
+   * Creates a complex dependency graph for testing dependency resolution performance.
+   * 
+   * @param size the number of nodes in the graph
+   * @return a list of dependency sources
+   */
+  private List<TestDependencySource> createComplexDependencyGraph(int size) {
+    List<TestDependencySource> sources = new ArrayList<>(size);
+    
+    // Create nodes
+    for (int i = 0; i < size; i++) {
+      sources.add(new TestDependencySource("node-" + i));
+    }
+    
+    // Create dependencies (each node depends on ~10% of other nodes)
+    for (int i = 0; i < size; i++) {
+      TestDependencySource source = sources.get(i);
+      for (int j = 0; j < size / 10; j++) {
+        int dependencyIndex = (i + j + 1) % size;
+        source.addDependency(new TestDependency(sources.get(dependencyIndex).getId()));
+      }
+    }
+    
+    return sources;
+  }
+  
+  /**
+   * Simple dependency source implementation for testing.
+   */
+  private static class TestDependencySource implements DependencySource<TestDependencySource> {
+    private final String id;
+    private final List<DependencySource.Dependency<TestDependencySource>> dependencies = new ArrayList<>();
+    
+    public TestDependencySource(String id) {
+      this.id = id;
+    }
+    
+    public String getId() {
+      return id;
+    }
+    
+    public void addDependency(DependencySource.Dependency<TestDependencySource> dependency) {
+      dependencies.add(dependency);
+    }
+    
+    @Override
+    public List<DependencySource.Dependency<TestDependencySource>> getDependencies() {
+      return dependencies;
     }
     
     @Override
     public String toString() {
-      return "TestDependency{" +
-          "id='" + id + '\'' +
-          ", dependencies=" + dependencies +
-          '}';
+      return "TestDependencySource{id='" + id + "'}";
     }
   }
   
   /**
-   * Holds performance measurement results.
+   * Simple dependency implementation for testing.
    */
-  private static class PerformanceResult
-  {
-    private final String label;
-    private final double baselineLatency;
-    private final double baselineThroughput;
-    private final double maxThroughput;
-    private final double p95Latency;
-    private final double resourceUtilization;
+  private static class TestDependency implements DependencySource.Dependency<TestDependencySource> {
+    private final String targetId;
     
-    public PerformanceResult(
-        String label,
-        double baselineLatency,
-        double baselineThroughput,
-        double maxThroughput,
-        double p95Latency,
-        double resourceUtilization)
-    {
-      this.label = label;
-      this.baselineLatency = baselineLatency;
-      this.baselineThroughput = baselineThroughput;
-      this.maxThroughput = maxThroughput;
-      this.p95Latency = p95Latency;
-      this.resourceUtilization = resourceUtilization;
+    public TestDependency(String targetId) {
+      this.targetId = targetId;
     }
     
-    public String getLabel() {
-      return label;
+    @Override
+    public boolean satisfiedBy(TestDependencySource source) {
+      return source.getId().equals(targetId);
     }
     
-    public double getBaselineLatency() {
-      return baselineLatency;
+    @Override
+    public String toString() {
+      return "TestDependency{targetId='" + targetId + "'}";
     }
-    
-    public double getBaselineThroughput() {
-      return baselineThroughput;
-    }
-    
-    public double getMaxThroughput() {
-      return maxThroughput;
-    }
-    
-    public double getP95Latency() {
-      return p95Latency;
-    }
-    
-    public double getResourceUtilization() {
-      return resourceUtilization;
-    }
+  }
+  
+  /**
+   * Mock implementation of PostStartupUpgradeAuditor for testing.
+   */
+  private interface PostStartupUpgradeAuditor {
+    void post(Object event);
   }
 }

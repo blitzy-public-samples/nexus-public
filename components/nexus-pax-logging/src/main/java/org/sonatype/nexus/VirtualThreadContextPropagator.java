@@ -17,288 +17,229 @@ import java.util.HashMap;
 import java.util.concurrent.Callable;
 import java.util.function.Supplier;
 
+import org.apache.logging.log4j.ThreadContext;
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.subject.Subject;
-import org.slf4j.MDC;
-
-import static com.google.common.base.Preconditions.checkNotNull;
-
-// Java 21 imports for Virtual Threads
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /**
- * Utility class for managing the propagation of thread-local variables across Virtual Thread boundaries in Java 21.
+ * Utility class for propagating thread-local context across Virtual Thread boundaries in Java 21.
  * <p>
- * This class ensures that logging context (MDC), security context, and other thread-local state is properly
- * maintained when operations span multiple Virtual Threads, which is critical for maintaining logging
- * continuity and security in asynchronous operations.
+ * This class provides methods to capture and restore thread-local state such as:
+ * <ul>
+ *   <li>Logging context (MDC - Mapped Diagnostic Context)</li>
+ *   <li>Security context (Shiro Subject)</li>
+ *   <li>Other thread-local variables</li>
+ * </ul>
  * <p>
- * Virtual Threads in Java 21 are lightweight threads that are managed by the JVM rather than the operating system.
- * While they support thread-local variables, special care must be taken to ensure proper propagation of context
- * when operations cross thread boundaries.
+ * When operations span multiple Virtual Threads, this propagator ensures that logging
+ * continuity and security context are maintained, which is critical for proper
+ * application behavior in asynchronous operations.
  * <p>
  * Usage example:
  * <pre>
- * // Capture the current context
- * ThreadContext context = VirtualThreadContextPropagator.capture();
+ * // Capture context from current thread
+ * ThreadContext captured = VirtualThreadContextPropagator.capture();
  * 
- * // Create a context-aware Runnable
- * Runnable task = VirtualThreadContextPropagator.wrap(() -> {
- *     // This code will execute with the captured context
- *     log.info("Operation in virtual thread");
- * }, context);
- * 
- * // Execute the task in a Virtual Thread
- * Thread.startVirtualThread(task);
+ * // Create a new virtual thread with the captured context
+ * Thread.ofVirtual().start(() -> {
+ *     // Restore the context in the new thread
+ *     try (VirtualThreadContextPropagator.ContextHandle handle = 
+ *          VirtualThreadContextPropagator.restore(captured)) {
+ *         // Execute operations with the restored context
+ *         // Logging and security operations will use the captured context
+ *     }
+ * });
  * </pre>
  *
  * @since 3.60
  */
-public final class VirtualThreadContextPropagator {
+public final class VirtualThreadContextPropagator
+{
+  private VirtualThreadContextPropagator() {
+    // Utility class, no instances
+  }
 
-    private VirtualThreadContextPropagator() {
-        // Utility class, no instances
+  /**
+   * Captures the current thread's context including MDC and security context.
+   *
+   * @return A {@link Context} object containing the captured state
+   */
+  public static Context capture() {
+    return new Context(
+        captureLoggingContext(),
+        captureSecurityContext()
+    );
+  }
+
+  /**
+   * Captures the current thread's logging context (MDC).
+   *
+   * @return A map containing the current MDC values
+   */
+  private static Map<String, String> captureLoggingContext() {
+    Map<String, String> mdcContext = ThreadContext.getContext();
+    return mdcContext != null ? new HashMap<>(mdcContext) : new HashMap<>();
+  }
+
+  /**
+   * Captures the current thread's security context (Shiro Subject).
+   *
+   * @return The current Shiro Subject or null if not available
+   */
+  private static Subject captureSecurityContext() {
+    try {
+      return SecurityUtils.getSubject();
+    }
+    catch (Exception e) {
+      // No security context available
+      return null;
+    }
+  }
+
+  /**
+   * Restores a previously captured context in the current thread.
+   *
+   * @param context The context to restore
+   * @return A {@link ContextHandle} that should be closed to restore the original context
+   */
+  public static ContextHandle restore(final Context context) {
+    // Capture current context before replacing it
+    Map<String, String> previousMdc = captureLoggingContext();
+    Subject previousSubject = captureSecurityContext();
+
+    // Apply the provided context
+    applyLoggingContext(context.loggingContext);
+    applySecurityContext(context.securityContext);
+
+    // Return a handle that will restore the previous context when closed
+    return new ContextHandle(previousMdc, previousSubject);
+  }
+
+  /**
+   * Applies the given logging context to the current thread.
+   *
+   * @param loggingContext The logging context to apply
+   */
+  private static void applyLoggingContext(final Map<String, String> loggingContext) {
+    ThreadContext.clearAll();
+    if (loggingContext != null && !loggingContext.isEmpty()) {
+      loggingContext.forEach(ThreadContext::put);
+    }
+  }
+
+  /**
+   * Applies the given security context to the current thread.
+   *
+   * @param securityContext The security context to apply
+   */
+  private static void applySecurityContext(final Subject securityContext) {
+    if (securityContext != null) {
+      SecurityUtils.getSubject().associateWith(securityContext.getSession());
+    }
+  }
+
+  /**
+   * Wraps a {@link Runnable} with context propagation.
+   *
+   * @param runnable The runnable to wrap
+   * @return A new runnable that will execute with the current thread's context
+   */
+  public static Runnable wrap(final Runnable runnable) {
+    final Context capturedContext = capture();
+    return () -> {
+      try (ContextHandle handle = restore(capturedContext)) {
+        runnable.run();
+      }
+    };
+  }
+
+  /**
+   * Wraps a {@link Callable} with context propagation.
+   *
+   * @param callable The callable to wrap
+   * @param <V> The return type of the callable
+   * @return A new callable that will execute with the current thread's context
+   */
+  public static <V> Callable<V> wrap(final Callable<V> callable) {
+    final Context capturedContext = capture();
+    return () -> {
+      try (ContextHandle handle = restore(capturedContext)) {
+        return callable.call();
+      }
+    };
+  }
+
+  /**
+   * Wraps a {@link Supplier} with context propagation.
+   *
+   * @param supplier The supplier to wrap
+   * @param <V> The return type of the supplier
+   * @return A new supplier that will execute with the current thread's context
+   */
+  public static <V> Supplier<V> wrap(final Supplier<V> supplier) {
+    final Context capturedContext = capture();
+    return () -> {
+      try (ContextHandle handle = restore(capturedContext)) {
+        return supplier.get();
+      }
+    };
+  }
+
+  /**
+   * Container class for thread context information.
+   */
+  public static final class Context
+  {
+    private final Map<String, String> loggingContext;
+    private final Subject securityContext;
+
+    private Context(final Map<String, String> loggingContext, final Subject securityContext) {
+      this.loggingContext = loggingContext;
+      this.securityContext = securityContext;
     }
 
     /**
-     * Represents a captured thread context that can be propagated to other threads.
-     * Contains MDC (logging) context and security context.
-     */
-    public static final class ThreadContext {
-        private final Map<String, String> mdcContext;
-        private final Subject securitySubject;
-
-        private ThreadContext(Map<String, String> mdcContext, Subject securitySubject) {
-            this.mdcContext = mdcContext != null ? new HashMap<>(mdcContext) : null;
-            this.securitySubject = securitySubject;
-        }
-    }
-
-    /**
-     * Captures the current thread's context for later propagation to another thread.
-     * This includes the MDC (logging) context and security context.
+     * Gets the captured logging context.
      *
-     * @return a ThreadContext object containing the captured context
+     * @return The logging context map
      */
-    public static ThreadContext capture() {
-        Map<String, String> mdcContext = MDC.getCopyOfContextMap();
-        Subject securitySubject = SecurityUtils.getSubject();
-        return new ThreadContext(mdcContext, securitySubject);
+    public Map<String, String> getLoggingContext() {
+      return loggingContext;
     }
 
     /**
-     * Applies a previously captured context to the current thread.
-     * This restores both MDC (logging) context and security context.
+     * Gets the captured security context.
      *
-     * @param context the context to apply, or null to clear the context
+     * @return The security context
      */
-    public static void apply(ThreadContext context) {
-        if (context == null) {
-            MDC.clear();
-            return;
-        }
-
-        // Apply MDC context
-        if (context.mdcContext != null) {
-            MDC.setContextMap(context.mdcContext);
-        } else {
-            MDC.clear();
-        }
-
-        // Note: Security context is thread-bound and typically managed by Shiro's SubjectAwareExecutorService
-        // We don't explicitly set it here as it's handled by the security framework
+    public Subject getSecurityContext() {
+      return securityContext;
     }
+  }
 
-    /**
-     * Clears the context for the current thread.
-     * This is important to prevent memory leaks, especially in Virtual Threads.
-     */
-    public static void clear() {
-        MDC.clear();
-        // Security context is managed by the security framework
+  /**
+   * Handle for managing context restoration.
+   * <p>
+   * This class implements {@link AutoCloseable} to allow use with try-with-resources.
+   */
+  public static final class ContextHandle
+      implements AutoCloseable
+  {
+    private final Map<String, String> previousLoggingContext;
+    private final Subject previousSecurityContext;
+
+    private ContextHandle(final Map<String, String> previousLoggingContext, final Subject previousSecurityContext) {
+      this.previousLoggingContext = previousLoggingContext;
+      this.previousSecurityContext = previousSecurityContext;
     }
 
     /**
-     * Wraps a Runnable to ensure it executes with the captured context.
-     * This is useful when submitting tasks to thread pools or creating Virtual Threads.
-     *
-     * @param runnable the Runnable to wrap
-     * @param context the context to apply before executing the Runnable
-     * @return a new Runnable that will apply the context before executing the original Runnable
+     * Restores the previous context when this handle is closed.
      */
-    public static Runnable wrap(Runnable runnable, ThreadContext context) {
-        checkNotNull(runnable, "Runnable cannot be null");
-        checkNotNull(context, "ThreadContext cannot be null");
-        
-        return () -> {
-            ThreadContext originalContext = capture();
-            try {
-                apply(context);
-                runnable.run();
-            } finally {
-                apply(originalContext);
-            }
-        };
+    @Override
+    public void close() {
+      applyLoggingContext(previousLoggingContext);
+      applySecurityContext(previousSecurityContext);
     }
-
-    /**
-     * Wraps a Callable to ensure it executes with the captured context.
-     * This is useful when submitting tasks to thread pools or ExecutorService.
-     *
-     * @param callable the Callable to wrap
-     * @param context the context to apply before executing the Callable
-     * @param <V> the return type of the Callable
-     * @return a new Callable that will apply the context before executing the original Callable
-     */
-    public static <V> Callable<V> wrap(Callable<V> callable, ThreadContext context) {
-        checkNotNull(callable, "Callable cannot be null");
-        checkNotNull(context, "ThreadContext cannot be null");
-        
-        return () -> {
-            ThreadContext originalContext = capture();
-            try {
-                apply(context);
-                return callable.call();
-            } finally {
-                apply(originalContext);
-            }
-        };
-    }
-
-    /**
-     * Wraps a Supplier to ensure it executes with the captured context.
-     * This is useful for functional programming patterns.
-     *
-     * @param supplier the Supplier to wrap
-     * @param context the context to apply before executing the Supplier
-     * @param <T> the return type of the Supplier
-     * @return a new Supplier that will apply the context before executing the original Supplier
-     */
-    public static <T> Supplier<T> wrap(Supplier<T> supplier, ThreadContext context) {
-        checkNotNull(supplier, "Supplier cannot be null");
-        checkNotNull(context, "ThreadContext cannot be null");
-        
-        return () -> {
-            ThreadContext originalContext = capture();
-            try {
-                apply(context);
-                return supplier.get();
-            } finally {
-                apply(originalContext);
-            }
-        };
-    }
-
-    /**
-     * Executes a Runnable with the current thread's context.
-     * This is useful for executing code in a different thread while maintaining the current context.
-     *
-     * @param runnable the Runnable to execute
-     */
-    public static void runWithCurrentContext(Runnable runnable) {
-        checkNotNull(runnable, "Runnable cannot be null");
-        ThreadContext context = capture();
-        wrap(runnable, context).run();
-    }
-
-    /**
-     * Executes a Callable with the current thread's context and returns its result.
-     * This is useful for executing code in a different thread while maintaining the current context.
-     *
-     * @param callable the Callable to execute
-     * @param <V> the return type of the Callable
-     * @return the result of the Callable execution
-     * @throws Exception if the callable throws an exception
-     */
-    public static <V> V callWithCurrentContext(Callable<V> callable) throws Exception {
-        checkNotNull(callable, "Callable cannot be null");
-        ThreadContext context = capture();
-        return wrap(callable, context).call();
-    }
-
-    /**
-     * Executes a Supplier with the current thread's context and returns its result.
-     * This is useful for functional programming patterns.
-     *
-     * @param supplier the Supplier to execute
-     * @param <T> the return type of the Supplier
-     * @return the result of the Supplier execution
-     */
-    public static <T> T getWithCurrentContext(Supplier<T> supplier) {
-        checkNotNull(supplier, "Supplier cannot be null");
-        ThreadContext context = capture();
-        return wrap(supplier, context).get();
-    }
-
-    /**
-     * Determines if the current thread is a Virtual Thread.
-     * This is useful for conditional logic based on thread type.
-     *
-     * @return true if the current thread is a Virtual Thread, false otherwise
-     */
-    public static boolean isVirtualThread() {
-        return Thread.currentThread().isVirtual();
-    }
-    
-    /**
-     * Creates a new Virtual Thread that executes the given task with the current thread's context.
-     * This is a convenience method for starting a Virtual Thread with context propagation.
-     *
-     * @param task the Runnable to execute in a new Virtual Thread with the current context
-     * @return the newly created and started Virtual Thread
-     */
-    public static Thread startVirtualThread(Runnable task) {
-        checkNotNull(task, "Task cannot be null");
-        ThreadContext context = capture();
-        return Thread.startVirtualThread(wrap(task, context));
-    }
-    
-    /**
-     * Creates a new Virtual Thread builder with context propagation support.
-     * The returned builder will create Virtual Threads that execute with the current thread's context.
-     *
-     * @return a Thread.Builder that will create Virtual Threads with context propagation
-     */
-    /**
-     * Creates a new Virtual Thread builder with context propagation support.
-     * The returned builder will create Virtual Threads that execute with the current thread's context.
-     *
-     * @return a Thread.Builder that will create Virtual Threads with context propagation
-     */
-    public static Thread.Builder.OfVirtual virtualThreadBuilder() {
-        ThreadContext context = capture();
-        return Thread.ofVirtual().factory(task -> {
-            Runnable contextualTask = wrap(task, context);
-            return Thread.ofVirtual().unstarted(contextualTask);
-        });
-    }
-    
-    /**
-     * Creates a structured concurrency scope that propagates the current thread's context to all child tasks.
-     * This is useful when using Java 21's StructuredTaskScope for parallel operations.
-     *
-     * @param <T> the type of the scope to return
-     * @param scopeSupplier a supplier that creates a new scope instance
-     * @return a new scope instance with context propagation
-     */
-    public static <T extends AutoCloseable> T withStructuredConcurrency(Supplier<T> scopeSupplier) {
-        checkNotNull(scopeSupplier, "Scope supplier cannot be null");
-        ThreadContext context = capture();
-        return getWithCurrentContext(scopeSupplier);
-    }
-    
-    /**
-     * Creates a new ExecutorService that uses Virtual Threads and propagates the current thread's context.
-     * This is a convenience method for creating a thread pool that uses Virtual Threads with context propagation.
-     *
-     * @return an ExecutorService that uses Virtual Threads with context propagation
-     */
-    public static ExecutorService newVirtualThreadExecutor() {
-        ThreadContext context = capture();
-        return Executors.newThreadPerTaskExecutor(task -> {
-            Runnable contextualTask = wrap(task, context);
-            return Thread.ofVirtual().unstarted(contextualTask);
-        });
-    }
+  }
 }

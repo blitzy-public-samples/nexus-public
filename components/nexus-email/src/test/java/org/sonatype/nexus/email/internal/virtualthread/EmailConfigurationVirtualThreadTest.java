@@ -14,455 +14,498 @@ package org.sonatype.nexus.email.internal.virtualthread;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.crypto.secrets.Secret;
 import org.sonatype.nexus.crypto.secrets.SecretsFactory;
+import org.sonatype.nexus.datastore.api.DataSession;
+import org.sonatype.nexus.datastore.mybatis.handlers.SecretTypeHandler;
 import org.sonatype.nexus.email.EmailConfiguration;
 import org.sonatype.nexus.internal.email.EmailConfigurationDAO;
 import org.sonatype.nexus.internal.email.EmailConfigurationData;
-
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.mockito.Mock;
-import org.mockito.Mockito;
+import org.sonatype.nexus.testdb.DataSessionRule;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.sonatype.nexus.datastore.api.DataStoreManager.DEFAULT_DATASTORE_NAME;
 
 /**
  * Tests for {@link EmailConfiguration} operations under Java 21 virtual threads.
  * 
- * This test class validates that email configuration operations (retrieval, updating, copying)
- * work correctly when accessed concurrently by multiple virtual threads.
+ * @since 3.60
  */
 public class EmailConfigurationVirtualThreadTest
     extends TestSupport
 {
-  @Mock
+  private static final int CONCURRENT_THREADS = 100;
+  private static final int TIMEOUT_SECONDS = 10;
+
+  private final SecretsFactory secretsFactory = mock(SecretsFactory.class);
+
+  private final DataSessionRule sessionRule =
+      new DataSessionRule().access(EmailConfigurationDAO.class).handle(new SecretTypeHandler(secretsFactory));
+
+  private DataSession<?> session;
+
   private EmailConfigurationDAO dao;
+
+  private Secret secret;
   
-  @Mock
-  private SecretsFactory secretsFactory;
-  
-  @Mock
-  private Secret secret1;
-  
-  @Mock
-  private Secret secret2;
-  
-  private EmailConfigurationData config;
-  
-  @Before
+  private ExecutorService virtualThreadExecutor;
+
+  @BeforeEach
   public void setup() {
-    // Setup a basic email configuration
-    config = new EmailConfigurationData();
-    config.setEnabled(true);
-    config.setHost("localhost");
-    config.setPort(25);
-    config.setUsername("email_user");
-    config.setPassword(secret1);
-    config.setFromAddress("test@example.com");
-    config.setSubjectPrefix("TEST: ");
-    config.setStartTlsEnabled(true);
-    config.setStartTlsRequired(false);
-    config.setSslOnConnectEnabled(true);
-    config.setSslCheckServerIdentityEnabled(false);
-    config.setNexusTrustStoreEnabled(true);
+    session = sessionRule.openSession(DEFAULT_DATASTORE_NAME);
+    dao = session.access(EmailConfigurationDAO.class);
+    secret = mock(Secret.class);
     
-    // Setup secrets
-    when(secret1.getId()).thenReturn("_1");
-    when(secretsFactory.from("_1")).thenReturn(secret1);
-    when(secret2.getId()).thenReturn("_2");
-    when(secretsFactory.from("_2")).thenReturn(secret2);
-    
-    // Setup DAO to return our config
-    when(dao.get()).thenReturn(Optional.of(config));
+    // Create a virtual thread executor for concurrent testing
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    virtualThreadExecutor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
   }
-  
-  @After
+
+  @AfterEach
   public void tearDown() {
-    // No specific teardown needed
+    session.close();
+    virtualThreadExecutor.shutdown();
   }
-  
+
+  private EmailConfigurationData createEmailConfigurationData(Secret secret) {
+    when(secret.getId()).thenReturn("_1");
+    when(secretsFactory.from("_1")).thenReturn(secret);
+    EmailConfigurationData entity = new EmailConfigurationData();
+    entity.setEnabled(true);
+    entity.setHost("localhost");
+    entity.setPort(25);
+    entity.setUsername("email_user");
+    entity.setPassword(secret);
+    entity.setFromAddress("foo@example.com");
+    entity.setSubjectPrefix("PREFIX: ");
+    entity.setStartTlsEnabled(true);
+    entity.setStartTlsRequired(false);
+    entity.setSslOnConnectEnabled(true);
+    entity.setSslCheckServerIdentityEnabled(false);
+    entity.setNexusTrustStoreEnabled(true);
+    return entity;
+  }
+
   /**
-   * Tests concurrent retrieval of email configuration using virtual threads.
-   * 
-   * This test verifies that multiple virtual threads can retrieve the email configuration
-   * simultaneously without causing inconsistencies or race conditions.
+   * Tests that concurrent reads of email configuration from multiple virtual threads
+   * return consistent results.
    */
   @Test
-  public void testConcurrentConfigurationRetrieval() throws Exception {
-    int threadCount = 100;
+  public void testConcurrentReadsWithVirtualThreads() throws Exception {
+    // Set up initial configuration
+    EmailConfigurationData entity = createEmailConfigurationData(secret);
+    dao.set(entity);
+    
+    // Create a latch to synchronize all threads
     CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(threadCount);
-    AtomicBoolean hasErrors = new AtomicBoolean(false);
+    CountDownLatch completionLatch = new CountDownLatch(CONCURRENT_THREADS);
     
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit tasks to retrieve configuration concurrently
-      for (int i = 0; i < threadCount; i++) {
-        executor.submit(() -> {
-          try {
-            startLatch.await(); // Wait for all threads to be ready
-            
-            // Retrieve configuration
-            EmailConfiguration config = dao.get().orElse(null);
-            
-            // Verify configuration is valid
-            if (config == null || !config.isEnabled() || !"localhost".equals(config.getHost()) ||
-                config.getPort() != 25 || !"email_user".equals(config.getUsername()) ||
-                config.getPassword() != secret1 || !"test@example.com".equals(config.getFromAddress())) {
-              hasErrors.set(true);
-            }
-          }
-          catch (Exception e) {
-            log.error("Error in virtual thread", e);
-            hasErrors.set(true);
-          }
-          finally {
-            completionLatch.countDown();
-          }
-        });
-      }
-      
-      // Start all threads simultaneously
-      startLatch.countDown();
-      
-      // Wait for all threads to complete
-      completionLatch.await(5, TimeUnit.SECONDS);
-    }
+    // Track any inconsistencies
+    AtomicBoolean foundInconsistency = new AtomicBoolean(false);
     
-    assertThat("No errors should occur during concurrent configuration retrieval", hasErrors.get(), is(false));
-  }
-  
-  /**
-   * Tests concurrent updates to email configuration using virtual threads.
-   * 
-   * This test verifies that multiple virtual threads can update the email configuration
-   * without causing data corruption or inconsistent state.
-   */
-  @Test
-  public void testConcurrentConfigurationUpdates() throws Exception {
-    int threadCount = 50;
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(threadCount);
-    AtomicReference<EmailConfigurationData> lastConfig = new AtomicReference<>(config);
-    AtomicBoolean hasErrors = new AtomicBoolean(false);
-    
-    // Setup DAO to update our reference when set is called
-    Mockito.doAnswer(invocation -> {
-      EmailConfigurationData newConfig = invocation.getArgument(0);
-      lastConfig.set(newConfig);
-      return null;
-    }).when(dao).set(Mockito.any(EmailConfigurationData.class));
-    
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit tasks to update configuration concurrently
-      for (int i = 0; i < threadCount; i++) {
-        final int index = i;
-        executor.submit(() -> {
-          try {
-            startLatch.await(); // Wait for all threads to be ready
-            
-            // Get current config
-            EmailConfigurationData currentConfig = dao.get().orElse(null);
-            if (currentConfig == null) {
-              hasErrors.set(true);
-              return;
-            }
-            
-            // Create a modified copy
-            EmailConfigurationData updatedConfig = new EmailConfigurationData();
-            updatedConfig.setEnabled(currentConfig.isEnabled());
-            updatedConfig.setHost("host-" + index);
-            updatedConfig.setPort(currentConfig.getPort() + index % 10);
-            updatedConfig.setUsername(currentConfig.getUsername() + "-" + index);
-            updatedConfig.setPassword(index % 2 == 0 ? secret1 : secret2); // Alternate between secrets
-            updatedConfig.setFromAddress("user" + index + "@example.com");
-            updatedConfig.setSubjectPrefix("PREFIX-" + index + ": ");
-            updatedConfig.setStartTlsEnabled(index % 2 == 0);
-            updatedConfig.setStartTlsRequired(index % 3 == 0);
-            updatedConfig.setSslOnConnectEnabled(index % 2 != 0);
-            updatedConfig.setSslCheckServerIdentityEnabled(index % 3 != 0);
-            updatedConfig.setNexusTrustStoreEnabled(index % 5 == 0);
-            
-            // Update configuration
-            dao.set(updatedConfig);
-          }
-          catch (Exception e) {
-            log.error("Error in virtual thread", e);
-            hasErrors.set(true);
-          }
-          finally {
-            completionLatch.countDown();
-          }
-        });
-      }
-      
-      // Start all threads simultaneously
-      startLatch.countDown();
-      
-      // Wait for all threads to complete
-      completionLatch.await(5, TimeUnit.SECONDS);
-    }
-    
-    // Verify final configuration state
-    EmailConfigurationData finalConfig = lastConfig.get();
-    assertThat("Final configuration should not be null", finalConfig, is(notNullValue()));
-    assertThat("No errors should occur during concurrent configuration updates", hasErrors.get(), is(false));
-  }
-  
-  /**
-   * Tests concurrent access to password secrets in email configuration using virtual threads.
-   * 
-   * This test verifies that encrypted credentials (secrets) are handled properly when
-   * accessed by multiple virtual threads simultaneously.
-   */
-  @Test
-  public void testConcurrentSecretAccess() throws Exception {
-    int threadCount = 100;
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(threadCount);
-    List<Secret> accessedSecrets = new ArrayList<>();
-    Object lock = new Object();
-    
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit tasks to access secrets concurrently
-      for (int i = 0; i < threadCount; i++) {
-        final int index = i;
-        executor.submit(() -> {
-          try {
-            startLatch.await(); // Wait for all threads to be ready
-            
-            // Get current config
-            EmailConfigurationData currentConfig = dao.get().orElse(null);
-            if (currentConfig != null) {
-              // Access the secret
-              Secret secret = currentConfig.getPassword();
-              
-              // Record which secret was accessed (thread-safe)
-              synchronized (lock) {
-                accessedSecrets.add(secret);
-              }
-              
-              // If index is even, update the secret
-              if (index % 2 == 0) {
-                currentConfig.setPassword(secret2);
-                dao.set(currentConfig);
-              }
-            }
-          }
-          catch (Exception e) {
-            log.error("Error in virtual thread", e);
-          }
-          finally {
-            completionLatch.countDown();
-          }
-        });
-      }
-      
-      // Start all threads simultaneously
-      startLatch.countDown();
-      
-      // Wait for all threads to complete
-      completionLatch.await(5, TimeUnit.SECONDS);
-    }
-    
-    // Verify that secrets were accessed correctly
-    assertThat("Secrets should have been accessed", accessedSecrets.size(), is(threadCount));
-  }
-  
-  /**
-   * Tests configuration copy operations across virtual threads.
-   * 
-   * This test verifies that configuration copy operations maintain consistency
-   * when performed across multiple virtual threads.
-   */
-  @Test
-  public void testConfigurationCopyAcrossVirtualThreads() throws Exception {
-    int threadCount = 20;
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(threadCount);
-    AtomicBoolean hasErrors = new AtomicBoolean(false);
-    
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit tasks to copy configuration concurrently
-      for (int i = 0; i < threadCount; i++) {
-        executor.submit(() -> {
-          try {
-            startLatch.await(); // Wait for all threads to be ready
-            
-            // Get current config
-            EmailConfigurationData sourceConfig = dao.get().orElse(null);
-            if (sourceConfig == null) {
-              hasErrors.set(true);
-              return;
-            }
-            
-            // Create a copy
-            EmailConfigurationData copy = new EmailConfigurationData();
-            copy.setEnabled(sourceConfig.isEnabled());
-            copy.setHost(sourceConfig.getHost());
-            copy.setPort(sourceConfig.getPort());
-            copy.setUsername(sourceConfig.getUsername());
-            copy.setPassword(sourceConfig.getPassword()); // Copy the secret reference
-            copy.setFromAddress(sourceConfig.getFromAddress());
-            copy.setSubjectPrefix(sourceConfig.getSubjectPrefix());
-            copy.setStartTlsEnabled(sourceConfig.isStartTlsEnabled());
-            copy.setStartTlsRequired(sourceConfig.isStartTlsRequired());
-            copy.setSslOnConnectEnabled(sourceConfig.isSslOnConnectEnabled());
-            copy.setSslCheckServerIdentityEnabled(sourceConfig.isSslCheckServerIdentityEnabled());
-            copy.setNexusTrustStoreEnabled(sourceConfig.isNexusTrustStoreEnabled());
-            
-            // Verify the copy is consistent with the source
-            if (!copy.isEnabled() == sourceConfig.isEnabled() ||
-                !copy.getHost().equals(sourceConfig.getHost()) ||
-                copy.getPort() != sourceConfig.getPort() ||
-                !copy.getUsername().equals(sourceConfig.getUsername()) ||
-                copy.getPassword() != sourceConfig.getPassword() ||
-                !copy.getFromAddress().equals(sourceConfig.getFromAddress()) ||
-                !copy.getSubjectPrefix().equals(sourceConfig.getSubjectPrefix()) ||
-                copy.isStartTlsEnabled() != sourceConfig.isStartTlsEnabled() ||
-                copy.isStartTlsRequired() != sourceConfig.isStartTlsRequired() ||
-                copy.isSslOnConnectEnabled() != sourceConfig.isSslOnConnectEnabled() ||
-                copy.isSslCheckServerIdentityEnabled() != sourceConfig.isSslCheckServerIdentityEnabled() ||
-                copy.isNexusTrustStoreEnabled() != sourceConfig.isNexusTrustStoreEnabled()) {
-              hasErrors.set(true);
-            }
-          }
-          catch (Exception e) {
-            log.error("Error in virtual thread", e);
-            hasErrors.set(true);
-          }
-          finally {
-            completionLatch.countDown();
-          }
-        });
-      }
-      
-      // Start all threads simultaneously
-      startLatch.countDown();
-      
-      // Wait for all threads to complete
-      completionLatch.await(5, TimeUnit.SECONDS);
-    }
-    
-    assertThat("No errors should occur during configuration copy operations", hasErrors.get(), is(false));
-  }
-  
-  /**
-   * Tests configuration state visibility across virtual thread boundaries.
-   * 
-   * This test verifies that changes to the configuration state are properly visible
-   * across different virtual threads.
-   */
-  @Test
-  public void testConfigurationStateVisibilityAcrossThreads() throws Exception {
-    CountDownLatch updateLatch = new CountDownLatch(1);
-    CountDownLatch verifyLatch = new CountDownLatch(1);
-    AtomicBoolean updateComplete = new AtomicBoolean(false);
-    AtomicBoolean verifyComplete = new AtomicBoolean(false);
-    AtomicBoolean stateVisibilityCorrect = new AtomicBoolean(false);
-    
-    // Setup a reference to track the updated configuration
-    AtomicReference<EmailConfigurationData> updatedConfigRef = new AtomicReference<>();
-    
-    // Setup DAO to update our reference when set is called
-    Mockito.doAnswer(invocation -> {
-      EmailConfigurationData newConfig = invocation.getArgument(0);
-      updatedConfigRef.set(newConfig);
-      when(dao.get()).thenReturn(Optional.of(newConfig));
-      return null;
-    }).when(dao).set(Mockito.any(EmailConfigurationData.class));
-    
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Thread 1: Updates the configuration
-      executor.submit(() -> {
+    // Launch multiple virtual threads to read the configuration
+    for (int i = 0; i < CONCURRENT_THREADS; i++) {
+      virtualThreadExecutor.submit(() -> {
         try {
-          // Get current config
-          EmailConfigurationData currentConfig = dao.get().orElse(null);
-          if (currentConfig != null) {
-            // Create an updated configuration
-            EmailConfigurationData updatedConfig = new EmailConfigurationData();
-            updatedConfig.setEnabled(true);
-            updatedConfig.setHost("updated-host");
-            updatedConfig.setPort(587);
-            updatedConfig.setUsername("updated-user");
-            updatedConfig.setPassword(secret2); // Use different secret
-            updatedConfig.setFromAddress("updated@example.com");
-            updatedConfig.setSubjectPrefix("UPDATED: ");
-            updatedConfig.setStartTlsEnabled(false);
-            updatedConfig.setStartTlsRequired(true);
-            updatedConfig.setSslOnConnectEnabled(false);
-            updatedConfig.setSslCheckServerIdentityEnabled(true);
-            updatedConfig.setNexusTrustStoreEnabled(false);
-            
-            // Update the configuration
-            dao.set(updatedConfig);
-            updateComplete.set(true);
-          }
-        }
-        catch (Exception e) {
-          log.error("Error in update thread", e);
-        }
-        finally {
-          updateLatch.countDown(); // Signal that update is complete
-        }
-      });
-      
-      // Thread 2: Verifies the updated configuration is visible
-      executor.submit(() -> {
-        try {
-          // Wait for Thread 1 to complete the update
-          updateLatch.await(2, TimeUnit.SECONDS);
+          // Wait for all threads to be ready
+          startLatch.await();
           
-          // Get the configuration after update
-          EmailConfigurationData config = dao.get().orElse(null);
+          // Read the configuration
+          EmailConfiguration config = dao.get().orElse(null);
           
-          // Verify the configuration reflects the updates
-          if (config != null && 
-              config.isEnabled() &&
-              "updated-host".equals(config.getHost()) &&
-              config.getPort() == 587 &&
-              "updated-user".equals(config.getUsername()) &&
-              config.getPassword() == secret2 &&
-              "updated@example.com".equals(config.getFromAddress()) &&
-              "UPDATED: ".equals(config.getSubjectPrefix()) &&
-              !config.isStartTlsEnabled() &&
-              config.isStartTlsRequired() &&
-              !config.isSslOnConnectEnabled() &&
-              config.isSslCheckServerIdentityEnabled() &&
+          // Verify configuration is consistent
+          if (config == null || 
+              !config.isEnabled() ||
+              !"localhost".equals(config.getHost()) ||
+              config.getPort() != 25 ||
+              !"email_user".equals(config.getUsername()) ||
+              config.getPassword() != secret ||
+              !"foo@example.com".equals(config.getFromAddress()) ||
+              !"PREFIX: ".equals(config.getSubjectPrefix()) ||
+              !config.isStartTlsEnabled() ||
+              config.isStartTlsRequired() ||
+              !config.isSslOnConnectEnabled() ||
+              config.isSslCheckServerIdentityEnabled() ||
               !config.isNexusTrustStoreEnabled()) {
-            stateVisibilityCorrect.set(true);
+            foundInconsistency.set(true);
           }
-          
-          verifyComplete.set(true);
         }
         catch (Exception e) {
-          log.error("Error in verify thread", e);
+          foundInconsistency.set(true);
+          log.error("Error in virtual thread", e);
         }
         finally {
-          verifyLatch.countDown(); // Signal that verification is complete
+          completionLatch.countDown();
         }
       });
-      
-      // Wait for both threads to complete
-      verifyLatch.await(5, TimeUnit.SECONDS);
     }
     
-    // Verify results
-    assertThat("Update operation should complete", updateComplete.get(), is(true));
-    assertThat("Verify operation should complete", verifyComplete.get(), is(true));
-    assertThat("Configuration state should be correctly visible across threads", stateVisibilityCorrect.get(), is(true));
+    // Start all threads simultaneously
+    startLatch.countDown();
+    
+    // Wait for all threads to complete
+    assertThat("All virtual threads should complete in time",
+        completionLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), is(true));
+    
+    // Verify no inconsistencies were found
+    assertThat("No inconsistencies should be found in concurrent reads", 
+        foundInconsistency.get(), is(false));
+  }
+
+  /**
+   * Tests that concurrent updates to email configuration from multiple virtual threads
+   * maintain data consistency.
+   */
+  @Test
+  public void testConcurrentUpdatesWithVirtualThreads() throws Exception {
+    // Set up initial configuration
+    EmailConfigurationData entity = createEmailConfigurationData(secret);
+    dao.set(entity);
+    
+    // Create a latch to synchronize all threads
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch completionLatch = new CountDownLatch(CONCURRENT_THREADS);
+    
+    // Track update success count
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    // Launch multiple virtual threads to update the configuration
+    for (int i = 0; i < CONCURRENT_THREADS; i++) {
+      final int threadId = i;
+      virtualThreadExecutor.submit(() -> {
+        try {
+          // Wait for all threads to be ready
+          startLatch.await();
+          
+          // Create a unique secret for this thread
+          Secret threadSecret = mock(Secret.class);
+          String secretId = "_thread" + threadId;
+          when(threadSecret.getId()).thenReturn(secretId);
+          when(secretsFactory.from(secretId)).thenReturn(threadSecret);
+          
+          // Get current configuration
+          EmailConfigurationData config = dao.get().orElse(null);
+          if (config != null) {
+            // Update with thread-specific values
+            config.setHost("host" + threadId);
+            config.setPort(2000 + threadId);
+            config.setUsername("user" + threadId);
+            config.setPassword(threadSecret);
+            config.setFromAddress("thread" + threadId + "@example.com");
+            
+            // Attempt to save the update
+            dao.set(config);
+            successCount.incrementAndGet();
+          }
+        }
+        catch (Exception e) {
+          log.error("Error in virtual thread " + threadId, e);
+        }
+        finally {
+          completionLatch.countDown();
+        }
+      });
+    }
+    
+    // Start all threads simultaneously
+    startLatch.countDown();
+    
+    // Wait for all threads to complete
+    assertThat("All virtual threads should complete in time",
+        completionLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), is(true));
+    
+    // At least one update should succeed
+    assertThat("At least one update should succeed", 
+        successCount.get() > 0, is(true));
+    
+    // Verify the final configuration exists and is valid
+    EmailConfiguration finalConfig = dao.get().orElse(null);
+    assertThat(finalConfig, is(notNullValue()));
+    assertThat(finalConfig.getHost().startsWith("host"), is(true));
+    assertThat(finalConfig.getPort() >= 2000, is(true));
+    assertThat(finalConfig.getUsername().startsWith("user"), is(true));
+    assertThat(finalConfig.getFromAddress().contains("@example.com"), is(true));
+  }
+
+  /**
+   * Tests that configuration copy operations maintain consistency when accessed
+   * from multiple virtual threads simultaneously.
+   */
+  @Test
+  public void testConcurrentCopyOperationsWithVirtualThreads() throws Exception {
+    // Set up initial configuration
+    EmailConfigurationData entity = createEmailConfigurationData(secret);
+    dao.set(entity);
+    
+    // Create a list to hold all the futures
+    List<CompletableFuture<EmailConfiguration>> futures = new ArrayList<>();
+    
+    // Launch multiple virtual threads to copy the configuration
+    for (int i = 0; i < CONCURRENT_THREADS; i++) {
+      CompletableFuture<EmailConfiguration> future = CompletableFuture.supplyAsync(() -> {
+        // Get the configuration
+        EmailConfiguration config = dao.get().orElse(null);
+        if (config != null) {
+          // Create a copy
+          return config.copy();
+        }
+        return null;
+      }, virtualThreadExecutor);
+      
+      futures.add(future);
+    }
+    
+    // Wait for all futures to complete and verify the copies
+    for (CompletableFuture<EmailConfiguration> future : futures) {
+      EmailConfiguration copy = future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      
+      // Verify the copy is valid
+      assertThat(copy, is(notNullValue()));
+      assertThat(copy.isEnabled(), is(true));
+      assertThat(copy.getHost(), is("localhost"));
+      assertThat(copy.getPort(), is(25));
+      assertThat(copy.getUsername(), is("email_user"));
+      assertThat(copy.getPassword(), is(secret));
+      assertThat(copy.getFromAddress(), is("foo@example.com"));
+      assertThat(copy.getSubjectPrefix(), is("PREFIX: "));
+      assertThat(copy.isStartTlsEnabled(), is(true));
+      assertThat(copy.isStartTlsRequired(), is(false));
+      assertThat(copy.isSslOnConnectEnabled(), is(true));
+      assertThat(copy.isSslCheckServerIdentityEnabled(), is(false));
+      assertThat(copy.isNexusTrustStoreEnabled(), is(true));
+    }
+  }
+
+  /**
+   * Tests that password secrets are handled correctly when accessed concurrently
+   * from multiple virtual threads.
+   */
+  @Test
+  public void testConcurrentSecretHandlingWithVirtualThreads() throws Exception {
+    // Set up initial configuration with a secret
+    EmailConfigurationData entity = createEmailConfigurationData(secret);
+    dao.set(entity);
+    
+    // Create a latch to synchronize all threads
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch completionLatch = new CountDownLatch(CONCURRENT_THREADS);
+    
+    // Track any inconsistencies with secret handling
+    AtomicBoolean secretInconsistency = new AtomicBoolean(false);
+    
+    // Create a collection of different secrets for testing
+    List<Secret> secrets = new ArrayList<>();
+    for (int i = 0; i < CONCURRENT_THREADS; i++) {
+      Secret threadSecret = mock(Secret.class);
+      String secretId = "_secret" + i;
+      when(threadSecret.getId()).thenReturn(secretId);
+      when(secretsFactory.from(secretId)).thenReturn(threadSecret);
+      secrets.add(threadSecret);
+    }
+    
+    // Launch multiple virtual threads to update and read secrets
+    for (int i = 0; i < CONCURRENT_THREADS; i++) {
+      final int threadId = i;
+      final Secret threadSecret = secrets.get(i);
+      
+      virtualThreadExecutor.submit(() -> {
+        try {
+          // Wait for all threads to be ready
+          startLatch.await();
+          
+          // Get current configuration
+          EmailConfigurationData config = dao.get().orElse(null);
+          if (config != null) {
+            // Update the password with this thread's secret
+            config.setPassword(threadSecret);
+            dao.set(config);
+            
+            // Read it back immediately
+            EmailConfiguration readConfig = dao.get().orElse(null);
+            
+            // Verify the secret is handled correctly
+            if (readConfig == null || readConfig.getPassword() == null) {
+              secretInconsistency.set(true);
+            }
+          }
+        }
+        catch (Exception e) {
+          secretInconsistency.set(true);
+          log.error("Error in virtual thread " + threadId, e);
+        }
+        finally {
+          completionLatch.countDown();
+        }
+      });
+    }
+    
+    // Start all threads simultaneously
+    startLatch.countDown();
+    
+    // Wait for all threads to complete
+    assertThat("All virtual threads should complete in time",
+        completionLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), is(true));
+    
+    // Verify no inconsistencies were found with secret handling
+    assertThat("No inconsistencies should be found in secret handling", 
+        secretInconsistency.get(), is(false));
+    
+    // Verify the final configuration has a valid secret
+    EmailConfiguration finalConfig = dao.get().orElse(null);
+    assertThat(finalConfig, is(notNullValue()));
+    assertThat(finalConfig.getPassword(), is(notNullValue()));
+  }
+
+  /**
+   * Tests that configuration state visibility is consistent across virtual thread boundaries.
+   */
+  @Test
+  public void testConfigurationStateVisibilityAcrossVirtualThreads() throws Exception {
+    // Set up initial configuration
+    EmailConfigurationData entity = createEmailConfigurationData(secret);
+    dao.set(entity);
+    
+    // Reference to hold the configuration from the first thread
+    AtomicReference<EmailConfiguration> firstThreadConfig = new AtomicReference<>();
+    
+    // Create a latch to ensure the first thread completes before the second starts
+    CountDownLatch firstThreadLatch = new CountDownLatch(1);
+    
+    // First virtual thread reads the configuration
+    CompletableFuture<Void> firstThread = CompletableFuture.runAsync(() -> {
+      try {
+        // Get the configuration
+        EmailConfiguration config = dao.get().orElse(null);
+        firstThreadConfig.set(config);
+        
+        // Signal that the first thread has completed
+        firstThreadLatch.countDown();
+      }
+      catch (Exception e) {
+        log.error("Error in first virtual thread", e);
+      }
+    }, virtualThreadExecutor);
+    
+    // Wait for the first thread to complete
+    assertThat("First virtual thread should complete in time",
+        firstThreadLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), is(true));
+    
+    // Second virtual thread updates the configuration
+    CompletableFuture<Void> secondThread = CompletableFuture.runAsync(() -> {
+      try {
+        // Get the configuration
+        EmailConfigurationData config = dao.get().orElse(null);
+        if (config != null) {
+          // Update with new values
+          config.setHost("updatedhost");
+          config.setPort(587);
+          config.setUsername("updateduser");
+          
+          // Save the update
+          dao.set(config);
+        }
+      }
+      catch (Exception e) {
+        log.error("Error in second virtual thread", e);
+      }
+    }, virtualThreadExecutor);
+    
+    // Wait for the second thread to complete
+    secondThread.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    
+    // Third virtual thread reads the updated configuration
+    CompletableFuture<EmailConfiguration> thirdThread = CompletableFuture.supplyAsync(() -> {
+      // Get the configuration
+      return dao.get().orElse(null);
+    }, virtualThreadExecutor);
+    
+    // Get the configuration from the third thread
+    EmailConfiguration updatedConfig = thirdThread.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    
+    // Verify the first thread saw the initial configuration
+    EmailConfiguration initialConfig = firstThreadConfig.get();
+    assertThat(initialConfig, is(notNullValue()));
+    assertThat(initialConfig.getHost(), is("localhost"));
+    assertThat(initialConfig.getPort(), is(25));
+    assertThat(initialConfig.getUsername(), is("email_user"));
+    
+    // Verify the third thread saw the updated configuration
+    assertThat(updatedConfig, is(notNullValue()));
+    assertThat(updatedConfig.getHost(), is("updatedhost"));
+    assertThat(updatedConfig.getPort(), is(587));
+    assertThat(updatedConfig.getUsername(), is("updateduser"));
+  }
+
+  /**
+   * Tests that deleting the configuration is thread-safe when accessed from virtual threads.
+   */
+  @Test
+  public void testConcurrentDeleteWithVirtualThreads() throws Exception {
+    // Set up initial configuration
+    EmailConfigurationData entity = createEmailConfigurationData(secret);
+    dao.set(entity);
+    
+    // Create a latch to synchronize all threads
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch completionLatch = new CountDownLatch(CONCURRENT_THREADS);
+    
+    // Track delete success count
+    AtomicInteger deleteSuccessCount = new AtomicInteger(0);
+    
+    // Launch multiple virtual threads to try to delete the configuration
+    for (int i = 0; i < CONCURRENT_THREADS; i++) {
+      virtualThreadExecutor.submit(() -> {
+        try {
+          // Wait for all threads to be ready
+          startLatch.await();
+          
+          // Try to delete the configuration
+          dao.clear();
+          deleteSuccessCount.incrementAndGet();
+        }
+        catch (Exception e) {
+          log.error("Error in virtual thread", e);
+        }
+        finally {
+          completionLatch.countDown();
+        }
+      });
+    }
+    
+    // Start all threads simultaneously
+    startLatch.countDown();
+    
+    // Wait for all threads to complete
+    assertThat("All virtual threads should complete in time",
+        completionLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), is(true));
+    
+    // Verify the configuration was deleted
+    EmailConfiguration finalConfig = dao.get().orElse(null);
+    assertThat(finalConfig, is(nullValue()));
+    
+    // At least one delete should have succeeded
+    assertThat("At least one delete should succeed", 
+        deleteSuccessCount.get() > 0, is(true));
   }
 }

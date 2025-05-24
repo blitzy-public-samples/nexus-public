@@ -25,7 +25,7 @@ import io.swagger.annotations.ApiModelProperty;
 import javax.validation.constraints.NotBlank;
 
 /**
- * Script privilege API model.
+ * Script privilege API model for REST operations.
  * 
  * @since 3.19
  */
@@ -39,14 +39,14 @@ public class ApiPrivilegeScript
   private String scriptName;
 
   /**
-   * Default constructor for deserialization by Jackson.
+   * Default constructor for Jackson deserialization
    */
   private ApiPrivilegeScript() {
     super(ScriptPrivilegeDescriptor.TYPE);
   }
 
   /**
-   * Constructor for creating a new script privilege.
+   * Full constructor for creating a new script privilege
    */
   public ApiPrivilegeScript(final String name,
                             final String description,
@@ -59,30 +59,26 @@ public class ApiPrivilegeScript
   }
 
   /**
-   * Constructor that creates an API model from a privilege entity.
-   * Uses record pattern for more concise code.
+   * Constructor that converts from a domain Privilege object
    */
   public ApiPrivilegeScript(final Privilege privilege) {
     super(privilege);
-    // Using record pattern to extract property from privilege
-    if (privilege instanceof Privilege(var id, var name, var description, var type, var readOnly, var properties)) {
-      this.scriptName = properties.get(SCRIPT_KEY);
-    }
-    else {
-      // Fallback for non-record pattern case
-      this.scriptName = privilege.getPrivilegeProperty(SCRIPT_KEY);
+    // Using pattern matching to extract property from privilege
+    switch (privilege) {
+      case Privilege p when p != null -> scriptName = p.getPrivilegeProperty(SCRIPT_KEY);
+      default -> throw new IllegalArgumentException(STR."Invalid privilege: \{privilege}");
     }
   }
 
   /**
-   * Sets the script name for this privilege.
+   * Sets the script name for this privilege
    */
   public void setScriptName(final String scriptName) {
     this.scriptName = scriptName;
   }
 
   /**
-   * Gets the script name for this privilege.
+   * Gets the script name for this privilege
    */
   public String getScriptName() {
     return scriptName;
@@ -91,13 +87,18 @@ public class ApiPrivilegeScript
   @Override
   protected Privilege doAsPrivilege(final Privilege privilege) {
     super.doAsPrivilege(privilege);
-    privilege.addProperty(SCRIPT_KEY, scriptName);
+    // Using pattern matching to set property on privilege
+    switch (privilege) {
+      case Privilege p when p != null -> p.addProperty(SCRIPT_KEY, scriptName);
+      default -> throw new IllegalArgumentException(STR."Cannot add property to null privilege");
+    }
     return privilege;
   }
 
   @Override
   protected String doAsActionString() {
     // Using Java 21 String Templates for more readable string formatting
-    return STR."Script actions: \{toBreadRunActionString()}";
+    String actions = toBreadRunActionString();
+    return STR."Script actions: \{actions}";
   }
 }

@@ -18,7 +18,6 @@ import java.lang.reflect.Parameter;
 import java.util.Arrays;
 import java.util.function.Supplier;
 
-
 import javax.annotation.Nullable;
 import javax.management.Descriptor;
 import javax.management.MBeanOperationInfo;
@@ -86,20 +85,22 @@ public class ReflectionMBeanOperation
 
   private Object target() {
     Object result = target.get();
-    checkState(result != null);
+    checkState(result != null, "Target supplier returned null");
     return result;
   }
 
-  // TODO: coercion for non-open types?
-
+  /**
+   * Invokes the underlying method with the given parameters.
+   * Handles parameter conversion and error reporting.
+   */
   @Override
   @Nullable
   public Object invoke(final Object[] params) throws Exception {
-    log.trace(STR."Invoke: \{Arrays.asList(params)} -> \{method}");
     try {
+      log.trace(STR."Invoke: \{Arrays.asList(params)} -> \{method}");
       return method.invoke(target(), params);
     } catch (Exception e) {
-      log.error(STR."Error invoking method \{method.getName()} with parameters \{Arrays.asList(params)}", e);
+      log.error(STR."Error invoking \{method} with parameters \{Arrays.asList(params)}", e);
       throw e;
     }
   }
@@ -140,12 +141,12 @@ public class ReflectionMBeanOperation
     }
 
     public Builder target(final Supplier target) {
-      this.target = target;
+      this.target = checkNotNull(target, "Target supplier cannot be null");
       return this;
     }
 
     public Builder method(final Method method) {
-      this.method = method;
+      this.method = checkNotNull(method, "Method cannot be null");
       return this;
     }
 
@@ -155,11 +156,13 @@ public class ReflectionMBeanOperation
     }
 
     public ReflectionMBeanOperation build() {
-      checkState(target != null, "Target must not be null");
-      checkState(method != null, "Method must not be null");
+      checkState(target != null, "Target supplier is required");
+      checkState(method != null, "Method is required");
 
       // default to method-name if not provided
-      name = (name != null) ? name : method.getName();
+      if (name == null) {
+        name = method.getName();
+      }
 
       MBeanOperationInfo info = new MBeanOperationInfo(
           name,
@@ -179,28 +182,46 @@ public class ReflectionMBeanOperation
     //
 
     /**
-     * Extract {@link MBeanParameterInfo} signature for given method using Java 21's native reflection capabilities.
-     * Uses record patterns for improved type safety and reduced boilerplate.
+     * Extract {@link MBeanParameterInfo} signature for given method using Java 21's native reflection.
      */
     private MBeanParameterInfo[] signature(final Method method) {
       Parameter[] parameters = method.getParameters();
       Class<?>[] types = method.getParameterTypes();
       Annotation[][] annotations = method.getParameterAnnotations();
-
+      
       MBeanParameterInfo[] result = new MBeanParameterInfo[parameters.length];
       for (int i = 0; i < parameters.length; i++) {
-        // Use pattern matching to extract parameter information
-        if (parameters[i] instanceof Parameter parameter) {
-          String paramName = parameter.isNamePresent() ? parameter.getName() : "arg" + i;
+        // Use record pattern to extract parameter information
+        if (parameters[i] instanceof Parameter(String name, int modifiers, Class<?> type, boolean namePresent)) {
           Descriptor descriptor = DescriptorHelper.build(annotations[i]);
-          String description = DescriptorHelper.stringValue(descriptor, "description");
-
+          String paramDescription = DescriptorHelper.stringValue(descriptor, "description");
+          
+          // Use the parameter name if available, otherwise generate a default name
+          String paramName = namePresent ? name : "arg" + i;
+          
           result[i] = new MBeanParameterInfo(
               paramName,
               types[i].getName(),
-              description,
+              paramDescription,
               descriptor
           );
+        } else {
+          // Fallback in case the record pattern doesn't match (shouldn't happen with standard Parameter implementation)
+          Parameter param = parameters[i];
+          Descriptor descriptor = DescriptorHelper.build(annotations[i]);
+          String paramDescription = DescriptorHelper.stringValue(descriptor, "description");
+          
+          // Use the parameter name if available, otherwise generate a default name
+          String paramName = param.isNamePresent() ? param.getName() : "arg" + i;
+          
+          result[i] = new MBeanParameterInfo(
+              paramName,
+              types[i].getName(),
+              paramDescription,
+              descriptor
+          );
+          
+          log.debug(STR."Using fallback parameter extraction for \{method.getName()}[\{i}]: \{paramName}");
         }
       }
 

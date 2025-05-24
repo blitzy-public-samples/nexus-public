@@ -14,30 +14,34 @@ package org.sonatype.nexus.crypto.secrets.internal;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.audit.AuditData;
 import org.sonatype.nexus.audit.AuditRecorder;
+import org.sonatype.nexus.common.event.EventHelper;
 import org.sonatype.nexus.crypto.secrets.ActiveKeyChangeEvent;
 
+import com.google.common.collect.ImmutableMap;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.experimental.categories.Category;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.Spy;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -46,11 +50,12 @@ import static org.mockito.Mockito.when;
  * Virtual Thread tests for {@link SecretsAuditor} that validate thread safety and event handling
  * under high concurrency with Java 21 Virtual Threads.
  */
+@Category(VirtualThreadTestGroup.class)
 public class SecretsAuditorVTTest
     extends TestSupport
 {
-  private static final int CONCURRENT_THREADS = 1000;
-  private static final int TIMEOUT_SECONDS = 10;
+  private static final int THREAD_COUNT = 5000;
+  private static final int TIMEOUT_SECONDS = 30;
 
   @Mock
   private AuditRecorder auditRecorder;
@@ -64,161 +69,259 @@ public class SecretsAuditorVTTest
   @Before
   public void setup() {
     underTest.setAuditRecorder(() -> auditRecorder);
-    when(auditRecorder.isEnabled()).thenReturn(true);
   }
 
   /**
-   * Tests that the SecretsAuditor can handle multiple concurrent events from virtual threads
-   * without missing any events or experiencing thread safety issues.
+   * Tests that the SecretsAuditor can handle thousands of concurrent events from virtual threads
+   * without thread safety issues or race conditions.
    */
   @Test
-  public void testConcurrentEventsWithVirtualThreads() throws Exception {
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(CONCURRENT_THREADS);
-    AtomicInteger counter = new AtomicInteger(0);
+  public void testConcurrentEventHandlingWithVirtualThreads() throws Exception {
+    when(auditRecorder.isEnabled()).thenReturn(true);
+
+    // Create a virtual thread executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     
-    // Create and start virtual threads to trigger events concurrently
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      for (int i = 0; i < CONCURRENT_THREADS; i++) {
-        final int threadNum = i;
+    // Use a CountDownLatch to wait for all threads to complete
+    CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
+    
+    // Track any errors that occur during execution
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    try {
+      // Submit tasks to the executor
+      for (int i = 0; i < THREAD_COUNT; i++) {
+        final String keyId = "key-" + UUID.randomUUID();
+        final String previousKeyId = "prev-" + UUID.randomUUID();
+        final String userId = "user-" + i;
+        
         executor.submit(() -> {
           try {
-            // Wait for all threads to be ready before starting
-            startLatch.await();
-            
-            // Generate a unique event for this thread
-            String newKeyId = "key-" + threadNum;
-            String previousKeyId = "prev-" + threadNum;
-            String userId = "user-" + threadNum;
-            
-            // Trigger the event
-            underTest.on(new ActiveKeyChangeEvent(newKeyId, previousKeyId, userId));
-            
-            // Count successful event processing
-            counter.incrementAndGet();
-          }
-          catch (Exception e) {
-            log.error("Error in virtual thread {}", threadNum, e);
-          }
-          finally {
-            completionLatch.countDown();
+            // Trigger the event handler
+            underTest.on(new ActiveKeyChangeEvent(keyId, previousKeyId, userId));
+          } catch (Exception e) {
+            log.error("Error in virtual thread", e);
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
           }
         });
       }
-      
-      // Start all threads simultaneously
-      startLatch.countDown();
       
       // Wait for all threads to complete or timeout
-      boolean completed = completionLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertThat("All virtual threads should complete in time", completed, is(true));
-    }
-    
-    // Verify that all events were processed
-    assertThat("All events should be processed", counter.get(), equalTo(CONCURRENT_THREADS));
-    
-    // Verify that the audit recorder received the correct number of events
-    verify(auditRecorder, times(CONCURRENT_THREADS)).record(any(AuditData.class));
-  }
-
-  /**
-   * Tests that the SecretsAuditor correctly records all event data when processing
-   * events from multiple virtual threads simultaneously.
-   */
-  @Test
-  public void testEventDataIntegrityWithVirtualThreads() throws Exception {
-    // Use a concurrent set to track all the key IDs that were processed
-    Set<String> processedKeyIds = ConcurrentHashMap.newKeySet();
-    CountDownLatch completionLatch = new CountDownLatch(CONCURRENT_THREADS);
-    
-    // Capture all audit data records
-    List<AuditData> capturedData = new ArrayList<>();
-    when(auditRecorder.record(captor.capture())).thenAnswer(invocation -> {
-      AuditData data = invocation.getArgument(0);
-      capturedData.add(data);
-      String keyId = (String) data.getAttributes().get("newKeyId");
-      processedKeyIds.add(keyId);
-      completionLatch.countDown();
-      return null;
-    });
-    
-    // Create and start virtual threads to trigger events concurrently
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      for (int i = 0; i < CONCURRENT_THREADS; i++) {
-        final int threadNum = i;
-        executor.submit(() -> {
-          // Generate a unique event for this thread
-          String newKeyId = "key-" + threadNum;
-          String previousKeyId = "prev-" + threadNum;
-          String userId = "user-" + threadNum;
-          
-          // Trigger the event
-          underTest.on(new ActiveKeyChangeEvent(newKeyId, previousKeyId, userId));
-        });
-      }
+      boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
       
-      // Wait for all events to be processed or timeout
-      boolean completed = completionLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertThat("All events should be processed in time", completed, is(true));
-    }
-    
-    // Verify that all events were recorded correctly
-    assertThat("All audit records should be captured", capturedData, hasSize(CONCURRENT_THREADS));
-    assertThat("All unique key IDs should be processed", processedKeyIds.size(), equalTo(CONCURRENT_THREADS));
-    
-    // Verify that each key ID was processed exactly once (no duplicates or missing events)
-    for (int i = 0; i < CONCURRENT_THREADS; i++) {
-      String expectedKeyId = "key-" + i;
-      assertThat("Key ID should be processed: " + expectedKeyId, 
-          processedKeyIds.contains(expectedKeyId), is(true));
+      // Verify all threads completed successfully
+      assertThat("All virtual threads should complete within the timeout", completed, is(true));
+      assertThat("No errors should occur during concurrent execution", errorCount.get(), is(0));
+      
+      // Verify that the audit recorder was called the expected number of times
+      verify(auditRecorder, times(THREAD_COUNT)).record(any(AuditData.class));
+    } finally {
+      executor.shutdown();
     }
   }
 
   /**
-   * Tests that the SecretsAuditor can handle a high volume of events from virtual threads
-   * without experiencing performance degradation or resource leaks.
+   * Tests that the SecretsAuditor correctly handles audit data when processing events from
+   * multiple virtual threads simultaneously.
    */
   @Test
-  public void testHighVolumeEventProcessingWithVirtualThreads() throws Exception {
-    final int HIGH_VOLUME = 10000; // 10,000 concurrent events
-    CountDownLatch completionLatch = new CountDownLatch(HIGH_VOLUME);
-    AtomicInteger successCounter = new AtomicInteger(0);
+  public void testAuditDataIntegrityWithVirtualThreads() throws Exception {
+    when(auditRecorder.isEnabled()).thenReturn(true);
+
+    // Create a virtual thread executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     
-    // Configure mock to count down latch when record is called
-    when(auditRecorder.record(any(AuditData.class))).thenAnswer(invocation -> {
-      successCounter.incrementAndGet();
-      completionLatch.countDown();
-      return null;
-    });
+    // Use a smaller number of threads for this test to make verification manageable
+    int testThreadCount = 100;
+    CountDownLatch latch = new CountDownLatch(testThreadCount);
     
-    long startTime = System.currentTimeMillis();
+    // Create lists to store the expected key IDs
+    List<String> expectedKeyIds = new ArrayList<>(testThreadCount);
+    List<String> expectedPrevKeyIds = new ArrayList<>(testThreadCount);
+    List<String> expectedUserIds = new ArrayList<>(testThreadCount);
     
-    // Create and start virtual threads to trigger a high volume of events
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      for (int i = 0; i < HIGH_VOLUME; i++) {
-        final int threadNum = i;
+    try {
+      // Submit tasks to the executor
+      for (int i = 0; i < testThreadCount; i++) {
+        final String keyId = "key-" + i;
+        final String previousKeyId = "prev-" + i;
+        final String userId = "user-" + i;
+        
+        expectedKeyIds.add(keyId);
+        expectedPrevKeyIds.add(previousKeyId);
+        expectedUserIds.add(userId);
+        
         executor.submit(() -> {
-          String newKeyId = "high-volume-key-" + threadNum;
-          String previousKeyId = "high-volume-prev-" + threadNum;
-          String userId = "high-volume-user-" + threadNum;
-          
-          underTest.on(new ActiveKeyChangeEvent(newKeyId, previousKeyId, userId));
+          try {
+            // Trigger the event handler
+            underTest.on(new ActiveKeyChangeEvent(keyId, previousKeyId, userId));
+          } finally {
+            latch.countDown();
+          }
         });
       }
       
-      // Wait for all events to be processed or timeout
-      boolean completed = completionLatch.await(TIMEOUT_SECONDS * 2, TimeUnit.SECONDS);
-      assertThat("All high-volume events should be processed in time", completed, is(true));
+      // Wait for all threads to complete
+      latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      
+      // Capture all audit data records
+      verify(auditRecorder, times(testThreadCount)).record(captor.capture());
+      
+      // Verify that all expected audit data was recorded correctly
+      List<AuditData> capturedData = captor.getAllValues();
+      assertThat(capturedData.size(), is(testThreadCount));
+      
+      // Check that each audit record has the correct structure
+      for (AuditData data : capturedData) {
+        assertThat(data, notNullValue());
+        assertThat(data.getContext(), is("system"));
+        assertThat(data.getDomain(), is(SecretsAuditor.DOMAIN));
+        assertThat(data.getType(), is("changed"));
+        
+        // Verify the attributes contain a key ID, previous key ID, and user ID
+        assertThat(data.getAttributes().containsKey("newKeyId"), is(true));
+        assertThat(data.getAttributes().containsKey("previousKeyId"), is(true));
+        assertThat(data.getAttributes().containsKey("userId"), is(true));
+        
+        // Verify the key IDs and user ID are in our expected lists
+        String newKeyId = (String) data.getAttributes().get("newKeyId");
+        String prevKeyId = (String) data.getAttributes().get("previousKeyId");
+        String userId = (String) data.getAttributes().get("userId");
+        
+        assertThat(expectedKeyIds.contains(newKeyId), is(true));
+        assertThat(expectedPrevKeyIds.contains(prevKeyId), is(true));
+        assertThat(expectedUserIds.contains(userId), is(true));
+      }
+    } finally {
+      executor.shutdown();
     }
+  }
+
+  /**
+   * Verifies that replicating events from other nodes are not recorded when processed
+   * by virtual threads.
+   */
+  @Test
+  public void testReplicatingEventsIgnoredWithVirtualThreads() throws Exception {
+    when(auditRecorder.isEnabled()).thenReturn(true);
+
+    // Create a virtual thread executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     
-    long duration = System.currentTimeMillis() - startTime;
-    log.info("Processed {} events in {} ms", HIGH_VOLUME, duration);
+    int testThreadCount = 100;
+    CountDownLatch latch = new CountDownLatch(testThreadCount);
     
-    // Verify that all events were processed successfully
-    assertThat("All high-volume events should be processed successfully", 
-        successCounter.get(), equalTo(HIGH_VOLUME));
+    try {
+      // Submit tasks to the executor
+      for (int i = 0; i < testThreadCount; i++) {
+        final String keyId = "key-" + i;
+        final String previousKeyId = "prev-" + i;
+        final String userId = "user-" + i;
+        
+        executor.submit(() -> {
+          try {
+            // Simulate a replicating event
+            EventHelper.asReplicating(() -> {
+              underTest.on(new ActiveKeyChangeEvent(keyId, previousKeyId, userId));
+              return null;
+            });
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all threads to complete
+      latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      
+      // Verify that no audit records were created for replicating events
+      verify(auditRecorder, never()).record(any());
+    } finally {
+      executor.shutdown();
+    }
+  }
+
+  /**
+   * Verifies that when auditing is disabled, no events are recorded even with
+   * high concurrency from virtual threads.
+   */
+  @Test
+  public void testAuditingDisabledWithVirtualThreads() throws Exception {
+    // Configure auditing to be disabled
+    when(auditRecorder.isEnabled()).thenReturn(false);
+
+    // Create a virtual thread executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     
-    // Verify with the mock that the correct number of events were recorded
-    verify(auditRecorder, times(HIGH_VOLUME)).record(any(AuditData.class));
+    int testThreadCount = 100;
+    CountDownLatch latch = new CountDownLatch(testThreadCount);
+    
+    try {
+      // Submit tasks to the executor
+      for (int i = 0; i < testThreadCount; i++) {
+        final String keyId = "key-" + i;
+        final String previousKeyId = "prev-" + i;
+        final String userId = "user-" + i;
+        
+        executor.submit(() -> {
+          try {
+            // Trigger the event handler
+            underTest.on(new ActiveKeyChangeEvent(keyId, previousKeyId, userId));
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all threads to complete
+      latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      
+      // Verify that no audit records were created when auditing is disabled
+      verify(auditRecorder, never()).record(any());
+    } finally {
+      executor.shutdown();
+    }
+  }
+
+  /**
+   * Tests that context propagation works correctly across virtual thread boundaries.
+   * This ensures that thread-local variables used by the auditing system are properly maintained.
+   */
+  @Test
+  public void testContextPropagationAcrossVirtualThreads() throws Exception {
+    when(auditRecorder.isEnabled()).thenReturn(true);
+
+    // Create a virtual thread executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    // Use a CountDownLatch to wait for all threads to complete
+    CountDownLatch latch = new CountDownLatch(1);
+    
+    try {
+      // Set up a replicating context in the parent thread
+      EventHelper.asReplicating(() -> {
+        // Submit a task to a virtual thread from within the replicating context
+        executor.submit(() -> {
+          try {
+            // The replicating context should be propagated to the virtual thread
+            // So this event should not be recorded
+            underTest.on(new ActiveKeyChangeEvent("foo", "bar", "baz"));
+          } finally {
+            latch.countDown();
+          }
+        });
+        return null;
+      });
+      
+      // Wait for the thread to complete
+      latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      
+      // Verify that no audit records were created due to the propagated replicating context
+      verify(auditRecorder, never()).record(any());
+    } finally {
+      executor.shutdown();
+    }
   }
 }

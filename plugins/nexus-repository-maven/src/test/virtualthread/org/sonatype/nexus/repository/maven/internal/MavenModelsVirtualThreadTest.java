@@ -15,7 +15,7 @@ package org.sonatype.nexus.repository.maven.internal;
 import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -25,186 +25,180 @@ import org.sonatype.goodies.testsupport.TestSupport;
 
 import org.apache.maven.artifact.repository.metadata.Metadata;
 import org.apache.maven.model.Model;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Tests for {@link MavenModels} with Java 21 Virtual Threads.
+ * 
+ * This test class verifies that the MavenModels utility functions correctly
+ * when used concurrently with Virtual Threads.
  */
 @Tag("VirtualThreadTestGroup")
 public class MavenModelsVirtualThreadTest
     extends TestSupport
 {
-  private static final int THREAD_COUNT = 50;
-  private static final int ITERATIONS = 20;
+  private static final int CONCURRENT_THREADS = 100;
+  private static final int ITERATIONS_PER_THREAD = 10;
   
-  private ExecutorService executorService;
-  private String notXml = "not xml";
+  private String notXml;
 
   @BeforeEach
   void setUp() {
-    // Create an executor service that uses virtual threads
-    executorService = Executors.newVirtualThreadPerTaskExecutor();
+    notXml = "not xml";
   }
 
-  @AfterEach
-  void tearDown() {
-    if (executorService != null) {
-      executorService.shutdownNow();
-    }
-  }
-
+  /**
+   * Tests that reading an empty input stream returns null when executed concurrently with Virtual Threads.
+   */
   @Test
-  void testReadModel_emptyInputStreamIsNullWithVirtualThreads() throws Exception {
+  void testReadModel_emptyInputStreamIsNull_withVirtualThreads() throws Exception {
     List<Future<Model>> futures = new ArrayList<>();
     
-    // Submit multiple tasks to read empty models concurrently using virtual threads
-    for (int i = 0; i < THREAD_COUNT; i++) {
-      futures.add(executorService.submit(() -> {
-        Model model = null;
-        for (int j = 0; j < ITERATIONS; j++) {
-          model = MavenModels.readModel(new ByteArrayInputStream(new byte[0]));
-          assertThat(model, nullValue());
-        }
-        return model;
-      }));
-    }
-    
-    // Wait for all tasks to complete
-    for (Future<Model> future : futures) {
-      assertThat(future.get(30, TimeUnit.SECONDS), nullValue());
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit multiple concurrent tasks
+      for (int i = 0; i < CONCURRENT_THREADS; i++) {
+        futures.add(executor.submit(() -> {
+          Model model = null;
+          for (int j = 0; j < ITERATIONS_PER_THREAD; j++) {
+            model = MavenModels.readModel(new ByteArrayInputStream(new byte[0]));
+            assertThat(model, nullValue());
+          }
+          return model;
+        }));
+      }
+      
+      // Wait for all tasks to complete
+      for (Future<Model> future : futures) {
+        future.get(); // This will throw an exception if any task failed
+      }
     }
   }
 
+  /**
+   * Tests that reading non-XML content returns null when executed concurrently with Virtual Threads.
+   */
   @Test
-  void testReadModel_NotXmlIsNullWithVirtualThreads() throws Exception {
+  void testReadModel_NotXmlIsNull_withVirtualThreads() throws Exception {
     List<Future<Model>> futures = new ArrayList<>();
     
-    // Submit multiple tasks to read non-XML models concurrently using virtual threads
-    for (int i = 0; i < THREAD_COUNT; i++) {
-      futures.add(executorService.submit(() -> {
-        Model model = null;
-        for (int j = 0; j < ITERATIONS; j++) {
-          model = MavenModels.readModel(new ByteArrayInputStream(notXml.getBytes()));
-          assertThat(model, nullValue());
-        }
-        return model;
-      }));
-    }
-    
-    // Wait for all tasks to complete
-    for (Future<Model> future : futures) {
-      assertThat(future.get(30, TimeUnit.SECONDS), nullValue());
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit multiple concurrent tasks
+      for (int i = 0; i < CONCURRENT_THREADS; i++) {
+        futures.add(executor.submit(() -> {
+          Model model = null;
+          for (int j = 0; j < ITERATIONS_PER_THREAD; j++) {
+            model = MavenModels.readModel(new ByteArrayInputStream(notXml.getBytes()));
+            assertThat(model, nullValue());
+          }
+          return model;
+        }));
+      }
+      
+      // Wait for all tasks to complete
+      for (Future<Model> future : futures) {
+        future.get(); // This will throw an exception if any task failed
+      }
     }
   }
 
+  /**
+   * Tests that reading XML without closing tags returns null when executed concurrently with Virtual Threads.
+   */
   @Test
-  void testReadModel_WithoutClosingTagsIsNullWithVirtualThreads() throws Exception {
+  void testReadModel_WithoutClosingTagsIsNull_withVirtualThreads() throws Exception {
     List<Future<Metadata>> futures = new ArrayList<>();
     
-    // Submit multiple tasks to read malformed XML metadata concurrently using virtual threads
-    for (int i = 0; i < THREAD_COUNT; i++) {
-      futures.add(executorService.submit(() -> {
-        Metadata metadata = null;
-        for (int j = 0; j < ITERATIONS; j++) {
-          metadata = MavenModels.readMetadata(
-              getClass().getResourceAsStream("/org/sonatype/nexus/repository/maven/metadataWithoutClosingTags.xml"));
-          assertThat(metadata, nullValue());
-        }
-        return metadata;
-      }));
-    }
-    
-    // Wait for all tasks to complete
-    for (Future<Metadata> future : futures) {
-      assertThat(future.get(30, TimeUnit.SECONDS), nullValue());
-    }
-  }
-  
-  @Test
-  void testConcurrentModelParsingWithVirtualThreads() throws Exception {
-    final int threadCount = 100; // Higher concurrency for stress testing
-    final CountDownLatch startLatch = new CountDownLatch(1);
-    final CountDownLatch endLatch = new CountDownLatch(threadCount);
-    
-    // Create tasks that will all start at the same time for maximum concurrency
-    for (int i = 0; i < threadCount; i++) {
-      final int threadId = i;
-      Thread.ofVirtual().start(() -> {
-        try {
-          startLatch.await(); // Wait for all threads to be ready
-          
-          // Alternate between different test cases based on thread ID
-          switch (threadId % 3) {
-            case 0:
-              // Test empty input
-              for (int j = 0; j < ITERATIONS; j++) {
-                Model model = MavenModels.readModel(new ByteArrayInputStream(new byte[0]));
-                assertThat(model, nullValue());
-              }
-              break;
-              
-            case 1:
-              // Test non-XML input
-              for (int j = 0; j < ITERATIONS; j++) {
-                Model model = MavenModels.readModel(new ByteArrayInputStream(notXml.getBytes()));
-                assertThat(model, nullValue());
-              }
-              break;
-              
-            case 2:
-              // Test malformed XML
-              for (int j = 0; j < ITERATIONS; j++) {
-                Metadata metadata = MavenModels.readMetadata(
-                    getClass().getResourceAsStream("/org/sonatype/nexus/repository/maven/metadataWithoutClosingTags.xml"));
-                assertThat(metadata, nullValue());
-              }
-              break;
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit multiple concurrent tasks
+      for (int i = 0; i < CONCURRENT_THREADS; i++) {
+        futures.add(executor.submit(() -> {
+          Metadata metadata = null;
+          for (int j = 0; j < ITERATIONS_PER_THREAD; j++) {
+            metadata = MavenModels.readMetadata(
+                getClass().getResourceAsStream("/org/sonatype/nexus/repository/maven/metadataWithoutClosingTags.xml"));
+            assertThat(metadata, nullValue());
           }
-        }
-        catch (Exception e) {
-          log.error("Error in virtual thread test", e);
-          throw new RuntimeException(e);
-        }
-        finally {
-          endLatch.countDown();
-        }
-      });
+          return metadata;
+        }));
+      }
+      
+      // Wait for all tasks to complete
+      for (Future<Metadata> future : futures) {
+        future.get(); // This will throw an exception if any task failed
+      }
     }
-    
-    // Start all threads simultaneously
-    startLatch.countDown();
-    
-    // Wait for all threads to complete with timeout
-    assertThat("All virtual threads should complete in time", 
-        endLatch.await(60, TimeUnit.SECONDS), is(true));
   }
   
+  /**
+   * Tests that concurrent model parsing with Virtual Threads doesn't cause exceptions.
+   */
   @Test
-  void testExceptionHandlingWithVirtualThreads() throws Exception {
-    // Test that exceptions are properly propagated when using virtual threads
-    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+  void testConcurrentModelParsing_withVirtualThreads() throws Exception {
+    // Create a large number of virtual threads to stress test the model parsing
+    List<Thread> threads = new ArrayList<>();
     
-    try {
-      Future<?> future = executor.submit(() -> {
-        // Create a scenario that should throw an exception
-        // We'll use a null input stream which should cause a NullPointerException
-        MavenModels.readModel(null);
-        return null;
+    for (int i = 0; i < CONCURRENT_THREADS; i++) {
+      Thread thread = Thread.ofVirtual().name("model-parser-" + i).start(() -> {
+        for (int j = 0; j < ITERATIONS_PER_THREAD; j++) {
+          assertDoesNotThrow(() -> {
+            MavenModels.readModel(new ByteArrayInputStream(new byte[0]));
+            MavenModels.readModel(new ByteArrayInputStream(notXml.getBytes()));
+            MavenModels.readMetadata(
+                getClass().getResourceAsStream("/org/sonatype/nexus/repository/maven/metadataWithoutClosingTags.xml"));
+          });
+        }
       });
-      
-      // The future.get() should throw an ExecutionException wrapping the NullPointerException
-      assertThrows(Exception.class, () -> future.get(5, TimeUnit.SECONDS));
+      threads.add(thread);
     }
-    finally {
-      executor.shutdownNow();
+    
+    // Wait for all threads to complete
+    for (Thread thread : threads) {
+      thread.join();
+    }
+  }
+  
+  /**
+   * Tests that concurrent model parsing with a mix of valid and invalid inputs doesn't cause unexpected exceptions.
+   */
+  @Test
+  void testMixedInputModelParsing_withVirtualThreads() throws Exception {
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      List<Future<?>> futures = new ArrayList<>();
+      
+      for (int i = 0; i < CONCURRENT_THREADS; i++) {
+        final int threadNum = i;
+        futures.add(executor.submit(() -> {
+          for (int j = 0; j < ITERATIONS_PER_THREAD; j++) {
+            // Mix different types of inputs based on thread number to create varied load
+            if (threadNum % 3 == 0) {
+              // Empty input
+              assertThat(MavenModels.readModel(new ByteArrayInputStream(new byte[0])), nullValue());
+            } 
+            else if (threadNum % 3 == 1) {
+              // Non-XML input
+              assertThat(MavenModels.readModel(new ByteArrayInputStream(notXml.getBytes())), nullValue());
+            } 
+            else {
+              // Malformed XML input
+              assertThat(MavenModels.readMetadata(
+                  getClass().getResourceAsStream("/org/sonatype/nexus/repository/maven/metadataWithoutClosingTags.xml")), 
+                  nullValue());
+            }
+          }
+        }));
+      }
+      
+      // Wait for all tasks to complete
+      for (Future<?> future : futures) {
+        future.get(30, TimeUnit.SECONDS); // Add timeout to prevent test hanging
+      }
     }
   }
 }

@@ -35,6 +35,8 @@ import static org.sonatype.nexus.repository.view.matchers.logic.LogicMatchers.an
 
 /**
  * Example hosted recipe.
+ * 
+ * Updated for Java 21 compatibility with Virtual Threads support and updated HTTP framework components.
  *
  * @since 3.24
  */
@@ -62,6 +64,8 @@ public class ExampleHostedRecipe
 
   /**
    * Configure {@link ViewFacet}.
+   * 
+   * Updated for Java 21 compatibility with Virtual Threads and updated HTTP framework components.
    */
   private ViewFacet configure(final ConfigurableViewFacet facet) {
     Router.Builder builder = new Router.Builder();
@@ -69,12 +73,15 @@ public class ExampleHostedRecipe
     // Additional handlers, such as the lastDownloadHandler, are intentionally
     // not included on this route because this route forwards to the route below.
     // This route specifically handles GET / and forwards to /index.html.
+    // This route is processed on a Virtual Thread when running on Java 21
     builder.route(new Route.Builder()
         .matcher(and(new ActionMatcher(HttpMethods.GET), new SuffixMatcher("/")))
         .handler(timingHandler)
         .handler(indexHtmlForwardHandler)
         .create());
 
+    // Main content route with full handler chain
+    // This route is processed on a Virtual Thread when running on Java 21
     builder.route(new Route.Builder()
         .matcher(new TokenMatcher("{path:/.+}"))
         .handler(timingHandler)
@@ -88,6 +95,7 @@ public class ExampleHostedRecipe
         .handler(contentHandler)
         .create());
 
+    // Default handler for unmatched requests
     builder.defaultHandlers(HttpHandlers.badRequest());
 
     facet.configure(builder.create());

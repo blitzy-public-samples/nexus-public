@@ -14,95 +14,70 @@ package org.sonatype.nexus.blobstore.restore.datastore;
 
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.common.app.ApplicationVersion;
 import org.sonatype.nexus.formfields.FormField;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.experimental.categories.Category;
 import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.junit.jupiter.api.extension.ExtendWith;
 
 import static org.hamcrest.Matchers.hasSize;
-import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.Mockito.when;
 
 /**
- * Test for {@link RestoreMetadataTaskDescriptor} that runs in a Virtual Thread context.
- * This test ensures that the task descriptor correctly provides the expected form fields
- * when running under Java 21's Virtual Threads.
+ * Test for {@link RestoreMetadataTaskDescriptor} that runs in a Virtual Thread context to verify
+ * compatibility with Java 21's Virtual Threads.
  */
-@ExtendWith(MockitoExtension.class)
-class RestoreMetadataTaskDescriptorTest
+@Category(VirtualThreadTestGroup.class)
+public class RestoreMetadataTaskDescriptorTest
     extends TestSupport
 {
-  private RestoreMetadataTaskDescriptor underTest;
+  RestoreMetadataTaskDescriptor underTest;
 
   @Mock
-  private ApplicationVersion applicationVersion;
+  ApplicationVersion applicationVersion;
 
-  @BeforeEach
-  void setup() {
+  @Before
+  public void setup() {
     when(applicationVersion.getEdition())
         .thenReturn("RPO");
 
     underTest = new RestoreMetadataTaskDescriptor(true, applicationVersion);
   }
 
-  /**
-   * Test that verifies the form fields of the RestoreMetadataTaskDescriptor when running in a Virtual Thread.
-   * This ensures that the descriptor functions correctly in the Java 21 Virtual Thread environment.
-   */
   @Test
-  void testGetFormFieldsInVirtualThread() throws Exception {
-    // Create a latch to wait for the virtual thread to complete
-    CountDownLatch latch = new CountDownLatch(1);
-    
-    // Create atomic references to hold the results and any exception
-    AtomicReference<List<FormField>> formFieldsRef = new AtomicReference<>();
-    AtomicReference<Boolean> isVirtualThreadRef = new AtomicReference<>();
-    AtomicReference<Exception> exceptionRef = new AtomicReference<>();
-    
+  public void testGetFormFields() throws ExecutionException, InterruptedException {
     // Create and start a virtual thread to run the test
-    Thread virtualThread = Thread.ofVirtual().name("virtual-restore-metadata-test").start(() -> {
-      try {
-        // Verify we're running in a virtual thread
-        isVirtualThreadRef.set(Thread.currentThread().isVirtual());
-        
-        // Get the form fields from the descriptor
-        List<FormField> formFields = underTest.getFormFields();
-        formFieldsRef.set(formFields);
-      }
-      catch (Exception e) {
-        exceptionRef.set(e);
-      }
-      finally {
-        latch.countDown();
-      }
+    Future<List<FormField>> future = Thread.ofVirtual().name("virtual-test-thread").start(() -> {
+      // Verify we're running in a virtual thread
+      Thread currentThread = Thread.currentThread();
+      log.info("Running test in thread: {}, isVirtual: {}", currentThread.getName(), currentThread.isVirtual());
+      assertThat("Test should run in a virtual thread", currentThread.isVirtual(), is(true));
+      
+      // Get the form fields from the descriptor
+      List<FormField> fields = underTest.getFormFields();
+      
+      // Return the fields for verification outside the virtual thread
+      return fields;
     });
     
-    // Wait for the virtual thread to complete
-    latch.await();
+    // Get the result from the virtual thread
+    List<FormField> formFields = future.get();
     
-    // Check if an exception occurred
-    if (exceptionRef.get() != null) {
-      throw exceptionRef.get();
-    }
-    
-    // Verify the thread was actually a virtual thread
-    assertTrue(isVirtualThreadRef.get(), "Test should run in a virtual thread");
-    
-    // Verify the form fields
-    List<FormField> formFields = formFieldsRef.get();
+    // Verify the form fields - same as the original test
     assertThat(formFields, hasSize(6));
     
     // Additional verification for any virtual thread specific configuration
-    // This would be added if the descriptor has any virtual thread specific options
-    // For now, we just verify the basic functionality works in a virtual thread context
+    // In a real implementation, we might check for fields that configure virtual thread behavior
+    // For example, thread pool settings or concurrency limits that might be exposed in the UI
+    // For now, we're just verifying the same behavior as the regular test
   }
 }

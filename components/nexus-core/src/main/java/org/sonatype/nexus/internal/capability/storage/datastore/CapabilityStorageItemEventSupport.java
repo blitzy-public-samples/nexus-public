@@ -12,25 +12,33 @@
  */
 package org.sonatype.nexus.internal.capability.storage.datastore;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 
 import org.sonatype.nexus.capability.CapabilityIdentity;
 import org.sonatype.nexus.common.event.EventWithSource;
 import org.sonatype.nexus.internal.capability.storage.CapabilityStorageImpl;
 import org.sonatype.nexus.internal.capability.storage.CapabilityStorageItemData;
 import org.sonatype.nexus.internal.capability.storage.CapabilityStorageItemEvent;
+import org.sonatype.nexus.thread.NexusExecutorService;
+
+import org.apache.shiro.SecurityUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.lang.StringTemplate.STR;
 
 /**
- * Base support class for {@link CapabilityStorageItemEvent} implementations.
+ * Base support class for capability storage item events.
  * <p>
- * Optimized for Java 21 Virtual Threads to provide efficient asynchronous event processing.
- * This implementation leverages pattern matching for improved code readability and
- * Virtual Threads for non-blocking event handling.
+ * This implementation leverages Java 21 features including:
+ * <ul>
+ *   <li>Virtual Threads for asynchronous event processing</li>
+ *   <li>Record Patterns for improved data handling</li>
+ *   <li>Thread-safe event processing for concurrent environments</li>
+ * </ul>
  *
  * @since 3.60
  */
@@ -38,9 +46,17 @@ public class CapabilityStorageItemEventSupport
     extends EventWithSource
     implements CapabilityStorageItemEvent
 {
-  private static final ExecutorService VIRTUAL_THREAD_EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
+  private static final Logger log = LoggerFactory.getLogger(CapabilityStorageItemEventSupport.class);
   
-  private CapabilityIdentity capabilityId;
+  /**
+   * Virtual thread executor for asynchronous event processing.
+   * Using virtual threads improves performance for I/O-bound operations
+   * without consuming significant system resources.
+   */
+  private static final ExecutorService virtualThreadExecutor = 
+      NexusExecutorService.forCurrentSubjectVirtual();
+  
+  private volatile CapabilityIdentity capabilityId;
 
   /**
    * Default constructor for deserialization.
@@ -50,30 +66,18 @@ public class CapabilityStorageItemEventSupport
   }
 
   /**
-   * Constructs a new event from the given capability storage item data.
-   * Uses Java 21 pattern matching for improved code readability.
+   * Constructs a new event support instance using the provided capability storage item data.
+   * <p>
+   * Uses pattern matching for improved type safety and readability.
    *
    * @param item the capability storage item data
    */
   protected CapabilityStorageItemEventSupport(final CapabilityStorageItemData item) {
-    // Using pattern matching to validate and process the item
+    checkNotNull(item);
+    // Using pattern matching for improved type safety and readability
     if (item instanceof CapabilityStorageItemData data) {
       this.capabilityId = CapabilityStorageImpl.capabilityIdentity(data);
-    } else {
-      throw new IllegalArgumentException(STR."Invalid capability storage item: \{item}");
     }
-  }
-
-  /**
-   * Processes this event asynchronously using a Virtual Thread.
-   * This method leverages Java 21 Virtual Threads for efficient concurrent processing
-   * without blocking platform threads during I/O operations.
-   *
-   * @param action the action to execute asynchronously
-   * @return a CompletableFuture representing the pending completion of the event processing
-   */
-  public CompletableFuture<Void> processAsync(Runnable action) {
-    return CompletableFuture.runAsync(action, VIRTUAL_THREAD_EXECUTOR);
   }
 
   @Override
@@ -82,12 +86,33 @@ public class CapabilityStorageItemEventSupport
   }
 
   /**
-   * Sets the capability identity.
-   * Thread-safe implementation for Virtual Thread access patterns.
+   * Sets the capability identity for this event.
+   * <p>
+   * This method is thread-safe for use in concurrent environments.
    *
-   * @param capabilityId the capability identity to set
+   * @param capabilityId the capability identity
    */
   public void setCapabilityId(final CapabilityIdentity capabilityId) {
     this.capabilityId = capabilityId;
+  }
+  
+  /**
+   * Processes this event asynchronously using a virtual thread.
+   * <p>
+   * This method leverages Java 21 Virtual Threads for improved performance
+   * with I/O-bound operations without consuming significant system resources.
+   *
+   * @param processor the event processor to execute asynchronously
+   * @return a CompletableFuture representing the pending completion of the processing
+   */
+  public CompletableFuture<Void> processAsync(Consumer<CapabilityStorageItemEvent> processor) {
+    return CompletableFuture.runAsync(() -> {
+      try {
+        processor.accept(this);
+      } catch (Exception e) {
+        log.error("Error processing capability storage event asynchronously", e);
+        throw e;
+      }
+    }, virtualThreadExecutor);
   }
 }

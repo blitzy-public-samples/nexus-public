@@ -13,38 +13,38 @@
 package org.sonatype.goodies.testsupport.group;
 
 /**
- * Marker interface for tests that specifically validate Java 21 features.
+ * JUnit category marker interface for tests that specifically validate Java 21 features.
  * 
  * <p>
- * This category enables the Maven build system to selectively execute tests that validate
- * Java 21-specific features using the java21-tests profile. Tests in this category will only
- * be executed when the java21-tests profile is activated, ensuring that tests requiring
+ * This category enables the Maven build system to selectively execute tests that require
+ * Java 21 features using the java21-tests profile. Tests marked with this category will
+ * only be executed when the java21-tests profile is active, ensuring that tests requiring
  * Java 21 features are only run in compatible environments.
  * </p>
  * 
  * <p>
  * Usage example:
  * </p>
+ * 
  * <pre>
  * {@code
  * @Category(Java21TestGroup.class)
- * public class RecordPatternMatchingTest {
- *   // Tests that validate Java 21 record pattern matching
+ * public class MyJava21FeatureTest {
+ *   @Test
+ *   public void testVirtualThreads() {
+ *     // Test code that uses Java 21 Virtual Threads
+ *   }
  * }
  * }
  * </pre>
  * 
  * <p>
- * To run tests in this category, use the Maven java21-tests profile:
+ * These tests can be executed using the Maven command:
+ * {@code mvn test -Djava21-tests=true}
  * </p>
- * <pre>
- * {@code
- * mvn test -Djava21-tests=true
- * }
- * </pre>
  *
  * @since 3.60
  */
-public interface Java21TestGroup extends TestGroup {
-    // Marker interface - no methods required
+public interface Java21TestGroup {
+  // Marker interface - no methods required
 }

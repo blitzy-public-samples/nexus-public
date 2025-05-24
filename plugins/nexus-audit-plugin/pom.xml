@@ -28,13 +28,6 @@
   <name>${project.groupId}:${project.artifactId}</name>
   <packaging>bundle</packaging>
 
-  <properties>
-    <!-- Java 21 compatibility -->
-    <maven.compiler.release>21</maven.compiler.release>
-    <maven.compiler.source>21</maven.compiler.source>
-    <maven.compiler.target>21</maven.compiler.target>
-  </properties>
-
   <dependencies>
     <dependency>
       <groupId>org.sonatype.nexus</groupId>
@@ -81,6 +74,17 @@
 
   <build>
     <plugins>
+      <!-- Configure Maven compiler for Java 21 -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <release>21</release>
+          <source>21</source>
+          <target>21</target>
+        </configuration>
+      </plugin>
+      
       <!-- Configure OSGi bundle manifest for Java 21 compatibility -->
       <plugin>
         <groupId>org.apache.felix</groupId>
@@ -88,20 +92,10 @@
         <configuration>
           <instructions>
             <Bundle-RequiredExecutionEnvironment>JavaSE-21</Bundle-RequiredExecutionEnvironment>
-            <!-- Include standard instructions from parent configuration -->
+            <!-- Include default instructions from parent configuration -->
             <_consumer-policy>$(version;==)</_consumer-policy>
             <Include-Resource>/=${project.build.outputDirectory},{maven-resources}</Include-Resource>
             <Private-Package/>
-            <Feature-Flagged>$(classes;ANNOTATED;org.sonatype.nexus.common.app.FeatureFlag)</Feature-Flagged>
-            <Import-Package>
-              $(if;$(classes;EXTENDS;*.FacetSupport);org.sonatype.nexus.repository.config),
-              $(if;$(classes;EXTENDS;*.(Blob|Data)StoreSupport);org.sonatype.nexus.transaction),
-              $(if;$(classes;EXTENDS;*.ContentFacetSupport);org.sonatype.nexus.repository.content,org.sonatype.nexus.transaction),
-              $(if;$(classes;IMPLEMENTS;*.ContentRepositoryDAO);org.sonatype.nexus.common.entity),
-              $(if;$(classes;IMPLEMENTS;*.AssetBlobDAO);org.sonatype.nexus.blobstore.api),
-              *
-            </Import-Package>
-            <_noclassforname>true</_noclassforname>
           </instructions>
         </configuration>
       </plugin>
@@ -111,67 +105,7 @@
         <groupId>org.apache.karaf.tooling</groupId>
         <artifactId>karaf-maven-plugin</artifactId>
         <configuration>
-          <!-- Ensure compatibility with Java 21 runtime -->
           <javase>21</javase>
-          <!-- Include standard exclusions from parent configuration -->
-          <excludedArtifactIds>
-            <id>org.osgi.core</id>
-            <id>org.osgi.compendium</id>
-            <id>osgi.core</id>
-            <id>osgi.cmpn</id>
-            <id>org.eclipse.osgi</id>
-            <id>activation</id>
-            <id>javax.annotation</id>
-            <id>javax.annotation-api</id>
-            <id>jboss-annotations-api_1.1_spec</id>
-            <id>jboss-annotations-api_1.2_spec</id>
-            <id>jboss-annotations-api_1.3_spec</id>
-            <id>javax.inject</id>
-            <id>aopalliance</id>
-            <id>javax.ws.rs</id>
-            <id>javax.ws.rs-api</id>
-            <id>jakarta.xml.bind-api</id>
-            <id>jaxb-runtime</id>
-            <id>txw2</id>
-            <id>istack-commons-runtime</id>
-            <id>jsr250-api</id>
-            <id>jsr305</id>
-            <id>slf4j-api</id>
-            <id>jul-to-slf4j</id>
-            <id>jcl-over-slf4j</id>
-            <id>log4j-over-slf4j</id>
-            <id>logback-core</id>
-            <id>logback-classic</id>
-            <id>jboss-logging</id>
-            <id>bcprov-jdk15to18</id>
-            <id>bcpkix-jdk15to18</id>
-            <id>bcpg-jdk15to18</id>
-            <id>bcutil-jdk15to18</id>
-            <id>directjngine</id>
-            <id>validation-api</id>
-            <id>jakarta.el</id>
-            <id>jakarta.validation-api</id>
-            <id>jetty-util</id>
-            <id>paranamer</id>
-            <id>httpcore</id>
-            <id>httpclient</id>
-            <id>shiro-guice</id>
-            <id>metrics-guice</id>
-            <id>simpleclient_dropwizard</id>
-            <id>quartz</id>
-            <id>resteasy-jaxrs</id>
-            <id>resteasy-atom-provider</id>
-            <id>resteasy-jackson2-provider</id>
-            <id>resteasy-jaxb-provider</id>
-            <id>resteasy-multipart-provider</id>
-            <id>resteasy-validator-provider</id>
-            <id>resteasy-client</id>
-            <id>jackson-coreutils</id>
-            <id>json-patch</id>
-            <id>jsoup</id>
-            <id>swagger-core</id>
-            <id>swagger-jaxrs</id>
-          </excludedArtifactIds>
         </configuration>
       </plugin>
     </plugins>

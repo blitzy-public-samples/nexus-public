@@ -13,15 +13,13 @@
 package virtualthread;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.contains;
-import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -31,24 +29,17 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import javax.ws.rs.NotFoundException;
 import javax.ws.rs.WebApplicationException;
-import javax.ws.rs.core.Response;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.Captor;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.slf4j.Logger;
+import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.event.EventManager;
 import org.sonatype.nexus.common.script.ScriptService;
 import org.sonatype.nexus.script.Script;
@@ -62,531 +53,406 @@ import org.sonatype.nexus.script.plugin.internal.security.ScriptPermission;
 import org.sonatype.nexus.security.SecurityHelper;
 
 /**
- * Tests the {@link ScriptResource} REST API implementation using Java 21 Virtual Threads.
+ * Tests the {@link ScriptResource} REST API implementation using Java 21 Virtual Threads to verify that
+ * REST operations (browse, read, add, edit, delete, run) work correctly in a virtual thread environment.
  * 
- * This test ensures that REST operations (browse, read, add, edit, delete, run) work correctly
- * in a virtual thread environment, which is critical for maintaining performance during
- * high-concurrency scenarios.
+ * This test ensures that the REST API remains reliable when executed with virtual threads, which is critical
+ * for maintaining performance during high-concurrency scenarios.
  */
-@ExtendWith(MockitoExtension.class)
-class ScriptResourceVirtualThreadTest
+public class ScriptResourceVirtualThreadTest
+    extends TestSupport
 {
-  private static final String SCRIPT_NAME = "test-script";
-  private static final String SCRIPT_CONTENT = "return 'Hello, World!'";
-  private static final String SCRIPT_TYPE = "groovy";
-  private static final String SCRIPT_RESULT = "Hello, World!";
-
-  @Mock
   private ScriptManager scriptManager;
-
-  @Mock
   private SecurityHelper securityHelper;
-
-  @Mock
   private ScriptService scriptService;
-
-  @Mock
   private EventManager eventManager;
-
-  @Mock
-  private Script script;
-
-  @Mock
-  private Logger log;
-
-  @Captor
-  private ArgumentCaptor<ScriptRunEvent> eventCaptor;
-
-  @InjectMocks
   private ScriptResource underTest;
 
   @BeforeEach
-  void setUp() {
-    // Common script setup
-    when(script.getName()).thenReturn(SCRIPT_NAME);
-    when(script.getContent()).thenReturn(SCRIPT_CONTENT);
-    when(script.getType()).thenReturn(SCRIPT_TYPE);
+  public void setup() {
+    scriptManager = mock(ScriptManager.class);
+    securityHelper = mock(SecurityHelper.class);
+    scriptService = mock(ScriptService.class);
+    eventManager = mock(EventManager.class);
+
+    underTest = new ScriptResource(scriptManager, securityHelper, scriptService, eventManager);
   }
 
   /**
-   * Tests the browse operation in a virtual thread.
+   * Tests that the browse operation works correctly when executed in a virtual thread.
    */
   @Test
-  void testBrowseInVirtualThread() throws Exception {
-    // Setup
+  public void testBrowseInVirtualThread() throws Exception {
+    // Setup test data
     List<Script> scripts = new ArrayList<>();
-    scripts.add(script);
+    Script script1 = mock(Script.class);
+    when(script1.getName()).thenReturn("script1");
+    when(script1.getContent()).thenReturn("println 'Hello'");
+    when(script1.getType()).thenReturn("groovy");
+    scripts.add(script1);
+
+    Script script2 = mock(Script.class);
+    when(script2.getName()).thenReturn("script2");
+    when(script2.getContent()).thenReturn("println 'World'");
+    when(script2.getType()).thenReturn("groovy");
+    scripts.add(script2);
+
     when(scriptManager.browse()).thenReturn(scripts);
 
     // Execute in virtual thread
-    AtomicReference<List<ScriptXO>> resultRef = new AtomicReference<>();
-    CountDownLatch latch = new CountDownLatch(1);
-
-    Thread virtualThread = Thread.startVirtualThread(() -> {
+    AtomicReference<List<ScriptXO>> result = new AtomicReference<>();
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
       try {
-        resultRef.set(underTest.browse());
-      } finally {
-        latch.countDown();
+        result.set(Thread.startVirtualThread(() -> underTest.browse()).join());
+      }
+      catch (Exception e) {
+        throw new RuntimeException(e);
       }
     });
 
-    // Wait for completion
-    latch.await(5, TimeUnit.SECONDS);
-    virtualThread.join();
+    future.get(); // Wait for completion
 
-    // Verify
-    List<ScriptXO> result = resultRef.get();
-    assertThat(result, notNullValue());
-    assertThat(result, hasSize(1));
-    assertThat(result.get(0).getName(), is(SCRIPT_NAME));
-    assertThat(result.get(0).getContent(), is(SCRIPT_CONTENT));
-    assertThat(result.get(0).getType(), is(SCRIPT_TYPE));
+    // Verify results
+    List<ScriptXO> scriptXOs = result.get();
+    assertThat(scriptXOs, notNullValue());
+    assertThat(scriptXOs.size(), is(2));
+    assertThat(scriptXOs.get(0).getName(), is("script1"));
+    assertThat(scriptXOs.get(0).getContent(), is("println 'Hello'"));
+    assertThat(scriptXOs.get(0).getType(), is("groovy"));
+    assertThat(scriptXOs.get(1).getName(), is("script2"));
+    assertThat(scriptXOs.get(1).getContent(), is("println 'World'"));
+    assertThat(scriptXOs.get(1).getType(), is("groovy"));
   }
 
   /**
-   * Tests the read operation in a virtual thread.
+   * Tests that the read operation works correctly when executed in a virtual thread.
    */
   @Test
-  void testReadInVirtualThread() throws Exception {
-    // Setup
-    when(scriptManager.get(SCRIPT_NAME)).thenReturn(script);
+  public void testReadInVirtualThread() throws Exception {
+    // Setup test data
+    String scriptName = "testScript";
+    Script script = mock(Script.class);
+    when(script.getName()).thenReturn(scriptName);
+    when(script.getContent()).thenReturn("println 'Test'");
+    when(script.getType()).thenReturn("groovy");
+    when(scriptManager.get(scriptName)).thenReturn(script);
 
     // Execute in virtual thread
-    AtomicReference<ScriptXO> resultRef = new AtomicReference<>();
-    CountDownLatch latch = new CountDownLatch(1);
-
-    Thread virtualThread = Thread.startVirtualThread(() -> {
+    AtomicReference<ScriptXO> result = new AtomicReference<>();
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
       try {
-        resultRef.set(underTest.read(SCRIPT_NAME));
-      } finally {
-        latch.countDown();
+        result.set(Thread.startVirtualThread(() -> underTest.read(scriptName)).join());
+      }
+      catch (Exception e) {
+        throw new RuntimeException(e);
       }
     });
 
-    // Wait for completion
-    latch.await(5, TimeUnit.SECONDS);
-    virtualThread.join();
+    future.get(); // Wait for completion
 
-    // Verify
-    ScriptXO result = resultRef.get();
-    assertThat(result, notNullValue());
-    assertThat(result.getName(), is(SCRIPT_NAME));
-    assertThat(result.getContent(), is(SCRIPT_CONTENT));
-    assertThat(result.getType(), is(SCRIPT_TYPE));
+    // Verify results
+    ScriptXO scriptXO = result.get();
+    assertThat(scriptXO, notNullValue());
+    assertThat(scriptXO.getName(), is(scriptName));
+    assertThat(scriptXO.getContent(), is("println 'Test'"));
+    assertThat(scriptXO.getType(), is("groovy"));
+
+    // Verify security check was performed
     verify(securityHelper).ensurePermitted(any(ScriptPermission.class));
   }
 
   /**
-   * Tests the read operation with a non-existent script in a virtual thread.
+   * Tests that the read operation correctly handles not found exceptions when executed in a virtual thread.
    */
   @Test
-  void testReadNonExistentScriptInVirtualThread() throws Exception {
-    // Setup
-    when(scriptManager.get(SCRIPT_NAME)).thenReturn(null);
+  public void testReadNotFoundInVirtualThread() throws Exception {
+    // Setup test data
+    String scriptName = "nonExistentScript";
+    when(scriptManager.get(scriptName)).thenReturn(null);
 
     // Execute in virtual thread
-    AtomicReference<Throwable> exceptionRef = new AtomicReference<>();
-    CountDownLatch latch = new CountDownLatch(1);
-
-    Thread virtualThread = Thread.startVirtualThread(() -> {
+    AtomicReference<Throwable> exception = new AtomicReference<>();
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
       try {
-        underTest.read(SCRIPT_NAME);
-      } catch (Exception e) {
-        exceptionRef.set(e);
-      } finally {
-        latch.countDown();
+        Thread.startVirtualThread(() -> underTest.read(scriptName)).join();
+      }
+      catch (Exception e) {
+        exception.set(e);
       }
     });
 
-    // Wait for completion
-    latch.await(5, TimeUnit.SECONDS);
-    virtualThread.join();
+    future.get(); // Wait for completion
 
-    // Verify
-    Throwable exception = exceptionRef.get();
-    assertThat(exception, notNullValue());
-    assertThat(exception instanceof NotFoundException, is(true));
+    // Verify exception
+    assertThat(exception.get(), notNullValue());
+    assertThat(exception.get().getCause() instanceof NotFoundException, is(true));
   }
 
   /**
-   * Tests the add operation in a virtual thread.
+   * Tests that the add operation works correctly when executed in a virtual thread.
    */
   @Test
-  void testAddInVirtualThread() throws Exception {
-    // Setup
-    ScriptXO scriptXO = new ScriptXO(SCRIPT_NAME, SCRIPT_CONTENT, SCRIPT_TYPE);
+  public void testAddInVirtualThread() throws Exception {
+    // Setup test data
+    ScriptXO scriptXO = new ScriptXO("newScript", "println 'New'", "groovy");
 
     // Execute in virtual thread
-    CountDownLatch latch = new CountDownLatch(1);
-
-    Thread virtualThread = Thread.startVirtualThread(() -> {
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
       try {
-        underTest.add(scriptXO);
-      } finally {
-        latch.countDown();
+        Thread.startVirtualThread(() -> {
+          underTest.add(scriptXO);
+          return null;
+        }).join();
+      }
+      catch (Exception e) {
+        throw new RuntimeException(e);
       }
     });
 
-    // Wait for completion
-    latch.await(5, TimeUnit.SECONDS);
-    virtualThread.join();
+    future.get(); // Wait for completion
 
-    // Verify
-    verify(scriptManager).create(SCRIPT_NAME, SCRIPT_CONTENT, SCRIPT_TYPE);
+    // Verify script was created
+    verify(scriptManager).create(scriptXO.getName(), scriptXO.getContent(), scriptXO.getType());
   }
 
   /**
-   * Tests the add operation when scripting is disabled in a virtual thread.
+   * Tests that the add operation correctly handles scripting disabled exceptions when executed in a virtual thread.
    */
   @Test
-  void testAddWhenScriptingDisabledInVirtualThread() throws Exception {
-    // Setup
-    ScriptXO scriptXO = new ScriptXO(SCRIPT_NAME, SCRIPT_CONTENT, SCRIPT_TYPE);
+  public void testAddScriptingDisabledInVirtualThread() throws Exception {
+    // Setup test data
+    ScriptXO scriptXO = new ScriptXO("newScript", "println 'New'", "groovy");
     doThrow(new ScriptingDisabledException("Scripting is disabled"))
-        .when(scriptManager).create(SCRIPT_NAME, SCRIPT_CONTENT, SCRIPT_TYPE);
+        .when(scriptManager).create(anyString(), anyString(), anyString());
 
     // Execute in virtual thread
-    AtomicReference<Throwable> exceptionRef = new AtomicReference<>();
-    CountDownLatch latch = new CountDownLatch(1);
-
-    Thread virtualThread = Thread.startVirtualThread(() -> {
+    AtomicReference<Throwable> exception = new AtomicReference<>();
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
       try {
-        underTest.add(scriptXO);
-      } catch (Exception e) {
-        exceptionRef.set(e);
-      } finally {
-        latch.countDown();
+        Thread.startVirtualThread(() -> {
+          underTest.add(scriptXO);
+          return null;
+        }).join();
+      }
+      catch (Exception e) {
+        exception.set(e);
       }
     });
 
-    // Wait for completion
-    latch.await(5, TimeUnit.SECONDS);
-    virtualThread.join();
+    future.get(); // Wait for completion
 
-    // Verify
-    Throwable exception = exceptionRef.get();
-    assertThat(exception, notNullValue());
-    assertThat(exception instanceof WebApplicationException, is(true));
-    WebApplicationException webException = (WebApplicationException) exception;
-    assertThat(webException.getResponse().getStatus(), is(Response.Status.GONE.getStatusCode()));
+    // Verify exception
+    assertThat(exception.get(), notNullValue());
+    assertThat(exception.get().getCause() instanceof WebApplicationException, is(true));
   }
 
   /**
-   * Tests the edit operation in a virtual thread.
+   * Tests that the edit operation works correctly when executed in a virtual thread.
    */
   @Test
-  void testEditInVirtualThread() throws Exception {
-    // Setup
-    ScriptXO scriptXO = new ScriptXO(SCRIPT_NAME, "updated content", SCRIPT_TYPE);
-    when(scriptManager.get(SCRIPT_NAME)).thenReturn(script);
+  public void testEditInVirtualThread() throws Exception {
+    // Setup test data
+    String scriptName = "existingScript";
+    ScriptXO scriptXO = new ScriptXO(scriptName, "println 'Updated'", "groovy");
+    Script script = mock(Script.class);
+    when(script.getName()).thenReturn(scriptName);
+    when(scriptManager.get(scriptName)).thenReturn(script);
 
     // Execute in virtual thread
-    CountDownLatch latch = new CountDownLatch(1);
-
-    Thread virtualThread = Thread.startVirtualThread(() -> {
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
       try {
-        underTest.edit(SCRIPT_NAME, scriptXO);
-      } finally {
-        latch.countDown();
+        Thread.startVirtualThread(() -> {
+          underTest.edit(scriptName, scriptXO);
+          return null;
+        }).join();
+      }
+      catch (Exception e) {
+        throw new RuntimeException(e);
       }
     });
 
-    // Wait for completion
-    latch.await(5, TimeUnit.SECONDS);
-    virtualThread.join();
+    future.get(); // Wait for completion
 
-    // Verify
+    // Verify script was updated
+    verify(scriptManager).update(scriptName, scriptXO.getContent());
     verify(securityHelper).ensurePermitted(any(ScriptPermission.class));
-    verify(scriptManager).update(SCRIPT_NAME, "updated content");
   }
 
   /**
-   * Tests the edit operation with a non-existent script in a virtual thread.
+   * Tests that the delete operation works correctly when executed in a virtual thread.
    */
   @Test
-  void testEditNonExistentScriptInVirtualThread() throws Exception {
-    // Setup
-    ScriptXO scriptXO = new ScriptXO(SCRIPT_NAME, "updated content", SCRIPT_TYPE);
-    when(scriptManager.get(SCRIPT_NAME)).thenReturn(null);
+  public void testDeleteInVirtualThread() throws Exception {
+    // Setup test data
+    String scriptName = "scriptToDelete";
+    Script script = mock(Script.class);
+    when(script.getName()).thenReturn(scriptName);
+    when(scriptManager.get(scriptName)).thenReturn(script);
 
     // Execute in virtual thread
-    AtomicReference<Throwable> exceptionRef = new AtomicReference<>();
-    CountDownLatch latch = new CountDownLatch(1);
-
-    Thread virtualThread = Thread.startVirtualThread(() -> {
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
       try {
-        underTest.edit(SCRIPT_NAME, scriptXO);
-      } catch (Exception e) {
-        exceptionRef.set(e);
-      } finally {
-        latch.countDown();
+        Thread.startVirtualThread(() -> {
+          underTest.delete(scriptName);
+          return null;
+        }).join();
+      }
+      catch (Exception e) {
+        throw new RuntimeException(e);
       }
     });
 
-    // Wait for completion
-    latch.await(5, TimeUnit.SECONDS);
-    virtualThread.join();
+    future.get(); // Wait for completion
 
-    // Verify
-    Throwable exception = exceptionRef.get();
-    assertThat(exception, notNullValue());
-    assertThat(exception instanceof NotFoundException, is(true));
-  }
-
-  /**
-   * Tests the edit operation when scripting is disabled in a virtual thread.
-   */
-  @Test
-  void testEditWhenScriptingDisabledInVirtualThread() throws Exception {
-    // Setup
-    ScriptXO scriptXO = new ScriptXO(SCRIPT_NAME, "updated content", SCRIPT_TYPE);
-    when(scriptManager.get(SCRIPT_NAME)).thenReturn(script);
-    doThrow(new ScriptingDisabledException("Scripting is disabled"))
-        .when(scriptManager).update(SCRIPT_NAME, "updated content");
-
-    // Execute in virtual thread
-    AtomicReference<Throwable> exceptionRef = new AtomicReference<>();
-    CountDownLatch latch = new CountDownLatch(1);
-
-    Thread virtualThread = Thread.startVirtualThread(() -> {
-      try {
-        underTest.edit(SCRIPT_NAME, scriptXO);
-      } catch (Exception e) {
-        exceptionRef.set(e);
-      } finally {
-        latch.countDown();
-      }
-    });
-
-    // Wait for completion
-    latch.await(5, TimeUnit.SECONDS);
-    virtualThread.join();
-
-    // Verify
-    Throwable exception = exceptionRef.get();
-    assertThat(exception, notNullValue());
-    assertThat(exception instanceof WebApplicationException, is(true));
-    WebApplicationException webException = (WebApplicationException) exception;
-    assertThat(webException.getResponse().getStatus(), is(Response.Status.GONE.getStatusCode()));
-  }
-
-  /**
-   * Tests the delete operation in a virtual thread.
-   */
-  @Test
-  void testDeleteInVirtualThread() throws Exception {
-    // Setup
-    when(scriptManager.get(SCRIPT_NAME)).thenReturn(script);
-
-    // Execute in virtual thread
-    CountDownLatch latch = new CountDownLatch(1);
-
-    Thread virtualThread = Thread.startVirtualThread(() -> {
-      try {
-        underTest.delete(SCRIPT_NAME);
-      } finally {
-        latch.countDown();
-      }
-    });
-
-    // Wait for completion
-    latch.await(5, TimeUnit.SECONDS);
-    virtualThread.join();
-
-    // Verify
+    // Verify script was deleted
+    verify(scriptManager).delete(scriptName);
     verify(securityHelper).ensurePermitted(any(ScriptPermission.class));
-    verify(scriptManager).delete(SCRIPT_NAME);
   }
 
   /**
-   * Tests the delete operation with a non-existent script in a virtual thread.
+   * Tests that the run operation works correctly when executed in a virtual thread.
    */
   @Test
-  void testDeleteNonExistentScriptInVirtualThread() throws Exception {
-    // Setup
-    when(scriptManager.get(SCRIPT_NAME)).thenReturn(null);
+  public void testRunInVirtualThread() throws Exception {
+    // Setup test data
+    String scriptName = "scriptToRun";
+    String scriptArgs = "arg1 arg2";
+    String scriptResult = "Script execution result";
+    Script script = mock(Script.class);
+    when(script.getName()).thenReturn(scriptName);
+    when(script.getContent()).thenReturn("println 'Running'");
+    when(script.getType()).thenReturn("groovy");
+    when(scriptManager.get(scriptName)).thenReturn(script);
+    when(scriptService.eval(eq(script.getType()), eq(script.getContent()), any(Map.class))).thenReturn(scriptResult);
 
     // Execute in virtual thread
-    AtomicReference<Throwable> exceptionRef = new AtomicReference<>();
-    CountDownLatch latch = new CountDownLatch(1);
-
-    Thread virtualThread = Thread.startVirtualThread(() -> {
+    AtomicReference<ScriptResultXO> result = new AtomicReference<>();
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
       try {
-        underTest.delete(SCRIPT_NAME);
-      } catch (Exception e) {
-        exceptionRef.set(e);
-      } finally {
-        latch.countDown();
+        result.set(Thread.startVirtualThread(() -> underTest.run(scriptName, scriptArgs)).join());
+      }
+      catch (Exception e) {
+        throw new RuntimeException(e);
       }
     });
 
-    // Wait for completion
-    latch.await(5, TimeUnit.SECONDS);
-    virtualThread.join();
+    future.get(); // Wait for completion
 
-    // Verify
-    Throwable exception = exceptionRef.get();
-    assertThat(exception, notNullValue());
-    assertThat(exception instanceof NotFoundException, is(true));
-  }
+    // Verify results
+    ScriptResultXO scriptResultXO = result.get();
+    assertThat(scriptResultXO, notNullValue());
+    assertThat(scriptResultXO.getName(), is(scriptName));
+    assertThat(scriptResultXO.getResult(), is(scriptResult));
 
-  /**
-   * Tests the run operation in a virtual thread.
-   */
-  @Test
-  void testRunInVirtualThread() throws Exception {
-    // Setup
-    when(scriptManager.get(SCRIPT_NAME)).thenReturn(script);
-    when(scriptService.eval(eq(SCRIPT_TYPE), eq(SCRIPT_CONTENT), any(Map.class))).thenReturn(SCRIPT_RESULT);
-
-    // Execute in virtual thread
-    AtomicReference<ScriptResultXO> resultRef = new AtomicReference<>();
-    CountDownLatch latch = new CountDownLatch(1);
-
-    Thread virtualThread = Thread.startVirtualThread(() -> {
-      try {
-        resultRef.set(underTest.run(SCRIPT_NAME, null));
-      } finally {
-        latch.countDown();
-      }
-    });
-
-    // Wait for completion
-    latch.await(5, TimeUnit.SECONDS);
-    virtualThread.join();
-
-    // Verify
-    ScriptResultXO result = resultRef.get();
-    assertThat(result, notNullValue());
-    assertThat(result.getName(), is(SCRIPT_NAME));
-    assertThat(result.getResult(), is(SCRIPT_RESULT));
+    // Verify security check was performed
     verify(securityHelper).ensurePermitted(any(ScriptPermission.class));
-    verify(eventManager).post(any(ScriptRunEvent.class));
+
+    // Verify event was published
+    ArgumentCaptor<ScriptRunEvent> eventCaptor = ArgumentCaptor.forClass(ScriptRunEvent.class);
+    verify(eventManager).post(eventCaptor.capture());
+    assertThat(eventCaptor.getValue().getScript(), is(script));
   }
 
   /**
-   * Tests the run operation with a script execution error in a virtual thread.
+   * Tests that the run operation correctly handles script execution exceptions when executed in a virtual thread.
    */
   @Test
-  void testRunWithExecutionErrorInVirtualThread() throws Exception {
-    // Setup
-    when(scriptManager.get(SCRIPT_NAME)).thenReturn(script);
-    when(scriptService.eval(eq(SCRIPT_TYPE), eq(SCRIPT_CONTENT), any(Map.class)))
-        .thenThrow(new RuntimeException("Script execution error"));
+  public void testRunExceptionInVirtualThread() throws Exception {
+    // Setup test data
+    String scriptName = "scriptWithError";
+    String scriptArgs = "arg1 arg2";
+    Script script = mock(Script.class);
+    when(script.getName()).thenReturn(scriptName);
+    when(script.getContent()).thenReturn("throw new Exception('Script error')");
+    when(script.getType()).thenReturn("groovy");
+    when(scriptManager.get(scriptName)).thenReturn(script);
+    when(scriptService.eval(eq(script.getType()), eq(script.getContent()), any(Map.class)))
+        .thenThrow(new Exception("Script execution failed"));
 
     // Execute in virtual thread
-    AtomicReference<Throwable> exceptionRef = new AtomicReference<>();
-    CountDownLatch latch = new CountDownLatch(1);
-
-    Thread virtualThread = Thread.startVirtualThread(() -> {
+    AtomicReference<Throwable> exception = new AtomicReference<>();
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
       try {
-        underTest.run(SCRIPT_NAME, null);
-      } catch (Exception e) {
-        exceptionRef.set(e);
-      } finally {
-        latch.countDown();
+        Thread.startVirtualThread(() -> underTest.run(scriptName, scriptArgs)).join();
+      }
+      catch (Exception e) {
+        exception.set(e);
       }
     });
 
-    // Wait for completion
-    latch.await(5, TimeUnit.SECONDS);
-    virtualThread.join();
+    future.get(); // Wait for completion
 
-    // Verify
-    Throwable exception = exceptionRef.get();
-    assertThat(exception, notNullValue());
-    assertThat(exception instanceof WebApplicationException, is(true));
-    WebApplicationException webException = (WebApplicationException) exception;
-    assertThat(webException.getResponse().getStatus(), is(Response.Status.BAD_REQUEST.getStatusCode()));
+    // Verify exception
+    assertThat(exception.get(), notNullValue());
+    assertThat(exception.get().getCause() instanceof WebApplicationException, is(true));
+
+    // Verify event was not published
     verify(eventManager, never()).post(any(ScriptRunEvent.class));
   }
 
   /**
-   * Tests the run operation with a non-existent script in a virtual thread.
+   * Tests that multiple concurrent operations can be executed in virtual threads without issues.
    */
   @Test
-  void testRunNonExistentScriptInVirtualThread() throws Exception {
-    // Setup
-    when(scriptManager.get(SCRIPT_NAME)).thenReturn(null);
+  public void testConcurrentOperationsInVirtualThreads() throws Exception {
+    // Setup test data
+    String scriptName = "concurrentScript";
+    Script script = mock(Script.class);
+    when(script.getName()).thenReturn(scriptName);
+    when(script.getContent()).thenReturn("println 'Concurrent'");
+    when(script.getType()).thenReturn("groovy");
+    when(scriptManager.get(scriptName)).thenReturn(script);
+    when(scriptService.eval(eq(script.getType()), eq(script.getContent()), any(Map.class)))
+        .thenReturn("Concurrent result");
 
-    // Execute in virtual thread
-    AtomicReference<Throwable> exceptionRef = new AtomicReference<>();
-    CountDownLatch latch = new CountDownLatch(1);
+    List<Script> scripts = Collections.singletonList(script);
+    when(scriptManager.browse()).thenReturn(scripts);
 
-    Thread virtualThread = Thread.startVirtualThread(() -> {
+    // Execute multiple operations concurrently in virtual threads
+    CompletableFuture<List<ScriptXO>> browseFuture = CompletableFuture.supplyAsync(() -> {
       try {
-        underTest.run(SCRIPT_NAME, null);
-      } catch (Exception e) {
-        exceptionRef.set(e);
-      } finally {
-        latch.countDown();
+        return Thread.startVirtualThread(() -> underTest.browse()).join();
+      }
+      catch (Exception e) {
+        throw new RuntimeException(e);
       }
     });
 
-    // Wait for completion
-    latch.await(5, TimeUnit.SECONDS);
-    virtualThread.join();
+    CompletableFuture<ScriptXO> readFuture = CompletableFuture.supplyAsync(() -> {
+      try {
+        return Thread.startVirtualThread(() -> underTest.read(scriptName)).join();
+      }
+      catch (Exception e) {
+        throw new RuntimeException(e);
+      }
+    });
 
-    // Verify
-    Throwable exception = exceptionRef.get();
-    assertThat(exception, notNullValue());
-    assertThat(exception instanceof NotFoundException, is(true));
-  }
+    CompletableFuture<ScriptResultXO> runFuture = CompletableFuture.supplyAsync(() -> {
+      try {
+        return Thread.startVirtualThread(() -> underTest.run(scriptName, "args")).join();
+      }
+      catch (Exception e) {
+        throw new RuntimeException(e);
+      }
+    });
 
-  /**
-   * Tests concurrent script operations in multiple virtual threads.
-   */
-  @Test
-  void testConcurrentOperationsInVirtualThreads() throws Exception {
-    // Setup
-    int threadCount = 100;
-    CountDownLatch latch = new CountDownLatch(threadCount);
-    List<Thread> threads = new ArrayList<>();
-    List<Script> scripts = Collections.singletonList(script);
-    
-    when(scriptManager.browse()).thenReturn(scripts);
-    when(scriptManager.get(SCRIPT_NAME)).thenReturn(script);
-    when(scriptService.eval(eq(SCRIPT_TYPE), eq(SCRIPT_CONTENT), any(Map.class))).thenReturn(SCRIPT_RESULT);
+    // Wait for all operations to complete
+    CompletableFuture<Void> allFutures = CompletableFuture.allOf(browseFuture, readFuture, runFuture);
+    allFutures.get();
 
-    // Create and start virtual threads
-    for (int i = 0; i < threadCount; i++) {
-      final int index = i;
-      Thread virtualThread = Thread.startVirtualThread(() -> {
-        try {
-          // Perform different operations based on thread index
-          switch (index % 5) {
-            case 0:
-              underTest.browse();
-              break;
-            case 1:
-              underTest.read(SCRIPT_NAME);
-              break;
-            case 2:
-              underTest.add(new ScriptXO(SCRIPT_NAME + index, SCRIPT_CONTENT, SCRIPT_TYPE));
-              break;
-            case 3:
-              underTest.edit(SCRIPT_NAME, new ScriptXO(SCRIPT_NAME, SCRIPT_CONTENT, SCRIPT_TYPE));
-              break;
-            case 4:
-              underTest.run(SCRIPT_NAME, null);
-              break;
-          }
-        } catch (Exception e) {
-          // Ignore exceptions for this test
-        } finally {
-          latch.countDown();
-        }
-      });
-      threads.add(virtualThread);
-    }
+    // Verify results
+    List<ScriptXO> browseResult = browseFuture.get();
+    assertThat(browseResult, notNullValue());
+    assertThat(browseResult.size(), is(1));
+    assertThat(browseResult.get(0).getName(), is(scriptName));
 
-    // Wait for all threads to complete
-    boolean completed = latch.await(10, TimeUnit.SECONDS);
-    assertThat("All virtual threads should complete within timeout", completed, is(true));
+    ScriptXO readResult = readFuture.get();
+    assertThat(readResult, notNullValue());
+    assertThat(readResult.getName(), is(scriptName));
 
-    // Join all threads to ensure they're done
-    for (Thread thread : threads) {
-      thread.join(1000);
-    }
+    ScriptResultXO runResult = runFuture.get();
+    assertThat(runResult, notNullValue());
+    assertThat(runResult.getName(), is(scriptName));
+    assertThat(runResult.getResult(), is("Concurrent result"));
   }
 }

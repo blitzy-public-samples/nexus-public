@@ -14,9 +14,8 @@ package org.sonatype.nexus.ui;
 
 import java.net.URL;
 import java.util.Enumeration;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -32,41 +31,34 @@ public class UiUtil
   private static final Logger log = Logger.getLogger(UiUtil.class.getName());
 
   /**
-   * Gets the path for a file in the classpath using Virtual Threads for improved performance.
+   * Gets the path for the specified file in the classpath.
+   * Uses Virtual Threads for I/O-bound operations to improve performance.
    *
    * @param filename the name of the file to find
    * @param space the ClassSpace to search in
    * @return the path to the requested file, or null if not found
    */
   public static String getPathForFile(final String filename, final ClassSpace space) {
-    if (filename == null || space == null) {
-      log.log(Level.WARNING, STR."Cannot search for file: filename=\{filename}, space=\{space}");
-      return null;
-    }
-
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
-        try {
-          Enumeration<URL> entries = space.findEntries("static", filename, true);
-          if (entries != null && entries.hasMoreElements()) {
+    log.log(Level.FINE, STR."Searching for file: \{filename} in classpath");
+    
+    // Use Virtual Threads for I/O-bound operations
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      Future<String> pathFuture = executor.submit(() -> {
+        try (var entries = space.findEntries("static", filename, true)) {
+          if (entries.hasMoreElements()) {
             URL url = entries.nextElement();
             String path = url.getPath();
-            log.log(Level.FINE, STR."Found file \{filename} at path \{path}");
+            log.log(Level.FINE, STR."Found file: \{filename} at path: \{path}");
             return path;
           }
           log.log(Level.FINE, STR."File not found: \{filename}");
           return null;
         }
-        catch (Exception e) {
-          log.log(Level.WARNING, STR."Error searching for file \{filename}: \{e.getMessage()}", e);
-          return null;
-        }
-      }, executor);
-
-      return future.join();
-    }
-    catch (Exception e) {
-      log.log(Level.SEVERE, STR."Failed to execute file search for \{filename}: \{e.getMessage()}", e);
+      });
+      
+      return pathFuture.get();
+    } catch (Exception e) {
+      log.log(Level.WARNING, STR."Error searching for file: \{filename}", e);
       return null;
     }
   }

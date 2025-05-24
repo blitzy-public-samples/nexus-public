@@ -12,231 +12,126 @@
  */
 package org.sonatype.nexus.pax.logging;
 
-import java.lang.StringTemplate;
-import java.lang.StringTemplate.Processor;
 import java.util.HashMap;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
- * A processor for Java 21 String Templates (JEP 430) that transforms template expressions
- * into structured log fields while maintaining human-readable formatting.
- * <p>
- * This processor extracts template fragments and expressions, produces a formatted message
- * string for traditional log displays, and builds a structured data map for consumption by
- * JSON log processors.
- * <p>
- * Example usage:
- * <pre>
- * // Define the processor
- * var LOG_STRUCT = StringTemplateLogProcessor.INSTANCE;
- * 
- * // Use in logging statements
- * logger.info(LOG_STRUCT."User \{user.id} performed action \{action} on resource \{resource.id}");
- * 
- * // Produces both a human-readable message and structured data with fields:
- * // - user.id
- * // - action
- * // - resource.id
- * </pre>
- * 
- * @since 3.60
+ * Processor for Java 21 String Templates in log messages.
+ * This class provides utilities for structured logging with string templates.
+ * It extracts template expressions into structured data that can be used for
+ * machine-readable logging formats like JSON.
+ *
+ * @since 3.60.0
  */
-public final class StringTemplateLogProcessor implements Processor<LogTemplateResult, RuntimeException> {
-
-  /**
-   * Singleton instance of the processor.
-   */
-  public static final StringTemplateLogProcessor INSTANCE = new StringTemplateLogProcessor();
-
-  private StringTemplateLogProcessor() {
-    // Singleton
+public class StringTemplateLogProcessor
+{
+  private static final boolean STRING_TEMPLATE_AVAILABLE;
+  
+  static {
+    boolean available = false;
+    try {
+      // Check if StringTemplate class exists (Java 21+)
+      Class.forName("java.lang.StringTemplate");
+      available = true;
+    }
+    catch (ClassNotFoundException e) {
+      // String templates not available in this Java version
+    }
+    STRING_TEMPLATE_AVAILABLE = available;
   }
-
+  
   /**
-   * Processes a StringTemplate into a structured log result containing both a formatted message
-   * and a map of extracted fields.
+   * Checks if String Templates are available in the current Java runtime.
    *
-   * @param template the string template to process
-   * @return a LogTemplateResult containing the formatted message and structured data
+   * @return true if String Templates are available, false otherwise
    */
-  @Override
-  public LogTemplateResult process(StringTemplate template) {
-    StringBuilder message = new StringBuilder();
-    Map<String, Object> structuredData = new LinkedHashMap<>();
+  public static boolean isStringTemplateAvailable() {
+    return STRING_TEMPLATE_AVAILABLE;
+  }
+  
+  /**
+   * Extracts structured data from a log message that might contain string template expressions.
+   * This is useful for creating structured log entries with key-value pairs.
+   *
+   * @param message the log message that might contain string template expressions
+   * @param args the arguments passed to the log message
+   * @return a map of extracted key-value pairs, or an empty map if no structured data is found
+   */
+  public static Map<String, Object> extractStructuredData(String message, Object... args) {
+    Map<String, Object> structuredData = new HashMap<>();
     
-    List<String> fragments = template.fragments();
-    List<Object> values = template.values();
-    
-    // Process the template fragments and values
-    Iterator<String> fragmentIterator = fragments.iterator();
-    int valueIndex = 0;
-    
-    // Always start with the first fragment
-    message.append(escapeFragment(fragmentIterator.next()));
-    
-    // Process each value and its corresponding fragment
-    for (Object value : values) {
-      // Extract field name from the template fragment
-      String fieldName = extractFieldName(template, valueIndex);
-      
-      // Add the value to the structured data
-      addToStructuredData(structuredData, fieldName, value);
-      
-      // Append the value to the message
-      message.append(formatValue(value));
-      
-      // Append the next fragment if available
-      if (fragmentIterator.hasNext()) {
-        message.append(escapeFragment(fragmentIterator.next()));
-      }
-      
-      valueIndex++;
+    if (!STRING_TEMPLATE_AVAILABLE || args == null || args.length == 0) {
+      return structuredData;
     }
     
-    return new LogTemplateResult(message.toString(), structuredData);
-  }
-
-  /**
-   * Extracts the field name from a template expression.
-   * <p>
-   * This attempts to determine the field name by analyzing the template expression.
-   * If the expression is a simple variable reference, that name is used.
-   * For more complex expressions, a best-effort approach is used to extract a meaningful name.
-   *
-   * @param template the string template
-   * @param valueIndex the index of the value in the template
-   * @return the extracted field name
-   */
-  private String extractFieldName(StringTemplate template, int valueIndex) {
-    // Get the fragments surrounding the value
-    List<String> fragments = template.fragments();
-    if (valueIndex >= fragments.size() - 1) {
-      return "field" + valueIndex; // Fallback if we can't determine the name
-    }
-    
-    // Look for the expression in the previous fragment
-    String prevFragment = fragments.get(valueIndex);
-    int exprStart = prevFragment.lastIndexOf("\\{");
-    if (exprStart >= 0) {
-      // Extract the expression name from the fragment
-      String expr = prevFragment.substring(exprStart + 2).trim();
-      
-      // Handle common expression patterns
-      if (expr.contains(".")) {
-        // For expressions like "user.name", use the full path
-        return expr;
-      } else if (expr.contains("[")) {
-        // For array/map access like "users[0]", use the variable name
-        return expr.substring(0, expr.indexOf('['));
-      } else {
-        // For simple variables, use the variable name
-        return expr;
+    try {
+      // Check if any of the arguments might be a string template
+      for (Object arg : args) {
+        if (arg != null && arg.getClass().getName().startsWith("java.lang.StringTemplate")) {
+          // Use reflection to extract template fragments and values
+          Class<?> stringTemplateClass = Class.forName("java.lang.StringTemplate");
+          if (stringTemplateClass.isInstance(arg)) {
+            // Get the fragments and values methods
+            java.lang.reflect.Method fragmentsMethod = stringTemplateClass.getMethod("fragments");
+            java.lang.reflect.Method valuesMethod = stringTemplateClass.getMethod("values");
+            
+            // Extract fragments and values
+            Object fragments = fragmentsMethod.invoke(arg);
+            Object values = valuesMethod.invoke(arg);
+            
+            if (fragments instanceof String[] && values instanceof Object[]) {
+              String[] fragmentsArray = (String[]) fragments;
+              Object[] valuesArray = (Object[]) values;
+              
+              // Extract variable names from fragments and pair with values
+              for (int i = 0; i < valuesArray.length; i++) {
+                if (i < fragmentsArray.length - 1) {
+                  String fragment = fragmentsArray[i];
+                  Object value = valuesArray[i];
+                  
+                  // Try to extract variable name from the fragment
+                  String varName = extractVariableName(fragment);
+                  if (varName != null && !varName.isEmpty()) {
+                    structuredData.put(varName, value);
+                  }
+                  else {
+                    // Use a generic name if we can't extract a variable name
+                    structuredData.put("param" + i, value);
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
+    catch (Exception e) {
+      // Ignore any errors in structured data extraction
+    }
     
-    // Fallback to a generic field name
-    return "field" + valueIndex;
+    return structuredData;
   }
-
+  
   /**
-   * Adds a value to the structured data map, handling nested structures.
+   * Attempts to extract a variable name from a string template fragment.
+   * This is a heuristic approach and may not work for all cases.
    *
-   * @param data the structured data map
-   * @param fieldName the field name
-   * @param value the value to add
+   * @param fragment the string template fragment
+   * @return the extracted variable name, or null if none could be found
    */
-  @SuppressWarnings("unchecked")
-  private void addToStructuredData(Map<String, Object> data, String fieldName, Object value) {
-    if (fieldName.contains(".")) {
-      // Handle nested fields (e.g., "user.name")
-      String[] parts = fieldName.split("\\.", 2);
-      String rootField = parts[0];
-      String nestedField = parts[1];
-      
-      // Create or get the nested map
-      Map<String, Object> nestedMap = (Map<String, Object>) data.computeIfAbsent(
-          rootField, k -> new LinkedHashMap<String, Object>());
-      
-      // Recursively add to the nested map
-      addToStructuredData(nestedMap, nestedField, value);
-    } else {
-      // Simple field
-      data.put(fieldName, value);
+  private static String extractVariableName(String fragment) {
+    if (fragment == null || fragment.isEmpty()) {
+      return null;
     }
-  }
-
-  /**
-   * Formats a value for inclusion in the log message.
-   *
-   * @param value the value to format
-   * @return the formatted string representation
-   */
-  private String formatValue(Object value) {
-    if (value == null) {
-      return "null";
-    } else if (value instanceof String) {
-      return (String) value;
-    } else if (value instanceof LogTemplateResult) {
-      // Handle nested template results
-      return ((LogTemplateResult) value).getMessage();
-    } else {
-      return String.valueOf(value);
+    
+    // Look for common patterns in string template usage
+    // For example: "User {username} logged in" - extract "username"
+    int lastSpace = fragment.lastIndexOf(' ');
+    if (lastSpace >= 0 && lastSpace < fragment.length() - 1) {
+      return fragment.substring(lastSpace + 1);
     }
-  }
-
-  /**
-   * Escapes special characters in template fragments for safe logging.
-   *
-   * @param fragment the template fragment
-   * @return the escaped fragment
-   */
-  private String escapeFragment(String fragment) {
-    // Replace any remaining template expression markers
-    return fragment.replace("\\{", "{");
-  }
-
-  /**
-   * Result class that holds both the formatted message and structured data.
-   */
-  public static final class LogTemplateResult {
-    private final String message;
-    private final Map<String, Object> data;
-
-    /**
-     * Creates a new log template result.
-     *
-     * @param message the formatted message
-     * @param data the structured data
-     */
-    public LogTemplateResult(String message, Map<String, Object> data) {
-      this.message = message;
-      this.data = new HashMap<>(data);
-    }
-
-    /**
-     * Gets the formatted message.
-     *
-     * @return the message
-     */
-    public String getMessage() {
-      return message;
-    }
-
-    /**
-     * Gets the structured data.
-     *
-     * @return the data
-     */
-    public Map<String, Object> getData() {
-      return data;
-    }
-
-    @Override
-    public String toString() {
-      return message;
-    }
+    
+    // If no space found, try to use the whole fragment as the name
+    return fragment;
   }
 }

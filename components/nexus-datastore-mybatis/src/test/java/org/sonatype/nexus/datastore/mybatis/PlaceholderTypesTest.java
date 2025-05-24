@@ -15,7 +15,9 @@ package org.sonatype.nexus.datastore.mybatis;
 import org.apache.ibatis.session.Configuration;
 import org.junit.jupiter.api.Test;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.sonatype.nexus.datastore.mybatis.PlaceholderTypes.configurePlaceholderTypes;
 
@@ -31,9 +33,9 @@ public class PlaceholderTypesTest
 
     configurePlaceholderTypes(config);
 
-    assertThat(config.getVariables().get("UUID_TYPE")).isEqualTo("UUID");
-    assertThat(config.getVariables().get("JSON_TYPE")).isEqualTo("JSON");
-    assertThat(config.getVariables().get("BINARY_TYPE")).isEqualTo("BYTEA");
+    assertThat(config.getVariables().get("UUID_TYPE"), is("UUID"));
+    assertThat(config.getVariables().get("JSON_TYPE"), is("JSON"));
+    assertThat(config.getVariables().get("BINARY_TYPE"), is("BYTEA"));
   }
 
   @Test
@@ -43,9 +45,9 @@ public class PlaceholderTypesTest
 
     configurePlaceholderTypes(config);
 
-    assertThat(config.getVariables().get("UUID_TYPE")).isEqualTo("UUID");
-    assertThat(config.getVariables().get("JSON_TYPE")).isEqualTo("JSONB");
-    assertThat(config.getVariables().get("BINARY_TYPE")).isEqualTo("BYTEA");
+    assertThat(config.getVariables().get("UUID_TYPE"), is("UUID"));
+    assertThat(config.getVariables().get("JSON_TYPE"), is("JSONB"));
+    assertThat(config.getVariables().get("BINARY_TYPE"), is("BYTEA"));
   }
 
   @Test
@@ -59,9 +61,9 @@ public class PlaceholderTypesTest
 
     configurePlaceholderTypes(config);
 
-    assertThat(config.getVariables().get("UUID_TYPE")).isEqualTo("CHARACTER VARYING (36)");
-    assertThat(config.getVariables().get("JSON_TYPE")).isEqualTo("CLOB");
-    assertThat(config.getVariables().get("BINARY_TYPE")).isEqualTo("BLOB");
+    assertThat(config.getVariables().get("UUID_TYPE"), is("CHARACTER VARYING (36)"));
+    assertThat(config.getVariables().get("JSON_TYPE"), is("CLOB"));
+    assertThat(config.getVariables().get("BINARY_TYPE"), is("BLOB"));
   }
 
   @Test
@@ -73,7 +75,7 @@ public class PlaceholderTypesTest
       configurePlaceholderTypes(config);
     });
     
-    assertThat(exception.getMessage()).contains("No database type configured for UUID_TYPE.MyDB");
+    assertThat(exception.getMessage(), containsString("No database type configured for UUID_TYPE.MyDB"));
   }
 
   @Test
@@ -118,7 +120,7 @@ public class PlaceholderTypesTest
       configurePlaceholderTypes(config);
     });
     
-    assertThat(exception.getMessage()).contains("Invalid database type " + type + " configured for UUID_TYPE.MyDB");
+    assertThat(exception.getMessage(), containsString("Invalid database type " + type + " configured for UUID_TYPE.MyDB"));
   }
 
   private void assertTypeIsValid(Configuration config, String type) {

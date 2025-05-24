@@ -12,10 +12,10 @@
  */
 package org.sonatype.nexus.internal.email.rest;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.Path;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.Path;
 
 import org.sonatype.nexus.email.EmailManager;
 
@@ -23,12 +23,11 @@ import static org.sonatype.nexus.internal.email.rest.EmailConfigurationApiResour
 import static org.sonatype.nexus.rest.APIConstants.V1_API_PREFIX;
 
 /**
- * v1 endpoint for email configuration REST API.
+ * v1 endpoint for email configuration REST API
  * 
- * This implementation leverages Java 21 Virtual Threads for improved performance in handling
- * email configuration operations. Virtual Threads provide efficient non-blocking I/O operations
- * for email verification and configuration management, enabling higher throughput with minimal
- * resource consumption.
+ * This implementation leverages Java 21 features including Virtual Threads for improved
+ * performance in I/O-bound operations such as email verification. The parent class handles
+ * the actual implementation details including non-blocking operations with Virtual Threads.
  *
  * @since 3.25
  */
@@ -40,6 +39,12 @@ public class EmailConfigurationApiResourceV1
 {
   static final String RESOURCE_URI = V1_API_PREFIX + "/email";
 
+  /**
+   * Constructor that initializes the resource with an EmailManager.
+   * 
+   * @param emailManager The email manager service that handles email operations using Virtual Threads
+   *                    for non-blocking I/O operations in Java 21
+   */
   @Inject
   public EmailConfigurationApiResourceV1(final EmailManager emailManager) {
     super(emailManager);

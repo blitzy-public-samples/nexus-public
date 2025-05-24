@@ -17,24 +17,55 @@
 
   <modelVersion>4.0.0</modelVersion>
 
-  <!-- Parent POM information with String Template placeholders -->
   <parent>
     <groupId>\{parentGroupId}</groupId>
     <artifactId>\{parentArtifactId}</artifactId>
     <version>\{parentVersion}</version>
   </parent>
 
-  <!-- Artifact coordinates with String Template placeholders -->
   <groupId>\{groupId}</groupId>
   <artifactId>\{artifactId}</artifactId>
   <version>\{version}</version>
+  <packaging>\{packaging}</packaging>
   
-  <!-- Dependencies section with String Template placeholders -->
+  <name>\{name}</name>
+  <description>\{description}</description>
+  
+  <properties>
+    <java.version>\{javaVersion}</java.version>
+    <project.build.sourceEncoding>\{encoding}</project.build.sourceEncoding>
+  </properties>
+  
   <dependencies>
     <dependency>
       <groupId>\{dependencyGroupId}</groupId>
       <artifactId>\{dependencyArtifactId}</artifactId>
       <version>\{dependencyVersion}</version>
     </dependency>
+    <!-- Test dependencies -->
+    <dependency>
+      <groupId>\{testDependencyGroupId}</groupId>
+      <artifactId>\{testDependencyArtifactId}</artifactId>
+      <version>\{testDependencyVersion}</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
+  
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>\{compilerPluginVersion}</version>
+        <configuration>
+          <source>\{javaVersion}</source>
+          <target>\{javaVersion}</target>
+          <release>\{javaVersion}</release>
+          <compilerArgs>
+            <arg>--enable-preview</arg>
+          </compilerArgs>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 </project>

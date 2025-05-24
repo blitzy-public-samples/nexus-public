@@ -11,6 +11,7 @@
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  */
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -21,12 +22,10 @@ import org.sonatype.nexus.common.entity.EntityId;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.mock;
 
 /**
- * Tests for Java 21 Record Pattern matching with repository configuration objects.
+ * Tests for Java 21 Record Pattern matching with repository configuration data structures.
  * 
  * @since 3.60
  */
@@ -34,85 +33,112 @@ public class RecordPatternTest
     extends TestSupport
 {
   /**
-   * Simple record representing basic repository configuration.
+   * Simple record representing repository configuration attributes
    */
-  record RepositoryConfig(String name, String recipeName, boolean online, EntityId routingRuleId) {}
+  record ConfigAttributes(String key, Map<String, Object> values) {}
 
   /**
-   * Record with nested attributes for testing nested pattern matching.
+   * Record representing a repository configuration
    */
-  record NestedConfig(String name, AttributesConfig attributes) {}
+  record RepoConfig(String name, String recipeName, boolean online, EntityId routingRuleId) {}
 
   /**
-   * Record representing configuration attributes.
+   * Nested record representing a complete repository configuration with attributes
    */
-  record AttributesConfig(Map<String, Object> storage, Map<String, Object> proxy) {}
+  record CompleteRepoConfig(RepoConfig config, List<ConfigAttributes> attributes) {}
 
   /**
-   * Record with generic type for testing type inference.
+   * Generic record for testing parameterized record patterns
    */
-  record GenericConfig<T>(String name, T value) {}
+  record ConfigWrapper<T>(T value, String description) {}
 
   /**
-   * Tests basic record pattern matching with instanceof.
+   * Tests basic record pattern matching with instanceof operator.
    */
   @Test
   public void testBasicRecordPatternMatching() {
-    EntityId mockId = mock(EntityId.class);
-    Object config = new RepositoryConfig("maven-central", "maven2-proxy", true, mockId);
+    // Create a repository configuration record
+    EntityId mockEntityId = mock(EntityId.class);
+    RepoConfig repoConfig = new RepoConfig("test-repo", "maven2", true, mockEntityId);
     
-    // Traditional instanceof approach (pre-Java 21)
-    if (config instanceof RepositoryConfig) {
-      RepositoryConfig rc = (RepositoryConfig) config;
-      assertEquals("maven-central", rc.name());
-      assertEquals("maven2-proxy", rc.recipeName());
-      assertTrue(rc.online());
-      assertThat(rc.routingRuleId(), is(mockId));
+    // Test pattern matching with instanceof
+    if (repoConfig instanceof RepoConfig(String name, String recipe, boolean isOnline, EntityId id)) {
+      // Pattern variables are now in scope and can be used
+      assertThat(name, is("test-repo"));
+      assertThat(recipe, is("maven2"));
+      assertThat(isOnline, is(true));
+      assertThat(id, is(mockEntityId));
     }
-    
-    // Java 21 record pattern matching with instanceof
-    if (config instanceof RepositoryConfig(String name, String recipe, boolean online, EntityId id)) {
-      assertEquals("maven-central", name);
-      assertEquals("maven2-proxy", recipe);
-      assertTrue(online);
-      assertThat(id, is(mockId));
+    else {
+      // This should never happen
+      fail("Record pattern matching failed");
     }
   }
 
   /**
-   * Tests nested record pattern matching.
+   * Tests record pattern matching with var for type inference.
+   */
+  @Test
+  public void testRecordPatternMatchingWithVar() {
+    EntityId mockEntityId = mock(EntityId.class);
+    RepoConfig repoConfig = new RepoConfig("test-repo", "maven2", true, mockEntityId);
+    
+    // Test pattern matching with var for type inference
+    if (repoConfig instanceof RepoConfig(var name, var recipe, var isOnline, var id)) {
+      // The compiler infers the correct types for the pattern variables
+      assertThat(name, is("test-repo"));
+      assertThat(recipe, is("maven2"));
+      assertThat(isOnline, is(true));
+      assertThat(id, is(mockEntityId));
+    }
+    else {
+      fail("Record pattern matching with var failed");
+    }
+  }
+
+  /**
+   * Tests nested record pattern matching for complex configuration structures.
    */
   @Test
   public void testNestedRecordPatternMatching() {
-    Map<String, Object> storageAttrs = Map.of("blobStoreName", "default", "strictContentTypeValidation", true);
-    Map<String, Object> proxyAttrs = Map.of("remoteUrl", "https://repo.maven.apache.org/maven2/", "contentMaxAge", 1440);
+    EntityId mockEntityId = mock(EntityId.class);
+    RepoConfig repoConfig = new RepoConfig("test-repo", "maven2", true, mockEntityId);
     
-    AttributesConfig attrs = new AttributesConfig(storageAttrs, proxyAttrs);
-    Object config = new NestedConfig("maven-central", attrs);
+    ConfigAttributes storageAttrs = new ConfigAttributes("storage", 
+        Map.of("blobStoreName", "default", "strictContentTypeValidation", true));
+    ConfigAttributes proxyAttrs = new ConfigAttributes("proxy", 
+        Map.of("remoteUrl", "https://repo.maven.apache.org/maven2/"));
     
-    // Java 21 nested record pattern matching
-    if (config instanceof NestedConfig(String name, AttributesConfig(Map<String, Object> storage, Map<String, Object> proxy))) {
-      assertEquals("maven-central", name);
-      assertEquals("default", storage.get("blobStoreName"));
-      assertEquals(true, storage.get("strictContentTypeValidation"));
-      assertEquals("https://repo.maven.apache.org/maven2/", proxy.get("remoteUrl"));
-      assertEquals(1440, proxy.get("contentMaxAge"));
+    CompleteRepoConfig completeConfig = new CompleteRepoConfig(repoConfig, List.of(storageAttrs, proxyAttrs));
+    
+    // Test nested pattern matching
+    if (completeConfig instanceof CompleteRepoConfig(RepoConfig(var name, var recipe, var isOnline, var id), var attrsList)) {
+      // We can access both the outer and inner record components
+      assertThat(name, is("test-repo"));
+      assertThat(recipe, is("maven2"));
+      assertThat(isOnline, is(true));
+      assertThat(id, is(mockEntityId));
+      assertThat(attrsList.size(), is(2));
+      
+      // We can further process the attributes list
+      Optional<ConfigAttributes> storageConfig = attrsList.stream()
+          .filter(attr -> attr.key().equals("storage"))
+          .findFirst();
+      
+      assertThat(storageConfig.isPresent(), is(true));
+      
+      // We can use pattern matching on the found attribute
+      if (storageConfig.isPresent() && storageConfig.get() instanceof ConfigAttributes(var key, var values)) {
+        assertThat(key, is("storage"));
+        assertThat(values.get("blobStoreName"), is("default"));
+        assertThat((Boolean) values.get("strictContentTypeValidation"), is(true));
+      }
+      else {
+        fail("Storage attributes not found or pattern matching failed");
+      }
     }
-  }
-
-  /**
-   * Tests record pattern matching with type inference using var.
-   */
-  @Test
-  public void testRecordPatternMatchingWithTypeInference() {
-    Object config = new RepositoryConfig("maven-central", "maven2-proxy", true, mock(EntityId.class));
-    
-    // Java 21 record pattern matching with var for type inference
-    if (config instanceof RepositoryConfig(var name, var recipe, var online, var id)) {
-      assertEquals("maven-central", name);
-      assertEquals("maven2-proxy", recipe);
-      assertTrue(online);
-      assertThat(id, is(notNullValue()));
+    else {
+      fail("Nested record pattern matching failed");
     }
   }
 
@@ -121,88 +147,85 @@ public class RecordPatternTest
    */
   @Test
   public void testRecordPatternMatchingInSwitch() {
-    EntityId mockId = mock(EntityId.class);
-    Object config = new RepositoryConfig("maven-central", "maven2-proxy", true, mockId);
+    EntityId mockEntityId = mock(EntityId.class);
+    RepoConfig mavenConfig = new RepoConfig("maven-central", "maven2", true, mockEntityId);
+    RepoConfig npmConfig = new RepoConfig("npm-registry", "npm", false, mockEntityId);
     
-    // Java 21 record pattern matching in switch expression
-    String result = switch (config) {
-      case RepositoryConfig(String name, String recipe, boolean online, EntityId id) ->
-          name + ":" + recipe + ":" + (online ? "online" : "offline");
-      default -> "unknown";
-    };
-    
-    assertEquals("maven-central:maven2-proxy:online", result);
-  }
-
-  /**
-   * Tests record pattern matching with conditional guards.
-   */
-  @Test
-  public void testRecordPatternMatchingWithGuards() {
-    EntityId mockId = mock(EntityId.class);
-    Object config1 = new RepositoryConfig("maven-central", "maven2-proxy", true, mockId);
-    Object config2 = new RepositoryConfig("maven-releases", "maven2-hosted", false, mockId);
-    
-    // Java 21 record pattern matching with guards in switch
-    String result1 = switch (config1) {
-      case RepositoryConfig(String name, String recipe, boolean online, EntityId id) when online ->
-          name + " is online";
-      case RepositoryConfig(String name, String recipe, boolean online, EntityId id) ->
-          name + " is offline";
-      default -> "unknown";
-    };
-    
-    String result2 = switch (config2) {
-      case RepositoryConfig(String name, String recipe, boolean online, EntityId id) when online ->
-          name + " is online";
-      case RepositoryConfig(String name, String recipe, boolean online, EntityId id) ->
-          name + " is offline";
-      default -> "unknown";
-    };
-    
-    assertEquals("maven-central is online", result1);
-    assertEquals("maven-releases is offline", result2);
-  }
-
-  /**
-   * Tests generic record pattern matching with type inference.
-   */
-  @Test
-  public void testGenericRecordPatternMatching() {
-    GenericConfig<Integer> intConfig = new GenericConfig<>("count", 42);
-    GenericConfig<String> strConfig = new GenericConfig<>("message", "Hello");
-    
-    // Java 21 generic record pattern matching with type inference
-    processGenericConfig(intConfig);
-    processGenericConfig(strConfig);
-  }
-  
-  private <T> void processGenericConfig(Object config) {
-    if (config instanceof GenericConfig<T>(String name, T value)) {
-      if (value instanceof Integer i) {
-        assertEquals("count", name);
-        assertEquals(Integer.valueOf(42), i);
-      } else if (value instanceof String s) {
-        assertEquals("message", name);
-        assertEquals("Hello", s);
+    // Test pattern matching in switch expressions
+    for (RepoConfig config : List.of(mavenConfig, npmConfig)) {
+      String result = switch (config) {
+        case RepoConfig(var name, "maven2", true, var id) -> 
+            "Online Maven repository: " + name;
+        case RepoConfig(var name, "npm", false, var id) -> 
+            "Offline NPM repository: " + name;
+        default -> 
+            "Unknown repository configuration";
+      };
+      
+      if (config == mavenConfig) {
+        assertThat(result, is("Online Maven repository: maven-central"));
+      }
+      else if (config == npmConfig) {
+        assertThat(result, is("Offline NPM repository: npm-registry"));
       }
     }
   }
 
   /**
-   * Tests record pattern matching with Optional.
+   * Tests record pattern matching with parameterized records.
    */
   @Test
-  public void testRecordPatternMatchingWithOptional() {
-    Optional<RepositoryConfig> optConfig = Optional.of(
-        new RepositoryConfig("maven-central", "maven2-proxy", true, mock(EntityId.class)));
+  public void testParameterizedRecordPatternMatching() {
+    EntityId mockEntityId = mock(EntityId.class);
+    RepoConfig repoConfig = new RepoConfig("test-repo", "maven2", true, mockEntityId);
+    ConfigWrapper<RepoConfig> wrapper = new ConfigWrapper<>(repoConfig, "Maven repository configuration");
     
-    // Java 21 record pattern matching with Optional
-    if (optConfig.isPresent() && optConfig.get() instanceof RepositoryConfig(var name, var recipe, var online, var id)) {
-      assertEquals("maven-central", name);
-      assertEquals("maven2-proxy", recipe);
-      assertTrue(online);
-      assertThat(id, is(notNullValue()));
+    // Test pattern matching with parameterized records
+    if (wrapper instanceof ConfigWrapper<RepoConfig>(var config, var description)) {
+      assertThat(description, is("Maven repository configuration"));
+      assertThat(config, is(notNullValue()));
+      
+      // We can further pattern match on the extracted config
+      if (config instanceof RepoConfig(var name, var recipe, var isOnline, var id)) {
+        assertThat(name, is("test-repo"));
+        assertThat(recipe, is("maven2"));
+        assertThat(isOnline, is(true));
+        assertThat(id, is(mockEntityId));
+      }
+      else {
+        fail("Nested pattern matching on parameterized record failed");
+      }
+    }
+    else {
+      fail("Parameterized record pattern matching failed");
+    }
+  }
+
+  /**
+   * Tests record pattern matching with conditional expressions (guards).
+   */
+  @Test
+  public void testRecordPatternMatchingWithGuards() {
+    EntityId mockEntityId = mock(EntityId.class);
+    RepoConfig repoConfig1 = new RepoConfig("maven-central", "maven2", true, mockEntityId);
+    RepoConfig repoConfig2 = new RepoConfig("maven-snapshots", "maven2", true, mockEntityId);
+    
+    for (RepoConfig config : List.of(repoConfig1, repoConfig2)) {
+      String result = switch (config) {
+        case RepoConfig(var name, var recipe, var isOnline, var id) when name.contains("central") -> 
+            "Central repository: " + name;
+        case RepoConfig(var name, var recipe, var isOnline, var id) when name.contains("snapshots") -> 
+            "Snapshots repository: " + name;
+        default -> 
+            "Other repository: " + config.name();
+      };
+      
+      if (config == repoConfig1) {
+        assertThat(result, is("Central repository: maven-central"));
+      }
+      else if (config == repoConfig2) {
+        assertThat(result, is("Snapshots repository: maven-snapshots"));
+      }
     }
   }
 }

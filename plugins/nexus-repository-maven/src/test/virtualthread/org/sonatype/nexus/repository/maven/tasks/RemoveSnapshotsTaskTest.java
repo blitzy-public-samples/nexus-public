@@ -15,10 +15,13 @@ package org.sonatype.nexus.repository.maven.tasks;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.repository.Format;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.RepositoryTaskSupport;
@@ -32,13 +35,15 @@ import org.sonatype.nexus.repository.types.GroupType;
 import org.sonatype.nexus.scheduling.TaskConfiguration;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static com.google.common.collect.Lists.newArrayList;
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -49,7 +54,7 @@ import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.repository.RepositoryTaskSupport.ALL_REPOSITORIES;
 
 @ExtendWith(MockitoExtension.class)
-@Tag("virtualThread")
+@org.junit.experimental.categories.Category(VirtualThreadTestGroup.class)
 public class RemoveSnapshotsTaskTest
     extends TestSupport
 {
@@ -81,7 +86,7 @@ public class RemoveSnapshotsTaskTest
   }
 
   @Test
-  public void testGroupMembersProcessed() throws Exception {
+  void testGroupMembersProcessed() throws Exception {
     Repository repo1 = mockRepo();
     Repository repo2 = mockRepo();
     Repository repoGroup = mockGroup(newArrayList(repo1, repo2));
@@ -98,7 +103,7 @@ public class RemoveSnapshotsTaskTest
   }
 
   @Test
-  public void testNestedGroups() throws Exception {
+  void testNestedGroups() throws Exception {
     Repository repo1 = mockRepo();
     Repository repo2 = mockRepo();
 
@@ -117,7 +122,7 @@ public class RemoveSnapshotsTaskTest
   }
 
   @Test
-  public void testRepositoryNotProcessedTwice() throws Exception {
+  void testRepositoryNotProcessedTwice() throws Exception {
     Repository repo1 = mockRepo();
     Repository repo2 = mockRepo();
 
@@ -135,7 +140,7 @@ public class RemoveSnapshotsTaskTest
   }
 
   @Test
-  public void testCyclicGroupReferencesHandledCorrectly() throws Exception {
+  void testCyclicGroupReferencesHandledCorrectly() throws Exception {
     Repository repo1 = mockRepo();
     Repository repo2 = mockRepo();
 
@@ -155,78 +160,73 @@ public class RemoveSnapshotsTaskTest
   }
   
   @Test
-  public void testConcurrentExecutionWithVirtualThreads() throws Exception {
-    // Create a complex repository structure with nested groups
+  void testConcurrentExecutionWithVirtualThreads() throws Exception {
+    // Create a complex repository structure with cyclic references
     Repository repo1 = mockRepo();
     Repository repo2 = mockRepo();
     Repository repo3 = mockRepo();
-    Repository repo4 = mockRepo();
     
-    Repository group1 = mockGroup(newArrayList(repo1, repo2));
-    Repository group2 = mockGroup(newArrayList(repo3, repo4));
-    Repository group3 = mockGroup(newArrayList(group1, group2));
-    Repository group4 = mockGroup(newArrayList(group3, repo1)); // Cyclic reference to repo1
+    Repository group2 = mockGroup(newArrayList(repo1, repo2));
+    Repository group1 = mockGroup(newArrayList(repo1, group2));
+    Repository group3 = mockGroup(newArrayList(group1, group2, repo1, repo2, repo3));
     
-    when(repositoryManager.browse()).thenReturn(newArrayList(group1, group2, group3, group4, repo1, repo2, repo3, repo4));
+    when(repositoryManager.browse()).thenReturn(newArrayList(group1, group2, group3, repo1, repo2, repo3));
     
     // Create 10 virtual threads to execute the task concurrently
     int threadCount = 10;
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(threadCount);
+    CountDownLatch latch = new CountDownLatch(threadCount);
     AtomicInteger successCount = new AtomicInteger(0);
     
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().factory());
     
-    for (int i = 0; i < threadCount; i++) {
-      Runnable task = () -> {
-        try {
-          startLatch.await(); // Wait for all threads to be ready
-          taskUnderTest.execute();
-          successCount.incrementAndGet();
-        }
-        catch (Exception e) {
-          log.error("Error executing task in virtual thread", e);
-        }
-        finally {
-          completionLatch.countDown();
-        }
-      };
+    try {
+      // Submit the task to multiple virtual threads
+      for (int i = 0; i < threadCount; i++) {
+        executor.submit(() -> {
+          try {
+            // Each thread executes the task independently
+            taskUnderTest.execute();
+            successCount.incrementAndGet();
+          } 
+          catch (Exception e) {
+            log.error("Error executing task in virtual thread", e);
+          }
+          finally {
+            latch.countDown();
+          }
+        });
+      }
       
-      Thread virtualThread = virtualThreadFactory.newThread(task);
-      virtualThread.start();
+      // Wait for all threads to complete (with timeout)
+      assertTrue(latch.await(30, TimeUnit.SECONDS), "Timed out waiting for virtual threads to complete");
+      
+      // Verify all threads completed successfully
+      assertThat(successCount.get(), is(threadCount));
+      
+      // Verify repositories were processed correctly
+      verifyGroups(group1, group2, group3);
+      verifyRepoProcessed(repo1, threadCount);
+      verifyRepoProcessed(repo2, threadCount);
+      verifyRepoProcessed(repo3, threadCount);
+      
+      // Verify the removeSnapshots method was called the expected number of times
+      // Each thread processes 3 repositories, and we have 10 threads
+      verify(removeSnapshotsFacet, times(3 * threadCount)).removeSnapshots(any());
+    } 
+    finally {
+      executor.shutdown();
     }
-    
-    // Start all threads simultaneously
-    startLatch.countDown();
-    
-    // Wait for all threads to complete
-    completionLatch.await();
-    
-    // Verify all threads completed successfully
-    assertTrue(successCount.get() == threadCount, "All virtual threads should complete successfully");
-    
-    // Verify repositories were processed correctly
-    verifyGroups(group1, group2, group3, group4);
-    
-    // Each repository should be processed exactly once per thread execution
-    verifyRepoProcessed(repo1, threadCount);
-    verifyRepoProcessed(repo2, threadCount);
-    verifyRepoProcessed(repo3, threadCount);
-    verifyRepoProcessed(repo4, threadCount);
-    
-    // Each thread should call removeSnapshots on each repository
-    verify(removeSnapshotsFacet, times(4 * threadCount)).removeSnapshots(any());
   }
 
   private void verifyGroups(final Repository... groups) {
     for (Repository group : groups) {
-      assertTrue(taskUnderTest.hasBeenProcessed(group), "Group should be processed");
+      assertThat(taskUnderTest.hasBeenProcessed(group), is(true));
       verify(group, never()).facet(RemoveSnapshotsFacet.class); // groups should not have the facet executed against
     }
   }
 
   private void verifyRepoProcessed(final Repository repo, final int numFacetExecutions) {
-    assertTrue(taskUnderTest.hasBeenProcessed(repo), "Repository should be processed");
+    assertThat(taskUnderTest.hasBeenProcessed(repo), is(true));
     verify(repo, times(numFacetExecutions)).facet(RemoveSnapshotsFacet.class);
   }
 

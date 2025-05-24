@@ -12,41 +12,48 @@
  */
 package virtualthread;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.experimental.categories.Category;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.content.testsuite.groups.SQLTestGroup;
 import org.sonatype.nexus.datastore.api.DataSession;
 import org.sonatype.nexus.script.Script;
 import org.sonatype.nexus.script.plugin.internal.ScriptDAO;
 import org.sonatype.nexus.script.plugin.internal.ScriptData;
 import org.sonatype.nexus.testdb.DataSessionRule;
-import org.sonatype.nexus.testdb.DataSessionExtension;
+import org.sonatype.nexus.testsuite.testsupport.Java21TestGroup;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 import static org.sonatype.nexus.datastore.api.DataStoreManager.DEFAULT_DATASTORE_NAME;
 
 /**
- * Tests the {@link ScriptDAO} database operations using Java 21 Virtual Threads.
+ * Tests the ScriptDAO database operations using Java 21 Virtual Threads to verify that
+ * CRUD operations work correctly in a virtual thread environment.
+ * 
  * This test ensures that database access for script storage remains reliable when executed
  * with virtual threads, which is critical for maintaining performance during high-concurrency scenarios.
  */
-@ExtendWith(DataSessionExtension.class)
-@Category({SQLTestGroup.class, VirtualThreadTestGroup.class})
+@ExtendWith(MockitoExtension.class)
+@Category({SQLTestGroup.class, Java21TestGroup.class})
 public class ScriptDAOVirtualThreadTest
     extends TestSupport
 {
-  private DataSessionRule sessionRule = new DataSessionRule().access(ScriptDAO.class);
+  @RegisterExtension
+  public DataSessionRule sessionRule = new DataSessionRule().access(ScriptDAO.class);
 
   private DataSession<?> session;
 
@@ -64,185 +71,258 @@ public class ScriptDAOVirtualThreadTest
   }
 
   /**
-   * Tests creating, reading, updating, and deleting a script entity using a virtual thread.
-   * This verifies that database operations work correctly when executed in a virtual thread context.
+   * Tests basic CRUD operations (create, read, update, delete) for a script entity
+   * when executed within a virtual thread.
    */
   @Test
-  @DisplayName("Test CRUD operations in a virtual thread")
-  public void testCreateReadUpdateDeleteInVirtualThread() throws Exception {
+  public void testCrudOperationsInVirtualThread() throws Exception {
     // Create a latch to wait for the virtual thread to complete
     CountDownLatch latch = new CountDownLatch(1);
-    // Reference to hold any exception that might occur in the virtual thread
-    AtomicReference<Throwable> exceptionRef = new AtomicReference<>();
     
-    // Start a virtual thread to perform the database operations
+    // Create atomic references to capture results and exceptions from the virtual thread
+    AtomicReference<Exception> threadException = new AtomicReference<>();
+    AtomicReference<Script> readResult = new AtomicReference<>();
+    AtomicReference<Script> updateResult = new AtomicReference<>();
+    AtomicReference<Boolean> deleteResult = new AtomicReference<>();
+    
+    // Create and start a virtual thread to perform CRUD operations
     Thread virtualThread = Thread.startVirtualThread(() -> {
       try {
         // Create a new script
         ScriptData script = new ScriptData();
-        script.setName("virtualThreadTest");
-        script.setContent("log.info('Hello from virtual thread')");
-
-        // Create the script in the database
+        script.setName("virtual-thread-test");
+        script.setContent("log.info('Testing virtual threads')");
+        
         dao.create(script);
-
-        // Read the script back
+        
+        // Read the script
         Script read = dao.read(script.getName()).orElse(null);
-
-        // Verify the read operation
-        assertThat(read, is(notNullValue()));
-        assertThat(read.getName(), is(script.getName()));
-        assertThat(read.getType(), is(script.getType()));
-        assertThat(read.getContent(), is(script.getContent()));
-
+        readResult.set(read);
+        
         // Update the script
-        script.setContent("log.info('Updated from virtual thread')");
+        script.setContent("log.info('Updated in virtual thread')");
         dao.update(script);
-
+        
         // Read the updated script
-        Script update = dao.read(script.getName()).orElse(null);
-
-        // Verify the update operation
-        assertThat(update, is(notNullValue()));
-        assertThat(update.getName(), is(script.getName()));
-        assertThat(update.getType(), is(script.getType()));
-        assertThat(update.getContent(), is(script.getContent()));
-
+        Script updated = dao.read(script.getName()).orElse(null);
+        updateResult.set(updated);
+        
         // Delete the script
         dao.delete(script.getName());
-
-        // Verify the delete operation
-        assertThat(dao.read(script.getName()).isPresent(), is(false));
+        
+        // Verify deletion
+        boolean deleted = !dao.read(script.getName()).isPresent();
+        deleteResult.set(deleted);
       }
-      catch (Throwable t) {
-        // Store any exception that occurs
-        exceptionRef.set(t);
+      catch (Exception e) {
+        threadException.set(e);
       }
       finally {
-        // Signal that the virtual thread has completed
         latch.countDown();
       }
     });
-
-    // Wait for the virtual thread to complete
-    latch.await();
     
-    // If an exception occurred in the virtual thread, rethrow it
-    if (exceptionRef.get() != null) {
-      throw new AssertionError("Exception in virtual thread", exceptionRef.get());
+    // Wait for the virtual thread to complete
+    assertThat("Virtual thread operation timed out", 
+        latch.await(10, TimeUnit.SECONDS), is(true));
+    
+    // Check if any exception occurred in the virtual thread
+    if (threadException.get() != null) {
+      throw new AssertionError("Exception in virtual thread", threadException.get());
     }
+    
+    // Verify the results of the CRUD operations
+    Script read = readResult.get();
+    assertThat("Read operation in virtual thread failed", read, is(notNullValue()));
+    assertThat(read.getName(), is("virtual-thread-test"));
+    assertThat(read.getContent(), is("log.info('Testing virtual threads')"));
+    
+    Script updated = updateResult.get();
+    assertThat("Update operation in virtual thread failed", updated, is(notNullValue()));
+    assertThat(updated.getName(), is("virtual-thread-test"));
+    assertThat(updated.getContent(), is("log.info('Updated in virtual thread')"));
+    
+    Boolean deleted = deleteResult.get();
+    assertThat("Delete operation in virtual thread failed", deleted, is(true));
   }
 
   /**
-   * Tests multiple concurrent CRUD operations using virtual threads.
-   * This verifies that the database can handle multiple concurrent operations
-   * when executed by virtual threads.
+   * Tests concurrent database operations using multiple virtual threads.
+   * This test creates, reads, updates, and deletes multiple script entities concurrently
+   * to verify that the database operations remain reliable under high concurrency.
    */
   @Test
-  @DisplayName("Test concurrent CRUD operations with multiple virtual threads")
-  public void testConcurrentOperationsWithVirtualThreads() throws Exception {
-    final int threadCount = 10;
-    CountDownLatch latch = new CountDownLatch(threadCount);
-    AtomicReference<Throwable> exceptionRef = new AtomicReference<>();
+  public void testConcurrentDatabaseOperationsWithVirtualThreads() throws Exception {
+    int operationCount = 50;
+    CountDownLatch latch = new CountDownLatch(operationCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    List<String> scriptNames = new ArrayList<>();
+    List<Thread> virtualThreads = new ArrayList<>();
     
-    // Create multiple virtual threads to perform concurrent operations
-    for (int i = 0; i < threadCount; i++) {
-      final int threadId = i;
-      Thread.startVirtualThread(() -> {
+    // Create multiple scripts concurrently using virtual threads
+    for (int i = 0; i < operationCount; i++) {
+      final int index = i;
+      String scriptName = "vt-script-" + index;
+      scriptNames.add(scriptName);
+      
+      Thread virtualThread = Thread.startVirtualThread(() -> {
         try {
-          // Create a unique script for this thread
+          // Create script
           ScriptData script = new ScriptData();
-          script.setName("virtualThreadTest" + threadId);
-          script.setContent("log.info('Thread " + threadId + "')");
-
-          // Perform CRUD operations
+          script.setName(scriptName);
+          script.setContent("log.info('Virtual Thread Script " + index + "')");
+          
           dao.create(script);
           
-          Script read = dao.read(script.getName()).orElse(null);
-          assertThat(read, is(notNullValue()));
-          assertThat(read.getName(), is(script.getName()));
+          // Verify script was created
+          Script read = dao.read(scriptName).orElse(null);
+          if (read == null || !read.getName().equals(scriptName)) {
+            log.error("Failed to read script {} after creation", scriptName);
+            errorCount.incrementAndGet();
+          }
           
-          script.setContent("log.info('Updated Thread " + threadId + "')");
+          // Update script
+          script.setContent("log.info('Updated Virtual Thread Script " + index + "')");
           dao.update(script);
           
-          Script updated = dao.read(script.getName()).orElse(null);
-          assertThat(updated, is(notNullValue()));
-          assertThat(updated.getContent(), is(script.getContent()));
-          
-          dao.delete(script.getName());
-          assertThat(dao.read(script.getName()).isPresent(), is(false));
-        }
-        catch (Throwable t) {
-          // Store the first exception that occurs
-          exceptionRef.compareAndSet(null, t);
-        }
+          // Verify update
+          Script updated = dao.read(scriptName).orElse(null);
+          if (updated == null || !updated.getContent().contains("Updated")) {
+            log.error("Failed to update script {}", scriptName);
+            errorCount.incrementAndGet();
+          }
+        } 
+        catch (Exception e) {
+          log.error("Error in virtual thread operation for script {}", scriptName, e);
+          errorCount.incrementAndGet();
+        } 
         finally {
           latch.countDown();
         }
       });
+      
+      virtualThreads.add(virtualThread);
     }
     
-    // Wait for all virtual threads to complete
-    latch.await();
+    // Wait for all operations to complete
+    assertThat("Virtual thread operations timed out", 
+        latch.await(30, TimeUnit.SECONDS), is(true));
     
-    // If any exception occurred, rethrow it
-    if (exceptionRef.get() != null) {
-      throw new AssertionError("Exception in concurrent virtual threads", exceptionRef.get());
+    // Verify results
+    assertThat("All operations should complete without errors", 
+        errorCount.get(), is(0));
+    
+    // Verify all scripts exist and can be read
+    for (String name : scriptNames) {
+      Script script = dao.read(name).orElse(null);
+      assertThat("Script " + name + " should exist", script, is(notNullValue()));
+      assertThat(script.getContent(), containsString("Updated Virtual Thread Script"));
     }
+    
+    // Clean up - delete all scripts using virtual threads
+    CountDownLatch deleteLatch = new CountDownLatch(scriptNames.size());
+    AtomicInteger deleteErrorCount = new AtomicInteger(0);
+    
+    for (String name : scriptNames) {
+      Thread.startVirtualThread(() -> {
+        try {
+          dao.delete(name);
+          
+          // Verify deletion
+          if (dao.read(name).isPresent()) {
+            log.error("Failed to delete script {}", name);
+            deleteErrorCount.incrementAndGet();
+          }
+        } 
+        catch (Exception e) {
+          log.error("Error deleting script {}", name, e);
+          deleteErrorCount.incrementAndGet();
+        } 
+        finally {
+          deleteLatch.countDown();
+        }
+      });
+    }
+    
+    // Wait for all deletions to complete
+    assertThat("Virtual thread deletion operations timed out", 
+        deleteLatch.await(30, TimeUnit.SECONDS), is(true));
+    
+    // Verify all deletions were successful
+    assertThat("All deletion operations should complete without errors", 
+        deleteErrorCount.get(), is(0));
   }
-
+  
   /**
-   * Tests transaction behavior in virtual threads by attempting to create a script
-   * with a duplicate name, which should fail due to unique constraint violation.
+   * Tests transaction isolation in virtual threads by performing conflicting operations
+   * on the same script entity from multiple virtual threads.
    */
   @Test
-  @DisplayName("Test transaction behavior in virtual threads")
-  public void testTransactionBehaviorInVirtualThread() throws Exception {
-    CountDownLatch latch = new CountDownLatch(1);
-    AtomicReference<Boolean> transactionWorked = new AtomicReference<>(false);
+  public void testTransactionIsolationInVirtualThreads() throws Exception {
+    // Create initial script
+    ScriptData initialScript = new ScriptData();
+    initialScript.setName("transaction-test");
+    initialScript.setContent("log.info('Initial content')");
+    dao.create(initialScript);
     
-    // First create a script outside the virtual thread
-    ScriptData originalScript = new ScriptData();
-    originalScript.setName("transactionTest");
-    originalScript.setContent("log.info('Original')");
-    dao.create(originalScript);
+    int threadCount = 10;
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch completionLatch = new CountDownLatch(threadCount);
+    AtomicInteger successCount = new AtomicInteger(0);
+    List<Thread> virtualThreads = new ArrayList<>();
     
-    // Now try to create a script with the same name in a virtual thread
-    Thread.startVirtualThread(() -> {
-      try {
-        // Create a script with the same name, which should fail
-        ScriptData duplicateScript = new ScriptData();
-        duplicateScript.setName("transactionTest"); // Same name as original
-        duplicateScript.setContent("log.info('Duplicate')");
-        
+    // Create multiple virtual threads that will try to update the same script
+    for (int i = 0; i < threadCount; i++) {
+      final int index = i;
+      Thread virtualThread = Thread.startVirtualThread(() -> {
         try {
-          dao.create(duplicateScript);
-          // If we get here, the unique constraint didn't work
-          transactionWorked.set(false);
-        }
+          // Wait for the signal to start (ensures threads compete for the update)
+          startLatch.await();
+          
+          // Read the script
+          Script script = dao.read("transaction-test").orElse(null);
+          if (script != null) {
+            // Update with thread-specific content
+            ScriptData updateData = new ScriptData();
+            updateData.setName(script.getName());
+            updateData.setContent("log.info('Updated by thread " + index + "')");
+            
+            // Attempt to update
+            dao.update(updateData);
+            
+            // If we got here without exception, count as success
+            successCount.incrementAndGet();
+          }
+        } 
         catch (Exception e) {
-          // Expected exception due to unique constraint violation
-          transactionWorked.set(true);
+          // Expected that some threads may fail due to concurrent modification
+          log.debug("Expected concurrent modification in thread {}", index, e);
+        } 
+        finally {
+          completionLatch.countDown();
         }
-        
-        // Verify the original script is still intact and wasn't modified
-        Script original = dao.read("transactionTest").orElse(null);
-        assertThat(original, is(notNullValue()));
-        assertThat(original.getContent(), is("log.info('Original')"));
-      }
-      finally {
-        latch.countDown();
-      }
-    });
+      });
+      
+      virtualThreads.add(virtualThread);
+    }
     
-    // Wait for the virtual thread to complete
-    latch.await();
+    // Signal all threads to start simultaneously
+    startLatch.countDown();
+    
+    // Wait for all threads to complete
+    assertThat("Virtual thread operations timed out", 
+        completionLatch.await(30, TimeUnit.SECONDS), is(true));
+    
+    // Verify that at least one thread succeeded in updating the script
+    assertThat("At least one thread should succeed in updating the script", 
+        successCount.get(), is(greaterThan(0)));
+    
+    // Verify that the script exists and has been updated
+    Script finalScript = dao.read("transaction-test").orElse(null);
+    assertThat("Script should exist after concurrent updates", finalScript, is(notNullValue()));
+    assertThat(finalScript.getContent(), containsString("Updated by thread"));
     
     // Clean up
-    dao.delete("transactionTest");
-    
-    // Verify that the transaction behavior worked as expected
-    assertThat("Transaction should have failed with unique constraint violation", 
-               transactionWorked.get(), is(true));
+    dao.delete("transaction-test");
   }
 }

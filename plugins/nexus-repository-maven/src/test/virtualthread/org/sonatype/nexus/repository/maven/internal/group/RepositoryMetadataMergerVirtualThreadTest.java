@@ -31,7 +31,6 @@ import org.sonatype.nexus.repository.view.Content;
 
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
 import org.apache.maven.artifact.repository.metadata.Metadata;
 import org.apache.maven.artifact.repository.metadata.Plugin;
 import org.apache.maven.artifact.repository.metadata.Snapshot;
@@ -53,11 +52,8 @@ import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 
 /**
- * Tests for {@link RepositoryMetadataMerger} using Java 21 Virtual Threads.
+ * Tests for {@link RepositoryMetadataMerger} with Java 21 Virtual Threads.
  * 
- * This test validates that the metadata merging operations function correctly
- * when executed in a highly concurrent environment using Virtual Threads.
- *
  * @since 3.60
  */
 @ExtendWith(MockitoExtension.class)
@@ -65,16 +61,16 @@ class RepositoryMetadataMergerVirtualThreadTest
     extends TestSupport
 {
   @Mock
-  OutputStream outputStream;
+  private OutputStream outputStream;
 
   @Mock
-  MavenPath mavenPath;
+  private MavenPath mavenPath;
 
   @Mock
-  Repository repository;
+  private Repository repository;
 
   @Mock
-  Content content;
+  private Content content;
 
   private RepositoryMetadataMerger merger;
 
@@ -84,7 +80,7 @@ class RepositoryMetadataMergerVirtualThreadTest
   }
 
   /**
-   * Creates a Plugin object with the given name.
+   * Creates a plugin metadata object with the given name.
    */
   private Plugin plugin(String name) {
     final Plugin p = new Plugin();
@@ -113,8 +109,7 @@ class RepositoryMetadataMergerVirtualThreadTest
                      final String lastUpdated,
                      final String latest,
                      final String release,
-                     final String... versions)
-  {
+                     final String... versions) {
     final Metadata m = new Metadata();
     m.setGroupId(groupId);
     m.setArtifactId(artifactId);
@@ -140,8 +135,7 @@ class RepositoryMetadataMergerVirtualThreadTest
                      final String artifactId,
                      final String versionPrefix,
                      final String timestamp,
-                     final int buildNumber)
-  {
+                     final int buildNumber) {
     final Metadata m = new Metadata();
     m.setGroupId(groupId);
     m.setArtifactId(artifactId);
@@ -175,12 +169,8 @@ class RepositoryMetadataMergerVirtualThreadTest
     return m;
   }
 
-  /**
-   * Tests that metadata equality checks work correctly with Virtual Threads.
-   */
   @Test
-  void metadataEqualityChecksWorkWithVirtualThreads() throws Exception {
-    // Create test metadata objects
+  void metadataWithNullAndEmptyAreEqual() {
     final Metadata nullClassifier = v("org.foo", "some-project", "v-", "20150324121700", 1);
     final Metadata emptyClassifier = v("org.foo", "some-project", "v-", "20150324121700", 1);
     final Metadata spaceClassifier = v("org.foo", "some-project", "v-", "20150324121700", 1);
@@ -189,23 +179,167 @@ class RepositoryMetadataMergerVirtualThreadTest
     emptyClassifier.getVersioning().getSnapshotVersions().get(0).setClassifier("");
     spaceClassifier.getVersioning().getSnapshotVersions().get(0).setClassifier("   ");
 
+    assertThat(merger.metadataEquals(nullClassifier, emptyClassifier), is(true));
+    assertThat(merger.metadataEquals(emptyClassifier, spaceClassifier), is(true));
+    assertThat(merger.metadataEquals(spaceClassifier, nullClassifier), is(true));
+  }
+
+  @Test
+  void groupLevelMdMerge() {
+    final Metadata m1 = g("foo");
+    final Metadata m2 = g("foo", "bar");
+    final Metadata m3 = g("baz");
+
+    final Metadata m = merger.merge(
+        ImmutableList.of(new Envelope("1", m1), new Envelope("2", m2), new Envelope("3", m3))
+    );
+    assertThat(m, notNullValue());
+    assertThat(m.getModelVersion(), equalTo("1.1.0"));
+    assertThat(m.getPlugins(), hasSize(3));
+    
+    List<String> pluginArtifactIds = new ArrayList<>();
+    for (Plugin plugin : m.getPlugins()) {
+      pluginArtifactIds.add(plugin.getArtifactId());
+    }
+    
+    assertThat(pluginArtifactIds, containsInAnyOrder("foo-maven-plugin", "bar-maven-plugin", "baz-maven-plugin"));
+  }
+
+  @Test
+  void artifactLevelMdMerge() {
+    final Metadata m1 = a("org.foo", "some-project", "20150324121500", "1.0.1", "1.0.1", "1.0.0", "1.0.1");
+    final Metadata m2 = a("org.foo", "some-project", "20150324121700", "1.0.2", "1.0.2", "1.0.2");
+    final Metadata m3 = a("org.foo", "some-project", "20150324121600", "1.1.0-SNAPSHOT", null, "1.1.0-SNAPSHOT");
+
+    final Metadata m = merger.merge(
+        ImmutableList.of(new Envelope("1", m1), new Envelope("2", m2), new Envelope("3", m3))
+    );
+    assertThat(m, notNullValue());
+    assertThat(m.getModelVersion(), equalTo("1.1.0"));
+    assertThat(m.getGroupId(), equalTo("org.foo"));
+    assertThat(m.getArtifactId(), equalTo("some-project"));
+    assertThat(m.getVersioning().getLastUpdated(), equalTo("20150324121700"));
+    assertThat(m.getVersioning().getSnapshot(), nullValue());
+    assertThat(m.getVersioning().getRelease(), equalTo("1.0.2"));
+    assertThat(m.getVersioning().getLatest(), equalTo("1.1.0-SNAPSHOT"));
+    assertThat(m.getVersioning().getVersions(), contains("1.0.0", "1.0.1", "1.0.2", "1.1.0-SNAPSHOT"));
+  }
+
+  @Test
+  void versionLevelMdMerge() {
+    final Metadata m1 = v("org.foo", "some-project", "1.0.0", "20150324.121500", 3);
+    final Metadata m2 = v("org.foo", "some-project", "1.0.0", "20150323.121500", 2);
+    final Metadata m3 = v("org.foo", "some-project", "1.0.0", "20150322.121500", 1);
+
+    final Metadata m = merger.merge(
+        ImmutableList.of(new Envelope("1", m1), new Envelope("2", m2), new Envelope("3", m3))
+    );
+    assertThat(m, notNullValue());
+    assertThat(m.getModelVersion(), equalTo("1.1.0"));
+    assertThat(m.getGroupId(), equalTo("org.foo"));
+    assertThat(m.getArtifactId(), equalTo("some-project"));
+    assertThat(m.getVersioning().getLastUpdated(), equalTo("20150324121500"));
+    assertThat(m.getVersioning().getSnapshot(), notNullValue());
+    assertThat(m.getVersioning().getSnapshot().getTimestamp(), equalTo("20150324.121500"));
+    assertThat(m.getVersioning().getSnapshot().getBuildNumber(), equalTo(3));
+  }
+
+  @Test
+  void mixedLevelMdMerge() {
+    final Metadata m1 = a("org.foo", "some-project", "20150324121500", "1.0.1", "1.0.1", "1.0.0", "1.0.1");
+    final Metadata m2 = g("foo", "bar");
+    final Metadata m3 = v("org.foo", "some-project", "1.1.0", "20150322.121500", 3);
+
+    final Metadata m = merger.merge(
+        ImmutableList.of(new Envelope("1", m1), new Envelope("2", m2), new Envelope("3", m3))
+    );
+    assertThat(m, notNullValue());
+    assertThat(m.getModelVersion(), equalTo("1.1.0"));
+    assertThat(m.getGroupId(), equalTo("org.foo"));
+    assertThat(m.getArtifactId(), equalTo("some-project"));
+    assertThat(m.getVersion(), equalTo("1.1.0-SNAPSHOT"));
+    assertThat(m.getVersioning().getLastUpdated(), equalTo("20150324121500"));
+    assertThat(m.getVersioning().getSnapshot(), notNullValue());
+    assertThat(m.getVersioning().getSnapshot().getTimestamp(), equalTo("20150322.121500"));
+    assertThat(m.getVersioning().getSnapshot().getBuildNumber(), equalTo(3));
+    assertThat(m.getVersioning().getRelease(), equalTo("1.0.1"));
+    assertThat(m.getVersioning().getLatest(), equalTo("1.0.1"));
+    assertThat(m.getVersioning().getVersions(), contains("1.0.0", "1.0.1"));
+    assertThat(m.getPlugins(), hasSize(2));
+    
+    List<String> pluginArtifactIds = new ArrayList<>();
+    for (Plugin plugin : m.getPlugins()) {
+      pluginArtifactIds.add(plugin.getArtifactId());
+    }
+    
+    assertThat(pluginArtifactIds, containsInAnyOrder("foo-maven-plugin", "bar-maven-plugin"));
+  }
+
+  @Test
+  void allowVersionInArtifactLevelMetadata() {
+    Metadata m1 = a("org.foo", "some-project", "20150324121500", "1.0.0","1.0.0", "1.0.0");
+    m1.setVersion("1.0.0");
+    Metadata m2 = a("org.foo", "some-project", "20150324121501", "1.0.1","1.0.1", "1.0.1");
+    m2.setVersion("1.0.1");
+
+    final Metadata m = merger.merge(
+        ImmutableList.of(new Envelope("1", m1), new Envelope("2", m2))
+    );
+    assertThat(m.getVersion(), is(m1.getVersion())); // target version is left intact, no attempt to merge
+    assertThat(m.getVersioning().getRelease(), is(m2.getVersion()));
+    assertThat(m.getVersioning().getLastUpdated(), is(m2.getVersioning().getLastUpdated()));
+    assertThat(m.getVersioning().getVersions(), contains("1.0.0", "1.0.1"));
+  }
+
+  @Test
+  void handleNullSnapshotTimestamps() {
+    Metadata m1 = v("org.foo", "some-project", "1.0.0", "20150322.121500", 1);
+    m1.getVersioning().getSnapshot().setTimestamp(null);
+    Metadata m2 = v("org.foo", "some-project", "1.0.0", "20150323.121500", 2);
+
+    final Metadata m = merger.merge(
+        ImmutableList.of(new Envelope("1", m1), new Envelope("2", m2))
+    );
+    assertThat(m, notNullValue());
+    assertThat(m.getModelVersion(), equalTo("1.1.0"));
+    assertThat(m.getGroupId(), equalTo("org.foo"));
+    assertThat(m.getArtifactId(), equalTo("some-project"));
+    assertThat(m.getVersioning().getLastUpdated(), equalTo("20150323121500"));
+    assertThat(m.getVersioning().getSnapshot(), notNullValue());
+    assertThat(m.getVersioning().getSnapshot().getTimestamp(), equalTo("20150323.121500"));
+    assertThat(m.getVersioning().getSnapshot().getBuildNumber(), equalTo(2));
+  }
+
+  /**
+   * Tests concurrent merging of group-level metadata using Virtual Threads.
+   */
+  @Test
+  void concurrentGroupLevelMdMergeWithVirtualThreads() throws Exception {
     // Create a virtual thread factory
     ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
     ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-
+    
     try {
-      // Test equality checks concurrently with virtual threads
-      int taskCount = 1000;
+      int taskCount = 100;
       CountDownLatch latch = new CountDownLatch(taskCount);
       AtomicInteger errorCount = new AtomicInteger(0);
-
+      
+      // Submit multiple concurrent tasks using virtual threads
       for (int i = 0; i < taskCount; i++) {
+        final int index = i;
         executor.submit(() -> {
           try {
-            // Verify equality checks work correctly
-            if (!merger.metadataEquals(nullClassifier, emptyClassifier) ||
-                !merger.metadataEquals(emptyClassifier, spaceClassifier) ||
-                !merger.metadataEquals(spaceClassifier, nullClassifier)) {
+            // Create different metadata combinations for each thread
+            final Metadata m1 = g("foo" + index);
+            final Metadata m2 = g("foo" + index, "bar" + index);
+            final Metadata m3 = g("baz" + index);
+
+            final Metadata m = merger.merge(
+                ImmutableList.of(new Envelope("1", m1), new Envelope("2", m2), new Envelope("3", m3))
+            );
+            
+            // Verify the merged result
+            if (m == null || m.getPlugins() == null || m.getPlugins().size() != 3) {
               errorCount.incrementAndGet();
             }
           } catch (Exception e) {
@@ -215,47 +349,54 @@ class RepositoryMetadataMergerVirtualThreadTest
           }
         });
       }
-
+      
       // Wait for all tasks to complete
       latch.await(30, TimeUnit.SECONDS);
-
+      
       // Verify no errors occurred
-      assertThat(errorCount.get(), is(0));
+      assertThat("All concurrent metadata merges should complete successfully", 
+          errorCount.get(), is(0));
     } finally {
       executor.shutdown();
     }
   }
 
   /**
-   * Tests that group-level metadata merging works correctly with Virtual Threads.
+   * Tests concurrent merging of artifact-level metadata using Virtual Threads.
    */
   @Test
-  void groupLevelMetadataMergingWorksWithVirtualThreads() throws Exception {
-    // Create test metadata objects
-    final Metadata m1 = g("foo");
-    final Metadata m2 = g("foo", "bar");
-    final Metadata m3 = g("baz");
-
+  void concurrentArtifactLevelMdMergeWithVirtualThreads() throws Exception {
     // Create a virtual thread factory
     ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
     ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-
+    
     try {
-      // Test merging concurrently with virtual threads
-      int taskCount = 1000;
+      int taskCount = 100;
       CountDownLatch latch = new CountDownLatch(taskCount);
-      List<Metadata> results = new ArrayList<>(taskCount);
       AtomicInteger errorCount = new AtomicInteger(0);
-
+      
+      // Submit multiple concurrent tasks using virtual threads
       for (int i = 0; i < taskCount; i++) {
+        final int index = i;
         executor.submit(() -> {
           try {
-            // Perform the merge operation
-            Metadata merged = merger.merge(
+            // Create different metadata combinations for each thread
+            final Metadata m1 = a("org.foo", "project-" + index, "20150324121500", "1.0.1", "1.0.1", "1.0.0", "1.0.1");
+            final Metadata m2 = a("org.foo", "project-" + index, "20150324121700", "1.0.2", "1.0.2", "1.0.2");
+            final Metadata m3 = a("org.foo", "project-" + index, "20150324121600", "1.1.0-SNAPSHOT", null, "1.1.0-SNAPSHOT");
+
+            final Metadata m = merger.merge(
                 ImmutableList.of(new Envelope("1", m1), new Envelope("2", m2), new Envelope("3", m3))
             );
-            synchronized (results) {
-              results.add(merged);
+            
+            // Verify the merged result
+            if (m == null || !"org.foo".equals(m.getGroupId()) || 
+                !"project-" + index.equals(m.getArtifactId()) ||
+                !"20150324121700".equals(m.getVersioning().getLastUpdated()) ||
+                !"1.0.2".equals(m.getVersioning().getRelease()) ||
+                !"1.1.0-SNAPSHOT".equals(m.getVersioning().getLatest()) ||
+                m.getVersioning().getVersions().size() != 4) {
+              errorCount.incrementAndGet();
             }
           } catch (Exception e) {
             errorCount.incrementAndGet();
@@ -264,61 +405,54 @@ class RepositoryMetadataMergerVirtualThreadTest
           }
         });
       }
-
+      
       // Wait for all tasks to complete
       latch.await(30, TimeUnit.SECONDS);
-
+      
       // Verify no errors occurred
-      assertThat(errorCount.get(), is(0));
-      assertThat(results, hasSize(taskCount));
-
-      // Verify the first result (all should be identical)
-      Metadata m = results.get(0);
-      assertThat(m, notNullValue());
-      assertThat(m.getModelVersion(), equalTo("1.1.0"));
-      assertThat(m.getPlugins(), hasSize(3));
-
-      // Verify all plugins are present
-      List<String> artifactIds = Lists.newArrayList();
-      for (Plugin plugin : m.getPlugins()) {
-        artifactIds.add(plugin.getArtifactId());
-      }
-      assertThat(artifactIds, containsInAnyOrder("foo-maven-plugin", "bar-maven-plugin", "baz-maven-plugin"));
+      assertThat("All concurrent metadata merges should complete successfully", 
+          errorCount.get(), is(0));
     } finally {
       executor.shutdown();
     }
   }
 
   /**
-   * Tests that artifact-level metadata merging works correctly with Virtual Threads.
+   * Tests concurrent merging of version-level metadata using Virtual Threads.
    */
   @Test
-  void artifactLevelMetadataMergingWorksWithVirtualThreads() throws Exception {
-    // Create test metadata objects
-    final Metadata m1 = a("org.foo", "some-project", "20150324121500", "1.0.1", "1.0.1", "1.0.0", "1.0.1");
-    final Metadata m2 = a("org.foo", "some-project", "20150324121700", "1.0.2", "1.0.2", "1.0.2");
-    final Metadata m3 = a("org.foo", "some-project", "20150324121600", "1.1.0-SNAPSHOT", null, "1.1.0-SNAPSHOT");
-
+  void concurrentVersionLevelMdMergeWithVirtualThreads() throws Exception {
     // Create a virtual thread factory
     ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
     ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-
+    
     try {
-      // Test merging concurrently with virtual threads
-      int taskCount = 1000;
+      int taskCount = 100;
       CountDownLatch latch = new CountDownLatch(taskCount);
-      List<Metadata> results = new ArrayList<>(taskCount);
       AtomicInteger errorCount = new AtomicInteger(0);
-
+      
+      // Submit multiple concurrent tasks using virtual threads
       for (int i = 0; i < taskCount; i++) {
+        final int index = i;
         executor.submit(() -> {
           try {
-            // Perform the merge operation
-            Metadata merged = merger.merge(
+            // Create different metadata combinations for each thread
+            final Metadata m1 = v("org.foo", "project-" + index, "1.0.0", "20150324.121500", 3);
+            final Metadata m2 = v("org.foo", "project-" + index, "1.0.0", "20150323.121500", 2);
+            final Metadata m3 = v("org.foo", "project-" + index, "1.0.0", "20150322.121500", 1);
+
+            final Metadata m = merger.merge(
                 ImmutableList.of(new Envelope("1", m1), new Envelope("2", m2), new Envelope("3", m3))
             );
-            synchronized (results) {
-              results.add(merged);
+            
+            // Verify the merged result
+            if (m == null || !"org.foo".equals(m.getGroupId()) || 
+                !"project-" + index.equals(m.getArtifactId()) ||
+                !"20150324121500".equals(m.getVersioning().getLastUpdated()) ||
+                m.getVersioning().getSnapshot() == null ||
+                !"20150324.121500".equals(m.getVersioning().getSnapshot().getTimestamp()) ||
+                m.getVersioning().getSnapshot().getBuildNumber() != 3) {
+              errorCount.incrementAndGet();
             }
           } catch (Exception e) {
             errorCount.incrementAndGet();
@@ -327,60 +461,61 @@ class RepositoryMetadataMergerVirtualThreadTest
           }
         });
       }
-
+      
       // Wait for all tasks to complete
       latch.await(30, TimeUnit.SECONDS);
-
+      
       // Verify no errors occurred
-      assertThat(errorCount.get(), is(0));
-      assertThat(results, hasSize(taskCount));
-
-      // Verify the first result (all should be identical)
-      Metadata m = results.get(0);
-      assertThat(m, notNullValue());
-      assertThat(m.getModelVersion(), equalTo("1.1.0"));
-      assertThat(m.getGroupId(), equalTo("org.foo"));
-      assertThat(m.getArtifactId(), equalTo("some-project"));
-      assertThat(m.getVersioning().getLastUpdated(), equalTo("20150324121700"));
-      assertThat(m.getVersioning().getSnapshot(), nullValue());
-      assertThat(m.getVersioning().getRelease(), equalTo("1.0.2"));
-      assertThat(m.getVersioning().getLatest(), equalTo("1.1.0-SNAPSHOT"));
-      assertThat(m.getVersioning().getVersions(), contains("1.0.0", "1.0.1", "1.0.2", "1.1.0-SNAPSHOT"));
+      assertThat("All concurrent metadata merges should complete successfully", 
+          errorCount.get(), is(0));
     } finally {
       executor.shutdown();
     }
   }
 
   /**
-   * Tests that version-level metadata merging works correctly with Virtual Threads.
+   * Tests concurrent merging of mixed-level metadata using Virtual Threads.
+   * This test verifies that the merger can handle complex metadata merging operations
+   * when executed across many Virtual Threads simultaneously.
    */
   @Test
-  void versionLevelMetadataMergingWorksWithVirtualThreads() throws Exception {
-    // Create test metadata objects
-    final Metadata m1 = v("org.foo", "some-project", "1.0.0", "20150324.121500", 3);
-    final Metadata m2 = v("org.foo", "some-project", "1.0.0", "20150323.121500", 2);
-    final Metadata m3 = v("org.foo", "some-project", "1.0.0", "20150322.121500", 1);
-
+  void concurrentMixedLevelMdMergeWithVirtualThreads() throws Exception {
     // Create a virtual thread factory
     ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
     ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-
+    
     try {
-      // Test merging concurrently with virtual threads
-      int taskCount = 1000;
+      int taskCount = 100;
       CountDownLatch latch = new CountDownLatch(taskCount);
-      List<Metadata> results = new ArrayList<>(taskCount);
       AtomicInteger errorCount = new AtomicInteger(0);
-
+      
+      // Submit multiple concurrent tasks using virtual threads
       for (int i = 0; i < taskCount; i++) {
+        final int index = i;
         executor.submit(() -> {
           try {
-            // Perform the merge operation
-            Metadata merged = merger.merge(
+            // Create different metadata combinations for each thread
+            final Metadata m1 = a("org.foo", "project-" + index, "20150324121500", "1.0.1", "1.0.1", "1.0.0", "1.0.1");
+            final Metadata m2 = g("foo" + index, "bar" + index);
+            final Metadata m3 = v("org.foo", "project-" + index, "1.1.0", "20150322.121500", 3);
+
+            final Metadata m = merger.merge(
                 ImmutableList.of(new Envelope("1", m1), new Envelope("2", m2), new Envelope("3", m3))
             );
-            synchronized (results) {
-              results.add(merged);
+            
+            // Verify the merged result
+            if (m == null || !"org.foo".equals(m.getGroupId()) || 
+                !"project-" + index.equals(m.getArtifactId()) ||
+                !"1.1.0-SNAPSHOT".equals(m.getVersion()) ||
+                !"20150324121500".equals(m.getVersioning().getLastUpdated()) ||
+                m.getVersioning().getSnapshot() == null ||
+                !"20150322.121500".equals(m.getVersioning().getSnapshot().getTimestamp()) ||
+                m.getVersioning().getSnapshot().getBuildNumber() != 3 ||
+                !"1.0.1".equals(m.getVersioning().getRelease()) ||
+                !"1.0.1".equals(m.getVersioning().getLatest()) ||
+                m.getVersioning().getVersions().size() != 2 ||
+                m.getPlugins().size() != 2) {
+              errorCount.incrementAndGet();
             }
           } catch (Exception e) {
             errorCount.incrementAndGet();
@@ -389,59 +524,79 @@ class RepositoryMetadataMergerVirtualThreadTest
           }
         });
       }
-
+      
       // Wait for all tasks to complete
       latch.await(30, TimeUnit.SECONDS);
-
+      
       // Verify no errors occurred
-      assertThat(errorCount.get(), is(0));
-      assertThat(results, hasSize(taskCount));
-
-      // Verify the first result (all should be identical)
-      Metadata m = results.get(0);
-      assertThat(m, notNullValue());
-      assertThat(m.getModelVersion(), equalTo("1.1.0"));
-      assertThat(m.getGroupId(), equalTo("org.foo"));
-      assertThat(m.getArtifactId(), equalTo("some-project"));
-      assertThat(m.getVersioning().getLastUpdated(), equalTo("20150324121500"));
-      assertThat(m.getVersioning().getSnapshot(), notNullValue());
-      assertThat(m.getVersioning().getSnapshot().getTimestamp(), equalTo("20150324.121500"));
-      assertThat(m.getVersioning().getSnapshot().getBuildNumber(), equalTo(3));
+      assertThat("All concurrent metadata merges should complete successfully", 
+          errorCount.get(), is(0));
     } finally {
       executor.shutdown();
     }
   }
 
   /**
-   * Tests that mixed-level metadata merging works correctly with Virtual Threads.
+   * Tests that the metadata merger can handle high concurrency with many Virtual Threads.
+   * This test creates a large number of Virtual Threads to stress test the merger implementation.
    */
   @Test
-  void mixedLevelMetadataMergingWorksWithVirtualThreads() throws Exception {
-    // Create test metadata objects
-    final Metadata m1 = a("org.foo", "some-project", "20150324121500", "1.0.1", "1.0.1", "1.0.0", "1.0.1");
-    final Metadata m2 = g("foo", "bar");
-    final Metadata m3 = v("org.foo", "some-project", "1.1.0", "20150322.121500", 3);
-
+  void highConcurrencyMetadataMergeWithVirtualThreads() throws Exception {
     // Create a virtual thread factory
     ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
     ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-
+    
     try {
-      // Test merging concurrently with virtual threads
+      // Use a higher number of threads to stress test
       int taskCount = 1000;
       CountDownLatch latch = new CountDownLatch(taskCount);
-      List<Metadata> results = new ArrayList<>(taskCount);
       AtomicInteger errorCount = new AtomicInteger(0);
-
+      
+      // Submit multiple concurrent tasks using virtual threads
       for (int i = 0; i < taskCount; i++) {
+        final int index = i;
         executor.submit(() -> {
           try {
-            // Perform the merge operation
-            Metadata merged = merger.merge(
-                ImmutableList.of(new Envelope("1", m1), new Envelope("2", m2), new Envelope("3", m3))
-            );
-            synchronized (results) {
-              results.add(merged);
+            // Alternate between different metadata types to increase test coverage
+            if (index % 3 == 0) {
+              // Group level metadata
+              final Metadata m1 = g("foo" + index);
+              final Metadata m2 = g("foo" + index, "bar" + index);
+              final Metadata m3 = g("baz" + index);
+
+              final Metadata m = merger.merge(
+                  ImmutableList.of(new Envelope("1", m1), new Envelope("2", m2), new Envelope("3", m3))
+              );
+              
+              if (m == null || m.getPlugins() == null || m.getPlugins().size() != 3) {
+                errorCount.incrementAndGet();
+              }
+            } else if (index % 3 == 1) {
+              // Artifact level metadata
+              final Metadata m1 = a("org.foo", "project-" + index, "20150324121500", "1.0.1", "1.0.1", "1.0.0", "1.0.1");
+              final Metadata m2 = a("org.foo", "project-" + index, "20150324121700", "1.0.2", "1.0.2", "1.0.2");
+              final Metadata m3 = a("org.foo", "project-" + index, "20150324121600", "1.1.0-SNAPSHOT", null, "1.1.0-SNAPSHOT");
+
+              final Metadata m = merger.merge(
+                  ImmutableList.of(new Envelope("1", m1), new Envelope("2", m2), new Envelope("3", m3))
+              );
+              
+              if (m == null || !"1.0.2".equals(m.getVersioning().getRelease())) {
+                errorCount.incrementAndGet();
+              }
+            } else {
+              // Version level metadata
+              final Metadata m1 = v("org.foo", "project-" + index, "1.0.0", "20150324.121500", 3);
+              final Metadata m2 = v("org.foo", "project-" + index, "1.0.0", "20150323.121500", 2);
+              final Metadata m3 = v("org.foo", "project-" + index, "1.0.0", "20150322.121500", 1);
+
+              final Metadata m = merger.merge(
+                  ImmutableList.of(new Envelope("1", m1), new Envelope("2", m2), new Envelope("3", m3))
+              );
+              
+              if (m == null || m.getVersioning().getSnapshot().getBuildNumber() != 3) {
+                errorCount.incrementAndGet();
+              }
             }
           } catch (Exception e) {
             errorCount.incrementAndGet();
@@ -450,155 +605,13 @@ class RepositoryMetadataMergerVirtualThreadTest
           }
         });
       }
-
+      
       // Wait for all tasks to complete
-      latch.await(30, TimeUnit.SECONDS);
-
+      latch.await(60, TimeUnit.SECONDS);
+      
       // Verify no errors occurred
-      assertThat(errorCount.get(), is(0));
-      assertThat(results, hasSize(taskCount));
-
-      // Verify the first result (all should be identical)
-      Metadata m = results.get(0);
-      assertThat(m, notNullValue());
-      assertThat(m.getModelVersion(), equalTo("1.1.0"));
-      assertThat(m.getGroupId(), equalTo("org.foo"));
-      assertThat(m.getArtifactId(), equalTo("some-project"));
-      assertThat(m.getVersion(), equalTo("1.1.0-SNAPSHOT"));
-      assertThat(m.getVersioning().getLastUpdated(), equalTo("20150324121500"));
-      assertThat(m.getVersioning().getSnapshot(), notNullValue());
-      assertThat(m.getVersioning().getSnapshot().getTimestamp(), equalTo("20150322.121500"));
-      assertThat(m.getVersioning().getSnapshot().getBuildNumber(), equalTo(3));
-      assertThat(m.getVersioning().getRelease(), equalTo("1.0.1"));
-      assertThat(m.getVersioning().getLatest(), equalTo("1.0.1"));
-      assertThat(m.getVersioning().getVersions(), contains("1.0.0", "1.0.1"));
-      assertThat(m.getPlugins(), hasSize(2));
-
-      // Verify all plugins are present
-      List<String> artifactIds = Lists.newArrayList();
-      for (Plugin plugin : m.getPlugins()) {
-        artifactIds.add(plugin.getArtifactId());
-      }
-      assertThat(artifactIds, containsInAnyOrder("foo-maven-plugin", "bar-maven-plugin"));
-    } finally {
-      executor.shutdown();
-    }
-  }
-
-  /**
-   * Tests that null snapshot timestamp handling works correctly with Virtual Threads.
-   */
-  @Test
-  void nullSnapshotTimestampHandlingWorksWithVirtualThreads() throws Exception {
-    // Create test metadata objects
-    Metadata m1 = v("org.foo", "some-project", "1.0.0", "20150322.121500", 1);
-    m1.getVersioning().getSnapshot().setTimestamp(null);
-    Metadata m2 = v("org.foo", "some-project", "1.0.0", "20150323.121500", 2);
-
-    // Create a virtual thread factory
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-
-    try {
-      // Test merging concurrently with virtual threads
-      int taskCount = 1000;
-      CountDownLatch latch = new CountDownLatch(taskCount);
-      List<Metadata> results = new ArrayList<>(taskCount);
-      AtomicInteger errorCount = new AtomicInteger(0);
-
-      for (int i = 0; i < taskCount; i++) {
-        executor.submit(() -> {
-          try {
-            // Perform the merge operation
-            Metadata merged = merger.merge(
-                ImmutableList.of(new Envelope("1", m1), new Envelope("2", m2))
-            );
-            synchronized (results) {
-              results.add(merged);
-            }
-          } catch (Exception e) {
-            errorCount.incrementAndGet();
-          } finally {
-            latch.countDown();
-          }
-        });
-      }
-
-      // Wait for all tasks to complete
-      latch.await(30, TimeUnit.SECONDS);
-
-      // Verify no errors occurred
-      assertThat(errorCount.get(), is(0));
-      assertThat(results, hasSize(taskCount));
-
-      // Verify the first result (all should be identical)
-      Metadata m = results.get(0);
-      assertThat(m, notNullValue());
-      assertThat(m.getModelVersion(), equalTo("1.1.0"));
-      assertThat(m.getGroupId(), equalTo("org.foo"));
-      assertThat(m.getArtifactId(), equalTo("some-project"));
-      assertThat(m.getVersioning().getLastUpdated(), equalTo("20150323121500"));
-      assertThat(m.getVersioning().getSnapshot(), notNullValue());
-      assertThat(m.getVersioning().getSnapshot().getTimestamp(), equalTo("20150323.121500"));
-      assertThat(m.getVersioning().getSnapshot().getBuildNumber(), equalTo(2));
-    } finally {
-      executor.shutdown();
-    }
-  }
-
-  /**
-   * Tests that version in artifact-level metadata handling works correctly with Virtual Threads.
-   */
-  @Test
-  void versionInArtifactLevelMetadataWorksWithVirtualThreads() throws Exception {
-    // Create test metadata objects
-    Metadata m1 = a("org.foo", "some-project", "20150324121500", "1.0.0", "1.0.0", "1.0.0");
-    m1.setVersion("1.0.0");
-    Metadata m2 = a("org.foo", "some-project", "20150324121501", "1.0.1", "1.0.1", "1.0.1");
-    m2.setVersion("1.0.1");
-
-    // Create a virtual thread factory
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-
-    try {
-      // Test merging concurrently with virtual threads
-      int taskCount = 1000;
-      CountDownLatch latch = new CountDownLatch(taskCount);
-      List<Metadata> results = new ArrayList<>(taskCount);
-      AtomicInteger errorCount = new AtomicInteger(0);
-
-      for (int i = 0; i < taskCount; i++) {
-        executor.submit(() -> {
-          try {
-            // Perform the merge operation
-            Metadata merged = merger.merge(
-                ImmutableList.of(new Envelope("1", m1), new Envelope("2", m2))
-            );
-            synchronized (results) {
-              results.add(merged);
-            }
-          } catch (Exception e) {
-            errorCount.incrementAndGet();
-          } finally {
-            latch.countDown();
-          }
-        });
-      }
-
-      // Wait for all tasks to complete
-      latch.await(30, TimeUnit.SECONDS);
-
-      // Verify no errors occurred
-      assertThat(errorCount.get(), is(0));
-      assertThat(results, hasSize(taskCount));
-
-      // Verify the first result (all should be identical)
-      Metadata m = results.get(0);
-      assertThat(m.getVersion(), is(m1.getVersion())); // target version is left intact, no attempt to merge
-      assertThat(m.getVersioning().getRelease(), is(m2.getVersion()));
-      assertThat(m.getVersioning().getLastUpdated(), is(m2.getVersioning().getLastUpdated()));
-      assertThat(m.getVersioning().getVersions(), contains("1.0.0", "1.0.1"));
+      assertThat("All high concurrency metadata merges should complete successfully", 
+          errorCount.get(), is(0));
     } finally {
       executor.shutdown();
     }

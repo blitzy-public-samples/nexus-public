@@ -12,6 +12,9 @@
  */
 package org.sonatype.nexus.datastore.virtualthread;
 
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadInfo;
+import java.lang.management.ThreadMXBean;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -19,6 +22,7 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -26,9 +30,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import javax.sql.DataSource;
-
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.datastore.mybatis.PlaceholderTypes;
 
 import org.apache.ibatis.mapping.Environment;
 import org.apache.ibatis.session.Configuration;
@@ -41,8 +44,6 @@ import org.h2.jdbcx.JdbcDataSource;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -50,434 +51,503 @@ import static org.hamcrest.Matchers.lessThan;
 
 /**
  * Tests MyBatis operations with Java 21 Virtual Threads to detect and prevent thread pinning issues.
+ * 
  * Thread pinning occurs when a virtual thread blocks a carrier platform thread, negating the benefits
- * of virtual threads.
+ * of virtual threads. This test verifies that common MyBatis operations like queries, updates, and
+ * transactions don't cause thread pinning, and provides diagnostics when pinning is detected.
  */
 public class MyBatisVirtualThreadPinningTest
     extends TestSupport
 {
-  private static final Logger log = LoggerFactory.getLogger(MyBatisVirtualThreadPinningTest.class);
-
   private static final int VIRTUAL_THREAD_COUNT = 100;
   private static final int OPERATIONS_PER_THREAD = 10;
-  private static final int LARGE_RESULT_SET_SIZE = 1000;
-  private static final int TIMEOUT_SECONDS = 30;
-
-  private DataSource dataSource;
+  private static final long PINNING_THRESHOLD_MS = 20; // Match JFR's default threshold
+  
   private SqlSessionFactory sqlSessionFactory;
+  private JdbcDataSource dataSource;
   private ExecutorService executorService;
-  private final AtomicBoolean pinningDetected = new AtomicBoolean(false);
-  private final AtomicInteger pinnedThreadCount = new AtomicInteger(0);
-  private final List<String> pinningStackTraces = new ArrayList<>();
-
+  private ThreadMXBean threadMXBean;
+  private AtomicBoolean pinningDetected;
+  private AtomicInteger completedOperations;
+  
   /**
-   * Sets up the test environment with an in-memory H2 database and MyBatis configuration.
+   * Set up the test environment with an in-memory H2 database and MyBatis configuration.
    */
   @Before
-  public void setUp() throws SQLException {
-    // Create an in-memory H2 database for testing
-    JdbcDataSource h2DataSource = new JdbcDataSource();
-    h2DataSource.setURL("jdbc:h2:mem:test;DB_CLOSE_DELAY=-1");
-    h2DataSource.setUser("sa");
-    h2DataSource.setPassword("");
-    this.dataSource = h2DataSource;
-
-    // Create test table and populate with test data
+  public void setUp() throws Exception {
+    // Create an H2 in-memory database
+    dataSource = new JdbcDataSource();
+    dataSource.setURL("jdbc:h2:mem:test;DB_CLOSE_DELAY=-1");
+    dataSource.setUser("sa");
+    dataSource.setPassword("");
+    
+    // Create test table
     try (Connection conn = dataSource.getConnection();
          PreparedStatement stmt = conn.prepareStatement(
-             "CREATE TABLE IF NOT EXISTS test_table (id INT PRIMARY KEY, name VARCHAR(255))")) {
+             "CREATE TABLE IF NOT EXISTS test_data (id VARCHAR(36) PRIMARY KEY, value VARCHAR(255))")) {
       stmt.execute();
     }
-
-    populateTestData(LARGE_RESULT_SET_SIZE);
-
+    
     // Configure MyBatis
     TransactionFactory transactionFactory = new JdbcTransactionFactory();
     Environment environment = new Environment("test", transactionFactory, dataSource);
+    
     Configuration configuration = new Configuration(environment);
     configuration.setDatabaseId("H2");
-    this.sqlSessionFactory = new SqlSessionFactoryBuilder().build(configuration);
-
-    // Create a virtual thread per task executor
-    this.executorService = Executors.newVirtualThreadPerTaskExecutor();
-
-    log.info("Test environment set up with Java version: {}", System.getProperty("java.version"));
-    log.info("Virtual thread support: {}", Thread.ofVirtual().isVirtual());
+    PlaceholderTypes.configurePlaceholderTypes(configuration);
+    configuration.addMapper(TestMapper.class);
+    
+    sqlSessionFactory = new SqlSessionFactoryBuilder().build(configuration);
+    
+    // Create a virtual thread executor
+    executorService = Executors.newVirtualThreadPerTaskExecutor();
+    
+    // Get the ThreadMXBean for monitoring thread states
+    threadMXBean = ManagementFactory.getThreadMXBean();
+    
+    // Initialize tracking variables
+    pinningDetected = new AtomicBoolean(false);
+    completedOperations = new AtomicInteger(0);
   }
-
-  /**
-   * Cleans up resources after tests.
-   */
+  
   @After
   public void tearDown() throws Exception {
     if (executorService != null) {
       executorService.shutdown();
-      executorService.awaitTermination(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      executorService.awaitTermination(5, TimeUnit.SECONDS);
     }
-
-    // Clean up database
+    
+    // Clean up the database
     try (Connection conn = dataSource.getConnection();
-         PreparedStatement stmt = conn.prepareStatement("DROP TABLE IF EXISTS test_table")) {
+         PreparedStatement stmt = conn.prepareStatement("DROP TABLE IF EXISTS test_data")) {
       stmt.execute();
     }
   }
-
+  
   /**
-   * Tests if MyBatis query operations cause thread pinning when executed on virtual threads.
+   * Test that MyBatis query operations don't cause thread pinning when using virtual threads.
    */
   @Test
-  public void testMyBatisQueryOperationsForThreadPinning() throws Exception {
-    log.info("Starting query operations test with {} virtual threads", VIRTUAL_THREAD_COUNT);
-    CountDownLatch latch = new CountDownLatch(VIRTUAL_THREAD_COUNT);
-
-    // Start monitoring for thread pinning
-    Thread monitorThread = startPinningMonitor();
-
-    // Submit tasks to virtual threads
+  public void testMyBatisQueriesWithVirtualThreads() throws Exception {
+    // Populate test data
+    populateTestData(100);
+    
+    // Run concurrent queries using virtual threads
+    runConcurrentOperations(TestOperation.QUERY);
+    
+    // Verify no pinning was detected
+    assertThat("Thread pinning was detected during query operations", pinningDetected.get(), is(false));
+  }
+  
+  /**
+   * Test that MyBatis insert operations don't cause thread pinning when using virtual threads.
+   */
+  @Test
+  public void testMyBatisInsertsWithVirtualThreads() throws Exception {
+    // Run concurrent inserts using virtual threads
+    runConcurrentOperations(TestOperation.INSERT);
+    
+    // Verify no pinning was detected
+    assertThat("Thread pinning was detected during insert operations", pinningDetected.get(), is(false));
+  }
+  
+  /**
+   * Test that MyBatis update operations don't cause thread pinning when using virtual threads.
+   */
+  @Test
+  public void testMyBatisUpdatesWithVirtualThreads() throws Exception {
+    // Populate test data
+    populateTestData(100);
+    
+    // Run concurrent updates using virtual threads
+    runConcurrentOperations(TestOperation.UPDATE);
+    
+    // Verify no pinning was detected
+    assertThat("Thread pinning was detected during update operations", pinningDetected.get(), is(false));
+  }
+  
+  /**
+   * Test that MyBatis delete operations don't cause thread pinning when using virtual threads.
+   */
+  @Test
+  public void testMyBatisDeletesWithVirtualThreads() throws Exception {
+    // Populate test data
+    populateTestData(100);
+    
+    // Run concurrent deletes using virtual threads
+    runConcurrentOperations(TestOperation.DELETE);
+    
+    // Verify no pinning was detected
+    assertThat("Thread pinning was detected during delete operations", pinningDetected.get(), is(false));
+  }
+  
+  /**
+   * Test that MyBatis transaction operations don't cause thread pinning when using virtual threads.
+   */
+  @Test
+  public void testMyBatisTransactionsWithVirtualThreads() throws Exception {
+    // Run concurrent transactions using virtual threads
+    runConcurrentOperations(TestOperation.TRANSACTION);
+    
+    // Verify no pinning was detected
+    assertThat("Thread pinning was detected during transaction operations", pinningDetected.get(), is(false));
+  }
+  
+  /**
+   * Test that MyBatis large result sets don't cause thread pinning when using virtual threads.
+   */
+  @Test
+  public void testMyBatisLargeResultSetsWithVirtualThreads() throws Exception {
+    // Populate a larger dataset
+    populateTestData(1000);
+    
+    // Run concurrent large result set queries using virtual threads
+    runConcurrentOperations(TestOperation.LARGE_RESULT_SET);
+    
+    // Verify no pinning was detected
+    assertThat("Thread pinning was detected during large result set operations", pinningDetected.get(), is(false));
+  }
+  
+  /**
+   * Test that carrier thread utilization remains efficient during MyBatis operations with virtual threads.
+   */
+  @Test
+  public void testCarrierThreadUtilization() throws Exception {
+    // Populate test data
+    populateTestData(100);
+    
+    // Get the initial number of platform threads
+    int initialPlatformThreadCount = countPlatformThreads();
+    
+    // Run a mix of operations concurrently
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch completionLatch = new CountDownLatch(VIRTUAL_THREAD_COUNT * 5);
+    
+    // Submit different types of operations
     for (int i = 0; i < VIRTUAL_THREAD_COUNT; i++) {
-      final int threadId = i;
-      executorService.submit(() -> {
-        try {
-          for (int j = 0; j < OPERATIONS_PER_THREAD; j++) {
-            executeQueryOperation(threadId, j);
-          }
-        }
-        catch (Exception e) {
-          log.error("Error in virtual thread {}: {}", threadId, e.getMessage(), e);
-        }
-        finally {
-          latch.countDown();
-        }
-      });
+      executorService.submit(() -> runOperationWithMonitoring(TestOperation.QUERY, startLatch, completionLatch));
+      executorService.submit(() -> runOperationWithMonitoring(TestOperation.INSERT, startLatch, completionLatch));
+      executorService.submit(() -> runOperationWithMonitoring(TestOperation.UPDATE, startLatch, completionLatch));
+      executorService.submit(() -> runOperationWithMonitoring(TestOperation.DELETE, startLatch, completionLatch));
+      executorService.submit(() -> runOperationWithMonitoring(TestOperation.TRANSACTION, startLatch, completionLatch));
     }
-
-    // Wait for all tasks to complete
-    boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertThat("All tasks should complete within timeout", completed, is(true));
-
-    // Stop monitoring
-    monitorThread.interrupt();
-    monitorThread.join(1000);
-
-    // Report results
-    if (pinningDetected.get()) {
-      log.warn("Thread pinning detected in {} threads", pinnedThreadCount.get());
-      for (String stackTrace : pinningStackTraces) {
-        log.warn("Pinning stack trace: {}", stackTrace);
-      }
-    }
-
-    // Assert that no thread pinning was detected
-    assertThat("No thread pinning should be detected", pinningDetected.get(), is(false));
+    
+    // Start all operations simultaneously
+    startLatch.countDown();
+    
+    // Wait for all operations to complete
+    completionLatch.await(30, TimeUnit.SECONDS);
+    
+    // Get the peak number of platform threads used during the test
+    int peakPlatformThreadCount = countPlatformThreads();
+    
+    // Verify that the number of platform threads used is much less than the number of virtual threads
+    // This indicates efficient carrier thread utilization
+    assertThat("Too many carrier threads were used, suggesting inefficient thread utilization",
+        peakPlatformThreadCount - initialPlatformThreadCount, lessThan(VIRTUAL_THREAD_COUNT / 10));
   }
-
+  
   /**
-   * Tests if MyBatis transaction operations cause thread pinning when executed on virtual threads.
+   * Runs concurrent operations of the specified type using virtual threads.
    */
-  @Test
-  public void testMyBatisTransactionOperationsForThreadPinning() throws Exception {
-    log.info("Starting transaction operations test with {} virtual threads", VIRTUAL_THREAD_COUNT);
-    CountDownLatch latch = new CountDownLatch(VIRTUAL_THREAD_COUNT);
-
-    // Start monitoring for thread pinning
-    Thread monitorThread = startPinningMonitor();
-
-    // Submit tasks to virtual threads
+  private void runConcurrentOperations(TestOperation operationType) throws Exception {
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch completionLatch = new CountDownLatch(VIRTUAL_THREAD_COUNT);
+    
+    // Submit tasks to the virtual thread executor
     for (int i = 0; i < VIRTUAL_THREAD_COUNT; i++) {
-      final int threadId = i;
-      executorService.submit(() -> {
-        try {
-          for (int j = 0; j < OPERATIONS_PER_THREAD; j++) {
-            executeTransactionOperation(threadId, j);
-          }
-        }
-        catch (Exception e) {
-          log.error("Error in virtual thread {}: {}", threadId, e.getMessage(), e);
-        }
-        finally {
-          latch.countDown();
-        }
-      });
+      executorService.submit(() -> runOperationWithMonitoring(operationType, startLatch, completionLatch));
     }
-
-    // Wait for all tasks to complete
-    boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertThat("All tasks should complete within timeout", completed, is(true));
-
-    // Stop monitoring
-    monitorThread.interrupt();
-    monitorThread.join(1000);
-
-    // Report results
-    if (pinningDetected.get()) {
-      log.warn("Thread pinning detected in {} threads during transaction operations", pinnedThreadCount.get());
-      for (String stackTrace : pinningStackTraces) {
-        log.warn("Pinning stack trace: {}", stackTrace);
-      }
-    }
-
-    // Assert that no thread pinning was detected
-    assertThat("No thread pinning should be detected in transaction operations", pinningDetected.get(), is(false));
+    
+    // Start all operations simultaneously
+    startLatch.countDown();
+    
+    // Wait for all operations to complete
+    boolean allCompleted = completionLatch.await(30, TimeUnit.SECONDS);
+    assertThat("Not all operations completed in time", allCompleted, is(true));
+    
+    // Verify all operations were completed
+    assertThat("Not all operations were completed", 
+        completedOperations.get(), is(VIRTUAL_THREAD_COUNT * OPERATIONS_PER_THREAD));
   }
-
+  
   /**
-   * Tests if MyBatis large result set operations cause thread pinning when executed on virtual threads.
+   * Runs a MyBatis operation with thread pinning monitoring.
    */
-  @Test
-  public void testMyBatisLargeResultSetForThreadPinning() throws Exception {
-    log.info("Starting large result set test with {} virtual threads", VIRTUAL_THREAD_COUNT);
-    CountDownLatch latch = new CountDownLatch(VIRTUAL_THREAD_COUNT);
-
-    // Start monitoring for thread pinning
-    Thread monitorThread = startPinningMonitor();
-
-    // Submit tasks to virtual threads
-    for (int i = 0; i < VIRTUAL_THREAD_COUNT; i++) {
-      final int threadId = i;
-      executorService.submit(() -> {
-        try {
-          executeLargeResultSetQuery(threadId);
-        }
-        catch (Exception e) {
-          log.error("Error in virtual thread {}: {}", threadId, e.getMessage(), e);
-        }
-        finally {
-          latch.countDown();
-        }
-      });
-    }
-
-    // Wait for all tasks to complete
-    boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertThat("All tasks should complete within timeout", completed, is(true));
-
-    // Stop monitoring
-    monitorThread.interrupt();
-    monitorThread.join(1000);
-
-    // Report results
-    if (pinningDetected.get()) {
-      log.warn("Thread pinning detected in {} threads during large result set operations", pinnedThreadCount.get());
-      for (String stackTrace : pinningStackTraces) {
-        log.warn("Pinning stack trace: {}", stackTrace);
-      }
-    }
-
-    // Assert that no thread pinning was detected
-    assertThat("No thread pinning should be detected in large result set operations", pinningDetected.get(), is(false));
-  }
-
-  /**
-   * Tests the performance of MyBatis operations with virtual threads vs platform threads.
-   */
-  @Test
-  public void testVirtualThreadPerformance() throws Exception {
-    // First measure with virtual threads
-    long virtualThreadTime = measureOperationTime(true);
-    log.info("Virtual thread execution time: {} ms", virtualThreadTime);
-
-    // Then measure with platform threads
-    long platformThreadTime = measureOperationTime(false);
-    log.info("Platform thread execution time: {} ms", platformThreadTime);
-
-    // Virtual threads should be faster or at least not significantly slower
-    assertThat("Virtual threads should not be significantly slower than platform threads",
-        virtualThreadTime, lessThan(platformThreadTime * 2));
-  }
-
-  /**
-   * Measures the execution time of MyBatis operations using either virtual or platform threads.
-   */
-  private long measureOperationTime(boolean useVirtualThreads) throws Exception {
-    ExecutorService executor = useVirtualThreads ?
-        Executors.newVirtualThreadPerTaskExecutor() :
-        Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
-
+  private void runOperationWithMonitoring(
+      TestOperation operationType, 
+      CountDownLatch startLatch, 
+      CountDownLatch completionLatch) {
     try {
-      CountDownLatch latch = new CountDownLatch(VIRTUAL_THREAD_COUNT);
-      long startTime = System.currentTimeMillis();
-
-      for (int i = 0; i < VIRTUAL_THREAD_COUNT; i++) {
-        final int threadId = i;
-        executor.submit(() -> {
-          try {
-            for (int j = 0; j < OPERATIONS_PER_THREAD; j++) {
-              executeQueryOperation(threadId, j);
-            }
-          }
-          catch (Exception e) {
-            log.error("Error in thread {}: {}", threadId, e.getMessage(), e);
-          }
-          finally {
-            latch.countDown();
-          }
-        });
+      // Wait for the start signal
+      startLatch.await();
+      
+      // Get the current thread ID for monitoring
+      Thread currentThread = Thread.currentThread();
+      boolean isVirtualThread = currentThread.isVirtual();
+      
+      if (!isVirtualThread) {
+        log.warn("Test is not running on a virtual thread: {}", currentThread.getName());
       }
-
-      latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      return System.currentTimeMillis() - startTime;
-    }
+      
+      // Perform multiple operations
+      for (int i = 0; i < OPERATIONS_PER_THREAD; i++) {
+        // Record the start time for pinning detection
+        long startTime = System.currentTimeMillis();
+        
+        // Perform the operation
+        performOperation(operationType);
+        
+        // Check if the operation took longer than the pinning threshold
+        long duration = System.currentTimeMillis() - startTime;
+        if (duration > PINNING_THRESHOLD_MS) {
+          // This might indicate thread pinning
+          ThreadInfo threadInfo = threadMXBean.getThreadInfo(currentThread.threadId(), 10);
+          log.warn("Potential thread pinning detected: {} took {}ms\nStack trace: {}", 
+              operationType, duration, formatStackTrace(threadInfo));
+          pinningDetected.set(true);
+        }
+        
+        completedOperations.incrementAndGet();
+      }
+    } 
+    catch (Exception e) {
+      log.error("Error during operation: {}", e.getMessage(), e);
+    } 
     finally {
-      executor.shutdown();
-      executor.awaitTermination(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      completionLatch.countDown();
     }
   }
-
+  
   /**
-   * Starts a background thread to monitor for thread pinning.
-   * This is a simplified approach - in production, you would use JFR events or JVM flags.
+   * Performs a MyBatis operation based on the specified type.
    */
-  private Thread startPinningMonitor() {
-    Thread monitorThread = new Thread(() -> {
-      log.info("Starting thread pinning monitor");
-      try {
-        while (!Thread.currentThread().isInterrupted()) {
-          // In a real implementation, this would use JFR events or analyze thread dumps
-          // For this test, we're using a simplified approach to detect potential pinning
-          // by monitoring thread states and execution times
-          
-          // Sleep briefly to avoid consuming too many resources
-          Thread.sleep(100);
-        }
-      }
-      catch (InterruptedException e) {
-        // Expected when shutting down
-        Thread.currentThread().interrupt();
-      }
-      log.info("Thread pinning monitor stopped");
-    });
-    monitorThread.setDaemon(true);
-    monitorThread.start();
-    return monitorThread;
+  private void performOperation(TestOperation operationType) {
+    switch (operationType) {
+      case QUERY:
+        performQuery();
+        break;
+      case INSERT:
+        performInsert();
+        break;
+      case UPDATE:
+        performUpdate();
+        break;
+      case DELETE:
+        performDelete();
+        break;
+      case TRANSACTION:
+        performTransaction();
+        break;
+      case LARGE_RESULT_SET:
+        performLargeResultSetQuery();
+        break;
+    }
   }
-
+  
   /**
-   * Executes a simple query operation using MyBatis.
+   * Performs a simple query operation.
    */
-  private void executeQueryOperation(int threadId, int operationId) throws SQLException {
+  private void performQuery() {
     try (SqlSession session = sqlSessionFactory.openSession()) {
-      Connection connection = session.getConnection();
-      try (PreparedStatement stmt = connection.prepareStatement(
-          "SELECT * FROM test_table WHERE id = ?")) {
-        stmt.setInt(1, (threadId * OPERATIONS_PER_THREAD + operationId) % LARGE_RESULT_SET_SIZE);
-        try (ResultSet rs = stmt.executeQuery()) {
-          if (rs.next()) {
-            // Just read the result to ensure the operation completes
-            rs.getInt("id");
-            rs.getString("name");
-          }
-        }
-      }
+      TestMapper mapper = session.getMapper(TestMapper.class);
+      mapper.findAll();
     }
   }
-
+  
   /**
-   * Executes a transaction operation using MyBatis.
+   * Performs an insert operation.
    */
-  private void executeTransactionOperation(int threadId, int operationId) throws SQLException {
-    try (SqlSession session = sqlSessionFactory.openSession(false)) { // false = manual commit
-      Connection connection = session.getConnection();
-      try {
-        // Update operation
-        try (PreparedStatement stmt = connection.prepareStatement(
-            "UPDATE test_table SET name = ? WHERE id = ?")) {
-          stmt.setString(1, "Updated by thread " + threadId + " op " + operationId);
-          stmt.setInt(2, (threadId * OPERATIONS_PER_THREAD + operationId) % LARGE_RESULT_SET_SIZE);
-          stmt.executeUpdate();
-        }
-
-        // Read operation within the same transaction
-        try (PreparedStatement stmt = connection.prepareStatement(
-            "SELECT * FROM test_table WHERE id = ?")) {
-          stmt.setInt(1, (threadId * OPERATIONS_PER_THREAD + operationId) % LARGE_RESULT_SET_SIZE);
-          try (ResultSet rs = stmt.executeQuery()) {
-            if (rs.next()) {
-              // Just read the result to ensure the operation completes
-              rs.getInt("id");
-              rs.getString("name");
-            }
-          }
-        }
-
-        // Commit the transaction
+  private void performInsert() {
+    try (SqlSession session = sqlSessionFactory.openSession()) {
+      TestMapper mapper = session.getMapper(TestMapper.class);
+      TestData data = new TestData(UUID.randomUUID().toString(), "Value " + System.currentTimeMillis());
+      mapper.insert(data);
+      session.commit();
+    }
+  }
+  
+  /**
+   * Performs an update operation.
+   */
+  private void performUpdate() {
+    try (SqlSession session = sqlSessionFactory.openSession()) {
+      TestMapper mapper = session.getMapper(TestMapper.class);
+      List<TestData> allData = mapper.findAll();
+      if (!allData.isEmpty()) {
+        TestData data = allData.get((int) (Math.random() * allData.size()));
+        data.setValue("Updated " + System.currentTimeMillis());
+        mapper.update(data);
         session.commit();
       }
-      catch (Exception e) {
-        // Rollback on error
-        session.rollback();
-        throw e;
-      }
     }
   }
-
+  
   /**
-   * Executes a query that returns a large result set.
+   * Performs a delete operation.
    */
-  private void executeLargeResultSetQuery(int threadId) throws SQLException {
+  private void performDelete() {
     try (SqlSession session = sqlSessionFactory.openSession()) {
-      Connection connection = session.getConnection();
-      try (PreparedStatement stmt = connection.prepareStatement(
-          "SELECT * FROM test_table ORDER BY id")) {
-        try (ResultSet rs = stmt.executeQuery()) {
-          int count = 0;
-          while (rs.next() && count < LARGE_RESULT_SET_SIZE) {
-            // Process each row
-            rs.getInt("id");
-            rs.getString("name");
-            count++;
-          }
-          log.debug("Thread {} processed {} rows", threadId, count);
+      TestMapper mapper = session.getMapper(TestMapper.class);
+      List<TestData> allData = mapper.findAll();
+      if (!allData.isEmpty()) {
+        TestData data = allData.get((int) (Math.random() * allData.size()));
+        mapper.delete(data.getId());
+        session.commit();
+      }
+    }
+  }
+  
+  /**
+   * Performs a transaction with multiple operations.
+   */
+  private void performTransaction() {
+    try (SqlSession session = sqlSessionFactory.openSession(false)) {
+      TestMapper mapper = session.getMapper(TestMapper.class);
+      
+      // Insert a new record
+      TestData data = new TestData(UUID.randomUUID().toString(), "Transaction " + System.currentTimeMillis());
+      mapper.insert(data);
+      
+      // Update the record
+      data.setValue("Updated in transaction");
+      mapper.update(data);
+      
+      // Commit the transaction
+      session.commit();
+    }
+  }
+  
+  /**
+   * Performs a query that returns a large result set.
+   */
+  private void performLargeResultSetQuery() {
+    try (SqlSession session = sqlSessionFactory.openSession()) {
+      TestMapper mapper = session.getMapper(TestMapper.class);
+      List<TestData> results = mapper.findAll();
+      
+      // Process the results to ensure they're fully loaded
+      for (TestData data : results) {
+        // Just access the data to ensure it's loaded
+        String value = data.getValue();
+        if (value == null) {
+          log.warn("Null value found for ID: {}", data.getId());
         }
       }
     }
   }
-
+  
   /**
-   * Populates the test table with sample data.
+   * Populates the test database with the specified number of records.
    */
-  private void populateTestData(int rowCount) throws SQLException {
-    try (Connection conn = dataSource.getConnection()) {
-      // First clear any existing data
-      try (PreparedStatement stmt = conn.prepareStatement("DELETE FROM test_table")) {
-        stmt.execute();
-      }
-
-      // Then insert new test data
-      try (PreparedStatement stmt = conn.prepareStatement(
-          "INSERT INTO test_table (id, name) VALUES (?, ?)")) {
-        for (int i = 0; i < rowCount; i++) {
-          stmt.setInt(1, i);
-          stmt.setString(2, "Test data " + i);
-          stmt.addBatch();
-
-          // Execute in batches of 100
-          if (i % 100 == 0) {
-            stmt.executeBatch();
-          }
+  private void populateTestData(int count) throws SQLException {
+    try (Connection conn = dataSource.getConnection();
+         PreparedStatement stmt = conn.prepareStatement(
+             "INSERT INTO test_data (id, value) VALUES (?, ?)")) {
+      
+      for (int i = 0; i < count; i++) {
+        stmt.setString(1, UUID.randomUUID().toString());
+        stmt.setString(2, "Test value " + i);
+        stmt.addBatch();
+        
+        // Execute in batches of 100
+        if (i % 100 == 0) {
+          stmt.executeBatch();
         }
-        stmt.executeBatch(); // Execute any remaining statements
       }
-      conn.commit();
+      
+      stmt.executeBatch();
     }
   }
-
+  
   /**
-   * Records a thread pinning event with diagnostic information.
+   * Counts the number of platform threads currently active.
    */
-  private void recordPinningEvent(Thread thread, Duration duration, StackTraceElement[] stackTrace) {
-    pinningDetected.set(true);
-    pinnedThreadCount.incrementAndGet();
-
-    StringBuilder sb = new StringBuilder();
-    sb.append("Thread ").append(thread.getName())
-        .append(" pinned for ").append(duration.toMillis()).append("ms\n");
-    
-    for (StackTraceElement element : stackTrace) {
-      sb.append("\tat ").append(element).append("\n");
+  private int countPlatformThreads() {
+    return (int) Thread.getAllStackTraces().keySet().stream()
+        .filter(t -> !t.isVirtual())
+        .count();
+  }
+  
+  /**
+   * Formats a thread stack trace for logging.
+   */
+  private String formatStackTrace(ThreadInfo threadInfo) {
+    if (threadInfo == null) {
+      return "<no thread info available>";
     }
     
-    synchronized (pinningStackTraces) {
-      pinningStackTraces.add(sb.toString());
+    StringBuilder sb = new StringBuilder()
+        .append(threadInfo.getThreadName())
+        .append(" state: ")
+        .append(threadInfo.getThreadState());
+    
+    for (StackTraceElement element : threadInfo.getStackTrace()) {
+      sb.append("\n\tat ")
+        .append(element.toString());
     }
+    
+    return sb.toString();
+  }
+  
+  /**
+   * Enum representing different types of MyBatis operations to test.
+   */
+  private enum TestOperation {
+    QUERY,
+    INSERT,
+    UPDATE,
+    DELETE,
+    TRANSACTION,
+    LARGE_RESULT_SET
+  }
+  
+  /**
+   * Test data class for MyBatis operations.
+   */
+  public static class TestData {
+    private String id;
+    private String value;
+    
+    public TestData() {
+    }
+    
+    public TestData(String id, String value) {
+      this.id = id;
+      this.value = value;
+    }
+    
+    public String getId() {
+      return id;
+    }
+    
+    public void setId(String id) {
+      this.id = id;
+    }
+    
+    public String getValue() {
+      return value;
+    }
+    
+    public void setValue(String value) {
+      this.value = value;
+    }
+  }
+  
+  /**
+   * MyBatis mapper interface for test operations.
+   */
+  public interface TestMapper {
+    @org.apache.ibatis.annotations.Select("SELECT id, value FROM test_data")
+    List<TestData> findAll();
+    
+    @org.apache.ibatis.annotations.Insert("INSERT INTO test_data (id, value) VALUES (#{id}, #{value})")
+    void insert(TestData data);
+    
+    @org.apache.ibatis.annotations.Update("UPDATE test_data SET value = #{value} WHERE id = #{id}")
+    void update(TestData data);
+    
+    @org.apache.ibatis.annotations.Delete("DELETE FROM test_data WHERE id = #{id}")
+    void delete(String id);
   }
 }

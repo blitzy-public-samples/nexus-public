@@ -12,18 +12,27 @@
  */
 package org.sonatype.java21;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
+import java.util.regex.Pattern;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.nexus.upgrade.plan.DependencyResolver;
+import org.sonatype.nexus.upgrade.plan.DependencyResolver.CyclicDependencyException;
+import org.sonatype.nexus.upgrade.plan.DependencyResolver.UnresolvedDependencyException;
+import org.sonatype.nexus.upgrade.plan.DependencySource;
+import org.sonatype.nexus.upgrade.plan.DependencySource.DependsOnAware;
 
-import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.experimental.categories.Category;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -34,180 +43,318 @@ public class PatternMatchingUpgradeTest
     extends TestSupport
 {
   /**
-   * Base model for upgrade testing.
+   * Base class for upgrade model types used in pattern matching tests.
    */
-  sealed interface UpgradeModel permits SimpleUpgrade, ComplexUpgrade, ConditionalUpgrade {
-    String getVersion();
-    boolean isApplicable();
-  }
+  static abstract class UpgradeModel
+      implements DependencySource<UpgradeModel>, DependsOnAware<UpgradeModel>
+  {
+    String id;
+    String version;
+    List<Dependency<UpgradeModel>> dependencies = new ArrayList<>();
+    Collection<UpgradeModel> dependsOn;
 
-  /**
-   * Simple upgrade model with just a version.
-   */
-  record SimpleUpgrade(String version) implements UpgradeModel {
     @Override
-    public boolean isApplicable() {
-      return true;
+    public List<Dependency<UpgradeModel>> getDependencies() {
+      return dependencies;
     }
-  }
 
-  /**
-   * Complex upgrade model with version and additional metadata.
-   */
-  record ComplexUpgrade(String version, String description, List<String> dependencies) implements UpgradeModel {
     @Override
-    public boolean isApplicable() {
-      return !dependencies.isEmpty();
+    public String toString() {
+      return getClass().getSimpleName() + "{"
+          + "id='" + id + '\''
+          + ", version='" + version + '\''
+          + '}';
     }
-  }
 
-  /**
-   * Conditional upgrade model that may or may not be applicable.
-   */
-  record ConditionalUpgrade(String version, boolean applicable) implements UpgradeModel {
     @Override
-    public boolean isApplicable() {
-      return applicable;
+    public void setDependsOn(final Collection<UpgradeModel> dependsOn) {
+      this.dependsOn = dependsOn;
     }
-  }
 
-  /**
-   * Version validator that uses pattern matching to validate version formats.
-   */
-  static class VersionValidator {
-    /**
-     * Validates a version string using pattern matching with instanceof.
-     */
-    boolean isValidVersion(Object version) {
-      // Using pattern matching with instanceof
-      if (version instanceof String s && s.matches("\\d+\\.\\d+\\.\\d+")) {
-        return true;
+    @Override
+    public boolean equals(final Object o) {
+      if (o == null || getClass() != o.getClass()) {
+        return false;
       }
-      else if (version instanceof Integer i && i > 0) {
-        return true;
-      }
-      return false;
+      UpgradeModel model = (UpgradeModel) o;
+      return Objects.equals(id, model.id) && Objects.equals(version, model.version);
     }
 
-    /**
-     * Extracts major version using pattern matching with switch.
-     */
-    int extractMajorVersion(Object version) {
-      // Using pattern matching with switch
-      return switch (version) {
-        case String s when s.matches("\\d+\\.\\d+\\.\\d+") -> 
-            Integer.parseInt(s.split("\\.")[0]);
-        case Integer i -> i;
-        case null -> 0;
-        default -> -1;
-      };
+    @Override
+    public int hashCode() {
+      return Objects.hash(id, version);
     }
   }
 
   /**
-   * Upgrade processor that uses pattern matching to handle different upgrade models.
+   * Schema upgrade model type for pattern matching tests.
    */
-  static class UpgradeProcessor {
-    /**
-     * Processes an upgrade model using pattern matching with switch.
-     */
-    String processUpgrade(UpgradeModel model) {
-      // Using pattern matching with switch for different model types
-      return switch (model) {
-        case SimpleUpgrade s -> 
-            "Processing simple upgrade version " + s.version();
-        case ComplexUpgrade c when c.dependencies().size() > 2 -> 
-            "Processing complex upgrade version " + c.version() + " with many dependencies";
-        case ComplexUpgrade c -> 
-            "Processing complex upgrade version " + c.version() + " with " + c.dependencies().size() + " dependencies";
-        case ConditionalUpgrade c when c.applicable() -> 
-            "Processing applicable conditional upgrade version " + c.version();
-        case ConditionalUpgrade c -> 
-            "Skipping non-applicable conditional upgrade version " + c.version();
-      };
-    }
-
-    /**
-     * Determines if an upgrade is applicable using pattern matching with switch.
-     */
-    boolean isApplicable(Object model) {
-      // Using pattern matching with switch including null handling
-      return switch (model) {
-        case SimpleUpgrade s -> true;
-        case ComplexUpgrade c -> !c.dependencies().isEmpty();
-        case ConditionalUpgrade c -> c.applicable();
-        case null -> false;
-        default -> false;
-      };
+  static class SchemaUpgrade extends UpgradeModel {
+    String schemaName;
+    
+    SchemaUpgrade(String id, String version, String schemaName) {
+      this.id = id;
+      this.version = version;
+      this.schemaName = schemaName;
     }
   }
 
-  private VersionValidator versionValidator;
-  private UpgradeProcessor upgradeProcessor;
+  /**
+   * Data upgrade model type for pattern matching tests.
+   */
+  static class DataUpgrade extends UpgradeModel {
+    String dataType;
+    
+    DataUpgrade(String id, String version, String dataType) {
+      this.id = id;
+      this.version = version;
+      this.dataType = dataType;
+    }
+  }
+
+  /**
+   * Configuration upgrade model type for pattern matching tests.
+   */
+  static class ConfigUpgrade extends UpgradeModel {
+    String configKey;
+    
+    ConfigUpgrade(String id, String version, String configKey) {
+      this.id = id;
+      this.version = version;
+      this.configKey = configKey;
+    }
+  }
+
+  /**
+   * Record representing a version range for pattern matching tests.
+   */
+  record VersionRange(String from, String to) {
+    boolean includes(String version) {
+      return version.compareTo(from) >= 0 && version.compareTo(to) <= 0;
+    }
+  }
+
+  private DependencyResolver<UpgradeModel> resolver;
 
   @BeforeEach
-  void setUp() {
-    versionValidator = new VersionValidator();
-    upgradeProcessor = new UpgradeProcessor();
+  public void setUp() {
+    resolver = new DependencyResolver<>();
   }
 
+  /**
+   * Tests pattern matching with instanceof for upgrade model types.
+   */
   @Test
-  void testPatternMatchingWithInstanceOf() {
-    // Test pattern matching with instanceof for version validation
-    assertTrue(versionValidator.isValidVersion("1.2.3"));
-    assertTrue(versionValidator.isValidVersion(5));
-    assertFalse(versionValidator.isValidVersion("invalid"));
-    assertFalse(versionValidator.isValidVersion(null));
+  public void testPatternMatchingWithInstanceOf() {
+    // Create different types of upgrade models
+    UpgradeModel schemaUpgrade = new SchemaUpgrade("schema.users", "1.0", "users");
+    UpgradeModel dataUpgrade = new DataUpgrade("data.roles", "2.0", "roles");
+    UpgradeModel configUpgrade = new ConfigUpgrade("config.security", "3.0", "security.enabled");
+    
+    // Use pattern matching with instanceof to process different model types
+    String result = processUpgradeModel(schemaUpgrade);
+    assertEquals("Schema upgrade for users", result);
+    
+    result = processUpgradeModel(dataUpgrade);
+    assertEquals("Data upgrade for roles", result);
+    
+    result = processUpgradeModel(configUpgrade);
+    assertEquals("Config upgrade for security.enabled", result);
   }
 
-  @Test
-  void testPatternMatchingWithSwitchForVersionExtraction() {
-    // Test pattern matching with switch for version extraction
-    assertEquals(1, versionValidator.extractMajorVersion("1.2.3"));
-    assertEquals(5, versionValidator.extractMajorVersion(5));
-    assertEquals(-1, versionValidator.extractMajorVersion("invalid"));
-    assertEquals(0, versionValidator.extractMajorVersion(null));
+  /**
+   * Helper method that uses pattern matching with instanceof to process different upgrade model types.
+   */
+  private String processUpgradeModel(UpgradeModel model) {
+    // Using pattern matching with instanceof to avoid explicit casting
+    if (model instanceof SchemaUpgrade schemaUpgrade) {
+      return "Schema upgrade for " + schemaUpgrade.schemaName;
+    } else if (model instanceof DataUpgrade dataUpgrade) {
+      return "Data upgrade for " + dataUpgrade.dataType;
+    } else if (model instanceof ConfigUpgrade configUpgrade) {
+      return "Config upgrade for " + configUpgrade.configKey;
+    } else {
+      return "Unknown upgrade type";
+    }
   }
 
+  /**
+   * Tests pattern matching for switch expressions with upgrade model types.
+   */
   @Test
-  void testPatternMatchingWithSwitchForUpgradeModels() {
-    // Test pattern matching with switch for different upgrade model types
-    SimpleUpgrade simpleUpgrade = new SimpleUpgrade("2.0.0");
-    ComplexUpgrade complexUpgradeWithFewDeps = new ComplexUpgrade("2.1.0", "Complex upgrade", List.of("dep1", "dep2"));
-    ComplexUpgrade complexUpgradeWithManyDeps = new ComplexUpgrade("2.2.0", "Complex upgrade with many deps", 
-        List.of("dep1", "dep2", "dep3"));
-    ConditionalUpgrade applicableUpgrade = new ConditionalUpgrade("2.3.0", true);
-    ConditionalUpgrade nonApplicableUpgrade = new ConditionalUpgrade("2.4.0", false);
-
-    // Verify pattern matching with switch handles different model types correctly
-    assertEquals("Processing simple upgrade version 2.0.0", 
-        upgradeProcessor.processUpgrade(simpleUpgrade));
-    assertEquals("Processing complex upgrade version 2.1.0 with 2 dependencies", 
-        upgradeProcessor.processUpgrade(complexUpgradeWithFewDeps));
-    assertEquals("Processing complex upgrade version 2.2.0 with many dependencies", 
-        upgradeProcessor.processUpgrade(complexUpgradeWithManyDeps));
-    assertEquals("Processing applicable conditional upgrade version 2.3.0", 
-        upgradeProcessor.processUpgrade(applicableUpgrade));
-    assertEquals("Skipping non-applicable conditional upgrade version 2.4.0", 
-        upgradeProcessor.processUpgrade(nonApplicableUpgrade));
+  public void testPatternMatchingForSwitch() {
+    // Create different types of upgrade models
+    UpgradeModel schemaUpgrade = new SchemaUpgrade("schema.users", "1.0", "users");
+    UpgradeModel dataUpgrade = new DataUpgrade("data.roles", "2.0", "roles");
+    UpgradeModel configUpgrade = new ConfigUpgrade("config.security", "3.0", "security.enabled");
+    
+    // Use pattern matching with switch to process different model types
+    String schemaResult = processUpgradeModelWithSwitch(schemaUpgrade);
+    assertEquals("Schema upgrade for users (version 1.0)", schemaResult);
+    
+    String dataResult = processUpgradeModelWithSwitch(dataUpgrade);
+    assertEquals("Data upgrade for roles (version 2.0)", dataResult);
+    
+    String configResult = processUpgradeModelWithSwitch(configUpgrade);
+    assertEquals("Config upgrade for security.enabled (version 3.0)", configResult);
+    
+    // Test with null model
+    String nullResult = processUpgradeModelWithSwitch(null);
+    assertEquals("No upgrade model provided", nullResult);
   }
 
-  @Test
-  void testPatternMatchingWithSwitchForApplicability() {
-    // Test pattern matching with switch for determining applicability
-    SimpleUpgrade simpleUpgrade = new SimpleUpgrade("2.0.0");
-    ComplexUpgrade complexUpgradeWithDeps = new ComplexUpgrade("2.1.0", "Complex upgrade", List.of("dep1"));
-    ComplexUpgrade complexUpgradeWithoutDeps = new ComplexUpgrade("2.2.0", "Complex upgrade", List.of());
-    ConditionalUpgrade applicableUpgrade = new ConditionalUpgrade("2.3.0", true);
-    ConditionalUpgrade nonApplicableUpgrade = new ConditionalUpgrade("2.4.0", false);
+  /**
+   * Helper method that uses pattern matching with switch expressions to process different upgrade model types.
+   */
+  private String processUpgradeModelWithSwitch(UpgradeModel model) {
+    // Using pattern matching with switch expressions
+    return switch (model) {
+      case SchemaUpgrade schemaUpgrade -> 
+          "Schema upgrade for " + schemaUpgrade.schemaName + " (version " + schemaUpgrade.version + ")";
+      case DataUpgrade dataUpgrade -> 
+          "Data upgrade for " + dataUpgrade.dataType + " (version " + dataUpgrade.version + ")";
+      case ConfigUpgrade configUpgrade -> 
+          "Config upgrade for " + configUpgrade.configKey + " (version " + configUpgrade.version + ")";
+      case null -> "No upgrade model provided";
+      default -> "Unknown upgrade type";
+    };
+  }
 
-    // Verify pattern matching with switch correctly determines applicability
-    assertTrue(upgradeProcessor.isApplicable(simpleUpgrade));
-    assertTrue(upgradeProcessor.isApplicable(complexUpgradeWithDeps));
-    assertFalse(upgradeProcessor.isApplicable(complexUpgradeWithoutDeps));
-    assertTrue(upgradeProcessor.isApplicable(applicableUpgrade));
-    assertFalse(upgradeProcessor.isApplicable(nonApplicableUpgrade));
-    assertFalse(upgradeProcessor.isApplicable(null));
-    assertFalse(upgradeProcessor.isApplicable("not an upgrade model"));
+  /**
+   * Tests pattern matching with switch expressions and guarded patterns for version validation.
+   */
+  @Test
+  public void testPatternMatchingWithGuardedPatterns() {
+    // Create upgrade models with different versions
+    UpgradeModel oldSchema = new SchemaUpgrade("schema.users", "1.0", "users");
+    UpgradeModel newSchema = new SchemaUpgrade("schema.users", "2.5", "users");
+    UpgradeModel oldData = new DataUpgrade("data.roles", "1.5", "roles");
+    UpgradeModel newData = new DataUpgrade("data.roles", "3.0", "roles");
+    
+    // Define version ranges for testing
+    VersionRange oldRange = new VersionRange("1.0", "2.0");
+    VersionRange newRange = new VersionRange("2.0", "3.0");
+    
+    // Test version validation with guarded patterns
+    assertTrue(isUpgradeInRange(oldSchema, oldRange));
+    assertFalse(isUpgradeInRange(oldSchema, newRange));
+    assertTrue(isUpgradeInRange(newSchema, newRange));
+    assertFalse(isUpgradeInRange(newSchema, oldRange));
+    assertTrue(isUpgradeInRange(oldData, oldRange));
+    assertTrue(isUpgradeInRange(newData, newRange));
+  }
+
+  /**
+   * Helper method that uses pattern matching with guarded patterns to validate upgrade versions.
+   */
+  private boolean isUpgradeInRange(UpgradeModel model, VersionRange range) {
+    return switch (model) {
+      // Using guarded patterns with 'when' clause to add additional conditions
+      case SchemaUpgrade schemaUpgrade when range.includes(schemaUpgrade.version) -> true;
+      case DataUpgrade dataUpgrade when range.includes(dataUpgrade.version) -> true;
+      case ConfigUpgrade configUpgrade when range.includes(configUpgrade.version) -> true;
+      default -> false;
+    };
+  }
+
+  /**
+   * Tests pattern matching with instanceof for complex dependency resolution.
+   */
+  @Test
+  public void testDependencyResolutionWithPatternMatching() {
+    // Create upgrade models with dependencies
+    SchemaUpgrade usersSchema = new SchemaUpgrade("schema.users", "1.0", "users");
+    DataUpgrade rolesData = new DataUpgrade("data.roles", "1.0", "roles");
+    ConfigUpgrade securityConfig = new ConfigUpgrade("config.security", "1.0", "security.enabled");
+    
+    // Set up dependencies using pattern matching
+    setupDependencies(usersSchema, List.of(rolesData));
+    setupDependencies(rolesData, List.of(securityConfig));
+    
+    // Add models to resolver
+    resolver.add(usersSchema, rolesData, securityConfig);
+    
+    // Resolve dependencies
+    List<UpgradeModel> resolved = resolver.resolve().ordered;
+    
+    // Verify resolution order using pattern matching
+    assertEquals(3, resolved.size());
+    
+    // Verify correct ordering using pattern matching with instanceof
+    assertTrue(resolved.get(0) instanceof ConfigUpgrade);
+    assertTrue(resolved.get(1) instanceof DataUpgrade);
+    assertTrue(resolved.get(2) instanceof SchemaUpgrade);
+  }
+
+  /**
+   * Helper method to set up dependencies between upgrade models using pattern matching.
+   */
+  private void setupDependencies(UpgradeModel model, List<UpgradeModel> dependencies) {
+    // Using pattern matching to handle different model types
+    switch (model) {
+      case SchemaUpgrade schemaUpgrade -> {
+        for (UpgradeModel dependency : dependencies) {
+          schemaUpgrade.dependencies.add(createDependency(dependency.id));
+        }
+      }
+      case DataUpgrade dataUpgrade -> {
+        for (UpgradeModel dependency : dependencies) {
+          dataUpgrade.dependencies.add(createDependency(dependency.id));
+        }
+      }
+      case ConfigUpgrade configUpgrade -> {
+        for (UpgradeModel dependency : dependencies) {
+          configUpgrade.dependencies.add(createDependency(dependency.id));
+        }
+      }
+      default -> throw new IllegalArgumentException("Unsupported upgrade model type");
+    }
+  }
+
+  /**
+   * Creates a dependency that requires an upgrade model with the given identifier.
+   */
+  private Dependency<UpgradeModel> createDependency(final String id) {
+    return new Dependency<UpgradeModel>() {
+      @Override
+      public boolean satisfiedBy(final UpgradeModel other) {
+        return other.id.equals(id);
+      }
+
+      @Override
+      public String toString() {
+        return "DEPENDS_ON(" + id + ")";
+      }
+    };
+  }
+
+  /**
+   * Tests pattern matching with switch expressions for error handling.
+   */
+  @Test
+  public void testErrorHandlingWithPatternMatching() {
+    // Test cyclic dependency detection
+    SchemaUpgrade schema1 = new SchemaUpgrade("schema.a", "1.0", "a");
+    SchemaUpgrade schema2 = new SchemaUpgrade("schema.b", "1.0", "b");
+    
+    // Create a cycle: schema1 -> schema2 -> schema1
+    setupDependencies(schema1, List.of(schema2));
+    setupDependencies(schema2, List.of(schema1));
+    
+    resolver.add(schema1, schema2);
+    
+    // Verify that a cyclic dependency exception is thrown
+    Exception exception = assertThrows(CyclicDependencyException.class, () -> {
+      resolver.resolve();
+    });
+    
+    // Use pattern matching to extract information from the exception
+    String errorMessage = switch (exception) {
+      case CyclicDependencyException cyclicEx -> "Cyclic dependency detected";
+      case UnresolvedDependencyException unresolvedEx -> "Unresolved dependency";
+      default -> "Unknown error";
+    };
+    
+    assertEquals("Cyclic dependency detected", errorMessage);
   }
 }

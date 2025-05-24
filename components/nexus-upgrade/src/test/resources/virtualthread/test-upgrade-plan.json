@@ -1,443 +1,341 @@
 {
-  "_comment": "Test fixture for validating upgrade execution with Java 21 Virtual Threads",
-  "models": [
-    {
-      "name": "database",
-      "currentVersion": "1.0",
-      "targetVersion": "1.3",
-      "upgradePaths": [
-        {
-          "from": "1.0",
-          "to": "1.1",
-          "upgradeClass": "org.sonatype.nexus.upgrade.virtualthread.UpgradeDatabase_1_1",
-          "ioOperations": [
-            {
-              "type": "schema",
-              "description": "Create tables for virtual thread testing",
-              "estimatedDuration": 150
-            }
-          ]
-        },
-        {
-          "from": "1.1",
-          "to": "1.2",
-          "upgradeClass": "org.sonatype.nexus.upgrade.virtualthread.UpgradeDatabase_1_2",
-          "ioOperations": [
-            {
-              "type": "data",
-              "description": "Insert test data in parallel",
-              "estimatedDuration": 300,
-              "parallelOperations": 1000
-            }
-          ]
-        },
-        {
-          "from": "1.2",
-          "to": "1.3",
-          "upgradeClass": "org.sonatype.nexus.upgrade.virtualthread.UpgradeDatabase_1_3",
-          "ioOperations": [
-            {
-              "type": "index",
-              "description": "Create indexes on test tables",
-              "estimatedDuration": 200
-            }
-          ]
-        }
-      ],
-      "metadata": {
-        "description": "Database schema and data upgrades for virtual thread testing",
-        "priority": "high",
-        "ioIntensive": true
-      }
-    },
-    {
-      "name": "blobstore",
-      "currentVersion": "1.0",
-      "targetVersion": "1.2",
-      "upgradePaths": [
-        {
-          "from": "1.0",
-          "to": "1.1",
-          "upgradeClass": "org.sonatype.nexus.upgrade.virtualthread.UpgradeBlobstore_1_1",
-          "dependencies": [
-            {
-              "model": "database",
-              "version": "1.1"
-            }
-          ],
-          "ioOperations": [
-            {
-              "type": "file",
-              "description": "Migrate blob metadata files",
-              "estimatedDuration": 500,
-              "parallelOperations": 200
-            }
-          ]
-        },
-        {
-          "from": "1.1",
-          "to": "1.2",
-          "upgradeClass": "org.sonatype.nexus.upgrade.virtualthread.UpgradeBlobstore_1_2",
-          "dependencies": [
-            {
-              "model": "database",
-              "version": "1.3"
-            }
-          ],
-          "ioOperations": [
-            {
-              "type": "file",
-              "description": "Update blob content files",
-              "estimatedDuration": 800,
-              "parallelOperations": 500
-            }
-          ]
-        }
-      ],
-      "metadata": {
-        "description": "Blobstore upgrades with heavy file I/O operations",
-        "priority": "medium",
-        "ioIntensive": true
-      }
-    },
-    {
-      "name": "security",
-      "currentVersion": "1.0",
-      "targetVersion": "1.2",
-      "upgradePaths": [
-        {
-          "from": "1.0",
-          "to": "1.1",
-          "upgradeClass": "org.sonatype.nexus.upgrade.virtualthread.UpgradeSecurity_1_1",
-          "dependencies": [
-            {
-              "model": "database",
-              "version": "1.2"
-            }
-          ],
-          "ioOperations": [
-            {
-              "type": "data",
-              "description": "Migrate security settings",
-              "estimatedDuration": 250,
-              "parallelOperations": 50
-            }
-          ]
-        },
-        {
-          "from": "1.1",
-          "to": "1.2",
-          "upgradeClass": "org.sonatype.nexus.upgrade.virtualthread.UpgradeSecurity_1_2",
-          "dependencies": [
-            {
-              "model": "database",
-              "version": "1.3"
-            },
-            {
-              "model": "blobstore",
-              "version": "1.1"
-            }
-          ],
-          "ioOperations": [
-            {
-              "type": "network",
-              "description": "Update security certificates",
-              "estimatedDuration": 350,
-              "parallelOperations": 20
-            }
-          ]
-        }
-      ],
-      "metadata": {
-        "description": "Security configuration upgrades",
-        "priority": "high",
-        "ioIntensive": false
-      }
-    },
-    {
-      "name": "repository",
-      "currentVersion": "1.0",
-      "targetVersion": "1.1",
-      "upgradePaths": [
-        {
-          "from": "1.0",
-          "to": "1.1",
-          "upgradeClass": "org.sonatype.nexus.upgrade.virtualthread.UpgradeRepository_1_1",
-          "dependencies": [
-            {
-              "model": "database",
-              "version": "1.3"
-            },
-            {
-              "model": "blobstore",
-              "version": "1.2"
-            },
-            {
-              "model": "security",
-              "version": "1.2"
-            }
-          ],
-          "ioOperations": [
-            {
-              "type": "mixed",
-              "description": "Comprehensive repository upgrade with database, file, and network operations",
-              "estimatedDuration": 1000,
-              "parallelOperations": 100
-            }
-          ]
-        }
-      ],
-      "metadata": {
-        "description": "Repository configuration upgrades",
-        "priority": "low",
-        "ioIntensive": true
-      }
-    }
-  ],
-  "upgradeConfiguration": {
-    "executionMode": "parallel",
-    "failFast": true,
-    "maxRetries": 3,
-    "retryDelayMillis": 1000,
-    "logLevel": "INFO",
-    "java21Features": {
-      "useVirtualThreads": true,
-      "virtualThreadConfiguration": {
-        "maxConcurrentOperations": 1000,
-        "schedulerParallelism": 16,
-        "pinningDetectionEnabled": true,
-        "pinningThresholdMillis": 100
-      },
-      "usePatternMatching": true,
-      "useStringTemplates": true,
-      "useRecordPatterns": true
-    },
-    "performanceMetrics": {
-      "enabled": true,
-      "compareWithPlatformThreads": true,
-      "collectMemoryMetrics": true,
-      "collectCpuMetrics": true,
-      "collectThreadMetrics": true,
-      "outputFile": "virtual-thread-upgrade-metrics.json"
-    }
+  "metadata": {
+    "planId": "virtual-thread-test-plan",
+    "description": "Test upgrade plan for validating virtual thread execution",
+    "createdAt": "2024-05-24T10:00:00Z",
+    "targetVersion": "3.76.0",
+    "sourceVersion": "3.71.0",
+    "executionMode": "VIRTUAL_THREAD"
   },
-  "testScenarios": [
+  "configuration": {
+    "virtualThreadEnabled": true,
+    "maxConcurrentSteps": 10,
+    "timeoutSeconds": 300,
+    "retryCount": 3,
+    "retryDelaySeconds": 5,
+    "collectPerformanceMetrics": true,
+    "checkpointAfterEachStep": true
+  },
+  "steps": [
     {
-      "name": "Complete upgrade sequence",
-      "description": "Tests the full upgrade sequence with all dependencies using virtual threads",
-      "expectedExecutionOrder": [
-        "org.sonatype.nexus.upgrade.virtualthread.UpgradeDatabase_1_1",
-        "org.sonatype.nexus.upgrade.virtualthread.UpgradeDatabase_1_2",
-        "org.sonatype.nexus.upgrade.virtualthread.UpgradeBlobstore_1_1",
-        "org.sonatype.nexus.upgrade.virtualthread.UpgradeDatabase_1_3",
-        "org.sonatype.nexus.upgrade.virtualthread.UpgradeSecurity_1_1",
-        "org.sonatype.nexus.upgrade.virtualthread.UpgradeSecurity_1_2",
-        "org.sonatype.nexus.upgrade.virtualthread.UpgradeBlobstore_1_2",
-        "org.sonatype.nexus.upgrade.virtualthread.UpgradeRepository_1_1"
-      ],
-      "expectedPerformance": {
-        "totalDurationLessThan": 2000,
-        "speedupVsPlatformThreads": "3x-5x",
-        "maxConcurrentVirtualThreads": 1000,
-        "maxConcurrentPlatformThreads": 16
+      "id": "initialize-upgrade",
+      "description": "Initialize the upgrade process",
+      "type": "INITIALIZATION",
+      "dependencies": [],
+      "parameters": {
+        "validateSystemRequirements": true,
+        "backupConfiguration": true
+      },
+      "expectedDurationMs": 5000,
+      "checkpoint": {
+        "enabled": true,
+        "data": {
+          "status": "INITIALIZED",
+          "timestamp": "${EXECUTION_TIME}"
+        }
       }
     },
     {
-      "name": "Database-only upgrade",
-      "description": "Tests upgrading only the database model with virtual threads",
-      "modelsToUpgrade": ["database"],
-      "expectedExecutionOrder": [
-        "org.sonatype.nexus.upgrade.virtualthread.UpgradeDatabase_1_1",
-        "org.sonatype.nexus.upgrade.virtualthread.UpgradeDatabase_1_2",
-        "org.sonatype.nexus.upgrade.virtualthread.UpgradeDatabase_1_3"
-      ],
-      "expectedPerformance": {
-        "totalDurationLessThan": 700,
-        "speedupVsPlatformThreads": "2x-3x",
-        "maxConcurrentVirtualThreads": 1000,
-        "maxConcurrentPlatformThreads": 16
+      "id": "backup-database-schema",
+      "description": "Create a backup of the database schema",
+      "type": "DATABASE_OPERATION",
+      "dependencies": ["initialize-upgrade"],
+      "parameters": {
+        "operation": "BACKUP",
+        "target": "SCHEMA",
+        "location": "${DATA_DIR}/backup/schema_${TIMESTAMP}.sql"
+      },
+      "expectedDurationMs": 15000,
+      "ioIntensive": true,
+      "checkpoint": {
+        "enabled": true,
+        "data": {
+          "backupLocation": "${DATA_DIR}/backup/schema_${TIMESTAMP}.sql",
+          "timestamp": "${EXECUTION_TIME}"
+        }
       }
     },
     {
-      "name": "Repository upgrade with dependencies",
-      "description": "Tests upgrading the repository model with all its dependencies using virtual threads",
-      "modelsToUpgrade": ["repository"],
-      "expectedExecutionOrder": [
-        "org.sonatype.nexus.upgrade.virtualthread.UpgradeDatabase_1_1",
-        "org.sonatype.nexus.upgrade.virtualthread.UpgradeDatabase_1_2",
-        "org.sonatype.nexus.upgrade.virtualthread.UpgradeBlobstore_1_1",
-        "org.sonatype.nexus.upgrade.virtualthread.UpgradeDatabase_1_3",
-        "org.sonatype.nexus.upgrade.virtualthread.UpgradeSecurity_1_1",
-        "org.sonatype.nexus.upgrade.virtualthread.UpgradeSecurity_1_2",
-        "org.sonatype.nexus.upgrade.virtualthread.UpgradeBlobstore_1_2",
-        "org.sonatype.nexus.upgrade.virtualthread.UpgradeRepository_1_1"
-      ],
-      "expectedPerformance": {
-        "totalDurationLessThan": 2000,
-        "speedupVsPlatformThreads": "3x-5x",
-        "maxConcurrentVirtualThreads": 1000,
-        "maxConcurrentPlatformThreads": 16
+      "id": "backup-blobstore-metadata",
+      "description": "Backup BlobStore metadata",
+      "type": "FILE_OPERATION",
+      "dependencies": ["initialize-upgrade"],
+      "parameters": {
+        "operation": "BACKUP",
+        "source": "${DATA_DIR}/blobs",
+        "destination": "${DATA_DIR}/backup/blobs_${TIMESTAMP}",
+        "includePatterns": ["**/*.properties", "**/*.json", "**/*.xml"],
+        "excludePatterns": ["**/tmp/**"]
+      },
+      "expectedDurationMs": 20000,
+      "ioIntensive": true,
+      "checkpoint": {
+        "enabled": true,
+        "data": {
+          "backupLocation": "${DATA_DIR}/backup/blobs_${TIMESTAMP}",
+          "timestamp": "${EXECUTION_TIME}"
+        }
       }
     },
     {
-      "name": "Parallel independent upgrades",
-      "description": "Tests parallel execution of independent upgrade steps using virtual threads",
-      "modelsToUpgrade": ["database", "security"],
-      "expectedParallelExecution": [
-        ["org.sonatype.nexus.upgrade.virtualthread.UpgradeDatabase_1_1"],
-        ["org.sonatype.nexus.upgrade.virtualthread.UpgradeDatabase_1_2"],
-        ["org.sonatype.nexus.upgrade.virtualthread.UpgradeSecurity_1_1"],
-        ["org.sonatype.nexus.upgrade.virtualthread.UpgradeDatabase_1_3", "org.sonatype.nexus.upgrade.virtualthread.UpgradeSecurity_1_2"]
-      ],
-      "expectedPerformance": {
-        "totalDurationLessThan": 1000,
-        "speedupVsPlatformThreads": "2x-4x",
-        "maxConcurrentVirtualThreads": 500,
-        "maxConcurrentPlatformThreads": 16
+      "id": "update-database-schema",
+      "description": "Update database schema to support Java 21 features",
+      "type": "DATABASE_OPERATION",
+      "dependencies": ["backup-database-schema"],
+      "parameters": {
+        "operation": "MIGRATE",
+        "scripts": [
+          "upgrade/3.71.0_to_3.76.0/01_add_virtual_thread_metrics_table.sql",
+          "upgrade/3.71.0_to_3.76.0/02_add_thread_execution_indexes.sql",
+          "upgrade/3.71.0_to_3.76.0/03_update_schema_version.sql"
+        ],
+        "validateAfterEach": true
+      },
+      "expectedDurationMs": 30000,
+      "ioIntensive": true,
+      "checkpoint": {
+        "enabled": true,
+        "data": {
+          "schemaVersion": "3.76.0",
+          "migrationsApplied": 3,
+          "timestamp": "${EXECUTION_TIME}"
+        }
       }
-    }
-  ],
-  "virtualThreadTests": {
-    "threadPinningTests": [
-      {
-        "name": "Database operations pinning detection",
-        "description": "Tests detection of thread pinning during database operations",
-        "testClass": "org.sonatype.nexus.upgrade.virtualthread.ThreadPinningTest",
-        "testMethod": "testDatabaseOperationPinning",
-        "expectedResult": "Pinning detected and mitigated"
-      },
-      {
-        "name": "File I/O pinning detection",
-        "description": "Tests detection of thread pinning during file I/O operations",
-        "testClass": "org.sonatype.nexus.upgrade.virtualthread.ThreadPinningTest",
-        "testMethod": "testFileIOPinning",
-        "expectedResult": "Pinning detected and mitigated"
-      },
-      {
-        "name": "Synchronization pinning detection",
-        "description": "Tests detection of thread pinning due to synchronization",
-        "testClass": "org.sonatype.nexus.upgrade.virtualthread.ThreadPinningTest",
-        "testMethod": "testSynchronizationPinning",
-        "expectedResult": "Pinning detected and mitigated"
-      }
-    ],
-    "performanceTests": [
-      {
-        "name": "Database operations performance",
-        "description": "Tests performance of database operations with virtual threads",
-        "testClass": "org.sonatype.nexus.upgrade.virtualthread.PerformanceTest",
-        "testMethod": "testDatabaseOperationPerformance",
-        "parameters": {
-          "operationCount": 10000,
-          "virtualThreads": true
-        },
-        "expectedResult": "Virtual threads outperform platform threads by at least 3x"
-      },
-      {
-        "name": "File I/O performance",
-        "description": "Tests performance of file I/O operations with virtual threads",
-        "testClass": "org.sonatype.nexus.upgrade.virtualthread.PerformanceTest",
-        "testMethod": "testFileIOPerformance",
-        "parameters": {
-          "fileCount": 1000,
-          "fileSize": "1MB",
-          "virtualThreads": true
-        },
-        "expectedResult": "Virtual threads outperform platform threads by at least 2x"
-      },
-      {
-        "name": "Network I/O performance",
-        "description": "Tests performance of network I/O operations with virtual threads",
-        "testClass": "org.sonatype.nexus.upgrade.virtualthread.PerformanceTest",
-        "testMethod": "testNetworkIOPerformance",
-        "parameters": {
-          "requestCount": 500,
-          "virtualThreads": true
-        },
-        "expectedResult": "Virtual threads outperform platform threads by at least 5x"
-      }
-    ],
-    "compatibilityTests": [
-      {
-        "name": "JDBC driver compatibility",
-        "description": "Tests compatibility of JDBC drivers with virtual threads",
-        "testClass": "org.sonatype.nexus.upgrade.virtualthread.CompatibilityTest",
-        "testMethod": "testJdbcDriverCompatibility",
-        "drivers": [
+    },
+    {
+      "id": "update-configuration-files",
+      "description": "Update configuration files for Java 21 compatibility",
+      "type": "FILE_OPERATION",
+      "dependencies": ["initialize-upgrade"],
+      "parameters": {
+        "operation": "UPDATE",
+        "files": [
           {
-            "name": "PostgreSQL JDBC Driver",
-            "version": "42.7.2",
-            "expectedCompatible": true
+            "path": "${INSTALL_DIR}/etc/jetty/jetty.xml",
+            "updates": [
+              {
+                "type": "REPLACE",
+                "pattern": "<Set name=\"maxThreads\">400</Set>",
+                "replacement": "<Set name=\"maxThreads\">256</Set>"
+              },
+              {
+                "type": "ADD",
+                "after": "<Set name=\"maxThreads\">256</Set>",
+                "content": "<Set name=\"virtualThreadsEnabled\">true</Set>"
+              }
+            ]
           },
           {
-            "name": "H2 Database Engine",
-            "version": "2.2.224",
-            "expectedCompatible": true
+            "path": "${INSTALL_DIR}/bin/nexus.vmoptions",
+            "updates": [
+              {
+                "type": "ADD",
+                "after": "-XX:+UseZGC",
+                "content": "-XX:+ZGenerational"
+              },
+              {
+                "type": "ADD",
+                "after": "-Xms2703m",
+                "content": "-Djdk.virtualThreadScheduler.parallelism=16\n-Djdk.virtualThreadScheduler.maxPoolSize=256"
+              }
+            ]
           }
         ]
       },
-      {
-        "name": "Third-party library compatibility",
-        "description": "Tests compatibility of third-party libraries with virtual threads",
-        "testClass": "org.sonatype.nexus.upgrade.virtualthread.CompatibilityTest",
-        "testMethod": "testThirdPartyLibraryCompatibility",
-        "libraries": [
-          {
-            "name": "Apache Shiro",
-            "version": "1.13.0",
-            "expectedCompatible": true
-          },
-          {
-            "name": "Google Guice",
-            "version": "6.0.0",
-            "expectedCompatible": true
-          },
-          {
-            "name": "MyBatis",
-            "version": "3.5.15",
-            "expectedCompatible": true
-          }
+      "expectedDurationMs": 10000,
+      "ioIntensive": true,
+      "checkpoint": {
+        "enabled": true,
+        "data": {
+          "updatedFiles": 2,
+          "timestamp": "${EXECUTION_TIME}"
+        }
+      }
+    },
+    {
+      "id": "update-thread-pool-configuration",
+      "description": "Update thread pool configuration for virtual threads",
+      "type": "DATABASE_OPERATION",
+      "dependencies": ["update-database-schema"],
+      "parameters": {
+        "operation": "EXECUTE",
+        "statements": [
+          "UPDATE system_configuration SET value = 'VIRTUAL' WHERE key = 'threadPoolType'",
+          "UPDATE system_configuration SET value = '256' WHERE key = 'maxThreads'",
+          "INSERT INTO system_configuration (key, value) VALUES ('virtualThreadsEnabled', 'true')"
         ]
-      }
-    ]
-  },
-  "checkpoints": {
-    "enabled": true,
-    "interval": 1000,
-    "persistLocation": "upgrade-checkpoints.json",
-    "validateOnRestart": true
-  },
-  "extensionPoints": {
-    "preUpgradeHooks": [
-      {
-        "name": "VirtualThreadSetup",
-        "description": "Configures virtual thread execution environment",
-        "hookClass": "org.sonatype.nexus.upgrade.virtualthread.VirtualThreadSetupHook"
       },
-      {
-        "name": "PerformanceMonitoringStart",
-        "description": "Starts performance monitoring for the upgrade process",
-        "hookClass": "org.sonatype.nexus.upgrade.virtualthread.PerformanceMonitoringHook"
+      "expectedDurationMs": 5000,
+      "ioIntensive": true,
+      "checkpoint": {
+        "enabled": true,
+        "data": {
+          "threadPoolType": "VIRTUAL",
+          "timestamp": "${EXECUTION_TIME}"
+        }
       }
-    ],
-    "postUpgradeHooks": [
-      {
-        "name": "PerformanceReport",
-        "description": "Generates performance report comparing virtual threads to platform threads",
-        "hookClass": "org.sonatype.nexus.upgrade.virtualthread.PerformanceReportHook"
+    },
+    {
+      "id": "migrate-repository-configurations",
+      "description": "Update repository configurations for Java 21 compatibility",
+      "type": "DATABASE_OPERATION",
+      "dependencies": ["update-thread-pool-configuration"],
+      "parameters": {
+        "operation": "EXECUTE",
+        "statements": [
+          "UPDATE repository_config SET attributes = jsonb_set(attributes, '{httpClient,virtualThreads}', 'true') WHERE recipe_name LIKE '%proxy'"
+        ]
       },
-      {
-        "name": "ThreadPinningReport",
-        "description": "Generates report on thread pinning incidents during upgrade",
-        "hookClass": "org.sonatype.nexus.upgrade.virtualthread.ThreadPinningReportHook"
+      "expectedDurationMs": 15000,
+      "ioIntensive": true,
+      "checkpoint": {
+        "enabled": true,
+        "data": {
+          "repositoriesUpdated": "${AFFECTED_ROWS}",
+          "timestamp": "${EXECUTION_TIME}"
+        }
       }
-    ],
-    "errorHandlers": [
-      {
-        "name": "VirtualThreadErrorHandler",
-        "description": "Handles errors specific to virtual thread execution",
-        "handlerClass": "org.sonatype.nexus.upgrade.virtualthread.VirtualThreadErrorHandler"
+    },
+    {
+      "id": "optimize-blobstore-for-virtual-threads",
+      "description": "Optimize BlobStore operations for virtual threads",
+      "type": "COMPONENT_OPERATION",
+      "dependencies": ["backup-blobstore-metadata", "update-configuration-files"],
+      "parameters": {
+        "component": "blobstore",
+        "operation": "OPTIMIZE",
+        "options": {
+          "enableVirtualThreads": true,
+          "optimizeForIo": true,
+          "batchSize": 100
+        }
+      },
+      "expectedDurationMs": 45000,
+      "ioIntensive": true,
+      "checkpoint": {
+        "enabled": true,
+        "data": {
+          "blobstoresOptimized": "${AFFECTED_COMPONENTS}",
+          "timestamp": "${EXECUTION_TIME}"
+        }
       }
-    ]
-  }
+    },
+    {
+      "id": "update-http-client-configuration",
+      "description": "Update HTTP client configuration for virtual threads",
+      "type": "COMPONENT_OPERATION",
+      "dependencies": ["update-configuration-files"],
+      "parameters": {
+        "component": "httpclient",
+        "operation": "UPDATE_CONFIG",
+        "options": {
+          "enableVirtualThreads": true,
+          "disableThreadPool": true,
+          "useDirectExecutor": true
+        }
+      },
+      "expectedDurationMs": 5000,
+      "ioIntensive": false,
+      "checkpoint": {
+        "enabled": true,
+        "data": {
+          "status": "UPDATED",
+          "timestamp": "${EXECUTION_TIME}"
+        }
+      }
+    },
+    {
+      "id": "verify-database-connections",
+      "description": "Verify database connections with virtual threads",
+      "type": "VERIFICATION",
+      "dependencies": ["update-database-schema", "update-thread-pool-configuration"],
+      "parameters": {
+        "operation": "TEST_CONNECTIONS",
+        "connectionCount": 100,
+        "concurrentConnections": 50,
+        "testDurationSeconds": 10
+      },
+      "expectedDurationMs": 15000,
+      "ioIntensive": true,
+      "checkpoint": {
+        "enabled": true,
+        "data": {
+          "connectionsSuccessful": "${SUCCESS_COUNT}",
+          "connectionsFailed": "${FAILURE_COUNT}",
+          "averageResponseTimeMs": "${AVG_RESPONSE_TIME}",
+          "timestamp": "${EXECUTION_TIME}"
+        }
+      }
+    },
+    {
+      "id": "verify-repository-operations",
+      "description": "Verify repository operations with virtual threads",
+      "type": "VERIFICATION",
+      "dependencies": ["migrate-repository-configurations", "optimize-blobstore-for-virtual-threads"],
+      "parameters": {
+        "operation": "TEST_REPOSITORIES",
+        "repositoryTypes": ["maven", "npm", "docker"],
+        "operationsPerRepository": 50,
+        "concurrentOperations": 30
+      },
+      "expectedDurationMs": 30000,
+      "ioIntensive": true,
+      "checkpoint": {
+        "enabled": true,
+        "data": {
+          "repositoriesTested": "${TESTED_COUNT}",
+          "operationsSuccessful": "${SUCCESS_COUNT}",
+          "operationsFailed": "${FAILURE_COUNT}",
+          "averageResponseTimeMs": "${AVG_RESPONSE_TIME}",
+          "timestamp": "${EXECUTION_TIME}"
+        }
+      }
+    },
+    {
+      "id": "collect-performance-metrics",
+      "description": "Collect performance metrics for virtual thread execution",
+      "type": "METRICS_COLLECTION",
+      "dependencies": ["verify-database-connections", "verify-repository-operations"],
+      "parameters": {
+        "metrics": ["threadCount", "memoryUsage", "cpuUsage", "responseTime", "throughput"],
+        "duration": 30,
+        "intervalSeconds": 5,
+        "outputFile": "${DATA_DIR}/upgrade/metrics_${TIMESTAMP}.json"
+      },
+      "expectedDurationMs": 35000,
+      "ioIntensive": false,
+      "checkpoint": {
+        "enabled": true,
+        "data": {
+          "metricsCollected": 5,
+          "samplesCollected": 6,
+          "outputFile": "${DATA_DIR}/upgrade/metrics_${TIMESTAMP}.json",
+          "timestamp": "${EXECUTION_TIME}"
+        }
+      }
+    },
+    {
+      "id": "finalize-upgrade",
+      "description": "Finalize the upgrade process",
+      "type": "FINALIZATION",
+      "dependencies": ["collect-performance-metrics"],
+      "parameters": {
+        "updateVersionInfo": true,
+        "cleanupTempFiles": true,
+        "generateReport": true,
+        "reportFile": "${DATA_DIR}/upgrade/report_${TIMESTAMP}.html"
+      },
+      "expectedDurationMs": 10000,
+      "ioIntensive": true,
+      "checkpoint": {
+        "enabled": true,
+        "data": {
+          "status": "COMPLETED",
+          "newVersion": "3.76.0",
+          "upgradeTime": "${TOTAL_EXECUTION_TIME}",
+          "timestamp": "${EXECUTION_TIME}"
+        }
+      }
+    }
+  ]
 }

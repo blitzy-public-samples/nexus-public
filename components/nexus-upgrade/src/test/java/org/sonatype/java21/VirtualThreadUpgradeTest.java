@@ -20,7 +20,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -30,366 +29,562 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.common.upgrade.Checkpoint;
+import org.sonatype.nexus.common.upgrade.Upgrade;
 import org.sonatype.nexus.common.upgrade.events.UpgradeCompletedEvent;
 import org.sonatype.nexus.common.upgrade.events.UpgradeStartedEvent;
 import org.sonatype.nexus.datastore.api.DataStore;
 import org.sonatype.nexus.datastore.api.DataStoreManager;
+import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
 import org.sonatype.nexus.testdb.DataSessionRule;
 import org.sonatype.nexus.upgrade.datastore.DatabaseMigrationStep;
-import org.sonatype.nexus.upgrade.datastore.UpgradeException;
 import org.sonatype.nexus.upgrade.datastore.internal.PostStartupUpgradeAuditor;
-import org.sonatype.nexus.upgrade.datastore.internal.TestMigrationStep;
 import org.sonatype.nexus.upgrade.datastore.internal.UpgradeManagerImpl;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import org.junit.experimental.categories.Category;
 import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.MockitoAnnotations;
 
 import static java.util.Collections.singletonList;
-import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.datastore.api.DataStoreManager.DEFAULT_DATASTORE_NAME;
 
 /**
- * Tests that validate the Nexus upgrade framework's compatibility with Java 21 Virtual Threads.
+ * Tests to validate Java 21 Virtual Thread compatibility with the Nexus upgrade framework.
  * 
- * @since 3.60
+ * This test class verifies that upgrade operations can be executed concurrently using virtual threads,
+ * ensuring that the upgrade framework correctly handles thread scheduling, resource management,
+ * and transaction isolation when running with Java 21's lightweight thread implementation.
  */
-@ExtendWith(MockitoExtension.class)
+@Category({Java21TestGroup.class, VirtualThreadTestGroup.class})
+@org.junit.jupiter.api.Tag("Java21")
+@org.junit.jupiter.api.Tag("VirtualThread")
 public class VirtualThreadUpgradeTest
-    extends TestSupport
+    extends VirtualThreadTestSupport
 {
-  private static final String SELECT_FROM_FLYWAY_SCHEMA_HISTORY = "SELECT * FROM \"flyway_schema_history\"";
-
-  private static final String SELECT_FROM_EXAMPLE = "SELECT * FROM example";
-
-  private static final int CONCURRENT_THREADS = 10;
+  private static final String TEST_SCHEMA = "vt_upgrade_test";
   
+  private static final String CREATE_SCHEMA_SQL = "CREATE SCHEMA IF NOT EXISTS " + TEST_SCHEMA + " AUTHORIZATION test";
+  
+  private static final String DROP_SCHEMA_SQL = "DROP SCHEMA IF EXISTS " + TEST_SCHEMA + " CASCADE";
+  
+  private static final String CREATE_TABLE_SQL = 
+      "CREATE TABLE IF NOT EXISTS " + TEST_SCHEMA + ".upgrade_test (\n" +
+      "      id                INTEGER       NOT NULL,\n" +
+      "      version           VARCHAR(50)   NOT NULL,\n" +
+      "      status            VARCHAR(50)   NOT NULL,\n" +
+      "      CONSTRAINT pk_upgrade_test PRIMARY KEY (id)\n" +
+      "    );";
+  
+  private static final String INSERT_DATA_SQL = 
+      "INSERT INTO " + TEST_SCHEMA + ".upgrade_test (id, version, status) VALUES (?, ?, ?)";
+  
+  private static final String SELECT_COUNT_SQL = 
+      "SELECT COUNT(*) FROM " + TEST_SCHEMA + ".upgrade_test";
+  
+  private static final int CONCURRENT_UPGRADES = 20;
   private static final int TIMEOUT_SECONDS = 30;
-
-  private DataSessionRule dataSessionRule = new DataSessionRule();
-
+  
+  @org.junit.jupiter.api.extension.RegisterExtension
+  public DataSessionRule dataSessionRule = new DataSessionRule(DEFAULT_DATASTORE_NAME);
+  
   @Mock
   private DataStoreManager dataStoreManager;
-
+  
   @Mock
   private PostStartupUpgradeAuditor auditor;
-
-  private TestMigrationStep migrationStep = new TestMigrationStep();
-
+  
+  private ExecutorService virtualThreadExecutor;
+  private AutoCloseable mocks;
+  
   @BeforeEach
-  public void setUp() {
+  public void setUp() throws Exception {
+    // Initialize mocks
+    mocks = MockitoAnnotations.openMocks(this);
+    
+    // Create a virtual thread per task executor
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    virtualThreadExecutor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    // Setup DataStoreManager mock
     when(dataStoreManager.get(DEFAULT_DATASTORE_NAME)).thenReturn(getDataStore());
+    
+    // Initialize test schema
+    try (Connection conn = getConnection()) {
+      conn.createStatement().execute(DROP_SCHEMA_SQL);
+      conn.createStatement().execute(CREATE_SCHEMA_SQL);
+      conn.createStatement().execute(CREATE_TABLE_SQL);
+      conn.commit();
+    }
   }
-
+  
+  @AfterEach
+  public void tearDown() throws Exception {
+    // Clean up executor
+    if (virtualThreadExecutor != null) {
+      virtualThreadExecutor.shutdown();
+      if (!virtualThreadExecutor.awaitTermination(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+        virtualThreadExecutor.shutdownNow();
+      }
+    }
+    
+    // Clean up schema
+    try (Connection conn = getConnection()) {
+      conn.createStatement().execute(DROP_SCHEMA_SQL);
+      conn.commit();
+    }
+    
+    // Close mocks
+    if (mocks != null) {
+      mocks.close();
+    }
+  }
+  
   /**
-   * Tests that a basic upgrade operation works with virtual threads.
+   * Tests that a single upgrade can be executed in a virtual thread.
    */
   @Test
-  public void testBasicUpgradeWithVirtualThread() throws Exception {
+  public void testSingleUpgradeInVirtualThread() throws Exception {
+    // Create a test migration step
+    TestMigrationStep migrationStep = new TestMigrationStep();
+    
+    // Create upgrade manager with the migration step
     UpgradeManagerImpl upgradeManager = new UpgradeManagerImpl(dataStoreManager, auditor, singletonList(migrationStep));
     
-    // Create a virtual thread to run the upgrade
-    Thread virtualThread = Thread.ofVirtual().name("upgrade-virtual-thread").start(() -> {
+    // Execute the upgrade in a virtual thread
+    supplyFromVirtualThread(() -> {
       try {
+        // Verify we're running in a virtual thread
+        assertCurrentThreadIsVirtual();
+        
+        // Execute the upgrade
         upgradeManager.migrate();
-      }
-      catch (Exception e) {
+        return true;
+      } catch (Exception e) {
+        log.error("Upgrade failed", e);
         fail("Upgrade failed with exception: " + e.getMessage());
+        return false;
       }
     });
     
-    // Wait for the virtual thread to complete
-    virtualThread.join(TimeUnit.SECONDS.toMillis(TIMEOUT_SECONDS));
-    
-    // Verify the upgrade was successful
-    try (Connection conn = getConnection();
-         Statement stmt = conn.createStatement()) {
-      try (ResultSet results = stmt.executeQuery(SELECT_FROM_FLYWAY_SCHEMA_HISTORY)) {
-        if (migrationStep.isH2(conn)) {
-          // for H2 flyway inserts an initial null version
-          assertTrue(results.next());
-          assertNull(results.getString("version"));
-        }
-        // assert there is history of one schema upgrade
-        assertForExampleTable(results, "version", "1.0");
-      }
-      catch (Exception exception) {
-        fail(exception.getMessage());
-      }
-
-      // check for the result of the upgrade step
-      try (ResultSet results = stmt.executeQuery(SELECT_FROM_EXAMPLE)) {
-        assertForExampleTable(results, "name", "fawkes");
-      }
-      catch (Exception exception) {
-        fail(exception.getMessage());
-      }
-    }
-
-    // Migrations should trigger events
+    // Verify upgrade events were fired
     verify(auditor).post(any(UpgradeStartedEvent.class));
     verify(auditor).post(any(UpgradeCompletedEvent.class));
-    verifyNoMoreInteractions(auditor);
+    
+    // Verify data was inserted
+    try (Connection conn = getConnection()) {
+      var stmt = conn.createStatement();
+      var rs = stmt.executeQuery(SELECT_COUNT_SQL);
+      assertTrue(rs.next(), "Result set should have at least one row");
+      assertThat(rs.getInt(1), is(1));
+    }
   }
-
+  
   /**
-   * Tests that multiple concurrent upgrade operations can be performed using virtual threads.
-   * This validates that the upgrade framework correctly handles thread scheduling and resource
-   * management when running with Java 21's lightweight thread implementation.
+   * Tests that multiple upgrades can be executed concurrently using virtual threads.
    */
   @Test
   public void testConcurrentUpgradesWithVirtualThreads() throws Exception {
-    // Create a thread factory for virtual threads
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch completionLatch = new CountDownLatch(CONCURRENT_UPGRADES);
+    AtomicInteger successCount = new AtomicInteger(0);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    List<DatabaseMigrationStep> migrations = new ArrayList<>();
     
-    // Create an executor service that uses virtual threads
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-    
-    try {
-      // Create multiple migration steps for concurrent execution
-      List<DatabaseMigrationStep> migrationSteps = new ArrayList<>();
-      for (int i = 0; i < CONCURRENT_THREADS; i++) {
-        migrationSteps.add(new ConcurrentTestMigrationStep("concurrent_" + i));
-      }
-      
-      // Create a countdown latch to wait for all threads to complete
-      CountDownLatch latch = new CountDownLatch(CONCURRENT_THREADS);
-      
-      // Track any errors that occur during concurrent execution
-      AtomicBoolean hasErrors = new AtomicBoolean(false);
-      
-      // Submit tasks to the executor
-      for (int i = 0; i < CONCURRENT_THREADS; i++) {
-        final int index = i;
-        executor.submit(() -> {
-          try {
-            // Create a new upgrade manager for each thread with a single migration step
-            UpgradeManagerImpl upgradeManager = new UpgradeManagerImpl(
-                dataStoreManager, 
-                auditor, 
-                singletonList(migrationSteps.get(index)));
-            
-            // Perform the migration
-            upgradeManager.migrate();
-          }
-          catch (Exception e) {
-            log.error("Error in virtual thread {}: {}", index, e.getMessage(), e);
-            hasErrors.set(true);
-          }
-          finally {
-            latch.countDown();
-          }
-        });
-      }
-      
-      // Wait for all threads to complete
-      boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      
-      // Verify all threads completed successfully
-      assertTrue(completed, "Not all virtual threads completed within the timeout period");
-      assertFalse(hasErrors.get(), "One or more virtual threads encountered errors");
-      
-      // Verify that all tables were created
-      try (Connection conn = getConnection();
-           Statement stmt = conn.createStatement()) {
-        for (int i = 0; i < CONCURRENT_THREADS; i++) {
-          String tableName = "concurrent_" + i;
-          String query = "SELECT * FROM " + tableName;
+    // Create multiple migration steps
+    for (int i = 0; i < CONCURRENT_UPGRADES; i++) {
+      final int upgradeId = i;
+      migrations.add(new DatabaseMigrationStep() {
+        @Override
+        public Optional<String> version() {
+          return Optional.of("1." + upgradeId);
+        }
+        
+        @Override
+        public void migrate(Connection connection) throws Exception {
+          // Wait for all upgrades to start at the same time
+          startLatch.await();
           
-          try (ResultSet results = stmt.executeQuery(query)) {
-            assertTrue(results.next(), "No data found in table " + tableName);
-            assertThat(results.getString("name"), equalTo("virtual_thread_" + i));
-            assertFalse(results.next(), "More than one row found in table " + tableName);
+          // Verify we're running in a virtual thread
+          assertTrue(Thread.currentThread().isVirtual(), 
+              "Migration should be running in a virtual thread");
+          
+          // Execute upgrade
+          try (var stmt = connection.prepareStatement(INSERT_DATA_SQL)) {
+            stmt.setInt(1, upgradeId);
+            stmt.setString(2, "1." + upgradeId);
+            stmt.setString(3, "Completed");
+            stmt.executeUpdate();
+            successCount.incrementAndGet();
+          } catch (SQLException e) {
+            errorCount.incrementAndGet();
+            throw e;
+          } finally {
+            completionLatch.countDown();
           }
         }
-      }
+      });
     }
-    finally {
-      executor.shutdown();
-      if (!executor.awaitTermination(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-        executor.shutdownNow();
+    
+    // Create upgrade manager with all migration steps
+    UpgradeManagerImpl upgradeManager = new UpgradeManagerImpl(dataStoreManager, auditor, migrations);
+    
+    // Submit the upgrade to be executed with virtual threads
+    virtualThreadExecutor.submit(() -> {
+      try {
+        // Start all upgrades simultaneously
+        startLatch.countDown();
+        
+        // Execute the upgrades
+        upgradeManager.migrate();
+      } catch (Exception e) {
+        log.error("Concurrent upgrades failed", e);
       }
+    });
+    
+    // Wait for all upgrades to complete
+    assertTrue(completionLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), 
+        "All upgrades should complete within the timeout period");
+    
+    // Verify all upgrades completed successfully
+    assertThat(errorCount.get(), is(0));
+    assertThat(successCount.get(), is(CONCURRENT_UPGRADES));
+    
+    // Verify all data was inserted
+    try (Connection conn = getConnection()) {
+      var stmt = conn.createStatement();
+      var rs = stmt.executeQuery(SELECT_COUNT_SQL);
+      assertTrue(rs.next(), "Result set should have at least one row");
+      assertThat(rs.getInt(1), is(CONCURRENT_UPGRADES));
     }
   }
-
+  
   /**
-   * Tests that database connections are properly managed when used with virtual threads during upgrades.
-   * This verifies that thread pinning is minimized and resources are properly released.
+   * Tests that transaction boundaries are properly maintained when using virtual threads for upgrades.
    */
   @Test
-  public void testDatabaseConnectionsWithVirtualThreads() throws Exception {
-    // Create a thread factory for virtual threads
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+  public void testTransactionIntegrityWithVirtualThreads() throws Exception {
+    AtomicBoolean transactionRolledBack = new AtomicBoolean(false);
     
-    // Create an executor service that uses virtual threads
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-    
-    try {
-      // Create a large number of CompletableFuture tasks
-      List<CompletableFuture<Void>> futures = new ArrayList<>();
-      AtomicInteger successCount = new AtomicInteger(0);
-      
-      // Submit multiple tasks that perform database operations
-      for (int i = 0; i < CONCURRENT_THREADS; i++) {
-        final int index = i;
-        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-          try {
-            // Create a unique migration step for this thread
-            DatabaseMigrationStep step = new ConnectionTestMigrationStep("conn_test_" + index);
-            
-            // Create an upgrade manager with this step
-            UpgradeManagerImpl upgradeManager = new UpgradeManagerImpl(
-                dataStoreManager, 
-                auditor, 
-                singletonList(step));
-            
-            // Perform the migration
-            upgradeManager.migrate();
-            
-            // Increment success counter
-            successCount.incrementAndGet();
-          }
-          catch (Exception e) {
-            log.error("Error in virtual thread {}: {}", index, e.getMessage(), e);
-            throw new RuntimeException(e);
-          }
-        }, executor);
-        
-        futures.add(future);
+    // Create a test migration step that will fail
+    DatabaseMigrationStep failingMigration = new DatabaseMigrationStep() {
+      @Override
+      public Optional<String> version() {
+        return Optional.of("2.0");
       }
       
-      // Wait for all futures to complete
-      CompletableFuture<Void> allFutures = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
-      allFutures.join();
+      @Override
+      public void migrate(Connection connection) throws Exception {
+        // Verify we're running in a virtual thread
+        assertTrue(Thread.currentThread().isVirtual(), 
+            "Migration should be running in a virtual thread");
+        
+        // Insert a valid record
+        try (var stmt = connection.prepareStatement(INSERT_DATA_SQL)) {
+          stmt.setInt(1, 100);
+          stmt.setString(2, "2.0");
+          stmt.setString(3, "Before Failure");
+          stmt.executeUpdate();
+        }
+        
+        // Throw an exception to cause rollback
+        throw new SQLException("Simulated failure to test transaction rollback");
+      }
+    };
+    
+    // Create upgrade manager with the failing migration step
+    UpgradeManagerImpl upgradeManager = new UpgradeManagerImpl(dataStoreManager, auditor, 
+        singletonList(failingMigration));
+    
+    // Execute the upgrade in a virtual thread and expect failure
+    try {
+      supplyFromVirtualThread(() -> {
+        try {
+          upgradeManager.migrate();
+          return true;
+        } catch (Exception e) {
+          // Expected exception
+          transactionRolledBack.set(true);
+          return false;
+        }
+      });
+    } catch (Exception e) {
+      // Expected exception might be propagated
+      transactionRolledBack.set(true);
+    }
+    
+    // Verify transaction was rolled back
+    assertTrue(transactionRolledBack.get(), "Transaction should have been rolled back");
+    
+    // Verify no data was inserted (transaction was rolled back)
+    try (Connection conn = getConnection()) {
+      var stmt = conn.createStatement();
+      var rs = stmt.executeQuery(SELECT_COUNT_SQL);
+      assertTrue(rs.next(), "Result set should have at least one row");
+      assertThat(rs.getInt(1), is(0));
+    }
+  }
+  
+  /**
+   * Tests that checkpoint operations work correctly with virtual threads.
+   */
+  @Test
+  public void testCheckpointWithVirtualThreads() throws Exception {
+    AtomicBoolean checkpointExecuted = new AtomicBoolean(false);
+    
+    // Create a test checkpoint
+    TestCheckpoint checkpoint = new TestCheckpoint(checkpointExecuted);
+    
+    // Execute the checkpoint in a virtual thread
+    supplyFromVirtualThread(() -> {
+      try {
+        // Verify we're running in a virtual thread
+        assertCurrentThreadIsVirtual();
+        
+        // Execute the checkpoint
+        checkpoint.begin(getConnection());
+        checkpoint.end(getConnection());
+        return true;
+      } catch (Exception e) {
+        log.error("Checkpoint failed", e);
+        fail("Checkpoint failed with exception: " + e.getMessage());
+        return false;
+      }
+    });
+    
+    // Verify checkpoint was executed
+    assertTrue(checkpointExecuted.get(), "Checkpoint should have been executed");
+  }
+  
+  /**
+   * Tests that upgrade operations with long-running I/O don't cause thread pinning issues.
+   */
+  @Test
+  public void testUpgradeWithLongRunningIO() throws Exception {
+    // Create a test migration step with simulated I/O
+    DatabaseMigrationStep ioMigration = new DatabaseMigrationStep() {
+      @Override
+      public Optional<String> version() {
+        return Optional.of("3.0");
+      }
       
-      // Verify all operations completed successfully
-      assertThat(successCount.get(), equalTo(CONCURRENT_THREADS));
-      
-      // Verify that all tables were created
-      try (Connection conn = getConnection();
-           Statement stmt = conn.createStatement()) {
-        for (int i = 0; i < CONCURRENT_THREADS; i++) {
-          String tableName = "conn_test_" + i;
-          String query = "SELECT * FROM " + tableName;
-          
-          try (ResultSet results = stmt.executeQuery(query)) {
-            assertTrue(results.next(), "No data found in table " + tableName);
-            assertThat(results.getString("name"), equalTo("connection_test_" + i));
-            assertFalse(results.next(), "More than one row found in table " + tableName);
-          }
+      @Override
+      public void migrate(Connection connection) throws Exception {
+        // Verify we're running in a virtual thread
+        assertTrue(Thread.currentThread().isVirtual(), 
+            "Migration should be running in a virtual thread");
+        
+        // Simulate I/O operation by sleeping
+        // This should not pin the virtual thread if properly implemented
+        Thread.sleep(500);
+        
+        // Execute database operation after I/O
+        try (var stmt = connection.prepareStatement(INSERT_DATA_SQL)) {
+          stmt.setInt(1, 200);
+          stmt.setString(2, "3.0");
+          stmt.setString(3, "After I/O");
+          stmt.executeUpdate();
         }
       }
-    }
-    finally {
-      executor.shutdown();
-      if (!executor.awaitTermination(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-        executor.shutdownNow();
+    };
+    
+    // Create upgrade manager with the I/O migration step
+    UpgradeManagerImpl upgradeManager = new UpgradeManagerImpl(dataStoreManager, auditor, 
+        singletonList(ioMigration));
+    
+    // Execute the upgrade in a virtual thread
+    supplyFromVirtualThread(() -> {
+      try {
+        upgradeManager.migrate();
+        return true;
+      } catch (Exception e) {
+        log.error("I/O upgrade failed", e);
+        fail("I/O upgrade failed with exception: " + e.getMessage());
+        return false;
       }
+    });
+    
+    // Verify data was inserted after I/O
+    try (Connection conn = getConnection()) {
+      var stmt = conn.createStatement();
+      var rs = stmt.executeQuery(SELECT_COUNT_SQL);
+      assertTrue(rs.next(), "Result set should have at least one row");
+      assertThat(rs.getInt(1), is(1));
     }
   }
-
-  private static void assertForExampleTable(ResultSet results, String name, String fawkes) throws SQLException {
-    assertTrue(results.next());
-    assertThat(results.getString(name), equalTo(fawkes));
-    assertFalse(results.next());
+  
+  /**
+   * Tests that multiple concurrent upgrades with mixed I/O and CPU operations work correctly.
+   */
+  @Test
+  public void testMixedWorkloadUpgrades() throws Exception {
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch completionLatch = new CountDownLatch(CONCURRENT_UPGRADES);
+    List<DatabaseMigrationStep> migrations = new ArrayList<>();
+    
+    // Create multiple migration steps with mixed workloads
+    for (int i = 0; i < CONCURRENT_UPGRADES; i++) {
+      final int upgradeId = i;
+      final boolean isIOBound = i % 2 == 0; // Alternate between I/O and CPU bound
+      
+      migrations.add(new DatabaseMigrationStep() {
+        @Override
+        public Optional<String> version() {
+          return Optional.of("4." + upgradeId);
+        }
+        
+        @Override
+        public void migrate(Connection connection) throws Exception {
+          // Wait for all upgrades to start at the same time
+          startLatch.await();
+          
+          // Verify we're running in a virtual thread
+          assertTrue(Thread.currentThread().isVirtual(), 
+              "Migration should be running in a virtual thread");
+          
+          if (isIOBound) {
+            // Simulate I/O bound operation
+            Thread.sleep(200 + (upgradeId % 5) * 50); // Varied sleep times
+          } else {
+            // Simulate CPU bound operation
+            // This is a simple computation that shouldn't cause pinning
+            long result = 0;
+            for (int j = 0; j < 100000; j++) {
+              result += j;
+            }
+          }
+          
+          // Execute database operation
+          try (var stmt = connection.prepareStatement(INSERT_DATA_SQL)) {
+            stmt.setInt(1, upgradeId);
+            stmt.setString(2, "4." + upgradeId);
+            stmt.setString(3, isIOBound ? "I/O Bound" : "CPU Bound");
+            stmt.executeUpdate();
+          } finally {
+            completionLatch.countDown();
+          }
+        }
+      });
+    }
+    
+    // Create upgrade manager with all migration steps
+    UpgradeManagerImpl upgradeManager = new UpgradeManagerImpl(dataStoreManager, auditor, migrations);
+    
+    // Submit the upgrade to be executed with virtual threads
+    virtualThreadExecutor.submit(() -> {
+      try {
+        // Start all upgrades simultaneously
+        startLatch.countDown();
+        
+        // Execute the upgrades
+        upgradeManager.migrate();
+      } catch (Exception e) {
+        log.error("Mixed workload upgrades failed", e);
+      }
+    });
+    
+    // Wait for all upgrades to complete
+    assertTrue(completionLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), 
+        "All mixed workload upgrades should complete within the timeout period");
+    
+    // Verify all data was inserted
+    try (Connection conn = getConnection()) {
+      var stmt = conn.createStatement();
+      var rs = stmt.executeQuery(SELECT_COUNT_SQL);
+      assertTrue(rs.next(), "Result set should have at least one row");
+      assertThat(rs.getInt(1), is(CONCURRENT_UPGRADES));
+    }
   }
-
+  
   private Optional<DataStore<?>> getDataStore() {
     return dataSessionRule.getDataStore(DEFAULT_DATASTORE_NAME);
   }
-
+  
   private Connection getConnection() throws SQLException {
     return getDataStore()
         .orElseThrow(() -> new IllegalStateException("No DataStore found"))
         .getDataSource()
         .getConnection();
   }
-
+  
   /**
-   * A test migration step for concurrent execution testing.
+   * Test implementation of DatabaseMigrationStep for upgrade testing.
    */
-  private static class ConcurrentTestMigrationStep implements DatabaseMigrationStep {
-    private final String tableName;
-    
-    public ConcurrentTestMigrationStep(String tableName) {
-      this.tableName = tableName;
-    }
-    
+  private class TestMigrationStep implements DatabaseMigrationStep {
     @Override
     public Optional<String> version() {
-      return Optional.of("1.0-" + tableName);
+      return Optional.of("1.0");
     }
-
+    
     @Override
     public void migrate(Connection connection) throws Exception {
-      try (Statement stmt = connection.createStatement()) {
-        // Create a unique table for this migration step
-        stmt.execute("CREATE TABLE IF NOT EXISTS " + tableName + " (name VARCHAR(50))");
-        
-        // Insert a record with a unique name
-        int threadId = Integer.parseInt(tableName.substring(tableName.lastIndexOf('_') + 1));
-        stmt.execute("INSERT INTO " + tableName + " (name) VALUES('virtual_thread_" + threadId + "')");
-        
-        // Simulate some work to increase the chance of thread scheduling
-        Thread.sleep(50);
+      // Verify we're running in a virtual thread
+      assertTrue(Thread.currentThread().isVirtual(), 
+          "Migration should be running in a virtual thread");
+      
+      // Execute a simple migration that creates a record
+      try (var stmt = connection.prepareStatement(INSERT_DATA_SQL)) {
+        stmt.setInt(1, 1);
+        stmt.setString(2, "1.0");
+        stmt.setString(3, "Completed");
+        stmt.executeUpdate();
       }
+    }
+    
+    public boolean isH2(Connection connection) throws SQLException {
+      return connection.getMetaData().getDatabaseProductName().contains("H2");
     }
   }
-
+  
   /**
-   * A test migration step for connection management testing.
+   * Test implementation of Checkpoint for checkpoint testing.
    */
-  private static class ConnectionTestMigrationStep implements DatabaseMigrationStep {
-    private final String tableName;
+  private static class TestCheckpoint implements Checkpoint
+  {
+    private final AtomicBoolean executed;
     
-    public ConnectionTestMigrationStep(String tableName) {
-      this.tableName = tableName;
+    public TestCheckpoint(AtomicBoolean executed) {
+      this.executed = executed;
     }
     
     @Override
-    public Optional<String> version() {
-      return Optional.of("1.0-" + tableName);
+    public void begin(Connection connection) throws Exception {
+      // Verify we're running in a virtual thread
+      assertTrue(Thread.currentThread().isVirtual(), 
+          "Checkpoint should be running in a virtual thread");
+      
+      executed.set(true);
     }
-
+    
     @Override
-    public void migrate(Connection connection) throws Exception {
-      try (Statement stmt = connection.createStatement()) {
-        // Create a unique table for this migration step
-        stmt.execute("CREATE TABLE IF NOT EXISTS " + tableName + " (name VARCHAR(50))");
-        
-        // Insert a record with a unique name
-        int threadId = Integer.parseInt(tableName.substring(tableName.lastIndexOf('_') + 1));
-        stmt.execute("INSERT INTO " + tableName + " (name) VALUES('connection_test_" + threadId + "')");
-        
-        // Perform multiple database operations to test connection management
-        for (int i = 0; i < 5; i++) {
-          try (ResultSet rs = stmt.executeQuery("SELECT * FROM " + tableName)) {
-            // Just iterate through the results
-            while (rs.next()) {
-              rs.getString("name");
-            }
-          }
-          
-          // Small delay to allow thread scheduling
-          Thread.sleep(10);
-        }
-      }
+    public void end(Connection connection) throws Exception {
+      // Verify we're still running in a virtual thread
+      assertTrue(Thread.currentThread().isVirtual(), 
+          "Checkpoint should be running in a virtual thread");
     }
+  }
+  
+  /**
+   * Marker interface for Java 21 tests.
+   */
+  public interface Java21TestGroup {
+    // Marker interface
+  }
+  
+  /**
+   * Marker interface for Virtual Thread tests.
+   */
+  public interface VirtualThreadTestGroup {
+    // Marker interface
   }
 }

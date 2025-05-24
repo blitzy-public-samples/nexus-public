@@ -14,10 +14,9 @@ package org.sonatype.nexus.formfields;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.function.Function;
-import java.util.function.Supplier;
 
 import javax.annotation.Nullable;
 
@@ -35,12 +34,10 @@ public class ItemselectFormField
   private static final String ATTRIBUTE_LISTENERS = "listeners";
 
   /**
-   * Record representing a mapping pair for ID and name.
-   * Used for type-safe handling of mapping data.
-   *
-   * @since 3.60
+   * Record representing a field mapping pair (id and name).
+   * Used for type-safe handling of mapping data with record patterns.
    */
-public record MappingPair(String idMapping, String nameMapping) {}
+  public record FieldMapping(String idField, String nameField) {}
 
   private String storeApi;
 
@@ -111,13 +108,24 @@ public record MappingPair(String idMapping, String nameMapping) {}
   }
 
   /**
-   * Get the mapping pair containing both ID and name mappings.
-   *
-   * @return a record containing both mappings
-   * @since 3.60
+   * Returns the field mapping as a record for type-safe handling.
+   * 
+   * @return a FieldMapping record containing id and name field mappings
    */
-  public MappingPair getMappingPair() {
-    return new MappingPair(idMapping, nameMapping);
+  public FieldMapping getFieldMapping() {
+    return new FieldMapping(idMapping, nameMapping);
+  }
+
+  /**
+   * Asynchronously loads data from the configured store API using Virtual Threads.
+   * This method leverages Java 21 Virtual Threads for improved concurrency with minimal overhead.
+   *
+   * @param dataLoader the function that performs the actual data loading operation
+   * @param <T> the type of data being returned
+   * @return a Future containing the loaded data
+   */
+  public <T> Future<T> loadDataAsync(Function<ItemselectFormField, T> dataLoader) {
+    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> dataLoader.apply(this));
   }
 
   public void setStoreApi(final String storeApi) {
@@ -133,13 +141,14 @@ public record MappingPair(String idMapping, String nameMapping) {}
   }
 
   /**
-   * Set both ID and name mappings at once using a mapping pair.
+   * Sets both id and name mappings from a FieldMapping record.
+   * Demonstrates the use of record patterns for concise field extraction.
    *
-   * @param mappingPair the record containing both mappings
-   * @since 3.60
+   * @param mapping the field mapping record
    */
-  public void setMappingPair(final MappingPair mappingPair) {
-    if (mappingPair instanceof MappingPair(var id, var name)) {
+  public void setFieldMapping(FieldMapping mapping) {
+    // Using record pattern to extract fields
+    if (mapping instanceof FieldMapping(var id, var name)) {
       this.idMapping = id;
       this.nameMapping = name;
     }
@@ -150,37 +159,12 @@ public record MappingPair(String idMapping, String nameMapping) {}
   }
 
   /**
-   * Asynchronously load data from the store API using virtual threads.
+   * Adds multiple filters at once using modern collection operations.
    *
-   * @param dataLoader the function to load data from the store API
-   * @param <T> the type of data to be loaded
-   * @return a CompletableFuture containing the loaded data
-   * @since 3.60
+   * @param filters the map of filters to add
    */
-  public <T> CompletableFuture<T> loadDataAsync(final Function<String, T> dataLoader) {
-    return CompletableFuture.supplyAsync(() -> {
-      if (storeApi == null) {
-        throw new IllegalStateException(STR."Store API not configured for field \{getId()}");
-      }
-      return dataLoader.apply(storeApi);
-    }, Executors.newVirtualThreadPerTaskExecutor());
-  }
-
-  /**
-   * Asynchronously load data with filters from the store API using virtual threads.
-   *
-   * @param dataLoader the function to load data from the store API with filters
-   * @param <T> the type of data to be loaded
-   * @return a CompletableFuture containing the loaded data
-   * @since 3.60
-   */
-  public <T> CompletableFuture<T> loadDataWithFiltersAsync(final Function<Map<String, String>, T> dataLoader) {
-    return CompletableFuture.supplyAsync(() -> {
-      if (storeApi == null) {
-        throw new IllegalStateException(STR."Store API not configured for field \{getId()}");
-      }
-      return dataLoader.apply(getStoreFilters() != null ? getStoreFilters() : Map.of());
-    }, Executors.newVirtualThreadPerTaskExecutor());
+  public void addStoreFilters(Map<String, String> filters) {
+    filters.forEach(this.storeFilters::put);
   }
 
   public void setButtons(final String... buttons) {
@@ -215,19 +199,29 @@ public record MappingPair(String idMapping, String nameMapping) {}
   }
 
   /**
-   * Fluent API for setting both ID and name mappings at once using a mapping pair.
+   * Fluent API for setting both id and name mappings from a FieldMapping record.
    *
-   * @param mappingPair the record containing both mappings
+   * @param mapping the field mapping record
    * @return this instance for method chaining
-   * @since 3.60
    */
-  public ItemselectFormField withMappingPair(final MappingPair mappingPair) {
-    setMappingPair(mappingPair);
+  public ItemselectFormField withFieldMapping(FieldMapping mapping) {
+    setFieldMapping(mapping);
     return this;
   }
 
   public ItemselectFormField withStoreFilter(final String property, final String value) {
     storeFilters.put(property, value);
+    return this;
+  }
+
+  /**
+   * Fluent API for adding multiple filters at once using modern collection operations.
+   *
+   * @param filters the map of filters to add
+   * @return this instance for method chaining
+   */
+  public ItemselectFormField withStoreFilters(Map<String, String> filters) {
+    filters.forEach(this.storeFilters::put);
     return this;
   }
 
@@ -261,8 +255,9 @@ public record MappingPair(String idMapping, String nameMapping) {}
    * @return This instance
    */
   public ItemselectFormField withListener(final String eventName, final String listenerName) {
-    Map<String, String> declaredListeners = getAttributes().containsKey(ATTRIBUTE_LISTENERS)
-        ? (Map<String, String>) getAttributes().get(ATTRIBUTE_LISTENERS)
+    // Using pattern matching for instanceof check with type casting
+    Map<String, String> declaredListeners = getAttributes().get(ATTRIBUTE_LISTENERS) instanceof Map<?, ?> listeners
+        ? (Map<String, String>) listeners
         : new HashMap<>();
 
     declaredListeners.put(eventName, listenerName);
@@ -271,26 +266,19 @@ public record MappingPair(String idMapping, String nameMapping) {}
     return this;
   }
 
-  /**
-   * Configure multiple listeners at once using a map.
-   *
-   * @param listeners a map of event names to listener names
-   * @return this instance for method chaining
-   * @since 3.60
-   */
-  public ItemselectFormField withListeners(final Map<String, String> listeners) {
-    Map<String, String> declaredListeners = getAttributes().containsKey(ATTRIBUTE_LISTENERS)
-        ? (Map<String, String>) getAttributes().get(ATTRIBUTE_LISTENERS)
-        : new HashMap<>();
-
-    declaredListeners.putAll(listeners);
-    getAttributes().put(ATTRIBUTE_LISTENERS, declaredListeners);
-
-    return this;
-  }
-
   public ItemselectFormField withSelectionPlaceholderText(final String value) {
     getAttributes().put("selectionPlaceholderText", value);
     return this;
+  }
+
+  /**
+   * Returns a string representation of this form field using Java 21 String Templates.
+   * 
+   * @return a string representation of this form field
+   */
+  @Override
+  public String toString() {
+    return STR."ItemselectFormField{id=\{getId()}, label=\{getLabel()}, storeApi=\{storeApi}, "
+        + STR."idMapping=\{idMapping}, nameMapping=\{nameMapping}, filters=\{storeFilters.size()}}";
   }
 }

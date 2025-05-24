@@ -15,22 +15,19 @@ package stringtemplates;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Duration;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.Map;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreMetrics;
-import org.sonatype.nexus.logging.task.TaskLogger;
 import org.sonatype.nexus.scheduling.TaskInfo;
-import org.sonatype.nexus.scheduling.TaskInterruptedException;
+import org.sonatype.nexus.scheduling.TaskState;
 
 /**
  * Tests to validate the correct implementation of Java 21's String Template feature
@@ -39,188 +36,182 @@ import org.sonatype.nexus.scheduling.TaskInterruptedException;
 public class TaskProgressStringTemplateTest
     extends TestSupport
 {
-  private TaskLogger taskLogger;
+  private static final String BLOB_STORE_NAME = "test-blobstore";
+  
   private BlobStore blobStore;
   private BlobStoreMetrics metrics;
   private TaskInfo taskInfo;
-  private ArgumentCaptor<String> messageCaptor;
-
+  
   @BeforeEach
-  public void setup() {
-    taskLogger = mock(TaskLogger.class);
+  public void setUp() {
     blobStore = mock(BlobStore.class);
     metrics = mock(BlobStoreMetrics.class);
     taskInfo = mock(TaskInfo.class);
-    messageCaptor = ArgumentCaptor.forClass(String.class);
     
-    when(blobStore.getMetrics()).thenReturn(metrics);
-    when(blobStore.getBlobStoreConfiguration()).thenReturn(null);
-    when(metrics.getBlobCount()).thenReturn(1000L);
-    when(metrics.getTotalSize()).thenReturn(5000000L);
+    when(blobStore.getBlobStoreMetrics()).thenReturn(metrics);
+    when(blobStore.getBlobStoreName()).thenReturn(BLOB_STORE_NAME);
   }
-
+  
+  /**
+   * Test that basic progress messages correctly use String Templates for variable interpolation.
+   */
   @Test
-  @DisplayName("Test basic String Template usage in task progress reporting")
-  public void testBasicStringTemplateInTaskProgress() {
-    // Simulate a task progress message using String Templates
-    String blobStoreName = "test-store";
-    long blobCount = 1000L;
+  @DisplayName("Verify basic progress message with String Templates")
+  public void testBasicProgressMessage() {
+    // Setup test data
+    int processedCount = 1000;
+    int totalCount = 5000;
     
-    // Using String Template syntax
-    String progressMessage = STR."Processing \{blobCount} blobs in \{blobStoreName}";
+    // Create progress message using String Templates
+    String progressMessage = STR."Processing \{processedCount} of \{totalCount} blobs in \{BLOB_STORE_NAME}";
     
-    // Log the message
-    taskLogger.info(progressMessage);
+    // Verify the message contains the interpolated values
+    assertEquals("Processing 1000 of 5000 blobs in test-blobstore", progressMessage);
     
-    // Verify the message was correctly formatted
-    verify(taskLogger).info(messageCaptor.capture());
-    String capturedMessage = messageCaptor.getValue();
-    
-    // Assert the message contains the interpolated values
-    assertEquals("Processing 1000 blobs in test-store", capturedMessage);
+    // Verify the message doesn't contain the template syntax
+    assertTrue(!progressMessage.contains("\\{") && !progressMessage.contains("}"));
   }
-
+  
+  /**
+   * Test that status updates with multiple variables correctly use String Templates.
+   */
   @Test
-  @DisplayName("Test String Template with expressions in task progress reporting")
-  public void testStringTemplateWithExpressionsInTaskProgress() {
-    // Simulate a task progress message with expressions in String Templates
-    String blobStoreName = "test-store";
-    long blobCount = 1000L;
-    long totalSize = 5000000L;
+  @DisplayName("Verify status update with multiple variables using String Templates")
+  public void testStatusUpdateWithMultipleVariables() {
+    // Setup test data
+    long blobCount = 10000;
+    long totalSize = 1024 * 1024 * 1024; // 1 GB
+    String status = "RUNNING";
     
-    // Using String Template with expressions
-    String progressMessage = STR."Processing \{blobCount} blobs (\{totalSize / 1024 / 1024} MB) in \{blobStoreName}";
+    when(metrics.getBlobCount()).thenReturn(blobCount);
+    when(metrics.getTotalSize()).thenReturn(totalSize);
+    when(taskInfo.getCurrentState()).thenReturn(TaskState.RUNNING);
     
-    // Log the message
-    taskLogger.info(progressMessage);
+    // Create status update using String Templates
+    String statusUpdate = STR."Task status: \{status}, processing blob store \{BLOB_STORE_NAME} " +
+        STR."with \{blobCount} blobs and total size of \{formatSize(totalSize)}";
     
-    // Verify the message was correctly formatted
-    verify(taskLogger).info(messageCaptor.capture());
-    String capturedMessage = messageCaptor.getValue();
-    
-    // Assert the message contains the interpolated values with calculated expression
-    assertEquals("Processing 1000 blobs (4 MB) in test-store", capturedMessage);
+    // Verify the status update contains the interpolated values
+    assertEquals("Task status: RUNNING, processing blob store test-blobstore with 10000 blobs and total size of 1.00 GB", 
+        statusUpdate);
   }
-
+  
+  /**
+   * Test that completion notifications with timing information correctly use String Templates.
+   */
   @Test
-  @DisplayName("Test String Template with multiple variables and formatting in task progress")
-  public void testStringTemplateWithMultipleVariablesAndFormatting() {
-    // Simulate a complex task progress message
-    String blobStoreName = "test-store";
-    long processedCount = 500L;
-    long totalCount = 1000L;
-    Duration elapsed = Duration.ofSeconds(65);
+  @DisplayName("Verify completion notification with timing using String Templates")
+  public void testCompletionNotificationWithTiming() {
+    // Setup test data
+    Duration duration = Duration.ofMinutes(5).plusSeconds(30);
+    int processedCount = 5000;
     
-    // Calculate percentage
-    int percentage = (int) ((processedCount * 100) / totalCount);
+    // Create completion notification using String Templates
+    String completionMessage = STR."Completed processing \{processedCount} blobs in \{BLOB_STORE_NAME} " +
+        STR."(duration: \{formatDuration(duration)})";
     
-    // Using String Template with multiple variables and formatting
-    String progressMessage = STR."Task progress: \{percentage}% complete (\{processedCount}/\{totalCount}) " + 
-                             STR."in \{blobStoreName} - Elapsed time: \{elapsed.toMinutes()} min \{elapsed.toSecondsPart()} sec";
-    
-    // Log the message
-    taskLogger.info(progressMessage);
-    
-    // Verify the message was correctly formatted
-    verify(taskLogger).info(messageCaptor.capture());
-    String capturedMessage = messageCaptor.getValue();
-    
-    // Assert the message contains all interpolated values with correct formatting
-    assertEquals("Task progress: 50% complete (500/1000) in test-store - Elapsed time: 1 min 5 sec", capturedMessage);
+    // Verify the completion notification contains the interpolated values
+    assertEquals("Completed processing 5000 blobs in test-blobstore (duration: 5m 30s)", completionMessage);
   }
-
+  
+  /**
+   * Test that error messages with exception details correctly use String Templates.
+   */
   @Test
-  @DisplayName("Test String Template in error reporting")
-  public void testStringTemplateInErrorReporting() {
-    // Simulate an error scenario
-    String blobStoreName = "test-store";
-    String errorType = "IOException";
-    String errorMessage = "Failed to read blob data";
+  @DisplayName("Verify error message with exception details using String Templates")
+  public void testErrorMessageWithExceptionDetails() {
+    // Setup test data
+    Exception exception = new RuntimeException("Test error message");
+    String taskName = "CompactBlobStoreTask";
     
-    // Using String Template for error reporting
-    String errorReport = STR."Error processing blob store \{blobStoreName}: \{errorType} - \{errorMessage}";
+    // Create error message using String Templates
+    String errorMessage = STR."Error in task \{taskName} for blob store \{BLOB_STORE_NAME}: \{exception.getMessage()}";
     
-    // Log the error
-    taskLogger.error(errorReport);
-    
-    // Verify the error message was correctly formatted
-    verify(taskLogger).error(messageCaptor.capture());
-    String capturedMessage = messageCaptor.getValue();
-    
-    // Assert the error message contains the interpolated values
-    assertEquals("Error processing blob store test-store: IOException - Failed to read blob data", capturedMessage);
+    // Verify the error message contains the interpolated values
+    assertEquals("Error in task CompactBlobStoreTask for blob store test-blobstore: Test error message", errorMessage);
   }
-
+  
+  /**
+   * Test that nested expressions in String Templates work correctly.
+   */
   @Test
-  @DisplayName("Test String Template with conditional expressions")
-  public void testStringTemplateWithConditionalExpressions() {
-    // Simulate a task with conditional status
-    String blobStoreName = "test-store";
-    boolean isCompleted = true;
-    long processedCount = 1000L;
+  @DisplayName("Verify nested expressions in String Templates")
+  public void testNestedExpressions() {
+    // Setup test data
+    Map<String, Integer> blobCounts = Map.of(
+        "maven-central", 1000,
+        "npm-proxy", 500,
+        "docker-hosted", 250
+    );
     
-    // Using String Template with conditional expression
-    String statusMessage = STR."Task for \{blobStoreName} is \{isCompleted ? "completed" : "in progress"} " + 
-                           STR."with \{processedCount} items processed";
+    // Create message with nested expressions using String Templates
+    String message = STR."Blob counts for repositories: " +
+        STR."Maven Central: \{blobCounts.get("maven-central")}, " +
+        STR."NPM Proxy: \{blobCounts.get("npm-proxy")}, " +
+        STR."Docker Hosted: \{blobCounts.get("docker-hosted")}";
     
-    // Log the status
-    taskLogger.info(statusMessage);
-    
-    // Verify the status message was correctly formatted
-    verify(taskLogger).info(messageCaptor.capture());
-    String capturedMessage = messageCaptor.getValue();
-    
-    // Assert the status message contains the conditional expression result
-    assertEquals("Task for test-store is completed with 1000 items processed", capturedMessage);
+    // Verify the message contains the interpolated values from nested expressions
+    assertEquals("Blob counts for repositories: Maven Central: 1000, NPM Proxy: 500, Docker Hosted: 250", message);
   }
-
+  
+  /**
+   * Test that multi-line String Templates work correctly.
+   */
   @Test
-  @DisplayName("Test String Template in task interruption handling")
-  public void testStringTemplateInTaskInterruptionHandling() {
-    // Simulate a task interruption
-    String blobStoreName = "test-store";
-    long processedCount = 500L;
-    long totalCount = 1000L;
+  @DisplayName("Verify multi-line String Templates")
+  public void testMultiLineStringTemplates() {
+    // Setup test data
+    int successCount = 4500;
+    int failureCount = 50;
+    int skippedCount = 450;
     
-    // Using String Template for interruption message
-    String interruptionMessage = STR."Task interrupted while processing \{blobStoreName}: " + 
-                                STR."\{processedCount} out of \{totalCount} items processed (\{(processedCount * 100) / totalCount}%)";
+    // Create multi-line message using String Templates
+    String report = STR."""
+        Task Report for Blob Store: \{BLOB_STORE_NAME}
+        --------------------------------
+        Successful: \{successCount}
+        Failed:     \{failureCount}
+        Skipped:    \{skippedCount}
+        --------------------------------
+        Total:      \{successCount + failureCount + skippedCount}
+        """;
     
-    try {
-      // Simulate task interruption
-      taskLogger.info(interruptionMessage);
-      throw new TaskInterruptedException("Task was interrupted", true);
+    // Verify the multi-line message contains the interpolated values
+    String expected = """
+        Task Report for Blob Store: test-blobstore
+        --------------------------------
+        Successful: 4500
+        Failed:     50
+        Skipped:    450
+        --------------------------------
+        Total:      5000
+        """;
+    
+    assertEquals(expected, report);
+  }
+  
+  /**
+   * Helper method to format file size in human-readable format.
+   */
+  private String formatSize(long bytes) {
+    if (bytes < 1024) {
+      return bytes + " B";
+    } else if (bytes < 1024 * 1024) {
+      return String.format("%.2f KB", bytes / 1024.0);
+    } else if (bytes < 1024 * 1024 * 1024) {
+      return String.format("%.2f MB", bytes / (1024.0 * 1024.0));
+    } else {
+      return String.format("%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0));
     }
-    catch (TaskInterruptedException e) {
-      // Verify the interruption message was correctly formatted
-      verify(taskLogger).info(messageCaptor.capture());
-      String capturedMessage = messageCaptor.getValue();
-      
-      // Assert the interruption message contains the interpolated values
-      assertEquals("Task interrupted while processing test-store: 500 out of 1000 items processed (50%)", 
-                   capturedMessage);
-    }
   }
-
-  @Test
-  @DisplayName("Test String Template with dynamic counter updates")
-  public void testStringTemplateWithDynamicCounterUpdates() {
-    // Simulate a task with a dynamic counter
-    String blobStoreName = "test-store";
-    AtomicInteger counter = new AtomicInteger(0);
+  
+  /**
+   * Helper method to format duration in human-readable format.
+   */
+  private String formatDuration(Duration duration) {
+    long minutes = duration.toMinutes();
+    long seconds = duration.minusMinutes(minutes).getSeconds();
     
-    // Process first batch
-    counter.addAndGet(250);
-    String progressMessage1 = STR."Processed \{counter.get()} items in \{blobStoreName}";
-    taskLogger.info(progressMessage1);
-    
-    // Process second batch
-    counter.addAndGet(250);
-    String progressMessage2 = STR."Processed \{counter.get()} items in \{blobStoreName}";
-    taskLogger.info(progressMessage2);
-    
-    // Verify the progress messages were correctly formatted
-    verify(taskLogger).info("Processed 250 items in test-store");
-    verify(taskLogger).info("Processed 500 items in test-store");
+    return minutes + "m " + seconds + "s";
   }
 }
